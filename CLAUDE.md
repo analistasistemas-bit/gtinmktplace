@@ -82,6 +82,7 @@ Quando o assunto for um destes tópicos, **leia o ADR antes de propor mudança**
 | [0007](docs/decisions/0007-modelo-de-dados-4-tabelas.md) | Modelo de dados: 4 tabelas, sem catalogo_interno separado |
 | [0008](docs/decisions/0008-estrategia-de-preco-condicional.md) | Estratégia de preço condicional (PRÓPRIO vs COMPETITIVO) |
 | [0009](docs/decisions/0009-campos-payload-ml-e-categoria-deterministica.md) | Campos obrigatórios do payload ML + categoria via lookup determinístico (não via IA) |
+| [0010](docs/decisions/0010-openrouter-em-vez-de-openai-direto.md) | IA via OpenRouter (gateway compatível com OpenAI SDK), não OpenAI direto |
 
 ---
 

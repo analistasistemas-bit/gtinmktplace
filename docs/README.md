@@ -26,7 +26,8 @@ docs/
 │   ├── 0006-qstash-em-vez-de-postgres-queue.md
 │   ├── 0007-modelo-de-dados-4-tabelas.md
 │   ├── 0008-estrategia-de-preco-condicional.md
-│   └── 0009-campos-payload-ml-e-categoria-deterministica.md
+│   ├── 0009-campos-payload-ml-e-categoria-deterministica.md
+│   └── 0010-openrouter-em-vez-de-openai-direto.md
 └── superpowers/specs/             ← spec formal do design (1 por marco de planejamento)
     └── 2026-05-26-ean2marketplace-design.md  (a criar)
 ```
@@ -50,6 +51,7 @@ docs/
 | Schema do banco e por que essas tabelas | [decisions/0007](decisions/0007-modelo-de-dados-4-tabelas.md) |
 | Como o sistema decide entre preço próprio e competitivo | [decisions/0008](decisions/0008-estrategia-de-preco-condicional.md) |
 | Quais campos do payload ML existem e como a categoria é definida | [decisions/0009](decisions/0009-campos-payload-ml-e-categoria-deterministica.md) |
+| Por que usamos OpenRouter em vez de OpenAI direto | [decisions/0010](decisions/0010-openrouter-em-vez-de-openai-direto.md) |
 
 ## Status do projeto
 
