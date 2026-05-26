@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { useFamilias } from '@/hooks/useFamilias';
@@ -82,11 +82,6 @@ export default function Revisao() {
               : `${f} (${counts[f]})`}
           </button>
         ))}
-        <div className="ml-auto">
-          {selecionadas.size > 0 && (
-            <Badge variant="default">{selecionadas.size} selecionada(s)</Badge>
-          )}
-        </div>
       </div>
       <div className="flex-1 overflow-auto">
         {visiveis.map((familia) => (
@@ -107,6 +102,21 @@ export default function Revisao() {
           </div>
         )}
       </div>
+      {selecionadas.size > 0 && (
+        <div className="flex items-center justify-between border-t bg-background px-4 py-3">
+          <div className="text-sm text-muted-foreground">
+            {selecionadas.size} selecionada(s) de {visiveis.length}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setSelecionadas(new Set())}>
+              Rejeitar
+            </Button>
+            <Button onClick={() => setSelecionadas(new Set())}>
+              Aprovar selecionada{selecionadas.size > 1 ? 's' : ''}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
