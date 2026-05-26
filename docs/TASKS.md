@@ -2,16 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-26 (durante execução do Plano 01)
-**Próximo passo recomendado:** continuar Plano 01 — começar pela Task 5 (Tailwind + shadcn), Tasks 2/3/9/10 ficam para depois usando os MCPs Supabase/Upstash/Render que agora estão expostos à sessão (foram adicionados via `claude mcp add-json` em escopo `user`).
+**Última atualização:** 2026-05-26 (segunda sessão — fim de Tasks 5/6/7 do Plano 01)
+**Próximo passo recomendado:** **reload da sessão Claude Code** para expor as tools `mcp__supabase__*` e `mcp__upstash__*` (estão "Connected" mas nenhuma tool foi carregada como deferred nesta sessão; só `mcp__render__*` veio). Depois disso: Tasks 2/3 (provisionar) → 8 (cliente Supabase TDD) → 9 (Edge Function) → 10 (Render deploy).
 
-**Sessão atual interrompida** para reinicialização — necessária para carregar os 3 MCPs novos (Supabase, Upstash, Render) como ferramentas disponíveis ao agente. Eles estão em `~/.claude.json` (user scope) e `claude mcp list` confirma "Connected" para todos.
+**Progresso desta sessão (Plano 01):**
+- ✅ Task 5 (Tailwind 4 + shadcn) — commit `e103dc3` — *desvio:* preset Nova/`neutral` (4.8.0 mudou defaults), não Slate
+- ✅ Task 6 (Vitest + smoke) — commit `f77e24e` — *desvio:* vitest pinado em `^3` (4.x exige Vite 6)
+- ✅ Task 7 (React Router + TDD) — commit `04f6779` — react-router-dom v7, RED→GREEN limpo
+
+**Contexto para nova sessão:**
+1. Projeto Supabase **já existe** com nome `gtin_mktplace_ia` (Diego criou manualmente, não chamar `create_project`)
+2. Diego usa **OpenRouter** (não OpenAI direto) — `OPENROUTER_API_KEY` deve ser o secret no Supabase, conforme ADR-0010
+3. `.env.example` já está alinhado com ADR-0010 (variáveis `OPENROUTER_API_KEY`, `AI_MODEL_*`)
+4. shadcn 4.8 criou pasta literal `@/` na primeira tentativa — agora `tsconfig.json` raiz tem o path alias para evitar isso em futuros `shadcn add`
+5. Build OK: `pnpm build` (142 módulos, 21 kB CSS) | Test OK: `pnpm test` (2 passed)
 
 **Quando retomar (nova sessão):**
-1. Verificar MCPs estão expostos: `ToolSearch` por "supabase" deve retornar tools mcp__*supabase* 
-2. Continuar Task 5 (independente de contas — 100% local)
-3. Quando voltar pras Tasks 2/3/9/10, usar os MCPs diretamente
-4. Não esquecer: ADR-0010 (OpenRouter no lugar de OpenAI direto)
+1. Verificar MCPs expostos: `ToolSearch` por "supabase" deve retornar `mcp__supabase__*` (e idem "upstash")
+2. Pegar URL + ANON_KEY do projeto `gtin_mktplace_ia` via MCP, escrever `.env.local`
+3. Provisionar Upstash Redis + QStash (`sa-east-1`, free), gravar tokens como Supabase secrets
+4. Executar Task 8 (cliente Supabase JS, TDD) e Task 9 (Edge Function `hello` deploy + curl)
 
 ---
 
