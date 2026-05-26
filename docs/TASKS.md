@@ -2,8 +2,8 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-26 (terceira sessão — M0 concluído via Plano 01)
-**Próximo passo recomendado:** iniciar **Plano 02 (UI Mockup — M1)**. Backend e infra prontos; agora começa a UI das 6 telas (Dashboard, Novo Lote, Progresso, Revisão, Relatório, Configurações) com dados mockados.
+**Última atualização:** 2026-05-26 (quarta sessão — M1 implementado, aguardando walkthrough Diego)
+**Próximo passo recomendado:** **walkthrough manual em produção** (https://ean2marketplace-frontend.onrender.com) percorrendo as 6 telas. Após walkthrough, abrir Plano 03 (M2 — Backend core: schema + auth + Storage + Edge Function `ingest-lote`).
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -35,7 +35,7 @@
 |---|---|
 | Pré-implementação (brainstorming + ADRs) | ✅ |
 | M0 — Setup inicial | ✅ |
-| M1 — UI mockup com dados fake | ⬜ |
+| M1 — UI mockup com dados fake | ✅ (pendente walkthrough Diego) |
 | M2 — Backend core | ⬜ |
 | M3 — IA copywriting + Vision | ⬜ |
 | M4 — Integração Mercado Livre | ⬜ |
@@ -128,63 +128,63 @@
 
 ### Layout e tema
 
-- [ ] Layout geral com sidebar + topbar + tema shadcn (Slate ou Zinc) — `~4h`
-- [ ] Criar mock data em `src/lib/mocks/` (lotes, famílias, variações realistas) — `~2h`
-- [ ] Criar rota wrapper de autenticação simulada — `~1h`
+- [x] Layout geral com sidebar + topbar + tema shadcn — *Nova/neutral mantido do M0; AppShell com Sidebar persistente + Topbar fina (commit `b9a6a97`)*
+- [x] Criar mock data em `src/lib/mocks/` (lotes, famílias, variações realistas) — *types + 6 lotes + 50 famílias programáticas (commits `b4283a3` `79e6b53` `fa521d5`)*
+- [x] Criar rota wrapper de autenticação simulada — *skipped no M1 conforme decisão UX: sidebar hardcoded `diego@empresa`*
 
 ### Tela Dashboard (lista de lotes)
 
-- [ ] Componente `LoteCard` (status, contadores, ações) — `~2h`
-- [ ] Lista de lotes consumindo mock — `~1h`
-- [ ] Botão "Novo lote" navegando — `~30 min`
+- [x] Componente `LoteCard` (status, contadores, ações) — *commit `cc742f2`, TDD com destinoDoLote*
+- [x] Lista de lotes consumindo mock — *useLotes hook (commit `25ab568`)*
+- [x] Botão "Novo lote" navegando — *Plus icon + Link → /novo-lote*
 
 ### Tela Novo Lote (upload)
 
-- [ ] Componente `Dropzone` para planilha + imagens (react-dropzone) — `~3h`
-- [ ] Validação de tipo de arquivo (`.xlsx`/`.csv` e `.jpg`/`.jpeg`/`.png`) — `~1h`
-- [ ] Preview de quantidade de arquivos — `~1h`
-- [ ] Botão "Processar" navegando para tela de progresso — `~30 min`
+- [x] Componente `Dropzone` para planilha + imagens (react-dropzone) — *commit `a1b6ac2`, props reusáveis*
+- [x] Validação de tipo de arquivo (`.xlsx` e `.jpg`/`.jpeg`/`.png`) — *via prop accept; CSV deferido pra M2 quando parse real entrar*
+- [x] Preview de quantidade de arquivos — *"X arquivo(s) selecionado(s)" ou nome único*
+- [x] Botão "Processar" navegando para tela de progresso — *navega para `/progresso/lote-novo-{timestamp}` (mock)*
 
 ### Tela Progresso
 
-- [ ] Layout de etapas com checkpoints visuais — `~2h`
-- [ ] Barra de progresso geral — `~30 min`
-- [ ] Resumo do lote (mockado) — `~1h`
-- [ ] Simulação de progresso via timeout (avança a cada 2s) — `~1h`
+- [x] Layout de etapas com checkpoints visuais — *Stepper com aria-labels concluída/atual/pendente (commit `90db4d4`, TDD)*
+- [x] Barra de progresso geral — *shadcn Progress*
+- [x] Resumo do lote (mockado) — *38 famílias detectadas · 142 variações · 137 imagens matched · 5 órfãs (hardcoded)*
+- [x] Simulação de progresso via timeout (avança a cada 2s) — *useEffect com setTimeout + cleanup*
 
 ### Tela Revisão em Lote (a mais complexa)
 
-- [ ] Componente `FamiliaCard` expansível (collapsed por padrão) — `~4h`
-- [ ] Cabeçalho do card: badge CREATE/UPDATE, nome, foto capa, copy preview — `~3h`
-- [ ] Visualização da estratégia de preço (PRÓPRIO/COMPETITIVO com motivo) — `~2h`
-- [ ] Visualização de concorrência (níveis com cores) — `~1h`
-- [ ] Expansão para mostrar variações (tabela densa) — `~3h`
-- [ ] Edição inline de título, descrição, cor, preço (com `<Input>` controlado) — `~4h`
-- [ ] Seleção em massa (checkbox por família + "Selecionar tudo") — `~2h`
-- [ ] Ações em massa (Aprovar/Rejeitar selecionadas) — `~2h`
-- [ ] Filtros (dropdown: CREATE/UPDATE, concorrência, avisos) — `~2h`
-- [ ] Busca por código ou nome — `~1h`
-- [ ] Atalhos de teclado (J/K/A/R/Espaço) — `~2h`
-- [ ] Footer com contadores e botão "Publicar aprovadas" — `~1h`
+- [x] Componente `FamiliaRow` (substitui FamiliaCard original; design final é tabela densa) — *commit `8d1b9df`, TDD*
+- [x] Cabeçalho da linha: badge CREATE/UPDATE, nome, thumbnail (cor), código PAI — *grid 6 cols, layout compacto*
+- [x] Visualização da estratégia de preço (PRÓPRIO/COMPETITIVO com motivo) — *no FamiliaExpanded (commit `165a900`)*
+- [x] Visualização de concorrência (sem/moderada/alta) — *no FamiliaExpanded*
+- [x] Expansão accordion inline para mostrar variações — *FamiliaExpanded; múltiplas podem ficar abertas*
+- [x] Edição inline de título, descrição, cor, preço (com `<Input>` controlado) — *state local no FamiliaExpanded; persistência só em M2*
+- [x] Seleção em massa (checkbox por família) — *Set<id>, toggleSelecao imutável*
+- [x] Ações em massa (Aprovar/Rejeitar selecionadas) — *footer sticky, commit `42b1414`, TDD; ambos limpam seleção em M1 (mock)*
+- [x] Filtros chips (todos/CREATE/UPDATE/avisos) — *filtrarFamilias pura + 6 testes*
+- [x] Busca por código ou nome — *case-insensitive em título, substring em PAI*
+- [ ] Atalhos de teclado (J/K/A/R/Espaço) — *deferido para M5 (polimento)*
+- [x] Footer com contadores e botões "Aprovar/Rejeitar selecionadas" — *sticky bottom, condicional em selecionadas.size > 0*
 
 ### Tela Relatório Final
 
-- [ ] Cards de resumo (publicados, com erro) — `~1h`
-- [ ] Lista de famílias com link clicável simulado — `~2h`
-- [ ] Botão "Editar e tentar de novo" para erros — `~1h`
-- [ ] Botão "Exportar PDF" (placeholder, implementa em M5) — `~30 min`
+- [x] Cards de resumo (publicadas, com erro, custo IA) — *3 cards grid, commit `ab85ba5`*
+- [x] Lista de famílias com link clicável simulado — *href fixo `https://produto.mercadolivre.com.br/MLB-mockid`*
+- [x] Botão "Editar e tentar de novo" para erros — *visual apenas no M1*
+- [x] Botão "Exportar PDF" (placeholder, implementa em M5) — *Button disabled*
 
 ### Tela Configurações
 
-- [ ] Seção de conexão ML (estado mockado "Conectado") — `~1h`
-- [ ] Seção de estratégia de preço (radio buttons informacionais) — `~1h`
-- [ ] Seção de categorias padrão — `~1h`
+- [x] Seção de conexão ML (estado mockado "Conectado") — *Badge verde + "como vendedor_mock" (commit `1aa0fd8`)*
+- [x] Seção de estratégia de preço (radio buttons informacionais) — *RadioGroup default condicional, referencia ADR-0008*
+- [x] Seção de categorias padrão — *MLB1132/1430/1429, referencia ADR-0009*
 
 ### Validação com Diego
 
-- [ ] Deploy de mockup em URL pública (Render) — `~30 min`
-- [ ] Walkthrough ao vivo: Diego percorre todas as telas — `~1h`
-- [ ] Lista de ajustes identificados na validação (acrescenta em TASKS) — *variável*
+- [x] Deploy de mockup em URL pública (Render) — *auto-deploy ativo desde M0; último deploy contém todas as 14 tasks*
+- [ ] Walkthrough ao vivo: Diego percorre todas as telas — *aguardando Diego abrir a URL e validar*
+- [ ] Lista de ajustes identificados na validação (acrescenta em TASKS) — *pós-walkthrough*
 
 ---
 

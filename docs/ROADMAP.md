@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-26 (M0 concluído)
-**Estado geral:** 🟢 M0 concluído, pronto para M1 (UI mockup com dados fake)
+**Última atualização:** 2026-05-26 (M1 implementado; walkthrough pendente)
+**Estado geral:** 🟢 M1 implementado em produção (https://ean2marketplace-frontend.onrender.com); aguardando walkthrough do Diego para encerrar oficialmente e iniciar M2
 
 ---
 
@@ -63,21 +63,29 @@ Ambiente "Hello World" funcional: frontend serve uma página em produção com t
 
 ## 🏁 M1 — UI mockup com dados fake
 
-**Status:** ⬜ Não iniciado
-**Duração estimada:** 1 semana
-**Bloqueia:** validação de UX antes do backend
+**Status:** ✅ Implementado (2026-05-26, em 1 sessão via Plano 02 — Subagent-Driven Development)
+**Duração real:** ~1 dia útil (vs 1 semana estimada)
+**Walkthrough Diego:** pendente
 
 ### Objetivo
 Diego percorre todas as telas do produto com dados mockados, valida a UX e identifica ajustes antes da gente investir no backend.
 
 ### Critérios de saída
-- [ ] Todas as 6 telas navegáveis (Dashboard, Novo Lote, Progresso, Revisão, Relatório, Configurações)
-- [ ] Tela de Revisão completa com mock de famílias + variações + concorrência + estratégia de preço
-- [ ] Diego aprova o fluxo de revisão em walkthrough ao vivo
-- [ ] Ajustes identificados na validação são listados como itens em [TASKS.md](TASKS.md)
+- [x] Todas as 6 telas navegáveis (Dashboard, Novo Lote, Progresso, Revisão, Relatório, Configurações) — em produção
+- [x] Tela de Revisão completa com mock de 50 famílias + variações + concorrência + estratégia de preço
+- [ ] Diego aprova o fluxo de revisão em walkthrough ao vivo — *pendente*
+- [ ] Ajustes identificados na validação são listados como itens em [TASKS.md](TASKS.md) — *pós-walkthrough*
 
-### Saída esperada
-Site navegável em produção (Render) com tema shadcn, dados em JSON local, sem backend ainda.
+### Saída entregue
+Site navegável em produção (https://ean2marketplace-frontend.onrender.com) com tema Nova/neutral, 50 famílias mockadas no Lote #42, 45 testes passando.
+
+### Desvios do plano original
+- **Tema Slate/Zinc → Nova/neutral**: mantido do M0 por pragmatismo
+- **`FamiliaCard` → `FamiliaRow`**: design final é tabela densa (decisão brainstorming), não card grande
+- **Atalhos de teclado (J/K/A/R)**: deferidos para M5 (polimento)
+- **Validação CSV**: removida (só `.xlsx`); CSV entra no M2 quando parser real chegar
+- **Sidebar `/revisao` hardcoded**: aponta para `lote-42` (placeholder até existir conceito de "lote atual")
+- **Header da Revisão**: badge `X selecionada(s)` removido; info vive só no footer pra evitar duplicação
 
 ---
 
@@ -280,3 +288,4 @@ Itens explicitamente para versões futuras:
 |---|---|---|
 | 2026-05-26 | Criação inicial após brainstorming | Conclusão das 6 seções do design |
 | 2026-05-26 | M0 marcado ✅; estado geral → 🟢 | Plano 01 concluído em 3 sessões: Supabase URL/key + Upstash + Redis via MCP; `@supabase/supabase-js` + `src/lib/supabase.ts` (TDD); Edge Function `hello` deploy via MCP; Render Static Site com auto-deploy. Desvios documentados no card do M0. |
+| 2026-05-26 | M1 implementado ✅ (walkthrough pendente) | Plano 02 executado em 1 sessão via Subagent-Driven Development: 14 tasks de código + 1 task de docs. 50 famílias mock, 6 telas em produção, 45 testes passando. Desvios documentados no card do M1. |
