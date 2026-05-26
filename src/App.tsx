@@ -1,7 +1,11 @@
+import { Button } from '@/components/ui/button';
+
 function App() {
   return (
-    <div>
-      <h1>EAN2Marketplace — Foundation OK</h1>
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4">
+      <h1 className="text-3xl font-bold tracking-tight">EAN2Marketplace</h1>
+      <p className="text-muted-foreground">Foundation OK</p>
+      <Button>Funciona</Button>
     </div>
   );
 }
