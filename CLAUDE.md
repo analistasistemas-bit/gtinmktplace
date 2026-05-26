@@ -1,0 +1,215 @@
+# CLAUDE.md — Contexto persistente do projeto EAN2Marketplace
+
+> Este arquivo é o **system prompt do projeto**. Toda sessão de Claude Code (ou outro agente IA) deve lê-lo primeiro, antes de tocar em qualquer arquivo. Ele resume regras, convenções, decisões e workflow do projeto, e aponta para a documentação detalhada.
+
+**Última atualização:** 2026-05-26
+**Status do projeto:** brainstorming concluído; pronto para writing-plans
+
+---
+
+## O que é este projeto
+
+**EAN2Marketplace** é um sistema web interno que transforma planilhas de produtos exportadas do sistema interno da empresa em **anúncios publicados no Mercado Livre**, usando IA como copywriter especializado em **aviamentos** (linha de costura, botões, fitas).
+
+- **Cliente final:** empresa de tecidos e aviamentos (uso interno)
+- **Desenvolvedor único:** Diego — funcionário interno; também é o usuário-operador-validador
+- **Substitui:** uma proposta comercial externa (Leonardo Freitas) que foi inviável financeiramente
+- **MVP foca em:** aviamentos no Mercado Livre. Tecidos e outros marketplaces ficam para v2+
+- **Prazo:** 10 semanas de desenvolvimento (~2,5 meses), com buffer de 3 semanas até o limite de 3 meses
+
+---
+
+## Por onde começar (todo agente lê isso)
+
+Antes de fazer **qualquer alteração** ou tomar **qualquer decisão**, consulte os documentos abaixo nesta ordem:
+
+1. [docs/README.md](docs/README.md) — índice geral
+2. [docs/superpowers/specs/2026-05-26-ean2marketplace-design.md](docs/superpowers/specs/2026-05-26-ean2marketplace-design.md) — **spec completo** do design
+3. [docs/ROADMAP.md](docs/ROADMAP.md) — em que marco estamos, o que está fora de escopo
+4. [docs/TASKS.md](docs/TASKS.md) — checklist operacional; pegue a próxima tarefa aqui
+5. [docs/decisions/](docs/decisions/) — todos os ADRs vigentes; **para qualquer decisão técnica, leia o ADR correspondente antes de propor algo diferente**
+
+Se algum desses arquivos ainda não cobre algo que você precisa decidir, **escreva um ADR novo antes de implementar**.
+
+---
+
+## Stack confirmado
+
+(detalhes completos em [ADR-0001](docs/decisions/0001-stack-tecnologico.md))
+
+| Camada | Tecnologia |
+|---|---|
+| Frontend | Vite + React 18 + TypeScript + shadcn/ui + Tailwind + TanStack Query + Zustand |
+| Backend / DB / Storage / Auth / Realtime | Supabase (Postgres + Edge Functions Deno/TS + Storage + Vault) |
+| Hospedagem do frontend | Render Static Site |
+| Fila assíncrona | Upstash QStash |
+| Cache | Upstash Redis |
+| IA copywriting | OpenAI GPT-4o-mini |
+| IA visão (cor) | OpenAI GPT-4o Vision |
+| Integração externa | Mercado Livre API (OAuth 2.0) |
+
+**Custo operacional alvo:** $3–28/mês
+
+---
+
+## MCPs do ambiente (priorizar SEMPRE)
+
+Diego tem MCPs configurados localmente; usá-los é a primeira escolha em qualquer operação que tenha equivalente:
+
+- `supabase-mcp-server` — operações no Supabase (DB, auth, storage, edge functions)
+- `upstash` — QStash + Redis
+- `render` — deploy do frontend
+- `shadcn` — componentes UI
+- `context7` — documentação atualizada de SDKs (use antes de chutar API)
+- `n8n-mcp`, `Firebase`, `Stitch` — disponíveis se necessário
+
+**Regra de ouro:** antes de propor solução custom ou sugerir "vá no dashboard do serviço X", verifique se há MCP equivalente.
+
+---
+
+## Decisões arquiteturais já tomadas (todos os ADRs)
+
+Quando o assunto for um destes tópicos, **leia o ADR antes de propor mudança**:
+
+| ADR | Tópico |
+|---|---|
+| [0001](docs/decisions/0001-stack-tecnologico.md) | Stack tecnológico |
+| [0002](docs/decisions/0002-mvp-aviamentos-primeiro.md) | MVP começa por aviamentos, não tecidos |
+| [0003](docs/decisions/0003-variacoes-agrupadas-por-pai.md) | Variações agrupadas por código PAI no anúncio do ML |
+| [0004](docs/decisions/0004-atribuicao-de-cor.md) | Cor: descrição primeiro, IA Vision como fallback |
+| [0005](docs/decisions/0005-lifecycle-publish-and-update.md) | Lifecycle: publica novo, atualiza existente |
+| [0006](docs/decisions/0006-qstash-em-vez-de-postgres-queue.md) | QStash em vez de fila no Postgres |
+| [0007](docs/decisions/0007-modelo-de-dados-4-tabelas.md) | Modelo de dados: 4 tabelas, sem catalogo_interno separado |
+| [0008](docs/decisions/0008-estrategia-de-preco-condicional.md) | Estratégia de preço condicional (PRÓPRIO vs COMPETITIVO) |
+| [0009](docs/decisions/0009-campos-payload-ml-e-categoria-deterministica.md) | Campos obrigatórios do payload ML + categoria via lookup determinístico (não via IA) |
+
+---
+
+## Convenções do projeto
+
+### Documentação
+- **Toda decisão técnica não-trivial** vira ADR em `docs/decisions/` antes da implementação
+- ADRs são **imutáveis** depois de aceitos; se mudar, criar novo ADR substituindo (com referência)
+- `docs/ROADMAP.md` e `docs/TASKS.md` são **vivos** — atualize ao avançar
+- Atualizar `docs/README.md` e este `CLAUDE.md` quando criar ADR novo ou mudar workflow
+
+### Código
+- **TypeScript strict mode** sempre
+- **Tipos do Supabase gerados** (`supabase gen types`) — não escrever à mão
+- **Camada de IA isolada** (não chamar OpenAI direto em todo lugar — passar por `lib/ai/*`) para facilitar swap de modelo
+- **Camada de fila isolada** (`lib/queue.ts`) — abstrair QStash para que troca seja localizada
+- Edge Functions devem ser **idempotentes** (verificar `status` antes de processar — padrão completo em [ADR-0006](docs/decisions/0006-qstash-em-vez-de-postgres-queue.md))
+- **Sem comentários explicando o "o que"** — só o "porquê" quando não-óbvio
+- **Sem código morto** — funcionalidades não-pedidas ficam de fora
+
+### Banco de dados
+- **4 tabelas:** `lotes`, `familias`, `variacoes`, `ml_credentials`
+- **RLS por user_id** em todas as tabelas de domínio
+- **Tokens OAuth** sempre via Supabase Vault (pgsodium)
+- **Enums Postgres** em vez de string livre
+- **Migrations aditivas** sempre que possível; nunca soltar `DROP COLUMN` sem backup
+
+### Arquivos e imagens
+- Imagens de produto: arquivo nomeado `00CODIGO.jpeg` (8 dígitos, zero-padded)
+- Storage path: `{user_id}/{codigo}.jpeg` no bucket `imagens`
+- Capa do anúncio agrupado: foto do PAI se existir o arquivo; caso contrário, foto da primeira variação encontrada
+
+### Schema esperado da planilha
+Colunas obrigatórias: `CODIGO`, `PAI`, `NOME`, `UNIDADE`, `GTIN`, `PRECO`, `ESTOQUE`, `DESCRICAO_DETALHADO`, `PESO_GRAMAS`, `ALTURA_CM`, `LARGURA_CM`, `COMPRIMENTO_CM`.
+
+Regras:
+- `PAI = 0` significa que o produto é o pai (não vendido, só agrupador)
+- `PAI = <código>` significa que o produto é filho daquele código
+- Se faltar coluna obrigatória, o ingest falha cedo (erro de validação clara)
+
+### Domínio
+- **Produtos PAI nunca são vendidos** — só conceito de agrupador no ML
+- **Filhos (cores) são os SKUs reais** que viram variações dentro do anúncio único do ML
+- **Revisão humana obrigatória** antes de qualquer publicação no ML
+
+---
+
+## Workflow por sessão
+
+Ao iniciar uma sessão neste projeto:
+
+1. Ler este CLAUDE.md
+2. Ler `MEMORY.md` global do Claude Code (preferências persistentes de Diego)
+3. Ler `docs/ROADMAP.md` (em que marco estamos)
+4. Pegar próxima tarefa pendente em `docs/TASKS.md`
+5. Se for tarefa de implementação:
+   - Conferir ADR relacionado (se houver)
+   - Implementar
+   - Atualizar TASKS.md (marcar ✅)
+   - Se a tarefa originou decisão nova → escrever ADR
+   - Se mudou roadmap → atualizar ROADMAP.md
+   - Antes do commit: lint + types check
+6. Se for tarefa de design/planejamento:
+   - Seguir workflow do Superpowers (`brainstorming` → `writing-plans` → `subagent-driven-development`)
+7. Sempre que tomar atalho ou pular convenção: registrar exceção como TODO no TASKS.md ou em comentário no código (com explicação)
+
+---
+
+## Regras de operação para a IA
+
+Estas regras são **inegociáveis** salvo aprovação explícita do Diego em mensagem da sessão:
+
+1. **Antes de propor algo, ler ADR relacionado.** Não improvisar contradizendo ADR vigente.
+2. **Antes de implementar decisão não-trivial, escrever ADR.** ADR vem antes do código, não depois.
+3. **Priorizar MCPs configurados** sobre soluções manuais ou outros serviços.
+4. **Recomendar diretamente** em decisões técnicas que Diego não tem expertise; menu A/B/C/D só em decisões de produto/negócio.
+5. **Caminho mais prático e rápido** vence elegância em tradeoffs (Diego declarou preferência).
+6. **Edge Functions sempre idempotentes** — verificar status antes de processar.
+7. **Para mudanças que afetam arquitetura**: atualizar spec + criar ADR antes de codar.
+8. **Cada commit** deve fazer referência a item do TASKS.md ou ADR.
+9. **Testes:** TDD onde aplicável (regras de negócio, parsers, cálculo de preço); pular onde não agrega valor (UI cosmética).
+10. **Authoring e review separados** (regra do OMC): nunca aprovar a própria mudança no mesmo passo.
+
+---
+
+## Glossário
+
+| Termo | Significado |
+|---|---|
+| **PAI** | Produto-pai conceitual, identificado pelo campo `PAI=0` na planilha; agrupa variações; nunca é vendido isoladamente |
+| **Filho** | Produto-variação (geralmente uma cor); tem `PAI = <código do pai>`; é o SKU real vendido |
+| **Família** | Registro do PAI no nosso banco (tabela `familias`); vira **1 anúncio** no ML |
+| **Variação** | Registro do filho no nosso banco (tabela `variacoes`); vira **1 variação** dentro do anúncio do ML |
+| **Lote** | Uma sessão de importação (1 upload de planilha + imagens correspondentes) |
+| **CREATE / UPDATE** | Operações de publicação no ML: CREATE = anúncio novo; UPDATE = atualizar estoque/preço de anúncio existente |
+| **Operador** | O usuário-final do sistema (no caso, Diego ou outra pessoa interna da empresa) |
+| **GTIN** | Código de barras EAN; pode ser nulo ou começar com `3000*` (código interno, não EAN real GS1) |
+| **MLB####** | Identificador de categoria no Mercado Livre |
+
+---
+
+## O que NUNCA fazer neste projeto
+
+- ❌ **Inventar dados** que a IA não tem (alucinar especificações inexistentes — prompt do copywriter proíbe explicitamente)
+- ❌ **Pular o operador** (revisão humana é obrigatória antes de qualquer publicação no ML)
+- ❌ **Quebrar idempotência** das Edge Functions (sempre verificar status antes de processar)
+- ❌ **Salvar tokens OAuth em texto puro** (sempre via Supabase Vault)
+- ❌ **Ignorar RLS** (sempre policy por user_id em toda tabela de domínio)
+- ❌ **Criar tabelas novas** sem ADR aprovado
+- ❌ **Pôr credenciais** em código ou no repo — sempre via `.env.local` (não commitado) ou Supabase secrets
+- ❌ **Modificar ADR** depois de aceito (criar novo substituindo)
+- ❌ **Recomendar serviço externo** se houver MCP equivalente já configurado
+- ❌ **Fazer review da própria mudança** no mesmo passo (sempre passes separados — `code-reviewer` ou `verifier` agente)
+- ❌ **Quebrar a regra do PAI**: PAI nunca é vendido isoladamente; sempre publicado como agrupador
+- ❌ **Auto-publicar sem revisão**, mesmo em casos UPDATE — operador sempre confirma o lote
+
+---
+
+## Trilho paralelo crítico (não esquecer)
+
+⚠ **Aprovação do app no portal Mercado Livre Developers** é manual, responsabilidade de Diego, e pode levar de 1 a 4 semanas. Deve começar **imediatamente** (não esperar M0 estar completo). Sem isso, o marco M4 fica desenvolvendo contra sandbox até a aprovação sair.
+
+Status atual: ⬜ não iniciado. Ver detalhes em [ROADMAP.md](docs/ROADMAP.md#trilho-paralelo--aprovação-do-app-mercado-livre).
+
+---
+
+## Histórico deste CLAUDE.md
+
+| Data | Mudança |
+|---|---|
+| 2026-05-26 | Criação inicial após brainstorming completo (Seções 1-6 aprovadas, 8 ADRs, ROADMAP, TASKS, spec consolidado) |
