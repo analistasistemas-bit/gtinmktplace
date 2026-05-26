@@ -2,26 +2,31 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-26 (segunda sessão — fim de Tasks 5/6/7 do Plano 01)
-**Próximo passo recomendado:** **reload da sessão Claude Code** para expor as tools `mcp__supabase__*` e `mcp__upstash__*` (estão "Connected" mas nenhuma tool foi carregada como deferred nesta sessão; só `mcp__render__*` veio). Depois disso: Tasks 2/3 (provisionar) → 8 (cliente Supabase TDD) → 9 (Edge Function) → 10 (Render deploy).
+**Última atualização:** 2026-05-26 (terceira sessão — Tasks 2/3 do Plano 01 via MCP)
+**Próximo passo recomendado:** Task 8 (instalar `@supabase/supabase-js`, criar `src/lib/supabase.ts` com TDD) → Task 9 (Edge Function `hello` deploy + curl) → Task 10 (Render Static Site deploy automático).
 
-**Progresso desta sessão (Plano 01):**
+**Progresso desta sessão (terceira sessão, 2026-05-26):**
+- ✅ Task 2 (Supabase URL/ANON_KEY) — captured via `get_project_url` + `get_publishable_keys` MCP
+- ✅ Task 3 (Upstash Redis + QStash) — Redis `mktplace-redis` já existente (us-east-1 global, free); QStash já ativo (eu-central-1, free, conta `analistasistemas@gmail.com`)
+- ✅ `.env.local` criado com credenciais reais (gitignored, verificado via `git check-ignore`)
+- *Desvio:* Redis está em `us-east-1` (global), não `sa-east-1` como TASKS.md sugeria — Diego provisionou previamente, mantido por pragmatismo
+
+**Progresso da sessão anterior (Plano 01):**
 - ✅ Task 5 (Tailwind 4 + shadcn) — commit `e103dc3` — *desvio:* preset Nova/`neutral` (4.8.0 mudou defaults), não Slate
 - ✅ Task 6 (Vitest + smoke) — commit `f77e24e` — *desvio:* vitest pinado em `^3` (4.x exige Vite 6)
 - ✅ Task 7 (React Router + TDD) — commit `04f6779` — react-router-dom v7, RED→GREEN limpo
 
-**Contexto para nova sessão:**
-1. Projeto Supabase **já existe** com nome `gtin_mktplace_ia` (Diego criou manualmente, não chamar `create_project`)
-2. Diego usa **OpenRouter** (não OpenAI direto) — `OPENROUTER_API_KEY` deve ser o secret no Supabase, conforme ADR-0010
-3. `.env.example` já está alinhado com ADR-0010 (variáveis `OPENROUTER_API_KEY`, `AI_MODEL_*`)
+**Contexto cumulativo:**
+1. Projeto Supabase: `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp` / URL `https://txvncrgkoynoxwopfkbp.supabase.co`
+2. Diego usa **OpenRouter** (não OpenAI direto) — `OPENROUTER_API_KEY` ainda **não preenchida** no `.env.local` (Diego precisa colar a key)
+3. QStash signing keys ainda em branco no `.env.local` — pegar em https://console.upstash.com/qstash quando for implementar verificação de assinatura
 4. shadcn 4.8 criou pasta literal `@/` na primeira tentativa — agora `tsconfig.json` raiz tem o path alias para evitar isso em futuros `shadcn add`
 5. Build OK: `pnpm build` (142 módulos, 21 kB CSS) | Test OK: `pnpm test` (2 passed)
 
 **Quando retomar (nova sessão):**
-1. Verificar MCPs expostos: `ToolSearch` por "supabase" deve retornar `mcp__supabase__*` (e idem "upstash")
-2. Pegar URL + ANON_KEY do projeto `gtin_mktplace_ia` via MCP, escrever `.env.local`
-3. Provisionar Upstash Redis + QStash (`sa-east-1`, free), gravar tokens como Supabase secrets
-4. Executar Task 8 (cliente Supabase JS, TDD) e Task 9 (Edge Function `hello` deploy + curl)
+1. Pedir ao Diego a `OPENROUTER_API_KEY` (e signing keys QStash se for usar webhooks)
+2. Replicar secrets para Supabase via CLI (`supabase secrets set OPENROUTER_API_KEY=... UPSTASH_REDIS_REST_URL=... QSTASH_TOKEN=...`) antes do primeiro deploy de Edge Function
+3. Executar Task 8 (cliente Supabase JS com TDD) e Task 9 (Edge Function `hello` deploy + curl)
 
 ---
 
@@ -71,13 +76,13 @@
 
 - ⬜ Criar repositório Git no GitHub (`ean2marketplace`) — `~30 min`
 - ⬜ Inicializar projeto local (`git init`, README inicial) — `~15 min`
-- ⬜ Criar projeto Supabase (via supabase-mcp-server) — `~30 min`
-- ⬜ Anotar URL e ANON_KEY do Supabase em `.env.example` — `~10 min`
+- ✅ Criar projeto Supabase (via supabase-mcp-server) — *Diego criou manualmente como `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp`*
+- ✅ Anotar URL e ANON_KEY do Supabase em `.env.local` — *capturado via MCP `get_project_url` + `get_publishable_keys` (publishable key, não legacy anon)*
 - ⬜ Criar Render Static Site conectado ao repo — `~30 min`
-- ⬜ Criar conta Upstash + QStash + Redis (via upstash MCP) — `~30 min`
-- ⬜ Anotar tokens de QStash e Redis em `.env.example` — `~10 min`
-- ⬜ Criar conta OpenAI (se não tiver) + adicionar crédito mínimo ($20) — `~15 min`
-- ⬜ Provisionar OPENAI_API_KEY como Supabase secret — `~10 min`
+- ✅ Criar conta Upstash + QStash + Redis (via upstash MCP) — *Redis `mktplace-redis` (us-east-1 global, free) + QStash (eu-central-1, free) já provisionados*
+- ✅ Anotar tokens de QStash e Redis em `.env.local` — *gravado em `.env.local` (gitignored)*
+- ⬜ (Substituída por ADR-0010) Criar conta OpenRouter + adicionar crédito mínimo — `~15 min`
+- ⬜ Provisionar `OPENROUTER_API_KEY` + `UPSTASH_*` + `QSTASH_TOKEN` como Supabase secrets (`supabase secrets set ...`) — `~15 min`
 
 ### Trilho paralelo: Mercado Livre Developers
 
