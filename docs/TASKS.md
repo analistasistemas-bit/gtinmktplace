@@ -2,8 +2,16 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-26
-**Próximo passo recomendado:** finalizar brainstorming → escrever plano de implementação detalhado (writing-plans) → iniciar M0
+**Última atualização:** 2026-05-26 (durante execução do Plano 01)
+**Próximo passo recomendado:** continuar Plano 01 — começar pela Task 5 (Tailwind + shadcn), Tasks 2/3/9/10 ficam para depois usando os MCPs Supabase/Upstash/Render que agora estão expostos à sessão (foram adicionados via `claude mcp add-json` em escopo `user`).
+
+**Sessão atual interrompida** para reinicialização — necessária para carregar os 3 MCPs novos (Supabase, Upstash, Render) como ferramentas disponíveis ao agente. Eles estão em `~/.claude.json` (user scope) e `claude mcp list` confirma "Connected" para todos.
+
+**Quando retomar (nova sessão):**
+1. Verificar MCPs estão expostos: `ToolSearch` por "supabase" deve retornar tools mcp__*supabase* 
+2. Continuar Task 5 (independente de contas — 100% local)
+3. Quando voltar pras Tasks 2/3/9/10, usar os MCPs diretamente
+4. Não esquecer: ADR-0010 (OpenRouter no lugar de OpenAI direto)
 
 ---
 
