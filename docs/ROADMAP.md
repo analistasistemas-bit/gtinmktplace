@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-26
-**Estado geral:** 🟡 Brainstorming concluído; aguardando início da implementação
+**Última atualização:** 2026-05-26 (M0 concluído)
+**Estado geral:** 🟢 M0 concluído, pronto para M1 (UI mockup com dados fake)
 
 ---
 
@@ -34,25 +34,30 @@ Limite teto:     2026-08-25 (3 meses corridos)
 
 ## 🏁 M0 — Setup inicial
 
-**Status:** ⬜ Não iniciado
-**Duração estimada:** 1 semana (em paralelo com início do M1)
-**Bloqueia:** nada — pode começar imediatamente
+**Status:** ✅ Concluído (2026-05-26, em 3 sessões)
+**Duração real:** 3 sessões focadas (~1 dia útil acumulado, em vez de 1 semana estimada)
+**Bloqueia:** nada — M1 pode iniciar
 
 ### Objetivo
 Ter todas as contas, repositórios e ambientes configurados para começar a desenvolver.
 
 ### Critérios de saída
-- [ ] Repo Git criado e versionado
-- [ ] Projeto Supabase ativo, com schema vazio
-- [ ] Render conectado ao repo (mesmo que site placeholder)
-- [ ] Upstash QStash + Redis criados via MCP
-- [ ] Chave OpenAI provisionada com crédito mínimo
-- [ ] App Mercado Livre Developers **criado** (aprovação fica em paralelo)
-- [ ] Frontend Vite + React + TS + shadcn instalado e rodando localmente
-- [ ] `.env.local` e Supabase secrets configurados
+- [x] Repo Git criado e versionado — `analistasistemas-bit/gtinmktplace`
+- [x] Projeto Supabase ativo — `gtin_mktplace_ia` (ref `txvncrgkoynoxwopfkbp`), Edge Function `hello` deployada e respondendo
+- [x] Render conectado ao repo — Static Site `srv-d8at8arbc2fs73e5qcb0` em `https://ean2marketplace-frontend.onrender.com`, auto-deploy ativo
+- [x] Upstash QStash + Redis criados via MCP — `mktplace-redis` (us-east-1) + QStash (eu-central-1)
+- [x] Chave de IA provisionada — `OPENROUTER_API_KEY` (não OpenAI direto, ver ADR-0010)
+- [ ] App Mercado Livre Developers **criado** — *trilho paralelo, Diego inicia separadamente*
+- [x] Frontend Vite + React + TS + Tailwind 4 + shadcn instalado e rodando localmente — build OK 153 módulos
+- [x] `.env.local` configurado — Supabase, Upstash, OpenRouter, QStash; *Supabase secrets via CLI ainda pendente, será feito ao primeiro Edge Function que precise (M2/M3)*
 
 ### Saída esperada
-Ambiente "Hello World" funcional: frontend serve uma página em branco com tema shadcn; Edge Function de teste retorna 200.
+Ambiente "Hello World" funcional: frontend serve uma página em produção com tema shadcn; Edge Function `hello` retorna 200 com JSON.
+
+### Desvios documentados ao concluir
+- **HashRouter em vez de BrowserRouter** — rule de rewrite `/* → /index.html` do Render retorna 200 com body vazio (bug investigado, doc context7 confere sintaxe). HashRouter contorna sem depender da config do servidor. URLs ficam `/#/rota` — aceitável para ferramenta interna.
+- **Supabase CLI não instalada** — MCP `deploy_edge_function` cobre deploy sem precisar de password do banco. Instalar só se um dia precisar de dev local com Docker.
+- **Secrets Supabase ainda não setados** — `OPENROUTER_API_KEY`/`UPSTASH_*`/`QSTASH_*` estão em `.env.local` (frontend), mas falta `supabase secrets set` para o backend. Adiar até o primeiro Edge Function que use IA/Redis (M2/M3).
 
 ---
 
@@ -274,3 +279,4 @@ Itens explicitamente para versões futuras:
 | Data | O quê | Por quê |
 |---|---|---|
 | 2026-05-26 | Criação inicial após brainstorming | Conclusão das 6 seções do design |
+| 2026-05-26 | M0 marcado ✅; estado geral → 🟢 | Plano 01 concluído em 3 sessões: Supabase URL/key + Upstash + Redis via MCP; `@supabase/supabase-js` + `src/lib/supabase.ts` (TDD); Edge Function `hello` deploy via MCP; Render Static Site com auto-deploy. Desvios documentados no card do M0. |

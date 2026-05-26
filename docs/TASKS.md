@@ -2,42 +2,46 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-26 (terceira sessão — Tasks 2/3 do Plano 01 via MCP)
-**Próximo passo recomendado:** Task 8 (instalar `@supabase/supabase-js`, criar `src/lib/supabase.ts` com TDD) → Task 9 (Edge Function `hello` deploy + curl) → Task 10 (Render Static Site deploy automático).
+**Última atualização:** 2026-05-26 (terceira sessão — M0 concluído via Plano 01)
+**Próximo passo recomendado:** iniciar **Plano 02 (UI Mockup — M1)**. Backend e infra prontos; agora começa a UI das 6 telas (Dashboard, Novo Lote, Progresso, Revisão, Relatório, Configurações) com dados mockados.
 
-**Progresso desta sessão (terceira sessão, 2026-05-26):**
-- ✅ Task 2 (Supabase URL/ANON_KEY) — captured via `get_project_url` + `get_publishable_keys` MCP
-- ✅ Task 3 (Upstash Redis + QStash) — Redis `mktplace-redis` já existente (us-east-1 global, free); QStash já ativo (eu-central-1, free, conta `analistasistemas@gmail.com`)
-- ✅ `.env.local` criado com credenciais reais (gitignored, verificado via `git check-ignore`)
-- *Desvio:* Redis está em `us-east-1` (global), não `sa-east-1` como TASKS.md sugeria — Diego provisionou previamente, mantido por pragmatismo
+**Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
+- ✅ Task 2 (Supabase URL/ANON_KEY) — captured via MCP
+- ✅ Task 3 (Upstash Redis + QStash) — pré-existente, captured via MCP
+- ✅ Task 8 (cliente Supabase) — commit `9a0eabc` — TDD limpo (RED→GREEN), `src/lib/supabase.ts` com fail-fast
+- ✅ Task 9 (Edge Function `hello`) — commit `9159e27` — deployada via MCP `deploy_edge_function` (sem CLI/Docker), curl confirmado HTTP 200
+- ✅ Task 10 (Render Static Site) — commits `bad04ca` → `4e1ad16` → `7d25229` — service `srv-d8at8arbc2fs73e5qcb0`, auto-deploy ativo, URL `https://ean2marketplace-frontend.onrender.com`
+- *Desvio M0.1:* Render Static Site usa **HashRouter** em vez de BrowserRouter — rule `/* → /index.html` do Render retorna 200 com body vazio (bug; investigado a fundo, doc context7 confere sintaxe; HashRouter contorna sem depender da config do servidor)
+- *Desvio M0.2:* Steps de Supabase CLI (`supabase init`/`link`/CLI install) pulados — MCP `deploy_edge_function` cobre o caso sem precisar de password do banco
 
-**Progresso da sessão anterior (Plano 01):**
-- ✅ Task 5 (Tailwind 4 + shadcn) — commit `e103dc3` — *desvio:* preset Nova/`neutral` (4.8.0 mudou defaults), não Slate
+**Progresso da sessão anterior (Plano 01 — Tasks 5/6/7):**
+- ✅ Task 5 (Tailwind 4 + shadcn) — commit `e103dc3` — *desvio:* preset Nova/`neutral` (4.8.0 mudou defaults)
 - ✅ Task 6 (Vitest + smoke) — commit `f77e24e` — *desvio:* vitest pinado em `^3` (4.x exige Vite 6)
-- ✅ Task 7 (React Router + TDD) — commit `04f6779` — react-router-dom v7, RED→GREEN limpo
+- ✅ Task 7 (React Router + TDD) — commit `04f6779` — react-router-dom v7
 
-**Contexto cumulativo:**
-1. Projeto Supabase: `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp` / URL `https://txvncrgkoynoxwopfkbp.supabase.co`
-2. Diego usa **OpenRouter** (não OpenAI direto) — `OPENROUTER_API_KEY` ainda **não preenchida** no `.env.local` (Diego precisa colar a key)
-3. QStash signing keys ainda em branco no `.env.local` — pegar em https://console.upstash.com/qstash quando for implementar verificação de assinatura
-4. shadcn 4.8 criou pasta literal `@/` na primeira tentativa — agora `tsconfig.json` raiz tem o path alias para evitar isso em futuros `shadcn add`
-5. Build OK: `pnpm build` (142 módulos, 21 kB CSS) | Test OK: `pnpm test` (2 passed)
-
-**Quando retomar (nova sessão):**
-1. Pedir ao Diego a `OPENROUTER_API_KEY` (e signing keys QStash se for usar webhooks)
-2. Replicar secrets para Supabase via CLI (`supabase secrets set OPENROUTER_API_KEY=... UPSTASH_REDIS_REST_URL=... QSTASH_TOKEN=...`) antes do primeiro deploy de Edge Function
-3. Executar Task 8 (cliente Supabase JS com TDD) e Task 9 (Edge Function `hello` deploy + curl)
+**Estado do sistema ao final desta sessão:**
+1. Supabase: `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp` — ativo, com Edge Function `hello` deployada e responsiva
+2. Frontend: deployado em `https://ean2marketplace-frontend.onrender.com` (HashRouter, refresh sempre funciona)
+3. Repo GitHub: `analistasistemas-bit/gtinmktplace` — main pushed
+4. Build OK: `pnpm build` (153 módulos, 21 kB CSS, 212 kB JS gzip 69 kB) | Test OK: `pnpm test` (4 passed)
+5. Credenciais em `.env.local` (gitignored): Supabase URL+key, Upstash Redis+QStash tokens+signing keys, OpenRouter API key
+6. **Ainda pendente para próximo bloco de trabalho:** (a) `supabase secrets set` para envs do backend antes do primeiro Edge Function que use IA/Redis; (b) trilho ML Developers — Diego precisa criar o app no portal ML
 
 ---
 
 ## Resumo de progresso
 
-| Estado | Símbolo | Contagem |
-|---|---|---|
-| Concluído | ✅ | 0 |
-| Em progresso | 🟡 | 0 |
-| Bloqueado | ⏸️ | 0 |
-| Não iniciado | ⬜ | 87 |
+| Marco | Status |
+|---|---|
+| Pré-implementação (brainstorming + ADRs) | ✅ |
+| M0 — Setup inicial | ✅ |
+| M1 — UI mockup com dados fake | ⬜ |
+| M2 — Backend core | ⬜ |
+| M3 — IA copywriting + Vision | ⬜ |
+| M4 — Integração Mercado Livre | ⬜ |
+| M5 — Polimento e testes | ⬜ |
+| M6 — Lançamento | ⬜ |
+| Trilho paralelo: app ML Developers | ⬜ |
 
 ---
 
@@ -74,15 +78,15 @@
 
 ### Contas e provisionamento
 
-- ⬜ Criar repositório Git no GitHub (`ean2marketplace`) — `~30 min`
-- ⬜ Inicializar projeto local (`git init`, README inicial) — `~15 min`
+- ✅ Criar repositório Git no GitHub (`gtinmktplace`) — *Diego criou; remote adicionado e pushed nesta sessão*
+- ✅ Inicializar projeto local (`git init`, README inicial) — *feito na sessão 1 (Plano 01 Task 1)*
 - ✅ Criar projeto Supabase (via supabase-mcp-server) — *Diego criou manualmente como `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp`*
 - ✅ Anotar URL e ANON_KEY do Supabase em `.env.local` — *capturado via MCP `get_project_url` + `get_publishable_keys` (publishable key, não legacy anon)*
-- ⬜ Criar Render Static Site conectado ao repo — `~30 min`
+- ✅ Criar Render Static Site conectado ao repo — *service `srv-d8at8arbc2fs73e5qcb0` criado via MCP, auto-deploy ativo, URL pública responsiva*
 - ✅ Criar conta Upstash + QStash + Redis (via upstash MCP) — *Redis `mktplace-redis` (us-east-1 global, free) + QStash (eu-central-1, free) já provisionados*
 - ✅ Anotar tokens de QStash e Redis em `.env.local` — *gravado em `.env.local` (gitignored)*
-- ⬜ (Substituída por ADR-0010) Criar conta OpenRouter + adicionar crédito mínimo — `~15 min`
-- ⬜ Provisionar `OPENROUTER_API_KEY` + `UPSTASH_*` + `QSTASH_TOKEN` como Supabase secrets (`supabase secrets set ...`) — `~15 min`
+- ✅ (Substituída por ADR-0010) Criar conta OpenRouter + adicionar crédito mínimo — *Diego forneceu a key, gravada em `.env.local`*
+- ⬜ Provisionar `OPENROUTER_API_KEY` + `UPSTASH_*` + `QSTASH_TOKEN` como Supabase secrets (`supabase secrets set ...`) — *adiar até o primeiro Edge Function que precise (M2/M3); placeholder Edge `hello` não precisa*
 
 ### Trilho paralelo: Mercado Livre Developers
 
@@ -95,28 +99,28 @@
 
 ### Setup do projeto frontend
 
-- ⬜ Criar projeto Vite + React + TypeScript (`pnpm create vite`) — `~15 min`
-- ⬜ Instalar Tailwind + setup conforme docs do Tailwind 4 — `~30 min`
-- ⬜ Instalar shadcn/ui via CLI e inicializar — `~30 min`
-- ⬜ Adicionar componentes shadcn iniciais (Button, Card, Badge, Dialog, Input, Sheet, Table) — `~30 min`
-- ⬜ Instalar TanStack Query, Zustand, react-router-dom — `~15 min`
-- ⬜ Instalar Supabase JS client e configurar — `~15 min`
-- ⬜ Criar estrutura de pastas: `src/components`, `src/lib`, `src/pages`, `src/hooks` — `~10 min`
-- ⬜ Verificar build local roda (`pnpm dev`) — `~10 min`
+- ✅ Criar projeto Vite + React + TypeScript (`pnpm create vite`) — *Plano 01 Task 4 (sessão 1)*
+- ✅ Instalar Tailwind + setup conforme docs do Tailwind 4 — *commit `e103dc3`; Tailwind 4 CSS-only via `@import` + `@theme`*
+- ✅ Instalar shadcn/ui via CLI e inicializar — *commit `e103dc3`; preset Nova/neutral em vez de Slate (4.8 mudou default)*
+- ⬜ Adicionar componentes shadcn iniciais (Button, Card, Badge, Dialog, Input, Sheet, Table) — *só Button feito; resto sob demanda no M1*
+- ⬜ Instalar TanStack Query, Zustand — *react-router-dom já instalado; TanStack/Zustand quando precisar no M1/M2*
+- ✅ Instalar Supabase JS client e configurar — *commit `9a0eabc`; TDD limpo (`src/lib/supabase.ts`)*
+- ✅ Criar estrutura de pastas: `src/components`, `src/lib`, `src/pages` — *`src/hooks` ainda não — criar no M1 quando precisar*
+- ✅ Verificar build local roda (`pnpm dev`) — *múltiplos builds OK na sessão; deploy Render confirma*
 
 ### Setup do projeto backend (Supabase)
 
-- ⬜ Instalar Supabase CLI localmente — `~15 min`
-- ⬜ `supabase init` + `supabase link` ao projeto remoto — `~10 min`
-- ⬜ Criar pasta `supabase/functions` para Edge Functions — `~5 min`
-- ⬜ Criar Edge Function de teste `hello` para validar deploy — `~15 min`
+- ⬜ Instalar Supabase CLI localmente — *deferido; MCP `deploy_edge_function` cobre deploy sem CLI. Instalar se um dia precisar de dev local com Docker*
+- ⬜ `supabase init` + `supabase link` ao projeto remoto — *idem: deferido com MCP*
+- ✅ Criar pasta `supabase/functions` para Edge Functions — *criada no commit `9159e27`*
+- ✅ Criar Edge Function de teste `hello` para validar deploy — *commit `9159e27`, deployada via MCP, curl HTTP 200*
 
 ### Configuração geral
 
-- ⬜ Adicionar `.env.example` + `.env.local` ao gitignore — `~10 min`
-- ⬜ Configurar Render para deploy automático ao push na main — `~30 min`
-- ⬜ Validar que push gera deploy bem-sucedido — `~15 min`
-- ⬜ Atualizar TASKS.md marcando M0 como completo
+- ✅ Adicionar `.env.example` + `.env.local` ao gitignore — *gitignore criado na sessão 1; `.env.local` verificado via `git check-ignore`*
+- ✅ Configurar Render para deploy automático ao push na main — *autoDeploy:yes via MCP; cada push em main triggera novo deploy em ~40s*
+- ✅ Validar que push gera deploy bem-sucedido — *commits `bad04ca`/`4e1ad16`/`7d25229` deployados live com sucesso*
+- ✅ Atualizar TASKS.md marcando M0 como completo — *esta atualização*
 
 ---
 
