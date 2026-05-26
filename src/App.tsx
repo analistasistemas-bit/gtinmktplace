@@ -1,12 +1,21 @@
-import { Button } from '@/components/ui/button';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Home from '@/pages/Home';
+import NotFound from '@/pages/NotFound';
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <h1 className="text-3xl font-bold tracking-tight">EAN2Marketplace</h1>
-      <p className="text-muted-foreground">Foundation OK</p>
-      <Button>Funciona</Button>
-    </div>
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   );
 }
 
