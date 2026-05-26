@@ -29,7 +29,8 @@ describe('App routing', () => {
 
   it('renderiza Revisao na rota /revisao/:loteId', () => {
     renderRoute('/revisao/lote-42');
-    expect(screen.getByRole('heading', { name: /revis/i })).toBeInTheDocument();
+    // Now uses a header with buscar input — assert on the placeholder text
+    expect(screen.getByPlaceholderText(/buscar por código ou nome/i)).toBeInTheDocument();
   });
 
   it('renderiza Relatorio na rota /relatorio/:loteId', () => {
