@@ -1,0 +1,58 @@
+import type { Lote } from './types';
+
+export const MOCK_LOTES: Lote[] = [
+  {
+    id: 'lote-42',
+    numero: 42,
+    criadoEm: '2026-05-25T14:32:00.000Z',
+    status: 'revisao',
+    totalFamilias: 50,
+    totalPublicadas: 0,
+    totalErros: 0,
+  },
+  {
+    id: 'lote-41',
+    numero: 41,
+    criadoEm: '2026-05-24T10:15:00.000Z',
+    status: 'concluido',
+    totalFamilias: 12,
+    totalPublicadas: 11,
+    totalErros: 1,
+  },
+  {
+    id: 'lote-40',
+    numero: 40,
+    criadoEm: '2026-05-23T09:00:00.000Z',
+    status: 'concluido',
+    totalFamilias: 7,
+    totalPublicadas: 7,
+    totalErros: 0,
+  },
+  {
+    id: 'lote-39',
+    numero: 39,
+    criadoEm: '2026-05-22T16:48:00.000Z',
+    status: 'publicando',
+    totalFamilias: 20,
+    totalPublicadas: 5,
+    totalErros: 0,
+  },
+  {
+    id: 'lote-38',
+    numero: 38,
+    criadoEm: '2026-05-22T11:00:00.000Z',
+    status: 'erro',
+    totalFamilias: 0,
+    totalPublicadas: 0,
+    totalErros: 0,
+  },
+  {
+    id: 'lote-37',
+    numero: 37,
+    criadoEm: '2026-05-22T08:30:00.000Z',
+    status: 'processando',
+    totalFamilias: 0,
+    totalPublicadas: 0,
+    totalErros: 0,
+  },
+];
