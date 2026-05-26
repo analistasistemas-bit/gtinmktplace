@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { FamiliaRow } from '@/components/familia-row';
+import { FamiliaExpanded } from '@/components/familia-expanded';
 import { useFamilias } from '@/hooks/useFamilias';
 import type { Familia } from '@/lib/mocks/types';
 
@@ -89,14 +90,16 @@ export default function Revisao() {
       </div>
       <div className="flex-1 overflow-auto">
         {visiveis.map((familia) => (
-          <FamiliaRow
-            key={familia.id}
-            familia={familia}
-            selecionada={selecionadas.has(familia.id)}
-            expandida={expandidas.has(familia.id)}
-            onSelecionar={toggleSelecao}
-            onExpandir={toggleExpansao}
-          />
+          <div key={familia.id}>
+            <FamiliaRow
+              familia={familia}
+              selecionada={selecionadas.has(familia.id)}
+              expandida={expandidas.has(familia.id)}
+              onSelecionar={toggleSelecao}
+              onExpandir={toggleExpansao}
+            />
+            {expandidas.has(familia.id) && <FamiliaExpanded familia={familia} />}
+          </div>
         ))}
         {visiveis.length === 0 && (
           <div className="p-8 text-center text-sm text-muted-foreground">
