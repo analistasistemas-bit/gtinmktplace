@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +21,21 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
+      {familia.precoAbaixo20pc && (
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+          <div>
+            <div className="font-semibold text-destructive">
+              Atenção: preço sugerido abaixo do mínimo aceitável
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              O preço sugerido pela estratégia <strong>{familia.estrategiaPreco}</strong> ficou
+              mais de 20% abaixo do preço da sua planilha. Reveja antes de aprovar — pode estar
+              vendendo no prejuízo.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-muted-foreground">TÍTULO</label>

@@ -45,16 +45,20 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       <Badge variant={familia.operacao === 'CREATE' ? 'default' : 'secondary'}>
         {familia.operacao}
       </Badge>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         <span>
           R$ {formatarBRL(familia.precoMin)}
           {familia.precoMin !== familia.precoMax && `-${formatarBRL(familia.precoMax)}`}
         </span>
         {familia.precoAbaixo20pc && (
-          <AlertTriangle
-            className="h-4 w-4 text-destructive"
-            aria-label="Preço abaixo de 20% do seu preço"
-          />
+          <span
+            className="inline-flex items-center gap-0.5 rounded-sm bg-destructive/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-destructive"
+            aria-label="Preço abaixo de 20% do seu preço da planilha"
+            title="Preço abaixo de 20% do seu preço da planilha"
+          >
+            <AlertTriangle className="h-3 w-3" />
+            Preço baixo
+          </span>
         )}
       </div>
       <button

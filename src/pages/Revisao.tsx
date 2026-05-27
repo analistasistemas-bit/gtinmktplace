@@ -83,6 +83,12 @@ export default function Revisao() {
           </button>
         ))}
       </div>
+      {filtro === 'avisos' && (
+        <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+          Famílias com preço sugerido <strong>abaixo de 20%</strong> do preço da sua planilha.
+          Reveja antes de aprovar para não vender no prejuízo.
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         {visiveis.map((familia) => (
           <div key={familia.id}>
