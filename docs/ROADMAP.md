@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-27 (M2 completo — técnico + bug bash com planilha real)
-**Estado geral:** 🟢 M2 completo (2026-05-27); pronto pra iniciar M3 (IA copywriting + Vision)
+**Última atualização:** 2026-05-27 (M2 completo + trilho paralelo ML ✅)
+**Estado geral:** 🟢 M0+M1+M2 + trilho ML concluídos; M3 (IA copywriting + Vision) liberado para iniciar
 
 ---
 
@@ -47,7 +47,7 @@ Ter todas as contas, repositórios e ambientes configurados para começar a dese
 - [x] Render conectado ao repo — Static Site `srv-d8at8arbc2fs73e5qcb0` em `https://ean2marketplace-frontend.onrender.com`, auto-deploy ativo
 - [x] Upstash QStash + Redis criados via MCP — `mktplace-redis` (us-east-1) + QStash (eu-central-1)
 - [x] Chave de IA provisionada — `OPENROUTER_API_KEY` (não OpenAI direto, ver ADR-0010)
-- [ ] App Mercado Livre Developers **criado** — *trilho paralelo, Diego inicia separadamente*
+- [x] App Mercado Livre Developers **criado** — `PubliAI`, Client ID 5907788004648058, credenciais em `.env.local` (2026-05-27)
 - [x] Frontend Vite + React + TS + Tailwind 4 + shadcn instalado e rodando localmente — build OK 153 módulos
 - [x] `.env.local` configurado — Supabase, Upstash, OpenRouter, QStash; *Supabase secrets via CLI ainda pendente, será feito ao primeiro Edge Function que precise (M2/M3)*
 
@@ -150,7 +150,7 @@ Diego importa lote de 5 famílias → 5 minutos depois vê copy gerada na tela d
 **Status:** ⬜ Não iniciado
 **Duração estimada:** 2 semanas
 **Bloqueia:** M5 (precisa publicar antes de polir)
-**Dependência crítica:** app ML Developers aprovado (trilho paralelo)
+**Dependência crítica:** ✅ app ML Developers já criada (trilho paralelo concluído em 2026-05-27)
 
 ### Objetivo
 Sistema publica anúncios reais no Mercado Livre, com variações, fotos, atributos e estratégia de preço condicional.
@@ -221,27 +221,31 @@ Sistema em uso recorrente; operador é autônomo no fluxo principal.
 
 ---
 
-## Trilho paralelo — Aprovação do app Mercado Livre
+## Trilho paralelo — App Mercado Livre Developers
 
-**Status:** ⬜ Não iniciado
+**Status:** ✅ Pronto pra M4 (2026-05-27)
 **Responsável:** Diego (manual, fora do ambiente de dev)
-**Quando iniciar:** **imediatamente** (esta semana)
-**Quando finalizar:** antes do início do M4 (semana 6)
+**Tempo real:** 1 sessão (~15 min) vs "1-4 semanas" temidos
+**Observação:** Certificação formal ML não é necessária — uso interno (PubliAI publica nos anúncios da própria Daludi)
 
-### Tarefas (sequenciais)
-1. ⬜ Criar conta no [Mercado Livre Developers](https://developers.mercadolibre.com.br/)
-2. ⬜ Criar app com nome "PubliAI" e descrição
-3. ⬜ Configurar redirect URI (provisório: `http://localhost:5173/ml-callback`; depois: URL do Render)
-4. ⬜ Anotar `client_id` e `client_secret` em local seguro
-5. ⬜ Validar fluxo OAuth em sandbox (após M0)
-6. ⬜ Submeter app para aprovação em produção
-7. ⬜ Aguardar aprovação (pode levar de dias a semanas)
-8. ⬜ Confirmar que limites de rate estão adequados
+### Tarefas
+1. ✅ Conta no [Mercado Livre Developers](https://developers.mercadolibre.com.br/) — já existia da operação como vendedor
+2. ✅ App criada — `PubliAI` (curto: `publiaidaludi`), Client ID `5907788004648058`
+3. ✅ Redirect URI configurada — `https://txvncrgkoynoxwopfkbp.supabase.co/functions/v1/ml-oauth-callback` (ver [ADR-0011](decisions/0011-redirect-uri-via-edge-function.md))
+4. ✅ `ML_CLIENT_ID` + `ML_CLIENT_SECRET` salvos em `.env.local` (gitignored; vão para Supabase Vault no M4)
+5. ⬜ Validar fluxo OAuth com flow real — **acontece naturalmente no M4** quando a Edge Function for implementada
+6. ⏭ Submeter app para certificação — **pulado** (uso interno; certificação só é exigida pra integrações de terceiros)
+7. ⏭ Aguardar aprovação — N/A
+8. ⬜ Confirmar limites de rate — **acontece naturalmente no M4** após primeiros testes de publicação
 
-### Riscos
-- Aprovação pode ser lenta — começar cedo
-- Categoria do app pode exigir documentação extra (CNPJ, comprovante de vendedor)
-- Mudanças de política da Meli durante o processo
+### Permissões concedidas no portal ML
+- **Authorization Code** + **Refresh Token** (OAuth flows)
+- **Publicação e sincronização**: leitura e escrita
+- **Usuários**: leitura e escrita
+- (sem outras permissões — PubliAI não toca em pedidos, envios, faturamento, etc.)
+
+### Pendente para M5/futuro
+- Configurar URL de webhook de notificações (campo `URL de retornos de chamada de notificação` no portal — só importante se quisermos detectar edições externas dos anúncios)
 
 ---
 
@@ -283,9 +287,9 @@ Itens explicitamente para versões futuras:
 
 | Risco | Probabilidade | Impacto | Mitigação | Status |
 |---|---|---|---|---|
-| Aprovação ML > 2 semanas | Média | Alto | Começar trilho paralelo HOJE; dev em sandbox até liberar | Pendente |
+| ~~Aprovação ML > 2 semanas~~ | ~~Média~~ | ~~Alto~~ | App criada em 15 min (2026-05-27); certificação dispensada (uso interno) | ✅ Resolvido |
 | Prompt IA exige muitas iterações | Alta | Médio | Iterar com lotes pequenos no M3; benchmark de "ground truth" | Pendente |
-| Edge cases da planilha real | Alta | Médio | Bug bash dedicado no fim do M2 | Pendente |
+| ~~Edge cases da planilha real~~ | ~~Alta~~ | ~~Médio~~ | Bug bash com 290 variações reais feito no fechamento do M2 | ✅ Resolvido |
 | Limites de free tier | Baixa | Baixo | Upgrade para Pro tranquilo | Pendente |
 | ML rejeita atributos obrigatórios | Alta | Médio | Mapear atributos por categoria no M4 | Pendente |
 | Diego sem tempo (outras prioridades) | Média | Alto | Buffer 3-4 semanas; entregas incrementais | Pendente |
@@ -301,3 +305,4 @@ Itens explicitamente para versões futuras:
 | 2026-05-26 | M1 implementado ✅ (walkthrough pendente) | Plano 02 executado em 1 sessão via Subagent-Driven Development: 14 tasks de código + 1 task de docs. 50 famílias mock, 6 telas em produção, 45 testes passando. Desvios documentados no card do M1. |
 | 2026-05-27 | M2 técnico ✅ via Plano 03 (16 tasks Subagent-Driven Development) | Schema (4 tabelas + Vault), auth, upload real, edge functions ingest-lote + process-familia stub, TanStack Query + adapters, Realtime. 59 testes passando. Pendências: secrets QStash no Edge runtime + bug bash com planilha real (depende de ação manual do Diego). Desvios: pgsodium → supabase_vault standalone; xlsx 0.18.5. |
 | 2026-05-27 | M2 completo ✅ (bug bash com planilha real no mesmo dia) | Secrets QStash configurados via dashboard, usuário criado, planilha LINHA P/COST.XIK 120 (290 variações) importada com sucesso. Bugs descobertos e corrigidos no mesmo dia: sidebar Revisão hardcoded, exibição estoque/imagens, persistência da edição inline com feedback visual, busca por código de filho, race condition do realtime (polling fallback). 61 testes passando. M3 liberado pra começar. |
+| 2026-05-27 | Trilho paralelo ML ✅ | App PubliAI criada no portal ML Developers em ~15 min (vs 1-4 semanas temidas). Client ID `5907788004648058`, fluxos Authorization Code + Refresh Token, permissões "Publicação e sincronização" + "Usuários" (leitura e escrita). Redirect URI aponta para Edge Function `ml-oauth-callback` (a criar em M4) — decisão registrada em ADR-0011. Certificação dispensada (uso interno). M4 sem mais dependências externas. |

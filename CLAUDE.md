@@ -83,6 +83,7 @@ Quando o assunto for um destes tópicos, **leia o ADR antes de propor mudança**
 | [0008](docs/decisions/0008-estrategia-de-preco-condicional.md) | Estratégia de preço condicional (PRÓPRIO vs COMPETITIVO) |
 | [0009](docs/decisions/0009-campos-payload-ml-e-categoria-deterministica.md) | Campos obrigatórios do payload ML + categoria via lookup determinístico (não via IA) |
 | [0010](docs/decisions/0010-openrouter-em-vez-de-openai-direto.md) | IA via OpenRouter (gateway compatível com OpenAI SDK), não OpenAI direto |
+| [0011](docs/decisions/0011-redirect-uri-via-edge-function.md) | OAuth ML: redirect URI aponta para Supabase Edge Function (não para o frontend; mantém client_secret no servidor e evita o problema do HashRouter) |
 
 ---
 
@@ -201,11 +202,11 @@ Estas regras são **inegociáveis** salvo aprovação explícita do Diego em men
 
 ---
 
-## Trilho paralelo crítico (não esquecer)
+## Trilho paralelo — App Mercado Livre Developers ✅
 
-⚠ **Aprovação do app no portal Mercado Livre Developers** é manual, responsabilidade de Diego, e pode levar de 1 a 4 semanas. Deve começar **imediatamente** (não esperar M0 estar completo). Sem isso, o marco M4 fica desenvolvendo contra sandbox até a aprovação sair.
+App PubliAI criada no portal ML Developers em 2026-05-27. Credenciais (`ML_CLIENT_ID`, `ML_CLIENT_SECRET`, `ML_REDIRECT_URI`) salvas no `.env.local`. Redirect URI aponta para Supabase Edge Function `ml-oauth-callback` (a ser criada em M4) — ver [ADR-0011](docs/decisions/0011-redirect-uri-via-edge-function.md).
 
-Status atual: ⬜ não iniciado. Ver detalhes em [ROADMAP.md](docs/ROADMAP.md#trilho-paralelo--aprovação-do-app-mercado-livre).
+Tarefas que sobram do trilho são naturais do M4 (validar fluxo OAuth real + confirmar rate limits). Certificação formal da app **não é necessária** porque o uso é interno (PubliAI publica nos anúncios da própria Daludi).
 
 ---
 
@@ -215,3 +216,4 @@ Status atual: ⬜ não iniciado. Ver detalhes em [ROADMAP.md](docs/ROADMAP.md#tr
 |---|---|
 | 2026-05-26 | Criação inicial após brainstorming completo (Seções 1-6 aprovadas, 8 ADRs, ROADMAP, TASKS, spec consolidado) |
 | 2026-05-27 | M0+M1+M2 todos ✅; status atualizado pra refletir início do M3 |
+| 2026-05-27 | Trilho paralelo ML ✅ + ADR-0011 (redirect URI via Edge Function) registrado |

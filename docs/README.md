@@ -27,7 +27,8 @@ docs/
 │   ├── 0007-modelo-de-dados-4-tabelas.md
 │   ├── 0008-estrategia-de-preco-condicional.md
 │   ├── 0009-campos-payload-ml-e-categoria-deterministica.md
-│   └── 0010-openrouter-em-vez-de-openai-direto.md
+│   ├── 0010-openrouter-em-vez-de-openai-direto.md
+│   └── 0011-redirect-uri-via-edge-function.md
 └── superpowers/specs/             ← spec formal do design (1 por marco de planejamento)
     └── 2026-05-26-publiai-design.md  (a criar)
 ```
@@ -52,14 +53,15 @@ docs/
 | Como o sistema decide entre preço próprio e competitivo | [decisions/0008](decisions/0008-estrategia-de-preco-condicional.md) |
 | Quais campos do payload ML existem e como a categoria é definida | [decisions/0009](decisions/0009-campos-payload-ml-e-categoria-deterministica.md) |
 | Por que usamos OpenRouter em vez de OpenAI direto | [decisions/0010](decisions/0010-openrouter-em-vez-de-openai-direto.md) |
+| Por que o redirect URI do OAuth ML aponta para Edge Function e não pro frontend | [decisions/0011](decisions/0011-redirect-uri-via-edge-function.md) |
 
 ## Status do projeto
 
-- 🟢 **Brainstorming:** seções 1–3 aprovadas; 4–6 em andamento
-- 🟡 **Spec formal:** será escrita ao final do brainstorming
-- 🔴 **Plano de implementação:** ainda não iniciado
-- 🔴 **Código:** ainda não iniciado
-- 🔴 **App Mercado Livre Developers:** precisa ser criado pelo operador (trilho paralelo manual)
+- 🟢 **Brainstorming + spec formal:** concluídos (2026-05-26)
+- 🟢 **M0 (setup) + M1 (UI mockup) + M2 (backend core):** ✅ entregues, em produção em https://ean2marketplace-frontend.onrender.com
+- 🟢 **App Mercado Livre Developers:** ✅ criada (PubliAI, Client ID 5907788004648058)
+- 🟡 **M3 (IA copywriting + Vision):** próximo marco — brainstorming + plano ainda não iniciados
+- 🔴 **M4 (integração ML), M5 (polimento), M6 (lançamento):** futuros
 
 ## Stack confirmado
 

@@ -41,7 +41,7 @@
 | M4 — Integração Mercado Livre | ⬜ |
 | M5 — Polimento e testes | ⬜ |
 | M6 — Lançamento | ⬜ |
-| Trilho paralelo: app ML Developers | ⬜ |
+| Trilho paralelo: app ML Developers | ✅ (criada em 2026-05-27, certificação dispensada — uso interno) |
 
 ---
 
@@ -88,14 +88,14 @@
 - [x] (Substituída por ADR-0010) Criar conta OpenRouter + adicionar crédito mínimo — *Diego forneceu a key, gravada em `.env.local`*
 - [ ] Provisionar `OPENROUTER_API_KEY` + `UPSTASH_*` + `QSTASH_TOKEN` como Supabase secrets (`supabase secrets set ...`) — *adiar até o primeiro Edge Function que precise (M2/M3); placeholder Edge `hello` não precisa*
 
-### Trilho paralelo: Mercado Livre Developers
+### Trilho paralelo: Mercado Livre Developers ✅ (2026-05-27)
 
-- [ ] Acessar [Mercado Livre Developers](https://developers.mercadolibre.com.br/) — `~15 min`
-- [ ] Criar app "PubliAI" — `~30 min`
-- [ ] Configurar redirect URI provisório (`http://localhost:5173/ml-callback`) — `~15 min`
-- [ ] Anotar `client_id` e `client_secret` em local seguro (1Password ou similar) — `~10 min`
-- [ ] Submeter app para aprovação — `~30 min`
-- [ ] ⏸️ Aguardar aprovação (1-4 semanas) — *bloqueia M4 produção, mas sandbox funciona desde já*
+- [x] Acessar [Mercado Livre Developers](https://developers.mercadolibre.com.br/) — conta da Avil Têxtil já existia
+- [x] Criar app "PubliAI" — Client ID `5907788004648058`, fluxos `Authorization Code` + `Refresh Token`
+- [x] Configurar redirect URI — Supabase Edge Function (`ml-oauth-callback`) — ver [ADR-0011](decisions/0011-redirect-uri-via-edge-function.md)
+- [x] `ML_CLIENT_ID` + `ML_CLIENT_SECRET` em `.env.local` (gitignored; serão movidos para Supabase Vault no M4)
+- [⏭️] Submeter app para certificação — **dispensado**: uso interno, PubliAI publica nos anúncios da própria Daludi
+- [⏭️] Aguardar aprovação — N/A (certificação dispensada)
 
 ### Setup do projeto frontend
 
