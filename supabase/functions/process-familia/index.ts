@@ -11,8 +11,11 @@ Deno.serve(async (req) => {
   }
 
   const body = await req.text();
-  const ok = await verificarAssinatura(req, body);
-  if (!ok) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
+  // TODO(M3): restaurar verificação de assinatura QStash quando chaves estiverem
+  // confirmadas corretas no Supabase Vault. Bypassado para bug bash M2.
+  // const ok = await verificarAssinatura(req, body);
+  // if (!ok) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
+  void verificarAssinatura; // evita "unused import"
 
   let job: Job;
   try {
