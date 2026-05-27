@@ -2,8 +2,8 @@
 
 > Este arquivo é o **system prompt do projeto**. Toda sessão de Claude Code (ou outro agente IA) deve lê-lo primeiro, antes de tocar em qualquer arquivo. Ele resume regras, convenções, decisões e workflow do projeto, e aponta para a documentação detalhada.
 
-**Última atualização:** 2026-05-26
-**Status do projeto:** brainstorming concluído; pronto para writing-plans
+**Última atualização:** 2026-05-27
+**Status do projeto:** M0+M1+M2 ✅ concluídos; M3 (IA copywriting + Vision) é o próximo marco
 
 ---
 
@@ -214,3 +214,4 @@ Status atual: ⬜ não iniciado. Ver detalhes em [ROADMAP.md](docs/ROADMAP.md#tr
 | Data | Mudança |
 |---|---|
 | 2026-05-26 | Criação inicial após brainstorming completo (Seções 1-6 aprovadas, 8 ADRs, ROADMAP, TASKS, spec consolidado) |
+| 2026-05-27 | M0+M1+M2 todos ✅; status atualizado pra refletir início do M3 |

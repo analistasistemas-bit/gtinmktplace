@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-27 (M2 técnico concluído via Plano 03)
-**Estado geral:** 🟢 M2 técnico concluído (2026-05-27); secrets QStash + bug bash pendentes; pronto pra iniciar M3 em paralelo
+**Última atualização:** 2026-05-27 (M2 completo — técnico + bug bash com planilha real)
+**Estado geral:** 🟢 M2 completo (2026-05-27); pronto pra iniciar M3 (IA copywriting + Vision)
 
 ---
 
@@ -91,9 +91,9 @@ Site navegável em produção (https://ean2marketplace-frontend.onrender.com) co
 
 ## 🏁 M2 — Backend core
 
-**Status:** 🟡 Concluído tecnicamente (2026-05-27); validação ponta-a-ponta com planilha real pendente (depende de secrets do Diego)
-**Duração real:** 1 sessão via Plano 03 (16 tasks Subagent-Driven Development) vs 2 semanas estimadas
-**Bloqueia:** M4 publicação real (M3 IA copywriting pode rodar em paralelo)
+**Status:** ✅ Completo (2026-05-27) — técnico + bug bash com planilha real
+**Duração real:** 1 sessão via Plano 03 (16 tasks Subagent-Driven Development) + correções do bug bash no mesmo dia, vs 2 semanas estimadas
+**Bloqueia:** nada — M3 (IA copywriting) liberado
 
 ### Objetivo
 Sistema aceita upload real de planilha + imagens, persiste no Supabase com schema e RLS corretos, autentica o usuário.
@@ -104,21 +104,21 @@ Sistema aceita upload real de planilha + imagens, persiste no Supabase com schem
 - [x] Upload de planilha e imagens diretos pro Storage
 - [x] Edge function `ingest-lote` parseia .xlsx, agrupa por PAI, faz match imagens, persiste no banco
 - [x] Detecção CREATE vs UPDATE funciona ([ADR-0005](decisions/0005-lifecycle-publish-and-update.md))
-- [x] Tela de Progresso reflete atualizações reais via Realtime
-- [ ] Lote de teste real (planilha do Diego) é importado sem erros — *bloqueado por secrets do Edge runtime*
+- [x] Tela de Progresso reflete atualizações reais via Realtime + polling fallback
+- [x] Lote de teste real importado sem erros — planilha LINHA P/COST.XIK 120 (1 família, 290 variações, 2 imagens)
 
-### Saída esperada
-Diego sobe planilha real → vê famílias e variações corretas no banco → tela mostra progresso ao vivo.
+### Saída entregue
+Diego subiu 2 lotes da planilha real, viu 290 variações persistidas corretamente, edita inline com persistência no banco, busca por código de filho funciona, imagens das variações renderizam. 61 testes passando.
 
 ### Desvios documentados ao concluir
 - **pgsodium removido das migrations** — extensão descontinuada pelo Supabase em 2024; supabase_vault 0.3.1 funciona standalone
 - **xlsx@^0.20 → ^0.18.5** — SheetJS moveu versões novas só pro CDN próprio; npm registry só vai até 0.18.5 (mesma API)
 - **Migrations `rls_initplan_fix` + `secure_trigger_and_indexes`** — ajustes pós-review (auth.uid() wrap em policies pra cachear no initplan, revoke execute em triggers, drop índices redundantes)
+- **TEMP: bypass de assinatura QStash em `process-familia`** — `Receiver.verify()` rejeitava com 401 (provável incompatibilidade entre chaves no Supabase Vault e console Upstash). Restaurar em M3 quando reconfirmar as chaves
+- **Correções de UX descobertas no bug bash, aplicadas no mesmo dia:** sidebar Revisão → lote mais recente; exibição de estoque (label + thousand separator); imagens das variações via signed URL; persistência da edição inline com feedback `Salvando…` / `✓ Salvo`; busca achando filho pelo código; polling fallback 2.5s no Progresso (race condition do realtime quando process-familia termina antes da subscription estabilizar)
 
-### Pendências do operador para validação ponta-a-ponta
-1. `supabase login` + `supabase secrets set` para QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, OPENROUTER_API_KEY (todas estão em `.env.local`)
-2. Criar 1 usuário via tela de cadastro (https://ean2marketplace-frontend.onrender.com/#/cadastro) + confirmar e-mail
-3. Bug bash com planilha real (5-15 famílias, 30-80 variações)
+### Adiado para M3 (decisão do bug bash)
+- Upload posterior de imagens em lote existente (drop zone + ícone por variação) — entra natural junto da IA Vision do M3
 
 ---
 
@@ -300,3 +300,4 @@ Itens explicitamente para versões futuras:
 | 2026-05-26 | M0 marcado ✅; estado geral → 🟢 | Plano 01 concluído em 3 sessões: Supabase URL/key + Upstash + Redis via MCP; `@supabase/supabase-js` + `src/lib/supabase.ts` (TDD); Edge Function `hello` deploy via MCP; Render Static Site com auto-deploy. Desvios documentados no card do M0. |
 | 2026-05-26 | M1 implementado ✅ (walkthrough pendente) | Plano 02 executado em 1 sessão via Subagent-Driven Development: 14 tasks de código + 1 task de docs. 50 famílias mock, 6 telas em produção, 45 testes passando. Desvios documentados no card do M1. |
 | 2026-05-27 | M2 técnico ✅ via Plano 03 (16 tasks Subagent-Driven Development) | Schema (4 tabelas + Vault), auth, upload real, edge functions ingest-lote + process-familia stub, TanStack Query + adapters, Realtime. 59 testes passando. Pendências: secrets QStash no Edge runtime + bug bash com planilha real (depende de ação manual do Diego). Desvios: pgsodium → supabase_vault standalone; xlsx 0.18.5. |
+| 2026-05-27 | M2 completo ✅ (bug bash com planilha real no mesmo dia) | Secrets QStash configurados via dashboard, usuário criado, planilha LINHA P/COST.XIK 120 (290 variações) importada com sucesso. Bugs descobertos e corrigidos no mesmo dia: sidebar Revisão hardcoded, exibição estoque/imagens, persistência da edição inline com feedback visual, busca por código de filho, race condition do realtime (polling fallback). 61 testes passando. M3 liberado pra começar. |
