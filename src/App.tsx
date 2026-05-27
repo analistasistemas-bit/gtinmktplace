@@ -8,6 +8,7 @@ import Dashboard from '@/pages/Dashboard';
 import NovoLote from '@/pages/NovoLote';
 import Progresso from '@/pages/Progresso';
 import Revisao from '@/pages/Revisao';
+import RevisaoIndex from '@/pages/RevisaoIndex';
 import Relatorio from '@/pages/Relatorio';
 import Configuracoes from '@/pages/Configuracoes';
 import NotFound from '@/pages/NotFound';
@@ -24,6 +25,7 @@ export function AppRoutes() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/novo-lote" element={<NovoLote />} />
           <Route path="/progresso/:loteId" element={<Progresso />} />
+          <Route path="/revisao" element={<RevisaoIndex />} />
           <Route path="/revisao/:loteId" element={<Revisao />} />
           <Route path="/relatorio/:loteId" element={<Relatorio />} />
           <Route path="/configuracoes" element={<Configuracoes />} />

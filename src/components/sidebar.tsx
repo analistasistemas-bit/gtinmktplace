@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/novo-lote', label: 'Novo lote', icon: Upload, end: false },
-  { to: '/revisao/lote-42', label: 'Revisão', icon: ListChecks, end: false },
+  { to: '/revisao', label: 'Revisão', icon: ListChecks, end: false },
   { to: '/configuracoes', label: 'Configurações', icon: Settings, end: false },
 ];
 
