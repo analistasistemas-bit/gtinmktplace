@@ -44,7 +44,7 @@ Ter todas as contas, repositórios e ambientes configurados para começar a dese
 ### Critérios de saída
 - [x] Repo Git criado e versionado — `analistasistemas-bit/gtinmktplace`
 - [x] Projeto Supabase ativo — `gtin_mktplace_ia` (ref `txvncrgkoynoxwopfkbp`), Edge Function `hello` deployada e respondendo
-- [x] Render conectado ao repo — Static Site `srv-d8at8arbc2fs73e5qcb0` em `https://publiai-frontend.onrender.com`, auto-deploy ativo
+- [x] Render conectado ao repo — Static Site `srv-d8at8arbc2fs73e5qcb0` em `https://ean2marketplace-frontend.onrender.com`, auto-deploy ativo
 - [x] Upstash QStash + Redis criados via MCP — `mktplace-redis` (us-east-1) + QStash (eu-central-1)
 - [x] Chave de IA provisionada — `OPENROUTER_API_KEY` (não OpenAI direto, ver ADR-0010)
 - [ ] App Mercado Livre Developers **criado** — *trilho paralelo, Diego inicia separadamente*
@@ -77,7 +77,7 @@ Diego percorre todas as telas do produto com dados mockados, valida a UX e ident
 - [ ] Ajustes identificados na validação são listados como itens em [TASKS.md](TASKS.md) — *pós-walkthrough*
 
 ### Saída entregue
-Site navegável em produção (https://publiai-frontend.onrender.com) com tema Nova/neutral, 50 famílias mockadas no Lote #42, 45 testes passando.
+Site navegável em produção (https://ean2marketplace-frontend.onrender.com) com tema Nova/neutral, 50 famílias mockadas no Lote #42, 45 testes passando.
 
 ### Desvios do plano original
 - **Tema Slate/Zinc → Nova/neutral**: mantido do M0 por pragmatismo
@@ -117,7 +117,7 @@ Diego sobe planilha real → vê famílias e variações corretas no banco → t
 
 ### Pendências do operador para validação ponta-a-ponta
 1. `supabase login` + `supabase secrets set` para QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, OPENROUTER_API_KEY (todas estão em `.env.local`)
-2. Criar 1 usuário via tela de cadastro (https://publiai-frontend.onrender.com/#/cadastro) + confirmar e-mail
+2. Criar 1 usuário via tela de cadastro (https://ean2marketplace-frontend.onrender.com/#/cadastro) + confirmar e-mail
 3. Bug bash com planilha real (5-15 famílias, 30-80 variações)
 
 ---

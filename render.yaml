@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: publiai-frontend
+    name: ean2marketplace-frontend
     runtime: static
     rootDir: .
     buildCommand: pnpm install && pnpm build

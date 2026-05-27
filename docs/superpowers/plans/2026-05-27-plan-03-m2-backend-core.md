@@ -2811,11 +2811,11 @@ EOF
 git push
 ```
 
-Aguardar deploy do Render (~40s). Validar `https://publiai-frontend.onrender.com/` carrega.
+Aguardar deploy do Render (~40s). Validar `https://ean2marketplace-frontend.onrender.com/` carrega.
 
 - [ ] **Step 16.2: Importar planilha real**
 
-Diego escolhe uma planilha **representativa** (lote pequeno: 5-15 famílias, 30-80 variações) do sistema interno e a pasta de imagens correspondente. Subir via `https://publiai-frontend.onrender.com/#/novo-lote`.
+Diego escolhe uma planilha **representativa** (lote pequeno: 5-15 famílias, 30-80 variações) do sistema interno e a pasta de imagens correspondente. Subir via `https://ean2marketplace-frontend.onrender.com/#/novo-lote`.
 
 - [ ] **Step 16.3: Checklist de observação**
 

@@ -2492,12 +2492,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 git push
 ```
 
-Aguardar deploy (~40s). Confirmar via list_deploys MCP ou checando `https://publiai-frontend.onrender.com/` manualmente.
+Aguardar deploy (~40s). Confirmar via list_deploys MCP ou checando `https://ean2marketplace-frontend.onrender.com/` manualmente.
 
 - [ ] **Step 15.2: Walkthrough com Diego**
 
 Pedir ao Diego para:
-1. Abrir `https://publiai-frontend.onrender.com/`
+1. Abrir `https://ean2marketplace-frontend.onrender.com/`
 2. Percorrer as 6 telas: Dashboard → clique em lote-42 → Revisão (expandir 2-3 famílias, editar 1 preço) → voltar → Novo Lote → Progresso (testar com `/#/progresso/lote-37`) → Relatório (lote-41) → Configurações
 3. Listar ajustes percebidos
 

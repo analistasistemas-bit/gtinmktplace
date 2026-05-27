@@ -10,7 +10,7 @@
 - [x] Task 3 (Upstash Redis + QStash) — pré-existente, captured via MCP
 - [x] Task 8 (cliente Supabase) — commit `9a0eabc` — TDD limpo (RED→GREEN), `src/lib/supabase.ts` com fail-fast
 - [x] Task 9 (Edge Function `hello`) — commit `9159e27` — deployada via MCP `deploy_edge_function` (sem CLI/Docker), curl confirmado HTTP 200
-- [x] Task 10 (Render Static Site) — commits `bad04ca` → `4e1ad16` → `7d25229` — service `srv-d8at8arbc2fs73e5qcb0`, auto-deploy ativo, URL `https://publiai-frontend.onrender.com`
+- [x] Task 10 (Render Static Site) — commits `bad04ca` → `4e1ad16` → `7d25229` — service `srv-d8at8arbc2fs73e5qcb0`, auto-deploy ativo, URL `https://ean2marketplace-frontend.onrender.com`
 - *Desvio M0.1:* Render Static Site usa **HashRouter** em vez de BrowserRouter — rule `/* → /index.html` do Render retorna 200 com body vazio (bug; investigado a fundo, doc context7 confere sintaxe; HashRouter contorna sem depender da config do servidor)
 - *Desvio M0.2:* Steps de Supabase CLI (`supabase init`/`link`/CLI install) pulados — MCP `deploy_edge_function` cobre o caso sem precisar de password do banco
 
@@ -21,7 +21,7 @@
 
 **Estado do sistema ao final desta sessão:**
 1. Supabase: `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp` — ativo, com Edge Function `hello` deployada e responsiva
-2. Frontend: deployado em `https://publiai-frontend.onrender.com` (HashRouter, refresh sempre funciona)
+2. Frontend: deployado em `https://ean2marketplace-frontend.onrender.com` (HashRouter, refresh sempre funciona)
 3. Repo GitHub: `analistasistemas-bit/gtinmktplace` — main pushed
 4. Build OK: `pnpm build` (153 módulos, 21 kB CSS, 212 kB JS gzip 69 kB) | Test OK: `pnpm test` (4 passed)
 5. Credenciais em `.env.local` (gitignored): Supabase URL+key, Upstash Redis+QStash tokens+signing keys, OpenRouter API key
@@ -197,7 +197,7 @@
 **Pendências bloqueantes para validação ponta-a-ponta:**
 - [ ] Diego: rodar `supabase login` e `supabase secrets set` para QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, OPENROUTER_API_KEY (todas estão em .env.local). Sem isso, `ingest-lote` vai falhar em runtime ao tentar `enfileirarFamilia`.
   - Alternativa: configurar via dashboard Supabase → Project Settings → Edge Functions → Secrets
-- [ ] Diego: criar 1 usuário em Auth pelo cadastro do app (https://publiai-frontend.onrender.com/#/cadastro) e confirmar e-mail
+- [ ] Diego: criar 1 usuário em Auth pelo cadastro do app (https://ean2marketplace-frontend.onrender.com/#/cadastro) e confirmar e-mail
 - [ ] Diego: bug bash com planilha real do sistema interno (5-15 famílias, 30-80 variações) — só viável após os 2 itens acima
 
 **Desvios vs spec original (documentados nos commits):**
