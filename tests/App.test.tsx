@@ -1,7 +1,27 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRoutes } from '@/App';
+
+// As rotas protegidas dependem de useAuth; mockamos com um usuário válido
+// para que ProtectedRoute libere a renderização. As rotas públicas
+// (/login, /cadastro, /reset-senha) também funcionam com esse mock.
+vi.mock('@/hooks/useAuth', () => ({
+  useAuth: () => ({
+    user: { id: 'u1', email: 'diego@empresa' },
+    session: { access_token: 't' },
+    loading: false,
+  }),
+}));
+
+// Topbar/signOut chamam supabase em runtime real; stubamos a lib de auth
+// (signOut etc.) para evitar contato com supabase nas rotas protegidas.
+vi.mock('@/lib/auth', () => ({
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  signOut: vi.fn(),
+  sendPasswordReset: vi.fn(),
+}));
 
 function renderRoute(initialPath: string) {
   return render(
@@ -53,5 +73,21 @@ describe('App routing', () => {
     renderRoute('/');
     expect(screen.getByText('PubliAI')).toBeInTheDocument();
     expect(screen.getByText('diego@empresa')).toBeInTheDocument();
+  });
+
+  it('renderiza Login na rota /login (pública)', () => {
+    renderRoute('/login');
+    expect(screen.getByRole('heading', { name: /PubliAI/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument();
+  });
+
+  it('renderiza Cadastro na rota /cadastro (pública)', () => {
+    renderRoute('/cadastro');
+    expect(screen.getByRole('heading', { name: /criar conta/i })).toBeInTheDocument();
+  });
+
+  it('renderiza ResetSenha na rota /reset-senha (pública)', () => {
+    renderRoute('/reset-senha');
+    expect(screen.getByRole('heading', { name: /recuperar senha/i })).toBeInTheDocument();
   });
 });

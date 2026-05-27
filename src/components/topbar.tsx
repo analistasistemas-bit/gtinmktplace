@@ -1,15 +1,18 @@
-import type { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
+import { signOut } from '@/lib/auth';
 
-interface TopbarProps {
-  breadcrumb: string;
-  actions?: ReactNode;
-}
-
-export function Topbar({ breadcrumb, actions }: TopbarProps) {
+export function Topbar() {
+  const { user } = useAuth();
   return (
     <header className="flex h-11 items-center justify-between border-b bg-background px-4 text-sm">
-      <span className="text-muted-foreground">{breadcrumb}</span>
-      <div className="flex items-center gap-2">{actions}</div>
+      <div className="text-muted-foreground">PubliAI</div>
+      <div className="flex items-center gap-3">
+        <span className="text-xs text-muted-foreground">{user?.email}</span>
+        <Button size="sm" variant="ghost" onClick={() => signOut()}>
+          Sair
+        </Button>
+      </div>
     </header>
   );
 }
