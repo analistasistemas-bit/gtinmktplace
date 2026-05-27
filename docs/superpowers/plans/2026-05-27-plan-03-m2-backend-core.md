@@ -5,7 +5,7 @@
 **Goal:** sair de "tudo mockado" (M1) para "Diego sobe uma planilha real + imagens, autenticado, e vê famílias/variações reais persistidas no Supabase com progresso ao vivo via Realtime". O sistema fica pronto para receber a camada de IA no M3.
 
 **Architecture:**
-- **Schema:** 4 tabelas (`lotes`, `familias`, `variacoes`, `ml_credentials`) + enums Postgres + RLS por `user_id` em tudo + Supabase Vault (pgsodium) para tokens OAuth ([ADR-0007](../../decisions/0007-modelo-de-dados-4-tabelas.md))
+- **Schema:** 4 tabelas (`lotes`, `familias`, `variacoes`, `ml_credentials`) + enums Postgres + RLS por `user_id` em tudo + Supabase Vault (`supabase_vault`) para tokens OAuth ([ADR-0007](../../decisions/0007-modelo-de-dados-4-tabelas.md))
 - **Auth:** Supabase Auth (email/senha) com store Zustand global + `ProtectedRoute` que envolve `AppShell`
 - **Upload:** frontend faz upload **direto pro Supabase Storage** (bucket `imagens`) com signed-URL POST; só depois chama a Edge Function passando o `lote_id`
 - **Ingest:** Edge Function `ingest-lote` (Deno) parseia `.xlsx` com SheetJS, agrupa por `PAI`, faz match de imagens por nome de arquivo (`00CODIGO.jpeg`), detecta CREATE vs UPDATE ([ADR-0005](../../decisions/0005-lifecycle-publish-and-update.md)), persiste e enfileira 1 job QStash por família para processamento posterior — **idempotente** ([ADR-0006](../../decisions/0006-qstash-em-vez-de-postgres-queue.md))
@@ -18,7 +18,7 @@
 - **Novo:** `zustand` ^4 (auth global)
 - **Novo:** `xlsx` ^0.20 (parser SheetJS — frontend e Edge Function)
 - **Novo:** `@upstash/qstash` ^2 (cliente QStash em Deno via npm: specifier)
-- Supabase Postgres 15 + Auth + Storage + Edge Functions (Deno) + Realtime + Vault (pgsodium)
+- Supabase Postgres 15 + Auth + Storage + Edge Functions (Deno) + Realtime + `supabase_vault` (standalone — Supabase removeu pgsodium em 2024)
 - Upstash QStash (eu-central-1)
 
 **Documentos relacionados:**
@@ -488,10 +488,10 @@ create trigger familias_set_updated_at
 
 alter table public.familias enable row level security;
 
-create policy "familias: select own" on public.familias for select using (auth.uid() = user_id);
-create policy "familias: insert own" on public.familias for insert with check (auth.uid() = user_id);
-create policy "familias: update own" on public.familias for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "familias: delete own" on public.familias for delete using (auth.uid() = user_id);
+create policy "familias: select own" on public.familias for select using ((select auth.uid()) = user_id);
+create policy "familias: insert own" on public.familias for insert with check ((select auth.uid()) = user_id);
+create policy "familias: update own" on public.familias for update using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "familias: delete own" on public.familias for delete using ((select auth.uid()) = user_id);
 
 -- ----------------------------------------------------------------------------
 -- Tabela: variacoes
@@ -545,10 +545,10 @@ create trigger variacoes_set_updated_at
 
 alter table public.variacoes enable row level security;
 
-create policy "variacoes: select own" on public.variacoes for select using (auth.uid() = user_id);
-create policy "variacoes: insert own" on public.variacoes for insert with check (auth.uid() = user_id);
-create policy "variacoes: update own" on public.variacoes for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "variacoes: delete own" on public.variacoes for delete using (auth.uid() = user_id);
+create policy "variacoes: select own" on public.variacoes for select using ((select auth.uid()) = user_id);
+create policy "variacoes: insert own" on public.variacoes for insert with check ((select auth.uid()) = user_id);
+create policy "variacoes: update own" on public.variacoes for update using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy "variacoes: delete own" on public.variacoes for delete using ((select auth.uid()) = user_id);
 
 -- ----------------------------------------------------------------------------
 -- Trigger: atualiza contadores de lote quando família muda de status
@@ -652,7 +652,7 @@ alter table public.ml_credentials enable row level security;
 -- Apenas SELECT pelo dono (operações de escrita são feitas pelas Edge Functions com service role)
 create policy "ml_credentials: select own"
   on public.ml_credentials for select
-  using (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id);
 
 -- ----------------------------------------------------------------------------
 -- Helpers: criar/atualizar/ler tokens via Vault (chamados pelas Edge Functions
@@ -2913,7 +2913,7 @@ supabase secrets list --project-ref txvncrgkoynoxwopfkbp
 
 **Erros comuns esperados:**
 
-- **`supabase_vault` não descriptografa:** `pgsodium` precisa estar `installed_version` não-nulo. Validar `list_extensions` após Migration 001. Se não estiver, rodar `CREATE EXTENSION pgsodium WITH SCHEMA pgsodium` separado.
+- **`supabase_vault` não descriptografa:** confirmar que `supabase_vault` está `installed_version: 0.3.1` (ou superior) via `list_extensions`. Nada de pgsodium — o Supabase removeu a extensão de projetos managed em 2024 e o Vault virou standalone.
 - **Edge Function `npm:xlsx` lenta no cold start:** primeira execução pode passar 5-10s (compila o módulo); subsequente fica < 1s. Aceitável.
 - **JWT do frontend não chega na Edge Function:** confirmar que o `Authorization: Bearer <token>` está nos headers do `fetch` e que `apikey: <ANON_KEY>` também está (Supabase exige ambos).
 - **Realtime não dispara:** verificar `pg_publication_tables` (Task 15 Step 2). Se a tabela não está na publication, `INSERT`/`UPDATE` não viram eventos.
