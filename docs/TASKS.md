@@ -300,6 +300,19 @@
 - [ ] Edição inline persistindo no banco — `~3h`
 - [ ] Flags `editado_pelo_operador` marcadas corretamente — `~1h`
 
+### Upload posterior de imagens (decidido no bug bash M2)
+
+Atualmente só dá pra subir imagens no momento de criar o lote. Diego pediu
+no bug bash M2 a capacidade de adicionar imagens depois — adiado para M3
+porque o marco já mexe em imagens (Vision).
+
+- [ ] Drop zone na Revisão para adicionar imagens em massa; casa pelo
+      nome `00CODIGO.jpeg` com variações existentes — `~2h`
+- [ ] Ícone de câmera por VariacaoCard para upload pontual de 1 imagem
+      em 1 variação — `~1h`
+- [ ] Atualizar `imagem_path` na variação correspondente e invalidar
+      query do TanStack — `~30 min`
+
 ### Bug bash do M3
 
 - [ ] Lote real com 10+ famílias processado completamente — `~30 min`
