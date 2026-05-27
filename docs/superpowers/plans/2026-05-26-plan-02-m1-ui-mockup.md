@@ -759,7 +759,7 @@ const NAV_ITEMS = [
 export function Sidebar() {
   return (
     <aside className="flex h-screen w-[180px] flex-col border-r bg-background">
-      <div className="flex h-11 items-center px-4 font-semibold">EAN2Marketplace</div>
+      <div className="flex h-11 items-center px-4 font-semibold">PubliAI</div>
       <nav className="flex-1 px-2 py-2">
         {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
           <NavLink
@@ -999,7 +999,7 @@ describe('App routing', () => {
 
   it('renderiza Sidebar dentro das rotas com shell', () => {
     renderRoute('/');
-    expect(screen.getByText('EAN2Marketplace')).toBeInTheDocument();
+    expect(screen.getByText('PubliAI')).toBeInTheDocument();
     expect(screen.getByText('diego@empresa')).toBeInTheDocument();
   });
 });
@@ -2492,12 +2492,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 git push
 ```
 
-Aguardar deploy (~40s). Confirmar via list_deploys MCP ou checando `https://ean2marketplace-frontend.onrender.com/` manualmente.
+Aguardar deploy (~40s). Confirmar via list_deploys MCP ou checando `https://publiai-frontend.onrender.com/` manualmente.
 
 - [ ] **Step 15.2: Walkthrough com Diego**
 
 Pedir ao Diego para:
-1. Abrir `https://ean2marketplace-frontend.onrender.com/`
+1. Abrir `https://publiai-frontend.onrender.com/`
 2. Percorrer as 6 telas: Dashboard → clique em lote-42 → Revisão (expandir 2-3 famílias, editar 1 preço) → voltar → Novo Lote → Progresso (testar com `/#/progresso/lote-37`) → Relatório (lote-41) → Configurações
 3. Listar ajustes percebidos
 

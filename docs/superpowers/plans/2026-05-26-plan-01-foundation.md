@@ -17,7 +17,7 @@
 - MCPs: `supabase-mcp-server`, `upstash`, `render`, `shadcn`, `context7`
 
 **Documentos relacionados:**
-- Spec: [docs/superpowers/specs/2026-05-26-ean2marketplace-design.md](../specs/2026-05-26-ean2marketplace-design.md)
+- Spec: [docs/superpowers/specs/2026-05-26-publiai-design.md](../specs/2026-05-26-publiai-design.md)
 - ADR-0001 (stack): [docs/decisions/0001-stack-tecnologico.md](../../decisions/0001-stack-tecnologico.md)
 - CLAUDE.md (regras do projeto): [CLAUDE.md](../../../CLAUDE.md)
 
@@ -214,7 +214,7 @@ VITE_SUPABASE_ANON_KEY=
 - [ ] **Step 1.4: Criar `README.md`**
 
 ````markdown
-# EAN2Marketplace
+# PubliAI
 
 Sistema interno que transforma planilhas de produtos em anúncios no Mercado Livre, usando IA como copywriter especializado em aviamentos.
 
@@ -257,10 +257,10 @@ Via `supabase-mcp-server`, listar organizações. Se mais de uma, pausar e pergu
 
 - [ ] **Step 2.2: 👤 Confirmar organização com Diego**
 
-- [ ] **Step 2.3: Criar projeto Supabase `ean2marketplace`**
+- [ ] **Step 2.3: Criar projeto Supabase `publiai`**
 
 Via `supabase-mcp-server`:
-- Name: `ean2marketplace`
+- Name: `publiai`
 - Region: `sa-east-1` (São Paulo)
 - Plan: `free`
 - Database password: gerar forte (anotar no 1Password)
@@ -272,7 +272,7 @@ Listar via MCP. Guardar para `.env.local` na Task 8.
 - [ ] **Step 2.5: 👤 Provisionar OpenAI API key**
 
 Diego (manual no painel <https://platform.openai.com/api-keys>):
-- Criar key dedicada `ean2marketplace`
+- Criar key dedicada `publiai`
 - Anotar no 1Password
 - Garantir que o billing tem ao menos $20 de crédito (PR-8)
 
@@ -295,7 +295,7 @@ Via `supabase-mcp-server`:
 - [ ] **Step 3.1: Criar banco Redis no Upstash**
 
 Via `upstash` MCP:
-- Name: `ean2marketplace-cache`
+- Name: `publiai-cache`
 - Region: `sa-east-1` (São Paulo, mais perto do Supabase)
 - Tier: `free`
 
@@ -340,7 +340,7 @@ Substituir todo o conteúdo por:
 function App() {
   return (
     <div>
-      <h1>EAN2Marketplace — Foundation OK</h1>
+      <h1>PubliAI — Foundation OK</h1>
     </div>
   );
 }
@@ -380,7 +380,7 @@ Esperado: `node_modules/` + `pnpm-lock.yaml` criados.
 pnpm dev
 ```
 
-Abrir `http://localhost:5173`. Deve aparecer "EAN2Marketplace — Foundation OK" sem estilo. Encerrar com `Ctrl+C`.
+Abrir `http://localhost:5173`. Deve aparecer "PubliAI — Foundation OK" sem estilo. Encerrar com `Ctrl+C`.
 
 - [ ] **Step 4.7: Configurar path alias `@/*` em `tsconfig.app.json`**
 
@@ -550,7 +550,7 @@ import { Button } from '@/components/ui/button';
 function App() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <h1 className="text-3xl font-bold tracking-tight">EAN2Marketplace</h1>
+      <h1 className="text-3xl font-bold tracking-tight">PubliAI</h1>
       <p className="text-muted-foreground">Foundation OK</p>
       <Button>Funciona</Button>
     </div>
@@ -640,9 +640,9 @@ import { render, screen } from '@testing-library/react';
 import App from '@/App';
 
 describe('App (smoke)', () => {
-  it('renderiza o título do EAN2Marketplace', () => {
+  it('renderiza o título do PubliAI', () => {
     render(<App />);
-    expect(screen.getByText('EAN2Marketplace')).toBeInTheDocument();
+    expect(screen.getByText('PubliAI')).toBeInTheDocument();
   });
 
   it('renderiza o botão "Funciona"', () => {
@@ -702,7 +702,7 @@ function renderRoute(initialPath: string) {
 describe('App routing', () => {
   it('renderiza Home na rota /', () => {
     renderRoute('/');
-    expect(screen.getByText(/EAN2Marketplace/i)).toBeInTheDocument();
+    expect(screen.getByText(/PubliAI/i)).toBeInTheDocument();
     expect(screen.getByText(/Foundation OK/i)).toBeInTheDocument();
   });
 
@@ -730,7 +730,7 @@ import { Button } from '@/components/ui/button';
 export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <h1 className="text-3xl font-bold tracking-tight">EAN2Marketplace</h1>
+      <h1 className="text-3xl font-bold tracking-tight">PubliAI</h1>
       <p className="text-muted-foreground">Foundation OK</p>
       <Button>Funciona</Button>
     </div>
@@ -958,7 +958,7 @@ interface HelloResponse {
 
 Deno.serve((_req) => {
   const body: HelloResponse = {
-    message: 'EAN2Marketplace foundation OK',
+    message: 'PubliAI foundation OK',
     timestamp: new Date().toISOString(),
   };
 
@@ -985,7 +985,7 @@ Esperado: log "Deployed Function hello to https://<ref>.supabase.co/functions/v1
 curl -s https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/hello | jq
 ```
 
-Esperado: JSON com `message: "EAN2Marketplace foundation OK"` e `timestamp` ISO.
+Esperado: JSON com `message: "PubliAI foundation OK"` e `timestamp` ISO.
 
 (Se `jq` não estiver instalado, use sem o pipe.)
 
@@ -1016,7 +1016,7 @@ git commit -m "feat: add hello Edge Function deployed to Supabase"
 ```yaml
 services:
   - type: web
-    name: ean2marketplace-frontend
+    name: publiai-frontend
     runtime: static
     rootDir: .
     buildCommand: pnpm install && pnpm build
@@ -1039,11 +1039,11 @@ git commit -m "chore: add render.yaml blueprint and SPA redirects"
 - [ ] **Step 10.4: 👤 Diego cria repo GitHub e linka**
 
 Pausar para Diego:
-1. Criar repo `ean2marketplace` (privado) no GitHub
+1. Criar repo `publiai` (privado) no GitHub
 2. Adicionar como remoto:
 
 ```bash
-git remote add origin git@github.com:<usuario>/ean2marketplace.git
+git remote add origin git@github.com:<usuario>/publiai.git
 git branch -M main
 git push -u origin main
 ```
@@ -1051,7 +1051,7 @@ git push -u origin main
 - [ ] **Step 10.5: Criar Static Site no Render via MCP**
 
 Via `render` MCP, criar Static Site:
-- Connect to: o repo `ean2marketplace` do GitHub
+- Connect to: o repo `publiai` do GitHub
 - Branch: `main`
 - Auto-deploy: enabled
 - Build/publish: vêm do `render.yaml`

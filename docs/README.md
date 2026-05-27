@@ -1,4 +1,4 @@
-# EAN2Marketplace — Documentação do Projeto
+# PubliAI — Documentação do Projeto
 
 Sistema interno que transforma planilhas de produtos da empresa em anúncios publicados no Mercado Livre, usando IA como copywriter especializado em aviamentos.
 
@@ -29,7 +29,7 @@ docs/
 │   ├── 0009-campos-payload-ml-e-categoria-deterministica.md
 │   └── 0010-openrouter-em-vez-de-openai-direto.md
 └── superpowers/specs/             ← spec formal do design (1 por marco de planejamento)
-    └── 2026-05-26-ean2marketplace-design.md  (a criar)
+    └── 2026-05-26-publiai-design.md  (a criar)
 ```
 
 ## Documentos vivos vs imutáveis

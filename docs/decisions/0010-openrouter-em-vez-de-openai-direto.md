@@ -18,7 +18,7 @@ OpenRouter (<https://openrouter.ai/>) é um gateway que:
 
 ## Decisão
 
-A camada de IA do EAN2Marketplace usa **OpenRouter como gateway** em vez de chamar a OpenAI diretamente. O código continua usando a **SDK oficial da OpenAI** (`openai` npm), apenas com `baseURL` apontando para o OpenRouter e header `Authorization: Bearer <OPENROUTER_API_KEY>`.
+A camada de IA do PubliAI usa **OpenRouter como gateway** em vez de chamar a OpenAI diretamente. O código continua usando a **SDK oficial da OpenAI** (`openai` npm), apenas com `baseURL` apontando para o OpenRouter e header `Authorization: Bearer <OPENROUTER_API_KEY>`.
 
 **Configuração padrão:**
 
@@ -30,7 +30,7 @@ const ai = new OpenAI({
   apiKey: Deno.env.get('OPENROUTER_API_KEY'),
   defaultHeaders: {
     'HTTP-Referer': 'https://<seu-app>.onrender.com',  // bom-tom OpenRouter
-    'X-Title': 'EAN2Marketplace',
+    'X-Title': 'PubliAI',
   },
 });
 ```

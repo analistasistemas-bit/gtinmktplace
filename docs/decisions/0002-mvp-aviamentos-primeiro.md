@@ -12,7 +12,7 @@ Durante o brainstorming, Diego informou um pivot do produto inicial: a empresa d
 
 ## Decisão
 
-O MVP do EAN2Marketplace foca exclusivamente em **aviamentos** (linha de costura, botões, fitas). Tecidos entram em uma fase posterior, possivelmente como uma "categoria de produto" plugável.
+O MVP do PubliAI foca exclusivamente em **aviamentos** (linha de costura, botões, fitas). Tecidos entram em uma fase posterior, possivelmente como uma "categoria de produto" plugável.
 
 ## Alternativas consideradas
 

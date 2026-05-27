@@ -1,6 +1,6 @@
 # ADRs — Architecture Decision Records
 
-Esta pasta contém o registro de decisões arquiteturais do EAN2Marketplace. Cada ADR documenta **uma decisão**, o **contexto** em que foi tomada, **alternativas consideradas**, e **consequências** (positivas e negativas).
+Esta pasta contém o registro de decisões arquiteturais do PubliAI. Cada ADR documenta **uma decisão**, o **contexto** em que foi tomada, **alternativas consideradas**, e **consequências** (positivas e negativas).
 
 ## Por que ADRs?
 

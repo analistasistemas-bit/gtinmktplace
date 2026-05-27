@@ -12,7 +12,7 @@ const NAV_ITEMS = [
 export function Sidebar() {
   return (
     <aside className="flex h-screen w-[180px] flex-col border-r bg-background">
-      <div className="flex h-11 items-center px-4 font-semibold">EAN2Marketplace</div>
+      <div className="flex h-11 items-center px-4 font-semibold">PubliAI</div>
       <nav className="flex-1 px-2 py-2">
         {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
           <NavLink

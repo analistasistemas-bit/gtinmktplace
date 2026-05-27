@@ -1,4 +1,4 @@
-# CLAUDE.md — Contexto persistente do projeto EAN2Marketplace
+# CLAUDE.md — Contexto persistente do projeto PubliAI
 
 > Este arquivo é o **system prompt do projeto**. Toda sessão de Claude Code (ou outro agente IA) deve lê-lo primeiro, antes de tocar em qualquer arquivo. Ele resume regras, convenções, decisões e workflow do projeto, e aponta para a documentação detalhada.
 
@@ -9,7 +9,7 @@
 
 ## O que é este projeto
 
-**EAN2Marketplace** é um sistema web interno que transforma planilhas de produtos exportadas do sistema interno da empresa em **anúncios publicados no Mercado Livre**, usando IA como copywriter especializado em **aviamentos** (linha de costura, botões, fitas).
+**PubliAI** é um sistema web interno que transforma planilhas de produtos exportadas do sistema interno da empresa em **anúncios publicados no Mercado Livre**, usando IA como copywriter especializado em **aviamentos** (linha de costura, botões, fitas).
 
 - **Cliente final:** empresa de tecidos e aviamentos (uso interno)
 - **Desenvolvedor único:** Diego — funcionário interno; também é o usuário-operador-validador
@@ -24,7 +24,7 @@
 Antes de fazer **qualquer alteração** ou tomar **qualquer decisão**, consulte os documentos abaixo nesta ordem:
 
 1. [docs/README.md](docs/README.md) — índice geral
-2. [docs/superpowers/specs/2026-05-26-ean2marketplace-design.md](docs/superpowers/specs/2026-05-26-ean2marketplace-design.md) — **spec completo** do design
+2. [docs/superpowers/specs/2026-05-26-publiai-design.md](docs/superpowers/specs/2026-05-26-publiai-design.md) — **spec completo** do design
 3. [docs/ROADMAP.md](docs/ROADMAP.md) — em que marco estamos, o que está fora de escopo
 4. [docs/TASKS.md](docs/TASKS.md) — checklist operacional; pegue a próxima tarefa aqui
 5. [docs/decisions/](docs/decisions/) — todos os ADRs vigentes; **para qualquer decisão técnica, leia o ADR correspondente antes de propor algo diferente**

@@ -8,7 +8,7 @@ interface HelloResponse {
 
 Deno.serve((_req) => {
   const body: HelloResponse = {
-    message: 'EAN2Marketplace foundation OK',
+    message: 'PubliAI foundation OK',
     timestamp: new Date().toISOString(),
   };
 

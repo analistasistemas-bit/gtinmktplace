@@ -51,7 +51,7 @@ describe('App routing', () => {
 
   it('renderiza Sidebar dentro das rotas com shell', () => {
     renderRoute('/');
-    expect(screen.getByText('EAN2Marketplace')).toBeInTheDocument();
+    expect(screen.getByText('PubliAI')).toBeInTheDocument();
     expect(screen.getByText('diego@empresa')).toBeInTheDocument();
   });
 });

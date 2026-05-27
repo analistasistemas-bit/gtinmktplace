@@ -1,11 +1,11 @@
 # M1 — UI Mockup com dados fake (Design)
 
-> Spec da fase M1 do EAN2Marketplace. Foco: validar UX das 6 telas do produto com dados mockados, sem investir em backend. Saída do M1 alimenta o Plano 02.
+> Spec da fase M1 do PubliAI. Foco: validar UX das 6 telas do produto com dados mockados, sem investir em backend. Saída do M1 alimenta o Plano 02.
 
 **Data:** 2026-05-26
 **Status:** aprovado (brainstorming concluído com Diego)
 **Plano de implementação:** será gerado em seguida via `superpowers:writing-plans` → `docs/superpowers/plans/`
-**Spec relacionado:** [docs/superpowers/specs/2026-05-26-ean2marketplace-design.md](./2026-05-26-ean2marketplace-design.md)
+**Spec relacionado:** [docs/superpowers/specs/2026-05-26-publiai-design.md](./2026-05-26-publiai-design.md)
 
 ---
 

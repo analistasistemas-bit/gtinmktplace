@@ -1,4 +1,4 @@
-# EAN2Marketplace
+# PubliAI
 
 Sistema interno que transforma planilhas de produtos em anúncios no Mercado Livre, usando IA como copywriter especializado em aviamentos.
 

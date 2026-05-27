@@ -1,5 +1,5 @@
 ---
-title: EAN2Marketplace — Spec de Design
+title: PubliAI — Spec de Design
 data: 2026-05-26
 versao: 1.0
 status: Aprovado pelo cliente (Diego), pronto para writing-plans
@@ -7,7 +7,7 @@ autores: Diego (cliente + desenvolvedor) + Claude Code (facilitador do brainstor
 substitui: Proposta comercial v1.1 de Leonardo Freitas (21/05/2026)
 ---
 
-# EAN2Marketplace — Spec de Design
+# PubliAI — Spec de Design
 
 ## Sumário Executivo
 
@@ -61,7 +61,7 @@ Sistema interno da empresa
    │
    │ (operador exporta planilha + seleciona pasta de imagens)
    ▼
-EAN2Marketplace (web)
+PubliAI (web)
    │
    ├─► Importa planilha + imagens (drag & drop)
    ├─► Agrupa famílias por código PAI

@@ -1,16 +1,16 @@
-# EAN2Marketplace — Tasks
+# PubliAI — Tasks
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
 **Última atualização:** 2026-05-26 (quarta sessão — M1 implementado, aguardando walkthrough Diego)
-**Próximo passo recomendado:** **walkthrough manual em produção** (https://ean2marketplace-frontend.onrender.com) percorrendo as 6 telas. Após walkthrough, abrir Plano 03 (M2 — Backend core: schema + auth + Storage + Edge Function `ingest-lote`).
+**Próximo passo recomendado:** **walkthrough manual em produção** (https://publiai-frontend.onrender.com) percorrendo as 6 telas. Após walkthrough, abrir Plano 03 (M2 — Backend core: schema + auth + Storage + Edge Function `ingest-lote`).
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
 - [x] Task 3 (Upstash Redis + QStash) — pré-existente, captured via MCP
 - [x] Task 8 (cliente Supabase) — commit `9a0eabc` — TDD limpo (RED→GREEN), `src/lib/supabase.ts` com fail-fast
 - [x] Task 9 (Edge Function `hello`) — commit `9159e27` — deployada via MCP `deploy_edge_function` (sem CLI/Docker), curl confirmado HTTP 200
-- [x] Task 10 (Render Static Site) — commits `bad04ca` → `4e1ad16` → `7d25229` — service `srv-d8at8arbc2fs73e5qcb0`, auto-deploy ativo, URL `https://ean2marketplace-frontend.onrender.com`
+- [x] Task 10 (Render Static Site) — commits `bad04ca` → `4e1ad16` → `7d25229` — service `srv-d8at8arbc2fs73e5qcb0`, auto-deploy ativo, URL `https://publiai-frontend.onrender.com`
 - *Desvio M0.1:* Render Static Site usa **HashRouter** em vez de BrowserRouter — rule `/* → /index.html` do Render retorna 200 com body vazio (bug; investigado a fundo, doc context7 confere sintaxe; HashRouter contorna sem depender da config do servidor)
 - *Desvio M0.2:* Steps de Supabase CLI (`supabase init`/`link`/CLI install) pulados — MCP `deploy_edge_function` cobre o caso sem precisar de password do banco
 
@@ -21,7 +21,7 @@
 
 **Estado do sistema ao final desta sessão:**
 1. Supabase: `gtin_mktplace_ia` / ref `txvncrgkoynoxwopfkbp` — ativo, com Edge Function `hello` deployada e responsiva
-2. Frontend: deployado em `https://ean2marketplace-frontend.onrender.com` (HashRouter, refresh sempre funciona)
+2. Frontend: deployado em `https://publiai-frontend.onrender.com` (HashRouter, refresh sempre funciona)
 3. Repo GitHub: `analistasistemas-bit/gtinmktplace` — main pushed
 4. Build OK: `pnpm build` (153 módulos, 21 kB CSS, 212 kB JS gzip 69 kB) | Test OK: `pnpm test` (4 passed)
 5. Credenciais em `.env.local` (gitignored): Supabase URL+key, Upstash Redis+QStash tokens+signing keys, OpenRouter API key
@@ -68,7 +68,7 @@
 - [x] Criação dos 8 ADRs iniciais
 - [x] Criação do ROADMAP.md
 - [x] Criação do TASKS.md
-- [ ] Escrita do design doc consolidado em `docs/superpowers/specs/2026-05-26-ean2marketplace-design.md`
+- [ ] Escrita do design doc consolidado em `docs/superpowers/specs/2026-05-26-publiai-design.md`
 - [ ] Revisão crítica do design doc (Diego ou agente revisor)
 - [ ] Escrita do plano de implementação detalhado (`writing-plans`)
 
@@ -91,7 +91,7 @@
 ### Trilho paralelo: Mercado Livre Developers
 
 - [ ] Acessar [Mercado Livre Developers](https://developers.mercadolibre.com.br/) — `~15 min`
-- [ ] Criar app "EAN2Marketplace" — `~30 min`
+- [ ] Criar app "PubliAI" — `~30 min`
 - [ ] Configurar redirect URI provisório (`http://localhost:5173/ml-callback`) — `~15 min`
 - [ ] Anotar `client_id` e `client_secret` em local seguro (1Password ou similar) — `~10 min`
 - [ ] Submeter app para aprovação — `~30 min`

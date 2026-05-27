@@ -6,7 +6,7 @@
 
 ## Contexto
 
-Precisamos escolher o stack tecnológico para o EAN2Marketplace. Constraints:
+Precisamos escolher o stack tecnológico para o PubliAI. Constraints:
 
 - **Solo developer** com perfil "vibe coder" (AI-assisted development), confortável com Python, JS/TS, React, FastAPI/NestJS
 - **Prazo apertado:** 2-3 meses para entregar MVP completo (10 funcionalidades must-have)
