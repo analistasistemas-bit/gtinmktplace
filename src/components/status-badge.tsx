@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import type { LoteStatus } from '@/lib/mocks/types';
+import type { LoteStatus } from '@/lib/tipos-dominio';
 
 const LABELS: Record<LoteStatus, string> = {
   importando: 'Importando',

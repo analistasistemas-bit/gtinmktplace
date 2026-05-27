@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { VariacaoCard } from '@/components/variacao-card';
-import type { Familia } from '@/lib/mocks/types';
+import type { Familia } from '@/lib/tipos-dominio';
 
 export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const [titulo, setTitulo] = useState(familia.titulo);

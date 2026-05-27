@@ -1,6 +1,52 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import type { Familia } from '@/lib/tipos-dominio';
+
+// Mocka useFamilias para devolver direto um array de famílias, evitando
+// dependência de QueryClient/Supabase neste teste de UI.
+const FAMILIAS_FAKE: Familia[] = [
+  {
+    id: 'a',
+    loteId: 'lote-42',
+    codigoPai: '1001',
+    titulo: 'Linha Vermelha',
+    descricao: '',
+    operacao: 'CREATE',
+    estrategiaPreco: 'PROPRIO',
+    estrategiaMotivo: '',
+    concorrencia: 'sem',
+    precoMin: 1,
+    precoMax: 1,
+    precoAbaixo20pc: false,
+    variacoes: [],
+  },
+  {
+    id: 'b',
+    loteId: 'lote-42',
+    codigoPai: '1002',
+    titulo: 'Botão Azul',
+    descricao: '',
+    operacao: 'UPDATE',
+    estrategiaPreco: 'COMPETITIVO',
+    estrategiaMotivo: '',
+    concorrencia: 'alta',
+    precoMin: 1,
+    precoMax: 1,
+    precoAbaixo20pc: true,
+    variacoes: [],
+  },
+];
+
+vi.mock('@/hooks/useFamilias', () => ({
+  useFamilias: () => ({
+    data: FAMILIAS_FAKE,
+    isLoading: false,
+    error: null,
+    isSuccess: true,
+  }),
+}));
+
 import Revisao from '@/pages/Revisao';
 
 function renderRevisao() {

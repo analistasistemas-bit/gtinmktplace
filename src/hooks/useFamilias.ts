@@ -1,7 +1,11 @@
-import { MOCK_FAMILIAS } from '@/lib/mocks/familias';
-import type { Familia } from '@/lib/mocks/types';
+import { useQuery } from '@tanstack/react-query';
+import { QK, fetchFamilias, familiaFromRow } from '@/lib/queries';
+import type { Familia } from '@/lib/tipos-dominio';
 
-export function useFamilias(loteId: string | undefined): Familia[] {
-  if (!loteId) return [];
-  return MOCK_FAMILIAS.filter((f) => f.loteId === loteId);
+export function useFamilias(loteId: string | undefined) {
+  return useQuery<Familia[]>({
+    queryKey: QK.familias(loteId ?? ''),
+    queryFn: async () => (await fetchFamilias(loteId!)).map(familiaFromRow),
+    enabled: !!loteId,
+  });
 }

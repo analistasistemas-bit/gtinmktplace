@@ -1,11 +1,24 @@
-import { MOCK_LOTES } from '@/lib/mocks/lotes';
-import type { Lote } from '@/lib/mocks/types';
+import { useQuery } from '@tanstack/react-query';
+import { QK, fetchLotes, fetchLote, loteFromRow } from '@/lib/queries';
+import type { Lote } from '@/lib/tipos-dominio';
+import { useAuth } from './useAuth';
 
-export function useLotes(): Lote[] {
-  return MOCK_LOTES;
+export function useLotes() {
+  const { user } = useAuth();
+  return useQuery<Lote[]>({
+    queryKey: QK.lotes(user?.id ?? 'anon'),
+    queryFn: async () => (await fetchLotes()).map(loteFromRow),
+    enabled: !!user,
+  });
 }
 
-export function useLote(id: string | undefined): Lote | undefined {
-  if (!id) return undefined;
-  return MOCK_LOTES.find((l) => l.id === id);
+export function useLote(id: string | undefined) {
+  return useQuery<Lote | null>({
+    queryKey: QK.lote(id ?? ''),
+    queryFn: async () => {
+      const row = await fetchLote(id!);
+      return row ? loteFromRow(row) : null;
+    },
+    enabled: !!id,
+  });
 }

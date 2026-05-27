@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filtrarFamilias } from '@/pages/Revisao';
-import type { Familia } from '@/lib/mocks/types';
+import type { Familia } from '@/lib/tipos-dominio';
 
 const FAMILIAS: Familia[] = [
   {

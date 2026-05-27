@@ -7,12 +7,13 @@ import { useFamilias } from '@/hooks/useFamilias';
 
 export default function Relatorio() {
   const { loteId } = useParams();
-  const lote = useLote(loteId);
-  // No M1, usamos as famílias do lote-42 como mock visual mesmo para outros lotes
-  const familias = useFamilias('lote-42').slice(0, lote?.totalFamilias ?? 0);
+  const { data: lote, isLoading: loadingLote } = useLote(loteId);
+  const { data: todasFamilias = [] } = useFamilias(loteId);
 
+  if (loadingLote) return <div className="p-6">Carregando relatório...</div>;
   if (!lote) return <div className="p-6">Lote não encontrado.</div>;
 
+  const familias = todasFamilias.slice(0, lote.totalFamilias);
   const publicadas = familias.slice(0, lote.totalPublicadas);
   const erros = familias.slice(lote.totalPublicadas, lote.totalPublicadas + lote.totalErros);
 

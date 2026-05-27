@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { StatusBadge } from '@/components/status-badge';
-import type { Lote, LoteStatus } from '@/lib/mocks/types';
+import type { Lote, LoteStatus } from '@/lib/tipos-dominio';
 
 function destinoDoLote(status: LoteStatus, id: string): string {
   if (status === 'revisao') return `/revisao/${id}`;

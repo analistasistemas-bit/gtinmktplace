@@ -1,5 +1,5 @@
 import { Input } from '@/components/ui/input';
-import type { Variacao } from '@/lib/mocks/types';
+import type { Variacao } from '@/lib/tipos-dominio';
 
 interface VariacaoCardProps {
   variacao: Variacao;

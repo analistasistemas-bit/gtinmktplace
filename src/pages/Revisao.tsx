@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { useFamilias } from '@/hooks/useFamilias';
-import type { Familia } from '@/lib/mocks/types';
+import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos';
 
@@ -23,7 +23,7 @@ export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: st
 
 export default function Revisao() {
   const { loteId } = useParams();
-  const familias = useFamilias(loteId);
+  const { data: familias = [], isLoading, error } = useFamilias(loteId);
   const [filtro, setFiltro] = useState<FiltroOp>('todos');
   const [busca, setBusca] = useState('');
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
@@ -90,22 +90,34 @@ export default function Revisao() {
         </div>
       )}
       <div className="flex-1 overflow-auto">
-        {visiveis.map((familia) => (
-          <div key={familia.id}>
-            <FamiliaRow
-              familia={familia}
-              selecionada={selecionadas.has(familia.id)}
-              expandida={expandidas.has(familia.id)}
-              onSelecionar={toggleSelecao}
-              onExpandir={toggleExpansao}
-            />
-            {expandidas.has(familia.id) && <FamiliaExpanded familia={familia} />}
-          </div>
-        ))}
-        {visiveis.length === 0 && (
+        {isLoading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
-            Nenhuma família encontrada com esses filtros.
+            Carregando famílias...
           </div>
+        ) : error ? (
+          <div className="p-8 text-center text-sm text-destructive">
+            Erro ao carregar famílias: {(error as Error).message}
+          </div>
+        ) : (
+          <>
+            {visiveis.map((familia) => (
+              <div key={familia.id}>
+                <FamiliaRow
+                  familia={familia}
+                  selecionada={selecionadas.has(familia.id)}
+                  expandida={expandidas.has(familia.id)}
+                  onSelecionar={toggleSelecao}
+                  onExpandir={toggleExpansao}
+                />
+                {expandidas.has(familia.id) && <FamiliaExpanded familia={familia} />}
+              </div>
+            ))}
+            {visiveis.length === 0 && (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                Nenhuma família encontrada com esses filtros.
+              </div>
+            )}
+          </>
         )}
       </div>
       {selecionadas.size > 0 && (
@@ -114,6 +126,7 @@ export default function Revisao() {
             {selecionadas.size} selecionada(s) de {visiveis.length}
           </div>
           <div className="flex gap-2">
+            {/* Mutations reais entram no M3; por ora só limpam seleção. */}
             <Button variant="outline" onClick={() => setSelecionadas(new Set())}>
               Rejeitar
             </Button>

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { LoteCard } from '@/components/lote-card';
-import type { Lote } from '@/lib/mocks/types';
+import type { Lote } from '@/lib/tipos-dominio';
 
 const LOTE_REVISAO: Lote = {
   id: 'lote-42',

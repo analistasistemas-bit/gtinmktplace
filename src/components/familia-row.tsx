@@ -2,7 +2,7 @@ import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import type { Familia } from '@/lib/mocks/types';
+import type { Familia } from '@/lib/tipos-dominio';
 
 interface FamiliaRowProps {
   familia: Familia;

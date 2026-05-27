@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { FamiliaRow } from '@/components/familia-row';
-import type { Familia } from '@/lib/mocks/types';
+import type { Familia } from '@/lib/tipos-dominio';
 
 const FAMILIA: Familia = {
   id: 'familia-1',

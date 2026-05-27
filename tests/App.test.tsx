@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from '@/App';
 
 // As rotas protegidas dependem de useAuth; mockamos com um usuário válido
@@ -23,11 +24,38 @@ vi.mock('@/lib/auth', () => ({
   sendPasswordReset: vi.fn(),
 }));
 
+// useLotes/useFamilias agora usam TanStack Query + Supabase. Para os smoke tests
+// de rota neste arquivo basta devolver lista vazia (loading=false) — assim
+// Dashboard renderiza o título e Revisao renderiza o input de busca.
+vi.mock('@/hooks/useLotes', () => ({
+  useLotes: () => ({ data: [], isLoading: false, error: null, isSuccess: true }),
+  useLote: () => ({
+    data: {
+      id: 'lote-41',
+      numero: 41,
+      criadoEm: '2026-05-24T10:15:00.000Z',
+      status: 'concluido',
+      totalFamilias: 0,
+      totalPublicadas: 0,
+      totalErros: 0,
+    },
+    isLoading: false,
+    error: null,
+    isSuccess: true,
+  }),
+}));
+vi.mock('@/hooks/useFamilias', () => ({
+  useFamilias: () => ({ data: [], isLoading: false, error: null, isSuccess: true }),
+}));
+
 function renderRoute(initialPath: string) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <AppRoutes />
-    </MemoryRouter>
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <AppRoutes />
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
