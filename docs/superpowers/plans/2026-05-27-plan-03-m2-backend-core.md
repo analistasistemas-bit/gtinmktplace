@@ -476,11 +476,10 @@ create table public.familias (
   unique (lote_id, codigo_pai)
 );
 
-create index familias_lote_id_idx           on public.familias (lote_id);
 create index familias_user_id_codigo_pai_idx on public.familias (user_id, codigo_pai);
 create index familias_user_ml_item_idx       on public.familias (user_id, ml_item_id)
   where ml_item_id is not null;
-create index familias_status_idx              on public.familias (status);
+create index familias_lote_id_status_idx     on public.familias (lote_id, status);
 
 create trigger familias_set_updated_at
   before update on public.familias
@@ -536,7 +535,6 @@ create table public.variacoes (
   unique (familia_id, codigo)
 );
 
-create index variacoes_familia_id_idx on public.variacoes (familia_id);
 create index variacoes_user_id_codigo_idx on public.variacoes (user_id, codigo);
 
 create trigger variacoes_set_updated_at
@@ -571,6 +569,9 @@ begin
   return new;
 end;
 $$;
+
+-- Trigger-only: a função roda apenas a partir do trigger abaixo. Sem RPC pública.
+revoke execute on function public.update_lote_counters() from public, anon, authenticated;
 
 create trigger familias_update_lote_counters
   after insert or update on public.familias
