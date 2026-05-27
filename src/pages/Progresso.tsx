@@ -11,7 +11,12 @@ export default function Progresso() {
   useLoteRealtime(loteId);
 
   const { data: lote } = useLote(loteId);
-  const { data: familias = [] } = useFamilias(loteId);
+  // Realtime tem race condition se process-familia terminar antes da subscription
+  // estabilizar (~1-2s). Polling de fallback enquanto o lote está em transito.
+  const polling = lote?.status === 'processando' || lote?.status === 'importando';
+  const { data: familias = [] } = useFamilias(loteId, {
+    refetchInterval: polling ? 2500 : undefined,
+  });
 
   useEffect(() => {
     if (lote?.status === 'revisao' || lote?.status === 'processando') {
