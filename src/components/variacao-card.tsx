@@ -1,15 +1,23 @@
 import { Input } from '@/components/ui/input';
+import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import type { Variacao } from '@/lib/tipos-dominio';
 
 interface VariacaoCardProps {
   variacao: Variacao;
+  statusPreco?: SaveStatus;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
   onSalvarPreco?: (codigo: string) => void;
 }
 
-export function VariacaoCard({ variacao, onMudarPreco, onMudarCor, onSalvarPreco }: VariacaoCardProps) {
+export function VariacaoCard({
+  variacao,
+  statusPreco,
+  onMudarPreco,
+  onMudarCor,
+  onSalvarPreco,
+}: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   return (
     <div className="flex items-center gap-3 rounded-md bg-background p-2 text-sm">
@@ -32,14 +40,19 @@ export function VariacaoCard({ variacao, onMudarPreco, onMudarCor, onSalvarPreco
         onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
         className="h-7 flex-1"
       />
-      <Input
-        type="number"
-        step="0.01"
-        value={variacao.preco}
-        onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
-        onBlur={() => onSalvarPreco?.(variacao.codigo)}
-        className="h-7 w-24"
-      />
+      <div className="flex items-center gap-1">
+        <Input
+          type="number"
+          step="0.01"
+          value={variacao.preco}
+          onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
+          onBlur={() => onSalvarPreco?.(variacao.codigo)}
+          className="h-7 w-24"
+        />
+        <div className="min-w-[60px]">
+          <StatusInline status={statusPreco} />
+        </div>
+      </div>
       <div className="flex w-20 flex-col items-end leading-tight">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           Estoque

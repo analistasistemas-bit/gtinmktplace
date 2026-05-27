@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { VariacaoCard } from '@/components/variacao-card';
+import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import {
   useUpdateVariacaoPreco,
   useUpdateFamiliaTitulo,
@@ -11,10 +12,16 @@ import {
 } from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
 
+const FLASH_MS = 2000;
+
 export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const [titulo, setTitulo] = useState(familia.titulo);
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
+
+  const [tituloStatus, setTituloStatus] = useState<SaveStatus>(undefined);
+  const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
+  const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
 
   const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
@@ -28,23 +35,56 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, cor: novaCor } : v)));
   }
 
-  function salvarTitulo() {
-    if (titulo !== familia.titulo) {
-      updateTitulo.mutate({ id: familia.id, titulo });
+  function flash(setter: (s: SaveStatus) => void) {
+    setter('salvo');
+    setTimeout(() => setter(undefined), FLASH_MS);
+  }
+
+  function flashPreco(codigo: string, status: SaveStatus) {
+    setPrecoStatuses((s) => ({ ...s, [codigo]: status }));
+    if (status === 'salvo') {
+      setTimeout(() => {
+        setPrecoStatuses((s) => {
+          const copy = { ...s };
+          delete copy[codigo];
+          return copy;
+        });
+      }, FLASH_MS);
     }
   }
 
-  function salvarDescricao() {
-    if (descricao !== familia.descricao) {
-      updateDescricao.mutate({ id: familia.id, descricao });
+  async function salvarTitulo() {
+    if (titulo === familia.titulo) return;
+    setTituloStatus('salvando');
+    try {
+      await updateTitulo.mutateAsync({ id: familia.id, titulo });
+      flash(setTituloStatus);
+    } catch {
+      setTituloStatus('erro');
     }
   }
 
-  function salvarPreco(codigo: string) {
+  async function salvarDescricao() {
+    if (descricao === familia.descricao) return;
+    setDescricaoStatus('salvando');
+    try {
+      await updateDescricao.mutateAsync({ id: familia.id, descricao });
+      flash(setDescricaoStatus);
+    } catch {
+      setDescricaoStatus('erro');
+    }
+  }
+
+  async function salvarPreco(codigo: string) {
     const v = variacoes.find((x) => x.codigo === codigo);
     const original = familia.variacoes.find((x) => x.codigo === codigo);
-    if (v?.id && original && v.preco !== original.preco) {
-      updatePreco.mutate({ id: v.id, preco: v.preco });
+    if (!v?.id || !original || v.preco === original.preco) return;
+    flashPreco(codigo, 'salvando');
+    try {
+      await updatePreco.mutateAsync({ id: v.id, preco: v.preco });
+      flashPreco(codigo, 'salvo');
+    } catch {
+      flashPreco(codigo, 'erro');
     }
   }
 
@@ -67,14 +107,20 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
       )}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="mb-1 block text-xs font-semibold text-muted-foreground">TÍTULO</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-xs font-semibold text-muted-foreground">TÍTULO</label>
+            <StatusInline status={tituloStatus} />
+          </div>
           <Input
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
             onBlur={salvarTitulo}
           />
 
-          <label className="mb-1 mt-3 block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>
+          <div className="mb-1 mt-3 flex items-center justify-between">
+            <label className="block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>
+            <StatusInline status={descricaoStatus} />
+          </div>
           <Textarea
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
@@ -102,6 +148,7 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
               <VariacaoCard
                 key={v.codigo}
                 variacao={v}
+                statusPreco={precoStatuses[v.codigo]}
                 onMudarPreco={mudarPreco}
                 onMudarCor={mudarCor}
                 onSalvarPreco={salvarPreco}
