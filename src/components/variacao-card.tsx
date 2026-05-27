@@ -27,9 +27,14 @@ export function VariacaoCard({ variacao, onMudarPreco, onMudarCor }: VariacaoCar
         onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
         className="h-7 w-24"
       />
-      <span className="w-16 text-right text-xs text-muted-foreground">
-        estq {variacao.estoque}
-      </span>
+      <div className="flex w-20 flex-col items-end leading-tight">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Estoque
+        </span>
+        <span className="text-sm font-semibold tabular-nums">
+          {new Intl.NumberFormat('pt-BR').format(variacao.estoque)}
+        </span>
+      </div>
     </div>
   );
 }
