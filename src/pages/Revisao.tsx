@@ -15,9 +15,12 @@ export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: st
     if (filtro === 'CREATE' && f.operacao !== 'CREATE') return false;
     if (filtro === 'UPDATE' && f.operacao !== 'UPDATE') return false;
     if (filtro === 'avisos' && !f.precoAbaixo20pc) return false;
-    if (buscaLower && !f.titulo.toLowerCase().includes(buscaLower) && !f.codigoPai.includes(buscaLower))
-      return false;
-    return true;
+    if (!buscaLower) return true;
+    return (
+      f.titulo.toLowerCase().includes(buscaLower) ||
+      f.codigoPai.includes(buscaLower) ||
+      f.variacoes.some((v) => v.codigo.toLowerCase().includes(buscaLower))
+    );
   });
 }
 
