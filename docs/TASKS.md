@@ -2,8 +2,8 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-26 (quarta sessão — M1 implementado, aguardando walkthrough Diego)
-**Próximo passo recomendado:** **walkthrough manual em produção** (https://publiai-frontend.onrender.com) percorrendo as 6 telas. Após walkthrough, abrir Plano 03 (M2 — Backend core: schema + auth + Storage + Edge Function `ingest-lote`).
+**Última atualização:** 2026-05-27 — M2 técnico concluído, secrets + walkthrough pendente
+**Próximo passo recomendado:** Diego configura secrets do QStash, depois bug bash com planilha real; **OU** já partir para Plano 04 (M3 IA copywriting) em paralelo se preferir
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -36,7 +36,7 @@
 | Pré-implementação (brainstorming + ADRs) | ✅ |
 | M0 — Setup inicial | ✅ |
 | M1 — UI mockup com dados fake | ✅ (pendente walkthrough Diego) |
-| M2 — Backend core | ⬜ |
+| M2 — Backend core | 🟡 Concluído tecnicamente (secrets + bug bash pendentes) |
 | M3 — IA copywriting + Vision | ⬜ |
 | M4 — Integração Mercado Livre | ⬜ |
 | M5 — Polimento e testes | ⬜ |
@@ -190,60 +190,75 @@
 
 ## 🏁 M2 — Backend core
 
+### Status final (2026-05-27)
+
+**Pipeline técnico concluído** em 1 sessão (16 tasks via Subagent-Driven Development). Schema (4 tabelas + Vault), auth, upload real, edge functions (ingest-lote + process-familia stub), TanStack Query, Realtime — tudo deployado em produção. 59 testes passando.
+
+**Pendências bloqueantes para validação ponta-a-ponta:**
+- [ ] Diego: rodar `supabase login` e `supabase secrets set` para QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, OPENROUTER_API_KEY (todas estão em .env.local). Sem isso, `ingest-lote` vai falhar em runtime ao tentar `enfileirarFamilia`.
+  - Alternativa: configurar via dashboard Supabase → Project Settings → Edge Functions → Secrets
+- [ ] Diego: criar 1 usuário em Auth pelo cadastro do app (https://publiai-frontend.onrender.com/#/cadastro) e confirmar e-mail
+- [ ] Diego: bug bash com planilha real do sistema interno (5-15 famílias, 30-80 variações) — só viável após os 2 itens acima
+
+**Desvios vs spec original (documentados nos commits):**
+- pgsodium removido das migrations: extensão descontinuada pelo Supabase em 2024; supabase_vault 0.3.1 funciona standalone
+- xlsx@^0.20 → ^0.18.5: SheetJS moveu versões novas só pro CDN próprio; npm registry só vai até 0.18.5 (mesma API)
+- Migration `rls_initplan_fix` + `secure_trigger_and_indexes`: ajustes pós-review (auth.uid() wrap, revoke execute, drop índices redundantes)
+
 ### Schema do banco
 
-- [ ] Criar migration inicial com enums (status, operacao, cor_origem, estrategia_preco) — `~2h`
-- [ ] Criar tabelas `lotes`, `familias`, `variacoes`, `ml_credentials` — `~3h`
-- [ ] Criar políticas RLS por user_id em todas as tabelas — `~2h`
-- [ ] Configurar Supabase Vault para tokens criptografados — `~1h`
-- [ ] Gerar tipos TypeScript do schema (`supabase gen types`) — `~30 min`
-- [ ] Validar políticas RLS com testes manuais — `~2h`
+- [x] Criar migration inicial com enums (status, operacao, cor_origem, estrategia_preco) — `~2h`
+- [x] Criar tabelas `lotes`, `familias`, `variacoes`, `ml_credentials` — `~3h`
+- [x] Criar políticas RLS por user_id em todas as tabelas — `~2h`
+- [x] Configurar Supabase Vault para tokens criptografados — `~1h`
+- [x] Gerar tipos TypeScript do schema (`supabase gen types`) — `~30 min`
+- [x] Validar políticas RLS com testes manuais — `~2h`
 
 ### Autenticação
 
-- [ ] Tela de Login (email/senha) com Supabase Auth — `~3h`
-- [ ] Tela de Cadastro (email/senha) — `~2h`
-- [ ] Tela de Reset de senha — `~2h`
-- [ ] Middleware de rota protegida — `~1h`
-- [ ] Hook `useAuth` com Zustand — `~1h`
+- [x] Tela de Login (email/senha) com Supabase Auth — `~3h`
+- [x] Tela de Cadastro (email/senha) — `~2h`
+- [x] Tela de Reset de senha — `~2h`
+- [x] Middleware de rota protegida — `~1h`
+- [x] Hook `useAuth` com Zustand — `~1h`
 
 ### Storage
 
-- [ ] Criar bucket `imagens` privado no Supabase Storage — `~30 min`
-- [ ] Políticas RLS de Storage por user_id — `~1h`
-- [ ] Função helper para upload com retry — `~2h`
-- [ ] Função helper para gerar signed URL — `~30 min`
+- [x] Criar bucket `imagens` privado no Supabase Storage — `~30 min`
+- [x] Políticas RLS de Storage por user_id — `~1h`
+- [x] Função helper para upload com retry — `~2h`
+- [x] Função helper para gerar signed URL — `~30 min`
 
 ### Upload direto do frontend
 
-- [ ] Upload de planilha + imagens diretos pro Storage (chunks paralelos) — `~4h`
-- [ ] Barra de progresso real (não simulada) — `~2h`
-- [ ] Tratamento de erros de upload (rede, tamanho, tipo) — `~2h`
+- [x] Upload de planilha + imagens diretos pro Storage (chunks paralelos) — `~4h`
+- [x] Barra de progresso real (não simulada) — `~2h`
+- [x] Tratamento de erros de upload (rede, tamanho, tipo) — `~2h`
 
 ### Edge function `ingest-lote`
 
-- [ ] Setup base da edge function + tipos compartilhados — `~1h`
-- [ ] Parse de .xlsx usando SheetJS — `~2h`
-- [ ] Validação de colunas obrigatórias — `~2h`
-- [ ] Agrupamento por PAI (detecção do PAI=0) — `~2h`
-- [ ] Match de imagens por nome de arquivo (`00CODIGO.jpeg`) — `~2h`
-- [ ] Detecção de famílias já publicadas (query em `familias.ml_item_id`) — `~2h`
-- [ ] Persistência em `lotes` + `familias` + `variacoes` — `~3h`
-- [ ] Enfileiramento de jobs no QStash (via lib `lib/queue.ts`) — `~2h`
-- [ ] Retorno de `lote_id` para o frontend — `~30 min`
-- [ ] Tratamento de erros: planilha inválida, imagens órfãs, etc. — `~3h`
+- [x] Setup base da edge function + tipos compartilhados — `~1h`
+- [x] Parse de .xlsx usando SheetJS — `~2h`
+- [x] Validação de colunas obrigatórias — `~2h`
+- [x] Agrupamento por PAI (detecção do PAI=0) — `~2h`
+- [x] Match de imagens por nome de arquivo (`00CODIGO.jpeg`) — `~2h`
+- [x] Detecção de famílias já publicadas (query em `familias.ml_item_id`) — `~2h`
+- [x] Persistência em `lotes` + `familias` + `variacoes` — `~3h`
+- [x] Enfileiramento de jobs no QStash (via lib `lib/queue.ts`) — `~2h`
+- [x] Retorno de `lote_id` para o frontend — `~30 min`
+- [x] Tratamento de erros: planilha inválida, imagens órfãs, etc. — `~3h`
 
 ### Realtime no frontend
 
-- [ ] Hook `useLoteRealtime(loteId)` com Supabase channels — `~3h`
-- [ ] Atualização ao vivo da tela de Progresso — `~2h`
-- [ ] Reconexão automática se canal cai — `~1h`
+- [x] Hook `useLoteRealtime(loteId)` com Supabase channels — `~3h`
+- [x] Atualização ao vivo da tela de Progresso — `~2h`
+- [x] Reconexão automática se canal cai — `~1h`
 
 ### Bug bash do M2
 
-- [ ] Importar planilha real do Diego (exportada do sistema interno) — `~30 min`
+- [ ] Importar planilha real do Diego (exportada do sistema interno) — `~30 min` — *bloqueado por secrets do Edge runtime (ver Status final acima)*
 - [ ] Identificar edge cases e fixar — *variável*
-- [ ] Atualizar TASKS.md marcando M2 como completo
+- [x] Atualizar TASKS.md marcando M2 como completo
 
 ---
 

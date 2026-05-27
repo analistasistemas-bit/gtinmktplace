@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-26 (M1 implementado; walkthrough pendente)
-**Estado geral:** 🟢 M1 implementado em produção (https://publiai-frontend.onrender.com); aguardando walkthrough do Diego para encerrar oficialmente e iniciar M2
+**Última atualização:** 2026-05-27 (M2 técnico concluído via Plano 03)
+**Estado geral:** 🟢 M2 técnico concluído (2026-05-27); secrets QStash + bug bash pendentes; pronto pra iniciar M3 em paralelo
 
 ---
 
@@ -91,24 +91,34 @@ Site navegável em produção (https://publiai-frontend.onrender.com) com tema N
 
 ## 🏁 M2 — Backend core
 
-**Status:** ⬜ Não iniciado
-**Duração estimada:** 2 semanas
-**Bloqueia:** M3, M4 (precisam de schema e ingestão)
+**Status:** 🟡 Concluído tecnicamente (2026-05-27); validação ponta-a-ponta com planilha real pendente (depende de secrets do Diego)
+**Duração real:** 1 sessão via Plano 03 (16 tasks Subagent-Driven Development) vs 2 semanas estimadas
+**Bloqueia:** M4 publicação real (M3 IA copywriting pode rodar em paralelo)
 
 ### Objetivo
 Sistema aceita upload real de planilha + imagens, persiste no Supabase com schema e RLS corretos, autentica o usuário.
 
 ### Critérios de saída
-- [ ] Schema do banco implementado (4 tabelas + enums + RLS) — [ADR-0007](decisions/0007-modelo-de-dados-4-tabelas.md)
-- [ ] Supabase Auth funcionando (cadastro + login)
-- [ ] Upload de planilha e imagens diretos pro Storage
-- [ ] Edge function `ingest-lote` parseia .xlsx, agrupa por PAI, faz match imagens, persiste no banco
-- [ ] Detecção CREATE vs UPDATE funciona ([ADR-0005](decisions/0005-lifecycle-publish-and-update.md))
-- [ ] Tela de Progresso reflete atualizações reais via Realtime
-- [ ] Lote de teste real (planilha do Diego) é importado sem erros
+- [x] Schema do banco implementado (4 tabelas + enums + RLS) — [ADR-0007](decisions/0007-modelo-de-dados-4-tabelas.md)
+- [x] Supabase Auth funcionando (cadastro + login)
+- [x] Upload de planilha e imagens diretos pro Storage
+- [x] Edge function `ingest-lote` parseia .xlsx, agrupa por PAI, faz match imagens, persiste no banco
+- [x] Detecção CREATE vs UPDATE funciona ([ADR-0005](decisions/0005-lifecycle-publish-and-update.md))
+- [x] Tela de Progresso reflete atualizações reais via Realtime
+- [ ] Lote de teste real (planilha do Diego) é importado sem erros — *bloqueado por secrets do Edge runtime*
 
 ### Saída esperada
 Diego sobe planilha real → vê famílias e variações corretas no banco → tela mostra progresso ao vivo.
+
+### Desvios documentados ao concluir
+- **pgsodium removido das migrations** — extensão descontinuada pelo Supabase em 2024; supabase_vault 0.3.1 funciona standalone
+- **xlsx@^0.20 → ^0.18.5** — SheetJS moveu versões novas só pro CDN próprio; npm registry só vai até 0.18.5 (mesma API)
+- **Migrations `rls_initplan_fix` + `secure_trigger_and_indexes`** — ajustes pós-review (auth.uid() wrap em policies pra cachear no initplan, revoke execute em triggers, drop índices redundantes)
+
+### Pendências do operador para validação ponta-a-ponta
+1. `supabase login` + `supabase secrets set` para QSTASH_TOKEN, QSTASH_CURRENT_SIGNING_KEY, QSTASH_NEXT_SIGNING_KEY, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, OPENROUTER_API_KEY (todas estão em `.env.local`)
+2. Criar 1 usuário via tela de cadastro (https://publiai-frontend.onrender.com/#/cadastro) + confirmar e-mail
+3. Bug bash com planilha real (5-15 famílias, 30-80 variações)
 
 ---
 
@@ -289,3 +299,4 @@ Itens explicitamente para versões futuras:
 | 2026-05-26 | Criação inicial após brainstorming | Conclusão das 6 seções do design |
 | 2026-05-26 | M0 marcado ✅; estado geral → 🟢 | Plano 01 concluído em 3 sessões: Supabase URL/key + Upstash + Redis via MCP; `@supabase/supabase-js` + `src/lib/supabase.ts` (TDD); Edge Function `hello` deploy via MCP; Render Static Site com auto-deploy. Desvios documentados no card do M0. |
 | 2026-05-26 | M1 implementado ✅ (walkthrough pendente) | Plano 02 executado em 1 sessão via Subagent-Driven Development: 14 tasks de código + 1 task de docs. 50 famílias mock, 6 telas em produção, 45 testes passando. Desvios documentados no card do M1. |
+| 2026-05-27 | M2 técnico ✅ via Plano 03 (16 tasks Subagent-Driven Development) | Schema (4 tabelas + Vault), auth, upload real, edge functions ingest-lote + process-familia stub, TanStack Query + adapters, Realtime. 59 testes passando. Pendências: secrets QStash no Edge runtime + bug bash com planilha real (depende de ação manual do Diego). Desvios: pgsodium → supabase_vault standalone; xlsx 0.18.5. |
