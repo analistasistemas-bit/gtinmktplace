@@ -1,12 +1,12 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from './database.types';
 
 const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!url || !anonKey) {
-  throw new Error(
-    'Supabase env vars ausentes: VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY são obrigatórios. Verifique o .env.local.'
-  );
-}
+if (!url) throw new Error('VITE_SUPABASE_URL não definida');
+if (!anon) throw new Error('VITE_SUPABASE_ANON_KEY não definida');
 
-export const supabase: SupabaseClient = createClient(url, anonKey);
+export const supabase = createClient<Database>(url, anon, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+});
