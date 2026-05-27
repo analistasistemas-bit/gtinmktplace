@@ -6,9 +6,10 @@ interface VariacaoCardProps {
   variacao: Variacao;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
+  onSalvarPreco?: (codigo: string) => void;
 }
 
-export function VariacaoCard({ variacao, onMudarPreco, onMudarCor }: VariacaoCardProps) {
+export function VariacaoCard({ variacao, onMudarPreco, onMudarCor, onSalvarPreco }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   return (
     <div className="flex items-center gap-3 rounded-md bg-background p-2 text-sm">
@@ -36,6 +37,7 @@ export function VariacaoCard({ variacao, onMudarPreco, onMudarCor }: VariacaoCar
         step="0.01"
         value={variacao.preco}
         onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
+        onBlur={() => onSalvarPreco?.(variacao.codigo)}
         className="h-7 w-24"
       />
       <div className="flex w-20 flex-col items-end leading-tight">

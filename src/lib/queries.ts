@@ -79,6 +79,7 @@ export function loteFromRow(r: LoteRow): Lote {
 
 export function variacaoFromRow(r: VariacaoRow): Variacao {
   return {
+    id: r.id,
     codigo: r.codigo,
     cor: r.cor ?? '',
     corHex: r.cor_hex ?? '#cccccc',
@@ -87,6 +88,52 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     fotoPath: r.imagem_path ?? undefined,
     editadoPeloOperador: r.preco_editado_pelo_operador,
   };
+}
+
+// ============================================================================
+// Mutations: edição inline persiste no banco
+// ============================================================================
+
+export async function updateVariacaoPreco(
+  variacaoId: string,
+  novoPreco: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('variacoes')
+    .update({
+      preco_publicacao: novoPreco,
+      preco_editado_pelo_operador: true,
+    })
+    .eq('id', variacaoId);
+  if (error) throw error;
+}
+
+export async function updateFamiliaTitulo(
+  familiaId: string,
+  novoTitulo: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('familias')
+    .update({
+      titulo_ml: novoTitulo,
+      titulo_editado_pelo_operador: true,
+    })
+    .eq('id', familiaId);
+  if (error) throw error;
+}
+
+export async function updateFamiliaDescricao(
+  familiaId: string,
+  novaDescricao: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('familias')
+    .update({
+      descricao_ml: novaDescricao,
+      descricao_editada_pelo_operador: true,
+    })
+    .eq('id', familiaId);
+  if (error) throw error;
 }
 
 export function familiaFromRow(

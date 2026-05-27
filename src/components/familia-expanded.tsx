@@ -4,6 +4,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { VariacaoCard } from '@/components/variacao-card';
+import {
+  useUpdateVariacaoPreco,
+  useUpdateFamiliaTitulo,
+  useUpdateFamiliaDescricao,
+} from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
 
 export function FamiliaExpanded({ familia }: { familia: Familia }) {
@@ -11,12 +16,36 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
 
+  const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
+  const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
+  const updatePreco = useUpdateVariacaoPreco(familia.loteId);
+
   function mudarPreco(codigo: string, novoPreco: number) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, preco: novoPreco } : v)));
   }
 
   function mudarCor(codigo: string, novaCor: string) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, cor: novaCor } : v)));
+  }
+
+  function salvarTitulo() {
+    if (titulo !== familia.titulo) {
+      updateTitulo.mutate({ id: familia.id, titulo });
+    }
+  }
+
+  function salvarDescricao() {
+    if (descricao !== familia.descricao) {
+      updateDescricao.mutate({ id: familia.id, descricao });
+    }
+  }
+
+  function salvarPreco(codigo: string) {
+    const v = variacoes.find((x) => x.codigo === codigo);
+    const original = familia.variacoes.find((x) => x.codigo === codigo);
+    if (v?.id && original && v.preco !== original.preco) {
+      updatePreco.mutate({ id: v.id, preco: v.preco });
+    }
   }
 
   return (
@@ -39,12 +68,17 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="mb-1 block text-xs font-semibold text-muted-foreground">TÍTULO</label>
-          <Input value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+          <Input
+            value={titulo}
+            onChange={(e) => setTitulo(e.target.value)}
+            onBlur={salvarTitulo}
+          />
 
           <label className="mb-1 mt-3 block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>
           <Textarea
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
+            onBlur={salvarDescricao}
             rows={5}
           />
 
@@ -70,6 +104,7 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                 variacao={v}
                 onMudarPreco={mudarPreco}
                 onMudarCor={mudarCor}
+                onSalvarPreco={salvarPreco}
               />
             ))}
           </div>

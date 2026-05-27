@@ -31,6 +31,7 @@ export interface Lote {
 }
 
 export interface Variacao {
+  id?: string;
   codigo: string;
   cor: string;
   corHex: string;
