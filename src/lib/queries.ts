@@ -84,6 +84,7 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     corHex: r.cor_hex ?? '#cccccc',
     preco: Number(r.preco),
     estoque: r.estoque,
+    fotoPath: r.imagem_path ?? undefined,
     editadoPeloOperador: r.preco_editado_pelo_operador,
   };
 }
@@ -109,6 +110,7 @@ export function familiaFromRow(
     precoMin,
     precoMax,
     precoAbaixo20pc: false, // M4 detectará comparando com preço da planilha
+    fotoCapaPath: variacoes.find((v) => v.fotoPath)?.fotoPath,
     variacoes,
     editadoPeloOperador:
       r.titulo_editado_pelo_operador || r.descricao_editada_pelo_operador,

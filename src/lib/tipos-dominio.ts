@@ -36,7 +36,7 @@ export interface Variacao {
   corHex: string;
   preco: number;
   estoque: number;
-  fotoUrl?: string;
+  fotoPath?: string;
   editadoPeloOperador?: boolean;
 }
 
@@ -53,7 +53,7 @@ export interface Familia {
   precoMin: number;
   precoMax: number;
   precoAbaixo20pc: boolean;
-  fotoCapaUrl?: string;
+  fotoCapaPath?: string;
   variacoes: Variacao[];
   editadoPeloOperador?: boolean;
   status: FamiliaStatus;

@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { useImageUrl } from '@/hooks/useImageUrl';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 
@@ -17,6 +18,7 @@ function formatarBRL(valor: number): string {
 }
 
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir }: FamiliaRowProps) {
+  const { data: capaUrl } = useImageUrl(familia.fotoCapaPath);
   return (
     <div
       className={cn(
@@ -28,14 +30,23 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         checked={selecionada}
         onCheckedChange={(v) => onSelecionar(familia.id, v === true)}
       />
-      <div
-        className="h-8 w-8 rounded bg-muted"
-        style={
-          familia.variacoes[0]
-            ? { backgroundColor: familia.variacoes[0].corHex }
-            : undefined
-        }
-      />
+      {capaUrl ? (
+        <img
+          src={capaUrl}
+          alt={familia.titulo}
+          className="h-8 w-8 rounded border object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className="h-8 w-8 rounded bg-muted"
+          style={
+            familia.variacoes[0]
+              ? { backgroundColor: familia.variacoes[0].corHex }
+              : undefined
+          }
+        />
+      )}
       <div>
         <div className="font-medium">{familia.titulo}</div>
         <div className="text-xs text-muted-foreground">

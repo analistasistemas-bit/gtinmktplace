@@ -1,4 +1,5 @@
 import { Input } from '@/components/ui/input';
+import { useImageUrl } from '@/hooks/useImageUrl';
 import type { Variacao } from '@/lib/tipos-dominio';
 
 interface VariacaoCardProps {
@@ -8,13 +9,23 @@ interface VariacaoCardProps {
 }
 
 export function VariacaoCard({ variacao, onMudarPreco, onMudarCor }: VariacaoCardProps) {
+  const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   return (
     <div className="flex items-center gap-3 rounded-md bg-background p-2 text-sm">
-      <div
-        className="h-6 w-6 shrink-0 rounded"
-        style={{ backgroundColor: variacao.corHex }}
-        aria-label={`Cor ${variacao.cor}`}
-      />
+      {imgUrl ? (
+        <img
+          src={imgUrl}
+          alt={variacao.cor || variacao.codigo}
+          className="h-8 w-8 shrink-0 rounded object-cover"
+          loading="lazy"
+        />
+      ) : (
+        <div
+          className="h-8 w-8 shrink-0 rounded border"
+          style={{ backgroundColor: variacao.corHex }}
+          aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
+        />
+      )}
       <Input
         value={variacao.cor}
         onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}

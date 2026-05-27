@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Familia } from '@/lib/tipos-dominio';
 
 // Mocka useFamilias para devolver direto um array de famílias, evitando
@@ -52,12 +53,15 @@ vi.mock('@/hooks/useFamilias', () => ({
 import Revisao from '@/pages/Revisao';
 
 function renderRevisao() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter initialEntries={['/revisao/lote-42']}>
-      <Routes>
-        <Route path="/revisao/:loteId" element={<Revisao />} />
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={['/revisao/lote-42']}>
+        <Routes>
+          <Route path="/revisao/:loteId" element={<Revisao />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 

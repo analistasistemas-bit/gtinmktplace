@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FamiliaRow } from '@/components/familia-row';
 import type { Familia } from '@/lib/tipos-dominio';
+
+function renderWithClient(ui: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 const FAMILIA: Familia = {
   id: 'familia-1',
@@ -24,7 +30,7 @@ const FAMILIA: Familia = {
 
 describe('FamiliaRow', () => {
   it('mostra título, código PAI, operação e range de preço', () => {
-    render(
+    renderWithClient(
       <FamiliaRow
         familia={FAMILIA}
         selecionada={false}
@@ -40,7 +46,7 @@ describe('FamiliaRow', () => {
   });
 
   it('marca checkbox como checked quando selecionada=true', () => {
-    render(
+    renderWithClient(
       <FamiliaRow
         familia={FAMILIA}
         selecionada={true}
@@ -53,7 +59,7 @@ describe('FamiliaRow', () => {
   });
 
   it('mostra alerta de preço quando precoAbaixo20pc=true', () => {
-    render(
+    renderWithClient(
       <FamiliaRow
         familia={{ ...FAMILIA, precoAbaixo20pc: true }}
         selecionada={false}
