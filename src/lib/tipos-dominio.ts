@@ -12,6 +12,14 @@ export type EstrategiaPreco = 'PROPRIO' | 'COMPETITIVO';
 
 export type Concorrencia = 'sem' | 'moderada' | 'alta';
 
+export type FamiliaStatus =
+  | 'pendente'
+  | 'processando'
+  | 'pronto'
+  | 'publicando'
+  | 'publicado'
+  | 'erro';
+
 export interface Lote {
   id: string;
   numero: number;
@@ -48,4 +56,5 @@ export interface Familia {
   fotoCapaUrl?: string;
   variacoes: Variacao[];
   editadoPeloOperador?: boolean;
+  status: FamiliaStatus;
 }

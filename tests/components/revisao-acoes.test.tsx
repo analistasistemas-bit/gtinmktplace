@@ -20,6 +20,7 @@ const FAMILIAS_FAKE: Familia[] = [
     precoMax: 1,
     precoAbaixo20pc: false,
     variacoes: [],
+    status: 'pronto',
   },
   {
     id: 'b',
@@ -35,6 +36,7 @@ const FAMILIAS_FAKE: Familia[] = [
     precoMax: 1,
     precoAbaixo20pc: true,
     variacoes: [],
+    status: 'pronto',
   },
 ];
 

@@ -3,6 +3,7 @@ import type { Database } from './database.types';
 import type {
   Lote,
   Familia,
+  FamiliaStatus,
   Variacao,
   LoteStatus,
   OperacaoML,
@@ -111,5 +112,6 @@ export function familiaFromRow(
     variacoes,
     editadoPeloOperador:
       r.titulo_editado_pelo_operador || r.descricao_editada_pelo_operador,
+    status: r.status as FamiliaStatus,
   };
 }

@@ -1,55 +1,58 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
+import { useLote } from '@/hooks/useLotes';
+import { useFamilias } from '@/hooks/useFamilias';
+import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Progress } from '@/components/ui/progress';
-import { Stepper } from '@/components/stepper';
-
-const ETAPAS = [
-  'Upload concluído',
-  'Parse da planilha',
-  'Match de imagens',
-  'Detecção CREATE/UPDATE',
-  'Busca de concorrência',
-  'Geração de copy IA',
-];
 
 export default function Progresso() {
-  const { loteId } = useParams();
-  const navigate = useNavigate();
-  const [atual, setAtual] = useState(0);
+  const { loteId } = useParams<{ loteId: string }>();
+  const nav = useNavigate();
+  useLoteRealtime(loteId);
+
+  const { data: lote } = useLote(loteId);
+  const { data: familias = [] } = useFamilias(loteId);
 
   useEffect(() => {
-    if (atual >= ETAPAS.length) return;
-    const timer = setTimeout(() => setAtual((a) => a + 1), 2000);
-    return () => clearTimeout(timer);
-  }, [atual]);
+    if (lote?.status === 'revisao' || lote?.status === 'processando') {
+      const prontas = familias.filter((f) => f.status === 'pronto').length;
+      if (prontas > 0 && prontas === familias.length) {
+        nav(`/revisao/${loteId}`);
+      }
+    }
+  }, [lote, familias, loteId, nav]);
 
-  const concluido = atual >= ETAPAS.length;
-  const progressoPct = Math.min(100, Math.round((atual / ETAPAS.length) * 100));
+  if (!lote) {
+    return (
+      <div className="p-6 text-sm text-muted-foreground">Carregando…</div>
+    );
+  }
+
+  const total = lote.totalFamilias;
+  const prontas = familias.filter(
+    (f) => f.status === 'pronto' || f.status === 'publicado'
+  ).length;
+  const erradas = familias.filter((f) => f.status === 'erro').length;
+  const pct = total > 0 ? Math.round((prontas / total) * 100) : 0;
 
   return (
     <div className="p-6">
-      <h1 className="mb-1 text-2xl font-semibold">Processando lote</h1>
-      <p className="mb-4 text-sm text-muted-foreground">ID: {loteId}</p>
-
-      <div className="mx-auto max-w-2xl">
-        <Progress value={progressoPct} className="mb-4" />
-
-        <Stepper etapas={ETAPAS} atual={concluido ? ETAPAS.length : atual} />
-
-        <div className="mt-6 rounded-md border bg-card p-4 text-sm">
-          <div className="font-semibold mb-2">Resumo do lote</div>
-          <p className="text-muted-foreground">
-            38 famílias detectadas · 142 variações · 137 imagens matched · 5 órfãs
-          </p>
-        </div>
-
-        {concluido && (
-          <Button onClick={() => navigate('/revisao/lote-42')} size="lg" className="mt-6 w-full">
-            Revisar lote
-          </Button>
-        )}
+      <h1 className="mb-2 text-2xl font-semibold">Processando lote #{lote.numero}</h1>
+      <div className="mb-4 text-sm text-muted-foreground">
+        Status: <span className="font-medium">{lote.status}</span> · {prontas} de {total} prontas
+        {erradas > 0 && <> · {erradas} com erro</>}
       </div>
+      <Progress value={pct} className="h-2" />
+      <ul className="mt-6 space-y-1 text-sm">
+        {familias.map((f) => (
+          <li key={f.id} className="flex justify-between border-b py-1">
+            <span>
+              {f.codigoPai} — {f.titulo}
+            </span>
+            <span className="text-xs text-muted-foreground">{f.status}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
