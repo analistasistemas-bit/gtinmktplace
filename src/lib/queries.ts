@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { signedUrl } from './storage';
 import type { Database } from './database.types';
 import type {
   Lote,
@@ -171,6 +172,20 @@ export async function updateVariacaoCor(
     }
   } catch (e) {
     console.warn('Invalidação de cache falhou (não bloqueante):', e);
+  }
+}
+
+// ============================================================================
+// Storage helpers
+// ============================================================================
+
+/** Gera URL assinada (1h) para a capa de uma família. Retorna null se não há path. */
+export async function urlCapaFamilia(capaStoragePath: string | null | undefined): Promise<string | null> {
+  if (!capaStoragePath) return null;
+  try {
+    return await signedUrl('imagens', capaStoragePath, 60 * 60);
+  } catch {
+    return null;
   }
 }
 
