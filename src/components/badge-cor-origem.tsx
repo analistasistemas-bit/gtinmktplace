@@ -20,7 +20,7 @@ function BadgeComTooltip({ bg, icone, titulo }: { bg: string; icone: string; tit
       </span>
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-background shadow-md group-hover:block"
+        className="pointer-events-none absolute left-1/2 top-full z-[100] mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-neutral-900 px-2 py-1 text-[11px] text-white shadow-lg group-hover:block"
       >
         {titulo}
       </span>
