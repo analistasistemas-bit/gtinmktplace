@@ -1,16 +1,22 @@
-import { useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { AlertTriangle, Camera, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
+import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import {
   useUpdateVariacaoPreco,
   useUpdateVariacaoCor,
   useUpdateFamiliaTitulo,
   useUpdateFamiliaDescricao,
 } from '@/hooks/useFamiliaMutations';
+import { subirCapaFamilia, removerCapaFamilia } from '@/lib/upload-imagens';
+import { useImageUrl } from '@/hooks/useImageUrl';
+import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 
 const FLASH_MS = 2000;
@@ -24,6 +30,11 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
   const [corStatuses, setCorStatuses] = useState<Record<string, SaveStatus>>({});
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [trocando, setTrocando] = useState(false);
+  const qc = useQueryClient();
+  const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
 
   const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
@@ -117,8 +128,64 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
     }
   }
 
+  async function lidarTrocaCapa(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTrocando(true);
+    try {
+      await subirCapaFamilia(familia.loteId, familia.codigoPai, file);
+      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+    } catch (err) {
+      alert(`Erro ao trocar capa: ${(err as Error).message}`);
+    } finally {
+      setTrocando(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  async function lidarRemoverCapa() {
+    if (!familia.capaStoragePath) return;
+    if (!confirm('Remover capa desta família?')) return;
+    try {
+      await removerCapaFamilia(familia.id, familia.capaStoragePath);
+      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+    } catch (err) {
+      alert(`Erro ao remover capa: ${(err as Error).message}`);
+    }
+  }
+
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
+      <div className="mb-4 flex items-start gap-4 border-b pb-4">
+        <FotoCapaFamilia capaUrl={capaUrl ?? null} tamanho="large" />
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">Foto-capa do anúncio</span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => inputRef.current?.click()}
+              disabled={trocando}
+            >
+              <Camera className="mr-2 h-4 w-4" />
+              {familia.capaStoragePath ? 'Trocar foto' : 'Subir capa'}
+            </Button>
+            {familia.capaStoragePath && (
+              <Button variant="ghost" size="sm" onClick={lidarRemoverCapa}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Remover
+              </Button>
+            )}
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/jpg"
+            className="hidden"
+            onChange={lidarTrocaCapa}
+          />
+        </div>
+      </div>
       {familia.precoAbaixo20pc && (
         <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
