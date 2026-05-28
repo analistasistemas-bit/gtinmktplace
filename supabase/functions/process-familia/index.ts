@@ -1,8 +1,15 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
+import { extrairCorDoTexto } from '../_shared/cor/extrair.ts';
+import { pool } from '../_shared/concorrencia/pool.ts';
+import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
+import { extrairCorPorVision } from '../_shared/ai/vision.ts';
+import { gerarCopy } from '../_shared/ai/copywriter.ts';
 
 interface Job { familia_id: string; lote_id: string; }
+
+const POOL_VISION = 5;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -11,11 +18,8 @@ Deno.serve(async (req) => {
   }
 
   const body = await req.text();
-  // TODO(M3): restaurar verificação de assinatura QStash quando chaves estiverem
-  // confirmadas corretas no Supabase Vault. Bypassado para bug bash M2.
-  // const ok = await verificarAssinatura(req, body);
-  // if (!ok) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
-  void verificarAssinatura; // evita "unused import"
+  const ok = await verificarAssinatura(req, body);
+  if (!ok) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
 
   let job: Job;
   try {
@@ -29,37 +33,119 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
 
-  // Idempotência (ADR-0006): UPDATE atômico pendente → processando
+  // 1. Claim atômico (UPDATE pendente -> processando, RETURNING)
   const { data: claimed, error: claimErr } = await admin
     .from('familias')
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id')
     .maybeSingle();
   if (claimErr) {
-    return new Response(`Erro no claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
+    return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
   }
   if (!claimed) {
     return new Response('Already processed', { status: 200, headers: corsHeaders });
   }
 
+  const userId = claimed.user_id as string;
+
   try {
-    // === STUB DO M2 ===
-    // Real logic (IA, concorrência) entra em M3/M4. Por ora, só marca 'pronto'.
-    await admin
-      .from('familias')
-      .update({ status: 'pronto' })
-      .eq('id', job.familia_id);
-    // ==================
+    // 2. Carregar variações
+    const { data: variacoes, error: varErr } = await admin
+      .from('variacoes')
+      .select('id, codigo, cor, cor_origem, nome, preco, imagem_path')
+      .eq('familia_id', job.familia_id);
+    if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
+
+    type Variacao = NonNullable<typeof variacoes>[number];
+
+    // 3. Resolver cor de cada variação (pool máx 5 paralelas)
+    const resolvidas = await pool(POOL_VISION, variacoes ?? [], async (v: Variacao) => {
+      if (v.cor) return v;
+
+      // Camada 1 — dicionário
+      const corTexto = extrairCorDoTexto([
+        v.nome,
+        claimed.nome_pai,
+        claimed.descricao_pai,
+      ]);
+      if (corTexto) return { ...v, cor: corTexto, cor_origem: 'descricao' as OrigemCor };
+
+      // Cache Redis
+      try {
+        const cached = await cacheCorGet(userId, v.codigo);
+        if (cached) return { ...v, cor: cached.cor, cor_origem: cached.origem };
+      } catch (e) {
+        console.warn(`Cache miss (erro): ${(e as Error).message}`);
+      }
+
+      // Camada 2 — Vision (só se variação tem imagem)
+      if (!v.imagem_path) return v;
+      try {
+        const { data: signed, error: signErr } = await admin.storage
+          .from('imagens')
+          .createSignedUrl(v.imagem_path, 3600);
+        if (signErr || !signed?.signedUrl) return v;
+        const visionResult = await extrairCorPorVision(signed.signedUrl);
+        try {
+          await cacheCorSet(userId, v.codigo, { cor: visionResult.cor, origem: 'vision' });
+        } catch (e) {
+          console.warn(`Cache set falhou: ${(e as Error).message}`);
+        }
+        return { ...v, cor: visionResult.cor, cor_origem: 'vision' as OrigemCor };
+      } catch (e) {
+        console.warn(`Vision falhou para ${v.codigo}: ${(e as Error).message}`);
+        return v;
+      }
+    });
+
+    // 4. Persistir cores (UPDATE em batch — só as que mudaram)
+    const updatesVar = resolvidas
+      .filter((v, i) => {
+        const original = (variacoes ?? [])[i];
+        return v.cor !== original?.cor || v.cor_origem !== original?.cor_origem;
+      })
+      .map((v) =>
+        admin.from('variacoes')
+          .update({ cor: v.cor, cor_origem: v.cor_origem })
+          .eq('id', v.id)
+      );
+    await Promise.all(updatesVar);
+
+    // 5. Copywriter (1 chamada por família)
+    const copy = await gerarCopy({
+      nome: claimed.nome_pai,
+      descricao_detalhado: claimed.descricao_pai ?? '',
+      variacoes: resolvidas.map((v) => ({
+        codigo: v.codigo,
+        cor: v.cor,
+        preco: Number(v.preco),
+      })),
+    });
+
+    // 6. Persistir título + descrição + custos + status final
+    await admin.from('familias').update({
+      titulo_ml: copy.titulo,
+      descricao_ml: copy.descricao,
+      tokens_input: copy.tokens_input,
+      tokens_output: copy.tokens_output,
+      custo_centavos: copy.custo_centavos,
+      status: 'pronto',
+    }).eq('id', job.familia_id);
 
     return new Response('OK', { status: 200, headers: corsHeaders });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await admin
-      .from('familias')
-      .update({ status: 'erro', erro_mensagem: msg })
-      .eq('id', job.familia_id);
-    return new Response(`Erro: ${msg}`, { status: 500, headers: corsHeaders });
+    await admin.from('familias').update({
+      status: 'erro',
+      erro_mensagem: msg,
+    }).eq('id', job.familia_id);
+    // 5xx → QStash retenta. 4xx (já consumido com erro persistido) → 200.
+    const retry = !/4\d\d/.test(msg);
+    return new Response(`Erro: ${msg}`, {
+      status: retry ? 500 : 200,
+      headers: corsHeaders,
+    });
   }
 });
