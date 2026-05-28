@@ -1,9 +1,9 @@
 import type { CorOrigem } from '@/lib/tipos-dominio';
 
-const ESTILOS: Record<CorOrigem, { bg: string; rotulo: string }> = {
-  descricao: { bg: 'bg-neutral-200 text-neutral-700', rotulo: '📝 descrição' },
-  vision: { bg: 'bg-blue-100 text-blue-700', rotulo: '👁 IA Vision' },
-  manual: { bg: 'bg-green-100 text-green-700', rotulo: '✓ manual' },
+const ESTILOS: Record<CorOrigem, { bg: string; icone: string; titulo: string }> = {
+  descricao: { bg: 'bg-neutral-200 text-neutral-700', icone: '📝', titulo: 'Cor extraída do texto da descrição' },
+  vision: { bg: 'bg-blue-100 text-blue-700', icone: '👁', titulo: 'Cor identificada pela IA Vision (foto)' },
+  manual: { bg: 'bg-green-100 text-green-700', icone: '✓', titulo: 'Cor editada manualmente pelo operador' },
 };
 
 interface Props {
@@ -13,15 +13,21 @@ interface Props {
 export function BadgeCorOrigem({ origem }: Props) {
   if (!origem) {
     return (
-      <span className="inline-block whitespace-nowrap rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
-        ⚠ sem cor
+      <span
+        title="Sem cor identificada — revise"
+        className="inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-xs text-red-700"
+      >
+        ⚠
       </span>
     );
   }
   const e = ESTILOS[origem];
   return (
-    <span className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-medium ${e.bg}`}>
-      {e.rotulo}
+    <span
+      title={e.titulo}
+      className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs ${e.bg}`}
+    >
+      {e.icone}
     </span>
   );
 }
