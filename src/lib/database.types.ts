@@ -21,6 +21,7 @@ export type Database = {
           categoria_ml_id: string | null
           codigo_pai: string
           criado_em: string
+          custo_centavos: number | null
           descricao_editada_pelo_operador: boolean
           descricao_ml: string | null
           descricao_pai: string | null
@@ -47,6 +48,8 @@ export type Database = {
           tipo_origem: Database["public"]["Enums"]["tipo_origem"] | null
           titulo_editado_pelo_operador: boolean
           titulo_ml: string | null
+          tokens_input: number | null
+          tokens_output: number | null
           unidade: string | null
           user_id: string
         }
@@ -56,6 +59,7 @@ export type Database = {
           categoria_ml_id?: string | null
           codigo_pai: string
           criado_em?: string
+          custo_centavos?: number | null
           descricao_editada_pelo_operador?: boolean
           descricao_ml?: string | null
           descricao_pai?: string | null
@@ -82,6 +86,8 @@ export type Database = {
           tipo_origem?: Database["public"]["Enums"]["tipo_origem"] | null
           titulo_editado_pelo_operador?: boolean
           titulo_ml?: string | null
+          tokens_input?: number | null
+          tokens_output?: number | null
           unidade?: string | null
           user_id: string
         }
@@ -91,6 +97,7 @@ export type Database = {
           categoria_ml_id?: string | null
           codigo_pai?: string
           criado_em?: string
+          custo_centavos?: number | null
           descricao_editada_pelo_operador?: boolean
           descricao_ml?: string | null
           descricao_pai?: string | null
@@ -117,6 +124,8 @@ export type Database = {
           tipo_origem?: Database["public"]["Enums"]["tipo_origem"] | null
           titulo_editado_pelo_operador?: boolean
           titulo_ml?: string | null
+          tokens_input?: number | null
+          tokens_output?: number | null
           unidade?: string | null
           user_id?: string
         }
@@ -218,6 +227,7 @@ export type Database = {
           codigo: string
           comprimento_cm: number | null
           cor: string | null
+          cor_editada_pelo_operador: boolean
           cor_hex: string | null
           cor_origem: Database["public"]["Enums"]["cor_origem"] | null
           criado_em: string
@@ -242,6 +252,7 @@ export type Database = {
           codigo: string
           comprimento_cm?: number | null
           cor?: string | null
+          cor_editada_pelo_operador?: boolean
           cor_hex?: string | null
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
@@ -266,6 +277,7 @@ export type Database = {
           codigo?: string
           comprimento_cm?: number | null
           cor?: string | null
+          cor_editada_pelo_operador?: boolean
           cor_hex?: string | null
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
