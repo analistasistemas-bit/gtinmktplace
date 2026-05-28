@@ -7,6 +7,7 @@ import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import {
   useUpdateVariacaoPreco,
+  useUpdateVariacaoCor,
   useUpdateFamiliaTitulo,
   useUpdateFamiliaDescricao,
 } from '@/hooks/useFamiliaMutations';
@@ -22,10 +23,12 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const [tituloStatus, setTituloStatus] = useState<SaveStatus>(undefined);
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
+  const [corStatuses, setCorStatuses] = useState<Record<string, SaveStatus>>({});
 
   const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
   const updatePreco = useUpdateVariacaoPreco(familia.loteId);
+  const updateCor = useUpdateVariacaoCor(familia.loteId);
 
   function mudarPreco(codigo: string, novoPreco: number) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, preco: novoPreco } : v)));
@@ -85,6 +88,32 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
       flashPreco(codigo, 'salvo');
     } catch {
       flashPreco(codigo, 'erro');
+    }
+  }
+
+  function flashCor(codigo: string, status: SaveStatus) {
+    setCorStatuses((s) => ({ ...s, [codigo]: status }));
+    if (status === 'salvo') {
+      setTimeout(() => {
+        setCorStatuses((s) => {
+          const copy = { ...s };
+          delete copy[codigo];
+          return copy;
+        });
+      }, FLASH_MS);
+    }
+  }
+
+  async function salvarCor(codigo: string) {
+    const v = variacoes.find((x) => x.codigo === codigo);
+    const original = familia.variacoes.find((x) => x.codigo === codigo);
+    if (!v?.id || !original || v.cor === original.cor) return;
+    flashCor(codigo, 'salvando');
+    try {
+      await updateCor.mutateAsync({ id: v.id, codigo: v.codigo, cor: v.cor });
+      flashCor(codigo, 'salvo');
+    } catch {
+      flashCor(codigo, 'erro');
     }
   }
 
@@ -150,9 +179,11 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                 variacao={v}
                 loteId={familia.loteId}
                 statusPreco={precoStatuses[v.codigo]}
+                statusCor={corStatuses[v.codigo]}
                 onMudarPreco={mudarPreco}
                 onMudarCor={mudarCor}
                 onSalvarPreco={salvarPreco}
+                onSalvarCor={salvarCor}
               />
             ))}
           </div>

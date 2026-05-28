@@ -49,8 +49,13 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       )}
       <div>
         <div className="font-medium">{familia.titulo}</div>
-        <div className="text-xs text-muted-foreground">
-          PAI {familia.codigoPai} · {familia.variacoes.length} cores
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
+          {familia.variacoesSemCor > 0 && (
+            <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+              ⚠ {familia.variacoesSemCor} sem cor
+            </span>
+          )}
         </div>
       </div>
       <Badge variant={familia.operacao === 'CREATE' ? 'default' : 'secondary'}>

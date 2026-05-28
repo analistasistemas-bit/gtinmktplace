@@ -138,6 +138,42 @@ export async function updateFamiliaDescricao(
   if (error) throw error;
 }
 
+export async function updateVariacaoCor(
+  variacaoId: string,
+  codigo: string,
+  novaCor: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('variacoes')
+    .update({
+      cor: novaCor,
+      cor_origem: 'manual',
+      cor_editada_pelo_operador: true,
+    })
+    .eq('id', variacaoId);
+  if (error) throw error;
+
+  // Invalida cache Redis (não bloqueante — se Redis falhar, log mas segue)
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invalidar-cache-cor`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ codigo }),
+        }
+      );
+    }
+  } catch (e) {
+    console.warn('Invalidação de cache falhou (não bloqueante):', e);
+  }
+}
+
 export function familiaFromRow(
   r: FamiliaRow & { variacoes: VariacaoRow[] }
 ): Familia {

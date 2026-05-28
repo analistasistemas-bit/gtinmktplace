@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { BotaoTrocarFoto } from '@/components/botao-trocar-foto';
+import { BadgeCorOrigem } from '@/components/badge-cor-origem';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
@@ -12,18 +13,22 @@ interface VariacaoCardProps {
   variacao: Variacao;
   loteId: string;
   statusPreco?: SaveStatus;
+  statusCor?: SaveStatus;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
   onSalvarPreco?: (codigo: string) => void;
+  onSalvarCor?: (codigo: string) => void;
 }
 
 export function VariacaoCard({
   variacao,
   loteId,
   statusPreco,
+  statusCor,
   onMudarPreco,
   onMudarCor,
   onSalvarPreco,
+  onSalvarCor,
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
@@ -60,11 +65,18 @@ export function VariacaoCard({
         />
       )}
       <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
-      <Input
-        value={variacao.cor}
-        onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
-        className="h-7 flex-1"
-      />
+      <div className="flex flex-1 items-center gap-2">
+        <Input
+          value={variacao.cor}
+          onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
+          onBlur={() => onSalvarCor?.(variacao.codigo)}
+          className="h-7 flex-1"
+        />
+        <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
+        <div className="min-w-[60px]">
+          <StatusInline status={statusCor} />
+        </div>
+      </div>
       <div className="flex items-center gap-1">
         <Input
           type="number"
