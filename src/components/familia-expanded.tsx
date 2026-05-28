@@ -230,7 +230,14 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => regenerar.mutate(familia.id)}
+              onClick={() =>
+                regenerar.mutate(familia.id, {
+                  onSuccess: (data) => {
+                    setTitulo(data.titulo);
+                    setDescricao(data.descricao);
+                  },
+                })
+              }
               disabled={regenerar.isPending}
             >
               <Sparkles className="mr-2 h-4 w-4" />
