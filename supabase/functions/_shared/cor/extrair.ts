@@ -1,4 +1,4 @@
-import { DICIONARIO_CORES } from './dicionario';
+import { DICIONARIO_CORES } from './dicionario.ts';
 
 interface Termo {
   canonica: string;
