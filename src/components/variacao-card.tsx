@@ -1,10 +1,16 @@
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
+import { BotaoTrocarFoto } from '@/components/botao-trocar-foto';
 import { useImageUrl } from '@/hooks/useImageUrl';
+import { uploadImagensLote } from '@/lib/upload-imagens';
+import { QK } from '@/lib/queries';
 import type { Variacao } from '@/lib/tipos-dominio';
 
 interface VariacaoCardProps {
   variacao: Variacao;
+  loteId: string;
   statusPreco?: SaveStatus;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
@@ -13,12 +19,30 @@ interface VariacaoCardProps {
 
 export function VariacaoCard({
   variacao,
+  loteId,
   statusPreco,
   onMudarPreco,
   onMudarCor,
   onSalvarPreco,
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
+  const qc = useQueryClient();
+  const [trocaStatus, setTrocaStatus] = useState<SaveStatus>(undefined);
+
+  async function lidarTrocaFoto(arquivo: File) {
+    const ext = arquivo.name.split('.').pop()?.toLowerCase() ?? 'jpeg';
+    const renomeado = new File([arquivo], `${variacao.codigo}.${ext}`, { type: arquivo.type });
+    setTrocaStatus('salvando');
+    try {
+      await uploadImagensLote(loteId, [renomeado]);
+      qc.invalidateQueries({ queryKey: QK.familias(loteId) });
+      setTrocaStatus('salvo');
+      setTimeout(() => setTrocaStatus(undefined), 2000);
+    } catch {
+      setTrocaStatus('erro');
+    }
+  }
+
   return (
     <div className="flex items-center gap-3 rounded-md bg-background p-2 text-sm">
       {imgUrl ? (
@@ -35,6 +59,7 @@ export function VariacaoCard({
           aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
         />
       )}
+      <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
       <Input
         value={variacao.cor}
         onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
@@ -50,7 +75,7 @@ export function VariacaoCard({
           className="h-7 w-24"
         />
         <div className="min-w-[60px]">
-          <StatusInline status={statusPreco} />
+          <StatusInline status={statusPreco ?? trocaStatus} />
         </div>
       </div>
       <div className="flex w-20 flex-col items-end leading-tight">

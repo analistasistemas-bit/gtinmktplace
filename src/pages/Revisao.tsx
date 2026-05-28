@@ -1,10 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
+import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
 import { useFamilias } from '@/hooks/useFamilias';
+import { uploadImagensLote } from '@/lib/upload-imagens';
+import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos';
@@ -31,8 +35,31 @@ export default function Revisao() {
   const [busca, setBusca] = useState('');
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const qc = useQueryClient();
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
+
+  async function lidarArquivosDrop(arquivos: File[]) {
+    if (!loteId) return;
+    setUploadStatus(`Enviando ${arquivos.length} imagem(ns)...`);
+    try {
+      const r = await uploadImagensLote(loteId, arquivos);
+      const partes = [
+        `${r.ok} nova(s)`,
+        `${r.ja_tinha} substituída(s)`,
+        `${r.sem_match} sem match`,
+      ];
+      if (r.erros.length) partes.push(`${r.erros.length} erro(s)`);
+      setUploadStatus(`✓ ${partes.join(' · ')}`);
+      qc.invalidateQueries({ queryKey: QK.familias(loteId) });
+      if (r.erros.length) console.error('Erros no upload:', r.erros);
+      setTimeout(() => setUploadStatus(null), 4000);
+    } catch (e) {
+      setUploadStatus(`✗ ${(e as Error).message}`);
+      setTimeout(() => setUploadStatus(null), 6000);
+    }
+  }
 
   function toggleSelecao(id: string, valor: boolean) {
     setSelecionadas((prev) => {
@@ -90,6 +117,14 @@ export default function Revisao() {
         <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
           Famílias com preço sugerido <strong>abaixo de 20%</strong> do preço da sua planilha.
           Reveja antes de aprovar para não vender no prejuízo.
+        </div>
+      )}
+      {loteId && (
+        <div className="border-b bg-background px-3 py-2">
+          <DropZoneImagensExistente onArquivos={lidarArquivosDrop} />
+          {uploadStatus && (
+            <div className="mt-2 text-xs text-muted-foreground">{uploadStatus}</div>
+          )}
         </div>
       )}
       <div className="flex-1 overflow-auto">

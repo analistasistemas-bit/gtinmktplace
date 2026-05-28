@@ -148,6 +148,7 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
               <VariacaoCard
                 key={v.codigo}
                 variacao={v}
+                loteId={familia.loteId}
                 statusPreco={precoStatuses[v.codigo]}
                 onMudarPreco={mudarPreco}
                 onMudarCor={mudarCor}
