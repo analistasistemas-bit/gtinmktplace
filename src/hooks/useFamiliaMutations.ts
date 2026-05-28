@@ -6,6 +6,7 @@ import {
   updateFamiliaDescricao,
   QK,
 } from '@/lib/queries';
+import { regenerarCopyFamilia } from '@/lib/ai-copy';
 
 export function useUpdateVariacaoPreco(loteId: string) {
   const qc = useQueryClient();
@@ -39,6 +40,14 @@ export function useUpdateFamiliaDescricao(loteId: string) {
   return useMutation({
     mutationFn: ({ id, descricao }: { id: string; descricao: string }) =>
       updateFamiliaDescricao(id, descricao),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useRegenerarCopy(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (familiaId: string) => regenerarCopyFamilia(familiaId),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

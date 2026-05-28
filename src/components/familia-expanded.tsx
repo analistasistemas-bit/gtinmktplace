@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Camera, Trash2 } from 'lucide-react';
+import { AlertTriangle, Camera, Sparkles, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,7 @@ import {
   useUpdateVariacaoCor,
   useUpdateFamiliaTitulo,
   useUpdateFamiliaDescricao,
+  useRegenerarCopy,
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia } from '@/lib/upload-imagens';
 import { useImageUrl } from '@/hooks/useImageUrl';
@@ -40,6 +41,7 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
   const updatePreco = useUpdateVariacaoPreco(familia.loteId);
   const updateCor = useUpdateVariacaoCor(familia.loteId);
+  const regenerar = useRegenerarCopy(familia.loteId);
 
   function mudarPreco(codigo: string, novoPreco: number) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, preco: novoPreco } : v)));
@@ -223,6 +225,18 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
             onBlur={salvarDescricao}
             rows={5}
           />
+
+          <div className="mt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => regenerar.mutate(familia.id)}
+              disabled={regenerar.isPending}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              {regenerar.isPending ? 'Gerando…' : 'Regenerar descrição'}
+            </Button>
+          </div>
 
           <div className="mt-4 flex items-center gap-2">
             <Badge variant={familia.estrategiaPreco === 'PROPRIO' ? 'outline' : 'secondary'}>
