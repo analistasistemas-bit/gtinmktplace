@@ -10,24 +10,34 @@ interface Props {
   origem: CorOrigem | null;
 }
 
+function BadgeComTooltip({ bg, icone, titulo }: { bg: string; icone: string; titulo: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <span
+        className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs ${bg}`}
+      >
+        {icone}
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-background shadow-md group-hover:block"
+      >
+        {titulo}
+      </span>
+    </span>
+  );
+}
+
 export function BadgeCorOrigem({ origem }: Props) {
   if (!origem) {
     return (
-      <span
-        title="Sem cor identificada — revise"
-        className="inline-flex h-6 w-6 items-center justify-center rounded bg-red-100 text-xs text-red-700"
-      >
-        ⚠
-      </span>
+      <BadgeComTooltip
+        bg="bg-red-100 text-red-700"
+        icone="⚠"
+        titulo="Sem cor identificada — revise"
+      />
     );
   }
   const e = ESTILOS[origem];
-  return (
-    <span
-      title={e.titulo}
-      className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs ${e.bg}`}
-    >
-      {e.icone}
-    </span>
-  );
+  return <BadgeComTooltip bg={e.bg} icone={e.icone} titulo={e.titulo} />;
 }
