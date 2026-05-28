@@ -9,7 +9,10 @@ export default mergeConfig(
       environment: 'jsdom',
       globals: true,
       setupFiles: ['./src/test/setup.ts'],
-      include: ['./tests/**/*.test.{ts,tsx}'],
+      include: [
+        './tests/**/*.test.{ts,tsx}',
+        './supabase/functions/**/__tests__/**/*.test.ts',
+      ],
     },
   })
 );
