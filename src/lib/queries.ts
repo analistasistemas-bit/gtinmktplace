@@ -83,6 +83,8 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     codigo: r.codigo,
     cor: r.cor ?? '',
     corHex: r.cor_hex ?? '#cccccc',
+    corOrigem: r.cor_origem,
+    corEditadaPeloOperador: r.cor_editada_pelo_operador,
     preco: Number(r.preco),
     estoque: r.estoque,
     fotoPath: r.imagem_path ?? undefined,
@@ -162,5 +164,11 @@ export function familiaFromRow(
     editadoPeloOperador:
       r.titulo_editado_pelo_operador || r.descricao_editada_pelo_operador,
     status: r.status as FamiliaStatus,
+    tokensInput: r.tokens_input,
+    tokensOutput: r.tokens_output,
+    custoCentavos: r.custo_centavos,
+    tituloEditadoPeloOperador: r.titulo_editado_pelo_operador,
+    descricaoEditadaPeloOperador: r.descricao_editada_pelo_operador,
+    variacoesSemCor: variacoes.filter((v) => !v.cor).length,
   };
 }

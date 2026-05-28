@@ -30,11 +30,15 @@ export interface Lote {
   totalErros: number;
 }
 
+export type CorOrigem = 'descricao' | 'vision' | 'manual';
+
 export interface Variacao {
   id?: string;
   codigo: string;
   cor: string;
   corHex: string;
+  corOrigem: CorOrigem | null;
+  corEditadaPeloOperador: boolean;
   preco: number;
   estoque: number;
   fotoPath?: string;
@@ -58,4 +62,10 @@ export interface Familia {
   variacoes: Variacao[];
   editadoPeloOperador?: boolean;
   status: FamiliaStatus;
+  tokensInput: number | null;
+  tokensOutput: number | null;
+  custoCentavos: number | null;
+  tituloEditadoPeloOperador: boolean;
+  descricaoEditadaPeloOperador: boolean;
+  variacoesSemCor: number;
 }
