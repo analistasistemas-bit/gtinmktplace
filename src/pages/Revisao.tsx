@@ -46,9 +46,11 @@ export default function Revisao() {
     try {
       const r = await uploadImagensLote(loteId, arquivos);
       const partes = [
-        `${r.ok} nova(s)`,
-        `${r.ja_tinha} substituída(s)`,
-        `${r.sem_match} sem match`,
+        `${r.ok} cor(es) nova(s)`,
+        `${r.ja_tinha} cor(es) substituída(s)`,
+        `${r.sem_match} cor(es) sem match`,
+        `${r.capas_ok} capa(s)`,
+        `${r.capas_sem_match} capa(s) sem match`,
       ];
       if (r.erros.length) partes.push(`${r.erros.length} erro(s)`);
       setUploadStatus(`✓ ${partes.join(' · ')}`);
