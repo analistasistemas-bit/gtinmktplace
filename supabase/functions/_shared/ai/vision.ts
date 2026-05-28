@@ -14,8 +14,11 @@ const PROMPT = `Você é um identificador de cor de produto. Recebe a foto de um
 Responda APENAS com o nome da cor predominante, em português, escolhendo entre estas opções canônicas:
 [Preto, Branco, Vermelho, Azul Royal, Azul Marinho, Azul Claro, Verde Bandeira, Verde Musgo, Verde Claro, Amarelo, Laranja, Rosa, Pink, Roxo, Marrom, Bege, Cru, Cinza, Prata, Dourado, Rosa Neon, Verde Neon, Outra]
 
-Se não conseguir identificar, responda "Outra".
-Não explique, não adicione contexto, devolva apenas o nome da cor.`;
+REGRAS:
+1. Avalie a cor do PRODUTO em si (linha, botão, fita), ignorando fundo, papel da etiqueta, embalagem ou reflexos.
+2. Se a cor for muito escura (próxima de preto), responda "Preto" — não confunda com Azul Marinho a menos que tenha um azul visível claramente.
+3. Se houver QUALQUER dúvida entre duas cores, ou se a iluminação distorce a cor, responda "Outra" — o operador valida manualmente.
+4. Não explique, não adicione contexto, devolva apenas o nome da cor.`;
 
 export interface ResultadoVision {
   cor: string;

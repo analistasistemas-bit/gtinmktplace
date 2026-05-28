@@ -34,22 +34,24 @@ const SCHEMA = {
 const SYSTEM = `Você é um copywriter especializado em anúncios de aviamentos (linhas de costura, botões, fitas) no Mercado Livre Brasil. Sua tarefa: gerar título e descrição para UM anúncio agrupado que contém várias variações de cor do mesmo produto.
 
 REGRAS INEGOCIÁVEIS:
-1. NUNCA invente especificações que não estão no input (composição, gramatura, dimensões, marca, certificações). Use APENAS o que está em "DESCRICAO_DETALHADO".
-2. Título: até 60 caracteres, frase comercial, idealmente menciona a quantidade de cores disponíveis no final.
-3. Descrição: use os dados de DESCRICAO_DETALHADO como verdade absoluta. Pode reorganizar, formatar em parágrafos, adicionar separadores, mas NÃO acrescentar informações novas.
-4. Tom: profissional, direto, focado em utilidade do produto.
-5. Liste as cores disponíveis em uma seção da descrição.`;
+1. NUNCA invente ESPECIFICAÇÕES TÉCNICAS que não estão no input (composição, gramatura exata, dimensões, marca, certificações, normas ISO/INMETRO). Use APENAS o que está em "DESCRICAO_DETALHADO" para essas especificações.
+2. Título: até 60 caracteres, frase comercial focada no produto. NUNCA mencione quantidade de cores nem use expressões como "Disponível em N cores", "N Cores Disponíveis" ou similares no título.
+3. Descrição: use os dados de DESCRICAO_DETALHADO como verdade absoluta para especificações técnicas. Pode reorganizar, formatar em parágrafos e adicionar separadores.
+4. SEMPRE inclua uma seção "Aplicações" ou "Para que serve" na descrição com 1-2 frases sobre o uso típico do tipo de aviamento (ex.: linha de costura serve para costura em geral, reparos, artesanato; fita de cetim serve para acabamento, embalagens, decoração; botão serve para fechamento de peças, customização). Essas aplicações genéricas SÃO PERMITIDAS por serem conhecimento de domínio público — só não invente specs técnicas.
+5. Tom: profissional, direto, focado em utilidade do produto.
+6. Liste APENAS os nomes das cores disponíveis em uma seção da descrição. NUNCA inclua códigos de produto, preços, estoques ou qualquer número ao lado das cores. Exemplo CORRETO: "- Preto" / "- Branco". Exemplo PROIBIDO: "- Preto (Código: 123) - R$ 5,00" ou "- Branco - R$ 5,85".`;
 
 function montarUserPrompt(input: InputCopy): string {
-  const lista = input.variacoes
-    .map((v) => `- ${v.codigo}: ${v.cor ?? '(sem cor)'} — R$ ${v.preco.toFixed(2)}`)
-    .join('\n');
+  const coresUnicas = Array.from(
+    new Set(input.variacoes.map((v) => v.cor ?? '(sem cor identificada)'))
+  );
+  const lista = coresUnicas.map((c) => `- ${c}`).join('\n');
   return [
     `Nome do produto: ${input.nome}`,
     `Descrição detalhada (fonte de verdade):`,
     input.descricao_detalhado,
     ``,
-    `Variações disponíveis (${input.variacoes.length} cores):`,
+    `Cores disponíveis:`,
     lista,
     input.categoria_hint ? `Categoria sugerida: ${input.categoria_hint}` : '',
   ].filter(Boolean).join('\n');
