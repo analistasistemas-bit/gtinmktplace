@@ -41,6 +41,7 @@ export interface Variacao {
   corEditadaPeloOperador: boolean;
   preco: number;
   estoque: number;
+  gtin: string | null;
   fotoPath?: string;
   editadoPeloOperador?: boolean;
 }

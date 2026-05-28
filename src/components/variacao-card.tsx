@@ -14,10 +14,13 @@ interface VariacaoCardProps {
   loteId: string;
   statusPreco?: SaveStatus;
   statusCor?: SaveStatus;
+  statusGtin?: SaveStatus;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
+  onMudarGtin: (codigo: string, novoGtin: string) => void;
   onSalvarPreco?: (codigo: string) => void;
   onSalvarCor?: (codigo: string) => void;
+  onSalvarGtin?: (codigo: string) => void;
 }
 
 export function VariacaoCard({
@@ -25,10 +28,13 @@ export function VariacaoCard({
   loteId,
   statusPreco,
   statusCor,
+  statusGtin,
   onMudarPreco,
   onMudarCor,
+  onMudarGtin,
   onSalvarPreco,
   onSalvarCor,
+  onSalvarGtin,
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
@@ -49,35 +55,51 @@ export function VariacaoCard({
   }
 
   return (
-    <div className="flex items-center gap-3 rounded-md bg-background p-2 text-sm">
+    <div className="flex items-start gap-3 rounded-md bg-background p-2 text-sm">
       {imgUrl ? (
         <img
           src={imgUrl}
           alt={variacao.cor || variacao.codigo}
-          className="h-8 w-8 shrink-0 rounded object-cover"
+          className="mt-0.5 h-8 w-8 shrink-0 rounded object-cover"
           loading="lazy"
         />
       ) : (
         <div
-          className="h-8 w-8 shrink-0 rounded border"
+          className="mt-0.5 h-8 w-8 shrink-0 rounded border"
           style={{ backgroundColor: variacao.corHex }}
           aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
         />
       )}
       <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
-      <div className="flex flex-1 items-center gap-2">
-        <Input
-          value={variacao.cor}
-          onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
-          onBlur={() => onSalvarCor?.(variacao.codigo)}
-          className="h-7 flex-1"
-        />
-        <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
-        <div className="min-w-[60px]">
-          <StatusInline status={statusCor} />
+      <div className="flex flex-1 flex-col gap-1">
+        {/* Linha 1: cor */}
+        <div className="flex items-center gap-2">
+          <Input
+            value={variacao.cor}
+            onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
+            onBlur={() => onSalvarCor?.(variacao.codigo)}
+            className="h-7 flex-1"
+          />
+          <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
+          <div className="min-w-[60px]">
+            <StatusInline status={statusCor} />
+          </div>
+        </div>
+        {/* Linha 2: EAN/GTIN */}
+        <div className="flex items-center gap-2">
+          <Input
+            value={variacao.gtin ?? ''}
+            onChange={(e) => onMudarGtin(variacao.codigo, e.target.value)}
+            onBlur={() => onSalvarGtin?.(variacao.codigo)}
+            placeholder="EAN/GTIN"
+            className="h-6 flex-1 border-muted bg-muted/40 text-xs text-muted-foreground placeholder:text-muted-foreground/60"
+          />
+          <div className="min-w-[60px]">
+            <StatusInline status={statusGtin} />
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 pt-0.5">
         <Input
           type="number"
           step="0.01"
@@ -90,7 +112,7 @@ export function VariacaoCard({
           <StatusInline status={statusPreco ?? trocaStatus} />
         </div>
       </div>
-      <div className="flex w-20 flex-col items-end leading-tight">
+      <div className="flex w-20 flex-col items-end leading-tight pt-0.5">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           Estoque
         </span>

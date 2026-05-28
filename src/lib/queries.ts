@@ -88,6 +88,7 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     corEditadaPeloOperador: r.cor_editada_pelo_operador,
     preco: Number(r.preco),
     estoque: r.estoque,
+    gtin: r.gtin,
     fotoPath: r.imagem_path ?? undefined,
     editadoPeloOperador: r.preco_editado_pelo_operador,
   };
@@ -173,6 +174,17 @@ export async function updateVariacaoCor(
   } catch (e) {
     console.warn('Invalidação de cache falhou (não bloqueante):', e);
   }
+}
+
+export async function updateVariacaoGtin(
+  variacaoId: string,
+  gtin: string | null
+): Promise<void> {
+  const { error } = await supabase
+    .from('variacoes')
+    .update({ gtin })
+    .eq('id', variacaoId);
+  if (error) throw error;
 }
 
 // ============================================================================
