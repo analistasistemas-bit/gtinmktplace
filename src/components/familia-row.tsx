@@ -18,7 +18,7 @@ function formatarBRL(valor: number): string {
 }
 
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir }: FamiliaRowProps) {
-  const { data: capaUrl } = useImageUrl(familia.fotoCapaPath);
+  const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   return (
     <div
       className={cn(
