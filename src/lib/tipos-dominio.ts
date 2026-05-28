@@ -59,6 +59,7 @@ export interface Familia {
   precoMax: number;
   precoAbaixo20pc: boolean;
   fotoCapaPath?: string;
+  capaStoragePath: string | null;
   variacoes: Variacao[];
   editadoPeloOperador?: boolean;
   status: FamiliaStatus;

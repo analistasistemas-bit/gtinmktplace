@@ -196,6 +196,7 @@ export function familiaFromRow(
     precoMax,
     precoAbaixo20pc: false, // M4 detectará comparando com preço da planilha
     fotoCapaPath: variacoes.find((v) => v.fotoPath)?.fotoPath,
+    capaStoragePath: r.capa_storage_path,
     variacoes,
     editadoPeloOperador:
       r.titulo_editado_pelo_operador || r.descricao_editada_pelo_operador,
