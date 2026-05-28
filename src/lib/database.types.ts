@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           atributos_ml: Json
           atualizado_em: string
+          capa_storage_path: string | null
           categoria_ml_id: string | null
           codigo_pai: string
           criado_em: string
@@ -56,6 +57,7 @@ export type Database = {
         Insert: {
           atributos_ml?: Json
           atualizado_em?: string
+          capa_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai: string
           criado_em?: string
@@ -94,6 +96,7 @@ export type Database = {
         Update: {
           atributos_ml?: Json
           atualizado_em?: string
+          capa_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai?: string
           criado_em?: string
