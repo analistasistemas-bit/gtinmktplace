@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-28 (M3 concluído após bug bash + iteração do prompt)
-**Estado geral:** 🟢 M0+M1+M2+M3 + trilho ML concluídos; M4 (Integração Mercado Livre) liberado para iniciar
+**Última atualização:** 2026-05-28 (M3.1 entregue — foto-capa + polimento UX)
+**Estado geral:** 🟢 M0+M1+M2+M3+M3.1 + trilho ML concluídos; M4 (Integração Mercado Livre) liberado para iniciar
 
 ---
 
@@ -151,6 +151,25 @@ Diego importou lote real de 4 famílias (linhas + fitas) → ~30s depois viu cop
 - **MCP qstash_publish_message tem bug de double-encoding** — usado só pra smoke test; produção usa SDK QStash via `enfileirarFamilia` (sem o bug).
 - **Vitest config estendido** — `./supabase/functions/**/__tests__/` adicionado ao `include` pra testar funções puras dos shared modules sem montar runtime Deno.
 - **Edge functions deployadas via MCP:** process-familia v11, upload-imagens-lote v1, invalidar-cache-cor v1.
+
+---
+
+## 🟢 M3.1 — Foto-capa + polimento UX (2026-05-28)
+
+**Status:** ✅ entregue, em produção.
+
+- Foto-capa por família como `pictures[0]` futuro (drag-drop com prefixo `CAPA_`, thumb no card, botões Trocar/Remover)
+- Barra de progresso real no drop em lote (chunks de 5)
+- Template novo de descrição com seções emoji (🧵 ✅ 📌 🎯 🎨 📦 🚚) — Process-familia v12
+- Botão "Regenerar descrição" por família — Regenerar-copy-familia v1
+- Badge `cor_origem` compacto com tooltip
+- GTIN/EAN editável por variação
+- Spec: `docs/superpowers/specs/2026-05-28-foto-capa-familia-design.md`
+- Plano: `docs/superpowers/plans/2026-05-28-plan-05-foto-capa.md`
+
+### Histórico de commits
+Commits do M3.1: `bffc775` (spec), `1d81d93` (plano), `d57e10a`, `7f0344e`, `fcb4cca`, `c69d926`, `3dfc479`, `6735f5b`, `48448a2`, `5fe6183`, `47e1ddc`, `b2be2d9`.
+Ajustes pós-M3.1: `de1f034`, `b6fd20f`, `f2340a5`, `20c8fdf`, `7b5d2ae`, `8865dad`, `dcf23a1`, `7f40f87`.
 
 ---
 
@@ -316,3 +335,4 @@ Itens explicitamente para versões futuras:
 | 2026-05-27 | M2 completo ✅ (bug bash com planilha real no mesmo dia) | Secrets QStash configurados via dashboard, usuário criado, planilha LINHA P/COST.XIK 120 (290 variações) importada com sucesso. Bugs descobertos e corrigidos no mesmo dia: sidebar Revisão hardcoded, exibição estoque/imagens, persistência da edição inline com feedback visual, busca por código de filho, race condition do realtime (polling fallback). 61 testes passando. M3 liberado pra começar. |
 | 2026-05-27 | Trilho paralelo ML ✅ | App PubliAI criada no portal ML Developers em ~15 min (vs 1-4 semanas temidas). Client ID `5907788004648058`, fluxos Authorization Code + Refresh Token, permissões "Publicação e sincronização" + "Usuários" (leitura e escrita). Redirect URI aponta para Edge Function `ml-oauth-callback` (a criar em M4) — decisão registrada em ADR-0011. Certificação dispensada (uso interno). M4 sem mais dependências externas. |
 | 2026-05-28 | M3 ✅ via Plano 04 (20 tasks Subagent-Driven Development) | Pipeline IA real: parser cor PT-BR (dicionário 42 cores), Vision (gpt-4o) com prompt conservador, Copywriter (gpt-4o-mini) com structured output JSON Schema, cache Redis TTL 90d, custos capturados por família. UI: badges cor_origem, drop zone para upload posterior de imagens, ícone câmera por variação, alerta sem cor. Edge functions deployadas: process-familia v11, upload-imagens-lote v1, invalidar-cache-cor v1. Assinatura QStash restaurada (rotacionada via console Upstash, secrets atualizados no Supabase). Bug bash com 4 famílias reais → 5 ajustes no prompt → Diego aprovou. 86 testes passando. M4 (Integração ML) liberado. |
+| 2026-05-28 | M3.1 ✅ (foto-capa + polimento UX, mesmo dia) | 12 tasks subagent-driven: migration `capa_storage_path`, helper `classificarArquivo` (6 testes), upload-imagens-lote v5 (CAPA_), componente FotoCapaFamilia (3 testes), card Trocar/Remover, contadores capas_ok/sem_match. Ajustes adicionais: barra de progresso real em chunks de 5, template de descrição com seções emoji (process-familia v12), botão regenerar por família (regenerar-copy-familia v1), badge cor_origem compacto com tooltip CSS-only, GTIN/EAN editável por variação. 101/101 testes passando. |

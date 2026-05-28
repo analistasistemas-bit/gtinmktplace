@@ -2,8 +2,8 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-28 — M3 concluído após bug bash + iteração do prompt
-**Próximo passo recomendado:** partir para Plano 05 (M4 Integração Mercado Livre)
+**Última atualização:** 2026-05-28 — M3.1 entregue (foto-capa + polimento UX) + 101/101 testes passando
+**Próximo passo recomendado:** partir para M4 (Integração Mercado Livre)
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -38,6 +38,7 @@
 | M1 — UI mockup com dados fake | ✅ (pendente walkthrough Diego) |
 | M2 — Backend core | ✅ |
 | M3 — IA copywriting + Vision | ✅ |
+| M3.1 — Foto-capa + polimento UX | ✅ |
 | M4 — Integração Mercado Livre | ⬜ |
 | M5 — Polimento e testes | ⬜ |
 | M6 — Lançamento | ⬜ |
@@ -353,6 +354,36 @@
 - [x] Diego revisou qualidade da IA e indicou ajustes — 5 ajustes aplicados via prompt iteration
 - [x] Diego aprovou output final — "ficou ótimo agora"
 - [x] Atualizar TASKS.md/ROADMAP.md marcando M3 como completo
+
+---
+
+## M3.1 — Foto-capa por família + polimento UX (2026-05-28)
+
+### Foto-capa (Plano 05, 12 tasks subagent-driven)
+
+- [x] Task 1 — Migration `capa_familia` + regeneração de tipos (commit `d57e10a`)
+- [x] Task 2 — Expor `capaStoragePath` em Familia + mapper (`7f0344e`)
+- [x] Task 3 — Helper TDD `classificarArquivo` (6 testes verdes, `fcb4cca`)
+- [x] Task 4 — Edge function `upload-imagens-lote` v5 detecta prefixo CAPA_ (6 testes, `c69d926`)
+- [x] Task 5 — Helpers cliente `subirCapaFamilia` / `removerCapaFamilia` (`3dfc479`)
+- [x] Task 6 — Componente `<FotoCapaFamilia>` (3 testes, `6735f5b`)
+- [x] Task 7 — Helper `urlCapaFamilia` (signedUrl, `48448a2`)
+- [x] Task 8 — Card colapsado prioriza capa explícita (`5fe6183`)
+- [x] Task 9 — Card expandido com Trocar/Remover (`47e1ddc`)
+- [x] Task 10 — Contadores `capas_ok` no drop-zone (`b2be2d9`)
+- [x] Task 11 — Smoke test manual aprovado por Diego
+- [x] Task 12 — Docs finais (esta task)
+
+### Ajustes adicionais do dia
+
+- [x] Barra de progresso real no drop em lote (chunks de 5) — `de1f034`
+- [x] Novo template de descrição com seções emoji — `b6fd20f` + process-familia v12
+- [x] Botão "Regenerar descrição" por família — `f2340a5` + regenerar-copy-familia v1
+- [x] Fix: regenerar atualiza state local imediato — `20c8fdf`
+- [x] Badge cor_origem compacto (só ícone com tooltip) — `7b5d2ae` + `dcf23a1` + `7f40f87`
+- [x] GTIN/EAN editável por variação — `8865dad`
+
+**Status final do dia:** 101/101 testes passando, build verde, push concluído. Próximo marco: M4 (Integração Mercado Livre).
 
 ---
 

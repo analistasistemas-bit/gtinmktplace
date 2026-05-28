@@ -29,8 +29,12 @@ docs/
 │   ├── 0009-campos-payload-ml-e-categoria-deterministica.md
 │   ├── 0010-openrouter-em-vez-de-openai-direto.md
 │   └── 0011-redirect-uri-via-edge-function.md
-└── superpowers/specs/             ← spec formal do design (1 por marco de planejamento)
-    └── 2026-05-26-publiai-design.md  (a criar)
+└── superpowers/
+    ├── specs/                     ← spec formal do design (1 por marco de planejamento)
+    │   ├── 2026-05-26-publiai-design.md
+    │   └── 2026-05-28-foto-capa-familia-design.md
+    └── plans/
+        └── 2026-05-28-plan-05-foto-capa.md
 ```
 
 ## Documentos vivos vs imutáveis
@@ -58,9 +62,9 @@ docs/
 ## Status do projeto
 
 - 🟢 **Brainstorming + spec formal:** concluídos (2026-05-26)
-- 🟢 **M0 (setup) + M1 (UI mockup) + M2 (backend core):** ✅ entregues, em produção em https://ean2marketplace-frontend.onrender.com
+- 🟢 **M0 (setup) + M1 (UI mockup) + M2 (backend core) + M3 (IA copywriting + Vision):** ✅ entregues, em produção em https://ean2marketplace-frontend.onrender.com
+- 🟢 **M3.1 (foto-capa + polimento UX):** ✅ entregue (2026-05-28) — foto-capa por família, template emoji, regenerar copy, badge compacto, GTIN editável. 101/101 testes.
 - 🟢 **App Mercado Livre Developers:** ✅ criada (PubliAI, Client ID 5907788004648058)
-- 🟡 **M3 (IA copywriting + Vision):** próximo marco — brainstorming + plano ainda não iniciados
 - 🔴 **M4 (integração ML), M5 (polimento), M6 (lançamento):** futuros
 
 ## Stack confirmado
