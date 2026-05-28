@@ -2,8 +2,8 @@
 
 > Este arquivo é o **system prompt do projeto**. Toda sessão de Claude Code (ou outro agente IA) deve lê-lo primeiro, antes de tocar em qualquer arquivo. Ele resume regras, convenções, decisões e workflow do projeto, e aponta para a documentação detalhada.
 
-**Última atualização:** 2026-05-27
-**Status do projeto:** M0+M1+M2 ✅ concluídos; M3 (IA copywriting + Vision) é o próximo marco
+**Última atualização:** 2026-05-28
+**Status do projeto:** M0+M1+M2+M3 ✅ concluídos; M4 (Integração Mercado Livre) é o próximo marco
 
 ---
 
@@ -217,3 +217,4 @@ Tarefas que sobram do trilho são naturais do M4 (validar fluxo OAuth real + con
 | 2026-05-26 | Criação inicial após brainstorming completo (Seções 1-6 aprovadas, 8 ADRs, ROADMAP, TASKS, spec consolidado) |
 | 2026-05-27 | M0+M1+M2 todos ✅; status atualizado pra refletir início do M3 |
 | 2026-05-27 | Trilho paralelo ML ✅ + ADR-0011 (redirect URI via Edge Function) registrado |
+| 2026-05-28 | M3 ✅ via Plano 04 (20 tasks Subagent-Driven Development). Pipeline IA completo: parser cor PT-BR, Vision (gpt-4o conservador), Copywriter (gpt-4o-mini + json_schema), cache Redis TTL 90d. UI: badges cor_origem, drop zone, ícone câmera. Edge functions deployadas: process-familia v11, upload-imagens-lote v1, invalidar-cache-cor v1. Bug bash com 4 famílias reais + 5 ajustes no prompt → Diego aprovou. 86 testes passando. Status do projeto agora aponta para M4 (Integração ML). |
