@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
@@ -36,30 +37,56 @@ export default function Revisao() {
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [progresso, setProgresso] = useState<{ feito: number; total: number } | null>(null);
   const qc = useQueryClient();
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
 
   async function lidarArquivosDrop(arquivos: File[]) {
     if (!loteId) return;
-    setUploadStatus(`Enviando ${arquivos.length} imagem(ns)...`);
+    const TAMANHO_CHUNK = 5;
+    const acumulado = {
+      ok: 0,
+      ja_tinha: 0,
+      sem_match: 0,
+      capas_ok: 0,
+      capas_sem_match: 0,
+      erros: [] as Array<{ arquivo: string; motivo: string }>,
+    };
+    setUploadStatus(null);
+    setProgresso({ feito: 0, total: arquivos.length });
     try {
-      const r = await uploadImagensLote(loteId, arquivos);
+      for (let i = 0; i < arquivos.length; i += TAMANHO_CHUNK) {
+        const chunk = arquivos.slice(i, i + TAMANHO_CHUNK);
+        const r = await uploadImagensLote(loteId, chunk);
+        acumulado.ok += r.ok;
+        acumulado.ja_tinha += r.ja_tinha;
+        acumulado.sem_match += r.sem_match;
+        acumulado.capas_ok += r.capas_ok;
+        acumulado.capas_sem_match += r.capas_sem_match;
+        acumulado.erros.push(...r.erros);
+        setProgresso({
+          feito: Math.min(i + TAMANHO_CHUNK, arquivos.length),
+          total: arquivos.length,
+        });
+      }
       const partes = [
-        `${r.ok} cor(es) nova(s)`,
-        `${r.ja_tinha} cor(es) substituída(s)`,
-        `${r.sem_match} cor(es) sem match`,
-        `${r.capas_ok} capa(s)`,
-        `${r.capas_sem_match} capa(s) sem match`,
+        `${acumulado.ok} cor(es) nova(s)`,
+        `${acumulado.ja_tinha} cor(es) substituída(s)`,
+        `${acumulado.sem_match} cor(es) sem match`,
+        `${acumulado.capas_ok} capa(s)`,
+        `${acumulado.capas_sem_match} capa(s) sem match`,
       ];
-      if (r.erros.length) partes.push(`${r.erros.length} erro(s)`);
+      if (acumulado.erros.length) partes.push(`${acumulado.erros.length} erro(s)`);
       setUploadStatus(`✓ ${partes.join(' · ')}`);
       qc.invalidateQueries({ queryKey: QK.familias(loteId) });
-      if (r.erros.length) console.error('Erros no upload:', r.erros);
+      if (acumulado.erros.length) console.error('Erros no upload:', acumulado.erros);
       setTimeout(() => setUploadStatus(null), 4000);
     } catch (e) {
       setUploadStatus(`✗ ${(e as Error).message}`);
       setTimeout(() => setUploadStatus(null), 6000);
+    } finally {
+      setProgresso(null);
     }
   }
 
@@ -124,7 +151,15 @@ export default function Revisao() {
       {loteId && (
         <div className="border-b bg-background px-3 py-2">
           <DropZoneImagensExistente onArquivos={lidarArquivosDrop} />
-          {uploadStatus && (
+          {progresso && (
+            <div className="mt-2 space-y-1">
+              <Progress value={(progresso.feito / Math.max(progresso.total, 1)) * 100} />
+              <div className="text-xs text-muted-foreground">
+                Processando {progresso.feito} de {progresso.total} imagem(ns)…
+              </div>
+            </div>
+          )}
+          {uploadStatus && !progresso && (
             <div className="mt-2 text-xs text-muted-foreground">{uploadStatus}</div>
           )}
         </div>
