@@ -2,8 +2,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-28 (M3.1 entregue — foto-capa + polimento UX)
-**Estado geral:** 🟢 M0+M1+M2+M3+M3.1 + trilho ML concluídos; M4 (Integração Mercado Livre) liberado para iniciar
+**Última atualização:** 2026-05-29 (M4 bloco OAuth ML entregue)
+**Estado geral:** 🟢 M0+M1+M2+M3+M3.1 + trilho ML concluídos; M4 (Integração Mercado Livre) **em andamento** — bloco OAuth ✅ (conectar/desconectar validado em produção, ADR-0012); faltam concorrência, preço, categorias e publicação
 
 ---
 
@@ -184,8 +184,8 @@ Ajustes pós-M3.1: `de1f034`, `b6fd20f`, `f2340a5`, `20c8fdf`, `7b5d2ae`, `8865d
 Sistema publica anúncios reais no Mercado Livre, com variações, fotos, atributos e estratégia de preço condicional.
 
 ### Critérios de saída
-- [ ] OAuth Mercado Livre funcional (autorizar + refresh)
-- [ ] Tokens criptografados via Supabase Vault
+- [x] OAuth Mercado Livre funcional (autorizar + refresh) — bloco OAuth ✅ 2026-05-29 (ADR-0012)
+- [x] Tokens criptografados via Supabase Vault — reaproveitado do M2 + `delete_ml_credentials`
 - [ ] Busca de concorrência funciona (por GTIN e por título)
 - [ ] Cache Redis (`cache:concorrencia:*`) funcionando
 - [ ] Lógica de preço condicional implementada ([ADR-0008](decisions/0008-estrategia-de-preco-condicional.md))

@@ -2,8 +2,8 @@
 
 > Este arquivo é o **system prompt do projeto**. Toda sessão de Claude Code (ou outro agente IA) deve lê-lo primeiro, antes de tocar em qualquer arquivo. Ele resume regras, convenções, decisões e workflow do projeto, e aponta para a documentação detalhada.
 
-**Última atualização:** 2026-05-28
-**Status do projeto:** M0+M1+M2+M3+M3.1 ✅ concluídos; M4 (Integração Mercado Livre) é o próximo marco
+**Última atualização:** 2026-05-29
+**Status do projeto:** M0+M1+M2+M3+M3.1 ✅ concluídos; M4 (Integração ML) em andamento — **bloco OAuth ✅** (conectar/desconectar validado em produção); próximos blocos do M4: concorrência, estratégia de preço, categorias, publicação CREATE/UPDATE
 
 ---
 
@@ -219,3 +219,4 @@ Tarefas que sobram do trilho são naturais do M4 (validar fluxo OAuth real + con
 | 2026-05-27 | Trilho paralelo ML ✅ + ADR-0011 (redirect URI via Edge Function) registrado |
 | 2026-05-28 | M3 ✅ via Plano 04 (20 tasks Subagent-Driven Development). Pipeline IA completo: parser cor PT-BR, Vision (gpt-4o conservador), Copywriter (gpt-4o-mini + json_schema), cache Redis TTL 90d. UI: badges cor_origem, drop zone, ícone câmera. Edge functions deployadas: process-familia v11, upload-imagens-lote v1, invalidar-cache-cor v1. Bug bash com 4 famílias reais + 5 ajustes no prompt → Diego aprovou. 86 testes passando. Status do projeto agora aponta para M4 (Integração ML). |
 | 2026-05-28 | M3.1 entregue: foto-capa por família (spec + plano-05 + 12 tasks subagent-driven) + 6 ajustes pós (barra progresso em chunks, novo template emoji da descrição, botão regenerar por família, badge compacto com tooltip, GTIN editável). Edge functions deployadas: process-familia v12 (template novo), upload-imagens-lote v5 (CAPA_), regenerar-copy-familia v1 (nova). 101/101 testes verdes. |
+| 2026-05-29 | M4 bloco OAuth ML ✅ (spec + ADR-0012 + plano-06 15 tasks subagent-driven). Edge functions deployadas `verify_jwt:false`: ml-oauth-start, ml-oauth-callback, ml-oauth-disconnect. `getValidAccessToken` com refresh proativo + lock Redis (ADR-0012, resolve gap §541). Vault reaproveitado do M2 + migration nova `delete_ml_credentials`. Bug bash real aprovado (conectou como AVILBV; disconnect limpa Vault). Bugs corrigidos no bug bash: domínio de auth do Brasil é `mercadolivre.com.br` (com "v"); banner de sucesso preso pós-disconnect. 106/106 testes verdes. TODO: instalar eslint (`pnpm lint` quebrado). |

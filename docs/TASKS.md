@@ -2,8 +2,8 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-28 — M3.1 entregue (foto-capa + polimento UX) + 101/101 testes passando
-**Próximo passo recomendado:** partir para M4 (Integração Mercado Livre)
+**Última atualização:** 2026-05-29 — M4 bloco OAuth ML ✅ (conectar/desconectar validado em produção) + 106/106 testes passando
+**Próximo passo recomendado:** próximo bloco do M4 — busca de concorrência + estratégia de preço (independentes do OAuth)
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -389,15 +389,24 @@
 
 ## 🏁 M4 — Integração Mercado Livre
 
-### OAuth Mercado Livre
+### OAuth Mercado Livre ✅ (2026-05-29)
 
-- [ ] Tela "Conectar Mercado Livre" em Configurações — `~2h`
-- [ ] Botão que abre URL de autorização (com state CSRF) — `~1h`
-- [ ] Página de callback (`/ml-callback`) — `~1h`
-- [ ] Edge function `ml-oauth-callback` (troca code por tokens) — `~3h`
-- [ ] Criptografia dos tokens via Supabase Vault — `~2h`
-- [ ] Edge function helper `ml-token-refresh` (refresh proativo) — `~3h`
-- [ ] Validação manual do fluxo OAuth de ponta a ponta — `~1h`
+**Bloco OAuth concluído** via subagent-driven (spec + ADR-0012 + plano 15 tasks). Bug bash real aprovado: conectou como `AVILBV` (ml_user_id 1003820507), token gravado no Vault, scope com `write`/`publish-sync`/`offline_access`; disconnect limpa linha + segredos (0 órfãos). Ver [spec](superpowers/specs/2026-05-29-m4-oauth-ml-design.md) e [plano](superpowers/plans/2026-05-29-m4-oauth-ml.md).
+
+- [x] Tela "Conectar Mercado Livre" em Configurações — seção real com badge/nickname + Conectar/Desconectar (`useMlConnection`)
+- [x] Botão que abre URL de autorização (com state CSRF) — `ml-oauth-start` gera state no Redis (TTL 10min) + `montarAuthUrl`
+- [⏭️] Página de callback (`/ml-callback`) — **dispensada**: callback é a Edge Function (ADR-0011), não rota do frontend
+- [x] Edge function `ml-oauth-callback` (troca code por tokens) — deployada `verify_jwt:false`, redireciona com `?ml_conectado`/`?ml_erro`
+- [x] Criptografia dos tokens via Supabase Vault — **reaproveitada do M2** (`upsert_ml_credentials`/`get_ml_tokens`); só faltou `delete_ml_credentials` (migration nova) p/ o disconnect
+- [x] Helper de refresh proativo — `getValidAccessToken` (`_shared/ml/token.ts`) com lock distribuído Redis `SET NX` ([ADR-0012](decisions/0012-refresh-token-oauth-ml-com-lock-redis.md)); resolve gap §541
+- [x] Validação manual do fluxo OAuth de ponta a ponta — bug bash 2026-05-29 (Diego)
+
+**Desvios/achados do bug bash:**
+- Bug corrigido: domínio de autorização do **Brasil é `auth.mercadolivre.com.br`** (com "v"), não `mercadolibre.com.br` — DNS NXDOMAIN no primeiro teste.
+- Bug corrigido: banner "Conta conectada" ficava preso após disconnect (param `?ml_conectado` na URL) → agora gated no estado real.
+- Sem testes unitários da orquestração (token.ts/edge functions): restrição do vitest (só funções puras importáveis) — `montarAuthUrl`/`precisaRenovar` testadas; resto validado no bug bash. 106/106 testes verdes.
+- **TODO conhecido:** `eslint` não está instalado no projeto (`pnpm lint` quebra) — corrigir no polimento (M5) ou no finishing do M4.
+- `getValidAccessToken` ainda **não tem consumidor** — será usado nos blocos de concorrência/publicação.
 
 ### Busca de concorrência
 
@@ -538,7 +547,7 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 ### 🟠 Tratar durante M4 (Integração ML)
 
 - [ ] **UPDATE com variação adicionada/removida** — quando reimportar uma família já publicada e ela ganhar/perder cores, sistema deve detectar e sinalizar com badge na tela de revisão. Não precisa publicar a mudança automaticamente, mas precisa COMUNICAR. Senão o operador publica com estoque/variação errados. Atualizar [ADR-0005](decisions/0005-lifecycle-publish-and-update.md) com regra antes de implementar.
-- [ ] **OAuth refresh com lock no Redis** — duas Edge Functions chamando refresh em paralelo invalidam token uma da outra (ML invalida refresh_token antigo após uso). Implementar lock via `SET NX` no Upstash Redis com TTL. Documentar em novo ADR (ADR-0010) antes de implementar a função `getValidAccessToken`.
+- [x] **OAuth refresh com lock no Redis** — ✅ resolvido no bloco OAuth do M4. `getValidAccessToken` usa lock `SET NX` no Upstash (TTL 30s) + refresh proativo (buffer 5min). Documentado em [ADR-0012](decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) (o gap citava "ADR-0010", mas esse número já era do OpenRouter).
 - [ ] **Alerta visual de preço perigoso** — se o preço sugerido pela estratégia COMPETITIVO ficar abaixo de 20% do preço da planilha, exibir badge vermelho "⚠ ATENÇÃO: preço X% abaixo do seu preço" na tela de revisão. Não bloqueia publicação, só sinaliza. Aditar [ADR-0008](decisions/0008-estrategia-de-preco-condicional.md).
 - [ ] **Reavaliar duração de M4 para 3 semanas** — escopo real (~20 tarefas substanciais) parece pedir 3 semanas. Decidir ao iniciar M4: ou estender M4, ou mover busca de concorrência + estratégia de preço para M3 (são independentes do OAuth).
 
