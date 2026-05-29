@@ -314,6 +314,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_ml_credentials: { Args: { p_user_id: string }; Returns: undefined }
       get_ml_tokens: {
         Args: { p_user_id: string }
         Returns: {
