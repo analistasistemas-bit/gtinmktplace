@@ -9,5 +9,7 @@ export function montarAuthUrl(
     redirect_uri: redirectUri,
     state,
   });
-  return `https://auth.mercadolibre.com.br/authorization?${params.toString()}`;
+  // Brasil usa o domínio "mercadolivre.com.br" (PT) para autorização;
+  // o endpoint de token é api.mercadolibre.com (com "b", global).
+  return `https://auth.mercadolivre.com.br/authorization?${params.toString()}`;
 }
