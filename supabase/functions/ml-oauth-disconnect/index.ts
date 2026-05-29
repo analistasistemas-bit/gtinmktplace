@@ -16,7 +16,8 @@ Deno.serve(async (req) => {
 
   const { error } = await adminClient().rpc('delete_ml_credentials', { p_user_id: user.id });
   if (error) {
-    return new Response(`delete_ml_credentials: ${error.message}`, { status: 500, headers: corsHeaders });
+    console.error('delete_ml_credentials:', error.message);
+    return new Response('Erro ao desconectar conta ML', { status: 500, headers: corsHeaders });
   }
   return new Response('OK', { status: 200, headers: corsHeaders });
 });
