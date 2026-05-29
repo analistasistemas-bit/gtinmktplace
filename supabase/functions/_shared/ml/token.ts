@@ -96,6 +96,11 @@ export async function getValidAccessToken(userId: string): Promise<string> {
   if (pegouLock) {
     try {
       const tok = await refreshTokenML(row.refresh_token);
+      // ML rotaciona o refresh_token a cada uso; se a resposta vier incompleta,
+      // gravar gravaria lixo no Vault e quebraria a próxima renovação.
+      if (!tok.access_token || !tok.refresh_token) {
+        throw new Error('ML não retornou tokens completos na rotação');
+      }
       await gravarRotacao(userId, tok);
       return tok.access_token;
     } finally {
@@ -111,5 +116,9 @@ export async function getValidAccessToken(userId: string): Promise<string> {
       return r2.access_token;
     }
   }
+  // Se o detentor do lock falhou ao gravar, o QStash re-tenta a família mais
+  // tarde (tradeoço aceito do ADR-0012: a sequência ML-refresh + persistência
+  // não é atômica; aqui não re-tentamos com o refresh_token possivelmente já
+  // rotacionado para não invalidar a credencial).
   throw new Error('Timeout aguardando refresh de token ML (lock concorrente)');
 }
