@@ -44,7 +44,7 @@ export default function Configuracoes() {
         <Card className="p-4">
           <h2 className="mb-2 text-sm font-semibold">Mercado Livre</h2>
 
-          {mlConectado && (
+          {!carregandoConexao && mlConectado && (
             <p className="mb-2 rounded bg-green-50 px-2 py-1 text-xs text-green-700">
               Conta conectada com sucesso.
             </p>

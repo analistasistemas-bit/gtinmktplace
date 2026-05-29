@@ -10,10 +10,11 @@ export interface EstadoConexaoML {
 export function useMlConnection() {
   return useQuery<EstadoConexaoML>({
     queryKey: ['ml-connection'],
+    staleTime: 5 * 60 * 1000, // estado só muda por ação explícita; invalidamos no disconnect
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ml_credentials')
-        .select('ml_nickname, ml_user_id, expires_at')
+        .select('ml_nickname, ml_user_id')
         .maybeSingle();
       if (error) throw error;
       if (!data) return { conectado: false, nickname: null, mlUserId: null };
