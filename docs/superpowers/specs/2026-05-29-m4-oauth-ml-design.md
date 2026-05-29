@@ -79,10 +79,11 @@ qualquer Edge que chame a API do ML:
 
 ### Helpers compartilhados (`_shared/`)
 
-- **`vault.ts`** — `guardarSegredo(valor, nome) → uuid`, `lerSegredo(uuid) → valor`, `atualizarSegredo(uuid, valor)`, `apagarSegredo(uuid)`. Encapsula as funções SQL `SECURITY DEFINER` (ver Migration).
-- **`ml/token.ts`** — `getValidAccessToken(user_id) → string`. Refresh proativo com lock, conforme [ADR-0012](../../decisions/0012-refresh-token-oauth-ml-com-lock-redis.md). Também `trocarCodePorToken(code)` e `refreshToken(refresh)` como funções internas finas sobre `POST /oauth/token`.
-- **`ml/auth-url.ts`** — `montarAuthUrl(state) → string` (função pura, testável).
+- **`ml/token.ts`** — `getValidAccessToken(user_id) → string`. Refresh proativo com lock, conforme [ADR-0012](../../decisions/0012-refresh-token-oauth-ml-com-lock-redis.md). Lê/grava tokens pelas **RPCs `get_ml_tokens` / `upsert_ml_credentials` já existentes do M2** (encapsulam o Vault). Também `trocarCodePorToken(code)` e `refreshTokenML(refresh)` como funções internas finas sobre `POST /oauth/token`. A decisão de renovar fica na função pura **`precisaRenovar(expiresAtMs, agoraMs, bufferMs)`**.
+- **`ml/auth-url.ts`** — `montarAuthUrl(state, clientId, redirectUri) → string` (função pura, testável; recebe os valores por parâmetro para não depender de `Deno.env` em teste).
 - **`redis/client.ts`** — adiciona `redisSetNX(chave, valor, ttlSegundos) → boolean` (true se setou).
+
+> **Nota (descoberta no planejamento):** a camada de Vault foi **inteiramente implementada no M2** (migration `20260527000003_ml_credentials_vault.sql`). As funções `SECURITY DEFINER` `upsert_ml_credentials(p_user_id, p_ml_user_id, p_ml_nickname, p_access_token, p_refresh_token, p_scope, p_expires_at)` (faz create dos segredos no Vault ou rotaciona ambos via `vault.update_secret`) e `get_ml_tokens(p_user_id) → {access_token, refresh_token, expires_at}` já existem e estão revogadas de `public/anon/authenticated` (só `service_role`). Portanto **não há migration nova nem `_shared/vault.ts`** neste bloco — as Edge Functions chamam essas RPCs via `adminClient().rpc(...)`.
 
 ### Frontend
 
@@ -90,18 +91,16 @@ qualquer Edge que chame a API do ML:
 - **`lib/ml-oauth.ts`** — `iniciarConexaoML()` chama a edge `ml-oauth-start` e faz `window.location.href = authUrl`; `desconectarML()` chama `ml-oauth-disconnect` e invalida a query.
 - **Seção ML em Configurações** — substitui o mock "Conectado / vendedor_mock" por estado real: badge verde + nickname + botão Desconectar quando conectado; botão Conectar quando não. Lê `?ml_conectado` / `?ml_erro` da URL e mostra toast (Sonner).
 
-## Storage de token (Supabase Vault)
+## Storage de token (Supabase Vault) — já existe (M2)
 
-Os tokens **nunca** ficam em texto na tabela. A tabela `ml_credentials` guarda apenas os UUIDs do Vault (colunas `access_token_secret_id`, `refresh_token_secret_id` já existem no schema).
+Os tokens **nunca** ficam em texto na tabela; ela guarda só os UUIDs do Vault (`access_token_secret_id`, `refresh_token_secret_id`). Toda a mecânica foi implementada no M2 (migration `20260527000003_ml_credentials_vault.sql`) e é reutilizada aqui sem alteração:
 
-Migration aditiva cria funções wrapper em `public`, `SECURITY DEFINER`, com `EXECUTE` revogado de `public`/`anon`/`authenticated` e concedido **só a `service_role`**:
+- **`upsert_ml_credentials(p_user_id, p_ml_user_id, p_ml_nickname, p_access_token, p_refresh_token, p_scope, p_expires_at) → void`** — se não existe linha, faz `vault.create_secret` dos dois tokens e insere; se existe, faz `vault.update_secret` **dos dois** (cobre a rotação do refresh) e atualiza os metadados. É a função que o callback e o refresh usam para gravar.
+- **`get_ml_tokens(p_user_id) → table(access_token, refresh_token, expires_at)`** — lê os segredos descriptografados via `vault.decrypted_secrets`. Lança exceção se não houver credencial.
 
-- `public.guardar_ml_secret(valor text, nome text) returns uuid` → chama `vault.create_secret`.
-- `public.ler_ml_secret(id uuid) returns text` → `select decrypted_secret from vault.decrypted_secrets where id = $1`.
-- `public.atualizar_ml_secret(id uuid, valor text)` → `vault.update_secret`.
-- `public.apagar_ml_secret(id uuid)` → `delete from vault.secrets where id = $1`.
+Ambas são `SECURITY DEFINER` com `EXECUTE` revogado de `public/anon/authenticated` (só `service_role`). As Edge Functions chamam via `adminClient().rpc(...)`. **Não há migration nova neste bloco.**
 
-(O padrão de wrapper SECURITY DEFINER é necessário porque o schema `vault` não é exposto via PostgREST. As Edge Functions usam o `service_role` via `adminClient().rpc(...)`.)
+Para o **disconnect** falta uma função de delete (o schema `vault` não é exposto via PostgREST, então o `adminClient` não consegue apagar segredos com `.from()`). Este bloco adiciona **uma migration mínima** com `public.delete_ml_credentials(p_user_id uuid)` — `SECURITY DEFINER`, apaga os dois `vault.secrets` referenciados e a linha de `ml_credentials`, com `EXECUTE` revogado de todos menos `service_role`. É a única mudança de schema do bloco.
 
 ## Refresh com lock — resumo
 
@@ -134,9 +133,9 @@ Detalhe completo no [ADR-0012](../../decisions/0012-refresh-token-oauth-ml-com-l
 
 ## Migrations e setup
 
-1. **Migration aditiva** com as 4 funções `SECURITY DEFINER` do Vault + grants para `service_role`.
+1. **Uma migration mínima:** `public.delete_ml_credentials(p_user_id)` para o disconnect (apaga segredos do Vault + linha). A camada de leitura/escrita (`upsert_ml_credentials` / `get_ml_tokens`) já existe do M2.
 2. **Secrets do Supabase:** provisionar `ML_CLIENT_ID`, `ML_CLIENT_SECRET`, `ML_REDIRECT_URI` (hoje só no `.env.local`) para as Edge Functions lerem via `Deno.env`. Etapa explícita no plano.
-3. Regenerar tipos TS se a migration alterar algo consumido pelo frontend (as funções RPC do Vault são chamadas só pelo backend; provavelmente sem impacto no frontend).
+3. **Regenerar tipos TS** após a migration (`delete_ml_credentials` aparece em `Functions`); impacto no frontend é nulo, mas mantém os tipos consistentes.
 
 ## Critérios de sucesso
 
