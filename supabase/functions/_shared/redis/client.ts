@@ -29,3 +29,12 @@ export async function redisSet(chave: string, valor: string, ttlSegundos?: numbe
 export async function redisDel(chave: string): Promise<void> {
   await call(['DEL', chave]);
 }
+
+export async function redisSetNX(
+  chave: string,
+  valor: string,
+  ttlSegundos: number,
+): Promise<boolean> {
+  const r = await call<string>(['SET', chave, valor, 'NX', 'EX', ttlSegundos]);
+  return r === 'OK';
+}
