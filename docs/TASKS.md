@@ -3,7 +3,7 @@
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
 **Última atualização:** 2026-05-31 — ESLint configurado (`pnpm lint` verde) + checklist de módulos anteriores sincronizado com o código real
-**Próximo passo recomendado:** próximo bloco do M4 — busca de concorrência + estratégia de preço (independentes do OAuth)
+**Próximo passo recomendado:** retomar [plano-07](superpowers/plans/2026-05-31-plan-07-busca-concorrencia.md) na **Task 8** (migration via MCP) → Task 9 (integração + deploy) → Task 10 (bug bash). Tasks 1–7 (código puro da busca de concorrência) já feitas e testadas.
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -410,11 +410,15 @@
 
 ### Busca de concorrência
 
-- [ ] Função `buscarConcorrenciaPorGTIN(gtin)` — `~2h`
-- [ ] Função `buscarConcorrenciaPorTitulo(titulo)` (fallback) — `~2h`
-- [ ] Classificação (sem/moderada/alta) — `~1h`
-- [ ] Cache `cache:concorrencia:{gtin}` no Redis (TTL 6h) — `~2h`
-- [ ] Integração na edge function `process-familia` — `~1h`
+> **Plano:** [plano-07](superpowers/plans/2026-05-31-plan-07-busca-concorrencia.md) · **Spec/ADR:** [ADR-0014](decisions/0014-busca-de-concorrencia.md). Tasks 1–7 do plano (código puro + cache + busca) ✅ implementadas/testadas/revisadas (subagent-driven, 2 estágios) e na `main` — **122 testes verdes**. Faltam Tasks 8–10 (migration, integração+deploy, bug bash), que exigem MCP/produção.
+
+- [x] Função de busca por GTIN — `_shared/ml/concorrencia.ts` (`buscarConcorrencia`, ramo `gtin`) + `escolherIdentificador`/`gtinValido`
+- [x] Função de busca por título (fallback) — mesmo `buscarConcorrencia`, ramo `titulo` (baixa confiança)
+- [x] Classificação (sem/moderada/alta) — `_shared/concorrencia/classificar.ts`
+- [x] Cache `cache:concorrencia:*` no Redis (TTL 6h) — `_shared/redis/cache-concorrencia.ts` (chave com hash do título)
+- [ ] **Integração na edge function `process-familia` + deploy** — plano-07 Task 9 (pendente; precisa MCP)
+- [ ] **Migration** (colunas `concorrencia_*` em `familias`) + regenerar tipos — plano-07 Task 8 (pendente; precisa MCP)
+- [ ] **Bug bash** (lote real: 1 família c/ EAN, 1 c/ `3000*`) — plano-07 Task 10 (pendente; valida payload real do ML)
 
 ### Estratégia de preço condicional
 
