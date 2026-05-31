@@ -12,10 +12,12 @@ export function parseResultadoBusca(json: unknown): { vendedores: number; preco_
     .map((r) => r.price)
     .filter((p): p is number => typeof p === 'number' && p > 0);
   const sellers = new Set(
-    results.map((r) => r.seller?.id).filter((id) => id !== undefined && id !== null),
+    results
+      .map((r) => (r.seller?.id != null ? String(r.seller.id) : undefined))
+      .filter((id): id is string => id !== undefined),
   );
   return {
     vendedores: sellers.size > 0 ? sellers.size : results.length,
-    preco_min: precos.length ? Math.min(...precos) : null,
+    preco_min: precos.length ? precos.reduce((a, b) => Math.min(a, b)) : null,
   };
 }

@@ -11,20 +11,27 @@ const NENHUMA: ResultadoConcorrencia = {
 
 const SEARCH_URL = 'https://api.mercadolibre.com/sites/MLB/search';
 
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function buscarConcorrencia(
   userId: string,
   familia: FamiliaParaBusca,
 ): Promise<ResultadoConcorrencia> {
   try {
     const ident = escolherIdentificador(familia);
-    const termo = `${ident.tipo}:${ident.valor}`;
+    const termo = ident.tipo === 'gtin'
+      ? `gtin:${ident.valor}`
+      : `titulo:${await sha256Hex(ident.valor.toLowerCase().trim())}`;
 
     const cached = await cacheConcorrenciaGet(termo).catch(() => null);
     if (cached) {
       return {
         vendedores: cached.vendedores,
         preco_min: cached.preco_min,
-        origem: ident.tipo,
+        origem: cached.origem,
         classe: cached.classe,
       };
     }

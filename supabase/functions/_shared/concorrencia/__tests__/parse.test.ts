@@ -34,4 +34,12 @@ describe('parseResultadoBusca', () => {
     const json = { results: [{ price: 3 }, { price: 4 }] };
     expect(parseResultadoBusca(json)).toEqual({ vendedores: 2, preco_min: 3 });
   });
+
+  it('mesmo vendedor com id number e string conta como 1', () => {
+    const json = { results: [
+      { price: 5, seller: { id: 1 } },
+      { price: 6, seller: { id: '1' } },
+    ]};
+    expect(parseResultadoBusca(json)).toEqual({ vendedores: 1, preco_min: 5 });
+  });
 });

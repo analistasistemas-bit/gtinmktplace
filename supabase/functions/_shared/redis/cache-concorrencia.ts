@@ -11,6 +11,7 @@ export interface CacheConcorrenciaEntrada {
   criado_em: string;
 }
 
+// cache global: a concorrência de um GTIN/título no ML é igual para qualquer usuário
 function chave(termo: string): string {
   return `cache:concorrencia:${termo}`;
 }
