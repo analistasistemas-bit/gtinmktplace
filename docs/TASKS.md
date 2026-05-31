@@ -405,7 +405,7 @@
 - Bug corrigido: domínio de autorização do **Brasil é `auth.mercadolivre.com.br`** (com "v"), não `mercadolibre.com.br` — DNS NXDOMAIN no primeiro teste.
 - Bug corrigido: banner "Conta conectada" ficava preso após disconnect (param `?ml_conectado` na URL) → agora gated no estado real.
 - Sem testes unitários da orquestração (token.ts/edge functions): restrição do vitest (só funções puras importáveis) — `montarAuthUrl`/`precisaRenovar` testadas; resto validado no bug bash. 106/106 testes verdes.
-- **TODO conhecido:** `eslint` não está instalado no projeto (`pnpm lint` quebra) — corrigir no polimento (M5) ou no finishing do M4.
+- [x] **eslint instalado (2026-05-31)** — toolchain ESLint 9 flat config (`@eslint/js` + `typescript-eslint` + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh` + `globals`), config em `eslint.config.js`. `pnpm lint` passa (0 errors, 3 warnings benignos de `react-refresh` em arquivos shadcn ui + Revisao). `no-explicit-any` desligado só em `tests/**` (mocks do Supabase). Edge Functions (`supabase/functions`, Deno) ficam fora do lint do frontend.
 - `getValidAccessToken` ainda **não tem consumidor** — será usado nos blocos de concorrência/publicação.
 
 ### Busca de concorrência
