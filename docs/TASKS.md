@@ -433,6 +433,7 @@
 
 ### Publicação CREATE
 
+- [ ] **Pré-publicação: implementar [ADR-0013](decisions/0013-edge-cases-da-planilha-no-ingest.md)** (edge cases da planilha, não-bloqueantes) — no `_shared/parser.ts`: dedup por CODIGO (manter 1ª); trocar os 2 `throw` (filho órfão e PAI sem filho) por coleta dos descartados; `agruparPorPai` retorna grupos + contadores; `ingest-lote` persiste os contadores no lote e o resumo/Progresso os exibe. TDD nas funções puras. Garante a pré-condição "só famílias com ≥1 variação publicam". — `~3h`
 - [ ] Edge function `publish-familia-ml` (esqueleto) — `~2h`
 - [ ] Configurar QStash para chamar publish — `~1h`
 - [ ] Montar payload com variações nativas — `~4h`
