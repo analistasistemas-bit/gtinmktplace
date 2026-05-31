@@ -86,6 +86,7 @@ Quando o assunto for um destes tópicos, **leia o ADR antes de propor mudança**
 | [0011](docs/decisions/0011-redirect-uri-via-edge-function.md) | OAuth ML: redirect URI aponta para Supabase Edge Function (não para o frontend; mantém client_secret no servidor e evita o problema do HashRouter) |
 | [0012](docs/decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) | Refresh de token OAuth ML com lock distribuído no Redis (evita corrida de refresh) |
 | [0013](docs/decisions/0013-edge-cases-da-planilha-no-ingest.md) | Edge cases da planilha no ingest (não-bloqueantes): CODIGO duplicado → manter 1ª + avisar; filho órfão → pular + avisar; PAI sem filho → pular + avisar |
+| [0014](docs/decisions/0014-busca-de-concorrencia.md) | Busca de concorrência no ML: 1 busca por família; GTIN válido → catálogo, senão título (baixa confiança); classe sem/moderada/alta só informativa; erro → PRÓPRIO seguro |
 
 ---
 

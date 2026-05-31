@@ -556,7 +556,7 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 
 - [ ] **Edge cases da planilha** — regra definida em [ADR-0013](decisions/0013-edge-cases-da-planilha-no-ingest.md) (2026-05-31): todas não-bloqueantes (descartar + contar no resumo). CODIGO duplicado → manter a 1ª; filho órfão → pular o filho; PAI sem filho → pular a família. **Hoje os três casos ou rejeitam o lote (órfão/PAI vazio) ou são silenciosos (duplicado)** — ver comportamento atual no ADR. **Implementação pendente** no fluxo de ingest/publicação do M4 (dedup por CODIGO + trocar os 2 `throw` por coleta + contadores no resumo do lote).
 - [ ] **Signed URL com TTL longo para foto no ML** — API ML faz download assíncrono; signed URL precisa de TTL > tempo de processamento ML (≥1h) ou usar upload direto via `POST /pictures`.
-- [ ] **Critérios de classificação de concorrência** — definir explicitamente: sem=0 vendedores com mesmo GTIN; moderada=1-5; alta=6+. Documentar como regra na implementação de `buscarConcorrencia`.
+- [x] **Critérios de classificação de concorrência** — definidos em [ADR-0014](decisions/0014-busca-de-concorrencia.md): sem=0; moderada=1–5; alta=6+ (apenas informativo; o preço segue a regra binária do ADR-0008).
 - [x] **Invalidar cache de cor** — implementado no M3: edge `invalidar-cache-cor` é chamada quando o operador edita a cor manualmente.
 
 ### 🟢 Lembretes pequenos
