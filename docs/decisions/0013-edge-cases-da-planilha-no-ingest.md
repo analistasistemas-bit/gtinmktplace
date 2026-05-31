@@ -12,45 +12,65 @@
 O `ingest-lote` transforma a planilha em famílias/variações agrupando por `PAI`
 (`agruparPorPai` em `_shared/parser.ts`). Três anomalias de dados podem aparecer:
 
-1. **Filho órfão** — linha com `PAI=X` onde `X` não existe no lote.
-2. **CODIGO duplicado** — duas ou mais linhas com o mesmo `CODIGO`.
+1. **CODIGO duplicado** — duas ou mais linhas com o mesmo `CODIGO`.
+2. **Filho órfão** — linha com `PAI=X` onde `X` não existe no lote.
 3. **PAI sem nenhum filho** — linha `PAI=0` (agrupador) que nenhuma outra linha referencia.
 
-Comportamento **antes** desta decisão:
-- Órfão: já tratado — vira "família solo" (anúncio próprio com 1 variação). **Mantido.**
-- CODIGO duplicado: o `Map` por código sobrescrevia silenciosamente (PAIs/solos) ou
-  gerava variações duplicadas (filhos) — perda/inconsistência **sem aviso**.
-- PAI sem filho: virava família com `variacoes: []` — anúncio vazio, que violaria a
-  regra "PAI nunca é vendido sozinho" e quebraria a publicação no M4.
+### Comportamento atual (antes desta decisão)
 
-A decisão é necessária **antes do bloco de publicação do M4**: uma família com 0
-variações ou uma variação perdida em silêncio viraria um anúncio errado no Mercado Livre.
+Conferido lendo `_shared/parser.ts`:
+
+- **CODIGO duplicado:** PAIs duplicados são sobrescritos em silêncio (`pais.set(codigo, r)` —
+  o último vence); filhos duplicados viram **duas variações** (`lista.push(r)`). Em ambos os
+  casos **sem aviso**.
+- **Filho órfão:** `agruparPorPai` **lança erro** → o lote inteiro é **rejeitado**
+  (`throw new Error("Linha órfã: ...")`).
+- **PAI sem filho:** `agruparPorPai` **lança erro** → o lote inteiro é **rejeitado**
+  (`throw new Error("PAI ... sem variações ...")`).
+
+> Não existe conceito de "família solo" no código — uma versão anterior deste ADR
+> descreveu isso por engano; o comportamento real para órfão e PAI-sem-filho sempre foi
+> rejeitar o lote.
+
+### Por que decidir agora
+
+Dois problemas com o status quo:
+
+1. **Bloqueio total é caro:** um lote de 50+ famílias é abortado por causa de uma única
+   linha órfã ou um único PAI vazio.
+2. **CODIGO duplicado é silencioso:** uma variação pode sumir (ou duplicar) sem ninguém saber,
+   o que no bloco de publicação do M4 vira anúncio errado no Mercado Livre.
 
 Princípio adotado: ser consistente com o tratamento de **imagens órfãs**, que já é
-não-bloqueante (conta e sinaliza no resumo do lote, não aborta a importação). Bloquear
-um lote de 50+ famílias por causa de uma linha ruim é custoso demais.
+**não-bloqueante** (conta e sinaliza no resumo do lote, não aborta a importação).
 
 ## Decisão
 
+As três anomalias passam a ser **não-bloqueantes**: a linha problemática é descartada,
+contabilizada e sinalizada no resumo do lote; a importação prossegue.
+
 **1. CODIGO duplicado → avisar e manter a 1ª ocorrência.**
-- Antes de agrupar, deduplicar por `CODIGO`: a primeira linha com cada código prevalece;
+- Deduplicar por `CODIGO` antes de agrupar: a primeira linha com cada código prevalece;
   as repetições são descartadas.
-- Contabilizar quantos (e quais) códigos vieram duplicados e expor no resumo do lote.
-- Não bloqueia a importação.
+- Contabilizar quantos (e quais) códigos vieram duplicados.
 
-**2. PAI sem filho → pular a família + avisar.**
-- Após agrupar, descartar famílias com `variacoes.length === 0` (PAI `PAI=0` que não
-  recebeu nenhum filho). Família-solo de órfão **não** cai aqui (tem 1 variação: ele mesmo).
-- Contabilizar quantas famílias foram puladas e expor no resumo do lote.
-- Não bloqueia a importação.
+**2. Filho órfão → pular o filho e avisar.**
+- Em vez de lançar erro, descartar a variação cujo `PAI` não existe no lote.
+- Contabilizar quantos filhos órfãos foram descartados.
 
-**3. Filho órfão → inalterado** (vira família solo; já era o comportamento).
+**3. PAI sem filho → pular a família e avisar.**
+- Em vez de lançar erro, descartar a família `PAI=0` que não recebeu nenhum filho.
+- Contabilizar quantas famílias foram puladas.
+
+Isso garante a pré-condição da publicação do M4: só seguem famílias com ≥1 variação,
+e nenhuma variação é perdida em silêncio.
 
 ## Sinalização ao operador
 
-Os contadores de anomalias entram no resumo do lote / tela de Progresso, no mesmo
-padrão das imagens sem match (`sem_match`): algo como `codigos_duplicados` e
-`familias_sem_filho`. O operador vê o que foi descartado e corrige na origem se quiser.
+Os contadores entram no resumo do lote / tela de Progresso, no mesmo padrão das imagens
+sem match (`sem_match`): algo como `codigos_duplicados`, `filhos_orfaos`,
+`familias_sem_filho`. O operador vê o que foi descartado e corrige na origem se quiser
+(ex.: um órfão costuma indicar que o PAI faltou na exportação → reimportar).
 
 ## Consequências
 
@@ -60,22 +80,24 @@ padrão das imagens sem match (`sem_match`): algo como `codigos_duplicados` e
 - Garante que só famílias com ≥1 variação seguem para publicação (pré-condição do M4).
 
 **Ruins / tradeoffs:**
-- "Manter a 1ª" é uma heurística: se a planilha de origem colocasse a versão correta por
-  último, a escolha seria errada — assumimos que duplicado é anomalia rara de exportação,
-  não um padrão intencional.
-- Famílias puladas exigem que o operador confira o resumo; não há bloqueio forçando isso.
+- "Manter a 1ª" é heurística: se a origem colocasse a versão correta por último, a escolha
+  seria errada — assume-se que duplicado é anomalia rara de exportação, não um padrão.
+- Anomalias puladas dependem de o operador conferir o resumo; não há bloqueio forçando isso.
+  Aceito por consistência com o tratamento de imagens órfãs.
 
 ## Alternativas consideradas
 
-- **Rejeitar o lote inteiro** em qualquer anomalia: mais seguro contra inconsistência,
-  mas trava lotes grandes por causa de uma linha — descartado por custo de UX.
-- **Manter a última ocorrência** do CODIGO duplicado: só faria sentido se a origem
-  garantisse "correto por último", o que não é o caso.
-- **Criar a família vazia mesmo assim**: quebraria a publicação no ML; descartado.
+- **Manter a rejeição do lote inteiro** (status quo para órfão e PAI-sem-filho): mais seguro
+  contra inconsistência, mas trava lotes grandes por uma linha — descartado por custo de UX.
+- **Manter a última ocorrência** do CODIGO duplicado: só faria sentido se a origem garantisse
+  "correto por último", o que não é o caso.
+- **Publicar o filho órfão como item solo** (anúncio próprio de 1 item): não faz sentido no
+  fluxo de aviamentos agrupados por PAI — descartado.
 
 ---
 
 **Implementação (pendente, no fluxo de ingest/publicação do M4):**
-`_shared/parser.ts` — passo de dedup por `CODIGO` antes de `agruparPorPai` + filtro de
-famílias com `variacoes` vazio, retornando contadores para o `ingest-lote` persistir no lote.
-Cobrir com testes (funções puras, já testáveis no vitest).
+`_shared/parser.ts` — (a) passo de dedup por `CODIGO` antes de `agruparPorPai`; (b) trocar os
+dois `throw` (órfão e PAI-sem-filho) por coleta dos descartados; (c) `agruparPorPai` passa a
+retornar os grupos **e** os contadores de anomalias, que o `ingest-lote` persiste no lote para
+exibição no resumo/Progresso. Cobrir com testes (funções puras, já testáveis no vitest).

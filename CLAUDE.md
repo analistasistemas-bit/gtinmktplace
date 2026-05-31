@@ -85,7 +85,7 @@ Quando o assunto for um destes tópicos, **leia o ADR antes de propor mudança**
 | [0010](docs/decisions/0010-openrouter-em-vez-de-openai-direto.md) | IA via OpenRouter (gateway compatível com OpenAI SDK), não OpenAI direto |
 | [0011](docs/decisions/0011-redirect-uri-via-edge-function.md) | OAuth ML: redirect URI aponta para Supabase Edge Function (não para o frontend; mantém client_secret no servidor e evita o problema do HashRouter) |
 | [0012](docs/decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) | Refresh de token OAuth ML com lock distribuído no Redis (evita corrida de refresh) |
-| [0013](docs/decisions/0013-edge-cases-da-planilha-no-ingest.md) | Edge cases da planilha no ingest: CODIGO duplicado → manter 1ª + avisar; PAI sem filho → pular + avisar; órfão → família solo |
+| [0013](docs/decisions/0013-edge-cases-da-planilha-no-ingest.md) | Edge cases da planilha no ingest (não-bloqueantes): CODIGO duplicado → manter 1ª + avisar; filho órfão → pular + avisar; PAI sem filho → pular + avisar |
 
 ---
 
@@ -223,4 +223,4 @@ Tarefas que sobram do trilho são naturais do M4 (validar fluxo OAuth real + con
 | 2026-05-28 | M3.1 entregue: foto-capa por família (spec + plano-05 + 12 tasks subagent-driven) + 6 ajustes pós (barra progresso em chunks, novo template emoji da descrição, botão regenerar por família, badge compacto com tooltip, GTIN editável). Edge functions deployadas: process-familia v12 (template novo), upload-imagens-lote v5 (CAPA_), regenerar-copy-familia v1 (nova). 101/101 testes verdes. |
 | 2026-05-29 | M4 bloco OAuth ML ✅ (spec + ADR-0012 + plano-06 15 tasks subagent-driven). Edge functions deployadas `verify_jwt:false`: ml-oauth-start, ml-oauth-callback, ml-oauth-disconnect. `getValidAccessToken` com refresh proativo + lock Redis (ADR-0012, resolve gap §541). Vault reaproveitado do M2 + migration nova `delete_ml_credentials`. Bug bash real aprovado (conectou como AVILBV; disconnect limpa Vault). Bugs corrigidos no bug bash: domínio de auth do Brasil é `mercadolivre.com.br` (com "v"); banner de sucesso preso pós-disconnect. 106/106 testes verdes. TODO: instalar eslint (`pnpm lint` quebrado). |
 | 2026-05-31 | ESLint instalado e configurado (toolchain ESLint 9 flat config + `eslint.config.js`); `pnpm lint` passa (0 errors, 3 warnings benignos). TODO do M4 resolvido. |
-| 2026-05-31 | TASKS.md sincronizado com o código real (falsos-pendentes marcados ✅). ADR-0013 registra a política de edge cases da planilha no ingest (gap §556); tabela de ADRs deste arquivo atualizada com 0012 e 0013. | 
+| 2026-05-31 | TASKS.md sincronizado com o código real (falsos-pendentes marcados ✅). ADR-0013 registra a política de edge cases da planilha no ingest (gap §556): os 3 casos (CODIGO duplicado, filho órfão, PAI sem filho) passam a ser não-bloqueantes (descartar + avisar); hoje os 2 últimos rejeitam o lote. Tabela de ADRs deste arquivo atualizada com 0012 e 0013. | 
