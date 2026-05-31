@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-05-29 — M4 bloco OAuth ML ✅ (conectar/desconectar validado em produção) + 106/106 testes passando
+**Última atualização:** 2026-05-31 — ESLint configurado (`pnpm lint` verde) + checklist de módulos anteriores sincronizado com o código real
 **Próximo passo recomendado:** próximo bloco do M4 — busca de concorrência + estratégia de preço (independentes do OAuth)
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
@@ -69,9 +69,9 @@
 - [x] Criação dos 8 ADRs iniciais
 - [x] Criação do ROADMAP.md
 - [x] Criação do TASKS.md
-- [ ] Escrita do design doc consolidado em `docs/superpowers/specs/2026-05-26-publiai-design.md`
-- [ ] Revisão crítica do design doc (Diego ou agente revisor)
-- [ ] Escrita do plano de implementação detalhado (`writing-plans`)
+- [x] Escrita do design doc consolidado em `docs/superpowers/specs/2026-05-26-publiai-design.md` — existe e é referenciado no CLAUDE.md
+- [x] Revisão crítica do design doc (Diego ou agente revisor) — feita; achados viraram os gaps §543+
+- [x] Escrita do plano de implementação detalhado (`writing-plans`) — planos 01–06 em `docs/superpowers/plans/`
 
 ---
 
@@ -87,7 +87,7 @@
 - [x] Criar conta Upstash + QStash + Redis (via upstash MCP) — *Redis `mktplace-redis` (us-east-1 global, free) + QStash (eu-central-1, free) já provisionados*
 - [x] Anotar tokens de QStash e Redis em `.env.local` — *gravado em `.env.local` (gitignored)*
 - [x] (Substituída por ADR-0010) Criar conta OpenRouter + adicionar crédito mínimo — *Diego forneceu a key, gravada em `.env.local`*
-- [ ] Provisionar `OPENROUTER_API_KEY` + `UPSTASH_*` + `QSTASH_TOKEN` como Supabase secrets (`supabase secrets set ...`) — *adiar até o primeiro Edge Function que precise (M2/M3); placeholder Edge `hello` não precisa*
+- [x] Provisionar `OPENROUTER_API_KEY` + `UPSTASH_*` + `QSTASH_TOKEN` como Supabase secrets (`supabase secrets set ...`) — configurados no M2/M3 (edge functions de IA/Redis em produção)
 
 ### Trilho paralelo: Mercado Livre Developers ✅ (2026-05-27)
 
@@ -103,8 +103,8 @@
 - [x] Criar projeto Vite + React + TypeScript (`pnpm create vite`) — *Plano 01 Task 4 (sessão 1)*
 - [x] Instalar Tailwind + setup conforme docs do Tailwind 4 — *commit `e103dc3`; Tailwind 4 CSS-only via `@import` + `@theme`*
 - [x] Instalar shadcn/ui via CLI e inicializar — *commit `e103dc3`; preset Nova/neutral em vez de Slate (4.8 mudou default)*
-- [ ] Adicionar componentes shadcn iniciais (Button, Card, Badge, Dialog, Input, Sheet, Table) — *só Button feito; resto sob demanda no M1*
-- [ ] Instalar TanStack Query, Zustand — *react-router-dom já instalado; TanStack/Zustand quando precisar no M1/M2*
+- [x] Adicionar componentes shadcn iniciais (Button, Card, Badge, Dialog, Input, Sheet, Table) — adicionados sob demanda ao longo de M1–M3
+- [x] Instalar TanStack Query, Zustand — `@tanstack/react-query` + `zustand` no `package.json`
 - [x] Instalar Supabase JS client e configurar — *commit `9a0eabc`; TDD limpo (`src/lib/supabase.ts`)*
 - [x] Criar estrutura de pastas: `src/components`, `src/lib`, `src/pages` — *`src/hooks` ainda não — criar no M1 quando precisar*
 - [x] Verificar build local roda (`pnpm dev`) — *múltiplos builds OK na sessão; deploy Render confirma*
@@ -553,15 +553,15 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 
 ### 🟡 Tratar durante M2 (parsing de planilha) e M4
 
-- [ ] **Edge cases da planilha** — CODIGO duplicado, filho com PAI inexistente no lote, PAI sem nenhum filho. Definir regras claras (rejeitar ou warn) antes de implementar `ingest-lote`.
+- [ ] **Edge cases da planilha** — status (2026-05-31): filho órfão (PAI inexistente) **já tratado** (vira família solo); **CODIGO duplicado** (`Map` sobrescreve silenciosamente) e **PAI sem nenhum filho** (vira família com 0 variações) **ainda sem regra/aviso**. Definir rejeitar vs warn antes do bloco de publicação do M4.
 - [ ] **Signed URL com TTL longo para foto no ML** — API ML faz download assíncrono; signed URL precisa de TTL > tempo de processamento ML (≥1h) ou usar upload direto via `POST /pictures`.
 - [ ] **Critérios de classificação de concorrência** — definir explicitamente: sem=0 vendedores com mesmo GTIN; moderada=1-5; alta=6+. Documentar como regra na implementação de `buscarConcorrencia`.
-- [ ] **Invalidar cache de cor** — quando operador corrigir cor manualmente, deletar `cache:cor:{codigo}` do Redis.
+- [x] **Invalidar cache de cor** — implementado no M3: edge `invalidar-cache-cor` é chamada quando o operador edita a cor manualmente.
 
 ### 🟢 Lembretes pequenos
 
-- [ ] **CORS** — frontend em Render chamando Edge Functions Supabase precisa de CORS configurado. Lembrete em M2.
-- [ ] **Zustand vs TanStack Query** — esclarecer divisão na primeira semana de código: Zustand para UI state (filtros, seleção); TanStack Query para server state.
+- [x] **CORS** — `_shared/cors.ts` aplicado em todas as Edge Functions (`handleOptions` + `corsHeaders`).
+- [x] **Zustand vs TanStack Query** — divisão aplicada na prática: Zustand para UI/auth state; TanStack Query para server state.
 
 ---
 
