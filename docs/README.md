@@ -58,6 +58,9 @@ docs/
 | Quais campos do payload ML existem e como a categoria é definida | [decisions/0009](decisions/0009-campos-payload-ml-e-categoria-deterministica.md) |
 | Por que usamos OpenRouter em vez de OpenAI direto | [decisions/0010](decisions/0010-openrouter-em-vez-de-openai-direto.md) |
 | Por que o redirect URI do OAuth ML aponta para Edge Function e não pro frontend | [decisions/0011](decisions/0011-redirect-uri-via-edge-function.md) |
+| Como o refresh de token OAuth ML evita corrida (lock Redis) | [decisions/0012](decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) |
+| Como o ingest trata edge cases da planilha (duplicado, órfão, PAI vazio) | [decisions/0013](decisions/0013-edge-cases-da-planilha-no-ingest.md) |
+| Como a busca de concorrência no ML funciona (granularidade, GTIN→título) | [decisions/0014](decisions/0014-busca-de-concorrencia.md) |
 
 ## Status do projeto
 
