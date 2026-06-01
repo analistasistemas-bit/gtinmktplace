@@ -10,6 +10,7 @@ import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { calcularEstrategiaPreco } from '../_shared/preco/calcular.ts';
 import { detectarTipoAviamento } from '../_shared/categoria/detectar.ts';
 import { categoriaParaTipo, montarAtributosML } from '../_shared/categoria/atributos.ts';
+import { analisarMercado } from '../_shared/ml/mercado.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -158,6 +159,12 @@ Deno.serve(async (req) => {
     const categoriaMlId = categoriaParaTipo(tipo);
     const atributosMl = montarAtributosML(tipo, claimed.nome_pai);
 
+    // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
+    const analiseMercado =
+      concorrencia.origem === 'gtin' && concorrencia.product_id && concorrencia.ofertas
+        ? await analisarMercado(userId, concorrencia.product_id, categoriaMlId, concorrencia.ofertas)
+        : null;
+
     // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final
     await admin.from('familias').update({
       titulo_ml: copy.titulo,
@@ -175,6 +182,7 @@ Deno.serve(async (req) => {
       tipo_origem: tipoOrigem,
       categoria_ml_id: categoriaMlId,
       atributos_ml: atributosMl,
+      analise_mercado: analiseMercado,
       status: 'pronto',
     }).eq('id', job.familia_id);
 
