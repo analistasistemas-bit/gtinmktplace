@@ -6,6 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
+import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
     // 2. Carregar variações
     const { data: variacoes, error: varErr } = await admin
       .from('variacoes')
-      .select('id, codigo, cor, cor_origem, nome, preco, imagem_path')
+      .select('id, codigo, gtin, cor, cor_origem, nome, preco, imagem_path')
       .eq('familia_id', job.familia_id);
     if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
 
@@ -124,13 +125,23 @@ Deno.serve(async (req) => {
       })),
     });
 
-    // 6. Persistir título + descrição + custos + status final
+    // 5b. Busca de concorrência (1x por família) — ADR-0014. Resiliente: erro → "nenhuma".
+    const concorrencia = await buscarConcorrencia(userId, {
+      nome_pai: claimed.nome_pai,
+      variacoes: resolvidas.map((v) => ({ gtin: v.gtin })),
+    });
+
+    // 6. Persistir título + descrição + custos + concorrência + status final
     await admin.from('familias').update({
       titulo_ml: copy.titulo,
       descricao_ml: copy.descricao,
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
       custo_centavos: copy.custo_centavos,
+      concorrencia_vendedores: concorrencia.vendedores,
+      concorrencia_preco_min: concorrencia.preco_min,
+      concorrencia_origem: concorrencia.origem,
+      concorrencia_classe: concorrencia.classe,
       status: 'pronto',
     }).eq('id', job.familia_id);
 
