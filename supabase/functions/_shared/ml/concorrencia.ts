@@ -3,7 +3,7 @@ import { escolherIdentificador, type FamiliaParaBusca } from '../concorrencia/id
 import { parseProdutoBusca, parseItensProduto } from '../concorrencia/parse.ts';
 import { classificarConcorrencia } from '../concorrencia/classificar.ts';
 import { cacheConcorrenciaGet, cacheConcorrenciaSet } from '../redis/cache-concorrencia.ts';
-import type { ResultadoConcorrencia } from '../concorrencia/tipos.ts';
+import type { DadosOfertas, ResultadoConcorrencia } from '../concorrencia/tipos.ts';
 
 const NENHUMA: ResultadoConcorrencia = {
   vendedores: 0, preco_min: null, origem: 'nenhuma', classe: 'sem',
@@ -51,6 +51,8 @@ export async function buscarConcorrencia(
         preco_min: cached.preco_min,
         origem: cached.origem,
         classe: cached.classe,
+        product_id: (cached as { product_id?: string | null }).product_id ?? null,
+        ofertas: (cached as { ofertas?: DadosOfertas }).ofertas,
       };
     }
 
@@ -64,9 +66,16 @@ export async function buscarConcorrencia(
     if (!productId) return { ...NENHUMA, origem: 'gtin' };
 
     const itensJson = await mlGet(`${API}/products/${productId}/items`, token);
-    const { vendedores, preco_min } = parseItensProduto(itensJson);
-    const classe = classificarConcorrencia(vendedores);
-    const resultado: ResultadoConcorrencia = { vendedores, preco_min, origem: 'gtin', classe };
+    const ofertas = parseItensProduto(itensJson);
+    const classe = classificarConcorrencia(ofertas.vendedores);
+    const resultado: ResultadoConcorrencia = {
+      vendedores: ofertas.vendedores,
+      preco_min: ofertas.preco_min,
+      origem: 'gtin',
+      classe,
+      product_id: productId,
+      ofertas,
+    };
 
     await cacheConcorrenciaSet(termo, resultado).catch(() => {});
     return resultado;
