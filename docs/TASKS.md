@@ -429,14 +429,18 @@
 - [x] Sinalização visual: badge PRÓPRIO/COMPETITIVO (já existia) + linha "publica: R$ X" no card + vendedores/menor preço no expandido + alerta de preço perigoso (gap §556, `precoAbaixo20pc` real no adapter)
 - **Validação (projeção SQL com dados reais do lote #5):** Daludi vende 2–3× mais barato que o ML → todas as famílias caem em **PRÓPRIO ("já menor")**; o ramo COMPETITIVO raramente dispara na prática. Confirma o edge case central do ADR-0008. _Persistência v16 na UI fica visível no próximo lote subido (v16 só roda em lotes processados após o deploy)._
 
-### Mapeamento de categorias e atributos
+### Mapeamento de categorias e atributos ✅ (2026-06-01)
 
-- [ ] Mapear categoria ML para Linhas de Costura (MLB1132) — `~2h`
-- [ ] Mapear categoria ML para Botões (MLB1430 ou similar) — `~2h`
-- [ ] Mapear categoria ML para Fitas (MLB1429 ou similar) — `~2h`
-- [ ] Mapear atributos obrigatórios por categoria — `~3h`
-- [ ] Função `montarAtributosML(familia, categoria)` — `~3h`
-- [ ] Validação de campos obrigatórios antes de publicar — `~2h`
+> `process-familia` **v17** · `_shared/categoria/{detectar,atributos}.ts` (TDD, 17 testes) · ADR-0009 + Adendo. **IDs do ADR estavam errados** (chutes) → reais validados via API ML.
+
+- [x] Categoria ML para Linhas → **MLB270273** (Fios e Cadarços de Armarinho), não MLB1132
+- [x] Categoria ML para Botões → **MLB270272**, não MLB1430
+- [x] Categoria ML para Fitas → **MLB255054** (Fitas de Cetim), não MLB1429
+- [x] Detecção de tipo (`detectarTipoAviamento`, regex PT-BR; camada IA fica como melhoria futura)
+- [x] Atributos obrigatórios por categoria (mapa real da API: BRAND+MODEL / BRAND+RIBBON_TYPE / BRAND+MATERIAL)
+- [x] Função `montarAtributosML(tipo, nome)` — BRAND fixo "Avil", MODEL=nome, RIBBON_TYPE/MATERIAL inferidos
+- [x] Validação `atributosFaltantes` + badge "categoria indefinida" na revisão quando `tipo=outro`
+- Persiste `tipo_aviamento`/`tipo_origem`/`categoria_ml_id`/`atributos_ml`. IDs corrigidos também na tela Configurações.
 
 ### Publicação CREATE
 

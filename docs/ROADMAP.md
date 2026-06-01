@@ -190,7 +190,7 @@ Sistema publica anúncios reais no Mercado Livre, com variações, fotos, atribu
 - [x] Cache Redis (`cache:concorrencia:*`) funcionando — `cache-concorrencia.ts` TTL 6h, chave `gtin:{gtin}`
 - [x] Lógica de preço condicional implementada ([ADR-0008](decisions/0008-estrategia-de-preco-condicional.md)) — `process-familia` v16 ✅ 2026-06-01 (função pura TDD + persistência)
 - [x] Sinalização visual da estratégia (PRÓPRIO/COMPETITIVO) na tela de revisão — badge + linha "publica:" + detalhe de concorrência + alerta de preço perigoso
-- [ ] Mapeamento de atributos para categorias ML (Linhas, Botões, Fitas)
+- [x] Mapeamento de atributos para categorias ML (Linhas, Botões, Fitas) — `process-familia` v17 ✅ 2026-06-01 (IDs reais validados via API: MLB270273/MLB255054/MLB270272; ADR-0009 Adendo)
 - [ ] Publicação CREATE funciona (1 anúncio com N variações) — [ADR-0003](decisions/0003-variacoes-agrupadas-por-pai.md)
 - [ ] Publicação UPDATE atualiza estoque + preço — [ADR-0005](decisions/0005-lifecycle-publish-and-update.md)
 - [ ] Tratamento de erros ML (4xx, 5xx, rate limit, token expirado)

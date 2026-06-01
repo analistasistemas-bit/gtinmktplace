@@ -236,6 +236,8 @@ export function familiaFromRow(
     concorrenciaVendedores: r.concorrencia_vendedores,
     concorrenciaPrecoMin:
       r.concorrencia_preco_min != null ? Number(r.concorrencia_preco_min) : null,
+    tipoAviamento: r.tipo_aviamento,
+    categoriaMlId: r.categoria_ml_id,
     precoMin,
     precoMax,
     precoAbaixo20pc,

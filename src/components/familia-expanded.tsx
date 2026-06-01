@@ -303,6 +303,19 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
               </>
             )}
           </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {familia.categoriaMlId ? (
+              <>
+                Categoria: <span className="font-medium">{familia.categoriaMlId}</span>
+                {familia.tipoAviamento && <> ({familia.tipoAviamento})</>}
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1 font-medium text-destructive">
+                <AlertTriangle className="h-3 w-3" />
+                Categoria indefinida — escolha manual antes de publicar
+              </span>
+            )}
+          </div>
         </div>
 
         <div>

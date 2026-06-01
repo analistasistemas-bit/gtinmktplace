@@ -12,6 +12,8 @@ export type EstrategiaPreco = 'PROPRIO' | 'COMPETITIVO';
 
 export type Concorrencia = 'sem' | 'moderada' | 'alta';
 
+export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'outro';
+
 export type FamiliaStatus =
   | 'pendente'
   | 'processando'
@@ -59,6 +61,8 @@ export interface Familia {
   concorrencia: Concorrencia;
   concorrenciaVendedores: number;
   concorrenciaPrecoMin: number | null;
+  tipoAviamento: TipoAviamento | null;
+  categoriaMlId: string | null;
   precoMin: number;
   precoMax: number;
   precoAbaixo20pc: boolean;

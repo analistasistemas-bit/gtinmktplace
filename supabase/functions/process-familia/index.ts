@@ -8,6 +8,8 @@ import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { calcularEstrategiaPreco } from '../_shared/preco/calcular.ts';
+import { detectarTipoAviamento } from '../_shared/categoria/detectar.ts';
+import { categoriaParaTipo, montarAtributosML } from '../_shared/categoria/atributos.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -150,7 +152,13 @@ Deno.serve(async (req) => {
       : 0;
     const estrategiaFamilia = calcularEstrategiaPreco(precoMinFamilia, conc);
 
-    // 6. Persistir título + descrição + custos + concorrência + estratégia + status final
+    // 5d. Categoria + atributos determinísticos (ADR-0009). tipo='outro' deixa
+    // categoria_ml_id null → operador escolhe na revisão (sem publicar às cegas).
+    const { tipo, origem: tipoOrigem } = detectarTipoAviamento(claimed.nome_pai);
+    const categoriaMlId = categoriaParaTipo(tipo);
+    const atributosMl = montarAtributosML(tipo, claimed.nome_pai);
+
+    // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final
     await admin.from('familias').update({
       titulo_ml: copy.titulo,
       descricao_ml: copy.descricao,
@@ -163,6 +171,10 @@ Deno.serve(async (req) => {
       concorrencia_classe: concorrencia.classe,
       estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
+      tipo_aviamento: tipo,
+      tipo_origem: tipoOrigem,
+      categoria_ml_id: categoriaMlId,
+      atributos_ml: atributosMl,
       status: 'pronto',
     }).eq('id', job.familia_id);
 

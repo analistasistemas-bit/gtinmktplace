@@ -115,18 +115,20 @@ export default function Configuracoes() {
           <h2 className="mb-3 text-sm font-semibold">Categorias padrão</h2>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between border-b pb-2">
-              <span>Linhas de Costura</span>
-              <code className="text-xs">MLB1132</code>
+              <span>Linhas (Fios e Cadarços de Armarinho)</span>
+              <code className="text-xs">MLB270273</code>
             </div>
             <div className="flex justify-between border-b pb-2">
               <span>Botões</span>
-              <code className="text-xs">MLB1430</code>
+              <code className="text-xs">MLB270272</code>
             </div>
             <div className="flex justify-between">
-              <span>Fitas</span>
-              <code className="text-xs">MLB1429</code>
+              <span>Fitas de Cetim</span>
+              <code className="text-xs">MLB255054</code>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Definidas via ADR-0009 (lookup determinístico)</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Categorias-folha reais do ML (lookup determinístico por tipo, ADR-0009)
+            </p>
           </div>
         </Card>
       </div>

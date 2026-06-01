@@ -143,3 +143,42 @@ Ou seja, o prompt agora recebe a categoria como **input** (decidida pelo lookup)
 ## Como reverter
 
 Se um dia for desejável que o operador volte a escolher categoria a cada lote, o campo `categoria_ml_id` já existe no schema; basta plugar UI em vez de lookup. Lookup table permanece como sugestão.
+
+---
+
+## Adendo (2026-06-01) — IDs reais validados na API + atributos obrigatórios
+
+Os IDs de categoria citados na Parte 1 (`MLB1132`/`MLB1430`/`MLB1429`) eram **chutes**
+("verificar ID exato na implementação") e estavam **todos errados** — apontavam para
+categorias raiz não-publicáveis ("Brinquedos e Hobbies", "Calçados, Roupas e Bolsas", "Outros").
+Descobertos via `GET /sites/MLB/domain_discovery/search` + `GET /categories/{id}` com token de
+produção. Os IDs reais (categorias-folha, `listing_allowed:true`, 12 fotos):
+
+| Tipo | category_id real | Nome ML |
+|---|---|---|
+| linha | **MLB270273** | Fios e Cadarços de Armarinho |
+| fita | **MLB255054** | Fitas de Cetim |
+| botao | **MLB270272** | Botões |
+
+**Atributos obrigatórios** (`tags.required`, via `GET /categories/{id}/attributes`):
+
+| Categoria | Obrigatórios | Observação |
+|---|---|---|
+| linha (MLB270273) | `BRAND`, `MODEL` | ambos texto livre |
+| fita (MLB255054) | `BRAND`, `RIBBON_TYPE` | RIBBON_TYPE = 8 value_ids fixos (Cetim/Estampada/Fita/Gorgorão/Organza/Renda/Veludo/Viés) |
+| botao (MLB270272) | `BRAND`, `MATERIAL` | MATERIAL = Acrílico/Madeira |
+
+`COLOR` é variation-capable em todas → vai como `attribute_combinations` por variação (na publicação).
+
+**Decisões de preenchimento (2026-06-01):**
+- `BRAND` = **fixo "Avil"** (decisão de negócio do Diego; ML aceita texto livre).
+- `MODEL` (linha) = nome do PAI.
+- `RIBBON_TYPE` (fita) = inferido do nome por palavra-chave (default value_id `22691456` "Fita").
+- `MATERIAL` (botão) = "Madeira" se o nome menciona, senão "Acrílico" (default).
+
+**Implementação:** `_shared/categoria/detectar.ts` (regex de tipo) + `_shared/categoria/atributos.ts`
+(`categoriaParaTipo`, `montarAtributosML`, `atributosFaltantes`), TDD 17 testes. Integrado no
+`process-familia` **v17**: popula `tipo_aviamento`, `tipo_origem`, `categoria_ml_id`, `atributos_ml`.
+`tipo='outro'` deixa `categoria_ml_id` null → badge "categoria indefinida" na revisão (não publica
+às cegas). A **camada IA classificadora** (Parte 1, item 2) não foi implementada — o regex cobre os
+casos reais; fica como melhoria se aparecerem nomes que o regex não classifica.
