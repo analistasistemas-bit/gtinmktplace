@@ -186,8 +186,8 @@ Sistema publica anúncios reais no Mercado Livre, com variações, fotos, atribu
 ### Critérios de saída
 - [x] OAuth Mercado Livre funcional (autorizar + refresh) — bloco OAuth ✅ 2026-05-29 (ADR-0012)
 - [x] Tokens criptografados via Supabase Vault — reaproveitado do M2 + `delete_ml_credentials`
-- [ ] Busca de concorrência funciona (por GTIN e por título)
-- [ ] Cache Redis (`cache:concorrencia:*`) funcionando
+- [x] Busca de concorrência funciona (por GTIN e por título) — código + integração no `process-familia` v14 ✅ 2026-06-01 (ADR-0014); falta bug bash com token real
+- [x] Cache Redis (`cache:concorrencia:*`) funcionando — `cache-concorrencia.ts` TTL 6h, chave global por GTIN/hash-de-título
 - [ ] Lógica de preço condicional implementada ([ADR-0008](decisions/0008-estrategia-de-preco-condicional.md))
 - [ ] Sinalização visual da estratégia (PRÓPRIO/COMPETITIVO) na tela de revisão
 - [ ] Mapeamento de atributos para categorias ML (Linhas, Botões, Fitas)
