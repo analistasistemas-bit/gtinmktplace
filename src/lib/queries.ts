@@ -10,6 +10,7 @@ import type {
   OperacaoML,
   EstrategiaPreco,
   Concorrencia,
+  AnaliseMercado,
 } from './tipos-dominio';
 
 export const QK = {
@@ -236,6 +237,7 @@ export function familiaFromRow(
     concorrenciaVendedores: r.concorrencia_vendedores,
     concorrenciaPrecoMin:
       r.concorrencia_preco_min != null ? Number(r.concorrencia_preco_min) : null,
+    analiseMercado: (r.analise_mercado as AnaliseMercado | null) ?? null,
     tipoAviamento: r.tipo_aviamento,
     categoriaMlId: r.categoria_ml_id,
     precoMin,

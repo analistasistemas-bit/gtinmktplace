@@ -12,6 +12,17 @@ export type EstrategiaPreco = 'PROPRIO' | 'COMPETITIVO';
 
 export type Concorrencia = 'sem' | 'moderada' | 'alta';
 
+export interface AnaliseMercado {
+  preco_max: number | null;
+  total_ofertas: number;
+  frete_gratis: number;
+  full: number;
+  lideres: number;
+  maior_vendas: number;
+  ranking_categoria: number | null;
+  produto_desde: string | null;
+}
+
 export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'outro';
 
 export type FamiliaStatus =
@@ -61,6 +72,7 @@ export interface Familia {
   concorrencia: Concorrencia;
   concorrenciaVendedores: number;
   concorrenciaPrecoMin: number | null;
+  analiseMercado: AnaliseMercado | null;
   tipoAviamento: TipoAviamento | null;
   categoriaMlId: string | null;
   precoMin: number;
