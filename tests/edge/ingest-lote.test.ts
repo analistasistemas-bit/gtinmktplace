@@ -4,6 +4,7 @@ import {
   agruparPorPai,
   normalizarCodigo,
   matchImagem,
+  matchCapa,
 } from '../../supabase/functions/_shared/parser';
 import type { PlanilhaRow } from '../../supabase/functions/_shared/types';
 
@@ -69,5 +70,22 @@ describe('matchImagem', () => {
   });
   it('retorna undefined se não houver match', () => {
     expect(matchImagem('999', ['u1/l1/00000100.jpeg'])).toBeUndefined();
+  });
+  it('NÃO casa arquivo de capa como imagem de variação', () => {
+    expect(matchImagem('449253', ['u1/l1/CAPA_00449253.jpg'])).toBeUndefined();
+  });
+});
+
+describe('matchCapa', () => {
+  it('encontra a capa por CAPA_00CODIGO.ext (case-insensitive, jpg/jpeg/png)', () => {
+    const paths = ['u1/l1/00220566.jpeg', 'u1/l1/CAPA_00449253.jpg'];
+    expect(matchCapa('449253', paths)).toBe('u1/l1/CAPA_00449253.jpg');
+    expect(matchCapa('00449253', ['u1/l1/capa_00449253.png'])).toBe('u1/l1/capa_00449253.png');
+  });
+  it('não confunde imagem de variação com capa', () => {
+    expect(matchCapa('220566', ['u1/l1/00220566.jpeg'])).toBeUndefined();
+  });
+  it('retorna undefined quando não há capa para o código', () => {
+    expect(matchCapa('449253', ['u1/l1/CAPA_00111111.jpg'])).toBeUndefined();
   });
 });

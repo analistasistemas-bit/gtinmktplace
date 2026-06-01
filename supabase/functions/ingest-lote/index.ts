@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { validarColunas, agruparPorPai, matchImagem, normalizarCodigo } from '../_shared/parser.ts';
+import { validarColunas, agruparPorPai, matchImagem, matchCapa, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import * as XLSX from 'npm:xlsx@^0.18';
@@ -95,6 +95,7 @@ Deno.serve(async (req) => {
       unidade: g.unidade,
       operacao: publicadosSet.has(g.codigo_pai) ? 'UPDATE' : 'CREATE',
       status: 'pendente',
+      capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
     }));
     const { data: familiasCriadas, error: famErr } = await admin
       .from('familias')
