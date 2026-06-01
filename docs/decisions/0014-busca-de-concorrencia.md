@@ -1,6 +1,6 @@
 # ADR-0014 — Busca de concorrência no Mercado Livre
 
-**Status:** Aceito
+**Status:** Aceito (aditado em 2026-06-01 — ver §Adendo)
 **Data:** 2026-05-31
 **Decisores:** Diego (decisões de produto/UX)
 **Relacionado:** alimenta [ADR-0008 (estratégia de preço condicional)](0008-estrategia-de-preco-condicional.md); consome [ADR-0012 (`getValidAccessToken`)](0012-refresh-token-oauth-ml-com-lock-redis.md); resolve o gap §558 do `TASKS.md`
@@ -87,3 +87,34 @@ TTL **6h**, no Upstash Redis já no stack.
 A busca é isolada em `_shared/ml/concorrencia.ts` + funções puras. Para desligar, basta o
 `process-familia` não chamá-la (campos ficam no default `nenhuma`/`0`, levando todo mundo a
 PRÓPRIO). Trocar o endpoint do ML é localizado nessa função.
+
+---
+
+## Adendo (2026-06-01) — endpoint real do ML após bug bash
+
+O bug bash (Task 10 do plano-07) com token de produção (AVILBV) revelou que o endpoint
+`/sites/MLB/search` usado na 1ª implementação retorna **HTTP 403 forbidden** mesmo com token
+válido — o Mercado Livre **descontinuou o search de itens por site para apps**. A
+implementação foi corrigida para usar o **catálogo** (que era a intenção original da Decisão 2):
+
+**Ramo GTIN (confiança alta) — fluxo de 2 chamadas:**
+1. `GET /products/search?status=active&site_id=MLB&q={gtin}` → `results[0].id` (product_id de
+   catálogo). `paging.total=0` ou sem id → `origem='gtin'`, sem concorrência.
+2. `GET /products/{product_id}/items` → conta `seller_id` distintos (= `vendedores`) e
+   `min(price)` (= `preco_min`). Campos vêm no **topo** de cada oferta (`seller_id`/`price`),
+   não em `seller.id`.
+
+Validado em 2026-06-01: GTIN `7891521360659` (Fita Cetim Progresso N.3) → produto
+`MLB34175726` → 8 ofertas, 6 vendedores distintos, preço mín R$ 12,62, classe `alta`.
+
+**Ramo título (confiança baixa) — não quantifica.** `/products/search?q={título}` retorna ~10k
+resultados irrelevantes (ruído de catálogo textual sem âncora de EAN). Em vez de inventar um
+número, a busca registra `origem='titulo'` com `vendedores=0`/`classe='sem'` → estratégia
+PRÓPRIO segura. Isso troca a 2ª parte da Decisão 2 ("título via `/sites/MLB/search`"): o ramo
+título deixa de tentar contar concorrência e passa a só sinalizar "sem EAN → sem dado
+confiável". A Decisão 4 (resiliência → PRÓPRIO) e a classificação informativa (Decisão 3)
+permanecem.
+
+**Cache:** chave `cache:concorrencia:gtin:{gtin}` (TTL 6h). O ramo título não cacheia (retorno
+imediato, sem I/O). A normalização por hash de título citada na seção "Cache" deixa de ser
+usada.
