@@ -25,46 +25,43 @@ describe('parseProdutoBusca', () => {
 });
 
 describe('parseItensProduto', () => {
-  it('payload vazio → 0 vendedores, preço null', () => {
-    expect(parseItensProduto({ results: [] })).toEqual({ vendedores: 0, preco_min: null });
-    expect(parseItensProduto({})).toEqual({ vendedores: 0, preco_min: null });
-    expect(parseItensProduto(null)).toEqual({ vendedores: 0, preco_min: null });
+  const json = {
+    paging: { total: 4 },
+    results: [
+      { seller_id: 1, price: 12.62, shipping: { free_shipping: true, logistic_type: 'fulfillment' } },
+      { seller_id: 2, price: 17.02, shipping: { free_shipping: false, logistic_type: 'cross_docking' } },
+      { seller_id: 1, price: 14.0, shipping: { free_shipping: true, logistic_type: 'drop_off' } },
+      { seller_id: 3, price: 0, shipping: { free_shipping: false, logistic_type: 'cross_docking' } },
+    ],
+  };
+
+  it('payload vazio → tudo zerado', () => {
+    expect(parseItensProduto({ results: [] })).toEqual({
+      vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
+      frete_gratis: 0, full: 0, seller_ids: [],
+    });
+    expect(parseItensProduto(null)).toEqual({
+      vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
+      frete_gratis: 0, full: 0, seller_ids: [],
+    });
   });
 
-  it('conta vendedores distintos (seller_id) e pega o menor preço', () => {
-    // formato real de /products/{id}/items
-    const json = {
-      paging: { total: 8 },
-      results: [
-        { seller_id: 303221310, price: 12.62 },
-        { seller_id: 146443982, price: 13.35 },
-        { seller_id: 303221310, price: 11.0 }, // mesmo seller → conta 1
-      ],
-    };
-    expect(parseItensProduto(json)).toEqual({ vendedores: 2, preco_min: 11.0 });
+  it('preço min/max ignora <=0; total_ofertas conta todas', () => {
+    const r = parseItensProduto(json);
+    expect(r.preco_min).toBe(12.62);
+    expect(r.preco_max).toBe(17.02);
+    expect(r.total_ofertas).toBe(4);
   });
 
-  it('ignora preços inválidos (<=0 ou ausentes)', () => {
-    const json = {
-      results: [
-        { seller_id: 1, price: 0 },
-        { seller_id: 2, price: 5.25 },
-        { seller_id: 3 },
-      ],
-    };
-    expect(parseItensProduto(json)).toEqual({ vendedores: 3, preco_min: 5.25 });
+  it('vendedores distintos e seller_ids únicos', () => {
+    const r = parseItensProduto(json);
+    expect(r.vendedores).toBe(3);
+    expect(r.seller_ids.sort()).toEqual([1, 2, 3]);
   });
 
-  it('sem seller_id usa o nº de ofertas como fallback de contagem', () => {
-    const json = { results: [{ price: 3 }, { price: 4 }] };
-    expect(parseItensProduto(json)).toEqual({ vendedores: 2, preco_min: 3 });
-  });
-
-  it('mesmo vendedor com id number e string conta como 1', () => {
-    const json = { results: [
-      { seller_id: 1, price: 5 },
-      { seller_id: '1', price: 6 },
-    ]};
-    expect(parseItensProduto(json)).toEqual({ vendedores: 1, preco_min: 5 });
+  it('conta frete grátis e FULL por oferta', () => {
+    const r = parseItensProduto(json);
+    expect(r.frete_gratis).toBe(2);
+    expect(r.full).toBe(1);
   });
 });

@@ -1,3 +1,5 @@
+import type { DadosOfertas } from './tipos.ts';
+
 /** Extrai o product_id (catálogo) do 1º resultado de `/products/search`. null se vazio. */
 export function parseProdutoBusca(json: unknown): string | null {
   const results = (json as { results?: Array<{ id?: string }> } | null)?.results;
@@ -9,29 +11,42 @@ export function parseProdutoBusca(json: unknown): string | null {
 interface MLItem {
   seller_id?: number | string;
   price?: number;
+  shipping?: { free_shipping?: boolean; logistic_type?: string };
 }
 
 /**
- * Conta vendedores distintos e o menor preço das ofertas de `/products/{id}/items`.
- * Estrutura real: `{ results: [{ seller_id, price }] }` (campos no topo, não em `seller.id`).
+ * Extrai dados de ofertas de `/products/{id}/items`: faixa de preço, frete grátis,
+ * logística FULL e lista de seller_ids distintos.
+ * Estrutura real: `{ results: [{ seller_id, price, shipping }] }`.
  */
-export function parseItensProduto(
-  json: unknown,
-): { vendedores: number; preco_min: number | null } {
+export function parseItensProduto(json: unknown): DadosOfertas {
+  const vazio: DadosOfertas = {
+    vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
+    frete_gratis: 0, full: 0, seller_ids: [],
+  };
   const results = (json as { results?: MLItem[] } | null)?.results;
-  if (!Array.isArray(results) || results.length === 0) {
-    return { vendedores: 0, preco_min: null };
-  }
+  if (!Array.isArray(results) || results.length === 0) return vazio;
+
   const precos = results
     .map((r) => r.price)
     .filter((p): p is number => typeof p === 'number' && p > 0);
-  const sellers = new Set(
-    results
-      .map((r) => (r.seller_id != null ? String(r.seller_id) : undefined))
-      .filter((id): id is string => id !== undefined),
-  );
+  const sellers = [
+    ...new Set(
+      results
+        .map((r) => (r.seller_id != null ? Number(r.seller_id) : null))
+        .filter((id): id is number => id != null && !Number.isNaN(id)),
+    ),
+  ];
+  const frete_gratis = results.filter((r) => r.shipping?.free_shipping === true).length;
+  const full = results.filter((r) => r.shipping?.logistic_type === 'fulfillment').length;
+
   return {
-    vendedores: sellers.size > 0 ? sellers.size : results.length,
+    vendedores: sellers.length > 0 ? sellers.length : results.length,
     preco_min: precos.length ? precos.reduce((a, b) => Math.min(a, b)) : null,
+    preco_max: precos.length ? precos.reduce((a, b) => Math.max(a, b)) : null,
+    total_ofertas: results.length,
+    frete_gratis,
+    full,
+    seller_ids: sellers,
   };
 }
