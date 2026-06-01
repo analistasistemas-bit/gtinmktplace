@@ -1,0 +1,63 @@
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { PainelAnalise } from '@/components/painel-analise';
+import type { Familia } from '@/lib/tipos-dominio';
+
+function familiaBase(over: Partial<Familia> = {}): Familia {
+  return {
+    id: 'f1', loteId: 'l1', codigoPai: '00445975',
+    titulo: 'FITA CETIM N.3', descricao: '', operacao: 'CREATE',
+    estrategiaPreco: 'PROPRIO', estrategiaMotivo: 'nosso preço já é mais competitivo que o mercado',
+    concorrencia: 'alta', concorrenciaVendedores: 6, concorrenciaPrecoMin: 12.62,
+    tipoAviamento: 'fita', categoriaMlId: 'MLB255054',
+    precoMin: 2.95, precoMax: 2.95, precoAbaixo20pc: false,
+    capaStoragePath: null, variacoes: [], status: 'pronto',
+    tokensInput: null, tokensOutput: null, custoCentavos: null,
+    tituloEditadoPeloOperador: false, descricaoEditadaPeloOperador: false,
+    variacoesSemCor: 0,
+    ...over,
+  };
+}
+
+describe('PainelAnalise', () => {
+  it('estratégia PRÓPRIO com motivo', () => {
+    render(<PainelAnalise familia={familiaBase()} />);
+    expect(screen.getByText('PRÓPRIO')).toBeInTheDocument();
+    expect(screen.getByText(/já é mais competitivo/i)).toBeInTheDocument();
+  });
+
+  it('estratégia COMPETITIVO', () => {
+    render(<PainelAnalise familia={familiaBase({ estrategiaPreco: 'COMPETITIVO', estrategiaMotivo: 'concorrência presente — bater menor preço' })} />);
+    expect(screen.getByText('COMPETITIVO')).toBeInTheDocument();
+  });
+
+  it('concorrência alta mostra vendedores e menor preço', () => {
+    render(<PainelAnalise familia={familiaBase()} />);
+    expect(screen.getByText(/alta/i)).toBeInTheDocument();
+    expect(screen.getByText(/6 vendedores/i)).toBeInTheDocument();
+    expect(screen.getByText(/12,62/)).toBeInTheDocument();
+  });
+
+  it('concorrência sem → "sem concorrência"', () => {
+    render(<PainelAnalise familia={familiaBase({ concorrencia: 'sem', concorrenciaVendedores: 0, concorrenciaPrecoMin: null })} />);
+    expect(screen.getByText(/sem concorrência/i)).toBeInTheDocument();
+  });
+
+  it('categoria definida mostra nome amigável + id', () => {
+    render(<PainelAnalise familia={familiaBase()} />);
+    expect(screen.getByText(/Fita de Cetim/i)).toBeInTheDocument();
+    expect(screen.getByText(/MLB255054/)).toBeInTheDocument();
+  });
+
+  it('categoria indefinida (tipo outro / sem id) alerta', () => {
+    render(<PainelAnalise familia={familiaBase({ tipoAviamento: 'outro', categoriaMlId: null })} />);
+    expect(screen.getByText(/categoria indefinida/i)).toBeInTheDocument();
+  });
+
+  it('alerta de preço perigoso só quando precoAbaixo20pc', () => {
+    const { rerender } = render(<PainelAnalise familia={familiaBase()} />);
+    expect(screen.queryByText(/abaixo do m[íi]nimo/i)).not.toBeInTheDocument();
+    rerender(<PainelAnalise familia={familiaBase({ precoAbaixo20pc: true })} />);
+    expect(screen.getByText(/abaixo do m[íi]nimo/i)).toBeInTheDocument();
+  });
+});
