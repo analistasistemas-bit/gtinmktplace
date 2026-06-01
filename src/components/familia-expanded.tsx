@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, Camera, Sparkles, Trash2 } from 'lucide-react';
+import { Camera, Sparkles, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
+import { PainelAnalise } from '@/components/painel-analise';
 import {
   useUpdateVariacaoPreco,
   useUpdateVariacaoCor,
@@ -19,7 +19,6 @@ import {
 import { subirCapaFamilia, removerCapaFamilia } from '@/lib/upload-imagens';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
-import { fmtBRL } from '@/lib/formato';
 import type { Familia } from '@/lib/tipos-dominio';
 
 const FLASH_MS = 2000;
@@ -194,7 +193,8 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
-      <div className="mb-4 flex items-start gap-4 border-b pb-4">
+      <div className="mb-4 flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-start">
+        <div className="flex items-start gap-4">
         <FotoCapaFamilia capaUrl={capaUrl ?? null} tamanho="large" />
         <div className="flex flex-col gap-2">
           <span className="text-xs text-muted-foreground">Foto-capa do anúncio</span>
@@ -223,22 +223,9 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
             onChange={lidarTrocaCapa}
           />
         </div>
-      </div>
-      {familia.precoAbaixo20pc && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-          <div>
-            <div className="font-semibold text-destructive">
-              Atenção: preço sugerido abaixo do mínimo aceitável
-            </div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              O preço sugerido pela estratégia <strong>{familia.estrategiaPreco}</strong> ficou
-              mais de 20% abaixo do preço da sua planilha. Reveja antes de aprovar — pode estar
-              vendendo no prejuízo.
-            </div>
-          </div>
         </div>
-      )}
+        <PainelAnalise familia={familia} />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="mb-1 flex items-center justify-between">
@@ -281,41 +268,6 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
             </Button>
           </div>
 
-          <div className="mt-4 flex items-center gap-2">
-            <Badge variant={familia.estrategiaPreco === 'PROPRIO' ? 'outline' : 'secondary'}>
-              {familia.estrategiaPreco}
-            </Badge>
-            <span className="text-xs text-muted-foreground">{familia.estrategiaMotivo}</span>
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Concorrência: <span className="font-medium">{familia.concorrencia}</span>
-            {familia.concorrenciaVendedores > 0 && (
-              <>
-                {' · '}
-                {familia.concorrenciaVendedores}{' '}
-                {familia.concorrenciaVendedores === 1 ? 'vendedor' : 'vendedores'}
-                {familia.concorrenciaPrecoMin != null && (
-                  <>
-                    {' · menor preço '}
-                    <span className="font-medium">{fmtBRL(familia.concorrenciaPrecoMin)}</span>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {familia.categoriaMlId ? (
-              <>
-                Categoria: <span className="font-medium">{familia.categoriaMlId}</span>
-                {familia.tipoAviamento && <> ({familia.tipoAviamento})</>}
-              </>
-            ) : (
-              <span className="inline-flex items-center gap-1 font-medium text-destructive">
-                <AlertTriangle className="h-3 w-3" />
-                Categoria indefinida — escolha manual antes de publicar
-              </span>
-            )}
-          </div>
         </div>
 
         <div>
