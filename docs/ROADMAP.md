@@ -188,8 +188,8 @@ Sistema publica anúncios reais no Mercado Livre, com variações, fotos, atribu
 - [x] Tokens criptografados via Supabase Vault — reaproveitado do M2 + `delete_ml_credentials`
 - [x] Busca de concorrência funciona (por GTIN via catálogo) — `process-familia` v15 ✅ 2026-06-01 (ADR-0014 + Adendo); bug bash do lote #5 validou ponta a ponta com token real. Ramo título sinaliza baixa confiança sem quantificar.
 - [x] Cache Redis (`cache:concorrencia:*`) funcionando — `cache-concorrencia.ts` TTL 6h, chave `gtin:{gtin}`
-- [ ] Lógica de preço condicional implementada ([ADR-0008](decisions/0008-estrategia-de-preco-condicional.md))
-- [ ] Sinalização visual da estratégia (PRÓPRIO/COMPETITIVO) na tela de revisão
+- [x] Lógica de preço condicional implementada ([ADR-0008](decisions/0008-estrategia-de-preco-condicional.md)) — `process-familia` v16 ✅ 2026-06-01 (função pura TDD + persistência)
+- [x] Sinalização visual da estratégia (PRÓPRIO/COMPETITIVO) na tela de revisão — badge + linha "publica:" + detalhe de concorrência + alerta de preço perigoso
 - [ ] Mapeamento de atributos para categorias ML (Linhas, Botões, Fitas)
 - [ ] Publicação CREATE funciona (1 anúncio com N variações) — [ADR-0003](decisions/0003-variacoes-agrupadas-por-pai.md)
 - [ ] Publicação UPDATE atualiza estoque + preço — [ADR-0005](decisions/0005-lifecycle-publish-and-update.md)

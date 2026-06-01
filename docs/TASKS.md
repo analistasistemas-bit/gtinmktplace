@@ -420,11 +420,14 @@
 - [x] **Integração na edge function `process-familia` + deploy** — plano-07 Task 9 (busca 1×/família após a copy; `process-familia` v14 deployada via MCP)
 - [x] **Bug bash** (lote real #5, 4 famílias) — plano-07 Task 10 ✅. **Achado:** `/sites/MLB/search` retorna 403 (descontinuado pelo ML). Corrigido para catálogo `/products/search` → `/products/{id}/items` (ver Adendo do [ADR-0014](decisions/0014-busca-de-concorrencia.md)). **Validação ponta a ponta (v15, token AVILBV):** FITA N.3 → 6 vend./R$12,62; LINHA XIK → 6/R$12,90; FITA N.9 → 9/R$17,99 (todas `origem=gtin`, classe alta); LINHA 1500MT (GTIN fora do catálogo ML) → `gtin`/0 vendedores, status `pronto` (resiliência OK). Ramo título não quantifica (catálogo textual = ~10k ruído) → `origem='titulo'`/PRÓPRIO seguro (sem família sem-GTIN no lote; lógica é retorno trivial). **Nota:** o MCP QStash não aciona o `process-familia` (conta divergente das signing keys); reprocessar exige lote novo pela UI (`ingest-lote` usa o SDK QStash real).
 
-### Estratégia de preço condicional
+### Estratégia de preço condicional ✅ (2026-06-01)
 
-- [ ] Função `calcularPrecoSugerido({preco_planilha, concorrencia})` conforme ADR-0008 — `~2h`
-- [ ] Persistência dos campos `estrategia_preco`, `estrategia_motivo` em `familias` — `~1h`
-- [ ] Sinalização visual na tela de revisão (badge PRÓPRIO/COMPETITIVO) — `~2h`
+> `process-familia` **v16** · função pura `calcularEstrategiaPreco` (TDD, 6 testes) · ADR-0008.
+
+- [x] Função `calcularEstrategiaPreco(preco_planilha, concorrencia)` conforme ADR-0008 — `_shared/preco/calcular.ts` (TDD, 6 testes; cobre os 3 ramos + edge "já menor" + dado incompleto)
+- [x] Persistência: `estrategia_preco`/`estrategia_motivo` na família + `preco_publicacao` por variação (preserva `preco_editado_pelo_operador`) — `process-familia` v16
+- [x] Sinalização visual: badge PRÓPRIO/COMPETITIVO (já existia) + linha "publica: R$ X" no card + vendedores/menor preço no expandido + alerta de preço perigoso (gap §556, `precoAbaixo20pc` real no adapter)
+- **Validação (projeção SQL com dados reais do lote #5):** Daludi vende 2–3× mais barato que o ML → todas as famílias caem em **PRÓPRIO ("já menor")**; o ramo COMPETITIVO raramente dispara na prática. Confirma o edge case central do ADR-0008. _Persistência v16 na UI fica visível no próximo lote subido (v16 só roda em lotes processados após o deploy)._
 
 ### Mapeamento de categorias e atributos
 
@@ -553,7 +556,7 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 
 - [ ] **UPDATE com variação adicionada/removida** — quando reimportar uma família já publicada e ela ganhar/perder cores, sistema deve detectar e sinalizar com badge na tela de revisão. Não precisa publicar a mudança automaticamente, mas precisa COMUNICAR. Senão o operador publica com estoque/variação errados. Atualizar [ADR-0005](decisions/0005-lifecycle-publish-and-update.md) com regra antes de implementar.
 - [x] **OAuth refresh com lock no Redis** — ✅ resolvido no bloco OAuth do M4. `getValidAccessToken` usa lock `SET NX` no Upstash (TTL 30s) + refresh proativo (buffer 5min). Documentado em [ADR-0012](decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) (o gap citava "ADR-0010", mas esse número já era do OpenRouter).
-- [ ] **Alerta visual de preço perigoso** — se o preço sugerido pela estratégia COMPETITIVO ficar abaixo de 20% do preço da planilha, exibir badge vermelho "⚠ ATENÇÃO: preço X% abaixo do seu preço" na tela de revisão. Não bloqueia publicação, só sinaliza. Aditar [ADR-0008](decisions/0008-estrategia-de-preco-condicional.md).
+- [x] **Alerta visual de preço perigoso** — ✅ 2026-06-01. `precoAbaixo20pc` no adapter (`familiaFromRow`): alguma variação com `preco_publicacao < 0.8 × preco`. O alerta vermelho na tela de revisão já existia (`familia-expanded.tsx`), agora alimentado por dado real. Não bloqueia publicação, só sinaliza.
 - [ ] **Reavaliar duração de M4 para 3 semanas** — escopo real (~20 tarefas substanciais) parece pedir 3 semanas. Decidir ao iniciar M4: ou estender M4, ou mover busca de concorrência + estratégia de preço para M3 (são independentes do OAuth).
 
 ### 🟡 Tratar durante M2 (parsing de planilha) e M4
