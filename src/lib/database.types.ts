@@ -21,6 +21,10 @@ export type Database = {
           capa_storage_path: string | null
           categoria_ml_id: string | null
           codigo_pai: string
+          concorrencia_classe: Database["public"]["Enums"]["classe_concorrencia"]
+          concorrencia_origem: Database["public"]["Enums"]["origem_concorrencia"]
+          concorrencia_preco_min: number | null
+          concorrencia_vendedores: number
           criado_em: string
           custo_centavos: number | null
           descricao_editada_pelo_operador: boolean
@@ -60,6 +64,10 @@ export type Database = {
           capa_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai: string
+          concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
+          concorrencia_origem?: Database["public"]["Enums"]["origem_concorrencia"]
+          concorrencia_preco_min?: number | null
+          concorrencia_vendedores?: number
           criado_em?: string
           custo_centavos?: number | null
           descricao_editada_pelo_operador?: boolean
@@ -99,6 +107,10 @@ export type Database = {
           capa_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai?: string
+          concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
+          concorrencia_origem?: Database["public"]["Enums"]["origem_concorrencia"]
+          concorrencia_preco_min?: number | null
+          concorrencia_vendedores?: number
           criado_em?: string
           custo_centavos?: number | null
           descricao_editada_pelo_operador?: boolean
@@ -337,6 +349,7 @@ export type Database = {
       }
     }
     Enums: {
+      classe_concorrencia: "sem" | "moderada" | "alta"
       cor_origem: "descricao" | "vision" | "manual"
       estrategia_preco: "proprio" | "competitivo" | "manual"
       familia_status:
@@ -354,6 +367,7 @@ export type Database = {
         | "concluido"
         | "erro"
       operacao_ml: "CREATE" | "UPDATE"
+      origem_concorrencia: "gtin" | "titulo" | "nenhuma"
       tipo_aviamento: "linha" | "botao" | "fita" | "outro"
       tipo_origem: "regex" | "ia" | "manual"
     }
@@ -483,6 +497,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      classe_concorrencia: ["sem", "moderada", "alta"],
       cor_origem: ["descricao", "vision", "manual"],
       estrategia_preco: ["proprio", "competitivo", "manual"],
       familia_status: [
@@ -502,6 +517,7 @@ export const Constants = {
         "erro",
       ],
       operacao_ml: ["CREATE", "UPDATE"],
+      origem_concorrencia: ["gtin", "titulo", "nenhuma"],
       tipo_aviamento: ["linha", "botao", "fita", "outro"],
       tipo_origem: ["regex", "ia", "manual"],
     },
