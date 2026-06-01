@@ -577,6 +577,12 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 
 ---
 
+## Ajustes de UX da Revisão
+
+- [x] **Painel de Análise visual no topo do anúncio** (2026-06-01) — move estratégia/concorrência/categoria do final do expandido para um painel visual (cards + ícones + cores semânticas) ao lado da foto-capa; consolida o alerta de preço perigoso. Componente `PainelAnalise` (TDD 7 testes). Spec: [2026-06-01-painel-analise-revisao-design.md](superpowers/specs/2026-06-01-painel-analise-revisao-design.md) · Plano: [plano-08](superpowers/plans/2026-06-01-plan-08-painel-analise.md). Só frontend; 155 testes verdes.
+
+---
+
 ## Notas livres
 
 Espaço para observações, decisões pendentes pequenas, ideias durante a implementação:
