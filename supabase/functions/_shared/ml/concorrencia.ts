@@ -3,7 +3,7 @@ import { escolherIdentificador, type FamiliaParaBusca } from '../concorrencia/id
 import { parseProdutoBusca, parseItensProduto } from '../concorrencia/parse.ts';
 import { classificarConcorrencia } from '../concorrencia/classificar.ts';
 import { cacheConcorrenciaGet, cacheConcorrenciaSet } from '../redis/cache-concorrencia.ts';
-import type { DadosOfertas, ResultadoConcorrencia } from '../concorrencia/tipos.ts';
+import type { ResultadoConcorrencia } from '../concorrencia/tipos.ts';
 
 const NENHUMA: ResultadoConcorrencia = {
   vendedores: 0, preco_min: null, origem: 'nenhuma', classe: 'sem',
@@ -51,8 +51,8 @@ export async function buscarConcorrencia(
         preco_min: cached.preco_min,
         origem: cached.origem,
         classe: cached.classe,
-        product_id: (cached as { product_id?: string | null }).product_id ?? null,
-        ofertas: (cached as { ofertas?: DadosOfertas }).ofertas,
+        product_id: cached.product_id ?? null,
+        ofertas: cached.ofertas,
       };
     }
 

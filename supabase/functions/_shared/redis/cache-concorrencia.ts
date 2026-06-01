@@ -1,5 +1,5 @@
 import { redisGet, redisSet } from './client.ts';
-import type { ClasseConcorrencia, OrigemConcorrencia } from '../concorrencia/tipos.ts';
+import type { ClasseConcorrencia, OrigemConcorrencia, DadosOfertas } from '../concorrencia/tipos.ts';
 
 const TTL_6_HORAS = 60 * 60 * 6;
 
@@ -8,6 +8,8 @@ export interface CacheConcorrenciaEntrada {
   preco_min: number | null;
   origem: OrigemConcorrencia;
   classe: ClasseConcorrencia;
+  product_id?: string | null;
+  ofertas?: DadosOfertas;
   criado_em: string;
 }
 
