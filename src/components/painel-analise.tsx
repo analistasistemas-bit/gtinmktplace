@@ -1,7 +1,7 @@
-import { Coins, Tag, Store, AlertTriangle } from 'lucide-react';
+import { Coins, Tag, Store, AlertTriangle, TrendingUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { fmtBRL } from '@/lib/formato';
+import { fmtBRL, fmtMilhar } from '@/lib/formato';
 import type { Familia, TipoAviamento, Concorrencia } from '@/lib/tipos-dominio';
 
 function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
@@ -96,6 +96,42 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
           <p className="text-xs text-muted-foreground">sem concorrência detectada</p>
         )}
       </div>
+
+      {familia.analiseMercado && (
+        <div className="rounded-md border p-2">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <TrendingUp className="h-3.5 w-3.5" /> Potencial de venda
+          </div>
+          <div className="flex flex-col gap-1 text-xs">
+            {familia.concorrenciaPrecoMin != null && familia.analiseMercado.preco_max != null && (
+              <span>
+                💲 Preço concorrentes:{' '}
+                <span className="font-medium text-foreground">
+                  {fmtBRL(familia.concorrenciaPrecoMin)} – {fmtBRL(familia.analiseMercado.preco_max)}
+                </span>
+              </span>
+            )}
+            <span>
+              📈 {familia.analiseMercado.lideres}/{familia.concorrenciaVendedores} MercadoLíder
+              {familia.analiseMercado.maior_vendas > 0 && (
+                <> · maior <span className="font-medium text-foreground">{fmtMilhar(familia.analiseMercado.maior_vendas)} vendas</span></>
+              )}
+            </span>
+            <span>
+              🚚 Frete grátis: {familia.analiseMercado.frete_gratis}/{familia.analiseMercado.total_ofertas}
+              {' · '}⚡ FULL: {familia.analiseMercado.full}/{familia.analiseMercado.total_ofertas}
+            </span>
+            <span>
+              🏆 {familia.analiseMercado.ranking_categoria != null
+                ? `#${familia.analiseMercado.ranking_categoria} mais vendido na categoria`
+                : 'fora do top de mais vendidos da categoria'}
+            </span>
+            {familia.analiseMercado.produto_desde && (
+              <span className="text-muted-foreground">📅 no catálogo desde {familia.analiseMercado.produto_desde}</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,6 +15,10 @@ function familiaBase(over: Partial<Familia> = {}): Familia {
     tokensInput: null, tokensOutput: null, custoCentavos: null,
     tituloEditadoPeloOperador: false, descricaoEditadaPeloOperador: false,
     variacoesSemCor: 0,
+    analiseMercado: {
+      preco_max: 17.02, total_ofertas: 8, frete_gratis: 0, full: 0,
+      lideres: 4, maior_vendas: 52000, ranking_categoria: null, produto_desde: '2024-03-05',
+    },
     ...over,
   };
 }
@@ -35,7 +39,7 @@ describe('PainelAnalise', () => {
     render(<PainelAnalise familia={familiaBase()} />);
     expect(screen.getByText(/alta/i)).toBeInTheDocument();
     expect(screen.getByText(/6 vendedores/i)).toBeInTheDocument();
-    expect(screen.getByText(/12,62/)).toBeInTheDocument();
+    expect(screen.getAllByText(/12,62/).length).toBeGreaterThan(0);
   });
 
   it('concorrência sem → "sem concorrência"', () => {
@@ -59,5 +63,24 @@ describe('PainelAnalise', () => {
     expect(screen.queryByText(/abaixo do m[íi]nimo/i)).not.toBeInTheDocument();
     rerender(<PainelAnalise familia={familiaBase({ precoAbaixo20pc: true })} />);
     expect(screen.getByText(/abaixo do m[íi]nimo/i)).toBeInTheDocument();
+  });
+
+  it('mostra potencial de venda com força e faixa de preço', () => {
+    render(<PainelAnalise familia={familiaBase()} />);
+    expect(screen.getByText(/potencial de venda/i)).toBeInTheDocument();
+    expect(screen.getByText(/4\/6 mercadol[íi]der/i)).toBeInTheDocument();
+    expect(screen.getByText(/52 mil/i)).toBeInTheDocument();
+    expect(screen.getByText(/17,02/)).toBeInTheDocument();
+    expect(screen.getByText(/fora do top/i)).toBeInTheDocument();
+  });
+
+  it('mostra posição no ranking quando existe', () => {
+    render(<PainelAnalise familia={familiaBase({ analiseMercado: { ...familiaBase().analiseMercado!, ranking_categoria: 3 } })} />);
+    expect(screen.getByText(/#3/)).toBeInTheDocument();
+  });
+
+  it('sem analiseMercado → card de potencial não aparece', () => {
+    render(<PainelAnalise familia={familiaBase({ analiseMercado: null })} />);
+    expect(screen.queryByText(/potencial de venda/i)).not.toBeInTheDocument();
   });
 });
