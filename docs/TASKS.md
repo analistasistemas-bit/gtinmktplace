@@ -2,8 +2,8 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-06-01 — busca de concorrência Tasks 8+9 ✅; **bug bash (Task 10) revelou que `/sites/MLB/search` foi descontinuado pelo ML (403)** → corrigido para o catálogo (`/products/search` → `/products/{id}/items`), `process-familia` **v15** deployada, ADR-0014 aditado, 125 testes verdes. Lógica validada contra a API real (GTIN `7891521360659` → 6 vendedores, R$ 12,62).
-**Próximo passo recomendado:** validação final do pipeline v15 via **lote novo pela UI** (o `ingest-lote` usa o SDK QStash real; o MCP QStash não entrega — conta divergente). Depois, **estratégia de preço condicional** (ADR-0008).
+**Última atualização:** 2026-06-01 — **busca de concorrência (Tasks 8–10) ✅ CONCLUÍDA**. Bug bash do lote #5 validou o pipeline v15 ponta a ponta com token real: 3 famílias com concorrência (FITA N.3 → 6 vend./R$12,62; LINHA XIK → 6/R$12,90; FITA N.9 → 9/R$17,99) + 1 fora do catálogo (LINHA 1500MT → `gtin`/0, resiliência OK). 125 testes verdes.
+**Próximo passo recomendado:** **estratégia de preço condicional** (ADR-0008) — consome `concorrencia_*`.
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -418,7 +418,7 @@
 - [x] Cache `cache:concorrencia:*` no Redis (TTL 6h) — `_shared/redis/cache-concorrencia.ts` (chave com hash do título)
 - [x] **Migration** (2 enums + 4 colunas `concorrencia_*` em `familias`) + regenerar tipos — plano-07 Task 8 (MCP `apply_migration` `add_concorrencia_familias`; `database.types.ts` atualizado; build verde)
 - [x] **Integração na edge function `process-familia` + deploy** — plano-07 Task 9 (busca 1×/família após a copy; `process-familia` v14 deployada via MCP)
-- [~] **Bug bash** (lote real: 1 família c/ EAN, 1 c/ `3000*`) — plano-07 Task 10. **Achado (2026-06-01):** `/sites/MLB/search` retorna 403 (descontinuado pelo ML). Corrigido para catálogo `/products/search` → `/products/{id}/items` (ver Adendo do [ADR-0014](decisions/0014-busca-de-concorrencia.md)). Ramo GTIN validado contra API real com token AVILBV (GTIN `7891521360659` → produto `MLB34175726`, 6 vendedores, R$ 12,62, classe alta). Ramo título não quantifica (catálogo textual = ~10k de ruído) → `origem='titulo'`, PRÓPRIO seguro. **Falta:** rodar 1 lote novo pela UI p/ validar a persistência via pipeline real (o `process-familia` v15 só é acionável pelo SDK QStash do `ingest-lote`; o MCP QStash aponta p/ conta divergente e não entrega)
+- [x] **Bug bash** (lote real #5, 4 famílias) — plano-07 Task 10 ✅. **Achado:** `/sites/MLB/search` retorna 403 (descontinuado pelo ML). Corrigido para catálogo `/products/search` → `/products/{id}/items` (ver Adendo do [ADR-0014](decisions/0014-busca-de-concorrencia.md)). **Validação ponta a ponta (v15, token AVILBV):** FITA N.3 → 6 vend./R$12,62; LINHA XIK → 6/R$12,90; FITA N.9 → 9/R$17,99 (todas `origem=gtin`, classe alta); LINHA 1500MT (GTIN fora do catálogo ML) → `gtin`/0 vendedores, status `pronto` (resiliência OK). Ramo título não quantifica (catálogo textual = ~10k ruído) → `origem='titulo'`/PRÓPRIO seguro (sem família sem-GTIN no lote; lógica é retorno trivial). **Nota:** o MCP QStash não aciona o `process-familia` (conta divergente das signing keys); reprocessar exige lote novo pela UI (`ingest-lote` usa o SDK QStash real).
 
 ### Estratégia de preço condicional
 
