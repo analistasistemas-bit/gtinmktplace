@@ -580,6 +580,7 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 ## Ajustes de UX da Revisão
 
 - [x] **Painel de Análise visual no topo do anúncio** (2026-06-01) — move estratégia/concorrência/categoria do final do expandido para um painel visual (cards + ícones + cores semânticas) ao lado da foto-capa; consolida o alerta de preço perigoso. Componente `PainelAnalise` (TDD 7 testes). Spec: [2026-06-01-painel-analise-revisao-design.md](superpowers/specs/2026-06-01-painel-analise-revisao-design.md) · Plano: [plano-08](superpowers/plans/2026-06-01-plan-08-painel-analise.md). Só frontend; 155 testes verdes.
+- [x] **Card "Potencial de venda" no painel** (2026-06-01) — proxies de mercado (faixa de preço dos concorrentes, frete grátis, FULL, força dos concorrentes = MercadoLíder + maior vendas, ranking da categoria, idade no catálogo), já que a venda exata por produto não é exposta pela API do ML. Backend: `parseItensProduto`→`DadosOfertas` + `analisarMercado` (`_shared/ml/mercado.ts`, cache seller 24h/highlights 6h) + coluna `analise_mercado jsonb`; `process-familia` **v18**. Frontend: card no `PainelAnalise` (`fmtMilhar`). [ADR-0015](decisions/0015-potencial-de-venda-via-proxies.md) · spec `2026-06-01-potencial-de-venda-design.md` · [plano-09](superpowers/plans/2026-06-01-plan-09-potencial-de-venda.md). 162 testes verdes. **Falta:** bug bash com lote real (validar `analise_mercado` persistido + card na tela).
 
 ---
 
