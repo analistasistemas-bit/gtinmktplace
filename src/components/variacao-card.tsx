@@ -7,6 +7,7 @@ import { BadgeCorOrigem } from '@/components/badge-cor-origem';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
+import { fmtBRL } from '@/lib/formato';
 import type { Variacao } from '@/lib/tipos-dominio';
 
 interface VariacaoCardProps {
@@ -99,18 +100,28 @@ export function VariacaoCard({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1 pt-0.5">
-        <Input
-          type="number"
-          step="0.01"
-          value={variacao.preco}
-          onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
-          onBlur={() => onSalvarPreco?.(variacao.codigo)}
-          className="h-7 w-24"
-        />
-        <div className="min-w-[60px]">
-          <StatusInline status={statusPreco ?? trocaStatus} />
+      <div className="flex flex-col items-start gap-0.5 pt-0.5">
+        <div className="flex items-center gap-1">
+          <Input
+            type="number"
+            step="0.01"
+            value={variacao.preco}
+            onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
+            onBlur={() => onSalvarPreco?.(variacao.codigo)}
+            className="h-7 w-24"
+          />
+          <div className="min-w-[60px]">
+            <StatusInline status={statusPreco ?? trocaStatus} />
+          </div>
         </div>
+        {variacao.precoPublicacao != null &&
+          variacao.precoPublicacao !== variacao.preco && (
+            <span className="pl-0.5 text-[11px] text-muted-foreground">
+              publica: <span className="font-semibold text-foreground">
+                {fmtBRL(variacao.precoPublicacao)}
+              </span>
+            </span>
+          )}
       </div>
       <div className="flex w-20 flex-col items-end leading-tight pt-0.5">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">

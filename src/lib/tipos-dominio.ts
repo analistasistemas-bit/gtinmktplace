@@ -40,6 +40,7 @@ export interface Variacao {
   corOrigem: CorOrigem | null;
   corEditadaPeloOperador: boolean;
   preco: number;
+  precoPublicacao: number | null;
   estoque: number;
   gtin: string | null;
   fotoPath?: string;
@@ -56,6 +57,8 @@ export interface Familia {
   estrategiaPreco: EstrategiaPreco;
   estrategiaMotivo: string;
   concorrencia: Concorrencia;
+  concorrenciaVendedores: number;
+  concorrenciaPrecoMin: number | null;
   precoMin: number;
   precoMax: number;
   precoAbaixo20pc: boolean;

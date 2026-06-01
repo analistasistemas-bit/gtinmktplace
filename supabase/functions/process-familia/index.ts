@@ -7,6 +7,7 @@ import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
+import { calcularEstrategiaPreco } from '../_shared/preco/calcular.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -55,7 +56,7 @@ Deno.serve(async (req) => {
     // 2. Carregar variações
     const { data: variacoes, error: varErr } = await admin
       .from('variacoes')
-      .select('id, codigo, gtin, cor, cor_origem, nome, preco, imagem_path')
+      .select('id, codigo, gtin, cor, cor_origem, nome, preco, preco_editado_pelo_operador, imagem_path')
       .eq('familia_id', job.familia_id);
     if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
 
@@ -131,7 +132,25 @@ Deno.serve(async (req) => {
       variacoes: resolvidas.map((v) => ({ gtin: v.gtin })),
     });
 
-    // 6. Persistir título + descrição + custos + concorrência + status final
+    // 5c. Estratégia de preço condicional (ADR-0008). preco_publicacao por variação
+    // (preserva o que o operador editou); estratégia da família pela variação mais barata.
+    const conc = { vendedores: concorrencia.vendedores, preco_min: concorrencia.preco_min };
+    const updatesPreco = resolvidas
+      .filter((v) => !v.preco_editado_pelo_operador)
+      .map((v) => {
+        const { preco_sugerido } = calcularEstrategiaPreco(Number(v.preco), conc);
+        return admin.from('variacoes')
+          .update({ preco_publicacao: preco_sugerido })
+          .eq('id', v.id);
+      });
+    await Promise.all(updatesPreco);
+
+    const precoMinFamilia = resolvidas.length
+      ? Math.min(...resolvidas.map((v) => Number(v.preco)))
+      : 0;
+    const estrategiaFamilia = calcularEstrategiaPreco(precoMinFamilia, conc);
+
+    // 6. Persistir título + descrição + custos + concorrência + estratégia + status final
     await admin.from('familias').update({
       titulo_ml: copy.titulo,
       descricao_ml: copy.descricao,
@@ -142,6 +161,8 @@ Deno.serve(async (req) => {
       concorrencia_preco_min: concorrencia.preco_min,
       concorrencia_origem: concorrencia.origem,
       concorrencia_classe: concorrencia.classe,
+      estrategia_preco: estrategiaFamilia.estrategia,
+      estrategia_motivo: estrategiaFamilia.motivo,
       status: 'pronto',
     }).eq('id', job.familia_id);
 

@@ -19,6 +19,7 @@ import {
 import { subirCapaFamilia, removerCapaFamilia } from '@/lib/upload-imagens';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
+import { fmtBRL } from '@/lib/formato';
 import type { Familia } from '@/lib/tipos-dominio';
 
 const FLASH_MS = 2000;
@@ -288,6 +289,19 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             Concorrência: <span className="font-medium">{familia.concorrencia}</span>
+            {familia.concorrenciaVendedores > 0 && (
+              <>
+                {' · '}
+                {familia.concorrenciaVendedores}{' '}
+                {familia.concorrenciaVendedores === 1 ? 'vendedor' : 'vendedores'}
+                {familia.concorrenciaPrecoMin != null && (
+                  <>
+                    {' · menor preço '}
+                    <span className="font-medium">{fmtBRL(familia.concorrenciaPrecoMin)}</span>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
 

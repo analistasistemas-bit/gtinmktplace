@@ -9,6 +9,7 @@ import type {
   LoteStatus,
   OperacaoML,
   EstrategiaPreco,
+  Concorrencia,
 } from './tipos-dominio';
 
 export const QK = {
@@ -66,6 +67,12 @@ function mapEstrategiaPreco(
   return 'PROPRIO';
 }
 
+function mapConcorrenciaClasse(
+  v: Database['public']['Enums']['classe_concorrencia'] | null
+): Concorrencia {
+  return v ?? 'sem';
+}
+
 export function loteFromRow(r: LoteRow): Lote {
   return {
     id: r.id,
@@ -87,6 +94,7 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     corOrigem: r.cor_origem,
     corEditadaPeloOperador: r.cor_editada_pelo_operador,
     preco: Number(r.preco),
+    precoPublicacao: r.preco_publicacao != null ? Number(r.preco_publicacao) : null,
     estoque: r.estoque,
     gtin: r.gtin,
     fotoPath: r.imagem_path ?? undefined,
@@ -209,6 +217,12 @@ export function familiaFromRow(
   const precoMin = precos.length > 0 ? Math.min(...precos) : 0;
   const precoMax = precos.length > 0 ? Math.max(...precos) : 0;
 
+  // Alerta de preço perigoso (gap §556): alguma variação cujo preço de publicação
+  // ficou mais de 20% abaixo do preço da planilha.
+  const precoAbaixo20pc = variacoes.some(
+    (v) => v.precoPublicacao != null && v.preco > 0 && v.precoPublicacao < v.preco * 0.8
+  );
+
   return {
     id: r.id,
     loteId: r.lote_id,
@@ -218,10 +232,13 @@ export function familiaFromRow(
     operacao: r.operacao as OperacaoML,
     estrategiaPreco: mapEstrategiaPreco(r.estrategia_preco),
     estrategiaMotivo: r.estrategia_motivo ?? '',
-    concorrencia: 'sem', // M4 preencherá a partir da pesquisa de concorrência
+    concorrencia: mapConcorrenciaClasse(r.concorrencia_classe),
+    concorrenciaVendedores: r.concorrencia_vendedores,
+    concorrenciaPrecoMin:
+      r.concorrencia_preco_min != null ? Number(r.concorrencia_preco_min) : null,
     precoMin,
     precoMax,
-    precoAbaixo20pc: false, // M4 detectará comparando com preço da planilha
+    precoAbaixo20pc,
     fotoCapaPath: variacoes.find((v) => v.fotoPath)?.fotoPath,
     capaStoragePath: r.capa_storage_path,
     variacoes,
