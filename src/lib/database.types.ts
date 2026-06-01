@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       familias: {
         Row: {
+          analise_mercado: Json | null
           atributos_ml: Json
           atualizado_em: string
           capa_storage_path: string | null
@@ -59,6 +60,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          analise_mercado?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
           capa_storage_path?: string | null
@@ -102,6 +104,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          analise_mercado?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
           capa_storage_path?: string | null
