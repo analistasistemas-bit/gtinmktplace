@@ -38,6 +38,7 @@ vi.mock('@/hooks/useLotes', () => ({
       totalFamilias: 0,
       totalPublicadas: 0,
       totalErros: 0,
+      anomalias: { codigos_duplicados: [], filhos_orfaos: [], familias_sem_filho: [] },
     },
     isLoading: false,
     error: null,

@@ -33,6 +33,27 @@ export type FamiliaStatus =
   | 'publicado'
   | 'erro';
 
+/** Anomalias da planilha descartadas no ingest (ADR-0013), todas não-bloqueantes. */
+export interface AnomaliasPlanilha {
+  codigos_duplicados: string[];
+  filhos_orfaos: string[];
+  familias_sem_filho: string[];
+}
+
+export function parseAnomalias(json: unknown): AnomaliasPlanilha {
+  const o = (json ?? {}) as Record<string, unknown>;
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+  return {
+    codigos_duplicados: arr(o.codigos_duplicados),
+    filhos_orfaos: arr(o.filhos_orfaos),
+    familias_sem_filho: arr(o.familias_sem_filho),
+  };
+}
+
+export function totalAnomalias(a: AnomaliasPlanilha): number {
+  return a.codigos_duplicados.length + a.filhos_orfaos.length + a.familias_sem_filho.length;
+}
+
 export interface Lote {
   id: string;
   numero: number;
@@ -41,6 +62,7 @@ export interface Lote {
   totalFamilias: number;
   totalPublicadas: number;
   totalErros: number;
+  anomalias: AnomaliasPlanilha;
 }
 
 export type CorOrigem = 'descricao' | 'vision' | 'manual';

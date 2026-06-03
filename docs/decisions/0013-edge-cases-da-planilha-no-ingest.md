@@ -96,8 +96,14 @@ sem match (`sem_match`): algo como `codigos_duplicados`, `filhos_orfaos`,
 
 ---
 
-**Implementação (pendente, no fluxo de ingest/publicação do M4):**
-`_shared/parser.ts` — (a) passo de dedup por `CODIGO` antes de `agruparPorPai`; (b) trocar os
-dois `throw` (órfão e PAI-sem-filho) por coleta dos descartados; (c) `agruparPorPai` passa a
-retornar os grupos **e** os contadores de anomalias, que o `ingest-lote` persiste no lote para
-exibição no resumo/Progresso. Cobrir com testes (funções puras, já testáveis no vitest).
+**Implementação ✅ (2026-06-03):**
+`_shared/parser.ts` — `agruparPorPai` agora (a) deduplica por `CODIGO` (1ª ocorrência vence)
+antes de agrupar; (b) coleta filhos órfãos e PAIs-sem-filho em vez de lançar; (c) retorna
+`{ grupos, anomalias }` (`ResultadoAgrupamento` em `types.ts`). 5 testes TDD em
+`_shared/__tests__/parser.test.ts` (os 3 testes antigos de comportamento bloqueante foram
+migrados para o novo contrato). `ingest-lote` consome o novo retorno, aborta só se `grupos`
+ficar vazio após o descarte, e persiste `anomalias` na coluna nova `lotes.anomalias_planilha`
+(jsonb, migration `add_anomalias_planilha_lotes`). Frontend: `parseAnomalias`/`totalAnomalias`
+(TDD em `tests/lib/anomalias.test.ts`) + `Lote.anomalias` no adapter + faixa âmbar de
+descartados no `Progresso.tsx`. **Deploy do `ingest-lote` via MCP pendente** (necessário para
+o efeito em produção). 173 testes verdes.

@@ -444,7 +444,8 @@
 
 ### Publicação CREATE
 
-- [ ] **Pré-publicação: implementar [ADR-0013](decisions/0013-edge-cases-da-planilha-no-ingest.md)** (edge cases da planilha, não-bloqueantes) — no `_shared/parser.ts`: dedup por CODIGO (manter 1ª); trocar os 2 `throw` (filho órfão e PAI sem filho) por coleta dos descartados; `agruparPorPai` retorna grupos + contadores; `ingest-lote` persiste os contadores no lote e o resumo/Progresso os exibe. TDD nas funções puras. Garante a pré-condição "só famílias com ≥1 variação publicam". — `~3h`
+- [x] **Pré-publicação: implementar [ADR-0013](decisions/0013-edge-cases-da-planilha-no-ingest.md)** (edge cases da planilha, não-bloqueantes) ✅ 2026-06-03 — `agruparPorPai` retorna `{ grupos, anomalias }` com dedup por CODIGO (1ª vence) + coleta de órfãos/PAI-sem-filho (sem `throw`); `ingest-lote` aborta só se sobrar 0 família e persiste `anomalias` na coluna `lotes.anomalias_planilha` (jsonb, migration `add_anomalias_planilha_lotes`); `Progresso.tsx` mostra faixa âmbar dos descartados. TDD: `_shared/__tests__/parser.test.ts` (5) + `tests/lib/anomalias.test.ts` (5). 173 testes verdes. **Falta:** deploy do `ingest-lote` via MCP.
+- [ ] **Seleção do que publicar (pedido do Diego, 2026-06-03)** — na tela de Revisão, o operador escolhe granularmente o que vai pro ML (quais famílias e/ou variações), em vez de publicar o lote inteiro. **Precisa de brainstorming/spec/ADR** (granularidade família vs variação, relação com Aprovar/Rejeitar em massa já existente, persistência da escolha). Tratar no brainstorming do bloco de Publicação CREATE. — `~?`
 - [ ] Edge function `publish-familia-ml` (esqueleto) — `~2h`
 - [ ] Configurar QStash para chamar publish — `~1h`
 - [ ] Montar payload com variações nativas — `~4h`

@@ -4,6 +4,7 @@ import { useLote } from '@/hooks/useLotes';
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Progress } from '@/components/ui/progress';
+import { totalAnomalias } from '@/lib/tipos-dominio';
 
 export default function Progresso() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -40,6 +41,9 @@ export default function Progresso() {
   const erradas = familias.filter((f) => f.status === 'erro').length;
   const pct = total > 0 ? Math.round((prontas / total) * 100) : 0;
 
+  const anomalias = lote.anomalias;
+  const temAnomalias = totalAnomalias(anomalias) > 0;
+
   return (
     <div className="p-6">
       <h1 className="mb-2 text-2xl font-semibold">Processando lote #{lote.numero}</h1>
@@ -47,6 +51,20 @@ export default function Progresso() {
         Status: <span className="font-medium">{lote.status}</span> · {prontas} de {total} prontas
         {erradas > 0 && <> · {erradas} com erro</>}
       </div>
+      {temAnomalias && (
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          ⚠ Linhas descartadas da planilha:
+          {anomalias.codigos_duplicados.length > 0 && (
+            <> {anomalias.codigos_duplicados.length} código(s) duplicado(s)</>
+          )}
+          {anomalias.filhos_orfaos.length > 0 && (
+            <> · {anomalias.filhos_orfaos.length} variação(ões) órfã(s)</>
+          )}
+          {anomalias.familias_sem_filho.length > 0 && (
+            <> · {anomalias.familias_sem_filho.length} família(s) sem variação</>
+          )}
+        </div>
+      )}
       <Progress value={pct} className="h-2" />
       <ul className="mt-6 space-y-1 text-sm">
         {familias.map((f) => (

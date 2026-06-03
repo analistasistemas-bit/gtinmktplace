@@ -12,6 +12,7 @@ const LOTE_REVISAO: Lote = {
   totalFamilias: 50,
   totalPublicadas: 0,
   totalErros: 0,
+  anomalias: { codigos_duplicados: [], filhos_orfaos: [], familias_sem_filho: [] },
 };
 
 const LOTE_CONCLUIDO: Lote = {
@@ -22,6 +23,7 @@ const LOTE_CONCLUIDO: Lote = {
   totalFamilias: 12,
   totalPublicadas: 11,
   totalErros: 1,
+  anomalias: { codigos_duplicados: [], filhos_orfaos: [], familias_sem_filho: [] },
 };
 
 function renderCard(lote: Lote) {

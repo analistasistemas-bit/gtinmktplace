@@ -75,7 +75,11 @@ Deno.serve(async (req) => {
       COMPRIMENTO_CM: Number(r.COMPRIMENTO_CM ?? 0),
     }));
 
-    const grupos = agruparPorPai(rows);
+    const { grupos, anomalias } = agruparPorPai(rows);
+
+    if (grupos.length === 0) {
+      throw new Error('Nenhuma família com variação válida após descartar anomalias da planilha');
+    }
 
     const codigosPai = grupos.map((g) => g.codigo_pai);
     const { data: existentes } = await admin
@@ -131,7 +135,7 @@ Deno.serve(async (req) => {
 
     await admin
       .from('lotes')
-      .update({ status: 'processando' })
+      .update({ status: 'processando', anomalias_planilha: anomalias })
       .eq('id', lote.id);
 
     return new Response(

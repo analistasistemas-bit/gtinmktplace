@@ -159,6 +159,7 @@ export type Database = {
       }
       lotes: {
         Row: {
+          anomalias_planilha: Json
           atualizado_em: string
           criado_em: string
           erro_mensagem: string | null
@@ -173,6 +174,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          anomalias_planilha?: Json
           atualizado_em?: string
           criado_em?: string
           erro_mensagem?: string | null
@@ -187,6 +189,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          anomalias_planilha?: Json
           atualizado_em?: string
           criado_em?: string
           erro_mensagem?: string | null

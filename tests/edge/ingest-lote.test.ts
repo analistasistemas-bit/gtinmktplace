@@ -1,19 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   validarColunas,
-  agruparPorPai,
   normalizarCodigo,
   matchImagem,
   matchCapa,
 } from '../../supabase/functions/_shared/parser';
-import type { PlanilhaRow } from '../../supabase/functions/_shared/types';
-
-const baseRow = (over: Partial<PlanilhaRow>): PlanilhaRow => ({
-  CODIGO: '00000000', PAI: '0', NOME: '', UNIDADE: 'PC',
-  GTIN: null, PRECO: 0, ESTOQUE: 0, DESCRICAO_DETALHADO: '',
-  PESO_GRAMAS: 0, ALTURA_CM: 0, LARGURA_CM: 0, COMPRIMENTO_CM: 0,
-  ...over,
-});
 
 describe('validarColunas', () => {
   it('aceita quando todas as colunas obrigatórias estão presentes', () => {
@@ -34,29 +25,8 @@ describe('normalizarCodigo', () => {
   });
 });
 
-describe('agruparPorPai', () => {
-  it('PAI=0 vira chave; filhos têm PAI = codigo do pai', () => {
-    const rows: PlanilhaRow[] = [
-      baseRow({ CODIGO: '100', PAI: '0', NOME: 'Linha Azul - Família', DESCRICAO_DETALHADO: 'Pai' }),
-      baseRow({ CODIGO: '101', PAI: '100', NOME: 'Linha Azul Royal', PRECO: 5 }),
-      baseRow({ CODIGO: '102', PAI: '100', NOME: 'Linha Azul Marinho', PRECO: 5 }),
-    ];
-    const grupos = agruparPorPai(rows);
-    expect(grupos).toHaveLength(1);
-    expect(grupos[0].codigo_pai).toBe('00000100');
-    expect(grupos[0].variacoes).toHaveLength(2);
-  });
-
-  it('linha órfã (PAI aponta pra código que não existe) é ignorada e reportada', () => {
-    const rows = [baseRow({ CODIGO: '999', PAI: '888', NOME: 'Órfã' })];
-    expect(() => agruparPorPai(rows)).toThrow(/órfã|orfã|999/i);
-  });
-
-  it('PAI sem filhos vira família com 0 variações (anúncio só-pai não é vendável; vai pra erro)', () => {
-    const rows = [baseRow({ CODIGO: '500', PAI: '0', NOME: 'Pai Solitário' })];
-    expect(() => agruparPorPai(rows)).toThrow(/sem variações|solitário/i);
-  });
-});
+// Cobertura de agruparPorPai (incluindo as anomalias do ADR-0013) vive em
+// supabase/functions/_shared/__tests__/parser.test.ts.
 
 describe('matchImagem', () => {
   it('encontra imagem por nome 00CODIGO.jpeg', () => {

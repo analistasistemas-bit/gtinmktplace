@@ -1,4 +1,4 @@
-import type { PlanilhaRow, FamiliaAgrupada } from './types.ts';
+import type { PlanilhaRow, FamiliaAgrupada, ResultadoAgrupamento } from './types.ts';
 import { COLUNAS_OBRIGATORIAS } from './types.ts';
 
 export function validarColunas(cols: string[]): void {
@@ -14,11 +14,29 @@ export function normalizarCodigo(codigo: string | number): string {
   return s.padStart(8, '0');
 }
 
-export function agruparPorPai(rows: PlanilhaRow[]): FamiliaAgrupada[] {
+// ADR-0013: as três anomalias de dados são não-bloqueantes — a linha problemática
+// é descartada e contabilizada no resumo do lote; a importação prossegue.
+export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
+  const codigos_duplicados: string[] = [];
+  const filhos_orfaos: string[] = [];
+  const familias_sem_filho: string[] = [];
+
+  // 1. Dedup por CODIGO: a 1ª ocorrência prevalece.
+  const vistos = new Set<string>();
+  const unicas: PlanilhaRow[] = [];
+  for (const r of rows) {
+    const codigo = normalizarCodigo(r.CODIGO);
+    if (vistos.has(codigo)) {
+      codigos_duplicados.push(codigo);
+      continue;
+    }
+    vistos.add(codigo);
+    unicas.push(r);
+  }
+
   const pais = new Map<string, PlanilhaRow>();
   const filhos = new Map<string, PlanilhaRow[]>();
-
-  for (const r of rows) {
+  for (const r of unicas) {
     const codigo = normalizarCodigo(r.CODIGO);
     const paiCampo = String(r.PAI).trim();
     if (paiCampo === '0' || paiCampo === '') {
@@ -31,21 +49,23 @@ export function agruparPorPai(rows: PlanilhaRow[]): FamiliaAgrupada[] {
     }
   }
 
-  for (const [codigoFilho, lista] of filhos.entries()) {
+  // 2. Filho órfão: PAI referenciado não existe no lote → descarta o filho.
+  for (const lista of filhos.values()) {
     for (const f of lista) {
       const paiNorm = normalizarCodigo(String(f.PAI).trim());
       if (!pais.has(paiNorm)) {
-        throw new Error(`Linha órfã: filho ${normalizarCodigo(f.CODIGO)} aponta pra PAI ${paiNorm} que não existe na planilha`);
+        filhos_orfaos.push(normalizarCodigo(f.CODIGO));
       }
     }
-    void codigoFilho;
   }
 
   const grupos: FamiliaAgrupada[] = [];
   for (const [codigo, pai] of pais.entries()) {
     const variacoes = filhos.get(codigo) ?? [];
+    // 3. PAI sem nenhum filho → descarta a família.
     if (variacoes.length === 0) {
-      throw new Error(`PAI ${codigo} (${pai.NOME}) sem variações — anúncio só-pai não é vendável`);
+      familias_sem_filho.push(codigo);
+      continue;
     }
     grupos.push({
       codigo_pai: codigo,
@@ -55,7 +75,8 @@ export function agruparPorPai(rows: PlanilhaRow[]): FamiliaAgrupada[] {
       variacoes,
     });
   }
-  return grupos;
+
+  return { grupos, anomalias: { codigos_duplicados, filhos_orfaos, familias_sem_filho } };
 }
 
 const EXT_VALIDAS = /\.(jpe?g|png)$/i;

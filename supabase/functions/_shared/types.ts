@@ -21,6 +21,18 @@ export interface FamiliaAgrupada {
   variacoes: PlanilhaRow[];
 }
 
+/** Anomalias de dados descartadas no ingest (ADR-0013), todas não-bloqueantes. */
+export interface AnomaliasPlanilha {
+  codigos_duplicados: string[];
+  filhos_orfaos: string[];
+  familias_sem_filho: string[];
+}
+
+export interface ResultadoAgrupamento {
+  grupos: FamiliaAgrupada[];
+  anomalias: AnomaliasPlanilha;
+}
+
 export const COLUNAS_OBRIGATORIAS = [
   'CODIGO', 'PAI', 'NOME', 'UNIDADE', 'GTIN', 'PRECO', 'ESTOQUE',
   'DESCRICAO_DETALHADO', 'PESO_GRAMAS', 'ALTURA_CM', 'LARGURA_CM', 'COMPRIMENTO_CM',

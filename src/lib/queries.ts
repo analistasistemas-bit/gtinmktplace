@@ -12,6 +12,7 @@ import type {
   Concorrencia,
   AnaliseMercado,
 } from './tipos-dominio';
+import { parseAnomalias } from './tipos-dominio';
 
 export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
@@ -83,6 +84,7 @@ export function loteFromRow(r: LoteRow): Lote {
     totalFamilias: r.total_familias,
     totalPublicadas: r.total_publicadas,
     totalErros: r.total_erros,
+    anomalias: parseAnomalias(r.anomalias_planilha),
   };
 }
 
