@@ -80,6 +80,11 @@ vi.mock('@/hooks/useFamilias', () => ({
   }),
 }));
 
+vi.mock('@/lib/publicar', () => ({
+  publicarFamilias: vi.fn().mockResolvedValue({ enfileiradas: 1 }),
+  setVariacaoExcluida: vi.fn(),
+}));
+
 import Revisao from '@/pages/Revisao';
 
 function renderRevisao() {
@@ -98,24 +103,21 @@ function renderRevisao() {
 describe('Revisao — ações em massa', () => {
   it('footer fica oculto quando nenhuma família selecionada', () => {
     renderRevisao();
-    expect(screen.queryByRole('button', { name: /aprovar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /publicar/i })).not.toBeInTheDocument();
   });
 
-  it('footer aparece com botões Aprovar e Rejeitar ao selecionar', () => {
+  it('footer aparece com botão Publicar ao selecionar família publicável', () => {
     renderRevisao();
     const checkboxes = screen.getAllByRole('checkbox');
     fireEvent.click(checkboxes[0]);
-    expect(screen.getByRole('button', { name: /aprovar/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /rejeitar/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /publicar selecionada/i })).toBeInTheDocument();
   });
 
-  it('clicar em Aprovar limpa seleção', () => {
+  it('clicar em Publicar abre modal com título "Publicar no Mercado Livre"', () => {
     renderRevisao();
     const checkboxes = screen.getAllByRole('checkbox');
     fireEvent.click(checkboxes[0]);
-    fireEvent.click(checkboxes[1]);
-    expect(screen.getByText(/2 selecionada/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /aprovar/i }));
-    expect(screen.queryByText(/2 selecionada/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /publicar selecionada/i }));
+    expect(screen.getByText('Publicar no Mercado Livre')).toBeInTheDocument();
   });
 });

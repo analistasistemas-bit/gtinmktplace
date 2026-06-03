@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { filtrarFamilias } from '@/pages/Revisao';
+import { familiaPublicavel } from '@/lib/publicavel';
 import type { Familia } from '@/lib/tipos-dominio';
 
 const FAMILIAS: Familia[] = [
@@ -87,5 +88,86 @@ describe('filtrarFamilias', () => {
     const out = filtrarFamilias(FAMILIAS, 'todos', '30000');
     expect(out.length).toBe(1);
     expect(out[0].id).toBe('b');
+  });
+
+  it('filtra incompletas — retorna só famílias não-publicáveis', () => {
+    const varOk = {
+      codigo: '00010001',
+      cor: 'Vermelho',
+      corHex: '#dc2626',
+      corOrigem: 'descricao' as const,
+      corEditadaPeloOperador: false,
+      preco: 1,
+      precoPublicacao: 1,
+      estoque: 10,
+      gtin: null,
+      fotoPath: 'u/l/001.jpeg',
+      excluidaDaPublicacao: false,
+    };
+
+    const completa: Familia = {
+      id: 'c',
+      loteId: 'lote-42',
+      codigoPai: '2001',
+      titulo: 'Linha Completa',
+      descricao: '',
+      operacao: 'CREATE',
+      estrategiaPreco: 'PROPRIO',
+      estrategiaMotivo: '',
+      concorrencia: 'sem',
+      concorrenciaVendedores: 0,
+      concorrenciaPrecoMin: null,
+      analiseMercado: null,
+      tipoAviamento: 'linha',
+      categoriaMlId: 'MLB270273',
+      precoMin: 1,
+      precoMax: 1,
+      precoAbaixo20pc: false,
+      capaStoragePath: null,
+      variacoes: [varOk],
+      status: 'pronto',
+      tokensInput: null,
+      tokensOutput: null,
+      custoCentavos: null,
+      tituloEditadoPeloOperador: false,
+      descricaoEditadaPeloOperador: false,
+      variacoesSemCor: 0,
+    };
+
+    const incompleta: Familia = {
+      id: 'd',
+      loteId: 'lote-42',
+      codigoPai: '2002',
+      titulo: 'Linha Incompleta',
+      descricao: '',
+      operacao: 'CREATE',
+      estrategiaPreco: 'PROPRIO',
+      estrategiaMotivo: '',
+      concorrencia: 'sem',
+      concorrenciaVendedores: 0,
+      concorrenciaPrecoMin: null,
+      analiseMercado: null,
+      tipoAviamento: 'outro',
+      categoriaMlId: null,
+      precoMin: 1,
+      precoMax: 1,
+      precoAbaixo20pc: false,
+      capaStoragePath: null,
+      variacoes: [varOk],
+      status: 'pronto',
+      tokensInput: null,
+      tokensOutput: null,
+      custoCentavos: null,
+      tituloEditadoPeloOperador: false,
+      descricaoEditadaPeloOperador: false,
+      variacoesSemCor: 0,
+    };
+
+    expect(familiaPublicavel(completa).ok).toBe(true);
+    expect(familiaPublicavel(incompleta).ok).toBe(false);
+
+    const out = filtrarFamilias([completa, incompleta], 'incompletas', '');
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('d');
   });
 });

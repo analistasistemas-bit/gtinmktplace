@@ -1,18 +1,21 @@
 import { useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
 import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
+import { familiaPublicavel } from '@/lib/publicavel';
+import { publicarFamilias } from '@/lib/publicar';
 import type { Familia } from '@/lib/tipos-dominio';
 
-type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos';
+type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas';
 
 export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: string): Familia[] {
   const buscaLower = busca.trim().toLowerCase();
@@ -20,6 +23,7 @@ export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: st
     if (filtro === 'CREATE' && f.operacao !== 'CREATE') return false;
     if (filtro === 'UPDATE' && f.operacao !== 'UPDATE') return false;
     if (filtro === 'avisos' && !f.precoAbaixo20pc) return false;
+    if (filtro === 'incompletas' && familiaPublicavel(f).ok) return false;
     if (!buscaLower) return true;
     return (
       f.titulo.toLowerCase().includes(buscaLower) ||
@@ -31,6 +35,7 @@ export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: st
 
 export default function Revisao() {
   const { loteId } = useParams();
+  const nav = useNavigate();
   const { data: familias = [], isLoading, error } = useFamilias(loteId);
   const [filtro, setFiltro] = useState<FiltroOp>('todos');
   const [busca, setBusca] = useState('');
@@ -38,6 +43,8 @@ export default function Revisao() {
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [progresso, setProgresso] = useState<{ feito: number; total: number } | null>(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [publicando, setPublicando] = useState(false);
   const qc = useQueryClient();
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
@@ -93,8 +100,13 @@ export default function Revisao() {
   function toggleSelecao(id: string, valor: boolean) {
     setSelecionadas((prev) => {
       const novo = new Set(prev);
-      if (valor) novo.add(id);
-      else novo.delete(id);
+      if (valor) {
+        const familia = familias.find((f) => f.id === id);
+        if (familia && !familiaPublicavel(familia).ok) return prev;
+        novo.add(id);
+      } else {
+        novo.delete(id);
+      }
       return novo;
     });
   }
@@ -113,7 +125,26 @@ export default function Revisao() {
     CREATE: familias.filter((f) => f.operacao === 'CREATE').length,
     UPDATE: familias.filter((f) => f.operacao === 'UPDATE').length,
     avisos: familias.filter((f) => f.precoAbaixo20pc).length,
+    incompletas: familias.filter((f) => !familiaPublicavel(f).ok).length,
   };
+
+  const coresSelecionadas = familias
+    .filter((f) => selecionadas.has(f.id))
+    .reduce((acc, f) => acc + f.variacoes.filter((v) => !v.excluidaDaPublicacao).length, 0);
+
+  async function confirmarPublicacao() {
+    setPublicando(true);
+    try {
+      await publicarFamilias([...selecionadas]);
+      setSelecionadas(new Set());
+      setConfirmando(false);
+      nav(`/relatorio/${loteId}`);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setPublicando(false);
+    }
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -124,7 +155,7 @@ export default function Revisao() {
           onChange={(e) => setBusca(e.target.value)}
           className="max-w-xs"
         />
-        {(['todos', 'CREATE', 'UPDATE', 'avisos'] as FiltroOp[]).map((f) => (
+        {(['todos', 'CREATE', 'UPDATE', 'avisos', 'incompletas'] as FiltroOp[]).map((f) => (
           <button
             key={f}
             onClick={() => setFiltro(f)}
@@ -138,6 +169,8 @@ export default function Revisao() {
               ? `Todos (${counts.todos})`
               : f === 'avisos'
               ? `⚠ Avisos (${counts.avisos})`
+              : f === 'incompletas'
+              ? `🔒 Incompletas (${counts.incompletas})`
               : `${f} (${counts[f]})`}
           </button>
         ))}
@@ -198,19 +231,30 @@ export default function Revisao() {
       {selecionadas.size > 0 && (
         <div className="flex items-center justify-between border-t bg-background px-4 py-3">
           <div className="text-sm text-muted-foreground">
-            {selecionadas.size} selecionada(s) de {visiveis.length}
+            {selecionadas.size} família(s) · {coresSelecionadas} cor(es) selecionada(s)
           </div>
-          <div className="flex gap-2">
-            {/* Mutations reais entram no M3; por ora só limpam seleção. */}
-            <Button variant="outline" onClick={() => setSelecionadas(new Set())}>
-              Rejeitar
-            </Button>
-            <Button onClick={() => setSelecionadas(new Set())}>
-              Aprovar selecionada{selecionadas.size > 1 ? 's' : ''}
-            </Button>
-          </div>
+          <Button onClick={() => setConfirmando(true)}>
+            Publicar selecionada{selecionadas.size > 1 ? 's' : ''} →
+          </Button>
         </div>
       )}
+      <Dialog open={confirmando} onOpenChange={setConfirmando}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Publicar no Mercado Livre</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">
+            Vou publicar <strong>{selecionadas.size}</strong> família(s) como anúncios novos no
+            Mercado Livre, com <strong>{coresSelecionadas}</strong> cor(es) no total. Confirmar?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmando(false)}>Cancelar</Button>
+            <Button disabled={publicando} onClick={confirmarPublicacao}>
+              {publicando ? 'Enfileirando…' : 'Confirmar publicação'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
