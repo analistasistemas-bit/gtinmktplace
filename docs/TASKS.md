@@ -445,14 +445,16 @@
 ### Publicação CREATE
 
 - [x] **Pré-publicação: implementar [ADR-0013](decisions/0013-edge-cases-da-planilha-no-ingest.md)** (edge cases da planilha, não-bloqueantes) ✅ 2026-06-03 — `agruparPorPai` retorna `{ grupos, anomalias }` com dedup por CODIGO (1ª vence) + coleta de órfãos/PAI-sem-filho (sem `throw`); `ingest-lote` aborta só se sobrar 0 família e persiste `anomalias` na coluna `lotes.anomalias_planilha` (jsonb, migration `add_anomalias_planilha_lotes`); `Progresso.tsx` mostra faixa âmbar dos descartados. TDD: `_shared/__tests__/parser.test.ts` (5) + `tests/lib/anomalias.test.ts` (5). 173 testes verdes. **Falta:** deploy do `ingest-lote` via MCP.
-- [ ] **Seleção do que publicar (pedido do Diego, 2026-06-03)** — na tela de Revisão, o operador escolhe granularmente o que vai pro ML (quais famílias e/ou variações), em vez de publicar o lote inteiro. **Precisa de brainstorming/spec/ADR** (granularidade família vs variação, relação com Aprovar/Rejeitar em massa já existente, persistência da escolha). Tratar no brainstorming do bloco de Publicação CREATE. — `~?`
-- [ ] Edge function `publish-familia-ml` (esqueleto) — `~2h`
-- [ ] Configurar QStash para chamar publish — `~1h`
-- [ ] Montar payload com variações nativas — `~4h`
-- [ ] Upload das fotos para o ML (URLs públicas signed do Storage) — `~3h`
-- [ ] POST `/items` com tratamento de resposta — `~2h`
-- [ ] Salvar `ml_item_id`, `ml_permalink`, `ml_variation_id`s — `~2h`
-- [ ] Tratamento de erros 4xx vs 5xx (retry vs fail) — `~3h`
+> **Implementado via [plano-10](superpowers/plans/2026-06-03-plan-10-publicacao-create.md)** (subagent-driven, spec `2026-06-03-m4-publicacao-create-design.md`). 14 tasks + correções pós-review. 190 testes verdes, build/lint verdes. **Falta só o bug bash com token real (Task 13 abaixo).**
+
+- [x] **Seleção do que publicar (pedido do Diego)** ✅ 2026-06-03 — granularidade família + excluir cores; `familiaPublicavel` (TDD, 9 testes) bloqueia incompletas com motivo; selo na `FamiliaRow`, checkbox "incluir cor" no `FamiliaExpanded` (persiste `variacoes.excluida_da_publicacao`), filtro "🔒 Incompletas", footer "Publicar selecionadas" + modal de confirmação.
+- [x] Edge function `publish-familia-ml` (worker) ✅ — deploy **v2** (correções de idempotência pós-review). Idempotente (`ml_item_id`), valida atributos server-side, sobe fotos, `POST /items`, persiste.
+- [x] Edge function `publicar-familias` (disparo) ✅ — deploy v1. Claim atômico `status='publicando'` (filtra user_id/CREATE/pronto/`ml_item_id` null) + enfileira no QStash via `enfileirarPublicacao`.
+- [x] Montar payload com variações nativas ✅ — `montarPayloadItem` (`_shared/ml/publicar.ts`, TDD 4 testes). _Defaults `listing_type_id`/`condition`/GTIN a confirmar no bug bash._
+- [x] Upload das fotos para o ML ✅ — `subirFotoML` (`POST /pictures`); signed URL TTL 2h (gap §569); capa cacheada em `familias.capa_ml_picture_id` (idempotente em retries).
+- [x] POST `/items` com tratamento de resposta ✅ — `criarItemML` (`_shared/ml/criar-item.ts`), propaga `status` HTTP.
+- [x] Salvar `ml_item_id`, `ml_permalink`, `ml_variation_id`s ✅ — no worker; `ml_variation_id` casado por `seller_custom_field` com fallback por índice.
+- [x] Tratamento de erros 4xx vs 5xx (retry vs fail) ✅ — 4xx/erro local → `status='erro'`; 5xx/429 → mantém `publicando` e relança p/ QStash retentar; transição do lote `publicando→concluido/revisao` ao fim.
 
 ### Publicação UPDATE
 
@@ -463,16 +465,21 @@
 
 ### Tela de Relatório Final
 
-- [ ] Consumir dados reais (sucesso/erro por família) — `~2h`
-- [ ] Links clicáveis para anúncios publicados — `~1h`
-- [ ] Botão "Editar e tentar de novo" para erros — `~3h`
-- [ ] Custo de IA somado do lote — `~2h`
+- [x] Consumir dados reais (sucesso/erro por família) ✅ 2026-06-03 — `Relatorio.tsx` via `useFamilias`/`useLote`/`useLoteRealtime` + polling enquanto `lote.status='publicando'`
+- [x] Links clicáveis para anúncios publicados ✅ — `mlPermalink` exposto no adapter
+- [x] Botão "Editar e tentar de novo" para erros ✅ — mostra `erroMensagem` + volta à Revisão
+- [ ] Custo de IA somado do lote — `~2h` (deferido; cards atuais: publicadas/publicando/erro)
 
-### Bug bash do M4
+### Bug bash do M4 (Publicação CREATE) — **PENDENTE (precisa do Diego + token real)**
 
-- [ ] Publicar 5 famílias reais (1 com erro proposital pra validar fluxo) — `~1h`
-- [ ] Validar fluxo UPDATE em uma família já publicada — `~1h`
-- [ ] Atualizar TASKS.md marcando M4 como completo
+> Task 13 do plano-10. Edges deployadas: `publicar-familias` v1, `publish-familia-ml` v2. Descobre os 3 pontos da spec §5.4 (GTIN interno `3000*`, `listing_type_id`, endpoint/forma de foto) ajustando `montarPayloadItem`/`subirFotoML` contra a API real.
+
+- [ ] Subir um lote novo pela UI (1 família simples, fotos + GTIN válido), processar até `pronto`
+- [ ] Selecionar e publicar pela UI; observar `familias.erro_mensagem` se falhar
+- [ ] Iterar os 3 pontos de descoberta (GTIN/listing_type/foto) re-deployando o worker
+- [ ] Validar 1 publicação real bem-sucedida (anúncio no ML com fotos/cores/preço; ids persistidos)
+- [ ] Atualizar os testes de `montarPayloadItem` para o formato final + ADR de fechamento se surgir decisão nova
+- [ ] (UPDATE fica para o bloco seguinte — fora do escopo deste plano)
 
 ---
 
