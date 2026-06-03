@@ -34,6 +34,17 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
   return messageId;
 }
 
+export async function enfileirarPublicacao(job: ProcessFamiliaJob): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/publish-familia-ml`;
+  const { messageId } = await qstashClient().publishJSON({
+    url: target,
+    body: job,
+    retries: 3,
+  });
+  return messageId;
+}
+
 export async function verificarAssinatura(req: Request, body: string): Promise<boolean> {
   const sig = req.headers.get('upstash-signature');
   if (!sig) return false;
