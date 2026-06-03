@@ -21,6 +21,7 @@ function formatarBRL(valor: number): string {
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   const pub = familiaPublicavel(familia);
+  const publicado = familia.status === 'publicado';
   return (
     <div
       className={cn(
@@ -59,13 +60,29 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               ⚠ {familia.variacoesSemCor} sem cor
             </span>
           )}
-          {!pub.ok && (
+          {!publicado && !pub.ok && (
             <span
               className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
               title={pub.motivos.join('\n')}
             >
               🔒 {pub.motivos[0]}{pub.motivos.length > 1 ? ` (+${pub.motivos.length - 1})` : ''}
             </span>
+          )}
+          {publicado && (
+            familia.mlPermalink ? (
+              <a
+                href={familia.mlPermalink}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800 hover:underline"
+              >
+                ✓ publicado ↗
+              </a>
+            ) : (
+              <span className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
+                ✓ publicado
+              </span>
+            )
           )}
         </div>
       </div>
