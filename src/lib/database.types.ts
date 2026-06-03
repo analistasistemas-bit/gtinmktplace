@@ -253,6 +253,7 @@ export type Database = {
           cor_origem: Database["public"]["Enums"]["cor_origem"] | null
           criado_em: string
           estoque: number
+          excluida_da_publicacao: boolean
           familia_id: string
           gtin: string | null
           id: string
@@ -278,6 +279,7 @@ export type Database = {
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
           estoque?: number
+          excluida_da_publicacao?: boolean
           familia_id: string
           gtin?: string | null
           id?: string
@@ -303,6 +305,7 @@ export type Database = {
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
           estoque?: number
+          excluida_da_publicacao?: boolean
           familia_id?: string
           gtin?: string | null
           id?: string
