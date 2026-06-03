@@ -19,6 +19,7 @@ export type Database = {
           analise_mercado: Json | null
           atributos_ml: Json
           atualizado_em: string
+          capa_ml_picture_id: string | null
           capa_storage_path: string | null
           categoria_ml_id: string | null
           codigo_pai: string
@@ -63,6 +64,7 @@ export type Database = {
           analise_mercado?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
+          capa_ml_picture_id?: string | null
           capa_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai: string
@@ -107,6 +109,7 @@ export type Database = {
           analise_mercado?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
+          capa_ml_picture_id?: string | null
           capa_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai?: string
