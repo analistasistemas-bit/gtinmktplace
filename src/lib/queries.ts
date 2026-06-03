@@ -102,6 +102,7 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     gtin: r.gtin,
     fotoPath: r.imagem_path ?? undefined,
     editadoPeloOperador: r.preco_editado_pelo_operador,
+    excluidaDaPublicacao: r.excluida_da_publicacao,
   };
 }
 

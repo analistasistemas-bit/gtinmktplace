@@ -80,6 +80,7 @@ export interface Variacao {
   gtin: string | null;
   fotoPath?: string;
   editadoPeloOperador?: boolean;
+  excluidaDaPublicacao: boolean;
 }
 
 export interface Familia {
