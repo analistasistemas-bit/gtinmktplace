@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
@@ -17,6 +18,7 @@ import {
   useRegenerarCopy,
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia } from '@/lib/upload-imagens';
+import { setVariacaoExcluida } from '@/lib/publicar';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -276,20 +278,36 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
           </label>
           <div className="flex flex-col gap-2">
             {variacoes.map((v) => (
-              <VariacaoCard
+              <div
                 key={v.codigo}
-                variacao={v}
-                loteId={familia.loteId}
-                statusPreco={precoStatuses[v.codigo]}
-                statusCor={corStatuses[v.codigo]}
-                statusGtin={gtinStatuses[v.codigo]}
-                onMudarPreco={mudarPreco}
-                onMudarCor={mudarCor}
-                onMudarGtin={mudarGtin}
-                onSalvarPreco={salvarPreco}
-                onSalvarCor={salvarCor}
-                onSalvarGtin={salvarGtin}
-              />
+                className={`flex items-start gap-2${v.excluidaDaPublicacao ? ' opacity-50' : ''}`}
+              >
+                <Checkbox
+                  checked={!v.excluidaDaPublicacao}
+                  aria-label={`Incluir cor ${v.cor || v.codigo} na publicação`}
+                  className="mt-2 shrink-0"
+                  onCheckedChange={async (marcado) => {
+                    if (!v.id) return;
+                    await setVariacaoExcluida(v.id, marcado !== true);
+                    qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+                  }}
+                />
+                <div className="flex-1">
+                  <VariacaoCard
+                    variacao={v}
+                    loteId={familia.loteId}
+                    statusPreco={precoStatuses[v.codigo]}
+                    statusCor={corStatuses[v.codigo]}
+                    statusGtin={gtinStatuses[v.codigo]}
+                    onMudarPreco={mudarPreco}
+                    onMudarCor={mudarCor}
+                    onMudarGtin={mudarGtin}
+                    onSalvarPreco={salvarPreco}
+                    onSalvarCor={salvarCor}
+                    onSalvarGtin={salvarGtin}
+                  />
+                </div>
+              </div>
             ))}
           </div>
         </div>
