@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
+import { familiaPublicavel } from '@/lib/publicavel';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -19,6 +20,7 @@ function formatarBRL(valor: number): string {
 
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
+  const pub = familiaPublicavel(familia);
   return (
     <div
       className={cn(
@@ -28,6 +30,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
     >
       <Checkbox
         checked={selecionada}
+        disabled={!pub.ok}
         onCheckedChange={(v) => onSelecionar(familia.id, v === true)}
       />
       {capaUrl ? (
@@ -54,6 +57,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           {familia.variacoesSemCor > 0 && (
             <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
               ⚠ {familia.variacoesSemCor} sem cor
+            </span>
+          )}
+          {!pub.ok && (
+            <span
+              className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+              title={pub.motivos.join('\n')}
+            >
+              🔒 {pub.motivos[0]}{pub.motivos.length > 1 ? ` (+${pub.motivos.length - 1})` : ''}
             </span>
           )}
         </div>

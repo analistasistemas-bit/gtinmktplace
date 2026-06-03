@@ -6,6 +6,12 @@ import type { Familia } from '@/lib/tipos-dominio';
 
 // Mocka useFamilias para devolver direto um array de famílias, evitando
 // dependência de QueryClient/Supabase neste teste de UI.
+const VAR_OK = {
+  codigo: '00010001', cor: 'Vermelho', corHex: '#dc2626', corOrigem: 'descricao' as const,
+  corEditadaPeloOperador: false, preco: 1, precoPublicacao: 1, estoque: 10,
+  gtin: null, fotoPath: 'u/l/001.jpeg', excluidaDaPublicacao: false,
+};
+
 const FAMILIAS_FAKE: Familia[] = [
   {
     id: 'a',
@@ -17,11 +23,23 @@ const FAMILIAS_FAKE: Familia[] = [
     estrategiaPreco: 'PROPRIO',
     estrategiaMotivo: '',
     concorrencia: 'sem',
+    concorrenciaVendedores: 0,
+    concorrenciaPrecoMin: null,
+    analiseMercado: null,
+    tipoAviamento: 'linha',
+    categoriaMlId: 'MLB270273',
     precoMin: 1,
     precoMax: 1,
     precoAbaixo20pc: false,
-    variacoes: [],
+    capaStoragePath: null,
+    variacoes: [VAR_OK],
     status: 'pronto',
+    tokensInput: null,
+    tokensOutput: null,
+    custoCentavos: null,
+    tituloEditadoPeloOperador: false,
+    descricaoEditadaPeloOperador: false,
+    variacoesSemCor: 0,
   },
   {
     id: 'b',
@@ -29,15 +47,27 @@ const FAMILIAS_FAKE: Familia[] = [
     codigoPai: '1002',
     titulo: 'Botão Azul',
     descricao: '',
-    operacao: 'UPDATE',
+    operacao: 'CREATE',
     estrategiaPreco: 'COMPETITIVO',
     estrategiaMotivo: '',
     concorrencia: 'alta',
+    concorrenciaVendedores: 5,
+    concorrenciaPrecoMin: null,
+    analiseMercado: null,
+    tipoAviamento: 'botao',
+    categoriaMlId: 'MLB270272',
     precoMin: 1,
     precoMax: 1,
     precoAbaixo20pc: true,
-    variacoes: [],
+    capaStoragePath: null,
+    variacoes: [{ ...VAR_OK, codigo: '00010002' }],
     status: 'pronto',
+    tokensInput: null,
+    tokensOutput: null,
+    custoCentavos: null,
+    tituloEditadoPeloOperador: false,
+    descricaoEditadaPeloOperador: false,
+    variacoesSemCor: 0,
   },
 ];
 
