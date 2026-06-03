@@ -258,5 +258,8 @@ export function familiaFromRow(
     tituloEditadoPeloOperador: r.titulo_editado_pelo_operador,
     descricaoEditadaPeloOperador: r.descricao_editada_pelo_operador,
     variacoesSemCor: variacoes.filter((v) => !v.cor).length,
+    mlPermalink: r.ml_permalink,
+    mlItemId: r.ml_item_id,
+    erroMensagem: r.erro_mensagem,
   };
 }

@@ -1,92 +1,56 @@
-import { Link, useParams } from 'react-router-dom';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useLote } from '@/hooks/useLotes';
 import { useFamilias } from '@/hooks/useFamilias';
+import { useLoteRealtime } from '@/hooks/useLoteRealtime';
+import { Button } from '@/components/ui/button';
 
 export default function Relatorio() {
-  const { loteId } = useParams();
-  const { data: lote, isLoading: loadingLote } = useLote(loteId);
-  const { data: todasFamilias = [] } = useFamilias(loteId);
+  const { loteId } = useParams<{ loteId: string }>();
+  const nav = useNavigate();
+  useLoteRealtime(loteId);
 
-  if (loadingLote) return <div className="p-6">Carregando relatório...</div>;
-  if (!lote) return <div className="p-6">Lote não encontrado.</div>;
+  const { data: lote } = useLote(loteId);
+  const polling = lote?.status === 'publicando';
+  const { data: familias = [] } = useFamilias(loteId, {
+    refetchInterval: polling ? 2500 : undefined,
+  });
 
-  const familias = todasFamilias.slice(0, lote.totalFamilias);
-  const publicadas = familias.slice(0, lote.totalPublicadas);
-  const erros = familias.slice(lote.totalPublicadas, lote.totalPublicadas + lote.totalErros);
+  const publicadas = familias.filter((f) => f.status === 'publicado').length;
+  const emPublicacao = familias.filter((f) => f.status === 'publicando').length;
+  const comErro = familias.filter((f) => f.status === 'erro').length;
+
+  if (!lote) return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
 
   return (
     <div className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          Relatório · Lote #{lote.numero}
-        </h1>
-        <Button variant="outline" disabled>
-          Exportar PDF
-        </Button>
+      <h1 className="mb-4 text-2xl font-semibold">Relatório · Lote #{lote.numero}</h1>
+      <div className="mb-6 grid grid-cols-3 gap-3 text-sm">
+        <div className="rounded-md border bg-green-50 px-3 py-2 text-green-800">✅ {publicadas} publicada(s)</div>
+        <div className="rounded-md border bg-blue-50 px-3 py-2 text-blue-800">⏳ {emPublicacao} publicando</div>
+        <div className="rounded-md border bg-red-50 px-3 py-2 text-red-800">❌ {comErro} com erro</div>
       </div>
-
-      <div className="mb-6 grid grid-cols-3 gap-3">
-        <Card className="p-4">
-          <div className="text-3xl font-semibold text-green-700">{lote.totalPublicadas}</div>
-          <div className="text-xs text-muted-foreground">publicadas</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-3xl font-semibold text-destructive">{lote.totalErros}</div>
-          <div className="text-xs text-muted-foreground">com erro</div>
-        </Card>
-        <Card className="p-4">
-          <div className="text-3xl font-semibold">R$ 0,42</div>
-          <div className="text-xs text-muted-foreground">custo IA</div>
-        </Card>
-      </div>
-
-      {publicadas.length > 0 && (
-        <>
-          <h2 className="mb-2 text-sm font-semibold">Publicadas</h2>
-          <div className="mb-6 flex flex-col gap-2">
-            {publicadas.map((f) => (
-              <Card key={f.id} className="flex items-center justify-between p-3 text-sm">
-                <div className="flex items-center gap-2">
-                  <Badge variant={f.operacao === 'CREATE' ? 'default' : 'secondary'}>
-                    {f.operacao}
-                  </Badge>
-                  <span>{f.titulo}</span>
-                </div>
-                <Link
-                  to="https://produto.mercadolivre.com.br/MLB-mockid"
-                  className="text-primary hover:underline"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Ver no Mercado Livre →
-                </Link>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-
-      {erros.length > 0 && (
-        <>
-          <h2 className="mb-2 text-sm font-semibold">Com erro</h2>
-          <div className="flex flex-col gap-2">
-            {erros.map((f) => (
-              <Card key={f.id} className="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <div>{f.titulo}</div>
-                  <div className="text-xs text-destructive">Erro: campo obrigatório ausente</div>
-                </div>
-                <Button size="sm" variant="outline">
-                  Editar e tentar de novo
-                </Button>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
+      <ul className="space-y-1 text-sm">
+        {familias.map((f) => (
+          <li key={f.id} className="flex items-center justify-between gap-3 border-b py-2">
+            <span className="truncate">{f.codigoPai} — {f.titulo}</span>
+            <span className="flex items-center gap-2 text-xs">
+              {f.status === 'publicado' && f.mlPermalink && (
+                <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver anúncio ↗</a>
+              )}
+              {f.status === 'publicando' && <span className="text-muted-foreground">publicando…</span>}
+              {f.status === 'erro' && (
+                <>
+                  <span className="max-w-xs truncate text-red-600" title={f.erroMensagem ?? ''}>{f.erroMensagem ?? 'erro'}</span>
+                  <Button size="sm" variant="outline" onClick={() => nav(`/revisao/${loteId}`)}>Editar e tentar de novo</Button>
+                </>
+              )}
+              {(f.status === 'pendente' || f.status === 'processando' || f.status === 'pronto') && (
+                <span className="text-muted-foreground">{f.status}</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

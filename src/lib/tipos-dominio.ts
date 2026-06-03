@@ -112,4 +112,7 @@ export interface Familia {
   tituloEditadoPeloOperador: boolean;
   descricaoEditadaPeloOperador: boolean;
   variacoesSemCor: number;
+  mlPermalink: string | null;
+  mlItemId: string | null;
+  erroMensagem: string | null;
 }
