@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
       .eq('user_id', user.id)
       .in('codigo_pai', codigosPai)
       .not('ml_item_id', 'is', null)
-      .order('publicado_em', { ascending: false });
+      .order('publicado_em', { ascending: false, nullsFirst: false });
 
     // Publicação mais recente por codigo_pai.
     const anteriorPorPai = new Map<string, NonNullable<typeof anteriores>[number]>();
