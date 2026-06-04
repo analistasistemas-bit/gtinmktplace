@@ -38,6 +38,16 @@ describe('montarPayloadItem', () => {
       expect.arrayContaining([{ id: 'COLOR', value_name: 'Azul' }]),
     );
   });
+  it('a capa entra como 1ª foto de cada variação (vira a principal com variações)', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId);
+    expect(p.variations[0].picture_ids[0]).toBe('CAPA1');
+    expect(p.variations[0].picture_ids).toContain('PIC1');
+    expect(p.variations[1].picture_ids[0]).toBe('CAPA1');
+  });
+  it('sem capa, a variação usa só a própria foto', () => {
+    const p = montarPayloadItem(familia, variacoes, null);
+    expect(p.variations[0].picture_ids).toEqual(['PIC1']);
+  });
   it('pictures do item incluem capa + foto de cada cor', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
     const ids = p.pictures.map((x) => x.id);

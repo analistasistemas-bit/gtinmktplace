@@ -61,11 +61,17 @@ export function montarPayloadItem(
 
   const aceitaEmptyGtin = categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
   const variations: VariacaoItem[] = variacoes.map((v) => {
+    // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria
+    // por variação, então sem isso a foto-capa do anúncio nunca apareceria.
+    const picsVariacao = [
+      ...(capaPictureId ? [capaPictureId] : []),
+      ...(v.ml_picture_id ? [v.ml_picture_id] : []),
+    ];
     const variation: VariacaoItem = {
       attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
       available_quantity: v.estoque,
       price: v.preco_publicacao ?? 0,
-      picture_ids: v.ml_picture_id ? [v.ml_picture_id] : [],
+      picture_ids: [...new Set(picsVariacao)],
       seller_custom_field: v.codigo,
     };
     if (gtinAusente(v.gtin)) {
