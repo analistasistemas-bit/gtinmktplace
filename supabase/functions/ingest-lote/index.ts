@@ -124,12 +124,16 @@ Deno.serve(async (req) => {
           capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
         };
       }
-      // UPDATE — herda metadados (exibição) + ml_item_id (publicação); pronto sem IA.
+      // UPDATE — herda metadados (exibição) + ml_item_id (publicação).
       const cas = casamentoPorPai.get(g.codigo_pai)!;
+      const temCorNova = cas.mudancaEstrutural.novas.length > 0;
       return {
         lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
-        operacao: 'UPDATE', status: 'pronto',
+        operacao: 'UPDATE',
+        // Com cor nova: 'pendente' p/ o process-familia resolver a cor das novas (ADR-0004).
+        // Sem cor nova: 'pronto' direto, sem IA.
+        status: temCorNova ? 'pendente' : 'pronto',
         capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
         ml_item_id: ant.ml_item_id,
         ml_permalink: ant.ml_permalink,
@@ -146,7 +150,7 @@ Deno.serve(async (req) => {
     const { data: familiasCriadas, error: famErr } = await admin
       .from('familias')
       .insert(familiasInsert)
-      .select('id, codigo_pai, operacao');
+      .select('id, codigo_pai, operacao, status');
     if (famErr || !familiasCriadas) throw new Error(`Insert famílias: ${famErr?.message}`);
 
     const familiaPorCodigo = new Map(familiasCriadas.map((f) => [f.codigo_pai, f.id]));
@@ -176,6 +180,8 @@ Deno.serve(async (req) => {
             ml_picture_id: h?.ml_picture_id ?? null,
             estoque_anterior: h?.estoque_anterior ?? null,
             preco_publicacao: v.PRECO,
+            // Cor nova (sem variação no anúncio) entra DESMARCADA (opt-in).
+            excluida_da_publicacao: h?.ml_variation_id == null,
           } : {}),
         };
       });
@@ -184,7 +190,7 @@ Deno.serve(async (req) => {
     if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
 
     for (const f of familiasCriadas) {
-      if (f.operacao !== 'CREATE') continue; // UPDATE já nasce 'pronto', sem IA
+      if (f.status !== 'pendente') continue; // CREATE + UPDATE com cor nova precisam de IA
       const messageId = await enfileirarFamilia({ familia_id: f.id, lote_id: lote.id });
       await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     }
