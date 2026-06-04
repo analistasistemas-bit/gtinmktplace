@@ -76,11 +76,11 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
                 rel="noreferrer"
                 className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800 hover:underline"
               >
-                ✓ publicado ↗
+                {familia.operacao === 'UPDATE' ? '✓ atualizado ↗' : '✓ publicado ↗'}
               </a>
             ) : (
               <span className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
-                ✓ publicado
+                {familia.operacao === 'UPDATE' ? '✓ atualizado' : '✓ publicado'}
               </span>
             )
           )}
