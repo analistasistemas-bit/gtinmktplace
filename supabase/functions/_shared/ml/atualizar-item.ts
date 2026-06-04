@@ -1,4 +1,4 @@
-import type { MLVariacaoAtual, VariacaoUpdate } from './atualizar.ts';
+import type { MLVariacaoAtual, VariacaoUpdate, VariacaoNovaPut } from './atualizar.ts';
 
 export interface ItemMLAtual {
   id: string;
@@ -26,16 +26,23 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
   return { id: String(json.id), variations };
 }
 
-// Atualiza só as variações (estoque). PUT /items/{id} com variations[].
+export interface ResultadoUpdate {
+  variations: Array<{ id: string | number; seller_custom_field?: string | null }>;
+}
+
+// Atualiza variações existentes (com id, só estoque) e cria as novas (sem id).
+// Retorna as variations do item (com ids) para casar as novas por seller_custom_field.
 export async function atualizarItemML(
   accessToken: string,
   itemId: string,
-  variations: VariacaoUpdate[],
-): Promise<void> {
+  variations: Array<VariacaoUpdate | VariacaoNovaPut>,
+): Promise<ResultadoUpdate> {
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ variations }),
   });
-  if (!resp.ok) throw erroML(resp.status, await resp.json().catch(() => ({})));
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw erroML(resp.status, json);
+  return { variations: (json as { variations?: ResultadoUpdate['variations'] }).variations ?? [] };
 }
