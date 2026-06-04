@@ -31,10 +31,12 @@ export function DiffEstoque({ familia }: { familia: Familia }) {
       )}
       {me && (
         <div className="mt-3 rounded bg-amber-50 p-2 text-xs text-amber-800">
-          <span className="font-semibold">Mudança estrutural (não aplicada no ML):</span>
-          {me.novas.length > 0 && <div>Cores novas (não publicadas): {me.novas.join(', ')}</div>}
+          <span className="font-semibold">Mudança estrutural:</span>
+          {me.novas.length > 0 && (
+            <div>Cores novas (marque "incluir" na lista para publicá-las): {me.novas.join(', ')}</div>
+          )}
           {me.removidas.length > 0 && (
-            <div>Cores sumidas da planilha (mantidas no anúncio): {me.removidas.map((r) => r.cor || r.codigo).join(', ')}</div>
+            <div>Cores sumidas da planilha (mantidas no anúncio, não removidas): {me.removidas.map((r) => r.cor || r.codigo).join(', ')}</div>
           )}
         </div>
       )}

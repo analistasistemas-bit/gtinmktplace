@@ -311,6 +311,11 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                     qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
                   }}
                 />
+                {familia.operacao === 'UPDATE' && !v.mlVariationId && (
+                  <span className="mt-2 shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                    nova
+                  </span>
+                )}
                 <div className="flex-1">
                   <VariacaoCard
                     variacao={v}
