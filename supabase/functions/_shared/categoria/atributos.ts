@@ -43,6 +43,18 @@ const OBRIGATORIOS: Record<TipoAviamento, string[]> = {
   outro: [],
 };
 
+// EMPTY_GTIN_REASON: value_id "O produto não tem código cadastrado" (global no ML BR).
+// Usado quando a variação não tem GTIN/EAN real (ex.: GTIN interno 3000*).
+export const EMPTY_GTIN_REASON_SEM_CODIGO = '17055160';
+
+// Categorias que expõem o atributo EMPTY_GTIN_REASON (validado via API ML 2026-06-04).
+// Botão (MLB270272) NÃO o expõe → sem GTIN o atributo é omitido (GTIN é só conditional_required).
+const CATEGORIAS_COM_EMPTY_GTIN_REASON = new Set(['MLB270273', 'MLB255054']);
+
+export function categoriaAceitaEmptyGtinReason(categoriaId: string | null): boolean {
+  return !!categoriaId && CATEGORIAS_COM_EMPTY_GTIN_REASON.has(categoriaId);
+}
+
 function normalizar(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }

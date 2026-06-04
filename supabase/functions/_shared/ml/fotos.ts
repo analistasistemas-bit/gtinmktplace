@@ -1,4 +1,4 @@
-// Endpoint exato (/pictures/items/upload) confirmado no bug bash (Task 13).
+// Endpoint /pictures/items/upload — formato a confirmar no bug bash (Task 13).
 export async function subirFotoML(accessToken: string, sourceUrl: string): Promise<string> {
   const resp = await fetch('https://api.mercadolibre.com/pictures/items/upload', {
     method: 'POST',

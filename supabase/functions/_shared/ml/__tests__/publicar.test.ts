@@ -36,9 +36,27 @@ describe('montarPayloadItem', () => {
     const ids = p.pictures.map((x) => x.id);
     expect(ids).toEqual(expect.arrayContaining(['CAPA1', 'PIC1', 'PIC2']));
   });
-  it('cor com GTIN inválido/nulo marca o atributo de "sem código universal"', () => {
+  it('cor com GTIN EAN válido envia atributo GTIN com value_name', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
-    const verde = p.variations[1];
-    expect(JSON.stringify(verde)).toMatch(/GTIN|código|EMPTY/i);
+    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '7891234567890' }]);
+  });
+  it('cor sem GTIN em categoria que aceita (linha) envia EMPTY_GTIN_REASON "sem código cadastrado"', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId);
+    expect(p.variations[1].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
+  });
+  it('GTIN interno 3000* é tratado como sem código (EMPTY_GTIN_REASON)', () => {
+    const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '30001234' }], capaPictureId);
+    expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
+  });
+  it('GTIN preenchido porém malformado vai como GTIN literal (ML valida), nunca como "sem código"', () => {
+    const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '123' }], capaPictureId);
+    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '123' }]);
+  });
+  it('cor sem GTIN em categoria sem suporte (botão MLB270272) não envia GTIN nem EMPTY_GTIN_REASON', () => {
+    const botao = { ...familia, categoria_ml_id: 'MLB270272' };
+    const p = montarPayloadItem(botao, [{ ...variacoes[1] }], capaPictureId);
+    const ids = (p.variations[0].attributes ?? []).map((a) => a.id);
+    expect(ids).not.toContain('GTIN');
+    expect(ids).not.toContain('EMPTY_GTIN_REASON');
   });
 });

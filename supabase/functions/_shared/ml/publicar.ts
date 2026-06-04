@@ -1,3 +1,5 @@
+import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
+
 export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
 export interface PictureRef { id: string; }
 export interface VariacaoItem {
@@ -32,16 +34,16 @@ interface VariacaoInput {
   preco_publicacao: number | null; gtin: string | null; ml_picture_id: string | null;
 }
 
-// Defaults a confirmar contra a API real (Task 13).
+// listing_type_id/condition/buying_mode confirmados como válidos no MLB (Task 13, 2026-06-04).
 const CURRENCY = 'BRL';
 const BUYING_MODE = 'buy_it_now';
 const LISTING_TYPE = 'gold_special';
 const CONDITION = 'new';
 
-function gtinValidoEan(gtin: string | null): boolean {
-  if (!gtin) return false;
-  if (/^3000/.test(gtin)) return false; // código interno, não-EAN
-  return /^\d{8,14}$/.test(gtin);
+// Ausência legítima de código universal: nulo/vazio ou código interno 3000* (não-EAN GS1).
+// Um GTIN preenchido (mesmo malformado) NÃO é ausência — vai ao ML, que valida o formato.
+function gtinAusente(gtin: string | null): boolean {
+  return !gtin || gtin.trim() === '' || /^3000/.test(gtin);
 }
 
 export function montarPayloadItem(
@@ -55,6 +57,7 @@ export function montarPayloadItem(
   ];
   const pictures: PictureRef[] = [...new Set(picIds)].map((id) => ({ id }));
 
+  const aceitaEmptyGtin = categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
   const variations: VariacaoItem[] = variacoes.map((v) => {
     const variation: VariacaoItem = {
       attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
@@ -63,11 +66,16 @@ export function montarPayloadItem(
       picture_ids: v.ml_picture_id ? [v.ml_picture_id] : [],
       seller_custom_field: v.codigo,
     };
-    if (gtinValidoEan(v.gtin)) {
-      variation.attributes = [{ id: 'GTIN', value_name: v.gtin! }];
+    if (gtinAusente(v.gtin)) {
+      // Sem código real (nulo ou interno 3000*): declara o motivo. GTIN é conditional_required,
+      // então em categorias sem EMPTY_GTIN_REASON (ex.: botão) o atributo é simplesmente omitido.
+      if (aceitaEmptyGtin) {
+        variation.attributes = [{ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO }];
+      }
     } else {
-      // Sem código universal — id/forma exatos confirmados no bug bash (Task 13).
-      variation.attributes = [{ id: 'GTIN', value_name: 'EMPTY_GTIN_NUMBER' }];
+      // GTIN preenchido: válido (ML aceita) ou malformado (ML rejeita e expõe o erro ao
+      // operador). Nunca declarar "sem código" para um valor preenchido — seria dado falso.
+      variation.attributes = [{ id: 'GTIN', value_name: v.gtin! }];
     }
     return variation;
   });
