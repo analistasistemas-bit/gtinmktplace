@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
     }
 
     // Sobe a foto das cores novas (idempotente via ml_picture_id).
-    const novasComFoto = [];
+    const novasComFoto: Array<typeof novas[number] & { ml_picture_id: string | null }> = [];
     for (const v of novas) {
       let picId = v.ml_picture_id as string | null;
       if (!picId && v.imagem_path) {
@@ -94,12 +94,21 @@ Deno.serve(async (req) => {
     const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut]);
 
     // Persiste o ml_variation_id das novas (casa por seller_custom_field).
+    const persistidas = new Set<string>();
     for (const mv of resultado.variations) {
       const codigo = mv.seller_custom_field;
       if (codigo && novasComFoto.some((v) => v.codigo === codigo)) {
         await admin.from('variacoes').update({ ml_variation_id: String(mv.id) })
           .eq('familia_id', job.familia_id).eq('codigo', codigo);
+        persistidas.add(codigo);
       }
+    }
+    // Se o ML não ecoou o seller_custom_field de alguma cor nova, NÃO marca publicado:
+    // a variação pode ter sido criada sem o ml_variation_id salvo, o que duplicaria a
+    // cor no próximo UPDATE. Falha explícita para o operador conferir antes de republicar.
+    const novasSemVinculo = novasComFoto.filter((v) => !persistidas.has(v.codigo));
+    if (novasSemVinculo.length > 0) {
+      throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field na resposta). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
     }
 
     await admin.from('familias').update({
