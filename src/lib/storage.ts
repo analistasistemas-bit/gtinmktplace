@@ -1,8 +1,21 @@
 import { supabase } from './supabase';
 
+// O Supabase Storage rejeita keys com acentos/espaços/caracteres especiais
+// ("Invalid key"). Sanitiza o nome do arquivo preservando os caracteres que o
+// match de imagens usa (dígitos, _, ., -) — ex.: "00CODIGO.jpeg"/"CAPA_00CODIGO.jpg"
+// passam inalterados; "Teste MKTPLACE - cópia.xlsx" vira "Teste_MKTPLACE_-_copia.xlsx".
+export function sanitizarNomeArquivo(filename: string): string {
+  return filename
+    .replace(/^[/\\]+/, '')
+    .split(/[/\\]/)
+    .pop()!
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w.-]/g, '_');
+}
+
 export function buildStoragePath(userId: string, loteId: string, filename: string): string {
-  const cleanName = filename.replace(/^[/\\]+/, '').split(/[/\\]/).pop()!;
-  return `${userId}/${loteId}/${cleanName}`;
+  return `${userId}/${loteId}/${sanitizarNomeArquivo(filename)}`;
 }
 
 export async function uploadFile(bucket: string, path: string, file: File): Promise<string> {
