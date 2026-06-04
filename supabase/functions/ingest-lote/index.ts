@@ -147,11 +147,20 @@ Deno.serve(async (req) => {
       };
     });
 
-    const { data: familiasCriadas, error: famErr } = await admin
-      .from('familias')
-      .insert(familiasInsert)
-      .select('id, codigo_pai, operacao, status');
-    if (famErr || !familiasCriadas) throw new Error(`Insert famílias: ${famErr?.message}`);
+    // Insert em dois lotes por operação: CREATE e UPDATE têm conjuntos de colunas
+    // diferentes; o bulk insert do PostgREST une as chaves e grava NULL nas ausentes
+    // (em vez do default da coluna), o que viola o NOT NULL de atributos_ml no CREATE.
+    const familiasCriadas: { id: string; codigo_pai: string; operacao: string; status: string }[] = [];
+    for (const op of ['CREATE', 'UPDATE'] as const) {
+      const subset = familiasInsert.filter((f) => f.operacao === op);
+      if (subset.length === 0) continue;
+      const { data, error: famErr } = await admin
+        .from('familias')
+        .insert(subset)
+        .select('id, codigo_pai, operacao, status');
+      if (famErr || !data) throw new Error(`Insert famílias (${op}): ${famErr?.message}`);
+      familiasCriadas.push(...data);
+    }
 
     const familiaPorCodigo = new Map(familiasCriadas.map((f) => [f.codigo_pai, f.id]));
 
