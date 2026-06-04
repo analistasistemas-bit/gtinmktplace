@@ -7,6 +7,7 @@ function cor(over: Partial<Variacao>): Variacao {
     codigo: '00000101', cor: 'Azul', corHex: '#00f', corOrigem: 'descricao',
     corEditadaPeloOperador: false, preco: 10, precoPublicacao: 9, estoque: 5,
     gtin: null, fotoPath: 'u/l/101.jpeg', excluidaDaPublicacao: false,
+    mlVariationId: null, estoqueAnterior: null,
     ...over,
   };
 }
@@ -20,6 +21,7 @@ function fam(over: Partial<Familia>): Familia {
     variacoes: [cor({})], status: 'pronto', tokensInput: null, tokensOutput: null,
     custoCentavos: null, tituloEditadoPeloOperador: false,
     descricaoEditadaPeloOperador: false, variacoesSemCor: 0,
+    mlPermalink: null, mlItemId: null, erroMensagem: null, mudancaEstrutural: null,
     ...over,
   };
 }
@@ -36,8 +38,35 @@ describe('familiaPublicavel', () => {
   it('status erro é publicável (permite re-tentar após falha)', () => {
     expect(familiaPublicavel(fam({ status: 'erro' })).ok).toBe(true);
   });
-  it('operação UPDATE não é CREATE-publicável', () => {
-    expect(familiaPublicavel(fam({ operacao: 'UPDATE' })).ok).toBe(false);
+  it('UPDATE com ml_item_id e ≥1 cor casada é publicável', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [cor({ mlVariationId: 'V1' })],
+    }));
+    expect(r.ok).toBe(true);
+  });
+  it('UPDATE sem ml_item_id bloqueia', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: null,
+      variacoes: [cor({ mlVariationId: 'V1' })],
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/anúncio|item|publicad/i);
+  });
+  it('UPDATE sem nenhuma cor casada bloqueia (tudo virou cor nova)', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [cor({ mlVariationId: null })],
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/cor.*atualiz|nenhuma cor/i);
+  });
+  it('UPDATE não exige categoria/foto/preço (já vêm do anúncio)', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123', categoriaMlId: null,
+      variacoes: [cor({ mlVariationId: 'V1', fotoPath: undefined, precoPublicacao: null })],
+    }));
+    expect(r.ok).toBe(true);
   });
   it('sem categoria bloqueia', () => {
     const r = familiaPublicavel(fam({ categoriaMlId: null, tipoAviamento: 'outro' }));

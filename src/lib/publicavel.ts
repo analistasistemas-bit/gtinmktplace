@@ -8,13 +8,22 @@ export interface ResultadoPublicavel {
 export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   const motivos: string[] = [];
 
-  // 'erro' é re-publicável (retry após falha de publicação); só bloqueia status de processamento.
+  // 'erro' é re-publicável (retry após falha); só bloqueia status de processamento.
   if (familia.status !== 'pronto' && familia.status !== 'erro') {
     motivos.push('Ainda em processamento (aguarde ficar "pronta")');
   }
-  if (familia.operacao !== 'CREATE') motivos.push('Já publicada (CREATE só vale para famílias novas)');
-  if (!familia.categoriaMlId) motivos.push('Categoria indefinida');
 
+  if (familia.operacao === 'UPDATE') {
+    if (!familia.mlItemId) motivos.push('Sem anúncio publicado para atualizar');
+    const casadas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao && v.mlVariationId);
+    if (casadas.length === 0) {
+      motivos.push('Nenhuma cor a atualizar (todas são novas — adicione manualmente no ML)');
+    }
+    return { ok: motivos.length === 0, motivos };
+  }
+
+  // CREATE: regras completas (categoria, cor, foto, preço por cor).
+  if (!familia.categoriaMlId) motivos.push('Categoria indefinida');
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   if (incluidas.length === 0) {
     motivos.push('Nenhuma cor incluída (ao menos 1 obrigatória)');
