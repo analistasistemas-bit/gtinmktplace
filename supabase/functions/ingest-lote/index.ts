@@ -4,6 +4,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
+import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import * as XLSX from 'npm:xlsx@^0.18';
 
 Deno.serve(async (req) => {
@@ -82,53 +83,108 @@ Deno.serve(async (req) => {
     }
 
     const codigosPai = grupos.map((g) => g.codigo_pai);
-    const { data: existentes } = await admin
+    const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, variacoes(codigo, ml_variation_id, cor, ml_picture_id, estoque)')
       .eq('user_id', user.id)
       .in('codigo_pai', codigosPai)
-      .not('ml_item_id', 'is', null);
-    const publicadosSet = new Set((existentes ?? []).map((e) => e.codigo_pai));
+      .not('ml_item_id', 'is', null)
+      .order('publicado_em', { ascending: false });
 
-    const familiasInsert = grupos.map((g) => ({
-      lote_id: lote.id,
-      user_id: user.id,
-      codigo_pai: g.codigo_pai,
-      nome_pai: g.nome_pai,
-      descricao_pai: g.descricao_pai,
-      unidade: g.unidade,
-      operacao: publicadosSet.has(g.codigo_pai) ? 'UPDATE' : 'CREATE',
-      status: 'pendente',
-      capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
-    }));
+    // Publicação mais recente por codigo_pai.
+    const anteriorPorPai = new Map<string, NonNullable<typeof anteriores>[number]>();
+    for (const a of anteriores ?? []) {
+      if (!anteriorPorPai.has(a.codigo_pai)) anteriorPorPai.set(a.codigo_pai, a);
+    }
+
+    // Casamento lote↔anúncio anterior por código (herança + mudança estrutural).
+    const casamentoPorPai = new Map<string, ReturnType<typeof casarVariacoesUpdate>>();
+    for (const g of grupos) {
+      const ant = anteriorPorPai.get(g.codigo_pai);
+      if (!ant) continue; // CREATE
+      const varsAnteriores: VarAnterior[] = (ant.variacoes ?? []).map((v) => ({
+        codigo: v.codigo,
+        ml_variation_id: v.ml_variation_id,
+        cor: v.cor,
+        ml_picture_id: v.ml_picture_id,
+        estoque: v.estoque,
+      }));
+      const novas = g.variacoes.map((v) => ({ codigo: normalizarCodigo(v.CODIGO) }));
+      casamentoPorPai.set(g.codigo_pai, casarVariacoesUpdate(novas, varsAnteriores));
+    }
+
+    const familiasInsert = grupos.map((g) => {
+      const ant = anteriorPorPai.get(g.codigo_pai);
+      if (!ant) {
+        // CREATE — comportamento atual.
+        return {
+          lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
+          nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
+          operacao: 'CREATE', status: 'pendente',
+          capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
+        };
+      }
+      // UPDATE — herda metadados (exibição) + ml_item_id (publicação); pronto sem IA.
+      const cas = casamentoPorPai.get(g.codigo_pai)!;
+      return {
+        lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
+        nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
+        operacao: 'UPDATE', status: 'pronto',
+        capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
+        ml_item_id: ant.ml_item_id,
+        ml_permalink: ant.ml_permalink,
+        titulo_ml: ant.titulo_ml,
+        descricao_ml: ant.descricao_ml,
+        categoria_ml_id: ant.categoria_ml_id,
+        atributos_ml: ant.atributos_ml,
+        tipo_aviamento: ant.tipo_aviamento,
+        capa_ml_picture_id: ant.capa_ml_picture_id,
+        mudanca_estrutural: cas.mudancaEstrutural,
+      };
+    });
+
     const { data: familiasCriadas, error: famErr } = await admin
       .from('familias')
       .insert(familiasInsert)
-      .select('id, codigo_pai');
+      .select('id, codigo_pai, operacao');
     if (famErr || !familiasCriadas) throw new Error(`Insert famílias: ${famErr?.message}`);
 
     const familiaPorCodigo = new Map(familiasCriadas.map((f) => [f.codigo_pai, f.id]));
 
-    const variacoesInsert = grupos.flatMap((g) =>
-      g.variacoes.map((v) => ({
-        familia_id: familiaPorCodigo.get(g.codigo_pai)!,
-        user_id: user.id,
-        codigo: normalizarCodigo(v.CODIGO),
-        nome: v.NOME,
-        gtin: v.GTIN,
-        estoque: v.ESTOQUE,
-        preco: v.PRECO,
-        peso_gramas: v.PESO_GRAMAS,
-        altura_cm: v.ALTURA_CM,
-        largura_cm: v.LARGURA_CM,
-        comprimento_cm: v.COMPRIMENTO_CM,
-        imagem_path: matchImagem(v.CODIGO, lote.imagens_paths) ?? null,
-      }))
-    );
+    const variacoesInsert = grupos.flatMap((g) => {
+      const cas = casamentoPorPai.get(g.codigo_pai); // undefined em CREATE
+      return g.variacoes.map((v) => {
+        const codigo = normalizarCodigo(v.CODIGO);
+        const h = cas?.herdados[codigo];
+        return {
+          familia_id: familiaPorCodigo.get(g.codigo_pai)!,
+          user_id: user.id,
+          codigo,
+          nome: v.NOME,
+          gtin: v.GTIN,
+          estoque: v.ESTOQUE,
+          preco: v.PRECO,
+          peso_gramas: v.PESO_GRAMAS,
+          altura_cm: v.ALTURA_CM,
+          largura_cm: v.LARGURA_CM,
+          comprimento_cm: v.COMPRIMENTO_CM,
+          imagem_path: matchImagem(v.CODIGO, lote.imagens_paths) ?? null,
+          // UPDATE: herda identidade no ML + cor + snapshot do diff; preço de publicação = planilha.
+          ...(cas ? {
+            ml_variation_id: h?.ml_variation_id ?? null,
+            cor: h?.cor ?? null,
+            ml_picture_id: h?.ml_picture_id ?? null,
+            estoque_anterior: h?.estoque_anterior ?? null,
+            preco_publicacao: v.PRECO,
+          } : {}),
+        };
+      });
+    });
     const { error: varErr } = await admin.from('variacoes').insert(variacoesInsert);
     if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
 
     for (const f of familiasCriadas) {
+      if (f.operacao !== 'CREATE') continue; // UPDATE já nasce 'pronto', sem IA
       const messageId = await enfileirarFamilia({ familia_id: f.id, lote_id: lote.id });
       await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     }
