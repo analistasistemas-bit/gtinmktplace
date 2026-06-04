@@ -46,3 +46,20 @@ mudanças estruturais. Ao implementar, decidimos os detalhes abaixo.
   adicionar exige foto/atributos).
 - GET ao vivo para o diff da UI: descartado (frontend não tem token; snapshot
   basta para decisão).
+
+---
+
+## Adendo (2026-06-04) — Cor nova publicável
+
+A decisão original (item 3) tratava cor nova como "apenas sinalizada". Refinamento
+a pedido do Diego: a **cor nova passa a ser publicável (opt-in)**.
+
+- A cor nova aparece na Revisão **desmarcada** (`excluida_da_publicacao=true`); o
+  operador marca para adicioná-la como **variação nova no anúncio existente**.
+- O nome da cor é resolvido só para as cores novas, na ordem do [ADR-0004](0004-atribuicao-de-cor.md)
+  (descrição/nome primeiro; Vision apenas como fallback). Implementado por um
+  `process-familia` em **modo parcial** que não mexe nos campos herdados.
+- Foto obrigatória (igual CREATE); preço da cor nova = preço da planilha.
+- O worker faz um único `PUT /items/{id}` que **cria** as variações sem `id` e
+  **atualiza** as com `id` no mesmo request.
+- **Cor removida continua apenas sinalizada** (não deleta) — inalterado.
