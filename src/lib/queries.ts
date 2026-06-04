@@ -12,7 +12,7 @@ import type {
   Concorrencia,
   AnaliseMercado,
 } from './tipos-dominio';
-import { parseAnomalias } from './tipos-dominio';
+import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 
 export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
@@ -103,6 +103,8 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     fotoPath: r.imagem_path ?? undefined,
     editadoPeloOperador: r.preco_editado_pelo_operador,
     excluidaDaPublicacao: r.excluida_da_publicacao,
+    mlVariationId: r.ml_variation_id,
+    estoqueAnterior: r.estoque_anterior,
   };
 }
 
@@ -260,6 +262,7 @@ export function familiaFromRow(
     variacoesSemCor: variacoes.filter((v) => !v.cor).length,
     mlPermalink: r.ml_permalink,
     mlItemId: r.ml_item_id,
+    mudancaEstrutural: parseMudancaEstrutural(r.mudanca_estrutural),
     erroMensagem: r.erro_mensagem,
   };
 }

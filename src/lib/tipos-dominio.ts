@@ -54,6 +54,25 @@ export function totalAnomalias(a: AnomaliasPlanilha): number {
   return a.codigos_duplicados.length + a.filhos_orfaos.length + a.familias_sem_filho.length;
 }
 
+export interface MudancaEstrutural {
+  novas: string[];
+  removidas: { codigo: string; cor: string | null }[];
+}
+
+export function parseMudancaEstrutural(json: unknown): MudancaEstrutural | null {
+  if (!json || typeof json !== 'object') return null;
+  const o = json as Record<string, unknown>;
+  const novas = Array.isArray(o.novas) ? o.novas.map(String) : [];
+  const removidas = Array.isArray(o.removidas)
+    ? o.removidas.map((r) => {
+        const x = (r ?? {}) as Record<string, unknown>;
+        return { codigo: String(x.codigo ?? ''), cor: x.cor != null ? String(x.cor) : null };
+      })
+    : [];
+  if (novas.length === 0 && removidas.length === 0) return null;
+  return { novas, removidas };
+}
+
 export interface Lote {
   id: string;
   numero: number;
@@ -81,6 +100,8 @@ export interface Variacao {
   fotoPath?: string;
   editadoPeloOperador?: boolean;
   excluidaDaPublicacao: boolean;
+  mlVariationId: string | null;
+  estoqueAnterior: number | null;
 }
 
 export interface Familia {
@@ -114,5 +135,6 @@ export interface Familia {
   variacoesSemCor: number;
   mlPermalink: string | null;
   mlItemId: string | null;
+  mudancaEstrutural: MudancaEstrutural | null;
   erroMensagem: string | null;
 }
