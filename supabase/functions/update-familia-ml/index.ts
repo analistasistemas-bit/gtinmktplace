@@ -35,6 +35,14 @@ Deno.serve(async (req) => {
   const { data: familia } = await admin.from('familias').select('*').eq('id', job.familia_id).single();
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
 
+  // Idempotência: só processa o claim ativo ('publicando'). Re-entrega do QStash após
+  // o lote já ter sido finalizado (status 'publicado'/'erro') é ignorada sem reprocessar.
+  if (familia.status !== 'publicando') {
+    return new Response(JSON.stringify({ skip: true, status: familia.status }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
     if (!familia.ml_item_id) throw new Error('Família UPDATE sem ml_item_id herdado (400)');
 
@@ -68,7 +76,7 @@ Deno.serve(async (req) => {
     const msg = err instanceof Error ? err.message : String(err);
     const status = (err as { status?: number }).status;
     // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
-    if (status && status >= 500) {
+    if (status && (status >= 500 || status === 429)) {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
     await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
