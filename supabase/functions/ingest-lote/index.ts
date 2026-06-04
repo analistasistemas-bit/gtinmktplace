@@ -164,13 +164,18 @@ Deno.serve(async (req) => {
 
     const familiaPorCodigo = new Map(familiasCriadas.map((f) => [f.codigo_pai, f.id]));
 
-    const variacoesInsert = grupos.flatMap((g) => {
+    // CREATE e UPDATE em listas separadas: o bulk insert do PostgREST une as chaves
+    // de todos os objetos e grava NULL nas ausentes (em vez do default), o que viola
+    // o NOT NULL de excluida_da_publicacao (presente só no ramo UPDATE) nas linhas CREATE.
+    const variacoesCreate: Record<string, unknown>[] = [];
+    const variacoesUpdate: Record<string, unknown>[] = [];
+    for (const g of grupos) {
       const cas = casamentoPorPai.get(g.codigo_pai); // undefined em CREATE
-      return g.variacoes.map((v) => {
+      const familiaId = familiaPorCodigo.get(g.codigo_pai)!;
+      for (const v of g.variacoes) {
         const codigo = normalizarCodigo(v.CODIGO);
-        const h = cas?.herdados[codigo];
-        return {
-          familia_id: familiaPorCodigo.get(g.codigo_pai)!,
+        const base = {
+          familia_id: familiaId,
           user_id: user.id,
           codigo,
           nome: v.NOME,
@@ -182,21 +187,30 @@ Deno.serve(async (req) => {
           largura_cm: v.LARGURA_CM,
           comprimento_cm: v.COMPRIMENTO_CM,
           imagem_path: matchImagem(v.CODIGO, lote.imagens_paths) ?? null,
+        };
+        if (cas) {
+          const h = cas.herdados[codigo];
           // UPDATE: herda identidade no ML + cor + snapshot do diff; preço de publicação = planilha.
-          ...(cas ? {
+          // Cor nova (sem variação no anúncio) entra DESMARCADA (opt-in).
+          variacoesUpdate.push({
+            ...base,
             ml_variation_id: h?.ml_variation_id ?? null,
             cor: h?.cor ?? null,
             ml_picture_id: h?.ml_picture_id ?? null,
             estoque_anterior: h?.estoque_anterior ?? null,
             preco_publicacao: v.PRECO,
-            // Cor nova (sem variação no anúncio) entra DESMARCADA (opt-in).
             excluida_da_publicacao: h?.ml_variation_id == null,
-          } : {}),
-        };
-      });
-    });
-    const { error: varErr } = await admin.from('variacoes').insert(variacoesInsert);
-    if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
+          });
+        } else {
+          variacoesCreate.push(base);
+        }
+      }
+    }
+    for (const subset of [variacoesCreate, variacoesUpdate]) {
+      if (subset.length === 0) continue;
+      const { error: varErr } = await admin.from('variacoes').insert(subset);
+      if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
+    }
 
     for (const f of familiasCriadas) {
       if (f.status !== 'pendente') continue; // CREATE + UPDATE com cor nova precisam de IA
