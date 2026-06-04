@@ -4,7 +4,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
 import { montarPayloadItem } from '../_shared/ml/publicar.ts';
-import { criarItemML } from '../_shared/ml/criar-item.ts';
+import { criarItemML, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
 import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 
@@ -45,6 +45,15 @@ Deno.serve(async (req) => {
   const { data: familia } = await admin.from('familias').select('*').eq('id', job.familia_id).single();
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
   if (familia.ml_item_id) {
+    // Já publicado: garante só a descrição (recurso separado pode ter faltado antes).
+    if (familia.descricao_ml) {
+      try {
+        const tk = await getValidAccessToken(familia.user_id);
+        await garantirDescricaoML(tk, familia.ml_item_id, familia.descricao_ml);
+      } catch (e) {
+        console.error(`descrição (retry) falhou para ${familia.ml_item_id}:`, e);
+      }
+    }
     return new Response(JSON.stringify({ jaPublicado: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
@@ -100,6 +109,16 @@ Deno.serve(async (req) => {
     if (upErr) {
       // O anúncio JÁ existe no ML mas não persistiu — evita re-publicação silenciosa no retry.
       console.error(`CRÍTICO: item ${resultado.id} criado no ML mas falhou ao persistir: ${upErr.message}`);
+    }
+
+    // Descrição: recurso separado no ML. Falha aqui não derruba o anúncio (já criado);
+    // um retry posterior a completa via o ramo de item já publicado.
+    if (familia.descricao_ml) {
+      try {
+        await garantirDescricaoML(token, resultado.id, familia.descricao_ml);
+      } catch (e) {
+        console.error(`descrição falhou para ${resultado.id}:`, e);
+      }
     }
 
     // Casa ml_variation_id por seller_custom_field; fallback por índice se o ML não ecoar e as contagens baterem.
