@@ -43,6 +43,7 @@ export type Database = {
           lote_id: string
           ml_item_id: string | null
           ml_permalink: string | null
+          mudanca_estrutural: Json | null
           nome_pai: string
           observacao_operador: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
@@ -88,6 +89,7 @@ export type Database = {
           lote_id: string
           ml_item_id?: string | null
           ml_permalink?: string | null
+          mudanca_estrutural?: Json | null
           nome_pai: string
           observacao_operador?: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
@@ -133,6 +135,7 @@ export type Database = {
           lote_id?: string
           ml_item_id?: string | null
           ml_permalink?: string | null
+          mudanca_estrutural?: Json | null
           nome_pai?: string
           observacao_operador?: string | null
           operacao?: Database["public"]["Enums"]["operacao_ml"]
@@ -256,6 +259,7 @@ export type Database = {
           cor_origem: Database["public"]["Enums"]["cor_origem"] | null
           criado_em: string
           estoque: number
+          estoque_anterior: number | null
           excluida_da_publicacao: boolean
           familia_id: string
           gtin: string | null
@@ -282,6 +286,7 @@ export type Database = {
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
           estoque?: number
+          estoque_anterior?: number | null
           excluida_da_publicacao?: boolean
           familia_id: string
           gtin?: string | null
@@ -308,6 +313,7 @@ export type Database = {
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
           estoque?: number
+          estoque_anterior?: number | null
           excluida_da_publicacao?: boolean
           familia_id?: string
           gtin?: string | null
