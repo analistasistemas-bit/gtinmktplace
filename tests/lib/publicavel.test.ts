@@ -33,6 +33,9 @@ describe('familiaPublicavel', () => {
     expect(r.ok).toBe(false);
     expect(r.motivos.join(' ')).toMatch(/pronta|processament/i);
   });
+  it('status erro é publicável (permite re-tentar após falha)', () => {
+    expect(familiaPublicavel(fam({ status: 'erro' })).ok).toBe(true);
+  });
   it('operação UPDATE não é CREATE-publicável', () => {
     expect(familiaPublicavel(fam({ operacao: 'UPDATE' })).ok).toBe(false);
   });

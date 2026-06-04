@@ -19,13 +19,14 @@ Deno.serve(async (req) => {
   const listingType = listing_type_id === 'gold_pro' ? 'gold_pro' : 'gold_special';
 
   const admin = adminClient();
+  // Claim atômico: 'pronto' (1ª vez) ou 'erro' (retry); limpa a mensagem de erro anterior.
   const { data: alvo, error } = await admin
     .from('familias')
-    .update({ status: 'publicando' })
+    .update({ status: 'publicando', erro_mensagem: null })
     .in('id', familia_ids)
     .eq('user_id', user.id)
     .eq('operacao', 'CREATE')
-    .eq('status', 'pronto')
+    .in('status', ['pronto', 'erro'])
     .is('ml_item_id', null)
     .select('id, lote_id');
   if (error) return new Response(`Erro no claim: ${error.message}`, { status: 500, headers: corsHeaders });

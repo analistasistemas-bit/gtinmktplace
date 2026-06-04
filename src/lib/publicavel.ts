@@ -8,7 +8,10 @@ export interface ResultadoPublicavel {
 export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   const motivos: string[] = [];
 
-  if (familia.status !== 'pronto') motivos.push('Ainda em processamento (aguarde ficar "pronta")');
+  // 'erro' é re-publicável (retry após falha de publicação); só bloqueia status de processamento.
+  if (familia.status !== 'pronto' && familia.status !== 'erro') {
+    motivos.push('Ainda em processamento (aguarde ficar "pronta")');
+  }
   if (familia.operacao !== 'CREATE') motivos.push('Já publicada (CREATE só vale para famílias novas)');
   if (!familia.categoriaMlId) motivos.push('Categoria indefinida');
 
