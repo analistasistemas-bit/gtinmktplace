@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { enfileirarPublicacao } from '../_shared/queue.ts';
+import { enfileirarPublicacao, enfileirarAtualizacao } from '../_shared/queue.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -19,8 +19,9 @@ Deno.serve(async (req) => {
   const listingType = listing_type_id === 'gold_pro' ? 'gold_pro' : 'gold_special';
 
   const admin = adminClient();
-  // Claim atômico: 'pronto' (1ª vez) ou 'erro' (retry); limpa a mensagem de erro anterior.
-  const { data: alvo, error } = await admin
+
+  // Claim CREATE: 'pronto'/'erro', ainda não publicado.
+  const { data: novos, error: errC } = await admin
     .from('familias')
     .update({ status: 'publicando', erro_mensagem: null })
     .in('id', familia_ids)
@@ -29,16 +30,36 @@ Deno.serve(async (req) => {
     .in('status', ['pronto', 'erro'])
     .is('ml_item_id', null)
     .select('id, lote_id');
-  if (error) return new Response(`Erro no claim: ${error.message}`, { status: 500, headers: corsHeaders });
+  if (errC) return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
+
+  // Claim UPDATE: 'pronto'/'erro', já publicado (tem ml_item_id herdado).
+  const { data: updates, error: errU } = await admin
+    .from('familias')
+    .update({ status: 'publicando', erro_mensagem: null })
+    .in('id', familia_ids)
+    .eq('user_id', user.id)
+    .eq('operacao', 'UPDATE')
+    .in('status', ['pronto', 'erro'])
+    .not('ml_item_id', 'is', null)
+    .select('id, lote_id');
+  if (errU) return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
 
   let enfileiradas = 0;
-  for (const f of alvo ?? []) {
+  let loteId: string | null = null;
+  for (const f of novos ?? []) {
     const messageId = await enfileirarPublicacao({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType });
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
+    loteId = f.lote_id;
     enfileiradas++;
   }
-  if (alvo && alvo[0]) {
-    await admin.from('lotes').update({ status: 'publicando' }).eq('id', alvo[0].lote_id);
+  for (const f of updates ?? []) {
+    const messageId = await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id });
+    await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
+    loteId = f.lote_id;
+    enfileiradas++;
+  }
+  if (loteId) {
+    await admin.from('lotes').update({ status: 'publicando' }).eq('id', loteId);
   }
 
   return new Response(JSON.stringify({ enfileiradas }), {
