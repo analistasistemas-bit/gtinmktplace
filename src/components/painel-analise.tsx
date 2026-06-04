@@ -21,6 +21,12 @@ const CORES_CONCORRENCIA: Record<Concorrencia, string> = {
 };
 
 export function PainelAnalise({ familia }: { familia: Familia }) {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
+  const precoPublicacao = baseVariacoes.length > 0
+    ? Math.min(...baseVariacoes.map((v) => v.precoPublicacao ?? v.preco))
+    : 0;
+
   const proprio = familia.estrategiaPreco === 'PROPRIO';
   const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
   const temConcorrencia = familia.concorrenciaVendedores > 0;
@@ -136,7 +142,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
         ) : (
           <div />
         )}
-        <CardVoceRecebe preco={familia.precoMin} categoriaMlId={familia.categoriaMlId} />
+        <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} />
       </div>
     </div>
   );
