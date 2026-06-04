@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, nome_pai, descricao_pai, lote_id')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -117,6 +117,14 @@ Deno.serve(async (req) => {
           .eq('id', v.id)
       );
     await Promise.all(updatesVar);
+
+    // UPDATE parcial: a família herdou título/descrição/categoria/concorrência do anúncio
+    // anterior; aqui só precisávamos resolver a cor das cores novas (feito nos passos 3-4).
+    // Não roda copy/concorrência/categoria/mercado. Marca pronto e encerra.
+    if (claimed.operacao === 'UPDATE') {
+      await admin.from('familias').update({ status: 'pronto' }).eq('id', job.familia_id);
+      return new Response('OK (update parcial)', { status: 200, headers: corsHeaders });
+    }
 
     // 5. Copywriter (1 chamada por família)
     const copy = await gerarCopy({
