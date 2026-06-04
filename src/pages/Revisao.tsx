@@ -137,6 +137,10 @@ export default function Revisao() {
     (f) => selecionadas.has(f.id) && f.operacao === 'CREATE',
   );
 
+  const selecaoTemUpdate = familias.some(
+    (f) => selecionadas.has(f.id) && f.operacao === 'UPDATE',
+  );
+
   async function confirmarPublicacao() {
     setPublicando(true);
     try {
@@ -249,8 +253,13 @@ export default function Revisao() {
             <DialogTitle>Publicar no Mercado Livre</DialogTitle>
           </DialogHeader>
           <p className="text-sm">
-            Vou publicar <strong>{selecionadas.size}</strong> família(s) como anúncios novos no
-            Mercado Livre, com <strong>{coresSelecionadas}</strong> cor(es) no total.
+            {selecaoTemCreate && selecaoTemUpdate ? (
+              <>Vou publicar/atualizar <strong>{selecionadas.size}</strong> família(s) no Mercado Livre, com <strong>{coresSelecionadas}</strong> cor(es) no total.</>
+            ) : !selecaoTemCreate && selecaoTemUpdate ? (
+              <>Vou atualizar o estoque de <strong>{selecionadas.size}</strong> família(s) já publicada(s), com <strong>{coresSelecionadas}</strong> cor(es) no total.</>
+            ) : (
+              <>Vou publicar <strong>{selecionadas.size}</strong> família(s) como anúncios novos no Mercado Livre, com <strong>{coresSelecionadas}</strong> cor(es) no total.</>
+            )}
           </p>
           {selecaoTemCreate && (
             <div className="mt-1">
