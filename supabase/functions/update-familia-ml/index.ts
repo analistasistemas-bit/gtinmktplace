@@ -3,7 +3,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
-import { montarVariacoesUpdate } from '../_shared/ml/atualizar.ts';
+import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
+import { subirFotoML } from '../_shared/ml/fotos.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -46,22 +47,60 @@ Deno.serve(async (req) => {
   try {
     if (!familia.ml_item_id) throw new Error('Família UPDATE sem ml_item_id herdado (400)');
 
-    // Estoques desejados: cores incluídas que casaram com o anúncio (têm ml_variation_id).
+    // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
+    // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
     const { data: variacoes } = await admin.from('variacoes')
-      .select('codigo, estoque, ml_variation_id')
+      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id')
       .eq('familia_id', job.familia_id)
-      .eq('excluida_da_publicacao', false)
-      .not('ml_variation_id', 'is', null);
-    if (!variacoes || variacoes.length === 0) throw new Error('Nenhuma cor casada para atualizar (400)');
+      .eq('excluida_da_publicacao', false);
+    if (!variacoes || variacoes.length === 0) throw new Error('Nenhuma cor incluída para atualizar (400)');
+
+    const casadas = variacoes.filter((v) => v.ml_variation_id);
+    const novas = variacoes.filter((v) => !v.ml_variation_id);
 
     const token = await getValidAccessToken(familia.user_id);
 
-    // GET estado real → garante reenviar todas as variações (ML deleta as omitidas).
-    const atual = await buscarItemML(token, familia.ml_item_id);
-    const desejados = variacoes.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
-    const variations = montarVariacoesUpdate(atual.variations, desejados);
+    const BUCKET = 'imagens';
+    const TTL_SIGNED = 60 * 60 * 2;
+    async function signed(path: string): Promise<string> {
+      const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
+      if (error || !data) throw new Error(`Signed URL falhou para ${path}`);
+      return data.signedUrl;
+    }
 
-    await atualizarItemML(token, familia.ml_item_id, variations);
+    // Sobe a foto das cores novas (idempotente via ml_picture_id).
+    const novasComFoto = [];
+    for (const v of novas) {
+      let picId = v.ml_picture_id as string | null;
+      if (!picId && v.imagem_path) {
+        picId = await subirFotoML(token, await signed(v.imagem_path));
+        await admin.from('variacoes').update({ ml_picture_id: picId }).eq('familia_id', job.familia_id).eq('codigo', v.codigo);
+      }
+      novasComFoto.push({ ...v, ml_picture_id: picId });
+    }
+
+    // GET estado real → reenviar todas as variações (ML deleta as omitidas).
+    const atual = await buscarItemML(token, familia.ml_item_id);
+    const desejados = casadas.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
+    const existentes = montarVariacoesUpdate(atual.variations, desejados);
+
+    const capaPic = (familia.capa_ml_picture_id as string | null) ?? null;
+    const novasPut = novasComFoto.map((v) => montarVariacaoNova(
+      { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
+      capaPic,
+      familia.categoria_ml_id as string | null,
+    ));
+
+    const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut]);
+
+    // Persiste o ml_variation_id das novas (casa por seller_custom_field).
+    for (const mv of resultado.variations) {
+      const codigo = mv.seller_custom_field;
+      if (codigo && novasComFoto.some((v) => v.codigo === codigo)) {
+        await admin.from('variacoes').update({ ml_variation_id: String(mv.id) })
+          .eq('familia_id', job.familia_id).eq('codigo', codigo);
+      }
+    }
 
     await admin.from('familias').update({
       status: 'publicado',
@@ -69,7 +108,7 @@ Deno.serve(async (req) => {
     }).eq('id', job.familia_id);
 
     await talvezFinalizarLote(admin, job.lote_id);
-    return new Response(JSON.stringify({ ml_item_id: familia.ml_item_id, atualizado: true }), {
+    return new Response(JSON.stringify({ ml_item_id: familia.ml_item_id, atualizado: true, novas: novasPut.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
