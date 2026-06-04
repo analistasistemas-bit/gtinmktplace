@@ -11,10 +11,12 @@ Deno.serve(async (req) => {
   try { user = await requireUser(req); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
-  const { familia_ids } = await req.json().catch(() => ({}));
+  const { familia_ids, listing_type_id } = await req.json().catch(() => ({}));
   if (!Array.isArray(familia_ids) || familia_ids.length === 0) {
     return new Response('familia_ids obrigatório', { status: 400, headers: corsHeaders });
   }
+  // Clássico (default) ou Premium; ignora qualquer outro valor.
+  const listingType = listing_type_id === 'gold_pro' ? 'gold_pro' : 'gold_special';
 
   const admin = adminClient();
   const { data: alvo, error } = await admin
@@ -30,7 +32,7 @@ Deno.serve(async (req) => {
 
   let enfileiradas = 0;
   for (const f of alvo ?? []) {
-    const messageId = await enfileirarPublicacao({ familia_id: f.id, lote_id: f.lote_id });
+    const messageId = await enfileirarPublicacao({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType });
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     enfileiradas++;
   }

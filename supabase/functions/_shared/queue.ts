@@ -21,6 +21,7 @@ export function qstashReceiver(): Receiver {
 export interface ProcessFamiliaJob {
   familia_id: string;
   lote_id: string;
+  listing_type_id?: string;
 }
 
 export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string> {

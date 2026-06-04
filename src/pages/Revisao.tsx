@@ -12,7 +12,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { familiaPublicavel } from '@/lib/publicavel';
-import { publicarFamilias } from '@/lib/publicar';
+import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas';
@@ -45,6 +45,7 @@ export default function Revisao() {
   const [progresso, setProgresso] = useState<{ feito: number; total: number } | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
+  const [listingType, setListingType] = useState<ListingType>('gold_special');
   const qc = useQueryClient();
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
@@ -135,7 +136,7 @@ export default function Revisao() {
   async function confirmarPublicacao() {
     setPublicando(true);
     try {
-      await publicarFamilias([...selecionadas]);
+      await publicarFamilias([...selecionadas], listingType);
       setSelecionadas(new Set());
       setConfirmando(false);
       nav(`/relatorio/${loteId}`);
@@ -245,8 +246,31 @@ export default function Revisao() {
           </DialogHeader>
           <p className="text-sm">
             Vou publicar <strong>{selecionadas.size}</strong> família(s) como anúncios novos no
-            Mercado Livre, com <strong>{coresSelecionadas}</strong> cor(es) no total. Confirmar?
+            Mercado Livre, com <strong>{coresSelecionadas}</strong> cor(es) no total.
           </p>
+          <div className="mt-1">
+            <span className="block text-xs font-semibold text-muted-foreground">Tipo de anúncio</span>
+            <div className="mt-1 flex gap-2">
+              {([
+                { v: 'gold_special', rotulo: 'Clássico', desc: 'comissão menor' },
+                { v: 'gold_pro', rotulo: 'Premium', desc: 'parcelamento + exposição' },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setListingType(opt.v)}
+                  className={
+                    listingType === opt.v
+                      ? 'flex-1 rounded-md border-2 border-primary bg-accent px-3 py-2 text-left'
+                      : 'flex-1 rounded-md border px-3 py-2 text-left text-muted-foreground hover:bg-accent/50'
+                  }
+                >
+                  <span className="block text-sm font-medium text-foreground">{opt.rotulo}</span>
+                  <span className="block text-[11px]">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmando(false)}>Cancelar</Button>
             <Button disabled={publicando} onClick={confirmarPublicacao}>

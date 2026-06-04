@@ -20,6 +20,13 @@ describe('montarPayloadItem', () => {
     expect(p.category_id).toBe('MLB270273');
     expect(p.attributes).toEqual(expect.arrayContaining([{ id: 'BRAND', value_name: 'Avil' }]));
   });
+  it('listing_type_id default é Clássico (gold_special)', () => {
+    expect(montarPayloadItem(familia, variacoes, capaPictureId).listing_type_id).toBe('gold_special');
+  });
+  it('usa o listing_type_id informado (ex.: Premium gold_pro)', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, 'gold_pro');
+    expect(p.listing_type_id).toBe('gold_pro');
+  });
   it('cria uma variação por cor com cor, estoque, preço e picture_ids', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
     expect(p.variations).toHaveLength(2);

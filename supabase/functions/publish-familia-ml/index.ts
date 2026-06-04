@@ -8,7 +8,7 @@ import { criarItemML } from '../_shared/ml/criar-item.ts';
 import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 
-interface Job { familia_id: string; lote_id: string; }
+interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona (gap §569)
@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
       { titulo_ml: familia.titulo_ml, descricao_ml: familia.descricao_ml, categoria_ml_id: familia.categoria_ml_id, atributos_ml: familia.atributos_ml ?? [] },
       variacoesComFoto.map((v) => ({ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id })),
       capaPictureId,
+      job.listing_type_id,
     );
 
     const resultado = await criarItemML(token, payload);

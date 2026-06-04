@@ -13,8 +13,13 @@ export interface ResultadoPublicar {
   enfileiradas: number;
 }
 
+export type ListingType = 'gold_special' | 'gold_pro';
+
 /** Dispara a publicação CREATE das famílias selecionadas (edge enfileira no QStash). */
-export async function publicarFamilias(familiaIds: string[]): Promise<ResultadoPublicar> {
+export async function publicarFamilias(
+  familiaIds: string[],
+  listingTypeId: ListingType = 'gold_special',
+): Promise<ResultadoPublicar> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão ativa');
   const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/publicar-familias`;
@@ -24,7 +29,7 @@ export async function publicarFamilias(familiaIds: string[]): Promise<ResultadoP
       Authorization: `Bearer ${session.access_token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ familia_ids: familiaIds }),
+    body: JSON.stringify({ familia_ids: familiaIds, listing_type_id: listingTypeId }),
   });
   if (!resp.ok) {
     const texto = await resp.text();

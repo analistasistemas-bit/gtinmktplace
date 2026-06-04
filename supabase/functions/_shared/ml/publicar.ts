@@ -34,10 +34,11 @@ interface VariacaoInput {
   preco_publicacao: number | null; gtin: string | null; ml_picture_id: string | null;
 }
 
-// listing_type_id/condition/buying_mode confirmados como válidos no MLB (Task 13, 2026-06-04).
+// condition/buying_mode confirmados válidos no MLB (Task 13). listing_type vem do
+// operador (gold_special = Clássico, gold_pro = Premium); default Clássico.
 const CURRENCY = 'BRL';
 const BUYING_MODE = 'buy_it_now';
-const LISTING_TYPE = 'gold_special';
+const LISTING_TYPE_PADRAO = 'gold_special';
 const CONDITION = 'new';
 
 // Ausência legítima de código universal: nulo/vazio ou código interno 3000* (não-EAN GS1).
@@ -50,6 +51,7 @@ export function montarPayloadItem(
   familia: FamiliaInput,
   variacoes: VariacaoInput[],
   capaPictureId: string | null,
+  listingTypeId: string = LISTING_TYPE_PADRAO,
 ): PayloadItem {
   const picIds = [
     ...(capaPictureId ? [capaPictureId] : []),
@@ -85,7 +87,7 @@ export function montarPayloadItem(
     category_id: familia.categoria_ml_id ?? '',
     currency_id: CURRENCY,
     buying_mode: BUYING_MODE,
-    listing_type_id: LISTING_TYPE,
+    listing_type_id: listingTypeId,
     condition: CONDITION,
     pictures,
     attributes: familia.atributos_ml ?? [],
