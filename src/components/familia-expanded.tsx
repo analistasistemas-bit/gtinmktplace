@@ -49,7 +49,10 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const regenerar = useRegenerarCopy(familia.loteId);
 
   function mudarPreco(codigo: string, novoPreco: number) {
-    setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, preco: novoPreco } : v)));
+    // O campo edita o preço de publicação (o que vai ao ML), não o preço da planilha.
+    setVariacoes((vs) =>
+      vs.map((v) => (v.codigo === codigo ? { ...v, precoPublicacao: novoPreco } : v)),
+    );
   }
 
   function mudarCor(codigo: string, novaCor: string) {
@@ -103,16 +106,30 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   }
 
   async function salvarPreco(codigo: string) {
-    const v = variacoes.find((x) => x.codigo === codigo);
+    const editada = variacoes.find((x) => x.codigo === codigo);
     const original = familia.variacoes.find((x) => x.codigo === codigo);
-    if (!v?.id || !original || v.preco === original.preco) return;
-    flashPreco(codigo, 'salvando');
-    try {
-      await updatePreco.mutateAsync({ id: v.id, preco: v.preco });
-      flashPreco(codigo, 'salvo');
-    } catch {
-      flashPreco(codigo, 'erro');
-    }
+    if (!editada?.id || !original) return;
+    const novoPreco = editada.precoPublicacao;
+    if (novoPreco == null || novoPreco === original.precoPublicacao) return;
+
+    // Preço é por produto: replica o novo preço de publicação para todas as cores.
+    setVariacoes((vs) => vs.map((x) => ({ ...x, precoPublicacao: novoPreco })));
+
+    // Salva a cor editada + as demais cujo preço ainda diverge do novo.
+    const alvos = variacoes.filter(
+      (x) => x.id && (x.codigo === codigo || x.precoPublicacao !== novoPreco),
+    );
+    alvos.forEach((x) => flashPreco(x.codigo, 'salvando'));
+    await Promise.all(
+      alvos.map(async (x) => {
+        try {
+          await updatePreco.mutateAsync({ id: x.id!, preco: novoPreco });
+          flashPreco(x.codigo, 'salvo');
+        } catch {
+          flashPreco(x.codigo, 'erro');
+        }
+      }),
+    );
   }
 
   function flashCor(codigo: string, status: SaveStatus) {

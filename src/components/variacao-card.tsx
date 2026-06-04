@@ -105,7 +105,7 @@ export function VariacaoCard({
           <Input
             type="number"
             step="0.01"
-            value={variacao.preco}
+            value={variacao.precoPublicacao ?? variacao.preco}
             onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
             onBlur={() => onSalvarPreco?.(variacao.codigo)}
             className="h-7 w-24"
@@ -117,8 +117,8 @@ export function VariacaoCard({
         {variacao.precoPublicacao != null &&
           variacao.precoPublicacao !== variacao.preco && (
             <span className="pl-0.5 text-[11px] text-muted-foreground">
-              publica: <span className="font-semibold text-foreground">
-                {fmtBRL(variacao.precoPublicacao)}
+              planilha: <span className="font-semibold text-foreground">
+                {fmtBRL(variacao.preco)}
               </span>
             </span>
           )}
