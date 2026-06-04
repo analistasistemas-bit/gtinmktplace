@@ -93,9 +93,15 @@ Deno.serve(async (req) => {
 
     const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut]);
 
-    // Persiste o ml_variation_id das novas (casa por seller_custom_field).
+    // Casa o ml_variation_id das novas. O PUT nem sempre ecoa seller_custom_field nas
+    // variações criadas; o GET ecoa de forma confiável — então relemos o item para casar.
+    let varsParaCasar = resultado.variations;
+    if (novasComFoto.length > 0) {
+      const refetch = await buscarItemML(token, familia.ml_item_id);
+      varsParaCasar = refetch.variations;
+    }
     const persistidas = new Set<string>();
-    for (const mv of resultado.variations) {
+    for (const mv of varsParaCasar) {
       const codigo = mv.seller_custom_field;
       if (codigo && novasComFoto.some((v) => v.codigo === codigo)) {
         await admin.from('variacoes').update({ ml_variation_id: String(mv.id) })
@@ -103,12 +109,11 @@ Deno.serve(async (req) => {
         persistidas.add(codigo);
       }
     }
-    // Se o ML não ecoou o seller_custom_field de alguma cor nova, NÃO marca publicado:
-    // a variação pode ter sido criada sem o ml_variation_id salvo, o que duplicaria a
-    // cor no próximo UPDATE. Falha explícita para o operador conferir antes de republicar.
+    // Se ainda assim alguma cor nova não tem vínculo, NÃO marca publicado (evita duplicar
+    // no próximo UPDATE). Falha explícita para o operador conferir antes de republicar.
     const novasSemVinculo = novasComFoto.filter((v) => !persistidas.has(v.codigo));
     if (novasSemVinculo.length > 0) {
-      throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field na resposta). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
+      throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
     }
 
     await admin.from('familias').update({
