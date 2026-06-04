@@ -9,6 +9,7 @@ import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { PainelAnalise } from '@/components/painel-analise';
+import { DiffEstoque } from '@/components/diff-estoque';
 import {
   useUpdateVariacaoPreco,
   useUpdateVariacaoCor,
@@ -212,6 +213,7 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
+      <DiffEstoque familia={familia} />
       <div className="mb-4 flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-start">
         <div className="flex items-start gap-4">
         <FotoCapaFamilia capaUrl={capaUrl ?? null} tamanho="large" />

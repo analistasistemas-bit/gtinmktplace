@@ -84,6 +84,17 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               </span>
             )
           )}
+          {familia.mudancaEstrutural && (
+            <span
+              className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+              title={[
+                familia.mudancaEstrutural.novas.length ? `${familia.mudancaEstrutural.novas.length} cor(es) nova(s)` : '',
+                familia.mudancaEstrutural.removidas.length ? `${familia.mudancaEstrutural.removidas.length} cor(es) removida(s)` : '',
+              ].filter(Boolean).join(' · ')}
+            >
+              ⚠ mudança estrutural
+            </span>
+          )}
         </div>
       </div>
       <Badge variant={familia.operacao === 'CREATE' ? 'default' : 'secondary'}>
