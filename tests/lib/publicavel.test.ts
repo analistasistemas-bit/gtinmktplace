@@ -53,13 +53,38 @@ describe('familiaPublicavel', () => {
     expect(r.ok).toBe(false);
     expect(r.motivos.join(' ')).toMatch(/anúncio|item|publicad/i);
   });
-  it('UPDATE sem nenhuma cor casada bloqueia (tudo virou cor nova)', () => {
+  it('UPDATE publica cor nova válida (com cor e foto)', () => {
     const r = familiaPublicavel(fam({
       operacao: 'UPDATE', mlItemId: 'MLB123',
-      variacoes: [cor({ mlVariationId: null })],
+      variacoes: [cor({ codigo: '00000777', cor: 'Vermelho', mlVariationId: null, fotoPath: 'u/l/777.jpeg' })],
+    }));
+    expect(r.ok).toBe(true);
+  });
+  it('UPDATE bloqueia cor nova incluída sem foto', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [cor({ codigo: '00000777', cor: 'Vermelho', mlVariationId: null, fotoPath: undefined })],
     }));
     expect(r.ok).toBe(false);
-    expect(r.motivos.join(' ')).toMatch(/cor.*atualiz|nenhuma cor/i);
+    expect(r.motivos.join(' ')).toMatch(/foto/i);
+  });
+  it('UPDATE bloqueia cor nova incluída sem cor definida', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [cor({ codigo: '00000777', cor: '', mlVariationId: null, fotoPath: 'u/l/777.jpeg' })],
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/cor/i);
+  });
+  it('UPDATE publicável misto: 1 cor casada (reposição) + 1 cor nova válida', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [
+        cor({ codigo: '00000101', mlVariationId: 'V1' }),
+        cor({ codigo: '00000777', cor: 'Vermelho', mlVariationId: null, fotoPath: 'u/l/777.jpeg' }),
+      ],
+    }));
+    expect(r.ok).toBe(true);
   });
   it('UPDATE não exige categoria/foto/preço (já vêm do anúncio)', () => {
     const r = familiaPublicavel(fam({
