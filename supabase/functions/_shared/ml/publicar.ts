@@ -43,7 +43,7 @@ const CONDITION = 'new';
 
 // Ausência legítima de código universal: nulo/vazio ou código interno 3000* (não-EAN GS1).
 // Um GTIN preenchido (mesmo malformado) NÃO é ausência — vai ao ML, que valida o formato.
-function gtinAusente(gtin: string | null): boolean {
+export function gtinAusente(gtin: string | null): boolean {
   return !gtin || gtin.trim() === '' || /^3000/.test(gtin);
 }
 
