@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarPayloadItem } from '../publicar';
+import { montarPayloadItem, ordenarVariacoesPrincipal } from '../publicar';
 
 const familia = {
   titulo_ml: 'Linha XIK 120 Várias Cores',
@@ -24,7 +24,7 @@ describe('montarPayloadItem', () => {
     expect(montarPayloadItem(familia, variacoes, capaPictureId).listing_type_id).toBe('gold_special');
   });
   it('usa o listing_type_id informado (ex.: Premium gold_pro)', () => {
-    const p = montarPayloadItem(familia, variacoes, capaPictureId, 'gold_pro');
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, 'gold_pro');
     expect(p.listing_type_id).toBe('gold_pro');
   });
   it('cria uma variação por cor com cor, estoque, preço e picture_ids', () => {
@@ -75,5 +75,39 @@ describe('montarPayloadItem', () => {
     const ids = (p.variations[0].attributes ?? []).map((a) => a.id);
     expect(ids).not.toContain('GTIN');
     expect(ids).not.toContain('EMPTY_GTIN_REASON');
+  });
+});
+
+describe('montarPayloadItem com 2a foto', () => {
+  const familia = { titulo_ml: 'T', descricao_ml: 'D', categoria_ml_id: 'MLB255054', atributos_ml: [] };
+  const variacoes = [
+    { codigo: '00000001', cor: 'Branco', estoque: 5, preco_publicacao: 10, gtin: '7891234567895', ml_picture_id: 'P1' },
+  ];
+  it('cada variação tem [capa, capa2, própria] e item.pictures inclui a capa2', () => {
+    const p = montarPayloadItem(familia, variacoes, 'CAPA', 'CAPA2');
+    expect(p.variations[0].picture_ids).toEqual(['CAPA', 'CAPA2', 'P1']);
+    expect(p.pictures.map((x) => x.id)).toEqual(expect.arrayContaining(['CAPA', 'CAPA2', 'P1']));
+  });
+  it('sem capa2 (null) mantém [capa, própria]', () => {
+    const p = montarPayloadItem(familia, variacoes, 'CAPA', null);
+    expect(p.variations[0].picture_ids).toEqual(['CAPA', 'P1']);
+  });
+});
+
+describe('ordenarVariacoesPrincipal', () => {
+  const vs = [
+    { codigo: '00000003' }, { codigo: '00000001' }, { codigo: '00000002' },
+  ];
+  it('põe a principal primeiro, resto por código', () => {
+    expect(ordenarVariacoesPrincipal(vs, '00000002').map((v) => v.codigo))
+      .toEqual(['00000002', '00000001', '00000003']);
+  });
+  it('sem principal (null) → tudo por código', () => {
+    expect(ordenarVariacoesPrincipal(vs, null).map((v) => v.codigo))
+      .toEqual(['00000001', '00000002', '00000003']);
+  });
+  it('principal inexistente → tudo por código', () => {
+    expect(ordenarVariacoesPrincipal(vs, '00009999').map((v) => v.codigo))
+      .toEqual(['00000001', '00000002', '00000003']);
   });
 });

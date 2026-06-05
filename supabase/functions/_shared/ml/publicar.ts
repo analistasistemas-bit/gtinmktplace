@@ -34,6 +34,20 @@ interface VariacaoInput {
   preco_publicacao: number | null; gtin: string | null; ml_picture_id: string | null;
 }
 
+/** Ordena as variações com a principal primeiro; o resto por código ascendente.
+ *  Genérica em T (só exige `codigo`) p/ servir CREATE (VariacaoInput) e testes. */
+export function ordenarVariacoesPrincipal<T extends { codigo: string }>(
+  variacoes: T[],
+  principalCodigo: string | null,
+): T[] {
+  const resto = [...variacoes].sort((a, b) => a.codigo.localeCompare(b.codigo));
+  if (!principalCodigo) return resto;
+  const idx = resto.findIndex((v) => v.codigo === principalCodigo);
+  if (idx < 0) return resto;
+  const [principal] = resto.splice(idx, 1);
+  return [principal, ...resto];
+}
+
 // condition/buying_mode confirmados válidos no MLB (Task 13). listing_type vem do
 // operador (gold_special = Clássico, gold_pro = Premium); default Clássico.
 const CURRENCY = 'BRL';
@@ -51,10 +65,12 @@ export function montarPayloadItem(
   familia: FamiliaInput,
   variacoes: VariacaoInput[],
   capaPictureId: string | null,
+  capa2PictureId: string | null,
   listingTypeId: string = LISTING_TYPE_PADRAO,
 ): PayloadItem {
+  const comuns = [capaPictureId, capa2PictureId].filter((x): x is string => !!x);
   const picIds = [
-    ...(capaPictureId ? [capaPictureId] : []),
+    ...comuns,
     ...variacoes.map((v) => v.ml_picture_id).filter((x): x is string => !!x),
   ];
   const pictures: PictureRef[] = [...new Set(picIds)].map((id) => ({ id }));
@@ -64,7 +80,7 @@ export function montarPayloadItem(
     // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria
     // por variação, então sem isso a foto-capa do anúncio nunca apareceria.
     const picsVariacao = [
-      ...(capaPictureId ? [capaPictureId] : []),
+      ...comuns,
       ...(v.ml_picture_id ? [v.ml_picture_id] : []),
     ];
     const variation: VariacaoItem = {

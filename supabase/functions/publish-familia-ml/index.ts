@@ -95,6 +95,7 @@ Deno.serve(async (req) => {
       { titulo_ml: familia.titulo_ml, descricao_ml: familia.descricao_ml, categoria_ml_id: familia.categoria_ml_id, atributos_ml: familia.atributos_ml ?? [] },
       variacoesComFoto.map((v) => ({ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id })),
       capaPictureId,
+      null,
       job.listing_type_id,
     );
 
