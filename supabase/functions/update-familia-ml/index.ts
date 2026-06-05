@@ -95,7 +95,14 @@ Deno.serve(async (req) => {
     // preservando os demais atributos. Sem fornecedor → não envia (não sobrescreve com "Avil").
     const marca = (familia.fornecedor as string | null)?.trim();
     const atributosItem = marca ? [{ id: 'BRAND', value_name: marca }] : [];
-    const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut], atributosItem);
+    // Ao criar variação nova, a foto dela precisa estar também no item.pictures
+    // (regra do ML: item.pictures.invalid.missing_ids). Reenvia o item.pictures =
+    // fotos atuais + as fotos das variações novas (dedup).
+    const novasPicIds = novasPut.flatMap((v) => v.picture_ids);
+    const pictures = novasPut.length > 0
+      ? [...new Set([...atual.pictures, ...novasPicIds])]
+      : undefined;
+    const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut], atributosItem, pictures);
 
     // Casa o ml_variation_id das novas. O PUT nem sempre ecoa seller_custom_field nas
     // variações criadas; o GET ecoa de forma confiável — então relemos o item para casar.

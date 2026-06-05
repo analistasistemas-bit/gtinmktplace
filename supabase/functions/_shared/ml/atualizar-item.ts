@@ -3,10 +3,15 @@ import type { MLVariacaoAtual, VariacaoUpdate, VariacaoNovaPut } from './atualiz
 export interface ItemMLAtual {
   id: string;
   variations: MLVariacaoAtual[];
+  pictures: string[];
 }
 
 function erroML(status: number, json: unknown): Error {
-  const detalhe = (json as { message?: string })?.message ?? JSON.stringify(json);
+  const j = (json ?? {}) as { message?: string; cause?: unknown; error?: string };
+  // O ML põe o detalhe real no array `cause` (a `message` costuma ser genérica
+  // tipo "Validation error"). Inclui o cause no texto p/ aparecer no erro persistido.
+  const causa = j.cause ? ` | cause: ${JSON.stringify(j.cause)}` : '';
+  const detalhe = (j.message ?? j.error ?? JSON.stringify(json)) + causa;
   const e = new Error(`ML rejeitou (${status}): ${detalhe}`);
   (e as { status?: number }).status = status;
   return e;
@@ -14,7 +19,7 @@ function erroML(status: number, json: unknown): Error {
 
 // Estado real do anúncio: ids + seller_custom_field + estoque de cada variação.
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
-  const url = `https://api.mercadolibre.com/items/${itemId}?attributes=id,variations`;
+  const url = `https://api.mercadolibre.com/items/${itemId}?attributes=id,variations,pictures`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
   if (!resp.ok) throw erroML(resp.status, json);
@@ -23,7 +28,10 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     seller_custom_field: (v.seller_custom_field as string | null) ?? null,
     available_quantity: (v.available_quantity as number) ?? 0,
   }));
-  return { id: String(json.id), variations };
+  const pictures = (json.pictures ?? [])
+    .map((p: Record<string, unknown>) => p.id as string)
+    .filter(Boolean);
+  return { id: String(json.id), variations, pictures };
 }
 
 export interface ResultadoUpdate {
@@ -39,9 +47,13 @@ export async function atualizarItemML(
   itemId: string,
   variations: Array<VariacaoUpdate | VariacaoNovaPut>,
   atributos?: Array<{ id: string; value_name?: string; value_id?: string }>,
+  pictures?: string[],
 ): Promise<ResultadoUpdate> {
   const body: Record<string, unknown> = { variations };
   if (atributos && atributos.length > 0) body.attributes = atributos;
+  // O ML exige que toda foto de variação esteja na lista de fotos do item. Ao criar
+  // variação nova, reenvia o item.pictures = fotos atuais + as novas (por id).
+  if (pictures && pictures.length > 0) body.pictures = pictures.map((id) => ({ id }));
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
