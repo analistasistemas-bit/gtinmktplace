@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
     const codigosPai = grupos.map((g) => g.codigo_pai);
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
       .eq('user_id', user.id)
       .in('codigo_pai', codigosPai)
       .not('ml_item_id', 'is', null)
@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
         cor_origem: v.cor_origem,
         ml_picture_id: v.ml_picture_id,
         estoque: v.estoque,
+        preco_publicacao: v.preco_publicacao,
       }));
       const novas = g.variacoes.map((v) => ({ codigo: normalizarCodigo(v.CODIGO) }));
       casamentoPorPai.set(g.codigo_pai, casarVariacoesUpdate(novas, varsAnteriores));
@@ -145,6 +146,15 @@ Deno.serve(async (req) => {
         tipo_aviamento: ant.tipo_aviamento,
         capa_ml_picture_id: ant.capa_ml_picture_id,
         mudanca_estrutural: cas.mudancaEstrutural,
+        // ADR-0016: UPDATE não re-roda IA/concorrência; herda a análise da publicação
+        // anterior p/ o Painel de Análise não aparecer vazio na revisão.
+        concorrencia_vendedores: ant.concorrencia_vendedores,
+        concorrencia_preco_min: ant.concorrencia_preco_min,
+        concorrencia_origem: ant.concorrencia_origem,
+        concorrencia_classe: ant.concorrencia_classe,
+        estrategia_preco: ant.estrategia_preco,
+        estrategia_motivo: ant.estrategia_motivo,
+        analise_mercado: ant.analise_mercado,
       };
     });
 
@@ -203,7 +213,9 @@ Deno.serve(async (req) => {
             cor_origem: h?.cor_origem ?? (h?.cor ? 'manual' : null),
             ml_picture_id: h?.ml_picture_id ?? null,
             estoque_anterior: h?.estoque_anterior ?? null,
-            preco_publicacao: v.PRECO,
+            // ADR-0016: UPDATE preserva o preço já publicado (não usa o da planilha).
+            // Cor nova (sem preço anterior) cai no preço da planilha.
+            preco_publicacao: h?.preco_publicacao ?? v.PRECO,
             excluida_da_publicacao: h?.ml_variation_id == null,
           });
         } else {

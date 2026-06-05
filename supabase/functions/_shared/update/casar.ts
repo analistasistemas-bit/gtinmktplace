@@ -5,6 +5,7 @@ export interface VarAnterior {
   cor_origem: string | null;
   ml_picture_id: string | null;
   estoque: number;
+  preco_publicacao: number | string | null;
 }
 export interface VarNova { codigo: string; }
 
@@ -14,6 +15,7 @@ export interface Herdado {
   cor_origem: string | null;
   ml_picture_id: string | null;
   estoque_anterior: number | null;
+  preco_publicacao: number | string | null;
 }
 export interface MudancaEstrutural {
   novas: string[];
@@ -42,9 +44,10 @@ export function casarVariacoesUpdate(
         cor_origem: ant.cor_origem,
         ml_picture_id: ant.ml_picture_id,
         estoque_anterior: ant.estoque,
+        preco_publicacao: ant.preco_publicacao,
       };
     } else {
-      herdados[n.codigo] = { ml_variation_id: null, cor: null, cor_origem: null, ml_picture_id: null, estoque_anterior: null };
+      herdados[n.codigo] = { ml_variation_id: null, cor: null, cor_origem: null, ml_picture_id: null, estoque_anterior: null, preco_publicacao: null };
       novasCores.push(n.codigo);
     }
   }
