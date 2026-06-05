@@ -24,10 +24,12 @@ export interface VariacaoNovaPut {
 export function montarVariacaoNova(
   v: CorNovaInput,
   capaPictureId: string | null,
+  capa2PictureId: string | null,
   categoriaMlId: string | null,
 ): VariacaoNovaPut {
   const pics = [
     ...(capaPictureId ? [capaPictureId] : []),
+    ...(capa2PictureId ? [capa2PictureId] : []),
     ...(v.ml_picture_id ? [v.ml_picture_id] : []),
   ];
   const variation: VariacaoNovaPut = {
@@ -53,18 +55,22 @@ export interface MLVariacaoAtual {
   available_quantity: number;
 }
 export interface EstoqueDesejado { codigo: string; estoque: number; }
-export interface VariacaoUpdate { id: string | number; available_quantity: number; }
+export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; }
 
 // Reenvia TODAS as variações atuais do anúncio (o ML deleta as omitidas). Só
 // available_quantity — sem price, para o ML preservar o preço de venda.
 export function montarVariacoesUpdate(
   atuais: MLVariacaoAtual[],
   desejados: EstoqueDesejado[],
+  picsPorCodigo?: Record<string, string[]>,
 ): VariacaoUpdate[] {
   const estoquePorCodigo = new Map(desejados.map((d) => [d.codigo, d.estoque]));
   return atuais.map((a) => {
     const codigo = a.seller_custom_field ?? '';
     const novo = estoquePorCodigo.get(codigo);
-    return { id: a.id, available_quantity: novo ?? a.available_quantity };
+    const base: VariacaoUpdate = { id: a.id, available_quantity: novo ?? a.available_quantity };
+    const pics = picsPorCodigo?.[codigo];
+    if (pics && pics.length > 0) base.picture_ids = [...new Set(pics)];
+    return base;
   });
 }
