@@ -125,6 +125,8 @@ export interface Familia {
   precoAbaixo20pc: boolean;
   fotoCapaPath?: string;
   capaStoragePath: string | null;
+  capa2StoragePath: string | null;
+  variacaoPrincipalCodigo: string | null;
   variacoes: Variacao[];
   editadoPeloOperador?: boolean;
   status: FamiliaStatus;

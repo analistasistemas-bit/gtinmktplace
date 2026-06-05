@@ -155,6 +155,14 @@ export async function updateFamiliaDescricao(
   if (error) throw error;
 }
 
+export async function updateVariacaoPrincipal(familiaId: string, codigo: string): Promise<void> {
+  const { error } = await supabase
+    .from('familias')
+    .update({ variacao_principal_codigo: codigo })
+    .eq('id', familiaId);
+  if (error) throw error;
+}
+
 export async function updateVariacaoCor(
   variacaoId: string,
   codigo: string,
@@ -251,6 +259,8 @@ export function familiaFromRow(
     precoAbaixo20pc,
     fotoCapaPath: variacoes.find((v) => v.fotoPath)?.fotoPath,
     capaStoragePath: r.capa_storage_path,
+    capa2StoragePath: r.capa2_storage_path,
+    variacaoPrincipalCodigo: r.variacao_principal_codigo,
     variacoes,
     editadoPeloOperador:
       r.titulo_editado_pelo_operador || r.descricao_editada_pelo_operador,

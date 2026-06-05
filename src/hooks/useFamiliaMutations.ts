@@ -5,6 +5,7 @@ import {
   updateVariacaoGtin,
   updateFamiliaTitulo,
   updateFamiliaDescricao,
+  updateVariacaoPrincipal,
   QK,
 } from '@/lib/queries';
 import { regenerarCopyFamilia } from '@/lib/ai-copy';
@@ -58,6 +59,15 @@ export function useRegenerarCopy(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (familiaId: string) => regenerarCopyFamilia(familiaId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useUpdateVariacaoPrincipal(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ familiaId, codigo }: { familiaId: string; codigo: string }) =>
+      updateVariacaoPrincipal(familiaId, codigo),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

@@ -17,8 +17,9 @@ import {
   useUpdateFamiliaTitulo,
   useUpdateFamiliaDescricao,
   useRegenerarCopy,
+  useUpdateVariacaoPrincipal,
 } from '@/hooks/useFamiliaMutations';
-import { subirCapaFamilia, removerCapaFamilia } from '@/lib/upload-imagens';
+import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
@@ -41,6 +42,10 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const [trocando, setTrocando] = useState(false);
   const qc = useQueryClient();
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
+  const { data: capa2Url } = useImageUrl(familia.capa2StoragePath);
+  const inputCapa2Ref = useRef<HTMLInputElement>(null);
+  const [trocandoCapa2, setTrocandoCapa2] = useState(false);
+  const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
 
   const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
@@ -211,6 +216,32 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
     }
   }
 
+  async function lidarTrocaCapa2(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTrocandoCapa2(true);
+    try {
+      await subirCapa2Familia(familia.loteId, familia.codigoPai, file);
+      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+    } catch (err) {
+      alert(`Erro ao subir 2ª foto: ${(err as Error).message}`);
+    } finally {
+      setTrocandoCapa2(false);
+      if (inputCapa2Ref.current) inputCapa2Ref.current.value = '';
+    }
+  }
+
+  async function lidarRemoverCapa2() {
+    if (!familia.capa2StoragePath) return;
+    if (!confirm('Remover a 2ª foto desta família?')) return;
+    try {
+      await removerCapa2Familia(familia.id, familia.capa2StoragePath);
+      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+    } catch (err) {
+      alert(`Erro ao remover 2ª foto: ${(err as Error).message}`);
+    }
+  }
+
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
       <DiffEstoque familia={familia} />
@@ -243,6 +274,24 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
             className="hidden"
             onChange={lidarTrocaCapa}
           />
+        </div>
+        </div>
+        <div className="flex items-start gap-4">
+        <FotoCapaFamilia capaUrl={capa2Url ?? null} tamanho="large" />
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">2ª foto (todas as cores)</span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => inputCapa2Ref.current?.click()} disabled={trocandoCapa2}>
+              <Camera className="mr-2 h-4 w-4" />
+              {familia.capa2StoragePath ? 'Trocar 2ª foto' : 'Subir 2ª foto'}
+            </Button>
+            {familia.capa2StoragePath && (
+              <Button variant="ghost" size="sm" onClick={lidarRemoverCapa2}>
+                <Trash2 className="mr-2 h-4 w-4" /> Remover
+              </Button>
+            )}
+          </div>
+          <input ref={inputCapa2Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa2} />
         </div>
         </div>
         <PainelAnalise familia={familia} />
@@ -319,6 +368,19 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                   <span className="mt-2 shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                     nova
                   </span>
+                )}
+                {familia.operacao === 'CREATE' && !v.excluidaDaPublicacao && (
+                  <label className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                    <input
+                      type="radio"
+                      name={`principal-${familia.id}`}
+                      checked={familia.variacaoPrincipalCodigo === v.codigo}
+                      onChange={() => updatePrincipal.mutate({ familiaId: familia.id, codigo: v.codigo })}
+                    />
+                    {familia.variacaoPrincipalCodigo === v.codigo ? (
+                      <span className="rounded bg-blue-100 px-1 font-medium text-blue-700">principal</span>
+                    ) : 'principal'}
+                  </label>
                 )}
                 <div className="flex-1">
                   <VariacaoCard
