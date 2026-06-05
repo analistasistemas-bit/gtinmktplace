@@ -41,6 +41,8 @@ Deno.serve(async (req) => {
     sem_match: 0,
     capas_ok: 0,
     capas_sem_match: 0,
+    capas2_ok: 0,
+    capas2_sem_match: 0,
     erros: [] as string[],
   };
 
@@ -52,6 +54,8 @@ Deno.serve(async (req) => {
       case 'sem_match':     contadores.sem_match++;       break;
       case 'capa_ok':       contadores.capas_ok++;        break;
       case 'capa_sem_match': contadores.capas_sem_match++; break;
+      case 'capa2_ok':       contadores.capas2_ok++;        break;
+      case 'capa2_sem_match': contadores.capas2_sem_match++; break;
       case 'invalido':      contadores.erros.push(r.erro); break;
     }
   }

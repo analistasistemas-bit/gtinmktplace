@@ -6,6 +6,8 @@ export type ResultadoProcessamento =
   | { tipo: 'sem_match' }
   | { tipo: 'capa_ok' }
   | { tipo: 'capa_sem_match' }
+  | { tipo: 'capa2_ok' }
+  | { tipo: 'capa2_sem_match' }
   | { tipo: 'invalido'; erro: string };
 
 export async function processarArquivo(
@@ -45,6 +47,32 @@ export async function processarArquivo(
     await admin.from('familias').update({ capa_storage_path: path }).eq('id', familia.id);
 
     return { tipo: 'capa_ok' };
+  }
+
+  if (classificacao.tipo === 'capa2') {
+    const { data: familias, error } = await admin
+      .from('familias')
+      .select('id, codigo_pai, capa2_storage_path')
+      .eq('lote_id', loteId)
+      .eq('user_id', userId);
+
+    if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
+    const familia = (familias as any[])?.find(
+      (f: any) => f.codigo_pai === classificacao.codigo,
+    );
+    if (!familia) return { tipo: 'capa2_sem_match' };
+
+    const ext = file.name.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg');
+    const path = `${userId}/capas2/${classificacao.codigo}.${ext}`;
+
+    const { error: upErr } = await admin.storage
+      .from('imagens')
+      .upload(path, new Uint8Array(bytes), { contentType: file.type, upsert: true });
+    if (upErr) return { tipo: 'invalido', erro: `Storage: ${upErr.message}` };
+
+    await admin.from('familias').update({ capa2_storage_path: path }).eq('id', familia.id);
+
+    return { tipo: 'capa2_ok' };
   }
 
   // classificacao.tipo === 'variacao'

@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { validarColunas, agruparPorPai, matchImagem, matchCapa, normalizarCodigo } from '../_shared/parser.ts';
+import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
@@ -127,6 +127,7 @@ Deno.serve(async (req) => {
           fornecedor: g.fornecedor,
           operacao: 'CREATE', status: 'pendente',
           capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
+          capa2_storage_path: matchCapa2(g.codigo_pai, lote.imagens_paths) ?? null,
         };
       }
       // UPDATE — herda metadados (exibição) + ml_item_id (publicação).
@@ -141,6 +142,7 @@ Deno.serve(async (req) => {
         // Sem cor nova: 'pronto' direto, sem IA.
         status: temCorNova ? 'pendente' : 'pronto',
         capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
+        capa2_storage_path: matchCapa2(g.codigo_pai, lote.imagens_paths) ?? null,
         ml_item_id: ant.ml_item_id,
         ml_permalink: ant.ml_permalink,
         titulo_ml: ant.titulo_ml,

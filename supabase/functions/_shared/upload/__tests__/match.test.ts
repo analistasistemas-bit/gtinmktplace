@@ -37,4 +37,12 @@ describe('classificarArquivo', () => {
     expect(classificarArquivo('capa_00012345.jpeg')).toEqual({ tipo: 'invalido' });
     expect(classificarArquivo('Capa_00012345.jpeg')).toEqual({ tipo: 'invalido' });
   });
+
+  it('reconhece CAPA2_ com 8 dígitos', () => {
+    expect(classificarArquivo('CAPA2_00012345.jpeg')).toEqual({ tipo: 'capa2', codigo: '00012345' });
+  });
+  it('CAPA2_ não é confundido com CAPA_ nem variação', () => {
+    expect(classificarArquivo('CAPA_00012345.jpeg').tipo).toBe('capa');
+    expect(classificarArquivo('00012345.jpeg').tipo).toBe('variacao');
+  });
 });

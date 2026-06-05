@@ -102,3 +102,14 @@ export function matchCapa(codigoPai: string | number, paths: string[]): string |
     return base.toUpperCase() === alvo;
   });
 }
+
+/** Acha a 2a foto comum (CAPA2_00CODIGO.ext) do PAI entre os paths já no storage. */
+export function matchCapa2(codigoPai: string | number, paths: string[]): string | undefined {
+  const alvo = `CAPA2_${normalizarCodigo(codigoPai)}`;
+  return paths.find((p) => {
+    if (!EXT_VALIDAS.test(p)) return false;
+    const filename = p.split('/').pop() ?? '';
+    const base = filename.replace(EXT_VALIDAS, '');
+    return base.toUpperCase() === alvo;
+  });
+}
