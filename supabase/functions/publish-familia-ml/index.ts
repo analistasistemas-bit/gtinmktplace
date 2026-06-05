@@ -3,7 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
-import { montarPayloadItem } from '../_shared/ml/publicar.ts';
+import { montarPayloadItem, ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
 import { criarItemML, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
 import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
@@ -81,6 +81,12 @@ Deno.serve(async (req) => {
       await admin.from('familias').update({ capa_ml_picture_id: capaPictureId }).eq('id', job.familia_id);
     }
 
+    let capa2PictureId: string | null = familia.capa2_ml_picture_id ?? null;
+    if (!capa2PictureId && familia.capa2_storage_path) {
+      capa2PictureId = await subirFotoML(token, await signed(familia.capa2_storage_path));
+      await admin.from('familias').update({ capa2_ml_picture_id: capa2PictureId }).eq('id', job.familia_id);
+    }
+
     const variacoesComFoto = [];
     for (const v of variacoes) {
       let picId = v.ml_picture_id as string | null;
@@ -91,11 +97,12 @@ Deno.serve(async (req) => {
       variacoesComFoto.push({ ...v, ml_picture_id: picId });
     }
 
+    const ordenadas = ordenarVariacoesPrincipal(variacoesComFoto, familia.variacao_principal_codigo ?? null);
     const payload = montarPayloadItem(
       { titulo_ml: familia.titulo_ml, descricao_ml: familia.descricao_ml, categoria_ml_id: familia.categoria_ml_id, atributos_ml: familia.atributos_ml ?? [] },
-      variacoesComFoto.map((v) => ({ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id })),
+      ordenadas.map((v) => ({ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id })),
       capaPictureId,
-      null,
+      capa2PictureId,
       job.listing_type_id,
     );
 
