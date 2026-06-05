@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
       NOME: String(r.NOME ?? ''),
       UNIDADE: String(r.UNIDADE ?? ''),
       GTIN: r.GTIN ? String(r.GTIN) : null,
+      CUSTO: Number(r.CUSTO ?? 0),
       PRECO: Number(r.PRECO ?? 0),
       ESTOQUE: Number(r.ESTOQUE ?? 0),
       DESCRICAO_DETALHADO: String(r.DESCRICAO_DETALHADO ?? ''),
@@ -74,6 +75,7 @@ Deno.serve(async (req) => {
       ALTURA_CM: Number(r.ALTURA_CM ?? 0),
       LARGURA_CM: Number(r.LARGURA_CM ?? 0),
       COMPRIMENTO_CM: Number(r.COMPRIMENTO_CM ?? 0),
+      FORNECEDOR: String(r.FORNECEDOR ?? ''),
     }));
 
     const { grupos, anomalias } = agruparPorPai(rows);
@@ -122,6 +124,7 @@ Deno.serve(async (req) => {
         return {
           lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
           nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
+          fornecedor: g.fornecedor,
           operacao: 'CREATE', status: 'pendente',
           capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
         };
@@ -132,6 +135,7 @@ Deno.serve(async (req) => {
       return {
         lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
+        fornecedor: g.fornecedor,
         operacao: 'UPDATE',
         // Com cor nova: 'pendente' p/ o process-familia resolver a cor das novas (ADR-0004).
         // Sem cor nova: 'pronto' direto, sem IA.
@@ -191,6 +195,7 @@ Deno.serve(async (req) => {
           codigo,
           nome: v.NOME,
           gtin: v.GTIN,
+          custo: v.CUSTO,
           estoque: v.ESTOQUE,
           preco: v.PRECO,
           peso_gramas: v.PESO_GRAMAS,
