@@ -62,3 +62,7 @@ O título e a descrição do anúncio vêm da informação do PAI; cada variaç�
 - Re-publicação (UPDATE) precisa lidar com adição/remoção de variações em anúncios já publicados (escopo da ADR-0005)
 
 **Regra de negócio importante:** o PAI não é vendido — ele é só um agrupador conceitual. Quem é vendido são os filhos (cores). O título e a descrição base vêm da informação do PAI; cada variação carrega o que é específico dela.
+
+## Adendo (2026-06-05) — Variação principal por ordem
+
+O ML define a "variação principal" do anúncio pela ordem do array de variações (a 1ª = principal). O operador escolhe na Revisão qual cor é a principal (`familias.variacao_principal_codigo`); o worker de CREATE ordena as variações com ela primeiro (resto por código). Aplica-se só ao CREATE — o UPDATE não reordena variações (ADR-0016).

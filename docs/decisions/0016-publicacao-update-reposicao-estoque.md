@@ -73,3 +73,7 @@ publicados antes da adoção do FORNECEDOR (ADR-0009 adendo). Os demais atributo
 reenviados. Se a família não tem fornecedor (vazio), o BRAND **não** é enviado (preserva o
 existente, evita sobrescrever com o fallback "Avil"). Preço/título/fotos seguem preservados como
 antes. Implementação: `update-familia-ml` calcula a marca e a envia via `atualizarItemML(..., atributos)`.
+
+## Adendo (2026-06-05) — 2ª foto comum no UPDATE
+
+Para propagar a 2ª foto comum (`capa2`) aos anúncios já publicados, o UPDATE passa a (re)enviar os `picture_ids` das variações existentes (`[capa, capa2, própria]`) quando há 2ª foto — exceção controlada à preservação de fotos. Idempotente (dedup); sem 2ª foto e sem cor nova, o comportamento segue só-estoque.
