@@ -187,6 +187,15 @@ Deno.serve(async (req) => {
     for (const g of grupos) {
       const cas = casamentoPorPai.get(g.codigo_pai); // undefined em CREATE
       const familiaId = familiaPorCodigo.get(g.codigo_pai)!;
+      // Preço de publicação representativo da família (menor entre as cores casadas) —
+      // a cor nova herda o mesmo preço de venda das outras, não o preço da planilha.
+      const precosCasados = cas
+        ? Object.values(cas.herdados)
+            .map((h) => h.preco_publicacao)
+            .filter((p) => p != null)
+            .map((p) => Number(p))
+        : [];
+      const precoPubFamilia = precosCasados.length ? Math.min(...precosCasados) : null;
       for (const v of g.variacoes) {
         const codigo = normalizarCodigo(v.CODIGO);
         const base = {
@@ -218,9 +227,9 @@ Deno.serve(async (req) => {
             cor_origem: h?.cor_origem ?? (h?.cor ? 'manual' : null),
             ml_picture_id: h?.ml_picture_id ?? null,
             estoque_anterior: h?.estoque_anterior ?? null,
-            // ADR-0016: UPDATE preserva o preço já publicado (não usa o da planilha).
-            // Cor nova (sem preço anterior) cai no preço da planilha.
-            preco_publicacao: h?.preco_publicacao ?? v.PRECO,
+            // ADR-0016: UPDATE preserva o preço já publicado. Cor nova (sem preço anterior)
+            // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
+            preco_publicacao: h?.preco_publicacao ?? precoPubFamilia ?? v.PRECO,
             excluida_da_publicacao: h?.ml_variation_id == null,
           });
         } else {

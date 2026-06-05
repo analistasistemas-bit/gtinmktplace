@@ -296,10 +296,14 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
             VARIAÇÕES ({variacoes.length})
           </label>
           <div className="flex flex-col gap-2">
-            {variacoes.map((v) => (
+            {variacoes.map((v) => {
+              // Cor nova (UPDATE sem variação no ML) é opt-in mas precisa ser editável
+              // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
+              const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
+              return (
               <div
                 key={v.codigo}
-                className={`flex items-start gap-2${v.excluidaDaPublicacao ? ' opacity-50' : ''}`}
+                className={`flex items-start gap-2${v.excluidaDaPublicacao && !corNova ? ' opacity-50' : ''}`}
               >
                 <Checkbox
                   checked={!v.excluidaDaPublicacao}
@@ -332,7 +336,8 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                   />
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

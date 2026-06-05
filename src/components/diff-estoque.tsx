@@ -1,5 +1,5 @@
 import type { Familia } from '@/lib/tipos-dominio';
-import { fmtMilhar } from '@/lib/formato';
+import { fmtInt } from '@/lib/formato';
 
 // UPDATE: mostra, por cor casada, o estoque antes→depois (só as que mudaram),
 // e sinaliza cores novas/removidas (mudança estrutural, não aplicada).
@@ -24,7 +24,7 @@ export function DiffEstoque({ familia }: { familia: Familia }) {
             <li key={v.codigo} className="flex items-center gap-2">
               <span className="font-medium">{v.cor || v.codigo}</span>
               <span className="text-muted-foreground">
-                estoque {fmtMilhar(v.estoqueAnterior ?? 0)} → {fmtMilhar(v.estoque)}
+                estoque {fmtInt(v.estoqueAnterior ?? 0)} → {fmtInt(v.estoque)}
               </span>
             </li>
           ))}
