@@ -91,7 +91,11 @@ Deno.serve(async (req) => {
       familia.categoria_ml_id as string | null,
     ));
 
-    const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut]);
+    // ADR-0016 (adendo 2026-06-05): sincroniza só o BRAND no UPDATE a partir do fornecedor,
+    // preservando os demais atributos. Sem fornecedor → não envia (não sobrescreve com "Avil").
+    const marca = (familia.fornecedor as string | null)?.trim();
+    const atributosItem = marca ? [{ id: 'BRAND', value_name: marca }] : [];
+    const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut], atributosItem);
 
     // Casa o ml_variation_id das novas. O PUT nem sempre ecoa seller_custom_field nas
     // variações criadas; o GET ecoa de forma confiável — então relemos o item para casar.

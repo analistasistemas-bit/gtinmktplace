@@ -31,16 +31,21 @@ export interface ResultadoUpdate {
 }
 
 // Atualiza variações existentes (com id, só estoque) e cria as novas (sem id).
+// Opcionalmente reenvia atributos de item (ex.: BRAND) — só os passados; o ML mescla por id,
+// preservando os demais atributos do anúncio.
 // Retorna as variations do item (com ids) para casar as novas por seller_custom_field.
 export async function atualizarItemML(
   accessToken: string,
   itemId: string,
   variations: Array<VariacaoUpdate | VariacaoNovaPut>,
+  atributos?: Array<{ id: string; value_name?: string; value_id?: string }>,
 ): Promise<ResultadoUpdate> {
+  const body: Record<string, unknown> = { variations };
+  if (atributos && atributos.length > 0) body.attributes = atributos;
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ variations }),
+    body: JSON.stringify(body),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw erroML(resp.status, json);

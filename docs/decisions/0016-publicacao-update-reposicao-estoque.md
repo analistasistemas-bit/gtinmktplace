@@ -63,3 +63,13 @@ a pedido do Diego: a **cor nova passa a ser publicável (opt-in)**.
 - O worker faz um único `PUT /items/{id}` que **cria** as variações sem `id` e
   **atualiza** as com `id` no mesmo request.
 - **Cor removida continua apenas sinalizada** (não deleta) — inalterado.
+
+## Adendo (2026-06-05) — BRAND sincronizado no UPDATE
+
+Exceção pontual à preservação de atributos: o UPDATE passa a reenviar **apenas o atributo
+BRAND** no `PUT /items/{id}`, usando o `fornecedor` da família, para corrigir a marca de anúncios
+publicados antes da adoção do FORNECEDOR (ADR-0009 adendo). Os demais atributos
+(RIBBON_TYPE/MATERIAL/MODEL etc.) continuam **preservados** — não são recalculados nem
+reenviados. Se a família não tem fornecedor (vazio), o BRAND **não** é enviado (preserva o
+existente, evita sobrescrever com o fallback "Avil"). Preço/título/fotos seguem preservados como
+antes. Implementação: `update-familia-ml` calcula a marca e a envia via `atualizarItemML(..., atributos)`.
