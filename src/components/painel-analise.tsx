@@ -27,6 +27,15 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
     ? Math.min(...baseVariacoes.map((v) => v.precoPublicacao ?? v.preco))
     : 0;
 
+  // Custo da variação cujo preço de publicação é o menor (a mesma que define precoPublicacao);
+  // empate → a primeira. Alimenta o markup do card "Você recebe".
+  const variacaoRepresentativa = baseVariacoes.length > 0
+    ? baseVariacoes.reduce((min, v) =>
+        (v.precoPublicacao ?? v.preco) < (min.precoPublicacao ?? min.preco) ? v : min,
+      baseVariacoes[0])
+    : null;
+  const custoRepresentativo = variacaoRepresentativa?.custo ?? null;
+
   const proprio = familia.estrategiaPreco === 'PROPRIO';
   const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
   const temConcorrencia = familia.concorrenciaVendedores > 0;
@@ -142,7 +151,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
         ) : (
           <div />
         )}
-        <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} />
+        <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} />
       </div>
     </div>
   );
