@@ -173,8 +173,10 @@ Deno.serve(async (req) => {
         ? await analisarMercado(userId, concorrencia.product_id, categoriaMlId, concorrencia.ofertas)
         : null;
 
-    // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final
-    await admin.from('familias').update({
+    // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final.
+    // Enums do banco são minúsculos: converte estrategia (PROPRIO→proprio) e garante tipo_origem
+    // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
+    const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: copy.titulo,
       descricao_ml: copy.descricao,
       tokens_input: copy.tokens_input,
@@ -184,15 +186,16 @@ Deno.serve(async (req) => {
       concorrencia_preco_min: concorrencia.preco_min,
       concorrencia_origem: concorrencia.origem,
       concorrencia_classe: concorrencia.classe,
-      estrategia_preco: estrategiaFamilia.estrategia,
+      estrategia_preco: estrategiaFamilia.estrategia === 'COMPETITIVO' ? 'competitivo' : 'proprio',
       estrategia_motivo: estrategiaFamilia.motivo,
       tipo_aviamento: tipo,
-      tipo_origem: tipoOrigem,
+      tipo_origem: tipoOrigem === 'ia' || tipoOrigem === 'manual' ? tipoOrigem : 'regex',
       categoria_ml_id: categoriaMlId,
       atributos_ml: atributosMl,
       analise_mercado: analiseMercado,
       status: 'pronto',
     }).eq('id', job.familia_id);
+    if (persistErr) throw new Error(`Persist final: ${persistErr.message}`);
 
     return new Response('OK', { status: 200, headers: corsHeaders });
   } catch (err) {
