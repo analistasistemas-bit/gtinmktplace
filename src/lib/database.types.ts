@@ -21,6 +21,8 @@ export type Database = {
           atualizado_em: string
           capa_ml_picture_id: string | null
           capa_storage_path: string | null
+          capa2_ml_picture_id: string | null
+          capa2_storage_path: string | null
           categoria_ml_id: string | null
           codigo_pai: string
           concorrencia_classe: Database["public"]["Enums"]["classe_concorrencia"]
@@ -61,6 +63,7 @@ export type Database = {
           tokens_output: number | null
           unidade: string | null
           user_id: string
+          variacao_principal_codigo: string | null
         }
         Insert: {
           analise_mercado?: Json | null
@@ -68,6 +71,8 @@ export type Database = {
           atualizado_em?: string
           capa_ml_picture_id?: string | null
           capa_storage_path?: string | null
+          capa2_ml_picture_id?: string | null
+          capa2_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai: string
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
@@ -108,6 +113,7 @@ export type Database = {
           tokens_output?: number | null
           unidade?: string | null
           user_id: string
+          variacao_principal_codigo?: string | null
         }
         Update: {
           analise_mercado?: Json | null
@@ -115,6 +121,8 @@ export type Database = {
           atualizado_em?: string
           capa_ml_picture_id?: string | null
           capa_storage_path?: string | null
+          capa2_ml_picture_id?: string | null
+          capa2_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai?: string
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
@@ -155,6 +163,7 @@ export type Database = {
           tokens_output?: number | null
           unidade?: string | null
           user_id?: string
+          variacao_principal_codigo?: string | null
         }
         Relationships: [
           {
