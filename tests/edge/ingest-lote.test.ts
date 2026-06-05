@@ -8,7 +8,7 @@ import {
 
 describe('validarColunas', () => {
   it('aceita quando todas as colunas obrigatórias estão presentes', () => {
-    const cols = ['CODIGO','PAI','NOME','UNIDADE','GTIN','PRECO','ESTOQUE','DESCRICAO_DETALHADO','PESO_GRAMAS','ALTURA_CM','LARGURA_CM','COMPRIMENTO_CM'];
+    const cols = ['CODIGO','PAI','NOME','UNIDADE','GTIN','CUSTO','PRECO','ESTOQUE','DESCRICAO_DETALHADO','PESO_GRAMAS','ALTURA_CM','LARGURA_CM','COMPRIMENTO_CM','FORNECEDOR'];
     expect(() => validarColunas(cols)).not.toThrow();
   });
   it('lança quando falta coluna', () => {

@@ -7,6 +7,7 @@ function row(p: Partial<PlanilhaRow> & { CODIGO: string; PAI: string }): Planilh
     NOME: 'X',
     UNIDADE: 'UN',
     GTIN: null,
+    CUSTO: 1,
     PRECO: 1,
     ESTOQUE: 1,
     DESCRICAO_DETALHADO: 'd',
@@ -14,6 +15,7 @@ function row(p: Partial<PlanilhaRow> & { CODIGO: string; PAI: string }): Planilh
     ALTURA_CM: 1,
     LARGURA_CM: 1,
     COMPRIMENTO_CM: 1,
+    FORNECEDOR: 'ACME',
     ...p,
   };
 }
@@ -72,6 +74,15 @@ describe('agruparPorPai', () => {
     expect(grupos).toHaveLength(1);
     expect(grupos[0].codigo_pai).toBe('00000100');
     expect(anomalias.familias_sem_filho).toEqual(['00000200']);
+  });
+
+  it('popula fornecedor a partir da linha PAI', () => {
+    const rows = [
+      row({ CODIGO: '100', PAI: '0', NOME: 'LINHA', FORNECEDOR: 'LINHAS SETTA LTDA' }),
+      row({ CODIGO: '101', PAI: '100', FORNECEDOR: 'IGNORADO' }),
+    ];
+    const { grupos } = agruparPorPai(rows);
+    expect(grupos[0].fornecedor).toBe('LINHAS SETTA LTDA');
   });
 
   it('combinação das três anomalias coexiste num só lote', () => {

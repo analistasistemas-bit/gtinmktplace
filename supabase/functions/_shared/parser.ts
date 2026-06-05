@@ -72,6 +72,7 @@ export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
       nome_pai: pai.NOME,
       descricao_pai: pai.DESCRICAO_DETALHADO,
       unidade: pai.UNIDADE,
+      fornecedor: pai.FORNECEDOR,
       variacoes,
     });
   }
