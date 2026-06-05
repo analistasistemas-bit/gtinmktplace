@@ -47,6 +47,16 @@ describe('montarAtributosML', () => {
   it('outro: sem atributos (sem categoria)', () => {
     expect(montarAtributosML('outro', 'qualquer')).toEqual([]);
   });
+
+  it('usa o fornecedor como BRAND quando informado', () => {
+    const a = montarAtributosML('linha', 'LINHA X', 'LINHAS SETTA LTDA');
+    expect(a).toContainEqual({ id: 'BRAND', value_name: 'LINHAS SETTA LTDA' });
+  });
+
+  it('fallback "Avil" quando a marca é vazia ou só espaços', () => {
+    expect(montarAtributosML('fita', 'FITA CETIM', '   ')).toContainEqual({ id: 'BRAND', value_name: 'Avil' });
+    expect(montarAtributosML('botao', 'BOTAO', '')).toContainEqual({ id: 'BRAND', value_name: 'Avil' });
+  });
 });
 
 describe('atributosFaltantes (validação pré-publicação)', () => {

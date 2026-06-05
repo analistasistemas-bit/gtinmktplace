@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
     // categoria_ml_id null → operador escolhe na revisão (sem publicar às cegas).
     const { tipo, origem: tipoOrigem } = detectarTipoAviamento(claimed.nome_pai);
     const categoriaMlId = categoriaParaTipo(tipo);
-    const atributosMl = montarAtributosML(tipo, claimed.nome_pai);
+    const atributosMl = montarAtributosML(tipo, claimed.nome_pai, (claimed.fornecedor as string | null) ?? undefined);
 
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =

@@ -6,7 +6,7 @@ export interface AtributoML {
   value_id?: string;
 }
 
-// Marca fixa da empresa (decisão de negócio do Diego, 2026-06-01).
+// Marca padrão (fallback do fornecedor) — decisão de negócio do Diego, 2026-06-01.
 const MARCA = 'Avil';
 
 // Categorias-folha reais do ML (validadas via API em 2026-06-01). Ver Adendo do ADR-0009.
@@ -64,24 +64,25 @@ export function categoriaParaTipo(tipo: TipoAviamento): string | null {
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */
-export function montarAtributosML(tipo: TipoAviamento, nome: string): AtributoML[] {
+export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: string): AtributoML[] {
   const texto = normalizar(nome ?? '');
+  const brand = marca?.trim() || MARCA;
   switch (tipo) {
     case 'linha':
       return [
-        { id: 'BRAND', value_name: MARCA },
+        { id: 'BRAND', value_name: brand },
         { id: 'MODEL', value_name: nome },
       ];
     case 'fita': {
       const match = RIBBON_TYPE.find((r) => texto.includes(r.termo));
       return [
-        { id: 'BRAND', value_name: MARCA },
+        { id: 'BRAND', value_name: brand },
         { id: 'RIBBON_TYPE', value_id: match?.id ?? RIBBON_TYPE_DEFAULT },
       ];
     }
     case 'botao':
       return [
-        { id: 'BRAND', value_name: MARCA },
+        { id: 'BRAND', value_name: brand },
         { id: 'MATERIAL', value_id: texto.includes('madeira') ? MATERIAL_MADEIRA : MATERIAL_ACRILICO },
       ];
     default:
