@@ -105,6 +105,7 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     excluidaDaPublicacao: r.excluida_da_publicacao,
     mlVariationId: r.ml_variation_id,
     estoqueAnterior: r.estoque_anterior,
+    custo: r.custo != null ? Number(r.custo) : null,
   };
 }
 

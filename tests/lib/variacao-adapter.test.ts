@@ -23,4 +23,15 @@ describe('variacaoFromRow', () => {
     expect(variacaoFromRow(baseRow({ excluida_da_publicacao: true })).excluidaDaPublicacao).toBe(true);
     expect(variacaoFromRow(baseRow({ excluida_da_publicacao: false })).excluidaDaPublicacao).toBe(false);
   });
+
+  it('mapeia custo do banco (string numérica → number)', () => {
+    const base: any = {
+      id: 'v1', codigo: '001', cor: 'Azul', cor_hex: null, cor_origem: 'descricao',
+      cor_editada_pelo_operador: false, preco: '2.95', preco_publicacao: '12.00',
+      estoque: 10, gtin: null, imagem_path: null, preco_editado_pelo_operador: false,
+      excluida_da_publicacao: false, ml_variation_id: null, estoque_anterior: null,
+      custo: '1.88',
+    };
+    expect(variacaoFromRow(base).custo).toBeCloseTo(1.88, 2);
+  });
 });

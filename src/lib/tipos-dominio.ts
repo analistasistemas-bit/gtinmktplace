@@ -102,6 +102,7 @@ export interface Variacao {
   excluidaDaPublicacao: boolean;
   mlVariationId: string | null;
   estoqueAnterior: number | null;
+  custo: number | null;
 }
 
 export interface Familia {
