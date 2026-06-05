@@ -2,62 +2,81 @@
 
 **Data:** 2026-06-05
 **Status:** Aprovado (brainstorming) — pronto para plano
-**Branch:** separada (worktree criado na execução)
+**Branch:** `feat/codigo-da-cor`
 **Relacionado:** ADR-0004 (atribuição de cor) · `_shared/cor/extrair.ts` · `process-familia`
 
 ## Objetivo
 
-Em alguns produtos, cada cor tem um **código** que aparece no campo NOME **antes** do nome da cor (ex.: `FITA CETIM PROGRESSO N.1 1354 VERMELHO TOMATE 10MT` → código `1354`, cor `Vermelho Tomate`). Esse código é importante para o cliente. Queremos extraí-lo e exibi-lo junto da cor, no formato **`{Cor} {código}`** (ex.: `Vermelho Tomate 1354`, `Azul Tiffany 247`, `Azul Bebê 212`), tanto na Revisão quanto no atributo **COLOR** do anúncio no Mercado Livre.
+Em alguns produtos, cada cor tem um **código** no campo NOME, **antes** do nome da cor (ex.: `FITA CETIM PROGRESSO N.1 1354 VERMELHO TOMATE 10MT` → código `1354`, cor `Vermelho Tomate`). Esse código é importante para o cliente. Queremos extrair o código **e** o nome comercial exato da cor e exibi-los como **`{Cor} {código}`** (ex.: `Vermelho Tomate 1354`, `Azul Tiffany 247`), na Revisão e no atributo **COLOR** do anúncio no Mercado Livre.
+
+## Achado da checagem do dicionário (motiva o desenho)
+
+O dicionário atual (`DICIONARIO_CORES`, ~40 cores genéricas) **não cobre** os nomes comerciais e os **achata**: `1354 VERMELHO TOMATE` → "Vermelho" (perde "Tomate"); `247 AZ TIFFANY`, `MARSALA`, `AREIA`, `AVEIA` → sem match. Logo, para os produtos com código, **não usamos o dicionário** — extraímos o **texto literal** da cor do próprio NOME.
 
 ## Decisões (do brainstorming)
 
 | Tema | Decisão |
 |---|---|
-| Detecção do código | **Qualquer número solto imediatamente antes do nome da cor** (de qualquer tamanho). Falsos positivos (ex.: `10 BCA` → `Branco 10`) são corrigidos pelo operador na Revisão. |
-| Armazenamento | **Embutir na cor** (`variacoes.cor = "Azul Tiffany 247"`). Sem coluna nova. A cor já alimenta a tela e o ML. |
-| Formato | `{Cor canônica} {código}` — o código, que no NOME vem **antes**, é exibido **depois** da cor. |
-| Escopo | **CREATE** (onde o `process-familia` resolve a cor). UPDATE herda a cor já com o código. |
+| Detecção do código | **Número (dígitos puros) imediatamente antes das palavras de cor.** Falsos positivos (ex.: `10 BCA` → `Branco 10`) são corrigidos pelo operador. |
+| Nome da cor | **Texto literal do NOME** (palavras só-letras após o código, até o tamanho), não o dicionário. |
+| Abreviações | **Expandir as comuns** via mapa pequeno: `AZ→Azul, VD→Verde, AMA→Amarelo, CL→Claro, ESC→Escuro, BCA→Branco, PTO→Preto`. Depois title-case. |
+| Armazenamento | **Embutir na cor** (`variacoes.cor = "Azul Tiffany 247"`). Sem coluna nova. |
+| Escopo | **CREATE** (onde o `process-familia` resolve a cor). UPDATE herda a cor já com código. |
+| Sem código | Mantém o comportamento atual (dicionário). |
 
-**Fora de escopo (YAGNI):** filtro por nº de dígitos; toggle por família; coluna separada para o código.
+**Fora de escopo (YAGNI):** filtro por nº de dígitos; toggle por família; coluna separada para o código; expandir abreviações além do mapa básico.
 
 ## Arquitetura
 
 ### 1. Extração — `_shared/cor/extrair.ts`
 
-Hoje `extrairCorDoTexto(textos)` devolve só a cor canônica (sem posição). Adicionamos uma função que também devolve o código:
+Nova função pura, independente do dicionário:
 
-- `extrairCorECodigo(nome: string): { cor: string; codigo: string | null } | null`
-  - Reusa `DICIONARIO_CORES`/`TERMOS` (já ordenado do sinônimo **mais longo** para o mais curto).
-  - Acha o **primeiro** sinônimo que casa em `nome` (o mais longo vence) e captura sua **posição** (índice do match).
-  - A partir do início do match, olha **para trás**: pula espaços e captura um **token numérico solto** (`\d+` precedido por espaço/início e seguido por espaço) imediatamente antes da cor → esse é o `codigo`.
-  - Sem número solto imediatamente antes → `codigo: null`.
-  - Nenhum sinônimo casa → retorna `null`.
-  - Usar o sinônimo mais longo é o que evita ancorar no `AZ` de `AZ TIFFANY`: casa `az tiffany` inteiro, então o token anterior é `247` (e não o `AZ`). Requer que o dicionário tenha o sinônimo composto; quando só houver o sinônimo curto, o número pode não ser capturado (cai em `codigo: null`) — aceitável, o operador edita.
+```
+extrairCorECodigo(nome: string): { cor: string; codigo: string } | null
+```
 
-Para obter a posição do match sem duplicar a lista de termos, a implementação expõe internamente o `regex` de cada termo (já existe em `TERMOS`) e usa `String.prototype.search`/`match` para o índice. `extrairCorDoTexto` permanece inalterada (consumidores atuais não mudam).
+Algoritmo (tokeniza `nome` por espaços):
+1. Acha o **último** índice `i` em que `token[i]` é **dígitos puros** (`/^\d+$/`) **e** `token[i+1]` existe e é **só-letras** (`/^\p{L}+$/u`). "Último" porque a cor fica perto do fim (antes do tamanho), o que evita pegar números do tipo-de-produto.
+2. Sem candidato → retorna `null` (o chamador cai no dicionário).
+3. `codigo = token[i]`.
+4. **Palavras de cor**: a partir de `i+1`, pega tokens consecutivos **só-letras**; para no primeiro token que **não** é só-letras (ex.: `10MT`, `2000J`) ou no fim. (Isso descarta o tamanho.)
+5. Para cada palavra: se a versão maiúscula está no mapa de abreviações, substitui (`AZ→Azul`…); senão mantém. Depois aplica **title-case** (1ª maiúscula, resto minúsculo, por palavra).
+6. `cor = palavras.join(' ')`; retorna `{ cor, codigo }`.
+
+Mapa de abreviações (chave em maiúsculas): `AZ→Azul, VD→Verde, AMA→Amarelo, CL→Claro, ESC→Escuro, BCA→Branco, PTO→Preto`. Extensível.
+
+`extrairCorDoTexto` (dicionário) permanece inalterada — é o fallback.
+
+**Exemplos:**
+| NOME | resultado |
+|---|---|
+| `... N.1 1354 VERMELHO TOMATE 10MT` | `{ cor:'Vermelho Tomate', codigo:'1354' }` |
+| `... N.07 247 AZ TIFFANY 10MT` | `{ cor:'Azul Tiffany', codigo:'247' }` |
+| `... N.07 2036 VD LIMA 10MT` | `{ cor:'Verde Lima', codigo:'2036' }` |
+| `... N.07 2052 AMA CL 10MT` | `{ cor:'Amarelo Claro', codigo:'2052' }` |
+| `LINHA P/COST.XIK 120 2000J 10 BCA` | `{ cor:'Branco', codigo:'10' }` (falso positivo — operador edita) |
+| `... N.3 PRETO 10MT` (sem dígito antes da cor) | `null` → dicionário |
 
 ### 2. Integração — `process-familia` (resolução de cor, Camada 1)
 
-No `pool` que resolve a cor de cada variação sem cor (`if (v.cor) return v;` continua barrando cor já definida/editada):
+No `pool` que resolve a cor das variações sem cor (`if (v.cor) return v;` segue barrando cor já definida/editada):
 
 ```ts
-// Camada 1 — dicionário, agora com código da cor quando o NOME tem "{número} {cor}".
+// Camada 0 — código + nome literal quando o NOME tem "{número} {cor}".
 const m = extrairCorECodigo(v.nome ?? '');
-if (m) {
-  const cor = m.codigo ? `${m.cor} ${m.codigo}` : m.cor;
-  return { ...v, cor, cor_origem: 'descricao' as OrigemCor };
-}
-// Fallback: cor (sem código) a partir do pai/descrição — o código é por variação e vem do v.nome.
-const corTexto = extrairCorDoTexto([claimed.nome_pai, claimed.descricao_pai]);
+if (m) return { ...v, cor: `${m.cor} ${m.codigo}`, cor_origem: 'descricao' as OrigemCor };
+
+// Camada 1 — dicionário (comportamento atual), quando não há código.
+const corTexto = extrairCorDoTexto([v.nome, claimed.nome_pai, claimed.descricao_pai]);
 if (corTexto) return { ...v, cor: corTexto, cor_origem: 'descricao' as OrigemCor };
 ```
 
-Os caminhos de **cache Redis** e **Vision** seguem como estão (a cor resolvida por Vision não tem código, pois o código depende do texto do `v.nome`).
+Cache Redis e Vision seguem como estão (cor via Vision não tem código; o código depende do texto do `v.nome`).
 
 ### 3. Exibição + ML (sem mudança adicional)
 
-- `variacoes.cor` já é renderizada no campo editável da Revisão (`VariacaoCard`) e usada como `value_name` do atributo **COLOR** na publicação (`montarPayloadItem`/`montarVariacaoNova`).
-- Logo, `"Azul Tiffany 247"` aparece na Revisão (editável — corrige falso positivo) e vai ao anúncio. **Sem migração, sem mudança de frontend.**
+`variacoes.cor` já é renderizada no campo editável da Revisão (`VariacaoCard`) e usada como `value_name` do **COLOR** na publicação (`montarPayloadItem`/`montarVariacaoNova`). Então `"Azul Tiffany 247"` aparece na Revisão (editável — corrige falso positivo) e vai ao anúncio. **Sem migração, sem mudança de frontend.**
 
 ## Fluxo de dados
 
@@ -72,23 +91,19 @@ variacoes.cor = "Vermelho Tomate 1354"
 
 ## Erros & casos de borda
 
-- **Número depois da cor** (ex.: `10MT`) é ignorado — só conta o token imediatamente **antes** do match.
-- **Sem número antes** → cor sem código (comportamento atual).
-- **Falso positivo** (`10 BCA` → `Branco 10`) → operador edita o campo de cor na Revisão.
-- **Cor resolvida só por descrição/Vision** (não está no `v.nome`) → sem código (anchor é o `v.nome`).
-- **Token numérico colado em outro** (`N.07`, `2000J`, `10MT`) → não é token solto de dígitos puros, não é capturado como código.
-- **Cor já definida/editada pelo operador** → não é sobrescrita (`if (v.cor) return v`).
+- **Tamanho** (`10MT`, `2000J`): não é só-letras → encerra a coleta de palavras de cor; nunca entra no nome.
+- **Sem dígito antes da cor** → `null` → dicionário (produtos não-codificados seguem como hoje).
+- **Falso positivo** (`10 BCA` → `Branco 10`) → operador edita o campo de cor.
+- **Vários dígitos** (`120 ... 10 BCA`) → usa o último dígito-puro seguido de letras (o mais próximo da cor).
+- **Token misto** (`N.07`, `2000J`, `10MT`) → não é dígito-puro nem só-letras → não vira código nem cor.
+- **Cor já definida/editada pelo operador** → não sobrescreve (`if (v.cor) return v`).
+- **Acentos** no nome da cor (ex.: `PÉROLA`) → title-case preserva o caractere; `\p{L}` cobre acentuados.
 
 ## Testes (TDD)
 
-`extrairCorECodigo`:
-- `"FITA CETIM PROGRESSO N.1 1354 VERMELHO TOMATE 10MT"` → `{ cor: 'Vermelho Tomate', codigo: '1354' }`
-- `"FITA CETIM PROGRESSO N.07 247 AZ TIFFANY 10MT"` → `{ cor: 'Azul Tiffany', codigo: '247' }`
-- cor sem número antes (`"FITA CETIM PROGRESSO N.3 PRETO 10MT"`) → `{ cor: 'Preto', codigo: null }`
-- nenhum sinônimo de cor → `null`
-- número só depois da cor → `codigo: null`
+`extrairCorECodigo` — cobre a tabela de exemplos acima (incl. expansão de abreviações, descarte do tamanho, falso positivo do `10 BCA`, e `null` quando não há código). Checagem de abreviações: `AZ/VD/AMA/CL/ESC/BCA/PTO`.
 
 ## Documentação
 
-- **Adendo ao ADR-0004:** quando o NOME traz `{número} {cor}`, o número (qualquer tamanho) é extraído como **código da cor** e embutido na cor (`"{Cor} {código}"`), exibido na Revisão e enviado ao ML; falsos positivos são corrigidos pelo operador.
+- **Adendo ao ADR-0004:** quando o NOME traz `{número} {cor}`, extrai-se o **código** e o **nome literal** da cor (expandindo abreviações comuns), embutidos em `variacoes.cor` como `"{Cor} {código}"`, exibidos na Revisão e enviados ao ML; sem código, mantém-se o dicionário; falsos positivos são corrigidos pelo operador.
 - Atualizar o histórico do `CLAUDE.md` ao concluir.
