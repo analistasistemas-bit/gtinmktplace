@@ -182,3 +182,15 @@ produção. Os IDs reais (categorias-folha, `listing_allowed:true`, 12 fotos):
 `tipo='outro'` deixa `categoria_ml_id` null → badge "categoria indefinida" na revisão (não publica
 às cegas). A **camada IA classificadora** (Parte 1, item 2) não foi implementada — o regex cobre os
 casos reais; fica como melhoria se aparecerem nomes que o regex não classifica.
+
+## Adendo (2026-06-05) — BRAND a partir do FORNECEDOR + colunas CUSTO/FORNECEDOR
+
+A planilha passou a exportar `CUSTO` e `FORNECEDOR`. Em consequência:
+
+- **BRAND** deixa de ser fixo `"Avil"`: passa a usar o `FORNECEDOR` da linha PAI
+  (`montarAtributosML(tipo, nome, marca)`), com fallback `"Avil"` quando vazio. Vale apenas em
+  publicações CREATE; UPDATE preserva os atributos do anúncio (ADR-0016).
+- Colunas novas (migration aditiva): `variacoes.custo` (custo do produto, distinto de
+  `custo_centavos` = custo de IA) e `familias.fornecedor`.
+- `CUSTO` alimenta o markup exibido no card "Você recebe" (cálculo no frontend; sem campo
+  persistido de markup).
