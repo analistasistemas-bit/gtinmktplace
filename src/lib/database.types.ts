@@ -38,6 +38,7 @@ export type Database = {
           estrategia_preco:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          fornecedor: string | null
           frete_gratis: boolean
           id: string
           lote_id: string
@@ -84,6 +85,7 @@ export type Database = {
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          fornecedor?: string | null
           frete_gratis?: boolean
           id?: string
           lote_id: string
@@ -130,6 +132,7 @@ export type Database = {
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          fornecedor?: string | null
           frete_gratis?: boolean
           id?: string
           lote_id?: string
@@ -258,6 +261,7 @@ export type Database = {
           cor_hex: string | null
           cor_origem: Database["public"]["Enums"]["cor_origem"] | null
           criado_em: string
+          custo: number | null
           estoque: number
           estoque_anterior: number | null
           excluida_da_publicacao: boolean
@@ -285,6 +289,7 @@ export type Database = {
           cor_hex?: string | null
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
+          custo?: number | null
           estoque?: number
           estoque_anterior?: number | null
           excluida_da_publicacao?: boolean
@@ -312,6 +317,7 @@ export type Database = {
           cor_hex?: string | null
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
+          custo?: number | null
           estoque?: number
           estoque_anterior?: number | null
           excluida_da_publicacao?: boolean
