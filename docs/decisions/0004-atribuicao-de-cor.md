@@ -64,3 +64,12 @@ A origem da cor é gravada no campo `variacoes.cor_origem` (enum: `descricao`, `
 **Como reverter:**
 - Pode-se desligar a Vision e cair em modo "manual" (operador preenche tudo) sem mudar o schema
 - Pode-se trocar de GPT-4o Vision para Gemini Vision sem mudar o resto do sistema (camada de IA isolada por contrato)
+
+## Adendo (2026-06-05) — Código da cor no NOME
+
+Quando o NOME traz `{número} {cor}` (ex.: `1354 VERMELHO TOMATE`), uma camada anterior ao
+dicionário (`extrairCorECodigo`) extrai o **código** e o **nome literal** da cor — abreviações
+comuns expandidas (AZ→Azul, VD→Verde, AMA→Amarelo, CL→Claro, ESC→Escuro, BCA→Branco, PTO→Preto)
+e title-case — embutindo em `variacoes.cor` como `"{Cor} {código}"` (ex.: `Vermelho Tomate 1354`).
+Sem esse padrão, mantém-se o dicionário canônico. Vale no CREATE; falsos positivos
+(ex.: `10 BCA` → `Branco 10`) são corrigidos pelo operador na Revisão.
