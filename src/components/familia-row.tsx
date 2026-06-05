@@ -22,6 +22,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   const pub = familiaPublicavel(familia);
   const publicado = familia.status === 'publicado';
+  // Resumo do UPDATE na linha recolhida: quantas cores têm estoque alterado
+  // (mesma regra do DiffEstoque). Dá o "o que será atualizado" sem precisar expandir.
+  const coresComEstoqueAlterado =
+    familia.operacao === 'UPDATE'
+      ? familia.variacoes.filter(
+          (v) => v.mlVariationId && !v.excluidaDaPublicacao && v.estoqueAnterior !== v.estoque,
+        ).length
+      : 0;
   return (
     <div
       className={cn(
@@ -55,6 +63,13 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         <div className="font-medium">{familia.titulo}</div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
+          {!publicado && familia.operacao === 'UPDATE' && (
+            <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+              {coresComEstoqueAlterado > 0
+                ? `estoque: ${coresComEstoqueAlterado} cor(es)`
+                : 'sem mudança de estoque'}
+            </span>
+          )}
           {familia.variacoesSemCor > 0 && (
             <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
               ⚠ {familia.variacoesSemCor} sem cor

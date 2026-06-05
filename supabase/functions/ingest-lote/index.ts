@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
     const codigosPai = grupos.map((g) => g.codigo_pai);
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, variacoes(codigo, ml_variation_id, cor, ml_picture_id, estoque)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque)')
       .eq('user_id', user.id)
       .in('codigo_pai', codigosPai)
       .not('ml_item_id', 'is', null)
@@ -106,6 +106,7 @@ Deno.serve(async (req) => {
         codigo: v.codigo,
         ml_variation_id: v.ml_variation_id,
         cor: v.cor,
+        cor_origem: v.cor_origem,
         ml_picture_id: v.ml_picture_id,
         estoque: v.estoque,
       }));
@@ -196,6 +197,10 @@ Deno.serve(async (req) => {
             ...base,
             ml_variation_id: h?.ml_variation_id ?? null,
             cor: h?.cor ?? null,
+            // Cor casada vem de um anúncio já publicado (confirmada): herda a origem real
+            // (descricao/vision/manual) p/ não disparar o alerta "sem cor". Dado antigo sem
+            // origem cai em 'manual'. Cor nova fica null → process-familia resolve (ADR-0004).
+            cor_origem: h?.cor_origem ?? (h?.cor ? 'manual' : null),
             ml_picture_id: h?.ml_picture_id ?? null,
             estoque_anterior: h?.estoque_anterior ?? null,
             preco_publicacao: v.PRECO,
