@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { extrairCorDoTexto } from '../_shared/cor/extrair.ts';
+import { extrairCorDoTexto, extrairCorECodigo } from '../_shared/cor/extrair.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
@@ -68,6 +68,12 @@ Deno.serve(async (req) => {
     // 3. Resolver cor de cada variação (pool máx 5 paralelas)
     const resolvidas = await pool(POOL_VISION, variacoes ?? [], async (v: Variacao) => {
       if (v.cor) return v;
+
+      // Camada 0 — código + nome literal da cor quando o NOME tem "{número} {cor}".
+      const comCodigo = extrairCorECodigo(v.nome ?? '');
+      if (comCodigo) {
+        return { ...v, cor: `${comCodigo.cor} ${comCodigo.codigo}`, cor_origem: 'descricao' as OrigemCor };
+      }
 
       // Camada 1 — dicionário
       const corTexto = extrairCorDoTexto([
