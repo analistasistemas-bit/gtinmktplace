@@ -33,3 +33,39 @@ describe('extrairCorDoTexto', () => {
     expect(extrairCorDoTexto(['', '', null as unknown as string])).toBeNull();
   });
 });
+
+import { extrairCorECodigo } from '../extrair';
+
+describe('extrairCorECodigo', () => {
+  it('código + cor literal (perde nada): VERMELHO TOMATE', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.1 1354 VERMELHO TOMATE 10MT'))
+      .toEqual({ cor: 'Vermelho Tomate', codigo: '1354' });
+  });
+  it('expande abreviações: AZ TIFFANY → Azul Tiffany', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 247 AZ TIFFANY 10MT'))
+      .toEqual({ cor: 'Azul Tiffany', codigo: '247' });
+  });
+  it('expande VD LIMA → Verde Lima', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 2036 VD LIMA 10MT'))
+      .toEqual({ cor: 'Verde Lima', codigo: '2036' });
+  });
+  it('expande AMA CL → Amarelo Claro', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 2052 AMA CL 10MT'))
+      .toEqual({ cor: 'Amarelo Claro', codigo: '2052' });
+  });
+  it('preserva zero à esquerda no código: 009', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 009 ROSA PETALA 10MT'))
+      .toEqual({ cor: 'Rosa Petala', codigo: '009' });
+  });
+  it('vários dígitos: usa o último seguido de letras (10 BCA → Branco 10)', () => {
+    expect(extrairCorECodigo('LINHA P/COST.XIK 120 2000J 10 BCA'))
+      .toEqual({ cor: 'Branco', codigo: '10' });
+  });
+  it('sem dígito antes da cor → null (cai no dicionário)', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.3 PRETO 10MT')).toBeNull();
+  });
+  it('ignora o tamanho (10MT) e tokens mistos', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.1 1355 MARSALA 10MT'))
+      .toEqual({ cor: 'Marsala', codigo: '1355' });
+  });
+});
