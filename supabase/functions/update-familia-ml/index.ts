@@ -79,15 +79,30 @@ Deno.serve(async (req) => {
       novasComFoto.push({ ...v, ml_picture_id: picId });
     }
 
+    let capa2Pic = (familia.capa2_ml_picture_id as string | null) ?? null;
+    if (!capa2Pic && familia.capa2_storage_path) {
+      capa2Pic = await subirFotoML(token, await signed(familia.capa2_storage_path as string));
+      await admin.from('familias').update({ capa2_ml_picture_id: capa2Pic }).eq('id', job.familia_id);
+    }
+
     // GET estado real → reenviar todas as variações (ML deleta as omitidas).
     const atual = await buscarItemML(token, familia.ml_item_id);
     const desejados = casadas.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
-    const existentes = montarVariacoesUpdate(atual.variations, desejados);
-
     const capaPic = (familia.capa_ml_picture_id as string | null) ?? null;
+    // Com 2a foto comum, propaga [capa, capa2, própria] às cores existentes; senão só estoque.
+    const picsPorCodigo: Record<string, string[]> = {};
+    if (capa2Pic) {
+      for (const v of casadas) {
+        picsPorCodigo[v.codigo] = [capaPic, capa2Pic, v.ml_picture_id as string | null]
+          .filter((x): x is string => !!x);
+      }
+    }
+    const existentes = montarVariacoesUpdate(atual.variations, desejados, capa2Pic ? picsPorCodigo : undefined);
+
     const novasPut = novasComFoto.map((v) => montarVariacaoNova(
       { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
       capaPic,
+      capa2Pic,
       familia.categoria_ml_id as string | null,
     ));
 
@@ -97,10 +112,11 @@ Deno.serve(async (req) => {
     const atributosItem = marca ? [{ id: 'BRAND', value_name: marca }] : [];
     // Ao criar variação nova, a foto dela precisa estar também no item.pictures
     // (regra do ML: item.pictures.invalid.missing_ids). Reenvia o item.pictures =
-    // fotos atuais + as fotos das variações novas (dedup).
+    // fotos atuais + as fotos das variações novas (dedup). Inclui capa2 quando presente.
     const novasPicIds = novasPut.flatMap((v) => v.picture_ids);
-    const pictures = novasPut.length > 0
-      ? [...new Set([...atual.pictures, ...novasPicIds])]
+    const precisaPictures = novasPut.length > 0 || !!capa2Pic;
+    const pictures = precisaPictures
+      ? [...new Set([...atual.pictures, ...(capa2Pic ? [capa2Pic] : []), ...novasPicIds])]
       : undefined;
     const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut], atributosItem, pictures);
 
