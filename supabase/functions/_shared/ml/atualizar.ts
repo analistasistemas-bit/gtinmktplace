@@ -53,6 +53,7 @@ export interface MLVariacaoAtual {
   id: string | number;
   seller_custom_field?: string | null;
   available_quantity: number;
+  picture_ids?: string[];
 }
 export interface EstoqueDesejado { codigo: string; estoque: number; }
 export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; }

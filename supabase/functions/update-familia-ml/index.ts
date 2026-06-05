@@ -89,12 +89,19 @@ Deno.serve(async (req) => {
     const atual = await buscarItemML(token, familia.ml_item_id);
     const desejados = casadas.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
     const capaPic = (familia.capa_ml_picture_id as string | null) ?? null;
-    // Com 2a foto comum, propaga [capa, capa2, própria] às cores existentes; senão só estoque.
+    // 2a foto nas cores existentes: parte das fotos ATUAIS do item (IDs válidos, lidos do GET —
+    // o ML re-hospeda as fotos, então os IDs de upload cacheados não batem com os do item) e
+    // insere a capa2 como 2a foto. Sem capa2 → só estoque (comportamento preservado).
+    const incluidas = new Set(casadas.map((c) => c.codigo));
     const picsPorCodigo: Record<string, string[]> = {};
     if (capa2Pic) {
-      for (const v of casadas) {
-        picsPorCodigo[v.codigo] = [capaPic, capa2Pic, v.ml_picture_id as string | null]
-          .filter((x): x is string => !!x);
+      for (const a of atual.variations) {
+        const codigo = a.seller_custom_field ?? '';
+        if (!incluidas.has(codigo)) continue;
+        const atuaisPics = a.picture_ids ?? [];
+        picsPorCodigo[codigo] = atuaisPics.includes(capa2Pic)
+          ? atuaisPics
+          : [atuaisPics[0], capa2Pic, ...atuaisPics.slice(1)].filter((x): x is string => !!x);
       }
     }
     const existentes = montarVariacoesUpdate(atual.variations, desejados, capa2Pic ? picsPorCodigo : undefined);

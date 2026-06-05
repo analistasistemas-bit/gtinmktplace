@@ -27,6 +27,8 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     id: v.id as string | number,
     seller_custom_field: (v.seller_custom_field as string | null) ?? null,
     available_quantity: (v.available_quantity as number) ?? 0,
+    // IDs reais das fotos no item (o ML re-hospeda; diferem dos IDs de upload cacheados).
+    picture_ids: ((v.picture_ids as string[] | undefined) ?? []).filter(Boolean),
   }));
   const pictures = (json.pictures ?? [])
     .map((p: Record<string, unknown>) => p.id as string)
