@@ -77,3 +77,32 @@ antes. Implementação: `update-familia-ml` calcula a marca e a envia via `atual
 ## Adendo (2026-06-05) — 2ª foto comum no UPDATE
 
 Para propagar a 2ª foto comum (`capa2`) aos anúncios já publicados, o UPDATE passa a (re)enviar os `picture_ids` das variações existentes (`[capa, capa2, própria]`) quando há 2ª foto — exceção controlada à preservação de fotos. Idempotente (dedup); sem 2ª foto e sem cor nova, o comportamento segue só-estoque.
+
+## Adendo (2026-06-06) — Descrição reflete a cor nova no UPDATE
+
+A decisão original (item 1) preserva a descrição no UPDATE. Na prática isso deixou um
+buraco: ao adicionar uma **cor nova** (publicável via adendo 2026-06-04), a variação é
+criada no ML, mas a seção **"🎨 CORES DISPONÍVEIS"** da descrição herdada continuava
+listando só as cores antigas (descrição é texto livre gerado pela IA no CREATE).
+
+**Refinamento (a pedido do Diego):** em todo UPDATE de família já publicada, o worker
+reescreve **apenas a lista da seção de cores** da descrição com as cores **incluídas**
+(casadas + novas) e — só quando a lista realmente muda — reenvia via `garantirDescricaoML`
+(`PUT /items/{id}/description`). O caso que dispara o reenvio é a entrada de uma cor nova;
+um UPDATE só-estoque não altera a lista e não toca a descrição.
+
+- **Sem IA** — `atualizarSecaoCores(descricao, cores)` é uma função pura determinística
+  (`_shared/ml/criar-item.ts`, TDD): localiza o cabeçalho "CORES DISPONÍVEIS", substitui o
+  bloco de linhas `- cor` e preserva todo o resto do texto. Mantém o espírito do item 1
+  (UPDATE barato, sem gastar IA) e do adendo 2026-06-05 (cor nova).
+- **Cirúrgico** — só a lista de cores muda; título, bullets e demais seções ficam intactos.
+  Se a descrição não tiver o cabeçalho (texto antigo/custom), retorna o original sem mexer.
+- **Falha explícita** — se `garantirDescricaoML` falhar, o worker falha e a família volta
+  para `status=erro`; o operador reprocessa pelo fluxo já conhecido. 5xx/429 → QStash
+  reentrega; 4xx permanente → `status=erro` com mensagem. O `familias.descricao_ml` no
+  banco só é atualizado após o push bem-sucedido.
+- **Idempotência no retry** — o bloco executa sempre que `familia.descricao_ml` existe
+  (não apenas quando `novas.length > 0`). O guard `novaDescricao !== familia.descricao_ml`
+  impede reenvio quando a descrição já foi persistida em run anterior — tornando o retry
+  seguro sem estado adicional.
+- **Cor removida** continua só sinalizada (não sai da descrição automaticamente) — inalterado.

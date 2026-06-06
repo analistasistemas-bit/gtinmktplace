@@ -3,6 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
+import { atualizarSecaoCores, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
@@ -161,6 +162,21 @@ Deno.serve(async (req) => {
     const novasSemVinculo = novasComFoto.filter((v) => !persistidas.has(v.codigo));
     if (novasSemVinculo.length > 0) {
       throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
+    }
+
+    // Reescreve a seção "CORES DISPONÍVEIS" da descrição herdada (ADR-0016, sem IA)
+    // para refletir as cores incluídas neste UPDATE. Falha explícita: se
+    // garantirDescricaoML falhar, o worker falha e o operador reprocessa de 'erro'.
+    // Idempotência: o guard (novaDescricao !== familia.descricao_ml) garante que
+    // num retry onde a descrição já foi persistida a chamada ao ML não é reenviada.
+    // PUT /description é idempotente no ML — seguro de repetir em retry.
+    if (familia.descricao_ml) {
+      const cores = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
+      const novaDescricao = atualizarSecaoCores(familia.descricao_ml as string, cores);
+      if (novaDescricao !== familia.descricao_ml) {
+        await garantirDescricaoML(token, familia.ml_item_id, novaDescricao);
+        await admin.from('familias').update({ descricao_ml: novaDescricao }).eq('id', job.familia_id);
+      }
     }
 
     await admin.from('familias').update({

@@ -39,6 +39,28 @@ export function sanitizarDescricaoML(texto: string): string {
 }
 
 /**
+ * Reescreve só a lista da seção "🎨 CORES DISPONÍVEIS" da descrição, preservando
+ * todo o resto do texto. Usado no UPDATE: quando entra uma cor nova, a descrição
+ * herdada do anúncio (sem IA, ADR-0016) precisa refletir a cor adicionada.
+ * Determinística (sem IA). Se a seção não existir, retorna o texto original intacto.
+ */
+export function atualizarSecaoCores(descricao: string, cores: string[]): string {
+  const linhas = descricao.split('\n');
+  const headerIdx = linhas.findIndex((l) => /CORES DISPON[IÍ]VEIS/i.test(l));
+  if (headerIdx === -1) return descricao;
+
+  let inicio = headerIdx + 1;
+  while (inicio < linhas.length && linhas[inicio].trim() === '') inicio++;
+  let fim = inicio;
+  while (fim < linhas.length && /^\s*-\s+/.test(linhas[fim])) fim++;
+
+  const novaLista = cores.map((c) => `- ${c}`);
+  const depois = linhas.slice(fim);
+  if (depois.length > 0 && depois[0].trim() !== '') depois.unshift('');
+  return [...linhas.slice(0, headerIdx + 1), '', ...novaLista, ...depois].join('\n');
+}
+
+/**
  * Cria/atualiza a descrição do item. No ML a descrição é um recurso separado
  * (`/items/{id}/description`), não vai no POST /items. Idempotente: tenta POST
  * (criar) e cai para PUT (atualizar) se já existir — seguro em retries.
