@@ -13,6 +13,7 @@ import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { familiaPublicavel } from '@/lib/publicavel';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
+import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas';
@@ -47,6 +48,8 @@ export default function Revisao() {
   const [publicando, setPublicando] = useState(false);
   const [listingType, setListingType] = useState<ListingType>('gold_special');
   const qc = useQueryClient();
+  const toggleLote = useToggleDescontoLote(loteId ?? '');
+  const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
 
@@ -183,6 +186,16 @@ export default function Revisao() {
               : `${f} (${counts[f]})`}
           </button>
         ))}
+        {loteId && familias.length > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => toggleLote.mutate(!todasComDesconto)}
+          >
+            {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
+          </Button>
+        )}
       </div>
       {filtro === 'avisos' && (
         <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">

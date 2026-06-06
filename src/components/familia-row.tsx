@@ -2,6 +2,9 @@ import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useImageUrl } from '@/hooks/useImageUrl';
+import { useDescontoPct } from '@/hooks/useConfiguracoes';
+import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/useFamiliaMutations';
+import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 import { familiaPublicavel } from '@/lib/publicavel';
@@ -16,6 +19,44 @@ interface FamiliaRowProps {
 
 function formatarBRL(valor: number): string {
   return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function DescontoControle({ familia }: { familia: Familia }) {
+  const { data: globalPct } = useDescontoPct();
+  const updExibir = useUpdateExibirDesconto(familia.loteId);
+  const updPct = useUpdateDescontoPctFamilia(familia.loteId);
+  const pct = pctEfetivo(familia.descontoPct, globalPct ?? 15);
+  const de = calcularPrecoDe(familia.precoMin, pct);
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Checkbox
+        checked={familia.exibirComDesconto}
+        onCheckedChange={(v) => updExibir.mutate({ familiaId: familia.id, exibir: !!v })}
+      />
+      <span>Exibir com desconto</span>
+      {familia.exibirComDesconto && (
+        <>
+          <input
+            type="number"
+            min={0}
+            max={99}
+            className="w-14 rounded border px-1"
+            defaultValue={familia.descontoPct ?? globalPct ?? 15}
+            onBlur={(e) => {
+              const n = Number(e.target.value);
+              updPct.mutate({ familiaId: familia.id, pct: Number.isFinite(n) ? n : null });
+            }}
+          />
+          <span>%</span>
+          {de != null && (
+            <span className="text-muted-foreground">
+              <s>R$ {formatarBRL(de)}</s> · R$ {formatarBRL(familia.precoMin)} · {pct}% OFF
+            </span>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir }: FamiliaRowProps) {
@@ -33,9 +74,12 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   return (
     <div
       className={cn(
-        'grid grid-cols-[24px_40px_1fr_80px_140px_40px] items-center gap-3 border-b px-4 py-2 text-sm',
+        'border-b',
         familia.editadoPeloOperador && 'border-l-2 border-l-purple-500'
       )}
+    >
+    <div
+      className="grid grid-cols-[24px_40px_1fr_80px_140px_40px] items-center gap-3 px-4 py-2 text-sm"
     >
       <Checkbox
         checked={selecionada}
@@ -135,6 +179,10 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       >
         {expandida ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </button>
+    </div>
+      <div className="px-4 pb-2 pl-[100px]">
+        <DescontoControle familia={familia} />
+      </div>
     </div>
   );
 }

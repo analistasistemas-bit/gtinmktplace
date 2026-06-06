@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useMlConnection } from '@/hooks/useMlConnection';
+import { useDescontoPct, useSalvarDescontoPct } from '@/hooks/useConfiguracoes';
 import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
 export default function Configuracoes() {
@@ -13,6 +14,14 @@ export default function Configuracoes() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [erroAcao, setErroAcao] = useState<string | null>(null);
+
+  const { data: descontoPct } = useDescontoPct();
+  const salvar = useSalvarDescontoPct();
+  const [pctInput, setPctInput] = useState('15');
+
+  useEffect(() => {
+    if (descontoPct != null) setPctInput(String(descontoPct));
+  }, [descontoPct]);
 
   const mlConectado = searchParams.get('ml_conectado') === 'true';
   const mlErro = searchParams.get('ml_erro');
@@ -109,6 +118,33 @@ export default function Configuracoes() {
               </div>
             </label>
           </RadioGroup>
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Desconto de marketing</h2>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Preço cheio riscado (selo "% OFF"). Sugestão 15%. O liga/desliga é por produto, na Revisão.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={99}
+              step={1}
+              className="w-20 rounded border px-2 py-1 text-sm"
+              value={pctInput}
+              onChange={(e) => setPctInput(e.target.value)}
+              onBlur={() => {
+                const n = Number(pctInput);
+                if (n >= 0 && n < 100) salvar.mutate(n);
+              }}
+            />
+            <span className="text-sm">%</span>
+            {salvar.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+            {salvar.isSuccess && !salvar.isPending && (
+              <span className="text-xs text-green-700">✓ Salvo</span>
+            )}
+          </div>
         </Card>
 
         <Card className="p-4">
