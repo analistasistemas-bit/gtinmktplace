@@ -4,6 +4,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
 import { montarPayloadItem, ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
+import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import { criarItemML, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
 import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
@@ -62,6 +63,15 @@ Deno.serve(async (req) => {
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Sem cores incluídas para publicar');
 
+    let desconto: { pct: number } | null = null;
+    if (familia.exibir_com_desconto) {
+      const { data: cfg } = await admin.from('configuracoes')
+        .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
+      const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
+      const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
+      desconto = { pct: pctEfetivo(fam, global) };
+    }
+
     const tipoAviamento = (familia.tipo_aviamento ?? 'outro') as TipoAviamento;
     const faltam = atributosFaltantes(tipoAviamento, familia.atributos_ml ?? []);
     if (faltam.length) throw new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`);
@@ -104,6 +114,7 @@ Deno.serve(async (req) => {
       capaPictureId,
       capa2PictureId,
       job.listing_type_id,
+      desconto,
     );
 
     const resultado = await criarItemML(token, payload);
