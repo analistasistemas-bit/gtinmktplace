@@ -94,6 +94,22 @@ describe('montarPayloadItem com 2a foto', () => {
   });
 });
 
+describe('montarPayloadItem com desconto', () => {
+  const fam = { titulo_ml: 'T', descricao_ml: null, categoria_ml_id: 'MLB255054', atributos_ml: [] };
+  const vars = [{ codigo: '1', cor: 'Azul', estoque: 5, preco_publicacao: 12.29, gtin: null, ml_picture_id: null }];
+
+  it('com desconto: adiciona original_price inflado por variação', () => {
+    const payload = montarPayloadItem(fam, vars, null, null, 'gold_special', { pct: 15 });
+    expect(payload.variations[0].price).toBe(12.29);
+    expect(payload.variations[0].original_price).toBe(14.46);
+  });
+
+  it('sem desconto (param ausente): não inclui original_price', () => {
+    const payload = montarPayloadItem(fam, vars, null, null, 'gold_special');
+    expect(payload.variations[0].original_price).toBeUndefined();
+  });
+});
+
 describe('ordenarVariacoesPrincipal', () => {
   const vs = [
     { codigo: '00000003' }, { codigo: '00000001' }, { codigo: '00000002' },

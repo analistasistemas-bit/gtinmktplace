@@ -1,4 +1,5 @@
 import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
+import { calcularPrecoDe } from '../preco/desconto.ts';
 
 export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
 export interface PictureRef { id: string; }
@@ -6,6 +7,7 @@ export interface VariacaoItem {
   attribute_combinations: AtributoItem[];
   available_quantity: number;
   price: number;
+  original_price?: number;
   picture_ids: string[];
   attributes?: AtributoItem[];
   seller_custom_field?: string;
@@ -67,6 +69,7 @@ export function montarPayloadItem(
   capaPictureId: string | null,
   capa2PictureId: string | null,
   listingTypeId: string = LISTING_TYPE_PADRAO,
+  desconto?: { pct: number } | null,
 ): PayloadItem {
   const comuns = [capaPictureId, capa2PictureId].filter((x): x is string => !!x);
   const picIds = [
@@ -90,6 +93,10 @@ export function montarPayloadItem(
       picture_ids: [...new Set(picsVariacao)],
       seller_custom_field: v.codigo,
     };
+    if (desconto) {
+      const de = calcularPrecoDe(variation.price, desconto.pct);
+      if (de !== null) variation.original_price = de;
+    }
     if (gtinAusente(v.gtin)) {
       // Sem código real (nulo ou interno 3000*): declara o motivo. GTIN é conditional_required,
       // então em categorias sem EMPTY_GTIN_REASON (ex.: botão) o atributo é simplesmente omitido.
