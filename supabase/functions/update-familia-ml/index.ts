@@ -5,6 +5,7 @@ import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
+import { pctEfetivo } from '../_shared/preco/desconto.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -55,6 +56,17 @@ Deno.serve(async (req) => {
       .eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Nenhuma cor incluída para atualizar (400)');
 
+    let desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null = null;
+    if (familia.exibir_com_desconto) {
+      const { data: cfg } = await admin.from('configuracoes')
+        .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
+      const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
+      const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
+      const precoPorCodigo: Record<string, number | null> = {};
+      for (const v of variacoes) precoPorCodigo[v.codigo] = v.preco_publicacao != null ? Number(v.preco_publicacao) : null;
+      desconto = { pct: pctEfetivo(fam, global), precoPorCodigo };
+    }
+
     const casadas = variacoes.filter((v) => v.ml_variation_id);
     const novas = variacoes.filter((v) => !v.ml_variation_id);
 
@@ -104,13 +116,14 @@ Deno.serve(async (req) => {
           : [atuaisPics[0], capa2Pic, ...atuaisPics.slice(1)].filter((x): x is string => !!x);
       }
     }
-    const existentes = montarVariacoesUpdate(atual.variations, desejados, capa2Pic ? picsPorCodigo : undefined);
+    const existentes = montarVariacoesUpdate(atual.variations, desejados, capa2Pic ? picsPorCodigo : undefined, desconto ?? undefined);
 
     const novasPut = novasComFoto.map((v) => montarVariacaoNova(
       { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
       capaPic,
       capa2Pic,
       familia.categoria_ml_id as string | null,
+      desconto ? { pct: desconto.pct } : null,
     ));
 
     // ADR-0016 (adendo 2026-06-05): sincroniza só o BRAND no UPDATE a partir do fornecedor,
