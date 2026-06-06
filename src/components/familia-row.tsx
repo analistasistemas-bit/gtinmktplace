@@ -78,6 +78,13 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           (v) => v.mlVariationId && !v.excluidaDaPublicacao && v.estoqueAnterior !== v.estoque,
         ).length
       : 0;
+  // Preço exibido no cabeçalho = preço de venda real (publicação) das cores incluídas,
+  // não o da planilha (no UPDATE eles diferem: planilha vs. preço já publicado).
+  const incluidasPub = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const basePub = incluidasPub.length > 0 ? incluidasPub : familia.variacoes;
+  const precosPub = basePub.map((v) => v.precoPublicacao ?? v.preco);
+  const precoVendaMin = precosPub.length > 0 ? Math.min(...precosPub) : 0;
+  const precoVendaMax = precosPub.length > 0 ? Math.max(...precosPub) : 0;
   return (
     <div
       className={cn(
@@ -168,8 +175,8 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       </Badge>
       <div className="flex items-center gap-1">
         <span>
-          R$ {formatarBRL(familia.precoMin)}
-          {familia.precoMin !== familia.precoMax && `-${formatarBRL(familia.precoMax)}`}
+          R$ {formatarBRL(precoVendaMin)}
+          {precoVendaMin !== precoVendaMax && `-${formatarBRL(precoVendaMax)}`}
         </span>
         {familia.precoAbaixo20pc && (
           <AlertTriangle
