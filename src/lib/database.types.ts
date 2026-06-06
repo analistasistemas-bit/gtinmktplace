@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      configuracoes: {
+        Row: {
+          atualizado_em: string
+          criado_em: string
+          desconto_pct: number
+          user_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          criado_em?: string
+          desconto_pct?: number
+          user_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          criado_em?: string
+          desconto_pct?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       familias: {
         Row: {
           analise_mercado: Json | null
@@ -31,6 +52,7 @@ export type Database = {
           concorrencia_vendedores: number
           criado_em: string
           custo_centavos: number | null
+          desconto_pct: number | null
           descricao_editada_pelo_operador: boolean
           descricao_ml: string | null
           descricao_pai: string | null
@@ -40,6 +62,7 @@ export type Database = {
           estrategia_preco:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          exibir_com_desconto: boolean
           fornecedor: string | null
           frete_gratis: boolean
           id: string
@@ -81,6 +104,7 @@ export type Database = {
           concorrencia_vendedores?: number
           criado_em?: string
           custo_centavos?: number | null
+          desconto_pct?: number | null
           descricao_editada_pelo_operador?: boolean
           descricao_ml?: string | null
           descricao_pai?: string | null
@@ -90,6 +114,7 @@ export type Database = {
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          exibir_com_desconto?: boolean
           fornecedor?: string | null
           frete_gratis?: boolean
           id?: string
@@ -131,6 +156,7 @@ export type Database = {
           concorrencia_vendedores?: number
           criado_em?: string
           custo_centavos?: number | null
+          desconto_pct?: number | null
           descricao_editada_pelo_operador?: boolean
           descricao_ml?: string | null
           descricao_pai?: string | null
@@ -140,6 +166,7 @@ export type Database = {
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          exibir_com_desconto?: boolean
           fornecedor?: string | null
           frete_gratis?: boolean
           id?: string
