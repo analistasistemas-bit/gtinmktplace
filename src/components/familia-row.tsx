@@ -26,7 +26,14 @@ function DescontoControle({ familia }: { familia: Familia }) {
   const updExibir = useUpdateExibirDesconto(familia.loteId);
   const updPct = useUpdateDescontoPctFamilia(familia.loteId);
   const pct = pctEfetivo(familia.descontoPct, globalPct ?? 15);
-  const de = calcularPrecoDe(familia.precoMin, pct);
+  // Preço de venda real (mesma fonte do card "Você recebe", painel-analise): menor
+  // preço de PUBLICAÇÃO das cores incluídas — não o preço da planilha. Reage à edição.
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
+  const precoVenda = baseVariacoes.length > 0
+    ? Math.min(...baseVariacoes.map((v) => v.precoPublicacao ?? v.preco))
+    : 0;
+  const de = calcularPrecoDe(precoVenda, pct);
   return (
     <div className="flex items-center gap-2 text-xs">
       <Checkbox
@@ -50,7 +57,7 @@ function DescontoControle({ familia }: { familia: Familia }) {
           <span>%</span>
           {de != null && (
             <span className="text-muted-foreground">
-              <s>R$ {formatarBRL(de)}</s> · R$ {formatarBRL(familia.precoMin)} · {pct}% OFF
+              <s>R$ {formatarBRL(de)}</s> · R$ {formatarBRL(precoVenda)} · {pct}% OFF
             </span>
           )}
         </>
