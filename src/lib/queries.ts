@@ -275,5 +275,41 @@ export function familiaFromRow(
     mlItemId: r.ml_item_id,
     mudancaEstrutural: parseMudancaEstrutural(r.mudanca_estrutural),
     erroMensagem: r.erro_mensagem,
+    exibirComDesconto: r.exibir_com_desconto,
+    descontoPct: r.desconto_pct != null ? Number(r.desconto_pct) : null,
   };
+}
+
+export async function fetchDescontoPct(): Promise<number> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 15;
+  const { data } = await supabase.from('configuracoes')
+    .select('desconto_pct').eq('user_id', user.id).maybeSingle();
+  return data?.desconto_pct != null ? Number(data.desconto_pct) : 15;
+}
+
+export async function upsertDescontoPct(pct: number): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ user_id: user.id, desconto_pct: pct, atualizado_em: new Date().toISOString() });
+  if (error) throw error;
+}
+
+export async function updateFamiliaExibirDesconto(familiaId: string, exibir: boolean): Promise<void> {
+  const { error } = await supabase.from('familias')
+    .update({ exibir_com_desconto: exibir }).eq('id', familiaId);
+  if (error) throw error;
+}
+
+export async function updateFamiliaDescontoPct(familiaId: string, pct: number | null): Promise<void> {
+  const { error } = await supabase.from('familias')
+    .update({ desconto_pct: pct }).eq('id', familiaId);
+  if (error) throw error;
+}
+
+export async function toggleDescontoLote(loteId: string, exibir: boolean): Promise<void> {
+  const { error } = await supabase.from('familias')
+    .update({ exibir_com_desconto: exibir }).eq('lote_id', loteId);
+  if (error) throw error;
 }

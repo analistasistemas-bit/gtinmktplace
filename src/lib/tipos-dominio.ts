@@ -140,4 +140,6 @@ export interface Familia {
   mlItemId: string | null;
   mudancaEstrutural: MudancaEstrutural | null;
   erroMensagem: string | null;
+  exibirComDesconto: boolean;
+  descontoPct: number | null;
 }
