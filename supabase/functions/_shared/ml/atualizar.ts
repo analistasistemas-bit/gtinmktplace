@@ -1,5 +1,6 @@
 import { gtinAusente } from './publicar.ts';
 import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
+import { calcularPrecoDe } from '../preco/desconto.ts';
 
 export interface AtributoVar { id: string; value_name?: string; value_id?: string; }
 export interface CorNovaInput {
@@ -14,6 +15,7 @@ export interface VariacaoNovaPut {
   attribute_combinations: AtributoVar[];
   available_quantity: number;
   price: number;
+  original_price?: number;
   picture_ids: string[];
   attributes?: AtributoVar[];
   seller_custom_field: string;
@@ -26,6 +28,7 @@ export function montarVariacaoNova(
   capaPictureId: string | null,
   capa2PictureId: string | null,
   categoriaMlId: string | null,
+  desconto?: { pct: number } | null,
 ): VariacaoNovaPut {
   const pics = [
     ...(capaPictureId ? [capaPictureId] : []),
@@ -39,6 +42,10 @@ export function montarVariacaoNova(
     picture_ids: [...new Set(pics)],
     seller_custom_field: v.codigo,
   };
+  if (desconto) {
+    const de = calcularPrecoDe(variation.price, desconto.pct);
+    if (de !== null) variation.original_price = de;
+  }
   if (gtinAusente(v.gtin)) {
     if (categoriaAceitaEmptyGtinReason(categoriaMlId)) {
       variation.attributes = [{ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO }];
@@ -56,14 +63,16 @@ export interface MLVariacaoAtual {
   picture_ids?: string[];
 }
 export interface EstoqueDesejado { codigo: string; estoque: number; }
-export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; }
+export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; original_price?: number; }
 
 // Reenvia TODAS as variações atuais do anúncio (o ML deleta as omitidas). Só
 // available_quantity — sem price, para o ML preservar o preço de venda.
+// Quando desconto está ativo, envia price + original_price para ativar o selo.
 export function montarVariacoesUpdate(
   atuais: MLVariacaoAtual[],
   desejados: EstoqueDesejado[],
   picsPorCodigo?: Record<string, string[]>,
+  desconto?: { pct: number; precoPorCodigo: Record<string, number | null> } | null,
 ): VariacaoUpdate[] {
   const estoquePorCodigo = new Map(desejados.map((d) => [d.codigo, d.estoque]));
   return atuais.map((a) => {
@@ -72,6 +81,13 @@ export function montarVariacoesUpdate(
     const base: VariacaoUpdate = { id: a.id, available_quantity: novo ?? a.available_quantity };
     const pics = picsPorCodigo?.[codigo];
     if (pics && pics.length > 0) base.picture_ids = [...new Set(pics)];
+    if (desconto) {
+      const preco = desconto.precoPorCodigo[codigo];
+      if (preco != null) {
+        const de = calcularPrecoDe(preco, desconto.pct);
+        if (de !== null) { base.price = preco; base.original_price = de; }
+      }
+    }
     return base;
   });
 }

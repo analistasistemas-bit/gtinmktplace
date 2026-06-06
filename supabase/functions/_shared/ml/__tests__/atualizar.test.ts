@@ -51,6 +51,20 @@ describe('montarVariacoesUpdate', () => {
     expect(r[0]).toEqual({ id: 1, available_quantity: 5, picture_ids: ['CAPA', 'CAPA2', 'P1'] });
     expect(r[1]).toEqual({ id: 2, available_quantity: 8, picture_ids: ['CAPA', 'CAPA2'] });
   });
+
+  it('UPDATE com desconto: variação existente recebe price + original_price', () => {
+    const atuais = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
+    const desejados = [{ codigo: '1', estoque: 9 }];
+    const precos = { '1': 12.29 };
+    const out = montarVariacoesUpdate(atuais, desejados, undefined, { pct: 15, precoPorCodigo: precos });
+    expect(out[0]).toMatchObject({ id: 'A', available_quantity: 9, price: 12.29, original_price: 14.46 });
+  });
+
+  it('UPDATE sem desconto: variação existente NÃO recebe price/original_price', () => {
+    const atuais = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
+    const out = montarVariacoesUpdate(atuais, [{ codigo: '1', estoque: 9 }]);
+    expect(out[0]).toEqual({ id: 'A', available_quantity: 9 });
+  });
 });
 
 const corNova = {
@@ -92,5 +106,12 @@ describe('montarVariacaoNova', () => {
     const v = { codigo: '00000009', cor: 'Azul', estoque: 3, preco_publicacao: 12, gtin: null, ml_picture_id: 'PN' };
     const r = montarVariacaoNova(v, 'CAPA', 'CAPA2', 'MLB255054');
     expect(r.picture_ids).toEqual(['CAPA', 'CAPA2', 'PN']);
+  });
+
+  it('montarVariacaoNova com desconto adiciona original_price', () => {
+    const v = { codigo: '2', cor: 'Rosa', estoque: 4, preco_publicacao: 12.29, gtin: null, ml_picture_id: null };
+    const out = montarVariacaoNova(v, null, null, 'MLB255054', { pct: 15 });
+    expect(out.price).toBe(12.29);
+    expect(out.original_price).toBe(14.46);
   });
 });
