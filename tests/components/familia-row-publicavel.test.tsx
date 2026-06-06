@@ -35,13 +35,13 @@ describe('FamiliaRow — selo de publicável', () => {
     renderWithClient(
       <FamiliaRow familia={f} selecionada={false} expandida={false} onSelecionar={() => {}} onExpandir={() => {}} />
     );
-    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Selecionar família' })).toBeDisabled();
     expect(screen.getByText(/categoria/i)).toBeInTheDocument();
   });
   it('família publicável mantém o checkbox habilitado', () => {
     renderWithClient(
       <FamiliaRow familia={fam({})} selecionada={false} expandida={false} onSelecionar={() => {}} onExpandir={() => {}} />
     );
-    expect(screen.getByRole('checkbox')).not.toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Selecionar família' })).not.toBeDisabled();
   });
 });

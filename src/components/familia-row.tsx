@@ -37,6 +37,7 @@ function DescontoControle({ familia }: { familia: Familia }) {
   return (
     <div className="flex items-center gap-2 text-xs">
       <Checkbox
+        aria-label="Exibir com desconto"
         checked={familia.exibirComDesconto}
         onCheckedChange={(v) => updExibir.mutate({ familiaId: familia.id, exibir: !!v })}
       />
@@ -96,6 +97,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       className="grid grid-cols-[24px_40px_1fr_80px_140px_40px] items-center gap-3 px-4 py-2 text-sm"
     >
       <Checkbox
+        aria-label="Selecionar família"
         checked={selecionada}
         disabled={!pub.ok}
         onCheckedChange={(v) => onSelecionar(familia.id, v === true)}

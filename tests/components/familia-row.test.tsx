@@ -55,7 +55,7 @@ describe('FamiliaRow', () => {
         onExpandir={() => {}}
       />
     );
-    expect(screen.getByRole('checkbox')).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Selecionar família' })).toBeChecked();
   });
 
   it('mostra alerta de preço quando precoAbaixo20pc=true', () => {
