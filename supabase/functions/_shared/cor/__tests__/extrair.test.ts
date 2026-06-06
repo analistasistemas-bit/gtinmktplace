@@ -55,7 +55,23 @@ describe('extrairCorECodigo', () => {
   });
   it('preserva zero à esquerda no código: 009', () => {
     expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 009 ROSA PETALA 10MT'))
-      .toEqual({ cor: 'Rosa Petala', codigo: '009' });
+      .toEqual({ cor: 'Rosa Pétala', codigo: '009' });
+  });
+  it('restaura acento de palavra única: SALMAO → Salmão', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 392 SALMAO 10MT'))
+      .toEqual({ cor: 'Salmão', codigo: '392' });
+  });
+  it('restaura acento mantendo o resto literal: LRJ CITRICO → Lrj Cítrico', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 278 LRJ CITRICO 10MT'))
+      .toEqual({ cor: 'Lrj Cítrico', codigo: '278' });
+  });
+  it('acento com abreviação no início: VD BOTANICO → Verde Botânico', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 2017 VD BOTANICO 10MT'))
+      .toEqual({ cor: 'Verde Botânico', codigo: '2017' });
+  });
+  it('palavra sem acento conhecido fica title-case: AMARANTO', () => {
+    expect(extrairCorECodigo('FITA CETIM PROGRESSO N.07 2055 RS AMARANTO 10MT'))
+      .toEqual({ cor: 'Rs Amaranto', codigo: '2055' });
   });
   it('vários dígitos: usa o último seguido de letras (10 BCA → Branco 10)', () => {
     expect(extrairCorECodigo('LINHA P/COST.XIK 120 2000J 10 BCA'))

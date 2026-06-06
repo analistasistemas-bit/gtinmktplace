@@ -36,6 +36,17 @@ const ABREVIACOES_COR: Record<string, string> = {
   ESC: 'Escuro', BCA: 'Branco', PTO: 'Preto',
 };
 
+// Léxico de acentos (chave em MAIÚSCULAS sem acento) → forma acentuada. A planilha
+// vem do export interno em CAIXA-ALTA sem acento; restauramos o acento por palavra.
+// Palavra ausente aqui mantém o title-case literal (operador ajusta na revisão).
+const ACENTOS_COR: Record<string, string> = {
+  PETALA: 'Pétala', ORQUIDEA: 'Orquídea', MAGNOLIA: 'Magnólia',
+  BOTANICO: 'Botânico', CITRICO: 'Cítrico', SALMAO: 'Salmão',
+  BORDO: 'Bordô', MEDIO: 'Médio', ABOBORA: 'Abóbora',
+  LILAS: 'Lilás', CAQUI: 'Cáqui', PETROLEO: 'Petróleo',
+  BEBE: 'Bebê', CAFE: 'Café', LIMAO: 'Limão', INDIGO: 'Índigo',
+};
+
 const SO_LETRAS = /^\p{L}+$/u;
 const SO_DIGITOS = /^\d+$/;
 
@@ -64,7 +75,10 @@ export function extrairCorECodigo(nome: string): { cor: string; codigo: string }
     palavras.push(tokens[i]);
   }
   const cor = palavras
-    .map((p) => ABREVIACOES_COR[p.toUpperCase()] ?? titleCase(p))
+    .map((p) => {
+      const up = p.toUpperCase();
+      return ABREVIACOES_COR[up] ?? ACENTOS_COR[up] ?? titleCase(p);
+    })
     .join(' ');
   return { cor, codigo };
 }
