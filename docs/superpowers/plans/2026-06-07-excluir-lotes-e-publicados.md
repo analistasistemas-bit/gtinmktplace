@@ -229,7 +229,9 @@ Deno.serve(async (req) => {
     const { data: rest } = await admin.from('familias')
       .select('status, ml_item_id').eq('lote_id', lote_id);
     const total = rest?.length ?? 0;
-    const publicadas = rest?.filter((f) => f.ml_item_id != null).length ?? 0;
+    // Recontar pela MESMA base do trigger update_lote_counters: status='publicado'
+    // (não ml_item_id != null — podem divergir; o trigger usa status).
+    const publicadas = rest?.filter((f) => f.status === 'publicado').length ?? 0;
     const erros = rest?.filter((f) => f.status === 'erro').length ?? 0;
     await admin.from('lotes').update({
       total_familias: total, total_publicadas: publicadas, total_erros: erros, status: 'concluido',
@@ -289,6 +291,7 @@ export const removerPublicado = (familiaId: string) =>
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { excluirLote } from '@/lib/excluir';
+import { QK } from '@/lib/queries';
 
 export function useExcluirLote() {
   const qc = useQueryClient();
@@ -296,7 +299,7 @@ export function useExcluirLote() {
     mutationFn: (loteId: string) => excluirLote(loteId),
     onSuccess: async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) qc.invalidateQueries({ queryKey: ['lotes', user.id] });
+      if (user) qc.invalidateQueries({ queryKey: QK.lotes(user.id) }); // DRY: reusa a chave canônica
     },
   });
 }
@@ -399,6 +402,7 @@ export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
 - Create: `supabase/functions/status-publicados/index.ts`
 
 - [ ] **Step 1: Implementar** — valida JWT (getUser); lê `ml_item_id` das famílias do usuário; `getValidAccessToken(user.id)` num try/catch → se falhar, retorna `{ semCredencialML: true, itens: [] }`; batch `GET /items?ids=…&attributes=id,status,sub_status,available_quantity,price` em blocos de 20; mapeia com `parseStatusML`; item ausente na resposta → `indisponivel`. Retorna `{ itens: Array<{ ml_item_id, ...StatusParsed }> }`. Resiliente a erro do ML (retorna itens `indisponivel`).
+  - **⚠️ Envelope do multiget:** `GET /items?ids=a,b` retorna `[{ code: 200, body: {…item…} }, …]` (envelopado por id), **não** um array plano de itens. Desempacotar `entry.body` (e tratar `entry.code !== 200` → `indisponivel`) antes de passar ao `parseStatusML`.
 
 - [ ] **Step 2: Deploy** — `supabase functions deploy status-publicados --project-ref txvncrgkoynoxwopfkbp` (com JWT). Conferir `verify_jwt=true`.
 
@@ -411,7 +415,7 @@ export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
 **Files:**
 - Create: `src/lib/publicados.ts`, `tests/lib/publicados.test.ts`
 
-- [ ] **Step 1: Teste falhando** para `filtrarPublicados` (filtro por fornecedor, status, tipo e busca; combinados).
+- [ ] **Step 1: Teste falhando** para `filtrarPublicados`: cada filtro **isolado** (fornecedor, status, tipo, busca case-insensitive/parcial) **e** ao menos um caso **combinado** (ex.: fornecedor + status juntos) + filtro vazio retorna tudo. Não basta testar filtros isolados.
 - [ ] **Step 2:** rodar → FAIL.
 - [ ] **Step 3: Implementar** `src/lib/publicados.ts`:
 
@@ -462,6 +466,8 @@ export function filtrarPublicados(itens: PublicadoItem[], f: FiltroPublicados): 
 
 ### Task 9: Página `Publicados` + rota + menu
 
+> **⚠️ Ordem:** o botão "Remover do sistema" desta tela depende da edge `remover-publicado` (Task 10). **Implementar a Task 10 ANTES** desta, ou implementar a tabela/filtros aqui e só adicionar o botão Remover depois da Task 10. Não deixar a feature "Remover" quebrada entre commits.
+
 **Files:**
 - Create: `src/pages/Publicados.tsx`
 - Modify: `src/App.tsx` (rota `/publicados` dentro do `AppShell`), `src/components/sidebar.tsx` (`NAV_ITEMS` += `{ to: '/publicados', label: 'Publicados', icon: Package, end: false }`)
@@ -504,3 +510,6 @@ export function filtrarPublicados(itens: PublicadoItem[], f: FiltroPublicados): 
 - **`verify_jwt`**: as 3 edges são front-called → deploy **sem** `--no-verify-jwt`. Se o preflight OPTIONS quebrar com `verify_jwt=true`, seguir o padrão de `regenerar-copy-familia` (deploy `--no-verify-jwt` + validação manual de JWT, que já fazemos com `getUser`).
 - **Storage path real**: confirmar no bug bash o prefixo exato dos arquivos do lote (`{user_id}/{lote_id}/…` vs `{user_id}/{codigo}.jpeg`) antes de confiar na limpeza por prefixo; a remoção por lista explícita (`pathsRemover`) é a fonte primária e independe do prefixo.
 - **Admin client**: as edges usam service role; a validação de ownership (`user_id`/status) é feita explicitamente antes de qualquer escrita.
+- **Lote `importando` com famílias parciais**: `importando` é excluível por decisão do spec (limpar upload falho), mas em tese o `process-familia` ainda pode estar inserindo famílias nesse instante (janela curta). Risco baixo e aceito; se aparecer ruído no bug bash, bloquear também `importando` quando houver família em `processando`/`pendente`.
+- **Recontagem vs trigger**: a edge reconta `total_publicadas` por `status='publicado'` (mesma base do trigger `update_lote_counters`), não por `ml_item_id != null`, pra não divergir do que o trigger gravaria nos demais fluxos.
+- **Multiget do ML**: resposta envelopada `{ code, body }[]` — desempacotar `body` e tratar `code != 200` como `indisponivel` (ver Task 6).
