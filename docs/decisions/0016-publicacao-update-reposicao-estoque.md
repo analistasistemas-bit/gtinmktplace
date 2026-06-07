@@ -106,3 +106,37 @@ um UPDATE só-estoque não altera a lista e não toca a descrição.
   impede reenvio quando a descrição já foi persistida em run anterior — tornando o retry
   seguro sem estado adicional.
 - **Cor removida** continua só sinalizada (não sai da descrição automaticamente) — inalterado.
+
+---
+
+## Adendo (2026-06-07) — push da descrição quando o texto muda, não só as cores
+
+**Buraco descoberto em produção:** o guard original comparava a descrição recalculada
+contra o **próprio `familias.descricao_ml`** (`novaDescricao !== familia.descricao_ml`).
+Isso só detecta mudança **na seção de cores**. Quando o operador **corrige/regenera** a
+descrição de um anúncio já publicado (texto diferente, mesmas cores), o UPDATE **não
+enviava nada ao ML** — a correção ficava presa no banco/tela e o anúncio mantinha o texto
+antigo. Foi exatamente como uma descrição com preço (gerada por um copywriter revertido por
+deploy) persistiu num anúncio mesmo após o copywriter ser corrigido: os UPDATEs de reposição
+herdavam a descrição publicada e nunca a substituíam.
+
+**Refinamento:** o gatilho passa a comparar a descrição **desejada** contra a que está
+**ao vivo no ML**, não contra o banco:
+
+- `buscarDescricaoML(token, itemId)` faz um `GET /items/{id}/description` (grátis, sem IA)
+  e devolve o `plain_text` atual (item sem descrição → `''`).
+- `resolverDescricaoUpdate(descricaoDb, cores, liveMl)` (puro, TDD): aplica
+  `atualizarSecaoCores`, **sanitiza** (como o ML guarda — sem emojis) e compara com o
+  `liveMl` (ambos `trim()`). `precisaPush = desejada !== liveAoVivo`.
+- Só com `precisaPush` é que `garantirDescricaoML` reenvia; `familias.descricao_ml` no banco
+  só é atualizado quando o texto-fonte (com emojis) realmente mudou.
+
+**Cobre dois casos com o mesmo gatilho:** (a) **cor nova** — a seção de cores muda →
+difere do ML → envia (comportamento anterior preservado); (b) **descrição corrigida/
+regenerada** — o texto difere do ML → envia (o buraco fechado). **Reposição pura de
+estoque** → desejada == ao vivo → **não envia** (sem IA, sem token; o GET é grátis).
+
+**Custo de token:** zero. A IA (OpenRouter) só roda no CREATE ou no botão "Regenerar
+descrição"; o UPDATE nunca gera tokens — só lê (GET) e, quando necessário, escreve (PUT) a
+descrição. Idempotente: após o push, `sanitizar(desejada) == liveMl` → o próximo UPDATE não
+reenvia.

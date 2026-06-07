@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizarDescricaoML, atualizarSecaoCores } from '../criar-item';
+import { sanitizarDescricaoML, atualizarSecaoCores, resolverDescricaoUpdate } from '../criar-item';
 
 const DESCRICAO = `🧵 LINHA PROFISSIONAL
 
@@ -54,6 +54,44 @@ describe('atualizarSecaoCores', () => {
     const descricaoAtualizada = atualizarSecaoCores(DESCRICAO, ['Branco', 'Preto', 'Azul']);
     const recalculada = atualizarSecaoCores(descricaoAtualizada, ['Branco', 'Preto', 'Azul']);
     expect(recalculada).toBe(descricaoAtualizada); // guard false → sem reenvio ao ML
+  });
+});
+
+describe('resolverDescricaoUpdate (ADR-0016 adendo 2026-06-07: push da descrição no UPDATE)', () => {
+  const limpa = sanitizarDescricaoML(DESCRICAO).trim();
+
+  it('descrição nula → null (nada a fazer)', () => {
+    expect(resolverDescricaoUpdate(null, ['Branco'], '')).toBeNull();
+  });
+
+  it('reposição pura de estoque (cores e texto iguais ao ML) → não reenvia', () => {
+    const r = resolverDescricaoUpdate(DESCRICAO, ['Branco', 'Preto'], limpa);
+    expect(r?.precisaPush).toBe(false);
+  });
+
+  it('cor nova → seção de cores muda → reenvia', () => {
+    const r = resolverDescricaoUpdate(DESCRICAO, ['Branco', 'Preto', 'Azul'], limpa);
+    expect(r?.precisaPush).toBe(true);
+    expect(r?.novaDescricao).toContain('- Azul');
+  });
+
+  it('descrição corrigida no banco (texto diferente do ML, mesmas cores) → reenvia', () => {
+    const corrigida = DESCRICAO.replace('Fio de alta resistência.', 'Texto corrigido sem preço.');
+    const r = resolverDescricaoUpdate(corrigida, ['Branco', 'Preto'], limpa);
+    expect(r?.precisaPush).toBe(true);
+  });
+
+  it('compara sanitizado vs ML: descrição com emoji no banco e texto-puro no ML não dispara push falso', () => {
+    // o banco guarda com emoji (🧵 🎨…); o ML guarda sem. A comparação sanitiza antes.
+    const r = resolverDescricaoUpdate(DESCRICAO, ['Branco', 'Preto'], limpa);
+    expect(r?.precisaPush).toBe(false);
+  });
+
+  it('idempotência: após o push, recomputar com o ML já atualizado → não reenvia', () => {
+    const nova = atualizarSecaoCores(DESCRICAO, ['Branco', 'Preto', 'Azul']);
+    const liveAposPush = sanitizarDescricaoML(nova).trim();
+    const r = resolverDescricaoUpdate(DESCRICAO, ['Branco', 'Preto', 'Azul'], liveAposPush);
+    expect(r?.precisaPush).toBe(false);
   });
 });
 

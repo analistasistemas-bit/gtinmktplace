@@ -60,6 +60,35 @@ export function atualizarSecaoCores(descricao: string, cores: string[]): string 
   return [...linhas.slice(0, headerIdx + 1), '', ...novaLista, ...depois].join('\n');
 }
 
+/** Lê a descrição ao vivo do item (`plain_text`). Item sem descrição → ''. */
+export async function buscarDescricaoML(accessToken: string, itemId: string): Promise<string> {
+  const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}/description`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (resp.status === 404) return '';
+  if (!resp.ok) throw new Error(`Descrição GET (${resp.status}): ${await resp.text()}`);
+  const json = await resp.json().catch(() => ({}));
+  return (json?.plain_text as string) ?? '';
+}
+
+/**
+ * Decide se a descrição precisa ser reenviada ao ML no UPDATE (ADR-0016 adendo 2026-06-07).
+ * Compara a descrição DESEJADA (cores atualizadas + sanitizada como o ML guarda) contra a
+ * que está AO VIVO no item. Cobre dois casos com o mesmo gatilho: cor nova (a seção de cores
+ * muda) e descrição corrigida/regenerada pelo operador (o texto muda). Reposição pura de
+ * estoque → desejada == live → não reenvia (sem custo). Sem IA, determinística.
+ */
+export function resolverDescricaoUpdate(
+  descricaoDb: string | null,
+  cores: string[],
+  liveMl: string,
+): { novaDescricao: string; precisaPush: boolean } | null {
+  if (!descricaoDb) return null;
+  const novaDescricao = atualizarSecaoCores(descricaoDb, cores);
+  const desejada = sanitizarDescricaoML(novaDescricao).trim();
+  return { novaDescricao, precisaPush: desejada !== (liveMl ?? '').trim() };
+}
+
 /**
  * Cria/atualiza a descrição do item. No ML a descrição é um recurso separado
  * (`/items/{id}/description`), não vai no POST /items. Idempotente: tenta POST

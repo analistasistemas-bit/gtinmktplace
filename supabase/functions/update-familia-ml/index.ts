@@ -3,7 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
-import { atualizarSecaoCores, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
+import { buscarDescricaoML, garantirDescricaoML, resolverDescricaoUpdate } from '../_shared/ml/criar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
 import { montarAtributosPacote } from '../_shared/ml/pacote.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
@@ -177,18 +177,21 @@ Deno.serve(async (req) => {
       throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
     }
 
-    // Reescreve a seção "CORES DISPONÍVEIS" da descrição herdada (ADR-0016, sem IA)
-    // para refletir as cores incluídas neste UPDATE. Falha explícita: se
-    // garantirDescricaoML falhar, o worker falha e o operador reprocessa de 'erro'.
-    // Idempotência: o guard (novaDescricao !== familia.descricao_ml) garante que
-    // num retry onde a descrição já foi persistida a chamada ao ML não é reenviada.
-    // PUT /description é idempotente no ML — seguro de repetir em retry.
+    // Sincroniza a descrição do anúncio (ADR-0016 adendo 2026-06-07). Compara a descrição
+    // DESEJADA (cores atualizadas + sanitizada como o ML guarda) contra a que está AO VIVO
+    // no item, e só reenvia se diferir. Cobre dois casos: cor nova (seção de cores muda) e
+    // descrição corrigida/regenerada pelo operador (texto muda) — este último não chegava ao
+    // ML antes. Reposição pura de estoque → iguais → não reenvia (sem IA, sem token, e o GET
+    // de descrição é grátis). PUT /description é idempotente no ML — seguro em retry.
     if (familia.descricao_ml) {
       const cores = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
-      const novaDescricao = atualizarSecaoCores(familia.descricao_ml as string, cores);
-      if (novaDescricao !== familia.descricao_ml) {
-        await garantirDescricaoML(token, familia.ml_item_id, novaDescricao);
-        await admin.from('familias').update({ descricao_ml: novaDescricao }).eq('id', job.familia_id);
+      const liveDesc = await buscarDescricaoML(token, familia.ml_item_id);
+      const r = resolverDescricaoUpdate(familia.descricao_ml as string, cores, liveDesc);
+      if (r?.precisaPush) {
+        await garantirDescricaoML(token, familia.ml_item_id, r.novaDescricao);
+        if (r.novaDescricao !== familia.descricao_ml) {
+          await admin.from('familias').update({ descricao_ml: r.novaDescricao }).eq('id', job.familia_id);
+        }
       }
     }
 
