@@ -44,7 +44,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
   const semDimensoes = familiaSemDimensoesValidas(familia);
 
   return (
-    <div className="flex flex-1 flex-col gap-2 rounded-lg border bg-background p-3">
+    <div className="flex w-full flex-col gap-2 rounded-lg border bg-background p-3">
       <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Análise para publicação
       </span>
@@ -67,9 +67,11 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
+      {/* Cards em linha única responsiva (largura total): a tela prioriza a análise.
+          Cada card cresce (flex-1) com um piso de largura; quebram em linhas quando faltar espaço. */}
+      <div className="flex flex-wrap gap-2">
         {/* Estratégia */}
-        <div className="rounded-md border p-2">
+        <div className="min-w-[160px] flex-1 rounded-md border p-2">
           <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Coins className="h-3.5 w-3.5" /> Estratégia
           </div>
@@ -87,7 +89,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
         </div>
 
         {/* Categoria */}
-        <div className={cn('rounded-md border p-2', categoriaIndefinida && 'border-destructive/30 bg-destructive/5')}>
+        <div className={cn('min-w-[160px] flex-1 rounded-md border p-2', categoriaIndefinida && 'border-destructive/30 bg-destructive/5')}>
           <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Tag className="h-3.5 w-3.5" /> Categoria
           </div>
@@ -102,31 +104,30 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
             </>
           )}
         </div>
-      </div>
 
-      {/* Concorrência */}
-      <div className="rounded-md border p-2">
-        <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <Store className="h-3.5 w-3.5" /> Concorrência
-        </div>
-        {temConcorrencia ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge className={cn('font-semibold capitalize', CORES_CONCORRENCIA[familia.concorrencia])}>
-              {familia.concorrencia}
-            </Badge>
-            <span>{familia.concorrenciaVendedores} vendedores</span>
-            {familia.concorrenciaPrecoMin != null && (
-              <span>· menor preço <span className="font-medium text-foreground">{fmtBRL(familia.concorrenciaPrecoMin)}</span></span>
-            )}
+        {/* Concorrência */}
+        <div className="min-w-[180px] flex-1 rounded-md border p-2">
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Store className="h-3.5 w-3.5" /> Concorrência
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">sem concorrência detectada</p>
-        )}
-      </div>
+          {temConcorrencia ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <Badge className={cn('font-semibold capitalize', CORES_CONCORRENCIA[familia.concorrencia])}>
+                {familia.concorrencia}
+              </Badge>
+              <span>{familia.concorrenciaVendedores} vendedores</span>
+              {familia.concorrenciaPrecoMin != null && (
+                <span>· menor preço <span className="font-medium text-foreground">{fmtBRL(familia.concorrenciaPrecoMin)}</span></span>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">sem concorrência detectada</p>
+          )}
+        </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        {familia.analiseMercado ? (
-          <div className="rounded-md border p-2">
+        {/* Potencial de venda */}
+        {familia.analiseMercado && (
+          <div className="min-w-[200px] flex-1 rounded-md border p-2">
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" /> Potencial de venda
             </div>
@@ -159,10 +160,12 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
               )}
             </div>
           </div>
-        ) : (
-          <div />
         )}
-        <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} />
+
+        {/* Você recebe por venda (precisa de mais largura: compara Clássico × Premium) */}
+        <div className="min-w-[280px] flex-1">
+          <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} />
+        </div>
       </div>
     </div>
   );

@@ -245,54 +245,58 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
       <DiffEstoque familia={familia} />
-      <div className="mb-4 flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-start">
-        <div className="flex items-start gap-4">
-        <FotoCapaFamilia capaUrl={capaUrl ?? null} tamanho="large" />
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-muted-foreground">Foto-capa do anúncio</span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => inputRef.current?.click()}
-              disabled={trocando}
-            >
-              <Camera className="mr-2 h-4 w-4" />
-              {familia.capaStoragePath ? 'Trocar foto' : 'Subir capa'}
-            </Button>
-            {familia.capaStoragePath && (
-              <Button variant="ghost" size="sm" onClick={lidarRemoverCapa}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Remover
-              </Button>
-            )}
+      <div className="mb-4 flex flex-col gap-4 border-b pb-4">
+        {/* Faixa fina de fotos: a Análise (abaixo) é o foco da tela, então as fotos
+            ficam compactas em uma linha, sem comer a largura. */}
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div className="flex items-center gap-3">
+            <FotoCapaFamilia capaUrl={capaUrl ?? null} tamanho="medium" />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Foto-capa do anúncio</span>
+              <div className="flex gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => inputRef.current?.click()}
+                  disabled={trocando}
+                >
+                  <Camera className="mr-1.5 h-4 w-4" />
+                  {familia.capaStoragePath ? 'Trocar foto' : 'Subir capa'}
+                </Button>
+                {familia.capaStoragePath && (
+                  <Button variant="ghost" size="sm" onClick={lidarRemoverCapa}>
+                    <Trash2 className="mr-1.5 h-4 w-4" />
+                    Remover
+                  </Button>
+                )}
+              </div>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/jpg"
+                className="hidden"
+                onChange={lidarTrocaCapa}
+              />
+            </div>
           </div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/jpg"
-            className="hidden"
-            onChange={lidarTrocaCapa}
-          />
-        </div>
-        </div>
-        <div className="flex items-start gap-4">
-        <FotoCapaFamilia capaUrl={capa2Url ?? null} tamanho="large" />
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-muted-foreground">2ª foto (todas as cores)</span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => inputCapa2Ref.current?.click()} disabled={trocandoCapa2}>
-              <Camera className="mr-2 h-4 w-4" />
-              {familia.capa2StoragePath ? 'Trocar 2ª foto' : 'Subir 2ª foto'}
-            </Button>
-            {familia.capa2StoragePath && (
-              <Button variant="ghost" size="sm" onClick={lidarRemoverCapa2}>
-                <Trash2 className="mr-2 h-4 w-4" /> Remover
-              </Button>
-            )}
+          <div className="flex items-center gap-3">
+            <FotoCapaFamilia capaUrl={capa2Url ?? null} tamanho="medium" />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">2ª foto (todas as cores)</span>
+              <div className="flex gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => inputCapa2Ref.current?.click()} disabled={trocandoCapa2}>
+                  <Camera className="mr-1.5 h-4 w-4" />
+                  {familia.capa2StoragePath ? 'Trocar 2ª foto' : 'Subir 2ª foto'}
+                </Button>
+                {familia.capa2StoragePath && (
+                  <Button variant="ghost" size="sm" onClick={lidarRemoverCapa2}>
+                    <Trash2 className="mr-1.5 h-4 w-4" /> Remover
+                  </Button>
+                )}
+              </div>
+              <input ref={inputCapa2Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa2} />
+            </div>
           </div>
-          <input ref={inputCapa2Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa2} />
-        </div>
         </div>
         <PainelAnalise familia={familia} />
       </div>
