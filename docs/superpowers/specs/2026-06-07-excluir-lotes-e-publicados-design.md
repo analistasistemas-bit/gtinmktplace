@@ -23,10 +23,16 @@ Decisão (vira ADR-0019): **a exclusão de lote nunca remove famílias publicada
 
 ### Comportamento
 
+- **Guarda de status (race com QStash):** a exclusão é **bloqueada** se `lote.status IN ('processando','publicando')` — há workers do QStash ativos (`process-familia`/`publish`/`update`) que tocariam famílias recém-deletadas. Mensagem: "Aguarde o processamento/publicação terminar antes de excluir." O botão lixeira fica **desabilitado** nesses status na UI. Lotes `importando` (sem famílias ainda) **podem** ser excluídos (limpa upload falho).
 - Apaga as famílias **não publicadas** (`ml_item_id is null`) do lote → as variações somem por cascade (FK `variacoes.familia_id ON DELETE CASCADE`).
-- Remove do **Storage** (bucket `imagens`) as imagens dessas famílias/variações: `variacoes.imagem_path`, `familias.capa_storage_path`, `familias.capa2_storage_path`. O cascade do banco **não** limpa o Storage — é manual.
+- **Storage (bucket `imagens`), limpeza manual** (o cascade do banco não limpa Storage). Regra segura para preservar arquivos das publicadas:
+  - Coleta o conjunto de paths **referenciados pelas famílias publicadas sobreviventes** (`variacoes.imagem_path` + `capa_storage_path` + `capa2_storage_path`) → **preservar**.
+  - Remove todos os demais arquivos do lote: `lotes.planilha_path` (a planilha .xlsx), os paths das variações/capas das famílias removidas, e os de `lotes.imagens_paths` **que não estejam no conjunto preservado**.
+  - Se **nenhuma** família sobrar, remove o prefixo inteiro do lote no Storage (`{user_id}/{lote_id}/`) + `planilha_path`.
+- **Contadores do lote:** o trigger `update_lote_counters` **não dispara em DELETE** (definido `after insert or update`). Então, se sobrar ≥ 1 família, a edge **reconta manualmente** e atualiza `total_familias`/`total_publicadas`/`total_erros` (senão o Dashboard/Progresso mostram contagem errada).
+- **Status do lote após exclusão parcial:** se sobrar só publicadas, a edge recalcula o status do lote para `concluido` (não faz sentido manter `revisao` sem nada a revisar).
 - Famílias **publicadas sobrevivem**:
-  - Se sobrar ≥ 1 família publicada → o lote permanece no Dashboard (mostrando só as publicadas).
+  - Se sobrar ≥ 1 família publicada → o lote permanece no Dashboard (mostrando só as publicadas), com contadores e status recalculados.
   - Se **nenhuma** família sobrar → o lote inteiro é apagado (some do Dashboard).
 - O ML **nunca** é chamado.
 
@@ -40,18 +46,25 @@ Decisão (vira ADR-0019): **a exclusão de lote nunca remove famílias publicada
 ### Implementação
 
 Edge function `excluir-lote` (verify_jwt **true** — chamada do front com JWT do operador):
-1. Valida que o lote pertence ao usuário (`lotes.user_id = auth.uid`).
-2. Coleta as famílias não publicadas do lote e seus paths de Storage (variações + capas).
-3. Remove os arquivos do Storage (`storage.from('imagens').remove([...paths])`) — resiliente: falha em remover um arquivo não aborta a exclusão dos registros (loga e segue; arquivo órfão é inofensivo).
+1. Valida que o lote pertence ao usuário (`lotes.user_id = auth.uid`) **e** que `lote.status NOT IN ('processando','publicando')` (guarda de race).
+2. Carrega as famílias do lote (publicadas e não publicadas) + suas variações/capas; `particionarExclusao` separa em `paraExcluir`/`preservadas` e calcula `pathsRemover` (todos os paths das removidas + `planilha_path` + `imagens_paths`) **menos** `pathsPreservar` (paths das publicadas sobreviventes).
+3. Remove os arquivos do Storage (`storage.from('imagens').remove(pathsRemover)`) — resiliente: falha em remover um arquivo não aborta a exclusão dos registros (loga e segue; arquivo órfão é inofensivo).
 4. Deleta as famílias não publicadas (cascade nas variações).
-5. Conta famílias restantes do lote; se 0 → deleta o lote.
+5. Se **0** famílias restantes → deleta o lote. Senão → **reconta** `total_familias`/`total_publicadas`/`total_erros` e seta `status='concluido'` (o trigger não cobre DELETE).
 6. Retorna `{ familias_removidas, imagens_removidas, familias_preservadas, lote_removido }`.
 
-Por que edge function e não delete direto no front: envolve Storage + múltiplas tabelas + a regra "preservar publicado" — melhor num lugar único e testável, com a regra de negócio centralizada. Usa admin client mas valida ownership explicitamente.
+Por que edge function (admin client) e não delete direto no front via RLS: envolve **Storage com service role**, múltiplas tabelas, recontagem manual e a regra "preservar publicado" — melhor num lugar único e testável, com a regra de negócio centralizada. Valida ownership + status explicitamente antes de qualquer escrita. (Há policies de DELETE por `user_id`, mas a operação composta — Storage + recontagem + preservação — justifica o admin client.)
+
+**Nota sobre "Sem migration nova":** mantém-se verdadeira — a recontagem dos contadores é feita na própria edge (opção (b) da revisão), evitando uma migration que adicionasse `OR DELETE` ao trigger.
 
 ### Função pura (TDD)
 
-`particionarExclusao(familias)` → `{ paraExcluir: Familia[], preservadas: Familia[], pathsStorage: string[] }` — separa publicadas de não publicadas e junta os paths de Storage. Testável sem banco.
+`particionarExclusao({ familias, planilhaPath, imagensPaths })` → `{ paraExcluir, preservadas, pathsRemover, pathsPreservar, loteVazio }`:
+- separa publicadas (`ml_item_id != null`) de não publicadas;
+- `pathsPreservar` = paths referenciados pelas publicadas (variações + capas);
+- `pathsRemover` = (paths das removidas + `planilhaPath` + `imagensPaths`) **menos** `pathsPreservar` (dedup);
+- `loteVazio` = não há publicadas (→ lote inteiro removível + prefixo do Storage).
+Testável sem banco (a edge só fornece os dados).
 
 ---
 
@@ -63,12 +76,13 @@ Novo item "Publicados" no menu do `AppShell` → rota `/publicados` (HashRouter,
 
 ### Dados
 
-- **Nosso banco:** todas as famílias com `ml_item_id` (qualquer lote, do usuário): título, fornecedor, tipo_aviamento, preço de publicação (menor preço das variações incluídas), `ml_permalink`, `publicado_em`.
+- **Nosso banco:** todas as famílias com `ml_item_id` (qualquer lote, do usuário), via um **tipo e query dedicados** (`PublicadoItem` + `fetchPublicados`/`publicadoFromRow`) — **não** estendo o tipo `Familia` (que não tem `fornecedor`/`publicadoEm` hoje): título, fornecedor, tipo_aviamento, preço de publicação (menor preço das variações), `ml_item_id`, `ml_permalink`, `publicado_em`, `codigo_pai`. (`publicado_em` pode ser null se o worker crashou entre setar `ml_item_id` e `publicado_em` → UI mostra "—".)
 - **ML ao vivo:** edge function `status-publicados` (verify_jwt **true**):
   - Lê os `ml_item_id` publicados do usuário.
   - Batch `GET /items?ids=id1,id2,…&attributes=id,status,sub_status,available_quantity,price` (até 20 ids por chamada; pagina em blocos de 20).
-  - **Cache no Redis** por item, TTL ~15 min (`pub:item:{id}` → status/estoque/preço). Botão "Atualizar" no front bypassa o cache (força refetch).
-  - Resiliente: item 404 (anúncio excluído no ML) → status `indisponível`; falha geral do ML → linhas marcadas "status indisponível" sem quebrar a tela.
+  - **Sem cache Redis** (YAGNI: 19 itens = 1 chamada; cache adicionaria chave/invalidação/TTL por economia desprezível). O front usa `staleTime` do TanStack Query (~5 min) pra não refazer a chamada a cada navegação; botão "Atualizar" força refetch. Reavaliar cache só se o volume passar de ~100 itens.
+  - **Sem credencial ML conectada** (`getValidAccessToken` falha): a edge devolve `{ semCredencialML: true }`; o front mostra a tabela **só com dados do banco** + banner "Conecte sua conta ML nas Configurações para ver o status ao vivo."
+  - Resiliente: item 404 (anúncio excluído no ML) → status `indisponível`; falha geral do ML → linhas "status indisponível" sem quebrar a tela.
   - `getValidAccessToken` reaproveitado (refresh seguro com lock, ADR-0012).
 
 ### Tabela
@@ -90,7 +104,11 @@ Novo item "Publicados" no menu do `AppShell` → rota `/publicados` (HashRouter,
 
 ### "Remover do sistema" (escape hatch)
 
-Apaga só o registro daquela família publicada no nosso banco (não toca o ML), com aviso: "você perde o vínculo de UPDATE; o anúncio no ML continua". Para registros de teste já mortos no ML. Reaproveita a lógica de Storage da Feature 1 (remove imagens da família).
+Apaga só o registro daquela família publicada no nosso banco (não toca o ML), para registros de teste já mortos no ML. Reaproveita a lógica de Storage da Feature 1 (remove imagens da família).
+
+- **Aviso explícito (cross-lote):** o casamento de UPDATE é **global por `user_id` + `codigo_pai`** (não por lote — `ingest-lote` linhas 89-93). O diálogo deixa claro: "Você perde o vínculo de UPDATE para **todas as futuras planilhas** com o código {codigo_pai}, não só deste lote. O anúncio no ML continua ativo." Mostra o `codigo_pai` no diálogo.
+- **Guarda contra remoção perigosa:** bloqueia a remoção se **alguma família com o mesmo `codigo_pai`** estiver em status `publicando` em qualquer lote (um worker de UPDATE em andamento depende desse `ml_item_id`).
+- Reusa a mesma edge `excluir-lote`? **Não** — é uma operação diferente (remove 1 família publicada explicitamente, com as guardas próprias). Vai numa edge dedicada `remover-publicado` (ou um modo da `excluir-lote`); decisão fina fica para o plano. Recalcula contadores do lote de origem (mesma regra do trigger ausente).
 
 ### Mapeamento de status do ML → badge
 
@@ -114,33 +132,49 @@ Apaga só o registro daquela família publicada no nosso banco (não toca o ML),
 
 **Backend (edge functions):**
 - `excluir-lote/index.ts` (nova) + `_shared/lote/exclusao.ts` (`particionarExclusao`, puro, TDD).
-- `status-publicados/index.ts` (nova) + `_shared/ml/status.ts` (`parseStatusML`, puro, TDD) + cache Redis.
+- `remover-publicado/index.ts` (nova — remove 1 família publicada, com guarda de `publicando` por `codigo_pai`). Pode compartilhar helpers de Storage/recontagem com `excluir-lote`.
+- `status-publicados/index.ts` (nova) + `_shared/ml/status.ts` (`parseStatusML`, puro, TDD). **Sem Redis.**
 
 **Frontend:**
-- `LoteCard`: botão lixeira + diálogo de confirmação (`AlertDialog` shadcn) + hook `useExcluirLote`.
-- `pages/Publicados.tsx` (nova) + rota no `App.tsx` + item no menu do `AppShell`.
-- `lib/publicados.ts`: `filtrarPublicados` (puro) + adapters + `lib/queries` (fetch dos publicados).
-- `hooks/usePublicados.ts` + `hooks/useStatusPublicados.ts` (TanStack Query, refetch manual).
+- `LoteCard`: botão lixeira (desabilitado em `processando`/`publicando`) + diálogo de confirmação (`AlertDialog` shadcn) + hook `useExcluirLote`.
+- `pages/Publicados.tsx` (nova) + rota no `App.tsx` + **novo item em `src/components/sidebar.tsx` (`NAV_ITEMS`)** com ícone (`Package`/`ShoppingBag` do lucide-react).
+- `lib/publicados.ts`: tipo **`PublicadoItem`** + `publicadoFromRow` (adapter dedicado, não estende `Familia`) + `filtrarPublicados` (puro, TDD).
+- `lib/queries.ts`: `fetchPublicados` (famílias com `ml_item_id`).
+- `hooks/usePublicados.ts` + `hooks/useStatusPublicados.ts` (TanStack Query, `staleTime ~5min`, refetch manual) + `hooks/useRemoverPublicado.ts`.
 
-**Sem migration nova** (usa colunas existentes). **Sem mudança de schema.**
+**Sem migration nova** (usa colunas existentes; recontagem de contadores feita na edge, não via trigger). **Sem mudança de schema.**
 
 ## Tratamento de erros
 
 - Exclusão: falha de Storage não bloqueia a exclusão dos registros (órfão inofensivo); falha de banco → erro claro na UI, nada apagado pela metade (deletes numa ordem segura).
-- Status ao vivo: ML 404/erro → linha "indisponível", tela não quebra; cache Redis evita martelar a API; botão "Atualizar" para forçar.
+- Status ao vivo: ML 404/erro → linha "indisponível", tela não quebra; `staleTime` evita martelar a API; botão "Atualizar" força.
+
+## Casos de borda tratados (revisão do spec)
+
+1. **Trigger não cobre DELETE** → edge reconta `total_familias/total_publicadas/total_erros`.
+2. **Race com QStash** → bloqueia exclusão em `processando`/`publicando` (+ botão desabilitado).
+3. **Storage órfão** → limpa `planilha_path` + `imagens_paths` (menos os referenciados por publicadas sobreviventes); prefixo inteiro só quando 0 publicadas.
+4. **`fornecedor`/`publicadoEm` ausentes no front** → tipo `PublicadoItem` dedicado.
+5. **Sem credencial ML na tela Publicados** → tabela só com banco + banner pra conectar.
+6. **"Remover do sistema" com UPDATE ativo** → bloqueia se `codigo_pai` em `publicando` em qualquer lote.
+7. **Escopo cross-lote do vínculo** → aviso explícito no diálogo (perde UPDATE de TODAS as futuras planilhas do `codigo_pai`).
+8. **Lote `importando` (vazio)** → exclusão permitida (limpa upload falho).
+9. **Status do lote após exclusão parcial** → recalcula para `concluido` se só sobram publicadas.
+10. **`publicado_em` null** (worker crashou no meio) → UI mostra "—".
 
 ## Testes
 
-- `particionarExclusao`: publicadas preservadas, paths coletados, lote vazio vs com publicados.
+- `particionarExclusao`: publicadas preservadas; `pathsRemover` exclui os referenciados por publicadas; `pathsPreservar` correto; `loteVazio` (0 publicadas) vs com publicadas.
 - `parseStatusML`: cada status/sub_status → badge certo; 404/erro → indisponível.
 - `filtrarPublicados`: cada filtro isolado + combinados + busca.
-- Edge functions: idempotência/ownership validadas manualmente no bug bash (padrão do projeto).
+- Edge functions: guarda de status, recontagem de contadores, ownership e a guarda de `publicando` por `codigo_pai` validadas no bug bash com token real (padrão do projeto).
 
 ## Fora de escopo (YAGNI)
 
 - Métricas de desempenho (visitas/vendas) na tela Publicados — decidido começar enxuto (1 chamada batch).
 - Encerrar/editar anúncio no ML a partir da tela — o ML só é mexido subindo nova planilha.
 - Exclusão em massa de lotes — um a um por enquanto.
+- Cache Redis do status ao vivo — desnecessário no volume atual (19 itens = 1 chamada); reavaliar acima de ~100 itens.
 
 ## ADR
 
