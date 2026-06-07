@@ -3,9 +3,11 @@ interface PrecoModelo {
   output: number;
 }
 
+// $/1k tokens (preços reais OpenRouter): gpt-4o-mini $0.15/1M in · $0.60/1M out;
+// gpt-4o $2.50/1M in · $10.00/1M out. Antes estavam 100×/1000× inflados (tratados como $/1M).
 const PRECOS: Record<string, PrecoModelo> = {
-  'openai/gpt-4o-mini': { input: 0.015, output: 0.06 },
-  'openai/gpt-4o': { input: 2.50, output: 10.00 },
+  'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
+  'openai/gpt-4o': { input: 0.0025, output: 0.01 },
 };
 
 export interface UsageTokens {
