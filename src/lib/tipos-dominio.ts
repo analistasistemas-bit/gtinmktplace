@@ -103,6 +103,10 @@ export interface Variacao {
   mlVariationId: string | null;
   estoqueAnterior: number | null;
   custo: number | null;
+  pesoGramas: number | null;
+  alturaCm: number | null;
+  larguraCm: number | null;
+  comprimentoCm: number | null;
 }
 
 export interface Familia {

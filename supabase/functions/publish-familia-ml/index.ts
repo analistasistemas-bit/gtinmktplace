@@ -108,6 +108,14 @@ Deno.serve(async (req) => {
     }
 
     const ordenadas = ordenarVariacoesPrincipal(variacoesComFoto, familia.variacao_principal_codigo ?? null);
+    // Dimensões/peso (ADR-0018): da variação representativa (a principal, 1ª ordenada).
+    const rep = ordenadas[0];
+    const dimensoes = rep ? {
+      altura_cm: rep.altura_cm != null ? Number(rep.altura_cm) : null,
+      largura_cm: rep.largura_cm != null ? Number(rep.largura_cm) : null,
+      comprimento_cm: rep.comprimento_cm != null ? Number(rep.comprimento_cm) : null,
+      peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
+    } : null;
     const payload = montarPayloadItem(
       { titulo_ml: familia.titulo_ml, descricao_ml: familia.descricao_ml, categoria_ml_id: familia.categoria_ml_id, atributos_ml: familia.atributos_ml ?? [] },
       ordenadas.map((v) => ({ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id })),
@@ -115,6 +123,7 @@ Deno.serve(async (req) => {
       capa2PictureId,
       job.listing_type_id,
       desconto,
+      dimensoes,
     );
 
     const resultado = await criarItemML(token, payload);

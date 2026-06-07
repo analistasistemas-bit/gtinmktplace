@@ -106,6 +106,10 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     mlVariationId: r.ml_variation_id,
     estoqueAnterior: r.estoque_anterior,
     custo: r.custo != null ? Number(r.custo) : null,
+    pesoGramas: r.peso_gramas != null ? Number(r.peso_gramas) : null,
+    alturaCm: r.altura_cm != null ? Number(r.altura_cm) : null,
+    larguraCm: r.largura_cm != null ? Number(r.largura_cm) : null,
+    comprimentoCm: r.comprimento_cm != null ? Number(r.comprimento_cm) : null,
   };
 }
 

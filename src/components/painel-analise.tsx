@@ -1,8 +1,9 @@
-import { Coins, Tag, Store, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Coins, Tag, Store, AlertTriangle, TrendingUp, Truck } from 'lucide-react';
 import { CardVoceRecebe } from '@/components/card-voce-recebe';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMilhar } from '@/lib/formato';
+import { familiaSemDimensoesValidas } from '@/lib/publicavel';
 import type { Familia, TipoAviamento, Concorrencia } from '@/lib/tipos-dominio';
 
 function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
@@ -40,6 +41,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
   const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
   const temConcorrencia = familia.concorrenciaVendedores > 0;
   const categoriaIndefinida = !familia.categoriaMlId;
+  const semDimensoes = familiaSemDimensoesValidas(familia);
 
   return (
     <div className="flex flex-1 flex-col gap-2 rounded-lg border bg-background p-3">
@@ -52,6 +54,15 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <span className="text-destructive">
             Preço de publicação abaixo do mínimo aceitável (mais de 20% abaixo da planilha). Reveja antes de aprovar.
+          </span>
+        </div>
+      )}
+
+      {semDimensoes && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
+          <Truck className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span className="text-amber-700 dark:text-amber-400">
+            Sem dimensões/peso reais — o Mercado Livre vai <strong>estimar o frete</strong> (pode ficar alto e gerar moderação). Atualize a planilha com altura, largura, comprimento e peso reais.
           </span>
         </div>
       )}

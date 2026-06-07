@@ -94,6 +94,31 @@ describe('montarPayloadItem com 2a foto', () => {
   });
 });
 
+describe('montarPayloadItem com dimensões (ADR-0018)', () => {
+  it('mescla os SELLER_PACKAGE_* nos attributes quando válidas', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, undefined, null, {
+      altura_cm: 18, largura_cm: 7, comprimento_cm: 7, peso_gramas: 150,
+    });
+    const ids = p.attributes.map((a) => a.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      'BRAND', 'MODEL', 'SELLER_PACKAGE_HEIGHT', 'SELLER_PACKAGE_WIDTH', 'SELLER_PACKAGE_LENGTH', 'SELLER_PACKAGE_WEIGHT',
+    ]));
+    expect(p.attributes.find((a) => a.id === 'SELLER_PACKAGE_WEIGHT')?.value_name).toBe('150 g');
+  });
+
+  it('não adiciona pacote quando dimensões inválidas (placeholder 0,1cm)', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, undefined, null, {
+      altura_cm: 0.1, largura_cm: 0.1, comprimento_cm: 0.1, peso_gramas: 100,
+    });
+    expect(p.attributes.some((a) => a.id.startsWith('SELLER_PACKAGE'))).toBe(false);
+  });
+
+  it('não adiciona pacote quando dimensões ausentes (undefined)', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId);
+    expect(p.attributes.some((a) => a.id.startsWith('SELLER_PACKAGE'))).toBe(false);
+  });
+});
+
 describe('montarPayloadItem com desconto', () => {
   const fam = { titulo_ml: 'T', descricao_ml: null, categoria_ml_id: 'MLB255054', atributos_ml: [] };
   const vars = [{ codigo: '1', cor: 'Azul', estoque: 5, preco_publicacao: 12.29, gtin: null, ml_picture_id: null }];

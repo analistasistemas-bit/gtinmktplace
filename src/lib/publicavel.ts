@@ -44,3 +44,15 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
 
   return { ok: motivos.length === 0, motivos };
 }
+
+// Aviso (NÃO bloqueia — ADR-0018): família sem dimensões reais → o ML estima o
+// frete (e pode moderar por frete desproporcional). Olha a variação representativa
+// (principal, ou 1ª incluída), espelhando a regra da publicação.
+export function familiaSemDimensoesValidas(familia: Familia): boolean {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  if (incluidas.length === 0) return false;
+  const rep = incluidas.find((v) => v.codigo === familia.variacaoPrincipalCodigo) ?? incluidas[0];
+  const medidasOk = [rep.alturaCm, rep.larguraCm, rep.comprimentoCm].every((x) => x != null && x >= 1);
+  const pesoOk = rep.pesoGramas != null && rep.pesoGramas >= 1;
+  return !(medidasOk && pesoOk);
+}

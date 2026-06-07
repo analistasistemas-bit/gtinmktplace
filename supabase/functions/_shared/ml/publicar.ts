@@ -1,5 +1,6 @@
 import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
 import { calcularPrecoDe } from '../preco/desconto.ts';
+import { montarAtributosPacote, type DimensoesPacote } from './pacote.ts';
 
 export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
 export interface PictureRef { id: string; }
@@ -70,6 +71,7 @@ export function montarPayloadItem(
   capa2PictureId: string | null,
   listingTypeId: string = LISTING_TYPE_PADRAO,
   desconto?: { pct: number } | null,
+  dimensoes?: DimensoesPacote | null,
 ): PayloadItem {
   const comuns = [capaPictureId, capa2PictureId].filter((x): x is string => !!x);
   const picIds = [
@@ -111,6 +113,9 @@ export function montarPayloadItem(
     return variation;
   });
 
+  // Dimensões/peso (ADR-0018): SELLER_PACKAGE_* da variação representativa. Inválido → [] (ML estima).
+  const atributosPacote = dimensoes ? montarAtributosPacote(dimensoes) : [];
+
   return {
     title: familia.titulo_ml ?? '',
     category_id: familia.categoria_ml_id ?? '',
@@ -119,7 +124,7 @@ export function montarPayloadItem(
     listing_type_id: listingTypeId,
     condition: CONDITION,
     pictures,
-    attributes: familia.atributos_ml ?? [],
+    attributes: [...(familia.atributos_ml ?? []), ...atributosPacote],
     variations,
   };
 }

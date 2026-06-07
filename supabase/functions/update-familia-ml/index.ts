@@ -5,6 +5,7 @@ import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
 import { atualizarSecaoCores, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
+import { montarAtributosPacote } from '../_shared/ml/pacote.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 
@@ -52,7 +53,7 @@ Deno.serve(async (req) => {
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
     const { data: variacoes } = await admin.from('variacoes')
-      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id')
+      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', job.familia_id)
       .eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Nenhuma cor incluída para atualizar (400)');
@@ -129,8 +130,20 @@ Deno.serve(async (req) => {
 
     // ADR-0016 (adendo 2026-06-05): sincroniza só o BRAND no UPDATE a partir do fornecedor,
     // preservando os demais atributos. Sem fornecedor → não envia (não sobrescreve com "Avil").
+    // ADR-0018: também sincroniza dimensões/peso (SELLER_PACKAGE_*) da variação representativa
+    // (principal, ou 1ª) — inválido → omite (ML mantém o que tiver). Corrige frete pós-publicação.
     const marca = (familia.fornecedor as string | null)?.trim();
-    const atributosItem = marca ? [{ id: 'BRAND', value_name: marca }] : [];
+    const repUpd = variacoes.find((v) => v.codigo === familia.variacao_principal_codigo) ?? variacoes[0];
+    const dimensoesUpd = repUpd ? {
+      altura_cm: repUpd.altura_cm != null ? Number(repUpd.altura_cm) : null,
+      largura_cm: repUpd.largura_cm != null ? Number(repUpd.largura_cm) : null,
+      comprimento_cm: repUpd.comprimento_cm != null ? Number(repUpd.comprimento_cm) : null,
+      peso_gramas: repUpd.peso_gramas != null ? Number(repUpd.peso_gramas) : null,
+    } : null;
+    const atributosItem = [
+      ...(marca ? [{ id: 'BRAND', value_name: marca }] : []),
+      ...(dimensoesUpd ? montarAtributosPacote(dimensoesUpd) : []),
+    ];
     // Ao criar variação nova, a foto dela precisa estar também no item.pictures
     // (regra do ML: item.pictures.invalid.missing_ids). Reenvia o item.pictures =
     // fotos atuais + as fotos das variações novas (dedup). Inclui capa2 quando presente.
