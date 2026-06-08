@@ -150,9 +150,10 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
                 href={familia.mlPermalink}
                 target="_blank"
                 rel="noreferrer"
-                className="hover:underline"
+                aria-label={familia.operacao === 'UPDATE' ? 'Abrir anúncio atualizado no Mercado Livre' : 'Abrir anúncio publicado no Mercado Livre'}
+                className="rounded-full underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <StatusPill tone="success">
+                <StatusPill tone="success" className="hover:bg-success/20">
                   {familia.operacao === 'UPDATE' ? '✓ atualizado ↗' : '✓ publicado ↗'}
                 </StatusPill>
               </a>
