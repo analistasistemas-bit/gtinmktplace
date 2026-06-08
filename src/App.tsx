@@ -11,6 +11,7 @@ import Revisao from '@/pages/Revisao';
 import RevisaoIndex from '@/pages/RevisaoIndex';
 import Relatorio from '@/pages/Relatorio';
 import Configuracoes from '@/pages/Configuracoes';
+import Publicados from '@/pages/Publicados';
 import NotFound from '@/pages/NotFound';
 
 export function AppRoutes() {
@@ -29,6 +30,7 @@ export function AppRoutes() {
           <Route path="/revisao/:loteId" element={<Revisao />} />
           <Route path="/relatorio/:loteId" element={<Relatorio />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/publicados" element={<Publicados />} />
         </Route>
       </Route>
 

@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, ListChecks, Settings } from 'lucide-react';
+import { LayoutDashboard, Upload, ListChecks, Settings, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/novo-lote', label: 'Novo lote', icon: Upload, end: false },
   { to: '/revisao', label: 'Revisão', icon: ListChecks, end: false },
+  { to: '/publicados', label: 'Publicados', icon: Package, end: false },
   { to: '/configuracoes', label: 'Configurações', icon: Settings, end: false },
 ];
 
