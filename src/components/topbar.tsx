@@ -1,17 +1,29 @@
+import { Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/hooks/useAuth';
-import { signOut } from '@/lib/auth';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { UserMenu } from '@/components/user-menu';
+import { BrandMark } from '@/components/sidebar';
 
-export function Topbar() {
-  const { user } = useAuth();
+export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
   return (
-    <header className="flex h-11 items-center justify-between border-b bg-background px-4 text-sm">
-      <div className="text-muted-foreground">PubliAI</div>
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-muted-foreground">{user?.email}</span>
-        <Button size="sm" variant="ghost" onClick={() => signOut()}>
-          Sair
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b bg-background/80 px-4 backdrop-blur">
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="lg:hidden"
+          onClick={onOpenMobile}
+          aria-label="Abrir menu"
+        >
+          <Menu className="h-5 w-5" />
         </Button>
+        <div className="lg:hidden">
+          <BrandMark />
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        <ThemeToggle />
+        <UserMenu />
       </div>
     </header>
   );
