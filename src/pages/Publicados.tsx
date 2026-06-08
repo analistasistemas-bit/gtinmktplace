@@ -183,6 +183,13 @@ export default function Publicados() {
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
 
   const [filtro, setFiltro] = useState<FiltroPublicados>({});
+  const [removendoId, setRemovendoId] = useState<string | null>(null);
+
+  // Desabilita só a linha em remoção (não todas).
+  const handleRemover = (familiaId: string) => {
+    setRemovendoId(familiaId);
+    remover(familiaId, { onSettled: () => setRemovendoId(null) });
+  };
 
   // Merge status ao vivo
   const statusMap = new Map((statusData?.itens ?? []).map((s) => [s.ml_item_id, s]));
@@ -339,8 +346,8 @@ export default function Publicados() {
                     <LinhaTabela
                       key={item.familiaId}
                       item={item}
-                      onRemover={remover}
-                      removendo={removendo}
+                      onRemover={handleRemover}
+                      removendo={removendo && removendoId === item.familiaId}
                     />
                   ))
                 )}

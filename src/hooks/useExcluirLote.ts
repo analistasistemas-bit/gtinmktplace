@@ -10,6 +10,8 @@ export function useExcluirLote() {
     onSuccess: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) qc.invalidateQueries({ queryKey: QK.lotes(user.id) });
+      // Lote misto: famílias publicadas sobrevivem → a tela Publicados pode mudar.
+      qc.invalidateQueries({ queryKey: QK.publicados });
     },
   });
 }
