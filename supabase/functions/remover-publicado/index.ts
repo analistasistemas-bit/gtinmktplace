@@ -2,6 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { pathsDaFamilia } from '../_shared/lote/exclusao.ts';
+import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -18,6 +19,11 @@ Deno.serve(async (req) => {
     .select('id, user_id, lote_id, codigo_pai, ml_item_id, capa_storage_path, capa2_storage_path, variacoes(imagem_path)')
     .eq('id', familia_id).maybeSingle();
   if (!familia || familia.user_id !== user.id) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
+  // Invariante ADR-0019: este escape hatch só remove famílias PUBLICADAS.
+  if (!familia.ml_item_id) {
+    return new Response(JSON.stringify({ erro: 'Família não publicada — nada a remover aqui.' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
 
   // Guarda: bloqueia se há família com o mesmo codigo_pai em 'publicando' (UPDATE em voo depende do ml_item_id)
   const { data: emVoo } = await admin.from('familias')
@@ -40,16 +46,8 @@ Deno.serve(async (req) => {
   const loteId = familia.lote_id;
   await admin.from('familias').delete().eq('id', familia_id);
 
-  let loteRemovido = false;
-  const { data: rest } = await admin.from('familias').select('status').eq('lote_id', loteId);
-  if (!rest || rest.length === 0) {
-    await admin.from('lotes').delete().eq('id', loteId);
-    loteRemovido = true;
-  } else {
-    let publicadas = 0, erros = 0;
-    for (const f of rest) { if (f.status === 'publicado') publicadas++; else if (f.status === 'erro') erros++; }
-    await admin.from('lotes').update({ total_familias: rest.length, total_publicadas: publicadas, total_erros: erros }).eq('id', loteId);
-  }
+  // Remover 1 anúncio não "conclui" o lote → setConcluido=false.
+  const loteRemovido = await recontarOuRemoverLote(admin, loteId, false);
 
   return new Response(JSON.stringify({ ok: true, lote_removido: loteRemovido }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });

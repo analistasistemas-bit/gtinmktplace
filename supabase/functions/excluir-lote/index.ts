@@ -2,6 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { particionarExclusao, type FamiliaExclusao } from '../_shared/lote/exclusao.ts';
+import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 
 const BLOQUEADOS = ['processando', 'publicando'];
 
@@ -41,21 +42,8 @@ Deno.serve(async (req) => {
   const ids = part.paraExcluir.map((f) => f.id);
   if (ids.length > 0) await admin.from('familias').delete().in('id', ids);
 
-  let loteRemovido = false;
-  if (part.loteVazio) {
-    await admin.from('lotes').delete().eq('id', lote_id);
-    loteRemovido = true;
-  } else {
-    const { data: rest } = await admin.from('familias')
-      .select('status, ml_item_id').eq('lote_id', lote_id);
-    const total = rest?.length ?? 0;
-    // Recontar pela MESMA base do trigger update_lote_counters: status='publicado'.
-    const publicadas = rest?.filter((f) => f.status === 'publicado').length ?? 0;
-    const erros = rest?.filter((f) => f.status === 'erro').length ?? 0;
-    await admin.from('lotes').update({
-      total_familias: total, total_publicadas: publicadas, total_erros: erros, status: 'concluido',
-    }).eq('id', lote_id);
-  }
+  // Reconta (ou remove se vazio) a partir do estado real do DB. Sobrou só publicada → concluido.
+  const loteRemovido = await recontarOuRemoverLote(admin, lote_id, true);
 
   return new Response(JSON.stringify({
     familias_removidas: ids.length, imagens_removidas: part.pathsRemover.length,

@@ -91,13 +91,14 @@ interface LinhaProps {
   removendo: boolean;
 }
 
+const CONTEUDO_ML = (
+  <>
+    <ExternalLink className="mr-1 h-3 w-3" />
+    ML
+  </>
+);
+
 function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
-  const conteudoML = (
-    <>
-      <ExternalLink className="mr-1 h-3 w-3" />
-      ML
-    </>
-  );
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
       <td className="px-3 py-2">
@@ -129,9 +130,9 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
             className="h-7 px-2 text-xs"
           >
             {item.mlPermalink ? (
-              <a href={item.mlPermalink} target="_blank" rel="noreferrer">{conteudoML}</a>
+              <a href={item.mlPermalink} target="_blank" rel="noreferrer">{CONTEUDO_ML}</a>
             ) : (
-              <span>{conteudoML}</span>
+              <span>{CONTEUDO_ML}</span>
             )}
           </Button>
 
@@ -191,14 +192,17 @@ export default function Publicados() {
     remover(familiaId, { onSettled: () => setRemovendoId(null) });
   };
 
-  // Merge status ao vivo
-  const statusMap = new Map((statusData?.itens ?? []).map((s) => [s.ml_item_id, s]));
-  const merged: PublicadoItem[] = publicados.map((item) => {
-    const s = statusMap.get(item.mlItemId);
-    return s
-      ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo }
-      : { ...item, status: 'indisponivel' as StatusPublicado };
-  });
+  // Merge status ao vivo (memoizado: só recomputa quando publicados/statusData mudam,
+  // não a cada tecla na busca).
+  const merged: PublicadoItem[] = useMemo(() => {
+    const statusMap = new Map((statusData?.itens ?? []).map((s) => [s.ml_item_id, s]));
+    return publicados.map((item) => {
+      const s = statusMap.get(item.mlItemId);
+      return s
+        ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo }
+        : { ...item, status: 'indisponivel' as StatusPublicado };
+    });
+  }, [publicados, statusData]);
 
   const itensExibidos = filtrarPublicados(merged, filtro);
 

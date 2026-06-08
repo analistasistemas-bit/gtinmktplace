@@ -31,24 +31,26 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ semCredencialML: true, itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  const porId = new Map<string, ItemMLStatus | null>();
-  for (const bloco of chunk(ids, 20)) {
+  // Chunks em paralelo (latência O(1) em vez de O(n/20) serial).
+  const respostas = await Promise.all(chunk(ids, 20).map(async (bloco) => {
     const url = `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,status,sub_status,available_quantity,price`;
     try {
       const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!resp.ok) { console.warn(`status-publicados ML ${resp.status} (bloco)`); continue; }
+      if (!resp.ok) { console.warn(`status-publicados ML ${resp.status} (bloco)`); return []; }
       const arr = await resp.json(); // [{ code, body }]
-      if (Array.isArray(arr)) {
-        for (const entry of arr) {
-          const body = entry?.body;
-          const id = body?.id;
-          if (entry?.code === 200 && id) porId.set(id, body as ItemMLStatus);
-          else if (id) porId.set(id, null);
-        }
-      }
+      return Array.isArray(arr) ? arr : [];
     } catch (e) {
       console.warn('status-publicados ML falhou (bloco):', (e as Error).message);
+      return [];
     }
+  }));
+
+  const porId = new Map<string, ItemMLStatus | null>();
+  for (const entry of respostas.flat()) {
+    const body = entry?.body;
+    const id = body?.id;
+    if (entry?.code === 200 && id) porId.set(id, body as ItemMLStatus);
+    else if (id) porId.set(id, null);
   }
 
   const itens = ids.map((id) => ({ ml_item_id: id, ...parseStatusML(porId.get(id) ?? null) }));
