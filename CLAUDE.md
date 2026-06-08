@@ -110,6 +110,7 @@ Quando o assunto for um destes tópicos, **leia o ADR antes de propor mudança**
 - Edge Functions devem ser **idempotentes** (verificar `status` antes de processar — padrão completo em [ADR-0006](docs/decisions/0006-qstash-em-vez-de-postgres-queue.md))
 - **Sem comentários explicando o "o que"** — só o "porquê" quando não-óbvio
 - **Sem código morto** — funcionalidades não-pedidas ficam de fora
+- **UI / shadcn (React 18):** o projeto roda **React 18**, mas os componentes shadcn estilo `radix-nova` (`components.json`) são gerados para **React 19** (ref como prop comum). Todo primitivo interativo em `src/components/ui/` que renderiza um elemento host (button/input/textarea/span…) **DEVE usar `React.forwardRef`** — senão triggers `asChild` que dependem do ref (ex.: `DropdownMenuTrigger` → Popper) quebram **só no navegador** (o jsdom não pega). Ao adicionar/regenerar um primitivo via CLI do shadcn, conferir o `forwardRef`. Guard: `tests/components/ui-ref-forwarding.test.tsx`.
 
 ### Banco de dados
 - **4 tabelas:** `lotes`, `familias`, `variacoes`, `ml_credentials`
