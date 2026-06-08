@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react';
-import { RefreshCw, ExternalLink, Trash2 } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -103,7 +110,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
     <tr className="border-b transition-colors hover:bg-muted/30">
       <td className="px-3 py-2">
         <div className="max-w-[220px]">
-          <p className="truncate text-sm font-medium">{item.titulo}</p>
+          <p className="truncate text-sm font-medium uppercase">{item.titulo}</p>
           <p className="text-xs text-muted-foreground">{item.codigoPai}</p>
         </div>
       </td>
@@ -122,6 +129,28 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
       <td className="px-3 py-2 text-sm">{fmtData(item.publicadoEm)}</td>
       <td className="px-3 py-2">
         <div className="flex items-center gap-1">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={!item.descricao}
+              >
+                <FileText className="mr-1 h-3 w-3" />
+                Descrição
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="uppercase">{item.titulo}</DialogTitle>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground">
+                {item.descricao}
+              </div>
+            </DialogContent>
+          </Dialog>
+
           <Button
             asChild
             variant="ghost"

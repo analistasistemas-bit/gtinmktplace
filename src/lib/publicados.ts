@@ -15,6 +15,7 @@ export interface PublicadoItem {
   fornecedor: string | null;
   tipo: TipoAviamento | null;
   precoPublicacao: number;
+  descricao: string | null;
   mlItemId: string;
   mlPermalink: string | null;
   publicadoEm: string | null;

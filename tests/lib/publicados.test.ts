@@ -10,6 +10,7 @@ const fixtures: PublicadoItem[] = [
     fornecedor: 'Avil',
     tipo: 'fita',
     precoPublicacao: 12.9,
+    descricao: 'Fita cetim vermelha de alta qualidade.',
     mlItemId: 'MLB111',
     mlPermalink: null,
     publicadoEm: '2026-06-01T00:00:00Z',
@@ -25,6 +26,7 @@ const fixtures: PublicadoItem[] = [
     fornecedor: 'Coats',
     tipo: 'linha',
     precoPublicacao: 8.5,
+    descricao: null,
     mlItemId: 'MLB222',
     mlPermalink: 'https://ml.com/MLB222',
     publicadoEm: '2026-06-02T00:00:00Z',
@@ -40,6 +42,7 @@ const fixtures: PublicadoItem[] = [
     fornecedor: 'Avil',
     tipo: 'botao',
     precoPublicacao: 4.0,
+    descricao: null,
     mlItemId: 'MLB333',
     mlPermalink: 'https://ml.com/MLB333',
     publicadoEm: '2026-06-03T00:00:00Z',
@@ -55,6 +58,7 @@ const fixtures: PublicadoItem[] = [
     fornecedor: 'Coats',
     tipo: 'fita',
     precoPublicacao: 6.75,
+    descricao: null,
     mlItemId: 'MLB444',
     mlPermalink: null,
     publicadoEm: null,
@@ -114,7 +118,7 @@ describe('filtrarPublicados', () => {
 describe('dedupePublicados', () => {
   const base = (over: Partial<PublicadoItem>): PublicadoItem => ({
     familiaId: 'x', codigoPai: '001', titulo: 'Produto', fornecedor: null,
-    tipo: 'fita', precoPublicacao: 10, mlItemId: 'MLB1', mlPermalink: null,
+    tipo: 'fita', precoPublicacao: 10, descricao: null, mlItemId: 'MLB1', mlPermalink: null,
     publicadoEm: null, ...over,
   });
 
