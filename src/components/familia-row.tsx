@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useDescontoPct } from '@/hooks/useConfiguracoes';
 import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/useFamiliaMutations';
@@ -44,11 +45,11 @@ function DescontoControle({ familia }: { familia: Familia }) {
       <span>Exibir com desconto</span>
       {familia.exibirComDesconto && (
         <>
-          <input
+          <Input
             type="number"
             min={0}
             max={99}
-            className="w-14 rounded border px-1"
+            className="w-14"
             defaultValue={familia.descontoPct ?? globalPct ?? 15}
             onBlur={(e) => {
               const n = Number(e.target.value);
@@ -90,7 +91,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
     <div
       className={cn(
         'border-b',
-        familia.editadoPeloOperador && 'border-l-2 border-l-purple-500'
+        familia.editadoPeloOperador && 'border-l-2 border-l-primary'
       )}
     >
     <div
@@ -124,24 +125,24 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
           {!publicado && familia.operacao === 'UPDATE' && (
-            <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+            <StatusPill tone="info">
               {coresComEstoqueAlterado > 0
                 ? `estoque: ${coresComEstoqueAlterado} cor(es)`
                 : 'sem mudança de estoque'}
-            </span>
+            </StatusPill>
           )}
           {familia.variacoesSemCor > 0 && (
-            <span className="rounded bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+            <StatusPill tone="danger">
               ⚠ {familia.variacoesSemCor} sem cor
-            </span>
+            </StatusPill>
           )}
           {!publicado && !pub.ok && (
-            <span
-              className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+            <StatusPill
+              tone="warning"
               title={pub.motivos.join('\n')}
             >
               🔒 {pub.motivos[0]}{pub.motivos.length > 1 ? ` (+${pub.motivos.length - 1})` : ''}
-            </span>
+            </StatusPill>
           )}
           {publicado && (
             familia.mlPermalink ? (
@@ -149,34 +150,36 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
                 href={familia.mlPermalink}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800 hover:underline"
+                className="hover:underline"
               >
-                {familia.operacao === 'UPDATE' ? '✓ atualizado ↗' : '✓ publicado ↗'}
+                <StatusPill tone="success">
+                  {familia.operacao === 'UPDATE' ? '✓ atualizado ↗' : '✓ publicado ↗'}
+                </StatusPill>
               </a>
             ) : (
-              <span className="rounded bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-800">
+              <StatusPill tone="success">
                 {familia.operacao === 'UPDATE' ? '✓ atualizado' : '✓ publicado'}
-              </span>
+              </StatusPill>
             )
           )}
           {familia.mudancaEstrutural && (
-            <span
-              className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+            <StatusPill
+              tone="warning"
               title={[
                 familia.mudancaEstrutural.novas.length ? `${familia.mudancaEstrutural.novas.length} cor(es) nova(s)` : '',
                 familia.mudancaEstrutural.removidas.length ? `${familia.mudancaEstrutural.removidas.length} cor(es) removida(s)` : '',
               ].filter(Boolean).join(' · ')}
             >
               ⚠ mudança estrutural
-            </span>
+            </StatusPill>
           )}
         </div>
       </div>
-      <Badge variant={familia.operacao === 'CREATE' ? 'default' : 'secondary'}>
+      <StatusPill tone={familia.operacao === 'CREATE' ? 'info' : 'neutral'}>
         {familia.operacao}
-      </Badge>
+      </StatusPill>
       <div className="flex items-center gap-1">
-        <span>
+        <span className="tabular-nums">
           R$ {formatarBRL(precoVendaMin)}
           {precoVendaMin !== precoVendaMax && `-${formatarBRL(precoVendaMax)}`}
         </span>

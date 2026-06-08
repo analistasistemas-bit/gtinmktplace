@@ -15,12 +15,14 @@ interface StatusPillProps {
   tone?: StatusTone;
   children: ReactNode;
   className?: string;
+  title?: string;
 }
 
-export function StatusPill({ tone = 'neutral', children, className }: StatusPillProps) {
+export function StatusPill({ tone = 'neutral', children, className, title }: StatusPillProps) {
   return (
     <span
       data-tone={tone}
+      title={title}
       className={cn('inline-flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium', TONE_CLASSES[tone], className)}
     >
       {children}
