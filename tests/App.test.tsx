@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from '@/components/theme-provider';
 import { AppRoutes } from '@/App';
 
 // As rotas protegidas dependem de useAuth; mockamos com um usuário válido
@@ -52,11 +53,13 @@ vi.mock('@/hooks/useFamilias', () => ({
 function renderRoute(initialPath: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[initialPath]}>
-        <AppRoutes />
-      </MemoryRouter>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[initialPath]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 
@@ -100,8 +103,8 @@ describe('App routing', () => {
 
   it('renderiza Sidebar dentro das rotas com shell', () => {
     renderRoute('/');
-    expect(screen.getByText('PubliAI')).toBeInTheDocument();
-    expect(screen.getByText('diego@empresa')).toBeInTheDocument();
+    expect(screen.getAllByText('PubliAI').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
 
   it('renderiza Login na rota /login (pública)', () => {

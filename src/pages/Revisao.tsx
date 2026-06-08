@@ -3,8 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/ui/page-header';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
@@ -160,42 +163,50 @@ export default function Revisao() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b bg-background p-3 text-sm">
-        <Input
-          placeholder="Buscar por código ou nome..."
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          className="max-w-xs"
+      <div className="border-b bg-background px-4 pt-4 pb-0">
+        <PageHeader
+          title="Revisão"
+          subtitle={`${familias.length} famílias`}
+          className="mb-3"
+          actions={
+            loteId && familias.length > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => toggleLote.mutate(!todasComDesconto)}
+              >
+                {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
+              </Button>
+            ) : undefined
+          }
         />
-        {(['todos', 'CREATE', 'UPDATE', 'avisos', 'incompletas'] as FiltroOp[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFiltro(f)}
-            className={
-              filtro === f
-                ? 'rounded-md bg-accent px-3 py-1 font-medium'
-                : 'rounded-md px-3 py-1 text-muted-foreground hover:bg-accent/50'
-            }
-          >
-            {f === 'todos'
-              ? `Todos (${counts.todos})`
-              : f === 'avisos'
-              ? `⚠ Avisos (${counts.avisos})`
-              : f === 'incompletas'
-              ? `🔒 Incompletas (${counts.incompletas})`
-              : `${f} (${counts[f]})`}
-          </button>
-        ))}
-        {loteId && familias.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={() => toggleLote.mutate(!todasComDesconto)}
-          >
-            {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
-          </Button>
-        )}
+        <div className="flex items-center gap-3 pb-3">
+          <Tabs value={filtro} onValueChange={(v) => setFiltro(v as FiltroOp)}>
+            <TabsList>
+              <TabsTrigger value="todos">
+                Todos <Badge variant="secondary" className="ml-1.5">{counts.todos}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="CREATE">
+                CREATE <Badge variant="secondary" className="ml-1.5">{counts.CREATE}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="UPDATE">
+                UPDATE <Badge variant="secondary" className="ml-1.5">{counts.UPDATE}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="avisos">
+                Avisos <Badge variant="secondary" className="ml-1.5">{counts.avisos}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="incompletas">
+                Incompletas <Badge variant="secondary" className="ml-1.5">{counts.incompletas}</Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Input
+            placeholder="Buscar por código ou nome..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="max-w-xs"
+          />
+        </div>
       </div>
       {filtro === 'avisos' && (
         <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
@@ -251,7 +262,7 @@ export default function Revisao() {
         )}
       </div>
       {selecionadas.size > 0 && (
-        <div className="flex items-center justify-between border-t bg-background px-4 py-3">
+        <div className="sticky bottom-0 flex items-center justify-between border-t bg-background/95 px-4 py-3 shadow-md backdrop-blur">
           <div className="text-sm text-muted-foreground">
             {selecionadas.size} família(s) · {coresSelecionadas} cor(es) selecionada(s)
           </div>
@@ -288,8 +299,8 @@ export default function Revisao() {
                     onClick={() => setListingType(opt.v)}
                     className={
                       listingType === opt.v
-                        ? 'flex-1 rounded-md border-2 border-primary bg-accent px-3 py-2 text-left'
-                        : 'flex-1 rounded-md border px-3 py-2 text-left text-muted-foreground hover:bg-accent/50'
+                        ? 'flex-1 rounded-lg border-2 border-primary bg-accent px-3 py-2 text-left'
+                        : 'flex-1 rounded-lg border px-3 py-2 text-left text-muted-foreground hover:bg-accent/50'
                     }
                   >
                     <span className="block text-sm font-medium text-foreground">{opt.rotulo}</span>

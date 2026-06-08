@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { Camera, Sparkles, Trash2 } from 'lucide-react';
+import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -369,9 +370,9 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                   }}
                 />
                 {familia.operacao === 'UPDATE' && !v.mlVariationId && (
-                  <span className="mt-2 shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                  <StatusPill tone="success" className="mt-2 shrink-0">
                     nova
-                  </span>
+                  </StatusPill>
                 )}
                 {familia.operacao === 'CREATE' && !v.excluidaDaPublicacao && (
                   <label className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
@@ -382,7 +383,7 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
                       onChange={() => updatePrincipal.mutate({ familiaId: familia.id, codigo: v.codigo })}
                     />
                     {familia.variacaoPrincipalCodigo === v.codigo ? (
-                      <span className="rounded bg-blue-100 px-1 font-medium text-blue-700">principal</span>
+                      <StatusPill tone="info">principal</StatusPill>
                     ) : 'principal'}
                   </label>
                 )}
