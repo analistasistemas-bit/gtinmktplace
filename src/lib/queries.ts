@@ -13,11 +13,14 @@ import type {
   AnaliseMercado,
 } from './tipos-dominio';
 import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
+import type { PublicadoItem, StatusPublicado } from './publicados';
 
 export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
   lote: (loteId: string) => ['lote', loteId] as const,
   familias: (loteId: string) => ['familias', loteId] as const,
+  publicados: ['publicados'] as const,
+  statusPublicados: ['statusPublicados'] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];
@@ -316,4 +319,69 @@ export async function toggleDescontoLote(loteId: string, exibir: boolean): Promi
   const { error } = await supabase.from('familias')
     .update({ exibir_com_desconto: exibir }).eq('lote_id', loteId);
   if (error) throw error;
+}
+
+// ============================================================================
+// Publicados
+// ============================================================================
+
+export function publicadoFromRow(r: FamiliaRow & { variacoes: Pick<VariacaoRow, 'preco_publicacao' | 'excluida_da_publicacao'>[] }): PublicadoItem {
+  const incl = (r.variacoes ?? []).filter((v) => !v.excluida_da_publicacao);
+  const base = incl.length > 0 ? incl : (r.variacoes ?? []);
+  const precos = base
+    .map((v) => Number(v.preco_publicacao))
+    .filter((n) => !Number.isNaN(n) && n > 0);
+  return {
+    familiaId: r.id,
+    codigoPai: r.codigo_pai,
+    titulo: r.titulo_ml ?? r.nome_pai ?? '(sem título)',
+    fornecedor: r.fornecedor ?? null,
+    tipo: r.tipo_aviamento ?? null,
+    precoPublicacao: precos.length ? Math.min(...precos) : 0,
+    mlItemId: r.ml_item_id!,
+    mlPermalink: r.ml_permalink ?? null,
+    publicadoEm: r.publicado_em ?? null,
+  };
+}
+
+export async function fetchPublicados(): Promise<PublicadoItem[]> {
+  const { data, error } = await supabase
+    .from('familias')
+    .select('id, codigo_pai, titulo_ml, nome_pai, fornecedor, tipo_aviamento, ml_item_id, ml_permalink, publicado_em, variacoes(preco_publicacao, excluida_da_publicacao)')
+    .not('ml_item_id', 'is', null)
+    .order('publicado_em', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: Pick<VariacaoRow, 'preco_publicacao' | 'excluida_da_publicacao'>[] }));
+}
+
+export interface StatusPublicadoItem {
+  ml_item_id: string;
+  status: StatusPublicado;
+  motivo: string | null;
+  estoque: number | null;
+  preco: number | null;
+}
+
+export interface ResultadoStatusPublicados {
+  itens: StatusPublicadoItem[];
+  semCredencialML?: boolean;
+}
+
+export async function fetchStatusPublicados(): Promise<ResultadoStatusPublicados> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sem sessão');
+  const resp = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/status-publicados`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({}),
+    }
+  );
+  const json = await resp.json().catch(() => ({ itens: [] }));
+  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  return json as ResultadoStatusPublicados;
 }
