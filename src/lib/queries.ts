@@ -14,6 +14,7 @@ import type {
 } from './tipos-dominio';
 import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 import type { PublicadoItem, StatusPublicado } from './publicados';
+import { dedupePublicados } from './publicados';
 
 export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
@@ -351,7 +352,10 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: Pick<VariacaoRow, 'preco_publicacao' | 'excluida_da_publicacao'>[] }));
+  // 1 linha por anúncio (ml_item_id) — várias famílias compartilham o mesmo após ciclos de UPDATE.
+  return dedupePublicados(
+    (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: Pick<VariacaoRow, 'preco_publicacao' | 'excluida_da_publicacao'>[] })),
+  );
 }
 
 export interface StatusPublicadoItem {

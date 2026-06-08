@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filtrarPublicados } from '../../src/lib/publicados';
+import { filtrarPublicados, dedupePublicados } from '../../src/lib/publicados';
 import type { PublicadoItem } from '../../src/lib/publicados';
 
 const fixtures: PublicadoItem[] = [
@@ -108,5 +108,51 @@ describe('filtrarPublicados', () => {
     expect(resultStatus.map((i) => i.familiaId)).toEqual(['f2']);
     expect(resultCombinado.map((i) => i.familiaId)).toEqual(['f2']);
     expect(resultCombinado.length).toBeLessThanOrEqual(resultFornecedor.length);
+  });
+});
+
+describe('dedupePublicados', () => {
+  const base = (over: Partial<PublicadoItem>): PublicadoItem => ({
+    familiaId: 'x', codigoPai: '001', titulo: 'Produto', fornecedor: null,
+    tipo: 'fita', precoPublicacao: 10, mlItemId: 'MLB1', mlPermalink: null,
+    publicadoEm: null, ...over,
+  });
+
+  it('colapsa várias linhas do mesmo ml_item_id em uma só', () => {
+    const out = dedupePublicados([
+      base({ familiaId: 'a' }), base({ familiaId: 'b' }), base({ familiaId: 'c' }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].mlItemId).toBe('MLB1');
+  });
+
+  it('mantém ml_item_ids distintos separados', () => {
+    const out = dedupePublicados([base({ mlItemId: 'MLB1' }), base({ mlItemId: 'MLB2' })]);
+    expect(out.map((i) => i.mlItemId).sort()).toEqual(['MLB1', 'MLB2']);
+  });
+
+  it('representante: publicado real (publicadoEm) vence o não publicado', () => {
+    const out = dedupePublicados([
+      base({ familiaId: 'draft', publicadoEm: null }),
+      base({ familiaId: 'real', publicadoEm: '2026-06-05T00:00:00Z' }),
+    ]);
+    expect(out[0].familiaId).toBe('real');
+  });
+
+  it('entre publicados, escolhe o mais antigo (publicação original)', () => {
+    const out = dedupePublicados([
+      base({ familiaId: 'novo', publicadoEm: '2026-06-07T00:00:00Z' }),
+      base({ familiaId: 'orig', publicadoEm: '2026-06-04T00:00:00Z' }),
+    ]);
+    expect(out[0].familiaId).toBe('orig');
+  });
+
+  it('preenche fornecedor de qualquer linha do grupo quando o representante não tem', () => {
+    const out = dedupePublicados([
+      base({ familiaId: 'rep', publicadoEm: '2026-06-04T00:00:00Z', fornecedor: null }),
+      base({ familiaId: 'comFornecedor', publicadoEm: null, fornecedor: 'BUFALO' }),
+    ]);
+    expect(out[0].familiaId).toBe('rep');
+    expect(out[0].fornecedor).toBe('BUFALO');
   });
 });
