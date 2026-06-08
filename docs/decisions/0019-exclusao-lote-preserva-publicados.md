@@ -33,3 +33,11 @@ A restrição central: o `ingest-lote` decide CREATE vs UPDATE buscando família
 - A tela "Publicados" vira o inventário operacional (saúde dos anúncios + caça a moderados/mortos).
 - A recontagem na edge duplica a lógica do trigger para o caso DELETE (aceito; documentado aqui).
 - Sem migration nova; sem mudança de schema.
+
+---
+
+## Adendo (2026-06-08) — "Remover do sistema" corta TODOS os vínculos do código (achado do Codex)
+
+Revisão do Codex (P2) apontou que o vínculo de UPDATE é **global por `(user_id, codigo_pai, ml_item_id not null)`** — o `ingest-lote` casa por `codigo_pai`. Após ciclos de UPDATE, existem **várias** linhas publicadas do mesmo `codigo_pai` (uma por lote). A versão inicial do `remover-publicado` apagava só o `familia_id` selecionado, então outra linha ainda satisfazia a busca → a próxima planilha continuava virando UPDATE no anúncio morto (o objetivo do escape hatch não se cumpria).
+
+**Correção:** `remover-publicado` passa a apagar **todas** as famílias publicadas (`ml_item_id not null`) do mesmo `codigo_pai` do usuário — limpando o Storage de todas e recontando/removendo cada lote afetado (via `recontarOuRemoverLote`). A guarda de `publicando` e a exigência de `ml_item_id != null` no alvo permanecem. Assim o vínculo é realmente cortado e uma planilha futura do código vira CREATE. (`remover-publicado` v4.)

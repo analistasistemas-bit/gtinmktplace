@@ -8,6 +8,8 @@ export function useRemoverPublicado() {
     mutationFn: (familiaId: string) => removerPublicado(familiaId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QK.publicados });
+      // Remove todas as linhas publicadas do codigo_pai → lotes podem ser recontados/removidos.
+      qc.invalidateQueries({ queryKey: ['lotes'] });
     },
   });
 }

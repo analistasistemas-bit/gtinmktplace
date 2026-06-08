@@ -15,39 +15,55 @@ Deno.serve(async (req) => {
   if (!familia_id) return new Response('familia_id obrigatório', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
-  const { data: familia } = await admin.from('familias')
-    .select('id, user_id, lote_id, codigo_pai, ml_item_id, capa_storage_path, capa2_storage_path, variacoes(imagem_path)')
+  const { data: alvo } = await admin.from('familias')
+    .select('id, user_id, codigo_pai, ml_item_id')
     .eq('id', familia_id).maybeSingle();
-  if (!familia || familia.user_id !== user.id) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
+  if (!alvo || alvo.user_id !== user.id) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
   // Invariante ADR-0019: este escape hatch só remove famílias PUBLICADAS.
-  if (!familia.ml_item_id) {
+  if (!alvo.ml_item_id) {
     return new Response(JSON.stringify({ erro: 'Família não publicada — nada a remover aqui.' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  // Guarda: bloqueia se há família com o mesmo codigo_pai em 'publicando' (UPDATE em voo depende do ml_item_id)
+  // Guarda: bloqueia se há família do mesmo codigo_pai em 'publicando' (UPDATE em voo depende do ml_item_id).
   const { data: emVoo } = await admin.from('familias')
-    .select('id').eq('user_id', user.id).eq('codigo_pai', familia.codigo_pai).eq('status', 'publicando').limit(1);
+    .select('id').eq('user_id', user.id).eq('codigo_pai', alvo.codigo_pai).eq('status', 'publicando').limit(1);
   if (emVoo && emVoo.length > 0) {
     return new Response(JSON.stringify({ erro: 'Há uma publicação em andamento para este código. Aguarde terminar antes de remover.' }),
       { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  const paths = pathsDaFamilia({
-    capa_storage_path: familia.capa_storage_path,
-    capa2_storage_path: familia.capa2_storage_path,
-    variacoes: familia.variacoes ?? [],
-  });
+  // Codex P2: o vínculo de UPDATE é GLOBAL por (user_id, codigo_pai, ml_item_id not null) —
+  // o ingest-lote casa por codigo_pai. Após ciclos de UPDATE existem várias linhas publicadas
+  // do mesmo codigo_pai (uma por lote). Remover só a selecionada deixaria outra satisfazendo a
+  // busca → a próxima planilha ainda viraria UPDATE no anúncio morto. Removemos TODAS as linhas
+  // publicadas do mesmo codigo_pai para realmente cortar o vínculo.
+  const { data: familias } = await admin.from('familias')
+    .select('id, lote_id, capa_storage_path, capa2_storage_path, variacoes(imagem_path)')
+    .eq('user_id', user.id).eq('codigo_pai', alvo.codigo_pai).not('ml_item_id', 'is', null);
+  const alvos = familias ?? [];
+
+  const paths = [...new Set(alvos.flatMap((f) => pathsDaFamilia({
+    capa_storage_path: f.capa_storage_path,
+    capa2_storage_path: f.capa2_storage_path,
+    variacoes: f.variacoes ?? [],
+  })))];
   if (paths.length > 0) {
     const { error } = await admin.storage.from('imagens').remove(paths);
     if (error) console.warn('remover-publicado storage falhou (segue):', error.message);
   }
 
-  const loteId = familia.lote_id;
-  await admin.from('familias').delete().eq('id', familia_id);
+  const lotesAfetados = [...new Set(alvos.map((f) => f.lote_id))];
+  await admin.from('familias').delete().in('id', alvos.map((f) => f.id));
 
-  // Remover 1 anúncio não "conclui" o lote → setConcluido=false.
-  const loteRemovido = await recontarOuRemoverLote(admin, loteId, false);
+  // Reconta (ou remove se vazio) cada lote afetado. Remover não "conclui" o lote → setConcluido=false.
+  let lotesRemovidos = 0;
+  for (const loteId of lotesAfetados) {
+    if (await recontarOuRemoverLote(admin, loteId, false)) lotesRemovidos++;
+  }
 
-  return new Response(JSON.stringify({ ok: true, lote_removido: loteRemovido }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  return new Response(
+    JSON.stringify({ ok: true, familias_removidas: alvos.length, lotes_removidos: lotesRemovidos }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+  );
 });
