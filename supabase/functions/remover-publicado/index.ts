@@ -1,13 +1,14 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { adminClient, userClient } from '../_shared/supabase.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { requireUser } from '../_shared/auth.ts';
+import { pathsDaFamilia } from '../_shared/lote/exclusao.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  const { data: { user } } = await userClient(auth.slice(7)).auth.getUser();
-  if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let user;
+  try { user = await requireUser(req); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const { familia_id } = await req.json().catch(() => ({}));
   if (!familia_id) return new Response('familia_id obrigatório', { status: 400, headers: corsHeaders });
@@ -26,10 +27,11 @@ Deno.serve(async (req) => {
       { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  const paths = [
-    familia.capa_storage_path, familia.capa2_storage_path,
-    ...((familia.variacoes ?? []).map((v: { imagem_path: string | null }) => v.imagem_path)),
-  ].filter((p): p is string => !!p);
+  const paths = pathsDaFamilia({
+    capa_storage_path: familia.capa_storage_path,
+    capa2_storage_path: familia.capa2_storage_path,
+    variacoes: familia.variacoes ?? [],
+  });
   if (paths.length > 0) {
     const { error } = await admin.storage.from('imagens').remove(paths);
     if (error) console.warn('remover-publicado storage falhou (segue):', error.message);
@@ -44,8 +46,8 @@ Deno.serve(async (req) => {
     await admin.from('lotes').delete().eq('id', loteId);
     loteRemovido = true;
   } else {
-    const publicadas = rest.filter((f) => f.status === 'publicado').length;
-    const erros = rest.filter((f) => f.status === 'erro').length;
+    let publicadas = 0, erros = 0;
+    for (const f of rest) { if (f.status === 'publicado') publicadas++; else if (f.status === 'erro') erros++; }
     await admin.from('lotes').update({ total_familias: rest.length, total_publicadas: publicadas, total_erros: erros }).eq('id', loteId);
   }
 

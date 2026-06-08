@@ -1,5 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { adminClient, userClient } from '../_shared/supabase.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { requireUser } from '../_shared/auth.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { parseStatusML, type ItemMLStatus } from '../_shared/ml/status.ts';
 
@@ -12,10 +13,9 @@ function chunk<T>(arr: T[], n: number): T[][] {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  const { data: { user } } = await userClient(auth.slice(7)).auth.getUser();
-  if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let user;
+  try { user = await requireUser(req); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const admin = adminClient();
   const { data: familias } = await admin.from('familias')
@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
     const url = `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,status,sub_status,available_quantity,price`;
     try {
       const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!resp.ok) { console.warn(`status-publicados ML ${resp.status} (bloco)`); continue; }
       const arr = await resp.json(); // [{ code, body }]
       if (Array.isArray(arr)) {
         for (const entry of arr) {

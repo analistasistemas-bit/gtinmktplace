@@ -19,7 +19,13 @@ export interface ResultadoExclusao {
   loteVazio: boolean;
 }
 
-function pathsDaFamilia(f: FamiliaExclusao): string[] {
+// Paths de Storage de uma família (capas + imagens das variações). Aceita qualquer
+// objeto com esses campos (reusado pela edge remover-publicado).
+export function pathsDaFamilia(f: {
+  capa_storage_path: string | null;
+  capa2_storage_path: string | null;
+  variacoes: VariacaoExclusao[];
+}): string[] {
   return [
     f.capa_storage_path, f.capa2_storage_path,
     ...f.variacoes.map((v) => v.imagem_path),

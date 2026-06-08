@@ -1,5 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { adminClient, userClient } from '../_shared/supabase.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { requireUser } from '../_shared/auth.ts';
 import { particionarExclusao, type FamiliaExclusao } from '../_shared/lote/exclusao.ts';
 
 const BLOQUEADOS = ['processando', 'publicando'];
@@ -7,10 +8,9 @@ const BLOQUEADOS = ['processando', 'publicando'];
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  const { data: { user } } = await userClient(auth.slice(7)).auth.getUser();
-  if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let user;
+  try { user = await requireUser(req); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const { lote_id } = await req.json().catch(() => ({}));
   if (!lote_id) return new Response('lote_id obrigatório', { status: 400, headers: corsHeaders });

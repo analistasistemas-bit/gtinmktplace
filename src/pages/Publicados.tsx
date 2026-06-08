@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { RefreshCw, ExternalLink, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,6 +92,12 @@ interface LinhaProps {
 }
 
 function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
+  const conteudoML = (
+    <>
+      <ExternalLink className="mr-1 h-3 w-3" />
+      ML
+    </>
+  );
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
       <td className="px-3 py-2">
@@ -102,7 +108,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
       </td>
       <td className="px-3 py-2 text-sm">{item.fornecedor ?? '—'}</td>
       <td className="px-3 py-2 text-sm">{nomeTipo(item.tipo)}</td>
-      <td className="px-3 py-2 text-sm tabular-nums">{fmtBRL(item.precoPublicacao)}</td>
+      <td className="px-3 py-2 text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</td>
       <td className="px-3 py-2 text-sm tabular-nums">
         {item.estoque != null ? item.estoque : '—'}
       </td>
@@ -123,15 +129,9 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
             className="h-7 px-2 text-xs"
           >
             {item.mlPermalink ? (
-              <a href={item.mlPermalink} target="_blank" rel="noreferrer">
-                <ExternalLink className="mr-1 h-3 w-3" />
-                ML
-              </a>
+              <a href={item.mlPermalink} target="_blank" rel="noreferrer">{conteudoML}</a>
             ) : (
-              <span>
-                <ExternalLink className="mr-1 h-3 w-3" />
-                ML
-              </span>
+              <span>{conteudoML}</span>
             )}
           </Button>
 
@@ -203,7 +203,10 @@ export default function Publicados() {
   const itensExibidos = filtrarPublicados(merged, filtro);
 
   // Fornecedores distintos para o filtro
-  const fornecedores = Array.from(new Set(publicados.map((i) => i.fornecedor).filter(Boolean) as string[])).sort();
+  const fornecedores = useMemo(
+    () => Array.from(new Set(publicados.map((i) => i.fornecedor).filter(Boolean) as string[])).sort(),
+    [publicados],
+  );
 
   if (loadingPublicados) {
     return (
