@@ -44,7 +44,7 @@ const COLS: Column<Row>[] = [
 ];
 
 export default function StyleGuide() {
-  const { theme, toggle } = useTheme();
+  const { theme, setTheme } = useTheme();
   return (
     <div className="space-y-8 p-6">
       <PageHeader
@@ -54,7 +54,7 @@ export default function StyleGuide() {
         actions={
           <div className="flex items-center gap-2 text-sm">
             <span className="text-muted-foreground">Dark</span>
-            <Switch checked={theme === 'light'} onCheckedChange={toggle} />
+            <Switch checked={theme === 'light'} onCheckedChange={(v) => setTheme(v ? 'light' : 'dark')} />
             <span className="text-muted-foreground">Light</span>
           </div>
         }
