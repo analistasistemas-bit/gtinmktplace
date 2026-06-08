@@ -109,8 +109,8 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
   return (
     <tr className="border-b transition-colors hover:bg-muted/30">
       <td className="px-3 py-2">
-        <div className="max-w-[220px]">
-          <p className="truncate text-sm font-medium uppercase">{item.titulo}</p>
+        <div className="max-w-[260px]">
+          <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
           <p className="text-xs text-muted-foreground">{item.codigoPai}</p>
         </div>
       </td>
