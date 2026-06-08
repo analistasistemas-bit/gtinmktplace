@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LoteCard } from '@/components/lote-card';
 import type { Lote } from '@/lib/tipos-dominio';
 
@@ -27,10 +28,14 @@ const LOTE_CONCLUIDO: Lote = {
 };
 
 function renderCard(lote: Lote) {
+  // LoteCard usa useExcluirLote (TanStack Query) → precisa do QueryClientProvider.
+  const qc = new QueryClient();
   return render(
-    <MemoryRouter>
-      <LoteCard lote={lote} />
-    </MemoryRouter>
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <LoteCard lote={lote} />
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
