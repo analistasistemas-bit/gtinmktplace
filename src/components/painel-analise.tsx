@@ -1,6 +1,7 @@
-import { Coins, Tag, Store, AlertTriangle, TrendingUp, Truck } from 'lucide-react';
+import { Coins, Tag, Store, AlertTriangle, TrendingUp, Truck, DollarSign, Trophy, Calendar } from 'lucide-react';
 import { CardVoceRecebe } from '@/components/card-voce-recebe';
-import { Badge } from '@/components/ui/badge';
+import { StatusPill } from '@/components/ui/status-pill';
+import type { StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMilhar } from '@/lib/formato';
 import { familiaSemDimensoesValidas } from '@/lib/publicavel';
@@ -15,10 +16,10 @@ function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
   }
 }
 
-const CORES_CONCORRENCIA: Record<Concorrencia, string> = {
-  sem: 'bg-muted text-muted-foreground',
-  moderada: 'bg-blue-50 text-blue-700 border border-blue-200',
-  alta: 'bg-amber-50 text-amber-700 border border-amber-200',
+const TONE_CONCORRENCIA: Record<Concorrencia, StatusTone> = {
+  sem: 'neutral',
+  moderada: 'info',
+  alta: 'warning',
 };
 
 export function PainelAnalise({ familia }: { familia: Familia }) {
@@ -59,9 +60,9 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
       )}
 
       {semDimensoes && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:border-amber-500/30 dark:bg-amber-500/10">
-          <Truck className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <span className="text-amber-700 dark:text-amber-400">
+        <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2 text-xs">
+          <Truck className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <span className="text-warning">
             Sem dimensões/peso reais — o Mercado Livre vai <strong>estimar o frete</strong> (pode ficar alto e gerar moderação). Atualize a planilha com altura, largura, comprimento e peso reais.
           </span>
         </div>
@@ -71,25 +72,18 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
           Cada card cresce (flex-1) com um piso de largura; quebram em linhas quando faltar espaço. */}
       <div className="flex flex-wrap gap-2">
         {/* Estratégia */}
-        <div className="min-w-[160px] flex-1 rounded-md border p-2">
+        <div className="min-w-[160px] flex-1 rounded-md border bg-card p-2">
           <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Coins className="h-3.5 w-3.5" /> Estratégia
           </div>
-          <Badge
-            className={cn(
-              'font-semibold',
-              proprio
-                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                : 'bg-amber-50 text-amber-700 border border-amber-200'
-            )}
-          >
+          <StatusPill tone={proprio ? 'info' : 'warning'}>
             {labelEstrategia}
-          </Badge>
+          </StatusPill>
           <p className="mt-1 text-xs text-muted-foreground">{familia.estrategiaMotivo}</p>
         </div>
 
         {/* Categoria */}
-        <div className={cn('min-w-[160px] flex-1 rounded-md border p-2', categoriaIndefinida && 'border-destructive/30 bg-destructive/5')}>
+        <div className={cn('min-w-[160px] flex-1 rounded-md border bg-card p-2', categoriaIndefinida && 'border-destructive/30 bg-destructive/5')}>
           <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Tag className="h-3.5 w-3.5" /> Categoria
           </div>
@@ -106,15 +100,15 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
         </div>
 
         {/* Concorrência */}
-        <div className="min-w-[180px] flex-1 rounded-md border p-2">
+        <div className="min-w-[180px] flex-1 rounded-md border bg-card p-2">
           <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Store className="h-3.5 w-3.5" /> Concorrência
           </div>
           {temConcorrencia ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <Badge className={cn('font-semibold capitalize', CORES_CONCORRENCIA[familia.concorrencia])}>
+              <StatusPill tone={TONE_CONCORRENCIA[familia.concorrencia]} className="capitalize">
                 {familia.concorrencia}
-              </Badge>
+              </StatusPill>
               <span>{familia.concorrenciaVendedores} vendedores</span>
               {familia.concorrenciaPrecoMin != null && (
                 <span>· menor preço <span className="font-medium text-foreground">{fmtBRL(familia.concorrenciaPrecoMin)}</span></span>
@@ -127,36 +121,43 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
 
         {/* Potencial de venda */}
         {familia.analiseMercado && (
-          <div className="min-w-[200px] flex-1 rounded-md border p-2">
+          <div className="min-w-[200px] flex-1 rounded-md border bg-card p-2">
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" /> Potencial de venda
             </div>
             <div className="flex flex-col gap-1 text-xs">
               {familia.concorrenciaPrecoMin != null && familia.analiseMercado.preco_max != null && (
-                <span>
-                  💲 Preço concorrentes:{' '}
+                <span className="flex items-center gap-1">
+                  <DollarSign className="h-3 w-3 shrink-0 text-muted-foreground" />
+                  Preço concorrentes:{' '}
                   <span className="font-medium text-foreground">
                     {fmtBRL(familia.concorrenciaPrecoMin)} – {fmtBRL(familia.analiseMercado.preco_max)}
                   </span>
                 </span>
               )}
-              <span>
-                📈 {familia.analiseMercado.lideres}/{familia.concorrenciaVendedores} MercadoLíder
+              <span className="flex items-center gap-1">
+                <TrendingUp className="h-3 w-3 shrink-0 text-muted-foreground" />
+                {familia.analiseMercado.lideres}/{familia.concorrenciaVendedores} MercadoLíder
                 {familia.analiseMercado.maior_vendas > 0 && (
                   <> · maior <span className="font-medium text-foreground">{fmtMilhar(familia.analiseMercado.maior_vendas)} vendas</span></>
                 )}
               </span>
-              <span>
-                🚚 Frete grátis: {familia.analiseMercado.frete_gratis}/{familia.analiseMercado.total_ofertas}
-                {' · '}⚡ FULL: {familia.analiseMercado.full}/{familia.analiseMercado.total_ofertas}
+              <span className="flex items-center gap-1">
+                <Truck className="h-3 w-3 shrink-0 text-muted-foreground" />
+                Frete grátis: {familia.analiseMercado.frete_gratis}/{familia.analiseMercado.total_ofertas}
+                {' · '}FULL: {familia.analiseMercado.full}/{familia.analiseMercado.total_ofertas}
               </span>
-              <span>
-                🏆 {familia.analiseMercado.ranking_categoria != null
+              <span className="flex items-center gap-1">
+                <Trophy className="h-3 w-3 shrink-0 text-muted-foreground" />
+                {familia.analiseMercado.ranking_categoria != null
                   ? `#${familia.analiseMercado.ranking_categoria} mais vendido na categoria`
                   : 'fora do top de mais vendidos da categoria'}
               </span>
               {familia.analiseMercado.produto_desde && (
-                <span className="text-muted-foreground">📅 no catálogo desde {familia.analiseMercado.produto_desde}</span>
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <Calendar className="h-3 w-3 shrink-0" />
+                  no catálogo desde {familia.analiseMercado.produto_desde}
+                </span>
               )}
             </div>
           </div>

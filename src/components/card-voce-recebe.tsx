@@ -20,17 +20,17 @@ function Coluna({
   const { lucro, markup } = temCusto ? calcularMarkup(t.recebe, custo) : { lucro: 0, markup: 0 };
   const prejuizo = temCusto && lucro < 0;
   return (
-    <div className={cn('rounded-md border p-2', melhor && 'border-blue-200 bg-blue-50')}>
+    <div className={cn('rounded-md border bg-card p-2', melhor && 'border-primary/30 bg-primary/5')}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">{titulo}</span>
-        {melhor && <span className="text-[10px] font-semibold text-blue-700">melhor</span>}
+        {melhor && <span className="text-[10px] font-semibold text-primary">melhor</span>}
       </div>
       <div className="mt-0.5 text-sm font-semibold text-foreground">{fmtBRL(t.recebe)}</div>
       <div className="text-[11px] text-muted-foreground">
         comissão −{fmtBRL(t.comissao)} ({t.percentual}%)
       </div>
       {temCusto && (
-        <div className={cn('mt-0.5 text-[11px]', prejuizo ? 'text-destructive' : 'text-muted-foreground')}>
+        <div className={cn('mt-0.5 text-[11px]', prejuizo ? 'text-destructive' : 'text-success')}>
           {prejuizo ? 'prejuízo ' : 'lucro '}
           <span className="font-semibold">{fmtBRL(lucro)}</span>
           {' · markup '}
