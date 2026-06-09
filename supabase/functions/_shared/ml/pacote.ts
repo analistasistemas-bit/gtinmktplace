@@ -14,11 +14,14 @@ export interface AtributoPacote {
   value_name: string;
 }
 
-// Plausível = descarta o placeholder 0,1cm e protege contra a planilha antiga.
+// Piso 0,2cm (adendo ADR-0018 2026-06-09): descarta o placeholder 0,1cm da
+// planilha antiga sem matar dimensões reais finas (ex.: fita de 0,7cm de altura),
+// que com o piso anterior de 1cm caíam fora e voltavam a ser estimadas pelo ML.
+const PISO_MEDIDA_CM = 0.2;
 export function dimensoesValidas(d: DimensoesPacote): boolean {
   const medidas = [d.altura_cm, d.largura_cm, d.comprimento_cm];
   return (
-    medidas.every((x): x is number => x != null && x >= 1) &&
+    medidas.every((x): x is number => x != null && x >= PISO_MEDIDA_CM) &&
     d.peso_gramas != null &&
     d.peso_gramas >= 1
   );

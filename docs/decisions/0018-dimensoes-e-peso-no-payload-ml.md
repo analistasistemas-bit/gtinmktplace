@@ -37,3 +37,13 @@ A planilha do sistema interno trazia dimensões **placeholder fixas** (todas as 
 - **Default por tipo de aviamento** (linha/fita/botão): descartado — a planilha real torna desnecessário; defaults seriam chutes imprecisos para cones/rolos de tamanhos variados.
 - **Bloquear publicação sem dimensão**: descartado — trava o fluxo se a planilha vier furada; preferimos publicar + avisar (decisão do Diego).
 - **`shipping.dimensions` ("HxWxL,peso")**: o caminho atual do ML é por atributos `SELLER_PACKAGE_*`; mantido por ser o que a API expõe como writable na categoria.
+
+## Adendo (2026-06-09) — Piso da guarda baixado de 1 cm para 0,2 cm
+
+**Achado no bug bash com a planilha real (lote #20).** Das 3 famílias importadas com dimensões reais, a maior (cód. `00445932`, **74 variações** — fita fina) trazia altura legítima de **0,70 cm** (largura 2 cm, comprimento 11 cm, 11 g). A guarda original (§3) exigia **≥ 1 cm em todas as três medidas**, então descartava silenciosamente as 74 variações → o app não enviava dimensão → o ML voltava a **estimar** o pacote, recriando exatamente o cenário de moderação de frete que este ADR existe para evitar. As outras duas famílias (9,6×6×6 / 3×2×11) passavam normalmente.
+
+O piso de 1 cm fora calibrado só para matar o placeholder `0,10 cm`, mas era cego demais: matava também dimensões reais finas < 1 cm.
+
+**Decisão (Diego, 2026-06-09):** baixar o piso por medida de **`≥ 1 cm` para `≥ 0,2 cm`** (peso mantido em `≥ 1 g`). O placeholder `0,10 cm` continua descartado (0,10 < 0,2); dimensões reais finas como `0,70 cm` passam a ser enviadas. Não depende de conhecer o valor exato do placeholder — só de um piso que ele não alcança. Pior caso (medida real entre 0,1–0,2 cm, improvável para uma embalagem) = ML estima, **sem regressão** ante o comportamento atual.
+
+Constante `PISO_MEDIDA_CM = 0.2` em `_shared/ml/pacote.ts` (`dimensoesValidas`); cobertura TDD nova em `pacote.test.ts` (0,70 cm válido, piso exato 0,2 cm válido, 0,15 cm inválido, placeholder 0,10 cm inválido). Reusado por CREATE e UPDATE sem outras mudanças. Redeploy de `publish-familia-ml` e `update-familia-ml` (mudança em `_shared`).
