@@ -2,21 +2,10 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
-import { montarTarifa, type ListingPriceML } from '../_shared/ml/tarifa.ts';
+import { montarTarifa } from '../_shared/ml/tarifa.ts';
+import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 
 const CACHE_TTL_S = 6 * 60 * 60; // 6h — comissões mudam raramente
-
-async function listingPrice(
-  token: string,
-  preco: number,
-  categoria: string,
-  listingType: string,
-): Promise<ListingPriceML> {
-  const url = `https://api.mercadolibre.com/sites/MLB/listing_prices?price=${preco}&category_id=${categoria}&listing_type_id=${listingType}`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!resp.ok) throw new Error(`listing_prices ${listingType} ${resp.status}: ${await resp.text()}`);
-  return resp.json() as Promise<ListingPriceML>;
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -42,8 +31,8 @@ Deno.serve(async (req) => {
 
     const token = await getValidAccessToken(user.id);
     const [classicoML, premiumML] = await Promise.all([
-      listingPrice(token, preco, categoria_ml_id, 'gold_special'),
-      listingPrice(token, preco, categoria_ml_id, 'gold_pro'),
+      buscarListingPrice(token, preco, categoria_ml_id, 'gold_special'),
+      buscarListingPrice(token, preco, categoria_ml_id, 'gold_pro'),
     ]);
     const tarifa = montarTarifa(preco, classicoML, premiumML);
 
