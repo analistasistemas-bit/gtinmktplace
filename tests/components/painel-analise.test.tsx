@@ -53,17 +53,6 @@ describe('PainelAnalise', () => {
     expect(screen.getByText(/sem concorrência/i)).toBeInTheDocument();
   });
 
-  it('categoria definida mostra nome amigável + id', () => {
-    renderWithClient(<PainelAnalise familia={familiaBase()} />);
-    expect(screen.getByText(/Fita de Cetim/i)).toBeInTheDocument();
-    expect(screen.getByText(/MLB255054/)).toBeInTheDocument();
-  });
-
-  it('categoria indefinida (tipo outro / sem id) alerta', () => {
-    renderWithClient(<PainelAnalise familia={familiaBase({ tipoAviamento: 'outro', categoriaMlId: null })} />);
-    expect(screen.getByText(/categoria indefinida/i)).toBeInTheDocument();
-  });
-
   it('alerta de preço perigoso só quando precoAbaixo20pc', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { rerender } = render(

@@ -10,6 +10,7 @@ import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { PainelAnalise } from '@/components/painel-analise';
+import { CardCategoria } from '@/components/card-categoria';
 import { DiffEstoque } from '@/components/diff-estoque';
 import {
   useUpdateVariacaoPreco,
@@ -297,6 +298,9 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
               </div>
               <input ref={inputCapa2Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa2} />
             </div>
+          </div>
+          <div className="ml-auto">
+            <CardCategoria familia={familia} />
           </div>
         </div>
         <PainelAnalise familia={familia} />
