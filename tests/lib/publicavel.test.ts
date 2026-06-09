@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { familiaPublicavel } from '../../src/lib/publicavel';
+import { familiaPublicavel, criticasVariacao } from '../../src/lib/publicavel';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function cor(over: Partial<Variacao>): Variacao {
@@ -123,5 +123,33 @@ describe('familiaPublicavel', () => {
     const r = familiaPublicavel(fam({ variacoes: [cor({ excluidaDaPublicacao: true })] }));
     expect(r.ok).toBe(false);
     expect(r.motivos.join(' ')).toMatch(/nenhuma cor|ao menos|pelo menos/i);
+  });
+});
+
+describe('criticasVariacao', () => {
+  it('CREATE: variação completa não tem crítica', () => {
+    expect(criticasVariacao(cor({}), 'CREATE')).toEqual([]);
+  });
+  it('CREATE: sem foto', () => {
+    expect(criticasVariacao(cor({ fotoPath: undefined }), 'CREATE')).toEqual(['sem foto']);
+  });
+  it('CREATE: sem cor', () => {
+    expect(criticasVariacao(cor({ cor: '' }), 'CREATE')).toEqual(['sem cor']);
+  });
+  it('CREATE: sem preço', () => {
+    expect(criticasVariacao(cor({ precoPublicacao: null }), 'CREATE')).toEqual(['sem preço']);
+  });
+  it('CREATE: combina motivos na ordem cor → foto → preço', () => {
+    expect(criticasVariacao(cor({ cor: '', fotoPath: undefined, precoPublicacao: 0 }), 'CREATE'))
+      .toEqual(['sem cor', 'sem foto', 'sem preço']);
+  });
+  it('variação excluída não acusa crítica (não vai ao ML)', () => {
+    expect(criticasVariacao(cor({ fotoPath: undefined, excluidaDaPublicacao: true }), 'CREATE')).toEqual([]);
+  });
+  it('UPDATE: cor casada (reposição) não exige foto → sem crítica', () => {
+    expect(criticasVariacao(cor({ mlVariationId: 'V1', fotoPath: undefined }), 'UPDATE')).toEqual([]);
+  });
+  it('UPDATE: cor nova sem foto acusa crítica', () => {
+    expect(criticasVariacao(cor({ mlVariationId: null, fotoPath: undefined }), 'UPDATE')).toEqual(['sem foto']);
   });
 });

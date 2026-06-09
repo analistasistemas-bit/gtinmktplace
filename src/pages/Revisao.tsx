@@ -50,6 +50,8 @@ export default function Revisao() {
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [listingType, setListingType] = useState<ListingType>('gold_special');
+  // Variação-alvo ao clicar no selo de pendência do pai: expande + rola até ela.
+  const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
   const toggleLote = useToggleDescontoLote(loteId ?? '');
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
@@ -125,6 +127,11 @@ export default function Revisao() {
       else novo.add(id);
       return novo;
     });
+  }
+
+  function irParaCritica(familiaId: string, codigo: string) {
+    setExpandidas((prev) => new Set(prev).add(familiaId));
+    setFocoCritica({ familiaId, codigo });
   }
 
   const counts = {
@@ -249,8 +256,15 @@ export default function Revisao() {
                   expandida={expandidas.has(familia.id)}
                   onSelecionar={toggleSelecao}
                   onExpandir={toggleExpansao}
+                  onIrParaCritica={irParaCritica}
                 />
-                {expandidas.has(familia.id) && <FamiliaExpanded familia={familia} />}
+                {expandidas.has(familia.id) && (
+                  <FamiliaExpanded
+                    familia={familia}
+                    focoCodigo={focoCritica?.familiaId === familia.id ? focoCritica.codigo : null}
+                    onFocoConcluido={() => setFocoCritica(null)}
+                  />
+                )}
               </div>
             ))}
             {visiveis.length === 0 && (

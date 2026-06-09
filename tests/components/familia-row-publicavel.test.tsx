@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FamiliaRow } from '@/components/familia-row';
 import type { Familia, Variacao } from '@/lib/tipos-dominio';
@@ -43,5 +43,27 @@ describe('FamiliaRow — selo de publicável', () => {
       <FamiliaRow familia={fam({})} selecionada={false} expandida={false} onSelecionar={() => {}} onExpandir={() => {}} />
     );
     expect(screen.getByRole('checkbox', { name: 'Selecionar família' })).not.toBeDisabled();
+  });
+
+  it('selo de pendência por cor vira botão que leva à variação com problema', () => {
+    const onIr = vi.fn();
+    const f = fam({ variacoes: [cor({ codigo: '00000777', cor: 'Cereja', fotoPath: undefined })] });
+    renderWithClient(
+      <FamiliaRow
+        familia={f} selecionada={false} expandida={false}
+        onSelecionar={() => {}} onExpandir={() => {}} onIrParaCritica={onIr}
+      />
+    );
+    const btn = screen.getByRole('button', { name: /sem foto/i });
+    fireEvent.click(btn);
+    expect(onIr).toHaveBeenCalledWith('f1', '00000777');
+  });
+
+  it('sem onIrParaCritica, o selo de pendência não é um botão', () => {
+    const f = fam({ variacoes: [cor({ codigo: '00000777', cor: 'Cereja', fotoPath: undefined })] });
+    renderWithClient(
+      <FamiliaRow familia={f} selecionada={false} expandida={false} onSelecionar={() => {}} onExpandir={() => {}} />
+    );
+    expect(screen.queryByRole('button', { name: /sem foto/i })).not.toBeInTheDocument();
   });
 });
