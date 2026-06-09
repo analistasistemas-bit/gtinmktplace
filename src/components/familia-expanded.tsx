@@ -452,6 +452,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
                       onSalvarPreco={salvarPreco}
                       onSalvarCor={salvarCor}
                       onSalvarGtin={salvarGtin}
+                      categoriaMlId={familia.categoriaMlId}
                     />
                   </div>
                 </div>

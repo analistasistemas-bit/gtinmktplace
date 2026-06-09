@@ -9,6 +9,7 @@ import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
 import type { Variacao } from '@/lib/tipos-dominio';
+import { SemaforoPreco } from '@/components/semaforo-preco';
 
 interface VariacaoCardProps {
   variacao: Variacao;
@@ -22,6 +23,7 @@ interface VariacaoCardProps {
   onSalvarPreco?: (codigo: string) => void;
   onSalvarCor?: (codigo: string) => void;
   onSalvarGtin?: (codigo: string) => void;
+  categoriaMlId: string | null;
 }
 
 export function VariacaoCard({
@@ -36,6 +38,7 @@ export function VariacaoCard({
   onSalvarPreco,
   onSalvarCor,
   onSalvarGtin,
+  categoriaMlId,
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
@@ -114,14 +117,15 @@ export function VariacaoCard({
             <StatusInline status={statusPreco ?? trocaStatus} />
           </div>
         </div>
-        {variacao.precoPublicacao != null &&
-          variacao.precoPublicacao !== variacao.preco && (
-            <span className="pl-0.5 text-[11px] text-muted-foreground">
-              planilha: <span className="font-semibold text-foreground">
-                {fmtBRL(variacao.preco)}
-              </span>
-            </span>
-          )}
+        <span className="pl-0.5 text-[11px] text-muted-foreground">
+          mín. líquido: <span className="font-semibold text-foreground">{fmtBRL(variacao.preco)}</span>
+        </span>
+        <SemaforoPreco
+          preco={variacao.precoPublicacao ?? variacao.preco}
+          piso={variacao.preco}
+          custo={variacao.custo}
+          categoriaMlId={categoriaMlId}
+        />
       </div>
       <div className="flex w-20 flex-col items-end leading-tight pt-0.5">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
