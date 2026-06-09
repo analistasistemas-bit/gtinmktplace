@@ -95,7 +95,23 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       )}
     >
     <div
-      className="grid grid-cols-[24px_40px_1fr_80px_140px_40px] items-center gap-3 px-4 py-2 text-sm"
+      role="button"
+      tabIndex={0}
+      aria-expanded={expandida}
+      aria-label={expandida ? 'Recolher família' : 'Expandir família'}
+      onClick={(e) => {
+        // Ignora cliques que nasceram em controles interativos da linha
+        // (checkbox de seleção, link "publicado ↗") para não expandir sem querer.
+        if ((e.target as HTMLElement).closest('button, a, input, [role="checkbox"]')) return;
+        onExpandir(familia.id);
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+          e.preventDefault();
+          onExpandir(familia.id);
+        }
+      }}
+      className="grid cursor-pointer select-none grid-cols-[24px_40px_1fr_80px_140px_40px] items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted/50"
     >
       <Checkbox
         aria-label="Selecionar família"
@@ -191,14 +207,9 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           />
         )}
       </div>
-      <button
-        type="button"
-        onClick={() => onExpandir(familia.id)}
-        className="text-muted-foreground hover:text-foreground"
-        aria-label={expandida ? 'Recolher' : 'Expandir'}
-      >
+      <span className="justify-self-center text-muted-foreground" aria-hidden="true">
         {expandida ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-      </button>
+      </span>
     </div>
       <div className="px-4 pb-2 pl-[100px]">
         <DescontoControle familia={familia} />
