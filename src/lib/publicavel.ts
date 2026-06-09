@@ -48,11 +48,14 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
 // Aviso (NÃO bloqueia — ADR-0018): família sem dimensões reais → o ML estima o
 // frete (e pode moderar por frete desproporcional). Olha a variação representativa
 // (principal, ou 1ª incluída), espelhando a regra da publicação.
+// Piso 0,2cm espelha `dimensoesValidas` do backend (adendo ADR-0018 2026-06-09):
+// descarta o placeholder 0,1cm sem matar dimensões reais finas (ex.: fita 0,7cm).
+const PISO_MEDIDA_CM = 0.2;
 export function familiaSemDimensoesValidas(familia: Familia): boolean {
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   if (incluidas.length === 0) return false;
   const rep = incluidas.find((v) => v.codigo === familia.variacaoPrincipalCodigo) ?? incluidas[0];
-  const medidasOk = [rep.alturaCm, rep.larguraCm, rep.comprimentoCm].every((x) => x != null && x >= 1);
+  const medidasOk = [rep.alturaCm, rep.larguraCm, rep.comprimentoCm].every((x) => x != null && x >= PISO_MEDIDA_CM);
   const pesoOk = rep.pesoGramas != null && rep.pesoGramas >= 1;
   return !(medidasOk && pesoOk);
 }
