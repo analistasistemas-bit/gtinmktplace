@@ -1,5 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { extrairMetragem, garantirMetragemTitulo } from '../titulo';
+import { extrairMetragem, garantirMetragemTitulo, removerCaudaConectiva } from '../titulo';
+
+describe('removerCaudaConectiva', () => {
+  it('remove conectivo solto no fim ("VERSÁTIL E" → "VERSÁTIL")', () => {
+    expect(removerCaudaConectiva('FITA CETIM N.1 100MT | 100% POLIÉSTER | VERSÁTIL E'))
+      .toBe('FITA CETIM N.1 100MT | 100% POLIÉSTER | VERSÁTIL');
+  });
+
+  it('remove segmento que sobrou só com conectivo ("... | E" → "...")', () => {
+    expect(removerCaudaConectiva('FITA N.1 100MT | 100% POLIÉSTER | E'))
+      .toBe('FITA N.1 100MT | 100% POLIÉSTER');
+  });
+
+  it('remove vários conectivos encadeados e o pipe vazio', () => {
+    expect(removerCaudaConectiva('FITA N.1 100MT | 100% POLIÉSTER | RESISTENTE E DE'))
+      .toBe('FITA N.1 100MT | 100% POLIÉSTER | RESISTENTE');
+  });
+
+  it('não altera título já completo', () => {
+    const ok = 'FITA CETIM N.1 100MT | 100% POLIÉSTER | RESISTENTE';
+    expect(removerCaudaConectiva(ok)).toBe(ok);
+  });
+
+  it('limpa pipe pendurado no fim', () => {
+    expect(removerCaudaConectiva('FITA N.1 100MT | 100% POLIÉSTER |'))
+      .toBe('FITA N.1 100MT | 100% POLIÉSTER');
+  });
+});
 
 describe('extrairMetragem', () => {
   it('extrai metragem em MT preservando a unidade', () => {
@@ -49,6 +76,13 @@ describe('garantirMetragemTitulo', () => {
   it('não duplica quando a IA já incluiu a metragem', () => {
     const titulo = 'FITA PROGRESSO N.1 100MT | 100% POLIÉSTER | RESISTENTE';
     expect(garantirMetragemTitulo(titulo, 'FITA CETIM PROGRESSO N.1 CORES 100MT')).toBe(titulo);
+  });
+
+  it('limpa conectivo solto mesmo com a metragem já presente (bug do upload real)', () => {
+    expect(garantirMetragemTitulo(
+      'FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | VERSÁTIL E',
+      'FITA CETIM PROGRESSO N.1 CORES 100MT',
+    )).toBe('FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | VERSÁTIL');
   });
 
   it('deixa o título intacto quando o nome não tem metragem', () => {
