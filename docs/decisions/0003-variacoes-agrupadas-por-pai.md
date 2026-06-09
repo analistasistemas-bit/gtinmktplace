@@ -66,3 +66,9 @@ O título e a descrição do anúncio vêm da informação do PAI; cada variaç�
 ## Adendo (2026-06-05) — Variação principal por ordem
 
 O ML define a "variação principal" do anúncio pela ordem do array de variações (a 1ª = principal). O operador escolhe na Revisão qual cor é a principal (`familias.variacao_principal_codigo`); o worker de CREATE ordena as variações com ela primeiro (resto por código). Aplica-se só ao CREATE — o UPDATE não reordena variações (ADR-0016).
+
+## Adendo (2026-06-09) — Ordem das fotos por variação: a capa2 nunca lidera
+
+O ML usa a **1ª `picture_id`** de cada variação como a foto-capa da galeria daquela cor. A montagem do payload (`montarPayloadItem`/`montarVariacaoNova`) ordenava as fotos como `[capa, capa2, fotoDaCor]` filtrando nulos — então, numa família **sem foto-capa própria** (sem arquivo `CAPA_` nem foto do PAI), a `capa2` (2ª foto comum, ADR-0005/0016) escorregava para a 1ª posição e virava a capa do anúncio. Bug observado no `MLB4752971229` (família 00445916): o banner `CAPA2_` apareceu como foto principal.
+
+**Regra (helper puro `ordenarFotosVariacao`):** a 1ª posição é sempre uma foto **principal** — a foto-capa da família quando existe, senão a própria foto da cor. A `capa2` é, por definição, a 2ª foto e **nunca** assume a 1ª; sem capa, a foto da cor lidera e a capa2 fica em 2ª. O mesmo vale para `item.pictures` (lidera com foto de cor, não com capa2). O caminho de variações **existentes** no UPDATE já estava correto (insere a capa2 como 2ª, preservando a 1ª foto atual). Aplicado em CREATE e na cor nova do UPDATE; anúncio afetado reordenado ao vivo no ML.
