@@ -59,7 +59,7 @@ export function VariacaoCard({
   }
 
   return (
-    <div className="flex items-start gap-3 rounded-md bg-background p-2 text-sm">
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-md bg-background p-2 text-sm">
       {imgUrl ? (
         <img
           src={imgUrl}
@@ -75,7 +75,7 @@ export function VariacaoCard({
         />
       )}
       <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
-      <div className="flex flex-1 flex-col gap-1">
+      <div className="flex min-w-[160px] flex-1 flex-col gap-1">
         {/* Linha 1: cor */}
         <div className="flex items-center gap-2">
           <Input
