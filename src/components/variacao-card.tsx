@@ -82,7 +82,7 @@ export function VariacaoCard({
             className="h-7 flex-1"
           />
           <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
-          <div className="min-w-[60px]">
+          <div className="min-w-0 shrink-0 whitespace-nowrap">
             <StatusInline status={statusCor} />
           </div>
         </div>
@@ -95,7 +95,7 @@ export function VariacaoCard({
             placeholder="EAN/GTIN"
             className="h-6 flex-1 border-muted bg-muted/40 text-xs text-muted-foreground placeholder:text-muted-foreground/60"
           />
-          <div className="min-w-[60px]">
+          <div className="min-w-0 shrink-0 whitespace-nowrap">
             <StatusInline status={statusGtin} />
           </div>
         </div>
@@ -110,7 +110,7 @@ export function VariacaoCard({
             onBlur={() => onSalvarPreco?.(variacao.codigo)}
             className="h-7 w-24"
           />
-          <div className="min-w-[60px]">
+          <div className="min-w-0 shrink-0 whitespace-nowrap">
             <StatusInline status={statusPreco ?? trocaStatus} />
           </div>
         </div>
