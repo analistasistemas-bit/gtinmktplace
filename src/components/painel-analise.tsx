@@ -1,20 +1,10 @@
-import { Coins, Tag, Store, AlertTriangle, TrendingUp, Truck, DollarSign, Trophy, Calendar } from 'lucide-react';
+import { Coins, Store, AlertTriangle, TrendingUp, Truck, DollarSign, Trophy, Calendar } from 'lucide-react';
 import { CardVoceRecebe } from '@/components/card-voce-recebe';
 import { StatusPill } from '@/components/ui/status-pill';
 import type { StatusTone } from '@/components/ui/status-pill';
-import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMilhar } from '@/lib/formato';
 import { familiaSemDimensoesValidas } from '@/lib/publicavel';
-import type { Familia, TipoAviamento, Concorrencia } from '@/lib/tipos-dominio';
-
-function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
-  switch (tipo) {
-    case 'linha': return 'Fios e Cadarços';
-    case 'fita': return 'Fita de Cetim';
-    case 'botao': return 'Botões';
-    default: return '—';
-  }
-}
+import type { Familia, Concorrencia } from '@/lib/tipos-dominio';
 
 const TONE_CONCORRENCIA: Record<Concorrencia, StatusTone> = {
   sem: 'neutral',
@@ -41,7 +31,6 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
   const proprio = familia.estrategiaPreco === 'PROPRIO';
   const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
   const temConcorrencia = familia.concorrenciaVendedores > 0;
-  const categoriaIndefinida = !familia.categoriaMlId;
   const semDimensoes = familiaSemDimensoesValidas(familia);
 
   return (
@@ -71,57 +60,41 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
       {/* Cards em linha única responsiva (largura total): a tela prioriza a análise.
           Cada card cresce (flex-1) com um piso de largura; quebram em linhas quando faltar espaço. */}
       <div className="flex flex-wrap gap-2">
-        {/* Estratégia */}
-        <div className="min-w-[160px] flex-1 rounded-md border bg-card p-2">
-          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Coins className="h-3.5 w-3.5" /> Estratégia
-          </div>
-          <StatusPill tone={proprio ? 'info' : 'warning'}>
-            {labelEstrategia}
-          </StatusPill>
-          <p className="mt-1 text-xs text-muted-foreground">{familia.estrategiaMotivo}</p>
-        </div>
-
-        {/* Categoria */}
-        <div className={cn('min-w-[160px] flex-1 rounded-md border bg-card p-2', categoriaIndefinida && 'border-destructive/30 bg-destructive/5')}>
-          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Tag className="h-3.5 w-3.5" /> Categoria
-          </div>
-          {categoriaIndefinida ? (
-            <p className="text-xs font-medium text-destructive">
-              Categoria indefinida — escolha antes de publicar
-            </p>
-          ) : (
-            <>
-              <p className="text-sm font-medium">{nomeCategoriaAmigavel(familia.tipoAviamento)}</p>
-              <p className="text-xs text-muted-foreground">{familia.categoriaMlId}</p>
-            </>
-          )}
-        </div>
-
-        {/* Concorrência */}
-        <div className="min-w-[180px] flex-1 rounded-md border bg-card p-2">
-          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Store className="h-3.5 w-3.5" /> Concorrência
-          </div>
-          {temConcorrencia ? (
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <StatusPill tone={TONE_CONCORRENCIA[familia.concorrencia]} className="capitalize">
-                {familia.concorrencia}
-              </StatusPill>
-              <span>{familia.concorrenciaVendedores} vendedores</span>
-              {familia.concorrenciaPrecoMin != null && (
-                <span>· menor preço <span className="font-medium text-foreground">{fmtBRL(familia.concorrenciaPrecoMin)}</span></span>
-              )}
+        {/* Estratégia + Concorrência (agrupados num box compacto: a tela prioriza
+            Potencial de venda e Você recebe, que ficam maiores ao lado) */}
+        <div className="flex min-w-[180px] flex-1 flex-col gap-2 rounded-md border bg-card p-2">
+          <div>
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Coins className="h-3.5 w-3.5" /> Estratégia
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">sem concorrência detectada</p>
-          )}
+            <StatusPill tone={proprio ? 'info' : 'warning'}>
+              {labelEstrategia}
+            </StatusPill>
+            <p className="mt-1 text-xs text-muted-foreground">{familia.estrategiaMotivo}</p>
+          </div>
+          <div className="border-t pt-2">
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Store className="h-3.5 w-3.5" /> Concorrência
+            </div>
+            {temConcorrencia ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <StatusPill tone={TONE_CONCORRENCIA[familia.concorrencia]} className="capitalize">
+                  {familia.concorrencia}
+                </StatusPill>
+                <span>{familia.concorrenciaVendedores} vendedores</span>
+                {familia.concorrenciaPrecoMin != null && (
+                  <span>· menor preço <span className="font-medium text-foreground">{fmtBRL(familia.concorrenciaPrecoMin)}</span></span>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">sem concorrência detectada</p>
+            )}
+          </div>
         </div>
 
-        {/* Potencial de venda */}
+        {/* Potencial de venda (prioritário → flex-[2], mais largura) */}
         {familia.analiseMercado && (
-          <div className="min-w-[200px] flex-1 rounded-md border bg-card p-2">
+          <div className="min-w-[240px] flex-[2] rounded-md border bg-card p-2">
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" /> Potencial de venda
             </div>
@@ -163,8 +136,8 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
           </div>
         )}
 
-        {/* Você recebe por venda (precisa de mais largura: compara Clássico × Premium) */}
-        <div className="min-w-[280px] flex-1">
+        {/* Você recebe por venda (prioritário → flex-[2]; compara Clássico × Premium) */}
+        <div className="min-w-[300px] flex-[2]">
           <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} />
         </div>
       </div>
