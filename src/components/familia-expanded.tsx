@@ -42,6 +42,16 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
 
+  // Re-sincroniza o estado local quando o servidor altera a FOTO de alguma variação
+  // (upload pela câmera → invalidate → refetch). Sem isso, o estado local — inicializado
+  // só uma vez — ignora a foto nova e a linha continua "sem foto". Chaveado apenas por
+  // código+foto p/ não descartar edições locais de cor/preço/GTIN ainda não salvas.
+  const fotosKey = familia.variacoes.map((v) => `${v.codigo}:${v.fotoPath ?? ''}`).join('|');
+  useEffect(() => {
+    setVariacoes(familia.variacoes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fotosKey]);
+
   const [tituloStatus, setTituloStatus] = useState<SaveStatus>(undefined);
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
