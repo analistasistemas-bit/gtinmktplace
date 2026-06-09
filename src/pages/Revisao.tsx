@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -156,13 +157,19 @@ export default function Revisao() {
 
   async function confirmarPublicacao() {
     setPublicando(true);
+    const total = selecionadas.size;
     try {
       await publicarFamilias([...selecionadas], listingType);
       setSelecionadas(new Set());
       setConfirmando(false);
+      toast.success(`${total} família(s) enfileirada(s) para publicação`, {
+        description: 'Acompanhe o andamento no relatório.',
+      });
       nav(`/relatorio/${loteId}`);
     } catch (e) {
-      alert((e as Error).message);
+      toast.error('Falha ao enfileirar a publicação', {
+        description: e instanceof Error ? e.message : String(e),
+      });
     } finally {
       setPublicando(false);
     }
@@ -324,8 +331,16 @@ export default function Revisao() {
               </div>
             </div>
           )}
+          {publicando && (
+            <div className="mt-1 space-y-2">
+              <div className="track-indeterminate" role="progressbar" aria-label="Enfileirando publicação" />
+              <p className="text-xs text-muted-foreground">
+                Enfileirando famílias e enviando fotos ao Mercado Livre…
+              </p>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmando(false)}>Cancelar</Button>
+            <Button variant="outline" disabled={publicando} onClick={() => setConfirmando(false)}>Cancelar</Button>
             <Button disabled={publicando} onClick={confirmarPublicacao}>
               {publicando ? 'Enfileirando…' : 'Confirmar publicação'}
             </Button>

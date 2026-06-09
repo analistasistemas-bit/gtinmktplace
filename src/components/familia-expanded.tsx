@@ -1,11 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Sparkles, Trash2, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { VariacaoCard } from '@/components/variacao-card';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
@@ -234,8 +246,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
     try {
       await subirCapaFamilia(familia.loteId, familia.codigoPai, file);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+      toast.success('Foto-capa atualizada');
     } catch (err) {
-      alert(`Erro ao trocar capa: ${(err as Error).message}`);
+      toast.error('Erro ao trocar capa', { description: (err as Error).message });
     } finally {
       setTrocando(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -244,12 +257,12 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
 
   async function lidarRemoverCapa() {
     if (!familia.capaStoragePath) return;
-    if (!confirm('Remover capa desta família?')) return;
     try {
       await removerCapaFamilia(familia.id, familia.capaStoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+      toast.success('Foto-capa removida');
     } catch (err) {
-      alert(`Erro ao remover capa: ${(err as Error).message}`);
+      toast.error('Erro ao remover capa', { description: (err as Error).message });
     }
   }
 
@@ -260,8 +273,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
     try {
       await subirCapa2Familia(familia.loteId, familia.codigoPai, file);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+      toast.success('2ª foto atualizada');
     } catch (err) {
-      alert(`Erro ao subir 2ª foto: ${(err as Error).message}`);
+      toast.error('Erro ao subir 2ª foto', { description: (err as Error).message });
     } finally {
       setTrocandoCapa2(false);
       if (inputCapa2Ref.current) inputCapa2Ref.current.value = '';
@@ -270,12 +284,12 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
 
   async function lidarRemoverCapa2() {
     if (!familia.capa2StoragePath) return;
-    if (!confirm('Remover a 2ª foto desta família?')) return;
     try {
       await removerCapa2Familia(familia.id, familia.capa2StoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+      toast.success('2ª foto removida');
     } catch (err) {
-      alert(`Erro ao remover 2ª foto: ${(err as Error).message}`);
+      toast.error('Erro ao remover 2ª foto', { description: (err as Error).message });
     }
   }
 
@@ -301,10 +315,31 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
                   {familia.capaStoragePath ? 'Trocar foto' : 'Subir capa'}
                 </Button>
                 {familia.capaStoragePath && (
-                  <Button variant="ghost" size="sm" onClick={lidarRemoverCapa}>
-                    <Trash2 className="mr-1.5 h-4 w-4" />
-                    Remover
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <Trash2 className="mr-1.5 h-4 w-4" />
+                        Remover
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remover a foto-capa?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A foto-capa desta família será removida. Você pode subir outra depois.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={lidarRemoverCapa}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Remover
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 )}
               </div>
               <input
@@ -326,9 +361,30 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
                   {familia.capa2StoragePath ? 'Trocar 2ª foto' : 'Subir 2ª foto'}
                 </Button>
                 {familia.capa2StoragePath && (
-                  <Button variant="ghost" size="sm" onClick={lidarRemoverCapa2}>
-                    <Trash2 className="mr-1.5 h-4 w-4" /> Remover
-                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <Trash2 className="mr-1.5 h-4 w-4" /> Remover
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remover a 2ª foto?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A 2ª foto (aplicada a todas as cores) será removida. Você pode subir outra depois.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={lidarRemoverCapa2}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Remover
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 )}
               </div>
               <input ref={inputCapa2Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa2} />
