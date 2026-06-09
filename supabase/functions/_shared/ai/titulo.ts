@@ -14,10 +14,38 @@ export function extrairMetragem(nome: string): string | null {
   return `${m[1]}${normalizarUnidade(m[2])}`;
 }
 
+// Conectivos/preposições que, sozinhos no fim do título, denunciam frase cortada
+// (a IA estoura o teto de 60 chars do schema no meio do "diferencial" → "VERSÁTIL E").
+const CAUDA_CONECTIVA = new Set([
+  'E', 'OU', 'DE', 'DA', 'DO', 'DAS', 'DOS', 'COM', 'SEM', 'PARA', 'POR',
+  'EM', 'NO', 'NA', 'A', 'O', 'AO', '&',
+]);
+
+// Remove a cauda incompleta do título: pipe pendurado (segmento vazio) e
+// conectivos soltos no fim. Não toca em título já completo.
+export function removerCaudaConectiva(titulo: string): string {
+  let t = titulo.trim();
+  for (;;) {
+    const antes = t;
+    t = t.replace(/\s*\|\s*$/, '').trimEnd(); // pipe pendurado / segmento vazio
+    const palavras = t.split(/\s+/);
+    const ultima = palavras[palavras.length - 1]?.toUpperCase();
+    if (ultima && CAUDA_CONECTIVA.has(ultima)) {
+      palavras.pop();
+      t = palavras.join(' ').trimEnd();
+    }
+    if (t === antes) break; // estabilizou
+  }
+  return t;
+}
+
 // Garante que a metragem do nome apareça no título (dado crucial que diferencia
 // produtos — ex.: fita 10MT vs 100MT). Rede de segurança determinística porque a
 // IA, sob o teto de 60 chars, descarta a metragem mesmo presente no nome.
 export function garantirMetragemTitulo(titulo: string, nomePai: string): string {
+  // Primeiro limpa a cauda incompleta deixada pelo corte de 60 chars da IA, para
+  // o resultado (inclusive no atalho "metragem já presente") nunca ter conectivo solto.
+  titulo = removerCaudaConectiva(titulo);
   const metragem = extrairMetragem(nomePai);
   if (!metragem) return titulo;
 

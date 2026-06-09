@@ -50,6 +50,7 @@ TÍTULO
 - Exemplo: \`FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | RESISTENTE\`
 - TUDO EM CAPS.
 - SE o nome do produto contém metragem ou quantidade (ex.: 10MT, 100MT, 50M), inclua-a OBRIGATORIAMENTE no título logo após o modelo. É dado crucial que diferencia o produto (10MT e 100MT são produtos distintos) — priorize a metragem real sobre adjetivos genéricos de "DIFERENCIAL".
+- O segmento "DIFERENCIAL" é OPCIONAL. Só inclua se a palavra/frase couber INTEIRA dentro dos 60 caracteres. NUNCA corte uma palavra no meio nem termine o título com conectivo solto (ex.: "... VERSÁTIL E", "... DE", "... COM"). Prefira um título mais curto e completo (ex.: "... | 100% POLIÉSTER") a um terminado em fragmento.
 - NUNCA mencione quantidade de cores nem "Disponível em N cores".
 - Use apenas dados do input.
 
