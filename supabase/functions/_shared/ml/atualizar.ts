@@ -1,4 +1,4 @@
-import { gtinAusente } from './publicar.ts';
+import { gtinAusente, ordenarFotosVariacao } from './publicar.ts';
 import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
 import { calcularPrecoDe } from '../preco/desconto.ts';
 
@@ -30,16 +30,11 @@ export function montarVariacaoNova(
   categoriaMlId: string | null,
   desconto?: { pct: number } | null,
 ): VariacaoNovaPut {
-  const pics = [
-    ...(capaPictureId ? [capaPictureId] : []),
-    ...(capa2PictureId ? [capa2PictureId] : []),
-    ...(v.ml_picture_id ? [v.ml_picture_id] : []),
-  ];
   const variation: VariacaoNovaPut = {
     attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
     available_quantity: v.estoque,
     price: v.preco_publicacao ?? 0,
-    picture_ids: [...new Set(pics)],
+    picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, v.ml_picture_id),
     seller_custom_field: v.codigo,
   };
   if (desconto) {

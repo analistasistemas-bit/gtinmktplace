@@ -108,6 +108,14 @@ describe('montarVariacaoNova', () => {
     expect(r.picture_ids).toEqual(['CAPA', 'CAPA2', 'PN']);
   });
 
+  // Regressão: cor nova sem foto-capa própria mas com 2ª foto comum. A capa2 não
+  // pode liderar (viraria capa da variação no ML); a própria foto vem 1ª, capa2 2ª.
+  it('sem capa mas com capa2: própria foto lidera e capa2 fica em 2º', () => {
+    const v = { codigo: '00000009', cor: 'Azul', estoque: 3, preco_publicacao: 12, gtin: null, ml_picture_id: 'PN' };
+    const r = montarVariacaoNova(v, null, 'CAPA2', 'MLB255054');
+    expect(r.picture_ids).toEqual(['PN', 'CAPA2']);
+  });
+
   it('montarVariacaoNova com desconto adiciona original_price', () => {
     const v = { codigo: '2', cor: 'Rosa', estoque: 4, preco_publicacao: 12.29, gtin: null, ml_picture_id: null };
     const out = montarVariacaoNova(v, null, null, 'MLB255054', { pct: 15 });

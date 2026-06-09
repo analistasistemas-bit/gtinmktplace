@@ -64,6 +64,19 @@ export function gtinAusente(gtin: string | null): boolean {
   return !gtin || gtin.trim() === '' || /^3000/.test(gtin);
 }
 
+/** Ordena as fotos de uma variação. O ML usa a 1ª picture_id como capa da galeria
+ *  da cor, então a 1ª posição é sempre uma foto "principal": a foto-capa da família
+ *  quando existe, senão a própria foto da cor. A capa2 é, por definição, a 2ª foto e
+ *  NUNCA pode liderar — sem capa, a própria foto sobe para a 1ª e a capa2 fica em 2ª. */
+export function ordenarFotosVariacao(
+  capa: string | null,
+  capa2: string | null,
+  propria: string | null,
+): string[] {
+  const lider = capa ?? propria;
+  return [...new Set([lider, capa2, propria].filter((x): x is string => !!x))];
+}
+
 export function montarPayloadItem(
   familia: FamiliaInput,
   variacoes: VariacaoInput[],
@@ -73,26 +86,22 @@ export function montarPayloadItem(
   desconto?: { pct: number } | null,
   dimensoes?: DimensoesPacote | null,
 ): PayloadItem {
-  const comuns = [capaPictureId, capa2PictureId].filter((x): x is string => !!x);
-  const picIds = [
-    ...comuns,
-    ...variacoes.map((v) => v.ml_picture_id).filter((x): x is string => !!x),
-  ];
+  // item.pictures lidera com uma foto principal (capa da família, ou a 1ª foto de cor
+  // quando não há capa); a capa2 nunca assume a 1ª posição.
+  const fotosCor = variacoes.map((v) => v.ml_picture_id).filter((x): x is string => !!x);
+  const lider = capaPictureId ?? fotosCor[0] ?? null;
+  const picIds = [lider, capa2PictureId, ...fotosCor].filter((x): x is string => !!x);
   const pictures: PictureRef[] = [...new Set(picIds)].map((id) => ({ id }));
 
   const aceitaEmptyGtin = categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
   const variations: VariacaoItem[] = variacoes.map((v) => {
     // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria
     // por variação, então sem isso a foto-capa do anúncio nunca apareceria.
-    const picsVariacao = [
-      ...comuns,
-      ...(v.ml_picture_id ? [v.ml_picture_id] : []),
-    ];
     const variation: VariacaoItem = {
       attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
       available_quantity: v.estoque,
       price: v.preco_publicacao ?? 0,
-      picture_ids: [...new Set(picsVariacao)],
+      picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, v.ml_picture_id),
       seller_custom_field: v.codigo,
     };
     if (desconto) {

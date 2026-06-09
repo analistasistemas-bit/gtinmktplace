@@ -92,6 +92,15 @@ describe('montarPayloadItem com 2a foto', () => {
     const p = montarPayloadItem(familia, variacoes, 'CAPA', null);
     expect(p.variations[0].picture_ids).toEqual(['CAPA', 'P1']);
   });
+  // Regressão: família sem foto-capa própria mas com 2ª foto comum. A capa2 é por
+  // definição a 2ª foto e nunca deve assumir a 1ª posição (o ML usa a 1ª como capa
+  // da galeria). Sem capa, a própria foto da cor lidera; a capa2 cai para 2º.
+  it('sem capa mas com capa2: a própria foto lidera e a capa2 fica em 2º (não vira capa)', () => {
+    const p = montarPayloadItem(familia, variacoes, null, 'CAPA2');
+    expect(p.variations[0].picture_ids).toEqual(['P1', 'CAPA2']);
+    expect(p.pictures[0].id).not.toBe('CAPA2');
+    expect(p.pictures[0].id).toBe('P1');
+  });
 });
 
 describe('montarPayloadItem com dimensões (ADR-0018)', () => {
