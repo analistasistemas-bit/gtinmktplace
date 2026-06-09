@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
+import { garantirMetragemTitulo } from '../_shared/ai/titulo.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -45,10 +46,12 @@ Deno.serve(async (req) => {
       })),
     });
 
+    const tituloFinal = garantirMetragemTitulo(result.titulo, familia.nome_pai);
+
     const { error: upErr } = await sb
       .from('familias')
       .update({
-        titulo_ml: result.titulo,
+        titulo_ml: tituloFinal,
         descricao_ml: result.descricao,
         tokens_input: result.tokens_input,
         tokens_output: result.tokens_output,
@@ -64,7 +67,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        titulo: result.titulo,
+        titulo: tituloFinal,
         descricao: result.descricao,
         custo_centavos: result.custo_centavos,
       }),

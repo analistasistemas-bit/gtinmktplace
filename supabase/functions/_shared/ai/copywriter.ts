@@ -46,9 +46,10 @@ Aplicações de uso genéricas do tipo de aviamento (ex.: "linha serve para cost
 TÍTULO
 ═══════════════════════════════════════════════════════
 - Até 60 caracteres.
-- Formato: \`MARCA MODELO | CARACTERÍSTICA PRINCIPAL | DIFERENCIAL\`
-- Exemplo: \`LINHA SETTA XIK TEX 120 | 100% POLIÉSTER | RESISTENTE\`
+- Formato: \`MARCA MODELO METRAGEM | CARACTERÍSTICA PRINCIPAL | DIFERENCIAL\`
+- Exemplo: \`FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | RESISTENTE\`
 - TUDO EM CAPS.
+- SE o nome do produto contém metragem ou quantidade (ex.: 10MT, 100MT, 50M), inclua-a OBRIGATORIAMENTE no título logo após o modelo. É dado crucial que diferencia o produto (10MT e 100MT são produtos distintos) — priorize a metragem real sobre adjetivos genéricos de "DIFERENCIAL".
 - NUNCA mencione quantidade de cores nem "Disponível em N cores".
 - Use apenas dados do input.
 

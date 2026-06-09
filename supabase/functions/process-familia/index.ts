@@ -6,6 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
+import { garantirMetragemTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { calcularEstrategiaPreco } from '../_shared/preco/calcular.ts';
 import { detectarTipoAviamento } from '../_shared/categoria/detectar.ts';
@@ -183,7 +184,7 @@ Deno.serve(async (req) => {
     // Enums do banco são minúsculos: converte estrategia (PROPRIO→proprio) e garante tipo_origem
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
     const { error: persistErr } = await admin.from('familias').update({
-      titulo_ml: copy.titulo,
+      titulo_ml: garantirMetragemTitulo(copy.titulo, claimed.nome_pai),
       descricao_ml: copy.descricao,
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
