@@ -7,9 +7,10 @@ interface DropzoneProps {
   multiple: boolean;
   onFiles: (files: File[]) => void;
   files: File[];
+  hint?: string;
 }
 
-export function Dropzone({ label, accept, multiple, onFiles, files }: DropzoneProps) {
+export function Dropzone({ label, accept, multiple, onFiles, files, hint }: DropzoneProps) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept,
     multiple,
@@ -35,6 +36,7 @@ export function Dropzone({ label, accept, multiple, onFiles, files }: DropzonePr
           {multiple ? `${files.length} arquivo(s) selecionado(s)` : files[0].name}
         </p>
       )}
+      {hint && <p className="mt-1 text-xs text-muted-foreground/70">{hint}</p>}
     </div>
   );
 }
