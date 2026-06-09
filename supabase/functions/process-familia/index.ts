@@ -8,7 +8,9 @@ import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { calcularEstrategiaPreco } from '../_shared/preco/calcular.ts';
+import { sugerirPrecoVenda } from '../_shared/preco/sugerir.ts';
+import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { detectarTipoAviamento } from '../_shared/categoria/detectar.ts';
 import { categoriaParaTipo, montarAtributosML } from '../_shared/categoria/atributos.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
@@ -150,29 +152,44 @@ Deno.serve(async (req) => {
       variacoes: resolvidas.map((v) => ({ gtin: v.gtin })),
     });
 
-    // 5c. Estratégia de preço condicional (ADR-0008). preco_publicacao por variação
-    // (preserva o que o operador editou); estratégia da família pela variação mais barata.
+    // 5c. Categoria + atributos determinísticos (ADR-0009). tipo='outro' deixa
+    // categoria_ml_id null → operador escolhe na revisão (sem publicar às cegas).
+    // Calculado ANTES do preço porque o gross-up usa categoriaMlId.
+    const { tipo, origem: tipoOrigem } = detectarTipoAviamento(claimed.nome_pai);
+    const categoriaMlId = categoriaParaTipo(tipo);
+    const atributosMl = montarAtributosML(tipo, claimed.nome_pai, (claimed.fornecedor as string | null) ?? undefined);
+
+    // 5d. Estratégia de preço v2 (ADR-0020). PRECO = líquido mínimo desejado.
+    // Com concorrente → mercado (× 0,95). Sem concorrente → gross-up (busca comissão 1x).
     const conc = { vendedores: concorrencia.vendedores, preco_min: concorrencia.preco_min };
+    const precoMinFamilia = resolvidas.length
+      ? Math.min(...resolvidas.map((v) => Number(v.preco)))
+      : 0;
+    const competitivo = conc.vendedores > 0 && conc.preco_min != null;
+
+    let comissao: { percentual: number; fixa: number } | null = null;
+    if (!competitivo && categoriaMlId) {
+      try {
+        const token = await getValidAccessToken(userId);
+        const lp = await buscarListingPrice(token, precoMinFamilia, categoriaMlId, 'gold_special');
+        comissao = comissaoDe(lp);
+      } catch (e) {
+        // Resiliente: sem comissão o gross-up cai no piso; o semáforo mostra "indisponível".
+        console.error('comissão p/ gross-up falhou:', e);
+      }
+    }
+
     const updatesPreco = resolvidas
       .filter((v) => !v.preco_editado_pelo_operador)
       .map((v) => {
-        const { preco_sugerido } = calcularEstrategiaPreco(Number(v.preco), conc);
+        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao);
         return admin.from('variacoes')
-          .update({ preco_publicacao: preco_sugerido })
+          .update({ preco_publicacao: preco })
           .eq('id', v.id);
       });
     await Promise.all(updatesPreco);
 
-    const precoMinFamilia = resolvidas.length
-      ? Math.min(...resolvidas.map((v) => Number(v.preco)))
-      : 0;
-    const estrategiaFamilia = calcularEstrategiaPreco(precoMinFamilia, conc);
-
-    // 5d. Categoria + atributos determinísticos (ADR-0009). tipo='outro' deixa
-    // categoria_ml_id null → operador escolhe na revisão (sem publicar às cegas).
-    const { tipo, origem: tipoOrigem } = detectarTipoAviamento(claimed.nome_pai);
-    const categoriaMlId = categoriaParaTipo(tipo);
-    const atributosMl = montarAtributosML(tipo, claimed.nome_pai, (claimed.fornecedor as string | null) ?? undefined);
+    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao);
 
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =
@@ -193,7 +210,7 @@ Deno.serve(async (req) => {
       concorrencia_preco_min: concorrencia.preco_min,
       concorrencia_origem: concorrencia.origem,
       concorrencia_classe: concorrencia.classe,
-      estrategia_preco: estrategiaFamilia.estrategia === 'COMPETITIVO' ? 'competitivo' : 'proprio',
+      estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
       tipo_aviamento: tipo,
       tipo_origem: tipoOrigem === 'ia' || tipoOrigem === 'manual' ? tipoOrigem : 'regex',
