@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,12 +50,20 @@ export function LoteCard({ lote }: { lote: Lote }) {
     excluir(lote.id, {
       onSuccess: (res) => {
         setDialogAberto(false);
-        window.alert(
-          `Lote excluído (${res.familias_removidas} famílias, ${res.imagens_removidas} imagens; ${res.familias_preservadas} preservadas)`
-        );
+        const plural = (n: number, s: string, p: string) => `${n} ${n === 1 ? s : p}`;
+        const partes = [
+          plural(res.familias_removidas, 'família removida', 'famílias removidas'),
+          plural(res.imagens_removidas, 'imagem', 'imagens'),
+        ];
+        if (res.familias_preservadas > 0) {
+          partes.push(plural(res.familias_preservadas, 'família preservada', 'famílias preservadas'));
+        }
+        toast.success(`Lote #${lote.numero} excluído`, { description: partes.join(' · ') });
       },
       onError: (err) => {
-        window.alert(`Erro: ${err instanceof Error ? err.message : String(err)}`);
+        toast.error(`Falha ao excluir o lote #${lote.numero}`, {
+          description: err instanceof Error ? err.message : String(err),
+        });
       },
     });
   }
@@ -112,7 +121,19 @@ export function LoteCard({ lote }: { lote: Lote }) {
                   Publicados e mantêm o vínculo para futuros UPDATEs.
                 </p>
                 <p>O Mercado Livre não é tocado por esta ação.</p>
-                {error && (
+                {isPending && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center gap-2 text-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="font-medium">Excluindo lote…</span>
+                    </div>
+                    <div className="track-indeterminate" role="progressbar" aria-label="Excluindo lote" />
+                    <p className="text-xs text-muted-foreground">
+                      Removendo famílias e imagens. Isso pode levar alguns segundos.
+                    </p>
+                  </div>
+                )}
+                {error && !isPending && (
                   <p className="text-destructive">
                     {error instanceof Error ? error.message : String(error)}
                   </p>
