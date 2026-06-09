@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -228,7 +229,14 @@ export default function Publicados() {
   // Desabilita só a linha em remoção (não todas).
   const handleRemover = (familiaId: string) => {
     setRemovendoId(familiaId);
-    remover(familiaId, { onSettled: () => setRemovendoId(null) });
+    remover(familiaId, {
+      onSuccess: () => toast.success('Removido do sistema'),
+      onError: (err) =>
+        toast.error('Falha ao remover', {
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      onSettled: () => setRemovendoId(null),
+    });
   };
 
   // Merge status ao vivo (memoizado: só recomputa quando publicados/statusData mudam,
