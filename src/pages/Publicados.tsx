@@ -1,6 +1,17 @@
 import { useMemo, useState } from 'react';
-import { RefreshCw, ExternalLink, Trash2, FileText } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +20,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,21 +60,21 @@ const STATUS_LABEL: Record<StatusPublicado, string> = {
   indisponivel: 'Indisponível',
 };
 
-function BadgeStatus({ status, motivo }: { status: StatusPublicado; motivo?: string | null }) {
-  const cls = {
-    ativo: 'bg-green-50 text-green-700 border border-green-200',
-    pausado: 'bg-muted text-muted-foreground',
-    encerrado: 'bg-gray-200 text-gray-700',
-    moderado: 'bg-amber-50 text-amber-700 border border-amber-200',
-    inativo: 'bg-red-50 text-red-700 border border-red-200',
-    indisponivel: 'border border-dashed border-red-300 text-red-600',
-  }[status];
+const STATUS_TONE: Record<StatusPublicado, StatusTone> = {
+  ativo: 'success',
+  pausado: 'neutral',
+  encerrado: 'neutral',
+  moderado: 'warning',
+  inativo: 'danger',
+  indisponivel: 'neutral',
+};
 
+function BadgeStatus({ status, motivo }: { status: StatusPublicado; motivo?: string | null }) {
   return (
     <span className="flex flex-col gap-0.5">
-      <Badge className={cn('w-fit font-medium', cls)}>{STATUS_LABEL[status]}</Badge>
+      <StatusPill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>
       {status === 'moderado' && motivo && (
-        <span className="text-xs text-amber-600">{motivo}</span>
+        <span className="text-xs text-warning">{motivo}</span>
       )}
     </span>
   );
@@ -107,27 +117,27 @@ const CONTEUDO_ML = (
 
 function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
   return (
-    <tr className="border-b transition-colors hover:bg-muted/30">
-      <td className="px-3 py-2">
+    <TableRow>
+      <TableCell className="whitespace-normal">
         <div className="max-w-[260px]">
           <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
           <p className="text-xs text-muted-foreground">{item.codigoPai}</p>
         </div>
-      </td>
-      <td className="px-3 py-2 text-sm">{item.fornecedor ?? '—'}</td>
-      <td className="px-3 py-2 text-sm">{nomeTipo(item.tipo)}</td>
-      <td className="px-3 py-2 text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</td>
-      <td className="px-3 py-2 text-sm tabular-nums">
+      </TableCell>
+      <TableCell className="text-sm">{item.fornecedor ?? '—'}</TableCell>
+      <TableCell className="text-sm">{nomeTipo(item.tipo)}</TableCell>
+      <TableCell className="text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</TableCell>
+      <TableCell className="text-sm tabular-nums">
         {item.estoque != null ? item.estoque : '—'}
-      </td>
-      <td className="px-3 py-2 text-sm tabular-nums">
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
         {item.precoAtual != null ? fmtBRL(item.precoAtual) : '—'}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
-      </td>
-      <td className="px-3 py-2 text-sm">{fmtData(item.publicadoEm)}</td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
+      <TableCell>
         <div className="flex items-center gap-1">
           <Dialog>
             <DialogTrigger asChild>
@@ -198,8 +208,8 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
             </AlertDialogContent>
           </AlertDialog>
         </div>
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -257,23 +267,24 @@ export default function Publicados() {
 
   return (
     <div className="p-6">
-      {/* Cabeçalho */}
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Publicados</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetchStatus()}
-          disabled={fetchingStatus}
-        >
-          <RefreshCw className={cn('mr-1.5 h-4 w-4', fetchingStatus && 'animate-spin')} />
-          {fetchingStatus ? 'Atualizando…' : 'Atualizar'}
-        </Button>
-      </div>
+      <PageHeader
+        title="Publicados"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetchStatus()}
+            disabled={fetchingStatus}
+          >
+            <RefreshCw className={cn('mr-1.5 h-4 w-4', fetchingStatus && 'animate-spin')} />
+            {fetchingStatus ? 'Atualizando…' : 'Atualizar'}
+          </Button>
+        }
+      />
 
       {/* Banner sem credencial ML */}
       {statusData?.semCredencialML && (
-        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           Conecte sua conta ML nas Configurações para ver o status ao vivo.
         </div>
       )}
@@ -287,9 +298,11 @@ export default function Publicados() {
 
       {/* Estado vazio */}
       {publicados.length === 0 ? (
-        <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhum anúncio publicado ainda.
-        </div>
+        <EmptyState
+          icon={PackageOpen}
+          title="Nenhum anúncio publicado ainda"
+          description="Os anúncios publicados no Mercado Livre aparecem aqui com o status ao vivo."
+        />
       ) : (
         <>
           {/* Filtros */}
@@ -355,28 +368,28 @@ export default function Publicados() {
           </div>
 
           {/* Tabela */}
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b bg-muted/50 text-xs font-medium text-muted-foreground">
-                  <th className="px-3 py-2">Título</th>
-                  <th className="px-3 py-2">Fornecedor</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2">Preço publicado</th>
-                  <th className="px-3 py-2">Estoque atual</th>
-                  <th className="px-3 py-2">Preço atual</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Publicado em</th>
-                  <th className="px-3 py-2">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
+                  <TableHead>Título</TableHead>
+                  <TableHead>Fornecedor</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Preço publicado</TableHead>
+                  <TableHead>Estoque atual</TableHead>
+                  <TableHead>Preço atual</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Publicado em</TableHead>
+                  <TableHead>Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {itensExibidos.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  <TableRow>
+                    <TableCell colSpan={9} className="py-6 text-center text-sm text-muted-foreground">
                       Nenhum resultado para os filtros aplicados.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   itensExibidos.map((item) => (
                     <LinhaTabela
@@ -387,8 +400,8 @@ export default function Publicados() {
                     />
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           <p className="mt-2 text-xs text-muted-foreground">
