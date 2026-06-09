@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { PageHeader } from '@/components/ui/page-header';
+import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useMlConnection } from '@/hooks/useMlConnection';
 import { useDescontoPct, useSalvarDescontoPct } from '@/hooks/useConfiguracoes';
@@ -47,26 +49,26 @@ export default function Configuracoes() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-2xl font-semibold">Configurações</h1>
+      <PageHeader title="Configurações" />
 
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <Card className="p-4">
           <h2 className="mb-2 text-sm font-semibold">Mercado Livre</h2>
 
           {!carregandoConexao && mlConectado && conexao?.conectado && (
-            <p className="mb-2 rounded bg-green-50 px-2 py-1 text-xs text-green-700">
+            <p className="mb-2 rounded border border-success/30 bg-success/10 px-2 py-1 text-xs text-success">
               Conta conectada com sucesso.
             </p>
           )}
           {mlErro && (
-            <p className="mb-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">
+            <p className="mb-2 rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
               {mlErro === 'state'
                 ? 'Sessão de conexão expirou. Tente conectar de novo.'
                 : 'Não foi possível conectar ao Mercado Livre. Tente de novo.'}
             </p>
           )}
           {erroAcao && (
-            <p className="mb-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">{erroAcao}</p>
+            <p className="mb-2 rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">{erroAcao}</p>
           )}
 
           {carregandoConexao ? (
@@ -74,7 +76,7 @@ export default function Configuracoes() {
           ) : conexao?.conectado ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Conectado</Badge>
+                <StatusPill tone="success">Conectado</StatusPill>
                 <span className="text-sm">como {conexao.nickname ?? conexao.mlUserId}</span>
               </div>
               <Button variant="outline" size="sm" onClick={handleDesconectar}>
@@ -126,12 +128,12 @@ export default function Configuracoes() {
             Preço cheio riscado (selo "% OFF"). Sugestão 15%. O liga/desliga é por produto, na Revisão.
           </p>
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="number"
               min={0}
               max={99}
               step={1}
-              className="w-20 rounded border px-2 py-1 text-sm"
+              className="h-8 w-20 text-sm"
               value={pctInput}
               onChange={(e) => setPctInput(e.target.value)}
               onBlur={() => {
@@ -142,7 +144,7 @@ export default function Configuracoes() {
             <span className="text-sm">%</span>
             {salvar.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
             {salvar.isSuccess && !salvar.isPending && (
-              <span className="text-xs text-green-700">✓ Salvo</span>
+              <span className="text-xs text-success">✓ Salvo</span>
             )}
           </div>
         </Card>
