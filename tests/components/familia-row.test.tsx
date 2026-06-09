@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FamiliaRow } from '@/components/familia-row';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -56,6 +56,37 @@ describe('FamiliaRow', () => {
       />
     );
     expect(screen.getByRole('checkbox', { name: 'Selecionar família' })).toBeChecked();
+  });
+
+  it('clicar na área da linha expande a família', () => {
+    const onExpandir = vi.fn();
+    renderWithClient(
+      <FamiliaRow
+        familia={FAMILIA}
+        selecionada={false}
+        expandida={false}
+        onSelecionar={() => {}}
+        onExpandir={onExpandir}
+      />
+    );
+    fireEvent.click(screen.getByText(/Linha de Costura/));
+    expect(onExpandir).toHaveBeenCalledWith('familia-1');
+  });
+
+  it('clicar no checkbox de seleção não expande', () => {
+    const onExpandir = vi.fn();
+    renderWithClient(
+      <FamiliaRow
+        familia={FAMILIA}
+        selecionada={false}
+        expandida={false}
+        onSelecionar={() => {}}
+        onExpandir={onExpandir}
+      />
+    );
+    // O clique borbulha no DOM; a linha deve ignorá-lo por vir de um controle interativo.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar família' }));
+    expect(onExpandir).not.toHaveBeenCalled();
   });
 
   it('mostra alerta de preço quando precoAbaixo20pc=true', () => {
