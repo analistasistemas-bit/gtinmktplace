@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, montarAtributosML, atributosFaltantes } from '../atributos';
+import { categoriaParaTipo, montarAtributosML, atributosFaltantes, ehDuplaFace } from '../atributos';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
   it('mapeia os 3 tipos conhecidos para categorias-folha', () => {
@@ -48,6 +48,25 @@ describe('montarAtributosML', () => {
     expect(montarAtributosML('outro', 'qualquer')).toEqual([]);
   });
 
+  it('fita: IS_DOUBLE_FACE = Não (242084) por padrão (face simples)', () => {
+    const a = montarAtributosML('fita', 'FITA CETIM PROGRESSO N.3');
+    expect(a).toContainEqual({ id: 'IS_DOUBLE_FACE', value_id: '242084' });
+  });
+
+  it('fita: IS_DOUBLE_FACE = Sim (242085) quando o detalhe indica dupla face', () => {
+    const a = montarAtributosML('fita', 'FITA CETIM N.3', 'Avil', 'Fita de cetim dupla face, brilho nos dois lados.');
+    expect(a).toContainEqual({ id: 'IS_DOUBLE_FACE', value_id: '242085' });
+  });
+
+  it('linha/botao: NÃO recebem IS_DOUBLE_FACE (atributo só da categoria fita)', () => {
+    expect(montarAtributosML('linha', 'LINHA X', 'Avil', 'dupla face')).not.toContainEqual(
+      expect.objectContaining({ id: 'IS_DOUBLE_FACE' }),
+    );
+    expect(montarAtributosML('botao', 'BOTAO', 'Avil', 'dupla face')).not.toContainEqual(
+      expect.objectContaining({ id: 'IS_DOUBLE_FACE' }),
+    );
+  });
+
   it('usa o fornecedor como BRAND quando informado', () => {
     const a = montarAtributosML('linha', 'LINHA X', 'LINHAS SETTA LTDA');
     expect(a).toContainEqual({ id: 'BRAND', value_name: 'LINHAS SETTA LTDA' });
@@ -56,6 +75,22 @@ describe('montarAtributosML', () => {
   it('fallback "Avil" quando a marca é vazia ou só espaços', () => {
     expect(montarAtributosML('fita', 'FITA CETIM', '   ')).toContainEqual({ id: 'BRAND', value_name: 'Avil' });
     expect(montarAtributosML('botao', 'BOTAO', '')).toContainEqual({ id: 'BRAND', value_name: 'Avil' });
+  });
+});
+
+describe('ehDuplaFace (detecção no texto da planilha)', () => {
+  it('reconhece "dupla face", "face dupla", "dupla-face", "duas faces", "dois lados"', () => {
+    expect(ehDuplaFace('Fita dupla face')).toBe(true);
+    expect(ehDuplaFace('acabamento face dupla premium')).toBe(true);
+    expect(ehDuplaFace('Fita dupla-face')).toBe(true);
+    expect(ehDuplaFace('estampa em duas faces')).toBe(true);
+    expect(ehDuplaFace('brilho nos dois lados')).toBe(true);
+    expect(ehDuplaFace('FITA DUPLA FACE')).toBe(true); // case/acento-insensível
+  });
+  it('face simples / texto vazio → false', () => {
+    expect(ehDuplaFace('Fita de cetim comum')).toBe(false);
+    expect(ehDuplaFace('')).toBe(false);
+    expect(ehDuplaFace(undefined)).toBe(false);
   });
 });
 

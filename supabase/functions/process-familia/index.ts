@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
     // Calculado ANTES do preço porque o gross-up usa categoriaMlId.
     const { tipo, origem: tipoOrigem } = detectarTipoAviamento(claimed.nome_pai);
     const categoriaMlId = categoriaParaTipo(tipo);
-    const atributosMl = montarAtributosML(tipo, claimed.nome_pai, (claimed.fornecedor as string | null) ?? undefined);
+    const atributosMl = montarAtributosML(tipo, claimed.nome_pai, (claimed.fornecedor as string | null) ?? undefined, claimed.descricao_pai ?? undefined);
 
     // 5d. Estratégia de preço v2 (ADR-0020). PRECO = líquido mínimo desejado.
     // Com concorrente → mercado (× 0,95). Sem concorrente → gross-up (busca comissão 1x).

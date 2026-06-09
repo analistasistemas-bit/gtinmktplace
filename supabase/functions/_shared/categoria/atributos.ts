@@ -30,6 +30,19 @@ const RIBBON_TYPE: { termo: string; id: string }[] = [
 ];
 const RIBBON_TYPE_DEFAULT = '22691456'; // "Fita"
 
+// value_id de IS_DOUBLE_FACE (categoria fita). Default Não: o ML auto-preenche "Sim"
+// quando o atributo é omitido, e a maioria dos produtos é face simples. "Sim" só quando
+// a DESCRICAO_DETALHADO da planilha indicar dupla face (decisão do Diego, 2026-06-09).
+const IS_DOUBLE_FACE_NAO = '242084';
+const IS_DOUBLE_FACE_SIM = '242085';
+
+const RE_DUPLA_FACE = /\b(dupla[ -]face|face[ -]dupla|duas faces|dois lados)\b/;
+
+/** Detecta menção a dupla face no texto da planilha (case/acento-insensível). */
+export function ehDuplaFace(detalhe?: string): boolean {
+  return RE_DUPLA_FACE.test(normalizar(detalhe ?? ''));
+}
+
 // value_id de MATERIAL (categoria botão): Acrílico (default) ou Madeira.
 const MATERIAL_ACRILICO = '1258137';
 const MATERIAL_MADEIRA = '2431881';
@@ -64,7 +77,7 @@ export function categoriaParaTipo(tipo: TipoAviamento): string | null {
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */
-export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: string): AtributoML[] {
+export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: string, detalhe?: string): AtributoML[] {
   const texto = normalizar(nome ?? '');
   const brand = marca?.trim() || MARCA;
   switch (tipo) {
@@ -78,6 +91,7 @@ export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: str
       return [
         { id: 'BRAND', value_name: brand },
         { id: 'RIBBON_TYPE', value_id: match?.id ?? RIBBON_TYPE_DEFAULT },
+        { id: 'IS_DOUBLE_FACE', value_id: ehDuplaFace(detalhe) ? IS_DOUBLE_FACE_SIM : IS_DOUBLE_FACE_NAO },
       ];
     }
     case 'botao':

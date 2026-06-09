@@ -194,3 +194,23 @@ A planilha passou a exportar `CUSTO` e `FORNECEDOR`. Em consequência:
   `custo_centavos` = custo de IA) e `familias.fornecedor`.
 - `CUSTO` alimenta o markup exibido no card "Você recebe" (cálculo no frontend; sem campo
   persistido de markup).
+
+## Adendo (2026-06-09) — IS_DOUBLE_FACE (dupla face) explícito na categoria fita
+
+Bug em produção: os anúncios de fita exibiam **"É dupla face: Sim"** mesmo sendo todos
+face simples. Causa raiz: o `montarAtributosML` nunca enviava o atributo `IS_DOUBLE_FACE`
+(categoria `MLB255054`); quando omitido, o ML **auto-preenche "Sim"**. As 4 fitas já
+publicadas tinham `atributos_ml` sem o atributo (`is_double_face` null no banco).
+
+Correção determinística (sem IA):
+
+- `montarAtributosML('fita', …)` passa a **sempre** emitir `IS_DOUBLE_FACE`:
+  - `value_id 242084` (**Não** = face simples) por padrão;
+  - `value_id 242085` (**Sim**) só quando a `DESCRICAO_DETALHADO` da planilha indicar dupla
+    face (`ehDuplaFace`: regex `dupla face|face dupla|duas faces|dois lados`, case/acento-insensível).
+- `montarAtributosML` ganhou 4º parâmetro opcional `detalhe`; o `process-familia` passa
+  `descricao_pai`. Vale só em CREATE; UPDATE preserva os atributos (ADR-0016).
+- `linha`/`botao` **não** recebem o atributo (pertence só à categoria fita).
+
+Valores validados via `GET /categories/MLB255054/attributes` (2026-06-09). TDD em
+`_shared/categoria/__tests__/atributos.test.ts`.
