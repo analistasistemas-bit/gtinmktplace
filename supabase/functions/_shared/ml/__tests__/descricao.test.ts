@@ -21,9 +21,15 @@ describe('atualizarSecaoCores', () => {
     expect(out).toContain('🧵 LINHA PROFISSIONAL');
     expect(out).toContain('📦 CONTEÚDO DA EMBALAGEM');
     expect(out).toContain('• 1 unidade');
-    // a lista final tem exatamente as 3 cores, nessa ordem
+    // a lista final tem exatamente as 3 cores, sempre em ordem alfabética
     const bloco = out.split('🎨 CORES DISPONÍVEIS')[1].split('📦')[0];
-    expect(bloco.match(/^- .+$/gm)).toEqual(['- Branco', '- Preto', '- Azul']);
+    expect(bloco.match(/^- .+$/gm)).toEqual(['- Azul', '- Branco', '- Preto']);
+  });
+
+  it('escreve as cores sempre em ordem alfabética, independente da ordem recebida', () => {
+    const out = atualizarSecaoCores(DESCRICAO, ['Vermelho 209', 'Azul 215', 'Preto 219']);
+    const bloco = out.split('🎨 CORES DISPONÍVEIS')[1].split('📦')[0];
+    expect(bloco.match(/^- .+$/gm)).toEqual(['- Azul 215', '- Preto 219', '- Vermelho 209']);
   });
 
   it('não duplica cores já presentes (a lista é substituída, não anexada)', () => {

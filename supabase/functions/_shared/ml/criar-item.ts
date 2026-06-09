@@ -1,4 +1,5 @@
 import type { PayloadItem } from './publicar.ts';
+import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 
 export interface ResultadoItem {
   id: string;
@@ -43,6 +44,7 @@ export function sanitizarDescricaoML(texto: string): string {
  * todo o resto do texto. Usado no UPDATE: quando entra uma cor nova, a descrição
  * herdada do anúncio (sem IA, ADR-0016) precisa refletir a cor adicionada.
  * Determinística (sem IA). Se a seção não existir, retorna o texto original intacto.
+ * A lista é sempre escrita em ordem alfabética (pedido do operador 2026-06-09).
  */
 export function atualizarSecaoCores(descricao: string, cores: string[]): string {
   const linhas = descricao.split('\n');
@@ -54,7 +56,7 @@ export function atualizarSecaoCores(descricao: string, cores: string[]): string 
   let fim = inicio;
   while (fim < linhas.length && /^\s*-\s+/.test(linhas[fim])) fim++;
 
-  const novaLista = cores.map((c) => `- ${c}`);
+  const novaLista = ordenarCoresAlfabetica(cores).map((c) => `- ${c}`);
   const depois = linhas.slice(fim);
   if (depois.length > 0 && depois[0].trim() !== '') depois.unshift('');
   return [...linhas.slice(0, headerIdx + 1), '', ...novaLista, ...depois].join('\n');

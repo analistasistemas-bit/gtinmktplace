@@ -1,6 +1,7 @@
 import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
+import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 
 export interface InputCopy {
   nome: string;
@@ -120,9 +121,9 @@ TOM E ESTILO
 Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 🎨 📦 🚚) e nos bullets (✔ • -). Evite emojis decorativos no meio dos parágrafos.`;
 
 function montarUserPrompt(input: InputCopy): string {
-  const coresUnicas = Array.from(
+  const coresUnicas = ordenarCoresAlfabetica(Array.from(
     new Set(input.variacoes.map((v) => v.cor ?? '(sem cor identificada)'))
-  );
+  ));
   const lista = coresUnicas.map((c) => `- ${c}`).join('\n');
   return [
     `Nome do produto: ${input.nome}`,
