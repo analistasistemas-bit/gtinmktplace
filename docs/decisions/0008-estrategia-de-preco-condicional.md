@@ -1,6 +1,6 @@
 # ADR-0008: Estratégia de preço condicional baseada em concorrência
 
-**Status:** Aceito
+**Status:** Substituído por [ADR-0020](0020-estrategia-de-preco-liquido-minimo.md) (2026-06-09)
 **Data:** 2026-05-26
 **Decisores:** Diego
 
