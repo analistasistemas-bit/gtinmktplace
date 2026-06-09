@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
         : null;
 
     // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final.
-    // Enums do banco são minúsculos: converte estrategia (PROPRIO→proprio) e garante tipo_origem
+    // estrategia_preco já vem minúscula de sugerirPrecoVenda (bate com o enum); garante tipo_origem
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: garantirMetragemTitulo(copy.titulo, claimed.nome_pai),
