@@ -304,20 +304,22 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label className="block text-xs font-semibold text-muted-foreground">TÍTULO</label>
+            <label htmlFor={`titulo-${familia.id}`} className="block text-xs font-semibold text-muted-foreground">TÍTULO</label>
             <StatusInline status={tituloStatus} />
           </div>
           <Input
+            id={`titulo-${familia.id}`}
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
             onBlur={salvarTitulo}
           />
 
           <div className="mb-1 mt-3 flex items-center justify-between">
-            <label className="block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>
+            <label htmlFor={`descricao-${familia.id}`} className="block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>
             <StatusInline status={descricaoStatus} />
           </div>
           <Textarea
+            id={`descricao-${familia.id}`}
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
             onBlur={salvarDescricao}

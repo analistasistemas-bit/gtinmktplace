@@ -81,13 +81,14 @@
     --muted-foreground: oklch(0.52 0.02 277);
     --accent: oklch(0.95 0.03 300);
     --accent-foreground: oklch(0.35 0.10 300);
-    --destructive: oklch(0.58 0.22 25);
+    /* Tons de estado escurecidos no light p/ contraste AA (text-<tone> sobre bg-<tone>/10 no StatusPill) — ver Fase 6 a11y */
+    --destructive: oklch(0.545 0.22 25);
     --destructive-foreground: oklch(0.99 0 0);
-    --success: oklch(0.62 0.15 150);
+    --success: oklch(0.51 0.15 150);
     --success-foreground: oklch(0.99 0 0);
-    --warning: oklch(0.72 0.16 75);
-    --warning-foreground: oklch(0.21 0.02 75);
-    --info: oklch(0.60 0.14 240);
+    --warning: oklch(0.53 0.16 75);
+    --warning-foreground: oklch(0.99 0 0);
+    --info: oklch(0.52 0.14 240);
     --info-foreground: oklch(0.99 0 0);
     --danger: var(--destructive);
     --danger-foreground: var(--destructive-foreground);

@@ -86,6 +86,7 @@ export function LoteCard({ lote }: { lote: Lote }) {
                 size="icon"
                 className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                 disabled={bloqueado}
+                aria-label={bloqueado ? 'Aguarde o processamento/publicação terminar' : 'Excluir lote'}
                 title={bloqueado ? 'Aguarde o processamento/publicação terminar' : 'Excluir lote'}
                 onClick={handleTrashClick}
               >

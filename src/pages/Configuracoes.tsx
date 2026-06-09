@@ -96,21 +96,21 @@ export default function Configuracoes() {
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold">Estratégia de preço</h2>
           <RadioGroup defaultValue="condicional" className="flex flex-col gap-2">
-            <label className="flex items-start gap-2 text-sm">
+            <label htmlFor="r1" className="flex items-start gap-2 text-sm">
               <RadioGroupItem value="proprio" id="r1" />
               <div>
                 <div className="font-medium">Próprio sempre</div>
                 <div className="text-xs text-muted-foreground">Manter o preço da planilha em todos os casos</div>
               </div>
             </label>
-            <label className="flex items-start gap-2 text-sm">
+            <label htmlFor="r2" className="flex items-start gap-2 text-sm">
               <RadioGroupItem value="competitivo" id="r2" />
               <div>
                 <div className="font-medium">Competitivo sempre</div>
                 <div className="text-xs text-muted-foreground">Alinhar com mediana do mercado em todos os casos</div>
               </div>
             </label>
-            <label className="flex items-start gap-2 text-sm">
+            <label htmlFor="r3" className="flex items-start gap-2 text-sm">
               <RadioGroupItem value="condicional" id="r3" />
               <div>
                 <div className="font-medium">Condicional (recomendado)</div>
