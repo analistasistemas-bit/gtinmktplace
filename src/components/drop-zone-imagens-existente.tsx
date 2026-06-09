@@ -1,4 +1,5 @@
 import { useDropzone } from 'react-dropzone';
+import { ImagePlus } from 'lucide-react';
 
 interface Props {
   onArquivos: (arquivos: File[]) => void;
@@ -14,13 +15,16 @@ export function DropZoneImagensExistente({ onArquivos, desabilitado }: Props) {
   return (
     <div
       {...getRootProps()}
-      className={`border-2 border-dashed rounded-md p-4 text-sm text-center cursor-pointer ${
-        isDragActive ? 'border-blue-500 bg-blue-50' : 'border-neutral-300 bg-neutral-50'
-      } ${desabilitado ? 'opacity-50 pointer-events-none' : ''}`}
+      className={`cursor-pointer rounded-md border-2 border-dashed p-4 text-center text-sm text-foreground transition-colors ${
+        isDragActive ? 'border-primary bg-accent' : 'border-border bg-muted/30 hover:bg-muted/50'
+      } ${desabilitado ? 'pointer-events-none opacity-50' : ''}`}
     >
       <input {...getInputProps()} data-testid="drop-zone-input" />
-      📷 Arraste imagens para atribuir às variações
-      <div className="text-xs text-neutral-500 mt-1">
+      <span className="inline-flex items-center gap-2">
+        <ImagePlus className="h-4 w-4 text-muted-foreground" />
+        Arraste imagens para atribuir às variações
+      </span>
+      <div className="mt-1 text-xs text-muted-foreground">
         (aceita 00CODIGO.jpeg / .jpg / .png)
       </div>
     </div>

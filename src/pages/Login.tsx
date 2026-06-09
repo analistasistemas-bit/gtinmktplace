@@ -31,7 +31,10 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm p-6">
-        <h1 className="mb-4 text-xl font-semibold">PubliAI</h1>
+        <div className="mb-6 text-center">
+          <h1 className="text-h1">PubliAI</h1>
+          <p className="text-caption">Publicação de anúncios no Mercado Livre</p>
+        </div>
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <Input
             type="email"

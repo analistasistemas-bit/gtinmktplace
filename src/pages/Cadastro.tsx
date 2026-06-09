@@ -27,7 +27,7 @@ export default function Cadastro() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm p-6">
-        <h1 className="mb-4 text-xl font-semibold">Criar conta</h1>
+        <h1 className="mb-4 text-h1">Criar conta</h1>
         {feito ? (
           <div className="text-sm">
             Cadastro feito. Verifique seu e-mail para confirmar a conta.

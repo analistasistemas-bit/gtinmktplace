@@ -1,8 +1,10 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useLote } from '@/hooks/useLotes';
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
 
 export default function Relatorio() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -23,11 +25,20 @@ export default function Relatorio() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-2xl font-semibold">Relatório · Lote #{lote.numero}</h1>
+      <PageHeader title={`Relatório · Lote #${lote.numero}`} />
       <div className="mb-6 grid grid-cols-3 gap-3 text-sm">
-        <div className="rounded-md border bg-green-50 px-3 py-2 text-green-800">✅ {publicadas} publicada(s)</div>
-        <div className="rounded-md border bg-blue-50 px-3 py-2 text-blue-800">⏳ {emPublicacao} publicando</div>
-        <div className="rounded-md border bg-red-50 px-3 py-2 text-red-800">❌ {comErro} com erro</div>
+        <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-success">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span><span className="font-semibold tabular-nums">{publicadas}</span> publicada(s)</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-info/30 bg-info/10 px-3 py-2 text-info">
+          <Loader2 className="h-4 w-4 shrink-0" />
+          <span><span className="font-semibold tabular-nums">{emPublicacao}</span> publicando</span>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+          <XCircle className="h-4 w-4 shrink-0" />
+          <span><span className="font-semibold tabular-nums">{comErro}</span> com erro</span>
+        </div>
       </div>
       <ul className="space-y-1 text-sm">
         {familias.map((f) => (
@@ -35,12 +46,12 @@ export default function Relatorio() {
             <span className="truncate">{f.codigoPai} — {f.titulo}</span>
             <span className="flex items-center gap-2 text-xs">
               {f.status === 'publicado' && f.mlPermalink && (
-                <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-blue-600 underline">ver anúncio ↗</a>
+                <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-primary underline">ver anúncio ↗</a>
               )}
               {f.status === 'publicando' && <span className="text-muted-foreground">publicando…</span>}
               {f.status === 'erro' && (
                 <>
-                  <span className="max-w-xs truncate text-red-600" title={f.erroMensagem ?? ''}>{f.erroMensagem ?? 'erro'}</span>
+                  <span className="max-w-xs truncate text-destructive" title={f.erroMensagem ?? ''}>{f.erroMensagem ?? 'erro'}</span>
                   <Button size="sm" variant="outline" onClick={() => nav(`/revisao/${loteId}`)}>Editar e tentar de novo</Button>
                 </>
               )}

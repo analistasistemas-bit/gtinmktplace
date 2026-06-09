@@ -24,7 +24,7 @@ export default function ResetSenha() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm p-6">
-        <h1 className="mb-4 text-xl font-semibold">Recuperar senha</h1>
+        <h1 className="mb-4 text-h1">Recuperar senha</h1>
         {feito ? (
           <div className="text-sm">
             Se a conta existir, você receberá um e-mail com as instruções.

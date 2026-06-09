@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/ui/page-header';
+import { Progress } from '@/components/ui/progress';
 import { Dropzone } from '@/components/dropzone';
 import { useUploadLote } from '@/hooks/useUploadLote';
 
@@ -25,7 +27,7 @@ export default function NovoLote() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-4 text-2xl font-semibold">Novo lote</h1>
+      <PageHeader title="Novo lote" subtitle="Envie a planilha e as imagens do lote para processar." />
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <Dropzone
           label="Planilha (.xlsx)"
@@ -44,12 +46,7 @@ export default function NovoLote() {
 
         {(enviando || status === 'concluido') && (
           <div className="flex flex-col gap-2">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${progresso}%` }}
-              />
-            </div>
+            <Progress value={progresso} className="h-2" />
             <p className="text-xs text-muted-foreground">
               {status === 'criando' && 'Criando lote...'}
               {status === 'enviando' && `Enviando arquivos... ${progresso}%`}
@@ -60,7 +57,7 @@ export default function NovoLote() {
         )}
 
         {erro && (
-          <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{erro}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{erro}</p>
         )}
 
         <Button onClick={handleProcessar} disabled={!podeProcessar || enviando} size="lg">
