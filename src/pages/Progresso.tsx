@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
 import { useLote } from '@/hooks/useLotes';
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
+import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
 import { totalAnomalias } from '@/lib/tipos-dominio';
 
@@ -46,23 +48,25 @@ export default function Progresso() {
 
   return (
     <div className="p-6">
-      <h1 className="mb-2 text-2xl font-semibold">Processando lote #{lote.numero}</h1>
-      <div className="mb-4 text-sm text-muted-foreground">
-        Status: <span className="font-medium">{lote.status}</span> · {prontas} de {total} prontas
-        {erradas > 0 && <> · {erradas} com erro</>}
-      </div>
+      <PageHeader
+        title={`Processando lote #${lote.numero}`}
+        subtitle={`Status: ${lote.status} · ${prontas} de ${total} prontas${erradas > 0 ? ` · ${erradas} com erro` : ''}`}
+      />
       {temAnomalias && (
-        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          ⚠ Linhas descartadas da planilha:
-          {anomalias.codigos_duplicados.length > 0 && (
-            <> {anomalias.codigos_duplicados.length} código(s) duplicado(s)</>
-          )}
-          {anomalias.filhos_orfaos.length > 0 && (
-            <> · {anomalias.filhos_orfaos.length} variação(ões) órfã(s)</>
-          )}
-          {anomalias.familias_sem_filho.length > 0 && (
-            <> · {anomalias.familias_sem_filho.length} família(s) sem variação</>
-          )}
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Linhas descartadas da planilha:
+            {anomalias.codigos_duplicados.length > 0 && (
+              <> {anomalias.codigos_duplicados.length} código(s) duplicado(s)</>
+            )}
+            {anomalias.filhos_orfaos.length > 0 && (
+              <> · {anomalias.filhos_orfaos.length} variação(ões) órfã(s)</>
+            )}
+            {anomalias.familias_sem_filho.length > 0 && (
+              <> · {anomalias.familias_sem_filho.length} família(s) sem variação</>
+            )}
+          </span>
         </div>
       )}
       <Progress value={pct} className="h-2" />
