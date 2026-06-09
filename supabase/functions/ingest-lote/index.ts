@@ -245,15 +245,20 @@ Deno.serve(async (req) => {
       if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
     }
 
+    let temPendente = false;
     for (const f of familiasCriadas) {
       if (f.status !== 'pendente') continue; // CREATE + UPDATE com cor nova precisam de IA
+      temPendente = true;
       const messageId = await enfileirarFamilia({ familia_id: f.id, lote_id: lote.id });
       await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     }
 
+    // Sem família pendente (reposição UPDATE sem cor nova → todas já 'pronto'): vai
+    // direto para revisão. Com pendentes, o trigger flipa processando→revisao quando
+    // a última família termina a IA.
     await admin
       .from('lotes')
-      .update({ status: 'processando', anomalias_planilha: anomalias })
+      .update({ status: temPendente ? 'processando' : 'revisao', anomalias_planilha: anomalias })
       .eq('id', lote.id);
 
     return new Response(
