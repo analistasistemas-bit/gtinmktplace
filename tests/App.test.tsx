@@ -66,7 +66,7 @@ function renderRoute(initialPath: string) {
 describe('App routing', () => {
   it('renderiza Dashboard na rota /', () => {
     renderRoute('/');
-    expect(screen.getByRole('heading', { name: /lotes recentes/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
   });
 
   it('renderiza NovoLote na rota /novo-lote', () => {

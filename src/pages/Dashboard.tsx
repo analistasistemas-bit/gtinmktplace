@@ -1,27 +1,66 @@
 import { Link } from 'react-router-dom';
-import { Plus, PackageOpen } from 'lucide-react';
+import {
+  Plus,
+  PackageOpen,
+  Package,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  ClipboardList,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { LoteCard } from '@/components/lote-card';
 import { useLotes } from '@/hooks/useLotes';
+import { usePublicados } from '@/hooks/usePublicados';
+import { useStatusPublicados } from '@/hooks/useStatusPublicados';
+import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
 
 export default function Dashboard() {
   const { data: lotes = [], isLoading, error } = useLotes();
+  const { data: publicados = [] } = usePublicados();
+  const { data: statusData, isLoading: loadingStatus, isError: erroStatus } = useStatusPublicados();
+
+  const statusItens = statusData?.itens ?? [];
+  // Cards ao vivo indisponíveis quando a conta ML não está conectada OU a chamada falhou.
+  const semStatus = (statusData?.semCredencialML ?? false) || erroStatus;
+  const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
+
+  const novoLoteBtn = (
+    <Button asChild>
+      <Link to="/novo-lote">
+        <Plus className="mr-1 h-4 w-4" />
+        Novo lote
+      </Link>
+    </Button>
+  );
 
   return (
     <div className="p-6">
-      <PageHeader
-        title="Lotes recentes"
-        actions={
-          <Button asChild>
-            <Link to="/novo-lote">
-              <Plus className="mr-1 h-4 w-4" />
-              Novo lote
-            </Link>
-          </Button>
-        }
-      />
+      <PageHeader title="Dashboard" actions={novoLoteBtn} />
+
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} />
+        <KpiCard
+          label="Ativos"
+          value={semStatus ? '—' : kpis.ativos}
+          icon={CheckCircle2}
+          loading={loadingStatus}
+          hint={semStatus ? 'ML indisponível' : undefined}
+        />
+        <KpiCard
+          label="Com problema"
+          value={semStatus ? '—' : kpis.comProblema}
+          icon={AlertTriangle}
+          loading={loadingStatus}
+          hint={semStatus ? 'ML indisponível' : undefined}
+        />
+        <KpiCard label="Erros de publicação" value={kpis.erros} icon={XCircle} />
+        <KpiCard label="A revisar" value={kpis.aRevisar} icon={ClipboardList} />
+      </div>
+
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Carregando lotes...</div>
       ) : error ? (
@@ -33,14 +72,7 @@ export default function Dashboard() {
           icon={PackageOpen}
           title="Nenhum lote ainda"
           description='Faça upload de uma planilha para começar. Clique em "Novo lote".'
-          action={
-            <Button asChild>
-              <Link to="/novo-lote">
-                <Plus className="mr-1 h-4 w-4" />
-                Novo lote
-              </Link>
-            </Button>
-          }
+          action={novoLoteBtn}
         />
       ) : (
         <div className="flex flex-col gap-3">
