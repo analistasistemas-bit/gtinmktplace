@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Camera, Sparkles, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Camera, Sparkles, Trash2, AlertTriangle } from 'lucide-react';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
@@ -23,13 +23,21 @@ import {
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
+import { criticasVariacao } from '@/lib/publicavel';
+import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 
 const FLASH_MS = 2000;
 
-export function FamiliaExpanded({ familia }: { familia: Familia }) {
+interface FamiliaExpandedProps {
+  familia: Familia;
+  focoCodigo?: string | null;
+  onFocoConcluido?: () => void;
+}
+
+export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: FamiliaExpandedProps) {
   const [titulo, setTitulo] = useState(familia.titulo);
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
@@ -55,6 +63,23 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
   const updateCor = useUpdateVariacaoCor(familia.loteId);
   const updateGtin = useUpdateVariacaoGtin(familia.loteId);
   const regenerar = useRegenerarCopy(familia.loteId);
+
+  // Foco numa variação (vindo do selo de pendência do pai): rola até ela e a realça.
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [flashCodigo, setFlashCodigo] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focoCodigo) return;
+    const el = rowRefs.current[focoCodigo];
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashCodigo(focoCodigo);
+    const t = setTimeout(() => setFlashCodigo(null), 2500);
+    onFocoConcluido?.();
+    return () => clearTimeout(t);
+    // Depende só de focoCodigo de propósito: onFocoConcluido é arrow inline (muda
+    // toda render) e incluí-la re-rolaria a cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focoCodigo]);
 
   function mudarPreco(codigo: string, novoPreco: number) {
     // O campo edita o preço de publicação (o que vai ao ML), não o preço da planilha.
@@ -360,54 +385,72 @@ export function FamiliaExpanded({ familia }: { familia: Familia }) {
               // Cor nova (UPDATE sem variação no ML) é opt-in mas precisa ser editável
               // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
               const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
+              // Cores com pendência (sem foto/cor/preço) ganham faixa âmbar p/ achar rápido.
+              const criticas = criticasVariacao(v, familia.operacao);
               return (
               <div
                 key={v.codigo}
-                className={`flex items-start gap-2${v.excluidaDaPublicacao && !corNova ? ' opacity-50' : ''}`}
+                ref={(el) => { rowRefs.current[v.codigo] = el; }}
+                className={cn(
+                  // Borda esquerda reservada (transparente) em TODAS as linhas → as
+                  // com crítica só trocam a cor, sem empurrar nem desalinhar as outras.
+                  'scroll-mt-4 rounded-md border-l-4 border-transparent pl-2 transition-shadow',
+                  v.excluidaDaPublicacao && !corNova && 'opacity-50',
+                  criticas.length > 0 && 'border-warning bg-warning/10 py-1',
+                  flashCodigo === v.codigo && 'ring-2 ring-warning ring-offset-2 ring-offset-background',
+                )}
               >
-                <Checkbox
-                  checked={!v.excluidaDaPublicacao}
-                  aria-label={`Incluir cor ${v.cor || v.codigo} na publicação`}
-                  className="mt-2 shrink-0"
-                  onCheckedChange={async (marcado) => {
-                    if (!v.id) return;
-                    await setVariacaoExcluida(v.id, marcado !== true);
-                    qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
-                  }}
-                />
-                {familia.operacao === 'UPDATE' && !v.mlVariationId && (
-                  <StatusPill tone="success" className="mt-2 shrink-0">
-                    nova
-                  </StatusPill>
-                )}
-                {familia.operacao === 'CREATE' && !v.excluidaDaPublicacao && (
-                  <label className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
-                    <input
-                      type="radio"
-                      name={`principal-${familia.id}`}
-                      checked={familia.variacaoPrincipalCodigo === v.codigo}
-                      onChange={() => updatePrincipal.mutate({ familiaId: familia.id, codigo: v.codigo })}
-                    />
-                    {familia.variacaoPrincipalCodigo === v.codigo ? (
-                      <StatusPill tone="info">principal</StatusPill>
-                    ) : 'principal'}
-                  </label>
-                )}
-                <div className="flex-1">
-                  <VariacaoCard
-                    variacao={v}
-                    loteId={familia.loteId}
-                    statusPreco={precoStatuses[v.codigo]}
-                    statusCor={corStatuses[v.codigo]}
-                    statusGtin={gtinStatuses[v.codigo]}
-                    onMudarPreco={mudarPreco}
-                    onMudarCor={mudarCor}
-                    onMudarGtin={mudarGtin}
-                    onSalvarPreco={salvarPreco}
-                    onSalvarCor={salvarCor}
-                    onSalvarGtin={salvarGtin}
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    checked={!v.excluidaDaPublicacao}
+                    aria-label={`Incluir cor ${v.cor || v.codigo} na publicação`}
+                    className="mt-2 shrink-0"
+                    onCheckedChange={async (marcado) => {
+                      if (!v.id) return;
+                      await setVariacaoExcluida(v.id, marcado !== true);
+                      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+                    }}
                   />
+                  {familia.operacao === 'UPDATE' && !v.mlVariationId && (
+                    <StatusPill tone="success" className="mt-2 shrink-0">
+                      nova
+                    </StatusPill>
+                  )}
+                  {familia.operacao === 'CREATE' && !v.excluidaDaPublicacao && (
+                    <label className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                      <input
+                        type="radio"
+                        name={`principal-${familia.id}`}
+                        checked={familia.variacaoPrincipalCodigo === v.codigo}
+                        onChange={() => updatePrincipal.mutate({ familiaId: familia.id, codigo: v.codigo })}
+                      />
+                      {familia.variacaoPrincipalCodigo === v.codigo ? (
+                        <StatusPill tone="info">principal</StatusPill>
+                      ) : 'principal'}
+                    </label>
+                  )}
+                  <div className="flex-1">
+                    <VariacaoCard
+                      variacao={v}
+                      loteId={familia.loteId}
+                      statusPreco={precoStatuses[v.codigo]}
+                      statusCor={corStatuses[v.codigo]}
+                      statusGtin={gtinStatuses[v.codigo]}
+                      onMudarPreco={mudarPreco}
+                      onMudarCor={mudarCor}
+                      onMudarGtin={mudarGtin}
+                      onSalvarPreco={salvarPreco}
+                      onSalvarCor={salvarCor}
+                      onSalvarGtin={salvarGtin}
+                    />
+                  </div>
                 </div>
+                {criticas.length > 0 && (
+                  <div className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {criticas.join(' · ')}
+                  </div>
+                )}
               </div>
               );
             })}

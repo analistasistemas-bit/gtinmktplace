@@ -8,7 +8,7 @@ import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/us
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
-import { familiaPublicavel } from '@/lib/publicavel';
+import { familiaPublicavel, criticasVariacao } from '@/lib/publicavel';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -16,6 +16,7 @@ interface FamiliaRowProps {
   expandida: boolean;
   onSelecionar: (id: string, valor: boolean) => void;
   onExpandir: (id: string) => void;
+  onIrParaCritica?: (familiaId: string, codigo: string) => void;
 }
 
 function formatarBRL(valor: number): string {
@@ -68,10 +69,14 @@ function DescontoControle({ familia }: { familia: Familia }) {
   );
 }
 
-export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir }: FamiliaRowProps) {
+export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir, onIrParaCritica }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   const pub = familiaPublicavel(familia);
   const publicado = familia.status === 'publicado';
+  // 1ª cor com pendência (sem foto/cor/preço): o selo de bloqueio leva direto a ela.
+  const primeiraCritica = publicado
+    ? undefined
+    : familia.variacoes.find((v) => criticasVariacao(v, familia.operacao).length > 0);
   // Resumo do UPDATE na linha recolhida: quantas cores têm estoque alterado
   // (mesma regra do DiffEstoque). Dá o "o que será atualizado" sem precisar expandir.
   const coresComEstoqueAlterado =
@@ -153,12 +158,25 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
             </StatusPill>
           )}
           {!publicado && !pub.ok && (
-            <StatusPill
-              tone="warning"
-              title={pub.motivos.join('\n')}
-            >
-              🔒 {pub.motivos[0]}{pub.motivos.length > 1 ? ` (+${pub.motivos.length - 1})` : ''}
-            </StatusPill>
+            primeiraCritica && onIrParaCritica ? (
+              <button
+                type="button"
+                onClick={() => onIrParaCritica(familia.id, primeiraCritica.codigo)}
+                title={`${pub.motivos.join('\n')}\n\nClique para ir até a cor com pendência`}
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <StatusPill tone="warning" className="cursor-pointer hover:bg-warning/20">
+                  🔒 {pub.motivos[0]}{pub.motivos.length > 1 ? ` (+${pub.motivos.length - 1})` : ''}
+                </StatusPill>
+              </button>
+            ) : (
+              <StatusPill
+                tone="warning"
+                title={pub.motivos.join('\n')}
+              >
+                🔒 {pub.motivos[0]}{pub.motivos.length > 1 ? ` (+${pub.motivos.length - 1})` : ''}
+              </StatusPill>
+            )
           )}
           {publicado && (
             familia.mlPermalink ? (
