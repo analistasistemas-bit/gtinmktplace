@@ -14,7 +14,7 @@ export function BotaoTrocarFoto({ onArquivo, desabilitado }: Props) {
         type="button"
         aria-label="Trocar foto"
         disabled={desabilitado}
-        className="p-1 rounded hover:bg-neutral-100 disabled:opacity-50"
+        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
         onClick={() => inputRef.current?.click()}
       >
         <Camera className="w-4 h-4" />
