@@ -5,6 +5,7 @@ import type { StatusTone } from '@/components/ui/status-pill';
 import { fmtBRL, fmtMilhar } from '@/lib/formato';
 import { familiaSemDimensoesValidas } from '@/lib/publicavel';
 import type { Familia, Concorrencia } from '@/lib/tipos-dominio';
+import { SemaforoPreco } from '@/components/semaforo-preco';
 
 const TONE_CONCORRENCIA: Record<Concorrencia, StatusTone> = {
   sem: 'neutral',
@@ -38,6 +39,13 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
       <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Análise para publicação
       </span>
+
+      <SemaforoPreco
+        preco={precoPublicacao}
+        piso={variacaoRepresentativa?.preco ?? precoPublicacao}
+        custo={custoRepresentativo}
+        categoriaMlId={familia.categoriaMlId}
+      />
 
       {familia.precoAbaixo20pc && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
