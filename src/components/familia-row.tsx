@@ -8,7 +8,7 @@ import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/us
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
-import { familiaPublicavel, criticasVariacao } from '@/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta } from '@/lib/publicavel';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -157,7 +157,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               ⚠ {familia.variacoesSemCor} sem cor
             </StatusPill>
           )}
-          {!publicado && !pub.ok && (
+          {familiaIncompleta(familia) && (
             primeiraCritica && onIrParaCritica ? (
               <button
                 type="button"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { familiaPublicavel, criticasVariacao } from '../../src/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta } from '../../src/lib/publicavel';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function cor(over: Partial<Variacao>): Variacao {
@@ -123,6 +123,24 @@ describe('familiaPublicavel', () => {
     const r = familiaPublicavel(fam({ variacoes: [cor({ excluidaDaPublicacao: true })] }));
     expect(r.ok).toBe(false);
     expect(r.motivos.join(' ')).toMatch(/nenhuma cor|ao menos|pelo menos/i);
+  });
+});
+
+describe('familiaIncompleta', () => {
+  it('família publicada NÃO é incompleta (mesmo não sendo mais publicável)', () => {
+    expect(familiaIncompleta(fam({ status: 'publicado', mlItemId: 'MLB123' }))).toBe(false);
+  });
+  it('família em publicação NÃO é incompleta', () => {
+    expect(familiaIncompleta(fam({ status: 'publicando' }))).toBe(false);
+  });
+  it('família ainda em processamento conta como incompleta (não finalizada; espelha o selo da linha)', () => {
+    expect(familiaIncompleta(fam({ status: 'processando' }))).toBe(true);
+  });
+  it('pronta com dado faltando (sem foto) É incompleta', () => {
+    expect(familiaIncompleta(fam({ variacoes: [cor({ fotoPath: undefined })] }))).toBe(true);
+  });
+  it('pronta e completa NÃO é incompleta', () => {
+    expect(familiaIncompleta(fam({}))).toBe(false);
   });
 });
 

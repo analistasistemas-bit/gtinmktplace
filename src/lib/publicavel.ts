@@ -72,6 +72,15 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   return { ok: motivos.length === 0, motivos };
 }
 
+// "Incompleta" = falta de DADOS que impediria publicar, e que o operador precisa
+// corrigir. Distingue-se de "não-publicável": uma família já publicada (ou em
+// publicação) não é mais publicável, mas também NÃO é incompleta — está concluída.
+// Espelha o selo da linha (familia-row só mostra "Incompleta" quando !publicado).
+export function familiaIncompleta(familia: Familia): boolean {
+  if (familia.status === 'publicado' || familia.status === 'publicando') return false;
+  return !familiaPublicavel(familia).ok;
+}
+
 // Aviso (NÃO bloqueia — ADR-0018): família sem dimensões reais → o ML estima o
 // frete (e pode moderar por frete desproporcional). Olha a variação representativa
 // (principal, ou 1ª incluída), espelhando a regra da publicação.

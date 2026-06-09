@@ -15,7 +15,7 @@ import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existen
 import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
-import { familiaPublicavel } from '@/lib/publicavel';
+import { familiaPublicavel, familiaIncompleta } from '@/lib/publicavel';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -28,7 +28,7 @@ export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: st
     if (filtro === 'CREATE' && f.operacao !== 'CREATE') return false;
     if (filtro === 'UPDATE' && f.operacao !== 'UPDATE') return false;
     if (filtro === 'avisos' && !f.precoAbaixo20pc) return false;
-    if (filtro === 'incompletas' && familiaPublicavel(f).ok) return false;
+    if (filtro === 'incompletas' && !familiaIncompleta(f)) return false;
     if (!buscaLower) return true;
     return (
       f.titulo.toLowerCase().includes(buscaLower) ||
@@ -140,7 +140,7 @@ export default function Revisao() {
     CREATE: familias.filter((f) => f.operacao === 'CREATE').length,
     UPDATE: familias.filter((f) => f.operacao === 'UPDATE').length,
     avisos: familias.filter((f) => f.precoAbaixo20pc).length,
-    incompletas: familias.filter((f) => !familiaPublicavel(f).ok).length,
+    incompletas: familias.filter((f) => familiaIncompleta(f)).length,
   };
 
   const coresSelecionadas = familias
