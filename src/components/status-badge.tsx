@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import type { LoteStatus } from '@/lib/tipos-dominio';
 
 const LABELS: Record<LoteStatus, string> = {
@@ -10,15 +10,15 @@ const LABELS: Record<LoteStatus, string> = {
   erro: 'Erro',
 };
 
-const VARIANTS: Record<LoteStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  importando: 'outline',
-  processando: 'outline',
-  revisao: 'default',
-  publicando: 'secondary',
-  concluido: 'secondary',
-  erro: 'destructive',
+const TONES: Record<LoteStatus, StatusTone> = {
+  importando: 'info',
+  processando: 'info',
+  revisao: 'info',
+  publicando: 'info',
+  concluido: 'success',
+  erro: 'danger',
 };
 
 export function StatusBadge({ status }: { status: LoteStatus }) {
-  return <Badge variant={VARIANTS[status]}>{LABELS[status]}</Badge>;
+  return <StatusPill tone={TONES[status]}>{LABELS[status]}</StatusPill>;
 }
