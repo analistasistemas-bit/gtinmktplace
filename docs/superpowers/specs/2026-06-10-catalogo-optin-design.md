@@ -71,11 +71,15 @@ API (resiliente, timeouts):
 - `buscarElegibilidade(token, itemId) → EligibilityBody | null`.
 - `optinCatalogo(token, body) → { catalog_listing_id } | erro` (trata 4xx por variação sem derrubar).
 
-### Matching — `process-familia` (estende ADR-0014)
+### Matching — no passo de catálogo (lazy)
 
-Hoje: 1 busca de concorrência por família. Passa a, **por variação com GTIN real**, resolver e
-persistir `variacoes.catalog_product_id` via `buscarProdutoCatalogoPorGtin` (cache por GTIN
-reaproveitado). GTIN nulo/`3000*`/busca vazia → `catalog_product_id = null`. Sem custo de IA.
+A busca do `catalog_product_id` por GTIN real roda **dentro do passo de catálogo** (em
+`vincularVariacoesCatalogo`), e só para variações que a elegibilidade já marcou
+`READY_FOR_OPTIN` — evita N buscas inúteis em anúncios `FAMILY_DIFF` inteiros. O resultado é
+persistido em `variacoes.catalog_product_id` (reuso em retries). GTIN nulo/`3000*`/busca vazia
+→ `catalog_product_id = null` → `sem_produto`. Sem custo de IA.
+(Decisão de implementação: mais coeso que espalhar a busca no `process-familia`, que tem
+ramo de UPDATE com retorno antecipado.)
 
 ### CREATE — `publish-familia-ml` (pós-criação do item)
 

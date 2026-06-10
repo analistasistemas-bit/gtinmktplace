@@ -6,6 +6,7 @@ import { subirFotoML } from '../_shared/ml/fotos.ts';
 import { montarPayloadItem, ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import { criarItemML, garantirDescricaoML } from '../_shared/ml/criar-item.ts';
+import { vincularVariacoesCatalogo } from '../_shared/ml/catalogo.ts';
 import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 
@@ -165,6 +166,21 @@ Deno.serve(async (req) => {
         await admin.from('variacoes').update({ ml_variation_id: String(mv.id) })
           .eq('familia_id', job.familia_id).eq('codigo', codigo);
       }
+    }
+
+    // Catálogo (ADR-0021): vincula cada cor elegível ao produto de catálogo (best-effort).
+    // Roda após o item já estar persistido (ml_item_id) e as variações casadas, então uma
+    // falha aqui não derruba o anúncio; um retry posterior reentra só no que falta.
+    try {
+      const { data: varsCat } = await admin.from('variacoes')
+        .select('id, codigo, gtin, ml_variation_id, catalog_product_id, catalog_listing_id')
+        .eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
+      if (varsCat && varsCat.length) {
+        const resumo = await vincularVariacoesCatalogo(token, admin, resultado.id, varsCat);
+        console.log(`catálogo ${resultado.id}: ${JSON.stringify(resumo)}`);
+      }
+    } catch (e) {
+      console.error(`passo de catálogo falhou para ${resultado.id}:`, e);
     }
 
     await talvezFinalizarLote(admin, job.lote_id);
