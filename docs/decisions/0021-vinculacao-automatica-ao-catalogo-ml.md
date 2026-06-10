@@ -38,11 +38,19 @@ Automatizar a vinculação ao catálogo **no fluxo de publicação** (CREATE e U
    casa por texto — evita associar à ficha errada).
 2. **Trava de elegibilidade:** só faz opt-in de variação `READY_FOR_OPTIN` + `buy_box_eligible`.
    `FAMILY_DIFF`/`NOT_ELIGIBLE`/sem match → registra o status, **não** força.
-3. **Best-effort, pós-publicação:** o passo roda depois de o item já estar persistido
-   (`ml_item_id`) e as variações casadas (`ml_variation_id`). Falha por variação não derruba o
-   anúncio; um retry reentra só no que falta.
+3. **Deferido via QStash (NÃO síncrono no publish):** a elegibilidade de catálogo do ML **não
+   está pronta no instante do `POST /items`** — leva alguns minutos, e ainda passa por estados
+   **transitórios** (um anúncio multi-cor de famílias diferentes pode aparecer `READY_FOR_OPTIN`
+   por instantes e depois assentar em `FAMILY_DIFF`). Rodar síncrono marcaria tudo como não
+   elegível (bug pego no bug bash do lote 25: 79/79 → `nao_elegivel` no publish; minutos depois,
+   `READY`/`FAMILY_DIFF`). Por isso o `publish`/`update` apenas **enfileiram** um job
+   `vincular-catalogo` com **delay (10 min, p/ a elegibilidade assentar) + retries**; o worker
+   roda o orquestrador. Enquanto houver variação `pendente` (ainda computando), devolve 500 e o
+   QStash retenta.
 4. **Idempotência:** variação com `catalog_listing_id` é pulada (o opt-in cria recurso novo, não
    é naturalmente idempotente); a elegibilidade é relida a cada execução.
+5. **`pendente` ≠ `nao_elegivel`:** elegibilidade ausente/sem status = ainda computando → estado
+   retentável `pendente`. `nao_elegivel` só quando o ML devolve status explícito não-elegível.
 
 ### Modelo de dados (migration aditiva)
 
@@ -54,7 +62,10 @@ Em `variacoes`: `catalog_product_id`, `catalog_listing_id`, `catalog_status`
 - `_shared/ml/catalogo.ts` — puras (`decidirAcaoCatalogo`, `montarBodyOptin`,
   `indexarEligibility`) + rede (`buscarProdutoCatalogoPorGtin`, `buscarElegibilidadeCatalogo`,
   `optinCatalogo`) + orquestrador `vincularVariacoesCatalogo`.
-- `publish-familia-ml` (CREATE) e `update-familia-ml` (UPDATE) chamam o orquestrador no fim.
+- `vincular-catalogo` (worker QStash) roda o orquestrador; 500 enquanto `pendente`.
+- `_shared/queue.ts` → `enfileirarVinculacaoCatalogo(familiaId, delay=600s, retries=5)`.
+- `publish-familia-ml` (CREATE) e `update-familia-ml` (UPDATE) **enfileiram** o job no fim
+  (não rodam o opt-in síncrono).
 
 ## Consequências
 

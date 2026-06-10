@@ -10,7 +10,7 @@ import { parseProdutoBusca } from '../concorrencia/parse.ts';
 const API = 'https://api.mercadolibre.com';
 const TIMEOUT_MS = 15000;
 
-export type AcaoCatalogo = 'optin' | 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pula';
+export type AcaoCatalogo = 'optin' | 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente' | 'pula';
 
 export interface EligVar {
   id: string | number;
@@ -28,17 +28,23 @@ export interface EstadoVariacaoCatalogo {
  * Decisão pura por variação a partir do estado local + elegibilidade do ML.
  * `catalogProductId` é o valor já resolvido (após o lookup por GTIN quando elegível).
  * Conservador: qualquer dúvida que não seja READY_FOR_OPTIN+buy_box → não arrisca opt-in.
+ *
+ * `pendente` = a elegibilidade ainda NÃO foi computada pelo ML (item recém-criado: a
+ * elegibilidade de catálogo leva alguns minutos após o `POST /items`). É um estado
+ * RETENTÁVEL — o job de catálogo roda com delay/retry até o ML computar. Distinguir isso de
+ * `nao_elegivel` (status explícito do ML) é o que evita marcar opt-in possível como impossível.
  */
 export function decidirAcaoCatalogo(
   estado: EstadoVariacaoCatalogo,
   elig: EligVar | undefined,
 ): AcaoCatalogo {
   if (estado.catalogListingId) return 'pula';
-  if (!elig) return 'nao_elegivel';
+  if (!elig || !elig.status) return 'pendente'; // sem entrada/sem status = ainda computando
+  if (elig.status === 'READY_FOR_OPTIN' && elig.buy_box_eligible === true) {
+    return estado.catalogProductId ? 'optin' : 'sem_produto';
+  }
   if (elig.status === 'FAMILY_DIFF') return 'family_diff';
-  if (elig.status !== 'READY_FOR_OPTIN' || elig.buy_box_eligible !== true) return 'nao_elegivel';
-  if (!estado.catalogProductId) return 'sem_produto';
-  return 'optin';
+  return 'nao_elegivel'; // status explícito do ML (NOT_ELIGIBLE etc.)
 }
 
 export function montarBodyOptin(
@@ -122,7 +128,7 @@ export interface VarCatalogoRow {
 }
 
 export interface ResumoCatalogo {
-  vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; erro: number; pulou: number;
+  vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; pendente: number; erro: number; pulou: number;
 }
 
 type DbLike = {
@@ -142,7 +148,7 @@ export async function vincularVariacoesCatalogo(
   itemId: string,
   variacoes: VarCatalogoRow[],
 ): Promise<ResumoCatalogo> {
-  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, erro: 0, pulou: 0 };
+  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0 };
   const setVar = (id: string, values: Record<string, unknown>) =>
     admin.from('variacoes').update(values).eq('id', id);
 
@@ -179,7 +185,8 @@ export async function vincularVariacoesCatalogo(
           await setVar(v.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
         }
       } else {
-        resumo[acao === 'sem_produto' ? 'sem_produto' : acao === 'family_diff' ? 'family_diff' : 'nao_elegivel']++;
+        // acao ∈ {sem_produto, family_diff, nao_elegivel, pendente} — todas são chaves do resumo.
+        resumo[acao as 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente']++;
         await setVar(v.id, { catalog_status: acao });
       }
     } catch (err) {
