@@ -25,7 +25,9 @@ export default function NovoLote() {
     e.target.value = '';
   }
 
-  const podeProcessar = planilha.length === 1 && imagens.length > 0;
+  // Imagens são opcionais: reposição de estoque sobe só a planilha. Lotes novos /
+  // cores novas pedem fotos, completáveis na Revisão (aviso + botão por cor).
+  const podeProcessar = planilha.length === 1;
   const enviando = status !== 'idle' && status !== 'erro' && status !== 'concluido';
 
   async function handleProcessar() {
@@ -40,7 +42,10 @@ export default function NovoLote() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Novo lote" subtitle="Envie a planilha e as imagens do lote para processar." />
+      <PageHeader
+        title="Novo lote"
+        subtitle="Envie a planilha. As imagens são opcionais: numa reposição de estoque, suba só a planilha."
+      />
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <Dropzone
           label="Planilha (.xlsx)"
@@ -56,7 +61,7 @@ export default function NovoLote() {
             multiple={true}
             onFiles={adicionarImagens}
             files={imagens}
-            hint="Arraste as pastas aqui (pode ser várias de uma vez) ou use o botão abaixo. As fotos acumulam."
+            hint="Opcional. Em reposição de estoque, pode deixar vazio. Cores novas e lotes novos pedem fotos — você completa na Revisão. As fotos acumulam."
           />
           <input
             ref={pastaInputRef}
