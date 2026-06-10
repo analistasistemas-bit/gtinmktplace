@@ -16,7 +16,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta } from '@/lib/publicavel';
-import { coresNovasSemFoto, totalCoresNovasSemFoto } from '@/lib/cores-novas';
+import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -60,7 +60,10 @@ export default function Revisao() {
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
   const coresNovas = useMemo(() => coresNovasSemFoto(familias), [familias]);
-  const totalCoresNovas = useMemo(() => totalCoresNovasSemFoto(familias), [familias]);
+  const totalCoresNovas = useMemo(
+    () => coresNovas.reduce((acc, f) => acc + f.codigos.length, 0),
+    [coresNovas],
+  );
 
   async function lidarArquivosDrop(arquivos: File[]) {
     if (!loteId) return;
