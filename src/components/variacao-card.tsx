@@ -16,13 +16,10 @@ interface VariacaoCardProps {
   loteId: string;
   statusPreco?: SaveStatus;
   statusCor?: SaveStatus;
-  statusGtin?: SaveStatus;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
-  onMudarGtin: (codigo: string, novoGtin: string) => void;
   onSalvarPreco?: (codigo: string) => void;
   onSalvarCor?: (codigo: string) => void;
-  onSalvarGtin?: (codigo: string) => void;
   categoriaMlId: string | null;
 }
 
@@ -31,13 +28,10 @@ export function VariacaoCard({
   loteId,
   statusPreco,
   statusCor,
-  statusGtin,
   onMudarPreco,
   onMudarCor,
-  onMudarGtin,
   onSalvarPreco,
   onSalvarCor,
-  onSalvarGtin,
   categoriaMlId,
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
@@ -94,16 +88,11 @@ export function VariacaoCard({
             <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
             <StatusInline status={statusCor} />
           </div>
-          <Input
-            value={variacao.gtin ?? ''}
-            onChange={(e) => onMudarGtin(variacao.codigo, e.target.value)}
-            onBlur={() => onSalvarGtin?.(variacao.codigo)}
-            placeholder="EAN/GTIN"
-            className="h-6 border-muted bg-muted/40 text-xs text-muted-foreground placeholder:text-muted-foreground/60"
-          />
-          <div className="whitespace-nowrap">
-            <StatusInline status={statusGtin} />
-          </div>
+          {/* EAN/GTIN é só exibição (vem da planilha; não editável na Revisão) */}
+          <span className="truncate pl-0.5 text-xs text-muted-foreground">
+            EAN: <span className="font-medium tabular-nums text-foreground">{variacao.gtin ?? 'não informado'}</span>
+          </span>
+          <span />
         </div>
         {/* preço + "mín. líquido" logo abaixo */}
         <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
