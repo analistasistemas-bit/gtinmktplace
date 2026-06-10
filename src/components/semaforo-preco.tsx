@@ -31,7 +31,7 @@ export function SemaforoPreco({
   const cfg = CFG[sem];
   const Icon = cfg.Icon;
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex flex-wrap items-center gap-1.5">
       <StatusPill tone={cfg.tone}>
         <Icon className="mr-1 h-3 w-3" />
         {cfg.label}
