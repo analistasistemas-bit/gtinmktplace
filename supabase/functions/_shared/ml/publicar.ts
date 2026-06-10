@@ -66,15 +66,17 @@ export function gtinAusente(gtin: string | null): boolean {
 
 /** Ordena as fotos de uma variação. O ML usa a 1ª picture_id como capa da galeria
  *  da cor, então a 1ª posição é sempre uma foto "principal": a foto-capa da família
- *  quando existe, senão a própria foto da cor. A capa2 é, por definição, a 2ª foto e
- *  NUNCA pode liderar — sem capa, a própria foto sobe para a 1ª e a capa2 fica em 2ª. */
+ *  quando existe, senão a própria foto da cor. capa2 e capa3 são, por definição, a 2ª
+ *  e a 3ª foto comuns e NUNCA podem liderar — sem capa, a própria foto sobe para a 1ª
+ *  e as comuns ficam logo atrás (capa3 sempre após a capa2). */
 export function ordenarFotosVariacao(
   capa: string | null,
   capa2: string | null,
+  capa3: string | null,
   propria: string | null,
 ): string[] {
   const lider = capa ?? propria;
-  return [...new Set([lider, capa2, propria].filter((x): x is string => !!x))];
+  return [...new Set([lider, capa2, capa3, propria].filter((x): x is string => !!x))];
 }
 
 export function montarPayloadItem(
@@ -82,15 +84,16 @@ export function montarPayloadItem(
   variacoes: VariacaoInput[],
   capaPictureId: string | null,
   capa2PictureId: string | null,
+  capa3PictureId: string | null,
   listingTypeId: string = LISTING_TYPE_PADRAO,
   desconto?: { pct: number } | null,
   dimensoes?: DimensoesPacote | null,
 ): PayloadItem {
   // item.pictures lidera com uma foto principal (capa da família, ou a 1ª foto de cor
-  // quando não há capa); a capa2 nunca assume a 1ª posição.
+  // quando não há capa); capa2 e capa3 nunca assumem a 1ª posição.
   const fotosCor = variacoes.map((v) => v.ml_picture_id).filter((x): x is string => !!x);
   const lider = capaPictureId ?? fotosCor[0] ?? null;
-  const picIds = [lider, capa2PictureId, ...fotosCor].filter((x): x is string => !!x);
+  const picIds = [lider, capa2PictureId, capa3PictureId, ...fotosCor].filter((x): x is string => !!x);
   const pictures: PictureRef[] = [...new Set(picIds)].map((id) => ({ id }));
 
   const aceitaEmptyGtin = categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
@@ -101,7 +104,7 @@ export function montarPayloadItem(
       attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
       available_quantity: v.estoque,
       price: v.preco_publicacao ?? 0,
-      picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, v.ml_picture_id),
+      picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),
       seller_custom_field: v.codigo,
     };
     if (desconto) {

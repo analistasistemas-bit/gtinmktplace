@@ -24,7 +24,7 @@ describe('montarPayloadItem', () => {
     expect(montarPayloadItem(familia, variacoes, capaPictureId).listing_type_id).toBe('gold_special');
   });
   it('usa o listing_type_id informado (ex.: Premium gold_pro)', () => {
-    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, 'gold_pro');
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, 'gold_pro');
     expect(p.listing_type_id).toBe('gold_pro');
   });
   it('cria uma variação por cor com cor, estoque, preço e picture_ids', () => {
@@ -84,28 +84,51 @@ describe('montarPayloadItem com 2a foto', () => {
     { codigo: '00000001', cor: 'Branco', estoque: 5, preco_publicacao: 10, gtin: '7891234567895', ml_picture_id: 'P1' },
   ];
   it('cada variação tem [capa, capa2, própria] e item.pictures inclui a capa2', () => {
-    const p = montarPayloadItem(familia, variacoes, 'CAPA', 'CAPA2');
+    const p = montarPayloadItem(familia, variacoes, 'CAPA', 'CAPA2', null);
     expect(p.variations[0].picture_ids).toEqual(['CAPA', 'CAPA2', 'P1']);
     expect(p.pictures.map((x) => x.id)).toEqual(expect.arrayContaining(['CAPA', 'CAPA2', 'P1']));
   });
   it('sem capa2 (null) mantém [capa, própria]', () => {
-    const p = montarPayloadItem(familia, variacoes, 'CAPA', null);
+    const p = montarPayloadItem(familia, variacoes, 'CAPA', null, null);
     expect(p.variations[0].picture_ids).toEqual(['CAPA', 'P1']);
   });
   // Regressão: família sem foto-capa própria mas com 2ª foto comum. A capa2 é por
   // definição a 2ª foto e nunca deve assumir a 1ª posição (o ML usa a 1ª como capa
   // da galeria). Sem capa, a própria foto da cor lidera; a capa2 cai para 2º.
   it('sem capa mas com capa2: a própria foto lidera e a capa2 fica em 2º (não vira capa)', () => {
-    const p = montarPayloadItem(familia, variacoes, null, 'CAPA2');
+    const p = montarPayloadItem(familia, variacoes, null, 'CAPA2', null);
     expect(p.variations[0].picture_ids).toEqual(['P1', 'CAPA2']);
     expect(p.pictures[0].id).not.toBe('CAPA2');
     expect(p.pictures[0].id).toBe('P1');
   });
 });
 
+describe('montarPayloadItem com 3a foto (CAPA3)', () => {
+  const familia = { titulo_ml: 'T', descricao_ml: 'D', categoria_ml_id: 'MLB255054', atributos_ml: [] };
+  const variacoes = [
+    { codigo: '00000001', cor: 'Branco', estoque: 5, preco_publicacao: 10, gtin: '7891234567895', ml_picture_id: 'P1' },
+  ];
+  it('cada variação tem [capa, capa2, capa3, própria] e item.pictures inclui a capa3', () => {
+    const p = montarPayloadItem(familia, variacoes, 'CAPA', 'CAPA2', 'CAPA3');
+    expect(p.variations[0].picture_ids).toEqual(['CAPA', 'CAPA2', 'CAPA3', 'P1']);
+    expect(p.pictures.map((x) => x.id)).toEqual(expect.arrayContaining(['CAPA', 'CAPA2', 'CAPA3', 'P1']));
+  });
+  // A capa3 vem logo após a capa2 (decisão Diego 2026-06-10), sem buraco quando falta a capa2.
+  it('com capa3 mas sem capa2: [capa, capa3, própria]', () => {
+    const p = montarPayloadItem(familia, variacoes, 'CAPA', null, 'CAPA3');
+    expect(p.variations[0].picture_ids).toEqual(['CAPA', 'CAPA3', 'P1']);
+  });
+  // Regressão: família sem foto-capa própria. capa2/capa3 nunca lideram; a própria foto da cor lidera.
+  it('sem capa mas com capa2+capa3: própria lidera, depois capa2, capa3', () => {
+    const p = montarPayloadItem(familia, variacoes, null, 'CAPA2', 'CAPA3');
+    expect(p.variations[0].picture_ids).toEqual(['P1', 'CAPA2', 'CAPA3']);
+    expect(p.pictures[0].id).toBe('P1');
+  });
+});
+
 describe('montarPayloadItem com dimensões (ADR-0018)', () => {
   it('mescla os SELLER_PACKAGE_* nos attributes quando válidas', () => {
-    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, undefined, null, {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, undefined, null, {
       altura_cm: 18, largura_cm: 7, comprimento_cm: 7, peso_gramas: 150,
     });
     const ids = p.attributes.map((a) => a.id);
@@ -116,7 +139,7 @@ describe('montarPayloadItem com dimensões (ADR-0018)', () => {
   });
 
   it('não adiciona pacote quando dimensões inválidas (placeholder 0,1cm)', () => {
-    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, undefined, null, {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, undefined, null, {
       altura_cm: 0.1, largura_cm: 0.1, comprimento_cm: 0.1, peso_gramas: 100,
     });
     expect(p.attributes.some((a) => a.id.startsWith('SELLER_PACKAGE'))).toBe(false);
@@ -133,13 +156,13 @@ describe('montarPayloadItem com desconto', () => {
   const vars = [{ codigo: '1', cor: 'Azul', estoque: 5, preco_publicacao: 12.29, gtin: null, ml_picture_id: null }];
 
   it('com desconto: adiciona original_price inflado por variação', () => {
-    const payload = montarPayloadItem(fam, vars, null, null, 'gold_special', { pct: 15 });
+    const payload = montarPayloadItem(fam, vars, null, null, null, 'gold_special', { pct: 15 });
     expect(payload.variations[0].price).toBe(12.29);
     expect(payload.variations[0].original_price).toBe(14.46);
   });
 
   it('sem desconto (param ausente): não inclui original_price', () => {
-    const payload = montarPayloadItem(fam, vars, null, null, 'gold_special');
+    const payload = montarPayloadItem(fam, vars, null, null, null, 'gold_special');
     expect(payload.variations[0].original_price).toBeUndefined();
   });
 });

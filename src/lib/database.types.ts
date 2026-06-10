@@ -44,6 +44,8 @@ export type Database = {
           capa_storage_path: string | null
           capa2_ml_picture_id: string | null
           capa2_storage_path: string | null
+          capa3_ml_picture_id: string | null
+          capa3_storage_path: string | null
           categoria_ml_id: string | null
           codigo_pai: string
           concorrencia_classe: Database["public"]["Enums"]["classe_concorrencia"]
@@ -96,6 +98,8 @@ export type Database = {
           capa_storage_path?: string | null
           capa2_ml_picture_id?: string | null
           capa2_storage_path?: string | null
+          capa3_ml_picture_id?: string | null
+          capa3_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai: string
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
@@ -148,6 +152,8 @@ export type Database = {
           capa_storage_path?: string | null
           capa2_ml_picture_id?: string | null
           capa2_storage_path?: string | null
+          capa3_ml_picture_id?: string | null
+          capa3_storage_path?: string | null
           categoria_ml_id?: string | null
           codigo_pai?: string
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]

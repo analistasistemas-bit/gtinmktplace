@@ -11,9 +11,10 @@ const fam = (
   capa: string | null = null,
   capa2: string | null = null,
   mlItemId: string | null = publicadoEm ? 'MLB1' : null,
+  capa3: string | null = null,
 ): FamiliaExclusao => ({
   id, ml_item_id: mlItemId, publicado_em: publicadoEm,
-  capa_storage_path: capa, capa2_storage_path: capa2,
+  capa_storage_path: capa, capa2_storage_path: capa2, capa3_storage_path: capa3,
   variacoes: vars.map((p) => ({ imagem_path: p })),
 });
 
@@ -57,6 +58,19 @@ describe('particionarExclusao', () => {
     });
     expect(r.loteVazio).toBe(true);
     expect(r.pathsRemover).toEqual(expect.arrayContaining(['u/1.jpg', 'u/l/plan.xlsx']));
+  });
+
+  it('capa3 de publicada é preservada; capa3 de excluída entra em pathsRemover', () => {
+    const r = particionarExclusao({
+      familias: [
+        fam('a', null, ['u/1.jpg'], 'u/capa-a.jpg', 'u/capa2-a.jpg', null, 'u/capa3-a.jpg'),
+        fam('b', '2026-06-04T00:00:00Z', ['u/2.jpg'], 'u/capa-b.jpg', 'u/capa2-b.jpg', 'MLB1', 'u/capa3-b.jpg'),
+      ],
+      planilhaPath: null, imagensPaths: ['u/1.jpg', 'u/2.jpg', 'u/capa3-a.jpg', 'u/capa3-b.jpg'],
+    });
+    expect(r.pathsRemover).toContain('u/capa3-a.jpg');
+    expect(r.pathsRemover).not.toContain('u/capa3-b.jpg');
+    expect(r.pathsPreservar).toContain('u/capa3-b.jpg');
   });
 
   it('dedup de paths e ignora nulos', () => {

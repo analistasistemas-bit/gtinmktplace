@@ -39,13 +39,14 @@ Deno.serve(async (req) => {
   // busca → a próxima planilha ainda viraria UPDATE no anúncio morto. Removemos TODAS as linhas
   // publicadas do mesmo codigo_pai para realmente cortar o vínculo.
   const { data: familias } = await admin.from('familias')
-    .select('id, lote_id, capa_storage_path, capa2_storage_path, variacoes(imagem_path)')
+    .select('id, lote_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
     .eq('user_id', user.id).eq('codigo_pai', alvo.codigo_pai).not('ml_item_id', 'is', null);
   const alvos = familias ?? [];
 
   const paths = [...new Set(alvos.flatMap((f) => pathsDaFamilia({
     capa_storage_path: f.capa_storage_path,
     capa2_storage_path: f.capa2_storage_path,
+    capa3_storage_path: f.capa3_storage_path,
     variacoes: f.variacoes ?? [],
   })))];
   if (paths.length > 0) {
