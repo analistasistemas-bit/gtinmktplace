@@ -1,8 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { particionarExclusao, type FamiliaExclusao } from '../exclusao';
 
-const fam = (id: string, mlItemId: string | null, vars: (string | null)[], capa: string | null = null, capa2: string | null = null): FamiliaExclusao => ({
-  id, ml_item_id: mlItemId,
+// O sinal de "preservar" é publicado_em (realmente publicada), não ml_item_id —
+// reposição UPDATE herda ml_item_id sem publicar. ml_item_id acompanha por padrão
+// (publicada tem ambos) mas pode ser sobrescrito p/ simular o caso herdado.
+const fam = (
+  id: string,
+  publicadoEm: string | null,
+  vars: (string | null)[],
+  capa: string | null = null,
+  capa2: string | null = null,
+  mlItemId: string | null = publicadoEm ? 'MLB1' : null,
+): FamiliaExclusao => ({
+  id, ml_item_id: mlItemId, publicado_em: publicadoEm,
   capa_storage_path: capa, capa2_storage_path: capa2,
   variacoes: vars.map((p) => ({ imagem_path: p })),
 });
@@ -10,7 +20,7 @@ const fam = (id: string, mlItemId: string | null, vars: (string | null)[], capa:
 describe('particionarExclusao', () => {
   it('separa publicadas (preservadas) das não publicadas (paraExcluir)', () => {
     const r = particionarExclusao({
-      familias: [fam('a', null, ['u/1.jpg']), fam('b', 'MLB1', ['u/2.jpg'])],
+      familias: [fam('a', null, ['u/1.jpg']), fam('b', '2026-06-04T00:00:00Z', ['u/2.jpg'])],
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg', 'u/2.jpg', 'u/l/plan.xlsx'],
     });
     expect(r.paraExcluir.map((f) => f.id)).toEqual(['a']);
@@ -18,9 +28,20 @@ describe('particionarExclusao', () => {
     expect(r.loteVazio).toBe(false);
   });
 
+  it('UPDATE que herdou ml_item_id mas nunca publicou (publicado_em null) é excluível', () => {
+    const r = particionarExclusao({
+      familias: [fam('a', null, ['u/1.jpg'], null, null, 'MLB1')], // ml_item_id herdado, publicado_em null
+      planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg'],
+    });
+    expect(r.paraExcluir.map((f) => f.id)).toEqual(['a']);
+    expect(r.preservadas).toEqual([]);
+    expect(r.loteVazio).toBe(true);
+    expect(r.pathsRemover).toEqual(expect.arrayContaining(['u/1.jpg', 'u/l/plan.xlsx']));
+  });
+
   it('pathsRemover NÃO inclui arquivos referenciados por publicadas sobreviventes', () => {
     const r = particionarExclusao({
-      familias: [fam('a', null, ['u/1.jpg']), fam('b', 'MLB1', ['u/2.jpg'], 'u/capa-b.jpg')],
+      familias: [fam('a', null, ['u/1.jpg']), fam('b', '2026-06-04T00:00:00Z', ['u/2.jpg'], 'u/capa-b.jpg')],
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg', 'u/2.jpg', 'u/capa-b.jpg'],
     });
     expect(r.pathsRemover).toContain('u/1.jpg');
