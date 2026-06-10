@@ -37,21 +37,20 @@ A lógica de negócio já está implementada; a feature é **destravar e expor**
   - lotes novos / cores novas precisam de fotos, completáveis na Revisão.
 - `useUploadLote` e `ingest-lote`: **sem alteração** (já lidam com lista de imagens vazia).
 
-### 3.2 Foto por cor na Revisão
+### 3.2 Foto por cor na Revisão — JÁ EXISTE
 
-- **Helper novo** `subirFotoVariacao(loteId: string, codigo: string, arquivo: File): Promise<void>` em `src/lib/upload-imagens.ts`:
-  - renomeia o arquivo para `{codigo.padStart(8, '0')}.{ext}`;
-  - chama o `uploadImagensLote` existente;
-  - valida sucesso por `ok === 1 || ja_tinha === 1` (a variação já existe no lote); em `sem_match`, erro claro ("cor não encontrada no lote").
-  - Espelha o padrão de `subirCapaFamilia`/`subirCapa2Familia`.
-- **UI por cor**: na linha/expandido da cor (`src/components/familia-expanded.tsx` / `variacao-card.tsx`), quando a variação **precisa de foto** — usando a regra que `criticasVariacao` já calcula (cor nova de UPDATE incluída sem foto, ou CREATE sem foto) — exibir um botão **"Subir foto"** por cor.
-  - Após o upload, refetch das famílias do lote → o alerta "sem foto" some e a cor fica publicável.
-- **Validação**: `familiaPublicavel` / `criticasVariacao` permanecem **inalteradas** (já exigem foto).
+O upload de foto por cor já está pronto na UI: `VariacaoCard` renderiza `BotaoTrocarFoto` para toda variação, e `lidarTrocaFoto` renomeia o arquivo para `{codigo}.{ext}` e chama `uploadImagensLote` (que casa por `variacoes.codigo` e grava `imagem_path`) + invalida o cache. Isso vale inclusive para a cor nova (a linha da cor nova não esmaece e mostra o botão).
 
-### 3.3 Sinalização
+**Logo, nenhum helper novo é necessário** (o `subirFotoVariacao` previsto antes seria redundante — YAGNI). A validação (`familiaPublicavel` / `criticasVariacao`) já exige foto e permanece inalterada.
 
-- Resumo no topo da Revisão: **"N cores novas precisam de foto"**, derivado das variações já carregadas (variações incluídas, novas no ML — `!mlVariationId` — e sem `fotoPath`). Função pura testável.
-- A aba "Incompletas" e o selo da linha já existem e continuam funcionando.
+### 3.3 Sinalização proativa (o gap real)
+
+A cor nova entra **desmarcada** (`excluida_da_publicacao: true`) e, enquanto desmarcada, `criticasVariacao` retorna `[]` — ou seja, ela fica **silenciosa**: o operador precisa descobrir sozinho que vieram cores novas. Numa importação só-planilha isso é especialmente fácil de passar batido.
+
+Correção: um **banner no topo da Revisão** quando houver cores novas sem foto, com a contagem e os códigos das famílias afetadas — "N cores novas vieram na planilha e precisam de foto". Derivado das variações já carregadas.
+
+- Função pura `coresNovasSemFoto(familias)` → retorna, por família afetada, `{ codigoPai, titulo, codigos: string[] }` para as variações **novas no ML** (`operacao === 'UPDATE'` e `!mlVariationId`) e **sem `fotoPath`**, independente de estarem marcadas/desmarcadas (a cor nova é opt-in, mas o aviso aparece assim que ela chega).
+- Banner informativo no topo da lista de Revisão (não bloqueia). A aba "Incompletas" e o selo da linha já existem e continuam funcionando.
 
 ## 4. Fluxos resultantes
 
@@ -72,8 +71,6 @@ Com imagens opcionais, é possível esquecer as fotos num lote genuinamente novo
 
 ## 7. Testes (TDD onde agrega)
 
-- `subirFotoVariacao`: renomeação correta do arquivo (`00CODIGO.ext`) e tratamento das respostas (`ok`, `ja_tinha`, `sem_match`).
-- Função pura de contagem "cores novas precisam de foto" a partir da lista de famílias.
-- Guarda do `podeProcessar`: planilha sozinha habilita o processamento; sem planilha, não.
+- Função pura `coresNovasSemFoto(familias)`: agrupa por família as cores novas (UPDATE, `!mlVariationId`) sem `fotoPath`; ignora cores casadas, CREATE e cores novas que já têm foto; lista vazia quando não há nenhuma.
 
-UI puramente cosmética não é testada (convenção do projeto).
+A relaxação do `podeProcessar` (uma condição booleana) e o banner são UI; seguem a convenção do projeto de não testar UI puramente apresentacional. O upload de foto por cor já existe e é coberto pelo comportamento atual.
