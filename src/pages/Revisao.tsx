@@ -16,6 +16,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta } from '@/lib/publicavel';
+import { coresNovasSemFoto, totalCoresNovasSemFoto } from '@/lib/cores-novas';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -58,6 +59,8 @@ export default function Revisao() {
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
+  const coresNovas = useMemo(() => coresNovasSemFoto(familias), [familias]);
+  const totalCoresNovas = useMemo(() => totalCoresNovasSemFoto(familias), [familias]);
 
   async function lidarArquivosDrop(arquivos: File[]) {
     if (!loteId) return;
@@ -226,6 +229,19 @@ export default function Revisao() {
         <div className="border-b border-destructive/30 bg-destructive/5 px-4 py-2 text-xs text-destructive">
           Famílias com preço sugerido <strong>abaixo de 20%</strong> do preço da sua planilha.
           Reveja antes de aprovar para não vender no prejuízo.
+        </div>
+      )}
+      {totalCoresNovas > 0 && (
+        <div className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning">
+          <strong>{totalCoresNovas} cor(es) nova(s)</strong> vieram na planilha e precisam de foto
+          para publicar. Expanda{' '}
+          {coresNovas.map((f, i) => (
+            <span key={f.codigoPai}>
+              {i > 0 && ', '}
+              <span className="font-medium">{f.titulo || f.codigoPai}</span> ({f.codigos.length})
+            </span>
+          ))}{' '}
+          e use o botão de foto em cada cor nova.
         </div>
       )}
       {loteId && (
