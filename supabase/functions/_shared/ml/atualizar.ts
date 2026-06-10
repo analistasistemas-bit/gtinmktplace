@@ -27,6 +27,7 @@ export function montarVariacaoNova(
   v: CorNovaInput,
   capaPictureId: string | null,
   capa2PictureId: string | null,
+  capa3PictureId: string | null,
   categoriaMlId: string | null,
   desconto?: { pct: number } | null,
 ): VariacaoNovaPut {
@@ -34,7 +35,7 @@ export function montarVariacaoNova(
     attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
     available_quantity: v.estoque,
     price: v.preco_publicacao ?? 0,
-    picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, v.ml_picture_id),
+    picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),
     seller_custom_field: v.codigo,
   };
   if (desconto) {

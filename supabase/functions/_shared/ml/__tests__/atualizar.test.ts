@@ -74,7 +74,7 @@ const corNova = {
 
 describe('montarVariacaoNova', () => {
   it('monta COLOR, estoque, preço, picture_ids e seller_custom_field, sem id', () => {
-    const v = montarVariacaoNova(corNova, null, null, 'MLB270273');
+    const v = montarVariacaoNova(corNova, null, null, null, 'MLB270273');
     expect(v).not.toHaveProperty('id');
     expect(v.attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Vermelho' }]);
     expect(v.available_quantity).toBe(9);
@@ -83,42 +83,54 @@ describe('montarVariacaoNova', () => {
     expect(v.seller_custom_field).toBe('00000777');
   });
   it('a capa entra como 1ª foto da variação nova', () => {
-    const v = montarVariacaoNova(corNova, 'CAPA1', null, 'MLB270273');
+    const v = montarVariacaoNova(corNova, 'CAPA1', null, null, 'MLB270273');
     expect(v.picture_ids).toEqual(['CAPA1', 'PICNOVA']);
   });
   it('GTIN EAN válido vira atributo GTIN', () => {
-    const v = montarVariacaoNova(corNova, null, null, 'MLB270273');
+    const v = montarVariacaoNova(corNova, null, null, null, 'MLB270273');
     expect(v.attributes).toEqual([{ id: 'GTIN', value_name: '7891234567890' }]);
   });
   it('sem GTIN em categoria que aceita → EMPTY_GTIN_REASON', () => {
-    const v = montarVariacaoNova({ ...corNova, gtin: null }, null, null, 'MLB270273');
+    const v = montarVariacaoNova({ ...corNova, gtin: null }, null, null, null, 'MLB270273');
     expect(v.attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
   });
   it('GTIN interno 3000* → EMPTY_GTIN_REASON', () => {
-    const v = montarVariacaoNova({ ...corNova, gtin: '30009999' }, null, null, 'MLB270273');
+    const v = montarVariacaoNova({ ...corNova, gtin: '30009999' }, null, null, null, 'MLB270273');
     expect(v.attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
   });
   it('sem GTIN em categoria sem suporte (botão MLB270272) → sem atributo de GTIN', () => {
-    const v = montarVariacaoNova({ ...corNova, gtin: null }, null, null, 'MLB270272');
+    const v = montarVariacaoNova({ ...corNova, gtin: null }, null, null, null, 'MLB270272');
     expect(v.attributes).toBeUndefined();
   });
   it('inclui [capa, capa2, própria] em picture_ids', () => {
     const v = { codigo: '00000009', cor: 'Azul', estoque: 3, preco_publicacao: 12, gtin: null, ml_picture_id: 'PN' };
-    const r = montarVariacaoNova(v, 'CAPA', 'CAPA2', 'MLB255054');
+    const r = montarVariacaoNova(v, 'CAPA', 'CAPA2', null, 'MLB255054');
     expect(r.picture_ids).toEqual(['CAPA', 'CAPA2', 'PN']);
+  });
+
+  it('inclui [capa, capa2, capa3, própria] em picture_ids', () => {
+    const v = { codigo: '00000009', cor: 'Azul', estoque: 3, preco_publicacao: 12, gtin: null, ml_picture_id: 'PN' };
+    const r = montarVariacaoNova(v, 'CAPA', 'CAPA2', 'CAPA3', 'MLB255054');
+    expect(r.picture_ids).toEqual(['CAPA', 'CAPA2', 'CAPA3', 'PN']);
   });
 
   // Regressão: cor nova sem foto-capa própria mas com 2ª foto comum. A capa2 não
   // pode liderar (viraria capa da variação no ML); a própria foto vem 1ª, capa2 2ª.
   it('sem capa mas com capa2: própria foto lidera e capa2 fica em 2º', () => {
     const v = { codigo: '00000009', cor: 'Azul', estoque: 3, preco_publicacao: 12, gtin: null, ml_picture_id: 'PN' };
-    const r = montarVariacaoNova(v, null, 'CAPA2', 'MLB255054');
+    const r = montarVariacaoNova(v, null, 'CAPA2', null, 'MLB255054');
     expect(r.picture_ids).toEqual(['PN', 'CAPA2']);
+  });
+
+  it('sem capa mas com capa2+capa3: própria lidera, depois capa2, capa3', () => {
+    const v = { codigo: '00000009', cor: 'Azul', estoque: 3, preco_publicacao: 12, gtin: null, ml_picture_id: 'PN' };
+    const r = montarVariacaoNova(v, null, 'CAPA2', 'CAPA3', 'MLB255054');
+    expect(r.picture_ids).toEqual(['PN', 'CAPA2', 'CAPA3']);
   });
 
   it('montarVariacaoNova com desconto adiciona original_price', () => {
     const v = { codigo: '2', cor: 'Rosa', estoque: 4, preco_publicacao: 12.29, gtin: null, ml_picture_id: null };
-    const out = montarVariacaoNova(v, null, null, 'MLB255054', { pct: 15 });
+    const out = montarVariacaoNova(v, null, null, null, 'MLB255054', { pct: 15 });
     expect(out.price).toBe(12.29);
     expect(out.original_price).toBe(14.46);
   });

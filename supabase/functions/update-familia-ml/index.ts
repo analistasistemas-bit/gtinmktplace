@@ -99,31 +99,41 @@ Deno.serve(async (req) => {
       await admin.from('familias').update({ capa2_ml_picture_id: capa2Pic }).eq('id', job.familia_id);
     }
 
+    let capa3Pic = (familia.capa3_ml_picture_id as string | null) ?? null;
+    if (!capa3Pic && familia.capa3_storage_path) {
+      capa3Pic = await subirFotoML(token, await signed(familia.capa3_storage_path as string));
+      await admin.from('familias').update({ capa3_ml_picture_id: capa3Pic }).eq('id', job.familia_id);
+    }
+
     // GET estado real → reenviar todas as variações (ML deleta as omitidas).
     const atual = await buscarItemML(token, familia.ml_item_id);
     const desejados = casadas.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
     const capaPic = (familia.capa_ml_picture_id as string | null) ?? null;
-    // 2a foto nas cores existentes: parte das fotos ATUAIS do item (IDs válidos, lidos do GET —
-    // o ML re-hospeda as fotos, então os IDs de upload cacheados não batem com os do item) e
-    // insere a capa2 como 2a foto. Sem capa2 → só estoque (comportamento preservado).
+    // Fotos comuns (capa2, capa3) nas cores existentes: parte das fotos ATUAIS do item
+    // (IDs válidos, lidos do GET — o ML re-hospeda as fotos, então os IDs de upload
+    // cacheados não batem com os do item) e insere as comuns logo após a líder (capa3
+    // sempre após a capa2). Idempotente: reaplicar reordena para o mesmo resultado.
+    // Sem fotos comuns → só estoque (comportamento preservado).
+    const comuns = [capa2Pic, capa3Pic].filter((x): x is string => !!x);
     const incluidas = new Set(casadas.map((c) => c.codigo));
     const picsPorCodigo: Record<string, string[]> = {};
-    if (capa2Pic) {
+    if (comuns.length > 0) {
       for (const a of atual.variations) {
         const codigo = a.seller_custom_field ?? '';
         if (!incluidas.has(codigo)) continue;
         const atuaisPics = a.picture_ids ?? [];
-        picsPorCodigo[codigo] = atuaisPics.includes(capa2Pic)
-          ? atuaisPics
-          : [atuaisPics[0], capa2Pic, ...atuaisPics.slice(1)].filter((x): x is string => !!x);
+        picsPorCodigo[codigo] = [...new Set(
+          [atuaisPics[0], ...comuns, ...atuaisPics.slice(1)].filter((x): x is string => !!x),
+        )];
       }
     }
-    const existentes = montarVariacoesUpdate(atual.variations, desejados, capa2Pic ? picsPorCodigo : undefined, desconto ?? undefined);
+    const existentes = montarVariacoesUpdate(atual.variations, desejados, comuns.length > 0 ? picsPorCodigo : undefined, desconto ?? undefined);
 
     const novasPut = novasComFoto.map((v) => montarVariacaoNova(
       { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
       capaPic,
       capa2Pic,
+      capa3Pic,
       familia.categoria_ml_id as string | null,
       desconto ? { pct: desconto.pct } : null,
     ));
@@ -146,11 +156,11 @@ Deno.serve(async (req) => {
     ];
     // Ao criar variação nova, a foto dela precisa estar também no item.pictures
     // (regra do ML: item.pictures.invalid.missing_ids). Reenvia o item.pictures =
-    // fotos atuais + as fotos das variações novas (dedup). Inclui capa2 quando presente.
+    // fotos atuais + comuns (capa2/capa3) + fotos das variações novas (dedup).
     const novasPicIds = novasPut.flatMap((v) => v.picture_ids);
-    const precisaPictures = novasPut.length > 0 || !!capa2Pic;
+    const precisaPictures = novasPut.length > 0 || comuns.length > 0;
     const pictures = precisaPictures
-      ? [...new Set([...atual.pictures, ...(capa2Pic ? [capa2Pic] : []), ...novasPicIds])]
+      ? [...new Set([...atual.pictures, ...comuns, ...novasPicIds])]
       : undefined;
     const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut], atributosItem, pictures);
 

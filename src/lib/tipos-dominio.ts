@@ -130,6 +130,7 @@ export interface Familia {
   fotoCapaPath?: string;
   capaStoragePath: string | null;
   capa2StoragePath: string | null;
+  capa3StoragePath: string | null;
   variacaoPrincipalCodigo: string | null;
   variacoes: Variacao[];
   editadoPeloOperador?: boolean;

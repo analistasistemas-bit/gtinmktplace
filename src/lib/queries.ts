@@ -268,6 +268,7 @@ export function familiaFromRow(
     fotoCapaPath: variacoes.find((v) => v.fotoPath)?.fotoPath,
     capaStoragePath: r.capa_storage_path,
     capa2StoragePath: r.capa2_storage_path,
+    capa3StoragePath: r.capa3_storage_path,
     variacaoPrincipalCodigo: r.variacao_principal_codigo,
     variacoes,
     editadoPeloOperador:

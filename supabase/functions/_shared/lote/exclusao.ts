@@ -5,6 +5,7 @@ export interface FamiliaExclusao {
   publicado_em: string | null;
   capa_storage_path: string | null;
   capa2_storage_path: string | null;
+  capa3_storage_path: string | null;
   variacoes: VariacaoExclusao[];
 }
 export interface EntradaExclusao {
@@ -25,10 +26,11 @@ export interface ResultadoExclusao {
 export function pathsDaFamilia(f: {
   capa_storage_path: string | null;
   capa2_storage_path: string | null;
+  capa3_storage_path: string | null;
   variacoes: VariacaoExclusao[];
 }): string[] {
   return [
-    f.capa_storage_path, f.capa2_storage_path,
+    f.capa_storage_path, f.capa2_storage_path, f.capa3_storage_path,
     ...f.variacoes.map((v) => v.imagem_path),
   ].filter((p): p is string => !!p);
 }

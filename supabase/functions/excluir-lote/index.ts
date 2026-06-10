@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: familias } = await admin.from('familias')
-    .select('id, ml_item_id, publicado_em, capa_storage_path, capa2_storage_path, variacoes(imagem_path)')
+    .select('id, ml_item_id, publicado_em, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
     .eq('lote_id', lote_id);
 
   const part = particionarExclusao({

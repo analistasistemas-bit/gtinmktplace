@@ -32,7 +32,7 @@ import {
   useRegenerarCopy,
   useUpdateVariacaoPrincipal,
 } from '@/hooks/useFamiliaMutations';
-import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia } from '@/lib/upload-imagens';
+import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { criticasVariacao } from '@/lib/publicavel';
 import { cn } from '@/lib/utils';
@@ -75,6 +75,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
   const { data: capa2Url } = useImageUrl(familia.capa2StoragePath);
   const inputCapa2Ref = useRef<HTMLInputElement>(null);
   const [trocandoCapa2, setTrocandoCapa2] = useState(false);
+  const { data: capa3Url } = useImageUrl(familia.capa3StoragePath);
+  const inputCapa3Ref = useRef<HTMLInputElement>(null);
+  const [trocandoCapa3, setTrocandoCapa3] = useState(false);
   const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
 
   const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
@@ -258,6 +261,33 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
     }
   }
 
+  async function lidarTrocaCapa3(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTrocandoCapa3(true);
+    try {
+      await subirCapa3Familia(familia.loteId, familia.codigoPai, file);
+      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+      toast.success('3ª foto atualizada');
+    } catch (err) {
+      toast.error('Erro ao subir 3ª foto', { description: (err as Error).message });
+    } finally {
+      setTrocandoCapa3(false);
+      if (inputCapa3Ref.current) inputCapa3Ref.current.value = '';
+    }
+  }
+
+  async function lidarRemoverCapa3() {
+    if (!familia.capa3StoragePath) return;
+    try {
+      await removerCapa3Familia(familia.id, familia.capa3StoragePath);
+      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+      toast.success('3ª foto removida');
+    } catch (err) {
+      toast.error('Erro ao remover 3ª foto', { description: (err as Error).message });
+    }
+  }
+
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
       <DiffEstoque familia={familia} />
@@ -353,6 +383,45 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
                 )}
               </div>
               <input ref={inputCapa2Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa2} />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <FotoCapaFamilia capaUrl={capa3Url ?? null} tamanho="medium" />
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">3ª foto (todas as cores)</span>
+              <div className="flex gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => inputCapa3Ref.current?.click()} disabled={trocandoCapa3}>
+                  <Camera className="mr-1.5 h-4 w-4" />
+                  {familia.capa3StoragePath ? 'Trocar 3ª foto' : 'Subir 3ª foto'}
+                </Button>
+                {familia.capa3StoragePath && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <Trash2 className="mr-1.5 h-4 w-4" /> Remover
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remover a 3ª foto?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          A 3ª foto (aplicada a todas as cores) será removida. Você pode subir outra depois.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={lidarRemoverCapa3}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Remover
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+              <input ref={inputCapa3Ref} type="file" accept="image/jpeg,image/png,image/jpg" className="hidden" onChange={lidarTrocaCapa3} />
             </div>
           </div>
           <div className="ml-auto">

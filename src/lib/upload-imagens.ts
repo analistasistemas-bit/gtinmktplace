@@ -8,6 +8,8 @@ export interface ResultadoUpload {
   capas_sem_match: number;
   capas2_ok: number;
   capas2_sem_match: number;
+  capas3_ok: number;
+  capas3_sem_match: number;
   erros: Array<{ arquivo: string; motivo: string }>;
 }
 
@@ -89,4 +91,33 @@ export async function removerCapa2Familia(familiaId: string, capa2StoragePath: s
   if (upErr) throw new Error(upErr.message);
   const { error: rmErr } = await supabase.storage.from('imagens').remove([capa2StoragePath]);
   if (rmErr) console.warn('Falha ao remover 2ª foto do storage:', rmErr.message);
+}
+
+export async function subirCapa3Familia(
+  loteId: string,
+  codigoPai: string,
+  arquivo: File,
+): Promise<void> {
+  const codigoPadronizado = codigoPai.padStart(8, '0');
+  const ext = arquivo.name.split('.').pop()?.toLowerCase() ?? 'jpeg';
+  const nomeRenomeado = `CAPA3_${codigoPadronizado}.${ext}`;
+  const renomeado = new File([arquivo], nomeRenomeado, { type: arquivo.type });
+  const r = await uploadImagensLote(loteId, [renomeado]);
+  if (r.capas3_ok !== 1) {
+    throw new Error(
+      r.capas3_sem_match > 0
+        ? `Família ${codigoPai} não encontrada no lote.`
+        : (r.erros[0]?.motivo ?? r.erros[0] as unknown as string) || 'Falha ao subir 3ª foto.',
+    );
+  }
+}
+
+export async function removerCapa3Familia(familiaId: string, capa3StoragePath: string): Promise<void> {
+  const { error: upErr } = await supabase
+    .from('familias')
+    .update({ capa3_storage_path: null })
+    .eq('id', familiaId);
+  if (upErr) throw new Error(upErr.message);
+  const { error: rmErr } = await supabase.storage.from('imagens').remove([capa3StoragePath]);
+  if (rmErr) console.warn('Falha ao remover 3ª foto do storage:', rmErr.message);
 }

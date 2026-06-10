@@ -97,6 +97,12 @@ Deno.serve(async (req) => {
       await admin.from('familias').update({ capa2_ml_picture_id: capa2PictureId }).eq('id', job.familia_id);
     }
 
+    let capa3PictureId: string | null = familia.capa3_ml_picture_id ?? null;
+    if (!capa3PictureId && familia.capa3_storage_path) {
+      capa3PictureId = await subirFotoML(token, await signed(familia.capa3_storage_path));
+      await admin.from('familias').update({ capa3_ml_picture_id: capa3PictureId }).eq('id', job.familia_id);
+    }
+
     const variacoesComFoto = [];
     for (const v of variacoes) {
       let picId = v.ml_picture_id as string | null;
@@ -121,6 +127,7 @@ Deno.serve(async (req) => {
       ordenadas.map((v) => ({ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id })),
       capaPictureId,
       capa2PictureId,
+      capa3PictureId,
       job.listing_type_id,
       desconto,
       dimensoes,
