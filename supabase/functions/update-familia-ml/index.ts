@@ -6,6 +6,7 @@ import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
 import { buscarDescricaoML, garantirDescricaoML, resolverDescricaoUpdate } from '../_shared/ml/criar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
 import { montarAtributosPacote } from '../_shared/ml/pacote.ts';
+import { vincularVariacoesCatalogo } from '../_shared/ml/catalogo.ts';
 import { subirFotoML } from '../_shared/ml/fotos.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 
@@ -209,6 +210,20 @@ Deno.serve(async (req) => {
       status: 'publicado',
       publicado_em: new Date().toISOString(),
     }).eq('id', job.familia_id);
+
+    // Catálogo (ADR-0021): reconcilia o vínculo das cores. Reposição pura → variações já
+    // vinculadas são puladas; cores novas / com erro anterior tentam o opt-in. Best-effort.
+    try {
+      const { data: varsCat } = await admin.from('variacoes')
+        .select('id, codigo, gtin, ml_variation_id, catalog_product_id, catalog_listing_id')
+        .eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
+      if (varsCat && varsCat.length) {
+        const resumo = await vincularVariacoesCatalogo(token, admin, familia.ml_item_id, varsCat);
+        console.log(`catálogo (update) ${familia.ml_item_id}: ${JSON.stringify(resumo)}`);
+      }
+    } catch (e) {
+      console.error(`passo de catálogo (update) falhou para ${familia.ml_item_id}:`, e);
+    }
 
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ ml_item_id: familia.ml_item_id, atualizado: true, novas: novasPut.length }), {
