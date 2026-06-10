@@ -57,6 +57,29 @@ export async function enfileirarAtualizacao(job: ProcessFamiliaJob): Promise<str
   return messageId;
 }
 
+export interface VincularCatalogoJob { familia_id: string; }
+
+/**
+ * Enfileira o opt-in de catálogo (ADR-0021) com delay. A elegibilidade de catálogo do ML só
+ * fica pronta alguns minutos após o `POST /items`, então o passo NÃO pode rodar síncrono no
+ * publish. Além de demorar a computar, ela passa por estados transitórios: um anúncio multi-cor
+ * de famílias diferentes pode aparecer `READY_FOR_OPTIN` por instantes e depois assentar em
+ * `FAMILY_DIFF`. O delay (10 min) dá tempo de a elegibilidade ASSENTAR antes de agirmos — assim
+ * só itens genuinamente elegíveis (mesma família) seguem READY e vinculam; `retries` cobre o
+ * caso de ainda não ter computado (o worker devolve 500 enquanto houver variação `pendente`).
+ */
+export async function enfileirarVinculacaoCatalogo(familiaId: string, delaySeconds = 600): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/vincular-catalogo`;
+  const { messageId } = await qstashClient().publishJSON({
+    url: target,
+    body: { familia_id: familiaId } satisfies VincularCatalogoJob,
+    delay: delaySeconds,
+    retries: 5,
+  });
+  return messageId;
+}
+
 export async function verificarAssinatura(req: Request, body: string): Promise<boolean> {
   const sig = req.headers.get('upstash-signature');
   if (!sig) return false;

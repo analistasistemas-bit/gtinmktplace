@@ -30,8 +30,12 @@ describe('decidirAcaoCatalogo', () => {
     expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, { id: 4, status: 'READY_FOR_OPTIN', buy_box_eligible: false })).toBe('nao_elegivel');
   });
 
-  it('sem entrada de elegibilidade (variação ausente) → nao_elegivel', () => {
-    expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, undefined)).toBe('nao_elegivel');
+  it('sem entrada de elegibilidade (item recém-criado, ainda computando) → pendente', () => {
+    expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, undefined)).toBe('pendente');
+  });
+
+  it('entrada presente mas status ainda nulo (computando) → pendente', () => {
+    expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, { id: 5, status: null, buy_box_eligible: null })).toBe('pendente');
   });
 });
 
