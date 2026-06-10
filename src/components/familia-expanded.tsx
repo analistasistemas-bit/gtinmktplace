@@ -27,7 +27,6 @@ import { DiffEstoque } from '@/components/diff-estoque';
 import {
   useUpdateVariacaoPreco,
   useUpdateVariacaoCor,
-  useUpdateVariacaoGtin,
   useUpdateFamiliaTitulo,
   useUpdateFamiliaDescricao,
   useRegenerarCopy,
@@ -68,7 +67,6 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
   const [corStatuses, setCorStatuses] = useState<Record<string, SaveStatus>>({});
-  const [gtinStatuses, setGtinStatuses] = useState<Record<string, SaveStatus>>({});
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [trocando, setTrocando] = useState(false);
@@ -83,7 +81,6 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
   const updatePreco = useUpdateVariacaoPreco(familia.loteId);
   const updateCor = useUpdateVariacaoCor(familia.loteId);
-  const updateGtin = useUpdateVariacaoGtin(familia.loteId);
   const regenerar = useRegenerarCopy(familia.loteId);
 
   // Foco numa variação (vindo do selo de pendência do pai): rola até ela e a realça.
@@ -112,12 +109,6 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
 
   function mudarCor(codigo: string, novaCor: string) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, cor: novaCor } : v)));
-  }
-
-  function mudarGtin(codigo: string, novoGtin: string) {
-    setVariacoes((vs) =>
-      vs.map((v) => (v.codigo === codigo ? { ...v, gtin: novoGtin || null } : v))
-    );
   }
 
   function flash(setter: (s: SaveStatus) => void) {
@@ -210,32 +201,6 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
       flashCor(codigo, 'salvo');
     } catch {
       flashCor(codigo, 'erro');
-    }
-  }
-
-  function flashGtin(codigo: string, status: SaveStatus) {
-    setGtinStatuses((s) => ({ ...s, [codigo]: status }));
-    if (status === 'salvo') {
-      setTimeout(() => {
-        setGtinStatuses((s) => {
-          const copy = { ...s };
-          delete copy[codigo];
-          return copy;
-        });
-      }, FLASH_MS);
-    }
-  }
-
-  async function salvarGtin(codigo: string) {
-    const v = variacoes.find((x) => x.codigo === codigo);
-    const original = familia.variacoes.find((x) => x.codigo === codigo);
-    if (!v?.id || !original || v.gtin === original.gtin) return;
-    flashGtin(codigo, 'salvando');
-    try {
-      await updateGtin.mutateAsync({ id: v.id, gtin: v.gtin });
-      flashGtin(codigo, 'salvo');
-    } catch {
-      flashGtin(codigo, 'erro');
     }
   }
 
@@ -501,13 +466,10 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
                       loteId={familia.loteId}
                       statusPreco={precoStatuses[v.codigo]}
                       statusCor={corStatuses[v.codigo]}
-                      statusGtin={gtinStatuses[v.codigo]}
                       onMudarPreco={mudarPreco}
                       onMudarCor={mudarCor}
-                      onMudarGtin={mudarGtin}
                       onSalvarPreco={salvarPreco}
                       onSalvarCor={salvarCor}
-                      onSalvarGtin={salvarGtin}
                       categoriaMlId={familia.categoriaMlId}
                     />
                   </div>

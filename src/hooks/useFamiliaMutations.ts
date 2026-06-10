@@ -2,7 +2,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   updateVariacaoPreco,
   updateVariacaoCor,
-  updateVariacaoGtin,
   updateFamiliaTitulo,
   updateFamiliaDescricao,
   updateVariacaoPrincipal,
@@ -27,15 +26,6 @@ export function useUpdateVariacaoCor(loteId: string) {
   return useMutation({
     mutationFn: ({ id, codigo, cor }: { id: string; codigo: string; cor: string }) =>
       updateVariacaoCor(id, codigo, cor),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
-  });
-}
-
-export function useUpdateVariacaoGtin(loteId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, gtin }: { id: string; gtin: string | null }) =>
-      updateVariacaoGtin(id, gtin),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }
