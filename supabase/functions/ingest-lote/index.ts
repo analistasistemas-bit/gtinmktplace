@@ -5,6 +5,9 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, norm
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
+import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
+import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
+import { getValidAccessToken } from '../_shared/ml/token.ts';
 import * as XLSX from 'npm:xlsx@^0.18';
 
 Deno.serve(async (req) => {
@@ -115,6 +118,24 @@ Deno.serve(async (req) => {
       }));
       const novas = g.variacoes.map((v) => ({ codigo: normalizarCodigo(v.CODIGO) }));
       casamentoPorPai.set(g.codigo_pai, casarVariacoesUpdate(novas, varsAnteriores));
+    }
+
+    // Reconciliação contra o ML (adendo ADR-0016): o snapshot local pode estar
+    // desatualizado (lote excluído, cor adicionada fora do app), marcando como "nova"
+    // uma cor que JÁ existe no anúncio. Só consulta o ML nas famílias com suposta cor
+    // nova (raro). Falha de ML/token → mantém o casamento local (resiliente).
+    let tokenML: string | null = null;
+    for (const g of grupos) {
+      const cas = casamentoPorPai.get(g.codigo_pai);
+      const ant = anteriorPorPai.get(g.codigo_pai);
+      if (!cas || !ant?.ml_item_id || cas.mudancaEstrutural.novas.length === 0) continue;
+      try {
+        if (!tokenML) tokenML = await getValidAccessToken(user.id);
+        const existentes = await buscarVariacoesExistentesML(tokenML, ant.ml_item_id);
+        casamentoPorPai.set(g.codigo_pai, reconciliarCasamentoComML(cas, existentes));
+      } catch (e) {
+        console.error(`Reconciliação ML falhou (${g.codigo_pai}): ${e instanceof Error ? e.message : e}`);
+      }
     }
 
     const familiasInsert = grupos.map((g) => {

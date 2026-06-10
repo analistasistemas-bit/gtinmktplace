@@ -140,3 +140,34 @@ estoque** → desejada == ao vivo → **não envia** (sem IA, sem token; o GET �
 descrição"; o UPDATE nunca gera tokens — só lê (GET) e, quando necessário, escreve (PUT) a
 descrição. Idempotente: após o push, `sanitizar(desejada) == liveMl` → o próximo UPDATE não
 reenvia.
+
+---
+
+## Adendo (2026-06-10) — Reconciliação do casamento contra o anúncio ao vivo
+
+**Problema (bug bash do import só-planilha):** o casamento UPDATE decide "o que já está
+publicado" pelo **snapshot local** (`familias`/`variacoes`). Esse snapshot pode **divergir
+do anúncio real no ML** — ex.: a variação existe no ML mas nunca foi registrada localmente
+(o lote que a publicou foi excluído, ou a cor foi adicionada fora do app). Caso real:
+anúncio `MLB6901096672` tinha 3 variações no ML (Branco, Preto, **Azul/SKU 00220809**), mas
+o banco só registrara 2 → o `casarVariacoesUpdate` (casa por código) marcava a 00220809 como
+**cor nova** (falso positivo) e, se publicada, o worker tentaria **criar SKU duplicado**.
+
+**Decisão:** o ML é a fonte da verdade (mapeia `seller_custom_field`=código → variação).
+Após o casamento local, o `ingest-lote` **reconcilia** os códigos marcados como novos contra
+as variações reais do anúncio:
+
+- `buscarVariacoesExistentesML(token, itemId)` (`GET /items/{id}?attributes=id,variations`)
+  devolve `{ id, seller_custom_field, cor (de attribute_combinations COLOR), available_quantity }`.
+- `reconciliarCasamentoComML(casamento, mlVariations)` (puro, TDD): para cada código em
+  `mudancaEstrutural.novas` que **já existe no ML** (casado por `seller_custom_field`
+  normalizado), reclassifica como **casado** — adota o `ml_variation_id` e a `cor` do ML,
+  `estoque_anterior` = `available_quantity`, e sai de `novas`. Só os códigos **realmente
+  ausentes** no ML continuam novos.
+
+**Efeitos:** some o falso "cor nova" na Revisão; a cor entra **incluída** (não opt-in) como
+reposição normal; o worker não duplica SKU; e o registro é **gravado de volta** no banco
+(auto-cura — o próximo lote casa localmente, sem nova chamada ao ML).
+
+**Custo/resiliência:** só consulta o ML nas famílias com suposta cor nova (raro; 1 GET por
+família afetada). Falha de ML/token → mantém o casamento local (comportamento anterior).
