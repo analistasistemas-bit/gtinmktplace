@@ -59,52 +59,56 @@ export function VariacaoCard({
   }
 
   return (
-    <div className="flex items-start gap-3 rounded-md bg-background p-2 text-sm">
-      {imgUrl ? (
-        <img
-          src={imgUrl}
-          alt={variacao.cor || variacao.codigo}
-          className="mt-0.5 h-8 w-8 shrink-0 rounded object-cover"
-          loading="lazy"
-        />
-      ) : (
-        <div
-          className="mt-0.5 h-8 w-8 shrink-0 rounded border"
-          style={{ backgroundColor: variacao.corHex }}
-          aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
-        />
-      )}
-      <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {/* Linha 1: cor */}
-        <div className="flex items-center gap-2">
-          <Input
-            value={variacao.cor}
-            onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
-            onBlur={() => onSalvarCor?.(variacao.codigo)}
-            className="h-7 flex-1"
+    // Layout em 2 linhas: a linha 1 (foto, cor/GTIN, preço, estoque) tem conteúdo de
+    // largura previsível, então a coluna cor/GTIN (flex-1 + piso de 150px) nunca colapsa.
+    // O semáforo tem largura variável (pior com o selo "frete por sua conta") — antes
+    // espremia cor/GTIN a ~0; agora vai p/ a linha 2, de largura livre.
+    <div className="rounded-md bg-background p-2 text-sm">
+      <div className="flex items-start gap-3">
+        {imgUrl ? (
+          <img
+            src={imgUrl}
+            alt={variacao.cor || variacao.codigo}
+            className="mt-0.5 h-8 w-8 shrink-0 rounded object-cover"
+            loading="lazy"
           />
-          <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
-          <div className="min-w-0 shrink-0 whitespace-nowrap">
-            <StatusInline status={statusCor} />
+        ) : (
+          <div
+            className="mt-0.5 h-8 w-8 shrink-0 rounded border"
+            style={{ backgroundColor: variacao.corHex }}
+            aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
+          />
+        )}
+        <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
+        <div className="flex min-w-[150px] flex-1 flex-col gap-1">
+          {/* cor */}
+          <div className="flex items-center gap-2">
+            <Input
+              value={variacao.cor}
+              onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
+              onBlur={() => onSalvarCor?.(variacao.codigo)}
+              className="h-7 flex-1"
+            />
+            <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
+            <div className="min-w-0 shrink-0 whitespace-nowrap">
+              <StatusInline status={statusCor} />
+            </div>
+          </div>
+          {/* EAN/GTIN */}
+          <div className="flex items-center gap-2">
+            <Input
+              value={variacao.gtin ?? ''}
+              onChange={(e) => onMudarGtin(variacao.codigo, e.target.value)}
+              onBlur={() => onSalvarGtin?.(variacao.codigo)}
+              placeholder="EAN/GTIN"
+              className="h-6 flex-1 border-muted bg-muted/40 text-xs text-muted-foreground placeholder:text-muted-foreground/60"
+            />
+            <div className="min-w-0 shrink-0 whitespace-nowrap">
+              <StatusInline status={statusGtin} />
+            </div>
           </div>
         </div>
-        {/* Linha 2: EAN/GTIN */}
-        <div className="flex items-center gap-2">
-          <Input
-            value={variacao.gtin ?? ''}
-            onChange={(e) => onMudarGtin(variacao.codigo, e.target.value)}
-            onBlur={() => onSalvarGtin?.(variacao.codigo)}
-            placeholder="EAN/GTIN"
-            className="h-6 flex-1 border-muted bg-muted/40 text-xs text-muted-foreground placeholder:text-muted-foreground/60"
-          />
-          <div className="min-w-0 shrink-0 whitespace-nowrap">
-            <StatusInline status={statusGtin} />
-          </div>
-        </div>
-      </div>
-      <div className="flex flex-col items-start gap-0.5 pt-0.5">
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 pt-0.5">
           <Input
             type="number"
             step="0.01"
@@ -117,7 +121,18 @@ export function VariacaoCard({
             <StatusInline status={statusPreco ?? trocaStatus} />
           </div>
         </div>
-        <span className="pl-0.5 text-[11px] text-muted-foreground">
+        <div className="flex w-16 shrink-0 flex-col items-end leading-tight pt-0.5">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Estoque
+          </span>
+          <span className="text-sm font-semibold tabular-nums">
+            {new Intl.NumberFormat('pt-BR').format(variacao.estoque)}
+          </span>
+        </div>
+      </div>
+      {/* Linha 2: viabilidade (mín. líquido + semáforo), largura livre */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 pl-11">
+        <span className="text-[11px] text-muted-foreground">
           mín. líquido: <span className="font-semibold text-foreground">{fmtBRL(variacao.preco)}</span>
         </span>
         <SemaforoPreco
@@ -126,14 +141,6 @@ export function VariacaoCard({
           custo={variacao.custo}
           categoriaMlId={categoriaMlId}
         />
-      </div>
-      <div className="flex w-20 flex-col items-end leading-tight pt-0.5">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Estoque
-        </span>
-        <span className="text-sm font-semibold tabular-nums">
-          {new Intl.NumberFormat('pt-BR').format(variacao.estoque)}
-        </span>
       </div>
     </div>
   );
