@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { FileText } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,7 @@ import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existen
 import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
-import { familiaPublicavel, familiaIncompleta, idsPublicaveis } from '@/lib/publicavel';
+import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '@/lib/publicavel';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
@@ -58,6 +59,11 @@ export default function Revisao() {
   const qc = useQueryClient();
   const toggleLote = useToggleDescontoLote(loteId ?? '');
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
+
+  // O lote volta para 'revisao' quando ainda restam famílias publicáveis, escondendo
+  // o relatório da última publicação (acessível via card do Dashboard só em 'concluido').
+  // Este atalho reabre o relatório do lote enquanto houver ≥1 família já publicada.
+  const temPublicacao = useMemo(() => loteTemPublicacao(familias), [familias]);
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
   // "Selecionar todos" age só sobre as famílias publicáveis visíveis (respeita
@@ -208,13 +214,25 @@ export default function Revisao() {
           className="mb-3"
           actions={
             loteId && familias.length > 0 ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => toggleLote.mutate(!todasComDesconto)}
-              >
-                {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
-              </Button>
+              <div className="flex items-center gap-2">
+                {temPublicacao && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => nav(`/relatorio/${loteId}`)}
+                  >
+                    <FileText className="mr-1.5 h-4 w-4" />
+                    Ver relatório da última publicação
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => toggleLote.mutate(!todasComDesconto)}
+                >
+                  {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
+                </Button>
+              </div>
             ) : undefined
           }
         />

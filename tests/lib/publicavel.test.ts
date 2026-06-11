@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { familiaPublicavel, criticasVariacao, familiaIncompleta, idsPublicaveis } from '../../src/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '../../src/lib/publicavel';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function cor(over: Partial<Variacao>): Variacao {
@@ -185,5 +185,20 @@ describe('idsPublicaveis (suporte ao "selecionar todos")', () => {
   });
   it('preserva a ordem de entrada', () => {
     expect(idsPublicaveis([fam({ id: 'x' }), fam({ id: 'y' })])).toEqual(['x', 'y']);
+  });
+});
+
+describe('loteTemPublicacao (atalho para o relatório na Revisão)', () => {
+  it('false quando nenhuma família foi publicada', () => {
+    expect(loteTemPublicacao([fam({ status: 'pronto' }), fam({ status: 'erro' })])).toBe(false);
+  });
+  it('true quando há família com status publicado', () => {
+    expect(loteTemPublicacao([fam({ status: 'pronto' }), fam({ status: 'publicado' })])).toBe(true);
+  });
+  it('true quando há família com anúncio no ML (mlItemId), ex.: UPDATE pendente', () => {
+    expect(loteTemPublicacao([fam({ status: 'pronto', operacao: 'UPDATE', mlItemId: 'MLB123' })])).toBe(true);
+  });
+  it('lista vazia → false', () => {
+    expect(loteTemPublicacao([])).toBe(false);
   });
 });
