@@ -8,6 +8,21 @@ describe('grossUp (preço cujo líquido ≥ piso)', () => {
   it('piso 20 com tarifa fixa R$ 6 → (26/0,87)=29,88 → 29,90', () => {
     expect(grossUp(20, 13, 6)).toBeCloseTo(29.9, 2);
   });
+
+  // ADR-0023: abaixo de R$ 12,50 o ML cobra 50% de tarifa fixa; o preço é empurrado
+  // para o menor múltiplo de 0,05 acima do abismo (R$ 12,55), onde a fixa zera.
+  it('piso baixo (R$ 4, 12%) → empurra para o piso acima do abismo (R$ 12,55)', () => {
+    expect(grossUp(4, 12, 0)).toBeCloseTo(12.55, 2);
+  });
+  it('piso R$ 10 (12%) ainda cairia na faixa cara → empurra para R$ 12,55', () => {
+    expect(grossUp(10, 12, 0)).toBeCloseTo(12.55, 2);
+  });
+  it('piso na fronteira: R$ 11,04/0,88 = 12,545 → arredonda 12,55', () => {
+    expect(grossUp(11.04, 12, 0)).toBeCloseTo(12.55, 2);
+  });
+  it('piso acima da fronteira (R$ 11,50, 12%) → 11,50/0,88=13,06 → 13,10 (passa do abismo)', () => {
+    expect(grossUp(11.5, 12, 0)).toBeCloseTo(13.1, 2);
+  });
 });
 
 describe('sugerirPrecoVenda', () => {
@@ -34,6 +49,11 @@ describe('sugerirPrecoVenda', () => {
     expect(r.estrategia).toBe('proprio');
     expect(r.preco).toBeCloseTo(20.05, 2);
     expect(r.motivo).toBe('sem concorrência — comissão indisponível, usando o piso');
+  });
+  it('fallback (sem comissão) com piso baixo → empurra para R$ 12,55 (fora da faixa cara)', () => {
+    const r = sugerirPrecoVenda(4, { vendedores: 0, preco_min: null }, null);
+    expect(r.estrategia).toBe('proprio');
+    expect(r.preco).toBeCloseTo(12.55, 2);
   });
   it('vendedores > 0 mas sem preco_min → trata como sem concorrente', () => {
     const r = sugerirPrecoVenda(20, { vendedores: 6, preco_min: null }, { percentual: 13, fixa: 0 });
