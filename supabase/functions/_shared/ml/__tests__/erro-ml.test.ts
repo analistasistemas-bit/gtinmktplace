@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanizarErroML } from '../erro-ml';
+import { humanizarErroML, ehErroRetentavel } from '../erro-ml';
 
 describe('humanizarErroML', () => {
   it('título acima de 60 → mensagem clara em PT (ignora os warnings de frete)', () => {
@@ -35,5 +35,31 @@ describe('humanizarErroML', () => {
   it('só warnings (sem erro real) → ainda devolve algo legível', () => {
     const json = { message: 'Validation error', cause: [{ type: 'warning', code: 'shipping.x', message: 'w' }] };
     expect(humanizarErroML(400, json).length).toBeGreaterThan(0);
+  });
+});
+
+describe('ehErroRetentavel (erro transiente que o ML pede para reenviar)', () => {
+  it('foto não processada ("envie-a novamente") → retentável', () => {
+    const json = { message: 'Validation error', cause: [{ type: 'error', code: 'item.pictures.error', message: 'Ocorreu um erro ao processar a foto. Por favor, envie-a novamente.' }] };
+    expect(ehErroRetentavel(json)).toBe(true);
+  });
+  it('inglês "please try again" → retentável', () => {
+    const json = { cause: [{ type: 'error', code: 'item.pictures.error', message: 'Error processing picture, please try again' }] };
+    expect(ehErroRetentavel(json)).toBe(true);
+  });
+  it('título >60 (erro permanente) → NÃO retentável', () => {
+    const json = { cause: [{ type: 'error', code: 'item.title.length.invalid', message: 'Category does not support titles greater than 60 characters' }] };
+    expect(ehErroRetentavel(json)).toBe(false);
+  });
+  it('foto de baixa qualidade (permanente, não pede reenvio) → NÃO retentável', () => {
+    const json = { cause: [{ type: 'error', code: 'item.pictures.poor_quality', message: 'A imagem tem baixa qualidade' }] };
+    expect(ehErroRetentavel(json)).toBe(false);
+  });
+  it('warning não conta como retentável', () => {
+    const json = { cause: [{ type: 'warning', code: 'x', message: 'envie novamente' }] };
+    expect(ehErroRetentavel(json)).toBe(false);
+  });
+  it('json vazio → não retentável', () => {
+    expect(ehErroRetentavel({})).toBe(false);
   });
 });
