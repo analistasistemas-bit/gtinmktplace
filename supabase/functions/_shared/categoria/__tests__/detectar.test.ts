@@ -19,6 +19,12 @@ describe('detectarTipoAviamento (ADR-0009)', () => {
     expect(detectarTipoAviamento('Botoes Acrilico').tipo).toBe('botao');
   });
 
+  it('detecta cola (bastão de cola quente)', () => {
+    expect(detectarTipoAviamento('COLA EM BASTAO 7MM FINA 1KG').tipo).toBe('cola');
+    expect(detectarTipoAviamento('Cola Quente em Bastão Grossa').tipo).toBe('cola');
+    expect(detectarTipoAviamento('REFIL BASTÃO DE COLA 11MM').tipo).toBe('cola');
+  });
+
   it('cai em "outro" quando nada bate', () => {
     expect(detectarTipoAviamento('PRODUTO XYZ 123').tipo).toBe('outro');
     expect(detectarTipoAviamento('').tipo).toBe('outro');

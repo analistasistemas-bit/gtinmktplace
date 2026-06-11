@@ -18,6 +18,10 @@ describe('matchCapa3', () => {
   it('não confunde CAPA3_ com CAPA_/CAPA2_ do mesmo pai', () => {
     expect(matchCapa3('00445975', ['u/lote/CAPA_00445975.jpeg', 'u/lote/CAPA2_00445975.jpeg'])).toBeUndefined();
   });
+  it('casa pelo código de variação quando a foto foi nomeada com o filho (lote #26)', () => {
+    const ps = ['u/lote/02841037.JPG', 'u/lote/CAPA3_02841037.jpeg'];
+    expect(matchCapa3(['02841029', '02841037'], ps)).toBe('u/lote/CAPA3_02841037.jpeg');
+  });
 });
 
 describe('classificarArquivo (CAPA3)', () => {

@@ -92,35 +92,36 @@ export function matchImagem(codigo: string | number, paths: string[]): string | 
   });
 }
 
-/** Acha a foto-capa (CAPA_00CODIGO.ext) do PAI entre os paths já no storage. */
-export function matchCapa(codigoPai: string | number, paths: string[]): string | undefined {
-  const alvo = `CAPA_${normalizarCodigo(codigoPai)}`;
+type Codigos = string | number | Array<string | number>;
+
+/**
+ * Acha uma foto comum (prefixo CAPA_/CAPA2_/CAPA3_) entre os paths.
+ * Aceita um único código OU vários candidatos (PAI + códigos das variações): o
+ * operador costuma nomear a foto pelo código vendável (filho), não pelo PAI — sem
+ * isso a foto comum some na Revisão (bug do lote #26 com produtos sem cor).
+ */
+function matchPrefixo(prefixo: string, codigos: Codigos, paths: string[]): string | undefined {
+  const arr = Array.isArray(codigos) ? codigos : [codigos];
+  const alvos = new Set(arr.map((c) => `${prefixo}${normalizarCodigo(c)}`));
   return paths.find((p) => {
     if (!EXT_VALIDAS.test(p)) return false;
     const filename = p.split('/').pop() ?? '';
     const base = filename.replace(EXT_VALIDAS, '');
-    return base.toUpperCase() === alvo;
+    return alvos.has(base.toUpperCase());
   });
 }
 
-/** Acha a 2a foto comum (CAPA2_00CODIGO.ext) do PAI entre os paths já no storage. */
-export function matchCapa2(codigoPai: string | number, paths: string[]): string | undefined {
-  const alvo = `CAPA2_${normalizarCodigo(codigoPai)}`;
-  return paths.find((p) => {
-    if (!EXT_VALIDAS.test(p)) return false;
-    const filename = p.split('/').pop() ?? '';
-    const base = filename.replace(EXT_VALIDAS, '');
-    return base.toUpperCase() === alvo;
-  });
+/** Acha a foto-capa (CAPA_00CODIGO.ext) entre os paths já no storage. */
+export function matchCapa(codigos: Codigos, paths: string[]): string | undefined {
+  return matchPrefixo('CAPA_', codigos, paths);
 }
 
-/** Acha a 3a foto comum (CAPA3_00CODIGO.ext) do PAI entre os paths já no storage. */
-export function matchCapa3(codigoPai: string | number, paths: string[]): string | undefined {
-  const alvo = `CAPA3_${normalizarCodigo(codigoPai)}`;
-  return paths.find((p) => {
-    if (!EXT_VALIDAS.test(p)) return false;
-    const filename = p.split('/').pop() ?? '';
-    const base = filename.replace(EXT_VALIDAS, '');
-    return base.toUpperCase() === alvo;
-  });
+/** Acha a 2a foto comum (CAPA2_00CODIGO.ext) entre os paths já no storage. */
+export function matchCapa2(codigos: Codigos, paths: string[]): string | undefined {
+  return matchPrefixo('CAPA2_', codigos, paths);
+}
+
+/** Acha a 3a foto comum (CAPA3_00CODIGO.ext) entre os paths já no storage. */
+export function matchCapa3(codigos: Codigos, paths: string[]): string | undefined {
+  return matchPrefixo('CAPA3_', codigos, paths);
 }

@@ -39,6 +39,34 @@ export function removerCaudaConectiva(titulo: string): string {
   return t;
 }
 
+// Enforça o teto de 60 chars SEM cortar palavra no meio. O schema do copywriter
+// não tem mais maxLength (ele cortava mecanicamente, gerando "IDEAL PARA P" — bug
+// do lote #26); a IA devolve o título inteiro e o limite vira responsabilidade aqui.
+// Derruba primeiro segmentos inteiros (após " | "), depois palavras inteiras.
+export function clampTitulo(titulo: string): string {
+  let t = removerCaudaConectiva(titulo);
+  if (t.length <= TITULO_MAX) return t;
+
+  const partes = t.split(' | ');
+  while (partes.length > 1 && partes.join(' | ').length > TITULO_MAX) {
+    partes.pop();
+  }
+  t = partes.join(' | ');
+
+  if (t.length > TITULO_MAX) {
+    const palavras = t.split(/\s+/);
+    while (palavras.length > 1 && palavras.join(' ').length > TITULO_MAX) {
+      palavras.pop();
+    }
+    t = palavras.join(' ');
+  }
+
+  // Degenerado: um único "token" maior que 60 (sem espaço para derrubar) → corte duro.
+  if (t.length > TITULO_MAX) t = t.slice(0, TITULO_MAX).trimEnd();
+
+  return removerCaudaConectiva(t);
+}
+
 // Garante que a metragem do nome apareça no título (dado crucial que diferencia
 // produtos — ex.: fita 10MT vs 100MT). Rede de segurança determinística porque a
 // IA, sob o teto de 60 chars, descarta a metragem mesmo presente no nome.
@@ -47,7 +75,8 @@ export function garantirMetragemTitulo(titulo: string, nomePai: string): string 
   // o resultado (inclusive no atalho "metragem já presente") nunca ter conectivo solto.
   titulo = removerCaudaConectiva(titulo);
   const metragem = extrairMetragem(nomePai);
-  if (!metragem) return titulo;
+  // Sem metragem: ainda assim clampa para 60 sem cortar palavra (cola, lote #26).
+  if (!metragem) return clampTitulo(titulo);
 
   const numero = metragem.match(/\d+/)?.[0] ?? '';
   // Já contém a metragem (qualquer unidade de metro adjacente)? Não duplica.

@@ -23,7 +23,7 @@ export interface AnaliseMercado {
   produto_desde: string | null;
 }
 
-export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'outro';
+export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'cola' | 'outro';
 
 export type FamiliaStatus =
   | 'pendente'

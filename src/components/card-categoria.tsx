@@ -1,18 +1,24 @@
 import { Tag } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useDefinirCategoria } from '@/hooks/useFamiliaMutations';
+import { CATEGORIAS_MANUAIS, type TipoCategoriaManual } from '@/lib/categoria';
 import type { Familia, TipoAviamento } from '@/lib/tipos-dominio';
 
 function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
-  switch (tipo) {
-    case 'linha': return 'Fios e Cadarços';
-    case 'fita': return 'Fita de Cetim';
-    case 'botao': return 'Botões';
-    default: return '—';
-  }
+  return CATEGORIAS_MANUAIS.find((c) => c.tipo === tipo)?.rotulo ?? '—';
 }
 
 export function CardCategoria({ familia }: { familia: Familia }) {
   const categoriaIndefinida = !familia.categoriaMlId;
+  const definir = useDefinirCategoria(familia.loteId);
 
   return (
     <div
@@ -25,9 +31,29 @@ export function CardCategoria({ familia }: { familia: Familia }) {
         <Tag className="h-3.5 w-3.5" /> Categoria
       </div>
       {categoriaIndefinida ? (
-        <p className="text-xs font-medium text-destructive">
-          Categoria indefinida — escolha antes de publicar
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-medium text-destructive">
+            Categoria indefinida — escolha antes de publicar
+          </p>
+          <Select
+            disabled={definir.isPending}
+            onValueChange={(v) =>
+              definir.mutate(
+                { familiaId: familia.id, tipo: v as TipoCategoriaManual },
+                { onError: (e) => toast.error('Erro ao definir categoria', { description: (e as Error).message }) },
+              )
+            }
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder={definir.isPending ? 'Salvando…' : 'Escolher categoria'} />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIAS_MANUAIS.map((c) => (
+                <SelectItem key={c.tipo} value={c.tipo}>{c.rotulo}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       ) : (
         <>
           <p className="text-sm font-medium">{nomeCategoriaAmigavel(familia.tipoAviamento)}</p>

@@ -140,6 +140,9 @@ Deno.serve(async (req) => {
 
     const familiasInsert = grupos.map((g) => {
       const ant = anteriorPorPai.get(g.codigo_pai);
+      // Candidatos para casar as fotos comuns: PAI + códigos das variações. O operador
+      // costuma nomear a foto pelo código vendável (filho), não pelo PAI (bug lote #26).
+      const codigosFoto = [g.codigo_pai, ...g.variacoes.map((v) => v.CODIGO)];
       if (!ant) {
         // CREATE — comportamento atual.
         return {
@@ -147,9 +150,9 @@ Deno.serve(async (req) => {
           nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
           fornecedor: g.fornecedor,
           operacao: 'CREATE', status: 'pendente',
-          capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
-          capa2_storage_path: matchCapa2(g.codigo_pai, lote.imagens_paths) ?? null,
-          capa3_storage_path: matchCapa3(g.codigo_pai, lote.imagens_paths) ?? null,
+          capa_storage_path: matchCapa(codigosFoto, lote.imagens_paths) ?? null,
+          capa2_storage_path: matchCapa2(codigosFoto, lote.imagens_paths) ?? null,
+          capa3_storage_path: matchCapa3(codigosFoto, lote.imagens_paths) ?? null,
         };
       }
       // UPDATE — herda metadados (exibição) + ml_item_id (publicação).
@@ -163,9 +166,9 @@ Deno.serve(async (req) => {
         // Com cor nova: 'pendente' p/ o process-familia resolver a cor das novas (ADR-0004).
         // Sem cor nova: 'pronto' direto, sem IA.
         status: temCorNova ? 'pendente' : 'pronto',
-        capa_storage_path: matchCapa(g.codigo_pai, lote.imagens_paths) ?? null,
-        capa2_storage_path: matchCapa2(g.codigo_pai, lote.imagens_paths) ?? null,
-        capa3_storage_path: matchCapa3(g.codigo_pai, lote.imagens_paths) ?? null,
+        capa_storage_path: matchCapa(codigosFoto, lote.imagens_paths) ?? null,
+        capa2_storage_path: matchCapa2(codigosFoto, lote.imagens_paths) ?? null,
+        capa3_storage_path: matchCapa3(codigosFoto, lote.imagens_paths) ?? null,
         ml_item_id: ant.ml_item_id,
         ml_permalink: ant.ml_permalink,
         titulo_ml: ant.titulo_ml,

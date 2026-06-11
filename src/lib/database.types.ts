@@ -434,7 +434,7 @@ export type Database = {
         | "erro"
       operacao_ml: "CREATE" | "UPDATE"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
-      tipo_aviamento: "linha" | "botao" | "fita" | "outro"
+      tipo_aviamento: "linha" | "botao" | "fita" | "cola" | "outro"
       tipo_origem: "regex" | "ia" | "manual"
     }
     CompositeTypes: {
@@ -584,7 +584,7 @@ export const Constants = {
       ],
       operacao_ml: ["CREATE", "UPDATE"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
-      tipo_aviamento: ["linha", "botao", "fita", "outro"],
+      tipo_aviamento: ["linha", "botao", "fita", "cola", "outro"],
       tipo_origem: ["regex", "ia", "manual"],
     },
   },

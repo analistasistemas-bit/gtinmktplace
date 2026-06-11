@@ -11,6 +11,7 @@ import {
   QK,
 } from '@/lib/queries';
 import { regenerarCopyFamilia } from '@/lib/ai-copy';
+import { definirCategoriaFamilia, type TipoCategoriaManual } from '@/lib/categoria';
 
 export function useUpdateVariacaoPreco(loteId: string) {
   const qc = useQueryClient();
@@ -79,6 +80,15 @@ export function useUpdateDescontoPctFamilia(loteId: string) {
   return useMutation({
     mutationFn: ({ familiaId, pct }: { familiaId: string; pct: number | null }) =>
       updateFamiliaDescontoPct(familiaId, pct),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useDefinirCategoria(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ familiaId, tipo }: { familiaId: string; tipo: TipoCategoriaManual }) =>
+      definirCategoriaFamilia(familiaId, tipo),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

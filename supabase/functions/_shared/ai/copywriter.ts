@@ -23,7 +23,10 @@ const SCHEMA = {
   schema: {
     type: 'object',
     properties: {
-      titulo: { type: 'string', maxLength: 60 },
+      // Sem maxLength: o teto de 60 chars cortava a string mecanicamente no meio da
+      // palavra (ex.: "IDEAL PARA P"). O limite agora é aplicado em garantirMetragemTitulo
+      // /clampTitulo, que derruba segmentos/palavras inteiras sem cortar (bug lote #26).
+      titulo: { type: 'string' },
       descricao: { type: 'string' },
     },
     required: ['titulo', 'descricao'],

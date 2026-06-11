@@ -1,4 +1,4 @@
-export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'outro';
+export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'cola' | 'outro';
 export type TipoOrigem = 'regex' | 'ia' | 'manual';
 
 // Palavras-chave por tipo (texto já normalizado: minúsculo, sem acento).
@@ -6,6 +6,7 @@ export type TipoOrigem = 'regex' | 'ia' | 'manual';
 const REGRAS: { tipo: TipoAviamento; termos: string[] }[] = [
   { tipo: 'fita', termos: ['fita', 'fitas', 'cetim', 'gorgorao', 'gorgurao', 'vies', 'organza', 'renda', 'veludo', 'fitilho'] },
   { tipo: 'botao', termos: ['botao', 'botoes', 'pressao'] },
+  { tipo: 'cola', termos: ['cola', 'colas'] },
   { tipo: 'linha', termos: ['linha', 'linhas', 'linhao', 'costura', 'cost', 'bobina', 'cone', 'fio', 'fios'] },
 ];
 

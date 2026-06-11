@@ -1,7 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CardCategoria } from '@/components/card-categoria';
 import type { Familia } from '@/lib/tipos-dominio';
+
+// CardCategoria usa useMutation (seletor manual de categoria) → precisa de QueryClient.
+function renderCard(familia: Familia) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={qc}>
+      <CardCategoria familia={familia} />
+    </QueryClientProvider>,
+  );
+}
 
 function familiaBase(over: Partial<Familia> = {}): Familia {
   return {
@@ -21,13 +32,20 @@ function familiaBase(over: Partial<Familia> = {}): Familia {
 
 describe('CardCategoria', () => {
   it('categoria definida mostra nome amigável + id', () => {
-    render(<CardCategoria familia={familiaBase()} />);
+    renderCard(familiaBase());
     expect(screen.getByText(/Fita de Cetim/i)).toBeInTheDocument();
     expect(screen.getByText(/MLB255054/)).toBeInTheDocument();
   });
 
-  it('categoria indefinida (tipo outro / sem id) alerta', () => {
-    render(<CardCategoria familia={familiaBase({ tipoAviamento: 'outro', categoriaMlId: null })} />);
+  it('categoria indefinida (tipo outro / sem id) alerta + oferece seletor', () => {
+    renderCard(familiaBase({ tipoAviamento: 'outro', categoriaMlId: null }));
     expect(screen.getByText(/categoria indefinida/i)).toBeInTheDocument();
+    expect(screen.getByText(/escolher categoria/i)).toBeInTheDocument();
+  });
+
+  it('cola: mostra "Bastões de Cola" quando definida', () => {
+    renderCard(familiaBase({ tipoAviamento: 'cola', categoriaMlId: 'MLB277319' }));
+    expect(screen.getByText(/Bastões de Cola/i)).toBeInTheDocument();
+    expect(screen.getByText(/MLB277319/)).toBeInTheDocument();
   });
 });

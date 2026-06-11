@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, montarAtributosML, atributosFaltantes, ehDuplaFace } from '../atributos';
+import { categoriaParaTipo, montarAtributosML, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason } from '../atributos';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
-  it('mapeia os 3 tipos conhecidos para categorias-folha', () => {
+  it('mapeia os tipos conhecidos para categorias-folha', () => {
     expect(categoriaParaTipo('linha')).toBe('MLB270273');
     expect(categoriaParaTipo('fita')).toBe('MLB255054');
     expect(categoriaParaTipo('botao')).toBe('MLB270272');
+    expect(categoriaParaTipo('cola')).toBe('MLB277319'); // Bastões de Cola
   });
   it('tipo "outro" não tem categoria (operador resolve)', () => {
     expect(categoriaParaTipo('outro')).toBe(null);
@@ -42,6 +43,18 @@ describe('montarAtributosML', () => {
   it('botao: BRAND + MATERIAL (default Acrílico, Madeira quando no nome)', () => {
     expect(montarAtributosML('botao', 'Botão de Pressão')).toContainEqual({ id: 'MATERIAL', value_id: '1258137' }); // Acrílico
     expect(montarAtributosML('botao', 'Botão de Madeira')).toContainEqual({ id: 'MATERIAL', value_id: '2431881' }); // Madeira
+  });
+
+  it('cola: BRAND + MODEL do nome (igual à linha)', () => {
+    const a = montarAtributosML('cola', 'COLA EM BASTAO 7MM FINA 1KG', 'AVIL');
+    expect(a).toEqual([
+      { id: 'BRAND', value_name: 'AVIL' },
+      { id: 'MODEL', value_name: 'COLA EM BASTAO 7MM FINA 1KG' },
+    ]);
+  });
+
+  it('cola: categoria aceita EMPTY_GTIN_REASON (validado na API ML)', () => {
+    expect(categoriaAceitaEmptyGtinReason('MLB277319')).toBe(true);
   });
 
   it('outro: sem atributos (sem categoria)', () => {
@@ -98,6 +111,10 @@ describe('atributosFaltantes (validação pré-publicação)', () => {
   it('linha completa → nada falta', () => {
     const a = montarAtributosML('linha', 'LINHA X');
     expect(atributosFaltantes('linha', a)).toEqual([]);
+  });
+  it('cola completa → nada falta', () => {
+    const a = montarAtributosML('cola', 'COLA EM BASTAO 7MM');
+    expect(atributosFaltantes('cola', a)).toEqual([]);
   });
   it('detecta obrigatório ausente', () => {
     expect(atributosFaltantes('fita', [{ id: 'BRAND', value_name: 'Avil' }])).toEqual(['RIBBON_TYPE']);

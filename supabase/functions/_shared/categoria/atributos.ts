@@ -14,6 +14,7 @@ const CATEGORIA_POR_TIPO: Record<TipoAviamento, string | null> = {
   linha: 'MLB270273', // Fios e Cadarços de Armarinho
   fita: 'MLB255054',  // Fitas de Cetim
   botao: 'MLB270272', // Botões
+  cola: 'MLB277319',  // Bastões de Cola (p/ pistolas elétricas) — validado API ML 2026-06-11
   outro: null,        // operador escolhe na revisão
 };
 
@@ -53,6 +54,7 @@ const OBRIGATORIOS: Record<TipoAviamento, string[]> = {
   linha: ['BRAND', 'MODEL'],
   fita: ['BRAND', 'RIBBON_TYPE'],
   botao: ['BRAND', 'MATERIAL'],
+  cola: ['BRAND', 'MODEL'],
   outro: [],
 };
 
@@ -62,7 +64,7 @@ export const EMPTY_GTIN_REASON_SEM_CODIGO = '17055160';
 
 // Categorias que expõem o atributo EMPTY_GTIN_REASON (validado via API ML 2026-06-04).
 // Botão (MLB270272) NÃO o expõe → sem GTIN o atributo é omitido (GTIN é só conditional_required).
-const CATEGORIAS_COM_EMPTY_GTIN_REASON = new Set(['MLB270273', 'MLB255054']);
+const CATEGORIAS_COM_EMPTY_GTIN_REASON = new Set(['MLB270273', 'MLB255054', 'MLB277319']);
 
 export function categoriaAceitaEmptyGtinReason(categoriaId: string | null): boolean {
   return !!categoriaId && CATEGORIAS_COM_EMPTY_GTIN_REASON.has(categoriaId);
@@ -82,6 +84,7 @@ export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: str
   const brand = marca?.trim() || MARCA;
   switch (tipo) {
     case 'linha':
+    case 'cola':
       return [
         { id: 'BRAND', value_name: brand },
         { id: 'MODEL', value_name: nome },
