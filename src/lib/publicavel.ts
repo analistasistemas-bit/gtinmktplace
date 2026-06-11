@@ -78,6 +78,14 @@ export function idsPublicaveis(familias: Familia[]): string[] {
   return familias.filter((f) => familiaPublicavel(f).ok).map((f) => f.id);
 }
 
+// Lote "já teve publicação": existe ≥1 família publicada (status 'publicado' ou
+// já com anúncio no ML). Habilita o atalho para o relatório na Revisão — o lote
+// volta para 'revisao' quando ainda restam famílias publicáveis (publish-familia-ml),
+// o que esconderia o relatório da última rodada via card do Dashboard.
+export function loteTemPublicacao(familias: Familia[]): boolean {
+  return familias.some((f) => f.status === 'publicado' || f.mlItemId != null);
+}
+
 // "Incompleta" = falta de DADOS que impediria publicar, e que o operador precisa
 // corrigir. Distingue-se de "não-publicável": uma família já publicada (ou em
 // publicação) não é mais publicável, mas também NÃO é incompleta — está concluída.
