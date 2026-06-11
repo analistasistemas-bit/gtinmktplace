@@ -55,8 +55,11 @@ export default function Relatorio() {
                   <Button size="sm" variant="outline" onClick={() => nav(`/revisao/${loteId}`)}>Editar e tentar de novo</Button>
                 </>
               )}
-              {(f.status === 'pendente' || f.status === 'processando' || f.status === 'pronto') && (
-                <span className="text-muted-foreground">{f.status}</span>
+              {f.status === 'pronto' && (
+                <span className="text-muted-foreground">não publicada (não selecionada)</span>
+              )}
+              {(f.status === 'pendente' || f.status === 'processando') && (
+                <span className="text-muted-foreground">processando…</span>
               )}
             </span>
           </li>
