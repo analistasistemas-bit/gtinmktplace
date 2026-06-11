@@ -1,6 +1,6 @@
 import type { PayloadItem } from './publicar.ts';
 import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
-import { humanizarErroML } from './erro-ml.ts';
+import { humanizarErroML, ehErroRetentavel } from './erro-ml.ts';
 
 export interface ResultadoItem {
   id: string;
@@ -16,8 +16,10 @@ export async function criarItemML(accessToken: string, payload: PayloadItem): Pr
   });
   const json = await resp.json();
   if (!resp.ok) {
+    console.error('ML recusou POST /items:', JSON.stringify(json));
     const e = new Error(humanizarErroML(resp.status, json));
     (e as { status?: number }).status = resp.status;
+    (e as { retentavel?: boolean }).retentavel = ehErroRetentavel(json);
     throw e;
   }
   return { id: json.id, permalink: json.permalink, variations: json.variations ?? [] };

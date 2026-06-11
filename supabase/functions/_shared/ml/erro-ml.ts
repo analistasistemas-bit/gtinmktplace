@@ -32,6 +32,24 @@ function humanizarCausa(c: Causa): string {
   return c.message ?? c.code ?? 'erro não especificado';
 }
 
+// O ML às vezes recusa o item por um erro TRANSIENTE de processamento de imagem
+// ("Ocorreu um erro ao processar a foto. Por favor, envie-a novamente.") — vem como
+// 4xx, mas some no retry. Detecta o pedido explícito de reenvio/retry (PT/ES/EN) em
+// causes bloqueantes; erros permanentes (título >60, foto de baixa qualidade) não casam.
+const PADRAO_RETENTAVEL = /novamente|de novo|nuevamente|\btry again\b|\bagain\b|reintent|temporar/i;
+
+export function ehErroRetentavel(json: unknown): boolean {
+  const j = (json ?? {}) as { cause?: unknown };
+  const causes: Causa[] = Array.isArray(j.cause)
+    ? (j.cause as Causa[])
+    : j.cause
+      ? [j.cause as Causa]
+      : [];
+  return causes
+    .filter((c) => (c?.type ?? 'error') !== 'warning')
+    .some((c) => PADRAO_RETENTAVEL.test(c?.message ?? ''));
+}
+
 export function humanizarErroML(status: number, json: unknown): string {
   const j = (json ?? {}) as { message?: string; error?: string; cause?: unknown };
   const causes: Causa[] = Array.isArray(j.cause)

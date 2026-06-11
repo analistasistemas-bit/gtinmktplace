@@ -182,8 +182,14 @@ Deno.serve(async (req) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const status = (err as { status?: number }).status;
+    // Erro de foto que o ML pede para reenviar é transiente (timing de processamento
+    // assíncrono de imagem). Retenta via QStash enquanto restar tentativa; ao esgotar
+    // (retries=3 do enfileirarPublicacao) cai no fluxo definitivo e marca 'erro'.
+    const retentavelFoto =
+      (err as { retentavel?: boolean }).retentavel === true &&
+      Number(req.headers.get('Upstash-Retried') ?? '0') < 3;
     // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
-    if (status && status >= 500) {
+    if ((status && status >= 500) || retentavelFoto) {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
     // 4xx ou erro local: definitivo — persiste erro e reavalia o lote.
