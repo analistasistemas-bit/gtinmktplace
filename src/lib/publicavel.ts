@@ -72,6 +72,12 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   return { ok: motivos.length === 0, motivos };
 }
 
+// IDs das famílias que podem ser publicadas — base do "selecionar todos" na
+// Revisão (marca/desmarca em lote só as publicáveis, espelhando toggleSelecao).
+export function idsPublicaveis(familias: Familia[]): string[] {
+  return familias.filter((f) => familiaPublicavel(f).ok).map((f) => f.id);
+}
+
 // "Incompleta" = falta de DADOS que impediria publicar, e que o operador precisa
 // corrigir. Distingue-se de "não-publicável": uma família já publicada (ou em
 // publicação) não é mais publicável, mas também NÃO é incompleta — está concluída.

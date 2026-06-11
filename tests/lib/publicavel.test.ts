@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { familiaPublicavel, criticasVariacao, familiaIncompleta } from '../../src/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta, idsPublicaveis } from '../../src/lib/publicavel';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function cor(over: Partial<Variacao>): Variacao {
@@ -169,5 +169,21 @@ describe('criticasVariacao', () => {
   });
   it('UPDATE: cor nova sem foto acusa crítica', () => {
     expect(criticasVariacao(cor({ mlVariationId: null, fotoPath: undefined }), 'UPDATE')).toEqual(['sem foto']);
+  });
+});
+
+describe('idsPublicaveis (suporte ao "selecionar todos")', () => {
+  it('retorna só os ids das famílias publicáveis (exclui incompleta e sem categoria)', () => {
+    const ok1 = fam({ id: 'a' });
+    const incompleta = fam({ id: 'b', variacoes: [cor({ cor: '' })] }); // sem cor
+    const ok2 = fam({ id: 'c' });
+    const semCategoria = fam({ id: 'd', categoriaMlId: null });
+    expect(idsPublicaveis([ok1, incompleta, ok2, semCategoria])).toEqual(['a', 'c']);
+  });
+  it('lista vazia → []', () => {
+    expect(idsPublicaveis([])).toEqual([]);
+  });
+  it('preserva a ordem de entrada', () => {
+    expect(idsPublicaveis([fam({ id: 'x' }), fam({ id: 'y' })])).toEqual(['x', 'y']);
   });
 });
