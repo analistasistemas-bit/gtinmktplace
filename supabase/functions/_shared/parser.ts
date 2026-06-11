@@ -14,6 +14,13 @@ export function normalizarCodigo(codigo: string | number): string {
   return s.padStart(8, '0');
 }
 
+// Remove o sufixo "(P)" (código interno da planilha) do fim do nome do produto —
+// não deve aparecer no anúncio (MODEL/título/descrição). Só no final; "P/" no meio
+// (ex.: "LINHA P/COSTURA") não é afetado.
+export function limparNomeProduto(nome: string): string {
+  return nome.replace(/\s*\(P\)\s*$/i, '');
+}
+
 // ADR-0013: as três anomalias de dados são não-bloqueantes — a linha problemática
 // é descartada e contabilizada no resumo do lote; a importação prossegue.
 export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
@@ -69,7 +76,7 @@ export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
     }
     grupos.push({
       codigo_pai: codigo,
-      nome_pai: pai.NOME,
+      nome_pai: limparNomeProduto(pai.NOME),
       descricao_pai: pai.DESCRICAO_DETALHADO,
       unidade: pai.UNIDADE,
       fornecedor: pai.FORNECEDOR,
