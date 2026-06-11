@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, unidade')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -139,6 +139,7 @@ Deno.serve(async (req) => {
     const copy = await gerarCopy({
       nome: claimed.nome_pai,
       descricao_detalhado: claimed.descricao_pai ?? '',
+      unidade: (claimed.unidade as string | null) ?? null,
       variacoes: resolvidas.map((v) => ({
         codigo: v.codigo,
         cor: v.cor,

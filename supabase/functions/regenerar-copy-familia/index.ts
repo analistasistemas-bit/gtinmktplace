@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, nome_pai, descricao_pai, variacoes(codigo, cor, preco)')
+    .select('id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
     .eq('id', body.familia_id)
     .eq('user_id', user.id)
     .maybeSingle();
@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
     const result = await gerarCopy({
       nome: familia.nome_pai,
       descricao_detalhado: familia.descricao_pai ?? '',
+      unidade: (familia.unidade as string | null) ?? null,
       variacoes: (familia.variacoes ?? []).map((v: any) => ({
         codigo: v.codigo,
         cor: v.cor,
