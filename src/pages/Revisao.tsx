@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -15,7 +16,7 @@ import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existen
 import { useFamilias } from '@/hooks/useFamilias';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
-import { familiaPublicavel, familiaIncompleta } from '@/lib/publicavel';
+import { familiaPublicavel, familiaIncompleta, idsPublicaveis } from '@/lib/publicavel';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
@@ -59,6 +60,12 @@ export default function Revisao() {
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
+  // "Selecionar todos" age só sobre as famílias publicáveis visíveis (respeita
+  // filtro/busca) — espelha a regra do toggleSelecao, que ignora as incompletas.
+  const idsSelecionaveis = useMemo(() => idsPublicaveis(visiveis), [visiveis]);
+  const todasSelecionadas =
+    idsSelecionaveis.length > 0 && idsSelecionaveis.every((id) => selecionadas.has(id));
+  const algumaSelecionada = idsSelecionaveis.some((id) => selecionadas.has(id));
   const coresNovas = useMemo(() => coresNovasSemFoto(familias), [familias]);
   const totalCoresNovas = useMemo(
     () => coresNovas.reduce((acc, f) => acc + f.codigos.length, 0),
@@ -122,6 +129,17 @@ export default function Revisao() {
         novo.add(id);
       } else {
         novo.delete(id);
+      }
+      return novo;
+    });
+  }
+
+  function toggleTodas(marcar: boolean) {
+    setSelecionadas((prev) => {
+      const novo = new Set(prev);
+      for (const id of idsSelecionaveis) {
+        if (marcar) novo.add(id);
+        else novo.delete(id);
       }
       return novo;
     });
@@ -274,6 +292,21 @@ export default function Revisao() {
           </div>
         ) : (
           <>
+            {visiveis.length > 0 && (
+              <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2">
+                <Checkbox
+                  id="sel-todos"
+                  checked={todasSelecionadas ? true : algumaSelecionada ? 'indeterminate' : false}
+                  onCheckedChange={(v) => toggleTodas(v === true)}
+                  disabled={idsSelecionaveis.length === 0}
+                  aria-label="Selecionar todas as famílias publicáveis"
+                />
+                <label htmlFor="sel-todos" className="cursor-pointer select-none text-sm text-muted-foreground">
+                  {todasSelecionadas ? 'Desmarcar todos' : 'Selecionar todos'}
+                  {idsSelecionaveis.length > 0 && ` (${idsSelecionaveis.length})`}
+                </label>
+              </div>
+            )}
             {visiveis.map((familia) => (
               <div key={familia.id}>
                 <FamiliaRow
