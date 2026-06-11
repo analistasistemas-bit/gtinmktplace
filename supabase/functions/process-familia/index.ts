@@ -8,7 +8,7 @@ import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { sugerirPrecoVenda } from '../_shared/preco/sugerir.ts';
+import { sugerirPrecoVenda, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { detectarTipoAviamento } from '../_shared/categoria/detectar.ts';
@@ -172,7 +172,9 @@ Deno.serve(async (req) => {
     if (!competitivo && categoriaMlId) {
       try {
         const token = await getValidAccessToken(userId);
-        const lp = await buscarListingPrice(token, precoMinFamilia, categoriaMlId, 'gold_special');
+        // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
+        // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
+        const lp = await buscarListingPrice(token, PRECO_REF_COMISSAO, categoriaMlId, 'gold_special');
         comissao = comissaoDe(lp);
       } catch (e) {
         // Resiliente: sem comissão o gross-up cai no piso; o semáforo mostra "indisponível".

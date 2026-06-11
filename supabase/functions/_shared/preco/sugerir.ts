@@ -21,15 +21,31 @@ const MOTIVO_COMPETITIVO = 'concorrência presente — 5% abaixo do menor preço
 const MOTIVO_GROSSUP = 'sem concorrência — preço cobre seu mínimo após comissão';
 const MOTIVO_FALLBACK = 'sem concorrência — comissão indisponível, usando o piso';
 
-/** Preço cujo líquido (após comissão) ≥ piso. P = (piso + fixa)/(1 − pct), arredonda pra cima. */
+/**
+ * Abismo da tarifa fixa do ML (ADR-0023): abaixo de R$ 12,50 o ML cobra, além do
+ * percentual, uma "tarifa fixa" = 50% do preço (comissão efetiva ~62%). Acima desse
+ * valor a tarifa fixa zera (só o percentual). Validado na API (listing_prices).
+ */
+export const ABISMO_TARIFA_FIXA = 12.5;
+/** Menor múltiplo de R$ 0,05 já acima do abismo (em R$ 12,50 a fixa ainda é cobrada). */
+export const PRECO_MIN_ACIMA_ABISMO = 12.55;
+/** Preço de referência (> abismo) para ler a comissão percentual "limpa", sem a tarifa fixa. */
+export const PRECO_REF_COMISSAO = 20;
+
+/**
+ * Preço cujo líquido (após comissão) ≥ piso, sempre acima do abismo da tarifa fixa
+ * (ADR-0023). `percentual`/`fixa` devem vir da comissão lida ACIMA do abismo (fixa ≈ 0).
+ * P = (piso + fixa)/(1 − pct), arredonda pra cima, e nunca abaixo de R$ 12,55.
+ */
 export function grossUp(piso: number, percentual: number, fixa: number): number {
   const bruto = (piso + fixa) / (1 - percentual / 100);
-  return arredondar5Cima(bruto);
+  return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(bruto));
 }
 
 /**
- * Sugere o preço de venda (ADR-0020). `piso` = PRECO da planilha (líquido mínimo desejado).
- * Com concorrente → mercado (× 0,95). Sem concorrente → gross-up até cobrir o piso.
+ * Sugere o preço de venda (ADR-0020 + ADR-0023). `piso` = PRECO da planilha (líquido mínimo).
+ * Com concorrente → mercado (× 0,95). Sem concorrente → gross-up que cobre o piso e fica
+ * acima do abismo de R$ 12,50 (onde o ML deixa de cobrar a tarifa fixa de 50%).
  */
 export function sugerirPrecoVenda(
   piso: number,
@@ -46,5 +62,10 @@ export function sugerirPrecoVenda(
   if (comissao) {
     return { preco: grossUp(piso, comissao.percentual, comissao.fixa), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };
   }
-  return { preco: arredondar5Cima(piso), estrategia: 'proprio', motivo: MOTIVO_FALLBACK };
+  // Sem comissão: ainda empurra para fora da faixa cara (acima do abismo).
+  return {
+    preco: Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(piso)),
+    estrategia: 'proprio',
+    motivo: MOTIVO_FALLBACK,
+  };
 }
