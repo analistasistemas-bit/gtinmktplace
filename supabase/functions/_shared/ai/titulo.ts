@@ -79,8 +79,10 @@ export function garantirMetragemTitulo(titulo: string, nomePai: string): string 
   if (!metragem) return clampTitulo(titulo);
 
   const numero = metragem.match(/\d+/)?.[0] ?? '';
-  // Já contém a metragem (qualquer unidade de metro adjacente)? Não duplica.
-  if (new RegExp(`\\b${numero}\\s*(MTS?|METROS?|M)\\b`, 'i').test(titulo)) return titulo;
+  // Já contém a metragem (qualquer unidade de metro adjacente)? Não duplica — mas
+  // ainda clampa para 60 (a metragem está no 1º segmento, que clampTitulo preserva).
+  // Sem o clamp aqui, um título já com metragem e >60 escapava (bug lote #27 → ML 400).
+  if (new RegExp(`\\b${numero}\\s*(MTS?|METROS?|M)\\b`, 'i').test(titulo)) return clampTitulo(titulo);
 
   const sufixo = ` ${metragem}`;
   const partes = titulo.split(' | ');

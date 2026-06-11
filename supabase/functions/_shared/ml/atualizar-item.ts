@@ -1,4 +1,5 @@
 import type { MLVariacaoAtual, VariacaoUpdate, VariacaoNovaPut } from './atualizar.ts';
+import { humanizarErroML } from './erro-ml.ts';
 
 export interface ItemMLAtual {
   id: string;
@@ -7,12 +8,7 @@ export interface ItemMLAtual {
 }
 
 function erroML(status: number, json: unknown): Error {
-  const j = (json ?? {}) as { message?: string; cause?: unknown; error?: string };
-  // O ML põe o detalhe real no array `cause` (a `message` costuma ser genérica
-  // tipo "Validation error"). Inclui o cause no texto p/ aparecer no erro persistido.
-  const causa = j.cause ? ` | cause: ${JSON.stringify(j.cause)}` : '';
-  const detalhe = (j.message ?? j.error ?? JSON.stringify(json)) + causa;
-  const e = new Error(`ML rejeitou (${status}): ${detalhe}`);
+  const e = new Error(humanizarErroML(status, json));
   (e as { status?: number }).status = status;
   return e;
 }
