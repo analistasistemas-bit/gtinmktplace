@@ -127,7 +127,13 @@ Deno.serve(async (req) => {
         )];
       }
     }
-    const existentes = montarVariacoesUpdate(atual.variations, desejados, comuns.length > 0 ? picsPorCodigo : undefined, desconto ?? undefined);
+    // Preço de publicação da família (todas as cores incluídas compartilham o mesmo).
+    // Propagado a TODAS as variações existentes (adendo ADR-0016): o ML exige preço
+    // único entre variações e o operador quer que a alteração de preço alcance a
+    // família já publicada. Idempotente quando o preço não mudou.
+    const precoFamiliaRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
+    const precoFamilia = precoFamiliaRaw != null ? Number(precoFamiliaRaw) : null;
+    const existentes = montarVariacoesUpdate(atual.variations, desejados, comuns.length > 0 ? picsPorCodigo : undefined, desconto ?? undefined, precoFamilia);
 
     const novasPut = novasComFoto.map((v) => montarVariacaoNova(
       { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
