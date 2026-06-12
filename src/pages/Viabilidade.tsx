@@ -62,6 +62,7 @@ export default function Viabilidade() {
         <TabsContent value="gtins">
           <div className="space-y-2">
             <textarea value={gtins} onChange={(e) => setGtins(e.target.value)} rows={5}
+              aria-label="GTINs, um por linha"
               placeholder="Um GTIN por linha" className="w-full rounded-md border border-border bg-background p-2 text-sm" />
             <button onClick={() => analise.mutate({ tipo: 'gtins', gtins: gtins.split('\n') })}
               disabled={analise.isPending || gtins.trim() === ''}
