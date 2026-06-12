@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -69,6 +69,12 @@ export default function Revisao() {
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
   const pag = usePaginacao(visiveis);
+  const listaRef = useRef<HTMLDivElement>(null);
+
+  const irPara = (p: number) => {
+    pag.irPara(p);
+    listaRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Mudar filtro/busca volta para a página 1. (idsSelecionaveis e counts
   // continuam derivando de `visiveis`/`familias`, a lista filtrada inteira.)
@@ -309,7 +315,7 @@ export default function Revisao() {
           )}
         </div>
       )}
-      <div className="flex-1 overflow-auto">
+      <div ref={listaRef} className="flex-1 overflow-auto">
         {isLoading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             Carregando famílias...
@@ -364,7 +370,7 @@ export default function Revisao() {
                   fim={pag.fim}
                   total={pag.total}
                   tamanho={pag.tamanho}
-                  onIrPara={pag.irPara}
+                  onIrPara={irPara}
                   onTamanho={pag.setTamanho}
                 />
               </div>

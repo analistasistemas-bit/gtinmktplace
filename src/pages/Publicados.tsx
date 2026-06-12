@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -255,6 +255,12 @@ export default function Publicados() {
 
   const itensExibidos = filtrarPublicados(merged, filtro);
   const pag = usePaginacao(itensExibidos);
+  const topoRef = useRef<HTMLDivElement>(null);
+
+  const irPara = (p: number) => {
+    pag.irPara(p);
+    topoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Mudar qualquer filtro/busca volta para a página 1.
   useEffect(() => {
@@ -385,7 +391,7 @@ export default function Publicados() {
           </div>
 
           {/* Tabela */}
-          <div className="rounded-md border">
+          <div ref={topoRef} className="scroll-mt-6 rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
@@ -430,7 +436,7 @@ export default function Publicados() {
             fim={pag.fim}
             total={pag.total}
             tamanho={pag.tamanho}
-            onIrPara={pag.irPara}
+            onIrPara={irPara}
             onTamanho={pag.setTamanho}
           />
         </>

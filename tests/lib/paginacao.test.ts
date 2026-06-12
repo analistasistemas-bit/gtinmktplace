@@ -42,6 +42,18 @@ describe('paginar', () => {
     expect(r.total).toBe(0);
   });
 
+  it('tamanho inválido (NaN/Infinity/0/negativo) cai no fallback de 1 por página', () => {
+    for (const tam of [NaN, Infinity, 0, -5]) {
+      const r = paginar(itens, 1, tam);
+      expect(Number.isFinite(r.totalPaginas)).toBe(true);
+      expect(r.totalPaginas).toBe(7);
+      expect(r.itensPagina).toEqual([1]);
+      expect(r.paginaAtual).toBe(1);
+      expect(r.inicio).toBe(1);
+      expect(r.fim).toBe(1);
+    }
+  });
+
   it('não muta a entrada', () => {
     const orig = [1, 2, 3];
     const copia = [...orig];

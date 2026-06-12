@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Plus,
@@ -30,6 +31,12 @@ export default function Dashboard() {
   const semStatus = (statusData?.semCredencialML ?? false) || erroStatus;
   const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
   const pag = usePaginacao(lotes);
+  const topoRef = useRef<HTMLDivElement>(null);
+
+  const irPara = (p: number) => {
+    pag.irPara(p);
+    topoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const novoLoteBtn = (
     <Button asChild>
@@ -78,7 +85,7 @@ export default function Dashboard() {
           action={novoLoteBtn}
         />
       ) : (
-        <div className="flex flex-col gap-3">
+        <div ref={topoRef} className="flex flex-col gap-3 scroll-mt-6">
           {pag.itensPagina.map((lote) => (
             <LoteCard key={lote.id} lote={lote} />
           ))}
@@ -90,7 +97,7 @@ export default function Dashboard() {
             fim={pag.fim}
             total={pag.total}
             tamanho={pag.tamanho}
-            onIrPara={pag.irPara}
+            onIrPara={irPara}
             onTamanho={pag.setTamanho}
           />
         </div>

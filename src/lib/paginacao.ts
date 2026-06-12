@@ -9,7 +9,9 @@ export interface ResultadoPaginacao<T> {
 
 export function paginar<T>(itens: T[], pagina: number, tamanho: number): ResultadoPaginacao<T> {
   const total = itens.length;
-  const tam = Math.max(1, Math.floor(tamanho));
+  // Qualquer tamanho não-finito ou < 1 (NaN/Infinity/0/negativo) cai em 1 por
+  // página, evitando NaN no offset (`0 * Infinity`) e cascata para os recortes.
+  const tam = Number.isFinite(tamanho) && tamanho >= 1 ? Math.floor(tamanho) : 1;
   const totalPaginas = Math.max(1, Math.ceil(total / tam));
   const paginaAtual = Math.min(Math.max(1, Math.floor(pagina) || 1), totalPaginas);
   const offset = (paginaAtual - 1) * tam;
