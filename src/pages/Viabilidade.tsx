@@ -4,7 +4,6 @@ import { Upload, Search } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Skeleton } from '@/components/ui/skeleton';
 import { ViabilidadeLinha } from '@/components/viabilidade-linha';
 import { useAnaliseViabilidade } from '@/hooks/useAnaliseViabilidade';
 import type { ItemAnalisado } from '@/lib/viabilidade';
@@ -37,7 +36,16 @@ export default function Viabilidade() {
     accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] },
   });
 
-  const itens = analise.data?.itens ?? [];
+  // "não vende no ML" vai para o fim (sort estável preserva a ordem dentro de cada grupo).
+  const itens = [...(analise.data?.itens ?? [])].sort(
+    (a, b) => Number(b.existeNoML) - Number(a.existeNoML),
+  );
+
+  const v = analise.variables;
+  const nGtins = v?.tipo === 'gtins' ? v.gtins.filter((g) => g.trim()).length : null;
+  const pendingLabel = nGtins != null
+    ? `Analisando ${nGtins} ${nGtins === 1 ? 'produto' : 'produtos'} no Mercado Livre…`
+    : 'Analisando os produtos da planilha no Mercado Livre…';
 
   return (
     <div className="space-y-6">
@@ -74,7 +82,13 @@ export default function Viabilidade() {
       </Tabs>
 
       {analise.isPending && (
-        <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">{pendingLabel}</p>
+          <div className="track-indeterminate" role="progressbar" aria-label="Analisando produtos no Mercado Livre" />
+          <p className="text-xs text-muted-foreground">
+            Consultando o catálogo e as tarifas do ML — pode levar alguns segundos com muitos GTINs.
+          </p>
+        </div>
       )}
       {analise.isError && <p className="text-sm text-destructive">{analise.error.message}</p>}
       {analise.isSuccess && itens.length === 0 && (
