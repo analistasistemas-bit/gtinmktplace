@@ -1,0 +1,59 @@
+import type { ItemAnalise } from './tipos.ts';
+
+const COLUNAS = ['NOME', 'UNIDADE', 'GTIN', 'PRECO', 'CUSTO'] as const;
+
+/** Aceita número JS ou string pt-BR ("39,90"); retorna null se não for número finito. */
+function parseNumero(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'string') {
+    const n = Number(v.trim().replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function gtinLimpo(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+}
+
+/**
+ * Extrai itens a analisar de linhas de planilha (enxuta ou completa do lote).
+ * Linha-a-linha, sem agrupar por pai. Se houver coluna PAI, pula agrupadores (PAI = 0).
+ * Linhas sem GTIN/PRECO/CUSTO válidos são descartadas e contadas em `ignorados`.
+ */
+export function extrairItensAnalise(
+  rows: Array<Record<string, unknown>>,
+): { itens: ItemAnalise[]; ignorados: number } {
+  if (rows.length > 0) {
+    const cols = new Set(Object.keys(rows[0]));
+    const faltando = COLUNAS.filter((c) => !cols.has(c));
+    if (faltando.length > 0) {
+      throw new Error(`Planilha sem a(s) coluna(s) obrigatória(s): ${faltando.join(', ')}`);
+    }
+  }
+
+  const itens: ItemAnalise[] = [];
+  let ignorados = 0;
+
+  for (const r of rows) {
+    if ('PAI' in r && String(r.PAI ?? '').trim() === '0') continue; // agrupador
+    const gtin = gtinLimpo(r.GTIN);
+    const minimo = parseNumero(r.PRECO);
+    const custo = parseNumero(r.CUSTO);
+    if (!gtin || minimo == null || custo == null) {
+      ignorados++;
+      continue;
+    }
+    itens.push({
+      gtin,
+      nome: String(r.NOME ?? '').trim(),
+      unidade: r.UNIDADE != null ? String(r.UNIDADE).trim() : null,
+      minimo,
+      custo,
+    });
+  }
+
+  return { itens, ignorados };
+}
