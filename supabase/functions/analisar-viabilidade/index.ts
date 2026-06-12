@@ -3,7 +3,6 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { buscarCategoriaProduto } from '../_shared/ml/produto-categoria.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
@@ -22,10 +21,11 @@ async function analisarItem(userId: string, item: ItemAnalise): Promise<ItemAnal
     const menor = conc.ofertas?.preco_min ?? conc.preco_min;
     if (!conc.product_id || conc.vendedores === 0 || menor == null) return base;
 
-    const token = await getValidAccessToken(userId);
-    const categoria = await buscarCategoriaProduto(token, conc.product_id);
+    // A categoria vem das próprias ofertas (GET /products/{id} não retorna category_id).
+    const categoria = conc.ofertas?.category_id ?? null;
     if (!categoria) return base;
 
+    const token = await getValidAccessToken(userId);
     const [classicoML, premiumML] = await Promise.all([
       buscarListingPrice(token, menor, categoria, 'gold_special'),
       buscarListingPrice(token, menor, categoria, 'gold_pro'),

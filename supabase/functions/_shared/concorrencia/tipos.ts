@@ -18,4 +18,6 @@ export interface DadosOfertas {
   frete_gratis: number;
   full: number;
   seller_ids: number[];
+  /** category_id do produto, lido das ofertas (GET /products/{id} não retorna esse campo). */
+  category_id: string | null;
 }

@@ -28,8 +28,8 @@ describe('parseItensProduto', () => {
   const json = {
     paging: { total: 4 },
     results: [
-      { seller_id: 1, price: 12.62, shipping: { free_shipping: true, logistic_type: 'fulfillment' } },
-      { seller_id: 2, price: 17.02, shipping: { free_shipping: false, logistic_type: 'cross_docking' } },
+      { seller_id: 1, price: 12.62, category_id: 'MLB255054', shipping: { free_shipping: true, logistic_type: 'fulfillment' } },
+      { seller_id: 2, price: 17.02, category_id: 'MLB255054', shipping: { free_shipping: false, logistic_type: 'cross_docking' } },
       { seller_id: 1, price: 14.0, shipping: { free_shipping: true, logistic_type: 'drop_off' } },
       { seller_id: 3, price: 0, shipping: { free_shipping: false, logistic_type: 'cross_docking' } },
     ],
@@ -38,12 +38,17 @@ describe('parseItensProduto', () => {
   it('payload vazio → tudo zerado', () => {
     expect(parseItensProduto({ results: [] })).toEqual({
       vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
-      frete_gratis: 0, full: 0, seller_ids: [],
+      frete_gratis: 0, full: 0, seller_ids: [], category_id: null,
     });
     expect(parseItensProduto(null)).toEqual({
       vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
-      frete_gratis: 0, full: 0, seller_ids: [],
+      frete_gratis: 0, full: 0, seller_ids: [], category_id: null,
     });
+  });
+
+  it('extrai category_id da 1ª oferta que tiver (GET /products/{id} não traz esse campo)', () => {
+    expect(parseItensProduto(json).category_id).toBe('MLB255054');
+    expect(parseItensProduto({ results: [{ seller_id: 9, price: 5 }] }).category_id).toBeNull();
   });
 
   it('preço min/max ignora <=0; total_ofertas conta todas', () => {
