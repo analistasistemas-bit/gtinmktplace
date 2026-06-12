@@ -1,14 +1,13 @@
 import type { Familia } from '@/lib/tipos-dominio';
 import { fmtInt } from '@/lib/formato';
+import { variacoesEstoqueAlterado } from '@/lib/publicavel';
 
 // UPDATE: mostra, por cor casada, o estoque antes→depois (só as que mudaram),
 // e sinaliza cores novas/removidas (mudança estrutural, não aplicada).
 export function DiffEstoque({ familia }: { familia: Familia }) {
   if (familia.operacao !== 'UPDATE') return null;
 
-  const mudaram = familia.variacoes.filter(
-    (v) => v.mlVariationId && !v.excluidaDaPublicacao && v.estoqueAnterior !== v.estoque,
-  );
+  const mudaram = variacoesEstoqueAlterado(familia);
   const me = familia.mudancaEstrutural;
 
   return (

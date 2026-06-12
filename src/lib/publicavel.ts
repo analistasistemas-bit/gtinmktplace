@@ -109,3 +109,19 @@ export function familiaSemDimensoesValidas(familia: Familia): boolean {
   const pesoOk = rep.pesoGramas != null && rep.pesoGramas >= 1;
   return !(medidasOk && pesoOk);
 }
+
+// Variações de uma reposição (UPDATE) cujo estoque mudou de fato: casada, incluída,
+// COM estoque anterior conhecido e valor diferente. A cor NOVA tem `estoqueAnterior`
+// null — após publicada ela ganha `mlVariationId`, mas continua não sendo reposição;
+// sem o guard `!= null` ela voltaria no diff como "null → X" (a "lista gigante" pós-
+// publicação). Fonte única do DiffEstoque e do resumo na linha.
+export function variacoesEstoqueAlterado(familia: Familia): Variacao[] {
+  if (familia.operacao !== 'UPDATE') return [];
+  return familia.variacoes.filter(
+    (v) =>
+      v.mlVariationId &&
+      !v.excluidaDaPublicacao &&
+      v.estoqueAnterior != null &&
+      v.estoqueAnterior !== v.estoque,
+  );
+}

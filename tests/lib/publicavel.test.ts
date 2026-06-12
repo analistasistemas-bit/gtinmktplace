@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { familiaPublicavel, criticasVariacao, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '../../src/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta, idsPublicaveis, loteTemPublicacao, variacoesEstoqueAlterado } from '../../src/lib/publicavel';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function cor(over: Partial<Variacao>): Variacao {
@@ -200,5 +200,31 @@ describe('loteTemPublicacao (atalho para o relatório na Revisão)', () => {
   });
   it('lista vazia → false', () => {
     expect(loteTemPublicacao([])).toBe(false);
+  });
+});
+
+describe('variacoesEstoqueAlterado', () => {
+  const upd = (vars: Partial<Variacao>[]) =>
+    fam({ operacao: 'UPDATE', mlItemId: 'MLB1', variacoes: vars.map((v) => cor(v)) });
+
+  it('CREATE não tem diff de estoque', () => {
+    expect(variacoesEstoqueAlterado(fam({ operacao: 'CREATE' }))).toHaveLength(0);
+  });
+  it('cor casada com estoque alterado conta', () => {
+    const f = upd([{ codigo: 'A', mlVariationId: '9', estoqueAnterior: 5, estoque: 12 }]);
+    expect(variacoesEstoqueAlterado(f).map((v) => v.codigo)).toEqual(['A']);
+  });
+  it('cor nova publicada (estoqueAnterior null) NÃO conta — não é reposição', () => {
+    // Após publicar, a cor nova ganha mlVariationId mas estoqueAnterior segue null.
+    const f = upd([{ codigo: 'NOVA', mlVariationId: '10', estoqueAnterior: null, estoque: 30 }]);
+    expect(variacoesEstoqueAlterado(f)).toHaveLength(0);
+  });
+  it('cor com estoque igual não conta', () => {
+    const f = upd([{ codigo: 'B', mlVariationId: '9', estoqueAnterior: 7, estoque: 7 }]);
+    expect(variacoesEstoqueAlterado(f)).toHaveLength(0);
+  });
+  it('cor excluída não conta', () => {
+    const f = upd([{ codigo: 'C', mlVariationId: '9', estoqueAnterior: 5, estoque: 12, excluidaDaPublicacao: true }]);
+    expect(variacoesEstoqueAlterado(f)).toHaveLength(0);
   });
 });

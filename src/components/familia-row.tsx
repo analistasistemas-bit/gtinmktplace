@@ -8,7 +8,7 @@ import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/us
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
-import { familiaPublicavel, criticasVariacao, familiaIncompleta } from '@/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado } from '@/lib/publicavel';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -79,12 +79,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
     : familia.variacoes.find((v) => criticasVariacao(v, familia.operacao).length > 0);
   // Resumo do UPDATE na linha recolhida: quantas cores têm estoque alterado
   // (mesma regra do DiffEstoque). Dá o "o que será atualizado" sem precisar expandir.
-  const coresComEstoqueAlterado =
-    familia.operacao === 'UPDATE'
-      ? familia.variacoes.filter(
-          (v) => v.mlVariationId && !v.excluidaDaPublicacao && v.estoqueAnterior !== v.estoque,
-        ).length
-      : 0;
+  const coresComEstoqueAlterado = variacoesEstoqueAlterado(familia).length;
   // Preço exibido no cabeçalho = preço de venda real (publicação) das cores incluídas,
   // não o da planilha (no UPDATE eles diferem: planilha vs. preço já publicado).
   const incluidasPub = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);

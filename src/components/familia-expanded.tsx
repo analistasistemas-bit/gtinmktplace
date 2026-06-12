@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Sparkles, Trash2, AlertTriangle } from 'lucide-react';
+import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
@@ -290,6 +290,22 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
+      {familia.status === 'publicado' && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-success">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span className="font-medium">
+            {familia.operacao === 'UPDATE'
+              ? 'Anúncio já atualizado no Mercado Livre.'
+              : 'Família já publicada no Mercado Livre.'}
+          </span>
+          {familia.mlPermalink && (
+            <a href={familia.mlPermalink} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              Abrir no ML ↗
+            </a>
+          )}
+          <span className="text-muted-foreground">Edições aqui só vão ao ar num novo UPDATE.</span>
+        </div>
+      )}
       <DiffEstoque familia={familia} />
       <div className="mb-4 flex flex-col gap-4 border-b pb-4">
         {/* Faixa fina de fotos: a Análise (abaixo) é o foco da tela, então as fotos
