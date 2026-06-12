@@ -1,6 +1,6 @@
 import { getValidAccessToken } from './token.ts';
 import { escolherIdentificador, type FamiliaParaBusca } from '../concorrencia/identificador.ts';
-import { parseProdutoBusca, parseItensProduto } from '../concorrencia/parse.ts';
+import { parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../concorrencia/parse.ts';
 import { classificarConcorrencia } from '../concorrencia/classificar.ts';
 import { cacheConcorrenciaGet, cacheConcorrenciaSet } from '../redis/cache-concorrencia.ts';
 import type { ResultadoConcorrencia } from '../concorrencia/tipos.ts';
@@ -52,6 +52,7 @@ export async function buscarConcorrencia(
         origem: cached.origem,
         classe: cached.classe,
         product_id: cached.product_id ?? null,
+        product_name: cached.product_name ?? null,
         ofertas: cached.ofertas,
       };
     }
@@ -74,6 +75,7 @@ export async function buscarConcorrencia(
       origem: 'gtin',
       classe,
       product_id: productId,
+      product_name: parseNomeProdutoBusca(busca),
       ofertas,
     };
 

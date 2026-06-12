@@ -8,6 +8,12 @@ export function parseProdutoBusca(json: unknown): string | null {
   return typeof id === 'string' && id.length > 0 ? id : null;
 }
 
+/** Extrai o `name` do 1º produto de catálogo de `/products/search`. null se ausente. */
+export function parseNomeProdutoBusca(json: unknown): string | null {
+  const nome = (json as { results?: Array<{ name?: string }> } | null)?.results?.[0]?.name;
+  return typeof nome === 'string' && nome.length > 0 ? nome : null;
+}
+
 interface MLItem {
   seller_id?: number | string;
   price?: number;

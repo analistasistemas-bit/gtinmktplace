@@ -9,6 +9,7 @@ export interface CacheConcorrenciaEntrada {
   origem: OrigemConcorrencia;
   classe: ClasseConcorrencia;
   product_id?: string | null;
+  product_name?: string | null;
   ofertas?: DadosOfertas;
   criado_em: string;
 }

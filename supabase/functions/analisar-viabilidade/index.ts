@@ -33,6 +33,8 @@ async function analisarItem(userId: string, item: ItemAnalise): Promise<ItemAnal
 
     return {
       ...base,
+      // Modo GTIN não tem nome (vem = gtin); usa o nome do produto de catálogo do ML.
+      nome: item.nome && item.nome !== item.gtin ? item.nome : (conc.product_name ?? item.gtin),
       existeNoML: true,
       mercado: {
         menor,

@@ -7,6 +7,8 @@ export interface ResultadoConcorrencia {
   origem: OrigemConcorrencia;
   classe: ClasseConcorrencia;
   product_id?: string | null;
+  /** Nome do produto de catálogo do ML (de /products/search). */
+  product_name?: string | null;
   ofertas?: DadosOfertas;
 }
 

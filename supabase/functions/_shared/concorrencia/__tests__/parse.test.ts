@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseProdutoBusca, parseItensProduto } from '../parse';
+import { parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../parse';
 
 describe('parseProdutoBusca', () => {
   it('payload vazio/inválido → null', () => {
@@ -21,6 +21,19 @@ describe('parseProdutoBusca', () => {
 
   it('id ausente no 1º resultado → null', () => {
     expect(parseProdutoBusca({ results: [{ name: 'sem id' }] })).toBe(null);
+  });
+});
+
+describe('parseNomeProdutoBusca', () => {
+  it('extrai o name do 1º produto de catálogo', () => {
+    expect(parseNomeProdutoBusca({ results: [{ id: 'MLB26209871', name: 'Fita Cetim Progresso Amarelo Ouro 7mm x 100m' }] }))
+      .toBe('Fita Cetim Progresso Amarelo Ouro 7mm x 100m');
+  });
+  it('name ausente/vazio ou payload vazio → null', () => {
+    expect(parseNomeProdutoBusca({ results: [{ id: 'MLB1' }] })).toBeNull();
+    expect(parseNomeProdutoBusca({ results: [{ id: 'MLB1', name: '' }] })).toBeNull();
+    expect(parseNomeProdutoBusca({ results: [] })).toBeNull();
+    expect(parseNomeProdutoBusca(null)).toBeNull();
   });
 });
 
