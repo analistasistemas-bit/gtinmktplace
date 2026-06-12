@@ -12,9 +12,22 @@ export default function Relatorio() {
   useLoteRealtime(loteId);
 
   const { data: lote } = useLote(loteId);
-  const polling = lote?.status === 'publicando';
+  // Poll enquanto houver família não-terminal. Guiar pelo status das famílias
+  // (não pelo do lote) evita a tela congelar em "publicando": o lote vira
+  // "concluido" ~0,8s antes do realtime entregar o status final das famílias,
+  // e se esse evento se perde o polling já teria parado. Aqui o próprio polling
+  // captura a transição final e só então para.
   const { data: familias = [] } = useFamilias(loteId, {
-    refetchInterval: polling ? 2500 : undefined,
+    refetchInterval: (query) => {
+      const fams = query.state.data ?? [];
+      const algumAtivo = fams.some(
+        (f) =>
+          f.status === 'pendente' ||
+          f.status === 'processando' ||
+          f.status === 'publicando'
+      );
+      return algumAtivo || lote?.status === 'publicando' ? 2500 : false;
+    },
   });
 
   const publicadas = familias.filter((f) => f.status === 'publicado').length;
