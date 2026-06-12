@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { extrairCorDoTexto, extrairCorECodigo } from '../_shared/cor/extrair.ts';
+import { extrairCorDeVariacao, extrairCorECodigo } from '../_shared/cor/extrair.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
@@ -78,12 +78,9 @@ Deno.serve(async (req) => {
         return { ...v, cor: `${comCodigo.cor} ${comCodigo.codigo}`, cor_origem: 'descricao' as OrigemCor };
       }
 
-      // Camada 1 — dicionário
-      const corTexto = extrairCorDoTexto([
-        v.nome,
-        claimed.nome_pai,
-        claimed.descricao_pai,
-      ]);
+      // Camada 1 — dicionário (só nome da variação + nome do pai; a descrição é prosa
+      // de marketing com cores incidentais → falso positivo, ver extrairCorDeVariacao)
+      const corTexto = extrairCorDeVariacao(v.nome, claimed.nome_pai);
       if (corTexto) return { ...v, cor: corTexto, cor_origem: 'descricao' as OrigemCor };
 
       // Cache Redis

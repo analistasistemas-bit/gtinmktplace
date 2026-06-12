@@ -30,6 +30,20 @@ export function extrairCorDoTexto(textos: Array<string | null | undefined>): str
   return null;
 }
 
+/**
+ * Cor de uma variação pelo dicionário, usando SÓ campos curtos e estruturados:
+ * o nome da variação e o nome do pai. A `descricao_detalhado` é prosa de marketing
+ * por família — cheia de cores incidentais ("desenho colorido", "linha brilhante") que
+ * geram falso positivo e, por ser igual para todas as variações, não distingue cor por
+ * variação. Excluída de propósito; sem cor no nome, a resolução cai no Vision (foto).
+ */
+export function extrairCorDeVariacao(
+  nomeVariacao: string | null | undefined,
+  nomePai: string | null | undefined,
+): string | null {
+  return extrairCorDoTexto([nomeVariacao, nomePai]);
+}
+
 // Mapa de abreviações comuns de cor (chave em MAIÚSCULAS) → forma por extenso.
 const ABREVIACOES_COR: Record<string, string> = {
   AZ: 'Azul', VD: 'Verde', AMA: 'Amarelo', CL: 'Claro',

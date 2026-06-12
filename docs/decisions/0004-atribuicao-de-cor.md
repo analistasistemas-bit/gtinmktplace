@@ -73,3 +73,23 @@ comuns expandidas (AZ→Azul, VD→Verde, AMA→Amarelo, CL→Claro, ESC→Escur
 e title-case — embutindo em `variacoes.cor` como `"{Cor} {código}"` (ex.: `Vermelho Tomate 1354`).
 Sem esse padrão, mantém-se o dicionário canônico. Vale no CREATE; falsos positivos
 (ex.: `10 BCA` → `Branco 10`) são corrigidos pelo operador na Revisão.
+
+## Adendo (2026-06-12) — Camada 1 não lê a descrição detalhada
+
+A decisão original (item 1) listava a `descricao_detalhado` como fonte do dicionário de
+cores. Na prática a `DESCRICAO_DETALHADO` evoluiu para **prosa de marketing longa**, cheia
+de cores **incidentais** que não nomeiam a cor do produto — ex.: a linha de bobina branca
+"LINHA 100% POLIESTER 150 15000MT" (`MLB6953626078`) tinha na descrição *"...a linha de cima
+(que faz o desenho **colorido**)..."*, e `colorido` (sinônimo de `Multicolor`) foi atribuído
+como cor da variação. Além disso, a `descricao_pai` é **por família** (igual para todas as
+variações), então **nunca** consegue distinguir cor por variação — só pode gerar falso
+positivo ou pintar todas as cores iguais.
+
+**Decisão:** a Camada 1 (dicionário) passa a usar **apenas campos curtos e estruturados** —
+o nome da variação (`v.nome`) e o nome do pai (`nome_pai`), via helper puro
+`extrairCorDeVariacao`. A descrição é **excluída de propósito**. Quando não há cor textual
+nesses campos, a resolução cai no **Vision** (Camada 2), que lê a foto real — exatamente o
+fallback projetado. Sinônimos do dicionário (inclusive `colorido`) são preservados; o que
+muda é a **fonte**, não o léxico. Só afeta CREATE/reprocessamento daqui pra frente; o único
+anúncio já publicado afetado (`MLB6953626078`) foi corrigido ao vivo (COLOR
+`Multicolor`→`Branco` + seção "CORES DISPONÍVEIS").

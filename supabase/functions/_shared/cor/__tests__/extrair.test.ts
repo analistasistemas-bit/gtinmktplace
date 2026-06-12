@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extrairCorDoTexto } from '../extrair';
+import { extrairCorDoTexto, extrairCorDeVariacao } from '../extrair';
 
 describe('extrairCorDoTexto', () => {
   it('retorna null quando nenhuma cor é encontrada', () => {
@@ -31,6 +31,31 @@ describe('extrairCorDoTexto', () => {
   it('ignora arrays vazios ou strings vazias', () => {
     expect(extrairCorDoTexto([])).toBeNull();
     expect(extrairCorDoTexto(['', '', null as unknown as string])).toBeNull();
+  });
+});
+
+describe('extrairCorDeVariacao', () => {
+  // A descrição detalhada é prosa de marketing por família: contém cores incidentais
+  // que não nomeiam a cor do produto. Documenta o falso positivo que motivou o helper.
+  const DESCRICAO_INCIDENTAL =
+    'A LINHA DE CIMA (QUE FAZ O DESENHO COLORIDO) É MAIS GROSSA. USAR A MESMA LINHA BRILHANTE.';
+
+  it('o dicionário casaria "colorido" da prosa como Multicolor (motivação do helper)', () => {
+    expect(extrairCorDoTexto([DESCRICAO_INCIDENTAL])).toBe('Multicolor');
+  });
+
+  it('não usa a descrição: nome sem cor + descrição com cor incidental → null (cai no Vision)', () => {
+    expect(
+      extrairCorDeVariacao('LINHA 100% POLIESTER 150 15000MT', 'LINHA 100% POLIESTER 150 15000MT'),
+    ).toBeNull();
+  });
+
+  it('extrai a cor quando está no nome da variação', () => {
+    expect(extrairCorDeVariacao('LINHA P/COSTURA 1500MT BRANCO', 'LINHA P/COSTURA 1500MT CORES')).toBe('Branco');
+  });
+
+  it('extrai a cor quando está no nome do pai (família de cor única)', () => {
+    expect(extrairCorDeVariacao('LINHA POLIESTER', 'LINHA POLIESTER PRETA')).toBe('Preto');
   });
 });
 
