@@ -35,6 +35,7 @@ import {
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { criticasVariacao } from '@/lib/publicavel';
+import { variacoesParaRevisao } from '@/lib/revisao-variacoes';
 import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
@@ -288,6 +289,11 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
     }
   }
 
+  // Variações da Revisão: sempre alfabéticas por cor. Após publicar, só as que NÃO
+  // foram ao anúncio (sem ml_variation_id) — o que "não conseguiu publicar".
+  const publicado = familia.status === 'publicado';
+  const variacoesExibidas = variacoesParaRevisao(variacoes, publicado);
+
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
       {familia.status === 'publicado' && (
@@ -494,10 +500,15 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
 
         <div>
           <label className="mb-2 block text-xs font-semibold text-muted-foreground">
-            VARIAÇÕES ({variacoes.length})
+            {publicado ? 'CORES PENDENTES' : 'VARIAÇÕES'} ({variacoesExibidas.length})
           </label>
+          {publicado && variacoesExibidas.length === 0 ? (
+            <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-success">
+              Todas as cores foram publicadas no anúncio. 🎉
+            </div>
+          ) : (
           <div className="flex flex-col gap-2">
-            {variacoes.map((v) => {
+            {variacoesExibidas.map((v) => {
               // Cor nova (UPDATE sem variação no ML) é opt-in mas precisa ser editável
               // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
               const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
@@ -584,6 +595,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
               );
             })}
           </div>
+          )}
         </div>
       </div>
     </div>
