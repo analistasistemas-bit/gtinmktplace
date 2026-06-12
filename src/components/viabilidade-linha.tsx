@@ -46,7 +46,14 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
   if (!item.existeNoML) {
     return (
       <tr className="border-t border-border text-muted-foreground">
-        <td className="px-3 py-2">{item.nome || item.gtin}</td>
+        <td className="px-3 py-2">
+          <span className="flex flex-col">
+            <span>{item.nome || item.gtin}</span>
+            {item.nome && item.nome !== item.gtin && (
+              <span className="text-xs">GTIN {item.gtin}</span>
+            )}
+          </span>
+        </td>
         <td colSpan={5} className="px-3 py-2">{item.erro ? 'ML indisponível' : 'não vende no ML'}</td>
       </tr>
     );
@@ -61,8 +68,13 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
       <tr className="cursor-pointer border-t border-border hover:bg-accent/40" onClick={() => setAberto((v) => !v)}>
         <td className="px-3 py-2">
           <span className="inline-flex items-center gap-1">
-            {aberto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            {item.nome || item.gtin}
+            {aberto ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}
+            <span className="flex flex-col">
+              <span>{item.nome || item.gtin}</span>
+              {item.nome && item.nome !== item.gtin && (
+                <span className="text-xs text-muted-foreground">GTIN {item.gtin}</span>
+              )}
+            </span>
           </span>
         </td>
         <td className="px-3 py-2">{fmtBRL(item.mercado!.menor ?? 0)}</td>
