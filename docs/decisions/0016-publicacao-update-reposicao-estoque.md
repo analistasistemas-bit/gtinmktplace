@@ -171,3 +171,34 @@ reposição normal; o worker não duplica SKU; e o registro é **gravado de volt
 
 **Custo/resiliência:** só consulta o ML nas famílias com suposta cor nova (raro; 1 GET por
 família afetada). Falha de ML/token → mantém o casamento local (comportamento anterior).
+
+---
+
+## Adendo (2026-06-12) — Preço de publicação propaga para a família inteira no UPDATE
+
+**Problema (lote #31):** anúncio `MLB6900892156` tinha 1 cor publicada (Azul Marinho, a
+R$ 12,00). Ao incluir 64 cores novas a R$ 12,50, o worker reenviava a variação existente
+**sem `price`** (preservando o preço antigo) e as novas a R$ 12,50 → o ML exige **preço
+único entre variações** e rejeitava com `Found different prices in variations`.
+
+**Decisão (pedido do operador):** no UPDATE, sempre que o preço de publicação da família
+mudar (incluir cor nova **ou** reposição de estoque), o novo preço é **propagado para todas
+as variações** do anúncio. `montarVariacoesUpdate` ganha o parâmetro `precoFamilia` (preço
+compartilhado pelas cores incluídas), aplicado a toda variação existente; idempotente quando
+o preço não mudou; o desconto, se ativo, tem precedência. Refina o "UPDATE preserva preço"
+do corpo deste ADR: a preservação valia para reposição pura; o preço de publicação agora é a
+fonte da verdade e alcança a família já publicada.
+
+## Adendo (2026-06-12) — Limpeza de cache de foto efêmero ao falhar
+
+**Problema (mesmo lote, no retry):** upload de foto no ML que **não é anexado a um item
+expira** (TTL). O worker cacheava o `ml_picture_id` das cores novas (e capas) logo após o
+upload; quando a publicação falhava (ex.: pelo erro de preço acima), o id ficava órfão e
+expirava. No retry, o guard `if (!picId)` reusava o id cacheado → `Picture id ... does not
+exist`.
+
+**Decisão:** no `catch` do ramo de erro definitivo, o worker **limpa os caches de foto
+efêmeros** — `ml_picture_id` das cores ainda não anexadas (`ml_variation_id` null, sempre) e
+as capas 2/3 subidas **naquele** attempt (flag) — para o próximo retry re-subir fresco. Cores
+já casadas preservam o id (durável). `publish-familia-ml` (CREATE) tem o mesmo padrão latente
+(follow-up).
