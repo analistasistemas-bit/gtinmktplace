@@ -16,6 +16,8 @@ import { LoteCard } from '@/components/lote-card';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
+import { usePaginacao } from '@/hooks/usePaginacao';
+import { Pagination } from '@/components/ui/pagination';
 import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
 
 export default function Dashboard() {
@@ -27,6 +29,7 @@ export default function Dashboard() {
   // Cards ao vivo indisponíveis quando a conta ML não está conectada OU a chamada falhou.
   const semStatus = (statusData?.semCredencialML ?? false) || erroStatus;
   const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
+  const pag = usePaginacao(lotes);
 
   const novoLoteBtn = (
     <Button asChild>
@@ -76,9 +79,20 @@ export default function Dashboard() {
         />
       ) : (
         <div className="flex flex-col gap-3">
-          {lotes.map((lote) => (
+          {pag.itensPagina.map((lote) => (
             <LoteCard key={lote.id} lote={lote} />
           ))}
+          <Pagination
+            rotuloItem="lote"
+            paginaAtual={pag.paginaAtual}
+            totalPaginas={pag.totalPaginas}
+            inicio={pag.inicio}
+            fim={pag.fim}
+            total={pag.total}
+            tamanho={pag.tamanho}
+            onIrPara={pag.irPara}
+            onTamanho={pag.setTamanho}
+          />
         </div>
       )}
     </div>

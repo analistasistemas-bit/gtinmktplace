@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -11,6 +11,8 @@ import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
+import { Pagination } from '@/components/ui/pagination';
+import { usePaginacao } from '@/hooks/usePaginacao';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
@@ -66,6 +68,14 @@ export default function Revisao() {
   const temPublicacao = useMemo(() => loteTemPublicacao(familias), [familias]);
 
   const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
+  const pag = usePaginacao(visiveis);
+
+  // Mudar filtro/busca volta para a página 1. (idsSelecionaveis e counts
+  // continuam derivando de `visiveis`/`familias`, a lista filtrada inteira.)
+  useEffect(() => {
+    pag.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro, busca]);
   // "Selecionar todos" age só sobre as famílias publicáveis visíveis (respeita
   // filtro/busca) — espelha a regra do toggleSelecao, que ignora as incompletas.
   const idsSelecionaveis = useMemo(() => idsPublicaveis(visiveis), [visiveis]);
@@ -325,7 +335,7 @@ export default function Revisao() {
                 </label>
               </div>
             )}
-            {visiveis.map((familia) => (
+            {pag.itensPagina.map((familia) => (
               <div key={familia.id}>
                 <FamiliaRow
                   familia={familia}
@@ -344,6 +354,21 @@ export default function Revisao() {
                 )}
               </div>
             ))}
+            {visiveis.length > 0 && (
+              <div className="px-4">
+                <Pagination
+                  rotuloItem="família"
+                  paginaAtual={pag.paginaAtual}
+                  totalPaginas={pag.totalPaginas}
+                  inicio={pag.inicio}
+                  fim={pag.fim}
+                  total={pag.total}
+                  tamanho={pag.tamanho}
+                  onIrPara={pag.irPara}
+                  onTamanho={pag.setTamanho}
+                />
+              </div>
+            )}
             {visiveis.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 Nenhuma família encontrada com esses filtros.
