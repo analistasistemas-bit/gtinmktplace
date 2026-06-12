@@ -47,6 +47,12 @@ Deno.serve(async (req) => {
     });
   }
 
+  // Caches de foto efêmeros subidos NESTE attempt: se a publicação falhar, são limpos
+  // no catch para o retry re-subir (upload de foto não anexado a um item expira no ML
+  // → "Picture id ... does not exist" no retry). Declarados fora do try p/ visibilidade no catch.
+  let capa2SubidaAgora = false;
+  let capa3SubidaAgora = false;
+
   try {
     if (!familia.ml_item_id) throw new Error('Família UPDATE sem ml_item_id herdado (400)');
 
@@ -97,12 +103,14 @@ Deno.serve(async (req) => {
     if (!capa2Pic && familia.capa2_storage_path) {
       capa2Pic = await subirFotoML(token, await signed(familia.capa2_storage_path as string));
       await admin.from('familias').update({ capa2_ml_picture_id: capa2Pic }).eq('id', job.familia_id);
+      capa2SubidaAgora = true;
     }
 
     let capa3Pic = (familia.capa3_ml_picture_id as string | null) ?? null;
     if (!capa3Pic && familia.capa3_storage_path) {
       capa3Pic = await subirFotoML(token, await signed(familia.capa3_storage_path as string));
       await admin.from('familias').update({ capa3_ml_picture_id: capa3Pic }).eq('id', job.familia_id);
+      capa3SubidaAgora = true;
     }
 
     // GET estado real → reenviar todas as variações (ML deleta as omitidas).
@@ -127,7 +135,13 @@ Deno.serve(async (req) => {
         )];
       }
     }
-    const existentes = montarVariacoesUpdate(atual.variations, desejados, comuns.length > 0 ? picsPorCodigo : undefined, desconto ?? undefined);
+    // Preço de publicação da família (todas as cores incluídas compartilham o mesmo).
+    // Propagado a TODAS as variações existentes (adendo ADR-0016): o ML exige preço
+    // único entre variações e o operador quer que a alteração de preço alcance a
+    // família já publicada. Idempotente quando o preço não mudou.
+    const precoFamiliaRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
+    const precoFamilia = precoFamiliaRaw != null ? Number(precoFamiliaRaw) : null;
+    const existentes = montarVariacoesUpdate(atual.variations, desejados, comuns.length > 0 ? picsPorCodigo : undefined, desconto ?? undefined, precoFamilia);
 
     const novasPut = novasComFoto.map((v) => montarVariacaoNova(
       { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
@@ -231,6 +245,17 @@ Deno.serve(async (req) => {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
     await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+    // Limpa os caches de foto efêmeros para o próximo retry re-subir fresco: as cores
+    // novas ainda não anexadas (ml_variation_id null) e as capas subidas neste attempt.
+    // Sem isto, o id de upload expirado reaparece no retry → "Picture id ... does not exist".
+    await admin.from('variacoes').update({ ml_picture_id: null })
+      .eq('familia_id', job.familia_id).is('ml_variation_id', null);
+    const limparCapas: Record<string, null> = {};
+    if (capa2SubidaAgora) limparCapas.capa2_ml_picture_id = null;
+    if (capa3SubidaAgora) limparCapas.capa3_ml_picture_id = null;
+    if (Object.keys(limparCapas).length > 0) {
+      await admin.from('familias').update(limparCapas).eq('id', job.familia_id);
+    }
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ erro: msg }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }

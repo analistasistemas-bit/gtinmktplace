@@ -61,14 +61,22 @@ export interface MLVariacaoAtual {
 export interface EstoqueDesejado { codigo: string; estoque: number; }
 export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; original_price?: number; }
 
-// Reenvia TODAS as variações atuais do anúncio (o ML deleta as omitidas). Só
-// available_quantity — sem price, para o ML preservar o preço de venda.
+// Reenvia TODAS as variações atuais do anúncio (o ML deleta as omitidas). Por
+// padrão só available_quantity — sem price, para o ML preservar o preço de venda
+// (reposição pura de estoque, ADR-0016).
 // Quando desconto está ativo, envia price + original_price para ativar o selo.
+// `precoFamilia` (adendo ADR-0016): preço de publicação atual da família. Quando
+// informado, é propagado para TODA variação existente — o ML exige preço único
+// entre variações, então incluir cor nova a um preço diferente obriga reprecificar
+// o anúncio inteiro; e o operador quer que a alteração de preço alcance a família
+// já publicada. Idempotente quando o preço não mudou. O desconto, se ativo, tem
+// precedência (já define price/original_price por código).
 export function montarVariacoesUpdate(
   atuais: MLVariacaoAtual[],
   desejados: EstoqueDesejado[],
   picsPorCodigo?: Record<string, string[]>,
   desconto?: { pct: number; precoPorCodigo: Record<string, number | null> } | null,
+  precoFamilia?: number | null,
 ): VariacaoUpdate[] {
   const estoquePorCodigo = new Map(desejados.map((d) => [d.codigo, d.estoque]));
   return atuais.map((a) => {
@@ -84,6 +92,7 @@ export function montarVariacoesUpdate(
         if (de !== null) { base.price = preco; base.original_price = de; }
       }
     }
+    if (precoFamilia != null && base.price == null) base.price = precoFamilia;
     return base;
   });
 }

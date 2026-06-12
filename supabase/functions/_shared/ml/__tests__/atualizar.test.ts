@@ -65,6 +65,28 @@ describe('montarVariacoesUpdate', () => {
     const out = montarVariacoesUpdate(atuais, [{ codigo: '1', estoque: 9 }]);
     expect(out[0]).toEqual({ id: 'A', available_quantity: 9 });
   });
+
+  // ADR-0016 adendo: ao mudar o preço de publicação da família (ex.: ao incluir
+  // cores novas a um preço diferente), o ML exige preço único entre variações.
+  // O preço da família é propagado para TODAS as variações existentes do anúncio.
+  it('com precoFamilia: toda variação existente recebe price = precoFamilia', () => {
+    const r = montarVariacoesUpdate(atuais, [{ codigo: '00000101', estoque: 12 }], undefined, undefined, 12.5);
+    expect(r[0]).toMatchObject({ id: 'V1', available_quantity: 12, price: 12.5 });
+    expect(r[1]).toMatchObject({ id: 'V2', available_quantity: 8, price: 12.5 });
+  });
+
+  it('precoFamilia preenche o price até de variação existente fora do lote (cor publicada excluída)', () => {
+    // V2 não está nos desejados (excluída da seleção), mas o ML não aceita ela num
+    // preço diferente das novas → recebe o preço da família mesmo assim.
+    const r = montarVariacoesUpdate(atuais, [{ codigo: '00000101', estoque: 12 }], undefined, undefined, 12.5);
+    expect(r.find((v) => v.id === 'V2')).toMatchObject({ price: 12.5 });
+  });
+
+  it('desconto tem precedência: precoFamilia não sobrescreve o price do desconto', () => {
+    const a = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
+    const out = montarVariacoesUpdate(a, [{ codigo: '1', estoque: 9 }], undefined, { pct: 15, precoPorCodigo: { '1': 12.29 } }, 99);
+    expect(out[0]).toMatchObject({ price: 12.29, original_price: 14.46 });
+  });
 });
 
 const corNova = {
