@@ -507,8 +507,23 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
                     className="mt-2 shrink-0"
                     onCheckedChange={async (marcado) => {
                       if (!v.id) return;
-                      await setVariacaoExcluida(v.id, marcado !== true);
-                      qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+                      const excluida = marcado !== true;
+                      // Reflete o clique no estado local na hora: o refetch do
+                      // invalidate NÃO re-sincroniza este campo (fotosKey só cobre
+                      // código+foto, p/ não descartar edições não salvas de cor/preço).
+                      // Sem isto o checkbox fica preso e a cor nova "não marca".
+                      setVariacoes((vs) =>
+                        vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: excluida } : x)),
+                      );
+                      try {
+                        await setVariacaoExcluida(v.id, excluida);
+                        qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+                      } catch (e) {
+                        setVariacoes((vs) =>
+                          vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: !excluida } : x)),
+                        );
+                        toast.error('Falha ao atualizar a cor', { description: (e as Error).message });
+                      }
                     }}
                   />
                   {familia.operacao === 'UPDATE' && !v.mlVariationId && (

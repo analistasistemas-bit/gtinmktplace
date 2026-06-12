@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import type { Familia, Variacao } from '@/lib/tipos-dominio';
+
+const setVariacaoExcluidaMock = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/publicar', () => ({
+  setVariacaoExcluida: (...args: unknown[]) => setVariacaoExcluidaMock(...args),
+}));
 
 function renderWithClient(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -50,5 +55,31 @@ describe('FamiliaExpanded — foto da variação reflete o refetch', () => {
       </QueryClientProvider>
     );
     expect(screen.queryByText(/sem foto/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('FamiliaExpanded — incluir cor nova (UPDATE) reflete o clique', () => {
+  it('marcar uma cor nova excluída persiste E deixa o checkbox marcado na hora', async () => {
+    setVariacaoExcluidaMock.mockClear();
+    // Cor nova de um anúncio já publicado (UPDATE), entra excluída por padrão.
+    const novaExcluida = fam({
+      operacao: 'UPDATE',
+      mlItemId: 'MLB6900892156',
+      variacoes: [
+        cor({ id: 'v-nova', codigo: '02719700', cor: 'Verde Neon', fotoPath: 'user/02719700.jpeg', excluidaDaPublicacao: true, mlVariationId: null }),
+      ],
+    });
+    renderWithClient(<FamiliaExpanded familia={novaExcluida} />);
+
+    const cb = screen.getByRole('checkbox', { name: /Incluir cor Verde Neon na publicação/i });
+    expect(cb).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(cb);
+
+    // Persistiu a inclusão (excluida=false) no banco...
+    await waitFor(() => expect(setVariacaoExcluidaMock).toHaveBeenCalledWith('v-nova', false));
+    // ...e o checkbox reflete o clique imediatamente (sem depender de um refetch
+    // que não re-sincroniza este campo).
+    await waitFor(() => expect(cb).toHaveAttribute('aria-checked', 'true'));
   });
 });
