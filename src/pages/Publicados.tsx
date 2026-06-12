@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,8 @@ import type { TipoAviamento } from '@/lib/tipos-dominio';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
+import { usePaginacao } from '@/hooks/usePaginacao';
+import { Pagination } from '@/components/ui/pagination';
 
 // ============================================================================
 // Badge de status
@@ -252,6 +254,19 @@ export default function Publicados() {
   }, [publicados, statusData]);
 
   const itensExibidos = filtrarPublicados(merged, filtro);
+  const pag = usePaginacao(itensExibidos);
+  const topoRef = useRef<HTMLDivElement>(null);
+
+  const irPara = (p: number) => {
+    pag.irPara(p);
+    topoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Mudar qualquer filtro/busca volta para a página 1.
+  useEffect(() => {
+    pag.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtro.busca, filtro.fornecedor, filtro.status, filtro.tipo]);
 
   // Fornecedores distintos para o filtro
   const fornecedores = useMemo(
@@ -376,7 +391,7 @@ export default function Publicados() {
           </div>
 
           {/* Tabela */}
-          <div className="rounded-md border">
+          <div ref={topoRef} className="scroll-mt-6 rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
@@ -399,7 +414,7 @@ export default function Publicados() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  itensExibidos.map((item) => (
+                  pag.itensPagina.map((item) => (
                     <LinhaTabela
                       key={item.familiaId}
                       item={item}
@@ -412,9 +427,18 @@ export default function Publicados() {
             </Table>
           </div>
 
-          <p className="mt-2 text-xs text-muted-foreground">
-            {itensExibidos.length} de {publicados.length} anúncio{publicados.length !== 1 ? 's' : ''}
-          </p>
+          <Pagination
+            rotuloItem="anúncio"
+            className="mt-2"
+            paginaAtual={pag.paginaAtual}
+            totalPaginas={pag.totalPaginas}
+            inicio={pag.inicio}
+            fim={pag.fim}
+            total={pag.total}
+            tamanho={pag.tamanho}
+            onIrPara={irPara}
+            onTamanho={pag.setTamanho}
+          />
         </>
       )}
     </div>
