@@ -117,18 +117,18 @@ Deno.serve(async (req) => {
     const atual = await buscarItemML(token, familia.ml_item_id);
     const desejados = casadas.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
     const capaPic = (familia.capa_ml_picture_id as string | null) ?? null;
-    // Fotos comuns (capa2, capa3) nas cores existentes: parte das fotos ATUAIS do item
-    // (IDs válidos, lidos do GET — o ML re-hospeda as fotos, então os IDs de upload
-    // cacheados não batem com os do item) e insere as comuns logo após a líder (capa3
-    // sempre após a capa2). Idempotente: reaplicar reordena para o mesmo resultado.
+    // Fotos comuns (capa2, capa3) são da FAMÍLIA INTEIRA → aplicam a TODAS as variações
+    // existentes do anúncio, não só as incluídas. A cor existente excluída (reposição
+    // não selecionada) também recebe as comuns — só o estoque dela é que não muda.
+    // IDs lidos do GET (válidos — o ML re-hospeda as fotos, então os IDs de upload
+    // cacheados não batem com os do item); insere as comuns logo após a líder (própria),
+    // capa3 sempre após a capa2. Idempotente: reaplicar reordena para o mesmo resultado.
     // Sem fotos comuns → só estoque (comportamento preservado).
     const comuns = [capa2Pic, capa3Pic].filter((x): x is string => !!x);
-    const incluidas = new Set(casadas.map((c) => c.codigo));
     const picsPorCodigo: Record<string, string[]> = {};
     if (comuns.length > 0) {
       for (const a of atual.variations) {
         const codigo = a.seller_custom_field ?? '';
-        if (!incluidas.has(codigo)) continue;
         const atuaisPics = a.picture_ids ?? [];
         picsPorCodigo[codigo] = [...new Set(
           [atuaisPics[0], ...comuns, ...atuaisPics.slice(1)].filter((x): x is string => !!x),
