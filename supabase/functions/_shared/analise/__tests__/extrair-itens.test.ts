@@ -22,6 +22,18 @@ describe('extrairItensAnalise', () => {
     expect(itens[0].custo).toBeCloseTo(21.1612, 4);
   });
 
+  it('aceita decimal en-US e separadores de milhar', () => {
+    const rows = [
+      { NOME: 'A', UNIDADE: 'UN', GTIN: '1', PRECO: '39.90', CUSTO: '21.16' },
+      { NOME: 'B', UNIDADE: 'UN', GTIN: '2', PRECO: '1.234,56', CUSTO: '1,234.56' },
+    ];
+    const { itens } = extrairItensAnalise(rows);
+    expect(itens[0].minimo).toBeCloseTo(39.9, 2);
+    expect(itens[0].custo).toBeCloseTo(21.16, 2);
+    expect(itens[1].minimo).toBeCloseTo(1234.56, 2);
+    expect(itens[1].custo).toBeCloseTo(1234.56, 2);
+  });
+
   it('planilha completa: pula linhas de agrupador (PAI = 0) e usa só as 5 colunas', () => {
     const rows = [
       { CODIGO: '10', PAI: '0', NOME: 'PAI AGRUP', UNIDADE: 'UN', GTIN: '111', PRECO: 5, CUSTO: 2, ESTOQUE: 0 },

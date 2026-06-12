@@ -2,14 +2,24 @@ import type { ItemAnalise } from './tipos.ts';
 
 const COLUNAS = ['NOME', 'UNIDADE', 'GTIN', 'PRECO', 'CUSTO'] as const;
 
-/** Aceita número JS ou string pt-BR ("39,90"); retorna null se não for número finito. */
+/** Aceita número JS ou string com decimal pt-BR ("39,90") ou en-US ("39.90"); null se não-numérico. */
 function parseNumero(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v === 'string') {
-    const n = Number(v.trim().replace(/\./g, '').replace(',', '.'));
-    return Number.isFinite(n) ? n : null;
+  if (typeof v !== 'string') return null;
+  let s = v.trim();
+  if (s === '') return null;
+  const temVirgula = s.includes(',');
+  const temPonto = s.includes('.');
+  if (temVirgula && temPonto) {
+    // o separador que aparece por último é o decimal; o outro é separador de milhar.
+    s = s.lastIndexOf(',') > s.lastIndexOf('.')
+      ? s.replace(/\./g, '').replace(',', '.')
+      : s.replace(/,/g, '');
+  } else if (temVirgula) {
+    s = s.replace(',', '.');
   }
-  return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
 }
 
 function gtinLimpo(v: unknown): string | null {
