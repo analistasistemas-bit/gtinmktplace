@@ -470,16 +470,16 @@
 - [x] Botão "Editar e tentar de novo" para erros ✅ — mostra `erroMensagem` + volta à Revisão
 - [ ] Custo de IA somado do lote — `~2h` (deferido; cards atuais: publicadas/publicando/erro)
 
-### Bug bash do M4 (Publicação CREATE) — **PENDENTE (precisa do Diego + token real)**
+### Bug bash do M4 (Publicação CREATE) — **✅ VALIDADO (2026-06-04, 2 anúncios reais; ver histórico no CLAUDE.md)**
 
-> Task 13 do plano-10. Edges deployadas: `publicar-familias` v1, `publish-familia-ml` v2. Descobre os 3 pontos da spec §5.4 (GTIN interno `3000*`, `listing_type_id`, endpoint/forma de foto) ajustando `montarPayloadItem`/`subirFotoML` contra a API real.
+> Task 13 do plano-10. Edges deployadas: `publicar-familias` v1, `publish-familia-ml` v2. Os 3 pontos da spec §5.4 foram descobertos e resolvidos contra a API real (GTIN sem EAN → `EMPTY_GTIN_REASON`; `listing_type_id` Clássico/Premium via modal; foto via `POST /pictures`). UPDATE, capa2/capa3, preço v2, catálogo e retry de foto também já validados em lotes reais posteriores.
 
-- [ ] Subir um lote novo pela UI (1 família simples, fotos + GTIN válido), processar até `pronto`
-- [ ] Selecionar e publicar pela UI; observar `familias.erro_mensagem` se falhar
-- [ ] Iterar os 3 pontos de descoberta (GTIN/listing_type/foto) re-deployando o worker
-- [ ] Validar 1 publicação real bem-sucedida (anúncio no ML com fotos/cores/preço; ids persistidos)
-- [ ] Atualizar os testes de `montarPayloadItem` para o formato final + ADR de fechamento se surgir decisão nova
-- [ ] (UPDATE fica para o bloco seguinte — fora do escopo deste plano)
+- [x] Subir um lote novo pela UI (1 família simples, fotos + GTIN válido), processar até `pronto`
+- [x] Selecionar e publicar pela UI; observar `familias.erro_mensagem` se falhar
+- [x] Iterar os 3 pontos de descoberta (GTIN/listing_type/foto) re-deployando o worker
+- [x] Validar 1 publicação real bem-sucedida (anúncio no ML com fotos/cores/preço; ids persistidos)
+- [x] Atualizar os testes de `montarPayloadItem` para o formato final + ADR de fechamento se surgir decisão nova
+- [x] (UPDATE validado em blocos seguintes — lotes #28/#31)
 
 ---
 
