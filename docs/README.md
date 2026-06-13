@@ -61,6 +61,12 @@ docs/
 | Como o refresh de token OAuth ML evita corrida (lock Redis) | [decisions/0012](decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) |
 | Como o ingest trata edge cases da planilha (duplicado, órfão, PAI vazio) | [decisions/0013](decisions/0013-edge-cases-da-planilha-no-ingest.md) |
 | Como a busca de concorrência no ML funciona (granularidade, GTIN→título) | [decisions/0014](decisions/0014-busca-de-concorrencia.md) |
+| **Visão de evolução para SaaS multicanal** (Shopee/Amazon, multi-tenant, billing, qualquer produto) | [superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md) |
+| Camada de abstração de canais (Ports & Adapters) | [decisions/0024](decisions/0024-camada-de-abstracao-de-canais.md) |
+| Modelo de dados multicanal (`anuncios_externos`) | [decisions/0025](decisions/0025-modelo-de-dados-multicanal.md) |
+| Generalização da categorização/atributos por IA | [decisions/0026](decisions/0026-generalizacao-categorizacao-atributos-por-ia.md) |
+| Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
+| Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
 ## Status do projeto
 

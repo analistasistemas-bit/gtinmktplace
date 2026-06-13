@@ -250,6 +250,29 @@ Sistema em uso recorrente; operador é autônomo no fluxo principal.
 
 ---
 
+## 🚀 Evolução v2 — SaaS multicanal (pós-MVP)
+
+**Status:** 📋 Planejado (documento mestre aprovado 2026-06-13)
+**Documento:** [superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)
+
+Transformar o PubliAI de ferramenta interna (ML-only, single-operador, aviamentos) em **SaaS
+multi-tenant, multi-marketplace, para qualquer produto** — comercializável. Abordagem *strangler fig*
+(evoluir in-place, sem big-bang), em 4 fases / 9 épicos:
+
+| Fase | Épicos | Entrega |
+|---|---|---|
+| **0 — Fundação** | E1 Camada de abstração de canais · E2 Modelo de dados multicanal (`anuncios_externos`) | ML atrás de uma interface; catálogo agnóstico (sem mudança visível) |
+| **1 — Qualquer produto** | E3 Taxonomia canônica + categoria por IA · E4 Atributos por IA (closed-set) | Sai do regex por nicho; aceita qualquer segmento |
+| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal | Publica em ML + Shopee de uma fonte única |
+| **3 — Virar SaaS** | E7 Multi-tenancy · E8 Billing (Asaas) + LGPD · E9 Operação SaaS | Multi-cliente, cobrável, escalável |
+
+**Decisões-chave:** strangler in-place (D1) · Shopee como 2º canal (D2) · assinatura por planos + metering
+de IA (D3) · IA híbrida + regras por vertical (D4). ADR stubs: 0024 (abstração), 0025 (dados multicanal),
+0026 (IA genérica), 0027 (multi-tenancy), 0028 (billing). Cada épico vira seu próprio `spec → plano →
+subagent-driven` quando iniciado.
+
+---
+
 ## Trilho paralelo — App Mercado Livre Developers
 
 **Status:** ✅ Pronto pra M4 (2026-05-27)
@@ -297,12 +320,12 @@ Repetido do design para enfatizar:
 
 ## Escopo fora do MVP
 
-Itens explicitamente para versões futuras:
+Itens explicitamente para versões futuras (vários agora **planejados** na [Evolução v2 — SaaS multicanal](#-evolução-v2--saas-multicanal-pós-mvp)):
 
-- ❌ Outros marketplaces (Shopee, Magalu, Amazon) — v2
-- ❌ Tecidos — v2 ([ADR-0002](decisions/0002-mvp-aviamentos-primeiro.md))
+- 📋 Outros marketplaces (Shopee, Magalu, Amazon) — **Evolução v2, Fase 2** (E5/E6)
+- ❌ Tecidos — v2 ([ADR-0002](decisions/0002-mvp-aviamentos-primeiro.md)); coberto pela generalização por IA (Fase 1)
 - ❌ Sincronização contínua sem re-importar planilha — v3
-- ❌ Multi-usuário com permissões diferentes — v3
+- 📋 Multi-usuário com permissões diferentes — **Evolução v2, Fase 3** (E7 multi-tenancy)
 - ❌ Análise de performance pós-publicação (vendas, visualizações)
 - ❌ Bot/IA respondendo perguntas no ML
 - ❌ Sincronização de estoque em tempo real
@@ -337,3 +360,4 @@ Itens explicitamente para versões futuras:
 | 2026-05-27 | Trilho paralelo ML ✅ | App PubliAI criada no portal ML Developers em ~15 min (vs 1-4 semanas temidas). Client ID `5907788004648058`, fluxos Authorization Code + Refresh Token, permissões "Publicação e sincronização" + "Usuários" (leitura e escrita). Redirect URI aponta para Edge Function `ml-oauth-callback` (a criar em M4) — decisão registrada em ADR-0011. Certificação dispensada (uso interno). M4 sem mais dependências externas. |
 | 2026-05-28 | M3 ✅ via Plano 04 (20 tasks Subagent-Driven Development) | Pipeline IA real: parser cor PT-BR (dicionário 42 cores), Vision (gpt-4o) com prompt conservador, Copywriter (gpt-4o-mini) com structured output JSON Schema, cache Redis TTL 90d, custos capturados por família. UI: badges cor_origem, drop zone para upload posterior de imagens, ícone câmera por variação, alerta sem cor. Edge functions deployadas: process-familia v11, upload-imagens-lote v1, invalidar-cache-cor v1. Assinatura QStash restaurada (rotacionada via console Upstash, secrets atualizados no Supabase). Bug bash com 4 famílias reais → 5 ajustes no prompt → Diego aprovou. 86 testes passando. M4 (Integração ML) liberado. |
 | 2026-05-28 | M3.1 ✅ (foto-capa + polimento UX, mesmo dia) | 12 tasks subagent-driven: migration `capa_storage_path`, helper `classificarArquivo` (6 testes), upload-imagens-lote v5 (CAPA_), componente FotoCapaFamilia (3 testes), card Trocar/Remover, contadores capas_ok/sem_match. Ajustes adicionais: barra de progresso real em chunks de 5, template de descrição com seções emoji (process-familia v12), botão regenerar por família (regenerar-copy-familia v1), badge cor_origem compacto com tooltip CSS-only, GTIN/EAN editável por variação. 101/101 testes passando. |
+| 2026-06-13 | 🚀 Evolução v2 — SaaS multicanal **planejada** | Documento mestre aprovado: north-star + arquitetura-alvo (3 camadas: produto canônico → listing por canal → conector) + roadmap de 4 fases / 9 épicos (strangler fig), embasado em pesquisa multi-agente de fundações. 4 decisões estratégicas travadas (in-place, Shopee, planos+metering, IA híbrida). 5 ADR stubs criados (0024–0028). Spec: `superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md`. |
