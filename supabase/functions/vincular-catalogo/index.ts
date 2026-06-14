@@ -3,6 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { vincularVariacoesCatalogo } from '../_shared/ml/catalogo.ts';
+import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 
 interface Job { familia_id: string; }
 
@@ -24,7 +25,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: familia } = await admin.from('familias')
-    .select('user_id, ml_item_id').eq('id', job.familia_id).single();
+    .select('user_id, codigo_pai, ml_item_id, ml_permalink, publicado_em').eq('id', job.familia_id).single();
   // Sem item publicado não há o que vincular (família removida/erro) — encerra sem retry.
   if (!familia?.ml_item_id) {
     return new Response(JSON.stringify({ skip: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -46,6 +47,19 @@ Deno.serve(async (req) => {
     if (resumo.pendente > 0) {
       return new Response(`elegibilidade ainda não computada (${resumo.pendente} pendentes)`, { status: 500, headers: corsHeaders });
     }
+    // E2 (ADR-0025): opt-in assentou — reflete o estado de catálogo no mapa variacoes_externas
+    // (best-effort). Recarrega as variações já com os catalog_* persistidos pelo passo acima.
+    const { data: varsEspelho } = await admin.from('variacoes')
+      .select('codigo, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
+      .eq('familia_id', job.familia_id);
+    await espelharAnuncioExterno(admin, {
+      user_id: familia.user_id,
+      codigo_pai: familia.codigo_pai,
+      ml_item_id: familia.ml_item_id,
+      ml_permalink: familia.ml_permalink ?? null,
+      publicado_em: familia.publicado_em ?? null,
+    }, varsEspelho ?? []);
+
     return new Response(JSON.stringify({ item: familia.ml_item_id, resumo }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
     // Erro transitório (token/rede) → 500 p/ retry. O passo é best-effort e idempotente.
