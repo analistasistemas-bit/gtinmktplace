@@ -3,7 +3,7 @@
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
 **Última atualização:** 2026-06-14 — MVP em produção (M0–M4 entregues; histórico detalhado no CLAUDE.md). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
-**📍 Passo atual:** Evolução v2 · Fase 0 · **E1 (CREATE) ✅ VALIDADO EM PRODUÇÃO** (2026-06-14) — mergeado, deployado e bug bash real via automação de navegador (publicou `MLB6966315202` pelo conector; anúncio removido após). **Próximo épico: E1b** (abstração do UPDATE + status).
+**📍 Passo atual:** Evolução v2 · Fase 0 · **E1 + E1b ✅ VALIDADOS EM PRODUÇÃO** (2026-06-14) — toda a camada de abstração de canais (CREATE + UPDATE + status) está atrás do `ChannelConnector`, mergeada, deployada e validada por bug bash real via automação de navegador (E1b: família de teste CREATE→UPDATE com reposição + cor nova + leitura de status ao vivo; anúncio `MLB6966427644` removido após). **Próximo épico: E2** (modelo de dados multicanal: `anuncios_externos` 1:N).
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -550,12 +550,12 @@
 
 > Decomposição operacional do [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md). **Convenção:** após cada implementação, marco o checkbox e atualizo o **"📍 Passo atual"** no topo deste arquivo — assim você sempre sabe exatamente onde estamos. Cada épico roda em **branch isolada da `main`** (app em produção); merge → `main` + deploy só com OK do Diego.
 
-**📍 Passo atual:** Fase 0 · **E1 (CREATE) ✅ validado em produção** — bug bash real publicou `MLB6966315202` pelo conector (depois removido). Próximo: **E1b**.
+**📍 Passo atual:** Fase 0 · **E1 (CREATE) + E1b (UPDATE+status) ✅ validados em produção** — bug bash real cobriu publicação, reposição de estoque, cor nova e leitura de status ao vivo pelo conector (anúncios de teste removidos). Próximo: **E2** (dados multicanal).
 
 | Fase | Épico | Status | ADR |
 |---|---|---|---|
 | 0 | E1 Camada de abstração (CREATE) | ✅ validado em produção | 0024 |
-| 0 | E1b Abstração UPDATE + status | ⬜ | 0024 |
+| 0 | E1b Abstração UPDATE + status | ✅ validado em produção | 0024 |
 | 0 | E2 Modelo de dados multicanal | ⬜ | 0025 |
 | 1 | E3 Taxonomia canônica + categoria por IA | ⬜ | 0026 |
 | 1 | E4 Atributos por IA (closed-set) | ⬜ | 0026 |
@@ -575,12 +575,12 @@
 - [x] E1.5 religar `publish-familia-ml` via conector (comportamento idêntico) — commit `542c061`, review independente (opus) APROVADO
 - [x] E1.✅ verificação: backend 505 testes verdes + lint + diff review + review opus + **bug bash real ✅** (lote de teste via automação de navegador → publicou `MLB6966315202` pelo conector; id/variação/foto persistidos; anúncio encerrado e removido) + merge→`main` (`1118d62`) + deploy `publish-familia-ml` via CLI **validado em produção (2026-06-14)**. As falhas transientes de foto no caminho foram tratadas corretamente pelo conector (retentável → retry).
 
-**E1b — Abstração UPDATE + status** · ADR-0024
-- [ ] E1b.1 estender o contrato com `atualizarAnuncio` + `lerStatus`
-- [ ] E1b.2 implementar no `MercadoLivreConnector` (delegar a `atualizar-item`/`atualizar`/`status`)
-- [ ] E1b.3 religar `update-familia-ml` via conector
-- [ ] E1b.4 religar `status-publicados` via conector (`lerStatus`)
-- [ ] E1b.✅ verificação + bug bash + deploy (com OK do Diego)
+**E1b — Abstração UPDATE + status** · [plano](superpowers/plans/2026-06-14-e1b-abstracao-update-status.md) · ADR-0024 · ✅ **validado em produção (2026-06-14)**
+- [x] E1b.1 contrato: `atualizarAnuncio` + `sincronizarDescricao` + `lerStatus` + tipos `AtualizacaoCanonica`/`ResultadoAtualizacao`/`StatusCanal` + `status?` no `ErroCanal` — commit `d6d64bd`
+- [x] E1b.2 `MercadoLivreConnector` implementa os 3 métodos delegando a `atualizar-item`/`atualizar`/`criar-item`/`pacote`/`status`; `mapearVariacoesPorSku` (UPDATE casa só por `seller_custom_field`, TDD) — commit `d6d64bd`
+- [x] E1b.3 religar `update-familia-ml` via `conn.atualizarAnuncio`/`sincronizarDescricao`/`subirFoto` (catch/idempotência/limpeza de cache de foto preservados) — commit `a9f2510`
+- [x] E1b.4 religar `status-publicados` via `conn.lerStatus` (`semCredencialML` preservado) — commit `a9f2510`
+- [x] E1b.✅ backend 340 testes verdes + lint 0 erros + review independente (opus) **APROVADO — EQUIVALENTE** (8 pontos, `tsc` 0 erros) + merge→`main` (`08e77e5`) + deploy `update-familia-ml` v26/`status-publicados` v4/`publish-familia-ml` v25 via CLI + **bug bash real via automação de navegador**: família de teste descartável CREATE→UPDATE (reposição estoque 10→25/8→3 **+ cor nova** criada e casada via refetch; descrição "CORES DISPONÍVEIS" atualizada; estoque ao vivo 43 lido por `lerStatus` na tela Publicados) — anúncio `MLB6966427644` encerrado e todo o dado de teste removido (ML/banco/storage)
 
 **E2 — Modelo de dados multicanal** · ADR-0025
 - [ ] E2.1 migration aditiva `canais_conectados` + `anuncios_externos` (1 família → N anúncios)
