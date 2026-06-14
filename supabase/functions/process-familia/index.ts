@@ -11,8 +11,11 @@ import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
-import { detectarTipoAviamento } from '../_shared/categoria/detectar.ts';
-import { categoriaParaTipo, montarAtributosML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { resolverCategoria } from '../_shared/categoria/resolver.ts';
+import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
+import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
 
 interface Job { familia_id: string; lote_id: string; }
@@ -150,12 +153,35 @@ Deno.serve(async (req) => {
       variacoes: resolvidas.map((v) => ({ gtin: v.gtin })),
     });
 
-    // 5c. Categoria + atributos determinísticos (ADR-0009). tipo='outro' deixa
-    // categoria_ml_id null → operador escolhe na revisão (sem publicar às cegas).
+    // 5c. Categoria + atributos (ADR-0026 / E3). Resolução em camadas: override (aviamento)
+    // → preditor nativo do ML → desempate LLM (ambíguo) → manual. Token içado 1x (resolver +
+    // gross-up). Resiliente: falha de token/rede → cai p/ override-ou-'outro', nunca quebra.
     // Calculado ANTES do preço porque o gross-up usa categoriaMlId.
-    const { tipo, origem: tipoOrigem } = detectarTipoAviamento(claimed.nome_pai);
-    const categoriaMlId = categoriaParaTipo(tipo);
-    const atributosMl = montarAtributosML(tipo, claimed.nome_pai, (claimed.fornecedor as string | null) ?? undefined, claimed.descricao_pai ?? undefined);
+    let token: string | null = null;
+    try { token = await getValidAccessToken(userId); } catch (e) { console.error('token p/ categoria/preço falhou:', e); }
+
+    const fornecedor = (claimed.fornecedor as string | null) ?? undefined;
+    const cat = await resolverCategoria(
+      { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
+      {
+        preditor: (q) => (token ? buscarCategoriaPreditor(token, q) : Promise.resolve([])),
+        llm: desempatarCategoriaLLM,
+      },
+    );
+    const tipo = cat.tipo;
+    const categoriaMlId = cat.categoriaId;
+
+    let atributosMl: AtributoML[] = [];
+    let faltantes: string[] = [];
+    if (cat.origem === 'regex') {
+      atributosMl = montarAtributosML(tipo, claimed.nome_pai, fornecedor, claimed.descricao_pai ?? undefined);
+    } else if (categoriaMlId && token) {
+      try {
+        const schema = await lerSchemaAtributos(token, categoriaMlId);
+        atributosMl = montarAtributosBase(schema, claimed.nome_pai, fornecedor);
+        faltantes = atributosFaltantesGenerico(atributosMl, schema);
+      } catch (e) { console.error('schema de atributos falhou:', e); }
+    }
 
     // 5d. Estratégia de preço v2 (ADR-0020). PRECO = líquido mínimo desejado.
     // Com concorrente → mercado (× 0,95). Sem concorrente → gross-up (busca comissão 1x).
@@ -166,9 +192,8 @@ Deno.serve(async (req) => {
     const competitivo = conc.vendedores > 0 && conc.preco_min != null;
 
     let comissao: { percentual: number; fixa: number } | null = null;
-    if (!competitivo && categoriaMlId) {
+    if (!competitivo && categoriaMlId && token) {
       try {
-        const token = await getValidAccessToken(userId);
         // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
         // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
         const lp = await buscarListingPrice(token, PRECO_REF_COMISSAO, categoriaMlId, 'gold_special');
@@ -213,9 +238,11 @@ Deno.serve(async (req) => {
       estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
       tipo_aviamento: tipo,
-      tipo_origem: tipoOrigem === 'ia' || tipoOrigem === 'manual' ? tipoOrigem : 'regex',
+      tipo_origem: cat.origem,
       categoria_ml_id: categoriaMlId,
+      categoria_nome: cat.categoriaNome,
       atributos_ml: atributosMl,
+      atributos_faltantes: faltantes,
       analise_mercado: analiseMercado,
       status: 'pronto',
     }).eq('id', job.familia_id);
