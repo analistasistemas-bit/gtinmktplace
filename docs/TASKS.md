@@ -3,7 +3,7 @@
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
 **Última atualização:** 2026-06-14 — MVP em produção (M0–M4 entregues; histórico detalhado no CLAUDE.md). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
-**📍 Passo atual:** Evolução v2 · Fase 0 · **E1 (CREATE) — código pronto e revisado** (5/5 tasks; backend 505 testes verdes, lint limpo, review independente APROVADO). Pendente: **bug bash com token real** + merge→`main` + deploy (com OK do Diego). Próximo épico: E1b (UPDATE + status).
+**📍 Passo atual:** Evolução v2 · Fase 0 · **E1 (CREATE) ✅ VALIDADO EM PRODUÇÃO** (2026-06-14) — mergeado, deployado e bug bash real via automação de navegador (publicou `MLB6966315202` pelo conector; anúncio removido após). **Próximo épico: E1b** (abstração do UPDATE + status).
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -550,11 +550,11 @@
 
 > Decomposição operacional do [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md). **Convenção:** após cada implementação, marco o checkbox e atualizo o **"📍 Passo atual"** no topo deste arquivo — assim você sempre sabe exatamente onde estamos. Cada épico roda em **branch isolada da `main`** (app em produção); merge → `main` + deploy só com OK do Diego.
 
-**📍 Passo atual:** Fase 0 · **E1 (CREATE) — código pronto e revisado**, aguardando bug bash com token real + merge→`main` + deploy (OK do Diego).
+**📍 Passo atual:** Fase 0 · **E1 (CREATE) ✅ validado em produção** — bug bash real publicou `MLB6966315202` pelo conector (depois removido). Próximo: **E1b**.
 
 | Fase | Épico | Status | ADR |
 |---|---|---|---|
-| 0 | E1 Camada de abstração (CREATE) | 🟢 código pronto (aguarda bug bash + merge) | 0024 |
+| 0 | E1 Camada de abstração (CREATE) | ✅ validado em produção | 0024 |
 | 0 | E1b Abstração UPDATE + status | ⬜ | 0024 |
 | 0 | E2 Modelo de dados multicanal | ⬜ | 0025 |
 | 1 | E3 Taxonomia canônica + categoria por IA | ⬜ | 0026 |
@@ -567,13 +567,13 @@
 
 ### Fase 0 — Fundação (sem mudança visível)
 
-**E1 — Camada de abstração de canais (CREATE)** · [plano](superpowers/plans/2026-06-14-e1-camada-abstracao-canais.md) · ADR-0024 · 🟢 **código pronto**
+**E1 — Camada de abstração de canais (CREATE)** · [plano](superpowers/plans/2026-06-14-e1-camada-abstracao-canais.md) · ADR-0024 · ✅ **validado em produção**
 - [x] E1.1 `contrato.ts` — `ChannelConnector` + tipos canônicos (`AnuncioCanonico`, `ResultadoCanal`, `Capabilities`, `RefAnuncio`) — commit `d64e256`
 - [x] E1.2 `mapeamento.ts` — puras `mapearVariacoesExternas` + `classificarErroCanal` (TDD, 6 testes) — commit `e8f0116`
 - [x] E1.3 `mercado-livre.ts` — `MercadoLivreConnector` delegando ao `_shared/ml` — commit `540066b`
 - [x] E1.4 `registry.ts` — `getConnector` (TDD, 2 testes) — commit `bc61f95`
 - [x] E1.5 religar `publish-familia-ml` via conector (comportamento idêntico) — commit `542c061`, review independente (opus) APROVADO
-- [ ] E1.✅ verificação final: backend 505 testes verdes + lint limpo + diff review ✅; **falta bug bash com token real** + merge→main + deploy via CLI (com OK do Diego)
+- [x] E1.✅ verificação: backend 505 testes verdes + lint + diff review + review opus + **bug bash real ✅** (lote de teste via automação de navegador → publicou `MLB6966315202` pelo conector; id/variação/foto persistidos; anúncio encerrado e removido) + merge→`main` (`1118d62`) + deploy `publish-familia-ml` via CLI **validado em produção (2026-06-14)**. As falhas transientes de foto no caminho foram tratadas corretamente pelo conector (retentável → retry).
 
 **E1b — Abstração UPDATE + status** · ADR-0024
 - [ ] E1b.1 estender o contrato com `atualizarAnuncio` + `lerStatus`
