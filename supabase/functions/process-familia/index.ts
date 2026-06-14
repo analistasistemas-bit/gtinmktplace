@@ -16,6 +16,7 @@ import { resolverCategoria } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
+import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
 
 interface Job { familia_id: string; lote_id: string; }
@@ -178,9 +179,15 @@ Deno.serve(async (req) => {
     } else if (categoriaMlId && token) {
       try {
         const schema = await lerSchemaAtributos(token, categoriaMlId);
-        atributosMl = montarAtributosBase(schema, claimed.nome_pai, fornecedor);
+        const base = montarAtributosBase(schema, claimed.nome_pai, fornecedor);
+        // E4: IA preenche os obrigatórios closed-set (ex.: VOLTAGE) escolhendo dentro de values[].
+        atributosMl = await preencherAtributosClosedSet(
+          schema, base,
+          { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
+          desempatarAtributosLLM,
+        );
         faltantes = atributosFaltantesGenerico(atributosMl, schema);
-      } catch (e) { console.error('schema de atributos falhou:', e); }
+      } catch (e) { console.error('schema/atributos falhou:', e); }
     }
 
     // 5d. Estratégia de preço v2 (ADR-0020). PRECO = líquido mínimo desejado.

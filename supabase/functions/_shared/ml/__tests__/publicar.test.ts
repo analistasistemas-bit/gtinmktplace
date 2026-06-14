@@ -184,3 +184,24 @@ describe('ordenarVariacoesPrincipal', () => {
       .toEqual(['00000001', '00000002', '00000003']);
   });
 });
+
+describe('montarPayloadItem aceitaEmptyGtin override (E4 — categoria prevista)', () => {
+  // MLB189007 (furadeira) NÃO está no Set hard-coded; sem o override não enviaria EMPTY_GTIN_REASON.
+  const prevista = { titulo_ml: 'Furadeira', descricao_ml: 'D', categoria_ml_id: 'MLB189007', atributos_ml: [{ id: 'BRAND', value_name: 'Bosch' }] };
+  const semGtin = [{ codigo: '900A', cor: 'Preto', estoque: 5, preco_publicacao: 99, gtin: null, ml_picture_id: 'P1' }];
+
+  it('override=true → variação sem GTIN recebe EMPTY_GTIN_REASON', () => {
+    const p = montarPayloadItem(prevista, semGtin, 'CAPA', null, null, 'gold_special', null, null, true);
+    expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
+  });
+  it('override ausente (undefined) e fora do Set hard-coded → não envia EMPTY_GTIN_REASON', () => {
+    const p = montarPayloadItem(prevista, semGtin, 'CAPA');
+    const ids = (p.variations[0].attributes ?? []).map((a) => a.id);
+    expect(ids).not.toContain('EMPTY_GTIN_REASON');
+  });
+  it('override=false → não envia (categoria não expõe o atributo)', () => {
+    const p = montarPayloadItem(prevista, semGtin, 'CAPA', null, null, 'gold_special', null, null, false);
+    const ids = (p.variations[0].attributes ?? []).map((a) => a.id);
+    expect(ids).not.toContain('EMPTY_GTIN_REASON');
+  });
+});
