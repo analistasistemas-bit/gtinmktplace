@@ -1,4 +1,5 @@
 import type { TipoAviamento } from './detectar.ts';
+import type { AtributoSchema } from './schema.ts';
 
 export interface AtributoML {
   id: string;
@@ -8,6 +9,15 @@ export interface AtributoML {
 
 // Marca padrão (fallback do fornecedor) — decisão de negócio do Diego, 2026-06-01.
 const MARCA = 'Avil';
+
+// Rótulo humano por tipo de aviamento (espelha CATEGORIAS_MANUAIS do front).
+const ROTULO_POR_TIPO: Record<TipoAviamento, string | null> = {
+  linha: 'Fios e Cadarços',
+  fita: 'Fita de Cetim',
+  botao: 'Botões',
+  cola: 'Bastões de Cola',
+  outro: null,
+};
 
 // Categorias-folha reais do ML (validadas via API em 2026-06-01). Ver Adendo do ADR-0009.
 const CATEGORIA_POR_TIPO: Record<TipoAviamento, string | null> = {
@@ -76,6 +86,39 @@ function normalizar(s: string): string {
 
 export function categoriaParaTipo(tipo: TipoAviamento): string | null {
   return CATEGORIA_POR_TIPO[tipo];
+}
+
+/** Rótulo humano do tipo de aviamento (override). 'outro' → null. */
+export function rotuloParaTipo(tipo: TipoAviamento): string | null {
+  return ROTULO_POR_TIPO[tipo];
+}
+
+// GTIN e EMPTY_GTIN_REASON são resolvidos por variação na publicação (lógica de GTIN
+// existente), não no nível da família → não entram na lista de "faltantes" da Revisão.
+const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON']);
+
+/**
+ * Atributos determinísticos universais para uma categoria PREVISTA (sem override): só o
+ * que dá para saber sem IA — BRAND (fornecedor) e MODEL (nome). Atributos com closed-set
+ * (ex.: VOLTAGE) ficam vazios → o E4 preenche por IA. Só inclui o que o schema expõe.
+ */
+export function montarAtributosBase(schema: AtributoSchema[], nome: string, marca?: string): AtributoML[] {
+  const ids = new Set(schema.map((a) => a.id));
+  const attrs: AtributoML[] = [];
+  if (ids.has('BRAND')) attrs.push({ id: 'BRAND', value_name: marca?.trim() || MARCA });
+  if (ids.has('MODEL')) attrs.push({ id: 'MODEL', value_name: nome });
+  return attrs;
+}
+
+/**
+ * Lista (nomes) dos atributos obrigatórios da categoria ainda NÃO preenchidos, lendo o
+ * schema dinâmico da API (ADR-0026). Ignora GTIN/EMPTY_GTIN_REASON (resolvidos na publicação).
+ */
+export function atributosFaltantesGenerico(temAtributos: AtributoML[], schema: AtributoSchema[]): string[] {
+  const presentes = new Set(temAtributos.filter((a) => a.value_name || a.value_id).map((a) => a.id));
+  return schema
+    .filter((a) => (a.required || a.conditionalRequired) && !FALTANTES_IGNORAR.has(a.id) && !presentes.has(a.id))
+    .map((a) => a.nome);
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */
