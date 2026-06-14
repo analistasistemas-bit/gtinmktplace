@@ -550,15 +550,15 @@
 
 > Decomposição operacional do [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md). **Convenção:** após cada implementação, marco o checkbox e atualizo o **"📍 Passo atual"** no topo deste arquivo — assim você sempre sabe exatamente onde estamos. Cada épico roda em **branch isolada da `main`** (app em produção); merge → `main` + deploy só com OK do Diego.
 
-**📍 Passo atual:** Fase 0 · **E1 + E1b + E2 ✅ validados em produção** — toda a camada de abstração de canais (CREATE+UPDATE+status) + o modelo de dados multicanal `anuncios_externos` (1 produto → N anúncios, dual-write) estão em produção. Bug bash real do E2 via browser cobriu CREATE→UPDATE→catálogo com o espelho conferido a cada passo. Próximo: **E3** (taxonomia canônica + categoria por IA).
+**📍 Passo atual:** Evolução SaaS · Fase 1 · **E1 + E1b + E2 + E3 + E4 ✅ validados em produção** — a camada de canais, o modelo multicanal `anuncios_externos`, a categoria genérica e os atributos por IA closed-set estão em produção. Bug bash real do E4 cobriu publicação de vertical nova pela UI (`MLB4779431383`, depois removido do sistema; `anuncios_externos` voltou a 21). Próximo: **E5** (conector Shopee, ADR-0027).
 
 | Fase | Épico | Status | ADR |
 |---|---|---|---|
 | 0 | E1 Camada de abstração (CREATE) | ✅ validado em produção | 0024 |
 | 0 | E1b Abstração UPDATE + status | ✅ validado em produção | 0024 |
 | 0 | E2 Modelo de dados multicanal | ✅ validado em produção | 0025 |
-| 1 | E3 Taxonomia canônica + categoria por IA | ⬜ | 0026 |
-| 1 | E4 Atributos por IA (closed-set) | ⬜ | 0026 |
+| 1 | E3 Taxonomia canônica + categoria por IA | ✅ validado em produção | 0026 |
+| 1 | E4 Atributos por IA (closed-set) | ✅ validado em produção | 0026 |
 | 2 | E5 Conector Shopee | ⬜ | (a criar) |
 | 2 | E6 Orquestração multicanal | ⬜ | (a criar) |
 | 3 | E7 Multi-tenancy | ⬜ | 0027 |
@@ -592,18 +592,17 @@
 
 ### Fase 1 — "Qualquer produto"
 
-**E3 — Taxonomia canônica + resolução de categoria por IA** · ADR-0026
-- [ ] E3.1 adotar/derivar taxonomia canônica interna (base Shopify) — tabela `taxonomia_canonica`
-- [ ] E3.2 tabela `mapping_categoria_canal` (canal, canonical_id, category_id) + cache Redis
-- [ ] E3.3 resolução de categoria: override por vertical → preditor nativo (`domain_discovery`) → LLM desempate
-- [ ] E3.4 schema dinâmico de atributos via `/categories/{id}/attributes` (cacheado)
+**E3 — Categoria genérica + schema dinâmico** · [spec](superpowers/specs/2026-06-14-e3-categoria-generica-design.md) · ADR-0026 · ✅ **validado em produção (2026-06-14)**
+- [x] E3.1 resolução em camadas: override por vertical → preditor nativo ML (`domain_discovery`) → LLM desempate closed-set → manual
+- [x] E3.2 schema dinâmico de atributos via `/categories/{id}/attributes` (cache Redis) + persistência de `categoria_nome`/`atributos_faltantes`
+- [x] E3.3 UI da Revisão mostra categoria prevista, origem e faltantes; aviamentos mantêm override determinístico sem regressão
+- [x] E3.✅ 25 testes novos, review independente aprovado, deploy via CLI e bug bash real via browser-use
 
-**E4 — Preenchimento de atributos por IA (closed-set) + validação** · ADR-0026
-- [ ] E4.1 LLM extrai valores escolhendo dentro de `values[]` permitidos (closed-set)
-- [ ] E4.2 generalizar `atributos.ts` → "schema dinâmico + registro de overrides por vertical" (aviamentos sem regressão)
-- [ ] E4.3 validação contra `required` + correção fuzzy + defaults seguros
-- [ ] E4.4 UI: selo "sugerido por IA — confirme" + seletor manual + `tipo_origem`/confiança + log de correções
-- [ ] E4.✅ bug bash com produto de vertical nova (token real)
+**E4 — Preenchimento de atributos por IA (closed-set) + validação** · [spec](superpowers/specs/2026-06-14-e4-atributos-ia-closed-set-design.md) · ADR-0026 · ✅ **validado em produção (2026-06-14)**
+- [x] E4.1 LLM extrai valores escolhendo dentro de `values[]` permitidos (closed-set), sem inventar `value_id`
+- [x] E4.2 gate de publicação generalizado para categoria prevista/manual e aviamentos sem regressão
+- [x] E4.3 `EMPTY_GTIN_REASON` generalizado por schema da categoria quando suportado pelo ML
+- [x] E4.✅ 14 testes novos, review independente sem bloqueios, deploy via CLI, publicação real de vertical nova pela UI (`MLB4779431383`) e limpeza total do dado de teste (`anuncios_externos` voltou a 21)
 
 ### Fase 2 — 2º canal
 
