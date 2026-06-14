@@ -2,8 +2,8 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-06-01 — **busca de concorrência (Tasks 8–10) ✅ CONCLUÍDA**. Bug bash do lote #5 validou o pipeline v15 ponta a ponta com token real: 3 famílias com concorrência (FITA N.3 → 6 vend./R$12,62; LINHA XIK → 6/R$12,90; FITA N.9 → 9/R$17,99) + 1 fora do catálogo (LINHA 1500MT → `gtin`/0, resiliência OK). 125 testes verdes.
-**Próximo passo recomendado:** **estratégia de preço condicional** (ADR-0008) — consome `concorrencia_*`.
+**Última atualização:** 2026-06-14 — MVP em produção (M0–M4 entregues; histórico detalhado no CLAUDE.md). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
+**📍 Passo atual:** Evolução v2 · Fase 0 · **Épico E1 (camada de abstração — CREATE)** — plano escrito (`plans/2026-06-14-e1-camada-abstracao-canais.md`), aguardando execução.
 
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
@@ -43,6 +43,7 @@
 | M5 — Polimento e testes | ⬜ |
 | M6 — Lançamento | ⬜ |
 | Trilho paralelo: app ML Developers | ✅ (criada em 2026-05-27, certificação dispensada — uso interno) |
+| 🚀 Evolução v2 — SaaS multicanal | 🟡 em andamento (Fase 0 / Épico E1) — ver [seção dedicada](#-evolução-v2--saas-multicanal) |
 
 ---
 
@@ -542,6 +543,110 @@
 - [ ] Medir tempo médio de revisão pelo operador — `~1h`
 - [ ] Medir taxa de aprovação sem edição (proxy de qualidade IA) — `~1h`
 - [ ] Medir custo operacional mensal real — `~1h`
+
+---
+
+## 🚀 Evolução v2 — SaaS multicanal
+
+> Decomposição operacional do [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md). **Convenção:** após cada implementação, marco o checkbox e atualizo o **"📍 Passo atual"** no topo deste arquivo — assim você sempre sabe exatamente onde estamos. Cada épico roda em **branch isolada da `main`** (app em produção); merge → `main` + deploy só com OK do Diego.
+
+**📍 Passo atual:** Fase 0 · **E1 (CREATE)** — plano escrito, aguardando execução (modo subagent-driven vs inline).
+
+| Fase | Épico | Status | ADR |
+|---|---|---|---|
+| 0 | E1 Camada de abstração (CREATE) | 🟡 plano pronto | 0024 |
+| 0 | E1b Abstração UPDATE + status | ⬜ | 0024 |
+| 0 | E2 Modelo de dados multicanal | ⬜ | 0025 |
+| 1 | E3 Taxonomia canônica + categoria por IA | ⬜ | 0026 |
+| 1 | E4 Atributos por IA (closed-set) | ⬜ | 0026 |
+| 2 | E5 Conector Shopee | ⬜ | (a criar) |
+| 2 | E6 Orquestração multicanal | ⬜ | (a criar) |
+| 3 | E7 Multi-tenancy | ⬜ | 0027 |
+| 3 | E8 Billing (Asaas) + LGPD | ⬜ | 0028 |
+| 3 | E9 Operação SaaS | ⬜ | (a criar) |
+
+### Fase 0 — Fundação (sem mudança visível)
+
+**E1 — Camada de abstração de canais (CREATE)** · [plano](superpowers/plans/2026-06-14-e1-camada-abstracao-canais.md) · ADR-0024
+- [ ] E1.1 `contrato.ts` — `ChannelConnector` + tipos canônicos (`AnuncioCanonico`, `ResultadoCanal`, `Capabilities`, `RefAnuncio`)
+- [ ] E1.2 `mapeamento.ts` — puras `mapearVariacoesExternas` + `classificarErroCanal` (TDD)
+- [ ] E1.3 `mercado-livre.ts` — `MercadoLivreConnector` delegando ao `_shared/ml`
+- [ ] E1.4 `registry.ts` — `getConnector` (TDD)
+- [ ] E1.5 religar `publish-familia-ml` via conector (comportamento idêntico)
+- [ ] E1.✅ verificação: suíte verde + tsc + lint + build + diff review + **bug bash token real** + deploy via CLI (com OK do Diego)
+
+**E1b — Abstração UPDATE + status** · ADR-0024
+- [ ] E1b.1 estender o contrato com `atualizarAnuncio` + `lerStatus`
+- [ ] E1b.2 implementar no `MercadoLivreConnector` (delegar a `atualizar-item`/`atualizar`/`status`)
+- [ ] E1b.3 religar `update-familia-ml` via conector
+- [ ] E1b.4 religar `status-publicados` via conector (`lerStatus`)
+- [ ] E1b.✅ verificação + bug bash + deploy (com OK do Diego)
+
+**E2 — Modelo de dados multicanal** · ADR-0025
+- [ ] E2.1 migration aditiva `canais_conectados` + `anuncios_externos` (1 família → N anúncios)
+- [ ] E2.2 backfill dos `ml_item_id`/`ml_variation_id`/`ml_permalink` atuais → `anuncios_externos`
+- [ ] E2.3 view de compatibilidade reexpondo os campos `ml_*` (evita big-bang no frontend)
+- [ ] E2.4 workers leem/gravam estado de publicação em `anuncios_externos`
+- [ ] E2.5 (diferido) remover colunas `ml_*` de `familias`/`variacoes` quando o frontend migrar
+
+### Fase 1 — "Qualquer produto"
+
+**E3 — Taxonomia canônica + resolução de categoria por IA** · ADR-0026
+- [ ] E3.1 adotar/derivar taxonomia canônica interna (base Shopify) — tabela `taxonomia_canonica`
+- [ ] E3.2 tabela `mapping_categoria_canal` (canal, canonical_id, category_id) + cache Redis
+- [ ] E3.3 resolução de categoria: override por vertical → preditor nativo (`domain_discovery`) → LLM desempate
+- [ ] E3.4 schema dinâmico de atributos via `/categories/{id}/attributes` (cacheado)
+
+**E4 — Preenchimento de atributos por IA (closed-set) + validação** · ADR-0026
+- [ ] E4.1 LLM extrai valores escolhendo dentro de `values[]` permitidos (closed-set)
+- [ ] E4.2 generalizar `atributos.ts` → "schema dinâmico + registro de overrides por vertical" (aviamentos sem regressão)
+- [ ] E4.3 validação contra `required` + correção fuzzy + defaults seguros
+- [ ] E4.4 UI: selo "sugerido por IA — confirme" + seletor manual + `tipo_origem`/confiança + log de correções
+- [ ] E4.✅ bug bash com produto de vertical nova (token real)
+
+### Fase 2 — 2º canal
+
+**E5 — Conector Shopee** · ADR a criar · [deep-dive §8.1 do doc mestre]
+- [ ] E5.1 registrar app no Shopee Open Platform (`partner_id`/`partner_key`); confirmar requisitos BR no portal logado
+- [ ] E5.2 `ShopeeConnector`: auth OAuth + HMAC-SHA256 + refresh proativo (lock Redis, reusar ADR-0012); `capabilities`
+- [ ] E5.3 mapeador `AnuncioCanonico → add_item` (item + `tier_variation`/`models`); upload `media_space`; categoria + `get_attribute_tree` + `brand`
+- [ ] E5.4 `update_stock`/`update_price`/`lerStatus`
+- [ ] E5.5 classificador de erro Shopee → enum canônico
+- [ ] E5.6 bug bash com token real Shopee BR (GTIN/EAN: `3000*` não passa — depende do E3/E4)
+
+**E6 — Orquestração multicanal** · ADR a criar
+- [ ] E6.1 `publicar-familias` aceita `{ familia_ids, canais[] }`
+- [ ] E6.2 worker genérico `publicar-anuncio` (`{ familia_id, canal }`); idempotência por `(familia,canal)`
+- [ ] E6.3 fan-out com delay escalonado por canal (rate limit)
+- [ ] E6.4 reconciliação: `lerStatus` por `(familia,canal)`
+- [ ] E6.5 frontend: seleção de canais na Revisão + status por canal em Publicados
+
+### Fase 3 — Virar SaaS comercial (só quando houver interessado externo)
+
+**E7 — Multi-tenancy** · ADR-0027
+- [ ] E7.1 migration: `organizations` + `organization_members` + `organization_invitations` + enum `org_role` + funções `is_member_of`/`has_role_on_org`
+- [ ] E7.2 `org_id` aditivo em `lotes`/`familias`/`variacoes`/`anuncios_externos` + backfill (org pessoal) + índices
+- [ ] E7.3 trocar policies `user_id=auth.uid()` → `is_member_of(org_id)` (manter `user_id` como criado_por)
+- [ ] E7.4 `ml_credentials` → `marketplace_connections` (org+canal+conta); helpers Vault por `connection_id`
+- [ ] E7.5 🔴 blindar edge functions (resolver+validar `org_id` do JWT antes de tocar segredos)
+- [ ] E7.6 onboarding self-serve (`handle_new_user` + `accept-invite`) + troca de org ativa no frontend
+- [ ] E7.7 `lotes.numero` global → sequência por org
+- [ ] E7.✅ validar isolamento (get_advisors security + teste cross-tenant)
+
+**E8 — Billing (Asaas) + LGPD** · ADR-0028
+- [ ] E8.1 integrar Asaas (Pix/boleto/cartão recorrente + Pix Automático)
+- [ ] E8.2 tabelas `assinaturas` + `uso_ciclo` (RLS por org)
+- [ ] E8.3 edge `webhook-asaas` (HMAC + idempotência) + reconciliação por cron
+- [ ] E8.4 entitlements/gating server-side (checar limite antes do claim; medir anúncios ATIVOS; repasse de IA com franquia+teto)
+- [ ] E8.5 planos (Free/Starter/Pro/Scale)
+- [ ] E8.6 LGPD: `audit_log` por org + DPA + export/exclusão de titular
+
+**E9 — Operação SaaS**
+- [ ] E9.1 observabilidade por canal (erro/latência/rate-limit) + alertas
+- [ ] E9.2 gestão de rate-limit por canal (token bucket) no fan-out
+- [ ] E9.3 painel de saúde de integração
+- [ ] E9.4 suporte: logs por tenant + replay de job + fila de exceções
+- [ ] E9.5 Supabase: pooler Supavisor (transaction mode) nas edges + revisão de plano/custo
 
 ---
 
