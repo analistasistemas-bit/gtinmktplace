@@ -89,6 +89,7 @@ export type Database = {
       familias: {
         Row: {
           analise_mercado: Json | null
+          atributos_faltantes: Json | null
           atributos_ml: Json
           atualizado_em: string
           capa_ml_picture_id: string | null
@@ -98,6 +99,7 @@ export type Database = {
           capa3_ml_picture_id: string | null
           capa3_storage_path: string | null
           categoria_ml_id: string | null
+          categoria_nome: string | null
           codigo_pai: string
           concorrencia_classe: Database["public"]["Enums"]["classe_concorrencia"]
           concorrencia_origem: Database["public"]["Enums"]["origem_concorrencia"]
@@ -143,6 +145,7 @@ export type Database = {
         }
         Insert: {
           analise_mercado?: Json | null
+          atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
           capa_ml_picture_id?: string | null
@@ -152,6 +155,7 @@ export type Database = {
           capa3_ml_picture_id?: string | null
           capa3_storage_path?: string | null
           categoria_ml_id?: string | null
+          categoria_nome?: string | null
           codigo_pai: string
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
           concorrencia_origem?: Database["public"]["Enums"]["origem_concorrencia"]
@@ -197,6 +201,7 @@ export type Database = {
         }
         Update: {
           analise_mercado?: Json | null
+          atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
           capa_ml_picture_id?: string | null
@@ -206,6 +211,7 @@ export type Database = {
           capa3_ml_picture_id?: string | null
           capa3_storage_path?: string | null
           categoria_ml_id?: string | null
+          categoria_nome?: string | null
           codigo_pai?: string
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
           concorrencia_origem?: Database["public"]["Enums"]["origem_concorrencia"]
@@ -499,7 +505,7 @@ export type Database = {
       operacao_ml: "CREATE" | "UPDATE"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
       tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola"
-      tipo_origem: "regex" | "ia" | "manual"
+      tipo_origem: "regex" | "ia" | "manual" | "preditor"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -650,7 +656,7 @@ export const Constants = {
       operacao_ml: ["CREATE", "UPDATE"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
       tipo_aviamento: ["linha", "botao", "fita", "outro", "cola"],
-      tipo_origem: ["regex", "ia", "manual"],
+      tipo_origem: ["regex", "ia", "manual", "preditor"],
     },
   },
 } as const
