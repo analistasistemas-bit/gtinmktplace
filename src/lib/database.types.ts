@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      anuncios_externos: {
+        Row: {
+          atualizado_em: string
+          canal: Database["public"]["Enums"]["canal_externo"]
+          codigo_pai: string
+          criado_em: string
+          erro_mensagem: string | null
+          id: string
+          item_externo_id: string | null
+          metadados_canal: Json
+          permalink: string | null
+          preco_override: number | null
+          publicado_em: string | null
+          status: string
+          user_id: string
+          variacoes_externas: Json
+        }
+        Insert: {
+          atualizado_em?: string
+          canal: Database["public"]["Enums"]["canal_externo"]
+          codigo_pai: string
+          criado_em?: string
+          erro_mensagem?: string | null
+          id?: string
+          item_externo_id?: string | null
+          metadados_canal?: Json
+          permalink?: string | null
+          preco_override?: number | null
+          publicado_em?: string | null
+          status?: string
+          user_id: string
+          variacoes_externas?: Json
+        }
+        Update: {
+          atualizado_em?: string
+          canal?: Database["public"]["Enums"]["canal_externo"]
+          codigo_pai?: string
+          criado_em?: string
+          erro_mensagem?: string | null
+          id?: string
+          item_externo_id?: string | null
+          metadados_canal?: Json
+          permalink?: string | null
+          preco_override?: number | null
+          publicado_em?: string | null
+          status?: string
+          user_id?: string
+          variacoes_externas?: Json
+        }
+        Relationships: []
+      }
       configuracoes: {
         Row: {
           atualizado_em: string
@@ -296,6 +347,10 @@ export type Database = {
         Row: {
           altura_cm: number | null
           atualizado_em: string
+          catalog_erro: string | null
+          catalog_listing_id: string | null
+          catalog_product_id: string | null
+          catalog_status: string
           codigo: string
           comprimento_cm: number | null
           cor: string | null
@@ -324,6 +379,10 @@ export type Database = {
         Insert: {
           altura_cm?: number | null
           atualizado_em?: string
+          catalog_erro?: string | null
+          catalog_listing_id?: string | null
+          catalog_product_id?: string | null
+          catalog_status?: string
           codigo: string
           comprimento_cm?: number | null
           cor?: string | null
@@ -352,6 +411,10 @@ export type Database = {
         Update: {
           altura_cm?: number | null
           atualizado_em?: string
+          catalog_erro?: string | null
+          catalog_listing_id?: string | null
+          catalog_product_id?: string | null
+          catalog_status?: string
           codigo?: string
           comprimento_cm?: number | null
           cor?: string | null
@@ -415,6 +478,7 @@ export type Database = {
       }
     }
     Enums: {
+      canal_externo: "mercado_livre"
       classe_concorrencia: "sem" | "moderada" | "alta"
       cor_origem: "descricao" | "vision" | "manual"
       estrategia_preco: "proprio" | "competitivo" | "manual"
@@ -434,7 +498,7 @@ export type Database = {
         | "erro"
       operacao_ml: "CREATE" | "UPDATE"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
-      tipo_aviamento: "linha" | "botao" | "fita" | "cola" | "outro"
+      tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola"
       tipo_origem: "regex" | "ia" | "manual"
     }
     CompositeTypes: {
@@ -563,6 +627,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      canal_externo: ["mercado_livre"],
       classe_concorrencia: ["sem", "moderada", "alta"],
       cor_origem: ["descricao", "vision", "manual"],
       estrategia_preco: ["proprio", "competitivo", "manual"],
@@ -584,7 +649,7 @@ export const Constants = {
       ],
       operacao_ml: ["CREATE", "UPDATE"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
-      tipo_aviamento: ["linha", "botao", "fita", "cola", "outro"],
+      tipo_aviamento: ["linha", "botao", "fita", "outro", "cola"],
       tipo_origem: ["regex", "ia", "manual"],
     },
   },
