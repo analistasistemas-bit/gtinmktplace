@@ -88,6 +88,7 @@ export function montarPayloadItem(
   listingTypeId: string = LISTING_TYPE_PADRAO,
   desconto?: { pct: number } | null,
   dimensoes?: DimensoesPacote | null,
+  aceitaEmptyGtinOverride?: boolean,
 ): PayloadItem {
   // item.pictures lidera com uma foto principal (capa da família, ou a 1ª foto de cor
   // quando não há capa); capa2 e capa3 nunca assumem a 1ª posição.
@@ -96,7 +97,8 @@ export function montarPayloadItem(
   const picIds = [lider, capa2PictureId, capa3PictureId, ...fotosCor].filter((x): x is string => !!x);
   const pictures: PictureRef[] = [...new Set(picIds)].map((id) => ({ id }));
 
-  const aceitaEmptyGtin = categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
+  // E4: categoria prevista passa o flag lido do schema; aviamento (override) usa o helper hard-coded.
+  const aceitaEmptyGtin = aceitaEmptyGtinOverride ?? categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
   const variations: VariacaoItem[] = variacoes.map((v) => {
     // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria
     // por variação, então sem isso a foto-capa do anúncio nunca apareceria.

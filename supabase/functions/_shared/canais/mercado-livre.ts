@@ -3,6 +3,7 @@ import type {
   AtualizacaoCanonica, ResultadoAtualizacao, StatusCanal,
 } from './contrato.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
+import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
 import { buscarItemML, atualizarItemML } from '../ml/atualizar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
@@ -34,6 +35,13 @@ export const mercadoLivreConnector: ChannelConnector = {
 
   async criarAnuncio(ctx: ContextoCanal, a: AnuncioCanonico): Promise<ResultadoCanal<RefAnuncio>> {
     const token = await ctx.getToken();
+    // E4: descobre pelo schema se a categoria expõe EMPTY_GTIN_REASON (generaliza p/ vertical nova).
+    // Falha de leitura → undefined → montarPayloadItem cai no helper hard-coded dos aviamentos.
+    let aceitaEmptyGtin: boolean | undefined;
+    try {
+      const schema = await lerSchemaAtributos(token, a.categoriaId ?? '');
+      if (schema.length) aceitaEmptyGtin = schema.some((s) => s.id === 'EMPTY_GTIN_REASON');
+    } catch { /* fallback hard-coded */ }
     const payload = montarPayloadItem(
       { titulo_ml: a.titulo, descricao_ml: a.descricao, categoria_ml_id: a.categoriaId, atributos_ml: a.atributos },
       a.variacoes.map((v) => ({
@@ -41,7 +49,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
       })),
       a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
-      a.listingTypeId, a.desconto, a.dimensoes,
+      a.listingTypeId, a.desconto, a.dimensoes, aceitaEmptyGtin,
     );
     try {
       const r = await criarItemML(token, payload);

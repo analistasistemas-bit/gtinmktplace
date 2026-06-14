@@ -4,7 +4,7 @@ import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/qu
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
-import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
+import { atributosFaltantes, categoriaParaTipo } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import type { AnuncioCanonico } from '../_shared/canais/contrato.ts';
@@ -76,8 +76,12 @@ Deno.serve(async (req) => {
       desconto = { pct: pctEfetivo(fam, global) };
     }
 
+    // Gate de atributos obrigatórios. Aviamento conhecido (override) → validador por-tipo (atual);
+    // categoria prevista/manual → lista genérica persistida (E3/E4, schema da API); sem categoria → bloqueia.
     const tipoAviamento = (familia.tipo_aviamento ?? 'outro') as TipoAviamento;
-    const faltam = atributosFaltantes(tipoAviamento, familia.atributos_ml ?? []);
+    const faltam = categoriaParaTipo(tipoAviamento) != null
+      ? atributosFaltantes(tipoAviamento, familia.atributos_ml ?? [])
+      : (familia.categoria_ml_id ? ((familia.atributos_faltantes as string[] | null) ?? []) : ['CATEGORIA']);
     if (faltam.length) throw new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`);
 
     async function signed(path: string): Promise<string> {
