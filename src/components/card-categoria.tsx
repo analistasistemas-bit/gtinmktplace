@@ -1,4 +1,4 @@
-import { Tag } from 'lucide-react';
+import { Tag, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { StatusPill } from '@/components/ui/status-pill';
 import { useDefinirCategoria } from '@/hooks/useFamiliaMutations';
 import { CATEGORIAS_MANUAIS, type TipoCategoriaManual } from '@/lib/categoria';
 import type { Familia, TipoAviamento } from '@/lib/tipos-dominio';
@@ -56,8 +57,21 @@ export function CardCategoria({ familia }: { familia: Familia }) {
         </div>
       ) : (
         <>
-          <p className="text-sm font-medium">{nomeCategoriaAmigavel(familia.tipoAviamento)}</p>
+          <p className="text-sm font-medium">
+            {familia.categoriaNome ?? nomeCategoriaAmigavel(familia.tipoAviamento)}
+          </p>
           <p className="text-xs text-muted-foreground">{familia.categoriaMlId}</p>
+          {(familia.tipoOrigem === 'preditor' || familia.tipoOrigem === 'ia') && (
+            <StatusPill tone="info" className="mt-1.5">
+              <Sparkles className="h-3 w-3" /> Sugerida por IA — confira
+            </StatusPill>
+          )}
+          {familia.atributosFaltantes && familia.atributosFaltantes.length > 0 && (
+            <p className="mt-1.5 flex items-start gap-1 text-xs text-warning">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>Faltam: {familia.atributosFaltantes.join(', ')}</span>
+            </p>
+          )}
         </>
       )}
     </div>

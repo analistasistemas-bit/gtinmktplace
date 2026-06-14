@@ -1,6 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
-import { categoriaParaTipo, montarAtributosML } from '../_shared/categoria/atributos.ts';
+import { categoriaParaTipo, montarAtributosML, rotuloParaTipo } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 
 // Seletor manual de categoria (escape hatch do ADR-0009): o operador escolhe a
@@ -53,7 +53,14 @@ Deno.serve(async (req) => {
 
   const { error: upErr } = await sb
     .from('familias')
-    .update({ categoria_ml_id, tipo_aviamento: tipo, tipo_origem: 'manual', atributos_ml })
+    .update({
+      categoria_ml_id,
+      categoria_nome: rotuloParaTipo(tipo),
+      tipo_aviamento: tipo,
+      tipo_origem: 'manual',
+      atributos_ml,
+      atributos_faltantes: [], // aviamento manual: montarAtributosML preenche todos os obrigatórios
+    })
     .eq('id', body.familia_id)
     .eq('user_id', user.id);
 

@@ -25,6 +25,10 @@ export interface AnaliseMercado {
 
 export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'cola' | 'outro';
 
+// Origem da resolução de categoria (ADR-0026 / E3). regex/manual = alta confiança;
+// preditor = média (domain_discovery do ML); ia = baixa (desempate LLM).
+export type TipoOrigem = 'regex' | 'preditor' | 'ia' | 'manual';
+
 export type FamiliaStatus =
   | 'pendente'
   | 'processando'
@@ -124,6 +128,9 @@ export interface Familia {
   analiseMercado: AnaliseMercado | null;
   tipoAviamento: TipoAviamento | null;
   categoriaMlId: string | null;
+  categoriaNome: string | null;
+  tipoOrigem: TipoOrigem | null;
+  atributosFaltantes: string[] | null;
   precoMin: number;
   precoMax: number;
   precoAbaixo20pc: boolean;

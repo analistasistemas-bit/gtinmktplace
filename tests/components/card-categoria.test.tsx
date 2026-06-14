@@ -21,6 +21,7 @@ function familiaBase(over: Partial<Familia> = {}): Familia {
     estrategiaPreco: 'PROPRIO', estrategiaMotivo: '',
     concorrencia: 'alta', concorrenciaVendedores: 6, concorrenciaPrecoMin: 12.62,
     tipoAviamento: 'fita', categoriaMlId: 'MLB255054',
+    categoriaNome: null, tipoOrigem: 'regex', atributosFaltantes: null,
     precoMin: 2.95, precoMax: 2.95, precoAbaixo20pc: false,
     capaStoragePath: null, variacoes: [], status: 'pronto',
     tokensInput: null, tokensOutput: null, custoCentavos: null,
@@ -47,5 +48,21 @@ describe('CardCategoria', () => {
     renderCard(familiaBase({ tipoAviamento: 'cola', categoriaMlId: 'MLB277319' }));
     expect(screen.getByText(/Bastões de Cola/i)).toBeInTheDocument();
     expect(screen.getByText(/MLB277319/)).toBeInTheDocument();
+  });
+
+  it('categoria prevista (preditor): usa categoria_nome + selo "Sugerida por IA" + faltantes', () => {
+    renderCard(familiaBase({
+      tipoAviamento: 'outro', categoriaMlId: 'MLB189007',
+      categoriaNome: 'De Mão', tipoOrigem: 'preditor', atributosFaltantes: ['Voltagem'],
+    }));
+    expect(screen.getByText(/De Mão/)).toBeInTheDocument();
+    expect(screen.getByText(/MLB189007/)).toBeInTheDocument();
+    expect(screen.getByText(/Sugerida por IA/i)).toBeInTheDocument();
+    expect(screen.getByText(/Faltam:\s*Voltagem/i)).toBeInTheDocument();
+  });
+
+  it('override (regex) não mostra selo de sugestão', () => {
+    renderCard(familiaBase()); // tipoOrigem 'regex'
+    expect(screen.queryByText(/Sugerida por IA/i)).not.toBeInTheDocument();
   });
 });
