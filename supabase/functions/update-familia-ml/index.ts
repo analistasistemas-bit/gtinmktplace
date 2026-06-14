@@ -4,6 +4,7 @@ import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/qu
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
+import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -196,6 +197,18 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error(`enfileirar catálogo (update) falhou para ${familia.ml_item_id}:`, e);
     }
+
+    // E2 (ADR-0025): espelha o estado atualizado em anuncios_externos (best-effort).
+    const { data: varsEspelho } = await admin.from('variacoes')
+      .select('codigo, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
+      .eq('familia_id', job.familia_id);
+    await espelharAnuncioExterno(admin, {
+      user_id: familia.user_id,
+      codigo_pai: familia.codigo_pai,
+      ml_item_id: familia.ml_item_id,
+      ml_permalink: familia.ml_permalink ?? null,
+      publicado_em: new Date().toISOString(),
+    }, varsEspelho ?? []);
 
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ ml_item_id: familia.ml_item_id, atualizado: true, novas: novasComFoto.length }), {
