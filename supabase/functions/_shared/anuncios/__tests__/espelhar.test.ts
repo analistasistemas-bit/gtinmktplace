@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarAnuncioExterno } from '../espelhar';
+import { montarAnuncioExterno, mesclarVariacoesExternas } from '../espelhar';
 
 const FAMILIA = {
   user_id: 'u1',
@@ -45,5 +45,33 @@ describe('montarAnuncioExterno', () => {
     const row = montarAnuncioExterno({ ...FAMILIA, ml_item_id: null, ml_permalink: null }, []);
     expect(row.item_externo_id).toBeNull();
     expect(row.permalink).toBeNull();
+  });
+});
+
+describe('mesclarVariacoesExternas', () => {
+  it('reposição parcial preserva as cores ausentes (não encolhe o mapa)', () => {
+    const existente = {
+      A: { variation_id: 'v-a' },
+      B: { variation_id: 'v-b', catalog_status: 'vinculado', catalog_listing_id: 'MLB9' },
+      C: { variation_id: 'v-c' },
+    };
+    const novo = { A: { variation_id: 'v-a' } }; // lote de reposição só com a cor A
+    expect(mesclarVariacoesExternas(existente, novo)).toEqual({
+      A: { variation_id: 'v-a' },
+      B: { variation_id: 'v-b', catalog_status: 'vinculado', catalog_listing_id: 'MLB9' },
+      C: { variation_id: 'v-c' },
+    });
+  });
+
+  it('o novo vence por código (atualiza catalog state)', () => {
+    const existente = { A: { variation_id: 'v-a' } };
+    const novo = { A: { variation_id: 'v-a', catalog_status: 'vinculado', catalog_listing_id: 'MLB9' } };
+    expect(mesclarVariacoesExternas(existente, novo)).toEqual({
+      A: { variation_id: 'v-a', catalog_status: 'vinculado', catalog_listing_id: 'MLB9' },
+    });
+  });
+
+  it('mapa existente nulo → retorna só o novo', () => {
+    expect(mesclarVariacoesExternas(null, { A: { variation_id: 'v-a' } })).toEqual({ A: { variation_id: 'v-a' } });
   });
 });

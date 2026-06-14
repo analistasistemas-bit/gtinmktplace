@@ -62,6 +62,16 @@ export function montarAnuncioExterno(
   };
 }
 
+// Mescla o mapa existente com o novo (novo vence por código). Preserva cores de lotes
+// anteriores que não vieram no lote atual — uma reposição parcial (poucos SKUs) não pode
+// encolher o mapa do anúncio (que tem todas as cores publicadas). Ver ADR-0025 / review E2.
+export function mesclarVariacoesExternas(
+  existente: Record<string, VariacaoExterna> | null | undefined,
+  novo: Record<string, VariacaoExterna>,
+): Record<string, VariacaoExterna> {
+  return { ...(existente ?? {}), ...novo };
+}
+
 // deno-lint-ignore no-explicit-any
 export async function espelharAnuncioExterno(
   admin: any,
@@ -70,6 +80,17 @@ export async function espelharAnuncioExterno(
 ): Promise<void> {
   try {
     const row = montarAnuncioExterno(familia, variacoes);
+    // Merge com o que já existe: o lote atual pode trazer só um subconjunto das cores
+    // (reposição parcial); o upsert substituiria a row inteira e perderia as demais.
+    const { data: existente } = await admin
+      .from('anuncios_externos')
+      .select('variacoes_externas')
+      .eq('user_id', row.user_id).eq('canal', row.canal).eq('codigo_pai', row.codigo_pai)
+      .maybeSingle();
+    row.variacoes_externas = mesclarVariacoesExternas(
+      existente?.variacoes_externas as Record<string, VariacaoExterna> | undefined,
+      row.variacoes_externas,
+    );
     const { error } = await admin
       .from('anuncios_externos')
       .upsert(row, { onConflict: 'user_id,canal,codigo_pai' });
