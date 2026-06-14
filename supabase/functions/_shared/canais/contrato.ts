@@ -24,6 +24,8 @@ export interface ErroCanal {
   codigo: ErroCanalCodigo;
   mensagemOperador: string;
   retentavel: boolean;
+  /** HTTP status nativo, quando houver — o worker decide retry (5xx/429) sem garimpar `raw`. */
+  status?: number;
   raw?: unknown;
 }
 
@@ -70,6 +72,41 @@ export interface AnuncioCanonico {
   variacoes: VariacaoCanonica[];
 }
 
+/** Status do anúncio no modelo canônico (generaliza StatusParsed de ml/status). */
+export type StatusAnuncioCanal =
+  | 'ativo' | 'pausado' | 'encerrado' | 'moderado' | 'inativo' | 'indisponivel';
+export interface StatusCanal {
+  status: StatusAnuncioCanal;
+  motivo: string | null;
+  estoque: number | null;
+  preco: number | null;
+}
+
+/** Atualização de um anúncio já publicado (UPDATE), no modelo canônico. */
+export interface AtualizacaoCanonica {
+  itemExternoId: string;
+  /** Cores já vinculadas (repor estoque): sku → estoque desejado. */
+  existentes: Array<{ sku: string; estoque: number }>;
+  /** Cores novas a criar como variação. */
+  novas: VariacaoCanonica[];
+  capaFotoId: string | null;
+  capa2FotoId: string | null;
+  capa3FotoId: string | null;
+  categoriaId: string | null;
+  /** BRAND a sincronizar (do fornecedor). null → não envia (preserva o atual). */
+  marca: string | null;
+  dimensoes: DimensoesPacote | null;
+  /** Desconto ativo → price+original_price por código. */
+  desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null;
+  /** Preço de publicação da família, propagado a TODAS as variações (adendo ADR-0016). */
+  precoFamilia: number | null;
+}
+
+/** Resultado do UPDATE: sku → id externo da variação (casar/persistir + detectar não-vinculadas). */
+export interface ResultadoAtualizacao {
+  variacoesExternas: Record<string, string>;
+}
+
 /** Contexto por chamada (auth lazy). */
 export interface ContextoCanal {
   getToken(): Promise<string>;
@@ -84,4 +121,10 @@ export interface ChannelConnector {
   criarAnuncio(ctx: ContextoCanal, anuncio: AnuncioCanonico): Promise<ResultadoCanal<RefAnuncio>>;
   /** Garante a descrição (recurso separado). Best-effort no worker. */
   garantirDescricao(ctx: ContextoCanal, itemExternoId: string, descricao: string): Promise<void>;
+  /** Atualiza um anúncio existente (estoque / cores novas / preço / atributos). Não lança: erros viram ResultadoCanal.erro. */
+  atualizarAnuncio(ctx: ContextoCanal, a: AtualizacaoCanonica): Promise<ResultadoCanal<ResultadoAtualizacao>>;
+  /** Sincroniza a descrição ao vivo (resolve + push). Retorna a descrição a persistir, ou null se nada mudou. */
+  sincronizarDescricao(ctx: ContextoCanal, itemExternoId: string, descricaoAtual: string, cores: string[]): Promise<string | null>;
+  /** Lê o status de N anúncios em lote. Lança se o token falhar (sem credencial). */
+  lerStatus(ctx: ContextoCanal, itemExternoIds: string[]): Promise<Record<string, StatusCanal>>;
 }
