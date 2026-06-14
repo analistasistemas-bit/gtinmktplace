@@ -2,11 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { buscarItemML, atualizarItemML } from '../_shared/ml/atualizar-item.ts';
-import { buscarDescricaoML, garantirDescricaoML, resolverDescricaoUpdate } from '../_shared/ml/criar-item.ts';
-import { montarVariacoesUpdate, montarVariacaoNova } from '../_shared/ml/atualizar.ts';
-import { montarAtributosPacote } from '../_shared/ml/pacote.ts';
-import { subirFotoML } from '../_shared/ml/fotos.ts';
+import { getConnector } from '../_shared/canais/registry.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 
 interface Job { familia_id: string; lote_id: string; }
@@ -38,6 +34,9 @@ Deno.serve(async (req) => {
   const admin = adminClient();
   const { data: familia } = await admin.from('familias').select('*').eq('id', job.familia_id).single();
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
+
+  const conn = getConnector('mercado_livre');
+  const ctx = { getToken: () => getValidAccessToken(familia.user_id) };
 
   // Idempotência: só processa o claim ativo ('publicando'). Re-entrega do QStash após
   // o lote já ter sido finalizado (status 'publicado'/'erro') é ignorada sem reprocessar.
@@ -78,8 +77,6 @@ Deno.serve(async (req) => {
     const casadas = variacoes.filter((v) => v.ml_variation_id);
     const novas = variacoes.filter((v) => !v.ml_variation_id);
 
-    const token = await getValidAccessToken(familia.user_id);
-
     const BUCKET = 'imagens';
     const TTL_SIGNED = 60 * 60 * 2;
     async function signed(path: string): Promise<string> {
@@ -93,7 +90,7 @@ Deno.serve(async (req) => {
     for (const v of novas) {
       let picId = v.ml_picture_id as string | null;
       if (!picId && v.imagem_path) {
-        picId = await subirFotoML(token, await signed(v.imagem_path));
+        picId = await conn.subirFoto(ctx, await signed(v.imagem_path));
         await admin.from('variacoes').update({ ml_picture_id: picId }).eq('familia_id', job.familia_id).eq('codigo', v.codigo);
       }
       novasComFoto.push({ ...v, ml_picture_id: picId });
@@ -101,62 +98,29 @@ Deno.serve(async (req) => {
 
     let capa2Pic = (familia.capa2_ml_picture_id as string | null) ?? null;
     if (!capa2Pic && familia.capa2_storage_path) {
-      capa2Pic = await subirFotoML(token, await signed(familia.capa2_storage_path as string));
+      capa2Pic = await conn.subirFoto(ctx, await signed(familia.capa2_storage_path as string));
       await admin.from('familias').update({ capa2_ml_picture_id: capa2Pic }).eq('id', job.familia_id);
       capa2SubidaAgora = true;
     }
 
     let capa3Pic = (familia.capa3_ml_picture_id as string | null) ?? null;
     if (!capa3Pic && familia.capa3_storage_path) {
-      capa3Pic = await subirFotoML(token, await signed(familia.capa3_storage_path as string));
+      capa3Pic = await conn.subirFoto(ctx, await signed(familia.capa3_storage_path as string));
       await admin.from('familias').update({ capa3_ml_picture_id: capa3Pic }).eq('id', job.familia_id);
       capa3SubidaAgora = true;
     }
 
-    // GET estado real → reenviar todas as variações (ML deleta as omitidas).
-    const atual = await buscarItemML(token, familia.ml_item_id);
-    const desejados = casadas.map((v) => ({ codigo: v.codigo, estoque: v.estoque }));
-    const capaPic = (familia.capa_ml_picture_id as string | null) ?? null;
-    // Fotos comuns (capa2, capa3) são da FAMÍLIA INTEIRA → aplicam a TODAS as variações
-    // existentes do anúncio, não só as incluídas. A cor existente excluída (reposição
-    // não selecionada) também recebe as comuns — só o estoque dela é que não muda.
-    // IDs lidos do GET (válidos — o ML re-hospeda as fotos, então os IDs de upload
-    // cacheados não batem com os do item); insere as comuns logo após a líder (própria),
-    // capa3 sempre após a capa2. Idempotente: reaplicar reordena para o mesmo resultado.
-    // Sem fotos comuns → só estoque (comportamento preservado).
-    const comuns = [capa2Pic, capa3Pic].filter((x): x is string => !!x);
-    const picsPorCodigo: Record<string, string[]> = {};
-    if (comuns.length > 0) {
-      for (const a of atual.variations) {
-        const codigo = a.seller_custom_field ?? '';
-        const atuaisPics = a.picture_ids ?? [];
-        picsPorCodigo[codigo] = [...new Set(
-          [atuaisPics[0], ...comuns, ...atuaisPics.slice(1)].filter((x): x is string => !!x),
-        )];
-      }
-    }
     // Preço de publicação da família (todas as cores incluídas compartilham o mesmo).
     // Propagado a TODAS as variações existentes (adendo ADR-0016): o ML exige preço
     // único entre variações e o operador quer que a alteração de preço alcance a
     // família já publicada. Idempotente quando o preço não mudou.
     const precoFamiliaRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
     const precoFamilia = precoFamiliaRaw != null ? Number(precoFamiliaRaw) : null;
-    const existentes = montarVariacoesUpdate(atual.variations, desejados, comuns.length > 0 ? picsPorCodigo : undefined, desconto ?? undefined, precoFamilia);
-
-    const novasPut = novasComFoto.map((v) => montarVariacaoNova(
-      { codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco_publicacao, gtin: v.gtin, ml_picture_id: v.ml_picture_id },
-      capaPic,
-      capa2Pic,
-      capa3Pic,
-      familia.categoria_ml_id as string | null,
-      desconto ? { pct: desconto.pct } : null,
-    ));
-
     // ADR-0016 (adendo 2026-06-05): sincroniza só o BRAND no UPDATE a partir do fornecedor,
     // preservando os demais atributos. Sem fornecedor → não envia (não sobrescreve com "Avil").
     // ADR-0018: também sincroniza dimensões/peso (SELLER_PACKAGE_*) da variação representativa
     // (principal, ou 1ª) — inválido → omite (ML mantém o que tiver). Corrige frete pós-publicação.
-    const marca = (familia.fornecedor as string | null)?.trim();
+    const marca = (familia.fornecedor as string | null)?.trim() || null;
     const repUpd = variacoes.find((v) => v.codigo === familia.variacao_principal_codigo) ?? variacoes[0];
     const dimensoesUpd = repUpd ? {
       altura_cm: repUpd.altura_cm != null ? Number(repUpd.altura_cm) : null,
@@ -164,32 +128,39 @@ Deno.serve(async (req) => {
       comprimento_cm: repUpd.comprimento_cm != null ? Number(repUpd.comprimento_cm) : null,
       peso_gramas: repUpd.peso_gramas != null ? Number(repUpd.peso_gramas) : null,
     } : null;
-    const atributosItem = [
-      ...(marca ? [{ id: 'BRAND', value_name: marca }] : []),
-      ...(dimensoesUpd ? montarAtributosPacote(dimensoesUpd) : []),
-    ];
-    // Ao criar variação nova, a foto dela precisa estar também no item.pictures
-    // (regra do ML: item.pictures.invalid.missing_ids). Reenvia o item.pictures =
-    // fotos atuais + comuns (capa2/capa3) + fotos das variações novas (dedup).
-    const novasPicIds = novasPut.flatMap((v) => v.picture_ids);
-    const precisaPictures = novasPut.length > 0 || comuns.length > 0;
-    const pictures = precisaPictures
-      ? [...new Set([...atual.pictures, ...comuns, ...novasPicIds])]
-      : undefined;
-    const resultado = await atualizarItemML(token, familia.ml_item_id, [...existentes, ...novasPut], atributosItem, pictures);
 
-    // Casa o ml_variation_id das novas. O PUT nem sempre ecoa seller_custom_field nas
-    // variações criadas; o GET ecoa de forma confiável — então relemos o item para casar.
-    let varsParaCasar = resultado.variations;
-    if (novasComFoto.length > 0) {
-      const refetch = await buscarItemML(token, familia.ml_item_id);
-      varsParaCasar = refetch.variations;
+    // O conector encapsula o GET estado → montar variações/novas → PUT → refetch → casar
+    // (reenviar TODAS as variações: o ML deleta as omitidas; comuns capa2/capa3 aplicadas a
+    // todas; foto da cor nova também em item.pictures). Não lança: erro vira ResultadoCanal.
+    const res = await conn.atualizarAnuncio(ctx, {
+      itemExternoId: familia.ml_item_id,
+      existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque })),
+      novas: novasComFoto.map((v) => ({
+        sku: v.codigo, cor: v.cor, estoque: v.estoque,
+        preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,
+      })),
+      capaFotoId: (familia.capa_ml_picture_id as string | null) ?? null,
+      capa2FotoId: capa2Pic,
+      capa3FotoId: capa3Pic,
+      categoriaId: familia.categoria_ml_id as string | null,
+      marca,
+      dimensoes: dimensoesUpd,
+      desconto: desconto ?? null,
+      precoFamilia,
+    });
+    if (!res.ok) {
+      const e = res.erro!;
+      const err = new Error(e.mensagemOperador);
+      // Repassa o HTTP status p/ o catch: 5xx/429 → retenta; senão erro + limpeza dos caches.
+      (err as { status?: number }).status = e.status;
+      throw err;
     }
+
+    // Casa o ml_variation_id das cores novas (idempotente). variacoesExternas: sku → id externo.
     const persistidas = new Set<string>();
-    for (const mv of varsParaCasar) {
-      const codigo = mv.seller_custom_field;
-      if (codigo && novasComFoto.some((v) => v.codigo === codigo)) {
-        await admin.from('variacoes').update({ ml_variation_id: String(mv.id) })
+    for (const [codigo, variationId] of Object.entries(res.valor!.variacoesExternas)) {
+      if (novasComFoto.some((v) => v.codigo === codigo)) {
+        await admin.from('variacoes').update({ ml_variation_id: variationId })
           .eq('familia_id', job.familia_id).eq('codigo', codigo);
         persistidas.add(codigo);
       }
@@ -201,21 +172,14 @@ Deno.serve(async (req) => {
       throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
     }
 
-    // Sincroniza a descrição do anúncio (ADR-0016 adendo 2026-06-07). Compara a descrição
-    // DESEJADA (cores atualizadas + sanitizada como o ML guarda) contra a que está AO VIVO
-    // no item, e só reenvia se diferir. Cobre dois casos: cor nova (seção de cores muda) e
-    // descrição corrigida/regenerada pelo operador (texto muda) — este último não chegava ao
-    // ML antes. Reposição pura de estoque → iguais → não reenvia (sem IA, sem token, e o GET
-    // de descrição é grátis). PUT /description é idempotente no ML — seguro em retry.
+    // Sincroniza a descrição do anúncio (ADR-0016 adendo 2026-06-07): cor nova (seção de cores
+    // muda) ou descrição corrigida/regenerada (texto muda). Reposição pura → não reenvia. O
+    // conector resolve contra a descrição ao vivo e devolve a nova a persistir (ou null).
     if (familia.descricao_ml) {
       const cores = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
-      const liveDesc = await buscarDescricaoML(token, familia.ml_item_id);
-      const r = resolverDescricaoUpdate(familia.descricao_ml as string, cores, liveDesc);
-      if (r?.precisaPush) {
-        await garantirDescricaoML(token, familia.ml_item_id, r.novaDescricao);
-        if (r.novaDescricao !== familia.descricao_ml) {
-          await admin.from('familias').update({ descricao_ml: r.novaDescricao }).eq('id', job.familia_id);
-        }
+      const nova = await conn.sincronizarDescricao(ctx, familia.ml_item_id, familia.descricao_ml as string, cores);
+      if (nova) {
+        await admin.from('familias').update({ descricao_ml: nova }).eq('id', job.familia_id);
       }
     }
 
@@ -234,7 +198,7 @@ Deno.serve(async (req) => {
     }
 
     await talvezFinalizarLote(admin, job.lote_id);
-    return new Response(JSON.stringify({ ml_item_id: familia.ml_item_id, atualizado: true, novas: novasPut.length }), {
+    return new Response(JSON.stringify({ ml_item_id: familia.ml_item_id, atualizado: true, novas: novasComFoto.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {

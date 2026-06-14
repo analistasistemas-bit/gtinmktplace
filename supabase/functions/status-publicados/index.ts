@@ -2,13 +2,8 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { parseStatusML, type ItemMLStatus } from '../_shared/ml/status.ts';
-
-function chunk<T>(arr: T[], n: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-  return out;
-}
+import { getConnector } from '../_shared/canais/registry.ts';
+import type { StatusCanal } from '../_shared/canais/contrato.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -25,34 +20,17 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  let token: string;
-  try { token = await getValidAccessToken(user.id); }
-  catch {
+  // Leitura de status em lote via conector (ADR-0024). getToken falha sem credencial ML →
+  // lerStatus lança → semCredencialML. Erro de bloco vira 'indisponivel' (não trava a tela).
+  const conn = getConnector('mercado_livre');
+  const ctx = { getToken: () => getValidAccessToken(user.id) };
+  let statusPorId: Record<string, StatusCanal>;
+  try {
+    statusPorId = await conn.lerStatus(ctx, ids);
+  } catch {
     return new Response(JSON.stringify({ semCredencialML: true, itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  // Chunks em paralelo (latência O(1) em vez de O(n/20) serial).
-  const respostas = await Promise.all(chunk(ids, 20).map(async (bloco) => {
-    const url = `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,status,sub_status,available_quantity,price`;
-    try {
-      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!resp.ok) { console.warn(`status-publicados ML ${resp.status} (bloco)`); return []; }
-      const arr = await resp.json(); // [{ code, body }]
-      return Array.isArray(arr) ? arr : [];
-    } catch (e) {
-      console.warn('status-publicados ML falhou (bloco):', (e as Error).message);
-      return [];
-    }
-  }));
-
-  const porId = new Map<string, ItemMLStatus | null>();
-  for (const entry of respostas.flat()) {
-    const body = entry?.body;
-    const id = body?.id;
-    if (entry?.code === 200 && id) porId.set(id, body as ItemMLStatus);
-    else if (id) porId.set(id, null);
-  }
-
-  const itens = ids.map((id) => ({ ml_item_id: id, ...parseStatusML(porId.get(id) ?? null) }));
+  const itens = ids.map((id) => ({ ml_item_id: id, ...statusPorId[id] }));
   return new Response(JSON.stringify({ itens }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });
