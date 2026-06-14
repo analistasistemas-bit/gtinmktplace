@@ -8,6 +8,7 @@ import { atributosFaltantes } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import type { AnuncioCanonico } from '../_shared/canais/contrato.ts';
+import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -189,6 +190,18 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error(`enfileirar catálogo falhou para ${ref.itemExternoId}:`, e);
     }
+
+    // E2 (ADR-0025): espelha o estado em anuncios_externos (best-effort, não derruba a publicação).
+    const { data: varsEspelho } = await admin.from('variacoes')
+      .select('codigo, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
+      .eq('familia_id', job.familia_id);
+    await espelharAnuncioExterno(admin, {
+      user_id: familia.user_id,
+      codigo_pai: familia.codigo_pai,
+      ml_item_id: ref.itemExternoId,
+      ml_permalink: ref.permalink ?? null,
+      publicado_em: new Date().toISOString(),
+    }, varsEspelho ?? []);
 
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ ml_item_id: ref.itemExternoId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

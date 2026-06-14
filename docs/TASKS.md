@@ -550,13 +550,13 @@
 
 > Decomposição operacional do [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md). **Convenção:** após cada implementação, marco o checkbox e atualizo o **"📍 Passo atual"** no topo deste arquivo — assim você sempre sabe exatamente onde estamos. Cada épico roda em **branch isolada da `main`** (app em produção); merge → `main` + deploy só com OK do Diego.
 
-**📍 Passo atual:** Fase 0 · **E1 (CREATE) + E1b (UPDATE+status) ✅ validados em produção** — bug bash real cobriu publicação, reposição de estoque, cor nova e leitura de status ao vivo pelo conector (anúncios de teste removidos). Próximo: **E2** (dados multicanal).
+**📍 Passo atual:** Fase 0 · **E1 + E1b + E2 ✅ validados em produção** — toda a camada de abstração de canais (CREATE+UPDATE+status) + o modelo de dados multicanal `anuncios_externos` (1 produto → N anúncios, dual-write) estão em produção. Bug bash real do E2 via browser cobriu CREATE→UPDATE→catálogo com o espelho conferido a cada passo. Próximo: **E3** (taxonomia canônica + categoria por IA).
 
 | Fase | Épico | Status | ADR |
 |---|---|---|---|
 | 0 | E1 Camada de abstração (CREATE) | ✅ validado em produção | 0024 |
 | 0 | E1b Abstração UPDATE + status | ✅ validado em produção | 0024 |
-| 0 | E2 Modelo de dados multicanal | ⬜ | 0025 |
+| 0 | E2 Modelo de dados multicanal | ✅ validado em produção | 0025 |
 | 1 | E3 Taxonomia canônica + categoria por IA | ⬜ | 0026 |
 | 1 | E4 Atributos por IA (closed-set) | ⬜ | 0026 |
 | 2 | E5 Conector Shopee | ⬜ | (a criar) |
@@ -582,12 +582,13 @@
 - [x] E1b.4 religar `status-publicados` via `conn.lerStatus` (`semCredencialML` preservado) — commit `a9f2510`
 - [x] E1b.✅ backend 340 testes verdes + lint 0 erros + review independente (opus) **APROVADO — EQUIVALENTE** (8 pontos, `tsc` 0 erros) + merge→`main` (`08e77e5`) + deploy `update-familia-ml` v26/`status-publicados` v4/`publish-familia-ml` v25 via CLI + **bug bash real via automação de navegador**: família de teste descartável CREATE→UPDATE (reposição estoque 10→25/8→3 **+ cor nova** criada e casada via refetch; descrição "CORES DISPONÍVEIS" atualizada; estoque ao vivo 43 lido por `lerStatus` na tela Publicados) — anúncio `MLB6966427644` encerrado e todo o dado de teste removido (ML/banco/storage)
 
-**E2 — Modelo de dados multicanal** · ADR-0025
-- [ ] E2.1 migration aditiva `canais_conectados` + `anuncios_externos` (1 família → N anúncios)
-- [ ] E2.2 backfill dos `ml_item_id`/`ml_variation_id`/`ml_permalink` atuais → `anuncios_externos`
-- [ ] E2.3 view de compatibilidade reexpondo os campos `ml_*` (evita big-bang no frontend)
-- [ ] E2.4 workers leem/gravam estado de publicação em `anuncios_externos`
-- [ ] E2.5 (diferido) remover colunas `ml_*` de `familias`/`variacoes` quando o frontend migrar
+**E2 — Modelo de dados multicanal** · [plano](superpowers/plans/2026-06-14-e2-modelo-dados-multicanal.md) · [spec](superpowers/specs/2026-06-14-e2-modelo-dados-multicanal-design.md) · ADR-0025 · ✅ **validado em produção (2026-06-14)**
+- [x] E2.1 migration aditiva `anuncios_externos` (1 produto → N anúncios) + enum `canal_externo` + RLS + índice + trigger — ancorada em `(user_id, canal, codigo_pai)` (não `familia_id`: `familias` é por-lote e várias linhas compartilham `ml_item_id`). `canais_conectados` diferido p/ E7; estoque único (decisões Diego)
+- [x] E2.2 backfill na própria migration (agrega todas as variações de todas as famílias do mesmo `(user_id, codigo_pai)`, dedup por código) — verificado: 21 anúncios, 414 entradas == 414 `(codigo_pai,codigo)` distintos casados
+- [x] E2.3 helper `_shared/anuncios/espelhar.ts` — puras `montarAnuncioExterno` + `mesclarVariacoesExternas` (TDD, 7 testes) + `espelharAnuncioExterno` best-effort (merge antes do upsert: reposição parcial não trunca o mapa)
+- [x] E2.4 dual-write nos workers `publish-familia-ml`/`update-familia-ml`/`vincular-catalogo` (após a persistência `ml_*`, best-effort, leitura/idempotência inalteradas)
+- [x] E2.✅ 579 testes verdes + tsc/lint 0 erros + **review independente (opus) APROVADO COM RESSALVAS** (🟠 do truncamento corrigido com merge + backfill agregado; 🟡 status/erro só no sucesso = intencional) + deploy `publish`/`update`/`vincular-catalogo` via CLI + **bug bash real via browser**: família de teste descartável **CREATE** (`MLB6966524308`, espelho criado com mapa de 2 cores) → **UPDATE** (reposição + cor nova Verde → mapa cresceu p/ 3, merge preservou as antigas) → **catálogo** (job QStash → `catalog_status` gravado no mapa) — anúncio encerrado no ML e todo o dado de teste removido (espelho voltou a 21 linhas de produção)
+- [ ] E2.5 (diferido) view de compatibilidade + cutover de leitura para `anuncios_externos` + remover colunas `ml_*`/`catalog_*` de `familias`/`variacoes` quando o frontend migrar ("corte do tronco")
 
 ### Fase 1 — "Qualquer produto"
 
