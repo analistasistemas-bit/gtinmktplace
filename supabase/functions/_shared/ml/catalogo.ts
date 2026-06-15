@@ -1,16 +1,22 @@
 import { gtinAusente } from './publicar.ts';
-import { parseProdutoBusca } from '../concorrencia/parse.ts';
 
 // Vinculação ao Catálogo do ML (ADR-0021). Validado com token real (2026-06-10):
 // aviamentos são `catalog_required` (não `catalog_only` → o anúncio de marketplace
 // sobrevive ao opt-in). O opt-in é `POST /items/catalog_listings`, um POST por variação,
 // e só funciona quando a variação está `READY_FOR_OPTIN`/`buy_box_eligible` na elegibilidade.
 // Anúncios que agrupam cores de famílias de catálogo diferentes vêm `FAMILY_DIFF` (bloqueado).
+//
+// Revisão pós-incidente (2026-06-15): match por GTIN NÃO garante ficha equivalente — o catálogo
+// do ML tem fichas de KIT ("Kit 5 Unidades", "10 cones") e de dimensão divergente carregando o
+// GTIN da unidade avulsa. Antes do opt-in, `fichaEquivalente` confronta os atributos da ficha
+// (SALE_FORMAT/UNITS_PER_PACK/LENGTH) com o nosso produto; ficha de kit/metragem divergente vira
+// `ficha_divergente` (não vincula). WIDTH ficou de fora: é dado sujo nos dois lados.
 
 const API = 'https://api.mercadolibre.com';
 const TIMEOUT_MS = 15000;
 
-export type AcaoCatalogo = 'optin' | 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente' | 'pula';
+export type AcaoCatalogo =
+  | 'optin' | 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente' | 'pula' | 'ficha_divergente';
 
 export interface EligVar {
   id: string | number;
@@ -23,6 +29,31 @@ export interface EstadoVariacaoCatalogo {
   catalogListingId: string | null;
   catalogProductId: string | null;
 }
+
+/** Atributos da ficha de catálogo relevantes para a trava de equivalência. */
+export interface AtributosFicha {
+  id: string;
+  saleFormat: string | null;
+  unitsPerPack: number | null;
+  lengthM: number | null;
+}
+
+/** O que esperamos do NOSSO produto, para confrontar com a ficha. */
+export interface EsperadoProduto {
+  lengthM: number | null;
+}
+
+export interface Equivalencia {
+  ok: boolean;
+  motivo: string | null;
+}
+
+// Metragem só é comparável acima deste piso: fichas reais trazem LENGTH lixo ("10 cm" em vez
+// de "10 m"); abaixo de 1 m tratamos como dado inválido e ignoramos (não reprova).
+const PISO_METRAGEM_M = 1;
+// Tolerância de ±25% na razão de metragem (mesma fita publicada por sellers difere um pouco).
+const RAZAO_MIN = 0.8;
+const RAZAO_MAX = 1.25;
 
 /**
  * Decisão pura por variação a partir do estado local + elegibilidade do ML.
@@ -37,14 +68,72 @@ export interface EstadoVariacaoCatalogo {
 export function decidirAcaoCatalogo(
   estado: EstadoVariacaoCatalogo,
   elig: EligVar | undefined,
+  equivalencia?: Equivalencia,
 ): AcaoCatalogo {
   if (estado.catalogListingId) return 'pula';
   if (!elig || !elig.status) return 'pendente'; // sem entrada/sem status = ainda computando
   if (elig.status === 'READY_FOR_OPTIN' && elig.buy_box_eligible === true) {
-    return estado.catalogProductId ? 'optin' : 'sem_produto';
+    if (!estado.catalogProductId) return 'sem_produto';
+    // Trava de equivalência (ADR-0021 pós-incidente): só vincula a ficha equivalente. Quando a
+    // avaliação não foi feita (undefined), preserva o comportamento anterior (optin).
+    if (equivalencia && !equivalencia.ok) return 'ficha_divergente';
+    return 'optin';
   }
   if (elig.status === 'FAMILY_DIFF') return 'family_diff';
   return 'nao_elegivel'; // status explícito do ML (NOT_ELIGIBLE etc.)
+}
+
+/** Converte um valor de comprimento do ML ("10 m", "10 cm", "150 mm", "1,5 m") para metros. */
+export function normalizarComprimentoMetros(valueName: string | null): number | null {
+  if (!valueName) return null;
+  const m = valueName.trim().toLowerCase().match(/^([\d.,]+)\s*(mm|cm|m)$/);
+  if (!m) return null;
+  const num = Number(m[1].replace(',', '.'));
+  if (!Number.isFinite(num)) return null;
+  const fator = m[2] === 'mm' ? 0.001 : m[2] === 'cm' ? 0.01 : 1;
+  return num * fator;
+}
+
+/** Extrai id + atributos relevantes do 1º produto de `/products/search`. null se vazio. */
+export function parseProdutoCatalogoBusca(json: unknown): AtributosFicha | null {
+  const r = (json as { results?: Array<{ id?: string; attributes?: Array<{ id?: string; value_name?: string }> }> } | null)?.results?.[0];
+  if (!r?.id) return null;
+  const attr = (id: string): string | null =>
+    r.attributes?.find((a) => a?.id === id)?.value_name ?? null;
+  const unitsRaw = attr('UNITS_PER_PACK');
+  const units = unitsRaw != null ? Number(unitsRaw) : null;
+  return {
+    id: r.id,
+    saleFormat: attr('SALE_FORMAT'),
+    unitsPerPack: units != null && Number.isFinite(units) ? units : null,
+    lengthM: normalizarComprimentoMetros(attr('LENGTH')),
+  };
+}
+
+/**
+ * Decide se a ficha de catálogo é equivalente ao nosso produto (1 unidade avulsa).
+ * Conservador, mas só reprova com SINAL FORTE (evita falso-positivo em dado sujo):
+ *  - kit: SALE_FORMAT ≠ "Unidade" OU UNITS_PER_PACK > 1;
+ *  - metragem: ambos os comprimentos plausíveis (≥ 1 m) e fora da tolerância de ±25%.
+ * WIDTH não entra (largura vem suja tanto no nosso item quanto nas fichas do ML).
+ */
+export function fichaEquivalente(ficha: AtributosFicha, esperado: EsperadoProduto): Equivalencia {
+  if (ficha.unitsPerPack != null && ficha.unitsPerPack > 1) {
+    return { ok: false, motivo: `ficha_kit_${ficha.unitsPerPack}un` };
+  }
+  const fmt = ficha.saleFormat?.trim().toLowerCase();
+  if (fmt && fmt !== 'unidade') {
+    return { ok: false, motivo: `ficha_formato_${fmt}` };
+  }
+  const a = ficha.lengthM;
+  const b = esperado.lengthM;
+  if (a != null && b != null && a >= PISO_METRAGEM_M && b >= PISO_METRAGEM_M) {
+    const razao = a / b;
+    if (razao < RAZAO_MIN || razao > RAZAO_MAX) {
+      return { ok: false, motivo: `metragem_divergente_${a}m_vs_${b}m` };
+    }
+  }
+  return { ok: true, motivo: null };
 }
 
 export function montarBodyOptin(
@@ -79,14 +168,25 @@ async function mlGet(url: string, token: string): Promise<unknown | null> {
   return resp.json();
 }
 
-/** Produto de catálogo exato por GTIN real. GTIN ausente/3000* → null (validado: 1 resultado). */
-export async function buscarProdutoCatalogoPorGtin(token: string, gtin: string | null): Promise<string | null> {
+/**
+ * Produto de catálogo exato por GTIN real, já com os atributos da ficha (a busca retorna
+ * `attributes` inline — não custa chamada extra). GTIN ausente/3000* → null (validado: 1 resultado).
+ */
+export async function buscarProdutoCatalogoPorGtin(token: string, gtin: string | null): Promise<AtributosFicha | null> {
   if (gtinAusente(gtin)) return null;
   const json = await mlGet(
     `${API}/products/search?status=active&site_id=MLB&product_identifier=${encodeURIComponent(gtin!)}`,
     token,
   );
-  return parseProdutoBusca(json);
+  return parseProdutoCatalogoBusca(json);
+}
+
+/** Lê o comprimento (LENGTH) do NOSSO item publicado — base de comparação da trava de metragem. */
+export async function buscarEsperadoDoItem(token: string, itemId: string): Promise<EsperadoProduto> {
+  const json = await mlGet(`${API}/items/${itemId}?include_attributes=all`, token);
+  const attrs = (json as { attributes?: Array<{ id?: string; value_name?: string }> } | null)?.attributes;
+  const length = attrs?.find((a) => a?.id === 'LENGTH')?.value_name ?? null;
+  return { lengthM: normalizarComprimentoMetros(length) };
 }
 
 export async function buscarElegibilidadeCatalogo(token: string, itemId: string): Promise<Map<string, EligVar>> {
@@ -128,7 +228,7 @@ export interface VarCatalogoRow {
 }
 
 export interface ResumoCatalogo {
-  vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; pendente: number; erro: number; pulou: number;
+  vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; pendente: number; erro: number; pulou: number; ficha_divergente: number;
 }
 
 type DbLike = {
@@ -148,7 +248,7 @@ export async function vincularVariacoesCatalogo(
   itemId: string,
   variacoes: VarCatalogoRow[],
 ): Promise<ResumoCatalogo> {
-  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0 };
+  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0, ficha_divergente: 0 };
   const setVar = (id: string, values: Record<string, unknown>) =>
     admin.from('variacoes').update(values).eq('id', id);
 
@@ -160,6 +260,12 @@ export async function vincularVariacoesCatalogo(
     return resumo; // sem elegibilidade não dá para decidir; deixa para um retry futuro
   }
 
+  // Base de comparação da trava de metragem (1 leitura por item). Se falhar, degrada para só
+  // a trava anti-kit (esperado.lengthM = null → metragem não é avaliada).
+  let esperado: EsperadoProduto = { lengthM: null };
+  try { esperado = await buscarEsperadoDoItem(token, itemId); }
+  catch (e) { console.warn(`atributos do item ${itemId} indisponíveis p/ trava de metragem: ${(e as Error).message}`); }
+
   for (const v of variacoes) {
     try {
       if (v.catalog_listing_id) { resumo.pulou++; continue; }
@@ -168,13 +274,19 @@ export async function vincularVariacoesCatalogo(
       const e = elig.get(String(v.ml_variation_id));
       const ready = e?.status === 'READY_FOR_OPTIN' && e?.buy_box_eligible === true;
 
+      // Re-busca a ficha por GTIN quando elegível para ter os atributos atuais (kit/metragem) —
+      // o opt-in não pode confiar só no catalog_product_id salvo, que pode ser de uma ficha-kit.
       let cpid = v.catalog_product_id;
-      if (ready && !cpid) {
-        cpid = await buscarProdutoCatalogoPorGtin(token, v.gtin);
-        if (cpid) await setVar(v.id, { catalog_product_id: cpid });
+      let equivalencia: Equivalencia | undefined;
+      if (ready) {
+        const ficha = await buscarProdutoCatalogoPorGtin(token, v.gtin);
+        if (ficha) {
+          if (ficha.id !== cpid) { cpid = ficha.id; await setVar(v.id, { catalog_product_id: cpid }); }
+          equivalencia = fichaEquivalente(ficha, esperado);
+        }
       }
 
-      const acao = decidirAcaoCatalogo({ catalogListingId: v.catalog_listing_id, catalogProductId: cpid }, e);
+      const acao = decidirAcaoCatalogo({ catalogListingId: v.catalog_listing_id, catalogProductId: cpid }, e, equivalencia);
       if (acao === 'optin') {
         const r = await optinCatalogo(token, montarBodyOptin(itemId, v.ml_variation_id, cpid!));
         if (r.erro) {
@@ -184,6 +296,9 @@ export async function vincularVariacoesCatalogo(
           resumo.vinculado++;
           await setVar(v.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
         }
+      } else if (acao === 'ficha_divergente') {
+        resumo.ficha_divergente++;
+        await setVar(v.id, { catalog_status: 'ficha_divergente', catalog_erro: (equivalencia?.motivo ?? 'ficha nao equivalente').slice(0, 300) });
       } else {
         // acao ∈ {sem_produto, family_diff, nao_elegivel, pendente} — todas são chaves do resumo.
         resumo[acao as 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente']++;

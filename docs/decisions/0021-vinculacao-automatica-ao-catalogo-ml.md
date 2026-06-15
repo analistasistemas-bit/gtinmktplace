@@ -85,3 +85,31 @@ Em `variacoes`: `catalog_product_id`, `catalog_listing_id`, `catalog_status`
   Vira follow-up quando o endpoint for validado com token real.
 - **Separar anúncios `FAMILY_DIFF`** por família de catálogo (mudança estrutural; conflita com
   ADR-0003).
+
+## Revisão pós-incidente (2026-06-15) — trava de equivalência
+
+**Incidente:** um cliente comprou pelo catálogo um anúncio nosso de **1 rolo** que estava
+vinculado à ficha `MLB25284234` = *"Fita... Verde Menta... **Kit 5 Unidades**"*. A varredura das
+3 famílias com catálogo achou **19 vinculações erradas**: 17 fichas `SALE_FORMAT=Kit /
+UNITS_PER_PACK=5` (fita N.3), 1 ficha `UNITS_PER_PACK=10` (linha "10 cones") e 1 de dimensão
+divergente (Cacau → ficha 22mm×50m). Os 19 foram **pausados** no ML (contenção) e seguem para
+close+delete.
+
+**Causa raiz:** a premissa do passo 1 da Decisão — *"match só por GTIN real → ficha equivalente"*
+— é **falsa**. O catálogo do ML tem fichas de **kit** e de **dimensão diferente** carregando o
+GTIN da unidade avulsa; o ML ainda devolve `READY_FOR_OPTIN`/`buy_box_eligible` para elas. Pior:
+o **título engana** (fichas-kit sem "kit"/"5" no nome); a verdade está nos atributos estruturados.
+
+**Decisão adicional:** antes de cada opt-in, `fichaEquivalente` confronta os atributos da ficha
+(que `/products/search` já devolve inline — sem chamada extra) com o nosso produto:
+
+1. **Anti-kit (forte, dado limpo):** `UNITS_PER_PACK > 1` **ou** `SALE_FORMAT ≠ "Unidade"` → não vincula.
+2. **Metragem:** compara `LENGTH` da ficha com o `LENGTH` do nosso item (lido 1× por item), só
+   quando ambos são plausíveis (≥ 1 m), com tolerância de ±25%. Pega o caso de dimensão (10m vs 50m).
+3. **`WIDTH` ficou de fora:** é dado sujo nos dois lados (nosso item publica `2.2 cm` para uma fita
+   de 15mm; fichas variam entre `1.5 cm` e `22 cm`) — compará-lo geraria falso-positivo em massa.
+
+Ficha reprovada → novo estado `catalog_status='ficha_divergente'` (migration aditiva), com o
+motivo em `catalog_erro`. Quando a avaliação não pôde ser feita, o comportamento anterior é
+preservado (não bloqueia). **Follow-up:** corrigir o atributo `WIDTH` dos nossos itens (publicação)
+para reabilitar a trava de largura.

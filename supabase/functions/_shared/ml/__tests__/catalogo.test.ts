@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { decidirAcaoCatalogo, montarBodyOptin, indexarEligibility, type EligVar } from '../catalogo';
+import {
+  decidirAcaoCatalogo,
+  montarBodyOptin,
+  indexarEligibility,
+  normalizarComprimentoMetros,
+  parseProdutoCatalogoBusca,
+  fichaEquivalente,
+  type EligVar,
+} from '../catalogo';
 
 const READY: EligVar = { id: 1, status: 'READY_FOR_OPTIN', buy_box_eligible: true };
 const FAMILY_DIFF: EligVar = { id: 2, status: 'FAMILY_DIFF', buy_box_eligible: false, reason: 'variation_belongs_to_different_family' };
@@ -36,6 +44,106 @@ describe('decidirAcaoCatalogo', () => {
 
   it('entrada presente mas status ainda nulo (computando) → pendente', () => {
     expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, { id: 5, status: null, buy_box_eligible: null })).toBe('pendente');
+  });
+});
+
+describe('decidirAcaoCatalogo — trava de equivalência (ADR-0021 pós-incidente)', () => {
+  it('elegível + produto casado + ficha equivalente → optin', () => {
+    expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, READY, { ok: true, motivo: null })).toBe('optin');
+  });
+
+  it('elegível + produto casado mas ficha NÃO equivalente (kit) → ficha_divergente', () => {
+    expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, READY, { ok: false, motivo: 'ficha_kit_5un' })).toBe('ficha_divergente');
+  });
+
+  it('sem avaliação de equivalência (undefined) → optin (compatível com o comportamento anterior)', () => {
+    expect(decidirAcaoCatalogo({ catalogListingId: null, catalogProductId: 'MLB1' }, READY)).toBe('optin');
+  });
+
+  it('já vinculada tem precedência sobre equivalência', () => {
+    expect(decidirAcaoCatalogo({ catalogListingId: 'MLB9', catalogProductId: 'MLB1' }, READY, { ok: false, motivo: 'x' })).toBe('pula');
+  });
+});
+
+describe('normalizarComprimentoMetros', () => {
+  it('converte metros', () => expect(normalizarComprimentoMetros('10 m')).toBe(10));
+  it('converte centímetros para metros', () => expect(normalizarComprimentoMetros('10 cm')).toBeCloseTo(0.1));
+  it('converte milímetros para metros', () => expect(normalizarComprimentoMetros('150 mm')).toBeCloseTo(0.15));
+  it('aceita vírgula decimal', () => expect(normalizarComprimentoMetros('1,5 m')).toBeCloseTo(1.5));
+  it('metragem grande de fita', () => expect(normalizarComprimentoMetros('50 m')).toBe(50));
+  it('null/sem unidade → null', () => {
+    expect(normalizarComprimentoMetros(null)).toBeNull();
+    expect(normalizarComprimentoMetros('abc')).toBeNull();
+  });
+});
+
+describe('parseProdutoCatalogoBusca', () => {
+  const corpo = (attrs: Array<{ id: string; value_name: string }>) => ({
+    results: [{ id: 'MLB25284234', name: 'Fita Kit 5', attributes: attrs }],
+  });
+
+  it('extrai id, sale_format, units_per_pack e comprimento em metros', () => {
+    const f = parseProdutoCatalogoBusca(corpo([
+      { id: 'SALE_FORMAT', value_name: 'Kit' },
+      { id: 'UNITS_PER_PACK', value_name: '5' },
+      { id: 'LENGTH', value_name: '10 m' },
+      { id: 'WIDTH', value_name: '1.5 cm' },
+    ]));
+    expect(f).toEqual({ id: 'MLB25284234', saleFormat: 'Kit', unitsPerPack: 5, lengthM: 10 });
+  });
+
+  it('ficha de unidade sem UNITS_PER_PACK', () => {
+    const f = parseProdutoCatalogoBusca(corpo([
+      { id: 'SALE_FORMAT', value_name: 'Unidade' },
+      { id: 'LENGTH', value_name: '10 m' },
+    ]));
+    expect(f).toEqual({ id: 'MLB25284234', saleFormat: 'Unidade', unitsPerPack: null, lengthM: 10 });
+  });
+
+  it('resultado vazio → null', () => {
+    expect(parseProdutoCatalogoBusca({ results: [] })).toBeNull();
+    expect(parseProdutoCatalogoBusca(null)).toBeNull();
+  });
+});
+
+describe('fichaEquivalente — trava anti-kit e metragem (incidente VD MENTA)', () => {
+  // O caso real do incidente: ficha "Kit 5 Unidades" casada por GTIN da unidade avulsa.
+  it('REPROVA kit por UNITS_PER_PACK > 1', () => {
+    const r = fichaEquivalente({ id: 'MLB25284234', saleFormat: 'Kit', unitsPerPack: 5, lengthM: 10 }, { lengthM: 10 });
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/kit/i);
+  });
+
+  it('REPROVA kit por SALE_FORMAT mesmo sem units (linha "10 cones")', () => {
+    const r = fichaEquivalente({ id: 'MLB1', saleFormat: 'Kit', unitsPerPack: null, lengthM: null }, { lengthM: null });
+    expect(r.ok).toBe(false);
+  });
+
+  it('REPROVA kit de 10 cones (UNITS_PER_PACK=10, sale_format ausente)', () => {
+    const r = fichaEquivalente({ id: 'MLB1', saleFormat: null, unitsPerPack: 10, lengthM: null }, { lengthM: null });
+    expect(r.ok).toBe(false);
+  });
+
+  it('REPROVA metragem divergente (Cacau 10m vs ficha 50m)', () => {
+    const r = fichaEquivalente({ id: 'MLB70267621', saleFormat: 'Unidade', unitsPerPack: 1, lengthM: 50 }, { lengthM: 10 });
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/metragem/i);
+  });
+
+  it('APROVA unidade com metragem equivalente', () => {
+    const r = fichaEquivalente({ id: 'MLB1', saleFormat: 'Unidade', unitsPerPack: 1, lengthM: 10 }, { lengthM: 10 });
+    expect(r.ok).toBe(true);
+  });
+
+  it('APROVA quando a ficha tem LENGTH implausível "10 cm" (lixo de dados) e nosso é 10 m', () => {
+    // 6 fichas reais traziam LENGTH="10 cm" (erro de digitação de 10 m). Não pode reprovar.
+    const r = fichaEquivalente({ id: 'MLB1', saleFormat: 'Unidade', unitsPerPack: 1, lengthM: 0.1 }, { lengthM: 10 });
+    expect(r.ok).toBe(true);
+  });
+
+  it('APROVA quando não há metragem para comparar e não é kit', () => {
+    const r = fichaEquivalente({ id: 'MLB1', saleFormat: null, unitsPerPack: null, lengthM: null }, { lengthM: 10 });
+    expect(r.ok).toBe(true);
   });
 });
 
