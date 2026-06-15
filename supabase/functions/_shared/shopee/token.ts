@@ -67,6 +67,12 @@ async function lerTokens(userId: string) {
   return row;
 }
 
+/** shop_id da credencial Shopee do usuário (canal shop-scoped). Lança sem credencial. */
+export async function getShopId(userId: string): Promise<string> {
+  const row = await lerTokens(userId);
+  return row.shop_id;
+}
+
 async function gravarRotacao(userId: string, shopId: string, tok: TokenShopee) {
   const expiresAt = new Date(Date.now() + tok.expire_in * 1000).toISOString();
   const { error } = await adminClient().rpc('upsert_shopee_credentials', {
