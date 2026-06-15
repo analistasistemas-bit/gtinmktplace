@@ -5,6 +5,8 @@
 **Última atualização:** 2026-06-14 — MVP em produção (M0–M4 entregues; histórico detalhado no CLAUDE.md). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
 **📍 Passo atual:** Evolução v2 · Fase 0 · **E1 + E1b ✅ VALIDADOS EM PRODUÇÃO** (2026-06-14) — toda a camada de abstração de canais (CREATE + UPDATE + status) está atrás do `ChannelConnector`, mergeada, deployada e validada por bug bash real via automação de navegador (E1b: família de teste CREATE→UPDATE com reposição + cor nova + leitura de status ao vivo; anúncio `MLB6966427644` removido após). **Próximo épico: E2** (modelo de dados multicanal: `anuncios_externos` 1:N).
 
+**Hotfix 2026-06-15:** tela `Publicados` corrigida para exibir `tipo_aviamento='cola'` como `Cola` e incluir esse valor no filtro de tipos. A causa era somente de renderização no frontend; banco já estava correto.
+
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
 - [x] Task 3 (Upstash Redis + QStash) — pré-existente, captured via MCP

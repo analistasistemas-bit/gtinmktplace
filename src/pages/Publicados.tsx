@@ -97,6 +97,8 @@ function nomeTipo(tipo: TipoAviamento | null): string {
     case 'linha': return 'Linha';
     case 'fita': return 'Fita';
     case 'botao': return 'Botão';
+    case 'cola': return 'Cola';
+    case 'outro': return 'Outro';
     default: return '—';
   }
 }
@@ -386,6 +388,7 @@ export default function Publicados() {
                 <SelectItem value="linha">Linha</SelectItem>
                 <SelectItem value="fita">Fita</SelectItem>
                 <SelectItem value="botao">Botão</SelectItem>
+                <SelectItem value="cola">Cola</SelectItem>
               </SelectContent>
             </Select>
           </div>
