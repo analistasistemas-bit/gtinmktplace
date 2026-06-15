@@ -108,6 +108,23 @@ describe('familiaPublicavel', () => {
     expect(r.ok).toBe(false);
     expect(r.motivos.join(' ')).toMatch(/cor/i);
   });
+  it('CREATE genérico com uma única variação não bloqueia por cor ausente', () => {
+    const r = familiaPublicavel(fam({
+      tipoAviamento: 'outro',
+      categoriaMlId: 'MLB189007',
+      variacoes: [cor({ cor: null, fotoPath: 'u/l/101.jpeg' })],
+    }));
+    expect(r.ok).toBe(true);
+  });
+  it('CREATE de aviamento continua bloqueando cor ausente', () => {
+    const r = familiaPublicavel(fam({
+      tipoAviamento: 'fita',
+      categoriaMlId: 'MLB255054',
+      variacoes: [cor({ cor: null, fotoPath: 'u/l/101.jpeg' })],
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/cor/i);
+  });
   it('cor sem preço de publicação bloqueia', () => {
     const r = familiaPublicavel(fam({ variacoes: [cor({ precoPublicacao: null })] }));
     expect(r.ok).toBe(false);
@@ -153,6 +170,9 @@ describe('criticasVariacao', () => {
   });
   it('CREATE: sem cor', () => {
     expect(criticasVariacao(cor({ cor: '' }), 'CREATE')).toEqual(['sem cor']);
+  });
+  it('CREATE genérico unitário: sem cor não é crítica', () => {
+    expect(criticasVariacao(cor({ cor: null }), 'CREATE', { exigeCor: false })).toEqual([]);
   });
   it('CREATE: sem preço', () => {
     expect(criticasVariacao(cor({ precoPublicacao: null }), 'CREATE')).toEqual(['sem preço']);

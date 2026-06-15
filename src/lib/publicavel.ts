@@ -8,21 +8,34 @@ export interface ResultadoPublicavel {
 // Checagens por variação compartilhadas entre familiaPublicavel (motivos longos
 // no selo do pai) e criticasVariacao (destaque na linha da cor). Fonte única da
 // regra para os dois não divergirem.
-function flagsCritica(v: Variacao): { semCor: boolean; semFoto: boolean; semPreco: boolean } {
+function flagsCritica(
+  v: Variacao,
+  opts: { exigeCor?: boolean } = {},
+): { semCor: boolean; semFoto: boolean; semPreco: boolean } {
+  const exigeCor = opts.exigeCor ?? true;
   return {
-    semCor: !v.cor,
+    semCor: exigeCor && !v.cor,
     semFoto: !v.fotoPath,
     semPreco: !v.precoPublicacao || v.precoPublicacao <= 0,
   };
 }
 
+export function familiaExigeCor(familia: Familia): boolean {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  return !(familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && incluidas.length === 1);
+}
+
 // Críticas curtas de uma variação que será publicada como variação plena no ML,
 // para destacar a linha da cor na Revisão. Só vale p/ cores que viram variação:
 // excluída ou reposição de cor já casada no ML (UPDATE) não acusa nada.
-export function criticasVariacao(v: Variacao, operacao: OperacaoML): string[] {
+export function criticasVariacao(
+  v: Variacao,
+  operacao: OperacaoML,
+  opts: { exigeCor?: boolean } = {},
+): string[] {
   if (v.excluidaDaPublicacao) return [];
   if (operacao === 'UPDATE' && v.mlVariationId) return [];
-  const f = flagsCritica(v);
+  const f = flagsCritica(v, opts);
   const out: string[] = [];
   if (f.semCor) out.push('sem cor');
   if (f.semFoto) out.push('sem foto');
@@ -59,11 +72,12 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   // CREATE: regras completas (categoria, cor, foto, preço por cor).
   if (!familia.categoriaMlId) motivos.push('Categoria indefinida');
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const exigeCor = familiaExigeCor(familia);
   if (incluidas.length === 0) {
     motivos.push('Nenhuma cor incluída (ao menos 1 obrigatória)');
   }
   for (const v of incluidas) {
-    const f = flagsCritica(v);
+    const f = flagsCritica(v, { exigeCor });
     if (f.semCor) motivos.push(`Cor ${v.codigo} sem cor definida`);
     if (f.semFoto) motivos.push(`Cor ${v.cor || v.codigo} sem foto`);
     if (f.semPreco) motivos.push(`Cor ${v.cor || v.codigo} sem preço de publicação`);

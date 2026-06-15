@@ -76,6 +76,14 @@ describe('montarPayloadItem', () => {
     expect(ids).not.toContain('GTIN');
     expect(ids).not.toContain('EMPTY_GTIN_REASON');
   });
+  it('variação unitária sem cor usa valor controlado em vez de COLOR vazio', () => {
+    const p = montarPayloadItem(
+      { ...familia, categoria_ml_id: 'MLB189007' },
+      [{ ...variacoes[0], cor: null }],
+      capaPictureId,
+    );
+    expect(p.variations[0].attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Único' }]);
+  });
 });
 
 describe('montarPayloadItem com 2a foto', () => {

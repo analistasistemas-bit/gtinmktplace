@@ -56,6 +56,11 @@ Deno.serve(async (req) => {
 
   const lotesAfetados = [...new Set(alvos.map((f) => f.lote_id))];
   await admin.from('familias').delete().in('id', alvos.map((f) => f.id));
+  await admin.from('anuncios_externos')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('canal', 'mercado_livre')
+    .eq('codigo_pai', alvo.codigo_pai);
 
   // Reconta (ou remove se vazio) cada lote afetado. Remover não "conclui" o lote → setConcluido=false.
   let lotesRemovidos = 0;

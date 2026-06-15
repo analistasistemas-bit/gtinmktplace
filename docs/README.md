@@ -14,6 +14,8 @@ Sistema interno que transforma planilhas de produtos da empresa em anúncios pub
 ```
 docs/
 ├── README.md                      ← você está aqui (índice geral)
+├── project-status.md              ← estado atual curto e confiável
+├── project-history.md             ← marcos históricos resumidos
 ├── ROADMAP.md                     ← visão estratégica das fases (vivo)
 ├── TASKS.md                       ← checklist operacional do dia a dia (vivo)
 ├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis)
@@ -40,6 +42,8 @@ docs/
 ## Documentos vivos vs imutáveis
 
 - **Vivos** (`ROADMAP.md`, `TASKS.md`) — atualize livremente conforme o projeto avança. São o "agora" do projeto.
+- **Snapshot operacional** (`project-status.md`) — resumo curto do estado real atual; consulte antes de usar `ROADMAP.md` como fotografia do presente.
+- **Memória institucional** (`project-history.md`) — marcos e mudanças relevantes sem poluir o bootstrap do projeto.
 - **Imutáveis** (`decisions/*`) — uma vez aceito, um ADR não é editado. Se uma decisão muda, criamos um novo ADR que substitui (com referência ao antigo via "Substituído por").
 - **Spec formal** (`superpowers/specs/*`) — congela o estado de uma fase de planejamento. Nova fase = novo spec.
 
@@ -47,6 +51,8 @@ docs/
 
 | Quero saber... | Vá para |
 |---|---|
+| Em que estado o projeto está hoje, sem ler changelog | [project-status.md](project-status.md) |
+| Quais foram os marcos principais até aqui | [project-history.md](project-history.md) |
 | Por que escolhemos Supabase + Render + Upstash | [decisions/0001](decisions/0001-stack-tecnologico.md) |
 | Por que começamos por aviamentos, não tecidos | [decisions/0002](decisions/0002-mvp-aviamentos-primeiro.md) |
 | Como variações funcionam no anúncio do ML | [decisions/0003](decisions/0003-variacoes-agrupadas-por-pai.md) |
@@ -70,11 +76,9 @@ docs/
 
 ## Status do projeto
 
-- 🟢 **Brainstorming + spec formal:** concluídos (2026-05-26)
-- 🟢 **M0 (setup) + M1 (UI mockup) + M2 (backend core) + M3 (IA copywriting + Vision):** ✅ entregues, em produção em https://ean2marketplace-frontend.onrender.com
-- 🟢 **M3.1 (foto-capa + polimento UX):** ✅ entregue (2026-05-28) — foto-capa por família, template emoji, regenerar copy, badge compacto, GTIN editável. 101/101 testes.
-- 🟢 **App Mercado Livre Developers:** ✅ criada (PubliAI, Client ID 5907788004648058)
-- 🔴 **M4 (integração ML), M5 (polimento), M6 (lançamento):** futuros
+- O snapshot confiável fica em [project-status.md](project-status.md).
+- `ROADMAP.md` mantém a visão estratégica.
+- `TASKS.md` mantém o checklist operacional detalhado.
 
 ## Stack confirmado
 

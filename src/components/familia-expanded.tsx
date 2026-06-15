@@ -34,7 +34,7 @@ import {
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
-import { criticasVariacao } from '@/lib/publicavel';
+import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
 import { variacoesParaRevisao } from '@/lib/revisao-variacoes';
 import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
@@ -80,6 +80,15 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
   const inputCapa3Ref = useRef<HTMLInputElement>(null);
   const [trocandoCapa3, setTrocandoCapa3] = useState(false);
   const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
+  const exigeCor = familiaExigeCor(familia);
+  const corSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    const timers = corSaveTimers.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
 
   const updateTitulo = useUpdateFamiliaTitulo(familia.loteId);
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
@@ -113,6 +122,10 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
 
   function mudarCor(codigo: string, novaCor: string) {
     setVariacoes((vs) => vs.map((v) => (v.codigo === codigo ? { ...v, cor: novaCor } : v)));
+    if (corSaveTimers.current[codigo]) clearTimeout(corSaveTimers.current[codigo]);
+    corSaveTimers.current[codigo] = setTimeout(() => {
+      void salvarCorValor(codigo, novaCor);
+    }, 600);
   }
 
   function flash(setter: (s: SaveStatus) => void) {
@@ -195,17 +208,26 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
     }
   }
 
-  async function salvarCor(codigo: string) {
-    const v = variacoes.find((x) => x.codigo === codigo);
+  async function salvarCorValor(codigo: string, novaCor: string | null | undefined) {
+    const v = variacoes.find((x) => x.codigo === codigo) ?? familia.variacoes.find((x) => x.codigo === codigo);
     const original = familia.variacoes.find((x) => x.codigo === codigo);
-    if (!v?.id || !original || v.cor === original.cor) return;
+    if (!v?.id || !original || novaCor === original.cor) return;
     flashCor(codigo, 'salvando');
     try {
-      await updateCor.mutateAsync({ id: v.id, codigo: v.codigo, cor: v.cor });
+      await updateCor.mutateAsync({ id: v.id, codigo: v.codigo, cor: novaCor ?? '' });
       flashCor(codigo, 'salvo');
     } catch {
       flashCor(codigo, 'erro');
     }
+  }
+
+  async function salvarCor(codigo: string) {
+    if (corSaveTimers.current[codigo]) {
+      clearTimeout(corSaveTimers.current[codigo]);
+      delete corSaveTimers.current[codigo];
+    }
+    const v = variacoes.find((x) => x.codigo === codigo);
+    await salvarCorValor(codigo, v?.cor);
   }
 
   async function lidarTrocaCapa(e: React.ChangeEvent<HTMLInputElement>) {
@@ -513,7 +535,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
               // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
               const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
               // Cores com pendência (sem foto/cor/preço) ganham faixa âmbar p/ achar rápido.
-              const criticas = criticasVariacao(v, familia.operacao);
+              const criticas = criticasVariacao(v, familia.operacao, { exigeCor });
               return (
               <div
                 key={v.codigo}

@@ -23,6 +23,37 @@ export interface DepsResolver {
   llm?: (input: InputCategoria, candidatos: CategoriaCandidata[]) => Promise<string | null>;
 }
 
+const PISTAS_FORTES: Array<{
+  termos: RegExp;
+  candidato: RegExp;
+  fallback?: { categoriaId: string; categoriaNome: string };
+}> = [
+  {
+    termos: /\b(furadeira|furadeiras|parafusadeira|parafusadeiras|martelete|marteletes)\b/,
+    candidato: /\b(furadeira|furadeiras|parafusadeira|parafusadeiras|martelete|marteletes|drill|drills)\b/,
+    fallback: { categoriaId: 'MLB189007', categoriaNome: 'De Mão' },
+  },
+];
+
+function normalizarTexto(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ' ');
+}
+
+function escolherPorPistaForte(input: InputCategoria, candidatos: CategoriaCandidata[]): CategoriaCandidata | null {
+  const texto = normalizarTexto(`${input.nome} ${input.descricao ?? ''}`);
+  for (const pista of PISTAS_FORTES) {
+    if (!pista.termos.test(texto)) continue;
+    const escolhido = candidatos.find((c) =>
+      pista.candidato.test(normalizarTexto(`${c.domainId} ${c.domainName} ${c.categoriaNome}`))
+    );
+    if (escolhido) return escolhido;
+    if (pista.fallback) {
+      return { domainId: 'FALLBACK_STRONG_CLUE', domainName: pista.fallback.categoriaNome, ...pista.fallback };
+    }
+  }
+  return null;
+}
+
 /** Função pura (deps injetadas). Resiliente: preditor que lança vira [] → fallback manual. */
 export async function resolverCategoria(input: InputCategoria, deps: DepsResolver): Promise<ResultadoCategoria> {
   // 1. Override determinístico por vertical (zero regressão nos aviamentos).
@@ -39,6 +70,11 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
   }
 
   const topo = candidatos[0];
+
+  const porPista = escolherPorPistaForte(input, candidatos);
+  if (porPista && porPista.categoriaId !== topo.categoriaId) {
+    return { categoriaId: porPista.categoriaId, categoriaNome: porPista.categoriaNome, tipo: 'outro', origem: 'ia' };
+  }
 
   // 2b. Desempate LLM — só em ambiguidade real (≥2 domains distintos) e com closed-set.
   const domains = new Set(candidatos.map((c) => c.domainId));

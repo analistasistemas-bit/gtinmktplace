@@ -8,7 +8,7 @@ import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/us
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
-import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado } from '@/lib/publicavel';
+import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado, familiaExigeCor } from '@/lib/publicavel';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -72,11 +72,12 @@ function DescontoControle({ familia }: { familia: Familia }) {
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir, onIrParaCritica }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   const pub = familiaPublicavel(familia);
+  const exigeCor = familiaExigeCor(familia);
   const publicado = familia.status === 'publicado';
   // 1ª cor com pendência (sem foto/cor/preço): o selo de bloqueio leva direto a ela.
   const primeiraCritica = publicado
     ? undefined
-    : familia.variacoes.find((v) => criticasVariacao(v, familia.operacao).length > 0);
+    : familia.variacoes.find((v) => criticasVariacao(v, familia.operacao, { exigeCor }).length > 0);
   // Resumo do UPDATE na linha recolhida: quantas cores têm estoque alterado
   // (mesma regra do DiffEstoque). Dá o "o que será atualizado" sem precisar expandir.
   const coresComEstoqueAlterado = variacoesEstoqueAlterado(familia).length;
@@ -147,7 +148,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
                 : 'sem mudança de estoque'}
             </StatusPill>
           )}
-          {familia.variacoesSemCor > 0 && (
+          {exigeCor && familia.variacoesSemCor > 0 && (
             <StatusPill tone="danger">
               ⚠ {familia.variacoesSemCor} sem cor
             </StatusPill>

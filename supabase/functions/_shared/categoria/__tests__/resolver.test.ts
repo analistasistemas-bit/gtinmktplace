@@ -9,6 +9,13 @@ const furadeira: CategoriaCandidata[] = [
 const caderno: CategoriaCandidata[] = [
   { domainId: 'MLB-NOTEBOOKS_AND_WRITING_PADS', domainName: 'Cadernos', categoriaId: 'MLB105305', categoriaNome: 'Cadernos' },
 ];
+const furadeiraComTopoRuim: CategoriaCandidata[] = [
+  { domainId: 'MLB-NETWORK_GATEWAYS', domainName: 'Adaptadores e Gateways', categoriaId: 'MLB11400', categoriaNome: 'Adaptadores e Gateways' },
+  { domainId: 'MLB-ELECTRIC_DRILLS', domainName: 'Furadeiras elétricas', categoriaId: 'MLB189007', categoriaNome: 'De Mão' },
+];
+const furadeiraSemCandidatoCompativel: CategoriaCandidata[] = [
+  { domainId: 'MLB-NETWORK_GATEWAYS', domainName: 'Adaptadores e Gateways', categoriaId: 'MLB11400', categoriaNome: 'Adaptadores e Gateways' },
+];
 
 const deps = (candidatos: CategoriaCandidata[], llm?: DepsResolver['llm']): DepsResolver => ({
   preditor: async () => candidatos,
@@ -68,5 +75,23 @@ describe('resolverCategoria', () => {
   it('(h) preditor lança → manual (resiliente)', async () => {
     const r = await resolverCategoria({ nome: 'Algo' }, { preditor: async () => { throw new Error('rede'); } });
     expect(r.origem).toBe('manual');
+  });
+
+  it('(i) pista forte no título corrige topo semanticamente incompatível', async () => {
+    const r = await resolverCategoria(
+      { nome: 'AUDITORIA E1E4 FURADEIRA 650W BIVOLT' },
+      deps(furadeiraComTopoRuim),
+    );
+    expect(r.categoriaId).toBe('MLB189007');
+    expect(r.categoriaNome).toBe('De Mão');
+  });
+
+  it('(j) pista forte no título usa categoria validada quando o preditor só traz candidato incompatível', async () => {
+    const r = await resolverCategoria(
+      { nome: 'AUDITORIA REVALIDACAO FURADEIRA 650W BIVOLT' },
+      deps(furadeiraSemCandidatoCompativel),
+    );
+    expect(r.categoriaId).toBe('MLB189007');
+    expect(r.categoriaNome).toBe('De Mão');
   });
 });

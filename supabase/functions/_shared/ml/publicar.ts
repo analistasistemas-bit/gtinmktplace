@@ -57,6 +57,7 @@ const CURRENCY = 'BRL';
 const BUYING_MODE = 'buy_it_now';
 const LISTING_TYPE_PADRAO = 'gold_special';
 const CONDITION = 'new';
+const COR_UNITARIA = 'Único';
 
 // Ausência legítima de código universal: nulo/vazio ou código interno 3000* (não-EAN GS1).
 // Um GTIN preenchido (mesmo malformado) NÃO é ausência — vai ao ML, que valida o formato.
@@ -99,11 +100,13 @@ export function montarPayloadItem(
 
   // E4: categoria prevista passa o flag lido do schema; aviamento (override) usa o helper hard-coded.
   const aceitaEmptyGtin = aceitaEmptyGtinOverride ?? categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
+  const variacaoUnica = variacoes.length === 1;
   const variations: VariacaoItem[] = variacoes.map((v) => {
+    const cor = v.cor?.trim() || (variacaoUnica ? COR_UNITARIA : '');
     // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria
     // por variação, então sem isso a foto-capa do anúncio nunca apareceria.
     const variation: VariacaoItem = {
-      attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
+      attribute_combinations: [{ id: 'COLOR', value_name: cor }],
       available_quantity: v.estoque,
       price: v.preco_publicacao ?? 0,
       picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),

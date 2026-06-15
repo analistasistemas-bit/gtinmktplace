@@ -52,7 +52,9 @@ describe('classificarErroCanal', () => {
 
   it('marca o erro de foto transiente (retentavel=true) como retentável', () => {
     const e = Object.assign(new Error('foto'), { retentavel: true, status: 400 });
-    expect(classificarErroCanal(e).retentavel).toBe(true);
+    const r = classificarErroCanal(e);
+    expect(r.retentavel).toBe(true);
+    expect(r.codigo).toBe('FOTO');
   });
 
   it('marca 4xx comum como definitivo', () => {

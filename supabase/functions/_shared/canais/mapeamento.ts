@@ -36,5 +36,5 @@ export function classificarErroCanal(e: unknown): ErroCanal {
   const retentavelNativo = (e as { retentavel?: boolean }).retentavel === true;
   const retentavel = retentavelNativo || (typeof status === 'number' && (status >= 500 || status === 429));
   const mensagemOperador = e instanceof Error ? e.message : String(e);
-  return { codigo: 'DESCONHECIDO', mensagemOperador, retentavel, status, raw: e };
+  return { codigo: retentavelNativo ? 'FOTO' : 'DESCONHECIDO', mensagemOperador, retentavel, status, raw: e };
 }

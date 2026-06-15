@@ -9,6 +9,7 @@ import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import type { AnuncioCanonico } from '../_shared/canais/contrato.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
+import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -25,6 +26,16 @@ async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId
     .select('id').eq('lote_id', loteId).eq('status', 'pronto');
   const novo = prontas && prontas.length > 0 ? 'revisao' : 'concluido';
   await admin.from('lotes').update({ status: novo }).eq('id', loteId);
+}
+
+async function limparFotosCachePublicacao(admin: ReturnType<typeof adminClient>, familiaId: string): Promise<void> {
+  await admin.from('variacoes').update({ ml_picture_id: null })
+    .eq('familia_id', familiaId).is('ml_variation_id', null);
+  await admin.from('familias').update({
+    capa_ml_picture_id: null,
+    capa2_ml_picture_id: null,
+    capa3_ml_picture_id: null,
+  }).eq('id', familiaId);
 }
 
 Deno.serve(async (req) => {
@@ -149,12 +160,15 @@ Deno.serve(async (req) => {
     const res = await conn.criarAnuncio(ctx, anuncio);
     if (!res.ok) {
       const e = res.erro!;
-      if (e.retentavel && Number(req.headers.get('Upstash-Retried') ?? '0') < 3) {
+      const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
+      if (e.codigo === 'FOTO') await limparFotosCachePublicacao(admin, job.familia_id);
+      if (decidirErroCriarAnuncio(e, tentativas) === 'retentar') {
         return new Response(e.mensagemOperador, { status: 500, headers: corsHeaders });
       }
-      await admin.from('familias').update({ status: 'erro', erro_mensagem: e.mensagemOperador }).eq('id', job.familia_id);
+      const msg = e.codigo === 'FOTO' ? mensagemErroFotoRecuperavel(e.mensagemOperador) : e.mensagemOperador;
+      await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
       await talvezFinalizarLote(admin, job.lote_id);
-      return new Response(JSON.stringify({ erro: e.mensagemOperador }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ erro: msg }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     const ref = res.valor!;
 
@@ -212,18 +226,25 @@ Deno.serve(async (req) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const status = (err as { status?: number }).status;
-    // Erro de foto que o ML pede para reenviar é transiente (timing de processamento
-    // assíncrono de imagem). Retenta via QStash enquanto restar tentativa; ao esgotar
-    // (retries=3 do enfileirarPublicacao) cai no fluxo definitivo e marca 'erro'.
-    const retentavelFoto =
-      (err as { retentavel?: boolean }).retentavel === true &&
-      Number(req.headers.get('Upstash-Retried') ?? '0') < 3;
+    // Erro de foto que o ML pede para reenviar: limpa caches efêmeros para o retry subir
+    // fotos frescas; se esgotar, marca erro visível sem deixar preso em publicando.
+    const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
+    const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
+    if (retentavelFoto) {
+      await limparFotosCachePublicacao(admin, job.familia_id);
+      if (tentativas < 3) {
+        return new Response(msg, { status: 500, headers: corsHeaders });
+      }
+    }
     // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
-    if ((status && status >= 500) || retentavelFoto) {
+    if (status && status >= 500) {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
     // 4xx ou erro local: definitivo — persiste erro e reavalia o lote.
-    await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+    await admin.from('familias').update({
+      status: 'erro',
+      erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
+    }).eq('id', job.familia_id);
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ erro: msg }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
