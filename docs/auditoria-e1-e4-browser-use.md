@@ -560,3 +560,13 @@ Foram removidos:
 Residual:
 
 - A publicacao real da vertical nova (furadeira) nao foi concluida nesta rodada porque o lote foi limpo apos a publicacao segura da fita. A parte E4 critica foi validada no banco/UI: categoria `MLB189007`, atributo `VOLTAGE` closed-set e publicabilidade pela Revisao.
+
+## Revisão pós-auditoria (2026-06-15)
+
+Revisão independente das correções A1–A6 (testes, build, deploy x código, análise crítica).
+
+- **Verificação:** 630 testes ok, `tsc` e `eslint` limpos. Deploys conferidos contra o código final: `process-familia`, `publish-familia-ml` e `remover-publicado` em dia.
+- **A1 refatorado.** O fallback hard-coded `MLB189007` foi removido por ser band-aid que contraria a resolução genérica do ADR-0026, não escala por vertical e não valida a categoria em runtime. Novo contrato: a pista forte só corrige o top-1 quando há candidato compatível na lista do preditor; sem candidato compatível, o resolver devolve `manual` (categoria indefinida) e o operador escolhe na Revisão (`definir-categoria-familia`) — em vez de auto-atribuir categoria errada ou inventar uma fixa. Teste `(j)` reescrito; `process-familia` redeployado (v41).
+- **Item residual `MLB6967261422`.** Confirmado no ML como `status=closed` (encerrado, não vendável) — estado terminal, sem ação pendente.
+- **A2/A4/A6** mantidos como estão (sólidos). **A3** segue pendente de reconfirmação manual no browser.
+- **Pendência E4 (decisão 2026-06-15):** não publicar furadeira sintética só para fechar o E2E. O publish real de vertical nova será validado quando uma furadeira real entrar num lote de produção normal. Registrado em `project-status.md`.

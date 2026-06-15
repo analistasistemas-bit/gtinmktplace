@@ -33,15 +33,20 @@
 
 ## Deploys operacionais mais recentes
 
-- `process-familia` v40
+- `process-familia` v41 (refactor A1: resolver de categoria sem fallback hard-coded)
 - `publish-familia-ml` v31
 - `remover-publicado` v7
 
+## Revisão pós-auditoria (2026-06-15)
+
+- A1 refatorado: removido o fallback hard-coded `MLB189007` do resolver de categoria. A pista forte só corrige o top-1 do preditor quando há candidato compatível; sem candidato compatível, devolve `manual` (operador define a categoria na Revisão via `definir-categoria-familia`). Evita auto-atribuir categoria errada e não inventa categoria fixa.
+- Item residual da auditoria `MLB6967261422` confirmado no ML como `status=closed` (encerrado, não vendável) — estado terminal, sem ação pendente.
+
 ## Riscos e ressalvas abertas
 
-- Retry de foto transiente no `CREATE` foi reforcado e validado; o mesmo padrao ainda merece extensao consistente no `UPDATE` quando houver necessidade operacional
-- Publicacao real da vertical nova (furadeira) foi validada ate Revisao/banco na reauditoria recente, mas o CREATE real de prova que fechou o fluxo completo dessa rodada foi com a familia de fita
-- `ROADMAP.md` ficou para contexto estrategico; o estado operativo confiavel esta neste arquivo e em `TASKS.md`
+- Retry de foto transiente no `CREATE` foi reforçado e validado; o mesmo padrão ainda merece extensão consistente no `UPDATE` quando houver necessidade operacional
+- **E4 — publicação real de vertical nova (furadeira) ainda não comprovada ponta a ponta no ML.** Foi validada até Revisão/banco (categoria `MLB189007` + `VOLTAGE` closed-set + publicabilidade); o único CREATE real de prova da reauditoria foi com a família de fita. Decisão (2026-06-15): não forçar um publish sintético; fechar esse fluxo quando uma furadeira real entrar num lote de produção normal.
+- `ROADMAP.md` ficou para contexto estratégico; o estado operativo confiável está neste arquivo e em `TASKS.md`
 
 ## Proximo foco recomendado
 
