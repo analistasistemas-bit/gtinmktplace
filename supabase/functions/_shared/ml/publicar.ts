@@ -1,8 +1,9 @@
 import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
 import { calcularPrecoDe } from '../preco/desconto.ts';
 import { montarAtributosPacote, type DimensoesPacote } from './pacote.ts';
+import type { AtributoItem } from '../canais/tipos.ts';
 
-export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
+export type { AtributoItem };
 export interface PictureRef { id: string; }
 export interface VariacaoItem {
   attribute_combinations: AtributoItem[];

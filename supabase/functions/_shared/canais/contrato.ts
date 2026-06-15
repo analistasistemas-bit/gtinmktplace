@@ -1,9 +1,8 @@
 // supabase/functions/_shared/canais/contrato.ts
-import type { AtributoItem } from '../ml/publicar.ts';
-import type { DimensoesPacote } from '../ml/pacote.ts';
+import type { AtributoItem, DimensoesPacote } from './tipos.ts';
 
 /** Canais suportados. Expandir conforme novos adapters (ADR-0024). */
-export type CanalId = 'mercado_livre';
+export type CanalId = 'mercado_livre' | 'shopee';
 
 /** Recursos que variam por canal; a orquestração consulta antes de agir. */
 export interface Capabilities {
@@ -107,9 +106,10 @@ export interface ResultadoAtualizacao {
   variacoesExternas: Record<string, string>;
 }
 
-/** Contexto por chamada (auth lazy). */
+/** Contexto por chamada (auth lazy). `shopId` só para canais shop-scoped (Shopee); ML ignora. */
 export interface ContextoCanal {
   getToken(): Promise<string>;
+  shopId?: string;
 }
 
 export interface ChannelConnector {
