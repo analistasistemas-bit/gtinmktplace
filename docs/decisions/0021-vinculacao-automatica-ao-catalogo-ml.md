@@ -106,10 +106,17 @@ o **título engana** (fichas-kit sem "kit"/"5" no nome); a verdade está nos atr
 1. **Anti-kit (forte, dado limpo):** `UNITS_PER_PACK > 1` **ou** `SALE_FORMAT ≠ "Unidade"` → não vincula.
 2. **Metragem:** compara `LENGTH` da ficha com o `LENGTH` do nosso item (lido 1× por item), só
    quando ambos são plausíveis (≥ 1 m), com tolerância de ±25%. Pega o caso de dimensão (10m vs 50m).
-3. **`WIDTH` ficou de fora:** é dado sujo nos dois lados (nosso item publica `2.2 cm` para uma fita
-   de 15mm; fichas variam entre `1.5 cm` e `22 cm`) — compará-lo geraria falso-positivo em massa.
+3. **`WIDTH` ficou de fora:** é dado sujo. O item no ML mostra `2.2 cm` para uma fita de 15mm,
+   mas **nós não enviamos `WIDTH`** (o `atributos_ml` da família só tem BRAND/RIBBON_TYPE/
+   IS_DOUBLE_FACE) — quem inferiu errado foi o próprio ML; e as fichas variam entre `1.5 cm` e
+   `22 cm`. Compará-lo geraria falso-positivo em massa.
 
 Ficha reprovada → novo estado `catalog_status='ficha_divergente'` (migration aditiva), com o
 motivo em `catalog_erro`. Quando a avaliação não pôde ser feita, o comportamento anterior é
-preservado (não bloqueia). **Follow-up:** corrigir o atributo `WIDTH` dos nossos itens (publicação)
-para reabilitar a trava de largura.
+preservado (não bloqueia).
+
+**Trava de largura (não implementada, sem pendência de código):** passar a enviar `WIDTH` correto
+exigiria a tabela "nº da fita Progresso → largura em mm" (N.3=15mm, N.12=50mm, …), que **não está
+na planilha** (o nome traz o nº e a metragem, não a largura). Sem essa fonte de domínio, enviar
+`WIDTH` seria inventar dado de produto. A trava anti-kit + metragem já cobre os casos do incidente,
+então a trava de largura não é necessária; fica reaberta apenas se o fornecedor disponibilizar a tabela.
