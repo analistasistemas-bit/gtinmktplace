@@ -86,12 +86,13 @@ describe('resolverCategoria', () => {
     expect(r.categoriaNome).toBe('De Mão');
   });
 
-  it('(j) pista forte no título usa categoria validada quando o preditor só traz candidato incompatível', async () => {
+  it('(j) pista forte sem candidato compatível → manual (não inventa categoria, operador decide)', async () => {
     const r = await resolverCategoria(
       { nome: 'AUDITORIA REVALIDACAO FURADEIRA 650W BIVOLT' },
       deps(furadeiraSemCandidatoCompativel),
     );
-    expect(r.categoriaId).toBe('MLB189007');
-    expect(r.categoriaNome).toBe('De Mão');
+    expect(r.origem).toBe('manual');
+    expect(r.categoriaId).toBeNull();
+    expect(r.tipo).toBe('outro');
   });
 });
