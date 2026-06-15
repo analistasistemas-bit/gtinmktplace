@@ -23,15 +23,13 @@ export interface DepsResolver {
   llm?: (input: InputCategoria, candidatos: CategoriaCandidata[]) => Promise<string | null>;
 }
 
-const PISTAS_FORTES: Array<{
-  termos: RegExp;
-  candidato: RegExp;
-  fallback?: { categoriaId: string; categoriaNome: string };
-}> = [
+// Pistas fortes de vertical: termos inequívocos no título (ferramenta elétrica)
+// que o preditor do ML às vezes rankeia mal. Conservador: só corrige quando há
+// um candidato compatível na lista do preditor — nunca injeta categoria fixa.
+const PISTAS_FORTES: Array<{ termos: RegExp; candidato: RegExp }> = [
   {
     termos: /\b(furadeira|furadeiras|parafusadeira|parafusadeiras|martelete|marteletes)\b/,
     candidato: /\b(furadeira|furadeiras|parafusadeira|parafusadeiras|martelete|marteletes|drill|drills)\b/,
-    fallback: { categoriaId: 'MLB189007', categoriaNome: 'De Mão' },
   },
 ];
 
@@ -39,17 +37,23 @@ function normalizarTexto(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ' ');
 }
 
-function escolherPorPistaForte(input: InputCategoria, candidatos: CategoriaCandidata[]): CategoriaCandidata | null {
+type VeredictoPista =
+  | { tipo: 'escolhido'; candidato: CategoriaCandidata }
+  | { tipo: 'sem-candidato' }
+  | null;
+
+// Avalia pistas fortes no título:
+// - sem pista → null (segue fluxo normal do preditor/LLM);
+// - pista + candidato compatível → 'escolhido' (corrige top-1 incompatível);
+// - pista + nenhum candidato compatível → 'sem-candidato' (não confiar no topo).
+function avaliarPistaForte(input: InputCategoria, candidatos: CategoriaCandidata[]): VeredictoPista {
   const texto = normalizarTexto(`${input.nome} ${input.descricao ?? ''}`);
   for (const pista of PISTAS_FORTES) {
     if (!pista.termos.test(texto)) continue;
     const escolhido = candidatos.find((c) =>
       pista.candidato.test(normalizarTexto(`${c.domainId} ${c.domainName} ${c.categoriaNome}`))
     );
-    if (escolhido) return escolhido;
-    if (pista.fallback) {
-      return { domainId: 'FALLBACK_STRONG_CLUE', domainName: pista.fallback.categoriaNome, ...pista.fallback };
-    }
+    return escolhido ? { tipo: 'escolhido', candidato: escolhido } : { tipo: 'sem-candidato' };
   }
   return null;
 }
@@ -71,9 +75,15 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
 
   const topo = candidatos[0];
 
-  const porPista = escolherPorPistaForte(input, candidatos);
-  if (porPista && porPista.categoriaId !== topo.categoriaId) {
-    return { categoriaId: porPista.categoriaId, categoriaNome: porPista.categoriaNome, tipo: 'outro', origem: 'ia' };
+  // Pista forte de vertical: corrige top-1 incompatível quando há candidato
+  // compatível; se a pista existe mas nenhum candidato bate, não auto-atribui
+  // categoria errada — devolve manual p/ o operador escolher na Revisão.
+  const pista = avaliarPistaForte(input, candidatos);
+  if (pista?.tipo === 'escolhido' && pista.candidato.categoriaId !== topo.categoriaId) {
+    return { categoriaId: pista.candidato.categoriaId, categoriaNome: pista.candidato.categoriaNome, tipo: 'outro', origem: 'ia' };
+  }
+  if (pista?.tipo === 'sem-candidato') {
+    return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
   }
 
   // 2b. Desempate LLM — só em ambiguidade real (≥2 domains distintos) e com closed-set.
