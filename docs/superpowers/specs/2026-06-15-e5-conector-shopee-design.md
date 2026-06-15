@@ -143,3 +143,18 @@ Tudo na branch isolada `worktree-e5-conector-shopee`, **não mergeado** até val
 - **Logística obrigatória no item:** add_item pode falhar sem canal de envio ativo na loja — validar `get_channel_list` na Fatia 1.
 - **Unidades/campos BR do add_item** (peso kg vs g, campos obrigatórios por categoria) — confirmar contra sandbox.
 - **Rotação do refresh_token** — confirmar comportamento; lock Redis mitiga corrida.
+
+## Estado da implementação (2026-06-15) — branch `worktree-e5-conector-shopee`
+
+**Código-completo e testado por unidade (700+ testes, tsc/eslint verdes), na branch, NÃO mergeado/deployado:**
+- Fatia 0: tipos neutralizados (`_shared/canais/tipos.ts`), `CanalId += 'shopee'`, `ContextoCanal.shopId?`.
+- `_shared/shopee/`: assinatura, status, mapeamento, item (peso g→kg, item_sku, descrição embutida), cliente, token (OAuth/refresh), fotos, categoria.
+- `_shared/canais/shopee.ts`: `shopeeConnector` (no-ops de descrição, `atualizar=NAO_SUPORTADO` Fatia 1, `lerStatus` em lote) + `registry`.
+- Edge functions: `shopee-oauth-start`, `shopee-oauth-callback`, `publish-familia-shopee` (estado em `anuncios_externos`, cache de foto p/ idempotência).
+- Migration `e5_shopee_credentials` (enum + tabela + RPCs Vault) — **não aplicada**.
+
+**Lacunas conhecidas (Fatia 1):**
+- **Enfileiramento Shopee não wired:** `queue.ts` ainda só enfileira o worker ML; disparar `publish-familia-shopee` (e a UI de seleção de canal) é E6. Para teste de sandbox, o worker pode ser invocado diretamente.
+- **Categoria Shopee** vem de `metadados_canal.categoria_id` (operador define manualmente); UI para isso é E6.
+
+**Bloqueio para prosseguir (precisa do Diego):** integração real (auth/sign contra sandbox; publish real) exige a conta Shopee Open Platform — ver `docs/shopee-open-platform-setup.md`. Sem o Test App (`partner_id/partner_key`) não há como validar assinatura/host nem publicar. Este é o ponto onde a implementação para sem intervenção externa.
