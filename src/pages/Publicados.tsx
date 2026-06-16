@@ -268,13 +268,13 @@ export default function Publicados() {
   const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
 
-  // Clicar na coluna cicla: asc → desc → sem ordenação (volta à ordem natural).
+  // Clicar na coluna alterna só entre A→Z e Z→A. Coluna nova começa em asc (A→Z).
   const ordenarPor = (coluna: ColunaOrdenavel) => {
-    setOrd((atual) => {
-      if (atual?.coluna !== coluna) return { coluna, dir: 'asc' };
-      if (atual.dir === 'asc') return { coluna, dir: 'desc' };
-      return null;
-    });
+    setOrd((atual) =>
+      atual?.coluna === coluna
+        ? { coluna, dir: atual.dir === 'asc' ? 'desc' : 'asc' }
+        : { coluna, dir: 'asc' },
+    );
   };
 
   // Desabilita só a linha em remoção (não todas).
