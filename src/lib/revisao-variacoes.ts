@@ -54,7 +54,8 @@ export function coresNovasPendentes(familia: Familia): { codigo: string; cor: st
   const porCodigo = new Map(familia.variacoes.map((v) => [v.codigo, v]));
   return novas
     .map((c) => porCodigo.get(c))
-    .filter((v): v is Variacao => v != null && !v.mlVariationId)
+    // Estoque 0 dorme até reposição: não é cor nova a publicar agora, então sai do aviso.
+    .filter((v): v is Variacao => v != null && !v.mlVariationId && v.estoque > 0)
     .sort(compararCor)
     .map((v) => ({ codigo: v.codigo, cor: v.cor || v.codigo }));
 }

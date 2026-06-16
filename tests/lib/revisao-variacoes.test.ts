@@ -124,4 +124,14 @@ describe('coresNovasPendentes', () => {
   it('sem mudança estrutural → vazio', () => {
     expect(coresNovasPendentes(fam({ mudancaEstrutural: null }))).toHaveLength(0);
   });
+  it('exclui cor nova com estoque 0 (dorme até reposição — não é cor nova a publicar)', () => {
+    const f = fam({
+      mudancaEstrutural: { novas: ['1', '2'], removidas: [] },
+      variacoes: [
+        v({ codigo: '1', cor: 'Cereja', mlVariationId: null, estoque: 0 }),
+        v({ codigo: '2', cor: 'Azul', mlVariationId: null, estoque: 5 }),
+      ],
+    });
+    expect(coresNovasPendentes(f).map((x) => x.cor)).toEqual(['Azul']);
+  });
 });
