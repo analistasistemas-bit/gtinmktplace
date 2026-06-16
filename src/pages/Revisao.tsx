@@ -49,7 +49,9 @@ export default function Revisao() {
   const { data: familias = [], isLoading, error } = useFamilias(loteId);
   const [filtro, setFiltro] = useState<FiltroOp>('todos');
   const [busca, setBusca] = useState('');
-  const [ocultarSemEstoque, setOcultarSemEstoque] = useState(false);
+  // Ligado por padrão: o operador foca nas cores com estoque; as zeradas (catálogo
+  // que dorme até reposição) ficam escondidas até ele clicar para mostrá-las.
+  const [ocultarSemEstoque, setOcultarSemEstoque] = useState(true);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
