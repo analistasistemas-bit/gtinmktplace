@@ -149,7 +149,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           {!publicado && familia.operacao === 'UPDATE' && (
             <StatusPill tone="info">
               {coresComEstoqueAlterado > 0
-                ? `estoque: ${coresComEstoqueAlterado} cor(es)`
+                ? `Estoque atualizado: ${coresComEstoqueAlterado} cor(es)`
                 : 'sem mudança de estoque'}
             </StatusPill>
           )}
