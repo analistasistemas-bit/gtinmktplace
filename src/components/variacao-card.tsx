@@ -85,7 +85,11 @@ export function VariacaoCard({
             className="h-7"
           />
           <div className="flex items-center gap-1 whitespace-nowrap">
-            <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
+            {/* Alerta "sem cor" (⚠️) só para cor que vai ao ML agora: estoque 0 dorme
+                até repor e não exige cor. Com cor, o badge de origem é informativo. */}
+            {(variacao.cor || variacao.estoque > 0) && (
+              <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
+            )}
             <StatusInline status={statusCor} />
           </div>
           {/* EAN/GTIN é só exibição (vem da planilha; não editável na Revisão) */}

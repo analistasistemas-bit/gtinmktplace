@@ -104,6 +104,20 @@ describe('coresNovasSemFoto', () => {
     expect(totalCoresNovasSemFoto([f])).toBe(1);
   });
 
+  it('ignora cor nova com estoque 0 (dorme até reposição — não pede foto)', () => {
+    const f = familia({
+      variacoes: [
+        variacao({ codigo: '00000102', mlVariationId: null, fotoPath: undefined, estoque: 0 }),
+        variacao({ codigo: '00000103', mlVariationId: null, fotoPath: undefined, estoque: 7 }),
+      ],
+    });
+    // só a com estoque > 0 conta
+    expect(coresNovasSemFoto([f])).toEqual([
+      { codigoPai: '00000100', titulo: 'FITA EXEMPLO', codigos: ['00000103'] },
+    ]);
+    expect(totalCoresNovasSemFoto([f])).toBe(1);
+  });
+
   it('retorna vazio quando não há cores novas sem foto', () => {
     const f = familia({
       variacoes: [variacao({ codigo: '00000101', mlVariationId: 'V1', fotoPath: 'a.jpg' })],
