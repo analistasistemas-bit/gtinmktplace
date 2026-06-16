@@ -23,7 +23,6 @@ import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { PainelAnalise } from '@/components/painel-analise';
 import { CardCategoria } from '@/components/card-categoria';
-import { DiffEstoque } from '@/components/diff-estoque';
 import {
   useUpdateVariacaoPreco,
   useUpdateVariacaoCor,
@@ -441,7 +440,6 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           <span className="text-muted-foreground">Edições aqui só vão ao ar num novo UPDATE.</span>
         </div>
       )}
-      <DiffEstoque familia={familia} />
       <div className="mb-4 flex flex-col gap-4 border-b pb-4">
         {/* Faixa fina de fotos: a Análise (abaixo) é o foco da tela, então as fotos
             ficam compactas em uma linha, sem comer a largura. */}
