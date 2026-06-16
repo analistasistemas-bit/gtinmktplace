@@ -49,6 +49,7 @@ export default function Revisao() {
   const { data: familias = [], isLoading, error } = useFamilias(loteId);
   const [filtro, setFiltro] = useState<FiltroOp>('todos');
   const [busca, setBusca] = useState('');
+  const [ocultarSemEstoque, setOcultarSemEstoque] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -272,6 +273,15 @@ export default function Revisao() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          <Button
+            variant={ocultarSemEstoque ? 'default' : 'outline'}
+            size="sm"
+            aria-pressed={ocultarSemEstoque}
+            onClick={() => setOcultarSemEstoque((s) => !s)}
+            title="Esconde as variações com estoque 0 nas famílias abertas"
+          >
+            Ocultar sem estoque
+          </Button>
           <Input
             placeholder="Buscar por código ou nome..."
             value={busca}
@@ -356,6 +366,7 @@ export default function Revisao() {
                     familia={familia}
                     focoCodigo={focoCritica?.familiaId === familia.id ? focoCritica.codigo : null}
                     onFocoConcluido={() => setFocoCritica(null)}
+                    ocultarSemEstoque={ocultarSemEstoque}
                   />
                 )}
               </div>

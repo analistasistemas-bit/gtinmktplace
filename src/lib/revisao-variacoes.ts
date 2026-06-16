@@ -13,10 +13,17 @@ export function compararCor(a: Variacao, b: Variacao): number {
 // Variações exibidas na Revisão: sempre em ordem alfabética de cor. Depois de a família
 // ser publicada, mostra só as que NÃO foram para o anúncio (sem ml_variation_id) — as
 // cores que "não conseguiram publicar" (ex.: cor nova sem foto); as já publicadas saem
-// da lista. Antes de publicar, mostra todas. Não muta a entrada.
-export function variacoesParaRevisao(variacoes: Variacao[], publicado: boolean): Variacao[] {
+// da lista. Antes de publicar, mostra todas. `ocultarSemEstoque` (filtro da barra da
+// Revisão) esconde as cores com estoque 0, que dormem até reposição. Não muta a entrada.
+export function variacoesParaRevisao(
+  variacoes: Variacao[],
+  publicado: boolean,
+  ocultarSemEstoque = false,
+): Variacao[] {
   const ordenadas = [...variacoes].sort(compararCor);
-  return publicado ? ordenadas.filter((v) => !v.mlVariationId) : ordenadas;
+  let r = publicado ? ordenadas.filter((v) => !v.mlVariationId) : ordenadas;
+  if (ocultarSemEstoque) r = r.filter((v) => v.estoque > 0);
+  return r;
 }
 
 // Cores novas (mudança estrutural detectada no ingest) que ainda NÃO foram publicadas

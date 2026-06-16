@@ -50,6 +50,18 @@ describe('variacoesParaRevisao', () => {
     variacoesParaRevisao(orig, false);
     expect(orig.map((x) => x.cor)).toEqual(['Z', 'A']);
   });
+  it('ocultarSemEstoque: esconde variações com estoque 0', () => {
+    const arr = [
+      v({ cor: 'Azul', estoque: 0 }),
+      v({ cor: 'Branco', estoque: 7 }),
+      v({ cor: 'Verde', estoque: 0 }),
+    ];
+    expect(variacoesParaRevisao(arr, false, true).map((x) => x.cor)).toEqual(['Branco']);
+  });
+  it('ocultarSemEstoque desligado (padrão): mantém estoque 0', () => {
+    const arr = [v({ cor: 'Azul', estoque: 0 }), v({ cor: 'Branco', estoque: 7 })];
+    expect(variacoesParaRevisao(arr, false).map((x) => x.cor)).toEqual(['Azul', 'Branco']);
+  });
 });
 
 function fam(over: Partial<Familia>): Familia {

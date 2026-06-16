@@ -47,9 +47,10 @@ interface FamiliaExpandedProps {
   familia: Familia;
   focoCodigo?: string | null;
   onFocoConcluido?: () => void;
+  ocultarSemEstoque?: boolean;
 }
 
-export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: FamiliaExpandedProps) {
+export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarSemEstoque = false }: FamiliaExpandedProps) {
   const [titulo, setTitulo] = useState(familia.titulo);
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
@@ -314,7 +315,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido }: Famili
   // Variações da Revisão: sempre alfabéticas por cor. Após publicar, só as que NÃO
   // foram ao anúncio (sem ml_variation_id) — o que "não conseguiu publicar".
   const publicado = familia.status === 'publicado';
-  const variacoesExibidas = variacoesParaRevisao(variacoes, publicado);
+  const variacoesExibidas = variacoesParaRevisao(variacoes, publicado, ocultarSemEstoque);
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
