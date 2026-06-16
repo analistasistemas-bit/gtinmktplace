@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -41,8 +41,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { filtrarPublicados } from '@/lib/publicados';
-import type { PublicadoItem, StatusPublicado, FiltroPublicados } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados } from '@/lib/publicados';
+import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import type { TipoAviamento } from '@/lib/tipos-dominio';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -219,6 +219,43 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
 }
 
 // ============================================================================
+// Cabeçalho ordenável
+// ============================================================================
+
+interface ThOrdenavelProps {
+  coluna: ColunaOrdenavel;
+  label: string;
+  ord: OrdenacaoPublicados | null;
+  onOrdenar: (coluna: ColunaOrdenavel) => void;
+}
+
+function ThOrdenavel({ coluna, label, ord, onOrdenar }: ThOrdenavelProps) {
+  const ativo = ord?.coluna === coluna;
+  return (
+    <TableHead>
+      <button
+        type="button"
+        onClick={() => onOrdenar(coluna)}
+        className={cn(
+          'flex items-center gap-1 transition-colors hover:text-foreground',
+          ativo && 'text-foreground',
+        )}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        {!ativo ? (
+          <ChevronsUpDown className="h-3 w-3 opacity-40" />
+        ) : ord!.dir === 'asc' ? (
+          <ArrowUp className="h-3 w-3" />
+        ) : (
+          <ArrowDown className="h-3 w-3" />
+        )}
+      </button>
+    </TableHead>
+  );
+}
+
+// ============================================================================
 // Página principal
 // ============================================================================
 
@@ -228,7 +265,17 @@ export default function Publicados() {
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
 
   const [filtro, setFiltro] = useState<FiltroPublicados>({});
+  const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
+
+  // Clicar na coluna cicla: asc → desc → sem ordenação (volta à ordem natural).
+  const ordenarPor = (coluna: ColunaOrdenavel) => {
+    setOrd((atual) => {
+      if (atual?.coluna !== coluna) return { coluna, dir: 'asc' };
+      if (atual.dir === 'asc') return { coluna, dir: 'desc' };
+      return null;
+    });
+  };
 
   // Desabilita só a linha em remoção (não todas).
   const handleRemover = (familiaId: string) => {
@@ -255,7 +302,10 @@ export default function Publicados() {
     });
   }, [publicados, statusData]);
 
-  const itensExibidos = filtrarPublicados(merged, filtro);
+  const itensExibidos = useMemo(
+    () => ordenarPublicados(filtrarPublicados(merged, filtro), ord),
+    [merged, filtro, ord],
+  );
   const pag = usePaginacao(itensExibidos);
   const topoRef = useRef<HTMLDivElement>(null);
 
@@ -264,11 +314,11 @@ export default function Publicados() {
     topoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  // Mudar qualquer filtro/busca volta para a página 1.
+  // Mudar qualquer filtro/busca/ordenação volta para a página 1.
   useEffect(() => {
     pag.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro.busca, filtro.fornecedor, filtro.status, filtro.tipo]);
+  }, [filtro.busca, filtro.fornecedor, filtro.status, filtro.tipo, ord?.coluna, ord?.dir]);
 
   // Fornecedores distintos para o filtro
   const fornecedores = useMemo(
@@ -398,14 +448,14 @@ export default function Publicados() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
-                  <TableHead>Título</TableHead>
-                  <TableHead>Fornecedor</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Preço publicado</TableHead>
-                  <TableHead>Estoque atual</TableHead>
-                  <TableHead>Preço atual</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Publicado em</TableHead>
+                  <ThOrdenavel coluna="titulo" label="Título" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="fornecedor" label="Fornecedor" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="tipo" label="Tipo" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="precoPublicacao" label="Preço publicado" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="estoque" label="Estoque atual" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="precoAtual" label="Preço atual" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="status" label="Status" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="publicadoEm" label="Publicado em" ord={ord} onOrdenar={ordenarPor} />
                   <TableHead>Ações</TableHead>
                 </TableRow>
               </TableHeader>

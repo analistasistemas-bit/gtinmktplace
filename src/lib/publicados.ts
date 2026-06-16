@@ -72,3 +72,60 @@ export function filtrarPublicados(
       (!q || i.titulo.toLowerCase().includes(q)),
   );
 }
+
+// ── Ordenação por coluna ────────────────────────────────────────────────────
+
+export type ColunaOrdenavel =
+  | 'titulo'
+  | 'fornecedor'
+  | 'tipo'
+  | 'precoPublicacao'
+  | 'estoque'
+  | 'precoAtual'
+  | 'status'
+  | 'publicadoEm';
+
+export interface OrdenacaoPublicados {
+  coluna: ColunaOrdenavel;
+  dir: 'asc' | 'desc';
+}
+
+// Severidade do status para a ordenação "Status" ser previsível (ativo→indisponível),
+// em vez de alfabética do rótulo.
+const STATUS_ORDEM: Record<StatusPublicado, number> = {
+  ativo: 0, pausado: 1, encerrado: 2, moderado: 3, inativo: 4, indisponivel: 5,
+};
+
+function chaveOrdenacao(i: PublicadoItem, coluna: ColunaOrdenavel): string | number | null {
+  switch (coluna) {
+    case 'titulo': return i.titulo;
+    case 'fornecedor': return i.fornecedor;
+    case 'tipo': return i.tipo;
+    case 'precoPublicacao': return i.precoPublicacao;
+    case 'estoque': return i.estoque ?? null;
+    case 'precoAtual': return i.precoAtual ?? null;
+    case 'status': return STATUS_ORDEM[i.status ?? 'indisponivel'];
+    case 'publicadoEm': return i.publicadoEm; // ISO 8601 ordena lexicograficamente
+  }
+}
+
+// Ordena por coluna sem mutar a entrada. Valores nulos/vazios vão sempre para o fim,
+// independente da direção. Strings comparam em pt-BR (acento/caixa-insensível, numérico).
+export function ordenarPublicados(
+  itens: PublicadoItem[],
+  ord: OrdenacaoPublicados | null,
+): PublicadoItem[] {
+  if (!ord) return itens;
+  const fator = ord.dir === 'asc' ? 1 : -1;
+  return [...itens].sort((a, b) => {
+    const va = chaveOrdenacao(a, ord.coluna);
+    const vb = chaveOrdenacao(b, ord.coluna);
+    const na = va == null || va === '';
+    const nb = vb == null || vb === '';
+    if (na && nb) return 0;
+    if (na) return 1;
+    if (nb) return -1;
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * fator;
+    return String(va).localeCompare(String(vb), 'pt-BR', { numeric: true, sensitivity: 'base' }) * fator;
+  });
+}

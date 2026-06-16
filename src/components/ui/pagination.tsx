@@ -108,7 +108,7 @@ export function Pagination({
         )}
 
         <Select value={String(tamanho)} onValueChange={(v) => onTamanho(Number(v))}>
-          <SelectTrigger className="h-8 w-[110px] text-sm" aria-label="Itens por página">
+          <SelectTrigger className="h-8 w-[132px] text-sm" aria-label="Itens por página">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

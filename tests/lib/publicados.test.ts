@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filtrarPublicados, dedupePublicados } from '../../src/lib/publicados';
+import { filtrarPublicados, dedupePublicados, ordenarPublicados } from '../../src/lib/publicados';
 import type { PublicadoItem } from '../../src/lib/publicados';
 
 const fixtures: PublicadoItem[] = [
@@ -112,6 +112,60 @@ describe('filtrarPublicados', () => {
     expect(resultStatus.map((i) => i.familiaId)).toEqual(['f2']);
     expect(resultCombinado.map((i) => i.familiaId)).toEqual(['f2']);
     expect(resultCombinado.length).toBeLessThanOrEqual(resultFornecedor.length);
+  });
+});
+
+describe('ordenarPublicados', () => {
+  it('ord null retorna a mesma lista (sem reordenar nem mutar)', () => {
+    const out = ordenarPublicados(fixtures, null);
+    expect(out.map((i) => i.familiaId)).toEqual(['f1', 'f2', 'f3', 'f4']);
+  });
+
+  it('não muta a entrada', () => {
+    const antes = fixtures.map((i) => i.familiaId);
+    ordenarPublicados(fixtures, { coluna: 'titulo', dir: 'asc' });
+    expect(fixtures.map((i) => i.familiaId)).toEqual(antes);
+  });
+
+  it('título asc (pt-BR, acento/caixa-insensível)', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'titulo', dir: 'asc' });
+    // Botao, Fita Cetim, Fita Gorgurão, Linha
+    expect(out.map((i) => i.familiaId)).toEqual(['f3', 'f1', 'f4', 'f2']);
+  });
+
+  it('título desc inverte', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'titulo', dir: 'desc' });
+    expect(out.map((i) => i.familiaId)).toEqual(['f2', 'f4', 'f1', 'f3']);
+  });
+
+  it('preço publicado asc é numérico (não lexicográfico)', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'precoPublicacao', dir: 'asc' });
+    // 4.0, 6.75, 8.5, 12.9
+    expect(out.map((i) => i.precoPublicacao)).toEqual([4.0, 6.75, 8.5, 12.9]);
+  });
+
+  it('estoque asc: nulos por último mesmo em asc', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'estoque', dir: 'asc' });
+    // 0 (f2), 50 (f1), 200 (f3), null (f4)
+    expect(out.map((i) => i.familiaId)).toEqual(['f2', 'f1', 'f3', 'f4']);
+  });
+
+  it('estoque desc: nulos continuam por último', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'estoque', dir: 'desc' });
+    // 200, 50, 0, null
+    expect(out.map((i) => i.familiaId)).toEqual(['f3', 'f1', 'f2', 'f4']);
+  });
+
+  it('status asc segue a severidade (ativo→indisponível)', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'status', dir: 'asc' });
+    // ativo(f1), ativo(f3), pausado(f2), moderado(f4)
+    expect(out.map((i) => i.status)).toEqual(['ativo', 'ativo', 'pausado', 'moderado']);
+  });
+
+  it('publicado em asc (ISO) com nulo por último', () => {
+    const out = ordenarPublicados(fixtures, { coluna: 'publicadoEm', dir: 'asc' });
+    // 06-01, 06-02, 06-03, null
+    expect(out.map((i) => i.familiaId)).toEqual(['f1', 'f2', 'f3', 'f4']);
   });
 });
 
