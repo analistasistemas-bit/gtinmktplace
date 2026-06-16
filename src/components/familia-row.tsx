@@ -9,7 +9,7 @@ import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado, familiaExigeCor } from '@/lib/publicavel';
-import { coresNovasPendentes } from '@/lib/revisao-variacoes';
+import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -82,8 +82,9 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   // Resumo do UPDATE na linha recolhida: quantas cores têm estoque alterado
   // (mesma regra do DiffEstoque). Dá o "o que será atualizado" sem precisar expandir.
   const coresComEstoqueAlterado = variacoesEstoqueAlterado(familia).length;
-  // Cores novas que de fato exigem ação (com estoque): estoque 0 dorme e não conta.
-  const coresNovasComEstoque = coresNovasPendentes(familia).length;
+  // Cores novas que de fato exigem ação (sem ml_variation_id e com estoque): precisam
+  // de foto. Estoque 0 dorme e não conta. Sinaliza na linha sem precisar expandir.
+  const novasComFoto = coresNovasComEstoque(familia).length;
   const removidas = familia.mudancaEstrutural?.removidas.length ?? 0;
   // Preço exibido no cabeçalho = preço de venda real (publicação) das cores incluídas,
   // não o da planilha (no UPDATE eles diferem: planilha vs. preço já publicado).
@@ -197,15 +198,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               </StatusPill>
             )
           )}
-          {(coresNovasComEstoque > 0 || removidas > 0) && (
-            <StatusPill
-              tone="warning"
-              title={[
-                coresNovasComEstoque ? `${coresNovasComEstoque} cor(es) nova(s)` : '',
-                removidas ? `${removidas} cor(es) removida(s)` : '',
-              ].filter(Boolean).join(' · ')}
-            >
-              ⚠ mudança estrutural
+          {novasComFoto > 0 && (
+            <StatusPill tone="warning" title="Cores novas que precisam de foto antes de publicar">
+              📷 {novasComFoto} cor(es) nova(s)
+            </StatusPill>
+          )}
+          {removidas > 0 && (
+            <StatusPill tone="warning" title={`${removidas} cor(es) da planilha sumiram (mantidas no anúncio)`}>
+              ⚠ {removidas} cor(es) removida(s)
             </StatusPill>
           )}
         </div>

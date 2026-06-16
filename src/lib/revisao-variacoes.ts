@@ -45,17 +45,14 @@ export function agruparRevisaoUpdate(variacoes: Variacao[]): GruposRevisao {
   return { reposicao, novas };
 }
 
-// Cores novas (mudança estrutural detectada no ingest) que ainda NÃO foram publicadas
-// — sem ml_variation_id. O campo `mudancaEstrutural.novas` é estático (do ingest) e
-// continua listando todas mesmo após publicá-las; este filtro deixa no aviso só as
-// pendentes (ex.: cor nova sem foto). Devolve {codigo, cor} em ordem alfabética.
-export function coresNovasPendentes(familia: Familia): { codigo: string; cor: string }[] {
-  const novas = familia.mudancaEstrutural?.novas ?? [];
-  const porCodigo = new Map(familia.variacoes.map((v) => [v.codigo, v]));
-  return novas
-    .map((c) => porCodigo.get(c))
-    // Estoque 0 dorme até reposição: não é cor nova a publicar agora, então sai do aviso.
-    .filter((v): v is Variacao => v != null && !v.mlVariationId && v.estoque > 0)
-    .sort(compararCor)
-    .map((v) => ({ codigo: v.codigo, cor: v.cor || v.codigo }));
+// Cores que viram variação NOVA no ML (sem ml_variation_id) e têm estoque — precisam
+// de foto antes de publicar. Base = ml_variation_id (igual à seção "Cores novas" da
+// Revisão e às críticas), NÃO `mudancaEstrutural.novas`: este diff do ingest pode não
+// listar cores que já existiam na família mas nunca foram publicadas no anúncio.
+// Estoque 0 não conta (dorme até reposição). Em ordem alfabética.
+export function coresNovasComEstoque(familia: Familia): Variacao[] {
+  if (familia.operacao !== 'UPDATE') return [];
+  return familia.variacoes
+    .filter((v) => !v.mlVariationId && v.estoque > 0)
+    .sort(compararCor);
 }

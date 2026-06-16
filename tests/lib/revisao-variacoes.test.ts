@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compararCor, variacoesParaRevisao, coresNovasPendentes, agruparRevisaoUpdate } from '../../src/lib/revisao-variacoes';
+import { compararCor, variacoesParaRevisao, coresNovasComEstoque, agruparRevisaoUpdate } from '../../src/lib/revisao-variacoes';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function v(over: Partial<Variacao>): Variacao {
@@ -102,36 +102,39 @@ describe('agruparRevisaoUpdate', () => {
   });
 });
 
-describe('coresNovasPendentes', () => {
-  it('exclui as cores novas já publicadas (com ml_variation_id)', () => {
+describe('coresNovasComEstoque', () => {
+  it('conta cor sem ml_variation_id e com estoque (precisa foto)', () => {
     const f = fam({
-      mudancaEstrutural: { novas: ['1', '2', '3'], removidas: [] },
       variacoes: [
-        v({ codigo: '1', cor: 'Vinho', mlVariationId: '900' }),   // já publicada
-        v({ codigo: '2', cor: 'Cereja', mlVariationId: null }),    // pendente
-        v({ codigo: '3', cor: 'Amarelo', mlVariationId: null }),   // pendente
+        v({ codigo: '1', cor: 'Vinho', mlVariationId: '900', estoque: 5 }), // casada
+        v({ codigo: '2', cor: 'Cereja', mlVariationId: null, estoque: 50 }), // nova
+        v({ codigo: '3', cor: 'Amarelo', mlVariationId: null, estoque: 49 }), // nova
       ],
     });
-    expect(coresNovasPendentes(f).map((x) => x.cor)).toEqual(['Amarelo', 'Cereja']);
+    expect(coresNovasComEstoque(f).map((x) => x.cor)).toEqual(['Amarelo', 'Cereja']);
   });
-  it('todas publicadas → lista vazia', () => {
+  it('NÃO depende de mudancaEstrutural.novas (cor da família nunca publicada conta)', () => {
+    // Regressão do bug: cor sem ml_variation_id mas FORA de mudancaEstrutural.novas.
     const f = fam({
-      mudancaEstrutural: { novas: ['1'], removidas: [] },
-      variacoes: [v({ codigo: '1', cor: 'X', mlVariationId: '9' })],
+      mudancaEstrutural: { novas: [], removidas: [] },
+      variacoes: [v({ codigo: '99', cor: 'Azul Turqueza', mlVariationId: null, estoque: 330 })],
     });
-    expect(coresNovasPendentes(f)).toHaveLength(0);
+    expect(coresNovasComEstoque(f).map((x) => x.cor)).toEqual(['Azul Turqueza']);
   });
-  it('sem mudança estrutural → vazio', () => {
-    expect(coresNovasPendentes(fam({ mudancaEstrutural: null }))).toHaveLength(0);
-  });
-  it('exclui cor nova com estoque 0 (dorme até reposição — não é cor nova a publicar)', () => {
+  it('exclui estoque 0 (dorme até reposição)', () => {
     const f = fam({
-      mudancaEstrutural: { novas: ['1', '2'], removidas: [] },
       variacoes: [
         v({ codigo: '1', cor: 'Cereja', mlVariationId: null, estoque: 0 }),
         v({ codigo: '2', cor: 'Azul', mlVariationId: null, estoque: 5 }),
       ],
     });
-    expect(coresNovasPendentes(f).map((x) => x.cor)).toEqual(['Azul']);
+    expect(coresNovasComEstoque(f).map((x) => x.cor)).toEqual(['Azul']);
+  });
+  it('CREATE → vazio (não é reposição de anúncio)', () => {
+    expect(coresNovasComEstoque(fam({ operacao: 'CREATE' }))).toHaveLength(0);
+  });
+  it('todas casadas → vazio', () => {
+    const f = fam({ variacoes: [v({ mlVariationId: '9', estoque: 5 })] });
+    expect(coresNovasComEstoque(f)).toHaveLength(0);
   });
 });
