@@ -76,6 +76,24 @@ describe('familiaPublicavel', () => {
     expect(r.ok).toBe(false);
     expect(r.motivos.join(' ')).toMatch(/cor/i);
   });
+  it('UPDATE: cor nova com estoque 0 incluída NÃO bloqueia (fica fora até ter estoque)', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [
+        cor({ codigo: '00000101', mlVariationId: 'V1' }),
+        cor({ codigo: '00000777', cor: '', mlVariationId: null, fotoPath: undefined, estoque: 0 }),
+      ],
+    }));
+    expect(r.ok).toBe(true);
+  });
+  it('UPDATE: cor nova COM estoque sem foto continua bloqueando (regressão)', () => {
+    const r = familiaPublicavel(fam({
+      operacao: 'UPDATE', mlItemId: 'MLB123',
+      variacoes: [cor({ codigo: '00000777', cor: 'Vermelho', mlVariationId: null, fotoPath: undefined, estoque: 4 })],
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/foto/i);
+  });
   it('UPDATE publicável misto: 1 cor casada (reposição) + 1 cor nova válida', () => {
     const r = familiaPublicavel(fam({
       operacao: 'UPDATE', mlItemId: 'MLB123',
@@ -189,6 +207,15 @@ describe('criticasVariacao', () => {
   });
   it('UPDATE: cor nova sem foto acusa crítica', () => {
     expect(criticasVariacao(cor({ mlVariationId: null, fotoPath: undefined }), 'UPDATE')).toEqual(['sem foto']);
+  });
+  it('estoque 0 não acusa crítica — fica fora até ter estoque (UPDATE cor nova)', () => {
+    expect(criticasVariacao(cor({ mlVariationId: null, cor: '', fotoPath: undefined, estoque: 0 }), 'UPDATE')).toEqual([]);
+  });
+  it('estoque 0 não acusa crítica (CREATE sem cor/foto)', () => {
+    expect(criticasVariacao(cor({ cor: '', fotoPath: undefined, estoque: 0 }), 'CREATE')).toEqual([]);
+  });
+  it('cor nova COM estoque continua acusando sem foto (regressão)', () => {
+    expect(criticasVariacao(cor({ mlVariationId: null, fotoPath: undefined, estoque: 4 }), 'UPDATE')).toEqual(['sem foto']);
   });
 });
 

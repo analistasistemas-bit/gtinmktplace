@@ -34,6 +34,10 @@ export function criticasVariacao(
   opts: { exigeCor?: boolean } = {},
 ): string[] {
   if (v.excluidaDaPublicacao) return [];
+  // Estoque 0 fica fora da publicação (dorme até repor) → não exige cor/foto/preço.
+  // A cor nova zerada nasce desmarcada (ingest) e só precisa estar completa quando
+  // ganhar estoque numa próxima planilha. Pendência é só para o que tem estoque.
+  if (v.estoque <= 0) return [];
   if (operacao === 'UPDATE' && v.mlVariationId) return [];
   const f = flagsCritica(v, opts);
   const out: string[] = [];
@@ -60,7 +64,8 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
       motivos.push('Nenhuma cor selecionada para atualizar');
     }
     // Cor nova vira variação no anúncio → exige cor + foto + preço (igual CREATE).
-    for (const v of novas) {
+    // Estoque 0 fica fora (dorme até repor): não bloqueia a publicação da família.
+    for (const v of novas.filter((v) => v.estoque > 0)) {
       const f = flagsCritica(v);
       if (f.semCor) motivos.push(`Cor nova ${v.codigo} sem cor definida`);
       if (f.semFoto) motivos.push(`Cor nova ${v.cor || v.codigo} sem foto`);
@@ -76,7 +81,8 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   if (incluidas.length === 0) {
     motivos.push('Nenhuma cor incluída (ao menos 1 obrigatória)');
   }
-  for (const v of incluidas) {
+  // Estoque 0 fica fora (dorme até repor) → não exige cor/foto/preço por cor.
+  for (const v of incluidas.filter((v) => v.estoque > 0)) {
     const f = flagsCritica(v, { exigeCor });
     if (f.semCor) motivos.push(`Cor ${v.codigo} sem cor definida`);
     if (f.semFoto) motivos.push(`Cor ${v.cor || v.codigo} sem foto`);

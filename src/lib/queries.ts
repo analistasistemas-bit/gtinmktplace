@@ -282,7 +282,9 @@ export function familiaFromRow(
     custoCentavos: r.custo_centavos,
     tituloEditadoPeloOperador: r.titulo_editado_pelo_operador,
     descricaoEditadaPeloOperador: r.descricao_editada_pelo_operador,
-    variacoesSemCor: variacoes.filter((v) => !v.cor).length,
+    // Selo "X sem cor" do pai: só conta o que vai virar variação no ML e precisa de
+    // cor — estoque 0 (dorme até repor) e cores excluídas não geram pendência.
+    variacoesSemCor: variacoes.filter((v) => !v.cor && v.estoque > 0 && !v.excluidaDaPublicacao).length,
     mlPermalink: r.ml_permalink,
     mlItemId: r.ml_item_id,
     mudancaEstrutural: parseMudancaEstrutural(r.mudanca_estrutural),

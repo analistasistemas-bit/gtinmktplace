@@ -202,3 +202,20 @@ efêmeros** — `ml_picture_id` das cores ainda não anexadas (`ml_variation_id`
 as capas 2/3 subidas **naquele** attempt (flag) — para o próximo retry re-subir fresco. Cores
 já casadas preservam o id (durável). `publish-familia-ml` (CREATE) tem o mesmo padrão latente
 (follow-up).
+
+## Adendo (2026-06-16) — Estoque 0 não gera pendência (dorme até reposição)
+
+**Contexto:** ao subir o catálogo completo, uma planilha traz muitas cores novas com
+`ESTOQUE = 0` (ainda sem estoque). Antes, cada cor nova entrava como pendência na Revisão
+(selo "X sem cor" no pai + ⚠️ "sem cor/foto" na linha), poluindo a tela com dezenas de
+exigências de cor/foto para itens que nem serão vendidos agora.
+
+**Decisão:** variação com `estoque <= 0` **não gera pendência** — fica fora da publicação
+(dorme) até ganhar estoque numa próxima planilha. Só `estoque > 0` exige cor/foto/preço.
+Regra aplicada na fonte única `src/lib/publicavel.ts` (`criticasVariacao` e `familiaPublicavel`
+ignoram estoque 0) e no selo do pai `variacoesSemCor` (`src/lib/queries.ts`, conta só cor
+ausente em variação com estoque e não-excluída). A "ida ao ML" já estava correta: cor nova
+zerada nasce desmarcada (`ingest-lote`), e cor casada que zerou continua indo ao PUT para
+zerar de fato no anúncio (vira `out_of_stock` no ML, reativando ao repor — `gold_special`/
+`gold_pro`, nunca `free`). Quando a reposição chega (estoque > 0), a cor volta a exigir
+cor/foto como qualquer cor nova publicável.
