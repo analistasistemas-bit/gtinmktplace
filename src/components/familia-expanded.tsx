@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
@@ -68,6 +68,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
   const [corStatuses, setCorStatuses] = useState<Record<string, SaveStatus>>({});
+  // Abre/fecha cada seção da Revisão (Cores novas / Reposição). Ausente = aberta.
+  const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>({});
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [trocando, setTrocando] = useState(false);
@@ -407,20 +409,33 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     );
   };
 
-  const renderSecao = (titulo: string, itens: typeof variacoesExibidas, vazio: string) => (
-    <div>
-      <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        <span className="h-px flex-1 bg-border" />
-        {titulo} ({itens.length})
-        <span className="h-px flex-1 bg-border" />
+  const renderSecao = (titulo: string, itens: typeof variacoesExibidas, vazio: string) => {
+    const aberta = secoesAbertas[titulo] ?? true;
+    return (
+      <div>
+        <button
+          type="button"
+          aria-expanded={aberta}
+          onClick={() => setSecoesAbertas((s) => ({ ...s, [titulo]: !aberta }))}
+          className="mb-1.5 flex w-full items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <span className="h-px flex-1 bg-border" />
+          <span className="flex items-center gap-1">
+            {aberta ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            {titulo} ({itens.length})
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </button>
+        {aberta && (
+          itens.length > 0 ? (
+            <div className="flex flex-col gap-2">{itens.map(renderVariacao)}</div>
+          ) : (
+            <div className="px-2 py-1 text-xs text-muted-foreground">{vazio}</div>
+          )
+        )}
       </div>
-      {itens.length > 0 ? (
-        <div className="flex flex-col gap-2">{itens.map(renderVariacao)}</div>
-      ) : (
-        <div className="px-2 py-1 text-xs text-muted-foreground">{vazio}</div>
-      )}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
@@ -635,8 +650,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             </div>
           ) : agruparSecoes ? (
             <div className="flex flex-col gap-4">
-              {renderSecao('Reposição de estoque', gruposUpdate.reposicao, 'Nenhuma cor de reposição nesta família.')}
               {renderSecao('Cores novas · precisam de foto', gruposUpdate.novas, 'Nenhuma cor nova — nada para subir foto aqui.')}
+              {renderSecao('Reposição de estoque', gruposUpdate.reposicao, 'Nenhuma cor de reposição nesta família.')}
             </div>
           ) : (
             <div className="flex flex-col gap-2">
