@@ -26,6 +26,25 @@ export function variacoesParaRevisao(
   return r;
 }
 
+export interface GruposRevisao {
+  reposicao: Variacao[];
+  novas: Variacao[];
+}
+
+// Separa as variações exibidas (UPDATE) em dois grupos para a Revisão não misturar o
+// que exige ação com o que não exige: `reposicao` = cor já no anúncio (tem ml_variation_id,
+// só atualiza estoque/preço) e `novas` = cor sem ml_variation_id (vira variação nova e
+// precisa de foto/cor). Preserva a ordem recebida (já alfabética). CREATE não usa isto.
+export function agruparRevisaoUpdate(variacoes: Variacao[]): GruposRevisao {
+  const reposicao: Variacao[] = [];
+  const novas: Variacao[] = [];
+  for (const v of variacoes) {
+    if (v.mlVariationId) reposicao.push(v);
+    else novas.push(v);
+  }
+  return { reposicao, novas };
+}
+
 // Cores novas (mudança estrutural detectada no ingest) que ainda NÃO foram publicadas
 // — sem ml_variation_id. O campo `mudancaEstrutural.novas` é estático (do ingest) e
 // continua listando todas mesmo após publicá-las; este filtro deixa no aviso só as

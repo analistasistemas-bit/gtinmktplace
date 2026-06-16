@@ -35,7 +35,7 @@ import {
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
-import { variacoesParaRevisao } from '@/lib/revisao-variacoes';
+import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
 import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
@@ -316,6 +316,112 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   // foram ao anúncio (sem ml_variation_id) — o que "não conseguiu publicar".
   const publicado = familia.status === 'publicado';
   const variacoesExibidas = variacoesParaRevisao(variacoes, publicado, ocultarSemEstoque);
+  // UPDATE em revisão: separa reposição (só estoque) de cores novas (precisam de foto)
+  // em duas seções, para o operador saber de relance o que exige ação.
+  const agruparSecoes = familia.operacao === 'UPDATE' && !publicado;
+  const gruposUpdate = agruparRevisaoUpdate(variacoesExibidas);
+
+  const renderVariacao = (v: (typeof variacoesExibidas)[number]) => {
+    // Cor nova (UPDATE sem variação no ML) é opt-in mas precisa ser editável
+    // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
+    const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
+    // Cores com pendência (sem foto/cor/preço) ganham faixa âmbar p/ achar rápido.
+    const criticas = criticasVariacao(v, familia.operacao, { exigeCor });
+    return (
+      <div
+        key={v.codigo}
+        ref={(el) => { rowRefs.current[v.codigo] = el; }}
+        className={cn(
+          // Borda esquerda reservada (transparente) em TODAS as linhas → as
+          // com crítica só trocam a cor, sem empurrar nem desalinhar as outras.
+          'scroll-mt-4 rounded-md border-l-4 border-transparent pl-2 transition-shadow',
+          v.excluidaDaPublicacao && !corNova && 'opacity-50',
+          criticas.length > 0 && 'border-warning bg-warning/10 py-1',
+          flashCodigo === v.codigo && 'ring-2 ring-warning ring-offset-2 ring-offset-background',
+        )}
+      >
+        <div className="flex items-start gap-2">
+          <Checkbox
+            checked={!v.excluidaDaPublicacao}
+            aria-label={`Incluir cor ${v.cor || v.codigo} na publicação`}
+            className="mt-2 shrink-0"
+            onCheckedChange={async (marcado) => {
+              if (!v.id) return;
+              const excluida = marcado !== true;
+              // Reflete o clique no estado local na hora: o refetch do
+              // invalidate NÃO re-sincroniza este campo (fotosKey só cobre
+              // código+foto, p/ não descartar edições não salvas de cor/preço).
+              // Sem isto o checkbox fica preso e a cor nova "não marca".
+              setVariacoes((vs) =>
+                vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: excluida } : x)),
+              );
+              try {
+                await setVariacaoExcluida(v.id, excluida);
+                qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
+              } catch (e) {
+                setVariacoes((vs) =>
+                  vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: !excluida } : x)),
+                );
+                toast.error('Falha ao atualizar a cor', { description: (e as Error).message });
+              }
+            }}
+          />
+          {familia.operacao === 'UPDATE' && !v.mlVariationId && (
+            <StatusPill tone="success" className="mt-2 shrink-0">
+              nova
+            </StatusPill>
+          )}
+          {familia.operacao === 'CREATE' && !v.excluidaDaPublicacao && (
+            <label className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+              <input
+                type="radio"
+                name={`principal-${familia.id}`}
+                checked={familia.variacaoPrincipalCodigo === v.codigo}
+                onChange={() => updatePrincipal.mutate({ familiaId: familia.id, codigo: v.codigo })}
+              />
+              {familia.variacaoPrincipalCodigo === v.codigo ? (
+                <StatusPill tone="info">principal</StatusPill>
+              ) : 'principal'}
+            </label>
+          )}
+          <div className="flex-1">
+            <VariacaoCard
+              variacao={v}
+              loteId={familia.loteId}
+              statusPreco={precoStatuses[v.codigo]}
+              statusCor={corStatuses[v.codigo]}
+              onMudarPreco={mudarPreco}
+              onMudarCor={mudarCor}
+              onSalvarPreco={salvarPreco}
+              onSalvarCor={salvarCor}
+              categoriaMlId={familia.categoriaMlId}
+            />
+          </div>
+        </div>
+        {criticas.length > 0 && (
+          <div className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            {criticas.join(' · ')}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSecao = (titulo: string, itens: typeof variacoesExibidas, vazio: string) => (
+    <div>
+      <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        {titulo} ({itens.length})
+        <span className="h-px flex-1 bg-border" />
+      </div>
+      {itens.length > 0 ? (
+        <div className="flex flex-col gap-2">{itens.map(renderVariacao)}</div>
+      ) : (
+        <div className="px-2 py-1 text-xs text-muted-foreground">{vazio}</div>
+      )}
+    </div>
+  );
 
   return (
     <div className="border-b bg-muted/30 p-4 text-sm">
@@ -529,95 +635,15 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-success">
               Todas as cores foram publicadas no anúncio. 🎉
             </div>
+          ) : agruparSecoes ? (
+            <div className="flex flex-col gap-4">
+              {renderSecao('Reposição de estoque', gruposUpdate.reposicao, 'Nenhuma cor de reposição nesta família.')}
+              {renderSecao('Cores novas · precisam de foto', gruposUpdate.novas, 'Nenhuma cor nova — nada para subir foto aqui.')}
+            </div>
           ) : (
-          <div className="flex flex-col gap-2">
-            {variacoesExibidas.map((v) => {
-              // Cor nova (UPDATE sem variação no ML) é opt-in mas precisa ser editável
-              // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
-              const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
-              // Cores com pendência (sem foto/cor/preço) ganham faixa âmbar p/ achar rápido.
-              const criticas = criticasVariacao(v, familia.operacao, { exigeCor });
-              return (
-              <div
-                key={v.codigo}
-                ref={(el) => { rowRefs.current[v.codigo] = el; }}
-                className={cn(
-                  // Borda esquerda reservada (transparente) em TODAS as linhas → as
-                  // com crítica só trocam a cor, sem empurrar nem desalinhar as outras.
-                  'scroll-mt-4 rounded-md border-l-4 border-transparent pl-2 transition-shadow',
-                  v.excluidaDaPublicacao && !corNova && 'opacity-50',
-                  criticas.length > 0 && 'border-warning bg-warning/10 py-1',
-                  flashCodigo === v.codigo && 'ring-2 ring-warning ring-offset-2 ring-offset-background',
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <Checkbox
-                    checked={!v.excluidaDaPublicacao}
-                    aria-label={`Incluir cor ${v.cor || v.codigo} na publicação`}
-                    className="mt-2 shrink-0"
-                    onCheckedChange={async (marcado) => {
-                      if (!v.id) return;
-                      const excluida = marcado !== true;
-                      // Reflete o clique no estado local na hora: o refetch do
-                      // invalidate NÃO re-sincroniza este campo (fotosKey só cobre
-                      // código+foto, p/ não descartar edições não salvas de cor/preço).
-                      // Sem isto o checkbox fica preso e a cor nova "não marca".
-                      setVariacoes((vs) =>
-                        vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: excluida } : x)),
-                      );
-                      try {
-                        await setVariacaoExcluida(v.id, excluida);
-                        qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
-                      } catch (e) {
-                        setVariacoes((vs) =>
-                          vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: !excluida } : x)),
-                        );
-                        toast.error('Falha ao atualizar a cor', { description: (e as Error).message });
-                      }
-                    }}
-                  />
-                  {familia.operacao === 'UPDATE' && !v.mlVariationId && (
-                    <StatusPill tone="success" className="mt-2 shrink-0">
-                      nova
-                    </StatusPill>
-                  )}
-                  {familia.operacao === 'CREATE' && !v.excluidaDaPublicacao && (
-                    <label className="mt-2 flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
-                      <input
-                        type="radio"
-                        name={`principal-${familia.id}`}
-                        checked={familia.variacaoPrincipalCodigo === v.codigo}
-                        onChange={() => updatePrincipal.mutate({ familiaId: familia.id, codigo: v.codigo })}
-                      />
-                      {familia.variacaoPrincipalCodigo === v.codigo ? (
-                        <StatusPill tone="info">principal</StatusPill>
-                      ) : 'principal'}
-                    </label>
-                  )}
-                  <div className="flex-1">
-                    <VariacaoCard
-                      variacao={v}
-                      loteId={familia.loteId}
-                      statusPreco={precoStatuses[v.codigo]}
-                      statusCor={corStatuses[v.codigo]}
-                      onMudarPreco={mudarPreco}
-                      onMudarCor={mudarCor}
-                      onSalvarPreco={salvarPreco}
-                      onSalvarCor={salvarCor}
-                      categoriaMlId={familia.categoriaMlId}
-                    />
-                  </div>
-                </div>
-                {criticas.length > 0 && (
-                  <div className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />
-                    {criticas.join(' · ')}
-                  </div>
-                )}
-              </div>
-              );
-            })}
-          </div>
+            <div className="flex flex-col gap-2">
+              {variacoesExibidas.map(renderVariacao)}
+            </div>
           )}
         </div>
       </div>

@@ -117,13 +117,23 @@ export function VariacaoCard({
             mín. líquido: <span className="font-semibold text-foreground">{fmtBRL(variacao.preco)}</span>
           </span>
         </div>
-        <div className="flex w-16 shrink-0 flex-col items-end leading-tight pt-0.5">
+        <div className="flex min-w-16 shrink-0 flex-col items-end leading-tight pt-0.5">
           <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             Estoque
           </span>
-          <span className="text-sm font-semibold tabular-nums">
-            {new Intl.NumberFormat('pt-BR').format(variacao.estoque)}
-          </span>
+          {variacao.estoqueAnterior != null && variacao.estoqueAnterior !== variacao.estoque ? (
+            // Reposição: mostra antes → depois para deixar claro que é só atualização de estoque.
+            <span className="text-sm font-semibold tabular-nums">
+              <span className="font-normal text-muted-foreground">
+                {new Intl.NumberFormat('pt-BR').format(variacao.estoqueAnterior)} →{' '}
+              </span>
+              {new Intl.NumberFormat('pt-BR').format(variacao.estoque)}
+            </span>
+          ) : (
+            <span className="text-sm font-semibold tabular-nums">
+              {new Intl.NumberFormat('pt-BR').format(variacao.estoque)}
+            </span>
+          )}
         </div>
       </div>
       {/* 3ª linha: apenas o semáforo (Vale a pena / frete), largura livre */}

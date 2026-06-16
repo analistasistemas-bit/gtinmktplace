@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compararCor, variacoesParaRevisao, coresNovasPendentes } from '../../src/lib/revisao-variacoes';
+import { compararCor, variacoesParaRevisao, coresNovasPendentes, agruparRevisaoUpdate } from '../../src/lib/revisao-variacoes';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function v(over: Partial<Variacao>): Variacao {
@@ -78,6 +78,29 @@ function fam(over: Partial<Familia>): Familia {
     ...over,
   } as Familia;
 }
+
+describe('agruparRevisaoUpdate', () => {
+  it('separa reposição (com ml_variation_id) de novas (sem)', () => {
+    const arr = [
+      v({ codigo: '1', cor: 'Azul', mlVariationId: '900' }),
+      v({ codigo: '2', cor: 'Nova', mlVariationId: null }),
+      v({ codigo: '3', cor: 'Branco', mlVariationId: '901' }),
+    ];
+    const g = agruparRevisaoUpdate(arr);
+    expect(g.reposicao.map((x) => x.cor)).toEqual(['Azul', 'Branco']);
+    expect(g.novas.map((x) => x.cor)).toEqual(['Nova']);
+  });
+  it('todas reposição → novas vazio', () => {
+    const arr = [v({ mlVariationId: '1' }), v({ mlVariationId: '2' })];
+    const g = agruparRevisaoUpdate(arr);
+    expect(g.reposicao).toHaveLength(2);
+    expect(g.novas).toHaveLength(0);
+  });
+  it('preserva a ordem recebida', () => {
+    const arr = [v({ codigo: 'B', mlVariationId: '1' }), v({ codigo: 'A', mlVariationId: '2' })];
+    expect(agruparRevisaoUpdate(arr).reposicao.map((x) => x.codigo)).toEqual(['B', 'A']);
+  });
+});
 
 describe('coresNovasPendentes', () => {
   it('exclui as cores novas já publicadas (com ml_variation_id)', () => {
