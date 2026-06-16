@@ -21,19 +21,26 @@ import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '@/lib/publicavel';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
+import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
 import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
 import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas';
 
-export function filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: string): Familia[] {
+export function filtrarFamilias(
+  familias: Familia[],
+  filtro: FiltroOp,
+  busca: string,
+  soComCoresNovas = false,
+): Familia[] {
   const buscaLower = busca.trim().toLowerCase();
   return familias.filter((f) => {
     if (filtro === 'CREATE' && f.operacao !== 'CREATE') return false;
     if (filtro === 'UPDATE' && f.operacao !== 'UPDATE') return false;
     if (filtro === 'avisos' && !f.precoAbaixo20pc) return false;
     if (filtro === 'incompletas' && !familiaIncompleta(f)) return false;
+    if (soComCoresNovas && coresNovasComEstoque(f).length === 0) return false;
     if (!buscaLower) return true;
     return (
       f.titulo.toLowerCase().includes(buscaLower) ||
@@ -52,6 +59,9 @@ export default function Revisao() {
   // Ligado por padrão: o operador foca nas cores com estoque; as zeradas (catálogo
   // que dorme até reposição) ficam escondidas até ele clicar para mostrá-las.
   const [ocultarSemEstoque, setOcultarSemEstoque] = useState(true);
+  // Filtra a lista para só famílias com ≥1 cor nova (UPDATE: cor sem ml_variation_id
+  // e com estoque — a que precisa de foto). Desligado por padrão.
+  const [soComCoresNovas, setSoComCoresNovas] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
   const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -70,7 +80,10 @@ export default function Revisao() {
   // Este atalho reabre o relatório do lote enquanto houver ≥1 família já publicada.
   const temPublicacao = useMemo(() => loteTemPublicacao(familias), [familias]);
 
-  const visiveis = useMemo(() => filtrarFamilias(familias, filtro, busca), [familias, filtro, busca]);
+  const visiveis = useMemo(
+    () => filtrarFamilias(familias, filtro, busca, soComCoresNovas),
+    [familias, filtro, busca, soComCoresNovas],
+  );
   const pag = usePaginacao(visiveis);
   const listaRef = useRef<HTMLDivElement>(null);
 
@@ -84,13 +97,17 @@ export default function Revisao() {
   useEffect(() => {
     pag.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro, busca]);
+  }, [filtro, busca, soComCoresNovas]);
   // "Selecionar todos" age só sobre as famílias publicáveis visíveis (respeita
   // filtro/busca) — espelha a regra do toggleSelecao, que ignora as incompletas.
   const idsSelecionaveis = useMemo(() => idsPublicaveis(visiveis), [visiveis]);
   const todasSelecionadas =
     idsSelecionaveis.length > 0 && idsSelecionaveis.every((id) => selecionadas.has(id));
   const algumaSelecionada = idsSelecionaveis.some((id) => selecionadas.has(id));
+  const familiasComCoresNovas = useMemo(
+    () => familias.filter((f) => coresNovasComEstoque(f).length > 0).length,
+    [familias],
+  );
   const coresNovas = useMemo(() => coresNovasSemFoto(familias), [familias]);
   const totalCoresNovas = useMemo(
     () => coresNovas.reduce((acc, f) => acc + f.codigos.length, 0),
@@ -338,7 +355,7 @@ export default function Revisao() {
           </div>
         ) : (
           <>
-            {visiveis.length > 0 && (
+            {(visiveis.length > 0 || soComCoresNovas) && (
               <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2">
                 <Checkbox
                   id="sel-todos"
@@ -351,6 +368,18 @@ export default function Revisao() {
                   {todasSelecionadas ? 'Desmarcar todos' : 'Selecionar todos'}
                   {idsSelecionaveis.length > 0 && ` (${idsSelecionaveis.length})`}
                 </label>
+                <Button
+                  variant={soComCoresNovas ? 'default' : 'outline'}
+                  size="sm"
+                  className="ml-2"
+                  aria-pressed={soComCoresNovas}
+                  disabled={!soComCoresNovas && familiasComCoresNovas === 0}
+                  onClick={() => setSoComCoresNovas((s) => !s)}
+                  title="Mostra só as famílias que têm cores novas (precisam de foto)"
+                >
+                  Só com cores novas
+                  {familiasComCoresNovas > 0 && ` (${familiasComCoresNovas})`}
+                </Button>
               </div>
             )}
             {pag.itensPagina.map((familia) => (

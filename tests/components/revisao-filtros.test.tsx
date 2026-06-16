@@ -90,6 +90,49 @@ describe('filtrarFamilias', () => {
     expect(out[0].id).toBe('b');
   });
 
+  it('soComCoresNovas: só famílias UPDATE com cor sem ml_variation_id e estoque', () => {
+    const base = { ...FAMILIAS[1], operacao: 'UPDATE' as const };
+    // Só reposição: toda cor já tem ml_variation_id → não é cor nova.
+    const soReposicao: Familia = {
+      ...base,
+      id: 'rep',
+      codigoPai: '1003',
+      titulo: 'Fita Reposição',
+      variacoes: [
+        { codigo: '400001', cor: 'verde', corHex: '#16a34a', preco: 1, estoque: 8, mlVariationId: '900' },
+      ],
+    } as Familia;
+    // Tem cor nova: uma variação sem ml_variation_id e com estoque.
+    const comCorNova: Familia = {
+      ...base,
+      id: 'nova',
+      codigoPai: '1004',
+      titulo: 'Fita Nova',
+      variacoes: [
+        { codigo: '500001', cor: 'verde', corHex: '#16a34a', preco: 1, estoque: 8, mlVariationId: '901' },
+        { codigo: '500002', cor: 'amarelo', corHex: '#eab308', preco: 1, estoque: 8, mlVariationId: null },
+      ],
+    } as Familia;
+    const out = filtrarFamilias([soReposicao, comCorNova], 'todos', '', true);
+    expect(out.map((f) => f.id)).toEqual(['nova']);
+  });
+
+  it('soComCoresNovas: cor nova com estoque 0 não conta (dorme)', () => {
+    const semEstoque: Familia = {
+      ...FAMILIAS[1],
+      operacao: 'UPDATE',
+      id: 'z',
+      variacoes: [
+        { codigo: '600001', cor: 'roxo', corHex: '#7c3aed', preco: 1, estoque: 0, mlVariationId: null },
+      ],
+    } as Familia;
+    expect(filtrarFamilias([semEstoque], 'todos', '', true)).toHaveLength(0);
+  });
+
+  it('soComCoresNovas desligado (padrão): não filtra', () => {
+    expect(filtrarFamilias(FAMILIAS, 'todos', '').length).toBe(2);
+  });
+
   it('filtra incompletas — retorna só famílias não-publicáveis', () => {
     const varOk = {
       codigo: '00010001',
