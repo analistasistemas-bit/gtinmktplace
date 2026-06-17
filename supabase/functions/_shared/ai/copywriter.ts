@@ -30,7 +30,14 @@ const SCHEMA = {
   strict: true,
 } as const;
 
-export async function gerarCopy(input: InputCopy): Promise<OutputCopy> {
+/** Timeout do OpenRouter foi disparado (AbortSignal) ou o SDK abortou a chamada. */
+function foiTimeout(e: unknown): boolean {
+  if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) return true;
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  return msg.includes('aborted') || msg.includes('timed out') || msg.includes('timeout');
+}
+
+async function chamarCopy(input: InputCopy): Promise<OutputCopy> {
   const client = openrouterClient();
   const resp = await client.chat.completions.create(
     {
@@ -45,12 +52,12 @@ export async function gerarCopy(input: InputCopy): Promise<OutputCopy> {
     { signal: AbortSignal.timeout(30_000) },
   );
   const conteudo = resp.choices[0]?.message?.content;
-  if (!conteudo) throw new Error('Copywriter: resposta vazia');
+  if (!conteudo) throw new Error('resposta vazia');
   let parsed: { titulo: string; descricao: string };
   try {
     parsed = JSON.parse(conteudo);
   } catch (e) {
-    throw new Error(`Copywriter: JSON inválido: ${(e as Error).message}`);
+    throw new Error(`JSON inválido: ${(e as Error).message}`);
   }
   const usage = resp.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
   return {
@@ -60,4 +67,26 @@ export async function gerarCopy(input: InputCopy): Promise<OutputCopy> {
     tokens_output: usage.completion_tokens,
     custo_centavos: custoCentavos(MODELO_COPY, usage),
   };
+}
+
+/**
+ * Gera título+descrição. É a única etapa de IA SEM fallback resiliente (ADR-0030): se
+ * falhar, derruba a família. Por isso ganha 1 retry (lentidão pontual do OpenRouter é o
+ * caso comum) e, ao desistir, lança erro ROTULADO com a etapa — não o "signal aborted"
+ * genérico que não dizia onde quebrou (lote #41).
+ */
+export async function gerarCopy(input: InputCopy): Promise<OutputCopy> {
+  let ultimoErro: unknown;
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    try {
+      return await chamarCopy(input);
+    } catch (e) {
+      ultimoErro = e;
+      console.warn(`Copy tentativa ${tentativa}/2 falhou: ${(e as Error).message}`);
+    }
+  }
+  if (foiTimeout(ultimoErro)) {
+    throw new Error('Copy (IA/OpenRouter): excedeu 30s (timeout) após 2 tentativas');
+  }
+  throw new Error(`Copy (IA/OpenRouter): ${ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)}`);
 }

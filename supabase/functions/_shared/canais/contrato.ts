@@ -107,6 +107,13 @@ export interface ResultadoAtualizacao {
   variacoesExternas: Record<string, string>;
 }
 
+/** Métricas de venda de um período, no modelo canônico (multicanal). */
+export interface MetricasVendasCanal {
+  /** itemExternoId → vendas do período (só itens dentro do escopo consultado). */
+  porItem: Record<string, { unidades: number; valor: number }>;
+  totais: { faturamento: number; unidades: number; pedidos: number };
+}
+
 /** Contexto por chamada (auth lazy). */
 export interface ContextoCanal {
   getToken(): Promise<string>;
@@ -127,4 +134,14 @@ export interface ChannelConnector {
   sincronizarDescricao(ctx: ContextoCanal, itemExternoId: string, descricaoAtual: string, cores: string[]): Promise<string | null>;
   /** Lê o status de N anúncios em lote. Lança se o token falhar (sem credencial). */
   lerStatus(ctx: ContextoCanal, itemExternoIds: string[]): Promise<Record<string, StatusCanal>>;
+  /**
+   * Agrega vendas do período (limites inclusive, ISO 8601), restrito aos itens do escopo
+   * (anúncios gerenciados pelo app). Lança se o token falhar (sem credencial); erros de
+   * leitura de página devolvem agregado parcial.
+   */
+  lerMetricasVendas(
+    ctx: ContextoCanal,
+    intervalo: { desde: string; ate: string },
+    itemExternoIds: string[],
+  ): Promise<MetricasVendasCanal>;
 }

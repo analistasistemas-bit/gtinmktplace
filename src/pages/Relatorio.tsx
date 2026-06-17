@@ -5,6 +5,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
+import { Progress } from '@/components/ui/progress';
 
 export default function Relatorio() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -36,9 +37,35 @@ export default function Relatorio() {
 
   if (!lote) return <div className="p-6 text-sm text-muted-foreground">Carregando…</div>;
 
+  // Famílias que entraram na publicação (selecionadas) = publicado + publicando + erro.
+  // A barra avança conforme cada uma termina (sucesso OU erro). Guiada pelo status das
+  // famílias + do lote para não sumir no intervalo em que o lote já virou 'concluido'
+  // mas ainda restam famílias 'publicando' (ver comentário do refetchInterval acima).
+  const totalPublicacao = publicadas + emPublicacao + comErro;
+  const processadas = publicadas + comErro;
+  const publicando = lote.status === 'publicando' || emPublicacao > 0;
+  const pctPublicacao = totalPublicacao > 0 ? Math.round((processadas / totalPublicacao) * 100) : 0;
+
   return (
     <div className="p-6">
       <PageHeader title={`Relatório · Lote #${lote.numero}`} />
+      {publicando && (
+        <div className="mb-6 space-y-2 rounded-lg border border-info/30 bg-info/5 px-4 py-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="flex items-center gap-2 font-medium text-info">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              Publicando no Mercado Livre…
+            </span>
+            <span className="tabular-nums text-muted-foreground">
+              {processadas} de {totalPublicacao} ({pctPublicacao}%)
+            </span>
+          </div>
+          <Progress value={pctPublicacao} className="h-2" />
+          <p className="text-xs text-muted-foreground">
+            Não feche esta tela — o status de cada família atualiza automaticamente.
+          </p>
+        </div>
+      )}
       <div className="mb-6 grid grid-cols-3 gap-3 text-sm">
         <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-success">
           <CheckCircle2 className="h-4 w-4 shrink-0" />

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { FileText, RotateCw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,8 @@ import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
-import { useToggleDescontoLote } from '@/hooks/useFamiliaMutations';
+import { useToggleDescontoLote, useReprocessar } from '@/hooks/useFamiliaMutations';
+import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas';
@@ -73,7 +74,9 @@ export default function Revisao() {
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
   const toggleLote = useToggleDescontoLote(loteId ?? '');
+  const reprocessarLote = useReprocessar(loteId ?? '');
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
+  const qtdErros = useMemo(() => familias.filter((f) => f.status === 'erro').length, [familias]);
 
   // O lote volta para 'revisao' quando ainda restam famílias publicáveis, escondendo
   // o relatório da última publicação (acessível via card do Dashboard só em 'concluido').
@@ -251,6 +254,29 @@ export default function Revisao() {
           actions={
             loteId && familias.length > 0 ? (
               <div className="flex items-center gap-2">
+                {qtdErros > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={reprocessarLote.isPending}
+                    onClick={() =>
+                      reprocessarLote.mutate(
+                        { loteId },
+                        {
+                          onSuccess: (r) =>
+                            toast.success(`${r.reenviadas} família(s) reenviada(s) para processamento`),
+                          onError: (e) =>
+                            toast.error('Falha ao reenviar', {
+                              description: e instanceof Error ? e.message : String(e),
+                            }),
+                        },
+                      )
+                    }
+                  >
+                    <RotateCw className={cn('mr-1.5 h-4 w-4', reprocessarLote.isPending && 'animate-spin')} />
+                    Reenviar {qtdErros} com erro
+                  </Button>
+                )}
                 {temPublicacao && (
                   <Button
                     variant="outline"

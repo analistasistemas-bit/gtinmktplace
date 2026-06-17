@@ -6,6 +6,7 @@ import type { PublicadoItem } from '@/lib/publicados';
 const usePublicadosMock = vi.fn();
 const useStatusPublicadosMock = vi.fn();
 const useRemoverPublicadoMock = vi.fn();
+const useMetricasVendasMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
@@ -17,6 +18,10 @@ vi.mock('@/hooks/useStatusPublicados', () => ({
 
 vi.mock('@/hooks/useRemoverPublicado', () => ({
   useRemoverPublicado: () => useRemoverPublicadoMock(),
+}));
+
+vi.mock('@/hooks/useMetricasVendas', () => ({
+  useMetricasVendas: () => useMetricasVendasMock(),
 }));
 
 function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
@@ -56,6 +61,11 @@ describe('Publicados', () => {
       mutate: vi.fn(),
       isPending: false,
       error: null,
+    });
+    useMetricasVendasMock.mockReturnValue({
+      data: { porItem: {}, totais: { faturamento: 0, unidades: 0, pedidos: 0 } },
+      isFetching: false,
+      refetch: vi.fn(),
     });
   });
 

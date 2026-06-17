@@ -1,10 +1,12 @@
-import { ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, AlertTriangle, RotateCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useDescontoPct } from '@/hooks/useConfiguracoes';
-import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia } from '@/hooks/useFamiliaMutations';
+import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia, useReprocessar } from '@/hooks/useFamiliaMutations';
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -72,9 +74,11 @@ function DescontoControle({ familia }: { familia: Familia }) {
 
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir, onIrParaCritica }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
+  const reprocessar = useReprocessar(familia.loteId);
   const pub = familiaPublicavel(familia);
   const exigeCor = familiaExigeCor(familia);
   const publicado = familia.status === 'publicado';
+  const emErro = familia.status === 'erro';
   // 1ª cor com pendência (sem foto/cor/preço): o selo de bloqueio leva direto a ela.
   const primeiraCritica = publicado
     ? undefined
@@ -150,6 +154,40 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         <div className="font-medium">{familia.titulo}</div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
+          {emErro && (
+            <>
+              <StatusPill tone="danger" title={familia.erroMensagem ?? undefined}>
+                ⚠ erro{familia.erroMensagem ? `: ${familia.erroMensagem}` : ''}
+              </StatusPill>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={reprocessar.isPending}
+                onClick={() =>
+                  reprocessar.mutate(
+                    { familiaId: familia.id },
+                    {
+                      onSuccess: (r) =>
+                        toast.success(
+                          r.reenviadas > 0
+                            ? 'Família reenviada para processamento'
+                            : 'Nada para reenviar (já não estava em erro)',
+                        ),
+                      onError: (e) =>
+                        toast.error('Falha ao reenviar', {
+                          description: e instanceof Error ? e.message : String(e),
+                        }),
+                    },
+                  )
+                }
+              >
+                <RotateCw className={cn('mr-1 h-3 w-3', reprocessar.isPending && 'animate-spin')} />
+                {reprocessar.isPending ? 'Reenviando…' : 'Reenviar'}
+              </Button>
+            </>
+          )}
           {!publicado && familia.operacao === 'UPDATE' && (
             <StatusPill tone="info">
               {coresComEstoqueAlterado > 0

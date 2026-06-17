@@ -24,6 +24,20 @@ export interface PublicadoItem {
   estoque?: number | null;
   precoAtual?: number | null;
   motivo?: string | null;
+  // preenchidos pelas métricas de venda do período (merge por mlItemId):
+  unidadesVendidas?: number | null;
+  valorVendido?: number | null;
+}
+
+/**
+ * Primeira palavra do fornecedor para exibição (ex.: "DETALLIA FITAS TEXTEIS LTDA" →
+ * "DETALLIA"). Só visual — filtro/ordenação seguem pelo nome completo. Retorna null se vazio.
+ */
+export function primeiroNome(fornecedor: string | null | undefined): string | null {
+  if (!fornecedor) return null;
+  const trim = fornecedor.trim();
+  if (!trim) return null;
+  return trim.split(/\s+/)[0];
 }
 
 // Um anúncio no ML = um ml_item_id, mas após ciclos de UPDATE há VÁRIAS linhas em
@@ -82,6 +96,8 @@ export type ColunaOrdenavel =
   | 'precoPublicacao'
   | 'estoque'
   | 'precoAtual'
+  | 'unidadesVendidas'
+  | 'valorVendido'
   | 'status'
   | 'publicadoEm';
 
@@ -104,6 +120,8 @@ function chaveOrdenacao(i: PublicadoItem, coluna: ColunaOrdenavel): string | num
     case 'precoPublicacao': return i.precoPublicacao;
     case 'estoque': return i.estoque ?? null;
     case 'precoAtual': return i.precoAtual ?? null;
+    case 'unidadesVendidas': return i.unidadesVendidas ?? null;
+    case 'valorVendido': return i.valorVendido ?? null;
     case 'status': return STATUS_ORDEM[i.status ?? 'indisponivel'];
     case 'publicadoEm': return i.publicadoEm; // ISO 8601 ordena lexicograficamente
   }

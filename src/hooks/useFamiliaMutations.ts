@@ -11,6 +11,7 @@ import {
   QK,
 } from '@/lib/queries';
 import { regenerarCopyFamilia } from '@/lib/ai-copy';
+import { reprocessarFamilia } from '@/lib/reprocessar';
 import { definirCategoriaFamilia, type TipoCategoriaManual } from '@/lib/categoria';
 
 export function useUpdateVariacaoPreco(loteId: string) {
@@ -53,6 +54,16 @@ export function useRegenerarCopy(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (familiaId: string) => regenerarCopyFamilia(familiaId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+/** Reenvia famílias em erro (ADR-0030): uma (familiaId) ou todas as do lote (loteId). */
+export function useReprocessar(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (alvo: { familiaId: string } | { loteId: string }) =>
+      reprocessarFamilia(alvo),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

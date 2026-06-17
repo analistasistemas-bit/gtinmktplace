@@ -1,7 +1,8 @@
 import type {
   ChannelConnector, ContextoCanal, AnuncioCanonico, ResultadoCanal, RefAnuncio,
-  AtualizacaoCanonica, ResultadoAtualizacao, StatusCanal,
+  AtualizacaoCanonica, ResultadoAtualizacao, StatusCanal, MetricasVendasCanal,
 } from './contrato.ts';
+import { lerVendasML } from '../ml/vendas.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
@@ -161,5 +162,14 @@ export const mercadoLivreConnector: ChannelConnector = {
     const out: Record<string, StatusCanal> = {};
     for (const id of ids) out[id] = parseStatusML(porId.get(id) ?? null);
     return out;
+  },
+
+  async lerMetricasVendas(
+    ctx: ContextoCanal,
+    intervalo: { desde: string; ate: string },
+    ids: string[],
+  ): Promise<MetricasVendasCanal> {
+    const token = await ctx.getToken();
+    return lerVendasML(token, intervalo, ids);
   },
 };
