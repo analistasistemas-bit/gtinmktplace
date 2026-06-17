@@ -261,7 +261,10 @@ Deno.serve(async (req) => {
             excluida_da_publicacao: h?.ml_variation_id == null,
           });
         } else {
-          variacoesCreate.push(base);
+          // CREATE: cor sem foto entra DESMARCADA (mesma política do opt-in da cor nova
+          // no UPDATE). Evita travar a publicação da família inteira por uma cor sem
+          // imagem; o operador é avisado na Revisão e a cor volta ao subir a foto.
+          variacoesCreate.push({ ...base, excluida_da_publicacao: base.imagem_path == null });
         }
       }
     }

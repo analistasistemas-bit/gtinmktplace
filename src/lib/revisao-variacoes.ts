@@ -56,3 +56,14 @@ export function coresNovasComEstoque(familia: Familia): Variacao[] {
     .filter((v) => !v.mlVariationId && v.estoque > 0)
     .sort(compararCor);
 }
+
+// Cores que ficaram FORA da publicação por não terem foto (vêm desmarcadas no
+// ingest; CREATE e UPDATE cor-nova). Base do aviso na Revisão: o operador vê o que
+// caiu fora sem precisar abrir a família. Só conta as com estoque — estoque 0 já
+// dorme até reposição e não exige foto. Excluída COM foto = decisão manual, não
+// entra aqui. Em ordem alfabética.
+export function coresSemFotoExcluidas(familia: Familia): Variacao[] {
+  return familia.variacoes
+    .filter((v) => v.excluidaDaPublicacao && !v.fotoPath && v.estoque > 0)
+    .sort(compararCor);
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compararCor, variacoesParaRevisao, coresNovasComEstoque, agruparRevisaoUpdate } from '../../src/lib/revisao-variacoes';
+import { compararCor, variacoesParaRevisao, coresNovasComEstoque, agruparRevisaoUpdate, coresSemFotoExcluidas } from '../../src/lib/revisao-variacoes';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function v(over: Partial<Variacao>): Variacao {
@@ -136,5 +136,37 @@ describe('coresNovasComEstoque', () => {
   it('todas casadas → vazio', () => {
     const f = fam({ variacoes: [v({ mlVariationId: '9', estoque: 5 })] });
     expect(coresNovasComEstoque(f)).toHaveLength(0);
+  });
+});
+
+describe('coresSemFotoExcluidas', () => {
+  it('conta cor excluída, sem foto e com estoque, em ordem alfabética', () => {
+    const f = fam({
+      operacao: 'CREATE',
+      variacoes: [
+        v({ codigo: '1', cor: 'Verde Botânico', fotoPath: undefined, excluidaDaPublicacao: true, estoque: 34 }),
+        v({ codigo: '2', cor: 'Cereja', fotoPath: undefined, excluidaDaPublicacao: true, estoque: 36 }),
+        v({ codigo: '3', cor: 'Azul', fotoPath: 'u/azul.jpeg', excluidaDaPublicacao: false, estoque: 10 }),
+      ],
+    });
+    expect(coresSemFotoExcluidas(f).map((x) => x.cor)).toEqual(['Cereja', 'Verde Botânico']);
+  });
+  it('ignora estoque 0 (dorme até reposição, não precisa avisar)', () => {
+    const f = fam({
+      variacoes: [v({ codigo: '1', cor: 'Cereja', fotoPath: undefined, excluidaDaPublicacao: true, estoque: 0 })],
+    });
+    expect(coresSemFotoExcluidas(f)).toHaveLength(0);
+  });
+  it('ignora cor excluída que TEM foto (exclusão manual, não por falta de foto)', () => {
+    const f = fam({
+      variacoes: [v({ codigo: '1', cor: 'Azul', fotoPath: 'u/azul.jpeg', excluidaDaPublicacao: true, estoque: 10 })],
+    });
+    expect(coresSemFotoExcluidas(f)).toHaveLength(0);
+  });
+  it('ignora cor sem foto que está INCLUÍDA (não foi desmarcada)', () => {
+    const f = fam({
+      variacoes: [v({ codigo: '1', cor: 'Azul', fotoPath: undefined, excluidaDaPublicacao: false, estoque: 10 })],
+    });
+    expect(coresSemFotoExcluidas(f)).toHaveLength(0);
   });
 });
