@@ -9,6 +9,8 @@
 
 **Hotfix 2026-06-17 (ADR-0030 — reprocessamento de família em erro):** o lote #41 ficou em `erro` com a mensagem genérica `"The signal has been aborted"` — causa: a copy (IA/OpenRouter) excedeu o timeout de 30s no `process-familia`, e a única etapa de IA sem fallback derrubou a família. Entregue: (1) `gerarCopy` com 1 retry + erro **rotulado por etapa** (não mais o abort genérico); (2) nova edge function `reprocessar-familia` (reseta `erro→pendente` e re-enfileira via `enfileirarFamilia`, idempotente, por `familia_id` ou `lote_id`); (3) UI: status `erro` + `erro_mensagem` agora visíveis na linha da família, com botão **Reenviar** (por família) e **Reenviar N com erro** no header do lote. Ver [ADR-0030](decisions/0030-reprocessamento-de-familia-em-erro.md).
 
+**Feature 2026-06-17 (Dashboard de KPIs em Publicados):** a tela `Publicados` ganhou um dashboard de vendas no topo (período selecionável 7/30/90d via `/orders` do ML): faturamento, unidades, pedidos, ticket médio, saúde dos anúncios, encalhados e top produtos. Tabela ganhou colunas **Unid. vendidas** e **Valor vendido**; **Fornecedor** passou a exibir a 1ª palavra (ex.: `DETALLIA`), com filtro pelo nome completo. Métrica abstraída no contrato de canal (`lerMetricasVendas`/`MetricasVendasCanal`) → multicanal-ready; nova edge function `metricas-vendas`. Validado em browser (login real, edge 200, fornecedor/colunas/seletor OK). Spec: [dashboard-kpis-publicados](superpowers/specs/2026-06-17-dashboard-kpis-publicados-design.md).
+
 **Progresso desta sessão (terceira sessão, 2026-05-26 — fechamento do M0):**
 - [x] Task 2 (Supabase URL/ANON_KEY) — captured via MCP
 - [x] Task 3 (Upstash Redis + QStash) — pré-existente, captured via MCP
