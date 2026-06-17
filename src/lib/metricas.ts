@@ -7,6 +7,8 @@ export interface MetricasVendas {
   porItem: Record<string, { unidades: number; valor: number }>;
   totais: { faturamento: number; unidades: number; pedidos: number };
   semCredencialML?: boolean;
+  /** Falha ao ler /orders do ML (ex.: app sem permissão de Pedidos) — números não confiáveis. */
+  erroVendas?: string;
 }
 
 /** Busca as vendas agregadas do período (edge metricas-vendas). desde/ate calculados aqui. */

@@ -12,6 +12,8 @@ interface Props {
   periodo: PeriodoDias;
   onPeriodo: (p: PeriodoDias) => void;
   carregando?: boolean;
+  /** Mensagem quando as vendas não puderam ser lidas (ex.: app sem permissão de Pedidos). */
+  aviso?: string | null;
 }
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
@@ -35,7 +37,7 @@ function Kpi({ icon: Icon, label, valor, tom }: {
   );
 }
 
-export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando }: Props) {
+export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando, aviso }: Props) {
   const resumo = useMemo(() => {
     const total = itens.length;
     const ativos = itens.filter((i) => i.status === 'ativo').length;
@@ -78,6 +80,12 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
         </div>
         {carregando && <span className="text-xs text-muted-foreground">atualizando…</span>}
       </div>
+
+      {aviso && (
+        <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+          {aviso}
+        </div>
+      )}
 
       {/* Vendas */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

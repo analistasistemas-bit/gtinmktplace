@@ -405,6 +405,11 @@ export default function Publicados() {
             periodo={periodo}
             onPeriodo={setPeriodo}
             carregando={fetchingMetricas}
+            aviso={
+              metricas?.erroVendas
+                ? 'Não foi possível ler as vendas do Mercado Livre. A aplicação pode não ter a permissão de Pedidos habilitada — os valores de venda ficam indisponíveis até isso ser ajustado.'
+                : null
+            }
           />
 
           {/* Filtros */}

@@ -40,11 +40,16 @@ Deno.serve(async (req) => {
   let metricas: MetricasVendasCanal;
   try {
     metricas = await conn.lerMetricasVendas(ctx, { desde: body.desde, ate: body.ate }, ids);
-  } catch {
-    return new Response(
-      JSON.stringify({ semCredencialML: true, ...vazio }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Distingue falta de credencial (token) de falha na leitura de pedidos (ex.: a app não
+    // tem a permissão funcional de Pedidos no DevCenter do ML → 403 PolicyAgent). Antes isso
+    // era mascarado como "0 vendas"; agora a UI mostra um aviso claro.
+    const semCred = /credenci|sem credenci|get_ml_tokens|oauth\/token|users\/me/i.test(msg);
+    const payload = semCred
+      ? { semCredencialML: true, ...vazio }
+      : { erroVendas: msg, ...vazio };
+    return new Response(JSON.stringify(payload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   return new Response(JSON.stringify(metricas), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

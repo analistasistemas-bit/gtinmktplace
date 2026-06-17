@@ -85,10 +85,19 @@ export async function lerVendasML(
     let resp: Response;
     try {
       resp = await fetch(`${API}/orders/search?${params}`, { headers, signal });
-    } catch {
-      break; // timeout/rede → devolve parcial
+    } catch (e) {
+      // Falha logo na 1ª página → propaga (não mascara como "0 vendas"); nas seguintes,
+      // já temos dados parciais e paramos.
+      if (offset === 0) throw new Error(`ML /orders indisponível: ${(e as Error).message}`);
+      break;
     }
-    if (!resp.ok) break; // 429/5xx → parcial
+    if (!resp.ok) {
+      if (offset === 0) {
+        const corpo = await resp.text().catch(() => '');
+        throw new Error(`ML /orders ${resp.status}: ${corpo.slice(0, 200)}`);
+      }
+      break; // erro em página posterior → devolve o que já agregou
+    }
     const data = await resp.json();
     const results: PedidoML[] = Array.isArray(data?.results) ? data.results : [];
     pedidos.push(...results);
