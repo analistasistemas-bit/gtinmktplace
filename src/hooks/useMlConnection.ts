@@ -5,6 +5,7 @@ export interface EstadoConexaoML {
   conectado: boolean;
   nickname: string | null;
   mlUserId: string | null;
+  scope: string | null;
 }
 
 export function useMlConnection() {
@@ -14,11 +15,16 @@ export function useMlConnection() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('ml_credentials')
-        .select('ml_nickname, ml_user_id')
+        .select('ml_nickname, ml_user_id, scope')
         .maybeSingle();
       if (error) throw error;
-      if (!data) return { conectado: false, nickname: null, mlUserId: null };
-      return { conectado: true, nickname: data.ml_nickname, mlUserId: data.ml_user_id };
+      if (!data) return { conectado: false, nickname: null, mlUserId: null, scope: null };
+      return {
+        conectado: true,
+        nickname: data.ml_nickname,
+        mlUserId: data.ml_user_id,
+        scope: data.scope,
+      };
     },
   });
 }

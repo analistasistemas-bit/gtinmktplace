@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
+import { humanizarErroVendasML } from '../_shared/ml/erro-vendas.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import type { MetricasVendasCanal } from '../_shared/canais/contrato.ts';
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
     const semCred = /credenci|sem credenci|get_ml_tokens|oauth\/token|users\/me/i.test(msg);
     const payload = semCred
       ? { semCredencialML: true, ...vazio }
-      : { erroVendas: msg, ...vazio };
+    : { erroVendas: humanizarErroVendasML(msg), ...vazio };
     return new Response(JSON.stringify(payload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 

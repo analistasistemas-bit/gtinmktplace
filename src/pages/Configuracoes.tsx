@@ -75,9 +75,19 @@ export default function Configuracoes() {
             <span className="text-sm text-muted-foreground">Carregando…</span>
           ) : conexao?.conectado ? (
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <StatusPill tone="success">Conectado</StatusPill>
-                <span className="text-sm">como {conexao.nickname ?? conexao.mlUserId}</span>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <StatusPill tone="success">Conectado</StatusPill>
+                  <span className="text-sm">como {conexao.nickname ?? conexao.mlUserId}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Escopo OAuth salvo: <code>{conexao.scope ?? 'não informado'}</code>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Para exibir vendas no dashboard, o app do Mercado Livre também precisa ter a
+                  permissão de Pedidos habilitada no Dev Center. Se você acabou de ajustar isso,
+                  desconecte e conecte a conta novamente.
+                </p>
               </div>
               <Button variant="outline" size="sm" onClick={handleDesconectar}>
                 Desconectar
