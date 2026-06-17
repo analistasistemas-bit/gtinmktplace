@@ -87,7 +87,8 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   const novasComFoto = coresNovasComEstoque(familia).length;
   // CREATE: cores que vieram desmarcadas por não terem foto (estoque > 0). Avisa na
   // linha o que ficou de fora da publicação. No UPDATE o selo "cores novas" já cobre.
-  const semFotoFora = familia.operacao === 'CREATE' ? coresSemFotoExcluidas(familia).length : 0;
+  const coresSemFoto = familia.operacao === 'CREATE' ? coresSemFotoExcluidas(familia) : [];
+  const semFotoFora = coresSemFoto.length;
   const removidas = familia.mudancaEstrutural?.removidas.length ?? 0;
   // Preço exibido no cabeçalho = preço de venda real (publicação) das cores incluídas,
   // não o da planilha (no UPDATE eles diferem: planilha vs. preço já publicado).
@@ -207,9 +208,22 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
             </StatusPill>
           )}
           {semFotoFora > 0 && (
-            <StatusPill tone="warning" title="Cores sem foto — vieram desmarcadas da publicação. Adicione a foto para incluí-las.">
-              📷 {semFotoFora} sem foto (fora)
-            </StatusPill>
+            onIrParaCritica ? (
+              <button
+                type="button"
+                onClick={() => onIrParaCritica(familia.id, coresSemFoto[0].codigo)}
+                title="Clique para ir até a 1ª cor sem foto"
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <StatusPill tone="warning" className="cursor-pointer hover:bg-warning/20">
+                  📷 {semFotoFora} sem foto
+                </StatusPill>
+              </button>
+            ) : (
+              <StatusPill tone="warning">
+                📷 {semFotoFora} sem foto
+              </StatusPill>
+            )
           )}
           {removidas > 0 && (
             <StatusPill tone="warning" title={`${removidas} cor(es) da planilha sumiram (mantidas no anúncio)`}>
