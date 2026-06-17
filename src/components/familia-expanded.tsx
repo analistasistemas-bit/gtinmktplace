@@ -336,7 +336,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           // Borda esquerda reservada (transparente) em TODAS as linhas → as
           // com crítica só trocam a cor, sem empurrar nem desalinhar as outras.
           'scroll-mt-4 rounded-md border-l-4 border-transparent pl-2 transition-shadow',
-          v.excluidaDaPublicacao && !corNova && 'opacity-50',
+          // Esmaece só a exclusão deliberada (cor com foto fora da publicação). A cor
+          // desmarcada por FALTA de foto fica visível — é pendência, não algo escondido.
+          v.excluidaDaPublicacao && !corNova && !!v.fotoPath && 'opacity-50',
           criticas.length > 0 && 'border-warning bg-warning/10 py-1',
           flashCodigo === v.codigo && 'ring-2 ring-warning ring-offset-2 ring-offset-background',
         )}

@@ -199,8 +199,11 @@ describe('criticasVariacao', () => {
     expect(criticasVariacao(cor({ cor: '', fotoPath: undefined, precoPublicacao: 0 }), 'CREATE'))
       .toEqual(['sem cor', 'sem foto', 'sem preço']);
   });
-  it('variação excluída não acusa crítica (não vai ao ML)', () => {
-    expect(criticasVariacao(cor({ fotoPath: undefined, excluidaDaPublicacao: true }), 'CREATE')).toEqual([]);
+  it('excluída SEM foto ainda acusa "sem foto" (pendência visível, mesmo desmarcada)', () => {
+    expect(criticasVariacao(cor({ fotoPath: undefined, excluidaDaPublicacao: true }), 'CREATE')).toEqual(['sem foto']);
+  });
+  it('excluída COM foto não acusa crítica (exclusão deliberada, não vai ao ML)', () => {
+    expect(criticasVariacao(cor({ cor: '', precoPublicacao: 0, excluidaDaPublicacao: true }), 'CREATE')).toEqual([]);
   });
   it('UPDATE: cor casada (reposição) não exige foto → sem crítica', () => {
     expect(criticasVariacao(cor({ mlVariationId: 'V1', fotoPath: undefined }), 'UPDATE')).toEqual([]);

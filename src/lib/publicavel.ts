@@ -26,20 +26,24 @@ export function familiaExigeCor(familia: Familia): boolean {
 }
 
 // Críticas curtas de uma variação que será publicada como variação plena no ML,
-// para destacar a linha da cor na Revisão. Só vale p/ cores que viram variação:
-// excluída ou reposição de cor já casada no ML (UPDATE) não acusa nada.
+// para destacar a linha da cor na Revisão. Reposição de cor já casada no ML (UPDATE)
+// não acusa nada. Uma cor desmarcada por falta de foto (CREATE/cor nova) continua
+// acusando "sem foto": é pendência visível que o operador resolve subindo a foto.
 export function criticasVariacao(
   v: Variacao,
   operacao: OperacaoML,
   opts: { exigeCor?: boolean } = {},
 ): string[] {
-  if (v.excluidaDaPublicacao) return [];
   // Estoque 0 fica fora da publicação (dorme até repor) → não exige cor/foto/preço.
   // A cor nova zerada nasce desmarcada (ingest) e só precisa estar completa quando
   // ganhar estoque numa próxima planilha. Pendência é só para o que tem estoque.
   if (v.estoque <= 0) return [];
   if (operacao === 'UPDATE' && v.mlVariationId) return [];
   const f = flagsCritica(v, opts);
+  // Cor desmarcada (excluída): só a falta de FOTO segue como pendência visível; cor/
+  // preço só importam para a cor que de fato vai publicar (incluída). Excluída com
+  // foto = exclusão deliberada e completa → sem alerta.
+  if (v.excluidaDaPublicacao) return f.semFoto ? ['sem foto'] : [];
   const out: string[] = [];
   if (f.semCor) out.push('sem cor');
   if (f.semFoto) out.push('sem foto');
