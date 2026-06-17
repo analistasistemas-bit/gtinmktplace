@@ -41,11 +41,14 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { filtrarPublicados, ordenarPublicados } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, primeiroNome } from '@/lib/publicados';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import type { TipoAviamento } from '@/lib/tipos-dominio';
+import type { PeriodoDias } from '@/lib/metricas';
+import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
+import { useMetricasVendas } from '@/hooks/useMetricasVendas';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePaginacao } from '@/hooks/usePaginacao';
 import { Pagination } from '@/components/ui/pagination';
@@ -129,7 +132,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
           <p className="text-xs text-muted-foreground">{item.codigoPai}</p>
         </div>
       </TableCell>
-      <TableCell className="text-sm">{item.fornecedor ?? '—'}</TableCell>
+      <TableCell className="text-sm" title={item.fornecedor ?? undefined}>{primeiroNome(item.fornecedor) ?? '—'}</TableCell>
       <TableCell className="text-sm">{nomeTipo(item.tipo)}</TableCell>
       <TableCell className="text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</TableCell>
       <TableCell className="text-sm tabular-nums">
@@ -137,6 +140,12 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
       </TableCell>
       <TableCell className="text-sm tabular-nums">
         {item.precoAtual != null ? fmtBRL(item.precoAtual) : '—'}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.unidadesVendidas != null ? item.unidadesVendidas : '—'}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.valorVendido != null && item.valorVendido > 0 ? fmtBRL(item.valorVendido) : '—'}
       </TableCell>
       <TableCell>
         <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
@@ -264,6 +273,9 @@ export default function Publicados() {
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
 
+  const [periodo, setPeriodo] = useState<PeriodoDias>(30);
+  const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(periodo);
+
   const [filtro, setFiltro] = useState<FiltroPublicados>({});
   const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
@@ -294,13 +306,19 @@ export default function Publicados() {
   // não a cada tecla na busca).
   const merged: PublicadoItem[] = useMemo(() => {
     const statusMap = new Map((statusData?.itens ?? []).map((s) => [s.ml_item_id, s]));
+    const vendasPorItem = metricas?.porItem ?? {};
     return publicados.map((item) => {
       const s = statusMap.get(item.mlItemId);
+      const v = vendasPorItem[item.mlItemId];
+      const comVendas = {
+        unidadesVendidas: v?.unidades ?? null,
+        valorVendido: v?.valor ?? null,
+      };
       return s
-        ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo }
-        : { ...item, status: 'indisponivel' as StatusPublicado };
+        ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, ...comVendas }
+        : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
-  }, [publicados, statusData]);
+  }, [publicados, statusData, metricas]);
 
   const itensExibidos = useMemo(
     () => ordenarPublicados(filtrarPublicados(merged, filtro), ord),
@@ -348,11 +366,11 @@ export default function Publicados() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetchStatus()}
-            disabled={fetchingStatus}
+            onClick={() => { refetchStatus(); refetchMetricas(); }}
+            disabled={fetchingStatus || fetchingMetricas}
           >
-            <RefreshCw className={cn('mr-1.5 h-4 w-4', fetchingStatus && 'animate-spin')} />
-            {fetchingStatus ? 'Atualizando…' : 'Atualizar'}
+            <RefreshCw className={cn('mr-1.5 h-4 w-4', (fetchingStatus || fetchingMetricas) && 'animate-spin')} />
+            {fetchingStatus || fetchingMetricas ? 'Atualizando…' : 'Atualizar'}
           </Button>
         }
       />
@@ -380,6 +398,15 @@ export default function Publicados() {
         />
       ) : (
         <>
+          {/* Dashboard de KPIs de venda */}
+          <DashboardPublicados
+            itens={merged}
+            totais={metricas?.totais ?? { faturamento: 0, unidades: 0, pedidos: 0 }}
+            periodo={periodo}
+            onPeriodo={setPeriodo}
+            carregando={fetchingMetricas}
+          />
+
           {/* Filtros */}
           <div className="mb-3 flex flex-wrap gap-2">
             <Input
@@ -454,6 +481,8 @@ export default function Publicados() {
                   <ThOrdenavel coluna="precoPublicacao" label="Preço publicado" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="estoque" label="Estoque atual" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="precoAtual" label="Preço atual" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="unidadesVendidas" label="Unid. vendidas" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="valorVendido" label="Valor vendido" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="status" label="Status" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="publicadoEm" label="Publicado em" ord={ord} onOrdenar={ordenarPor} />
                   <TableHead>Ações</TableHead>
@@ -462,7 +491,7 @@ export default function Publicados() {
               <TableBody>
                 {itensExibidos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-6 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={11} className="py-6 text-center text-sm text-muted-foreground">
                       Nenhum resultado para os filtros aplicados.
                     </TableCell>
                   </TableRow>
