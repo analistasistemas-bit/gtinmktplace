@@ -9,7 +9,7 @@ import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado, familiaExigeCor } from '@/lib/publicavel';
-import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
+import { coresNovasComEstoque, coresSemFotoExcluidas } from '@/lib/revisao-variacoes';
 
 interface FamiliaRowProps {
   familia: Familia;
@@ -85,6 +85,9 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   // Cores novas que de fato exigem ação (sem ml_variation_id e com estoque): precisam
   // de foto. Estoque 0 dorme e não conta. Sinaliza na linha sem precisar expandir.
   const novasComFoto = coresNovasComEstoque(familia).length;
+  // CREATE: cores que vieram desmarcadas por não terem foto (estoque > 0). Avisa na
+  // linha o que ficou de fora da publicação. No UPDATE o selo "cores novas" já cobre.
+  const semFotoFora = familia.operacao === 'CREATE' ? coresSemFotoExcluidas(familia).length : 0;
   const removidas = familia.mudancaEstrutural?.removidas.length ?? 0;
   // Preço exibido no cabeçalho = preço de venda real (publicação) das cores incluídas,
   // não o da planilha (no UPDATE eles diferem: planilha vs. preço já publicado).
@@ -201,6 +204,11 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           {novasComFoto > 0 && (
             <StatusPill tone="warning" title="Cores novas que precisam de foto antes de publicar">
               📷 {novasComFoto} cor(es) nova(s)
+            </StatusPill>
+          )}
+          {semFotoFora > 0 && (
+            <StatusPill tone="warning" title="Cores sem foto — vieram desmarcadas da publicação. Adicione a foto para incluí-las.">
+              📷 {semFotoFora} sem foto (fora)
             </StatusPill>
           )}
           {removidas > 0 && (

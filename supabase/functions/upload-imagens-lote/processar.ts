@@ -124,7 +124,13 @@ export async function processarArquivo(
     .upload(path, new Uint8Array(bytes), { contentType: file.type, upsert: true });
   if (upErr) return { tipo: 'invalido', erro: `Storage: ${upErr.message}` };
 
-  await admin.from('variacoes').update({ imagem_path: path }).eq('id', variacao.id);
+  // Ao ganhar foto, a cor que tinha vindo desmarcada por falta de imagem volta para a
+  // publicação (re-inclui). Só quando NÃO tinha imagem antes: cor que já tinha foto e
+  // foi excluída na mão é decisão do operador e fica preservada.
+  const patch = tinhaImagem
+    ? { imagem_path: path }
+    : { imagem_path: path, excluida_da_publicacao: false };
+  await admin.from('variacoes').update(patch).eq('id', variacao.id);
 
   return { tipo: tinhaImagem ? 'ja_tinha' : 'ok' };
 }
