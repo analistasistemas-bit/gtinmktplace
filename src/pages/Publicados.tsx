@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, FileText, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -13,13 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
@@ -153,28 +146,6 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
       <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
       <TableCell>
         <div className="flex items-center gap-1">
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={!item.descricao}
-              >
-                <FileText className="mr-1 h-3 w-3" />
-                Descrição
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="uppercase">{item.titulo}</DialogTitle>
-              </DialogHeader>
-              <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-sm text-foreground">
-                {item.descricao}
-              </div>
-            </DialogContent>
-          </Dialog>
-
           <Button
             asChild
             variant="ghost"
@@ -194,11 +165,12 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
               <Button
                 variant="ghost"
                 size="sm"
+                aria-label="Remover"
+                title="Remover"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                 disabled={removendo}
               >
-                <Trash2 className="mr-1 h-3 w-3" />
-                Remover
+                <Trash2 className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
