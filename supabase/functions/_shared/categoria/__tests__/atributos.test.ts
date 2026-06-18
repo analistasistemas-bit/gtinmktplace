@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, montarAtributosML, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason } from '../atributos';
+import { categoriaParaTipo, montarAtributosML, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack } from '../atributos';
+import type { AtributoSchema } from '../schema';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
   it('mapeia os tipos conhecidos para categorias-folha', () => {
@@ -121,5 +122,50 @@ describe('atributosFaltantes (validação pré-publicação)', () => {
   });
   it('tipo outro → reporta categoria indefinida', () => {
     expect(atributosFaltantes('outro', [])).toEqual(['CATEGORIA']);
+  });
+});
+
+describe('extrairUnitsPerPack (quantidade no nome/descrição)', () => {
+  it('extrai de "100UND" colado (convenção do título)', () => {
+    expect(extrairUnitsPerPack('ALFINETE DE SEGURANÇA N.O 100UND | 100% FERRO')).toBe(100);
+  });
+  it('extrai de variações com espaço e acento/case', () => {
+    expect(extrairUnitsPerPack('Botão 12 unidades')).toBe(12);
+    expect(extrairUnitsPerPack('LINHA 24 UN')).toBe(24);
+    expect(extrairUnitsPerPack('elástico 50 peças')).toBe(50);
+    expect(extrairUnitsPerPack('kit 6 pçs')).toBe(6);
+  });
+  it('não confunde "100% FERRO" com quantidade', () => {
+    expect(extrairUnitsPerPack('100% FERRO')).toBe(null);
+  });
+  it('ignora medidas (mm/cm/g/metros)', () => {
+    expect(extrairUnitsPerPack('FITA 10 mm x 50 metros')).toBe(null);
+  });
+  it('cai na descrição quando o nome não traz quantidade', () => {
+    expect(extrairUnitsPerPack('ALFINETE DE SEGURANÇA', 'pacote com 100 unidades')).toBe(100);
+  });
+  it('sem quantidade clara → null', () => {
+    expect(extrairUnitsPerPack('AGULHA DE COSTURA')).toBe(null);
+  });
+});
+
+describe('preencherUnitsPerPack (gate por schema)', () => {
+  const schemaComUnits: AtributoSchema[] = [
+    { id: 'UNITS_PER_PACK', nome: 'Unidades por kit', required: true, conditionalRequired: false, valores: [] },
+  ];
+  it('preenche value_name numérico quando a categoria expõe o atributo', () => {
+    const out = preencherUnitsPerPack(schemaComUnits, [], 'ALFINETE 100UND');
+    expect(out).toEqual([{ id: 'UNITS_PER_PACK', value_name: '100' }]);
+  });
+  it('não age se a categoria não expõe UNITS_PER_PACK', () => {
+    const out = preencherUnitsPerPack([], [{ id: 'BRAND', value_name: 'Avil' }], 'ALFINETE 100UND');
+    expect(out).toEqual([{ id: 'BRAND', value_name: 'Avil' }]);
+  });
+  it('não sobrescreve valor já presente', () => {
+    const base = [{ id: 'UNITS_PER_PACK', value_name: '50' }];
+    expect(preencherUnitsPerPack(schemaComUnits, base, 'ALFINETE 100UND')).toEqual(base);
+  });
+  it('sem quantidade no texto → deixa faltante (não inventa)', () => {
+    expect(preencherUnitsPerPack(schemaComUnits, [], 'AGULHA DE COSTURA')).toEqual([]);
   });
 });

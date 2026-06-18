@@ -121,6 +121,43 @@ export function atributosFaltantesGenerico(temAtributos: AtributoML[], schema: A
     .map((a) => a.nome);
 }
 
+// "Unidades por kit" (UNITS_PER_PACK) é atributo NUMÉRICO (sem closed-set), então o
+// preenchimento por IA (que só cobre values[]) nunca o resolve. Extraímos a quantidade do
+// nome/descrição. Exige um token de unidade após o número (und/un/unidades/peças/pçs) para
+// não pegar "100% FERRO" nem medidas ("10 mm", "50 metros"). Texto já normalizado (sem acento/ç).
+const RE_UNIDADES = /(\d{1,4})\s*(unidades?|unid|und|un|pecas?|pcs)\b/;
+
+/** Extrai a quantidade por pacote do nome (1ª escolha) ou descrição. null se não houver clara. */
+export function extrairUnitsPerPack(nome: string, descricao?: string): number | null {
+  for (const texto of [nome, descricao]) {
+    const m = normalizar(texto ?? '').match(RE_UNIDADES);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return null;
+}
+
+/**
+ * Preenche UNITS_PER_PACK a partir da quantidade no nome/descrição. Só age se a categoria
+ * expõe o atributo e ele ainda está vazio; sem quantidade clara, deixa faltante (operador
+ * completa). Não interfere na detecção de ficha-kit do catálogo (que lê a ficha do ML, não isto).
+ */
+export function preencherUnitsPerPack(
+  schema: AtributoSchema[],
+  atributos: AtributoML[],
+  nome: string,
+  descricao?: string,
+): AtributoML[] {
+  const exposto = schema.some((a) => a.id === 'UNITS_PER_PACK');
+  const jaTem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
+  if (!exposto || jaTem) return atributos;
+  const n = extrairUnitsPerPack(nome, descricao);
+  if (n == null) return atributos;
+  return [...atributos, { id: 'UNITS_PER_PACK', value_name: String(n) }];
+}
+
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */
 export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: string, detalhe?: string): AtributoML[] {
   const texto = normalizar(nome ?? '');
