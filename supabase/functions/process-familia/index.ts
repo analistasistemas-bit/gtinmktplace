@@ -11,7 +11,7 @@ import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
-import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverCategoria } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -186,6 +186,8 @@ Deno.serve(async (req) => {
           { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
           desempatarAtributosLLM,
         );
+        // UNITS_PER_PACK é numérico (sem closed-set) → a IA não cobre; extrai do nome/descrição.
+        atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
         faltantes = atributosFaltantesGenerico(atributosMl, schema);
       } catch (e) { console.error('schema/atributos falhou:', e); }
     }
