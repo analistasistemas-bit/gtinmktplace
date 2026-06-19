@@ -16,6 +16,14 @@ interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona (gap §569)
 
+// Foto recém-enviada fica alguns segundos "em processamento" no ML; criar o item nesse
+// intervalo devolve item.pictures.unavailable ("envie a foto novamente") — um 400 transitório
+// que some assim que a foto processa. Em vez de devolver 500 e esperar o backoff longo do
+// QStash (minutos em 'publicando'), re-tentamos o POST /items na mesma execução.
+const FOTO_RETRY_TENTATIVAS = 3;
+const FOTO_RETRY_INTERVALO_MS = 4000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // Reavalia o status do lote quando o worker some da fila (sucesso ou erro definitivo).
 // Sem famílias 'publicando' → 'concluido', ou 'revisao' se ainda restam publicáveis ('pronto').
 async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId: string): Promise<void> {
@@ -26,16 +34,6 @@ async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId
     .select('id').eq('lote_id', loteId).eq('status', 'pronto');
   const novo = prontas && prontas.length > 0 ? 'revisao' : 'concluido';
   await admin.from('lotes').update({ status: novo }).eq('id', loteId);
-}
-
-async function limparFotosCachePublicacao(admin: ReturnType<typeof adminClient>, familiaId: string): Promise<void> {
-  await admin.from('variacoes').update({ ml_picture_id: null })
-    .eq('familia_id', familiaId).is('ml_variation_id', null);
-  await admin.from('familias').update({
-    capa_ml_picture_id: null,
-    capa2_ml_picture_id: null,
-    capa3_ml_picture_id: null,
-  }).eq('id', familiaId);
 }
 
 Deno.serve(async (req) => {
@@ -157,11 +155,20 @@ Deno.serve(async (req) => {
       })),
     };
 
-    const res = await conn.criarAnuncio(ctx, anuncio);
+    let res = await conn.criarAnuncio(ctx, anuncio);
+    // Retry interno para a foto ainda em processamento no ML: espera curta e re-tenta na
+    // mesma execução, reusando os picture_ids já enviados (não limpa cache aqui). Resolve em
+    // segundos; se esgotar, cai no tratamento abaixo (rede de segurança do QStash).
+    for (let i = 0; i < FOTO_RETRY_TENTATIVAS && !res.ok && res.erro!.codigo === 'FOTO'; i++) {
+      await sleep(FOTO_RETRY_INTERVALO_MS);
+      res = await conn.criarAnuncio(ctx, anuncio);
+    }
     if (!res.ok) {
       const e = res.erro!;
       const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
-      if (e.codigo === 'FOTO') await limparFotosCachePublicacao(admin, job.familia_id);
+      // Erro de foto é transiente (a foto recém-enviada ainda processa no ML). NÃO limpamos
+      // o cache de picture_ids: re-subir a mesma imagem só reinicia o processamento e nunca
+      // assenta. Reusar o mesmo picture_id no retry deixa o ML terminar e o item publica.
       if (decidirErroCriarAnuncio(e, tentativas) === 'retentar') {
         return new Response(e.mensagemOperador, { status: 500, headers: corsHeaders });
       }
@@ -226,15 +233,13 @@ Deno.serve(async (req) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const status = (err as { status?: number }).status;
-    // Erro de foto que o ML pede para reenviar: limpa caches efêmeros para o retry subir
-    // fotos frescas; se esgotar, marca erro visível sem deixar preso em publicando.
+    // Erro de foto que o ML pede para reenviar é transiente (a foto ainda processa). Retenta
+    // via QStash reusando o MESMO picture_id (sem re-subir) enquanto restar tentativa; ao
+    // esgotar, marca erro visível com mensagem recuperável.
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
     const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
-    if (retentavelFoto) {
-      await limparFotosCachePublicacao(admin, job.familia_id);
-      if (tentativas < 3) {
-        return new Response(msg, { status: 500, headers: corsHeaders });
-      }
+    if (retentavelFoto && tentativas < 3) {
+      return new Response(msg, { status: 500, headers: corsHeaders });
     }
     // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
     if (status && status >= 500) {
