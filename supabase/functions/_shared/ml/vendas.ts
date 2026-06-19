@@ -58,6 +58,44 @@ export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): Agr
 
 const API = 'https://api.mercadolibre.com';
 
+function chunk<T>(arr: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+/** Pura: porItemExterno + títulos → lista de ItemExternoVenda ordenada por valor desc. */
+export function montarExternos(
+  porItemExterno: Record<string, { unidades: number; valor: number }>,
+  titulos: Record<string, string>,
+): ItemExternoVenda[] {
+  return Object.entries(porItemExterno)
+    .map(([id, v]) => ({ id, titulo: titulos[id] ?? id, unidades: v.unidades, valor: v.valor }))
+    .sort((a, b) => b.valor - a.valor);
+}
+
+/** Resolve títulos de N itens via /items em lote (resiliente: bloco que falha vira id). */
+async function buscarTitulos(token: string, ids: string[], signal: AbortSignal): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (ids.length === 0) return out;
+  const headers = { Authorization: `Bearer ${token}` };
+  for (const bloco of chunk(ids, 20)) {
+    try {
+      const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,title`;
+      const resp = await fetch(url, { headers, signal });
+      if (!resp.ok) continue;
+      const arr = await resp.json(); // [{ code, body:{ id, title } }]
+      if (Array.isArray(arr)) {
+        for (const e of arr) {
+          const id = e?.body?.id;
+          if (e?.code === 200 && id) out[id] = e.body.title ?? id;
+        }
+      }
+    } catch { /* bloco indisponível: ids ficam sem título → usa id */ }
+  }
+  return out;
+}
+
 /**
  * Varre /orders/search do vendedor no período (pedidos pagos) e agrega por item.
  * Resiliente: rate-limit (429) ou erro de página interrompe a varredura e devolve o
@@ -119,5 +157,11 @@ export async function lerVendasML(
     if (results.length === 0 || offset >= total) break;
   }
 
-  return agregarPedidos(pedidos, escopo);
+  const agg = agregarPedidos(pedidos, escopo);
+  const titulos = await buscarTitulos(token, Object.keys(agg.porItemExterno), signal);
+  return {
+    porItem: agg.porItem,
+    totais: agg.totais,
+    externos: montarExternos(agg.porItemExterno, titulos),
+  };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agregarPedidos, type PedidoML } from '../vendas.ts';
+import { agregarPedidos, montarExternos, type PedidoML } from '../vendas.ts';
 
 // Semântica (ADR-0032): `totais` reflete TODA a conta do vendedor no período (bate com a
 // tela de Métricas do ML), enquanto `porItem` continua restrito ao escopo do app (tabela,
@@ -79,5 +79,20 @@ describe('agregarPedidos', () => {
     expect(r.porItem['MLB1']).toEqual({ unidades: 0, valor: 0 });
     // pedido 1 sem itens não conta; pedidos 2 e 3 contam.
     expect(r.totais).toEqual({ faturamento: 1, unidades: 1, pedidos: 2 });
+  });
+});
+
+describe('montarExternos', () => {
+  it('mapeia título por id e ordena por valor desc; usa id quando falta título', () => {
+    const porItemExterno = {
+      MLBX: { unidades: 5, valor: 62.5 },
+      MLBY: { unidades: 2, valor: 100 },
+    };
+    const titulos = { MLBY: 'Produto Y' };
+    const r = montarExternos(porItemExterno, titulos);
+    expect(r).toEqual([
+      { id: 'MLBY', titulo: 'Produto Y', unidades: 2, valor: 100 },
+      { id: 'MLBX', titulo: 'MLBX', unidades: 5, valor: 62.5 },
+    ]);
   });
 });
