@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { buscarMetricasVendas, type MetricasVendas, type PeriodoDias } from '@/lib/metricas';
+import { buscarMetricasVendas, type MetricasVendas, type Janela } from '@/lib/metricas';
 
-export function useMetricasVendas(periodo: PeriodoDias) {
+export function useMetricasVendas(janela: Janela) {
   return useQuery<MetricasVendas>({
-    queryKey: ['metricasVendas', periodo],
-    queryFn: () => buscarMetricasVendas(periodo),
+    queryKey: ['metricasVendas', janela.desde, janela.ate],
+    queryFn: () => buscarMetricasVendas(janela),
     staleTime: 5 * 60_000,
   });
 }

@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { buscarResumoFinanceiro, type ResumoFinanceiro } from '@/lib/financeiro';
-import type { PeriodoDias } from '@/lib/metricas';
+import type { Janela } from '@/lib/metricas';
 
-export function useResumoFinanceiro(periodo: PeriodoDias) {
+export function useResumoFinanceiro(janela: Janela) {
   return useQuery<ResumoFinanceiro>({
-    queryKey: ['resumoFinanceiro', periodo],
-    queryFn: () => buscarResumoFinanceiro(periodo),
+    queryKey: ['resumoFinanceiro', janela.desde, janela.ate],
+    queryFn: () => buscarResumoFinanceiro(janela),
     staleTime: 5 * 60_000,
   });
 }

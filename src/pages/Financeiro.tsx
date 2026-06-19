@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
-import type { PeriodoDias } from '@/lib/metricas';
+import { resolverJanela, type PeriodoDias } from '@/lib/metricas';
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 7, label: '7 dias' },
@@ -33,7 +33,8 @@ function Kpi({ icon: Icon, label, valor, sub, tom }: {
 
 export default function Financeiro() {
   const [periodo, setPeriodo] = useState<PeriodoDias>(30);
-  const { data: r, isFetching, refetch } = useResumoFinanceiro(periodo);
+  const janela = useMemo(() => resolverJanela({ tipo: 'preset', dias: periodo }), [periodo]);
+  const { data: r, isFetching, refetch } = useResumoFinanceiro(janela);
 
   const semCred = r?.semCredencialMP;
   const pctRetido = r && r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;

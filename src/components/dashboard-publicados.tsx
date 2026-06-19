@@ -1,16 +1,17 @@
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import type { PublicadoItem } from '@/lib/publicados';
-import type { PeriodoDias } from '@/lib/metricas';
+import { resolverJanela, periodoToParams, type Periodo, type PeriodoDias } from '@/lib/metricas';
 
 interface Props {
   itens: PublicadoItem[];
   totais: { faturamento: number; unidades: number; pedidos: number };
-  periodo: PeriodoDias;
-  onPeriodo: (p: PeriodoDias) => void;
+  periodo: Periodo;
+  onPeriodo: (p: Periodo) => void;
   carregando?: boolean;
   /** Mensagem quando as vendas não puderam ser lidas (ex.: app sem permissão de Pedidos). */
   aviso?: string | null;
@@ -38,6 +39,16 @@ function Kpi({ icon: Icon, label, valor, tom }: {
 }
 
 export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando, aviso }: Props) {
+  const presetAtivo = periodo.tipo === 'preset' ? periodo.dias : null;
+  const custom = periodo.tipo === 'range' ? periodo : null;
+
+  const irParaCustom = () => {
+    const j = resolverJanela(periodo);
+    onPeriodo({ tipo: 'range', desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) });
+  };
+
+  const queryDetalhe = new URLSearchParams(periodoToParams(periodo)).toString();
+
   const resumo = useMemo(() => {
     const total = itens.length;
     const ativos = itens.filter((i) => i.status === 'ativo').length;
@@ -63,21 +74,51 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
   return (
     <div className="mb-5 space-y-3">
       {/* Seletor de período */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Vendas nos últimos</span>
         <div className="flex gap-1">
           {PERIODOS.map((p) => (
             <Button
               key={p.dias}
               size="sm"
-              variant={periodo === p.dias ? 'default' : 'outline'}
+              variant={presetAtivo === p.dias ? 'default' : 'outline'}
               className="h-7 px-2.5 text-xs"
-              onClick={() => onPeriodo(p.dias)}
+              onClick={() => onPeriodo({ tipo: 'preset', dias: p.dias })}
             >
               {p.label}
             </Button>
           ))}
+          <Button
+            size="sm"
+            variant={custom ? 'default' : 'outline'}
+            className="h-7 px-2.5 text-xs"
+            onClick={irParaCustom}
+          >
+            Personalizado
+          </Button>
         </div>
+        {custom && (
+          <div className="flex items-center gap-1.5">
+            <label className="text-xs text-muted-foreground" htmlFor="venda-de">De</label>
+            <input
+              id="venda-de"
+              type="date"
+              value={custom.desde}
+              max={custom.ate}
+              onChange={(e) => onPeriodo({ tipo: 'range', desde: e.target.value, ate: custom.ate })}
+              className="h-7 rounded-md border bg-background px-2 text-xs"
+            />
+            <label className="text-xs text-muted-foreground" htmlFor="venda-ate">Até</label>
+            <input
+              id="venda-ate"
+              type="date"
+              value={custom.ate}
+              min={custom.desde}
+              onChange={(e) => onPeriodo({ tipo: 'range', desde: custom.desde, ate: e.target.value })}
+              className="h-7 rounded-md border bg-background px-2 text-xs"
+            />
+          </div>
+        )}
         {carregando && <span className="text-xs text-muted-foreground">atualizando…</span>}
       </div>
 
@@ -89,7 +130,13 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
 
       {/* Vendas */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(totais.faturamento)} tom="success" />
+        <Link
+          to={{ pathname: '/publicados/vendas', search: queryDetalhe }}
+          className="rounded-lg outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring hover:opacity-90"
+          aria-label="Faturamento — ver composição"
+        >
+          <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(totais.faturamento)} tom="success" />
+        </Link>
         <Kpi icon={Package} label="Unidades vendidas" valor={String(totais.unidades)} />
         <Kpi icon={Receipt} label="Pedidos" valor={String(totais.pedidos)} />
         <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(ticket)} />
