@@ -38,10 +38,15 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
 export async function enfileirarPublicacao(job: ProcessFamiliaJob): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/publish-familia-ml`;
+  // Erro de foto em processamento no ML é transiente e resolve em segundos (ADR-0033). O
+  // backoff exponencial padrão do QStash chega a ~2-3min entre tentativas, deixando o item
+  // parado em 'publicando'. Delay curto e fixo (10s) + mais tentativas faz a publicação
+  // concluir em dezenas de segundos quando a foto demora além do retry interno do worker.
   const { messageId } = await qstashClient().publishJSON({
     url: target,
     body: job,
-    retries: 3,
+    retries: 5,
+    retryDelay: '10000',
   });
   return messageId;
 }
@@ -49,10 +54,12 @@ export async function enfileirarPublicacao(job: ProcessFamiliaJob): Promise<stri
 export async function enfileirarAtualizacao(job: ProcessFamiliaJob): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/update-familia-ml`;
+  // Mesmo motivo de enfileirarPublicacao (ADR-0033): retry rápido p/ foto transiente.
   const { messageId } = await qstashClient().publishJSON({
     url: target,
     body: job,
-    retries: 3,
+    retries: 5,
+    retryDelay: '10000',
   });
   return messageId;
 }

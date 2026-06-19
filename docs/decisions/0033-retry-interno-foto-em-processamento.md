@@ -55,3 +55,17 @@ zero a cada tentativa**, de modo que a foto **nunca assenta** e o item nunca pub
 Hipótese inicial de concorrência → serialização via QStash Queue `parallelism=1` (PR #1).
 Descartada: o erro ocorre com publicação isolada e a serialização bloqueava a 2ª família atrás
 da 1ª. Revertida em produção antes desta correção.
+
+## Adendo (2026-06-19): backoff de retry curto
+
+Teste com 2 produtos simultâneos: ambos publicaram (loop infinito resolvido), mas levaram
+~3-4 min cada. Causa: quando a foto demora além dos ~12s do retry interno, a publicação cai
+no retry do QStash, cujo **backoff exponencial padrão** chega a ~2-3 min entre tentativas —
+espera ociosa, pois a foto já estava pronta bem antes. O teste isolado (1 produto, 6s) não
+expôs isso porque a foto assentava dentro do retry interno.
+
+Decisão: em `enfileirarPublicacao`/`enfileirarAtualizacao`, trocar o backoff exponencial por
+**`retryDelay: '10000'` (10s fixo)** e **`retries: 5`**. Assim, quando a foto demora além do
+retry interno, a publicação conclui em dezenas de segundos (não minutos). O retry interno
+segue cobrindo o caso rápido (publica na 1ª invocação). A validação real é em produção,
+observando os tempos `CREATED→DELIVERED` no QStash.
