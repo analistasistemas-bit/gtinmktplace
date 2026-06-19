@@ -1,4 +1,4 @@
-import type { MetricasVendasCanal } from '../canais/contrato.ts';
+import type { MetricasVendasCanal, ItemExternoVenda } from '../canais/contrato.ts';
 
 /** Pedido do ML, recorte usado para agregar vendas (campos além destes são ignorados). */
 export interface PedidoML {
@@ -10,16 +10,25 @@ export interface PedidoML {
   }> | null;
 }
 
+/** Resultado bruto da agregação (sem títulos — `montarExternos`/`lerVendasML` resolvem). */
+export interface AgregadoPedidos {
+  porItem: Record<string, { unidades: number; valor: number }>;
+  porItemExterno: Record<string, { unidades: number; valor: number }>;
+  totais: { faturamento: number; unidades: number; pedidos: number };
+}
+
 /**
  * Agrega os pedidos pagos do período em dois recortes (ADR-0032):
  * - `totais`: TODA a conta do vendedor (faturamento/unidades/pedidos), para os KPIs do topo
  *   baterem com a tela de Métricas do ML — inclui anúncios publicados fora do PubliAI.
  * - `porItem`: restrito ao escopo (anúncios gerenciados pelo app), para a tabela por anúncio,
  *   rankings e encalhados.
+ * - `porItemExterno`: itens fora do escopo que venderam no período (sem títulos ainda).
  * Pura e sem rede. `pedidos` (nº distinto) conta cada pedido com ≥1 item uma única vez.
  */
-export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): MetricasVendasCanal {
+export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): AgregadoPedidos {
   const porItem: Record<string, { unidades: number; valor: number }> = {};
+  const porItemExterno: Record<string, { unidades: number; valor: number }> = {};
   let faturamento = 0;
   let unidades = 0;
   let pedidosComItem = 0;
@@ -30,23 +39,21 @@ export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): Met
       const qtd = Number(oi?.quantity ?? 0);
       const preco = Number(oi?.unit_price ?? 0);
       const valor = qtd * preco;
-      // Totais globais: somam todo item do pedido, dentro ou fora do escopo do app.
       faturamento += valor;
       unidades += qtd;
       temItem = true;
-      // porItem só agrega os anúncios do app (alimenta tabela/rankings/encalhados).
       const id = oi?.item?.id;
-      if (id && idsEscopo.has(id)) {
-        const acc = porItem[id] ?? { unidades: 0, valor: 0 };
-        acc.unidades += qtd;
-        acc.valor += valor;
-        porItem[id] = acc;
-      }
+      if (!id) continue;
+      const alvo = idsEscopo.has(id) ? porItem : porItemExterno;
+      const acc = alvo[id] ?? { unidades: 0, valor: 0 };
+      acc.unidades += qtd;
+      acc.valor += valor;
+      alvo[id] = acc;
     }
     if (temItem) pedidosComItem += 1;
   }
 
-  return { porItem, totais: { faturamento, unidades, pedidos: pedidosComItem } };
+  return { porItem, porItemExterno, totais: { faturamento, unidades, pedidos: pedidosComItem } };
 }
 
 const API = 'https://api.mercadolibre.com';

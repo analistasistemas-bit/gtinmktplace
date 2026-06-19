@@ -54,6 +54,21 @@ describe('agregarPedidos', () => {
     expect(r.porItem).toEqual({});
   });
 
+  it('separa itens fora do escopo em porItemExterno sem poluir porItem', () => {
+    const pedidos: PedidoML[] = [
+      { id: 1, order_items: [
+        { item: { id: 'MLB1' }, quantity: 1, unit_price: 10 },
+        { item: { id: 'FORA' }, quantity: 2, unit_price: 50 },
+      ] },
+      { id: 2, order_items: [{ item: { id: 'FORA' }, quantity: 1, unit_price: 50 }] },
+    ];
+    const r = agregarPedidos(pedidos, escopo);
+    expect(r.porItem['MLB1']).toEqual({ unidades: 1, valor: 10 });
+    expect(r.porItem['FORA']).toBeUndefined();
+    expect(r.porItemExterno['FORA']).toEqual({ unidades: 3, valor: 150 });
+    expect(r.totais).toEqual({ faturamento: 160, unidades: 4, pedidos: 2 });
+  });
+
   it('tolera campos ausentes/nulos', () => {
     const pedidos: PedidoML[] = [
       { id: 1, order_items: null },
