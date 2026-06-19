@@ -38,7 +38,7 @@ import { fmtBRL } from '@/lib/formato';
 import { filtrarPublicados, ordenarPublicados, primeiroNome } from '@/lib/publicados';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import type { TipoAviamento } from '@/lib/tipos-dominio';
-import type { PeriodoDias } from '@/lib/metricas';
+import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -247,9 +247,10 @@ export default function Publicados() {
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
 
-  const [periodo, setPeriodo] = useState<PeriodoDias>(30);
-  const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(periodo);
-  const { data: financeiro } = useResumoFinanceiro(periodo);
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const janela = useMemo(() => resolverJanela(periodo), [periodo]);
+  const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(janela);
+  const { data: financeiro } = useResumoFinanceiro(janela);
 
   const [filtro, setFiltro] = useState<FiltroPublicados>({});
   const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);

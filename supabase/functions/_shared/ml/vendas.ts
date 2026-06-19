@@ -1,4 +1,4 @@
-import type { MetricasVendasCanal } from '../canais/contrato.ts';
+import type { MetricasVendasCanal, ItemExternoVenda } from '../canais/contrato.ts';
 
 /** Pedido do ML, recorte usado para agregar vendas (campos além destes são ignorados). */
 export interface PedidoML {
@@ -10,16 +10,25 @@ export interface PedidoML {
   }> | null;
 }
 
+/** Resultado bruto da agregação (sem títulos — `montarExternos`/`lerVendasML` resolvem). */
+export interface AgregadoPedidos {
+  porItem: Record<string, { unidades: number; valor: number }>;
+  porItemExterno: Record<string, { unidades: number; valor: number }>;
+  totais: { faturamento: number; unidades: number; pedidos: number };
+}
+
 /**
  * Agrega os pedidos pagos do período em dois recortes (ADR-0032):
  * - `totais`: TODA a conta do vendedor (faturamento/unidades/pedidos), para os KPIs do topo
  *   baterem com a tela de Métricas do ML — inclui anúncios publicados fora do PubliAI.
  * - `porItem`: restrito ao escopo (anúncios gerenciados pelo app), para a tabela por anúncio,
  *   rankings e encalhados.
+ * - `porItemExterno`: itens fora do escopo que venderam no período (sem títulos ainda).
  * Pura e sem rede. `pedidos` (nº distinto) conta cada pedido com ≥1 item uma única vez.
  */
-export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): MetricasVendasCanal {
+export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): AgregadoPedidos {
   const porItem: Record<string, { unidades: number; valor: number }> = {};
+  const porItemExterno: Record<string, { unidades: number; valor: number }> = {};
   let faturamento = 0;
   let unidades = 0;
   let pedidosComItem = 0;
@@ -30,26 +39,65 @@ export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): Met
       const qtd = Number(oi?.quantity ?? 0);
       const preco = Number(oi?.unit_price ?? 0);
       const valor = qtd * preco;
-      // Totais globais: somam todo item do pedido, dentro ou fora do escopo do app.
       faturamento += valor;
       unidades += qtd;
       temItem = true;
-      // porItem só agrega os anúncios do app (alimenta tabela/rankings/encalhados).
       const id = oi?.item?.id;
-      if (id && idsEscopo.has(id)) {
-        const acc = porItem[id] ?? { unidades: 0, valor: 0 };
-        acc.unidades += qtd;
-        acc.valor += valor;
-        porItem[id] = acc;
-      }
+      if (!id) continue;
+      const alvo = idsEscopo.has(id) ? porItem : porItemExterno;
+      const acc = alvo[id] ?? { unidades: 0, valor: 0 };
+      acc.unidades += qtd;
+      acc.valor += valor;
+      alvo[id] = acc;
     }
     if (temItem) pedidosComItem += 1;
   }
 
-  return { porItem, totais: { faturamento, unidades, pedidos: pedidosComItem } };
+  return { porItem, porItemExterno, totais: { faturamento, unidades, pedidos: pedidosComItem } };
 }
 
 const API = 'https://api.mercadolibre.com';
+
+function chunk<T>(arr: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+/** Pura: porItemExterno + títulos → lista de ItemExternoVenda ordenada por valor desc. */
+export function montarExternos(
+  porItemExterno: Record<string, { unidades: number; valor: number }>,
+  titulos: Record<string, string>,
+): ItemExternoVenda[] {
+  return Object.entries(porItemExterno)
+    .map(([id, v]) => ({ id, titulo: titulos[id] ?? id, unidades: v.unidades, valor: v.valor }))
+    .sort((a, b) => b.valor - a.valor);
+}
+
+/** Resolve títulos de N itens via /items em lote (resiliente: bloco que falha vira id). */
+async function buscarTitulos(token: string, ids: string[], signal: AbortSignal): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (ids.length === 0) return out;
+  const headers = { Authorization: `Bearer ${token}` };
+  for (const bloco of chunk(ids, 20)) {
+    try {
+      const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,title`;
+      const resp = await fetch(url, { headers, signal });
+      if (!resp.ok) continue;
+      const arr = await resp.json(); // [{ code, body:{ id, title } }]
+      if (Array.isArray(arr)) {
+        for (const e of arr) {
+          const id = e?.body?.id;
+          if (e?.code === 200 && id) out[id] = e.body.title ?? id;
+        }
+      }
+    } catch (e) {
+      // Bloco indisponível: ids ficam sem título → usa id. Loga p/ diagnóstico (igual lerStatus).
+      console.warn('buscarTitulos bloco falhou:', (e as Error).message);
+    }
+  }
+  return out;
+}
 
 /**
  * Varre /orders/search do vendedor no período (pedidos pagos) e agrega por item.
@@ -112,5 +160,11 @@ export async function lerVendasML(
     if (results.length === 0 || offset >= total) break;
   }
 
-  return agregarPedidos(pedidos, escopo);
+  const agg = agregarPedidos(pedidos, escopo);
+  const titulos = await buscarTitulos(token, Object.keys(agg.porItemExterno), signal);
+  return {
+    porItem: agg.porItem,
+    totais: agg.totais,
+    externos: montarExternos(agg.porItemExterno, titulos),
+  };
 }

@@ -107,12 +107,22 @@ export interface ResultadoAtualizacao {
   variacoesExternas: Record<string, string>;
 }
 
+/** Um item que vendeu mas está fora do escopo do app (publicado direto no canal). */
+export interface ItemExternoVenda {
+  id: string;
+  titulo: string;
+  unidades: number;
+  valor: number;
+}
+
 /** Métricas de venda de um período, no modelo canônico (multicanal). */
 export interface MetricasVendasCanal {
   /** itemExternoId → vendas do período (só itens dentro do escopo consultado). */
   porItem: Record<string, { unidades: number; valor: number }>;
   /** Totais de TODA a conta do vendedor no período — inclui anúncios fora do escopo (ADR-0032). */
   totais: { faturamento: number; unidades: number; pedidos: number };
+  /** Itens fora do escopo do app que venderam no período (compõem o total — detalhe de vendas). */
+  externos?: ItemExternoVenda[];
 }
 
 /** Contexto por chamada (auth lazy). */

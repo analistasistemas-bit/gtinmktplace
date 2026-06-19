@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { PeriodoDias } from './metricas';
+import type { Janela } from './metricas';
 
 export interface ResumoFinanceiro {
   bruto: number;
@@ -14,11 +14,9 @@ export interface ResumoFinanceiro {
 }
 
 /** Busca o resumo financeiro realizado do período (edge resumo-financeiro). */
-export async function buscarResumoFinanceiro(periodoDias: PeriodoDias): Promise<ResumoFinanceiro> {
+export async function buscarResumoFinanceiro(janela: Janela): Promise<ResumoFinanceiro> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
-  const ate = new Date();
-  const desde = new Date(ate.getTime() - periodoDias * 24 * 60 * 60 * 1000);
   const resp = await fetch(
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resumo-financeiro`,
     {
@@ -27,7 +25,7 @@ export async function buscarResumoFinanceiro(periodoDias: PeriodoDias): Promise<
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({ desde: desde.toISOString(), ate: ate.toISOString() }),
+      body: JSON.stringify({ desde: janela.desde, ate: janela.ate }),
     },
   );
   const json = await resp.json().catch(() => null);

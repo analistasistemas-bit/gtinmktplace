@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agregarPedidos, type PedidoML } from '../vendas.ts';
+import { agregarPedidos, montarExternos, type PedidoML } from '../vendas.ts';
 
 // Semântica (ADR-0032): `totais` reflete TODA a conta do vendedor no período (bate com a
 // tela de Métricas do ML), enquanto `porItem` continua restrito ao escopo do app (tabela,
@@ -54,6 +54,21 @@ describe('agregarPedidos', () => {
     expect(r.porItem).toEqual({});
   });
 
+  it('separa itens fora do escopo em porItemExterno sem poluir porItem', () => {
+    const pedidos: PedidoML[] = [
+      { id: 1, order_items: [
+        { item: { id: 'MLB1' }, quantity: 1, unit_price: 10 },
+        { item: { id: 'FORA' }, quantity: 2, unit_price: 50 },
+      ] },
+      { id: 2, order_items: [{ item: { id: 'FORA' }, quantity: 1, unit_price: 50 }] },
+    ];
+    const r = agregarPedidos(pedidos, escopo);
+    expect(r.porItem['MLB1']).toEqual({ unidades: 1, valor: 10 });
+    expect(r.porItem['FORA']).toBeUndefined();
+    expect(r.porItemExterno['FORA']).toEqual({ unidades: 3, valor: 150 });
+    expect(r.totais).toEqual({ faturamento: 160, unidades: 4, pedidos: 2 });
+  });
+
   it('tolera campos ausentes/nulos', () => {
     const pedidos: PedidoML[] = [
       { id: 1, order_items: null },
@@ -64,5 +79,20 @@ describe('agregarPedidos', () => {
     expect(r.porItem['MLB1']).toEqual({ unidades: 0, valor: 0 });
     // pedido 1 sem itens não conta; pedidos 2 e 3 contam.
     expect(r.totais).toEqual({ faturamento: 1, unidades: 1, pedidos: 2 });
+  });
+});
+
+describe('montarExternos', () => {
+  it('mapeia título por id e ordena por valor desc; usa id quando falta título', () => {
+    const porItemExterno = {
+      MLBX: { unidades: 5, valor: 62.5 },
+      MLBY: { unidades: 2, valor: 100 },
+    };
+    const titulos = { MLBY: 'Produto Y' };
+    const r = montarExternos(porItemExterno, titulos);
+    expect(r).toEqual([
+      { id: 'MLBY', titulo: 'Produto Y', unidades: 2, valor: 100 },
+      { id: 'MLBX', titulo: 'MLBX', unidades: 5, valor: 62.5 },
+    ]);
   });
 });

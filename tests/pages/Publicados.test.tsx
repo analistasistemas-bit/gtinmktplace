@@ -81,13 +81,21 @@ describe('Publicados', () => {
   });
 
   it('mostra o tipo cola na tabela', () => {
-    render(<Publicados />);
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByRole('cell', { name: 'Cola' })).toBeInTheDocument();
   });
 
   it('oferece Cola no filtro de tipos', () => {
-    render(<Publicados />);
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
 
     fireEvent.click(screen.getAllByRole('combobox')[2]);
 
