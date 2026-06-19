@@ -16,6 +16,14 @@ interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona (gap §569)
 
+// Foto recém-enviada fica alguns segundos "em processamento" no ML; criar o item nesse
+// intervalo devolve item.pictures.unavailable ("envie a foto novamente") — um 400 transitório
+// que some assim que a foto processa. Em vez de devolver 500 e esperar o backoff longo do
+// QStash (minutos em 'publicando'), re-tentamos o POST /items na mesma execução.
+const FOTO_RETRY_TENTATIVAS = 3;
+const FOTO_RETRY_INTERVALO_MS = 4000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // Reavalia o status do lote quando o worker some da fila (sucesso ou erro definitivo).
 // Sem famílias 'publicando' → 'concluido', ou 'revisao' se ainda restam publicáveis ('pronto').
 async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId: string): Promise<void> {
@@ -157,7 +165,14 @@ Deno.serve(async (req) => {
       })),
     };
 
-    const res = await conn.criarAnuncio(ctx, anuncio);
+    let res = await conn.criarAnuncio(ctx, anuncio);
+    // Retry interno para a foto ainda em processamento no ML: espera curta e re-tenta na
+    // mesma execução, reusando os picture_ids já enviados (não limpa cache aqui). Resolve em
+    // segundos; se esgotar, cai no tratamento abaixo (rede de segurança do QStash).
+    for (let i = 0; i < FOTO_RETRY_TENTATIVAS && !res.ok && res.erro!.codigo === 'FOTO'; i++) {
+      await sleep(FOTO_RETRY_INTERVALO_MS);
+      res = await conn.criarAnuncio(ctx, anuncio);
+    }
     if (!res.ok) {
       const e = res.erro!;
       const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
