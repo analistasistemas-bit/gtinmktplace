@@ -35,25 +35,34 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
   return messageId;
 }
 
-export async function enfileirarPublicacao(job: ProcessFamiliaJob): Promise<string> {
+// Fila serial das escritas no ML por usuário (ADR-0033). O rate-limit do ML é por conta de
+// vendedor; publicar várias famílias concorrentes na mesma conta fazia a 2ª pegar erro
+// transitório e o backoff do QStash deixava o item ~30 min em 'publicando'. CREATE e UPDATE
+// compartilham a fila do usuário (ambos escrevem na mesma conta e não podem rodar juntos).
+function nomeFilaPublicacao(userId: string): string {
+  return `publish-ml-${userId}`;
+}
+
+/** Garante a fila serial (parallelism=1) do usuário. Idempotente; chamar antes de enfileirar. */
+export async function garantirFilaSerial(userId: string): Promise<void> {
+  await qstashClient().queue({ queueName: nomeFilaPublicacao(userId) }).upsert({ parallelism: 1 });
+}
+
+export async function enfileirarPublicacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/publish-familia-ml`;
-  const { messageId } = await qstashClient().publishJSON({
-    url: target,
-    body: job,
-    retries: 3,
-  });
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFilaPublicacao(userId) })
+    .enqueueJSON({ url: target, body: job, retries: 3 });
   return messageId;
 }
 
-export async function enfileirarAtualizacao(job: ProcessFamiliaJob): Promise<string> {
+export async function enfileirarAtualizacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/update-familia-ml`;
-  const { messageId } = await qstashClient().publishJSON({
-    url: target,
-    body: job,
-    retries: 3,
-  });
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFilaPublicacao(userId) })
+    .enqueueJSON({ url: target, body: job, retries: 3 });
   return messageId;
 }
 

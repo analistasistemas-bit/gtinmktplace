@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { enfileirarPublicacao, enfileirarAtualizacao } from '../_shared/queue.ts';
+import { enfileirarPublicacao, enfileirarAtualizacao, garantirFilaSerial } from '../_shared/queue.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -44,16 +44,22 @@ Deno.serve(async (req) => {
     .select('id, lote_id');
   if (errU) return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
 
+  // Serializa as escritas no ML deste usuário (ADR-0033): parallelism=1 evita que duas
+  // publicações batam concorrentes no POST /items e a 2ª pegue erro transitório.
+  if ((novos?.length ?? 0) + (updates?.length ?? 0) > 0) {
+    await garantirFilaSerial(user.id);
+  }
+
   let enfileiradas = 0;
   let loteId: string | null = null;
   for (const f of novos ?? []) {
-    const messageId = await enfileirarPublicacao({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType });
+    const messageId = await enfileirarPublicacao({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType }, user.id);
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     loteId = f.lote_id;
     enfileiradas++;
   }
   for (const f of updates ?? []) {
-    const messageId = await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id });
+    const messageId = await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id }, user.id);
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     loteId = f.lote_id;
     enfileiradas++;
