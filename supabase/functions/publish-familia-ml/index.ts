@@ -36,16 +36,6 @@ async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId
   await admin.from('lotes').update({ status: novo }).eq('id', loteId);
 }
 
-async function limparFotosCachePublicacao(admin: ReturnType<typeof adminClient>, familiaId: string): Promise<void> {
-  await admin.from('variacoes').update({ ml_picture_id: null })
-    .eq('familia_id', familiaId).is('ml_variation_id', null);
-  await admin.from('familias').update({
-    capa_ml_picture_id: null,
-    capa2_ml_picture_id: null,
-    capa3_ml_picture_id: null,
-  }).eq('id', familiaId);
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -176,7 +166,9 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const e = res.erro!;
       const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
-      if (e.codigo === 'FOTO') await limparFotosCachePublicacao(admin, job.familia_id);
+      // Erro de foto é transiente (a foto recém-enviada ainda processa no ML). NÃO limpamos
+      // o cache de picture_ids: re-subir a mesma imagem só reinicia o processamento e nunca
+      // assenta. Reusar o mesmo picture_id no retry deixa o ML terminar e o item publica.
       if (decidirErroCriarAnuncio(e, tentativas) === 'retentar') {
         return new Response(e.mensagemOperador, { status: 500, headers: corsHeaders });
       }
@@ -241,15 +233,13 @@ Deno.serve(async (req) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const status = (err as { status?: number }).status;
-    // Erro de foto que o ML pede para reenviar: limpa caches efêmeros para o retry subir
-    // fotos frescas; se esgotar, marca erro visível sem deixar preso em publicando.
+    // Erro de foto que o ML pede para reenviar é transiente (a foto ainda processa). Retenta
+    // via QStash reusando o MESMO picture_id (sem re-subir) enquanto restar tentativa; ao
+    // esgotar, marca erro visível com mensagem recuperável.
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
     const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
-    if (retentavelFoto) {
-      await limparFotosCachePublicacao(admin, job.familia_id);
-      if (tentativas < 3) {
-        return new Response(msg, { status: 500, headers: corsHeaders });
-      }
+    if (retentavelFoto && tentativas < 3) {
+      return new Response(msg, { status: 500, headers: corsHeaders });
     }
     // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
     if (status && status >= 500) {
