@@ -545,15 +545,19 @@ git commit -m "feat(vendas): montarDetalheVendas (composição app vs externo)"
 
 **Files:**
 - Modify: `src/hooks/useMetricasVendas.ts`
+- Modify: `src/lib/financeiro.ts` (generalizar para `Janela` — banner compartilha o `periodo`)
+- Modify: `src/hooks/useResumoFinanceiro.ts`
 - Modify: `src/components/dashboard-publicados.tsx`
 - Modify: `src/pages/Publicados.tsx`
 - Test: `src/components/__tests__/dashboard-publicados.test.tsx` (create)
 
 **Interfaces:**
 - Consumes: `Periodo`, `Janela`, `resolverJanela`, `periodoToParams` (Task 3).
-- Produces: `useMetricasVendas(janela: Janela)`; `DashboardPublicados` props `{ periodo: Periodo; onPeriodo: (p: Periodo) => void; … }`.
+- Produces: `useMetricasVendas(janela: Janela)`; `useResumoFinanceiro(janela: Janela)`; `buscarResumoFinanceiro(janela: Janela)`; `DashboardPublicados` props `{ periodo: Periodo; onPeriodo: (p: Periodo) => void; … }`.
 
-- [ ] **Step 1: Atualizar o hook**
+> **Contexto do merge do Financeiro (ADR-0031):** `src/pages/Publicados.tsx` agora também chama `useResumoFinanceiro(periodo)` (banner "Líquido das vendas") e ambos os hooks recebiam `PeriodoDias`. Como o `periodo` vira `Periodo`, generalizamos os dois para `Janela`, mantendo o banner coerente com o intervalo personalizado. `buscarResumoFinanceiro` já calcula `desde/ate` no cliente (igual ao antigo `buscarMetricasVendas`) e a edge `resumo-financeiro` já aceita `{ desde, ate }` — a mudança é só de assinatura.
+
+- [ ] **Step 1: Atualizar os hooks de período (metricas + financeiro)**
 
 Substitua `src/hooks/useMetricasVendas.ts` por:
 
@@ -569,6 +573,40 @@ export function useMetricasVendas(janela: Janela) {
   });
 }
 ```
+
+Em `src/lib/financeiro.ts`, troque a assinatura de `buscarResumoFinanceiro` para receber a janela pronta (remova o cálculo `desde/ate` interno):
+
+```ts
+import type { Janela } from './metricas';
+
+export async function buscarResumoFinanceiro(janela: Janela): Promise<ResumoFinanceiro> {
+  // …mantém a obtenção de sessão existente…
+  // remove: const ate = new Date(); const desde = new Date(ate.getTime() - periodoDias * …);
+  // usa janela.desde / janela.ate no body:
+  //   body: JSON.stringify({ desde: janela.desde, ate: janela.ate }),
+  // …mantém o restante (fetch, parse, retorno) igual…
+}
+```
+
+(Atualize o import de tipo: remova `PeriodoDias` se ficar sem uso; mantenha o corpo do fetch/parse intacto.)
+
+Substitua `src/hooks/useResumoFinanceiro.ts` por:
+
+```ts
+import { useQuery } from '@tanstack/react-query';
+import { buscarResumoFinanceiro, type ResumoFinanceiro } from '@/lib/financeiro';
+import type { Janela } from '@/lib/metricas';
+
+export function useResumoFinanceiro(janela: Janela) {
+  return useQuery<ResumoFinanceiro>({
+    queryKey: ['resumoFinanceiro', janela.desde, janela.ate],
+    queryFn: () => buscarResumoFinanceiro(janela),
+    staleTime: 5 * 60_000,
+  });
+}
+```
+
+Nota: `src/pages/Financeiro.tsx` chama `useResumoFinanceiro(periodo)` com `periodo: PeriodoDias` próprio. Ajuste essa chamada para passar a janela resolvida: `const janela = useMemo(() => resolverJanela({ tipo: 'preset', dias: periodo }), [periodo]);` e `useResumoFinanceiro(janela)` (importe `resolverJanela`/`useMemo`). O seletor de presets da página Financeiro permanece igual.
 
 - [ ] **Step 2: Escrever o teste de componente que falha**
 
@@ -742,15 +780,16 @@ import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { useMemo } from 'react'; // já importado — garanta que useMemo está no import existente
 ```
 
-(b) Substitua o estado e a chamada do hook:
+(b) Substitua o estado e as chamadas dos hooks (metricas + financeiro passam a usar `janela`):
 
 ```tsx
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(janela);
+  const { data: financeiro } = useResumoFinanceiro(janela);
 ```
 
-(c) A passagem de props para `<DashboardPublicados … periodo={periodo} onPeriodo={setPeriodo} … />` já está correta com os novos tipos (sem mudança no JSX).
+(c) A passagem de props para `<DashboardPublicados … periodo={periodo} onPeriodo={setPeriodo} … />` já está correta com os novos tipos (sem mudança no JSX). O banner "Líquido das vendas" que consome `financeiro` permanece igual.
 
 - [ ] **Step 6: Rodar testes + typecheck**
 
@@ -762,7 +801,7 @@ Expected: `No errors found`.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/hooks/useMetricasVendas.ts src/components/dashboard-publicados.tsx src/pages/Publicados.tsx src/components/__tests__/dashboard-publicados.test.tsx
+git add src/hooks/useMetricasVendas.ts src/hooks/useResumoFinanceiro.ts src/lib/financeiro.ts src/pages/Financeiro.tsx src/components/dashboard-publicados.tsx src/pages/Publicados.tsx src/components/__tests__/dashboard-publicados.test.tsx
 git commit -m "feat(publicados): período personalizado + card Faturamento clicável"
 ```
 
