@@ -111,6 +111,7 @@ export interface ResultadoAtualizacao {
 export interface MetricasVendasCanal {
   /** itemExternoId → vendas do período (só itens dentro do escopo consultado). */
   porItem: Record<string, { unidades: number; valor: number }>;
+  /** Totais de TODA a conta do vendedor no período — inclui anúncios fora do escopo (ADR-0032). */
   totais: { faturamento: number; unidades: number; pedidos: number };
 }
 
@@ -135,9 +136,9 @@ export interface ChannelConnector {
   /** Lê o status de N anúncios em lote. Lança se o token falhar (sem credencial). */
   lerStatus(ctx: ContextoCanal, itemExternoIds: string[]): Promise<Record<string, StatusCanal>>;
   /**
-   * Agrega vendas do período (limites inclusive, ISO 8601), restrito aos itens do escopo
-   * (anúncios gerenciados pelo app). Lança se o token falhar (sem credencial); erros de
-   * leitura de página devolvem agregado parcial.
+   * Agrega vendas do período (limites inclusive, ISO 8601). `totais` cobrem toda a conta do
+   * vendedor; `porItem` fica restrito aos itens do escopo (anúncios gerenciados pelo app).
+   * Lança se o token falhar (sem credencial); erros de leitura de página devolvem parcial.
    */
   lerMetricasVendas(
     ctx: ContextoCanal,

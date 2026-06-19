@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { agregarPedidos, type PedidoML } from '../vendas.ts';
 
+// Semântica (ADR-0032): `totais` reflete TODA a conta do vendedor no período (bate com a
+// tela de Métricas do ML), enquanto `porItem` continua restrito ao escopo do app (tabela,
+// rankings e encalhados na tela Publicados).
 describe('agregarPedidos', () => {
   const escopo = new Set(['MLB1', 'MLB2']);
 
@@ -16,7 +19,7 @@ describe('agregarPedidos', () => {
     expect(r.totais).toEqual({ faturamento: 75, unidades: 6, pedidos: 3 });
   });
 
-  it('ignora itens fora do escopo', () => {
+  it('porItem ignora itens fora do escopo, mas os totais contam a conta inteira', () => {
     const pedidos: PedidoML[] = [
       { id: 1, order_items: [
         { item: { id: 'MLB1' }, quantity: 1, unit_price: 10 },
@@ -24,11 +27,13 @@ describe('agregarPedidos', () => {
       ] },
     ];
     const r = agregarPedidos(pedidos, escopo);
+    expect(r.porItem['MLB1']).toEqual({ unidades: 1, valor: 10 });
     expect(r.porItem['FORA']).toBeUndefined();
-    expect(r.totais).toEqual({ faturamento: 10, unidades: 1, pedidos: 1 });
+    // totais globais: 1×10 + 9×99 = 901; 1 + 9 = 10 unidades; 1 pedido.
+    expect(r.totais).toEqual({ faturamento: 901, unidades: 10, pedidos: 1 });
   });
 
-  it('conta um pedido uma vez mesmo tocando vários itens do escopo', () => {
+  it('conta um pedido uma vez mesmo tocando vários itens', () => {
     const pedidos: PedidoML[] = [
       { id: 1, order_items: [
         { item: { id: 'MLB1' }, quantity: 1, unit_price: 10 },
@@ -40,12 +45,12 @@ describe('agregarPedidos', () => {
     expect(r.totais.faturamento).toBe(30);
   });
 
-  it('não conta pedido que não tocou nenhum item do escopo', () => {
+  it('conta nos totais um pedido mesmo que nenhum item esteja no escopo (porItem fica vazio)', () => {
     const pedidos: PedidoML[] = [
       { id: 1, order_items: [{ item: { id: 'FORA' }, quantity: 5, unit_price: 5 }] },
     ];
     const r = agregarPedidos(pedidos, escopo);
-    expect(r.totais).toEqual({ faturamento: 0, unidades: 0, pedidos: 0 });
+    expect(r.totais).toEqual({ faturamento: 25, unidades: 5, pedidos: 1 });
     expect(r.porItem).toEqual({});
   });
 
@@ -57,6 +62,7 @@ describe('agregarPedidos', () => {
     ];
     const r = agregarPedidos(pedidos, escopo);
     expect(r.porItem['MLB1']).toEqual({ unidades: 0, valor: 0 });
-    expect(r.totais.pedidos).toBe(1);
+    // pedido 1 sem itens não conta; pedidos 2 e 3 contam.
+    expect(r.totais).toEqual({ faturamento: 1, unidades: 1, pedidos: 2 });
   });
 });

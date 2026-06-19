@@ -11,36 +11,42 @@ export interface PedidoML {
 }
 
 /**
- * Agrega pedidos por item, restrito ao escopo (anúncios gerenciados pelo app, ADR-0030/spec).
- * Pura e sem rede: o teste cobre soma de unidades/valor, recorte por escopo e contagem de
- * pedidos distintos (um pedido conta uma vez mesmo tocando vários itens do escopo).
+ * Agrega os pedidos pagos do período em dois recortes (ADR-0032):
+ * - `totais`: TODA a conta do vendedor (faturamento/unidades/pedidos), para os KPIs do topo
+ *   baterem com a tela de Métricas do ML — inclui anúncios publicados fora do PubliAI.
+ * - `porItem`: restrito ao escopo (anúncios gerenciados pelo app), para a tabela por anúncio,
+ *   rankings e encalhados.
+ * Pura e sem rede. `pedidos` (nº distinto) conta cada pedido com ≥1 item uma única vez.
  */
 export function agregarPedidos(pedidos: PedidoML[], idsEscopo: Set<string>): MetricasVendasCanal {
   const porItem: Record<string, { unidades: number; valor: number }> = {};
   let faturamento = 0;
   let unidades = 0;
-  let pedidos_que_tocaram = 0;
+  let pedidosComItem = 0;
 
   for (const pedido of pedidos) {
-    let tocou = false;
+    let temItem = false;
     for (const oi of pedido.order_items ?? []) {
-      const id = oi?.item?.id;
-      if (!id || !idsEscopo.has(id)) continue;
       const qtd = Number(oi?.quantity ?? 0);
       const preco = Number(oi?.unit_price ?? 0);
       const valor = qtd * preco;
-      const acc = porItem[id] ?? { unidades: 0, valor: 0 };
-      acc.unidades += qtd;
-      acc.valor += valor;
-      porItem[id] = acc;
+      // Totais globais: somam todo item do pedido, dentro ou fora do escopo do app.
       faturamento += valor;
       unidades += qtd;
-      tocou = true;
+      temItem = true;
+      // porItem só agrega os anúncios do app (alimenta tabela/rankings/encalhados).
+      const id = oi?.item?.id;
+      if (id && idsEscopo.has(id)) {
+        const acc = porItem[id] ?? { unidades: 0, valor: 0 };
+        acc.unidades += qtd;
+        acc.valor += valor;
+        porItem[id] = acc;
+      }
     }
-    if (tocou) pedidos_que_tocaram += 1;
+    if (temItem) pedidosComItem += 1;
   }
 
-  return { porItem, totais: { faturamento, unidades, pedidos: pedidos_que_tocaram } };
+  return { porItem, totais: { faturamento, unidades, pedidos: pedidosComItem } };
 }
 
 const API = 'https://api.mercadolibre.com';
