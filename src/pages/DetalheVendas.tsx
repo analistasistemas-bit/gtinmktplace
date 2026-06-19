@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { periodoFromParams, resolverJanela } from '@/lib/metricas';
+import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { montarDetalheVendas, type SecaoVendas } from '@/lib/detalhe-vendas';
 import { useMetricasVendas } from '@/hooks/useMetricasVendas';
 import { usePublicados } from '@/hooks/usePublicados';
@@ -17,12 +17,12 @@ function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
 }
 
-function rotuloPeriodo(search: URLSearchParams): string {
-  const dias = search.get('dias');
-  if (dias) return `últimos ${dias} dias`;
-  const de = search.get('de');
-  const ate = search.get('ate');
-  return de && ate ? `${de} a ${ate}` : 'últimos 30 dias';
+// Deriva o rótulo do período JÁ RESOLVIDO (não do query cru) para o texto sempre
+// refletir a janela efetivamente consultada, mesmo com URL malformada.
+function rotuloPeriodo(periodo: Periodo): string {
+  return periodo.tipo === 'preset'
+    ? `últimos ${periodo.dias} dias`
+    : `${periodo.desde} a ${periodo.ate}`;
 }
 
 function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; secao: SecaoVendas }) {
@@ -97,7 +97,7 @@ export default function DetalheVendas() {
     <div className="p-6">
       <PageHeader
         title="Detalhe de vendas"
-        subtitle={`Composição do faturamento — ${rotuloPeriodo(search)}.`}
+        subtitle={`Composição do faturamento — ${rotuloPeriodo(periodo)}.`}
         actions={
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>

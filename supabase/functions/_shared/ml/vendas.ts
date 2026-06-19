@@ -91,7 +91,10 @@ async function buscarTitulos(token: string, ids: string[], signal: AbortSignal):
           if (e?.code === 200 && id) out[id] = e.body.title ?? id;
         }
       }
-    } catch { /* bloco indisponível: ids ficam sem título → usa id */ }
+    } catch (e) {
+      // Bloco indisponível: ids ficam sem título → usa id. Loga p/ diagnóstico (igual lerStatus).
+      console.warn('buscarTitulos bloco falhou:', (e as Error).message);
+    }
   }
   return out;
 }
