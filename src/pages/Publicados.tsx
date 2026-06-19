@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -42,6 +43,7 @@ import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useMetricasVendas } from '@/hooks/useMetricasVendas';
+import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePaginacao } from '@/hooks/usePaginacao';
 import { Pagination } from '@/components/ui/pagination';
@@ -247,6 +249,7 @@ export default function Publicados() {
 
   const [periodo, setPeriodo] = useState<PeriodoDias>(30);
   const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(periodo);
+  const { data: financeiro } = useResumoFinanceiro(periodo);
 
   const [filtro, setFiltro] = useState<FiltroPublicados>({});
   const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);
@@ -370,6 +373,23 @@ export default function Publicados() {
         />
       ) : (
         <>
+          {/* Ponte para o Financeiro: líquido recebido no período (clicável) */}
+          {financeiro && !financeiro.semCredencialMP && !financeiro.erroFinanceiro && (
+            <Link
+              to="/financeiro"
+              className="mb-3 flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-muted/50"
+            >
+              <div className="flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-success" />
+                <span className="text-sm text-muted-foreground">Líquido das vendas (você recebe)</span>
+                <span className="text-lg font-semibold tabular-nums text-success">{fmtBRL(financeiro.liquido)}</span>
+              </div>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                Ver financeiro <ChevronRight className="h-3.5 w-3.5" />
+              </span>
+            </Link>
+          )}
+
           {/* Dashboard de KPIs de venda */}
           <DashboardPublicados
             itens={merged}

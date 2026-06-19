@@ -12,6 +12,7 @@ import RevisaoIndex from '@/pages/RevisaoIndex';
 import Relatorio from '@/pages/Relatorio';
 import Configuracoes from '@/pages/Configuracoes';
 import Publicados from '@/pages/Publicados';
+import Financeiro from '@/pages/Financeiro';
 import Viabilidade from '@/pages/Viabilidade';
 import StyleGuide from '@/pages/StyleGuide';
 import NotFound from '@/pages/NotFound';
@@ -33,6 +34,7 @@ export function AppRoutes() {
           <Route path="/relatorio/:loteId" element={<Relatorio />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/publicados" element={<Publicados />} />
+          <Route path="/financeiro" element={<Financeiro />} />
           <Route path="/viabilidade" element={<Viabilidade />} />
           <Route path="/style-guide" element={<StyleGuide />} />
         </Route>
