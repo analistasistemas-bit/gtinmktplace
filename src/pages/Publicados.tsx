@@ -252,6 +252,16 @@ export default function Publicados() {
   const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(janela);
   const { data: financeiro } = useResumoFinanceiro(janela);
 
+  const markupPct = useMemo(() => {
+    const vendas = financeiro?.vendas;
+    if (!vendas?.length) return null;
+    let liq = 0, cst = 0;
+    for (const v of vendas) {
+      if (v.custo != null && v.custo > 0) { liq += v.liquido; cst += v.custo; }
+    }
+    return cst > 0 ? (liq - cst) / cst : null;
+  }, [financeiro]);
+
   const [filtro, setFiltro] = useState<FiltroPublicados>({});
   const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
@@ -399,6 +409,7 @@ export default function Publicados() {
             onPeriodo={setPeriodo}
             carregando={fetchingMetricas}
             aviso={metricas?.erroVendas ?? null}
+            markupPct={markupPct}
           />
 
           {/* Filtros */}
