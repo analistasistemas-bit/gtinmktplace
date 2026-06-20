@@ -25,18 +25,27 @@ async function custoPorPagamentoDoPeriodo(
     const pedidos = await buscarPedidosML(tokenML, intervalo);
     const itemPorPagamento = mapearPagamentoParaItem(pedidos);
 
+    // Custo REAL do produto vem da planilha → variacoes.custo (R$). Por variação (ml_variation_id)
+    // e, como fallback p/ anúncio sem variação, por anúncio (ml_item_id da família). max() é
+    // robusto a linhas duplicadas por re-importação. NÃO usar familias.custo_centavos: é o custo
+    // de tokens de IA da geração da copy/vision, não o custo do produto.
     const admin = adminClient();
-    const { data: familias } = await admin.from('familias')
-      .select('ml_item_id, custo_centavos').eq('user_id', userId).not('ml_item_id', 'is', null);
-    const custoCentavosPorItem: Record<string, number> = {};
-    for (const f of familias ?? []) {
-      const id = f.ml_item_id as string;
-      const c = Number(f.custo_centavos ?? 0);
-      // Mantém o maior custo por item (só uma família por ml_item_id tem custo > 0).
-      if (c > (custoCentavosPorItem[id] ?? 0)) custoCentavosPorItem[id] = c;
+    const { data: variacoes } = await admin.from('variacoes')
+      .select('custo, ml_variation_id, familias!inner(ml_item_id)')
+      .eq('user_id', userId).not('custo', 'is', null);
+    const custoPorVariacao: Record<string, number> = {};
+    const custoPorItem: Record<string, number> = {};
+    for (const v of variacoes ?? []) {
+      const custo = Number((v as { custo: number | null }).custo ?? 0);
+      if (custo <= 0) continue;
+      const varId = (v as { ml_variation_id: string | null }).ml_variation_id;
+      const fams = (v as { familias: { ml_item_id: string | null } | { ml_item_id: string | null }[] }).familias;
+      const itemId = (Array.isArray(fams) ? fams[0]?.ml_item_id : fams?.ml_item_id) ?? null;
+      if (varId != null && custo > (custoPorVariacao[varId] ?? 0)) custoPorVariacao[varId] = custo;
+      if (itemId != null && custo > (custoPorItem[itemId] ?? 0)) custoPorItem[itemId] = custo;
     }
 
-    return montarCustoPorPagamento(itemPorPagamento, custoCentavosPorItem);
+    return montarCustoPorPagamento(itemPorPagamento, custoPorVariacao, custoPorItem);
   } catch (_e) {
     return {};
   }

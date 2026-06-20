@@ -133,20 +133,23 @@ export function agregarFinanceiro(
 }
 
 /**
- * Custo total (R$) por pagamento, para o markup da tela de detalhe. Junta o mapa
- * pagamento→item (do ML) com o custo unitário em centavos por ml_item_id (das famílias):
- * custo = (custoCentavos / 100) × quantidade. Só entra quando há custo positivo cadastrado;
- * pagamentos sem item mapeado ou sem custo ficam de fora (markup "—"). Pura.
+ * Custo total (R$) por pagamento, para o markup da tela de detalhe. Junta o mapa pagamento→item
+ * (do ML) com o custo unitário do produto (R$) cadastrado na planilha: prioriza o custo da
+ * variação vendida (ml_variation_id) e, sem variação, cai no custo por anúncio (ml_item_id).
+ * custo = custoUnitário × quantidade. Só entra quando há custo positivo; pagamentos sem item
+ * mapeado ou sem custo ficam de fora (markup "—"). Pura.
  */
 export function montarCustoPorPagamento(
-  itemPorPagamento: Record<string, { mlItemId: string; quantidade: number }>,
-  custoCentavosPorItem: Record<string, number>,
+  itemPorPagamento: Record<string, { mlItemId: string; mlVariationId: string | null; quantidade: number }>,
+  custoPorVariacao: Record<string, number>,
+  custoPorItem: Record<string, number>,
 ): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const [pagamentoId, { mlItemId, quantidade }] of Object.entries(itemPorPagamento)) {
-    const centavos = custoCentavosPorItem[mlItemId];
-    if (!centavos || centavos <= 0 || quantidade <= 0) continue;
-    out[pagamentoId] = round2((centavos / 100) * quantidade);
+  for (const [pagamentoId, { mlItemId, mlVariationId, quantidade }] of Object.entries(itemPorPagamento)) {
+    const unitario = (mlVariationId != null ? custoPorVariacao[mlVariationId] : undefined)
+      ?? custoPorItem[mlItemId];
+    if (!unitario || unitario <= 0 || quantidade <= 0) continue;
+    out[pagamentoId] = round2(unitario * quantidade);
   }
   return out;
 }

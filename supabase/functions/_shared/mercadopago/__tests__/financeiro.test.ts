@@ -139,21 +139,32 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
 });
 
 describe('montarCustoPorPagamento', () => {
-  it('multiplica custo unitário (centavos→R$) pela quantidade', () => {
+  it('usa o custo da variação (R$) × quantidade quando há variação', () => {
     const r = montarCustoPorPagamento(
-      { '111': { mlItemId: 'MLB1', quantidade: 2 }, '222': { mlItemId: 'MLB2', quantidade: 1 } },
-      { MLB1: 1500, MLB2: 999 },
+      { '111': { mlItemId: 'MLB1', mlVariationId: 'V1', quantidade: 2 } },
+      { V1: 0.77896 },
+      { MLB1: 9.99 },
     );
-    expect(r).toEqual({ '111': 30, '222': 9.99 });
+    expect(r).toEqual({ '111': 1.56 });
   });
 
-  it('ignora pagamento sem custo cadastrado (ausente, zero ou negativo)', () => {
+  it('cai no custo por item quando a venda não tem variação', () => {
+    const r = montarCustoPorPagamento(
+      { '222': { mlItemId: 'MLB2', mlVariationId: null, quantidade: 3 } },
+      {},
+      { MLB2: 1.5 },
+    );
+    expect(r).toEqual({ '222': 4.5 });
+  });
+
+  it('ignora pagamento sem custo (variação e item ausentes, zero ou negativo)', () => {
     const r = montarCustoPorPagamento(
       {
-        '1': { mlItemId: 'SEM', quantidade: 1 },
-        '2': { mlItemId: 'ZERO', quantidade: 3 },
-        '3': { mlItemId: 'NEG', quantidade: 1 },
+        '1': { mlItemId: 'SEM', mlVariationId: 'X', quantidade: 1 },
+        '2': { mlItemId: 'ZERO', mlVariationId: null, quantidade: 3 },
+        '3': { mlItemId: 'NEG', mlVariationId: null, quantidade: 1 },
       },
+      {},
       { ZERO: 0, NEG: -10 },
     );
     expect(r).toEqual({});
