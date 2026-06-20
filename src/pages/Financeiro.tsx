@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, ChevronRight } from 'lucide-react';
+import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -14,9 +14,11 @@ const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 90, label: '90 dias' },
 ];
 
-function Kpi({ icon: Icon, label, valor, sub, tom }: {
+function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
   icon: typeof Wallet; label: string; valor: string; sub?: string;
   tom?: 'info' | 'success' | 'warning' | 'danger';
+  /** Cor opcional aplicada ao valor (ex.: markup verde/vermelho). */
+  valorCor?: string;
 }) {
   const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
     : tom === 'danger' ? 'text-destructive' : 'text-info';
@@ -26,7 +28,7 @@ function Kpi({ icon: Icon, label, valor, sub, tom }: {
         <Icon className="h-3.5 w-3.5 shrink-0" />
         {label}
       </div>
-      <div className="text-lg font-semibold tabular-nums">{valor}</div>
+      <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
     </div>
   );
@@ -42,6 +44,18 @@ export default function Financeiro() {
   const ticketLiquido = r && r.pagamentos > 0 ? r.liquido / r.pagamentos : 0;
   const queryDetalhe = new URLSearchParams(periodoToParams({ tipo: 'preset', dias: periodo })).toString();
   const podeDetalhar = !!r && !semCred && !r.erroFinanceiro;
+
+  // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
+  // cadastrado (as demais não entram na base, senão distorceria). null = nenhuma com custo.
+  const markup = useMemo(() => {
+    let liq = 0;
+    let cst = 0;
+    let n = 0;
+    for (const v of r?.vendas ?? []) {
+      if (v.custo != null && v.custo > 0) { liq += v.liquido; cst += v.custo; n += 1; }
+    }
+    return cst > 0 ? { pct: (liq - cst) / cst, lucro: liq - cst, n } : null;
+  }, [r]);
 
   return (
     <div className="p-6">
@@ -127,13 +141,23 @@ export default function Financeiro() {
         </div>
       </div>
 
-      {/* Quantidade de vendas */}
+      {/* Quantidade de vendas + markup do período */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi
           icon={ShoppingBag}
           label="Vendas no período"
           valor={fmtInt(r?.pagamentos ?? 0)}
           tom="info"
+        />
+        <Kpi
+          icon={TrendingUp}
+          label="Markup no período"
+          valor={markup ? `${markup.pct >= 0 ? '+' : ''}${Math.round(markup.pct * 100)}%` : '—'}
+          valorCor={markup ? (markup.pct >= 0 ? 'text-success' : 'text-destructive') : undefined}
+          tom={markup && markup.pct < 0 ? 'danger' : 'success'}
+          sub={markup
+            ? `lucro ${fmtBRL(markup.lucro)} · ${markup.n} venda(s) c/ custo`
+            : 'sem custo cadastrado nas vendas'}
         />
       </div>
 
