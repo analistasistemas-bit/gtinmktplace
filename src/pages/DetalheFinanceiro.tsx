@@ -9,6 +9,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
+import { calcularMarkup } from '@/lib/markup';
 import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
 
 function pct(n: number): string {
@@ -18,6 +19,25 @@ function pct(n: number): string {
 function fmtData(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');
+}
+
+/** Markup em % com sinal, ou null quando não há custo para calcular. */
+function fmtMarkup(markup: number): string {
+  const p = Math.round(markup * 100);
+  return `${p >= 0 ? '+' : ''}${p}%`;
+}
+
+/** Célula de markup: usa o custo da venda; sem custo cadastrado → "—". */
+function CelulaMarkup({ liquido, custo }: { liquido: number; custo: number | null }) {
+  if (custo == null || custo <= 0) {
+    return <TableCell className="text-right text-sm tabular-nums text-muted-foreground">—</TableCell>;
+  }
+  const { markup } = calcularMarkup(liquido, custo);
+  return (
+    <TableCell className={cn('text-right text-sm font-medium tabular-nums', markup >= 0 ? 'text-success' : 'text-destructive')}>
+      {fmtMarkup(markup)}
+    </TableCell>
+  );
 }
 
 // Deriva o rótulo do período JÁ RESOLVIDO (não do query cru) para o texto sempre
@@ -41,6 +61,16 @@ export default function DetalheFinanceiro() {
   const liquido = r?.liquido ?? 0;
   const retido = r?.descontos ?? 0;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
+
+  // Markup agregado: só sobre as vendas com custo cadastrado (senão a base ficaria distorcida).
+  const markupTotal = useMemo(() => {
+    let liq = 0;
+    let cst = 0;
+    for (const v of vendas) {
+      if (v.custo != null && v.custo > 0) { liq += v.liquido; cst += v.custo; }
+    }
+    return cst > 0 ? calcularMarkup(liq, cst).markup : null;
+  }, [vendas]);
 
   return (
     <div className="p-6">
@@ -92,12 +122,13 @@ export default function DetalheFinanceiro() {
               <TableHead className="text-right">Bruto</TableHead>
               <TableHead className="text-right">Retido (ML)</TableHead>
               <TableHead className="text-right">Líquido</TableHead>
+              <TableHead className="text-right">Markup</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {vendas.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
                   Sem vendas no período.
                 </TableCell>
               </TableRow>
@@ -116,6 +147,7 @@ export default function DetalheFinanceiro() {
                   <TableCell className="text-right text-sm tabular-nums">{fmtBRL(v.bruto)}</TableCell>
                   <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(v.retido)}</TableCell>
                   <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(v.liquido)}</TableCell>
+                  <CelulaMarkup liquido={v.liquido} custo={v.custo} />
                 </TableRow>
               ))
             )}
@@ -128,6 +160,13 @@ export default function DetalheFinanceiro() {
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(bruto)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(retido)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(liquido)}</TableCell>
+                <TableCell className={cn(
+                  'text-right text-sm tabular-nums',
+                  markupTotal == null ? 'text-muted-foreground'
+                    : markupTotal >= 0 ? 'text-success' : 'text-destructive',
+                )}>
+                  {markupTotal == null ? '—' : fmtMarkup(markupTotal)}
+                </TableCell>
               </TableRow>
             </TableFooter>
           )}
@@ -136,7 +175,9 @@ export default function DetalheFinanceiro() {
 
       <p className="mt-4 text-xs text-muted-foreground">
         Cada linha é um pagamento aprovado no período (fonte: Mercado Pago). "Retido" é o que o ML/MP
-        desconta da venda (taxas + frete). O "líquido" é o que sobra para o vendedor.
+        desconta da venda (taxas + frete). O "líquido" é o que sobra para o vendedor. O "markup" usa o
+        custo cadastrado na importação da planilha: (líquido − custo) ÷ custo; vendas sem custo
+        cadastrado ou de produtos fora do PubliAI mostram "—".
       </p>
     </div>
   );

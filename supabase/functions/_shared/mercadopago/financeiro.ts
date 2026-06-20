@@ -51,6 +51,9 @@ export interface VendaFinanceira {
   retido: number;
   /** Valor estornado nesta venda. */
   estorno: number;
+  /** Custo total do produto nesta venda (custo unitário × quantidade), em R$. null = sem custo
+   *  cadastrado ou venda não mapeada a um item — a UI mostra markup "—". */
+  custo: number | null;
 }
 
 export interface ResumoFinanceiro {
@@ -78,6 +81,7 @@ const liquido = (p: PagamentoMP) => Number(p.transaction_details?.net_received_a
 export function agregarFinanceiro(
   pagamentos: PagamentoMP[],
   intervalo: { desde: string; ate: string; contaId: number },
+  custoPorPagamento: Record<string, number> = {},
 ): ResumoFinanceiro {
   const desdeMs = Date.parse(intervalo.desde);
   const ateMs = Date.parse(intervalo.ate);
@@ -107,6 +111,7 @@ export function agregarFinanceiro(
       id: String(p.id),
       data: p.date_approved,
       descricao: p.description ?? null,
+      custo: custoPorPagamento[String(p.id)] ?? null,
       bruto: round2(vBruto),
       liquido: round2(vLiq),
       retido: round2(vBruto - vLiq),
@@ -125,6 +130,25 @@ export function agregarFinanceiro(
     pagamentos: qtd,
     vendas,
   };
+}
+
+/**
+ * Custo total (R$) por pagamento, para o markup da tela de detalhe. Junta o mapa
+ * pagamento→item (do ML) com o custo unitário em centavos por ml_item_id (das famílias):
+ * custo = (custoCentavos / 100) × quantidade. Só entra quando há custo positivo cadastrado;
+ * pagamentos sem item mapeado ou sem custo ficam de fora (markup "—"). Pura.
+ */
+export function montarCustoPorPagamento(
+  itemPorPagamento: Record<string, { mlItemId: string; quantidade: number }>,
+  custoCentavosPorItem: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [pagamentoId, { mlItemId, quantidade }] of Object.entries(itemPorPagamento)) {
+    const centavos = custoCentavosPorItem[mlItemId];
+    if (!centavos || centavos <= 0 || quantidade <= 0) continue;
+    out[pagamentoId] = round2((centavos / 100) * quantidade);
+  }
+  return out;
 }
 
 const MP_API = 'https://api.mercadopago.com';
