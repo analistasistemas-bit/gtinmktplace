@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
-import { montarDetalheVendas, type SecaoVendas } from '@/lib/detalhe-vendas';
+import { montarDetalheVendas, type LinhaVenda, type SecaoVendas } from '@/lib/detalhe-vendas';
 import { useMetricasVendas } from '@/hooks/useMetricasVendas';
 import { usePublicados } from '@/hooks/usePublicados';
 
@@ -25,7 +25,69 @@ function rotuloPeriodo(periodo: Periodo): string {
     : `${periodo.desde} a ${periodo.ate}`;
 }
 
+type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal';
+type Sort = { key: SortKey; dir: 'asc' | 'desc' };
+
+/** Cabeçalho clicável que ordena a seção pela coluna (seta indica direção). */
+function ThSort({ k, label, sort, onSort, align = 'left' }: {
+  k: SortKey; label: string; sort: Sort | null; onSort: (k: SortKey) => void; align?: 'left' | 'right';
+}) {
+  const ativo = sort?.key === k;
+  return (
+    <TableHead className={align === 'right' ? 'text-right' : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={cn(
+          'flex w-full items-center gap-1 transition-colors hover:text-foreground',
+          align === 'right' && 'justify-end',
+          ativo && 'text-foreground',
+        )}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        {!ativo ? <ChevronsUpDown className="h-3 w-3 opacity-40" />
+          : sort!.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+      </button>
+    </TableHead>
+  );
+}
+
 function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; secao: SecaoVendas }) {
+  // Ordenação local da seção: textuais começam A→Z; numéricas em maior→menor.
+  const [sort, setSort] = useState<Sort | null>(null);
+  const toggleSort = (k: SortKey) => {
+    const textual = k === 'codigo' || k === 'ean' || k === 'titulo';
+    setSort((s) => (s?.key === k
+      ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key: k, dir: textual ? 'asc' : 'desc' }));
+  };
+
+  const linhas = useMemo(() => {
+    if (!sort) return secao.linhas;
+    const val = (l: LinhaVenda): string | number | null => {
+      switch (sort.key) {
+        case 'codigo': return l.codigo;
+        case 'ean': return l.ean;
+        case 'titulo': return l.titulo;
+        case 'unidades': return l.unidades;
+        case 'valor': return l.valor;
+        case 'pctTotal': return l.pctTotal;
+      }
+    };
+    return [...secao.linhas].sort((a, b) => {
+      const va = val(a);
+      const vb = val(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // sem valor sempre por último
+      if (vb == null) return -1;
+      const cmp = typeof va === 'number' && typeof vb === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [secao.linhas, sort]);
+
   return (
     <div className="mb-6">
       <div className="mb-2 flex items-baseline justify-between">
@@ -36,34 +98,40 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
-              <TableHead>Título</TableHead>
-              <TableHead className="text-right">Unid.</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="text-right">% total</TableHead>
+              <ThSort k="codigo" label="Código" sort={sort} onSort={toggleSort} />
+              <ThSort k="ean" label="EAN" sort={sort} onSort={toggleSort} />
+              <ThSort k="titulo" label="Título" sort={sort} onSort={toggleSort} />
+              <ThSort k="unidades" label="Unid." sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="valor" label="Valor" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="pctTotal" label="% total" sort={sort} onSort={toggleSort} align="right" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {secao.linhas.length === 0 ? (
+            {linhas.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="py-4 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-4 text-center text-sm text-muted-foreground">
                   Sem vendas no período.
                 </TableCell>
               </TableRow>
             ) : (
-              secao.linhas.map((l) => (
+              linhas.map((l) => (
                 <TableRow key={l.id}>
-                  <TableCell className="text-sm uppercase">{l.titulo}</TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">{l.unidades}</TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">{fmtBRL(l.valor)}</TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">{pct(l.pctTotal)}</TableCell>
+                  <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.codigo ?? '—'}</TableCell>
+                  <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.ean ?? '—'}</TableCell>
+                  <TableCell className="align-top text-sm">
+                    <span className="block max-w-[420px] whitespace-normal break-words uppercase">{l.titulo}</span>
+                  </TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums">{l.unidades}</TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(l.valor)}</TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums">{pct(l.pctTotal)}</TableCell>
                 </TableRow>
               ))
             )}
           </TableBody>
-          {secao.linhas.length > 0 && (
+          {linhas.length > 0 && (
             <TableFooter>
               <TableRow className="border-t font-medium">
-                <TableCell className="text-sm">Subtotal</TableCell>
+                <TableCell colSpan={3} className="text-sm">Subtotal</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{secao.unidades}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(secao.valor)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{pct(secao.pctTotal)}</TableCell>

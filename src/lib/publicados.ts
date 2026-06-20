@@ -11,6 +11,8 @@ export type StatusPublicado =
 export interface PublicadoItem {
   familiaId: string;
   codigoPai: string;
+  /** EAN/GTIN representativo do anúncio (variação principal, ou a 1ª publicável). null se ausente. */
+  gtin: string | null;
   titulo: string;
   fornecedor: string | null;
   tipo: TipoAviamento | null;
