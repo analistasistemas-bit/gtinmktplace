@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   }
 
   const vazio: ResumoFinanceiro = {
-    bruto: 0, liquido: 0, descontos: 0, estornos: 0, pagamentos: 0,
+    bruto: 0, liquido: 0, descontos: 0, estornos: 0, pagamentos: 0, vendas: [],
   };
 
   const token = Deno.env.get('MP_ACCESS_TOKEN');
