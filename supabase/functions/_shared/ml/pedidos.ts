@@ -4,14 +4,20 @@
 // MP) quanto o item e a quantidade. Validado na conta real: o id do pagamento do pedido bate
 // com o id do /payments do MP, e os pedidos de aviamento têm 1 item por pedido.
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 /** Recorte de um pedido do ML usado para mapear pagamento → item (demais campos ignorados). */
 export interface PedidoComPagamentos {
   id: number | string;
   order_items?: Array<{
     item?: { id?: string | null; variation_id?: number | string | null } | null;
     quantity?: number | null;
+    /** Tarifa de venda do ML do item (comissão + cobrança + parcelamento). */
+    sale_fee?: number | null;
   }> | null;
   payments?: Array<{ id?: number | string | null } | null> | null;
+  /** Envio do pedido — pedidos de um mesmo pack compartilham o id (e o frete). */
+  shipping?: { id?: number | string | null } | null;
 }
 
 export interface ItemDoPagamento {
@@ -19,6 +25,10 @@ export interface ItemDoPagamento {
   /** ml_variation_id do item vendido (cor), quando o anúncio tem variações. null = sem variação. */
   mlVariationId: string | null;
   quantidade: number;
+  /** Soma das tarifas de venda do ML do pedido (sale_fee). Base p/ separar frete do retido. */
+  tarifaItem: number;
+  /** Id do envio do pedido — linhas com o mesmo id compartilham um frete (rateio). */
+  shippingId: string | null;
 }
 
 /**
@@ -38,23 +48,26 @@ export function mapearPagamentoParaItem(
     const ids = new Set<string>();
     const variacoes = new Set<string>();
     let quantidade = 0;
+    let tarifa = 0;
     for (const oi of itens) {
       const id = oi?.item?.id;
       if (id) ids.add(id);
       const varId = oi?.item?.variation_id;
       if (varId != null) variacoes.add(String(varId));
       quantidade += Number(oi?.quantity ?? 0);
+      tarifa += Number(oi?.sale_fee ?? 0);
     }
     // Só pedidos com exatamente um item distinto (custo inequívoco).
     if (ids.size !== 1) continue;
     const mlItemId = [...ids][0];
     // Variação só quando há exatamente uma (senão custo ambíguo → fallback por item).
     const mlVariationId = variacoes.size === 1 ? [...variacoes][0] : null;
+    const shippingId = pedido.shipping?.id != null ? String(pedido.shipping.id) : null;
 
     for (const pg of pedido.payments ?? []) {
       const pid = pg?.id;
       if (pid == null) continue;
-      out[String(pid)] = { mlItemId, mlVariationId, quantidade };
+      out[String(pid)] = { mlItemId, mlVariationId, quantidade, tarifaItem: round2(tarifa), shippingId };
     }
   }
 
