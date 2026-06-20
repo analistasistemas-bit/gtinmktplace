@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agregarFinanceiro, montarCustoPorPagamento, type PagamentoMP } from '../financeiro';
+import { agregarFinanceiro, montarInfoPorPagamento, type PagamentoMP } from '../financeiro';
 
 function pag(p: Partial<PagamentoMP> & { id: number }): PagamentoMP {
   return p as PagamentoMP;
@@ -71,26 +71,28 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
     // ordenado por data desc — a venda mais recente vem primeiro
     expect(r.vendas[0]).toEqual({
       id: '2', data: '2026-06-20T09:00:00.000Z', descricao: 'Linha 120m',
-      bruto: 25, liquido: 10.7, retido: 14.3, estorno: 5, custo: null,
+      bruto: 25, liquido: 10.7, retido: 14.3, estorno: 5, custo: null, codigo: null,
     });
     expect(r.vendas[1]).toEqual({
       id: '1', data: '2026-06-17T09:00:00.000Z', descricao: 'Fita Cetim',
-      bruto: 12.65, liquido: 4.35, retido: 8.3, estorno: 0, custo: null,
+      bruto: 12.65, liquido: 4.35, retido: 8.3, estorno: 0, custo: null, codigo: null,
     });
   });
 
-  it('anexa o custo por pagamento quando fornecido (markup), null quando ausente', () => {
+  it('anexa custo + código por pagamento quando fornecido (markup), null quando ausente', () => {
     const pagamentos = [
       pag({ id: 1, collector_id: CONTA, date_approved: '2026-06-17T09:00:00.000Z',
         transaction_amount: 25, transaction_details: { net_received_amount: 18 } }),
       pag({ id: 2, collector_id: CONTA, date_approved: '2026-06-18T09:00:00.000Z',
         transaction_amount: 30, transaction_details: { net_received_amount: 20 } }),
     ];
-    const r = agregarFinanceiro(pagamentos, INTERVALO, { '1': 9.9 });
+    const r = agregarFinanceiro(pagamentos, INTERVALO, { '1': { custo: 9.9, codigo: '00220566' } });
     const v1 = r.vendas.find((v) => v.id === '1');
     const v2 = r.vendas.find((v) => v.id === '2');
     expect(v1?.custo).toBe(9.9);
+    expect(v1?.codigo).toBe('00220566');
     expect(v2?.custo).toBeNull();
+    expect(v2?.codigo).toBeNull();
   });
 
   it('não inclui frete nem compras de terceiros na lista de vendas', () => {
@@ -138,34 +140,34 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
   });
 });
 
-describe('montarCustoPorPagamento', () => {
-  it('usa o custo da variação (R$) × quantidade quando há variação', () => {
-    const r = montarCustoPorPagamento(
+describe('montarInfoPorPagamento', () => {
+  it('usa custo+código da variação (R$ × qtd) quando há variação', () => {
+    const r = montarInfoPorPagamento(
       { '111': { mlItemId: 'MLB1', mlVariationId: 'V1', quantidade: 2 } },
-      { V1: 0.77896 },
-      { MLB1: 9.99 },
+      { V1: { custo: 0.77896, codigo: '00111' } },
+      { MLB1: { custo: 9.99, codigo: '00999' } },
     );
-    expect(r).toEqual({ '111': 1.56 });
+    expect(r).toEqual({ '111': { custo: 1.56, codigo: '00111' } });
   });
 
-  it('cai no custo por item quando a venda não tem variação', () => {
-    const r = montarCustoPorPagamento(
+  it('cai no custo+código por item quando a venda não tem variação', () => {
+    const r = montarInfoPorPagamento(
       { '222': { mlItemId: 'MLB2', mlVariationId: null, quantidade: 3 } },
       {},
-      { MLB2: 1.5 },
+      { MLB2: { custo: 1.5, codigo: '00222' } },
     );
-    expect(r).toEqual({ '222': 4.5 });
+    expect(r).toEqual({ '222': { custo: 4.5, codigo: '00222' } });
   });
 
   it('ignora pagamento sem custo (variação e item ausentes, zero ou negativo)', () => {
-    const r = montarCustoPorPagamento(
+    const r = montarInfoPorPagamento(
       {
         '1': { mlItemId: 'SEM', mlVariationId: 'X', quantidade: 1 },
         '2': { mlItemId: 'ZERO', mlVariationId: null, quantidade: 3 },
         '3': { mlItemId: 'NEG', mlVariationId: null, quantidade: 1 },
       },
       {},
-      { ZERO: 0, NEG: -10 },
+      { ZERO: { custo: 0, codigo: 'z' }, NEG: { custo: -10, codigo: 'n' } },
     );
     expect(r).toEqual({});
   });

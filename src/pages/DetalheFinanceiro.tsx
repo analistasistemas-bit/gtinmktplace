@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/table';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularMarkup } from '@/lib/markup';
+import type { VendaFinanceira } from '@/lib/financeiro';
 import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
 
 function pct(n: number): string {
@@ -27,14 +28,19 @@ function fmtMarkup(markup: number): string {
   return `${p >= 0 ? '+' : ''}${p}%`;
 }
 
+/** Markup (fração) da venda, ou null quando não há custo cadastrado. */
+function markupValor(v: VendaFinanceira): number | null {
+  return v.custo != null && v.custo > 0 ? calcularMarkup(v.liquido, v.custo).markup : null;
+}
+
 /** Célula de markup: usa o custo da venda; sem custo cadastrado → "—". */
 function CelulaMarkup({ liquido, custo }: { liquido: number; custo: number | null }) {
   if (custo == null || custo <= 0) {
-    return <TableCell className="text-right text-sm tabular-nums text-muted-foreground">—</TableCell>;
+    return <TableCell className="text-right text-sm tabular-nums text-muted-foreground align-top">—</TableCell>;
   }
   const { markup } = calcularMarkup(liquido, custo);
   return (
-    <TableCell className={cn('text-right text-sm font-medium tabular-nums', markup >= 0 ? 'text-success' : 'text-destructive')}>
+    <TableCell className={cn('text-right text-sm font-medium tabular-nums align-top', markup >= 0 ? 'text-success' : 'text-destructive')}>
       {fmtMarkup(markup)}
     </TableCell>
   );
@@ -46,6 +52,34 @@ function rotuloPeriodo(periodo: Periodo): string {
   return periodo.tipo === 'preset'
     ? `últimos ${periodo.dias} dias`
     : `${periodo.desde} a ${periodo.ate}`;
+}
+
+type SortKey = 'codigo' | 'descricao' | 'data' | 'bruto' | 'retido' | 'liquido' | 'markup';
+type Sort = { key: SortKey; dir: 'asc' | 'desc' };
+
+/** Cabeçalho clicável que ordena pela coluna (seta indica direção). */
+function ThSort({ k, label, sort, onSort, align = 'left' }: {
+  k: SortKey; label: string; sort: Sort | null; onSort: (k: SortKey) => void; align?: 'left' | 'right';
+}) {
+  const ativo = sort?.key === k;
+  return (
+    <TableHead className={align === 'right' ? 'text-right' : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={cn(
+          'flex w-full items-center gap-1 transition-colors hover:text-foreground',
+          align === 'right' && 'justify-end',
+          ativo && 'text-foreground',
+        )}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        {!ativo ? <ChevronsUpDown className="h-3 w-3 opacity-40" />
+          : sort!.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+      </button>
+    </TableHead>
+  );
 }
 
 export default function DetalheFinanceiro() {
@@ -61,6 +95,41 @@ export default function DetalheFinanceiro() {
   const liquido = r?.liquido ?? 0;
   const retido = r?.descontos ?? 0;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
+
+  // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
+  const [sort, setSort] = useState<Sort | null>(null);
+  const toggleSort = (k: SortKey) => {
+    const textual = k === 'codigo' || k === 'descricao';
+    setSort((s) => (s?.key === k
+      ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key: k, dir: textual ? 'asc' : 'desc' }));
+  };
+
+  const vendasOrdenadas = useMemo(() => {
+    if (!sort) return vendas;
+    const val = (v: VendaFinanceira): string | number | null => {
+      switch (sort.key) {
+        case 'codigo': return v.codigo;
+        case 'descricao': return v.descricao;
+        case 'data': return v.data;
+        case 'bruto': return v.bruto;
+        case 'retido': return v.retido;
+        case 'liquido': return v.liquido;
+        case 'markup': return markupValor(v);
+      }
+    };
+    return [...vendas].sort((a, b) => {
+      const va = val(a);
+      const vb = val(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // sem valor sempre por último
+      if (vb == null) return -1;
+      const cmp = typeof va === 'number' && typeof vb === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb), 'pt-BR');
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [vendas, sort]);
 
   // Markup agregado: só sobre as vendas com custo cadastrado (senão a base ficaria distorcida).
   const markupTotal = useMemo(() => {
@@ -117,46 +186,47 @@ export default function DetalheFinanceiro() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
-              <TableHead>Venda</TableHead>
-              <TableHead>Data</TableHead>
-              <TableHead className="text-right">Bruto</TableHead>
-              <TableHead className="text-right">Retido (ML)</TableHead>
-              <TableHead className="text-right">Líquido</TableHead>
-              <TableHead className="text-right">Markup</TableHead>
+              <ThSort k="codigo" label="Código" sort={sort} onSort={toggleSort} />
+              <ThSort k="descricao" label="Produto" sort={sort} onSort={toggleSort} />
+              <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
+              <ThSort k="bruto" label="Bruto" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="retido" label="Retido (ML)" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="liquido" label="Líquido" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="markup" label="Markup" sort={sort} onSort={toggleSort} align="right" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vendas.length === 0 ? (
+            {vendasOrdenadas.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
                   Sem vendas no período.
                 </TableCell>
               </TableRow>
             ) : (
-              vendas.map((v) => (
+              vendasOrdenadas.map((v) => (
                 <TableRow key={v.id}>
-                  <TableCell className="text-sm">
-                    <span className="block max-w-[320px] truncate uppercase" title={v.descricao ?? undefined}>
+                  <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{v.codigo ?? '—'}</TableCell>
+                  <TableCell className="align-top text-sm">
+                    <span className="block max-w-[360px] whitespace-normal break-words uppercase">
                       {v.descricao || `#${v.id}`}
                     </span>
                     {v.estorno > 0 && (
                       <span className="text-xs text-destructive">estornado {fmtBRL(v.estorno)}</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm tabular-nums">{fmtData(v.data)}</TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">{fmtBRL(v.bruto)}</TableCell>
-                  <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(v.retido)}</TableCell>
-                  <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(v.liquido)}</TableCell>
+                  <TableCell className="align-top whitespace-nowrap text-sm tabular-nums">{fmtData(v.data)}</TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(v.bruto)}</TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums text-warning">{fmtBRL(v.retido)}</TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(v.liquido)}</TableCell>
                   <CelulaMarkup liquido={v.liquido} custo={v.custo} />
                 </TableRow>
               ))
             )}
           </TableBody>
-          {vendas.length > 0 && (
+          {vendasOrdenadas.length > 0 && (
             <TableFooter>
               <TableRow className="border-t font-medium">
-                <TableCell className="text-sm">Subtotal</TableCell>
-                <TableCell />
+                <TableCell colSpan={3} className="text-sm">Subtotal</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(bruto)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(retido)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(liquido)}</TableCell>
@@ -177,7 +247,7 @@ export default function DetalheFinanceiro() {
         Cada linha é um pagamento aprovado no período (fonte: Mercado Pago). "Retido" é o que o ML/MP
         desconta da venda (taxas + frete). O "líquido" é o que sobra para o vendedor. O "markup" usa o
         custo cadastrado na importação da planilha: (líquido − custo) ÷ custo; vendas sem custo
-        cadastrado ou de produtos fora do PubliAI mostram "—".
+        cadastrado ou de produtos fora do PubliAI mostram "—". Clique no cabeçalho para ordenar.
       </p>
     </div>
   );

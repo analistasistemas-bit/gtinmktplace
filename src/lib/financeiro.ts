@@ -13,6 +13,8 @@ export interface VendaFinanceira {
   /** Custo total do produto nesta venda (custo unitário × quantidade), em R$. null = sem custo
    *  cadastrado ou venda não mapeada — markup "—". */
   custo: number | null;
+  /** Código do produto (planilha) da venda, quando mapeada ao catálogo. null = não mapeada. */
+  codigo: string | null;
 }
 
 export interface ResumoFinanceiro {
