@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agregarFinanceiro, type PagamentoMP } from '../financeiro';
+import { agregarFinanceiro, montarCustoPorPagamento, type PagamentoMP } from '../financeiro';
 
 function pag(p: Partial<PagamentoMP> & { id: number }): PagamentoMP {
   return p as PagamentoMP;
@@ -71,12 +71,26 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
     // ordenado por data desc — a venda mais recente vem primeiro
     expect(r.vendas[0]).toEqual({
       id: '2', data: '2026-06-20T09:00:00.000Z', descricao: 'Linha 120m',
-      bruto: 25, liquido: 10.7, retido: 14.3, estorno: 5,
+      bruto: 25, liquido: 10.7, retido: 14.3, estorno: 5, custo: null,
     });
     expect(r.vendas[1]).toEqual({
       id: '1', data: '2026-06-17T09:00:00.000Z', descricao: 'Fita Cetim',
-      bruto: 12.65, liquido: 4.35, retido: 8.3, estorno: 0,
+      bruto: 12.65, liquido: 4.35, retido: 8.3, estorno: 0, custo: null,
     });
+  });
+
+  it('anexa o custo por pagamento quando fornecido (markup), null quando ausente', () => {
+    const pagamentos = [
+      pag({ id: 1, collector_id: CONTA, date_approved: '2026-06-17T09:00:00.000Z',
+        transaction_amount: 25, transaction_details: { net_received_amount: 18 } }),
+      pag({ id: 2, collector_id: CONTA, date_approved: '2026-06-18T09:00:00.000Z',
+        transaction_amount: 30, transaction_details: { net_received_amount: 20 } }),
+    ];
+    const r = agregarFinanceiro(pagamentos, INTERVALO, { '1': 9.9 });
+    const v1 = r.vendas.find((v) => v.id === '1');
+    const v2 = r.vendas.find((v) => v.id === '2');
+    expect(v1?.custo).toBe(9.9);
+    expect(v2?.custo).toBeNull();
   });
 
   it('não inclui frete nem compras de terceiros na lista de vendas', () => {
@@ -121,5 +135,27 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
       INTERVALO,
     );
     expect(r).toEqual({ bruto: 0, liquido: 0, descontos: 0, estornos: 0, pagamentos: 0, vendas: [] });
+  });
+});
+
+describe('montarCustoPorPagamento', () => {
+  it('multiplica custo unitário (centavos→R$) pela quantidade', () => {
+    const r = montarCustoPorPagamento(
+      { '111': { mlItemId: 'MLB1', quantidade: 2 }, '222': { mlItemId: 'MLB2', quantidade: 1 } },
+      { MLB1: 1500, MLB2: 999 },
+    );
+    expect(r).toEqual({ '111': 30, '222': 9.99 });
+  });
+
+  it('ignora pagamento sem custo cadastrado (ausente, zero ou negativo)', () => {
+    const r = montarCustoPorPagamento(
+      {
+        '1': { mlItemId: 'SEM', quantidade: 1 },
+        '2': { mlItemId: 'ZERO', quantidade: 3 },
+        '3': { mlItemId: 'NEG', quantidade: 1 },
+      },
+      { ZERO: 0, NEG: -10 },
+    );
+    expect(r).toEqual({});
   });
 });

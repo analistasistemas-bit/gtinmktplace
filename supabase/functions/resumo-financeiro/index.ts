@@ -1,8 +1,46 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
-import { agregarFinanceiro, buscarPagamentosMP, getContaId, type ResumoFinanceiro } from '../_shared/mercadopago/financeiro.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import {
+  agregarFinanceiro, buscarPagamentosMP, getContaId, montarCustoPorPagamento,
+  type ResumoFinanceiro,
+} from '../_shared/mercadopago/financeiro.ts';
+import { buscarPedidosML, mapearPagamentoParaItem } from '../_shared/ml/pedidos.ts';
+import { getValidAccessToken } from '../_shared/ml/token.ts';
 
 interface Body { desde?: string; ate?: string }
+
+/**
+ * Custo total (R$) por pagamento, para o markup do detalhe. Cruza pedido do ML (payment→item)
+ * com o custo das famílias (custo_centavos por ml_item_id, o maior por item — só uma família
+ * tem custo cadastrado). Resiliente: qualquer falha (sem credencial ML, /orders bloqueado, etc.)
+ * devolve {} e o markup some — nunca quebra o financeiro.
+ */
+async function custoPorPagamentoDoPeriodo(
+  userId: string,
+  intervalo: { desde: string; ate: string },
+): Promise<Record<string, number>> {
+  try {
+    const tokenML = await getValidAccessToken(userId);
+    const pedidos = await buscarPedidosML(tokenML, intervalo);
+    const itemPorPagamento = mapearPagamentoParaItem(pedidos);
+
+    const admin = adminClient();
+    const { data: familias } = await admin.from('familias')
+      .select('ml_item_id, custo_centavos').eq('user_id', userId).not('ml_item_id', 'is', null);
+    const custoCentavosPorItem: Record<string, number> = {};
+    for (const f of familias ?? []) {
+      const id = f.ml_item_id as string;
+      const c = Number(f.custo_centavos ?? 0);
+      // Mantém o maior custo por item (só uma família por ml_item_id tem custo > 0).
+      if (c > (custoCentavosPorItem[id] ?? 0)) custoCentavosPorItem[id] = c;
+    }
+
+    return montarCustoPorPagamento(itemPorPagamento, custoCentavosPorItem);
+  } catch (_e) {
+    return {};
+  }
+}
 
 // Resumo financeiro da conta Mercado Pago: "A receber" líquido + calendário de lançamentos
 // futuros + KPIs do período (bruto/líquido/descontos/estornos), com o A receber segregado
@@ -16,7 +54,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  try { await requireUser(req); }
+  let user;
+  try { user = await requireUser(req); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -36,9 +75,15 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const intervalo = { desde: body.desde, ate: body.ate };
     const contaId = await getContaId(token);
-    const pagamentos = await buscarPagamentosMP(token);
-    const resumo = agregarFinanceiro(pagamentos, { desde: body.desde, ate: body.ate, contaId });
+    // MP (vendas/líquido) e o custo por pagamento (markup) em paralelo — o custo é resiliente
+    // e não derruba o financeiro se o ML falhar.
+    const [pagamentos, custoPorPagamento] = await Promise.all([
+      buscarPagamentosMP(token),
+      custoPorPagamentoDoPeriodo(user.id, intervalo),
+    ]);
+    const resumo = agregarFinanceiro(pagamentos, { ...intervalo, contaId }, custoPorPagamento);
     return json(resumo);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

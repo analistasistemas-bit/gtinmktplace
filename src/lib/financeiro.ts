@@ -10,6 +10,9 @@ export interface VendaFinanceira {
   liquido: number;
   retido: number;
   estorno: number;
+  /** Custo total do produto nesta venda (custo unitário × quantidade), em R$. null = sem custo
+   *  cadastrado ou venda não mapeada — markup "—". */
+  custo: number | null;
 }
 
 export interface ResumoFinanceiro {
