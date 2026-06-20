@@ -2,8 +2,8 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import {
-  agregarFinanceiro, buscarPagamentosMP, getContaId, montarCustoPorPagamento,
-  type ResumoFinanceiro,
+  agregarFinanceiro, buscarPagamentosMP, getContaId, montarInfoPorPagamento,
+  type InfoCusto, type ResumoFinanceiro,
 } from '../_shared/mercadopago/financeiro.ts';
 import { buscarGtinsDosItens, buscarPedidosML, mapearPagamentoParaItem } from '../_shared/ml/pedidos.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
@@ -14,18 +14,18 @@ interface Body { desde?: string; ate?: string }
 const normGtin = (g: string) => g.replace(/^0+/, '');
 
 /**
- * Custo total (R$) por pagamento, para o markup do detalhe. Cruza pedido do ML (payment→item/var)
- * com o custo REAL do produto da planilha (variacoes.custo, R$). Cadeia de resolução:
- *   1. custo da variação vendida (ml_variation_id)
- *   2. custo do anúncio (ml_item_id da família) — anúncio sem variação publicado pelo PubliAI
- *   3. custo por GTIN — anúncios FORA do PubliAI cujo produto existe no catálogo (1 /items extra)
- * max() por chave é robusto a linhas duplicadas por re-importação. NÃO usar familias.custo_centavos
- * (é custo de tokens de IA da copy/vision). Resiliente: qualquer falha devolve {} e o markup some.
+ * Custo total (R$) + código do produto por pagamento, para markup/identificação no detalhe.
+ * Cruza pedido do ML (payment→item/var) com custo+código da planilha (variacoes). Cadeia:
+ *   1. variação vendida (ml_variation_id)
+ *   2. anúncio (ml_item_id da família) — anúncio sem variação publicado pelo PubliAI
+ *   3. GTIN — anúncios FORA do PubliAI cujo produto existe no catálogo (1 /items extra)
+ * max(custo) por chave é robusto a linhas duplicadas por re-importação. NÃO usar
+ * familias.custo_centavos (é custo de tokens de IA). Resiliente: falha → {} e markup some.
  */
-async function custoPorPagamentoDoPeriodo(
+async function infoPorPagamentoDoPeriodo(
   userId: string,
   intervalo: { desde: string; ate: string },
-): Promise<Record<string, number>> {
+): Promise<Record<string, InfoCusto>> {
   try {
     const tokenML = await getValidAccessToken(userId);
     const pedidos = await buscarPedidosML(tokenML, intervalo);
@@ -33,40 +33,44 @@ async function custoPorPagamentoDoPeriodo(
 
     const admin = adminClient();
     const { data: variacoes } = await admin.from('variacoes')
-      .select('custo, ml_variation_id, gtin, familias!inner(ml_item_id)')
+      .select('custo, codigo, ml_variation_id, gtin, familias!inner(ml_item_id)')
       .eq('user_id', userId).not('custo', 'is', null);
-    const custoPorVariacao: Record<string, number> = {};
-    const custoPorItem: Record<string, number> = {};
-    const custoPorGtin: Record<string, number> = {};
+    const porVariacao: Record<string, InfoCusto> = {};
+    const porItem: Record<string, InfoCusto> = {};
+    const porGtin: Record<string, InfoCusto> = {};
+    // Mantém a entrada de maior custo por chave (e o código correspondente).
+    const upsert = (m: Record<string, InfoCusto>, k: string, custo: number, codigo: string | null) => {
+      if (custo > (m[k]?.custo ?? 0)) m[k] = { custo, codigo };
+    };
     for (const v of variacoes ?? []) {
       const custo = Number((v as { custo: number | null }).custo ?? 0);
       if (custo <= 0) continue;
+      const codigo = (v as { codigo: string | null }).codigo ?? null;
       const varId = (v as { ml_variation_id: string | null }).ml_variation_id;
       const gtin = (v as { gtin: string | null }).gtin;
       const fams = (v as { familias: { ml_item_id: string | null } | { ml_item_id: string | null }[] }).familias;
       const itemId = (Array.isArray(fams) ? fams[0]?.ml_item_id : fams?.ml_item_id) ?? null;
-      if (varId != null && custo > (custoPorVariacao[varId] ?? 0)) custoPorVariacao[varId] = custo;
-      if (itemId != null && custo > (custoPorItem[itemId] ?? 0)) custoPorItem[itemId] = custo;
-      if (gtin) { const k = normGtin(gtin); if (custo > (custoPorGtin[k] ?? 0)) custoPorGtin[k] = custo; }
+      if (varId != null) upsert(porVariacao, varId, custo, codigo);
+      if (itemId != null) upsert(porItem, itemId, custo, codigo);
+      if (gtin) upsert(porGtin, normGtin(gtin), custo, codigo);
     }
 
-    // Fallback GTIN: anúncios que não casaram custo por variação nem por item (ex.: publicados
-    // fora do PubliAI). Busca o GTIN só desses anúncios e casa com o catálogo.
+    // Fallback GTIN: anúncios que não casaram por variação nem por item (ex.: fora do PubliAI).
     const semCusto = [...new Set(
       Object.values(itemPorPagamento)
-        .filter((i) => custoPorItem[i.mlItemId] == null
-          && (i.mlVariationId == null || custoPorVariacao[i.mlVariationId] == null))
+        .filter((i) => porItem[i.mlItemId] == null
+          && (i.mlVariationId == null || porVariacao[i.mlVariationId] == null))
         .map((i) => i.mlItemId),
     )];
     if (semCusto.length > 0) {
       const gtinPorItem = await buscarGtinsDosItens(tokenML, semCusto);
       for (const [itemId, gtin] of Object.entries(gtinPorItem)) {
-        const custo = custoPorGtin[normGtin(gtin)];
-        if (custo != null && custo > 0) custoPorItem[itemId] = custo;
+        const info = porGtin[normGtin(gtin)];
+        if (info != null) porItem[itemId] = info;
       }
     }
 
-    return montarCustoPorPagamento(itemPorPagamento, custoPorVariacao, custoPorItem);
+    return montarInfoPorPagamento(itemPorPagamento, porVariacao, porItem);
   } catch (_e) {
     return {};
   }
@@ -107,13 +111,13 @@ Deno.serve(async (req) => {
   try {
     const intervalo = { desde: body.desde, ate: body.ate };
     const contaId = await getContaId(token);
-    // MP (vendas/líquido) e o custo por pagamento (markup) em paralelo — o custo é resiliente
-    // e não derruba o financeiro se o ML falhar.
-    const [pagamentos, custoPorPagamento] = await Promise.all([
+    // MP (vendas/líquido) e o custo+código por pagamento (markup) em paralelo — resiliente:
+    // não derruba o financeiro se o ML falhar.
+    const [pagamentos, infoPorPagamento] = await Promise.all([
       buscarPagamentosMP(token),
-      custoPorPagamentoDoPeriodo(user.id, intervalo),
+      infoPorPagamentoDoPeriodo(user.id, intervalo),
     ]);
-    const resumo = agregarFinanceiro(pagamentos, { ...intervalo, contaId }, custoPorPagamento);
+    const resumo = agregarFinanceiro(pagamentos, { ...intervalo, contaId }, infoPorPagamento);
     return json(resumo);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

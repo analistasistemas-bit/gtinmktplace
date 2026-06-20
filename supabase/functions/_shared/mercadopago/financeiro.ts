@@ -54,7 +54,12 @@ export interface VendaFinanceira {
   /** Custo total do produto nesta venda (custo unitário × quantidade), em R$. null = sem custo
    *  cadastrado ou venda não mapeada a um item — a UI mostra markup "—". */
   custo: number | null;
+  /** Código do produto (planilha) da venda, quando mapeada ao catálogo. null = não mapeada. */
+  codigo: string | null;
 }
+
+/** Custo (R$) + código do produto resolvidos para um pagamento. */
+export interface InfoCusto { custo: number; codigo: string | null }
 
 export interface ResumoFinanceiro {
   /** Faturamento bruto das vendas aprovadas no período. */
@@ -81,7 +86,7 @@ const liquido = (p: PagamentoMP) => Number(p.transaction_details?.net_received_a
 export function agregarFinanceiro(
   pagamentos: PagamentoMP[],
   intervalo: { desde: string; ate: string; contaId: number },
-  custoPorPagamento: Record<string, number> = {},
+  infoPorPagamento: Record<string, InfoCusto> = {},
 ): ResumoFinanceiro {
   const desdeMs = Date.parse(intervalo.desde);
   const ateMs = Date.parse(intervalo.ate);
@@ -107,11 +112,13 @@ export function agregarFinanceiro(
     liq += vLiq;
     estornos += vEstorno;
     qtd += 1;
+    const info = infoPorPagamento[String(p.id)];
     vendas.push({
       id: String(p.id),
       data: p.date_approved,
       descricao: p.description ?? null,
-      custo: custoPorPagamento[String(p.id)] ?? null,
+      custo: info?.custo ?? null,
+      codigo: info?.codigo ?? null,
       bruto: round2(vBruto),
       liquido: round2(vLiq),
       retido: round2(vBruto - vLiq),
@@ -133,23 +140,22 @@ export function agregarFinanceiro(
 }
 
 /**
- * Custo total (R$) por pagamento, para o markup da tela de detalhe. Junta o mapa pagamento→item
- * (do ML) com o custo unitário do produto (R$) cadastrado na planilha: prioriza o custo da
- * variação vendida (ml_variation_id) e, sem variação, cai no custo por anúncio (ml_item_id).
+ * Custo total (R$) + código do produto por pagamento, para o markup/identificação no detalhe.
+ * Junta o mapa pagamento→item (do ML) com o custo unitário + código do produto (da planilha):
+ * prioriza a variação vendida (ml_variation_id) e, sem variação, cai no anúncio (ml_item_id).
  * custo = custoUnitário × quantidade. Só entra quando há custo positivo; pagamentos sem item
  * mapeado ou sem custo ficam de fora (markup "—"). Pura.
  */
-export function montarCustoPorPagamento(
+export function montarInfoPorPagamento(
   itemPorPagamento: Record<string, { mlItemId: string; mlVariationId: string | null; quantidade: number }>,
-  custoPorVariacao: Record<string, number>,
-  custoPorItem: Record<string, number>,
-): Record<string, number> {
-  const out: Record<string, number> = {};
+  infoPorVariacao: Record<string, InfoCusto>,
+  infoPorItem: Record<string, InfoCusto>,
+): Record<string, InfoCusto> {
+  const out: Record<string, InfoCusto> = {};
   for (const [pagamentoId, { mlItemId, mlVariationId, quantidade }] of Object.entries(itemPorPagamento)) {
-    const unitario = (mlVariationId != null ? custoPorVariacao[mlVariationId] : undefined)
-      ?? custoPorItem[mlItemId];
-    if (!unitario || unitario <= 0 || quantidade <= 0) continue;
-    out[pagamentoId] = round2(unitario * quantidade);
+    const info = (mlVariationId != null ? infoPorVariacao[mlVariationId] : undefined) ?? infoPorItem[mlItemId];
+    if (!info || info.custo <= 0 || quantidade <= 0) continue;
+    out[pagamentoId] = { custo: round2(info.custo * quantidade), codigo: info.codigo };
   }
   return out;
 }
