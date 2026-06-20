@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, Check } from 'lucide-react';
+import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, Check, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ interface Props {
   carregando?: boolean;
   /** Mensagem quando as vendas não puderam ser lidas (ex.: app sem permissão de Pedidos). */
   aviso?: string | null;
+  /** Markup agregado do período (null = sem dados de custo). */
+  markupPct?: number | null;
 }
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
@@ -30,8 +32,8 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
   return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
 }
 
-function Kpi({ icon: Icon, label, valor, tom }: {
-  icon: typeof DollarSign; label: string; valor: string; tom?: 'info' | 'success' | 'warning';
+function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
+  icon: typeof DollarSign; label: string; valor: string; tom?: 'info' | 'success' | 'warning'; valorCor?: string;
 }) {
   const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning' : 'text-info';
   return (
@@ -40,12 +42,12 @@ function Kpi({ icon: Icon, label, valor, tom }: {
         <Icon className="h-3.5 w-3.5 shrink-0" />
         {label}
       </div>
-      <div className="text-lg font-semibold tabular-nums">{valor}</div>
+      <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
     </div>
   );
 }
 
-export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando, aviso }: Props) {
+export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando, aviso, markupPct }: Props) {
   // Rascunho local: abrir "Personalizado" e digitar datas NÃO refaz a busca.
   // Só ao clicar OK aplicamos via onPeriodo (e o período aplicado dispara o fetch).
   const [modoCustom, setModoCustom] = useState(periodo.tipo === 'range');
@@ -162,7 +164,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
       )}
 
       {/* Vendas */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className={cn('grid grid-cols-2 gap-3', markupPct != null ? 'md:grid-cols-5' : 'md:grid-cols-4')}>
         <Link
           to={{ pathname: '/publicados/vendas', search: queryDetalhe }}
           className="rounded-lg outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring hover:opacity-90"
@@ -173,6 +175,14 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
         <Kpi icon={Package} label="Unidades vendidas" valor={String(totais.unidades)} />
         <Kpi icon={Receipt} label="Pedidos" valor={String(totais.pedidos)} />
         <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(ticket)} />
+        {markupPct != null && (
+          <Kpi
+            icon={TrendingUp}
+            label="Markup no período"
+            valor={(markupPct >= 0 ? '+' : '') + Math.round(markupPct * 100) + '%'}
+            valorCor={markupPct >= 0 ? 'text-success' : 'text-destructive'}
+          />
+        )}
       </div>
 
       {/* Saúde + Encalhados + Rankings */}
