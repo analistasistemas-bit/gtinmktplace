@@ -162,15 +162,24 @@ export function agregarFinanceiro(
  * mapeado ou sem custo ficam de fora (markup "—"). Pura.
  */
 export function montarInfoPorPagamento(
-  itemPorPagamento: Record<string, { mlItemId: string; mlVariationId: string | null; quantidade: number }>,
+  itemPorPagamento: Record<string, {
+    mlItemId: string; mlVariationId: string | null; quantidade: number;
+    tarifaItem?: number; shippingId?: string | null;
+  }>,
   infoPorVariacao: Record<string, InfoCusto>,
   infoPorItem: Record<string, InfoCusto>,
 ): Record<string, InfoCusto> {
   const out: Record<string, InfoCusto> = {};
-  for (const [pagamentoId, { mlItemId, mlVariationId, quantidade }] of Object.entries(itemPorPagamento)) {
+  for (const [pagamentoId, it] of Object.entries(itemPorPagamento)) {
+    const { mlItemId, mlVariationId, quantidade, tarifaItem, shippingId } = it;
     const info = (mlVariationId != null ? infoPorVariacao[mlVariationId] : undefined) ?? infoPorItem[mlItemId];
     if (!info || info.custo <= 0 || quantidade <= 0) continue;
-    out[pagamentoId] = { custo: round2(info.custo * quantidade), codigo: info.codigo };
+    const entry: InfoCusto = { custo: round2(info.custo * quantidade), codigo: info.codigo };
+    // Campos de rateio: só anexa quando há dado (mantém saída enxuta p/ pagamento single).
+    if (info.peso != null) entry.peso = round2(info.peso * quantidade);
+    if (tarifaItem != null) entry.tarifa = tarifaItem;
+    if (shippingId != null) entry.shippingId = shippingId;
+    out[pagamentoId] = entry;
   }
   return out;
 }
