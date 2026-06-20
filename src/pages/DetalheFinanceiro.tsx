@@ -203,9 +203,15 @@ export default function DetalheFinanceiro() {
                 </TableCell>
               </TableRow>
             ) : (
-              vendasOrdenadas.map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{v.codigo ?? '—'}</TableCell>
+              vendasOrdenadas.map((v) => {
+                // Venda no prejuízo: o líquido recebido ficou abaixo do custo (markup negativo).
+                const prejuizo = v.custo != null && v.custo > 0 && v.liquido < v.custo;
+                return (
+                <TableRow key={v.id} className={cn(prejuizo && 'bg-destructive/10')}>
+                  <TableCell className={cn(
+                    'align-top text-sm tabular-nums text-muted-foreground',
+                    prejuizo && 'border-l-2 border-l-destructive',
+                  )}>{v.codigo ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm">
                     <span className="block max-w-[360px] whitespace-normal break-words uppercase">
                       {v.descricao || `#${v.id}`}
@@ -220,7 +226,8 @@ export default function DetalheFinanceiro() {
                   <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(v.liquido)}</TableCell>
                   <CelulaMarkup liquido={v.liquido} custo={v.custo} />
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
           {vendasOrdenadas.length > 0 && (
@@ -247,7 +254,8 @@ export default function DetalheFinanceiro() {
         Cada linha é um pagamento aprovado no período (fonte: Mercado Pago). "Retido" é o que o ML/MP
         desconta da venda (taxas + frete). O "líquido" é o que sobra para o vendedor. O "markup" usa o
         custo cadastrado na importação da planilha: (líquido − custo) ÷ custo; vendas sem custo
-        cadastrado ou de produtos fora do PubliAI mostram "—". Clique no cabeçalho para ordenar.
+        cadastrado ou de produtos fora do PubliAI mostram "—". Linhas destacadas em vermelho são
+        vendas no prejuízo (líquido abaixo do custo). Clique no cabeçalho para ordenar.
       </p>
     </div>
   );
