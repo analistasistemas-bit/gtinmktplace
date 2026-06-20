@@ -13,6 +13,7 @@
 // reproduzível pela API (ver ADR-0031); aqui entregamos o realizado, que é confiável.
 //
 // Fonte: /v1/payments/search com o Access Token de produção da conta (secret MP_ACCESS_TOKEN).
+import { ratearFreteCompartilhado } from './rateio.ts';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -58,8 +59,18 @@ export interface VendaFinanceira {
   codigo: string | null;
 }
 
-/** Custo (R$) + código do produto resolvidos para um pagamento. */
-export interface InfoCusto { custo: number; codigo: string | null }
+/** Custo (R$) + código do produto resolvidos para um pagamento. Campos de rateio (peso,
+ *  tarifa, shippingId) são opcionais e só preenchidos quando há pedido ML cruzado. */
+export interface InfoCusto {
+  custo: number;
+  codigo: string | null;
+  /** Peso do produto (g) — base do rateio de frete em pedido pack. */
+  peso?: number;
+  /** Tarifa de venda do ML do pagamento (sale_fee). */
+  tarifa?: number;
+  /** Id do envio do pedido — pagamentos com o mesmo id compartilham o frete. */
+  shippingId?: string | null;
+}
 
 export interface ResumoFinanceiro {
   /** Faturamento bruto das vendas aprovadas no período. */
@@ -126,8 +137,12 @@ export function agregarFinanceiro(
     });
   }
 
+  // Rateia o frete de envios compartilhados (packs) por peso entre suas linhas. Zero-soma:
+  // não altera os totais (bruto/liq) já acumulados acima — só a atribuição por linha.
+  const vendasRateadas = ratearFreteCompartilhado(vendas, infoPorPagamento);
+
   // Mais recente primeiro (espelha a ordem do extrato).
-  vendas.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
+  vendasRateadas.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
 
   return {
     bruto: round2(bruto),
@@ -135,7 +150,7 @@ export function agregarFinanceiro(
     descontos: round2(bruto - liq),
     estornos: round2(estornos),
     pagamentos: qtd,
-    vendas,
+    vendas: vendasRateadas,
   };
 }
 
@@ -147,15 +162,24 @@ export function agregarFinanceiro(
  * mapeado ou sem custo ficam de fora (markup "—"). Pura.
  */
 export function montarInfoPorPagamento(
-  itemPorPagamento: Record<string, { mlItemId: string; mlVariationId: string | null; quantidade: number }>,
+  itemPorPagamento: Record<string, {
+    mlItemId: string; mlVariationId: string | null; quantidade: number;
+    tarifaItem?: number; shippingId?: string | null;
+  }>,
   infoPorVariacao: Record<string, InfoCusto>,
   infoPorItem: Record<string, InfoCusto>,
 ): Record<string, InfoCusto> {
   const out: Record<string, InfoCusto> = {};
-  for (const [pagamentoId, { mlItemId, mlVariationId, quantidade }] of Object.entries(itemPorPagamento)) {
+  for (const [pagamentoId, it] of Object.entries(itemPorPagamento)) {
+    const { mlItemId, mlVariationId, quantidade, tarifaItem, shippingId } = it;
     const info = (mlVariationId != null ? infoPorVariacao[mlVariationId] : undefined) ?? infoPorItem[mlItemId];
     if (!info || info.custo <= 0 || quantidade <= 0) continue;
-    out[pagamentoId] = { custo: round2(info.custo * quantidade), codigo: info.codigo };
+    const entry: InfoCusto = { custo: round2(info.custo * quantidade), codigo: info.codigo };
+    // Campos de rateio: só anexa quando há dado (mantém saída enxuta p/ pagamento single).
+    if (info.peso != null) entry.peso = round2(info.peso * quantidade);
+    if (tarifaItem != null) entry.tarifa = tarifaItem;
+    if (shippingId != null) entry.shippingId = shippingId;
+    out[pagamentoId] = entry;
   }
   return out;
 }

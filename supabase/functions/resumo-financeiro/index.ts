@@ -33,26 +33,27 @@ async function infoPorPagamentoDoPeriodo(
 
     const admin = adminClient();
     const { data: variacoes } = await admin.from('variacoes')
-      .select('custo, codigo, ml_variation_id, gtin, familias!inner(ml_item_id)')
+      .select('custo, codigo, peso_gramas, ml_variation_id, gtin, familias!inner(ml_item_id)')
       .eq('user_id', userId).not('custo', 'is', null);
     const porVariacao: Record<string, InfoCusto> = {};
     const porItem: Record<string, InfoCusto> = {};
     const porGtin: Record<string, InfoCusto> = {};
-    // Mantém a entrada de maior custo por chave (e o código correspondente).
-    const upsert = (m: Record<string, InfoCusto>, k: string, custo: number, codigo: string | null) => {
-      if (custo > (m[k]?.custo ?? 0)) m[k] = { custo, codigo };
+    // Mantém a entrada de maior custo por chave (e o código/peso correspondentes).
+    const upsert = (m: Record<string, InfoCusto>, k: string, custo: number, codigo: string | null, peso: number) => {
+      if (custo > (m[k]?.custo ?? 0)) m[k] = { custo, codigo, peso };
     };
     for (const v of variacoes ?? []) {
       const custo = Number((v as { custo: number | null }).custo ?? 0);
       if (custo <= 0) continue;
       const codigo = (v as { codigo: string | null }).codigo ?? null;
+      const peso = Number((v as { peso_gramas: number | null }).peso_gramas ?? 0);
       const varId = (v as { ml_variation_id: string | null }).ml_variation_id;
       const gtin = (v as { gtin: string | null }).gtin;
       const fams = (v as { familias: { ml_item_id: string | null } | { ml_item_id: string | null }[] }).familias;
       const itemId = (Array.isArray(fams) ? fams[0]?.ml_item_id : fams?.ml_item_id) ?? null;
-      if (varId != null) upsert(porVariacao, varId, custo, codigo);
-      if (itemId != null) upsert(porItem, itemId, custo, codigo);
-      if (gtin) upsert(porGtin, normGtin(gtin), custo, codigo);
+      if (varId != null) upsert(porVariacao, varId, custo, codigo, peso);
+      if (itemId != null) upsert(porItem, itemId, custo, codigo, peso);
+      if (gtin) upsert(porGtin, normGtin(gtin), custo, codigo, peso);
     }
 
     // Fallback GTIN: anúncios que não casaram por variação nem por item (ex.: fora do PubliAI).

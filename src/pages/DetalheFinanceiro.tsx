@@ -252,7 +252,8 @@ export default function DetalheFinanceiro() {
 
       <p className="mt-4 text-xs text-muted-foreground">
         Cada linha é um pagamento aprovado no período (fonte: Mercado Pago). "Retido" é o que o ML/MP
-        desconta da venda (taxas + frete). O "líquido" é o que sobra para o vendedor. O "markup" usa o
+        desconta da venda (taxas + frete). Em pedidos com vários produtos (mesmo envio), o frete é
+        rateado entre os itens por peso. O "líquido" é o que sobra para o vendedor. O "markup" usa o
         custo cadastrado na importação da planilha: (líquido − custo) ÷ custo; vendas sem custo
         cadastrado ou de produtos fora do PubliAI mostram "—". Linhas destacadas em vermelho são
         vendas no prejuízo (líquido abaixo do custo). Clique no cabeçalho para ordenar.

@@ -11,7 +11,7 @@ describe('mapearPagamentoParaItem', () => {
       },
     ];
     expect(mapearPagamentoParaItem(pedidos)).toEqual({
-      '111': { mlItemId: 'MLB1', mlVariationId: null, quantidade: 2 },
+      '111': { mlItemId: 'MLB1', mlVariationId: null, quantidade: 2, tarifaItem: 0, shippingId: null },
     });
   });
 
@@ -19,7 +19,16 @@ describe('mapearPagamentoParaItem', () => {
     const r = mapearPagamentoParaItem([
       { id: 7, order_items: [{ item: { id: 'MLB7', variation_id: 9988 }, quantity: 1 }], payments: [{ id: 700 }] },
     ]);
-    expect(r['700']).toEqual({ mlItemId: 'MLB7', mlVariationId: '9988', quantidade: 1 });
+    expect(r['700']).toEqual({ mlItemId: 'MLB7', mlVariationId: '9988', quantidade: 1, tarifaItem: 0, shippingId: null });
+  });
+
+  it('captura tarifa (sale_fee somada) e shipping_id do pedido', () => {
+    const r = mapearPagamentoParaItem([
+      { id: 9, shipping: { id: 555 },
+        order_items: [{ item: { id: 'MLB9', variation_id: 3 }, quantity: 1, sale_fee: 2.16 }],
+        payments: [{ id: 900 }] },
+    ]);
+    expect(r['900']).toEqual({ mlItemId: 'MLB9', mlVariationId: '3', quantidade: 1, tarifaItem: 2.16, shippingId: '555' });
   });
 
   it('variação fica null quando o pedido tem duas variações distintas do mesmo item', () => {
@@ -33,15 +42,15 @@ describe('mapearPagamentoParaItem', () => {
         payments: [{ id: 800 }],
       },
     ]);
-    expect(r['800']).toEqual({ mlItemId: 'MLB8', mlVariationId: null, quantidade: 2 });
+    expect(r['800']).toEqual({ mlItemId: 'MLB8', mlVariationId: null, quantidade: 2, tarifaItem: 0, shippingId: null });
   });
 
   it('chaveia por string mesmo com id numérico e múltiplos pagamentos no pedido', () => {
     const r = mapearPagamentoParaItem([
       { id: 9, order_items: [{ item: { id: 'MLB9' }, quantity: 1 }], payments: [{ id: 500 }, { id: 501 }] },
     ]);
-    expect(r['500']).toEqual({ mlItemId: 'MLB9', mlVariationId: null, quantidade: 1 });
-    expect(r['501']).toEqual({ mlItemId: 'MLB9', mlVariationId: null, quantidade: 1 });
+    expect(r['500']).toEqual({ mlItemId: 'MLB9', mlVariationId: null, quantidade: 1, tarifaItem: 0, shippingId: null });
+    expect(r['501']).toEqual({ mlItemId: 'MLB9', mlVariationId: null, quantidade: 1, tarifaItem: 0, shippingId: null });
   });
 
   it('ignora pedidos com mais de um item distinto (custo ambíguo)', () => {
@@ -69,7 +78,7 @@ describe('mapearPagamentoParaItem', () => {
         payments: [{ id: 333 }],
       },
     ]);
-    expect(r['333']).toEqual({ mlItemId: 'MLB1', mlVariationId: null, quantidade: 5 });
+    expect(r['333']).toEqual({ mlItemId: 'MLB1', mlVariationId: null, quantidade: 5, tarifaItem: 0, shippingId: null });
   });
 
   it('ignora pedido sem item ou sem pagamento', () => {

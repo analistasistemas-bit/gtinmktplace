@@ -172,3 +172,28 @@ describe('montarInfoPorPagamento', () => {
     expect(r).toEqual({});
   });
 });
+
+describe('agregarFinanceiro — rateio de frete em pedido pack', () => {
+  it('rateia o frete por peso quando duas vendas compartilham shipping_id (zero-soma)', () => {
+    // Pack real: Linha 45,10 (frete concentrado no líquido dela) + Fita 12,70. Σ líq = 35,00.
+    const pagamentos = [
+      pag({ id: 10, collector_id: CONTA, date_approved: '2026-06-15T10:00:00.000Z',
+        transaction_amount: 45.10, transaction_details: { net_received_amount: 24.46 } }),
+      pag({ id: 11, collector_id: CONTA, date_approved: '2026-06-15T10:00:00.000Z',
+        transaction_amount: 12.70, transaction_details: { net_received_amount: 10.54 } }),
+    ];
+    const info = {
+      '10': { custo: 21.16, codigo: '02543842', tarifa: 7.44, peso: 338, shippingId: 'S1' },
+      '11': { custo: 1.95, codigo: 'FITA', tarifa: 2.16, peso: 58, shippingId: 'S1' },
+    };
+    const r = agregarFinanceiro(pagamentos, INTERVALO, info);
+    const byId = Object.fromEntries(r.vendas.map((v) => [v.id, v]));
+    expect(byId['10'].liquido).toBe(26.39);
+    expect(byId['10'].retido).toBe(18.71);
+    expect(byId['11'].liquido).toBe(8.61);
+    expect(byId['11'].retido).toBe(4.09);
+    // Totais do período inalterados (rateio é zero-soma).
+    expect(r.liquido).toBe(35.00);
+    expect(r.bruto).toBe(57.80);
+  });
+});
