@@ -35,6 +35,24 @@ export interface PagamentoMP {
 /** Pagamento do frete (perna de envio do ML), não é uma venda de produto. */
 const ehFrete = (p: PagamentoMP) => p.description === 'marketplace_shipment';
 
+/** Uma venda (pagamento aprovado) que compõe o líquido do período. */
+export interface VendaFinanceira {
+  /** id do pagamento no Mercado Pago. */
+  id: string;
+  /** date_approved (ISO) — quando o pagamento foi aprovado. */
+  data: string | null;
+  /** description do pagamento — costuma ser o título do produto. */
+  descricao: string | null;
+  /** Bruto da venda. */
+  bruto: number;
+  /** Líquido recebido (net_received_amount). */
+  liquido: number;
+  /** Bruto − líquido: taxas do ML/MP + frete retido nesta venda. */
+  retido: number;
+  /** Valor estornado nesta venda. */
+  estorno: number;
+}
+
 export interface ResumoFinanceiro {
   /** Faturamento bruto das vendas aprovadas no período. */
   bruto: number;
@@ -46,6 +64,8 @@ export interface ResumoFinanceiro {
   estornos: number;
   /** Quantidade de vendas (pagamentos recebidos) no período. */
   pagamentos: number;
+  /** Detalhe por venda (compõe o líquido), da mais recente para a mais antiga. */
+  vendas: VendaFinanceira[];
 }
 
 const liquido = (p: PagamentoMP) => Number(p.transaction_details?.net_received_amount ?? 0);
@@ -66,6 +86,7 @@ export function agregarFinanceiro(
   let liq = 0;
   let estornos = 0;
   let qtd = 0;
+  const vendas: VendaFinanceira[] = [];
 
   for (const p of pagamentos) {
     // Só vendas da conta — exclui compras/pagamentos de terceiros (collector diferente).
@@ -75,11 +96,26 @@ export function agregarFinanceiro(
     if (!p.date_approved) continue;
     const t = Date.parse(p.date_approved);
     if (!(t >= desdeMs && t <= ateMs)) continue;
-    bruto += Number(p.transaction_amount ?? 0);
-    liq += liquido(p);
-    estornos += Number(p.transaction_amount_refunded ?? 0);
+    const vBruto = Number(p.transaction_amount ?? 0);
+    const vLiq = liquido(p);
+    const vEstorno = Number(p.transaction_amount_refunded ?? 0);
+    bruto += vBruto;
+    liq += vLiq;
+    estornos += vEstorno;
     qtd += 1;
+    vendas.push({
+      id: String(p.id),
+      data: p.date_approved,
+      descricao: p.description ?? null,
+      bruto: round2(vBruto),
+      liquido: round2(vLiq),
+      retido: round2(vBruto - vLiq),
+      estorno: round2(vEstorno),
+    });
   }
+
+  // Mais recente primeiro (espelha a ordem do extrato).
+  vendas.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
 
   return {
     bruto: round2(bruto),
@@ -87,6 +123,7 @@ export function agregarFinanceiro(
     descontos: round2(bruto - liq),
     estornos: round2(estornos),
     pagamentos: qtd,
+    vendas,
   };
 }
 

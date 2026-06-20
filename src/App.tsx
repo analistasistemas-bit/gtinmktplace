@@ -14,6 +14,7 @@ import Configuracoes from '@/pages/Configuracoes';
 import Publicados from '@/pages/Publicados';
 import DetalheVendas from '@/pages/DetalheVendas';
 import Financeiro from '@/pages/Financeiro';
+import DetalheFinanceiro from '@/pages/DetalheFinanceiro';
 import Viabilidade from '@/pages/Viabilidade';
 import StyleGuide from '@/pages/StyleGuide';
 import NotFound from '@/pages/NotFound';
@@ -37,6 +38,7 @@ export function AppRoutes() {
           <Route path="/publicados" element={<Publicados />} />
           <Route path="/publicados/vendas" element={<DetalheVendas />} />
           <Route path="/financeiro" element={<Financeiro />} />
+          <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />
           <Route path="/viabilidade" element={<Viabilidade />} />
           <Route path="/style-guide" element={<StyleGuide />} />
         </Route>

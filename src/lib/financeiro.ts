@@ -1,12 +1,25 @@
 import { supabase } from './supabase';
 import type { Janela } from './metricas';
 
+/** Uma venda (pagamento aprovado) que compõe o líquido do período. */
+export interface VendaFinanceira {
+  id: string;
+  data: string | null;
+  descricao: string | null;
+  bruto: number;
+  liquido: number;
+  retido: number;
+  estorno: number;
+}
+
 export interface ResumoFinanceiro {
   bruto: number;
   liquido: number;
   descontos: number;
   estornos: number;
   pagamentos: number;
+  /** Detalhe por venda (compõe o líquido). Ausente em respostas sem credencial/erro. */
+  vendas?: VendaFinanceira[];
   /** Secret MP_ACCESS_TOKEN ausente — conta Mercado Pago não conectada. */
   semCredencialMP?: boolean;
   /** Falha ao ler /payments do MP — números não confiáveis. */

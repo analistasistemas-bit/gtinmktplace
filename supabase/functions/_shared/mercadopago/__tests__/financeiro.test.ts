@@ -57,6 +57,41 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
     expect(r.pagamentos).toBe(2);
   });
 
+  it('devolve a lista de vendas (uma por pagamento) com bruto/líquido/retido/estorno', () => {
+    const pagamentos = [
+      pag({ id: 1, collector_id: CONTA, date_approved: '2026-06-17T09:00:00.000Z',
+        description: 'Fita Cetim', transaction_amount: 12.65, transaction_amount_refunded: 0,
+        transaction_details: { net_received_amount: 4.35 } }),
+      pag({ id: 2, collector_id: CONTA, date_approved: '2026-06-20T09:00:00.000Z',
+        description: 'Linha 120m', transaction_amount: 25, transaction_amount_refunded: 5,
+        transaction_details: { net_received_amount: 10.7 } }),
+    ];
+    const r = agregarFinanceiro(pagamentos, INTERVALO);
+    expect(r.vendas).toHaveLength(2);
+    // ordenado por data desc — a venda mais recente vem primeiro
+    expect(r.vendas[0]).toEqual({
+      id: '2', data: '2026-06-20T09:00:00.000Z', descricao: 'Linha 120m',
+      bruto: 25, liquido: 10.7, retido: 14.3, estorno: 5,
+    });
+    expect(r.vendas[1]).toEqual({
+      id: '1', data: '2026-06-17T09:00:00.000Z', descricao: 'Fita Cetim',
+      bruto: 12.65, liquido: 4.35, retido: 8.3, estorno: 0,
+    });
+  });
+
+  it('não inclui frete nem compras de terceiros na lista de vendas', () => {
+    const r = agregarFinanceiro([
+      pag({ id: 1, collector_id: CONTA, date_approved: '2026-06-17T09:00:00.000Z',
+        transaction_amount: 33, transaction_details: { net_received_amount: 16.1 } }),
+      pag({ id: 2, collector_id: CONTA, date_approved: '2026-06-17T09:00:00.000Z',
+        description: 'marketplace_shipment', transaction_amount: 8.99,
+        transaction_details: { net_received_amount: 8.99 } }),
+      pag({ id: 3, collector_id: 999, date_approved: '2026-06-17T09:00:00.000Z',
+        transaction_amount: 999, transaction_details: { net_received_amount: 900 } }),
+    ], INTERVALO);
+    expect(r.vendas.map((v) => v.id)).toEqual(['1']);
+  });
+
   it('compara collector_id como número mesmo vindo string', () => {
     const r = agregarFinanceiro(
       [pag({ id: 1, collector_id: String(CONTA), date_approved: '2026-06-10T00:00:00.000Z',
@@ -85,6 +120,6 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
         transaction_amount: 100, transaction_details: { net_received_amount: 90 } })],
       INTERVALO,
     );
-    expect(r).toEqual({ bruto: 0, liquido: 0, descontos: 0, estornos: 0, pagamentos: 0 });
+    expect(r).toEqual({ bruto: 0, liquido: 0, descontos: 0, estornos: 0, pagamentos: 0, vendas: [] });
   });
 });

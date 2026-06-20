@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
-import { resolverJanela, type PeriodoDias } from '@/lib/metricas';
+import { periodoToParams, resolverJanela, type PeriodoDias } from '@/lib/metricas';
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 7, label: '7 dias' },
@@ -39,6 +40,8 @@ export default function Financeiro() {
   const semCred = r?.semCredencialMP;
   const pctRetido = r && r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
   const ticketLiquido = r && r.pagamentos > 0 ? r.liquido / r.pagamentos : 0;
+  const queryDetalhe = new URLSearchParams(periodoToParams({ tipo: 'preset', dias: periodo })).toString();
+  const podeDetalhar = !!r && !semCred && !r.erroFinanceiro;
 
   return (
     <div className="p-6">
@@ -85,15 +88,36 @@ export default function Financeiro() {
 
       {/* Destaque: líquido das vendas */}
       <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border bg-card px-4 py-4">
-          <div className="mb-1 flex items-center gap-1.5 text-xs text-success">
-            <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
+        {podeDetalhar ? (
+          <Link
+            to={{ pathname: '/financeiro/detalhe', search: queryDetalhe }}
+            className="group block rounded-lg border bg-card px-4 py-4 outline-none ring-offset-background transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Líquido das vendas — ver composição"
+          >
+            <div className="mb-1 flex items-center justify-between gap-1.5 text-xs text-success">
+              <span className="flex items-center gap-1.5">
+                <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
+              </span>
+              <span className="flex items-center gap-0.5 text-muted-foreground">
+                Ver detalhe <ChevronRight className="h-3.5 w-3.5" />
+              </span>
+            </div>
+            <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
+            </div>
+          </Link>
+        ) : (
+          <div className="rounded-lg border bg-card px-4 py-4">
+            <div className="mb-1 flex items-center gap-1.5 text-xs text-success">
+              <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
+            </div>
+            <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
+            </div>
           </div>
-          <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
-          </div>
-        </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
           <Kpi icon={Receipt} label="Faturamento bruto" valor={fmtBRL(r?.bruto ?? 0)} />
