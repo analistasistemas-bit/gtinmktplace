@@ -4,7 +4,7 @@ import type { MetricasVendas } from '@/lib/metricas';
 import type { PublicadoItem } from '@/lib/publicados';
 
 const publicados = [
-  { mlItemId: 'MLB1', titulo: 'App Item' },
+  { mlItemId: 'MLB1', titulo: 'App Item', codigoPai: '00445975', gtin: '7891521360659' },
 ] as unknown as PublicadoItem[];
 
 const metricas: MetricasVendas = {
@@ -22,10 +22,15 @@ describe('montarDetalheVendas', () => {
     expect(r.app.valor).toBe(90);
     expect(r.app.unidades).toBe(2);
     expect(r.app.linhas[0].titulo).toBe('App Item');
+    expect(r.app.linhas[0].codigo).toBe('00445975');
+    expect(r.app.linhas[0].ean).toBe('7891521360659');
     expect(r.app.linhas[0].pctTotal).toBeCloseTo(75);
 
     expect(r.externo.valor).toBe(30);
     expect(r.externo.linhas[0].titulo).toBe('Externo');
+    // Itens fora do PubliAI não têm código/EAN no catálogo.
+    expect(r.externo.linhas[0].codigo).toBeNull();
+    expect(r.externo.linhas[0].ean).toBeNull();
 
     expect(r.app.valor + r.externo.valor).toBe(r.total);
   });

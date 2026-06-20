@@ -332,15 +332,21 @@ export async function toggleDescontoLote(loteId: string, exibir: boolean): Promi
 // Publicados
 // ============================================================================
 
-export function publicadoFromRow(r: FamiliaRow & { variacoes: Pick<VariacaoRow, 'preco_publicacao' | 'excluida_da_publicacao'>[] }): PublicadoItem {
+type VariacaoPub = Pick<VariacaoRow, 'codigo' | 'gtin' | 'preco_publicacao' | 'excluida_da_publicacao'>;
+
+export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): PublicadoItem {
   const incl = (r.variacoes ?? []).filter((v) => !v.excluida_da_publicacao);
   const base = incl.length > 0 ? incl : (r.variacoes ?? []);
   const precos = base
     .map((v) => Number(v.preco_publicacao))
     .filter((n) => !Number.isNaN(n) && n > 0);
+  // EAN representativo do anúncio: a variação principal; senão a 1ª publicável com GTIN.
+  const principal = base.find((v) => v.codigo === r.variacao_principal_codigo);
+  const gtin = principal?.gtin ?? base.find((v) => v.gtin)?.gtin ?? null;
   return {
     familiaId: r.id,
     codigoPai: r.codigo_pai,
+    gtin,
     titulo: r.titulo_ml ?? r.nome_pai ?? '(sem título)',
     fornecedor: r.fornecedor ?? null,
     tipo: r.tipo_aviamento ?? null,
@@ -355,13 +361,13 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: Pick<VariacaoRow, 
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, titulo_ml, nome_pai, fornecedor, tipo_aviamento, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(preco_publicacao, excluida_da_publicacao)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
   // 1 linha por anúncio (ml_item_id) — várias famílias compartilham o mesmo após ciclos de UPDATE.
   return dedupePublicados(
-    (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: Pick<VariacaoRow, 'preco_publicacao' | 'excluida_da_publicacao'>[] })),
+    (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: VariacaoPub[] })),
   );
 }
 
