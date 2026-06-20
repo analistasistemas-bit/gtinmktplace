@@ -67,6 +67,14 @@ peso_grupo = 338 + 58 = 396g. frete_grupo = (57,80 − 35,00) − 9,60 = 13,20.
 
 Σ líquido' = 26,39 + 8,61 = **35,00** (inalterado). ✔
 
+> **Nota de validação (E2E em produção, 2026-06-20):** a função deployada confirmou o
+> mecanismo, mas o frete **realizado** (MP `net_received_amount`) deste pack é **R$23,19**,
+> não os R$13,20 do print do MP — que é a projeção "A receber" do app, não reproduzível
+> pela API (ADR-0031). Com frete 23,19: Linha → líquido **17,87** (−16%), Fita → **7,14**
+> (+266%); zero-soma preservada (antes 14,47 + 10,54 = depois 17,87 + 7,14 = 25,01). O
+> rateio distribui o frete **real deduzido**, que é o correto. A tabela acima (frete 13,20)
+> ilustra a fórmula; os valores de produção usam o frete realizado.
+
 ## Fontes de dados
 
 - **MP** (`/v1/payments/search`): bruto e líquido por pagamento — inalterado.
