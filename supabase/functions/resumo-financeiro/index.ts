@@ -5,16 +5,22 @@ import {
   agregarFinanceiro, buscarPagamentosMP, getContaId, montarCustoPorPagamento,
   type ResumoFinanceiro,
 } from '../_shared/mercadopago/financeiro.ts';
-import { buscarPedidosML, mapearPagamentoParaItem } from '../_shared/ml/pedidos.ts';
+import { buscarGtinsDosItens, buscarPedidosML, mapearPagamentoParaItem } from '../_shared/ml/pedidos.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 
 interface Body { desde?: string; ate?: string }
 
+/** GTIN normalizado para casar mesmo com zero à esquerda divergente entre ML e planilha. */
+const normGtin = (g: string) => g.replace(/^0+/, '');
+
 /**
- * Custo total (R$) por pagamento, para o markup do detalhe. Cruza pedido do ML (payment→item)
- * com o custo das famílias (custo_centavos por ml_item_id, o maior por item — só uma família
- * tem custo cadastrado). Resiliente: qualquer falha (sem credencial ML, /orders bloqueado, etc.)
- * devolve {} e o markup some — nunca quebra o financeiro.
+ * Custo total (R$) por pagamento, para o markup do detalhe. Cruza pedido do ML (payment→item/var)
+ * com o custo REAL do produto da planilha (variacoes.custo, R$). Cadeia de resolução:
+ *   1. custo da variação vendida (ml_variation_id)
+ *   2. custo do anúncio (ml_item_id da família) — anúncio sem variação publicado pelo PubliAI
+ *   3. custo por GTIN — anúncios FORA do PubliAI cujo produto existe no catálogo (1 /items extra)
+ * max() por chave é robusto a linhas duplicadas por re-importação. NÃO usar familias.custo_centavos
+ * (é custo de tokens de IA da copy/vision). Resiliente: qualquer falha devolve {} e o markup some.
  */
 async function custoPorPagamentoDoPeriodo(
   userId: string,
@@ -25,24 +31,39 @@ async function custoPorPagamentoDoPeriodo(
     const pedidos = await buscarPedidosML(tokenML, intervalo);
     const itemPorPagamento = mapearPagamentoParaItem(pedidos);
 
-    // Custo REAL do produto vem da planilha → variacoes.custo (R$). Por variação (ml_variation_id)
-    // e, como fallback p/ anúncio sem variação, por anúncio (ml_item_id da família). max() é
-    // robusto a linhas duplicadas por re-importação. NÃO usar familias.custo_centavos: é o custo
-    // de tokens de IA da geração da copy/vision, não o custo do produto.
     const admin = adminClient();
     const { data: variacoes } = await admin.from('variacoes')
-      .select('custo, ml_variation_id, familias!inner(ml_item_id)')
+      .select('custo, ml_variation_id, gtin, familias!inner(ml_item_id)')
       .eq('user_id', userId).not('custo', 'is', null);
     const custoPorVariacao: Record<string, number> = {};
     const custoPorItem: Record<string, number> = {};
+    const custoPorGtin: Record<string, number> = {};
     for (const v of variacoes ?? []) {
       const custo = Number((v as { custo: number | null }).custo ?? 0);
       if (custo <= 0) continue;
       const varId = (v as { ml_variation_id: string | null }).ml_variation_id;
+      const gtin = (v as { gtin: string | null }).gtin;
       const fams = (v as { familias: { ml_item_id: string | null } | { ml_item_id: string | null }[] }).familias;
       const itemId = (Array.isArray(fams) ? fams[0]?.ml_item_id : fams?.ml_item_id) ?? null;
       if (varId != null && custo > (custoPorVariacao[varId] ?? 0)) custoPorVariacao[varId] = custo;
       if (itemId != null && custo > (custoPorItem[itemId] ?? 0)) custoPorItem[itemId] = custo;
+      if (gtin) { const k = normGtin(gtin); if (custo > (custoPorGtin[k] ?? 0)) custoPorGtin[k] = custo; }
+    }
+
+    // Fallback GTIN: anúncios que não casaram custo por variação nem por item (ex.: publicados
+    // fora do PubliAI). Busca o GTIN só desses anúncios e casa com o catálogo.
+    const semCusto = [...new Set(
+      Object.values(itemPorPagamento)
+        .filter((i) => custoPorItem[i.mlItemId] == null
+          && (i.mlVariationId == null || custoPorVariacao[i.mlVariationId] == null))
+        .map((i) => i.mlItemId),
+    )];
+    if (semCusto.length > 0) {
+      const gtinPorItem = await buscarGtinsDosItens(tokenML, semCusto);
+      for (const [itemId, gtin] of Object.entries(gtinPorItem)) {
+        const custo = custoPorGtin[normGtin(gtin)];
+        if (custo != null && custo > 0) custoPorItem[itemId] = custo;
+      }
     }
 
     return montarCustoPorPagamento(itemPorPagamento, custoPorVariacao, custoPorItem);
