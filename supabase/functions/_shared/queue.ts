@@ -35,32 +35,37 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
   return messageId;
 }
 
-export async function enfileirarPublicacao(job: ProcessFamiliaJob): Promise<string> {
+// Fila serial das escritas no ML por usuário (parallelism=1), ADR-0034. Publicar várias
+// famílias concorrentes faz o processamento assíncrono de foto do ML ficar muito lento
+// (foto isolada processa em segundos; em par, trava). Serializar por conta de vendedor
+// elimina essa concorrência. CREATE e UPDATE compartilham a fila (mesma conta ML).
+function nomeFilaPublicacao(userId: string): string {
+  return `publish-ml-${userId}`;
+}
+
+/** Garante a fila serial (parallelism=1) do usuário. Idempotente; chamar antes de enfileirar. */
+export async function garantirFilaSerial(userId: string): Promise<void> {
+  await qstashClient().queue({ queueName: nomeFilaPublicacao(userId) }).upsert({ parallelism: 1 });
+}
+
+// retryDelay curto + retries: rede de segurança p/ erro transiente de foto (ADR-0033). retries=3
+// casa com MAX_RETRIES_TRANSIENTES do worker (_shared/publicacao/retry.ts). A fila serial já
+// elimina a concorrência que era a causa principal da lentidão, então o retry raramente dispara.
+export async function enfileirarPublicacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/publish-familia-ml`;
-  // Erro de foto em processamento no ML é transiente e resolve em segundos (ADR-0033). O
-  // backoff exponencial padrão do QStash chega a ~2-3min entre tentativas, deixando o item
-  // parado em 'publicando'. Delay curto e fixo (10s) + mais tentativas faz a publicação
-  // concluir em dezenas de segundos quando a foto demora além do retry interno do worker.
-  const { messageId } = await qstashClient().publishJSON({
-    url: target,
-    body: job,
-    retries: 5,
-    retryDelay: '10000',
-  });
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFilaPublicacao(userId) })
+    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
   return messageId;
 }
 
-export async function enfileirarAtualizacao(job: ProcessFamiliaJob): Promise<string> {
+export async function enfileirarAtualizacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/update-familia-ml`;
-  // Mesmo motivo de enfileirarPublicacao (ADR-0033): retry rápido p/ foto transiente.
-  const { messageId } = await qstashClient().publishJSON({
-    url: target,
-    body: job,
-    retries: 5,
-    retryDelay: '10000',
-  });
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFilaPublicacao(userId) })
+    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
   return messageId;
 }
 
