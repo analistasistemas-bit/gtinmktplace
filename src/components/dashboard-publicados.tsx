@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy } from 'lucide-react';
+import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,13 @@ const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 90, label: '90 dias' },
 ];
 
+/** Datas YYYY-MM-DD para o rascunho. No range usa as do período (sem round-trip UTC). */
+function rascunhoDe(p: Periodo): { desde: string; ate: string } {
+  if (p.tipo === 'range') return { desde: p.desde, ate: p.ate };
+  const j = resolverJanela(p);
+  return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
+}
+
 function Kpi({ icon: Icon, label, valor, tom }: {
   icon: typeof DollarSign; label: string; valor: string; tom?: 'info' | 'success' | 'warning';
 }) {
@@ -39,12 +46,27 @@ function Kpi({ icon: Icon, label, valor, tom }: {
 }
 
 export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando, aviso }: Props) {
-  const presetAtivo = periodo.tipo === 'preset' ? periodo.dias : null;
-  const custom = periodo.tipo === 'range' ? periodo : null;
+  // Rascunho local: abrir "Personalizado" e digitar datas NÃO refaz a busca.
+  // Só ao clicar OK aplicamos via onPeriodo (e o período aplicado dispara o fetch).
+  const [modoCustom, setModoCustom] = useState(periodo.tipo === 'range');
+  const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
 
-  const irParaCustom = () => {
-    const j = resolverJanela(periodo);
-    onPeriodo({ tipo: 'range', desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) });
+  const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
+
+  const escolherPreset = (dias: PeriodoDias) => {
+    setModoCustom(false);
+    onPeriodo({ tipo: 'preset', dias });
+  };
+
+  const abrirCustom = () => {
+    setRascunho(rascunhoDe(periodo));
+    setModoCustom(true);
+  };
+
+  const rascunhoValido = !!rascunho.desde && !!rascunho.ate && rascunho.desde <= rascunho.ate;
+  const aplicarCustom = () => {
+    if (!rascunhoValido) return;
+    onPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate });
   };
 
   const queryDetalhe = new URLSearchParams(periodoToParams(periodo)).toString();
@@ -83,41 +105,52 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
               size="sm"
               variant={presetAtivo === p.dias ? 'default' : 'outline'}
               className="h-7 px-2.5 text-xs"
-              onClick={() => onPeriodo({ tipo: 'preset', dias: p.dias })}
+              onClick={() => escolherPreset(p.dias)}
             >
               {p.label}
             </Button>
           ))}
           <Button
             size="sm"
-            variant={custom ? 'default' : 'outline'}
+            variant={modoCustom ? 'default' : 'outline'}
             className="h-7 px-2.5 text-xs"
-            onClick={irParaCustom}
+            onClick={abrirCustom}
           >
             Personalizado
           </Button>
         </div>
-        {custom && (
-          <div className="flex items-center gap-1.5">
+        {modoCustom && (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => { e.preventDefault(); aplicarCustom(); }}
+          >
             <label className="text-xs text-muted-foreground" htmlFor="venda-de">De</label>
             <input
               id="venda-de"
               type="date"
-              value={custom.desde}
-              max={custom.ate}
-              onChange={(e) => onPeriodo({ tipo: 'range', desde: e.target.value, ate: custom.ate })}
-              className="h-7 rounded-md border bg-background px-2 text-xs"
+              value={rascunho.desde}
+              max={rascunho.ate}
+              onChange={(e) => setRascunho((r) => ({ ...r, desde: e.target.value }))}
+              className="h-7 rounded-md border bg-background px-2 text-xs dark:[color-scheme:dark]"
             />
             <label className="text-xs text-muted-foreground" htmlFor="venda-ate">Até</label>
             <input
               id="venda-ate"
               type="date"
-              value={custom.ate}
-              min={custom.desde}
-              onChange={(e) => onPeriodo({ tipo: 'range', desde: custom.desde, ate: e.target.value })}
-              className="h-7 rounded-md border bg-background px-2 text-xs"
+              value={rascunho.ate}
+              min={rascunho.desde}
+              onChange={(e) => setRascunho((r) => ({ ...r, ate: e.target.value }))}
+              className="h-7 rounded-md border bg-background px-2 text-xs dark:[color-scheme:dark]"
             />
-          </div>
+            <Button
+              type="submit"
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              disabled={!rascunhoValido}
+            >
+              <Check className="mr-1 h-3.5 w-3.5" /> OK
+            </Button>
+          </form>
         )}
         {carregando && <span className="text-xs text-muted-foreground">atualizando…</span>}
       </div>
