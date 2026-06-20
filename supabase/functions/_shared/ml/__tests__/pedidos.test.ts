@@ -11,16 +11,37 @@ describe('mapearPagamentoParaItem', () => {
       },
     ];
     expect(mapearPagamentoParaItem(pedidos)).toEqual({
-      '111': { mlItemId: 'MLB1', quantidade: 2 },
+      '111': { mlItemId: 'MLB1', mlVariationId: null, quantidade: 2 },
     });
+  });
+
+  it('captura a variação vendida (ml_variation_id) quando há uma única', () => {
+    const r = mapearPagamentoParaItem([
+      { id: 7, order_items: [{ item: { id: 'MLB7', variation_id: 9988 }, quantity: 1 }], payments: [{ id: 700 }] },
+    ]);
+    expect(r['700']).toEqual({ mlItemId: 'MLB7', mlVariationId: '9988', quantidade: 1 });
+  });
+
+  it('variação fica null quando o pedido tem duas variações distintas do mesmo item', () => {
+    const r = mapearPagamentoParaItem([
+      {
+        id: 8,
+        order_items: [
+          { item: { id: 'MLB8', variation_id: 1 }, quantity: 1 },
+          { item: { id: 'MLB8', variation_id: 2 }, quantity: 1 },
+        ],
+        payments: [{ id: 800 }],
+      },
+    ]);
+    expect(r['800']).toEqual({ mlItemId: 'MLB8', mlVariationId: null, quantidade: 2 });
   });
 
   it('chaveia por string mesmo com id numérico e múltiplos pagamentos no pedido', () => {
     const r = mapearPagamentoParaItem([
       { id: 9, order_items: [{ item: { id: 'MLB9' }, quantity: 1 }], payments: [{ id: 500 }, { id: 501 }] },
     ]);
-    expect(r['500']).toEqual({ mlItemId: 'MLB9', quantidade: 1 });
-    expect(r['501']).toEqual({ mlItemId: 'MLB9', quantidade: 1 });
+    expect(r['500']).toEqual({ mlItemId: 'MLB9', mlVariationId: null, quantidade: 1 });
+    expect(r['501']).toEqual({ mlItemId: 'MLB9', mlVariationId: null, quantidade: 1 });
   });
 
   it('ignora pedidos com mais de um item distinto (custo ambíguo)', () => {
@@ -48,7 +69,7 @@ describe('mapearPagamentoParaItem', () => {
         payments: [{ id: 333 }],
       },
     ]);
-    expect(r['333']).toEqual({ mlItemId: 'MLB1', quantidade: 5 });
+    expect(r['333']).toEqual({ mlItemId: 'MLB1', mlVariationId: null, quantidade: 5 });
   });
 
   it('ignora pedido sem item ou sem pagamento', () => {

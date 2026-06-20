@@ -8,7 +8,7 @@
 export interface PedidoComPagamentos {
   id: number | string;
   order_items?: Array<{
-    item?: { id?: string | null } | null;
+    item?: { id?: string | null; variation_id?: number | string | null } | null;
     quantity?: number | null;
   }> | null;
   payments?: Array<{ id?: number | string | null } | null> | null;
@@ -16,13 +16,17 @@ export interface PedidoComPagamentos {
 
 export interface ItemDoPagamento {
   mlItemId: string;
+  /** ml_variation_id do item vendido (cor), quando o anúncio tem variações. null = sem variação. */
+  mlVariationId: string | null;
   quantidade: number;
 }
 
 /**
- * Mapa payment_id (string) → { item, quantidade } a partir dos pedidos. Só mapeia pedidos com
- * UM item distinto (markup por linha exige custo de um único produto); pedidos multi-item ficam
- * de fora (a linha mostra "—"). A quantidade é a soma das quantidades do item no pedido. Pura.
+ * Mapa payment_id (string) → { item, variação, quantidade } a partir dos pedidos. Só mapeia
+ * pedidos com UM item distinto (markup por linha exige custo de um único produto); pedidos
+ * multi-item ficam de fora (a linha mostra "—"). A variação só é fixada quando o pedido tem uma
+ * única variação distinta (senão null → cai no custo por item). A quantidade é a soma das
+ * quantidades do item no pedido. Pura.
  */
 export function mapearPagamentoParaItem(
   pedidos: PedidoComPagamentos[],
@@ -32,20 +36,25 @@ export function mapearPagamentoParaItem(
   for (const pedido of pedidos) {
     const itens = pedido.order_items ?? [];
     const ids = new Set<string>();
+    const variacoes = new Set<string>();
     let quantidade = 0;
     for (const oi of itens) {
       const id = oi?.item?.id;
       if (id) ids.add(id);
+      const varId = oi?.item?.variation_id;
+      if (varId != null) variacoes.add(String(varId));
       quantidade += Number(oi?.quantity ?? 0);
     }
     // Só pedidos com exatamente um item distinto (custo inequívoco).
     if (ids.size !== 1) continue;
     const mlItemId = [...ids][0];
+    // Variação só quando há exatamente uma (senão custo ambíguo → fallback por item).
+    const mlVariationId = variacoes.size === 1 ? [...variacoes][0] : null;
 
     for (const pg of pedido.payments ?? []) {
       const pid = pg?.id;
       if (pid == null) continue;
-      out[String(pid)] = { mlItemId, quantidade };
+      out[String(pid)] = { mlItemId, mlVariationId, quantidade };
     }
   }
 
