@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapearPagamentoParaItem, type PedidoComPagamentos } from '../pedidos';
+import { extrairGtin, mapearPagamentoParaItem, type PedidoComPagamentos } from '../pedidos';
 
 describe('mapearPagamentoParaItem', () => {
   it('mapeia cada pagamento do pedido para o item, somando a quantidade', () => {
@@ -78,5 +78,20 @@ describe('mapearPagamentoParaItem', () => {
       { id: 5, order_items: [{ item: { id: 'MLB5' }, quantity: 1 }], payments: [] },
     ]);
     expect(r).toEqual({});
+  });
+});
+
+describe('extrairGtin', () => {
+  it('pega o value_name do atributo GTIN', () => {
+    expect(extrairGtin({ id: 'MLB1', attributes: [
+      { id: 'BRAND', value_name: 'Progresso' },
+      { id: 'GTIN', value_name: '7909857046700' },
+    ] })).toBe('7909857046700');
+  });
+
+  it('retorna null sem GTIN', () => {
+    expect(extrairGtin({ id: 'MLB1', attributes: [{ id: 'BRAND', value_name: 'X' }] })).toBeNull();
+    expect(extrairGtin(null)).toBeNull();
+    expect(extrairGtin({ id: 'MLB1' })).toBeNull();
   });
 });
