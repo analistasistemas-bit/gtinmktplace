@@ -15,7 +15,10 @@ export interface PublicadoItem {
   gtin: string | null;
   titulo: string;
   fornecedor: string | null;
+  /** Tipo interno (enum de aviamento). Grosso: tudo fora dos 4 aviamentos é 'outro'. */
   tipo: TipoAviamento | null;
+  /** Categoria-folha real do ML resolvida pela IA/preditor (ex.: "Alfinetes de Segurança"). */
+  categoria: string | null;
   precoPublicacao: number;
   descricao: string | null;
   mlItemId: string;
@@ -68,10 +71,30 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
   return out;
 }
 
+// Rótulo grosso do tipo interno (fallback quando não há categoria real do ML).
+const NOME_TIPO: Record<TipoAviamento, string> = {
+  linha: 'Linha', fita: 'Fita', botao: 'Botão', cola: 'Cola', outro: 'Outro',
+};
+
+/** Rótulo grosso do tipo de aviamento. null → "—". */
+export function nomeTipo(tipo: TipoAviamento | null): string {
+  return tipo ? NOME_TIPO[tipo] : '—';
+}
+
+/**
+ * Rótulo de "Tipo" exibido na Publicados: a categoria-folha real do ML que a IA já resolveu
+ * (ex.: "Alfinetes de Segurança"); na falta dela, o tipo interno grosso; senão "—".
+ * Fonte única para coluna, filtro e ordenação (ficam sempre consistentes).
+ */
+export function rotuloTipo(item: Pick<PublicadoItem, 'categoria' | 'tipo'>): string {
+  return item.categoria ?? nomeTipo(item.tipo);
+}
+
 export interface FiltroPublicados {
   fornecedor?: string | null;
   status?: StatusPublicado | null;
-  tipo?: TipoAviamento | null;
+  /** Rótulo exibido de tipo (categoria real do ML, ou o rótulo grosso como "Outro"). */
+  tipo?: string | null;
   busca?: string;
 }
 
@@ -84,7 +107,7 @@ export function filtrarPublicados(
     (i) =>
       (!f.fornecedor || i.fornecedor === f.fornecedor) &&
       (!f.status || i.status === f.status) &&
-      (!f.tipo || i.tipo === f.tipo) &&
+      (!f.tipo || rotuloTipo(i) === f.tipo) &&
       (!q || i.titulo.toLowerCase().includes(q)),
   );
 }
@@ -118,7 +141,7 @@ function chaveOrdenacao(i: PublicadoItem, coluna: ColunaOrdenavel): string | num
   switch (coluna) {
     case 'titulo': return i.titulo;
     case 'fornecedor': return i.fornecedor;
-    case 'tipo': return i.tipo;
+    case 'tipo': return rotuloTipo(i);
     case 'precoPublicacao': return i.precoPublicacao;
     case 'estoque': return i.estoque ?? null;
     case 'precoAtual': return i.precoAtual ?? null;

@@ -1,5 +1,4 @@
 import type { FiltroPublicados, OrdenacaoPublicados, StatusPublicado, ColunaOrdenavel } from '@/lib/publicados';
-import type { TipoAviamento } from '@/lib/tipos-dominio';
 
 export const TAMANHO_PADRAO = 10;
 const TAMANHOS_VALIDOS = [5, 10, 20, 50];
@@ -12,7 +11,6 @@ export interface EstadoPublicados {
 }
 
 const STATUSES: StatusPublicado[] = ['ativo', 'pausado', 'encerrado', 'moderado', 'inativo', 'indisponivel'];
-const TIPOS: TipoAviamento[] = ['linha', 'botao', 'fita', 'cola', 'outro'];
 const COLUNAS: ColunaOrdenavel[] = [
   'titulo', 'fornecedor', 'tipo', 'precoPublicacao', 'estoque', 'precoAtual',
   'unidadesVendidas', 'valorVendido', 'status', 'publicadoEm',
@@ -37,14 +35,14 @@ export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
 /** Lê o estado da Publicados dos query params, validando o domínio (lixo vira null). */
 export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
   const status = p.get('status');
-  const tipo = p.get('tipo');
   const ordCol = p.get('ord');
 
   const filtro: FiltroPublicados = {
     busca: p.get('q') ?? undefined,
     fornecedor: p.get('fornecedor') ?? null,
     status: status && (STATUSES as string[]).includes(status) ? (status as StatusPublicado) : null,
-    tipo: tipo && (TIPOS as string[]).includes(tipo) ? (tipo as TipoAviamento) : null,
+    // Tipo agora é o rótulo exibido (categoria real do ML) — texto livre, como fornecedor.
+    tipo: p.get('tipo') || null,
   };
 
   const ord: OrdenacaoPublicados | null =

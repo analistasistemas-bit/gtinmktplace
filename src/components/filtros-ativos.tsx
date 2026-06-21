@@ -5,9 +5,6 @@ const STATUS_LABEL: Record<string, string> = {
   ativo: 'Ativo', pausado: 'Pausado', encerrado: 'Encerrado',
   moderado: 'Moderado', inativo: 'Inativo', indisponivel: 'Indisponível',
 };
-const TIPO_LABEL: Record<string, string> = {
-  linha: 'Linha', botao: 'Botão', fita: 'Fita', cola: 'Cola', outro: 'Outro',
-};
 
 export type ChaveFiltro = 'busca' | 'fornecedor' | 'status' | 'tipo';
 
@@ -25,7 +22,7 @@ export function FiltrosAtivos({
   if (filtro.busca?.trim()) chips.push({ chave: 'busca', label: `Busca: "${filtro.busca.trim()}"` });
   if (filtro.fornecedor) chips.push({ chave: 'fornecedor', label: filtro.fornecedor });
   if (filtro.status) chips.push({ chave: 'status', label: STATUS_LABEL[filtro.status] ?? filtro.status });
-  if (filtro.tipo) chips.push({ chave: 'tipo', label: TIPO_LABEL[filtro.tipo] ?? filtro.tipo });
+  if (filtro.tipo) chips.push({ chave: 'tipo', label: filtro.tipo });
 
   if (chips.length === 0) return null;
 

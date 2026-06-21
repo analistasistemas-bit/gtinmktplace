@@ -22,11 +22,15 @@ describe('paramsParaEstado', () => {
     expect(e.tamanho).toBe(20);
   });
 
-  it('status/tipo/coluna inválidos caem para null', () => {
-    const e = paramsParaEstado(new URLSearchParams('status=xpto&tipo=foo&ord=naoexiste&dir=asc'));
+  it('status/coluna inválidos caem para null', () => {
+    const e = paramsParaEstado(new URLSearchParams('status=xpto&ord=naoexiste&dir=asc'));
     expect(e.filtro.status).toBeNull();
-    expect(e.filtro.tipo).toBeNull();
     expect(e.ord).toBeNull();
+  });
+
+  it('tipo aceita texto livre (categoria real do ML), não só o enum antigo', () => {
+    const e = paramsParaEstado(new URLSearchParams('tipo=Alfinetes de Seguran%C3%A7a'));
+    expect(e.filtro.tipo).toBe('Alfinetes de Segurança');
   });
 
   it('tamanho fora da lista cai para o padrão; página mínima 1', () => {
