@@ -388,7 +388,7 @@ export default function Publicados() {
           {financeiro && !financeiro.semCredencialMP && !financeiro.erroFinanceiro && (
             <Link
               to="/financeiro"
-              className="mb-3 flex items-center justify-between rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-muted/50"
+              className="mb-3 flex items-center justify-between rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-3 shadow-sm transition-all hover:shadow-md"
             >
               <div className="flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-success" />
