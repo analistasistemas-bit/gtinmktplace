@@ -388,7 +388,7 @@ export default function Publicados() {
           {financeiro && !financeiro.semCredencialMP && !financeiro.erroFinanceiro && (
             <Link
               to="/financeiro"
-              className="mb-3 flex items-center justify-between rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-3 shadow-sm transition-all hover:shadow-md"
+              className="group mb-3 flex cursor-pointer items-center justify-between rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg"
             >
               <div className="flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-success" />
@@ -396,7 +396,7 @@ export default function Publicados() {
                 <span className="text-lg font-semibold tabular-nums text-success">{fmtBRL(financeiro.liquido)}</span>
               </div>
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                Ver financeiro <ChevronRight className="h-3.5 w-3.5" />
+                Ver financeiro <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
             </Link>
           )}

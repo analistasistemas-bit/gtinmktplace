@@ -23,7 +23,7 @@ function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
   const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
     : tom === 'danger' ? 'text-destructive' : 'text-info';
   return (
-    <div className="rounded-lg border bg-card px-3 py-2.5">
+    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
       <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
         <Icon className="h-3.5 w-3.5 shrink-0" />
         {label}
@@ -105,7 +105,7 @@ export default function Financeiro() {
         {podeDetalhar ? (
           <Link
             to={{ pathname: '/financeiro/detalhe', search: queryDetalhe }}
-            className="group block rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm outline-none ring-offset-background transition-all hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
+            className="group block cursor-pointer rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm outline-none ring-offset-background transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Líquido das vendas — ver composição"
           >
             <div className="mb-1 flex items-center justify-between gap-1.5 text-xs text-success">
@@ -113,7 +113,7 @@ export default function Financeiro() {
                 <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
               </span>
               <span className="flex items-center gap-0.5 text-muted-foreground">
-                Ver detalhe <ChevronRight className="h-3.5 w-3.5" />
+                Ver detalhe <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </span>
             </div>
             <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
