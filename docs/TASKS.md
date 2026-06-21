@@ -16,7 +16,12 @@
 - **Tarefa 2 / Onda 2 — Tirar atrito (2 fatias, TDD):**
   1. **Estado na URL + chips (Publicados)** — filtros/ordenação/página/tamanho passam a viver na URL (`lib/publicados-url.ts`), restaurados pelo back do navegador; chips de filtros ativos removíveis + "Limpar tudo" (`components/filtros-ativos.tsx`).
   2. **Quick wins** — paginação default 10 (era 5); estado vazio da Publicados com CTA "Novo lote".
-  Spec `superpowers/specs/2026-06-21-onda2-atrito-design.md`. 780 testes (8 novos), validado em light+dark. **Backlog restante (Onda 3):** breadcrumbs, busca global, período sincronizado Publicados↔Financeiro, drill-down de KPIs, ações em massa na Revisão, a11y, links cruzados, scroll restoration, aviso global do worker.
+  Spec `superpowers/specs/2026-06-21-onda2-atrito-design.md`. 780 testes (8 novos), validado em light+dark.
+- **Tarefa 2 / Onda 3 — Navegação & orientação (2 fatias, TDD) — fecha a Tarefa 2:**
+  1. **Breadcrumbs** nas telas profundas (Detalhe das vendas, Detalhe do líquido, Relatório) — componente acessível `components/ui/breadcrumbs.tsx`.
+  2. **KPIs navegáveis (drill-down)** no Dashboard — `KpiCard` ganha prop `to`; "Anúncios publicados"→/publicados, "Ativos"→/publicados?status=ativo (usa o deep-link da Onda 2), "Com problema"→/publicados. Demais KPIs seguem informativos (sem redundância com pendências).
+  Spec `superpowers/specs/2026-06-21-onda3-navegacao-design.md`. 783 testes (3 novos), validado em light+dark. **Tarefa 2 concluída.**
+  **Backlog pós-Tarefa 2 (adiado com justificativa):** busca global (custo alto/valor baixo single-tenant), ações em massa na Revisão (mexe no gate "revisão humana antes de publicar" — exige decisão), a11y aprofundada (épico próprio), período sincronizado Publicados↔Financeiro, links cruzados, scroll restoration, aviso global do worker.
 **📍 Passo atual:** Evolução v2 · Fase 0 · **E1 + E1b ✅ VALIDADOS EM PRODUÇÃO** (2026-06-14) — toda a camada de abstração de canais (CREATE + UPDATE + status) está atrás do `ChannelConnector`, mergeada, deployada e validada por bug bash real via automação de navegador (E1b: família de teste CREATE→UPDATE com reposição + cor nova + leitura de status ao vivo; anúncio `MLB6966427644` removido após). **Próximo épico: E2** (modelo de dados multicanal: `anuncios_externos` 1:N).
 
 **Hotfix 2026-06-15:** tela `Publicados` corrigida para exibir `tipo_aviamento='cola'` como `Cola` e incluir esse valor no filtro de tipos. A causa era somente de renderização no frontend; banco já estava correto.
