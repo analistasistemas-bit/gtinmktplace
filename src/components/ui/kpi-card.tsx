@@ -15,9 +15,10 @@ interface KpiCardProps {
   hint?: string;
   loading?: boolean;
   className?: string;
+  variant?: 'default' | 'brand';
 }
 
-export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral', hint, loading, className }: KpiCardProps) {
+export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral', hint, loading, className, variant = 'default' }: KpiCardProps) {
   if (loading) {
     return (
       <Card className={cn('p-4', className)}>
@@ -30,10 +31,19 @@ export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral
     deltaTrend === 'up' ? 'text-success' : deltaTrend === 'down' ? 'text-destructive' : 'text-muted-foreground';
   const TrendIcon = deltaTrend === 'up' ? ArrowUp : deltaTrend === 'down' ? ArrowDown : null;
   return (
-    <Card className={cn('p-4', className)}>
+    <Card className={cn('p-4', variant === 'brand' && 'bg-[image:var(--brand-gradient-soft)]', className)}>
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">{label}</span>
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+        {Icon && (
+          <span className={cn(
+            'inline-flex h-7 w-7 items-center justify-center rounded-lg',
+            variant === 'brand'
+              ? 'bg-[image:var(--brand-gradient)] text-primary-foreground shadow-brand'
+              : 'text-muted-foreground'
+          )}>
+            <Icon className="h-4 w-4" />
+          </span>
+        )}
       </div>
       <div className="mt-2 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
       {(delta || hint) && (
