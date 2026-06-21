@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { LoteCard } from '@/components/lote-card';
 import { LotesEmAndamento } from '@/components/dashboard-lotes-andamento';
+import { Pendencias } from '@/components/dashboard-pendencias';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -53,6 +54,8 @@ export default function Dashboard() {
       <PageHeader title="Dashboard" actions={novoLoteBtn} />
 
       <LotesEmAndamento lotes={lotes} />
+
+      <Pendencias comProblema={kpis.comProblema} lotes={lotes} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} variant="brand" />
