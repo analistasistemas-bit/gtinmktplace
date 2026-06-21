@@ -94,6 +94,20 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   const coresSemFoto = familia.operacao === 'CREATE' ? coresSemFotoExcluidas(familia) : [];
   const semFotoFora = coresSemFoto.length;
   const removidas = familia.mudancaEstrutural?.removidas.length ?? 0;
+  // Acento lateral por status, para escanear a lista sem ler cada pill.
+  // Prioridade: erro > precisa-ação > publicado > editado pelo operador > nenhum.
+  // CREATE/UPDATE não pintam o acento (já têm pill própria) p/ evitar "carnaval".
+  const precisaAcao =
+    familiaIncompleta(familia) || novasComFoto > 0 || semFotoFora > 0 || (exigeCor && familia.variacoesSemCor > 0);
+  const acentoStatus = emErro
+    ? 'border-l-destructive'
+    : precisaAcao
+      ? 'border-l-warning'
+      : publicado
+        ? 'border-l-success'
+        : familia.editadoPeloOperador
+          ? 'border-l-primary'
+          : 'border-l-transparent';
   // Preço exibido no cabeçalho = preço de venda real (publicação) das cores incluídas,
   // não o da planilha (no UPDATE eles diferem: planilha vs. preço já publicado).
   const incluidasPub = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
@@ -103,10 +117,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   const precoVendaMax = precosPub.length > 0 ? Math.max(...precosPub) : 0;
   return (
     <div
-      className={cn(
-        'border-b',
-        familia.editadoPeloOperador && 'border-l-2 border-l-primary'
-      )}
+      className={cn('border-b border-l-2', acentoStatus)}
     >
     <div
       role="button"

@@ -60,10 +60,19 @@ export default function Viabilidade() {
 
         <TabsContent value="planilha">
           <div {...getRootProps()}
-            className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed p-8 text-sm text-muted-foreground ${isDragActive ? 'border-primary bg-accent/40' : 'border-border'}`}>
+            className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-12 text-center transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-muted/40'}`}>
             <input {...getInputProps()} />
-            <Upload className="mb-2 h-6 w-6" />
-            Arraste o .xlsx (planilha completa do lote ou só NOME, UNIDADE, GTIN, PRECO, CUSTO)
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <Upload className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-base font-medium text-foreground">
+                {isDragActive ? 'Solte a planilha aqui' : 'Arraste sua planilha .xlsx aqui'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                ou clique para selecionar — planilha completa do lote ou só NOME, UNIDADE, GTIN, PRECO, CUSTO
+              </p>
+            </div>
           </div>
         </TabsContent>
 

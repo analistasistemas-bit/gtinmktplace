@@ -145,7 +145,7 @@
     --info-foreground: oklch(0.16 0.02 240);
     --danger: var(--destructive);
     --danger-foreground: var(--destructive-foreground);
-    --border: oklch(1 0 0 / 0.17);
+    --border: oklch(1 0 0 / 0.20);
     --input: oklch(1 0 0 / 14%);
     --ring: oklch(0.64 0.18 277);
     --brand-gradient: linear-gradient(135deg, oklch(0.64 0.18 277), oklch(0.66 0.19 300));
