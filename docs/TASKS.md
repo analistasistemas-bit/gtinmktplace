@@ -12,7 +12,11 @@
   2. **Painel "Precisa da sua atenção"** — pendências acionáveis no Dashboard (anúncios com problema, erros de publicação) (`lib/pendencias.ts`).
   3. **Revisão por exceção** — lista ordenada problemas-primeiro (erro→incompleta→aviso→ok→publicado), tabs/filtros intactos (`lib/revisao-ordem.ts`).
   4. **Pré-validação do upload** — valida as 14 colunas obrigatórias no cliente antes de enviar, feedback inline, bloqueia "Processar" se faltar coluna (`lib/validar-planilha.ts`).
-  Specs em `superpowers/specs/2026-06-21-jornada-lote-design.md`, `…-dashboard-pendencias-design.md`, `…-revisao-excecao-prevalidacao-design.md`. 772 testes (21 novos), commits `efbbee5`→`022e84e`→`3ef0de9`, deploy live. **Sem tocar backend/lifecycle.** Backlog: Ondas 2 e 3 (estado/filtros via URL, breadcrumbs, busca global, período sincronizado, drill-down de KPIs, ações em massa, a11y, links cruzados).
+  Specs em `superpowers/specs/2026-06-21-jornada-lote-design.md`, `…-dashboard-pendencias-design.md`, `…-revisao-excecao-prevalidacao-design.md`. 772 testes (21 novos), commits `efbbee5`→`022e84e`→`3ef0de9`, deploy live. **Sem tocar backend/lifecycle.**
+- **Tarefa 2 / Onda 2 — Tirar atrito (2 fatias, TDD):**
+  1. **Estado na URL + chips (Publicados)** — filtros/ordenação/página/tamanho passam a viver na URL (`lib/publicados-url.ts`), restaurados pelo back do navegador; chips de filtros ativos removíveis + "Limpar tudo" (`components/filtros-ativos.tsx`).
+  2. **Quick wins** — paginação default 10 (era 5); estado vazio da Publicados com CTA "Novo lote".
+  Spec `superpowers/specs/2026-06-21-onda2-atrito-design.md`. 780 testes (8 novos), validado em light+dark. **Backlog restante (Onda 3):** breadcrumbs, busca global, período sincronizado Publicados↔Financeiro, drill-down de KPIs, ações em massa na Revisão, a11y, links cruzados, scroll restoration, aviso global do worker.
 **📍 Passo atual:** Evolução v2 · Fase 0 · **E1 + E1b ✅ VALIDADOS EM PRODUÇÃO** (2026-06-14) — toda a camada de abstração de canais (CREATE + UPDATE + status) está atrás do `ChannelConnector`, mergeada, deployada e validada por bug bash real via automação de navegador (E1b: família de teste CREATE→UPDATE com reposição + cor nova + leitura de status ao vivo; anúncio `MLB6966427644` removido após). **Próximo épico: E2** (modelo de dados multicanal: `anuncios_externos` 1:N).
 
 **Hotfix 2026-06-15:** tela `Publicados` corrigida para exibir `tipo_aviamento='cola'` como `Cola` e incluir esse valor no filtro de tipos. A causa era somente de renderização no frontend; banco já estava correto.

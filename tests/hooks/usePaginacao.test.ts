@@ -5,16 +5,16 @@ import { usePaginacao } from '@/hooks/usePaginacao';
 describe('usePaginacao', () => {
   const itens = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
 
-  it('começa na página 1 com tamanho padrão 5', () => {
+  it('começa na página 1 com tamanho padrão 10', () => {
     const { result } = renderHook(() => usePaginacao(itens));
     expect(result.current.paginaAtual).toBe(1);
-    expect(result.current.tamanho).toBe(5);
-    expect(result.current.itensPagina).toEqual([1, 2, 3, 4, 5]);
-    expect(result.current.totalPaginas).toBe(3);
+    expect(result.current.tamanho).toBe(10);
+    expect(result.current.itensPagina).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(result.current.totalPaginas).toBe(2);
   });
 
   it('navega com proxima/anterior/irPara', () => {
-    const { result } = renderHook(() => usePaginacao(itens));
+    const { result } = renderHook(() => usePaginacao(itens, { tamanhoInicial: 5 }));
     act(() => result.current.proxima());
     expect(result.current.itensPagina).toEqual([6, 7, 8, 9, 10]);
     act(() => result.current.anterior());
@@ -46,7 +46,7 @@ describe('usePaginacao', () => {
   });
 
   it('clampa quando a lista encolhe (página fora do range)', () => {
-    const { result, rerender } = renderHook(({ data }) => usePaginacao(data), {
+    const { result, rerender } = renderHook(({ data }) => usePaginacao(data, { tamanhoInicial: 5 }), {
       initialProps: { data: itens },
     });
     act(() => result.current.irPara(3));
