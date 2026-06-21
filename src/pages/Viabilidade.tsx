@@ -95,7 +95,7 @@ export default function Viabilidade() {
         <EmptyState title="Nada para mostrar" description="Nenhum produto válido foi encontrado na entrada." />
       )}
       {itens.length > 0 && (
-        <div className="rounded-lg border border-border">
+        <div className="rounded-lg border border-border shadow-sm">
           {analise.data!.ignorados > 0 && (
             <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
               {analise.data!.ignorados} linha(s) ignorada(s) (sem GTIN/preço/custo).
