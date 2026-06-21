@@ -16,13 +16,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { StatusBadge } from '@/components/status-badge';
 import { useExcluirLote } from '@/hooks/useExcluirLote';
-import type { Lote, LoteStatus } from '@/lib/tipos-dominio';
-
-function destinoDoLote(status: LoteStatus, id: string): string {
-  if (status === 'revisao') return `/revisao/${id}`;
-  if (status === 'concluido' || status === 'erro') return `/relatorio/${id}`;
-  return `/progresso/${id}`;
-}
+import { destinoDoLote } from '@/lib/jornada';
+import type { Lote } from '@/lib/tipos-dominio';
 
 function formatarData(iso: string): string {
   return new Date(iso).toLocaleString('pt-BR', {

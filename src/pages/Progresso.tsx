@@ -6,6 +6,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
+import { JornadaLote } from '@/components/jornada-lote';
 import { totalAnomalias } from '@/lib/tipos-dominio';
 
 export default function Progresso() {
@@ -52,6 +53,9 @@ export default function Progresso() {
         title={`Processando lote #${lote.numero}`}
         subtitle={`Status: ${lote.status} · ${prontas} de ${total} prontas${erradas > 0 ? ` · ${erradas} com erro` : ''}`}
       />
+      <div className="mb-6">
+        <JornadaLote status={lote.status} />
+      </div>
       {temAnomalias && (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

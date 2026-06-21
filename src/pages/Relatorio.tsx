@@ -6,6 +6,7 @@ import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
+import { JornadaLote } from '@/components/jornada-lote';
 
 export default function Relatorio() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -49,6 +50,9 @@ export default function Relatorio() {
   return (
     <div className="p-6">
       <PageHeader title={`Relatório · Lote #${lote.numero}`} />
+      <div className="mb-6">
+        <JornadaLote status={lote.status} />
+      </div>
       {publicando && (
         <div className="mb-6 space-y-2 rounded-lg border border-info/30 bg-info/5 px-4 py-3">
           <div className="flex items-center justify-between text-sm">
