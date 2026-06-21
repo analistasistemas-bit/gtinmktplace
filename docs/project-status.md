@@ -2,14 +2,23 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-06-15
+**Ultima atualizacao:** 2026-06-21
 
 ## Snapshot
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`
 - Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`
-- Proximo epico: `E5` conector Shopee
+- Proximo epico de produto: `E5` conector Shopee
+- Trilho de UX (preparacao para SaaS comercial): repaginacao visual premium + Tarefa 2/Onda 1 (workflow operacional) concluidas e em producao (2026-06-21)
 - Marketplace ativo em producao: Mercado Livre
+
+## Trilho de UX/design (2026-06-21, em producao)
+
+Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.
+
+- **Tarefa 1 + 1.5 — Repaginacao visual premium:** tokens de marca (gradiente roxo->indigo, sombras, elevacao por cor no dark), regra hibrida vitrine/dados, hero cards, hover padronizado; refinamento pos-review (hierarquia do Dashboard, OAuth colapsado, timestamp no Financeiro, acento por status na Revisao, dropzone da Viabilidade).
+- **Tarefa 2 / Onda 1 — Workflow operacional (4 fatias):** jornada do lote visivel + "continuar de onde parei"; painel "Precisa da sua atencao"; Revisao por excecao (problemas-primeiro); pre-validacao das colunas da planilha no cliente. 772 testes, deploy live (commit `3ef0de9`).
+- **Backlog (Ondas 2 e 3):** preservar estado/filtros via URL, breadcrumbs, busca global, periodo sincronizado, drill-down de KPIs, acoes em massa na Revisao, a11y, links cruzados vendas<->financeiro.
 
 ## O que ja esta funcionando
 

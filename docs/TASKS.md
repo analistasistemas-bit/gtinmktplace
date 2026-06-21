@@ -2,7 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-**Última atualização:** 2026-06-14 — MVP em produção (M0–M4 entregues; histórico detalhado no CLAUDE.md). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
+**Última atualização:** 2026-06-21 — Repaginação visual premium + Tarefa 2/Onda 1 (workflow operacional) entregues e deployadas (ver bloco abaixo). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
+
+**Design/UX 2026-06-21 (preparação para SaaS comercial — em produção, light+dark, TDD na lógica):**
+- **Tarefa 1 — Repaginação visual premium (light-first):** sistema de tokens (gradiente de marca roxo→índigo, sombras recalibradas, elevação por cor no dark), regra híbrida vitrine/dados, hero cards e hover padronizado nos KPIs. Specs em `superpowers/specs/2026-06-20-repaginacao-visual-premium-design.md`.
+- **Tarefa 1.5 — Refinamento pós-review (Codex):** hierarquia de elevação do Dashboard, borda tonal no dark, OAuth colapsado em "Detalhes técnicos" (Configurações), "Atualizado às HH:mm" no Financeiro, acento lateral por status na Revisão, dropzone expressiva na Viabilidade. Plano em `superpowers/plans/2026-06-21-refinamento-1-5-design.md`.
+- **Tarefa 2 / Onda 1 — Workflow operacional contínuo (4 fatias, TDD):**
+  1. **Jornada do lote** — stepper "você está aqui" (Progresso/Revisão/Relatório) + card "Continuar de onde parei" no Dashboard (`lib/jornada.ts`).
+  2. **Painel "Precisa da sua atenção"** — pendências acionáveis no Dashboard (anúncios com problema, erros de publicação) (`lib/pendencias.ts`).
+  3. **Revisão por exceção** — lista ordenada problemas-primeiro (erro→incompleta→aviso→ok→publicado), tabs/filtros intactos (`lib/revisao-ordem.ts`).
+  4. **Pré-validação do upload** — valida as 14 colunas obrigatórias no cliente antes de enviar, feedback inline, bloqueia "Processar" se faltar coluna (`lib/validar-planilha.ts`).
+  Specs em `superpowers/specs/2026-06-21-jornada-lote-design.md`, `…-dashboard-pendencias-design.md`, `…-revisao-excecao-prevalidacao-design.md`. 772 testes (21 novos), commits `efbbee5`→`022e84e`→`3ef0de9`, deploy live. **Sem tocar backend/lifecycle.** Backlog: Ondas 2 e 3 (estado/filtros via URL, breadcrumbs, busca global, período sincronizado, drill-down de KPIs, ações em massa, a11y, links cruzados).
 **📍 Passo atual:** Evolução v2 · Fase 0 · **E1 + E1b ✅ VALIDADOS EM PRODUÇÃO** (2026-06-14) — toda a camada de abstração de canais (CREATE + UPDATE + status) está atrás do `ChannelConnector`, mergeada, deployada e validada por bug bash real via automação de navegador (E1b: família de teste CREATE→UPDATE com reposição + cor nova + leitura de status ao vivo; anúncio `MLB6966427644` removido após). **Próximo épico: E2** (modelo de dados multicanal: `anuncios_externos` 1:N).
 
 **Hotfix 2026-06-15:** tela `Publicados` corrigida para exibir `tipo_aviamento='cola'` como `Cola` e incluir esse valor no filtro de tipos. A causa era somente de renderização no frontend; banco já estava correto.
