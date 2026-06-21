@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -45,7 +45,9 @@ import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useMetricasVendas } from '@/hooks/useMetricasVendas';
 import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
-import { usePaginacao } from '@/hooks/usePaginacao';
+import { paginar } from '@/lib/paginacao';
+import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
+import { FiltrosAtivos, type ChaveFiltro } from '@/components/filtros-ativos';
 import { Pagination } from '@/components/ui/pagination';
 
 // ============================================================================
@@ -262,18 +264,41 @@ export default function Publicados() {
     return cst > 0 ? (liq - cst) / cst : null;
   }, [financeiro]);
 
-  const [filtro, setFiltro] = useState<FiltroPublicados>({});
-  const [ord, setOrd] = useState<OrdenacaoPublicados | null>(null);
+  // Estado da tela (filtro/ordenação/página/tamanho) vive na URL: ao abrir um
+  // detalhe e voltar (back), o navegador restaura tudo. Setters usam replace para
+  // não empilhar histórico a cada tecla. Mudar filtro/ordenação volta à página 1.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { filtro, ord, pagina, tamanho } = useMemo(() => paramsParaEstado(searchParams), [searchParams]);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
 
+  const aplicar = useCallback(
+    (mudanca: (atual: EstadoPublicados) => Partial<EstadoPublicados>) => {
+      setSearchParams(
+        (prev) => {
+          const atual = paramsParaEstado(prev);
+          return estadoParaParams({ ...atual, ...mudanca(atual) });
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const setFiltro = useCallback(
+    (updater: (f: FiltroPublicados) => FiltroPublicados) =>
+      aplicar((a) => ({ filtro: updater(a.filtro), pagina: 1 })),
+    [aplicar],
+  );
+
   // Clicar na coluna alterna só entre A→Z e Z→A. Coluna nova começa em asc (A→Z).
-  const ordenarPor = (coluna: ColunaOrdenavel) => {
-    setOrd((atual) =>
-      atual?.coluna === coluna
-        ? { coluna, dir: atual.dir === 'asc' ? 'desc' : 'asc' }
-        : { coluna, dir: 'asc' },
-    );
-  };
+  const ordenarPor = (coluna: ColunaOrdenavel) =>
+    aplicar((a) => ({
+      ord:
+        a.ord?.coluna === coluna
+          ? { coluna, dir: a.ord.dir === 'asc' ? 'desc' : 'asc' }
+          : { coluna, dir: 'asc' },
+      pagina: 1,
+    }));
 
   // Desabilita só a linha em remoção (não todas).
   const handleRemover = (familiaId: string) => {
@@ -310,19 +335,19 @@ export default function Publicados() {
     () => ordenarPublicados(filtrarPublicados(merged, filtro), ord),
     [merged, filtro, ord],
   );
-  const pag = usePaginacao(itensExibidos);
+  const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
   const topoRef = useRef<HTMLDivElement>(null);
 
   const irPara = (p: number) => {
-    pag.irPara(p);
+    aplicar(() => ({ pagina: p }));
     topoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
+  const setTamanho = (n: number) => aplicar(() => ({ tamanho: n, pagina: 1 }));
 
-  // Mudar qualquer filtro/busca/ordenação volta para a página 1.
-  useEffect(() => {
-    pag.reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro.busca, filtro.fornecedor, filtro.status, filtro.tipo, ord?.coluna, ord?.dir]);
+  const removerFiltro = (chave: ChaveFiltro) =>
+    setFiltro((f) => ({ ...f, [chave]: chave === 'busca' ? '' : null }));
+  const limparFiltros = () =>
+    aplicar((a) => ({ filtro: {}, pagina: 1, ord: a.ord, tamanho: a.tamanho }));
 
   // Fornecedores distintos para o filtro
   const fornecedores = useMemo(
@@ -380,7 +405,12 @@ export default function Publicados() {
         <EmptyState
           icon={PackageOpen}
           title="Nenhum anúncio publicado ainda"
-          description="Os anúncios publicados no Mercado Livre aparecem aqui com o status ao vivo."
+          description="Publique um lote para ver seus anúncios aqui, com status ao vivo do Mercado Livre."
+          action={
+            <Button asChild>
+              <Link to="/novo-lote">Novo lote</Link>
+            </Button>
+          }
         />
       ) : (
         <>
@@ -475,6 +505,8 @@ export default function Publicados() {
             </Select>
           </div>
 
+          <FiltrosAtivos filtro={filtro} onRemover={removerFiltro} onLimpar={limparFiltros} />
+
           {/* Tabela */}
           <div ref={topoRef} className="scroll-mt-6 rounded-md border">
             <Table>
@@ -522,9 +554,9 @@ export default function Publicados() {
             inicio={pag.inicio}
             fim={pag.fim}
             total={pag.total}
-            tamanho={pag.tamanho}
+            tamanho={tamanho}
             onIrPara={irPara}
-            onTamanho={pag.setTamanho}
+            onTamanho={setTamanho}
           />
         </>
       )}

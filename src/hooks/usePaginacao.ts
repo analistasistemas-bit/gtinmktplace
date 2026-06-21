@@ -12,7 +12,7 @@ export interface UsePaginacao<T> extends ResultadoPaginacao<T> {
 
 export function usePaginacao<T>(itens: T[], opts?: { tamanhoInicial?: number }): UsePaginacao<T> {
   const [pagina, setPagina] = useState(1);
-  const [tamanho, setTamanhoState] = useState(opts?.tamanhoInicial ?? 5);
+  const [tamanho, setTamanhoState] = useState(opts?.tamanhoInicial ?? 10);
 
   // `paginar` clampa a página ao range válido do `itens` atual; a página efetiva
   // (r.paginaAtual) é a verdade exibida. A navegação opera sobre o estado bruto

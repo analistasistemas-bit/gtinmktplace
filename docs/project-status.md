@@ -18,7 +18,8 @@ Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem
 
 - **Tarefa 1 + 1.5 — Repaginacao visual premium:** tokens de marca (gradiente roxo->indigo, sombras, elevacao por cor no dark), regra hibrida vitrine/dados, hero cards, hover padronizado; refinamento pos-review (hierarquia do Dashboard, OAuth colapsado, timestamp no Financeiro, acento por status na Revisao, dropzone da Viabilidade).
 - **Tarefa 2 / Onda 1 — Workflow operacional (4 fatias):** jornada do lote visivel + "continuar de onde parei"; painel "Precisa da sua atencao"; Revisao por excecao (problemas-primeiro); pre-validacao das colunas da planilha no cliente. 772 testes, deploy live (commit `3ef0de9`).
-- **Backlog (Ondas 2 e 3):** preservar estado/filtros via URL, breadcrumbs, busca global, periodo sincronizado, drill-down de KPIs, acoes em massa na Revisao, a11y, links cruzados vendas<->financeiro.
+- **Tarefa 2 / Onda 2 — Tirar atrito (2 fatias):** estado da Publicados (filtros/ordenacao/pagina) na URL + chips removiveis + "Limpar tudo"; paginacao default 10; estado vazio acionavel. 780 testes, validado light+dark.
+- **Backlog (Onda 3):** breadcrumbs, busca global, periodo sincronizado Publicados<->Financeiro, drill-down de KPIs, acoes em massa na Revisao, a11y, links cruzados, scroll restoration, aviso global do worker.
 
 ## O que ja esta funcionando
 
