@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { Link } from 'react-router-dom';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
@@ -16,9 +17,11 @@ interface KpiCardProps {
   loading?: boolean;
   className?: string;
   variant?: 'default' | 'brand';
+  /** Quando presente, o card vira um link navegável (drill-down) com affordance. */
+  to?: string;
 }
 
-export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral', hint, loading, className, variant = 'default' }: KpiCardProps) {
+export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral', hint, loading, className, variant = 'default', to }: KpiCardProps) {
   if (loading) {
     return (
       <Card className={cn('p-4', className)}>
@@ -30,8 +33,13 @@ export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral
   const trendCls =
     deltaTrend === 'up' ? 'text-success' : deltaTrend === 'down' ? 'text-destructive' : 'text-muted-foreground';
   const TrendIcon = deltaTrend === 'up' ? ArrowUp : deltaTrend === 'down' ? ArrowDown : null;
-  return (
-    <Card className={cn('p-4 transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110', variant === 'brand' && 'bg-[image:var(--brand-gradient-soft)]', className)}>
+  const card = (
+    <Card className={cn(
+      'p-4 transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
+      variant === 'brand' && 'bg-[image:var(--brand-gradient-soft)]',
+      to && 'cursor-pointer hover:-translate-y-0.5 hover:ring-2 hover:ring-primary/40',
+      className,
+    )}>
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">{label}</span>
         {Icon && (
@@ -58,5 +66,16 @@ export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral
         </div>
       )}
     </Card>
+  );
+  return to ? (
+    <Link
+      to={to}
+      aria-label={`${label} — ver detalhes`}
+      className="block rounded-xl outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {card}
+    </Link>
+  ) : (
+    card
   );
 }

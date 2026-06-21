@@ -5,6 +5,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
+import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Progress } from '@/components/ui/progress';
 import { JornadaLote } from '@/components/jornada-lote';
 
@@ -49,6 +50,7 @@ export default function Relatorio() {
 
   return (
     <div className="p-6">
+      <Breadcrumbs items={[{ label: 'Dashboard', to: '/' }, { label: `Lote #${lote.numero}` }]} />
       <PageHeader title={`Relatório · Lote #${lote.numero}`} />
       <div className="mb-6">
         <JornadaLote status={lote.status} />

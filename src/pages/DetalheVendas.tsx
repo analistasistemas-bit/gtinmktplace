@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
+import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -163,6 +164,7 @@ export default function DetalheVendas() {
 
   return (
     <div className="p-6">
+      <Breadcrumbs items={[{ label: 'Publicados', to: '/publicados' }, { label: 'Detalhe de vendas' }]} />
       <PageHeader
         title="Detalhe de vendas"
         subtitle={`Composição do faturamento — ${rotuloPeriodo(periodo)}.`}

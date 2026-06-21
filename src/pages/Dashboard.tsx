@@ -58,13 +58,14 @@ export default function Dashboard() {
       <Pendencias comProblema={kpis.comProblema} lotes={lotes} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} variant="brand" />
+        <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} variant="brand" to="/publicados" />
         <KpiCard
           label="Ativos"
           value={semStatus ? '—' : kpis.ativos}
           icon={CheckCircle2}
           loading={loadingStatus}
           hint={semStatus ? 'ML indisponível' : undefined}
+          to={semStatus ? undefined : '/publicados?status=ativo'}
         />
         <KpiCard
           label="Com problema"
@@ -72,6 +73,7 @@ export default function Dashboard() {
           icon={AlertTriangle}
           loading={loadingStatus}
           hint={semStatus ? 'ML indisponível' : undefined}
+          to={semStatus ? undefined : '/publicados'}
         />
         <KpiCard label="Erros de publicação" value={kpis.erros} icon={XCircle} />
         <KpiCard label="A revisar" value={kpis.aRevisar} icon={ClipboardList} />

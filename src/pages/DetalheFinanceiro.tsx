@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
+import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -143,6 +144,7 @@ export default function DetalheFinanceiro() {
 
   return (
     <div className="p-6">
+      <Breadcrumbs items={[{ label: 'Financeiro', to: '/financeiro' }, { label: 'Detalhe do líquido' }]} />
       <PageHeader
         title="Detalhe do líquido"
         subtitle={`Composição do líquido recebido — ${rotuloPeriodo(periodo)}.`}
