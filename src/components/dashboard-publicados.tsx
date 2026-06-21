@@ -37,7 +37,7 @@ function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
 }) {
   const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning' : 'text-info';
   return (
-    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
+    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
       <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
         <Icon className="h-3.5 w-3.5 shrink-0" />
         {label}
@@ -167,7 +167,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
       <div className={cn('grid grid-cols-2 gap-3', markupPct != null ? 'md:grid-cols-5' : 'md:grid-cols-4')}>
         <Link
           to={{ pathname: '/publicados/vendas', search: queryDetalhe }}
-          className="rounded-lg outline-none ring-offset-background transition focus-visible:ring-2 focus-visible:ring-ring hover:opacity-90"
+          className="group cursor-pointer rounded-lg outline-none ring-offset-background transition-all hover:-translate-y-0.5 hover:ring-2 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Faturamento — ver composição"
         >
           <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(totais.faturamento)} tom="success" />
@@ -187,7 +187,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
 
       {/* Saúde + Encalhados + Rankings */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Saúde dos anúncios
           </div>
@@ -201,7 +201,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <PackageX className="h-3.5 w-3.5 text-warning" /> Encalhados (sem venda no período)
           </div>
@@ -211,7 +211,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Trophy className="h-3.5 w-3.5 text-info" /> Top produtos (faturamento)
           </div>

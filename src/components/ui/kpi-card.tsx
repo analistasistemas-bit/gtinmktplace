@@ -31,7 +31,7 @@ export function KpiCard({ label, value, icon: Icon, delta, deltaTrend = 'neutral
     deltaTrend === 'up' ? 'text-success' : deltaTrend === 'down' ? 'text-destructive' : 'text-muted-foreground';
   const TrendIcon = deltaTrend === 'up' ? ArrowUp : deltaTrend === 'down' ? ArrowDown : null;
   return (
-    <Card className={cn('p-4', variant === 'brand' && 'bg-[image:var(--brand-gradient-soft)]', className)}>
+    <Card className={cn('p-4 transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110', variant === 'brand' && 'bg-[image:var(--brand-gradient-soft)]', className)}>
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">{label}</span>
         {Icon && (
