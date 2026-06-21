@@ -22,6 +22,7 @@ import { useLote } from '@/hooks/useLotes';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '@/lib/publicavel';
+import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
@@ -87,7 +88,7 @@ export default function Revisao() {
   const temPublicacao = useMemo(() => loteTemPublicacao(familias), [familias]);
 
   const visiveis = useMemo(
-    () => filtrarFamilias(familias, filtro, busca, soComCoresNovas),
+    () => ordenarPorExcecao(filtrarFamilias(familias, filtro, busca, soComCoresNovas)),
     [familias, filtro, busca, soComCoresNovas],
   );
   const pag = usePaginacao(visiveis);
