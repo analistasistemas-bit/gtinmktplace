@@ -52,7 +52,7 @@ export default function Dashboard() {
       <PageHeader title="Dashboard" actions={novoLoteBtn} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} />
+        <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} variant="brand" />
         <KpiCard
           label="Ativos"
           value={semStatus ? '—' : kpis.ativos}

@@ -24,7 +24,7 @@ export function CardCategoria({ familia }: { familia: Familia }) {
   return (
     <div
       className={cn(
-        'w-[200px] shrink-0 rounded-md border bg-card p-2',
+        'w-[200px] shrink-0 rounded-md border bg-card p-2 shadow-sm',
         categoriaIndefinida && 'border-destructive/30 bg-destructive/5',
       )}
     >

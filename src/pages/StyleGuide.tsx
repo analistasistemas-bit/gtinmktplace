@@ -142,6 +142,20 @@ export default function StyleGuide() {
         </div>
       </Section>
 
+      <Section title="Gradiente de marca">
+        <div className="flex flex-wrap gap-4">
+          <div className="space-y-1">
+            <div className="h-20 w-40 rounded-xl bg-[image:var(--brand-gradient)] shadow-brand" />
+            <p className="text-caption">--brand-gradient</p>
+          </div>
+          <div className="space-y-1">
+            <div className="h-20 w-40 rounded-xl bg-[image:var(--brand-gradient-soft)]" />
+            <p className="text-caption">--brand-gradient-soft</p>
+          </div>
+        </div>
+        <p className="text-caption mt-2 text-muted-foreground">Uso: só vitrine (hero, KPI destaque, logo, empty-state).</p>
+      </Section>
+
       <Section title="Skeleton">
         <div className="space-y-2">
           <Skeleton className="h-4 w-64" />

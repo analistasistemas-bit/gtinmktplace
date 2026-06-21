@@ -37,7 +37,7 @@ function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
 }) {
   const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning' : 'text-info';
   return (
-    <div className="rounded-lg border bg-card px-3 py-2.5">
+    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
       <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
         <Icon className="h-3.5 w-3.5 shrink-0" />
         {label}
@@ -187,7 +187,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
 
       {/* Saúde + Encalhados + Rankings */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Saúde dos anúncios
           </div>
@@ -201,7 +201,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <PackageX className="h-3.5 w-3.5 text-warning" /> Encalhados (sem venda no período)
           </div>
@@ -211,7 +211,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Trophy className="h-3.5 w-3.5 text-info" /> Top produtos (faturamento)
           </div>

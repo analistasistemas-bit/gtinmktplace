@@ -105,7 +105,7 @@ export default function Financeiro() {
         {podeDetalhar ? (
           <Link
             to={{ pathname: '/financeiro/detalhe', search: queryDetalhe }}
-            className="group block rounded-lg border bg-card px-4 py-4 outline-none ring-offset-background transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+            className="group block rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm outline-none ring-offset-background transition-all hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Líquido das vendas — ver composição"
           >
             <div className="mb-1 flex items-center justify-between gap-1.5 text-xs text-success">
@@ -122,7 +122,7 @@ export default function Financeiro() {
             </div>
           </Link>
         ) : (
-          <div className="rounded-lg border bg-card px-4 py-4">
+          <div className="rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm">
             <div className="mb-1 flex items-center gap-1.5 text-xs text-success">
               <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
             </div>

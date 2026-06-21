@@ -191,7 +191,7 @@ export default function DetalheVendas() {
       )}
 
       {/* Resumo */}
-      <div className="mb-5 rounded-lg border bg-card px-4 py-4">
+      <div className="mb-5 rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm">
         <div className="flex items-baseline justify-between">
           <span className="text-xs text-muted-foreground">Faturamento total</span>
           <span className="text-2xl font-bold tabular-nums text-success">{fmtBRL(detalhe.total)}</span>
