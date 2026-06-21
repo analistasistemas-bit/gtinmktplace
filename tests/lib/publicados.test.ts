@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filtrarPublicados, dedupePublicados, ordenarPublicados } from '../../src/lib/publicados';
+import { filtrarPublicados, dedupePublicados, ordenarPublicados, rotuloTipo } from '../../src/lib/publicados';
 import type { PublicadoItem } from '../../src/lib/publicados';
 
 const fixtures: PublicadoItem[] = [
@@ -9,6 +9,7 @@ const fixtures: PublicadoItem[] = [
     titulo: 'Fita Cetim Vermelho 10MT',
     fornecedor: 'Avil',
     tipo: 'fita',
+    categoria: null,
     precoPublicacao: 12.9,
     descricao: 'Fita cetim vermelha de alta qualidade.',
     mlItemId: 'MLB111',
@@ -25,6 +26,7 @@ const fixtures: PublicadoItem[] = [
     titulo: 'Linha Bordado Azul 1500MT',
     fornecedor: 'Coats',
     tipo: 'linha',
+    categoria: null,
     precoPublicacao: 8.5,
     descricao: null,
     mlItemId: 'MLB222',
@@ -41,6 +43,7 @@ const fixtures: PublicadoItem[] = [
     titulo: 'Botao Redondo Preto 12mm',
     fornecedor: 'Avil',
     tipo: 'botao',
+    categoria: null,
     precoPublicacao: 4.0,
     descricao: null,
     mlItemId: 'MLB333',
@@ -57,6 +60,7 @@ const fixtures: PublicadoItem[] = [
     titulo: 'Fita Gorgurão Rosa 5MT',
     fornecedor: 'Coats',
     tipo: 'fita',
+    categoria: null,
     precoPublicacao: 6.75,
     descricao: null,
     mlItemId: 'MLB444',
@@ -85,8 +89,8 @@ describe('filtrarPublicados', () => {
     expect(result.map((i) => i.familiaId)).toEqual(['f1', 'f3']);
   });
 
-  it('filtra por tipo', () => {
-    const result = filtrarPublicados(fixtures, { tipo: 'fita' });
+  it('filtra por tipo (rótulo exibido)', () => {
+    const result = filtrarPublicados(fixtures, { tipo: 'Fita' });
     expect(result.map((i) => i.familiaId)).toEqual(['f1', 'f4']);
   });
 
@@ -169,10 +173,45 @@ describe('ordenarPublicados', () => {
   });
 });
 
+describe('rotuloTipo (categoria real do ML resolvida pela IA)', () => {
+  const item = (over: Partial<PublicadoItem>): PublicadoItem => ({
+    familiaId: 'x', codigoPai: '001', titulo: 'P', fornecedor: null,
+    tipo: null, categoria: null, precoPublicacao: 1, descricao: null,
+    mlItemId: 'MLB1', mlPermalink: null, publicadoEm: null, ...over,
+  });
+
+  it('usa a categoria real quando presente (alfinete não cai em "Outro")', () => {
+    expect(rotuloTipo(item({ categoria: 'Alfinetes de Segurança', tipo: 'outro' })))
+      .toBe('Alfinetes de Segurança');
+  });
+
+  it('cai no rótulo grosso do tipo quando não há categoria', () => {
+    expect(rotuloTipo(item({ categoria: null, tipo: 'fita' }))).toBe('Fita');
+    expect(rotuloTipo(item({ categoria: null, tipo: 'outro' }))).toBe('Outro');
+  });
+
+  it('mostra "—" quando não há categoria nem tipo', () => {
+    expect(rotuloTipo(item({ categoria: null, tipo: null }))).toBe('—');
+  });
+
+  it('filtrarPublicados filtra pela categoria real e ordenarPublicados ordena pelo rótulo', () => {
+    const itens = [
+      item({ familiaId: 'fita', categoria: 'Fitas de Cetim', tipo: 'fita' }),
+      item({ familiaId: 'alf', categoria: 'Alfinetes de Segurança', tipo: 'outro' }),
+      item({ familiaId: 'sem', categoria: null, tipo: 'outro' }),
+    ];
+    expect(filtrarPublicados(itens, { tipo: 'Alfinetes de Segurança' }).map((i) => i.familiaId))
+      .toEqual(['alf']);
+    expect(filtrarPublicados(itens, { tipo: 'Outro' }).map((i) => i.familiaId)).toEqual(['sem']);
+    expect(ordenarPublicados(itens, { coluna: 'tipo', dir: 'asc' }).map((i) => i.familiaId))
+      .toEqual(['alf', 'fita', 'sem']); // Alfinetes < Fitas < Outro
+  });
+});
+
 describe('dedupePublicados', () => {
   const base = (over: Partial<PublicadoItem>): PublicadoItem => ({
     familiaId: 'x', codigoPai: '001', titulo: 'Produto', fornecedor: null,
-    tipo: 'fita', precoPublicacao: 10, descricao: null, mlItemId: 'MLB1', mlPermalink: null,
+    tipo: 'fita', categoria: null, precoPublicacao: 10, descricao: null, mlItemId: 'MLB1', mlPermalink: null,
     publicadoEm: null, ...over,
   });
 

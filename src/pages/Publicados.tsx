@@ -35,9 +35,8 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { filtrarPublicados, ordenarPublicados, primeiroNome } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, primeiroNome, rotuloTipo } from '@/lib/publicados';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
-import type { TipoAviamento } from '@/lib/tipos-dominio';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { usePublicados } from '@/hooks/usePublicados';
@@ -92,17 +91,6 @@ function fmtData(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
 
-function nomeTipo(tipo: TipoAviamento | null): string {
-  switch (tipo) {
-    case 'linha': return 'Linha';
-    case 'fita': return 'Fita';
-    case 'botao': return 'Botão';
-    case 'cola': return 'Cola';
-    case 'outro': return 'Outro';
-    default: return '—';
-  }
-}
-
 // ============================================================================
 // Linha da tabela
 // ============================================================================
@@ -130,7 +118,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
         </div>
       </TableCell>
       <TableCell className="text-sm" title={item.fornecedor ?? undefined}>{primeiroNome(item.fornecedor) ?? '—'}</TableCell>
-      <TableCell className="text-sm">{nomeTipo(item.tipo)}</TableCell>
+      <TableCell className="text-sm">{rotuloTipo(item)}</TableCell>
       <TableCell className="text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</TableCell>
       <TableCell className="text-sm tabular-nums">
         {item.estoque != null ? item.estoque : '—'}
@@ -355,6 +343,13 @@ export default function Publicados() {
     [publicados],
   );
 
+  // Tipos distintos (rótulo exibido = categoria real do ML, ou "Outro") para o filtro.
+  const tipos = useMemo(
+    () => Array.from(new Set(publicados.map(rotuloTipo))).sort((a, b) =>
+      a.localeCompare(b, 'pt-BR', { sensitivity: 'base' })),
+    [publicados],
+  );
+
   if (loadingPublicados) {
     return (
       <div className="p-6 text-sm text-muted-foreground">Carregando publicados...</div>
@@ -489,18 +484,17 @@ export default function Publicados() {
             <Select
               value={filtro.tipo ?? '__todos'}
               onValueChange={(v) =>
-                setFiltro((f) => ({ ...f, tipo: v === '__todos' ? null : (v as TipoAviamento) }))
+                setFiltro((f) => ({ ...f, tipo: v === '__todos' ? null : v }))
               }
             >
-              <SelectTrigger className="h-8 w-[130px] text-sm">
+              <SelectTrigger className="h-8 w-[180px] text-sm">
                 <SelectValue placeholder="Tipo" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__todos">Todos tipos</SelectItem>
-                <SelectItem value="linha">Linha</SelectItem>
-                <SelectItem value="fita">Fita</SelectItem>
-                <SelectItem value="botao">Botão</SelectItem>
-                <SelectItem value="cola">Cola</SelectItem>
+                {tipos.map((t) => (
+                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

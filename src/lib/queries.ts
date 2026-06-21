@@ -350,6 +350,7 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): 
     titulo: r.titulo_ml ?? r.nome_pai ?? '(sem título)',
     fornecedor: r.fornecedor ?? null,
     tipo: r.tipo_aviamento ?? null,
+    categoria: r.categoria_nome ?? null,
     precoPublicacao: precos.length ? Math.min(...precos) : 0,
     descricao: r.descricao_ml ?? null,
     mlItemId: r.ml_item_id!,
@@ -361,7 +362,7 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): 
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
