@@ -37,7 +37,10 @@ function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
 export default function Financeiro() {
   const [periodo, setPeriodo] = useState<PeriodoDias>(30);
   const janela = useMemo(() => resolverJanela({ tipo: 'preset', dias: periodo }), [periodo]);
-  const { data: r, isFetching, refetch } = useResumoFinanceiro(janela);
+  const { data: r, isFetching, refetch, dataUpdatedAt } = useResumoFinanceiro(janela);
+  const horaAtualizacao = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   const semCred = r?.semCredencialMP;
   const pctRetido = r && r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
@@ -97,7 +100,14 @@ export default function Financeiro() {
             </Button>
           ))}
         </div>
-        {isFetching && <span className="text-xs text-muted-foreground">atualizando…</span>}
+        {isFetching ? (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+            Atualizando…
+          </span>
+        ) : horaAtualizacao ? (
+          <span className="text-xs text-muted-foreground">Atualizado às {horaAtualizacao}</span>
+        ) : null}
       </div>
 
       {/* Destaque: líquido das vendas */}

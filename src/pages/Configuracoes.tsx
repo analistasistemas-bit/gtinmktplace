@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
@@ -74,24 +75,36 @@ export default function Configuracoes() {
           {carregandoConexao ? (
             <span className="text-sm text-muted-foreground">Carregando…</span>
           ) : conexao?.conectado ? (
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <StatusPill tone="success">Conectado</StatusPill>
                   <span className="text-sm">como {conexao.nickname ?? conexao.mlUserId}</span>
+                  <span className="text-xs text-muted-foreground">· Permissões salvas</span>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Escopo OAuth salvo: <code>{conexao.scope ?? 'não informado'}</code>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Para exibir vendas no dashboard, o app do Mercado Livre também precisa ter a
-                  permissão de Pedidos habilitada no Dev Center. Se você acabou de ajustar isso,
-                  desconecte e conecte a conta novamente.
-                </p>
+                <Button variant="outline" size="sm" onClick={handleDesconectar}>
+                  Desconectar
+                </Button>
               </div>
-              <Button variant="outline" size="sm" onClick={handleDesconectar}>
-                Desconectar
-              </Button>
+              <details className="group/details rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+                <summary className="-mx-1 flex cursor-pointer list-none items-center gap-1 px-1 text-muted-foreground transition-colors hover:text-foreground">
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-open/details:rotate-90" />
+                  Detalhes técnicos
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <p className="text-muted-foreground">
+                    Escopo OAuth salvo:{' '}
+                    <code className="block truncate rounded bg-background/60 px-1.5 py-0.5 font-mono text-[11px]" title={conexao.scope ?? 'não informado'}>
+                      {conexao.scope ?? 'não informado'}
+                    </code>
+                  </p>
+                  <p className="text-muted-foreground">
+                    Para exibir vendas no dashboard, o app do Mercado Livre também precisa ter a
+                    permissão de Pedidos habilitada no Dev Center. Se você acabou de ajustar isso,
+                    desconecte e conecte a conta novamente.
+                  </p>
+                </div>
+              </details>
             </div>
           ) : (
             <div className="flex items-center justify-between">
