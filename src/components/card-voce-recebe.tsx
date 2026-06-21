@@ -53,7 +53,7 @@ export function CardVoceRecebe({
   const { data, isLoading, isError } = useTarifaML(preco, categoriaMlId);
 
   return (
-    <div className="rounded-md border p-2">
+    <div className="rounded-md border p-2 shadow-sm">
       <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Wallet className="h-3.5 w-3.5" /> Você recebe por venda
       </div>
