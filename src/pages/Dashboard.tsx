@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { LoteCard } from '@/components/lote-card';
+import { LotesEmAndamento } from '@/components/dashboard-lotes-andamento';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -50,6 +51,8 @@ export default function Dashboard() {
   return (
     <div className="p-6">
       <PageHeader title="Dashboard" actions={novoLoteBtn} />
+
+      <LotesEmAndamento lotes={lotes} />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} variant="brand" />
