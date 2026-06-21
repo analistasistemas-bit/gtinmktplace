@@ -35,7 +35,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
   const semDimensoes = familiaSemDimensoesValidas(familia);
 
   return (
-    <div className="flex w-full flex-col gap-2 rounded-lg border bg-background p-3">
+    <div className="flex w-full flex-col gap-2 rounded-lg border bg-background p-3 shadow-sm">
       <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Análise para publicação
       </span>
