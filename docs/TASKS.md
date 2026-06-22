@@ -2,6 +2,11 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Módulo Faturamento (ADR-0037) — 2026-06-22
+
+- [x] **Menu Faturamento — vendas + devoluções + perguntas** — novo menu `/faturamento` com 3 abas: **Vendas** (pedido a pedido, KPIs só de pagos, árvore expansível com itens/comissão/frete/rastreio, filtros período/origem, botão Sincronizar), **Devoluções** (claims post-purchase: motivo/status/ações com prazo), **Perguntas** (responder pelo app + sugestão de IA via OpenRouter). Dados persistidos (`ml_vendas`/`ml_vendas_itens`/`ml_perguntas`/`ml_devolucoes`/`ml_webhook_eventos`, RLS por user) via **webhooks ML** (`ml-webhook`→QStash→`sync-venda`/`sync-pergunta`/`sync-devolucao`) + `backfill-faturamento` + `reconciliar-faturamento`. Alertas Telegram (nova venda/pergunta/devolução). [ADR-0037](decisions/0037-modulo-faturamento-webhooks-ml.md) · spec [2026-06-22-menu-faturamento-vendas-design.md](superpowers/specs/2026-06-22-menu-faturamento-vendas-design.md). Migrations + 8 edge functions deployadas; backfill validado (R$ 776,83 / 33 pedidos batem com a tela existente); validado end-to-end com browser-use (3 abas + IA). **Branch `worktree-feat-faturamento` — falta merge→deploy frontend (OK do Diego).**
+  - **PENDENTE (Diego, lado ML/infra):** (1) DevCenter → URL de notificações = `.../functions/v1/ml-webhook` + tópicos `orders_v2`/`questions`/`claims`/`shipments`; (2) QStash schedule (1h) → `.../functions/v1/reconciliar-faturamento`.
+
 **Última atualização:** 2026-06-21 — Repaginação visual premium + Tarefa 2/Onda 1 (workflow operacional) entregues e deployadas (ver bloco abaixo). **Iniciada a Evolução v2 — SaaS multicanal** (ver [seção dedicada](#-evolução-v2--saas-multicanal) abaixo + [documento mestre](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)).
 
 **Design/UX 2026-06-21 (preparação para SaaS comercial — em produção, light+dark, TDD na lógica):**
