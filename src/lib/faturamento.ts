@@ -72,13 +72,16 @@ export async function sincronizarFaturamento(dias = 90): Promise<{ sincronizados
 export interface KpisVendas { faturamento: number; pedidos: number; unidades: number; liquido: number; ticket: number }
 
 export function calcularKpis(vendas: Venda[]): KpisVendas {
-  let faturamento = 0, liquido = 0, unidades = 0;
+  // KPIs refletem receita realizada: só pedidos pagos contam (cancelados/pendentes
+  // aparecem na lista com o status, mas não inflam o faturamento). A lista mostra todos.
+  let faturamento = 0, liquido = 0, unidades = 0, pedidos = 0;
   for (const v of vendas) {
+    if (v.status !== 'paid') continue;
     faturamento += v.total_amount;
     liquido += v.liquido ?? 0;
     for (const i of v.itens) unidades += i.quantity;
+    pedidos += 1;
   }
-  const pedidos = vendas.length;
   return {
     faturamento: Math.round(faturamento * 100) / 100,
     liquido: Math.round(liquido * 100) / 100,

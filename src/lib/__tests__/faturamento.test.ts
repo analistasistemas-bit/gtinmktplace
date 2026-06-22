@@ -22,6 +22,15 @@ describe('calcularKpis', () => {
     expect(k.pedidos).toBe(2);
     expect(k.ticket).toBe(50.1);
   });
+  it('ignora pedidos não pagos (cancelado) no faturamento', () => {
+    const k = calcularKpis([
+      venda({ status: 'paid', total_amount: 50, liquido: 45, itens: [{ id: 'a', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, quantity: 1, unit_price: 50, sale_fee: 5, is_publiai: true }] }),
+      venda({ status: 'cancelled', total_amount: 999, liquido: 900, itens: [{ id: 'b', ml_item_id: 'N', variation_id: null, titulo: 't', codigo: null, quantity: 9, unit_price: 111, sale_fee: 99, is_publiai: false }] }),
+    ]);
+    expect(k.faturamento).toBe(50);
+    expect(k.pedidos).toBe(1);
+    expect(k.unidades).toBe(1);
+  });
   it('vazio → zeros e ticket 0', () => {
     expect(calcularKpis([])).toEqual({ faturamento: 0, liquido: 0, unidades: 0, pedidos: 0, ticket: 0 });
   });
