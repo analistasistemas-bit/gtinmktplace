@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, ListChecks, Settings, Package, Sparkles, Scale, Wallet } from 'lucide-react';
+import { LayoutDashboard, Upload, ListChecks, Settings, Package, Sparkles, Scale, Wallet, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const NAV_ITEMS = [
@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { to: '/novo-lote', label: 'Novo lote', icon: Upload, end: false },
   { to: '/revisao', label: 'Revisão', icon: ListChecks, end: false },
   { to: '/publicados', label: 'Publicados', icon: Package, end: false },
+  { to: '/faturamento', label: 'Faturamento', icon: Receipt, end: false },
   { to: '/financeiro', label: 'Financeiro', icon: Wallet, end: false },
   { to: '/viabilidade', label: 'Viabilidade', icon: Scale, end: false },
   { to: '/configuracoes', label: 'Configurações', icon: Settings, end: false },

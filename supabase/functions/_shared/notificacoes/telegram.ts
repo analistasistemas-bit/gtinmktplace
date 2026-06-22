@@ -55,6 +55,63 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
   ].join('\n');
 }
 
+// ─── Faturamento (ADR-0037) ────────────────────────────────────────────────
+
+export interface NovaVendaAlerta {
+  order_id: number;
+  comprador: string | null;
+  itens: Array<{ titulo: string | null; quantity: number }>;
+  total: number;
+  moeda: string;
+}
+
+const fmtBRL = (n: number, moeda: string) =>
+  moeda === 'BRL' ? `R$ ${n.toFixed(2).replace('.', ',')}` : `${moeda} ${n.toFixed(2)}`;
+
+export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
+  const itens = v.itens.map((i) => `• ${i.quantity}× ${i.titulo ?? 'item'}`).join('\n');
+  const comprador = v.comprador ? ` de ${v.comprador}` : '';
+  return [
+    `💰 Nova venda${comprador} — ${fmtBRL(v.total, v.moeda)}`,
+    itens,
+    `Pedido ${v.order_id}`,
+  ].filter(Boolean).join('\n');
+}
+
+export interface NovaPerguntaAlerta {
+  question_id: number;
+  texto: string;
+  item_titulo: string | null;
+}
+
+export function montarMensagemNovaPergunta(p: NovaPerguntaAlerta): string {
+  const sobre = p.item_titulo ? ` sobre "${p.item_titulo}"` : '';
+  return [
+    `❓ Nova pergunta${sobre}:`,
+    `"${p.texto}"`,
+    `Responda pelo PubliAI (menu Faturamento › Perguntas).`,
+  ].join('\n');
+}
+
+export interface NovaDevolucaoAlerta {
+  claim_id: number;
+  order_id: number | null;
+  tipo: string;
+  motivo: string | null;
+  valor: number | null;
+  moeda: string;
+}
+
+export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
+  const valor = d.valor != null ? ` (${fmtBRL(d.valor, d.moeda)})` : '';
+  const pedido = d.order_id ? ` do pedido ${d.order_id}` : '';
+  const motivo = d.motivo ? ` — ${d.motivo}` : '';
+  return [
+    `↩️ Nova ${d.tipo === 'return' ? 'devolução' : 'reclamação'}${pedido}${valor}${motivo}`,
+    `Acompanhe em Faturamento › Devoluções e aja dentro do prazo do ML.`,
+  ].join('\n');
+}
+
 /** Envia via Bot API com as credenciais do usuário (vindas da tabela configuracoes).
  * Sem token/chatId → no-op (retorna false). */
 export async function enviarTelegram(token: string | null, chatId: string | null, texto: string): Promise<boolean> {
