@@ -23,12 +23,17 @@ const MAP: Record<string, StatusPublicado> = {
   under_review: 'moderado',
 };
 
+// Marcadores de moderação no sub_status que valem "moderado" qualquer que seja o status.
+const MODERACAO_SUBS = ['forbidden', 'waiting_for_patch', 'poor_quality_thumbnail', 'poor_quality_picture'];
+
 export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
   if (!item || !item.status) {
     return { status: 'indisponivel', motivo: null, estoque: null, preco: null };
   }
   const sub = item.sub_status ?? [];
-  const moderado = item.status === 'under_review' || sub.includes('waiting_for_patch');
+  // O ML move um item moderado de `under_review` para `inactive` (+ `deleted`) em horas, então
+  // checar só o status perderia a janela. Qualquer marcador de moderação no sub_status já conta.
+  const moderado = item.status === 'under_review' || sub.some((s) => MODERACAO_SUBS.includes(s));
   const status = moderado ? 'moderado' : (MAP[item.status] ?? 'indisponivel');
   return {
     status,

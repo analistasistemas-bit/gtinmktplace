@@ -11,6 +11,7 @@ const MOTIVO_LABEL: Record<string, string> = {
   waiting_for_patch: 'Aguardando correção',
   poor_quality_thumbnail: 'Foto reprovada',
   poor_quality_picture: 'Foto reprovada',
+  deleted: 'Removido pelo ML',
 };
 
 function traduzir(motivo: string | null): string {

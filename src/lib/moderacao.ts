@@ -3,6 +3,7 @@ const MOTIVO_LABEL: Record<string, string> = {
   waiting_for_patch: 'Aguardando correção',
   poor_quality_thumbnail: 'Foto reprovada',
   poor_quality_picture: 'Foto reprovada',
+  deleted: 'Removido pelo ML',
 };
 
 /** Traduz o(s) sub_status cru(s) do ML em texto legível. Vários vêm separados por vírgula. */
