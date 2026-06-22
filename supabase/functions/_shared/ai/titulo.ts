@@ -102,3 +102,44 @@ export function garantirMetragemTitulo(titulo: string, nomePai: string): string 
   }
   return candidato;
 }
+
+// Placeholder que o copywriter usa quando a variação não tem cor identificada — não é cor real.
+const COR_NAO_IDENTIFICADA = '(sem cor identificada)';
+
+// Normaliza para a comparação "cor já está no título": sem acento, em CAPS.
+function normalizarBusca(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+}
+
+// Garante que a cor apareça no título quando o anúncio é de cor ÚNICA (mono-cor). Sem isso,
+// duas famílias-irmãs que diferem só na cor (PAI separado na planilha) geram títulos idênticos
+// e o ML baixa a segunda como duplicado ("Era igual a outro anúncio"). Rede de segurança
+// determinística porque a IA, sob o teto de 60 chars e o prompt multi-cor, descarta a cor.
+// Multi-cor (variação de cor real) NÃO leva cor no título — retorna o título intacto.
+export function garantirCorTitulo(titulo: string, cor: string | null, nCores: number): string {
+  if (nCores !== 1) return titulo;
+  const corLimpa = cor?.trim();
+  if (!corLimpa || corLimpa === COR_NAO_IDENTIFICADA) return titulo;
+
+  // Já contém a cor (palavra inteira, ignorando acento e caixa)? Não duplica.
+  const corNorm = normalizarBusca(corLimpa).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`\\b${corNorm}\\b`).test(normalizarBusca(titulo))) return titulo;
+
+  const sufixo = ` ${corLimpa.toUpperCase()}`;
+  const partes = titulo.split(' | ');
+  partes[0] = `${partes[0]}${sufixo}`;
+  let candidato = partes.join(' | ');
+  // Para caber em 60, derruba o "diferencial" genérico antes de aparar (igual à metragem).
+  while (candidato.length > TITULO_MAX && partes.length > 1) {
+    partes.pop();
+    candidato = partes.join(' | ');
+  }
+  // Sobrou só um segmento ainda longo: apara o texto-base preservando a cor (dado diferenciador).
+  if (candidato.length > TITULO_MAX) {
+    const overflow = candidato.length - TITULO_MAX;
+    const base = partes[0].slice(0, partes[0].length - sufixo.length);
+    partes[0] = base.slice(0, Math.max(0, base.length - overflow)).trimEnd() + sufixo;
+    candidato = partes.join(' | ');
+  }
+  return candidato;
+}

@@ -6,7 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo } from '../_shared/ai/titulo.ts';
+import { garantirMetragemTitulo, garantirCorTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
@@ -234,8 +234,15 @@ Deno.serve(async (req) => {
     // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final.
     // estrategia_preco já vem minúscula de sugerirPrecoVenda (bate com o enum); garante tipo_origem
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
+    // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0035): famílias-irmãs que
+    // diferem só na cor (PAI separado) não podem ter título idêntico.
+    const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
     const { error: persistErr } = await admin.from('familias').update({
-      titulo_ml: garantirMetragemTitulo(copy.titulo, claimed.nome_pai),
+      titulo_ml: garantirCorTitulo(
+        garantirMetragemTitulo(copy.titulo, claimed.nome_pai),
+        coresUnicas.length === 1 ? coresUnicas[0] : null,
+        coresUnicas.length,
+      ),
       descricao_ml: copy.descricao,
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,

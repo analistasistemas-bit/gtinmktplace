@@ -1,7 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo } from '../_shared/ai/titulo.ts';
+import { garantirMetragemTitulo, garantirCorTitulo } from '../_shared/ai/titulo.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -47,7 +47,14 @@ Deno.serve(async (req) => {
       })),
     });
 
-    const tituloFinal = garantirMetragemTitulo(result.titulo, familia.nome_pai);
+    // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0035).
+    const coresUnicas = [...new Set((familia.variacoes ?? [])
+      .map((v: any) => v.cor as string | null).filter((c: string | null): c is string => !!c))];
+    const tituloFinal = garantirCorTitulo(
+      garantirMetragemTitulo(result.titulo, familia.nome_pai),
+      coresUnicas.length === 1 ? coresUnicas[0] : null,
+      coresUnicas.length,
+    );
 
     const { error: upErr } = await sb
       .from('familias')
