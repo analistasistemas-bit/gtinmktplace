@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -36,6 +36,7 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { filtrarPublicados, ordenarPublicados, primeiroNome, rotuloTipo } from '@/lib/publicados';
+import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
@@ -76,7 +77,7 @@ function BadgeStatus({ status, motivo }: { status: StatusPublicado; motivo?: str
     <span className="flex flex-col gap-0.5">
       <StatusPill tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</StatusPill>
       {status === 'moderado' && motivo && (
-        <span className="text-xs text-warning">{motivo}</span>
+        <span className="text-xs text-warning">{traduzirMotivoModeracao(motivo)}</span>
       )}
     </span>
   );
@@ -319,6 +320,11 @@ export default function Publicados() {
     });
   }, [publicados, statusData, metricas]);
 
+  const totalModerados = useMemo(
+    () => merged.filter((i) => i.status === 'moderado').length,
+    [merged],
+  );
+
   const itensExibidos = useMemo(
     () => ordenarPublicados(filtrarPublicados(merged, filtro), ord),
     [merged, filtro, ord],
@@ -385,6 +391,18 @@ export default function Publicados() {
       {statusData?.semCredencialML && (
         <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
           Conecte sua conta ML nas Configurações para ver o status ao vivo.
+        </div>
+      )}
+
+      {/* Banner de anúncios moderados pelo ML */}
+      {totalModerados > 0 && (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            {totalModerados === 1
+              ? '1 anúncio moderado pelo Mercado Livre — verifique abaixo.'
+              : `${totalModerados} anúncios moderados pelo Mercado Livre — verifique abaixo.`}
+          </span>
         </div>
       )}
 
