@@ -70,18 +70,27 @@ export type Database = {
           atualizado_em: string
           criado_em: string
           desconto_pct: number
+          telegram_ativo: boolean
+          telegram_bot_token: string | null
+          telegram_chat_id: string | null
           user_id: string
         }
         Insert: {
           atualizado_em?: string
           criado_em?: string
           desconto_pct?: number
+          telegram_ativo?: boolean
+          telegram_bot_token?: string | null
+          telegram_chat_id?: string | null
           user_id: string
         }
         Update: {
           atualizado_em?: string
           criado_em?: string
           desconto_pct?: number
+          telegram_ativo?: boolean
+          telegram_bot_token?: string | null
+          telegram_chat_id?: string | null
           user_id?: string
         }
         Relationships: []
@@ -89,6 +98,9 @@ export type Database = {
       familias: {
         Row: {
           analise_mercado: Json | null
+          atacado: Json | null
+          atacado_erro: string | null
+          atacado_status: string | null
           atributos_faltantes: Json | null
           atributos_ml: Json
           atualizado_em: string
@@ -145,6 +157,9 @@ export type Database = {
         }
         Insert: {
           analise_mercado?: Json | null
+          atacado?: Json | null
+          atacado_erro?: string | null
+          atacado_status?: string | null
           atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
@@ -201,6 +216,9 @@ export type Database = {
         }
         Update: {
           analise_mercado?: Json | null
+          atacado?: Json | null
+          atacado_erro?: string | null
+          atacado_status?: string | null
           atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
@@ -268,6 +286,7 @@ export type Database = {
       lotes: {
         Row: {
           anomalias_planilha: Json
+          atacado_default: Json | null
           atualizado_em: string
           criado_em: string
           erro_mensagem: string | null
@@ -283,6 +302,7 @@ export type Database = {
         }
         Insert: {
           anomalias_planilha?: Json
+          atacado_default?: Json | null
           atualizado_em?: string
           criado_em?: string
           erro_mensagem?: string | null
@@ -298,6 +318,7 @@ export type Database = {
         }
         Update: {
           anomalias_planilha?: Json
+          atacado_default?: Json | null
           atualizado_em?: string
           criado_em?: string
           erro_mensagem?: string | null
@@ -345,6 +366,42 @@ export type Database = {
           ml_user_id?: string
           refresh_token_secret_id?: string
           scope?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_moderacao: {
+        Row: {
+          alertado_em: string | null
+          atualizado_em: string
+          detectado_em: string
+          id: string
+          ml_item_id: string
+          motivo: string | null
+          resolvido_em: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          alertado_em?: string | null
+          atualizado_em?: string
+          detectado_em?: string
+          id?: string
+          ml_item_id: string
+          motivo?: string | null
+          resolvido_em?: string | null
+          status: string
+          user_id: string
+        }
+        Update: {
+          alertado_em?: string | null
+          atualizado_em?: string
+          detectado_em?: string
+          id?: string
+          ml_item_id?: string
+          motivo?: string | null
+          resolvido_em?: string | null
+          status?: string
           user_id?: string
         }
         Relationships: []
@@ -468,6 +525,14 @@ export type Database = {
           access_token: string
           expires_at: string
           refresh_token: string
+        }[]
+      }
+      telegram_config_status: {
+        Args: never
+        Returns: {
+          ativo: boolean
+          chat_id: string
+          tem_token: boolean
         }[]
       }
       upsert_ml_credentials: {

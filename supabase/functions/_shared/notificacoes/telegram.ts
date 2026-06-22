@@ -31,12 +31,11 @@ export function montarMensagemModerados(itens: ItemAlerta[]): string {
   return [cabecalho, ...linhas].join('\n');
 }
 
-/** Envia via Bot API. Sem TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID → no-op (retorna false). */
-export async function enviarTelegram(texto: string): Promise<boolean> {
-  const token = Deno.env.get('TELEGRAM_BOT_TOKEN');
-  const chatId = Deno.env.get('TELEGRAM_CHAT_ID');
+/** Envia via Bot API com as credenciais do usuário (vindas da tabela configuracoes).
+ * Sem token/chatId → no-op (retorna false). */
+export async function enviarTelegram(token: string | null, chatId: string | null, texto: string): Promise<boolean> {
   if (!token || !chatId) {
-    console.warn('Telegram não configurado (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID); pulando alerta.');
+    console.warn('Telegram sem credenciais (token/chat_id); pulando envio.');
     return false;
   }
   try {
