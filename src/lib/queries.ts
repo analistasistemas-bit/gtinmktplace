@@ -316,6 +316,67 @@ export async function updateFamiliaExibirDesconto(familiaId: string, exibir: boo
   if (error) throw error;
 }
 
+// ── Alertas no Telegram (configuração na tela Configurações) ──────────────────
+
+export interface TelegramConfig {
+  chatId: string;
+  ativo: boolean;
+  temToken: boolean;
+}
+
+/** Lê o status via RPC (não devolve o token ao navegador). */
+export async function fetchTelegramConfig(): Promise<TelegramConfig> {
+  const { data, error } = await supabase.rpc('telegram_config_status');
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : null;
+  return {
+    chatId: row?.chat_id ?? '',
+    ativo: Boolean(row?.ativo),
+    temToken: Boolean(row?.tem_token),
+  };
+}
+
+/** Salva chat_id e ativo; só grava o token quando informado (campo deixado vazio = mantém). */
+export async function salvarTelegramConfig(input: { chatId: string; ativo: boolean; botToken?: string }): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('sem sessão');
+  const tokenLimpo = input.botToken?.trim();
+  const { error } = await supabase.from('configuracoes').upsert({
+    user_id: user.id,
+    telegram_chat_id: input.chatId || null,
+    telegram_ativo: input.ativo,
+    atualizado_em: new Date().toISOString(),
+    ...(tokenLimpo ? { telegram_bot_token: tokenLimpo } : {}),
+  });
+  if (error) throw error;
+}
+
+async function invocarMonitorarModerados(payload: Record<string, unknown>): Promise<{ ok: boolean; novos?: number; erro?: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sem sessão');
+  const resp = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/monitorar-moderados`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify(payload),
+    },
+  );
+  const json = await resp.json().catch(() => ({ ok: false, erro: `Falha (${resp.status})` }));
+  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  return json;
+}
+
+/** Dispara uma mensagem de teste pro Telegram do usuário. */
+export function enviarTesteTelegram(): Promise<{ ok: boolean; erro?: string }> {
+  return invocarMonitorarModerados({ teste: true });
+}
+
+/** Roda o monitor de moderados na hora, escopado ao usuário logado. */
+export function verificarModeradosAgora(): Promise<{ ok: boolean; novos?: number }> {
+  return invocarMonitorarModerados({});
+}
+
 export async function updateFamiliaDescontoPct(familiaId: string, pct: number | null): Promise<void> {
   const { error } = await supabase.from('familias')
     .update({ desconto_pct: pct }).eq('id', familiaId);

@@ -10,6 +10,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useMlConnection } from '@/hooks/useMlConnection';
 import { useDescontoPct, useSalvarDescontoPct } from '@/hooks/useConfiguracoes';
+import { ConfigTelegram } from '@/components/config-telegram';
 import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
 export default function Configuracoes() {
@@ -115,6 +116,8 @@ export default function Configuracoes() {
             </div>
           )}
         </Card>
+
+        <ConfigTelegram />
 
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold">Estratégia de preço</h2>
