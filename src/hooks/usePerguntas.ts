@@ -1,5 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { buscarPerguntas, type Pergunta } from '@/lib/perguntas';
+
+/** Lista de perguntas (não respondidas no topo). */
+export function useListaPerguntas() {
+  return useQuery<Pergunta[]>({
+    queryKey: ['perguntas'],
+    queryFn: buscarPerguntas,
+    staleTime: 60_000,
+  });
+}
 
 /** Conta perguntas não respondidas (para o badge do menu). Resiliente: erro → 0. */
 export function usePerguntasNaoRespondidas() {

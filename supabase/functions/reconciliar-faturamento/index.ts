@@ -6,6 +6,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda } from '../_shared/faturamento/io.ts';
+import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
+import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 
 const JANELA_HORAS = 72; // re-checa os últimos 3 dias (cobre atrasos/falhas de entrega).
 
@@ -36,6 +38,30 @@ Deno.serve(async (req) => {
         total++;
       } catch { /* segue */ }
     }
+
+    // Perguntas (pega não respondidas perdidas por webhook).
+    try {
+      const perguntas = await buscarPerguntasSeller(token);
+      const titulos = new Map<string, string | null>();
+      for (const q of perguntas) {
+        try {
+          const itemId = q.item_id ?? null;
+          if (itemId && !titulos.has(itemId)) titulos.set(itemId, await buscarTituloItem(token, itemId));
+          await upsertPergunta(admin, userId, q, itemId ? titulos.get(itemId) ?? null : null);
+        } catch { /* segue */ }
+      }
+    } catch { /* segue */ }
+
+    // Devoluções/claims.
+    try {
+      const claims = await buscarClaimsSeller(token);
+      for (const claim of claims) {
+        try {
+          const ret = await buscarReturn(token, String(claim.id));
+          await upsertDevolucao(admin, userId, claim, ret);
+        } catch { /* segue */ }
+      }
+    } catch { /* segue */ }
   }
 
   return new Response(JSON.stringify({ ok: true, reconciliados: total }), {

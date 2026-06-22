@@ -10,6 +10,8 @@ import { requireUser } from '../_shared/auth.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda } from '../_shared/faturamento/io.ts';
+import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
+import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 
 interface Body { dias?: number; desde?: string; ate?: string }
 
@@ -39,6 +41,35 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, userId: s
       console.warn(`backfill: erro upsert pedido ${pedido.id}: ${(e as Error).message}`);
     }
   }
+
+  // Perguntas (sem alerta no backfill — só importa o estado atual).
+  try {
+    const perguntas = await buscarPerguntasSeller(token);
+    const titulos = new Map<string, string | null>();
+    for (const q of perguntas) {
+      try {
+        const itemId = q.item_id ?? null;
+        if (itemId && !titulos.has(itemId)) titulos.set(itemId, await buscarTituloItem(token, itemId));
+        await upsertPergunta(admin, userId, q, itemId ? titulos.get(itemId) ?? null : null);
+      } catch { /* segue */ }
+    }
+  } catch (e) {
+    console.warn(`backfill: erro lendo perguntas de ${userId}: ${(e as Error).message}`);
+  }
+
+  // Devoluções/claims (sem alerta no backfill).
+  try {
+    const claims = await buscarClaimsSeller(token);
+    for (const claim of claims) {
+      try {
+        const ret = await buscarReturn(token, String(claim.id));
+        await upsertDevolucao(admin, userId, claim, ret);
+      } catch { /* segue */ }
+    }
+  } catch (e) {
+    console.warn(`backfill: erro lendo claims de ${userId}: ${(e as Error).message}`);
+  }
+
   return n;
 }
 
