@@ -31,6 +31,29 @@ export function montarMensagemModerados(itens: ItemAlerta[]): string {
   return [cabecalho, ...linhas].join('\n');
 }
 
+export interface CatalogoNoMatchAlerta {
+  ml_item_id: string;
+  titulo: string | null;
+  cores: string[];
+}
+
+// Alerta PROATIVO (ADR-0036): no opt-in de catálogo, alguma variação não tem ficha equivalente
+// (ex.: GTIN só existe em ficha de kit). Se ela ficar sem associação, o ML pausa o anúncio inteiro
+// depois. A ação "Não encontro minha variação" é só na UI do ML (não há endpoint OAuth), então o
+// sistema avisa o operador p/ resolver manualmente ANTES da pausa.
+export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): string {
+  const nome = item.titulo ?? item.ml_item_id;
+  const cores = item.cores.join(', ');
+  const plural = item.cores.length === 1 ? 'a variação' : 'as variações';
+  const url = `https://www.mercadolivre.com.br/produzir/catalogo/${item.ml_item_id}`;
+  return [
+    `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" não tem ficha equivalente e não vai competir.`,
+    `Se ficar assim, o Mercado Livre pode pausar/inativar o anúncio.`,
+    `Para evitar: abra o link → Publicar no catálogo → na cor sem ficha clique "Não encontro minha variação" → Confirmar.`,
+    url,
+  ].join('\n');
+}
+
 /** Envia via Bot API com as credenciais do usuário (vindas da tabela configuracoes).
  * Sem token/chatId → no-op (retorna false). */
 export async function enviarTelegram(token: string | null, chatId: string | null, texto: string): Promise<boolean> {

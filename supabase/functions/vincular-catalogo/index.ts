@@ -2,8 +2,9 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { vincularVariacoesCatalogo } from '../_shared/ml/catalogo.ts';
+import { vincularVariacoesCatalogo, deveAlertarCatalogoNoMatch } from '../_shared/ml/catalogo.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
+import { enviarTelegram, montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
 
 interface Job { familia_id: string; }
 
@@ -25,7 +26,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: familia } = await admin.from('familias')
-    .select('user_id, codigo_pai, ml_item_id, ml_permalink, publicado_em').eq('id', job.familia_id).single();
+    .select('user_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em').eq('id', job.familia_id).single();
   // Sem item publicado não há o que vincular (família removida/erro) — encerra sem retry.
   if (!familia?.ml_item_id) {
     return new Response(JSON.stringify({ skip: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -50,7 +51,7 @@ Deno.serve(async (req) => {
     // E2 (ADR-0025): opt-in assentou — reflete o estado de catálogo no mapa variacoes_externas
     // (best-effort). Recarrega as variações já com os catalog_* persistidos pelo passo acima.
     const { data: varsEspelho } = await admin.from('variacoes')
-      .select('codigo, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
+      .select('codigo, cor, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
       .eq('familia_id', job.familia_id);
     await espelharAnuncioExterno(admin, {
       user_id: familia.user_id,
@@ -59,6 +60,31 @@ Deno.serve(async (req) => {
       ml_permalink: familia.ml_permalink ?? null,
       publicado_em: familia.publicado_em ?? null,
     }, varsEspelho ?? []);
+
+    // Alerta proativo (ADR-0036): sobrou variação sem ficha de catálogo equivalente (ficha de kit
+    // etc.). Ela não compete e o ML pausa o anúncio depois. Como a ação "Não encontro minha
+    // variação" só existe na UI do ML (sem endpoint OAuth), avisa o operador p/ resolver à mão
+    // ANTES da pausa. Best-effort: falha de Telegram não derruba o opt-in (que já assentou).
+    if (deveAlertarCatalogoNoMatch(resumo)) {
+      try {
+        const { data: cfg } = await admin.from('configuracoes')
+          .select('telegram_bot_token, telegram_chat_id, telegram_ativo')
+          .eq('user_id', familia.user_id).maybeSingle();
+        if (cfg?.telegram_ativo && cfg.telegram_bot_token && cfg.telegram_chat_id) {
+          const cores = [...new Set((varsEspelho ?? [])
+            .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto')
+            .map((v) => (v as { cor?: string | null }).cor)
+            .filter((c): c is string => !!c))];
+          await enviarTelegram(
+            cfg.telegram_bot_token as string,
+            cfg.telegram_chat_id as string,
+            montarMensagemCatalogoNoMatch({ ml_item_id: familia.ml_item_id, titulo: familia.nome_pai ?? null, cores }),
+          );
+        }
+      } catch (e) {
+        console.error(`alerta catálogo no-match falhou para ${familia.ml_item_id}:`, (e as Error).message);
+      }
+    }
 
     return new Response(JSON.stringify({ item: familia.ml_item_id, resumo }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {

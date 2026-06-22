@@ -231,6 +231,16 @@ export interface ResumoCatalogo {
   vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; pendente: number; erro: number; pulou: number; ficha_divergente: number;
 }
 
+/**
+ * Decide se deve alertar o operador sobre variações sem ficha de catálogo equivalente (ADR-0036).
+ * Só quando a elegibilidade já foi computada (`pendente === 0`, estado final) e sobrou variação
+ * sem ficha (`ficha_divergente`/`sem_produto`) — essas não competem e fazem o ML pausar o anúncio
+ * depois. Esperar `pendente === 0` evita alerta prematuro/repetido durante os retries do worker.
+ */
+export function deveAlertarCatalogoNoMatch(resumo: ResumoCatalogo): boolean {
+  return resumo.pendente === 0 && (resumo.ficha_divergente > 0 || resumo.sem_produto > 0);
+}
+
 type DbLike = {
   from(table: string): { update(v: Record<string, unknown>): { eq(col: string, val: unknown): PromiseLike<unknown> } };
 };
