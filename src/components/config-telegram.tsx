@@ -117,12 +117,25 @@ export function ConfigTelegram() {
           <ChevronRight className="h-3.5 w-3.5 transition-transform group-open/details:rotate-90" />
           Como obter o token e o chat ID
         </summary>
-        <ol className="mt-2 list-decimal space-y-1 pl-4 text-muted-foreground">
-          <li>No Telegram, fale com <code>@BotFather</code> → <code>/newbot</code> → copie o token.</li>
-          <li>Mande qualquer mensagem ao seu bot novo.</li>
-          <li>Abra <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> e copie o <code>chat.id</code>.</li>
-          <li>Cole aqui, ligue o alerta e clique em "Enviar teste".</li>
+        <p className="mt-2 font-medium text-foreground">Bot token</p>
+        <ol className="mt-1 list-decimal space-y-1 pl-4 text-muted-foreground">
+          <li>No Telegram, fale com <code>@BotFather</code> → mande <code>/newbot</code>.</li>
+          <li>Escolha um nome e um usuário terminando em <code>bot</code>.</li>
+          <li>Copie o token que ele envia (algo como <code>8837666738:AAE...</code>) e cole acima.</li>
         </ol>
+
+        <p className="mt-3 font-medium text-foreground">Chat ID</p>
+        <ol className="mt-1 list-decimal space-y-1 pl-4 text-muted-foreground">
+          <li>No Telegram, abra uma conversa com <code>@userinfobot</code>.</li>
+          <li>Mande <code>/start</code>. Ele responde na hora com <code>Id: 123456789</code>.</li>
+          <li>Copie só o número e cole no campo Chat ID acima.</li>
+        </ol>
+
+        <p className="mt-3">
+          Importante: abra também o <strong>seu bot novo</strong> e mande qualquer mensagem
+          (ex.: <code>oi</code>) uma vez — sem isso o Telegram bloqueia o bot de te escrever.
+          Depois ligue o alerta e clique em "Enviar teste".
+        </p>
       </details>
     </Card>
   );
