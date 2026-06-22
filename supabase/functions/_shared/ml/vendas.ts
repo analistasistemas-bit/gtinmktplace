@@ -64,6 +64,53 @@ function chunk<T>(arr: T[], n: number): T[][] {
   return out;
 }
 
+/** Atributo de item do ML (recorte: só id + value_name nos interessam). */
+interface AtributoML { id?: string | null; value_name?: string | null }
+
+/** Pura: extrai o GTIN dos atributos de um item (id `GTIN`, fallback `EAN`). undefined se ausente. */
+export function extrairGtin(attrs: AtributoML[] | undefined | null): string | undefined {
+  if (!Array.isArray(attrs)) return undefined;
+  const acha = (id: string) => attrs.find((a) => a?.id === id)?.value_name;
+  const v = acha('GTIN') ?? acha('EAN');
+  return v ? String(v) : undefined;
+}
+
+/**
+ * Pura: atribui vendas de catálogo (itens externos) ao anúncio do usuário por GTIN (ADR-0037).
+ * Item externo cujo GTIN ∈ mapaGtin tem unidades/valor somados em porItem[ml_item_id] e some do
+ * externo; os demais continuam externos. Não muta os objetos de entrada.
+ * - gtinPorItem: itemExternoId → GTIN (vindo da API; ausente quando não foi possível ler)
+ * - mapaGtin: GTIN do usuário → ml_item_id da família dona dele
+ */
+export function reclassificarPorGtin(
+  porItem: Record<string, { unidades: number; valor: number }>,
+  porItemExterno: Record<string, { unidades: number; valor: number }>,
+  gtinPorItem: Record<string, string>,
+  mapaGtin: Record<string, string>,
+): {
+  porItem: Record<string, { unidades: number; valor: number }>;
+  porItemExterno: Record<string, { unidades: number; valor: number }>;
+} {
+  const novoItem: Record<string, { unidades: number; valor: number }> = {};
+  for (const [id, v] of Object.entries(porItem)) novoItem[id] = { ...v };
+  const novoExterno: Record<string, { unidades: number; valor: number }> = {};
+
+  for (const [id, v] of Object.entries(porItemExterno)) {
+    const gtin = gtinPorItem[id];
+    const alvo = gtin ? mapaGtin[gtin] : undefined;
+    if (!alvo) {
+      novoExterno[id] = { ...v };
+      continue;
+    }
+    const acc = novoItem[alvo] ?? { unidades: 0, valor: 0 };
+    acc.unidades += v.unidades;
+    acc.valor += v.valor;
+    novoItem[alvo] = acc;
+  }
+
+  return { porItem: novoItem, porItemExterno: novoExterno };
+}
+
 /** Pura: porItemExterno + títulos → lista de ItemExternoVenda ordenada por valor desc. */
 export function montarExternos(
   porItemExterno: Record<string, { unidades: number; valor: number }>,
@@ -74,29 +121,41 @@ export function montarExternos(
     .sort((a, b) => b.valor - a.valor);
 }
 
-/** Resolve títulos de N itens via /items em lote (resiliente: bloco que falha vira id). */
-async function buscarTitulos(token: string, ids: string[], signal: AbortSignal): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  if (ids.length === 0) return out;
+/**
+ * Resolve título e GTIN de N itens via /items em lote (resiliente: bloco que falha é ignorado).
+ * O GTIN serve para reclassificar venda de catálogo no produto do usuário (ADR-0037).
+ */
+async function buscarTitulosEGtins(
+  token: string,
+  ids: string[],
+  signal: AbortSignal,
+): Promise<{ titulos: Record<string, string>; gtins: Record<string, string> }> {
+  const titulos: Record<string, string> = {};
+  const gtins: Record<string, string> = {};
+  if (ids.length === 0) return { titulos, gtins };
   const headers = { Authorization: `Bearer ${token}` };
   for (const bloco of chunk(ids, 20)) {
     try {
-      const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,title`;
+      const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,title,attributes`;
       const resp = await fetch(url, { headers, signal });
       if (!resp.ok) continue;
-      const arr = await resp.json(); // [{ code, body:{ id, title } }]
+      const arr = await resp.json(); // [{ code, body:{ id, title, attributes } }]
       if (Array.isArray(arr)) {
         for (const e of arr) {
           const id = e?.body?.id;
-          if (e?.code === 200 && id) out[id] = e.body.title ?? id;
+          if (e?.code === 200 && id) {
+            titulos[id] = e.body.title ?? id;
+            const gtin = extrairGtin(e.body.attributes);
+            if (gtin) gtins[id] = gtin;
+          }
         }
       }
     } catch (e) {
-      // Bloco indisponível: ids ficam sem título → usa id. Loga p/ diagnóstico (igual lerStatus).
-      console.warn('buscarTitulos bloco falhou:', (e as Error).message);
+      // Bloco indisponível: ids ficam sem título/GTIN → usa id e segue externo. Loga p/ diagnóstico.
+      console.warn('buscarTitulosEGtins bloco falhou:', (e as Error).message);
     }
   }
-  return out;
+  return { titulos, gtins };
 }
 
 /**
@@ -109,6 +168,7 @@ export async function lerVendasML(
   token: string,
   intervalo: { desde: string; ate: string },
   idsEscopo: string[],
+  mapaGtin: Record<string, string> = {},
 ): Promise<MetricasVendasCanal> {
   const headers = { Authorization: `Bearer ${token}` };
   const signal = AbortSignal.timeout(25_000);
@@ -161,10 +221,13 @@ export async function lerVendasML(
   }
 
   const agg = agregarPedidos(pedidos, escopo);
-  const titulos = await buscarTitulos(token, Object.keys(agg.porItemExterno), signal);
+  // Enriquece os externos com título + GTIN; o GTIN reclassifica vendas de catálogo no produto
+  // do usuário (ADR-0037). Mesma chamada /items, sem custo extra de rede.
+  const { titulos, gtins } = await buscarTitulosEGtins(token, Object.keys(agg.porItemExterno), signal);
+  const { porItem, porItemExterno } = reclassificarPorGtin(agg.porItem, agg.porItemExterno, gtins, mapaGtin);
   return {
-    porItem: agg.porItem,
+    porItem,
     totais: agg.totais,
-    externos: montarExternos(agg.porItemExterno, titulos),
+    externos: montarExternos(porItemExterno, titulos),
   };
 }

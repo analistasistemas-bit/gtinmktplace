@@ -168,8 +168,9 @@ export const mercadoLivreConnector: ChannelConnector = {
     ctx: ContextoCanal,
     intervalo: { desde: string; ate: string },
     ids: string[],
+    mapaGtin: Record<string, string> = {},
   ): Promise<MetricasVendasCanal> {
     const token = await ctx.getToken();
-    return lerVendasML(token, intervalo, ids);
+    return lerVendasML(token, intervalo, ids, mapaGtin);
   },
 };

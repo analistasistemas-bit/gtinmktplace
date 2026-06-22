@@ -28,8 +28,23 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: familias } = await admin.from('familias')
-    .select('ml_item_id').eq('user_id', user.id).not('ml_item_id', 'is', null);
+    .select('id, ml_item_id').eq('user_id', user.id).not('ml_item_id', 'is', null);
   const ids = [...new Set((familias ?? []).map((f) => f.ml_item_id as string))];
+
+  // Mapa GTIN → ml_item_id da família dona dele: permite atribuir vendas de catálogo do ML ao
+  // produto do usuário por EAN, mesmo quando o pedido entra com o MLB do anúncio âncora (ADR-0037).
+  const itemPorFamilia = new Map((familias ?? []).map((f) => [f.id as string, f.ml_item_id as string]));
+  const mapaGtin: Record<string, string> = {};
+  if (itemPorFamilia.size > 0) {
+    const { data: variacoes } = await admin.from('variacoes')
+      .select('familia_id, gtin')
+      .in('familia_id', [...itemPorFamilia.keys()])
+      .not('gtin', 'is', null);
+    for (const v of variacoes ?? []) {
+      const item = itemPorFamilia.get(v.familia_id as string);
+      if (item && v.gtin) mapaGtin[String(v.gtin)] = item;
+    }
+  }
 
   const vazio: MetricasVendasCanal = { porItem: {}, totais: { faturamento: 0, unidades: 0, pedidos: 0 } };
   if (ids.length === 0) {
@@ -40,7 +55,7 @@ Deno.serve(async (req) => {
   const ctx = { getToken: () => getValidAccessToken(user.id) };
   let metricas: MetricasVendasCanal;
   try {
-    metricas = await conn.lerMetricasVendas(ctx, { desde: body.desde, ate: body.ate }, ids);
+    metricas = await conn.lerMetricasVendas(ctx, { desde: body.desde, ate: body.ate }, ids, mapaGtin);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     // Distingue falta de credencial (token) de falha na leitura de pedidos (ex.: a app não

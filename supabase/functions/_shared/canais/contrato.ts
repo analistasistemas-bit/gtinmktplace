@@ -154,5 +154,6 @@ export interface ChannelConnector {
     ctx: ContextoCanal,
     intervalo: { desde: string; ate: string },
     itemExternoIds: string[],
+    mapaGtin?: Record<string, string>,
   ): Promise<MetricasVendasCanal>;
 }

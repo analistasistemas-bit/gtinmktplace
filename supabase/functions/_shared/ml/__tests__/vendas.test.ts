@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agregarPedidos, montarExternos, type PedidoML } from '../vendas.ts';
+import { agregarPedidos, montarExternos, reclassificarPorGtin, extrairGtin, type PedidoML } from '../vendas.ts';
 
 // Semântica (ADR-0032): `totais` reflete TODA a conta do vendedor no período (bate com a
 // tela de Métricas do ML), enquanto `porItem` continua restrito ao escopo do app (tabela,
@@ -79,6 +79,85 @@ describe('agregarPedidos', () => {
     expect(r.porItem['MLB1']).toEqual({ unidades: 0, valor: 0 });
     // pedido 1 sem itens não conta; pedidos 2 e 3 contam.
     expect(r.totais).toEqual({ faturamento: 1, unidades: 1, pedidos: 2 });
+  });
+});
+
+describe('reclassificarPorGtin', () => {
+  // mapaGtin: GTIN do produto do usuário → ml_item_id da família dona dele.
+  const mapaGtin = { '789001': 'MLB_MEU_1', '789002': 'MLB_MEU_2' };
+
+  it('move item externo cujo GTIN casa para porItem sob o ml_item_id do usuário', () => {
+    const porItem = {};
+    const porItemExterno = { MLB_CAT: { unidades: 3, valor: 90 } };
+    const gtinPorItem = { MLB_CAT: '789001' };
+    const r = reclassificarPorGtin(porItem, porItemExterno, gtinPorItem, mapaGtin);
+    expect(r.porItem['MLB_MEU_1']).toEqual({ unidades: 3, valor: 90 });
+    expect(r.porItemExterno['MLB_CAT']).toBeUndefined();
+  });
+
+  it('soma a venda de catálogo sobre a venda direta já existente do mesmo produto', () => {
+    const porItem = { MLB_MEU_1: { unidades: 2, valor: 40 } };
+    const porItemExterno = { MLB_CAT: { unidades: 3, valor: 90 } };
+    const gtinPorItem = { MLB_CAT: '789001' };
+    const r = reclassificarPorGtin(porItem, porItemExterno, gtinPorItem, mapaGtin);
+    expect(r.porItem['MLB_MEU_1']).toEqual({ unidades: 5, valor: 130 });
+    expect(r.porItemExterno).toEqual({});
+  });
+
+  it('mantém externo o item cujo GTIN não casa', () => {
+    const porItem = {};
+    const porItemExterno = { MLB_OUTRO: { unidades: 1, valor: 50 } };
+    const gtinPorItem = { MLB_OUTRO: '000999' };
+    const r = reclassificarPorGtin(porItem, porItemExterno, gtinPorItem, mapaGtin);
+    expect(r.porItem).toEqual({});
+    expect(r.porItemExterno['MLB_OUTRO']).toEqual({ unidades: 1, valor: 50 });
+  });
+
+  it('mantém externo o item sem GTIN conhecido (API não trouxe)', () => {
+    const porItem = {};
+    const porItemExterno = { MLB_SEM_GTIN: { unidades: 1, valor: 10 } };
+    const gtinPorItem = {};
+    const r = reclassificarPorGtin(porItem, porItemExterno, gtinPorItem, mapaGtin);
+    expect(r.porItemExterno['MLB_SEM_GTIN']).toEqual({ unidades: 1, valor: 10 });
+    expect(r.porItem).toEqual({});
+  });
+
+  it('soma dois itens externos com o mesmo GTIN no mesmo ml_item_id', () => {
+    const porItem = {};
+    const porItemExterno = {
+      MLB_CAT_A: { unidades: 1, valor: 30 },
+      MLB_CAT_B: { unidades: 2, valor: 60 },
+    };
+    const gtinPorItem = { MLB_CAT_A: '789002', MLB_CAT_B: '789002' };
+    const r = reclassificarPorGtin(porItem, porItemExterno, gtinPorItem, mapaGtin);
+    expect(r.porItem['MLB_MEU_2']).toEqual({ unidades: 3, valor: 90 });
+    expect(r.porItemExterno).toEqual({});
+  });
+
+  it('não muta os objetos de entrada', () => {
+    const porItem = { MLB_MEU_1: { unidades: 2, valor: 40 } };
+    const porItemExterno = { MLB_CAT: { unidades: 3, valor: 90 } };
+    reclassificarPorGtin(porItem, porItemExterno, { MLB_CAT: '789001' }, mapaGtin);
+    expect(porItem).toEqual({ MLB_MEU_1: { unidades: 2, valor: 40 } });
+    expect(porItemExterno).toEqual({ MLB_CAT: { unidades: 3, valor: 90 } });
+  });
+});
+
+describe('extrairGtin', () => {
+  it('lê o atributo de id GTIN', () => {
+    const attrs = [{ id: 'BRAND', value_name: 'X' }, { id: 'GTIN', value_name: '789001' }];
+    expect(extrairGtin(attrs)).toBe('789001');
+  });
+
+  it('usa EAN como fallback quando não há GTIN', () => {
+    const attrs = [{ id: 'EAN', value_name: '789002' }];
+    expect(extrairGtin(attrs)).toBe('789002');
+  });
+
+  it('retorna undefined quando não há GTIN nem EAN', () => {
+    expect(extrairGtin([{ id: 'BRAND', value_name: 'X' }])).toBeUndefined();
+    expect(extrairGtin(undefined)).toBeUndefined();
+    expect(extrairGtin([{ id: 'GTIN', value_name: null }])).toBeUndefined();
   });
 });
 
