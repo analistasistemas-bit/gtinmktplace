@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularResumo, fretePorPedidoRateado, ehFaturavel } from '@/lib/resumo-vendas';
+import { calcularResumo, ratearLiquidoPorFrete, ehFaturavel } from '@/lib/resumo-vendas';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -81,16 +81,66 @@ describe('calcularResumo', () => {
   });
 });
 
-describe('fretePorPedidoRateado', () => {
-  it('divide o frete do envio igualmente entre os pedidos do pack', () => {
-    const m = fretePorPedidoRateado([
-      venda({ order_id: 1, shipping_id: 99, frete_vendedor: 40.4 }),
-      venda({ order_id: 2, shipping_id: 99, frete_vendedor: 40.4 }),
-      venda({ order_id: 3, shipping_id: 99, frete_vendedor: 40.4 }),
-      venda({ order_id: 4, shipping_id: null, pack_id: null, frete_vendedor: 6.55 }),
-    ]);
-    expect(m.get(1)).toBeCloseTo(13.47, 2); // 40,40 / 3
-    expect(m.get(4)).toBe(6.55);
-    expect((m.get(1)! + m.get(2)! + m.get(3)!)).toBeCloseTo(40.4, 1);
+describe('ratearLiquidoPorFrete', () => {
+  // Pack real (CV20260605013927): o ML concentrou TODO o frete de R$18,87 no pagamento do
+  // Búfalo, deixando-o com líquido 1,75 (markup -55%) e o Progresso com 16,56 (+115%). O rateio
+  // por peso redistribui o frete entre os dois e corrige a atribuição (zero-soma).
+  const buf = venda({
+    id: 'buf', order_id: 2000017053071592, shipping_id: 47353836484, pack_id: 2000013639986103,
+    total_amount: 24.64, liquido: 1.75, frete_vendedor: 18.87,
+    itens: [item({ id: 'buf-i', ml_item_id: 'MLBBUF', codigo: '03099962', quantity: 2, unit_price: 12.32, sale_fee: 2.01 })],
+  });
+  const pro = venda({
+    id: 'pro', order_id: 2000017053073394, shipping_id: 47353836484, pack_id: 2000013639986103,
+    total_amount: 19.95, liquido: 16.56, frete_vendedor: 18.87,
+    itens: [item({ id: 'pro-i', ml_item_id: 'MLBPRO', codigo: '01591851', quantity: 1, unit_price: 19.95, sale_fee: 3.39 })],
+  });
+  // Búfalo 58g × 2un = 116g; Progresso 112g × 1 = 112g.
+  const pesoResolver = (it: VendaItem) =>
+    it.codigo === '03099962' ? 58 : it.codigo === '01591851' ? 112 : null;
+
+  it('redistribui o frete do pack por peso, recompondo o líquido (zero-soma)', () => {
+    const m = ratearLiquidoPorFrete([buf, pro], pesoResolver);
+    // frete: 18,87 × 116/228 = 9,60 (Búfalo) e × 112/228 = 9,27 (Progresso);
+    // tarifa real do grupo = 44,59 − 18,87 − 18,31 = 7,41, rateada por bruto (4,09 / 3,32).
+    expect(m.get('buf')!.liquido).toBeCloseTo(10.95, 2); // 24,64 − 4,09 − 9,60
+    expect(m.get('pro')!.liquido).toBeCloseTo(7.36, 2);  // 19,95 − 3,32 − 9,27
+    expect(m.get('buf')!.liquido + m.get('pro')!.liquido).toBeCloseTo(18.31, 2); // soma preservada
+    expect(m.get('buf')!.frete).toBeCloseTo(9.6, 2);  // frete por peso, não os 18,87 inteiros
+    expect(m.get('pro')!.frete).toBeCloseTo(9.27, 2);
+  });
+
+  it('sem peso cadastrado cai no rateio por valor, mas ainda corrige a distorção e mantém a soma', () => {
+    const m = ratearLiquidoPorFrete([buf, pro]); // sem pesoResolver
+    expect(m.get('buf')!.liquido).toBeGreaterThan(1.75); // Búfalo deixa de absorver o frete todo
+    expect(m.get('buf')!.liquido + m.get('pro')!.liquido).toBeCloseTo(18.31, 2);
+  });
+
+  it('pedido fora de pack (sem grupo) não entra no mapa — fica com o líquido cru', () => {
+    const m = ratearLiquidoPorFrete([
+      venda({ id: 'solo', order_id: 7, shipping_id: 55, frete_vendedor: 6.55, liquido: 9 }),
+    ], pesoResolver);
+    expect(m.has('solo')).toBe(false);
+  });
+
+  it('grupo sem frete do vendedor fica cru (não inventa frete)', () => {
+    const m = ratearLiquidoPorFrete([
+      venda({ id: 'a', order_id: 1, shipping_id: 88, frete_vendedor: null, liquido: 5 }),
+      venda({ id: 'b', order_id: 2, shipping_id: 88, frete_vendedor: null, liquido: 5 }),
+    ], pesoResolver);
+    expect(m.size).toBe(0);
+  });
+
+  it('calcularResumo aplica o líquido rateado por linha sem mudar o agregado', () => {
+    const custoResolver = (it: VendaItem) =>
+      it.codigo === '03099962' ? 1.95 : it.codigo === '01591851' ? 7.69 : null;
+    const r = calcularResumo([buf, pro], custoResolver, pesoResolver);
+    const lBuf = r.vendas.find((v) => v.orderId === 2000017053071592)!;
+    const lPro = r.vendas.find((v) => v.orderId === 2000017053073394)!;
+    expect(lBuf.liquido).toBeCloseTo(10.95, 2);
+    expect(lBuf.retido).toBeCloseTo(13.69, 2); // 24,64 − 10,95
+    expect(lPro.liquido).toBeCloseTo(7.36, 2);
+    expect(r.liquido).toBeCloseTo(18.31, 2); // total do MP preservado (zero-soma)
+    expect(r.bruto).toBeCloseTo(44.59, 2);
   });
 });

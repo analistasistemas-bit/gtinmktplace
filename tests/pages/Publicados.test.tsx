@@ -9,9 +9,19 @@ const useStatusPublicadosMock = vi.fn();
 const useRemoverPublicadoMock = vi.fn();
 const useMetricasVendasMock = vi.fn();
 const useResumoFinanceiroMock = vi.fn();
+const useVendasMock = vi.fn();
+const useCustosMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
+}));
+
+vi.mock('@/hooks/useVendas', () => ({
+  useVendas: () => useVendasMock(),
+}));
+
+vi.mock('@/hooks/useCustos', () => ({
+  useCustos: () => useCustosMock(),
 }));
 
 vi.mock('@/hooks/useStatusPublicados', () => ({
@@ -79,6 +89,13 @@ describe('Publicados', () => {
       isFetching: false,
       refetch: vi.fn(),
     });
+    useVendasMock.mockReturnValue({
+      data: [],
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    useCustosMock.mockReturnValue({ data: undefined });
   });
 
   it('mostra o tipo cola na tabela', () => {
@@ -120,15 +137,14 @@ describe('Publicados', () => {
   });
 
   it('mostra a ponte de líquido linkando para o Financeiro quando há dados', () => {
-    useResumoFinanceiroMock.mockReturnValue({
-      data: {
-        bruto: 606.8,
-        liquido: 364.46,
-        descontos: 242.34,
-        estornos: 0,
-        pagamentos: 24,
-      },
+    // A ponte deriva de calcularResumo(vendas) (ADR-0038): líquido = soma de ml_vendas.liquido.
+    useVendasMock.mockReturnValue({
+      data: [{
+        id: 'v1', order_id: 1, status: 'paid', total_amount: 606.8, liquido: 364.46,
+        estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [],
+      }],
       isFetching: false,
+      error: null,
       refetch: vi.fn(),
     });
     render(

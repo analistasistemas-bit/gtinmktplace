@@ -45,7 +45,7 @@ import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { calcularResumo } from '@/lib/resumo-vendas';
-import { montarCustoResolver } from '@/lib/custos';
+import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -246,7 +246,7 @@ export default function Publicados() {
   const { data: vendas, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useVendas(janela, 'todos');
   const { data: custos } = useCustos();
   const resumo = useMemo(
-    () => calcularResumo(vendas ?? [], montarCustoResolver(custos)),
+    () => calcularResumo(vendas ?? [], montarCustoResolver(custos), montarPesoResolver(custos)),
     [vendas, custos],
   );
   const markupPct = resumo.markup;
