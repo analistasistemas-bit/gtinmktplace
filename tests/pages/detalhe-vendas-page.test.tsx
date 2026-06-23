@@ -2,23 +2,25 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-// metricas.ts (importado pela página) puxa supabase, que lança sem env — mock.
+// faturamento.ts (importado pela página via useVendas) puxa supabase, que lança sem env — mock.
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: vi.fn() } } }));
 
-vi.mock('@/hooks/useMetricasVendas', () => ({
-  useMetricasVendas: () => ({
-    data: {
-      porItem: { MLB1: { unidades: 2, valor: 90.2 } },
-      totais: { faturamento: 606.8, unidades: 36, pedidos: 24 },
-      externos: [{ id: 'MLBX', titulo: 'Fita Externa', unidades: 5, valor: 62.5 }],
-    },
+vi.mock('@/hooks/useVendas', () => ({
+  useVendas: () => ({
+    data: [
+      {
+        id: 'v1', order_id: 1, status: 'paid', total_amount: 90.2, is_publiai: true,
+        itens: [{ id: 'i1', ml_item_id: 'MLB1', titulo: 'LINHA LINHANYL 150', codigo: '01', ean: '789', quantity: 2, unit_price: 45.1, is_publiai: true }],
+      },
+      {
+        id: 'v2', order_id: 2, status: 'paid', total_amount: 62.5, is_publiai: false,
+        itens: [{ id: 'i2', ml_item_id: 'MLBX', titulo: 'Fita Externa', codigo: null, ean: null, quantity: 5, unit_price: 12.5, is_publiai: false }],
+      },
+    ],
     isFetching: false,
+    isError: false,
     refetch: vi.fn(),
   }),
-}));
-
-vi.mock('@/hooks/usePublicados', () => ({
-  usePublicados: () => ({ data: [{ mlItemId: 'MLB1', titulo: 'LINHA LINHANYL 150' }] }),
 }));
 
 import DetalheVendas from '@/pages/DetalheVendas';

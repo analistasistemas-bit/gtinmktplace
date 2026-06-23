@@ -11,8 +11,7 @@ import {
 } from '@/components/ui/table';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { montarDetalheVendas, type LinhaVenda, type SecaoVendas } from '@/lib/detalhe-vendas';
-import { useMetricasVendas } from '@/hooks/useMetricasVendas';
-import { usePublicados } from '@/hooks/usePublicados';
+import { useVendas } from '@/hooks/useVendas';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
@@ -150,17 +149,9 @@ export default function DetalheVendas() {
   const periodo = useMemo(() => periodoFromParams((k) => search.get(k)), [search]);
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
 
-  const { data: metricas, isFetching, refetch } = useMetricasVendas(janela);
-  const { data: publicados = [] } = usePublicados();
-
-  const semCred = metricas?.semCredencialML;
-  const detalhe = useMemo(
-    () => montarDetalheVendas(
-      metricas ?? { porItem: {}, totais: { faturamento: 0, unidades: 0, pedidos: 0 } },
-      publicados,
-    ),
-    [metricas, publicados],
-  );
+  // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número do card de Faturamento.
+  const { data: vendas = [], isFetching, refetch, isError } = useVendas(janela, 'todos');
+  const detalhe = useMemo(() => montarDetalheVendas(vendas), [vendas]);
 
   return (
     <div className="p-6">
@@ -181,14 +172,9 @@ export default function DetalheVendas() {
         }
       />
 
-      {semCred && (
-        <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          Conecte sua conta ML nas Configurações para ver as vendas.
-        </div>
-      )}
-      {metricas?.erroVendas && (
+      {isError && (
         <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-          {metricas.erroVendas}
+          Não foi possível ler as vendas. Tente Atualizar.
         </div>
       )}
 
