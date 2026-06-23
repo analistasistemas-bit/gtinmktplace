@@ -158,7 +158,7 @@ export async function upsertVenda(
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
           liquidoPorPayment?: Map<string, DadosPagamentoMP> },
-): Promise<{ vendaId: string; novaPaga: boolean }> {
+): Promise<{ vendaId: string; novaPaga: boolean; itens: VendaItemRow[] }> {
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
     infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,
@@ -195,5 +195,5 @@ export async function upsertVenda(
 
   const eraPaga = anterior?.status === 'paid';
   const novaPaga = venda.status === 'paid' && !eraPaga;
-  return { vendaId, novaPaga };
+  return { vendaId, novaPaga, itens };
 }

@@ -358,10 +358,26 @@ export function AbaVendas() {
             ))}
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={sincronizar} disabled={sincronizando}>
-          <RefreshCw className={cn('mr-1.5 h-4 w-4', sincronizando && 'animate-spin')} />
-          {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <span
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            title="Atualiza sozinho a cada 45s — novas vendas entram automaticamente"
+          >
+            <span className="relative flex h-2 w-2">
+              {/* Pulso contínuo = sinal "ao vivo"; acelera no instante do refetch. */}
+              <span className={cn(
+                'absolute inline-flex h-full w-full rounded-full bg-success opacity-75',
+                isFetching ? 'animate-ping' : 'animate-[ping_2.5s_ease-in-out_infinite]',
+              )} />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            </span>
+            Ao vivo
+          </span>
+          <Button variant="outline" size="sm" onClick={sincronizar} disabled={sincronizando}>
+            <RefreshCw className={cn('mr-1.5 h-4 w-4', sincronizando && 'animate-spin')} />
+            {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
+          </Button>
+        </div>
       </div>
 
       {/* ── KPIs ── */}
