@@ -51,18 +51,18 @@ Deno.serve(async (req) => {
     carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 
-  const { novaPaga } = await upsertVenda(admin, userId, pedido, {
+  const { novaPaga, itens } = await upsertVenda(admin, userId, pedido, {
     freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
   });
 
-  // Alerta de nova venda paga (só se Telegram ativo).
+  // Alerta de nova venda paga (só se Telegram ativo). Usa os itens já com EAN resolvido (catálogo/GTIN).
   if (novaPaga) {
     const cfg = await lerConfigTelegram(admin, userId);
     if (cfg.ativo) {
       await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaVenda({
         order_id: Number(pedido.id),
         comprador: pedido.buyer?.nickname ?? null,
-        itens: (pedido.order_items ?? []).map((oi) => ({ titulo: oi?.item?.title ?? null, quantity: Number(oi?.quantity ?? 0) })),
+        itens: itens.map((i) => ({ titulo: i.titulo, quantity: i.quantity, ean: i.ean })),
         total: Number(pedido.total_amount ?? 0),
         moeda: pedido.currency_id ?? 'BRL',
       }));

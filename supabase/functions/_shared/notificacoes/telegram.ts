@@ -60,7 +60,7 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
 export interface NovaVendaAlerta {
   order_id: number;
   comprador: string | null;
-  itens: Array<{ titulo: string | null; quantity: number }>;
+  itens: Array<{ titulo: string | null; quantity: number; ean: string | null }>;
   total: number;
   moeda: string;
 }
@@ -69,7 +69,9 @@ const fmtBRL = (n: number, moeda: string) =>
   moeda === 'BRL' ? `R$ ${n.toFixed(2).replace('.', ',')}` : `${moeda} ${n.toFixed(2)}`;
 
 export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
-  const itens = v.itens.map((i) => `• ${i.quantity}× ${i.titulo ?? 'item'}`).join('\n');
+  const itens = v.itens
+    .map((i) => `• ${i.quantity}× ${i.titulo ?? 'item'}${i.ean ? ` — EAN ${i.ean}` : ''}`)
+    .join('\n');
   const comprador = v.comprador ? ` de ${v.comprador}` : '';
   return [
     `💰 Nova venda${comprador} — ${fmtBRL(v.total, v.moeda)}`,
