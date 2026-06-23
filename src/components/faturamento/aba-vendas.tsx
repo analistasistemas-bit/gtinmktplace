@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, RefreshCw, ExternalLink, RotateCcw } from 'lucide-react';
+import { ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { resolverJanela, type PeriodoDias } from '@/lib/metricas';
@@ -19,6 +19,45 @@ const ORIGENS: { v: OrigemVenda; label: string }[] = [
 ];
 
 const tom = (t: 'success' | 'warning' | 'danger' | 'muted'): StatusTone => (t === 'muted' ? 'neutral' : t);
+
+type SortKey = 'data' | 'comprador' | 'unidades' | 'valor' | 'liquido' | 'pagamento' | 'envio' | 'origem';
+type Sort = { key: SortKey; dir: 'asc' | 'desc' };
+
+/** Cabeçalho clicável que ordena a tabela pela coluna (seta indica direção). */
+function ThSort({ k, label, sort, onSort, align = 'left' }: {
+  k: SortKey; label: string; sort: Sort | null; onSort: (k: SortKey) => void; align?: 'left' | 'right';
+}) {
+  const ativo = sort?.key === k;
+  return (
+    <TableHead className={align === 'right' ? 'text-right' : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={cn('flex w-full items-center gap-1 transition-colors hover:text-foreground',
+          align === 'right' && 'justify-end', ativo && 'text-foreground')}
+        aria-label={`Ordenar por ${label}`}
+      >
+        {label}
+        {!ativo ? <ChevronsUpDown className="h-3 w-3 opacity-40" />
+          : sort!.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+      </button>
+    </TableHead>
+  );
+}
+
+/** Valor comparável de uma venda para a coluna escolhida. null = vai pro fim. */
+function valorOrdenacao(v: Venda, k: SortKey): string | number | null {
+  switch (k) {
+    case 'data': { const d = v.date_closed ?? v.date_created; return d ? Date.parse(d) : null; }
+    case 'comprador': return v.comprador_nick;
+    case 'unidades': return v.itens.reduce((s, i) => s + i.quantity, 0);
+    case 'valor': return v.total_amount;
+    case 'liquido': return v.liquido;
+    case 'pagamento': return labelStatusPedido(v.status).label;
+    case 'envio': return labelStatusEnvio(v.shipping_status).label;
+    case 'origem': return v.is_publiai ? 1 : 0;
+  }
+}
 
 function Kpi({ icon: Icon, label, valor }: { icon: typeof DollarSign; label: string; valor: string }) {
   return (
@@ -112,6 +151,29 @@ export function AbaVendas() {
   const { data: vendas, isFetching, refetch } = useVendas(janela, origem);
   const kpis = useMemo(() => calcularKpis(vendas ?? []), [vendas]);
 
+  const [sort, setSort] = useState<Sort | null>(null);
+  const toggleSort = (k: SortKey) => {
+    const textual = k === 'comprador' || k === 'pagamento' || k === 'envio';
+    setSort((s) => (s?.key === k
+      ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key: k, dir: textual ? 'asc' : 'desc' }));
+  };
+  const vendasOrdenadas = useMemo(() => {
+    const lista = vendas ?? [];
+    if (!sort) return lista;
+    return [...lista].sort((a, b) => {
+      const va = valorOrdenacao(a, sort.key);
+      const vb = valorOrdenacao(b, sort.key);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      const cmp = typeof va === 'number' && typeof vb === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [vendas, sort]);
+
   async function sincronizar() {
     setSincronizando(true);
     try {
@@ -166,18 +228,18 @@ export function AbaVendas() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />
-              <TableHead>Data</TableHead>
-              <TableHead>Comprador</TableHead>
-              <TableHead>Itens</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="text-right">Líquido</TableHead>
-              <TableHead>Pagamento</TableHead>
-              <TableHead>Envio</TableHead>
-              <TableHead>Origem</TableHead>
+              <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
+              <ThSort k="comprador" label="Comprador" sort={sort} onSort={toggleSort} />
+              <ThSort k="unidades" label="Itens" sort={sort} onSort={toggleSort} />
+              <ThSort k="valor" label="Valor" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="liquido" label="Líquido" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="pagamento" label="Pagamento" sort={sort} onSort={toggleSort} />
+              <ThSort k="envio" label="Envio" sort={sort} onSort={toggleSort} />
+              <ThSort k="origem" label="Origem" sort={sort} onSort={toggleSort} />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(vendas ?? []).map((v) => <LinhaVenda key={v.id} v={v} />)}
+            {vendasOrdenadas.map((v) => <LinhaVenda key={v.id} v={v} />)}
           </TableBody>
         </Table>
         {!isFetching && (vendas ?? []).length === 0 && (
