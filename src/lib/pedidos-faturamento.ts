@@ -1,0 +1,193 @@
+// Visão por PEDIDO do menu Faturamento (ADR-0039): agrupa os order_id por pack (pack_id ?? order_id)
+// numa única linha — um carrinho do cliente vira um pedido, e os produtos vão para o detalhe.
+// Reaproveita o rateio de frete (ratearLiquidoPorFrete) e o custo (CustoResolver). Pura e testável.
+import type { Venda, VendaItem } from './faturamento';
+import { ehFaturavel, ratearLiquidoPorFrete, type CustoResolver, type PesoResolver } from './resumo-vendas';
+import { calcularMarkup } from './markup';
+import { labelStatusEnvio } from './ml-status';
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export interface ItemPedido {
+  id: string;
+  ml_item_id: string | null;
+  titulo: string | null;
+  codigo: string | null;
+  cor: string | null;
+  ean: string | null;
+  quantity: number;
+  unit_price: number;
+  /** Custo total do item (custo unitário × qtd), em R$. null = sem custo cadastrado. */
+  custo: number | null;
+  /** Líquido atribuído ao item: rateio do líquido do pedido por valor bruto do item. */
+  liquido: number;
+  /** (líquido − custo) ÷ custo. null sem custo. */
+  markup: number | null;
+}
+
+export interface Pedido {
+  /** Chave do pedido: String(pack_id ?? order_id). */
+  chave: string;
+  /** Verdadeiro quando agrupa >1 order_id do mesmo pack. */
+  isPack: boolean;
+  orderIds: number[];
+  data: string | null;
+  comprador_id: number | null;
+  comprador_nick: string | null;
+  /** Status de pagamento representativo do grupo (do membro mais antigo). */
+  status: string;
+  statusDetail: string | null;
+  shipping_status: string | null;
+  /** Substatus do envio (desmembra ready_to_ship: aguardando NF / a caminho). */
+  shipping_substatus: string | null;
+  /** Soma das quantidades dos itens. */
+  unidades: number;
+  /** Valor do checkout: soma de total_amount dos orders do pedido. */
+  bruto: number;
+  /** Frete do envio (uma vez por pack). null = sem frete. */
+  frete: number | null;
+  /** Líquido do pedido: soma do líquido (rateado) dos membros. */
+  liquido: number;
+  /** Custo total dos produtos do pedido. null = nenhum item com custo. */
+  custo: number | null;
+  markup: number | null;
+  comissao: number;
+  rastreio: string | null;
+  is_publiai: boolean;
+  tem_devolucao: boolean;
+  itens: ItemPedido[];
+}
+
+/** Custo total (R$) de um item: custo unitário × qtd. null se sem custo. */
+function custoDoItem(it: VendaItem, resolver?: CustoResolver): number | null {
+  const unit = resolver?.(it) ?? null;
+  return unit != null && unit > 0 ? round2(unit * it.quantity) : null;
+}
+
+/**
+ * Agrupa as vendas (linhas de ml_vendas, 1 por order_id) em PEDIDOS por `pack_id ?? order_id`.
+ * Totais por pedido: bruto = Σ total_amount; líquido = Σ líquido rateado; frete = max (uma vez);
+ * custo = Σ custo dos itens. Markup do pedido = (líquido − custo) ÷ custo. Por item, o líquido é
+ * rateado pelo valor bruto do item e o markup recalculado. Ordena do mais recente ao mais antigo.
+ */
+export function agruparPorPedido(
+  vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
+): Pedido[] {
+  const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
+  const liquidoMembro = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
+
+  const grupos = new Map<string, Venda[]>();
+  for (const v of vendas) {
+    const chave = String(v.pack_id ?? v.order_id);
+    const g = grupos.get(chave);
+    if (g) g.push(v); else grupos.set(chave, [v]);
+  }
+
+  const pedidos: Pedido[] = [];
+  for (const [chave, membros] of grupos) {
+    membros.sort((a, b) => a.order_id - b.order_id);
+    const bruto = round2(membros.reduce((s, v) => s + v.total_amount, 0));
+    const liquido = round2(membros.reduce((s, v) => s + liquidoMembro(v), 0));
+    const freteMax = Math.max(0, ...membros.map((v) => v.frete_vendedor ?? 0));
+    const frete = freteMax > 0 ? round2(freteMax) : null;
+    const comissao = round2(membros.reduce((s, v) => s + v.sale_fee_total, 0));
+
+    const itensFlat = membros.flatMap((v) => v.itens);
+    const unidades = itensFlat.reduce((s, i) => s + i.quantity, 0);
+    const valorItens = itensFlat.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+
+    let custoTotal = 0;
+    let temCusto = false;
+    const itens: ItemPedido[] = itensFlat.map((it) => {
+      const custo = custoDoItem(it, custoResolver);
+      if (custo != null) { custoTotal += custo; temCusto = true; }
+      const valorItem = it.unit_price * it.quantity;
+      const liqItem = valorItens > 0 ? round2((liquido * valorItem) / valorItens) : 0;
+      const markup = custo != null && custo > 0 ? calcularMarkup(liqItem, custo).markup : null;
+      return {
+        id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
+        cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
+        custo, liquido: liqItem, markup,
+      };
+    });
+    const custo = temCusto ? round2(custoTotal) : null;
+    const markup = custo != null && custo > 0 ? calcularMarkup(liquido, custo).markup : null;
+
+    const primeiro = membros[0];
+    pedidos.push({
+      chave,
+      isPack: primeiro.pack_id != null && membros.length > 1,
+      orderIds: membros.map((v) => v.order_id),
+      data: primeiro.date_closed ?? primeiro.date_created,
+      comprador_id: primeiro.comprador_id ?? null,
+      comprador_nick: primeiro.comprador_nick,
+      status: primeiro.status,
+      statusDetail: primeiro.status_detail,
+      shipping_status: primeiro.shipping_status,
+      shipping_substatus: primeiro.shipping_substatus,
+      unidades, bruto, frete, liquido, custo, markup, comissao,
+      rastreio: primeiro.tracking_number,
+      is_publiai: membros.some((v) => v.is_publiai),
+      tem_devolucao: membros.some((v) => v.tem_devolucao),
+      itens,
+    });
+  }
+  pedidos.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
+  return pedidos;
+}
+
+export interface KpisPedidos {
+  /** Nº de pedidos faturáveis (packs contam 1). */
+  pedidos: number;
+  unidades: number;
+  /** Faturamento bruto das vendas faturáveis no período. */
+  bruto: number;
+  /** Bruto ÷ pedidos. */
+  ticket: number;
+  /** Unidades ÷ pedidos. */
+  itensPorPedido: number;
+  /** Markup agregado: (Σ líquido com custo − Σ custo) ÷ Σ custo. null sem custo. */
+  markup: number | null;
+  compradoresUnicos: number;
+  /** % dos pedidos feitos por compradores com >1 pedido no período. */
+  pctRecompra: number;
+  /** Contagem de pedidos por status de envio (TODOS os pedidos, indep. de pagamento). */
+  porStatusEnvio: Record<string, number>;
+}
+
+/** Agrega KPIs operacionais a partir dos pedidos. Monetários só sobre faturáveis (ADR-0038). */
+export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
+  let bruto = 0, unidades = 0, faturaveis = 0, liqComCusto = 0, custoTotal = 0;
+  const porStatusEnvio: Record<string, number> = {};
+  const pedidosPorComprador = new Map<number, number>();
+
+  for (const p of pedidos) {
+    const st = labelStatusEnvio(p.shipping_status, p.shipping_substatus).label;
+    porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
+    if (!ehFaturavel(p.status)) continue;
+    faturaveis += 1;
+    bruto += p.bruto;
+    unidades += p.unidades;
+    if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
+    if (p.comprador_id != null) {
+      pedidosPorComprador.set(p.comprador_id, (pedidosPorComprador.get(p.comprador_id) ?? 0) + 1);
+    }
+  }
+
+  const compradoresUnicos = pedidosPorComprador.size;
+  let pedidosRecorrentes = 0;
+  for (const n of pedidosPorComprador.values()) if (n > 1) pedidosRecorrentes += n;
+  const pctRecompra = faturaveis > 0 ? round2((pedidosRecorrentes / faturaveis) * 100) : 0;
+
+  return {
+    pedidos: faturaveis,
+    unidades,
+    bruto: round2(bruto),
+    ticket: faturaveis > 0 ? round2(bruto / faturaveis) : 0,
+    itensPorPedido: faturaveis > 0 ? round2(unidades / faturaveis) : 0,
+    markup: custoTotal > 0 ? (liqComCusto - custoTotal) / custoTotal : null,
+    compradoresUnicos,
+    pctRecompra,
+    porStatusEnvio,
+  };
+}
