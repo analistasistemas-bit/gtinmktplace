@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
   const pedido = await buscarPedido(token, orderId);
   if (!pedido) return new Response(JSON.stringify({ ok: false, naoEncontrado: true }), { status: 200, headers: corsHeaders });
 
-  const { idsPubliai, codigoResolver } = await carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver } = await carregarCatalogo(admin, userId);
   const shippingId = pedido.shipping?.id ?? null;
   const [frete, shipment] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
   ]);
 
   const { novaPaga } = await upsertVenda(admin, userId, pedido, {
-    freteVendedor: frete, shipment, idsPubliai, codigoResolver,
+    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver,
   });
 
   // Alerta de nova venda paga (só se Telegram ativo).

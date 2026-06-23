@@ -12,11 +12,14 @@ export async function resolverUserId(admin: SupabaseClient, mlUserId: number | s
   return (data?.user_id as string | undefined) ?? null;
 }
 
-/** Map (ml_item_id, variation_id) → código do catálogo + conjunto de ids do PubliAI. */
-export async function carregarCatalogo(admin: SupabaseClient, userId: string): Promise<{
+export interface Catalogo {
   idsPubliai: Set<string>;
   codigoResolver: (itemId: string | null, varId: number | null) => string | null;
-}> {
+  eanResolver: (itemId: string | null, varId: number | null) => string | null;
+}
+
+/** Resolvedores (código/EAN) por (ml_item_id, variation_id) + conjunto de ids do PubliAI. */
+export async function carregarCatalogo(admin: SupabaseClient, userId: string): Promise<Catalogo> {
   const { data: familias } = await admin.from('familias')
     .select('id, ml_item_id, codigo_pai').eq('user_id', userId).not('ml_item_id', 'is', null);
   const famPorId = new Map<string, { mlItemId: string; codigoPai: string | null }>();
@@ -26,29 +29,29 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     idsPubliai.add(f.ml_item_id as string);
   }
   const { data: variacoes } = await admin.from('variacoes')
-    .select('familia_id, codigo, ml_variation_id').eq('user_id', userId);
-  // chave "itemId:varId" → codigo da variação; fallback "itemId" → codigo_pai da família.
-  const porVar = new Map<string, string>();
-  const porItem = new Map<string, string>();
+    .select('familia_id, codigo, gtin, ml_variation_id').eq('user_id', userId);
+  // chave "itemId:varId" → valor da variação; fallback "itemId" → primeiro valor da família.
+  const codPorVar = new Map<string, string>(), codPorItem = new Map<string, string>();
+  const eanPorVar = new Map<string, string>(), eanPorItem = new Map<string, string>();
   for (const v of variacoes ?? []) {
     const fam = famPorId.get(v.familia_id as string);
     if (!fam) continue;
-    const cod = v.codigo as string | null;
-    if (cod && v.ml_variation_id != null) porVar.set(`${fam.mlItemId}:${v.ml_variation_id}`, cod);
-    if (cod && !porItem.has(fam.mlItemId)) porItem.set(fam.mlItemId, cod);
+    const cod = v.codigo as string | null, ean = v.gtin as string | null;
+    if (cod && v.ml_variation_id != null) codPorVar.set(`${fam.mlItemId}:${v.ml_variation_id}`, cod);
+    if (cod && !codPorItem.has(fam.mlItemId)) codPorItem.set(fam.mlItemId, cod);
+    if (ean && v.ml_variation_id != null) eanPorVar.set(`${fam.mlItemId}:${v.ml_variation_id}`, ean);
+    if (ean && !eanPorItem.has(fam.mlItemId)) eanPorItem.set(fam.mlItemId, ean);
   }
   for (const [, fam] of famPorId) {
-    if (fam.codigoPai && !porItem.has(fam.mlItemId)) porItem.set(fam.mlItemId, fam.codigoPai);
+    if (fam.codigoPai && !codPorItem.has(fam.mlItemId)) codPorItem.set(fam.mlItemId, fam.codigoPai);
   }
-  const codigoResolver = (itemId: string | null, varId: number | null): string | null => {
-    if (!itemId) return null;
-    if (varId != null) {
-      const c = porVar.get(`${itemId}:${varId}`);
-      if (c) return c;
-    }
-    return porItem.get(itemId) ?? null;
-  };
-  return { idsPubliai, codigoResolver };
+  const mk = (porVar: Map<string, string>, porItem: Map<string, string>) =>
+    (itemId: string | null, varId: number | null): string | null => {
+      if (!itemId) return null;
+      if (varId != null) { const x = porVar.get(`${itemId}:${varId}`); if (x) return x; }
+      return porItem.get(itemId) ?? null;
+    };
+  return { idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem) };
 }
 
 /** GET /orders/{id}. null em erro. */
@@ -140,10 +143,12 @@ export async function upsertVenda(
   userId: string,
   pedido: PedidoML,
   opts: { freteVendedor?: number | null; shipment?: { status: string | null; substatus: string | null; tracking: string | null } | null;
-          idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null },
+          idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
+          eanResolver?: (i: string | null, v: number | null) => string | null },
 ): Promise<{ vendaId: string; novaPaga: boolean }> {
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
-    idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, freteVendedor: opts.freteVendedor,
+    idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
+    freteVendedor: opts.freteVendedor,
   });
   // Estado anterior (para detectar "nova venda paga" e não realertar).
   const { data: anterior } = await admin.from('ml_vendas')

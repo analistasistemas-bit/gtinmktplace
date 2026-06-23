@@ -9,6 +9,8 @@ export interface VendaItem {
   variation_id: number | null;
   titulo: string | null;
   codigo: string | null;
+  cor: string | null;
+  ean: string | null;
   quantity: number;
   unit_price: number;
   sale_fee: number;

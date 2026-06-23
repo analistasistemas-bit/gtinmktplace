@@ -63,6 +63,10 @@ export interface VendaItemRow {
   variation_id: number | null;
   titulo: string | null;
   codigo: string | null;
+  /** Cor vendida (variation_attributes COLOR do pedido). null = sem variação/cor. */
+  cor: string | null;
+  /** EAN/GTIN do produto (resolvido do catálogo). null = não mapeado. */
+  ean: string | null;
   quantity: number;
   unit_price: number;
   sale_fee: number;
@@ -83,7 +87,10 @@ export interface PedidoML {
   buyer?: { id?: number | string | null; nickname?: string | null } | null;
   shipping?: { id?: number | string | null } | null;
   order_items?: Array<{
-    item?: { id?: string | null; title?: string | null; variation_id?: number | string | null } | null;
+    item?: {
+      id?: string | null; title?: string | null; variation_id?: number | string | null;
+      variation_attributes?: Array<{ id?: string | null; name?: string | null; value_name?: string | null }> | null;
+    } | null;
     quantity?: number | null;
     unit_price?: number | null;
     sale_fee?: number | null;
@@ -95,8 +102,18 @@ export interface MapearOpts {
   idsPubliai: Set<string>;
   /** Resolve o código do catálogo a partir do (ml_item_id, variation_id). null = não mapeado. */
   codigoResolver: (mlItemId: string | null, variationId: number | null) => string | null;
+  /** Resolve o EAN/GTIN a partir do (ml_item_id, variation_id). null = não mapeado. */
+  eanResolver?: (mlItemId: string | null, variationId: number | null) => string | null;
   /** Custo de envio pago pelo vendedor (vem do shipment, opcional). */
   freteVendedor?: number | null;
+}
+
+/** Extrai a cor (variation_attributes COLOR) de um item do pedido. null se ausente. */
+function extrairCor(attrs: Array<{ id?: string | null; name?: string | null; value_name?: string | null }> | null | undefined): string | null {
+  for (const a of attrs ?? []) {
+    if (a?.id === 'COLOR' || /cor/i.test(a?.name ?? '')) return a?.value_name ?? null;
+  }
+  return null;
 }
 
 const num = (v: unknown): number | null => {
@@ -126,6 +143,8 @@ export function mapearPedidoParaVenda(
       variation_id: variationId,
       titulo: oi?.item?.title ?? null,
       codigo: itemPubliai ? opts.codigoResolver(mlItemId, variationId) : null,
+      cor: extrairCor(oi?.item?.variation_attributes),
+      ean: opts.eanResolver ? opts.eanResolver(mlItemId, variationId) : null,
       quantity: Number(oi?.quantity ?? 0),
       unit_price: Number(oi?.unit_price ?? 0),
       sale_fee: saleFee,

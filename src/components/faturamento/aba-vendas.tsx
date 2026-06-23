@@ -112,7 +112,9 @@ function LinhaVenda({ v }: { v: Venda }) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Item</TableHead>
+                    <TableHead>Cor</TableHead>
                     <TableHead>Código</TableHead>
+                    <TableHead>EAN</TableHead>
                     <TableHead className="text-right">Qtd</TableHead>
                     <TableHead className="text-right">Preço un.</TableHead>
                     <TableHead className="text-right">Comissão</TableHead>
@@ -121,8 +123,10 @@ function LinhaVenda({ v }: { v: Venda }) {
                 <TableBody>
                   {v.itens.map((i) => (
                     <TableRow key={i.id}>
-                      <TableCell className="max-w-[320px] truncate" title={i.titulo ?? ''}>{i.titulo ?? '—'}</TableCell>
+                      <TableCell className="max-w-[280px] truncate" title={i.titulo ?? ''}>{i.titulo ?? '—'}</TableCell>
+                      <TableCell>{i.cor ?? '—'}</TableCell>
                       <TableCell className="tabular-nums">{i.codigo ?? '—'}</TableCell>
+                      <TableCell className="tabular-nums">{i.ean ?? '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{i.quantity}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtBRL(i.unit_price)}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtBRL(i.sale_fee)}</TableCell>

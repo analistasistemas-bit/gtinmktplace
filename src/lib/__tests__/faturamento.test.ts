@@ -13,8 +13,8 @@ const venda = (over: Partial<Venda>): Venda => ({
 describe('calcularKpis', () => {
   it('agrega faturamento, líquido, unidades, pedidos e ticket', () => {
     const k = calcularKpis([
-      venda({ total_amount: 90.2, liquido: 83, itens: [{ id: 'a', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, quantity: 2, unit_price: 45.1, sale_fee: 7.2, is_publiai: true }] }),
-      venda({ total_amount: 10, liquido: 9, itens: [{ id: 'b', ml_item_id: 'N', variation_id: null, titulo: 't', codigo: null, quantity: 1, unit_price: 10, sale_fee: 1, is_publiai: false }] }),
+      venda({ total_amount: 90.2, liquido: 83, itens: [{ id: 'a', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, cor: null, ean: null, quantity: 2, unit_price: 45.1, sale_fee: 7.2, is_publiai: true }] }),
+      venda({ total_amount: 10, liquido: 9, itens: [{ id: 'b', ml_item_id: 'N', variation_id: null, titulo: 't', codigo: null, cor: null, ean: null, quantity: 1, unit_price: 10, sale_fee: 1, is_publiai: false }] }),
     ]);
     expect(k.faturamento).toBe(100.2);
     expect(k.liquido).toBe(92);
@@ -24,8 +24,8 @@ describe('calcularKpis', () => {
   });
   it('ignora pedidos não pagos (cancelado) no faturamento', () => {
     const k = calcularKpis([
-      venda({ status: 'paid', total_amount: 50, liquido: 45, itens: [{ id: 'a', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, quantity: 1, unit_price: 50, sale_fee: 5, is_publiai: true }] }),
-      venda({ status: 'cancelled', total_amount: 999, liquido: 900, itens: [{ id: 'b', ml_item_id: 'N', variation_id: null, titulo: 't', codigo: null, quantity: 9, unit_price: 111, sale_fee: 99, is_publiai: false }] }),
+      venda({ status: 'paid', total_amount: 50, liquido: 45, itens: [{ id: 'a', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, cor: null, ean: null, quantity: 1, unit_price: 50, sale_fee: 5, is_publiai: true }] }),
+      venda({ status: 'cancelled', total_amount: 999, liquido: 900, itens: [{ id: 'b', ml_item_id: 'N', variation_id: null, titulo: 't', codigo: null, cor: null, ean: null, quantity: 9, unit_price: 111, sale_fee: 99, is_publiai: false }] }),
     ]);
     expect(k.faturamento).toBe(50);
     expect(k.pedidos).toBe(1);

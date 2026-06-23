@@ -5,7 +5,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda } from '../_shared/faturamento/io.ts';
+import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 
@@ -31,10 +31,15 @@ Deno.serve(async (req) => {
     try { token = await getValidAccessToken(userId); } catch { continue; }
     let pedidos;
     try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
-    const { idsPubliai, codigoResolver } = await carregarCatalogo(admin, userId);
+    const { idsPubliai, codigoResolver, eanResolver } = await carregarCatalogo(admin, userId);
     for (const pedido of pedidos) {
       try {
-        await upsertVenda(admin, userId, pedido, { freteVendedor: null, shipment: null, idsPubliai, codigoResolver });
+        const shippingId = pedido.shipping?.id ?? null;
+        const [frete, shipment] = await Promise.all([
+          buscarFreteVendedor(token, shippingId),
+          buscarShipment(token, shippingId),
+        ]);
+        await upsertVenda(admin, userId, pedido, { freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver });
         total++;
       } catch { /* segue */ }
     }

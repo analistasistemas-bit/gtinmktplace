@@ -70,7 +70,10 @@ describe('mapearPedidoParaVenda', () => {
     shipping: { id: 40404 },
     order_items: [
       {
-        item: { id: 'MLB111', title: 'LINHA LINHANYL 150', variation_id: 700 },
+        item: {
+          id: 'MLB111', title: 'LINHA LINHANYL 150', variation_id: 700,
+          variation_attributes: [{ id: 'COLOR', name: 'Cor', value_name: 'Branco 01' }],
+        },
         quantity: 2,
         unit_price: 45.1,
         sale_fee: 7.2,
@@ -83,6 +86,7 @@ describe('mapearPedidoParaVenda', () => {
     const { venda, itens } = mapearPedidoParaVenda(pedidoBase, {
       idsPubliai: new Set(['MLB111']),
       codigoResolver: () => '02543826',
+      eanResolver: () => '7891521371181',
     });
     expect(venda.order_id).toBe(2000003508419013);
     expect(venda.status).toBe('paid');
@@ -97,6 +101,8 @@ describe('mapearPedidoParaVenda', () => {
       variation_id: 700,
       titulo: 'LINHA LINHANYL 150',
       codigo: '02543826',
+      cor: 'Branco 01',
+      ean: '7891521371181',
       quantity: 2,
       unit_price: 45.1,
       sale_fee: 7.2,
