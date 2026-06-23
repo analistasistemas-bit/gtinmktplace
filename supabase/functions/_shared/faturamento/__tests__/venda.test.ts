@@ -156,4 +156,29 @@ describe('mapearPedidoParaVenda', () => {
     expect(venda.frete_vendedor).toBeNull();
     expect(venda.liquido).toBe(83); // 90.20 - 7.20
   });
+
+  it('venda de catálogo: casa PubliAI por GTIN quando o item.id não bate', () => {
+    const pedido = {
+      ...pedidoBase,
+      order_items: [{ item: { id: 'MLB_CATALOGO_999', title: 'Fita X', variation_id: null }, quantity: 1, unit_price: 25, sale_fee: 4 }],
+    };
+    const { venda, itens } = mapearPedidoParaVenda(pedido, {
+      idsPubliai: new Set(['MLB_PROPRIO']), // não contém o id de catálogo
+      codigoResolver: () => null,
+      gtinPorItem: new Map([['MLB_CATALOGO_999', '7891521360659']]),
+      infoPorGtin: new Map([['7891521360659', { codigo: '00445975', ean: '7891521360659' }]]),
+    });
+    expect(venda.is_publiai).toBe(true);
+    expect(itens[0].is_publiai).toBe(true);
+    expect(itens[0].codigo).toBe('00445975');
+    expect(itens[0].ean).toBe('7891521360659');
+  });
+
+  it('líquido real vem do net do MP por pagamento (não da estimativa)', () => {
+    const { venda } = mapearPedidoParaVenda(pedidoBase, {
+      idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 50,
+      liquidoPorPayment: new Map([['1', 6.3]]),
+    });
+    expect(venda.liquido).toBe(6.3); // usa MP, ignora estimativa negativa por frete
+  });
 });

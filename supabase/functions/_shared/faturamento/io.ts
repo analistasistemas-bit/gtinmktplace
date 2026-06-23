@@ -1,7 +1,7 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, type PedidoML, type VendaItemRow } from './venda.ts';
+import { mapearPedidoParaVenda, normGtin, type PedidoML, type VendaItemRow } from './venda.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -16,6 +16,8 @@ export interface Catalogo {
   idsPubliai: Set<string>;
   codigoResolver: (itemId: string | null, varId: number | null) => string | null;
   eanResolver: (itemId: string | null, varId: number | null) => string | null;
+  /** normGtin → {codigo, ean} do catálogo — casa vendas de catálogo por GTIN. */
+  infoPorGtin: Map<string, { codigo: string | null; ean: string | null }>;
 }
 
 /** Resolvedores (código/EAN) por (ml_item_id, variation_id) + conjunto de ids do PubliAI. */
@@ -33,6 +35,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
   // chave "itemId:varId" → valor da variação; fallback "itemId" → primeiro valor da família.
   const codPorVar = new Map<string, string>(), codPorItem = new Map<string, string>();
   const eanPorVar = new Map<string, string>(), eanPorItem = new Map<string, string>();
+  const infoPorGtin = new Map<string, { codigo: string | null; ean: string | null }>();
   for (const v of variacoes ?? []) {
     const fam = famPorId.get(v.familia_id as string);
     if (!fam) continue;
@@ -41,6 +44,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     if (cod && !codPorItem.has(fam.mlItemId)) codPorItem.set(fam.mlItemId, cod);
     if (ean && v.ml_variation_id != null) eanPorVar.set(`${fam.mlItemId}:${v.ml_variation_id}`, ean);
     if (ean && !eanPorItem.has(fam.mlItemId)) eanPorItem.set(fam.mlItemId, ean);
+    if (ean && !infoPorGtin.has(normGtin(ean))) infoPorGtin.set(normGtin(ean), { codigo: cod, ean });
   }
   for (const [, fam] of famPorId) {
     if (fam.codigoPai && !codPorItem.has(fam.mlItemId)) codPorItem.set(fam.mlItemId, fam.codigoPai);
@@ -51,7 +55,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
       if (varId != null) { const x = porVar.get(`${itemId}:${varId}`); if (x) return x; }
       return porItem.get(itemId) ?? null;
     };
-  return { idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem) };
+  return { idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem), infoPorGtin };
 }
 
 /** GET /orders/{id}. null em erro. */
@@ -144,10 +148,14 @@ export async function upsertVenda(
   pedido: PedidoML,
   opts: { freteVendedor?: number | null; shipment?: { status: string | null; substatus: string | null; tracking: string | null } | null;
           idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
-          eanResolver?: (i: string | null, v: number | null) => string | null },
+          eanResolver?: (i: string | null, v: number | null) => string | null;
+          infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
+          gtinPorItem?: Map<string, string>;
+          liquidoPorPayment?: Map<string, number> },
 ): Promise<{ vendaId: string; novaPaga: boolean }> {
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
+    infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,
     freteVendedor: opts.freteVendedor,
   });
   // Estado anterior (para detectar "nova venda paga" e não realertar).

@@ -6,6 +6,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 
@@ -31,7 +32,11 @@ Deno.serve(async (req) => {
     try { token = await getValidAccessToken(userId); } catch { continue; }
     let pedidos;
     try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
-    const { idsPubliai, codigoResolver, eanResolver } = await carregarCatalogo(admin, userId);
+    const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+    const [liquidoPorPayment, gtinPorItem] = await Promise.all([
+      carregarLiquidoMP(),
+      carregarGtinsFallback(token, pedidos, idsPubliai),
+    ]);
     for (const pedido of pedidos) {
       try {
         const shippingId = pedido.shipping?.id ?? null;
@@ -39,7 +44,9 @@ Deno.serve(async (req) => {
           buscarFreteVendedor(token, shippingId),
           buscarShipment(token, shippingId),
         ]);
-        await upsertVenda(admin, userId, pedido, { freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver });
+        await upsertVenda(admin, userId, pedido, {
+          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+        });
         total++;
       } catch { /* segue */ }
     }

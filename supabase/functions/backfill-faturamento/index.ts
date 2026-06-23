@@ -10,6 +10,7 @@ import { requireUser } from '../_shared/auth.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 
@@ -31,7 +32,11 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, userId: s
     console.warn(`backfill: erro lendo pedidos de ${userId}: ${(e as Error).message}`);
     return 0;
   }
-  const { idsPubliai, codigoResolver, eanResolver } = await carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+  const [liquidoPorPayment, gtinPorItem] = await Promise.all([
+    carregarLiquidoMP(),
+    carregarGtinsFallback(token, pedidos, idsPubliai),
+  ]);
   let n = 0;
   for (const pedido of pedidos) {
     try {
@@ -40,7 +45,9 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, userId: s
         buscarFreteVendedor(token, shippingId),
         buscarShipment(token, shippingId),
       ]);
-      await upsertVenda(admin, userId, pedido, { freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver });
+      await upsertVenda(admin, userId, pedido, {
+        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+      });
       n++;
     } catch (e) {
       console.warn(`backfill: erro upsert pedido ${pedido.id}: ${(e as Error).message}`);

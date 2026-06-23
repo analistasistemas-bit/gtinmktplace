@@ -8,6 +8,7 @@ import { getValidAccessToken } from '../_shared/ml/token.ts';
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda,
 } from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
 import { enviarTelegram, montarMensagemNovaVenda } from '../_shared/notificacoes/telegram.ts';
 
@@ -41,15 +42,17 @@ Deno.serve(async (req) => {
   const pedido = await buscarPedido(token, orderId);
   if (!pedido) return new Response(JSON.stringify({ ok: false, naoEncontrado: true }), { status: 200, headers: corsHeaders });
 
-  const { idsPubliai, codigoResolver, eanResolver } = await carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
   const shippingId = pedido.shipping?.id ?? null;
-  const [frete, shipment] = await Promise.all([
+  const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
     buscarShipment(token, shippingId),
+    carregarLiquidoMP(),
+    carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 
   const { novaPaga } = await upsertVenda(admin, userId, pedido, {
-    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver,
+    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
   });
 
   // Alerta de nova venda paga (só se Telegram ativo).

@@ -61,8 +61,12 @@ O endpoint é público (`verify_jwt=false`), igual aos workers QStash, mas inert
 - Depende de **configuração manual no DevCenter** (URL de notificações + tópicos) e de um
   **QStash schedule**. Sem isso, backfill + reconciliação ainda mantêm as telas populadas.
 - Nova superfície de dados (5 tabelas). Nascem com `user_id` para migração aditiva a org (E7).
-- `liquido` é **estimado** (total − sale_fee − frete do vendedor); o líquido financeiro
-  "de caixa" continua no menu Financeiro (MP, ADR-0031). Os dois coexistem: Faturamento = visão
-  de vendas/operação; Financeiro = visão de recebíveis.
+- `liquido` usa o **líquido real do Mercado Pago** (`net_received_amount` por pagamento, mesma
+  fonte e lógica do menu Financeiro/ADR-0031 — já desconta tarifa + frete subsidiado). Sem
+  `MP_ACCESS_TOKEN` cai numa estimativa (total − sale_fee − frete). Faturamento = visão de
+  vendas/operação; Financeiro = visão de recebíveis; o líquido bate entre os dois.
+- **Classificação PubliAI por GTIN**: venda de catálogo traz `item.id` de catálogo (não casa por
+  `familias.ml_item_id`); o GTIN do produto (via `/items`) casa com `variacoes.gtin` do vendedor
+  → marcada PubliAI, com código/EAN resolvidos. Mesma estratégia do financeiro.
 - Atualiza a memória `reference_ml_permissao_pedidos`: `/orders` **funciona**; o que estava
   bloqueado era `/moderations` e `/orders` de *outros* contextos, não a venda do próprio seller.

@@ -4,6 +4,9 @@
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** GTIN normalizado (sem zeros à esquerda) para casar entre ML e planilha. */
+export const normGtin = (g: string) => g.replace(/^0+/, '');
+
 /** Notificação de webhook do ML, já normalizada. */
 export interface WebhookEvento {
   topic: string;
@@ -95,6 +98,7 @@ export interface PedidoML {
     unit_price?: number | null;
     sale_fee?: number | null;
   }> | null;
+  payments?: Array<{ id?: number | string | null } | null> | null;
 }
 
 export interface MapearOpts {
@@ -104,6 +108,12 @@ export interface MapearOpts {
   codigoResolver: (mlItemId: string | null, variationId: number | null) => string | null;
   /** Resolve o EAN/GTIN a partir do (ml_item_id, variation_id). null = não mapeado. */
   eanResolver?: (mlItemId: string | null, variationId: number | null) => string | null;
+  /** normGtin → {codigo, ean} do catálogo do vendedor — casa vendas de catálogo (item.id de catálogo). */
+  infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
+  /** ml_item_id → GTIN do item (buscado via /items), p/ o fallback por GTIN. */
+  gtinPorItem?: Map<string, string>;
+  /** paymentId → líquido recebido (net_received_amount do MP). Define o líquido real da venda. */
+  liquidoPorPayment?: Map<string, number>;
   /** Custo de envio pago pelo vendedor (vem do shipment, opcional). */
   freteVendedor?: number | null;
 }
@@ -136,15 +146,29 @@ export function mapearPedidoParaVenda(
     const variationId = num(oi?.item?.variation_id ?? null);
     const saleFee = round2(Number(oi?.sale_fee ?? 0));
     saleFeeTotal += saleFee;
-    const itemPubliai = mlItemId != null && opts.idsPubliai.has(mlItemId);
+
+    // 1) Match direto pelo ml_item_id (anúncio do próprio vendedor).
+    let itemPubliai = mlItemId != null && opts.idsPubliai.has(mlItemId);
+    let codigo = itemPubliai ? opts.codigoResolver(mlItemId, variationId) : null;
+    let ean = itemPubliai && opts.eanResolver ? opts.eanResolver(mlItemId, variationId) : null;
+
+    // 2) Fallback por GTIN: venda de catálogo traz item.id de catálogo (não casa por id),
+    //    mas o GTIN do produto bate com o catálogo do vendedor → é PubliAI (igual financeiro).
+    const gtin = mlItemId ? opts.gtinPorItem?.get(mlItemId) ?? null : null;
+    if (!itemPubliai && gtin && opts.infoPorGtin) {
+      const info = opts.infoPorGtin.get(normGtin(gtin));
+      if (info) { itemPubliai = true; codigo = info.codigo; ean = info.ean ?? gtin; }
+    }
+    if (!ean && gtin) ean = gtin; // mostra o EAN mesmo p/ itens fora do catálogo
+
     if (itemPubliai) isPubliai = true;
     return {
       ml_item_id: mlItemId,
       variation_id: variationId,
       titulo: oi?.item?.title ?? null,
-      codigo: itemPubliai ? opts.codigoResolver(mlItemId, variationId) : null,
+      codigo,
       cor: extrairCor(oi?.item?.variation_attributes),
-      ean: opts.eanResolver ? opts.eanResolver(mlItemId, variationId) : null,
+      ean,
       quantity: Number(oi?.quantity ?? 0),
       unit_price: Number(oi?.unit_price ?? 0),
       sale_fee: saleFee,
@@ -155,6 +179,18 @@ export function mapearPedidoParaVenda(
   saleFeeTotal = round2(saleFeeTotal);
   const total = Number(pedido.total_amount ?? 0);
   const frete = opts.freteVendedor ?? null;
+
+  // Líquido real: soma do net_received_amount (MP) dos pagamentos do pedido. Mesma lógica do
+  // menu Financeiro (ADR-0031) — já desconta tarifa + frete subsidiado. Sem MP → estimativa.
+  let liquidoMP: number | null = null;
+  if (opts.liquidoPorPayment) {
+    let soma = 0, achou = false;
+    for (const pg of pedido.payments ?? []) {
+      const id = pg?.id != null ? String(pg.id) : null;
+      if (id && opts.liquidoPorPayment.has(id)) { soma += opts.liquidoPorPayment.get(id)!; achou = true; }
+    }
+    if (achou) liquidoMP = round2(soma);
+  }
 
   const venda: VendaRow = {
     order_id: Number(pedido.id),
@@ -169,7 +205,7 @@ export function mapearPedidoParaVenda(
     paid_amount: num(pedido.paid_amount ?? null),
     sale_fee_total: saleFeeTotal,
     frete_vendedor: frete,
-    liquido: calcularLiquido(total, saleFeeTotal, frete),
+    liquido: liquidoMP != null ? liquidoMP : calcularLiquido(total, saleFeeTotal, frete),
     currency: pedido.currency_id ?? 'BRL',
     shipping_id: num(pedido.shipping?.id ?? null),
     is_publiai: isPubliai,
