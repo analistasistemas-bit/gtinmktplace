@@ -6,6 +6,8 @@ const PEDIDO: Record<string, { label: string; tom: 'success' | 'warning' | 'dang
   payment_required: { label: 'Aguardando pgto', tom: 'warning' },
   payment_in_process: { label: 'Processando pgto', tom: 'warning' },
   partially_paid: { label: 'Parcial', tom: 'warning' },
+  partially_refunded: { label: 'Estorno parcial', tom: 'warning' },
+  refunded: { label: 'Estornado', tom: 'danger' },
   cancelled: { label: 'Cancelado', tom: 'danger' },
   invalid: { label: 'Inválido', tom: 'danger' },
 };
