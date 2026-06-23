@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type { Janela } from './metricas';
-import { labelTipoEnvio } from './ml-status';
+import { labelStatusEnvio } from './ml-status';
 
 export type OrigemVenda = 'todos' | 'publiai' | 'fora';
 
@@ -75,26 +75,27 @@ export async function sincronizarFaturamento(dias = 90): Promise<{ sincronizados
 /** KPIs agregados das vendas exibidas. */
 export interface KpisVendas {
   faturamento: number; pedidos: number; unidades: number; liquido: number; ticket: number;
-  /** Quantidade de pedidos por tipo de envio (Full/Flex/Agência/Coleta/Sem envio). */
-  porTipoEnvio: Record<string, number>;
+  /** Quantidade de pedidos por status de envio (Pronto p/ envio, Enviado, Entregue, …). */
+  porStatusEnvio: Record<string, number>;
 }
 
 export function calcularKpis(vendas: Venda[]): KpisVendas {
-  // KPIs refletem receita realizada: só pedidos pagos contam (cancelados/pendentes
+  // KPIs monetários refletem receita realizada: só pedidos pagos contam (cancelados/pendentes
   // aparecem na lista com o status, mas não inflam o faturamento). A lista mostra todos.
+  // A quebra por status de envio conta TODOS os pedidos exibidos (operacional, indep. de pgto).
   let faturamento = 0, liquido = 0, unidades = 0, pedidos = 0;
-  const porTipoEnvio: Record<string, number> = {};
+  const porStatusEnvio: Record<string, number> = {};
   for (const v of vendas) {
+    const st = labelStatusEnvio(v.shipping_status).label;
+    porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
     if (v.status !== 'paid') continue;
     faturamento += v.total_amount;
     liquido += v.liquido ?? 0;
     for (const i of v.itens) unidades += i.quantity;
     pedidos += 1;
-    const tipo = labelTipoEnvio(v.shipping_logistic);
-    porTipoEnvio[tipo] = (porTipoEnvio[tipo] ?? 0) + 1;
   }
   return {
-    porTipoEnvio,
+    porStatusEnvio,
     faturamento: Math.round(faturamento * 100) / 100,
     liquido: Math.round(liquido * 100) / 100,
     unidades,

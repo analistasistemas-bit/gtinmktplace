@@ -229,15 +229,15 @@ export function AbaVendas() {
 
       <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
         <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Truck className="h-3.5 w-3.5 shrink-0" />Pedidos por tipo de envio
+          <Truck className="h-3.5 w-3.5 shrink-0" />Pedidos por status de envio
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          {Object.entries(kpis.porTipoEnvio).sort((a, b) => b[1] - a[1]).map(([tipo, n]) => (
-            <span key={tipo} className="tabular-nums">
-              <span className="font-semibold">{n}</span> <span className="text-muted-foreground">{tipo}</span>
+          {Object.entries(kpis.porStatusEnvio).sort((a, b) => b[1] - a[1]).map(([status, n]) => (
+            <span key={status} className="tabular-nums">
+              <span className="font-semibold">{n}</span> <span className="text-muted-foreground">{status}</span>
             </span>
           ))}
-          {Object.keys(kpis.porTipoEnvio).length === 0 && <span className="text-muted-foreground">—</span>}
+          {Object.keys(kpis.porStatusEnvio).length === 0 && <span className="text-muted-foreground">—</span>}
         </div>
       </div>
 

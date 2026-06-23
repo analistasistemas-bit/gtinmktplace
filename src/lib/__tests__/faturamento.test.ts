@@ -32,15 +32,15 @@ describe('calcularKpis', () => {
     expect(k.unidades).toBe(1);
   });
   it('vazio → zeros e ticket 0', () => {
-    expect(calcularKpis([])).toEqual({ faturamento: 0, liquido: 0, unidades: 0, pedidos: 0, ticket: 0, porTipoEnvio: {} });
+    expect(calcularKpis([])).toEqual({ faturamento: 0, liquido: 0, unidades: 0, pedidos: 0, ticket: 0, porStatusEnvio: {} });
   });
-  it('conta pedidos pagos por tipo de envio', () => {
+  it('conta TODOS os pedidos por status de envio (indep. de pagamento)', () => {
     const k = calcularKpis([
-      venda({ status: 'paid', shipping_logistic: 'fulfillment' }),
-      venda({ status: 'paid', shipping_logistic: 'fulfillment' }),
-      venda({ status: 'paid', shipping_logistic: 'self_service' }),
-      venda({ status: 'cancelled', shipping_logistic: 'drop_off' }),
+      venda({ status: 'paid', shipping_status: 'ready_to_ship' }),
+      venda({ status: 'paid', shipping_status: 'ready_to_ship' }),
+      venda({ status: 'paid', shipping_status: 'delivered' }),
+      venda({ status: 'cancelled', shipping_status: 'shipped' }),
     ]);
-    expect(k.porTipoEnvio).toEqual({ Full: 2, Flex: 1 });
+    expect(k.porStatusEnvio).toEqual({ 'Pronto p/ envio': 2, 'Entregue': 1, 'Enviado': 1 });
   });
 });
