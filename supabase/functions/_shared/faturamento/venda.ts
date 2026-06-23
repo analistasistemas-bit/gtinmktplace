@@ -142,16 +142,20 @@ function extrairCor(attrs: Array<{ id?: string | null; name?: string | null; val
 }
 
 /**
- * Extrai cidade/UF do `receiver_address` de um shipment do ML (/shipments/{id}). A UF vem como
- * `state.id` no formato "BR-SP" — devolvemos sem o prefixo ("SP"). Pura e defensiva: cidade/uf
- * null quando o ML não expõe o endereço (privacidade) ou o campo está ausente.
+ * Extrai cidade/UF do endereço de entrega de um shipment do ML (/shipments/{id} com `x-format-new`).
+ * No formato novo o endereço fica em `destination.shipping_address`; mantém fallback ao
+ * `receiver_address` (formato antigo). A UF vem como `state.id` "BR-SP" — devolvemos sem o prefixo
+ * ("SP"). Pura e defensiva: cidade/uf null quando ausente.
  */
 export function extrairGeo(shipment: unknown): { cidade: string | null; uf: string | null } {
-  const ra = (shipment as { receiver_address?: {
-    city?: { name?: string | null } | null; state?: { id?: string | null } | null;
-  } | null } | null | undefined)?.receiver_address;
-  const cidade = ra?.city?.name ?? null;
-  const stateId = ra?.state?.id ?? null;
+  type Endereco = { city?: { name?: string | null } | null; state?: { id?: string | null } | null } | null;
+  const s = shipment as {
+    destination?: { shipping_address?: Endereco } | null;
+    receiver_address?: Endereco;
+  } | null | undefined;
+  const addr = s?.destination?.shipping_address ?? s?.receiver_address ?? null;
+  const cidade = addr?.city?.name ?? null;
+  const stateId = addr?.state?.id ?? null;
   const uf = typeof stateId === 'string' ? stateId.replace(/^BR-/, '') : null;
   return { cidade: cidade ?? null, uf };
 }

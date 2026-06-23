@@ -8,16 +8,20 @@ import {
 } from '../venda';
 
 describe('extrairGeo', () => {
-  it('extrai cidade e UF (sem prefixo BR-) do receiver_address', () => {
-    const shipment = { receiver_address: { city: { name: 'São Paulo' }, state: { id: 'BR-SP', name: 'São Paulo' } } };
+  it('extrai cidade e UF (sem prefixo BR-) de destination.shipping_address (formato novo do ML)', () => {
+    const shipment = { destination: { shipping_address: { city: { name: 'Recife' }, state: { id: 'BR-PE', name: 'Pernambuco' } } } };
+    expect(extrairGeo(shipment)).toEqual({ cidade: 'Recife', uf: 'PE' });
+  });
+  it('fallback para receiver_address (formato antigo)', () => {
+    const shipment = { receiver_address: { city: { name: 'São Paulo' }, state: { id: 'BR-SP' } } };
     expect(extrairGeo(shipment)).toEqual({ cidade: 'São Paulo', uf: 'SP' });
   });
-  it('sem receiver_address → cidade/uf null', () => {
+  it('sem endereço → cidade/uf null', () => {
     expect(extrairGeo({ status: 'shipped' })).toEqual({ cidade: null, uf: null });
     expect(extrairGeo(null)).toEqual({ cidade: null, uf: null });
   });
-  it('state.id sem prefixo BR- é mantido; cidade ausente → null', () => {
-    expect(extrairGeo({ receiver_address: { state: { id: 'SP' } } })).toEqual({ cidade: null, uf: 'SP' });
+  it('state.id sem prefixo BR- é mantido', () => {
+    expect(extrairGeo({ destination: { shipping_address: { state: { id: 'SP' } } } })).toEqual({ cidade: null, uf: 'SP' });
   });
 });
 
