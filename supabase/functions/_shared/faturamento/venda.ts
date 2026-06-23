@@ -141,6 +141,21 @@ function extrairCor(attrs: Array<{ id?: string | null; name?: string | null; val
   return null;
 }
 
+/**
+ * Extrai cidade/UF do `receiver_address` de um shipment do ML (/shipments/{id}). A UF vem como
+ * `state.id` no formato "BR-SP" — devolvemos sem o prefixo ("SP"). Pura e defensiva: cidade/uf
+ * null quando o ML não expõe o endereço (privacidade) ou o campo está ausente.
+ */
+export function extrairGeo(shipment: unknown): { cidade: string | null; uf: string | null } {
+  const ra = (shipment as { receiver_address?: {
+    city?: { name?: string | null } | null; state?: { id?: string | null } | null;
+  } | null } | null | undefined)?.receiver_address;
+  const cidade = ra?.city?.name ?? null;
+  const stateId = ra?.state?.id ?? null;
+  const uf = typeof stateId === 'string' ? stateId.replace(/^BR-/, '') : null;
+  return { cidade: cidade ?? null, uf };
+}
+
 const num = (v: unknown): number | null => {
   if (v == null) return null;
   const n = Number(v);

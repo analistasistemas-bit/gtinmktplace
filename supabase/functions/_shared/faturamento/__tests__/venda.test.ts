@@ -4,7 +4,22 @@ import {
   extrairIdDoResource,
   mapearPedidoParaVenda,
   calcularLiquido,
+  extrairGeo,
 } from '../venda';
+
+describe('extrairGeo', () => {
+  it('extrai cidade e UF (sem prefixo BR-) do receiver_address', () => {
+    const shipment = { receiver_address: { city: { name: 'São Paulo' }, state: { id: 'BR-SP', name: 'São Paulo' } } };
+    expect(extrairGeo(shipment)).toEqual({ cidade: 'São Paulo', uf: 'SP' });
+  });
+  it('sem receiver_address → cidade/uf null', () => {
+    expect(extrairGeo({ status: 'shipped' })).toEqual({ cidade: null, uf: null });
+    expect(extrairGeo(null)).toEqual({ cidade: null, uf: null });
+  });
+  it('state.id sem prefixo BR- é mantido; cidade ausente → null', () => {
+    expect(extrairGeo({ receiver_address: { state: { id: 'SP' } } })).toEqual({ cidade: null, uf: 'SP' });
+  });
+});
 
 describe('extrairIdDoResource', () => {
   it('extrai id de /orders/123', () => {

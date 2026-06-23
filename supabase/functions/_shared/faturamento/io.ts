@@ -1,7 +1,7 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, normGtin, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { mapearPedidoParaVenda, normGtin, extrairGeo, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -82,9 +82,10 @@ export async function buscarFreteVendedor(token: string, shippingId: number | st
   }
 }
 
-/** Status do envio via /shipments/{id}. null em erro. */
+/** Status do envio + geografia (cidade/UF do receiver_address) via /shipments/{id}. null em erro. */
 export async function buscarShipment(token: string, shippingId: number | string | null): Promise<{
   status: string | null; substatus: string | null; tracking: string | null; logistic: string | null;
+  cidade: string | null; uf: string | null;
 } | null> {
   if (shippingId == null) return null;
   try {
@@ -93,11 +94,14 @@ export async function buscarShipment(token: string, shippingId: number | string 
     });
     if (!resp.ok) return null;
     const s = await resp.json();
+    const geo = extrairGeo(s);
     return {
       status: s?.status ?? null,
       substatus: s?.substatus ?? null,
       tracking: s?.tracking_number ?? null,
       logistic: s?.logistic?.type ?? s?.logistic_type ?? null,
+      cidade: geo.cidade,
+      uf: geo.uf,
     };
   } catch {
     return null;
@@ -150,7 +154,7 @@ export async function upsertVenda(
   opts: { freteVendedor?: number | null;
           idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
           eanResolver?: (i: string | null, v: number | null) => string | null;
-          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null } | null;
+          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null; cidade: string | null; uf: string | null } | null;
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
           liquidoPorPayment?: Map<string, DadosPagamentoMP> },
@@ -172,6 +176,8 @@ export async function upsertVenda(
     shipping_substatus: opts.shipment?.substatus ?? null,
     tracking_number: opts.shipment?.tracking ?? null,
     shipping_logistic: opts.shipment?.logistic ?? null,
+    cidade: opts.shipment?.cidade ?? null,
+    uf: opts.shipment?.uf ?? null,
     atualizado_em: new Date().toISOString(),
   };
   const { data: up, error } = await admin.from('ml_vendas')
