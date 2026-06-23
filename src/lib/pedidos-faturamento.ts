@@ -38,6 +38,8 @@ export interface Pedido {
   status: string;
   statusDetail: string | null;
   shipping_status: string | null;
+  /** Substatus do envio (desmembra ready_to_ship: aguardando NF / a caminho). */
+  shipping_substatus: string | null;
   /** Soma das quantidades dos itens. */
   unidades: number;
   /** Valor do checkout: soma de total_amount dos orders do pedido. */
@@ -122,6 +124,7 @@ export function agruparPorPedido(
       status: primeiro.status,
       statusDetail: primeiro.status_detail,
       shipping_status: primeiro.shipping_status,
+      shipping_substatus: primeiro.shipping_substatus,
       unidades, bruto, frete, liquido, custo, markup, comissao,
       rastreio: primeiro.tracking_number,
       is_publiai: membros.some((v) => v.is_publiai),
@@ -159,7 +162,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
   const pedidosPorComprador = new Map<number, number>();
 
   for (const p of pedidos) {
-    const st = labelStatusEnvio(p.shipping_status).label;
+    const st = labelStatusEnvio(p.shipping_status, p.shipping_substatus).label;
     porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
     if (!ehFaturavel(p.status)) continue;
     faturaveis += 1;

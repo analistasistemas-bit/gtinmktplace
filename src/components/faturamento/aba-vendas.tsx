@@ -75,7 +75,7 @@ function valorOrdenacao(p: Pedido, k: SortKey): string | number | null {
     case 'liquido': return p.liquido;
     case 'markup': return p.markup;
     case 'pagamento': return labelStatusPedido(p.status).label;
-    case 'envio': return labelStatusEnvio(p.shipping_status).label;
+    case 'envio': return labelStatusEnvio(p.shipping_status, p.shipping_substatus).label;
     case 'origem': return p.is_publiai ? 1 : 0;
   }
 }
@@ -102,7 +102,7 @@ function Kpi({ icon: Icon, label, valor, tom: tomProp, valorCor, sub }: {
 function LinhaPedido({ p }: { p: Pedido }) {
   const [aberto, setAberto] = useState(false);
   const pgto = labelStatusPedido(p.status);
-  const envio = labelStatusEnvio(p.shipping_status);
+  const envio = labelStatusEnvio(p.shipping_status, p.shipping_substatus);
   const resumo = p.itens.length === 1
     ? (p.itens[0].titulo ?? '—')
     : `${p.itens.length} produtos`;
