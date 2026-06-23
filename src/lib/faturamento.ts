@@ -30,6 +30,10 @@ export interface Venda {
   comprador_nick: string | null;
   /** id numérico do comprador no ML (coluna ml_vendas.comprador_id), p/ detectar recompra. */
   comprador_id: number | null;
+  /** UF do destinatário do envio (coluna ml_vendas.uf, sem prefixo "BR-"). */
+  uf: string | null;
+  /** Cidade do destinatário do envio (coluna ml_vendas.cidade). */
+  cidade: string | null;
   total_amount: number;
   paid_amount: number | null;
   sale_fee_total: number;
