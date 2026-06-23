@@ -5,6 +5,9 @@ import type { Janela } from './metricas';
 export interface VendaFinanceira {
   id: string;
   data: string | null;
+  /** money_release_date (ISO) — quando o ML libera este recebimento. Passado = liberado;
+   *  futuro = a liberar. null quando o MP não informa. */
+  dataLiberacao: string | null;
   descricao: string | null;
   bruto: number;
   liquido: number;
