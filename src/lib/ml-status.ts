@@ -22,13 +22,30 @@ const ENVIO: Record<string, { label: string; tom: 'success' | 'warning' | 'dange
   cancelled: { label: 'Cancelado', tom: 'danger' },
 };
 
+// Substatus de `ready_to_ship` em que o pacote JÁ saiu do vendedor. O ML, na tela de Vendas,
+// move esses para "Em trânsito / A caminho" — não são mais "Pronto p/ envio". (fluxo drop-off/coleta)
+const SUBSTATUS_A_CAMINHO = new Set([
+  'dropped_off', 'picked_up', 'in_hub', 'in_warehouse', 'arrived_at_warehouse',
+  'in_route', 'out_for_delivery', 'soon_deliver',
+]);
+
 export function labelStatusPedido(status: string | null | undefined): { label: string; tom: 'success' | 'warning' | 'danger' | 'muted' } {
   if (!status) return { label: '—', tom: 'muted' };
   return PEDIDO[status] ?? { label: status, tom: 'muted' };
 }
 
-export function labelStatusEnvio(status: string | null | undefined): { label: string; tom: 'success' | 'warning' | 'danger' | 'muted' } {
+export function labelStatusEnvio(
+  status: string | null | undefined,
+  substatus?: string | null,
+): { label: string; tom: 'success' | 'warning' | 'danger' | 'muted' } {
   if (!status) return { label: '—', tom: 'muted' };
+  // `ready_to_ship` é um guarda-chuva: o substatus diz se o pacote ainda está com o vendedor
+  // ("Pronto p/ envio"), aguardando nota ("Aguardando NF") ou já a caminho. Ver ML Vendas.
+  if (status === 'ready_to_ship') {
+    if (substatus === 'invoice_pending') return { label: 'Aguardando NF', tom: 'warning' };
+    if (substatus && SUBSTATUS_A_CAMINHO.has(substatus)) return { label: 'A caminho', tom: 'success' };
+    return { label: 'Pronto p/ envio', tom: 'warning' };
+  }
   return ENVIO[status] ?? { label: status, tom: 'muted' };
 }
 

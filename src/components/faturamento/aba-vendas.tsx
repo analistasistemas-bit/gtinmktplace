@@ -65,7 +65,7 @@ function valorOrdenacao(v: Venda, k: SortKey, liquido: number | null): string | 
     case 'valor': return v.total_amount;
     case 'liquido': return liquido;
     case 'pagamento': return labelStatusPedido(v.status).label;
-    case 'envio': return labelStatusEnvio(v.shipping_status).label;
+    case 'envio': return labelStatusEnvio(v.shipping_status, v.shipping_substatus).label;
     case 'origem': return v.is_publiai ? 1 : 0;
   }
 }
@@ -91,7 +91,7 @@ function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
 function LinhaVenda({ v, rateio }: { v: Venda; rateio?: RateioPedido }) {
   const [aberto, setAberto] = useState(false);
   const pgto = labelStatusPedido(v.status);
-  const envio = labelStatusEnvio(v.shipping_status);
+  const envio = labelStatusEnvio(v.shipping_status, v.shipping_substatus);
   // Em pack, o frete do envio é redistribuído por peso entre os pedidos; sem pack usa o cru.
   const liquido = rateio?.liquido ?? v.liquido;
   const frete = rateio?.frete ?? v.frete_vendedor;

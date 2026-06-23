@@ -93,7 +93,7 @@ export function calcularKpis(vendas: Venda[]): KpisVendas {
   let faturamento = 0, liquido = 0, unidades = 0, pedidos = 0;
   const porStatusEnvio: Record<string, number> = {};
   for (const v of vendas) {
-    const st = labelStatusEnvio(v.shipping_status).label;
+    const st = labelStatusEnvio(v.shipping_status, v.shipping_substatus).label;
     porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
     if (!ehFaturavel(v.status)) continue;
     faturamento += v.total_amount;
