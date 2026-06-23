@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown, Truck } from 'lucide-react';
+import {
+  ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, TrendingUp,
+  RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown,
+  Truck, Layers, Users,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
-import { montarPesoResolver } from '@/lib/custos';
-import { ratearLiquidoPorFrete, type RateioPedido } from '@/lib/resumo-vendas';
-import { calcularKpis, sincronizarFaturamento, type OrigemVenda, type Venda } from '@/lib/faturamento';
+import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
+import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
+import { agruparPorPedido, calcularKpisPedidos, type Pedido } from '@/lib/pedidos-faturamento';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
@@ -30,7 +34,13 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
   return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
 }
 
-type SortKey = 'data' | 'comprador' | 'unidades' | 'valor' | 'liquido' | 'pagamento' | 'envio' | 'origem';
+/** Formata markup como percentual com sinal. Ex: 0.42 → "+42%" */
+function fmtMarkup(m: number): string {
+  const pct = Math.round(m * 100);
+  return (pct >= 0 ? '+' : '') + pct + '%';
+}
+
+type SortKey = 'data' | 'comprador' | 'unidades' | 'valor' | 'liquido' | 'markup' | 'pagamento' | 'envio' | 'origem';
 type Sort = { key: SortKey; dir: 'asc' | 'desc' };
 
 /** Cabeçalho clicável que ordena a tabela pela coluna (seta indica direção). */
@@ -55,79 +65,97 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
   );
 }
 
-/** Valor comparável de uma venda para a coluna escolhida. null = vai pro fim. `liquido` já vem
- *  rateado (frete de pack redistribuído) para ordenar pela mesma cifra que a tabela exibe. */
-function valorOrdenacao(v: Venda, k: SortKey, liquido: number | null): string | number | null {
+/** Valor comparável de um pedido para a coluna escolhida. null = vai pro fim. */
+function valorOrdenacao(p: Pedido, k: SortKey): string | number | null {
   switch (k) {
-    case 'data': { const d = v.date_closed ?? v.date_created; return d ? Date.parse(d) : null; }
-    case 'comprador': return v.comprador_nick;
-    case 'unidades': return v.itens.reduce((s, i) => s + i.quantity, 0);
-    case 'valor': return v.total_amount;
-    case 'liquido': return liquido;
-    case 'pagamento': return labelStatusPedido(v.status).label;
-    case 'envio': return labelStatusEnvio(v.shipping_status).label;
-    case 'origem': return v.is_publiai ? 1 : 0;
+    case 'data': return p.data ? Date.parse(p.data) : null;
+    case 'comprador': return p.comprador_nick;
+    case 'unidades': return p.unidades;
+    case 'valor': return p.bruto;
+    case 'liquido': return p.liquido;
+    case 'markup': return p.markup;
+    case 'pagamento': return labelStatusPedido(p.status).label;
+    case 'envio': return labelStatusEnvio(p.shipping_status).label;
+    case 'origem': return p.is_publiai ? 1 : 0;
   }
 }
 
-function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
+function Kpi({ icon: Icon, label, valor, tom: tomProp, valorCor, sub }: {
   icon: typeof DollarSign; label: string; valor: string;
   tom?: 'info' | 'success' | 'warning' | 'danger';
-  /** Cor opcional aplicada ao valor (ex.: markup verde/vermelho). */
   valorCor?: string;
+  sub?: string;
 }) {
-  const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
-    : tom === 'danger' ? 'text-destructive' : 'text-info';
+  const cor = tomProp === 'success' ? 'text-success' : tomProp === 'warning' ? 'text-warning'
+    : tomProp === 'danger' ? 'text-destructive' : 'text-info';
   return (
     <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
       <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
         <Icon className="h-3.5 w-3.5 shrink-0" />{label}
       </div>
       <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
+      {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
     </div>
   );
 }
 
-function LinhaVenda({ v, rateio }: { v: Venda; rateio?: RateioPedido }) {
+function LinhaPedido({ p }: { p: Pedido }) {
   const [aberto, setAberto] = useState(false);
-  const pgto = labelStatusPedido(v.status);
-  const envio = labelStatusEnvio(v.shipping_status);
-  // Em pack, o frete do envio é redistribuído por peso entre os pedidos; sem pack usa o cru.
-  const liquido = rateio?.liquido ?? v.liquido;
-  const frete = rateio?.frete ?? v.frete_vendedor;
-  const resumo = v.itens.length === 1
-    ? (v.itens[0].titulo ?? '—')
-    : `${v.itens.length} itens`;
-  const urlVenda = `https://www.mercadolivre.com.br/vendas/${v.order_id}/detalhe`;
+  const pgto = labelStatusPedido(p.status);
+  const envio = labelStatusEnvio(p.shipping_status);
+  const resumo = p.itens.length === 1
+    ? (p.itens[0].titulo ?? '—')
+    : `${p.itens.length} produtos`;
+  const urlVenda = p.isPack
+    ? `https://www.mercadolivre.com.br/vendas/pacote/${p.chave}/detalhe`
+    : `https://www.mercadolivre.com.br/vendas/${p.orderIds[0]}/detalhe`;
+  const markupCor = p.markup == null ? undefined
+    : p.markup >= 0 ? 'text-success' : 'text-destructive';
+
   return (
     <>
       <TableRow className="cursor-pointer hover:bg-muted/40" onClick={() => setAberto((a) => !a)}>
         <TableCell className="w-8 align-middle">
-          {aberto ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          {aberto
+            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
         </TableCell>
-        <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(v.date_closed ?? v.date_created)}</TableCell>
-        <TableCell className="max-w-[140px] truncate">{v.comprador_nick ?? '—'}</TableCell>
+        <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(p.data)}</TableCell>
+        <TableCell className="max-w-[140px] truncate">
+          <span className="flex items-center gap-1">
+            {p.isPack && <Layers className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pack" />}
+            {p.comprador_nick ?? '—'}
+          </span>
+        </TableCell>
         <TableCell className="max-w-[280px] truncate uppercase" title={resumo}>{resumo}</TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">{fmtBRL(v.total_amount)}</TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums text-success">{liquido != null ? fmtBRL(liquido) : '—'}</TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">{fmtInt(p.unidades)}</TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums">{fmtBRL(p.bruto)}</TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums text-success">{fmtBRL(p.liquido)}</TableCell>
+        <TableCell className={cn('whitespace-nowrap text-right tabular-nums', markupCor)}>
+          {p.markup != null ? fmtMarkup(p.markup) : '—'}
+        </TableCell>
         <TableCell><StatusPill tone={tom(pgto.tom)}>{pgto.label}</StatusPill></TableCell>
         <TableCell><StatusPill tone={tom(envio.tom)}>{envio.label}</StatusPill></TableCell>
         <TableCell>
           <span className="flex items-center gap-1">
-            <StatusPill tone={v.is_publiai ? 'info' : 'neutral'}>{v.is_publiai ? 'PubliAI' : 'Fora'}</StatusPill>
-            {v.tem_devolucao && <StatusPill tone="danger"><RotateCcw className="h-3 w-3" />Devolução</StatusPill>}
+            <StatusPill tone={p.is_publiai ? 'info' : 'neutral'}>{p.is_publiai ? 'PubliAI' : 'Fora'}</StatusPill>
+            {p.tem_devolucao && <StatusPill tone="danger"><RotateCcw className="h-3 w-3" />Devolução</StatusPill>}
           </span>
         </TableCell>
       </TableRow>
       {aberto && (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={9} className="p-0">
+          <TableCell colSpan={11} className="p-0">
             <div className="px-10 py-3">
               <div className="mb-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
-                <div>Pedido <span className="font-medium text-foreground tabular-nums">{v.order_id}</span></div>
-                <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(v.sale_fee_total)}</span></div>
-                <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{frete != null ? fmtBRL(frete) : '—'}</span></div>
-                <div>Rastreio <span className="font-medium text-foreground">{v.tracking_number ?? '—'}</span></div>
+                <div>
+                  {p.isPack
+                    ? <>Pack <span className="font-medium text-foreground tabular-nums">{p.chave}</span></>
+                    : <>Pedido <span className="font-medium text-foreground tabular-nums">{p.orderIds[0]}</span></>}
+                </div>
+                <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.comissao)}</span></div>
+                <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{p.frete != null ? fmtBRL(p.frete) : '—'}</span></div>
+                <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>
               </div>
               <Table className="text-xs">
                 <TableHeader>
@@ -138,21 +166,31 @@ function LinhaVenda({ v, rateio }: { v: Venda; rateio?: RateioPedido }) {
                     <TableHead>EAN</TableHead>
                     <TableHead className="text-right">Qtd</TableHead>
                     <TableHead className="text-right">Preço un.</TableHead>
-                    <TableHead className="text-right">Comissão</TableHead>
+                    <TableHead className="text-right">Custo</TableHead>
+                    <TableHead className="text-right">Líquido</TableHead>
+                    <TableHead className="text-right">Markup</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {v.itens.map((i) => (
-                    <TableRow key={i.id}>
-                      <TableCell className="max-w-[280px] truncate uppercase" title={i.titulo ?? ''}>{i.titulo ?? '—'}</TableCell>
-                      <TableCell>{i.cor ?? '—'}</TableCell>
-                      <TableCell className="tabular-nums">{i.codigo ?? '—'}</TableCell>
-                      <TableCell className="tabular-nums">{i.ean ?? '—'}</TableCell>
-                      <TableCell className="text-right tabular-nums">{i.quantity}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmtBRL(i.unit_price)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmtBRL(i.sale_fee)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {p.itens.map((it) => {
+                    const mCor = it.markup == null ? undefined
+                      : it.markup >= 0 ? 'text-success' : 'text-destructive';
+                    return (
+                      <TableRow key={it.id}>
+                        <TableCell className="max-w-[280px] truncate uppercase" title={it.titulo ?? ''}>{it.titulo ?? '—'}</TableCell>
+                        <TableCell>{it.cor ?? '—'}</TableCell>
+                        <TableCell className="tabular-nums">{it.codigo ?? '—'}</TableCell>
+                        <TableCell className="tabular-nums">{it.ean ?? '—'}</TableCell>
+                        <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
+                        <TableCell className="text-right tabular-nums">{fmtBRL(it.unit_price)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{it.custo != null ? fmtBRL(it.custo) : '—'}</TableCell>
+                        <TableCell className="text-right tabular-nums text-success">{fmtBRL(it.liquido)}</TableCell>
+                        <TableCell className={cn('text-right tabular-nums', mCor)}>
+                          {it.markup != null ? fmtMarkup(it.markup) : '—'}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               <div className="mt-2">
@@ -180,13 +218,26 @@ export function AbaVendas() {
   const escolherPreset = (dias: PeriodoDias) => { setModoCustom(false); setPeriodo({ tipo: 'preset', dias }); };
   const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
   const aplicarCustom = () => { if (rascunhoValido) setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); };
+
   const { data: vendas, isFetching, refetch } = useVendas(janela, origem);
   const { data: custos } = useCustos();
-  const kpis = useMemo(() => calcularKpis(vendas ?? []), [vendas]);
-  // Frete de pack (mesmo envio em vários pedidos) rateado por peso → líquido/frete coerentes por linha.
-  const rateio = useMemo(
-    () => ratearLiquidoPorFrete(vendas ?? [], montarPesoResolver(custos)),
+
+  // Agrupa por pack/order_id → pedidos; calcula KPIs novos
+  const pedidos = useMemo(
+    () => agruparPorPedido(vendas ?? [], montarCustoResolver(custos), montarPesoResolver(custos)),
     [vendas, custos],
+  );
+  const kpis = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
+
+  // Filtro por status de envio (clique no card de contagem, toggle)
+  const [filtroEnvio, setFiltroEnvio] = useState<string | null>(null);
+  const toggleFiltroEnvio = (status: string) =>
+    setFiltroEnvio((f) => (f === status ? null : status));
+  const pedidosFiltrados = useMemo(
+    () => filtroEnvio == null
+      ? pedidos
+      : pedidos.filter((p) => labelStatusEnvio(p.shipping_status).label === filtroEnvio),
+    [pedidos, filtroEnvio],
   );
 
   const [sort, setSort] = useState<Sort | null>(null);
@@ -196,12 +247,11 @@ export function AbaVendas() {
       ? { key: k, dir: s.dir === 'asc' ? 'desc' : 'asc' }
       : { key: k, dir: textual ? 'asc' : 'desc' }));
   };
-  const vendasOrdenadas = useMemo(() => {
-    const lista = vendas ?? [];
-    if (!sort) return lista;
-    return [...lista].sort((a, b) => {
-      const va = valorOrdenacao(a, sort.key, rateio.get(a.id)?.liquido ?? a.liquido);
-      const vb = valorOrdenacao(b, sort.key, rateio.get(b.id)?.liquido ?? b.liquido);
+  const pedidosOrdenados = useMemo(() => {
+    if (!sort) return pedidosFiltrados;
+    return [...pedidosFiltrados].sort((a, b) => {
+      const va = valorOrdenacao(a, sort.key);
+      const vb = valorOrdenacao(b, sort.key);
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
       if (vb == null) return -1;
@@ -210,7 +260,7 @@ export function AbaVendas() {
         : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
       return sort.dir === 'asc' ? cmp : -cmp;
     });
-  }, [vendas, sort, rateio]);
+  }, [pedidosFiltrados, sort]);
 
   async function sincronizar() {
     setSincronizando(true);
@@ -225,8 +275,12 @@ export function AbaVendas() {
     }
   }
 
+  const markupCor = kpis.markup == null ? undefined
+    : kpis.markup >= 0 ? 'text-success' : 'text-destructive';
+
   return (
     <div className="space-y-4">
+      {/* ── Filtros de período / origem / sincronizar ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap items-center gap-1">
@@ -275,27 +329,54 @@ export function AbaVendas() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(kpis.faturamento)} tom="success" />
+      {/* ── KPIs ── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(kpis.bruto)} tom="success" />
         <Kpi icon={ShoppingBag} label="Pedidos" valor={fmtInt(kpis.pedidos)} tom="info" />
         <Kpi icon={Package} label="Unidades" valor={fmtInt(kpis.unidades)} tom="info" />
         <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(kpis.ticket)} tom="info" />
+        <Kpi icon={Layers} label="Itens / pedido" valor={kpis.itensPorPedido.toFixed(1).replace('.', ',')} tom="info" />
+        <Kpi icon={TrendingUp} label="Markup" valor={kpis.markup != null ? fmtMarkup(kpis.markup) : '—'}
+          tom={kpis.markup == null ? 'info' : kpis.markup >= 0 ? 'success' : 'danger'}
+          valorCor={markupCor} />
+        <Kpi icon={Users} label="Compradores" valor={fmtInt(kpis.compradoresUnicos)} tom="info"
+          sub={`${kpis.pctRecompra.toFixed(1).replace('.', ',')}% recompra`} />
       </div>
 
+      {/* ── Card de status de envio (clicável para filtrar) ── */}
       <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
         <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Truck className="h-3.5 w-3.5 shrink-0" />Pedidos por status de envio
+          {filtroEnvio && (
+            <button
+              type="button"
+              onClick={() => setFiltroEnvio(null)}
+              className="ml-2 text-xs text-info hover:underline">
+              limpar filtro
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {Object.entries(kpis.porStatusEnvio).sort((a, b) => b[1] - a[1]).map(([status, n]) => (
-            <span key={status} className="tabular-nums">
-              <span className="font-semibold">{n}</span> <span className="text-muted-foreground">{status}</span>
-            </span>
+            <button
+              key={status}
+              type="button"
+              onClick={() => toggleFiltroEnvio(status)}
+              className={cn(
+                'tabular-nums transition-opacity hover:opacity-80',
+                filtroEnvio != null && filtroEnvio !== status && 'opacity-40',
+              )}
+              aria-label={status}
+            >
+              <span className="font-semibold">{n}</span>{' '}
+              <span className="text-muted-foreground">{status}</span>
+            </button>
           ))}
           {Object.keys(kpis.porStatusEnvio).length === 0 && <span className="text-muted-foreground">—</span>}
         </div>
       </div>
 
+      {/* ── Tabela de pedidos ── */}
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>
@@ -303,16 +384,18 @@ export function AbaVendas() {
               <TableHead className="w-8" />
               <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
               <ThSort k="comprador" label="Comprador" sort={sort} onSort={toggleSort} />
-              <ThSort k="unidades" label="Itens" sort={sort} onSort={toggleSort} />
+              <TableHead>Produtos</TableHead>
+              <ThSort k="unidades" label="Un." sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="valor" label="Valor" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="liquido" label="Líquido" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="markup" label="Markup" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="pagamento" label="Pagamento" sort={sort} onSort={toggleSort} />
               <ThSort k="envio" label="Envio" sort={sort} onSort={toggleSort} />
               <ThSort k="origem" label="Origem" sort={sort} onSort={toggleSort} />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vendasOrdenadas.map((v) => <LinhaVenda key={v.id} v={v} rateio={rateio.get(v.id)} />)}
+            {pedidosOrdenados.map((p) => <LinhaPedido key={p.chave} p={p} />)}
           </TableBody>
         </Table>
         {!isFetching && (vendas ?? []).length === 0 && (
