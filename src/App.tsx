@@ -13,6 +13,7 @@ import Relatorio from '@/pages/Relatorio';
 import Configuracoes from '@/pages/Configuracoes';
 import Publicados from '@/pages/Publicados';
 import DetalheVendas from '@/pages/DetalheVendas';
+import Faturamento from '@/pages/Faturamento';
 import Financeiro from '@/pages/Financeiro';
 import DetalheFinanceiro from '@/pages/DetalheFinanceiro';
 import Viabilidade from '@/pages/Viabilidade';
@@ -37,6 +38,7 @@ export function AppRoutes() {
           <Route path="/configuracoes" element={<Configuracoes />} />
           <Route path="/publicados" element={<Publicados />} />
           <Route path="/publicados/vendas" element={<DetalheVendas />} />
+          <Route path="/faturamento" element={<Faturamento />} />
           <Route path="/financeiro" element={<Financeiro />} />
           <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />
           <Route path="/viabilidade" element={<Viabilidade />} />

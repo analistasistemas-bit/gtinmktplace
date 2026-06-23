@@ -39,3 +39,6 @@ Thumbs.db
 # Agent session/worktree artifacts
 .claude/
 .superpowers/
+
+# Serena MCP (config local da ferramenta)
+.serena/

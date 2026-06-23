@@ -20,11 +20,12 @@ describe('ThemeToggle', () => {
 });
 
 describe('SidebarNav', () => {
-  it('renderiza os 7 links com hrefs corretos', () => {
+  it('renderiza os 8 links com hrefs corretos', () => {
     render(<MemoryRouter><SidebarNav /></MemoryRouter>);
-    expect(screen.getAllByRole('link')).toHaveLength(7);
+    expect(screen.getAllByRole('link')).toHaveLength(8);
     expect(screen.getByRole('link', { name: /Dashboard/i }).getAttribute('href')).toBe('/');
     expect(screen.getByRole('link', { name: /Publicados/i }).getAttribute('href')).toBe('/publicados');
+    expect(screen.getByRole('link', { name: /Faturamento/i }).getAttribute('href')).toBe('/faturamento');
     expect(screen.getByRole('link', { name: /Financeiro/i }).getAttribute('href')).toBe('/financeiro');
     expect(screen.getByRole('link', { name: /Viabilidade/i }).getAttribute('href')).toBe('/viabilidade');
   });
