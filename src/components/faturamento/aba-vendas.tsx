@@ -4,6 +4,9 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
+import { useCustos } from '@/hooks/useCustos';
+import { montarPesoResolver } from '@/lib/custos';
+import { ratearLiquidoPorFrete, type RateioPedido } from '@/lib/resumo-vendas';
 import { calcularKpis, sincronizarFaturamento, type OrigemVenda, type Venda } from '@/lib/faturamento';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
@@ -52,14 +55,15 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
   );
 }
 
-/** Valor comparável de uma venda para a coluna escolhida. null = vai pro fim. */
-function valorOrdenacao(v: Venda, k: SortKey): string | number | null {
+/** Valor comparável de uma venda para a coluna escolhida. null = vai pro fim. `liquido` já vem
+ *  rateado (frete de pack redistribuído) para ordenar pela mesma cifra que a tabela exibe. */
+function valorOrdenacao(v: Venda, k: SortKey, liquido: number | null): string | number | null {
   switch (k) {
     case 'data': { const d = v.date_closed ?? v.date_created; return d ? Date.parse(d) : null; }
     case 'comprador': return v.comprador_nick;
     case 'unidades': return v.itens.reduce((s, i) => s + i.quantity, 0);
     case 'valor': return v.total_amount;
-    case 'liquido': return v.liquido;
+    case 'liquido': return liquido;
     case 'pagamento': return labelStatusPedido(v.status).label;
     case 'envio': return labelStatusEnvio(v.shipping_status).label;
     case 'origem': return v.is_publiai ? 1 : 0;
@@ -77,10 +81,13 @@ function Kpi({ icon: Icon, label, valor }: { icon: typeof DollarSign; label: str
   );
 }
 
-function LinhaVenda({ v }: { v: Venda }) {
+function LinhaVenda({ v, rateio }: { v: Venda; rateio?: RateioPedido }) {
   const [aberto, setAberto] = useState(false);
   const pgto = labelStatusPedido(v.status);
   const envio = labelStatusEnvio(v.shipping_status);
+  // Em pack, o frete do envio é redistribuído por peso entre os pedidos; sem pack usa o cru.
+  const liquido = rateio?.liquido ?? v.liquido;
+  const frete = rateio?.frete ?? v.frete_vendedor;
   const resumo = v.itens.length === 1
     ? (v.itens[0].titulo ?? '—')
     : `${v.itens.length} itens`;
@@ -95,7 +102,7 @@ function LinhaVenda({ v }: { v: Venda }) {
         <TableCell className="max-w-[140px] truncate">{v.comprador_nick ?? '—'}</TableCell>
         <TableCell className="max-w-[280px] truncate" title={resumo}>{resumo}</TableCell>
         <TableCell className="whitespace-nowrap text-right tabular-nums">{fmtBRL(v.total_amount)}</TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums text-success">{v.liquido != null ? fmtBRL(v.liquido) : '—'}</TableCell>
+        <TableCell className="whitespace-nowrap text-right tabular-nums text-success">{liquido != null ? fmtBRL(liquido) : '—'}</TableCell>
         <TableCell><StatusPill tone={tom(pgto.tom)}>{pgto.label}</StatusPill></TableCell>
         <TableCell><StatusPill tone={tom(envio.tom)}>{envio.label}</StatusPill></TableCell>
         <TableCell>
@@ -112,7 +119,7 @@ function LinhaVenda({ v }: { v: Venda }) {
               <div className="mb-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
                 <div>Pedido <span className="font-medium text-foreground tabular-nums">{v.order_id}</span></div>
                 <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(v.sale_fee_total)}</span></div>
-                <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{v.frete_vendedor != null ? fmtBRL(v.frete_vendedor) : '—'}</span></div>
+                <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{frete != null ? fmtBRL(frete) : '—'}</span></div>
                 <div>Rastreio <span className="font-medium text-foreground">{v.tracking_number ?? '—'}</span></div>
               </div>
               <Table className="text-xs">
@@ -167,7 +174,13 @@ export function AbaVendas() {
   const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
   const aplicarCustom = () => { if (rascunhoValido) setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); };
   const { data: vendas, isFetching, refetch } = useVendas(janela, origem);
+  const { data: custos } = useCustos();
   const kpis = useMemo(() => calcularKpis(vendas ?? []), [vendas]);
+  // Frete de pack (mesmo envio em vários pedidos) rateado por peso → líquido/frete coerentes por linha.
+  const rateio = useMemo(
+    () => ratearLiquidoPorFrete(vendas ?? [], montarPesoResolver(custos)),
+    [vendas, custos],
+  );
 
   const [sort, setSort] = useState<Sort | null>(null);
   const toggleSort = (k: SortKey) => {
@@ -180,8 +193,8 @@ export function AbaVendas() {
     const lista = vendas ?? [];
     if (!sort) return lista;
     return [...lista].sort((a, b) => {
-      const va = valorOrdenacao(a, sort.key);
-      const vb = valorOrdenacao(b, sort.key);
+      const va = valorOrdenacao(a, sort.key, rateio.get(a.id)?.liquido ?? a.liquido);
+      const vb = valorOrdenacao(b, sort.key, rateio.get(b.id)?.liquido ?? b.liquido);
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
       if (vb == null) return -1;
@@ -190,7 +203,7 @@ export function AbaVendas() {
         : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
       return sort.dir === 'asc' ? cmp : -cmp;
     });
-  }, [vendas, sort]);
+  }, [vendas, sort, rateio]);
 
   async function sincronizar() {
     setSincronizando(true);
@@ -289,7 +302,7 @@ export function AbaVendas() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vendasOrdenadas.map((v) => <LinhaVenda key={v.id} v={v} />)}
+            {vendasOrdenadas.map((v) => <LinhaVenda key={v.id} v={v} rateio={rateio.get(v.id)} />)}
           </TableBody>
         </Table>
         {!isFetching && (vendas ?? []).length === 0 && (

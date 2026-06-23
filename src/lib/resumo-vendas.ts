@@ -19,6 +19,9 @@ export const ehFaturavel = (status: string | null | undefined): boolean =>
 /** Resolve o custo unitário (R$) de um item vendido, ou null se não houver custo cadastrado. */
 export type CustoResolver = (item: VendaItem) => number | null;
 
+/** Resolve o peso unitário (g) de um item vendido, ou null se não houver peso cadastrado. */
+export type PesoResolver = (item: VendaItem) => number | null;
+
 /** Uma venda resumida para a tabela do detalhe financeiro (e afins). */
 export interface VendaResumo {
   id: string;
@@ -84,11 +87,17 @@ function descricaoVenda(v: Venda): string | null {
 
 /**
  * Agrega as vendas faturáveis do período num resumo único. `vendas` são as linhas de ml_vendas da
- * janela (a quebra por status de envio, que conta TODOS, fica em `calcularKpis`). O frete inflado
- * em packs (mesmo valor de envio repetido em cada pedido) NÃO afeta estes KPIs: o líquido vem do
- * net do MP por pedido, então `descontos = bruto − líquido` já é correto (ADR-0038).
+ * janela (a quebra por status de envio, que conta TODOS, fica em `calcularKpis`).
+ *
+ * Frete de pack: quando vários pedidos compartilham um envio (mesmo shipping_id), o ML concentra o
+ * frete inteiro no líquido (net do MP) de UM único pedido, distorcendo o markup por produto. Antes
+ * de montar o detalhe, `ratearLiquidoPorFrete` redistribui esse frete por peso entre os pedidos do
+ * grupo (zero-soma) — o `liquido` agregado do período não muda, só a atribuição por linha.
  */
-export function calcularResumo(vendas: Venda[], custoResolver?: CustoResolver): ResumoVendas {
+export function calcularResumo(
+  vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
+): ResumoVendas {
+  const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0, pedidos = 0;
   let liqComCusto = 0, custoTotal = 0;
   const porItem: Record<string, { unidades: number; valor: number }> = {};
@@ -96,7 +105,7 @@ export function calcularResumo(vendas: Venda[], custoResolver?: CustoResolver): 
 
   for (const v of vendas) {
     if (!ehFaturavel(v.status)) continue;
-    const liq = v.liquido ?? 0;
+    const liq = liqRateado.get(v.id)?.liquido ?? v.liquido ?? 0;
     const est = v.estorno ?? 0;
     bruto += v.total_amount;
     liquido += liq;
@@ -149,28 +158,83 @@ export function calcularResumo(vendas: Venda[], custoResolver?: CustoResolver): 
   };
 }
 
+/** Peso total (g) de um pedido: soma de pesoUnit × qtd dos itens com peso. 0 se nenhum tem. */
+function pesoDaVenda(v: Venda, resolver?: PesoResolver): number {
+  if (!resolver) return 0;
+  let total = 0;
+  for (const it of v.itens) {
+    const unit = resolver(it);
+    if (unit != null && unit > 0) total += unit * it.quantity;
+  }
+  return total;
+}
+
 /**
- * Frete do vendedor rateado por pedido. O webhook grava o frete do envio inteiro em cada pedido do
- * mesmo pack (shipping_id), inflando a soma; aqui dividimos o frete do envio igualmente entre os
- * pedidos do grupo para exibição (zero-soma). Pedido sem pack fica com o próprio frete.
- * Retorna mapa order_id → frete rateado (R$). Só para o detalhe; não afeta líquido/descontos.
+ * Rateia o frete de cada envio compartilhado (pack) entre os pedidos do grupo, recompondo o líquido
+ * de cada um. Zero-soma: a soma dos líquidos do grupo NÃO muda — corrige só a atribuição, que o ML
+ * concentra no net de um único pagamento (deixando um produto com markup negativo e o outro
+ * inflado). Base do rateio do frete: peso (todos os pedidos com peso) → senão valor (bruto).
+ *
+ * O frete real do envio vem de `frete_vendedor` (mesmo valor repetido em cada pedido do pack → vale
+ * uma vez). A tarifa real do grupo é derivada (`bruto − frete − líquido`) e rateada por valor.
+ * Grupos de 1 pedido, sem frete, ou não faturáveis ficam crus (não entram no mapa). Retorna
+ * venda.id → { líquido recomposto, frete atribuído ao pedido }.
  */
-export function fretePorPedidoRateado(vendas: Venda[]): Map<number, number> {
+export interface RateioPedido { liquido: number; frete: number }
+
+export function ratearLiquidoPorFrete(
+  vendas: Venda[], pesoResolver?: PesoResolver,
+): Map<string, RateioPedido> {
   const grupos = new Map<number, Venda[]>();
-  const soltos: Venda[] = [];
   for (const v of vendas) {
+    if (!ehFaturavel(v.status)) continue;
     const sid = v.shipping_id ?? v.pack_id;
-    if (sid == null) { soltos.push(v); continue; }
+    if (sid == null) continue;
     const g = grupos.get(sid);
     if (g) g.push(v); else grupos.set(sid, [v]);
   }
-  const out = new Map<number, number>();
-  for (const v of soltos) out.set(v.order_id, v.frete_vendedor ?? 0);
+
+  const out = new Map<string, RateioPedido>();
   for (const membros of grupos.values()) {
-    // O frete do envio é o mesmo repetido em cada pedido do pack → conta uma vez e divide igual.
+    if (membros.length < 2) continue;
+    // Frete do envio: o mesmo valor repetido em cada pedido do pack → conta uma vez.
     const freteEnvio = Math.max(0, ...membros.map((m) => m.frete_vendedor ?? 0));
-    const rateado = round2(freteEnvio / membros.length);
-    for (const m of membros) out.set(m.order_id, rateado);
+    if (freteEnvio <= 0) continue;
+
+    const somaLiqCru = round2(membros.reduce((s, m) => s + (m.liquido ?? 0), 0));
+    const brutoGrupo = round2(membros.reduce((s, m) => s + m.total_amount, 0));
+    // Tarifa real do grupo (taxas ML/MP), derivada do que o MP de fato reteve além do frete.
+    const tarifaGrupo = Math.max(0, round2(brutoGrupo - freteEnvio - somaLiqCru));
+
+    const pesos = membros.map((m) => pesoDaVenda(m, pesoResolver));
+    const usaPeso = pesos.every((p) => p > 0);
+    const base = usaPeso ? pesos : membros.map((m) => m.total_amount);
+    const baseTotal = base.reduce((s, b) => s + b, 0);
+    if (baseTotal <= 0) continue;
+    // Maior base absorve o resíduo de centavos dos arredondamentos.
+    let idxMax = 0;
+    for (let i = 1; i < base.length; i++) if (base[i] > base[idxMax]) idxMax = i;
+
+    // Frete por peso; tarifa por valor (taxa do ML é ~proporcional ao preço).
+    const fretes = ratearProporcional(freteEnvio, base, idxMax);
+    const tarifas = ratearProporcional(tarifaGrupo, membros.map((m) => m.total_amount), idxMax);
+
+    const liquidos = membros.map((m, i) => round2(m.total_amount - tarifas[i] - fretes[i]));
+    // Garante soma exata == líquido cru do grupo (resíduo na maior base).
+    const diff = round2(somaLiqCru - liquidos.reduce((s, l) => s + l, 0));
+    liquidos[idxMax] = round2(liquidos[idxMax] + diff);
+
+    membros.forEach((m, i) => out.set(m.id, { liquido: liquidos[i], frete: fretes[i] }));
   }
   return out;
+}
+
+/** Rateia `total` proporcionalmente a `base`; o resíduo de centavos vai para `idxResto`. */
+function ratearProporcional(total: number, base: number[], idxResto: number): number[] {
+  const baseTotal = base.reduce((s, b) => s + b, 0);
+  if (baseTotal <= 0) return base.map(() => 0);
+  const partes = base.map((b) => round2((total * b) / baseTotal));
+  const resto = round2(total - partes.reduce((s, p) => s + p, 0));
+  partes[idxResto] = round2(partes[idxResto] + resto);
+  return partes;
 }
