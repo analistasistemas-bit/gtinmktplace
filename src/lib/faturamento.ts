@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { Janela } from './metricas';
 import { labelStatusEnvio } from './ml-status';
+import { ehFaturavel } from './resumo-vendas';
 
 export type OrigemVenda = 'todos' | 'publiai' | 'fora';
 
@@ -32,7 +33,12 @@ export interface Venda {
   sale_fee_total: number;
   frete_vendedor: number | null;
   liquido: number | null;
+  /** Total estornado nesta venda (Mercado Pago). Coluna ml_vendas.estorno (ADR-0038). */
+  estorno: number | null;
+  /** money_release_date — quando o ML libera o recebimento. Coluna ml_vendas (ADR-0038). */
+  money_release_date: string | null;
   currency: string;
+  shipping_id: number | null;
   shipping_status: string | null;
   shipping_substatus: string | null;
   shipping_logistic: string | null;
@@ -80,15 +86,16 @@ export interface KpisVendas {
 }
 
 export function calcularKpis(vendas: Venda[]): KpisVendas {
-  // KPIs monetários refletem receita realizada: só pedidos pagos contam (cancelados/pendentes
-  // aparecem na lista com o status, mas não inflam o faturamento). A lista mostra todos.
+  // KPIs monetários refletem o "Vendas brutas" do ML: contam vendas faturáveis — pagas E
+  // reembolsadas (paid/partially_refunded/refunded), pelo valor bruto, igual à tela de Métricas
+  // do ML (ADR-0038). Cancelados aparecem na lista com o status, mas não inflam o faturamento.
   // A quebra por status de envio conta TODOS os pedidos exibidos (operacional, indep. de pgto).
   let faturamento = 0, liquido = 0, unidades = 0, pedidos = 0;
   const porStatusEnvio: Record<string, number> = {};
   for (const v of vendas) {
     const st = labelStatusEnvio(v.shipping_status).label;
     porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
-    if (v.status !== 'paid') continue;
+    if (!ehFaturavel(v.status)) continue;
     faturamento += v.total_amount;
     liquido += v.liquido ?? 0;
     for (const i of v.itens) unidades += i.quantity;

@@ -1,7 +1,7 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, normGtin, type PedidoML, type VendaItemRow } from './venda.ts';
+import { mapearPedidoParaVenda, normGtin, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -153,7 +153,7 @@ export async function upsertVenda(
           shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null } | null;
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
-          liquidoPorPayment?: Map<string, number> },
+          liquidoPorPayment?: Map<string, DadosPagamentoMP> },
 ): Promise<{ vendaId: string; novaPaga: boolean }> {
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,

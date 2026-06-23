@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
-import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
+import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { periodoToParams, resolverJanela, type PeriodoDias } from '@/lib/metricas';
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
@@ -37,28 +37,21 @@ function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
 export default function Financeiro() {
   const [periodo, setPeriodo] = useState<PeriodoDias>(30);
   const janela = useMemo(() => resolverJanela({ tipo: 'preset', dias: periodo }), [periodo]);
-  const { data: r, isFetching, refetch, dataUpdatedAt } = useResumoFinanceiro(janela);
+  const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela);
   const horaAtualizacao = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  const semCred = r?.semCredencialMP;
-  const pctRetido = r && r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
-  const ticketLiquido = r && r.pagamentos > 0 ? r.liquido / r.pagamentos : 0;
+  const pctRetido = r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
+  const ticketLiquido = r.pedidos > 0 ? r.liquido / r.pedidos : 0;
   const queryDetalhe = new URLSearchParams(periodoToParams({ tipo: 'preset', dias: periodo })).toString();
-  const podeDetalhar = !!r && !semCred && !r.erroFinanceiro;
+  const podeDetalhar = r.pedidos > 0;
 
   // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
   // cadastrado (as demais não entram na base, senão distorceria). null = nenhuma com custo.
-  const markup = useMemo(() => {
-    let liq = 0;
-    let cst = 0;
-    let n = 0;
-    for (const v of r?.vendas ?? []) {
-      if (v.custo != null && v.custo > 0) { liq += v.liquido; cst += v.custo; n += 1; }
-    }
-    return cst > 0 ? { pct: (liq - cst) / cst, lucro: liq - cst, n } : null;
-  }, [r]);
+  const markup = r.markup != null
+    ? { pct: r.markup, lucro: r.lucro, n: r.vendas.filter((v) => v.custo != null && v.custo > 0).length }
+    : null;
 
   return (
     <div className="p-6">
@@ -73,14 +66,9 @@ export default function Financeiro() {
         }
       />
 
-      {semCred && (
-        <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          Conta Mercado Pago não conectada. Cadastre o Access Token de produção para ver o financeiro.
-        </div>
-      )}
-      {r?.erroFinanceiro && (
+      {error && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          Falha ao ler o financeiro do Mercado Pago: {r.erroFinanceiro}
+          Falha ao ler as vendas. Clique em Atualizar para tentar de novo.
         </div>
       )}
 
@@ -156,7 +144,7 @@ export default function Financeiro() {
         <Kpi
           icon={ShoppingBag}
           label="Vendas no período"
-          valor={fmtInt(r?.pagamentos ?? 0)}
+          valor={fmtInt(r.pedidos)}
           tom="info"
         />
         <Kpi
@@ -172,9 +160,10 @@ export default function Financeiro() {
       </div>
 
       <p className="mt-6 text-xs text-muted-foreground">
-        Valores das vendas aprovadas no período (fonte: pagamentos do Mercado Pago). O "líquido" é
-        o que o vendedor recebe após taxas do ML/Mercado Pago e frete. A previsão de datas de
-        liberação ("a receber") não é exposta de forma confiável pela API e fica no app do Mercado Pago.
+        Vendas do período (fonte: pedidos do Mercado Livre — mesma base de Publicados e Faturamento).
+        O bruto segue o "Vendas brutas" do ML (inclui vendas reembolsadas). O "líquido" é o que o
+        vendedor recebe após taxas do ML/Mercado Pago e frete. A previsão de "a receber / lançamentos
+        futuros" não é exposta de forma confiável pela API e fica no app do Mercado Pago.
       </p>
     </div>
   );

@@ -174,11 +174,21 @@ describe('mapearPedidoParaVenda', () => {
     expect(itens[0].ean).toBe('7891521360659');
   });
 
-  it('líquido real vem do net do MP por pagamento (não da estimativa)', () => {
+  it('líquido/estorno/liberação reais vêm do MP por pagamento (não da estimativa)', () => {
     const { venda } = mapearPedidoParaVenda(pedidoBase, {
       idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 50,
-      liquidoPorPayment: new Map([['1', 6.3]]),
+      liquidoPorPayment: new Map([['1', { net: 6.3, estorno: 2.5, releaseDate: '2026-06-24T11:00:00Z' }]]),
     });
     expect(venda.liquido).toBe(6.3); // usa MP, ignora estimativa negativa por frete
+    expect(venda.estorno).toBe(2.5);
+    expect(venda.money_release_date).toBe('2026-06-24T11:00:00Z');
+  });
+
+  it('sem MP: estorno e liberação ficam null (líquido estimado)', () => {
+    const { venda } = mapearPedidoParaVenda(pedidoBase, {
+      idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 5,
+    });
+    expect(venda.estorno).toBeNull();
+    expect(venda.money_release_date).toBeNull();
   });
 });

@@ -42,8 +42,10 @@ import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
-import { useMetricasVendas } from '@/hooks/useMetricasVendas';
-import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
+import { useVendas } from '@/hooks/useVendas';
+import { useCustos } from '@/hooks/useCustos';
+import { calcularResumo } from '@/lib/resumo-vendas';
+import { montarCustoResolver } from '@/lib/custos';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -240,18 +242,14 @@ export default function Publicados() {
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
-  const { data: metricas, isFetching: fetchingMetricas, refetch: refetchMetricas } = useMetricasVendas(janela);
-  const { data: financeiro } = useResumoFinanceiro(janela);
-
-  const markupPct = useMemo(() => {
-    const vendas = financeiro?.vendas;
-    if (!vendas?.length) return null;
-    let liq = 0, cst = 0;
-    for (const v of vendas) {
-      if (v.custo != null && v.custo > 0) { liq += v.liquido; cst += v.custo; }
-    }
-    return cst > 0 ? (liq - cst) / cst : null;
-  }, [financeiro]);
+  // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
+  const { data: vendas, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useVendas(janela, 'todos');
+  const { data: custos } = useCustos();
+  const resumo = useMemo(
+    () => calcularResumo(vendas ?? [], montarCustoResolver(custos)),
+    [vendas, custos],
+  );
+  const markupPct = resumo.markup;
 
   // Estado da tela (filtro/ordenação/página/tamanho) vive na URL: ao abrir um
   // detalhe e voltar (back), o navegador restaura tudo. Setters usam replace para
@@ -306,7 +304,7 @@ export default function Publicados() {
   // não a cada tecla na busca).
   const merged: PublicadoItem[] = useMemo(() => {
     const statusMap = new Map((statusData?.itens ?? []).map((s) => [s.ml_item_id, s]));
-    const vendasPorItem = metricas?.porItem ?? {};
+    const vendasPorItem = resumo.porItem;
     return publicados.map((item) => {
       const s = statusMap.get(item.mlItemId);
       const v = vendasPorItem[item.mlItemId];
@@ -318,7 +316,7 @@ export default function Publicados() {
         ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, ...comVendas }
         : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
-  }, [publicados, statusData, metricas]);
+  }, [publicados, statusData, resumo]);
 
   const totalModerados = useMemo(
     () => merged.filter((i) => i.status === 'moderado').length,
@@ -428,7 +426,7 @@ export default function Publicados() {
       ) : (
         <>
           {/* Ponte para o Financeiro: líquido recebido no período (clicável) */}
-          {financeiro && !financeiro.semCredencialMP && !financeiro.erroFinanceiro && (
+          {resumo.pedidos > 0 && (
             <Link
               to="/financeiro"
               className="group mb-3 flex cursor-pointer items-center justify-between rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg"
@@ -436,7 +434,7 @@ export default function Publicados() {
               <div className="flex items-center gap-2">
                 <Wallet className="h-4 w-4 text-success" />
                 <span className="text-sm text-muted-foreground">Líquido das vendas (você recebe)</span>
-                <span className="text-lg font-semibold tabular-nums text-success">{fmtBRL(financeiro.liquido)}</span>
+                <span className="text-lg font-semibold tabular-nums text-success">{fmtBRL(resumo.liquido)}</span>
               </div>
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                 Ver financeiro <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -447,11 +445,11 @@ export default function Publicados() {
           {/* Dashboard de KPIs de venda */}
           <DashboardPublicados
             itens={merged}
-            totais={metricas?.totais ?? { faturamento: 0, unidades: 0, pedidos: 0 }}
+            totais={{ faturamento: resumo.bruto, unidades: resumo.unidades, pedidos: resumo.pedidos }}
             periodo={periodo}
             onPeriodo={setPeriodo}
             carregando={fetchingMetricas}
-            aviso={metricas?.erroVendas ?? null}
+            aviso={erroVendas ? 'Não foi possível ler as vendas. Tente Atualizar.' : null}
             markupPct={markupPct}
           />
 

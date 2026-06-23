@@ -2,14 +2,15 @@
 // catálogo. Reusa os helpers do financeiro (ADR-0031) e do _shared/ml. Não testado por vitest.
 import { buscarPagamentosMP, getContaId } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
-import type { PedidoML } from './venda.ts';
+import type { PedidoML, DadosPagamentoMP } from './venda.ts';
 
 /**
- * paymentId → net_received_amount (líquido que o vendedor recebe), das vendas da própria conta.
- * Mesma fonte do menu Financeiro. Sem MP_ACCESS_TOKEN ou em erro → mapa vazio (cai na estimativa).
+ * paymentId → dados do MP (líquido, estorno, data de liberação) das vendas da própria conta.
+ * Mesma fonte do menu Financeiro (ADR-0038). Sem MP_ACCESS_TOKEN ou em erro → mapa vazio (cai na
+ * estimativa; estorno/liberação ficam null).
  */
-export async function carregarLiquidoMP(lookbackDias = 120): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+export async function carregarLiquidoMP(lookbackDias = 120): Promise<Map<string, DadosPagamentoMP>> {
+  const out = new Map<string, DadosPagamentoMP>();
   const token = Deno.env.get('MP_ACCESS_TOKEN');
   if (!token) return out;
   try {
@@ -18,8 +19,11 @@ export async function carregarLiquidoMP(lookbackDias = 120): Promise<Map<string,
     for (const p of pagamentos) {
       if (Number(p.collector_id) !== contaId) continue;       // exclui compras/terceiros
       if (p.description === 'marketplace_shipment') continue;  // exclui pagamento de frete
-      const net = Number(p.transaction_details?.net_received_amount ?? 0);
-      out.set(String(p.id), net);
+      out.set(String(p.id), {
+        net: Number(p.transaction_details?.net_received_amount ?? 0),
+        estorno: Number(p.transaction_amount_refunded ?? 0),
+        releaseDate: p.money_release_date ?? null,
+      });
     }
   } catch (e) {
     console.warn('carregarLiquidoMP falhou:', (e as Error).message);

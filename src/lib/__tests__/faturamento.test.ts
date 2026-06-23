@@ -5,7 +5,8 @@ const venda = (over: Partial<Venda>): Venda => ({
   id: 'x', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
   date_closed: '2026-06-20T00:00:00Z', date_created: '2026-06-20T00:00:00Z',
   comprador_nick: null, total_amount: 0, paid_amount: null, sale_fee_total: 0,
-  frete_vendedor: null, liquido: null, currency: 'BRL', shipping_status: null,
+  frete_vendedor: null, liquido: null, estorno: null, money_release_date: null,
+  currency: 'BRL', shipping_id: null, shipping_status: null,
   shipping_substatus: null, shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
   itens: [], ...over,
 });
@@ -30,6 +31,15 @@ describe('calcularKpis', () => {
     expect(k.faturamento).toBe(50);
     expect(k.pedidos).toBe(1);
     expect(k.unidades).toBe(1);
+  });
+  it('conta venda reembolsada (partially_refunded) no faturamento, igual ML', () => {
+    const k = calcularKpis([
+      venda({ status: 'paid', total_amount: 50, liquido: 45, itens: [{ id: 'a', ml_item_id: 'M', variation_id: null, titulo: 't', codigo: null, cor: null, ean: null, quantity: 1, unit_price: 50, sale_fee: 5, is_publiai: true }] }),
+      venda({ status: 'partially_refunded', total_amount: 25, liquido: 9.58, itens: [{ id: 'b', ml_item_id: 'N', variation_id: null, titulo: 't', codigo: null, cor: null, ean: null, quantity: 2, unit_price: 12.5, sale_fee: 2, is_publiai: false }] }),
+    ]);
+    expect(k.faturamento).toBe(75);
+    expect(k.pedidos).toBe(2);
+    expect(k.unidades).toBe(3);
   });
   it('vazio → zeros e ticket 0', () => {
     expect(calcularKpis([])).toEqual({ faturamento: 0, liquido: 0, unidades: 0, pedidos: 0, ticket: 0, porStatusEnvio: {} });

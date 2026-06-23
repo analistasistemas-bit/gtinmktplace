@@ -56,9 +56,23 @@ export interface VendaRow {
   sale_fee_total: number;
   frete_vendedor: number | null;
   liquido: number | null;
+  /** Total estornado na venda (MP). null = sem dado do MP. */
+  estorno: number | null;
+  /** Data de liberação do recebimento (MP money_release_date). null = sem dado. */
+  money_release_date: string | null;
   currency: string;
   shipping_id: number | null;
   is_publiai: boolean;
+}
+
+/** Dados do pagamento vindos do Mercado Pago (ADR-0038), por payment id. */
+export interface DadosPagamentoMP {
+  /** net_received_amount — líquido recebido. */
+  net: number;
+  /** transaction_amount_refunded — estornado. */
+  estorno: number;
+  /** money_release_date — quando o saldo é liberado (ISO). */
+  releaseDate: string | null;
 }
 
 export interface VendaItemRow {
@@ -112,8 +126,9 @@ export interface MapearOpts {
   infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
   /** ml_item_id → GTIN do item (buscado via /items), p/ o fallback por GTIN. */
   gtinPorItem?: Map<string, string>;
-  /** paymentId → líquido recebido (net_received_amount do MP). Define o líquido real da venda. */
-  liquidoPorPayment?: Map<string, number>;
+  /** paymentId → dados do MP (líquido, estorno, data de liberação). Define o líquido/estorno/
+   *  liberação reais da venda; sem entrada → cai na estimativa (ADR-0038). */
+  liquidoPorPayment?: Map<string, DadosPagamentoMP>;
   /** Custo de envio pago pelo vendedor (vem do shipment, opcional). */
   freteVendedor?: number | null;
 }
@@ -180,16 +195,25 @@ export function mapearPedidoParaVenda(
   const total = Number(pedido.total_amount ?? 0);
   const frete = opts.freteVendedor ?? null;
 
-  // Líquido real: soma do net_received_amount (MP) dos pagamentos do pedido. Mesma lógica do
-  // menu Financeiro (ADR-0031) — já desconta tarifa + frete subsidiado. Sem MP → estimativa.
+  // Líquido/estorno/liberação reais: agregados dos pagamentos do pedido no Mercado Pago. Mesma
+  // lógica do menu Financeiro (ADR-0031/0038) — o líquido já desconta tarifa + frete subsidiado.
+  // Sem MP → líquido estimado; estorno/liberação ficam null.
   let liquidoMP: number | null = null;
+  let estorno: number | null = null;
+  let releaseDate: string | null = null;
   if (opts.liquidoPorPayment) {
-    let soma = 0, achou = false;
+    let soma = 0, somaEstorno = 0, achou = false;
     for (const pg of pedido.payments ?? []) {
       const id = pg?.id != null ? String(pg.id) : null;
-      if (id && opts.liquidoPorPayment.has(id)) { soma += opts.liquidoPorPayment.get(id)!; achou = true; }
+      const d = id ? opts.liquidoPorPayment.get(id) : undefined;
+      if (d) {
+        soma += d.net;
+        somaEstorno += d.estorno;
+        if (d.releaseDate && (!releaseDate || d.releaseDate > releaseDate)) releaseDate = d.releaseDate;
+        achou = true;
+      }
     }
-    if (achou) liquidoMP = round2(soma);
+    if (achou) { liquidoMP = round2(soma); estorno = round2(somaEstorno); }
   }
 
   const venda: VendaRow = {
@@ -206,6 +230,8 @@ export function mapearPedidoParaVenda(
     sale_fee_total: saleFeeTotal,
     frete_vendedor: frete,
     liquido: liquidoMP != null ? liquidoMP : calcularLiquido(total, saleFeeTotal, frete),
+    estorno,
+    money_release_date: releaseDate,
     currency: pedido.currency_id ?? 'BRL',
     shipping_id: num(pedido.shipping?.id ?? null),
     is_publiai: isPubliai,

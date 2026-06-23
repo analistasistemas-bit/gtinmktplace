@@ -11,8 +11,8 @@ import {
 } from '@/components/ui/table';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularMarkup } from '@/lib/markup';
-import type { VendaFinanceira } from '@/lib/financeiro';
-import { useResumoFinanceiro } from '@/hooks/useResumoFinanceiro';
+import type { VendaResumo } from '@/lib/resumo-vendas';
+import { useResumoVendas } from '@/hooks/useResumoVendas';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
@@ -47,7 +47,7 @@ function fmtMarkup(markup: number): string {
 }
 
 /** Markup (fração) da venda, ou null quando não há custo cadastrado. */
-function markupValor(v: VendaFinanceira): number | null {
+function markupValor(v: VendaResumo): number | null {
   return v.custo != null && v.custo > 0 ? calcularMarkup(v.liquido, v.custo).markup : null;
 }
 
@@ -105,13 +105,12 @@ export default function DetalheFinanceiro() {
   const periodo = useMemo(() => periodoFromParams((k) => search.get(k)), [search]);
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
 
-  const { data: r, isFetching, refetch } = useResumoFinanceiro(janela);
+  const { resumo: r, isFetching, refetch, error } = useResumoVendas(janela);
 
-  const semCred = r?.semCredencialMP;
-  const vendas = r?.vendas ?? [];
-  const bruto = r?.bruto ?? 0;
-  const liquido = r?.liquido ?? 0;
-  const retido = r?.descontos ?? 0;
+  const vendas = r.vendas;
+  const bruto = r.bruto;
+  const liquido = r.liquido;
+  const retido = r.descontos;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
 
   // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
@@ -125,7 +124,7 @@ export default function DetalheFinanceiro() {
 
   const vendasOrdenadas = useMemo(() => {
     if (!sort) return vendas;
-    const val = (v: VendaFinanceira): string | number | null => {
+    const val = (v: VendaResumo): string | number | null => {
       switch (sort.key) {
         case 'codigo': return v.codigo;
         case 'descricao': return v.descricao;
@@ -179,14 +178,9 @@ export default function DetalheFinanceiro() {
         }
       />
 
-      {semCred && (
-        <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-          Conta Mercado Pago não conectada. Cadastre o Access Token de produção para ver o financeiro.
-        </div>
-      )}
-      {r?.erroFinanceiro && (
+      {error && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          Falha ao ler o financeiro do Mercado Pago: {r.erroFinanceiro}
+          Falha ao ler as vendas. Clique em Atualizar para tentar de novo.
         </div>
       )}
 
@@ -197,7 +191,7 @@ export default function DetalheFinanceiro() {
           <span className="text-2xl font-bold tabular-nums text-success">{fmtBRL(liquido)}</span>
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
-          de {fmtBRL(bruto)} faturados — {pct(pctRetido)} retido pelo ML · {fmtInt(r?.pagamentos ?? 0)} venda(s)
+          de {fmtBRL(bruto)} faturados — {pct(pctRetido)} retido pelo ML · {fmtInt(r.pedidos)} venda(s)
         </div>
       </div>
 
@@ -273,7 +267,7 @@ export default function DetalheFinanceiro() {
       </div>
 
       <p className="mt-4 text-xs text-muted-foreground">
-        Cada linha é um pagamento aprovado no período (fonte: Mercado Pago). "Retido" é o que o ML/MP
+        Cada linha é uma venda do período (fonte: pedidos do Mercado Livre). "Retido" é o que o ML/MP
         desconta da venda (taxas + frete). Em pedidos com vários produtos (mesmo envio), o frete é
         rateado entre os itens por peso. O "líquido" é o que sobra para o vendedor. O "markup" usa o
         custo cadastrado na importação da planilha: (líquido − custo) ÷ custo; vendas sem custo
