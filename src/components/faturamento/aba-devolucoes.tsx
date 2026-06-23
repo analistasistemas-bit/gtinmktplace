@@ -48,7 +48,7 @@ export function AbaDevolucoes() {
     <div className="rounded-lg border bg-card">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
             <TableHead>Aberta</TableHead>
             <TableHead>Pedido</TableHead>
             <TableHead>Motivo</TableHead>

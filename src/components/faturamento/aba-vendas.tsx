@@ -100,7 +100,7 @@ function LinhaVenda({ v, rateio }: { v: Venda; rateio?: RateioPedido }) {
         </TableCell>
         <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(v.date_closed ?? v.date_created)}</TableCell>
         <TableCell className="max-w-[140px] truncate">{v.comprador_nick ?? '—'}</TableCell>
-        <TableCell className="max-w-[280px] truncate" title={resumo}>{resumo}</TableCell>
+        <TableCell className="max-w-[280px] truncate uppercase" title={resumo}>{resumo}</TableCell>
         <TableCell className="whitespace-nowrap text-right tabular-nums">{fmtBRL(v.total_amount)}</TableCell>
         <TableCell className="whitespace-nowrap text-right tabular-nums text-success">{liquido != null ? fmtBRL(liquido) : '—'}</TableCell>
         <TableCell><StatusPill tone={tom(pgto.tom)}>{pgto.label}</StatusPill></TableCell>
@@ -137,7 +137,7 @@ function LinhaVenda({ v, rateio }: { v: Venda; rateio?: RateioPedido }) {
                 <TableBody>
                   {v.itens.map((i) => (
                     <TableRow key={i.id}>
-                      <TableCell className="max-w-[280px] truncate" title={i.titulo ?? ''}>{i.titulo ?? '—'}</TableCell>
+                      <TableCell className="max-w-[280px] truncate uppercase" title={i.titulo ?? ''}>{i.titulo ?? '—'}</TableCell>
                       <TableCell>{i.cor ?? '—'}</TableCell>
                       <TableCell className="tabular-nums">{i.codigo ?? '—'}</TableCell>
                       <TableCell className="tabular-nums">{i.ean ?? '—'}</TableCell>
@@ -289,7 +289,7 @@ export function AbaVendas() {
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
               <TableHead className="w-8" />
               <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
               <ThSort k="comprador" label="Comprador" sort={sort} onSort={toggleSort} />
