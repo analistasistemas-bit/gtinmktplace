@@ -224,38 +224,41 @@ export function AbaVendas() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap items-center gap-1">
             {PERIODOS.map((p) => (
-              <button key={p.dias} onClick={() => escolherPreset(p.dias)}
-                className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  presetAtivo === p.dias ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+              <Button key={p.dias} size="sm"
+                variant={presetAtivo === p.dias ? 'default' : 'outline'}
+                className="h-7 px-2.5 text-xs"
+                onClick={() => escolherPreset(p.dias)}>
                 {p.label}
-              </button>
+              </Button>
             ))}
-            <button onClick={abrirCustom}
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                modoCustom ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+            <Button size="sm"
+              variant={modoCustom ? 'default' : 'outline'}
+              className="h-7 px-2.5 text-xs"
+              onClick={abrirCustom}>
               Personalizado
-            </button>
+            </Button>
             {modoCustom && (
               <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); aplicarCustom(); }}>
                 <label className="text-xs text-muted-foreground" htmlFor="fat-de">De</label>
                 <input id="fat-de" type="date" value={rascunho.desde} max={rascunho.ate}
                   onChange={(e) => setRascunho((r) => ({ ...r, desde: e.target.value }))}
-                  className="h-8 rounded-md border bg-background px-2 text-sm dark:[color-scheme:dark]" />
+                  className="h-7 rounded-md border bg-background px-2 text-xs dark:[color-scheme:dark]" />
                 <label className="text-xs text-muted-foreground" htmlFor="fat-ate">Até</label>
                 <input id="fat-ate" type="date" value={rascunho.ate} min={rascunho.desde}
                   onChange={(e) => setRascunho((r) => ({ ...r, ate: e.target.value }))}
-                  className="h-8 rounded-md border bg-background px-2 text-sm dark:[color-scheme:dark]" />
-                <Button type="submit" size="sm" disabled={!rascunhoValido}>OK</Button>
+                  className="h-7 rounded-md border bg-background px-2 text-xs dark:[color-scheme:dark]" />
+                <Button type="submit" size="sm" className="h-7 px-2.5 text-xs" disabled={!rascunhoValido}>OK</Button>
               </form>
             )}
           </div>
           <div className="flex gap-1">
             {ORIGENS.map((o) => (
-              <button key={o.v} onClick={() => setOrigem(o.v)}
-                className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  origem === o.v ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+              <Button key={o.v} size="sm"
+                variant={origem === o.v ? 'secondary' : 'outline'}
+                className="h-7 px-2.5 text-xs"
+                onClick={() => setOrigem(o.v)}>
                 {o.label}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
