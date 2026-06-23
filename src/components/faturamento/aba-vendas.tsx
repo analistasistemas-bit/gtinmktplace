@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown, Truck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
-import { resolverJanela, type PeriodoDias } from '@/lib/metricas';
+import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { calcularKpis, sincronizarFaturamento, type OrigemVenda, type Venda } from '@/lib/faturamento';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
@@ -19,6 +19,13 @@ const ORIGENS: { v: OrigemVenda; label: string }[] = [
 ];
 
 const tom = (t: 'success' | 'warning' | 'danger' | 'muted'): StatusTone => (t === 'muted' ? 'neutral' : t);
+
+/** Datas YYYY-MM-DD para o rascunho do período personalizado. */
+function rascunhoDe(p: Periodo): { desde: string; ate: string } {
+  if (p.tipo === 'range') return { desde: p.desde, ate: p.ate };
+  const j = resolverJanela(p);
+  return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
+}
 
 type SortKey = 'data' | 'comprador' | 'unidades' | 'valor' | 'liquido' | 'pagamento' | 'envio' | 'origem';
 type Sort = { key: SortKey; dir: 'asc' | 'desc' };
@@ -148,10 +155,17 @@ function LinhaVenda({ v }: { v: Venda }) {
 }
 
 export function AbaVendas() {
-  const [periodo, setPeriodo] = useState<PeriodoDias>(30);
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const [origem, setOrigem] = useState<OrigemVenda>('todos');
   const [sincronizando, setSincronizando] = useState(false);
-  const janela = useMemo(() => resolverJanela({ tipo: 'preset', dias: periodo }), [periodo]);
+  const [modoCustom, setModoCustom] = useState(false);
+  const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
+  const janela = useMemo(() => resolverJanela(periodo), [periodo]);
+  const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
+  const rascunhoValido = !!rascunho.desde && !!rascunho.ate && rascunho.desde <= rascunho.ate;
+  const escolherPreset = (dias: PeriodoDias) => { setModoCustom(false); setPeriodo({ tipo: 'preset', dias }); };
+  const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
+  const aplicarCustom = () => { if (rascunhoValido) setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); };
   const { data: vendas, isFetching, refetch } = useVendas(janela, origem);
   const kpis = useMemo(() => calcularKpis(vendas ?? []), [vendas]);
 
@@ -195,14 +209,32 @@ export function AbaVendas() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {PERIODOS.map((p) => (
-              <button key={p.dias} onClick={() => setPeriodo(p.dias)}
+              <button key={p.dias} onClick={() => escolherPreset(p.dias)}
                 className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                  periodo === p.dias ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+                  presetAtivo === p.dias ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
                 {p.label}
               </button>
             ))}
+            <button onClick={abrirCustom}
+              className={cn('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                modoCustom ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted')}>
+              Personalizado
+            </button>
+            {modoCustom && (
+              <form className="flex items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); aplicarCustom(); }}>
+                <label className="text-xs text-muted-foreground" htmlFor="fat-de">De</label>
+                <input id="fat-de" type="date" value={rascunho.desde} max={rascunho.ate}
+                  onChange={(e) => setRascunho((r) => ({ ...r, desde: e.target.value }))}
+                  className="h-8 rounded-md border bg-background px-2 text-sm dark:[color-scheme:dark]" />
+                <label className="text-xs text-muted-foreground" htmlFor="fat-ate">Até</label>
+                <input id="fat-ate" type="date" value={rascunho.ate} min={rascunho.desde}
+                  onChange={(e) => setRascunho((r) => ({ ...r, ate: e.target.value }))}
+                  className="h-8 rounded-md border bg-background px-2 text-sm dark:[color-scheme:dark]" />
+                <Button type="submit" size="sm" disabled={!rascunhoValido}>OK</Button>
+              </form>
+            )}
           </div>
           <div className="flex gap-1">
             {ORIGENS.map((o) => (
