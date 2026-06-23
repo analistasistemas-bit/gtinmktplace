@@ -6,7 +6,7 @@ const venda = (over: Partial<Venda>): Venda => ({
   date_closed: '2026-06-20T00:00:00Z', date_created: '2026-06-20T00:00:00Z',
   comprador_nick: null, total_amount: 0, paid_amount: null, sale_fee_total: 0,
   frete_vendedor: null, liquido: null, currency: 'BRL', shipping_status: null,
-  shipping_substatus: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
+  shipping_substatus: null, shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
   itens: [], ...over,
 });
 
@@ -32,6 +32,15 @@ describe('calcularKpis', () => {
     expect(k.unidades).toBe(1);
   });
   it('vazio → zeros e ticket 0', () => {
-    expect(calcularKpis([])).toEqual({ faturamento: 0, liquido: 0, unidades: 0, pedidos: 0, ticket: 0 });
+    expect(calcularKpis([])).toEqual({ faturamento: 0, liquido: 0, unidades: 0, pedidos: 0, ticket: 0, porTipoEnvio: {} });
+  });
+  it('conta pedidos pagos por tipo de envio', () => {
+    const k = calcularKpis([
+      venda({ status: 'paid', shipping_logistic: 'fulfillment' }),
+      venda({ status: 'paid', shipping_logistic: 'fulfillment' }),
+      venda({ status: 'paid', shipping_logistic: 'self_service' }),
+      venda({ status: 'cancelled', shipping_logistic: 'drop_off' }),
+    ]);
+    expect(k.porTipoEnvio).toEqual({ Full: 2, Flex: 1 });
   });
 });

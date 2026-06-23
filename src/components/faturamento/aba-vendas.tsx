@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown } from 'lucide-react';
+import { ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown, Truck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { resolverJanela, type PeriodoDias } from '@/lib/metricas';
@@ -225,6 +225,20 @@ export function AbaVendas() {
         <Kpi icon={ShoppingBag} label="Pedidos" valor={fmtInt(kpis.pedidos)} />
         <Kpi icon={Package} label="Unidades" valor={fmtInt(kpis.unidades)} />
         <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(kpis.ticket)} />
+      </div>
+
+      <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
+        <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Truck className="h-3.5 w-3.5 shrink-0" />Pedidos por tipo de envio
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          {Object.entries(kpis.porTipoEnvio).sort((a, b) => b[1] - a[1]).map(([tipo, n]) => (
+            <span key={tipo} className="tabular-nums">
+              <span className="font-semibold">{n}</span> <span className="text-muted-foreground">{tipo}</span>
+            </span>
+          ))}
+          {Object.keys(kpis.porTipoEnvio).length === 0 && <span className="text-muted-foreground">—</span>}
+        </div>
       </div>
 
       <div className="rounded-lg border bg-card">

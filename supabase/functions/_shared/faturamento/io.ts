@@ -84,7 +84,7 @@ export async function buscarFreteVendedor(token: string, shippingId: number | st
 
 /** Status do envio via /shipments/{id}. null em erro. */
 export async function buscarShipment(token: string, shippingId: number | string | null): Promise<{
-  status: string | null; substatus: string | null; tracking: string | null;
+  status: string | null; substatus: string | null; tracking: string | null; logistic: string | null;
 } | null> {
   if (shippingId == null) return null;
   try {
@@ -97,6 +97,7 @@ export async function buscarShipment(token: string, shippingId: number | string 
       status: s?.status ?? null,
       substatus: s?.substatus ?? null,
       tracking: s?.tracking_number ?? null,
+      logistic: s?.logistic?.type ?? s?.logistic_type ?? null,
     };
   } catch {
     return null;
@@ -146,9 +147,10 @@ export async function upsertVenda(
   admin: SupabaseClient,
   userId: string,
   pedido: PedidoML,
-  opts: { freteVendedor?: number | null; shipment?: { status: string | null; substatus: string | null; tracking: string | null } | null;
+  opts: { freteVendedor?: number | null;
           idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
           eanResolver?: (i: string | null, v: number | null) => string | null;
+          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null } | null;
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
           liquidoPorPayment?: Map<string, number> },
@@ -169,6 +171,7 @@ export async function upsertVenda(
     shipping_status: opts.shipment?.status ?? null,
     shipping_substatus: opts.shipment?.substatus ?? null,
     tracking_number: opts.shipment?.tracking ?? null,
+    shipping_logistic: opts.shipment?.logistic ?? null,
     atualizado_em: new Date().toISOString(),
   };
   const { data: up, error } = await admin.from('ml_vendas')
