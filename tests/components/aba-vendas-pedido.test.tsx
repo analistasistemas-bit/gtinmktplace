@@ -57,6 +57,12 @@ vi.mock('@/hooks/useVendas', () => ({
 vi.mock('@/hooks/useCustos', () => ({
   useCustos: () => ({ data: undefined }),
 }));
+vi.mock('@/hooks/useFotosProduto', () => ({
+  useFotosProduto: () => ({ data: undefined }),
+}));
+vi.mock('@/hooks/useImageUrl', () => ({
+  useImageUrl: () => ({ data: undefined }),
+}));
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function renderAba() {

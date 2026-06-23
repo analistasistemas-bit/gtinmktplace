@@ -3,6 +3,7 @@
 // Reaproveita o rateio de frete (ratearLiquidoPorFrete) e o custo (CustoResolver). Pura e testável.
 import type { Venda, VendaItem } from './faturamento';
 import { ehFaturavel, ratearLiquidoPorFrete, type CustoResolver, type PesoResolver } from './resumo-vendas';
+import type { FotoResolver } from './fotos-produto';
 import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
 
@@ -17,6 +18,8 @@ export interface ItemPedido {
   ean: string | null;
   quantity: number;
   unit_price: number;
+  /** Storage path da foto do produto (bucket `imagens`). null = sem foto cadastrada. */
+  imagem_path: string | null;
   /** Custo total do item (custo unitário × qtd), em R$. null = sem custo cadastrado. */
   custo: number | null;
   /** Líquido atribuído ao item: rateio do líquido do pedido por valor bruto do item. */
@@ -76,6 +79,7 @@ function custoDoItem(it: VendaItem, resolver?: CustoResolver): number | null {
  */
 export function agruparPorPedido(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
+  fotoResolver?: FotoResolver,
 ): Pedido[] {
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
   const liquidoMembro = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
@@ -111,6 +115,7 @@ export function agruparPorPedido(
       return {
         id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
         cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
+        imagem_path: fotoResolver?.(it) ?? null,
         custo, liquido: liqItem, markup,
       };
     });
