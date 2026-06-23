@@ -70,13 +70,20 @@ function valorOrdenacao(v: Venda, k: SortKey, liquido: number | null): string | 
   }
 }
 
-function Kpi({ icon: Icon, label, valor }: { icon: typeof DollarSign; label: string; valor: string }) {
+function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
+  icon: typeof DollarSign; label: string; valor: string;
+  tom?: 'info' | 'success' | 'warning' | 'danger';
+  /** Cor opcional aplicada ao valor (ex.: markup verde/vermelho). */
+  valorCor?: string;
+}) {
+  const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
+    : tom === 'danger' ? 'text-destructive' : 'text-info';
   return (
-    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
-      <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
+      <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
         <Icon className="h-3.5 w-3.5 shrink-0" />{label}
       </div>
-      <div className="text-lg font-semibold tabular-nums">{valor}</div>
+      <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
     </div>
   );
 }
@@ -269,13 +276,13 @@ export function AbaVendas() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(kpis.faturamento)} />
-        <Kpi icon={ShoppingBag} label="Pedidos" valor={fmtInt(kpis.pedidos)} />
-        <Kpi icon={Package} label="Unidades" valor={fmtInt(kpis.unidades)} />
-        <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(kpis.ticket)} />
+        <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(kpis.faturamento)} tom="success" />
+        <Kpi icon={ShoppingBag} label="Pedidos" valor={fmtInt(kpis.pedidos)} tom="info" />
+        <Kpi icon={Package} label="Unidades" valor={fmtInt(kpis.unidades)} tom="info" />
+        <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(kpis.ticket)} tom="info" />
       </div>
 
-      <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
+      <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
         <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Truck className="h-3.5 w-3.5 shrink-0" />Pedidos por status de envio
         </div>
