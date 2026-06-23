@@ -40,6 +40,10 @@ export interface Pedido {
   shipping_status: string | null;
   /** Substatus do envio (desmembra ready_to_ship: aguardando NF / a caminho). */
   shipping_substatus: string | null;
+  /** UF do destinatário do envio (coluna ml_vendas.uf, sem prefixo "BR-"). */
+  uf: string | null;
+  /** Cidade do destinatário do envio (coluna ml_vendas.cidade). */
+  cidade: string | null;
   /** Soma das quantidades dos itens. */
   unidades: number;
   /** Valor do checkout: soma de total_amount dos orders do pedido. */
@@ -127,6 +131,8 @@ export function agruparPorPedido(
       shipping_substatus: primeiro.shipping_substatus,
       unidades, bruto, frete, liquido, custo, markup, comissao,
       rastreio: primeiro.tracking_number,
+      uf: primeiro.uf ?? null,
+      cidade: primeiro.cidade ?? null,
       is_publiai: membros.some((v) => v.is_publiai),
       tem_devolucao: membros.some((v) => v.tem_devolucao),
       itens,

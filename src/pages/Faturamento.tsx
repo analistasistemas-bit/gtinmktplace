@@ -1,9 +1,10 @@
-import { Receipt, RotateCcw, MessageCircleQuestion } from 'lucide-react';
+import { Receipt, RotateCcw, MessageCircleQuestion, MapPin } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { AbaVendas } from '@/components/faturamento/aba-vendas';
 import { AbaDevolucoes } from '@/components/faturamento/aba-devolucoes';
 import { AbaPerguntas } from '@/components/faturamento/aba-perguntas';
+import { AbaGeografia } from '@/components/faturamento/aba-geografia';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 
 export default function Faturamento() {
@@ -26,10 +27,12 @@ export default function Faturamento() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="geografia"><MapPin className="h-4 w-4" />Geografia</TabsTrigger>
         </TabsList>
         <TabsContent value="vendas" className="mt-4"><AbaVendas /></TabsContent>
         <TabsContent value="devolucoes" className="mt-4"><AbaDevolucoes /></TabsContent>
         <TabsContent value="perguntas" className="mt-4"><AbaPerguntas /></TabsContent>
+        <TabsContent value="geografia" className="mt-4"><AbaGeografia /></TabsContent>
       </Tabs>
     </div>
   );

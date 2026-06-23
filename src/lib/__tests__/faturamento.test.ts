@@ -8,7 +8,7 @@ const venda = (over: Partial<Venda>): Venda => ({
   frete_vendedor: null, liquido: null, estorno: null, money_release_date: null,
   currency: 'BRL', shipping_id: null, shipping_status: null,
   shipping_substatus: null, shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
-  itens: [], ...over,
+  uf: null, cidade: null, itens: [], ...over,
 });
 
 describe('calcularKpis', () => {
