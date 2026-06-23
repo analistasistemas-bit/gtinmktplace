@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, TrendingUp,
   RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown,
@@ -131,7 +131,7 @@ function PilhaThumbs({ itens }: { itens: ItemPedido[] }) {
   );
 }
 
-function LinhaPedido({ p }: { p: Pedido }) {
+function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVisto?: () => void }) {
   const [aberto, setAberto] = useState(false);
   const pgto = labelStatusPedido(p.status);
   const envio = labelStatusEnvio(p.shipping_status, p.shipping_substatus);
@@ -141,9 +141,18 @@ function LinhaPedido({ p }: { p: Pedido }) {
   const markupCor = p.markup == null ? undefined
     : p.markup >= 0 ? 'text-success' : 'text-destructive';
 
+  function toggle() {
+    const abrindo = !aberto;
+    setAberto(abrindo);
+    if (abrindo && isNovo) onVisto?.();
+  }
+
   return (
     <>
-      <TableRow className="cursor-pointer hover:bg-muted/40" onClick={() => setAberto((a) => !a)}>
+      <TableRow
+        className={cn('cursor-pointer hover:bg-muted/40', isNovo && 'border-l-2 border-l-success')}
+        onClick={toggle}
+      >
         <TableCell className="w-8 align-middle">
           {aberto
             ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -169,6 +178,11 @@ function LinhaPedido({ p }: { p: Pedido }) {
           <span className="flex items-center gap-1">
             <StatusPill tone={p.is_publiai ? 'info' : 'neutral'}>{p.is_publiai ? 'PubliAI' : 'Fora'}</StatusPill>
             {p.tem_devolucao && <StatusPill tone="danger"><RotateCcw className="h-3 w-3" />Devolução</StatusPill>}
+            {isNovo && (
+              <span className="inline-flex animate-pulse items-center rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success ring-1 ring-inset ring-success/30">
+                Novo
+              </span>
+            )}
           </span>
         </TableCell>
       </TableRow>
@@ -263,6 +277,28 @@ export function AbaVendas() {
     [vendas, custos, fotos],
   );
   const kpis = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
+
+  // Detecta pedidos novos que chegaram via polling (após a carga inicial).
+  const chavesConhecidasRef = useRef<Set<string> | null>(null);
+  const [novosChaves, setNovosChaves] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!pedidos.length) return;
+    const atuais = new Set(pedidos.map((p) => p.chave));
+    if (chavesConhecidasRef.current === null) {
+      chavesConhecidasRef.current = atuais;
+      return;
+    }
+    const novos = pedidos.map((p) => p.chave).filter((c) => !chavesConhecidasRef.current!.has(c));
+    chavesConhecidasRef.current = atuais;
+    if (!novos.length) return;
+    setNovosChaves((prev) => new Set([...prev, ...novos]));
+    const t = setTimeout(() => {
+      setNovosChaves((prev) => { const n = new Set(prev); novos.forEach((c) => n.delete(c)); return n; });
+    }, 60_000);
+    return () => clearTimeout(t);
+  }, [pedidos]);
+  const marcarVisto = (chave: string) =>
+    setNovosChaves((prev) => { const n = new Set(prev); n.delete(chave); return n; });
 
   // Filtro por status de envio (clique no card de contagem, toggle)
   const [filtroEnvio, setFiltroEnvio] = useState<string | null>(null);
@@ -446,7 +482,9 @@ export function AbaVendas() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pedidosOrdenados.map((p) => <LinhaPedido key={p.chave} p={p} />)}
+            {pedidosOrdenados.map((p) => (
+              <LinhaPedido key={p.chave} p={p} isNovo={novosChaves.has(p.chave)} onVisto={() => marcarVisto(p.chave)} />
+            ))}
           </TableBody>
         </Table>
         {!isFetching && (vendas ?? []).length === 0 && (
