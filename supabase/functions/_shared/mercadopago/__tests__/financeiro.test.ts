@@ -70,11 +70,11 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
     expect(r.vendas).toHaveLength(2);
     // ordenado por data desc — a venda mais recente vem primeiro
     expect(r.vendas[0]).toEqual({
-      id: '2', data: '2026-06-20T09:00:00.000Z', descricao: 'Linha 120m',
+      id: '2', data: '2026-06-20T09:00:00.000Z', dataLiberacao: null, descricao: 'Linha 120m',
       bruto: 25, liquido: 10.7, retido: 14.3, estorno: 5, custo: null, codigo: null,
     });
     expect(r.vendas[1]).toEqual({
-      id: '1', data: '2026-06-17T09:00:00.000Z', descricao: 'Fita Cetim',
+      id: '1', data: '2026-06-17T09:00:00.000Z', dataLiberacao: null, descricao: 'Fita Cetim',
       bruto: 12.65, liquido: 4.35, retido: 8.3, estorno: 0, custo: null, codigo: null,
     });
   });
@@ -93,6 +93,19 @@ describe('agregarFinanceiro — só vendas da conta (collector_id)', () => {
     expect(v1?.codigo).toBe('00220566');
     expect(v2?.custo).toBeNull();
     expect(v2?.codigo).toBeNull();
+  });
+
+  it('expõe a data de liberação (money_release_date) por venda; null quando o MP não informa', () => {
+    const pagamentos = [
+      pag({ id: 1, collector_id: CONTA, date_approved: '2026-06-17T09:00:00.000Z',
+        money_release_date: '2026-07-01T09:00:00.000Z',
+        transaction_amount: 33, transaction_details: { net_received_amount: 16.1 } }),
+      pag({ id: 2, collector_id: CONTA, date_approved: '2026-06-18T09:00:00.000Z',
+        transaction_amount: 25, transaction_details: { net_received_amount: 10.7 } }),
+    ];
+    const r = agregarFinanceiro(pagamentos, INTERVALO);
+    expect(r.vendas.find((v) => v.id === '1')?.dataLiberacao).toBe('2026-07-01T09:00:00.000Z');
+    expect(r.vendas.find((v) => v.id === '2')?.dataLiberacao).toBeNull();
   });
 
   it('não inclui frete nem compras de terceiros na lista de vendas', () => {

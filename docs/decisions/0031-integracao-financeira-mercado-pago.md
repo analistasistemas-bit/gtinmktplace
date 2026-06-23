@@ -62,3 +62,17 @@ real (AVILBV) confirmou:
 - **Relatórios assíncronos (Released money / Account balance CSV):** históricos e
   request→poll→download; não entregam o "futuro agendado" nem servem a KPI ao vivo. Reservado
   para eventual conciliação contábil.
+
+## Atualização (2026-06-23) — data de liberação **por recebimento** no detalhe líquido
+
+A Decisão 3 (não reproduzir "A receber"/calendário) **continua valendo** para o **agregado**:
+somar `net_received_amount` por `money_release_date` diverge do app (retenção/reserva oculta).
+
+O que **passou a ser exibido** é diferente e não conflita com o spike: a data de liberação **de
+cada recebimento individual** (`money_release_date` do próprio pagamento), numa coluna "Liberação"
+do detalhe líquido (`DetalheFinanceiro.tsx`), com selo "liberado" (data passada) / "a liberar"
+(data futura). Não há **soma** por data — só a exibição do campo que o MP já entrega por pagamento,
+que é confiável por-linha. Propagado por `VendaFinanceira.dataLiberacao` (puro, coberto por teste);
+a edge `resumo-financeiro` repassa o resumo inteiro, sem mudança própria.
+
+Continua **não** havendo o agregado "A receber"/calendário do app — só a data por linha do realizado.

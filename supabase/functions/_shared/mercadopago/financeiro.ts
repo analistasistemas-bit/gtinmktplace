@@ -26,6 +26,9 @@ export interface PagamentoMP {
   collector_id?: number | string | null;
   /** ML cria um pagamento de frete à parte por venda, com description "marketplace_shipment". */
   description?: string | null;
+  /** Data agendada em que o saldo DESTE pagamento fica disponível para saque (ISO). Confiável
+   *  por-pagamento; o que o ADR-0031 rejeitou foi SOMAR por esta data (retenção/reserva oculta). */
+  money_release_date?: string | null;
   transaction_amount?: number | null; // bruto
   transaction_amount_refunded?: number | null;
   transaction_details?: {
@@ -42,6 +45,9 @@ export interface VendaFinanceira {
   id: string;
   /** date_approved (ISO) — quando o pagamento foi aprovado. */
   data: string | null;
+  /** money_release_date (ISO) — quando o ML/MP libera este recebimento para saque. Passado =
+   *  já liberado; futuro = a liberar. null quando o MP não informa. */
+  dataLiberacao: string | null;
   /** description do pagamento — costuma ser o título do produto. */
   descricao: string | null;
   /** Bruto da venda. */
@@ -127,6 +133,7 @@ export function agregarFinanceiro(
     vendas.push({
       id: String(p.id),
       data: p.date_approved,
+      dataLiberacao: p.money_release_date ?? null,
       descricao: p.description ?? null,
       custo: info?.custo ?? null,
       codigo: info?.codigo ?? null,

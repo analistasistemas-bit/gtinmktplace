@@ -23,6 +23,23 @@ function fmtData(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
 
+/** Célula de liberação: data que o ML libera o recebimento + status (liberado/a liberar).
+ *  Passado = já caiu no saldo (verde); futuro = ainda retido (âmbar). */
+function CelulaLiberacao({ iso }: { iso: string | null }) {
+  if (!iso) {
+    return <TableCell className="align-top whitespace-nowrap text-sm tabular-nums text-muted-foreground">—</TableCell>;
+  }
+  const liberado = new Date(iso).getTime() <= Date.now();
+  return (
+    <TableCell className="align-top whitespace-nowrap text-sm tabular-nums">
+      <span className="block">{fmtData(iso)}</span>
+      <span className={cn('text-xs', liberado ? 'text-success' : 'text-warning')}>
+        {liberado ? 'liberado' : 'a liberar'}
+      </span>
+    </TableCell>
+  );
+}
+
 /** Markup em % com sinal, ou null quando não há custo para calcular. */
 function fmtMarkup(markup: number): string {
   const p = Math.round(markup * 100);
@@ -55,7 +72,7 @@ function rotuloPeriodo(periodo: Periodo): string {
     : `${periodo.desde} a ${periodo.ate}`;
 }
 
-type SortKey = 'codigo' | 'descricao' | 'data' | 'bruto' | 'retido' | 'liquido' | 'markup';
+type SortKey = 'codigo' | 'descricao' | 'data' | 'liberacao' | 'bruto' | 'retido' | 'liquido' | 'markup';
 type Sort = { key: SortKey; dir: 'asc' | 'desc' };
 
 /** Cabeçalho clicável que ordena pela coluna (seta indica direção). */
@@ -113,6 +130,7 @@ export default function DetalheFinanceiro() {
         case 'codigo': return v.codigo;
         case 'descricao': return v.descricao;
         case 'data': return v.data;
+        case 'liberacao': return v.dataLiberacao;
         case 'bruto': return v.bruto;
         case 'retido': return v.retido;
         case 'liquido': return v.liquido;
@@ -191,6 +209,7 @@ export default function DetalheFinanceiro() {
               <ThSort k="codigo" label="Código" sort={sort} onSort={toggleSort} />
               <ThSort k="descricao" label="Produto" sort={sort} onSort={toggleSort} />
               <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
+              <ThSort k="liberacao" label="Liberação" sort={sort} onSort={toggleSort} />
               <ThSort k="bruto" label="Bruto" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="retido" label="Retido (ML)" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="liquido" label="Líquido" sort={sort} onSort={toggleSort} align="right" />
@@ -200,7 +219,7 @@ export default function DetalheFinanceiro() {
           <TableBody>
             {vendasOrdenadas.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="py-6 text-center text-sm text-muted-foreground">
                   Sem vendas no período.
                 </TableCell>
               </TableRow>
@@ -223,6 +242,7 @@ export default function DetalheFinanceiro() {
                     )}
                   </TableCell>
                   <TableCell className="align-top whitespace-nowrap text-sm tabular-nums">{fmtData(v.data)}</TableCell>
+                  <CelulaLiberacao iso={v.dataLiberacao} />
                   <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(v.bruto)}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums text-warning">{fmtBRL(v.retido)}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(v.liquido)}</TableCell>
@@ -235,7 +255,7 @@ export default function DetalheFinanceiro() {
           {vendasOrdenadas.length > 0 && (
             <TableFooter>
               <TableRow className="border-t font-medium">
-                <TableCell colSpan={3} className="text-sm">Subtotal</TableCell>
+                <TableCell colSpan={4} className="text-sm">Subtotal</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(bruto)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(retido)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(liquido)}</TableCell>
@@ -257,8 +277,10 @@ export default function DetalheFinanceiro() {
         desconta da venda (taxas + frete). Em pedidos com vários produtos (mesmo envio), o frete é
         rateado entre os itens por peso. O "líquido" é o que sobra para o vendedor. O "markup" usa o
         custo cadastrado na importação da planilha: (líquido − custo) ÷ custo; vendas sem custo
-        cadastrado ou de produtos fora do PubliAI mostram "—". Linhas destacadas em vermelho são
-        vendas no prejuízo (líquido abaixo do custo). Clique no cabeçalho para ordenar.
+        cadastrado ou de produtos fora do PubliAI mostram "—". "Liberação" é a data em que o
+        Mercado Livre libera aquele recebimento para saque ("a liberar" = ainda retido; "liberado"
+        = já no saldo). Linhas destacadas em vermelho são vendas no prejuízo (líquido abaixo do
+        custo). Clique no cabeçalho para ordenar.
       </p>
     </div>
   );
