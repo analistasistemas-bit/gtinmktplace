@@ -307,7 +307,7 @@ export function AbaVendas() {
   const pedidosFiltrados = useMemo(
     () => filtroEnvio == null
       ? pedidos
-      : pedidos.filter((p) => labelStatusEnvio(p.shipping_status).label === filtroEnvio),
+      : pedidos.filter((p) => labelStatusEnvio(p.shipping_status, p.shipping_substatus).label === filtroEnvio),
     [pedidos, filtroEnvio],
   );
 
