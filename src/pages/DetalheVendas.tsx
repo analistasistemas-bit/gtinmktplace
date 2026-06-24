@@ -6,15 +6,30 @@ import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
+import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
+import { periodoFromParams, resolverJanela, periodoToParams, type Periodo } from '@/lib/metricas';
 import { montarDetalheVendas, type LinhaVenda, type SecaoVendas } from '@/lib/detalhe-vendas';
 import { useVendas } from '@/hooks/useVendas';
+import { useCustos } from '@/hooks/useCustos';
+import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
+}
+
+/** Markup como percentual com sinal (ex.: +120%, −5%). */
+function fmtMarkup(m: number): string {
+  const p = Math.round(m * 100);
+  return (p >= 0 ? '+' : '') + p + '%';
+}
+
+/** Cor do markup/lucro: verde no positivo, vermelho no negativo, neutro em "—". */
+function corValor(v: number | null): string | undefined {
+  if (v == null) return undefined;
+  return v >= 0 ? 'text-success' : 'text-destructive';
 }
 
 // Deriva o rótulo do período JÁ RESOLVIDO (não do query cru) para o texto sempre
@@ -25,7 +40,7 @@ function rotuloPeriodo(periodo: Periodo): string {
     : `${periodo.desde} a ${periodo.ate}`;
 }
 
-type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal';
+type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal' | 'markup' | 'lucro';
 type Sort = { key: SortKey; dir: 'asc' | 'desc' };
 
 /** Cabeçalho clicável que ordena a seção pela coluna (seta indica direção). */
@@ -53,7 +68,9 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
   );
 }
 
-function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; secao: SecaoVendas }) {
+function SecaoTabela({ titulo, sub, secao, mostrarMargem = false }: {
+  titulo: string; sub?: string; secao: SecaoVendas; mostrarMargem?: boolean;
+}) {
   // Ordenação local da seção: textuais começam A→Z; numéricas em maior→menor.
   const [sort, setSort] = useState<Sort | null>(null);
   const toggleSort = (k: SortKey) => {
@@ -73,6 +90,8 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
         case 'unidades': return l.unidades;
         case 'valor': return l.valor;
         case 'pctTotal': return l.pctTotal;
+        case 'markup': return l.markup;
+        case 'lucro': return l.lucro;
       }
     };
     return [...secao.linhas].sort((a, b) => {
@@ -87,6 +106,9 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
       return sort.dir === 'asc' ? cmp : -cmp;
     });
   }, [secao.linhas, sort]);
+
+  // 6 colunas-base + (markup, lucro) quando a seção mostra margem.
+  const colSpanVazio = mostrarMargem ? 8 : 6;
 
   return (
     <div className="mb-6">
@@ -104,12 +126,14 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
               <ThSort k="unidades" label="Unid." sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="valor" label="Valor" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="pctTotal" label="% total" sort={sort} onSort={toggleSort} align="right" />
+              {mostrarMargem && <ThSort k="markup" label="Markup" sort={sort} onSort={toggleSort} align="right" />}
+              {mostrarMargem && <ThSort k="lucro" label="Lucro" sort={sort} onSort={toggleSort} align="right" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {linhas.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-4 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={colSpanVazio} className="py-4 text-center text-sm text-muted-foreground">
                   Sem vendas no período.
                 </TableCell>
               </TableRow>
@@ -124,6 +148,16 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
                   <TableCell className="align-top text-right text-sm tabular-nums">{l.unidades}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(l.valor)}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{pct(l.pctTotal)}</TableCell>
+                  {mostrarMargem && (
+                    <TableCell className={cn('align-top text-right text-sm tabular-nums', corValor(l.markup))}>
+                      {l.markup != null ? fmtMarkup(l.markup) : '—'}
+                    </TableCell>
+                  )}
+                  {mostrarMargem && (
+                    <TableCell className={cn('align-top text-right text-sm tabular-nums', corValor(l.lucro))}>
+                      {l.lucro != null ? fmtBRL(l.lucro) : '—'}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -135,6 +169,16 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
                 <TableCell className="text-right text-sm tabular-nums">{secao.unidades}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(secao.valor)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{pct(secao.pctTotal)}</TableCell>
+                {mostrarMargem && (
+                  <TableCell className={cn('text-right text-sm tabular-nums', corValor(secao.markup))}>
+                    {secao.markup != null ? fmtMarkup(secao.markup) : '—'}
+                  </TableCell>
+                )}
+                {mostrarMargem && (
+                  <TableCell className={cn('text-right text-sm tabular-nums', corValor(secao.lucro))}>
+                    {secao.markup != null ? fmtBRL(secao.lucro) : '—'}
+                  </TableCell>
+                )}
               </TableRow>
             </TableFooter>
           )}
@@ -145,13 +189,19 @@ function SecaoTabela({ titulo, sub, secao }: { titulo: string; sub?: string; sec
 }
 
 export default function DetalheVendas() {
-  const [search] = useSearchParams();
+  const [search, setSearch] = useSearchParams();
   const periodo = useMemo(() => periodoFromParams((k) => search.get(k)), [search]);
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
+  // Trocar o período reescreve a URL (mantém o link compartilhável e dispara o refetch).
+  const onPeriodo = (p: Periodo) => setSearch(periodoToParams(p));
 
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número do card de Faturamento.
   const { data: vendas = [], isFetching, refetch, isError } = useVendas(janela, 'todos');
-  const detalhe = useMemo(() => montarDetalheVendas(vendas), [vendas]);
+  const { data: custos } = useCustos();
+  const detalhe = useMemo(
+    () => montarDetalheVendas(vendas, montarCustoResolver(custos), montarPesoResolver(custos)),
+    [vendas, custos],
+  );
 
   return (
     <div className="p-6">
@@ -160,7 +210,21 @@ export default function DetalheVendas() {
         title="Detalhe de vendas"
         subtitle={`Composição do faturamento — ${rotuloPeriodo(periodo)}.`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <span
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              title="Atualiza sozinho a cada 45s — novas vendas entram automaticamente"
+            >
+              <span className="relative flex h-2 w-2">
+                {/* Pulso contínuo = sinal "ao vivo"; acelera no instante do refetch. */}
+                <span className={cn(
+                  'absolute inline-flex h-full w-full rounded-full bg-success opacity-75',
+                  isFetching ? 'animate-ping' : 'animate-[ping_2.5s_ease-in-out_infinite]',
+                )} />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+              </span>
+              Ao vivo
+            </span>
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
               <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
               {isFetching ? 'Atualizando…' : 'Atualizar'}
@@ -171,6 +235,10 @@ export default function DetalheVendas() {
           </div>
         }
       />
+
+      <div className="mb-4">
+        <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} carregando={isFetching} />
+      </div>
 
       {isError && (
         <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -197,7 +265,7 @@ export default function DetalheVendas() {
         </div>
       </div>
 
-      <SecaoTabela titulo="Seus anúncios (PubliAI)" secao={detalhe.app} />
+      <SecaoTabela titulo="Seus anúncios (PubliAI)" secao={detalhe.app} mostrarMargem />
       <SecaoTabela titulo="Fora do PubliAI" sub="publicados direto no ML" secao={detalhe.externo} />
     </div>
   );

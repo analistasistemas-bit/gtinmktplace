@@ -23,6 +23,11 @@ vi.mock('@/hooks/useVendas', () => ({
   }),
 }));
 
+// A página agora lê custos (para markup/lucro por produto) — mock sem custo (markup/lucro = "—").
+vi.mock('@/hooks/useCustos', () => ({
+  useCustos: () => ({ data: undefined }),
+}));
+
 import DetalheVendas from '@/pages/DetalheVendas';
 
 describe('DetalheVendas', () => {

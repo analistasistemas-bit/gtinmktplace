@@ -75,4 +75,15 @@ describe('estadoParaParams', () => {
   it('busca em branco não vira param', () => {
     expect(estadoParaParams({ ...vazio, filtro: { ...vazio.filtro, busca: '   ' } }).has('q')).toBe(false);
   });
+
+  it('serializa e lê o filtro de encalhados (encalhados=1)', () => {
+    const p = estadoParaParams({ ...vazio, filtro: { ...vazio.filtro, somenteEncalhados: true } });
+    expect(p.get('encalhados')).toBe('1');
+    expect(paramsParaEstado(new URLSearchParams('encalhados=1')).filtro.somenteEncalhados).toBe(true);
+  });
+
+  it('sem encalhados na URL → filtro sem a chave (não quebra defaults)', () => {
+    expect(estadoParaParams(vazio).has('encalhados')).toBe(false);
+    expect(paramsParaEstado(new URLSearchParams()).filtro.somenteEncalhados).toBeUndefined();
+  });
 });

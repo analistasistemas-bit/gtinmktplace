@@ -117,6 +117,22 @@ describe('filtrarPublicados', () => {
     expect(resultCombinado.map((i) => i.familiaId)).toEqual(['f2']);
     expect(resultCombinado.length).toBeLessThanOrEqual(resultFornecedor.length);
   });
+
+  it('somenteEncalhados mantém só ativos sem venda no período', () => {
+    const itens: PublicadoItem[] = [
+      { ...fixtures[0], unidadesVendidas: 0 },   // f1 ativo, 0 venda → encalhado
+      { ...fixtures[2], unidadesVendidas: 5 },   // f3 ativo, com venda → fora
+      { ...fixtures[1] },                        // f2 pausado → fora (não-ativo)
+      { ...fixtures[0], familiaId: 'f1b', unidadesVendidas: null }, // ativo, sem dado de venda → encalhado
+    ];
+    const r = filtrarPublicados(itens, { somenteEncalhados: true });
+    expect(r.map((i) => i.familiaId)).toEqual(['f1', 'f1b']);
+  });
+
+  it('somenteEncalhados desligado (ou ausente) não filtra nada', () => {
+    expect(filtrarPublicados(fixtures, { somenteEncalhados: false }).map((i) => i.familiaId))
+      .toEqual(['f1', 'f2', 'f3', 'f4']);
+  });
 });
 
 describe('ordenarPublicados', () => {

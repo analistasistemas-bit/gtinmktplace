@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, Check, TrendingUp } from 'lucide-react';
+import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, TrendingUp, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { Button } from '@/components/ui/button';
+import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import type { PublicadoItem } from '@/lib/publicados';
-import { resolverJanela, periodoToParams, type Periodo, type PeriodoDias } from '@/lib/metricas';
+import { periodoToParams, type Periodo } from '@/lib/metricas';
 
 interface Props {
   itens: PublicadoItem[];
@@ -17,19 +17,12 @@ interface Props {
   aviso?: string | null;
   /** Markup agregado do período (null = sem dados de custo). */
   markupPct?: number | null;
-}
-
-const PERIODOS: { dias: PeriodoDias; label: string }[] = [
-  { dias: 7, label: '7 dias' },
-  { dias: 30, label: '30 dias' },
-  { dias: 90, label: '90 dias' },
-];
-
-/** Datas YYYY-MM-DD para o rascunho. No range usa as do período (sem round-trip UTC). */
-function rascunhoDe(p: Periodo): { desde: string; ate: string } {
-  if (p.tipo === 'range') return { desde: p.desde, ate: p.ate };
-  const j = resolverJanela(p);
-  return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
+  /** Lucro agregado do período em R$ (null = sem dados de custo). */
+  lucro?: number | null;
+  /** Filtro "só encalhados" ligado? Reflete o estado do card clicável. */
+  somenteEncalhados?: boolean;
+  /** Alterna o filtro de encalhados (card vira toggle). */
+  onToggleEncalhados?: () => void;
 }
 
 function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
@@ -47,31 +40,13 @@ function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
   );
 }
 
-export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carregando, aviso, markupPct }: Props) {
-  // Rascunho local: abrir "Personalizado" e digitar datas NÃO refaz a busca.
-  // Só ao clicar OK aplicamos via onPeriodo (e o período aplicado dispara o fetch).
-  const [modoCustom, setModoCustom] = useState(periodo.tipo === 'range');
-  const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
-
-  const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
-
-  const escolherPreset = (dias: PeriodoDias) => {
-    setModoCustom(false);
-    onPeriodo({ tipo: 'preset', dias });
-  };
-
-  const abrirCustom = () => {
-    setRascunho(rascunhoDe(periodo));
-    setModoCustom(true);
-  };
-
-  const rascunhoValido = !!rascunho.desde && !!rascunho.ate && rascunho.desde <= rascunho.ate;
-  const aplicarCustom = () => {
-    if (!rascunhoValido) return;
-    onPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate });
-  };
-
+export function DashboardPublicados({
+  itens, totais, periodo, onPeriodo, carregando, aviso, markupPct, lucro,
+  somenteEncalhados, onToggleEncalhados,
+}: Props) {
   const queryDetalhe = new URLSearchParams(periodoToParams(periodo)).toString();
+  // Markup e lucro andam juntos: ambos só existem quando há custo cadastrado no período.
+  const temCusto = markupPct != null;
 
   const resumo = useMemo(() => {
     const total = itens.length;
@@ -97,65 +72,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
 
   return (
     <div className="mb-5 space-y-3">
-      {/* Seletor de período */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">Vendas nos últimos</span>
-        <div className="flex gap-1">
-          {PERIODOS.map((p) => (
-            <Button
-              key={p.dias}
-              size="sm"
-              variant={presetAtivo === p.dias ? 'default' : 'outline'}
-              className="h-7 px-2.5 text-xs"
-              onClick={() => escolherPreset(p.dias)}
-            >
-              {p.label}
-            </Button>
-          ))}
-          <Button
-            size="sm"
-            variant={modoCustom ? 'default' : 'outline'}
-            className="h-7 px-2.5 text-xs"
-            onClick={abrirCustom}
-          >
-            Personalizado
-          </Button>
-        </div>
-        {modoCustom && (
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => { e.preventDefault(); aplicarCustom(); }}
-          >
-            <label className="text-xs text-muted-foreground" htmlFor="venda-de">De</label>
-            <input
-              id="venda-de"
-              type="date"
-              value={rascunho.desde}
-              max={rascunho.ate}
-              onChange={(e) => setRascunho((r) => ({ ...r, desde: e.target.value }))}
-              className="h-7 rounded-md border bg-background px-2 text-xs dark:[color-scheme:dark]"
-            />
-            <label className="text-xs text-muted-foreground" htmlFor="venda-ate">Até</label>
-            <input
-              id="venda-ate"
-              type="date"
-              value={rascunho.ate}
-              min={rascunho.desde}
-              onChange={(e) => setRascunho((r) => ({ ...r, ate: e.target.value }))}
-              className="h-7 rounded-md border bg-background px-2 text-xs dark:[color-scheme:dark]"
-            />
-            <Button
-              type="submit"
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              disabled={!rascunhoValido}
-            >
-              <Check className="mr-1 h-3.5 w-3.5" /> OK
-            </Button>
-          </form>
-        )}
-        {carregando && <span className="text-xs text-muted-foreground">atualizando…</span>}
-      </div>
+      <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} carregando={carregando} />
 
       {aviso && (
         <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -164,7 +81,7 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
       )}
 
       {/* Vendas */}
-      <div className={cn('grid grid-cols-2 gap-3', markupPct != null ? 'md:grid-cols-5' : 'md:grid-cols-4')}>
+      <div className={cn('grid grid-cols-2 gap-3', temCusto ? 'sm:grid-cols-3 lg:grid-cols-6' : 'md:grid-cols-4')}>
         <Link
           to={{ pathname: '/publicados/vendas', search: queryDetalhe }}
           className="group cursor-pointer rounded-lg outline-none ring-offset-background transition-all hover:-translate-y-0.5 hover:ring-2 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-ring"
@@ -175,12 +92,20 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
         <Kpi icon={Package} label="Unidades vendidas" valor={String(totais.unidades)} />
         <Kpi icon={Receipt} label="Pedidos" valor={String(totais.pedidos)} />
         <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(ticket)} />
-        {markupPct != null && (
+        {temCusto && (
           <Kpi
             icon={TrendingUp}
             label="Markup no período"
             valor={(markupPct >= 0 ? '+' : '') + Math.round(markupPct * 100) + '%'}
             valorCor={markupPct >= 0 ? 'text-success' : 'text-destructive'}
+          />
+        )}
+        {temCusto && lucro != null && (
+          <Kpi
+            icon={Coins}
+            label="Lucro no período"
+            valor={fmtBRL(lucro)}
+            valorCor={lucro >= 0 ? 'text-success' : 'text-destructive'}
           />
         )}
       </div>
@@ -201,15 +126,33 @@ export function DashboardPublicados({ itens, totais, periodo, onPeriodo, carrega
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
-          <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <PackageX className="h-3.5 w-3.5 text-warning" /> Encalhados (sem venda no período)
+        {/* Encalhados: card clicável que filtra a lista (toggle). */}
+        <button
+          type="button"
+          onClick={onToggleEncalhados}
+          aria-pressed={!!somenteEncalhados}
+          disabled={!onToggleEncalhados}
+          className={cn(
+            'rounded-lg border bg-card px-3 py-2.5 text-left text-sm shadow-sm transition-all duration-200',
+            onToggleEncalhados && 'cursor-pointer hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
+            somenteEncalhados
+              ? 'border-warning ring-2 ring-warning/40'
+              : 'hover:border-warning/50',
+          )}
+        >
+          <div className="mb-2 flex items-center justify-between gap-1.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <PackageX className="h-3.5 w-3.5 text-warning" /> Encalhados (sem venda no período)
+            </span>
+            {somenteEncalhados && <span className="font-medium text-warning">• filtrando</span>}
           </div>
           <div className="text-2xl font-semibold tabular-nums">{resumo.encalhados}</div>
           <div className="text-xs text-muted-foreground">
-            de {resumo.ativos} ativo(s) — candidatos a revisão de preço/título/foto
+            {somenteEncalhados
+              ? 'clique para mostrar todos de novo'
+              : `de ${resumo.ativos} ativo(s) — clique para ver só os encalhados`}
           </div>
-        </div>
+        </button>
 
         <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">

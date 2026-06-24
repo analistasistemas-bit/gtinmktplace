@@ -451,6 +451,9 @@ export default function Publicados() {
             carregando={fetchingMetricas}
             aviso={erroVendas ? 'Não foi possível ler as vendas. Tente Atualizar.' : null}
             markupPct={markupPct}
+            lucro={resumo.lucro}
+            somenteEncalhados={filtro.somenteEncalhados}
+            onToggleEncalhados={() => setFiltro((f) => ({ ...f, somenteEncalhados: !f.somenteEncalhados }))}
           />
 
           {/* Filtros */}
