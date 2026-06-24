@@ -137,7 +137,22 @@ export default function DetalheFinanceiro() {
   };
 
   const vendasOrdenadas = useMemo(() => {
-    if (!sort) return vendasFiltradas;
+    if (!sort) {
+      // Padrão: o que vai liberar MAIS CEDO primeiro (a liberar, soonest no topo); depois o já
+      // liberado (mais recente primeiro); vendas sem data de liberação por último.
+      const agora = Date.now();
+      return [...vendasFiltradas].sort((a, b) => {
+        const ta = a.dataLiberacao ? new Date(a.dataLiberacao).getTime() : null;
+        const tb = b.dataLiberacao ? new Date(b.dataLiberacao).getTime() : null;
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        const aFut = ta > agora;
+        const bFut = tb > agora;
+        if (aFut !== bFut) return aFut ? -1 : 1; // a liberar antes do já liberado
+        return aFut ? ta - tb : tb - ta; // a liberar: mais cedo primeiro; liberado: mais recente
+      });
+    }
     const val = (v: VendaResumo): string | number | null => {
       switch (sort.key) {
         case 'codigo': return v.codigo;
