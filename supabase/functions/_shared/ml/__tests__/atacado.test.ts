@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { amountComDesconto, montarFaixasPxQ } from '../atacado';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { amountComDesconto, montarFaixasPxQ, aplicarPxQ } from '../atacado';
 
 describe('amountComDesconto', () => {
   it('converte % em valor absoluto arredondado a 2 casas', () => {
@@ -30,5 +30,21 @@ describe('montarFaixasPxQ', () => {
       type: 'standard', amount: 92, currency_id: 'BRL',
       conditions: { context_restrictions: ['channel_marketplace', 'user_type_business'], min_purchase_unit: 10 },
     });
+  });
+});
+
+describe('aplicarPxQ', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('lança com status e body do ML quando a resposta não é ok', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false, status: 422, text: async () => 'item not found',
+    })) as unknown as typeof fetch);
+    await expect(aplicarPxQ('tok', 'MLB1', 10, [])).rejects.toThrow(/422.*item not found/);
+  });
+
+  it('não lança quando a resposta é ok', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, text: async () => '' })) as unknown as typeof fetch);
+    await expect(aplicarPxQ('tok', 'MLB1', 10, [{ min_unidades: 5, desconto_pct: 5 }])).resolves.toBeUndefined();
   });
 });

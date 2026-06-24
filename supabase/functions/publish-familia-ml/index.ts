@@ -70,22 +70,28 @@ Deno.serve(async (req) => {
       }
     }
     // Atacado (PxQ): garante a aplicação se há faixas e ainda não aplicado (retry/idempotência).
-    const faixasJa = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
-    if (faixasJa.length > 0 && familia.atacado_status !== 'aplicado') {
-      const { data: vs } = await admin.from('variacoes')
-        .select('preco_publicacao').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
-      const baseRaw = vs?.find((v) => v.preco_publicacao != null)?.preco_publicacao;
-      const base = baseRaw != null ? Number(baseRaw) : null;
-      if (base != null) {
-        try {
-          await conn.aplicarAtacado(ctx, familia.ml_item_id, base, faixasJa);
-          await admin.from('familias').update({ atacado_status: 'aplicado', atacado_erro: null }).eq('id', job.familia_id);
-        } catch (e) {
-          const m = e instanceof Error ? e.message : String(e);
-          console.error(`atacado (retry) falhou para ${familia.ml_item_id}:`, m);
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+    try {
+      const faixasJa = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
+      if (faixasJa.length > 0 && familia.atacado_status !== 'aplicado') {
+        const { data: vs } = await admin.from('variacoes')
+          .select('preco_publicacao').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
+        const baseRaw = vs?.find((v) => v.preco_publicacao != null)?.preco_publicacao;
+        const base = baseRaw != null ? Number(baseRaw) : null;
+        if (base != null) {
+          try {
+            await conn.aplicarAtacado(ctx, familia.ml_item_id, base, faixasJa);
+            await admin.from('familias').update({ atacado_status: 'aplicado', atacado_erro: null }).eq('id', job.familia_id);
+          } catch (e) {
+            const m = e instanceof Error ? e.message : String(e);
+            console.error(`atacado (retry) falhou para ${familia.ml_item_id}:`, m);
+            await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+          }
+        } else {
+          console.warn('atacado (retry): sem preco_publicacao nas variacoes para familia', job.familia_id);
         }
       }
+    } catch (e) {
+      console.error('atacado (bloco retry) falhou inesperadamente:', e instanceof Error ? e.message : String(e));
     }
     return new Response(JSON.stringify({ jaPublicado: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
@@ -226,20 +232,24 @@ Deno.serve(async (req) => {
     }
 
     // Atacado (PxQ B2B): recurso separado pós-criação. Best-effort — não derruba o anúncio.
-    const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
-    if (faixasAtacado.length > 0) {
-      const baseRaw = ordenadas.find((v) => v.preco_publicacao != null)?.preco_publicacao;
-      const base = baseRaw != null ? Number(baseRaw) : null;
-      if (base != null) {
-        try {
-          await conn.aplicarAtacado(ctx, ref.itemExternoId, base, faixasAtacado);
-          await admin.from('familias').update({ atacado_status: 'aplicado', atacado_erro: null }).eq('id', job.familia_id);
-        } catch (e) {
-          const m = e instanceof Error ? e.message : String(e);
-          console.error(`atacado falhou para ${ref.itemExternoId}:`, m);
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+    try {
+      const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
+      if (faixasAtacado.length > 0) {
+        const baseRaw = ordenadas.find((v) => v.preco_publicacao != null)?.preco_publicacao;
+        const base = baseRaw != null ? Number(baseRaw) : null;
+        if (base != null) {
+          try {
+            await conn.aplicarAtacado(ctx, ref.itemExternoId, base, faixasAtacado);
+            await admin.from('familias').update({ atacado_status: 'aplicado', atacado_erro: null }).eq('id', job.familia_id);
+          } catch (e) {
+            const m = e instanceof Error ? e.message : String(e);
+            console.error(`atacado falhou para ${ref.itemExternoId}:`, m);
+            await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+          }
         }
       }
+    } catch (e) {
+      console.error('atacado (bloco criacao) falhou inesperadamente:', e instanceof Error ? e.message : String(e));
     }
 
     // Catálogo (ADR-0021): o opt-in roda DEFERIDO. A elegibilidade de catálogo do ML só fica
