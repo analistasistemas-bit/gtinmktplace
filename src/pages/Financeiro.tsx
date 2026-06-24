@@ -59,6 +59,15 @@ export default function Financeiro() {
   const queryDetalhe = new URLSearchParams(periodoToParams(periodo)).toString();
   const podeDetalhar = r.pedidos > 0;
 
+  const heroDelta = delta(r.liquido, rAnt.liquido);
+  const HeroDeltaBar = () => (
+    <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
+      heroDelta.trend === 'up' ? 'text-success' : heroDelta.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
+      {heroDelta.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : heroDelta.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
+      {heroDelta.texto}
+    </div>
+  );
+
   // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
   // cadastrado (as demais não entram na base, senão distorceria). null = nenhuma com custo.
   const markup = r.markup != null
@@ -151,13 +160,7 @@ export default function Financeiro() {
               </span>
             </div>
             <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
-            {(() => { const d = delta(r.liquido, rAnt.liquido); return (
-              <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
-                d.trend === 'up' ? 'text-success' : d.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
-                {d.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : d.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
-                {d.texto}
-              </div>
-            ); })()}
+            <HeroDeltaBar />
             <div className="mt-1 text-xs text-muted-foreground">
               de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
             </div>
@@ -168,13 +171,7 @@ export default function Financeiro() {
               <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
             </div>
             <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
-            {(() => { const d = delta(r.liquido, rAnt.liquido); return (
-              <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
-                d.trend === 'up' ? 'text-success' : d.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
-                {d.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : d.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
-                {d.texto}
-              </div>
-            ); })()}
+            <HeroDeltaBar />
             <div className="mt-1 text-xs text-muted-foreground">
               de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
             </div>
