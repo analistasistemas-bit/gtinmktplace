@@ -29,4 +29,16 @@ describe('parseStatusML', () => {
   it('null/erro → indisponivel', () => {
     expect(parseStatusML(null).status).toBe('indisponivel');
   });
+
+  it('listing_type_id gold_special → classico; gold_pro → premium', () => {
+    expect(parseStatusML({ id: 'x', status: 'active', listing_type_id: 'gold_special' }).listingType).toBe('classico');
+    expect(parseStatusML({ id: 'x', status: 'active', listing_type_id: 'gold_pro' }).listingType).toBe('premium');
+  });
+  it('listing_type ausente ou desconhecido → null', () => {
+    expect(parseStatusML({ id: 'x', status: 'active' }).listingType).toBeNull();
+    expect(parseStatusML({ id: 'x', status: 'active', listing_type_id: 'free' }).listingType).toBeNull();
+  });
+  it('item null → listingType null', () => {
+    expect(parseStatusML(null).listingType).toBeNull();
+  });
 });

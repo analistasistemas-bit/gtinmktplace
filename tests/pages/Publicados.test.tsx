@@ -35,6 +35,11 @@ vi.mock('@/hooks/useResumoFinanceiro', () => ({
   useResumoFinanceiro: () => useResumoFinanceiroMock(),
 }));
 
+// Expandir item carrega a família via react-query; sem QueryClient no teste, mockamos o hook.
+vi.mock('@/hooks/useFamilia', () => ({
+  useFamilia: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+
 function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
   return {
     familiaId: 'f1',
@@ -145,5 +150,31 @@ describe('Publicados', () => {
     const ponte = screen.getByRole('link', { name: /Líquido das vendas/i });
     expect(ponte).toHaveAttribute('href', '/financeiro');
     expect(ponte).toHaveTextContent('R$ 364,46');
+  });
+
+  it('exibe o selo do modo (Premium) vindo do status ao vivo', () => {
+    useStatusPublicadosMock.mockReturnValue({
+      data: { itens: [{ ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 87, preco: 24.1, listingType: 'premium' }] },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Premium')).toBeInTheDocument();
+  });
+
+  it('expandir a linha abre a área de análise (aria-expanded)', () => {
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    const toggle = screen.getByRole('button', { name: 'Expandir análise' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Recolher análise' })).toHaveAttribute('aria-expanded', 'true');
   });
 });

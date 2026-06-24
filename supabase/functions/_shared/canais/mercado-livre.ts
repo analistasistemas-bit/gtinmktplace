@@ -141,7 +141,7 @@ export const mercadoLivreConnector: ChannelConnector = {
     const token = await ctx.getToken();
     // Chunks em paralelo (latência O(1) em vez de O(n/20) serial).
     const respostas = await Promise.all(chunk(ids, 20).map(async (bloco) => {
-      const url = `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,status,sub_status,available_quantity,price`;
+      const url = `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,status,sub_status,available_quantity,price,listing_type_id`;
       try {
         const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         if (!resp.ok) { console.warn(`lerStatus ML ${resp.status} (bloco)`); return []; }

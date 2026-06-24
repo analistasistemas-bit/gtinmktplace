@@ -29,6 +29,8 @@ export interface PublicadoItem {
   estoque?: number | null;
   precoAtual?: number | null;
   motivo?: string | null;
+  /** Modo do anúncio no ML (ao vivo): 'classico' (gold_special) / 'premium' (gold_pro). null se indisponível. */
+  listingType?: 'classico' | 'premium' | null;
   // preenchidos pelas métricas de venda do período (merge por mlItemId):
   unidadesVendidas?: number | null;
   valorVendido?: number | null;

@@ -6,13 +6,24 @@ export interface ItemMLStatus {
   sub_status?: string[];
   available_quantity?: number;
   price?: number;
+  listing_type_id?: string;
 }
+
+export type ListingTypeCanal = 'classico' | 'premium' | null;
 
 export interface StatusParsed {
   status: StatusPublicado;
   motivo: string | null;
   estoque: number | null;
   preco: number | null;
+  listingType: ListingTypeCanal;
+}
+
+// gold_special = Clássico, gold_pro = Premium. Demais tipos (free, etc.) → null.
+function mapListingType(id: string | undefined): ListingTypeCanal {
+  if (id === 'gold_special') return 'classico';
+  if (id === 'gold_pro') return 'premium';
+  return null;
 }
 
 const MAP: Record<string, StatusPublicado> = {
@@ -28,7 +39,7 @@ const MODERACAO_SUBS = ['forbidden', 'waiting_for_patch', 'poor_quality_thumbnai
 
 export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
   if (!item || !item.status) {
-    return { status: 'indisponivel', motivo: null, estoque: null, preco: null };
+    return { status: 'indisponivel', motivo: null, estoque: null, preco: null, listingType: null };
   }
   const sub = item.sub_status ?? [];
   // O ML move um item moderado de `under_review` para `inactive` (+ `deleted`) em horas, então
@@ -40,5 +51,6 @@ export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
     motivo: moderado && sub.length ? sub.join(', ') : null,
     estoque: item.available_quantity ?? null,
     preco: item.price ?? null,
+    listingType: mapListingType(item.listing_type_id),
   };
 }
