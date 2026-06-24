@@ -60,6 +60,22 @@ export interface ResumoVendas {
   markup: number | null;
   /** Lucro do período (líquido − custo) das vendas com custo. */
   lucro: number;
+  /** Σ líquido das vendas já liberadas (money_release_date no passado). */
+  liberado: number;
+  /** Σ líquido das vendas ainda a liberar (money_release_date no futuro). */
+  aLiberar: number;
+  /** Menor money_release_date futuro (ISO), ou null se nada a liberar. */
+  proximaLiberacao: string | null;
+  /** Σ comissão do ML (sale_fee_total) das faturáveis. */
+  comissao: number;
+  /** Σ frete do vendedor (frete_vendedor) das faturáveis. */
+  frete: number;
+  /** Nº de vendas faturáveis com custo cadastrado (base do lucro/markup/margem). */
+  vendasComCusto: number;
+  /** Nº de vendas faturáveis no período (= pedidos), para a nota de cobertura. */
+  totalVendas: number;
+  /** Margem sobre a receita líquida: lucro ÷ líquido (com custo). null = sem custo. */
+  margem: number | null;
   /** ml_item_id → vendas do período (anúncios), p/ rankings da tela Publicados. */
   porItem: Record<string, { unidades: number; valor: number }>;
   /** Detalhe por venda, da mais recente para a mais antiga. */
@@ -96,10 +112,14 @@ function descricaoVenda(v: Venda): string | null {
  */
 export function calcularResumo(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
+  agoraMs: number = Date.now(),
 ): ResumoVendas {
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0, pedidos = 0;
   let liqComCusto = 0, custoTotal = 0;
+  let liberado = 0, aLiberar = 0, comissao = 0, frete = 0, vendasComCusto = 0;
+  let proximaLiberacaoMs: number | null = null;
+  let proximaLiberacao: string | null = null;
   const porItem: Record<string, { unidades: number; valor: number }> = {};
   const vendasResumo: VendaResumo[] = [];
 
@@ -124,6 +144,22 @@ export function calcularResumo(
 
     const custo = custoDaVenda(v, custoResolver);
     if (custo != null && custo > 0) { liqComCusto += liq; custoTotal += custo; }
+
+    comissao += v.sale_fee_total ?? 0;
+    frete += v.frete_vendedor ?? 0;
+    if (custo != null && custo > 0) vendasComCusto += 1;
+    if (v.money_release_date) {
+      const ms = Date.parse(v.money_release_date);
+      if (ms <= agoraMs) {
+        liberado += liq;
+      } else {
+        aLiberar += liq;
+        if (proximaLiberacaoMs == null || ms < proximaLiberacaoMs) {
+          proximaLiberacaoMs = ms;
+          proximaLiberacao = v.money_release_date;
+        }
+      }
+    }
 
     vendasResumo.push({
       id: v.id,
@@ -153,6 +189,14 @@ export function calcularResumo(
     ticket: pedidos > 0 ? round2(bruto / pedidos) : 0,
     markup: custoTotal > 0 ? (liqComCusto - custoTotal) / custoTotal : null,
     lucro: round2(liqComCusto - custoTotal),
+    liberado: round2(liberado),
+    aLiberar: round2(aLiberar),
+    proximaLiberacao,
+    comissao: round2(comissao),
+    frete: round2(frete),
+    vendasComCusto,
+    totalVendas: pedidos,
+    margem: custoTotal > 0 ? (liqComCusto - custoTotal) / liqComCusto : null,
     porItem,
     vendas: vendasResumo,
   };
