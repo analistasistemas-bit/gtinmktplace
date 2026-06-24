@@ -14,7 +14,7 @@ A configuração pode ser feita **para o lote inteiro** ou **por família indepe
 ## Contexto / descobertas
 
 - A feature equivale ao recurso nativo **PxQ (Preços por Quantidade)** do ML, endpoint
-  `PUT /items/{ITEM_ID}/prices/standard/quantity`. **Não** usa `/seller-promotions` — logo
+  `POST /items/{ITEM_ID}/prices/standard/quantity`. **Não** usa `/seller-promotions` — logo
   **não** esbarra no bloqueio de permissão que estacionou o selo de desconto (ADR-0017).
 - **Viabilidade confirmada:** a conta AVILBV (`user_id` ML `1003820507`) é **B2B**
   (`tags: ["business"]`, CNPJ `04917296000594`, `cust_type_id: "BU"`). O endpoint já
@@ -84,19 +84,24 @@ O payload do PxQ é o **conjunto completo** de preços:
 }
 ```
 
-- Faixa base (preço cheio, sem restrição) **sempre** presente.
+> **Contrato confirmado em produção (2026-06-24):** o body do POST leva **só as faixas B2B**
+> (cada uma com `min_purchase_unit` + `context_restrictions`). A **base do anúncio NÃO entra**
+> (incluí-la → 400 `marketplace.context.is.mandatory`). É **full-replace**: o conjunto enviado
+> substitui o anterior; `{ "prices": [] }` limpa as faixas. O exemplo acima é ilustrativo do
+> cálculo %→R$; na prática o array contém apenas os objetos com `min_purchase_unit`.
+
 - Faixas de atacado com `min_purchase_unit` + `context_restrictions` B2B.
-- Faixas vazias = enviar só a base (limpa o PxQ existente).
+- Faixas vazias = `POST { "prices": [] }` (limpa o PxQ existente).
 
 ## Camada de aplicação no ML
 
 **Novo módulo** `supabase/functions/_shared/ml/atacado.ts`:
 
-- `montarFaixasPxQ(precoBase, faixas): PricePxQ[]` — puro/testável. Monta base + faixas,
-  aplica o cálculo %→R$, ordena por `min_unidades`. `faixas` vazio → só a base.
-- `aplicarPxQ(token, itemId, precoBase, faixas): Promise<void>` — `PUT
-  /items/{itemId}/prices/standard/quantity` com o conjunto montado. Idempotente (PUT
-  sobrescreve). Lança em erro HTTP (com a mensagem do ML).
+- `montarFaixasPxQ(precoBase, faixas): PricePxQ[]` — puro/testável. Monta **só as faixas** B2B,
+  aplica o cálculo %→R$, ordena por `min_unidades`. `faixas` vazio → `[]`.
+- `aplicarPxQ(token, itemId, precoBase, faixas): Promise<void>` — `POST
+  /items/{itemId}/prices/standard/quantity` com `{ prices }` (full-replace). Idempotente.
+  Lança em erro HTTP (com a mensagem do ML). PUT/GET/DELETE nesse path → 405.
 
 **Conector de canal** (`_shared/canais/`): expor `aplicarAtacado(ctx, itemId, precoBase, faixas)`
 no contrato e marcar capability `atacado: true` no conector ML.

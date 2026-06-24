@@ -25,9 +25,14 @@ reputação que a conta não tem.
 O recurso correto é **Preços por Quantidade (PxQ)**, endpoint dedicado da API de preços do item:
 
 ```
-PUT https://api.mercadolibre.com/items/{ITEM_ID}/prices/standard/quantity
-GET https://api.mercadolibre.com/items/{ITEM_ID}/prices   (header show-all-prices: TRUE)
+POST https://api.mercadolibre.com/items/{ITEM_ID}/prices/standard/quantity   (escrever faixas)
+GET  https://api.mercadolibre.com/items/{ITEM_ID}/prices   (header show-all-prices: TRUE) (ler)
 ```
+
+**Contrato confirmado em produção (2026-06-24):** o **POST** em `/prices/standard/quantity` é
+o único método (PUT/GET/DELETE nesse path → 405). O body é `{ "prices": [ ...só as faixas
+B2B... ] }` — a base do anúncio **não** entra (incluí-la → 400 `marketplace.context.is.mandatory`).
+É **full-replace**: o conjunto enviado substitui o anterior; `{ "prices": [] }` limpa as faixas.
 
 - Até **5** faixas (confirmado na doc e no comportamento real da conta).
 - **Não** passa por `/seller-promotions` → **não** sofre o bloqueio do ADR-0017.
