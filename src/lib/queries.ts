@@ -407,15 +407,17 @@ export async function toggleDescontoLote(loteId: string, exibir: boolean): Promi
 }
 
 export async function updateFamiliaAtacado(familiaId: string, faixas: FaixaAtacado[]): Promise<void> {
+  const atacado = faixas.length > 0 ? (faixas as unknown as Database['public']['Tables']['familias']['Update']['atacado']) : null;
   const { error } = await supabase.from('familias')
-    .update({ atacado: faixas.length > 0 ? faixas : null, atacado_status: null, atacado_erro: null })
+    .update({ atacado, atacado_status: null, atacado_erro: null })
     .eq('id', familiaId);
   if (error) throw error;
 }
 
 export async function setAtacadoLote(loteId: string, faixas: FaixaAtacado[]): Promise<void> {
+  const atacado = faixas.length > 0 ? (faixas as unknown as Database['public']['Tables']['familias']['Update']['atacado']) : null;
   const { error } = await supabase.from('familias')
-    .update({ atacado: faixas.length > 0 ? faixas : null, atacado_status: null, atacado_erro: null })
+    .update({ atacado, atacado_status: null, atacado_erro: null })
     .eq('lote_id', loteId);
   if (error) throw error;
 }

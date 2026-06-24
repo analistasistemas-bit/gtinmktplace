@@ -26,7 +26,9 @@ import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
-import { useToggleDescontoLote, useReprocessar } from '@/hooks/useFamiliaMutations';
+import { useToggleDescontoLote, useReprocessar, useSetAtacadoLote } from '@/hooks/useFamiliaMutations';
+import { AtacadoEditor } from '@/components/atacado-editor';
+import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 
@@ -78,6 +80,10 @@ export default function Revisao() {
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
   const toggleLote = useToggleDescontoLote(loteId ?? '');
+  const setAtacadoLote = useSetAtacadoLote(loteId ?? '');
+  const [atacadoAberto, setAtacadoAberto] = useState(false);
+  const [faixasLote, setFaixasLote] = useState<FaixaAtacado[]>([{ min_unidades: 5, desconto_pct: 5 }]);
+  const erroFaixasLote = validarFaixas(faixasLote);
   const reprocessarLote = useReprocessar(loteId ?? '');
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
   const qtdErros = useMemo(() => familias.filter((f) => f.status === 'erro').length, [familias]);
@@ -298,6 +304,9 @@ export default function Revisao() {
                 >
                   {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
                 </Button>
+                <Button variant="outline" size="sm" onClick={() => setAtacadoAberto(true)}>
+                  Atacado no lote
+                </Button>
               </div>
             ) : undefined
           }
@@ -470,6 +479,32 @@ export default function Revisao() {
           </Button>
         </div>
       )}
+      <Dialog open={atacadoAberto} onOpenChange={setAtacadoAberto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Preço de atacado no lote inteiro</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Aplica estas faixas a <strong>todas</strong> as {familias.length} famílias do lote
+            (sobrescreve o atacado individual). O preço de cada família é o dela.
+          </p>
+          <AtacadoEditor faixas={faixasLote} precoBase={0} onChange={setFaixasLote} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setFaixasLote([]); setAtacadoLote.mutate([], {
+              onSuccess: () => { toast.success('Atacado removido de todas as famílias'); setAtacadoAberto(false); },
+            }); }}>
+              Remover de todas
+            </Button>
+            <Button disabled={!!erroFaixasLote || setAtacadoLote.isPending}
+              onClick={() => setAtacadoLote.mutate(faixasLote, {
+                onSuccess: () => { toast.success('Atacado aplicado a todas as famílias do lote'); setAtacadoAberto(false); },
+                onError: (e) => toast.error('Falha ao aplicar atacado', { description: e instanceof Error ? e.message : String(e) }),
+              })}>
+              {setAtacadoLote.isPending ? 'Aplicando…' : 'Aplicar a todas'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={confirmando} onOpenChange={setConfirmando}>
         <DialogContent>
           <DialogHeader>
