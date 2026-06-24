@@ -151,10 +151,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
           </button>
           <div className="max-w-[260px]">
             <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-              <p className="text-xs text-muted-foreground">{item.codigoPai}</p>
-              <SeloModo listingType={item.listingType} />
-            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">{item.codigoPai}</p>
           </div>
         </div>
       </TableCell>
@@ -177,7 +174,10 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
         <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
       </TableCell>
       <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
-      <TableCell>
+      <TableCell className="relative">
+        <div className="absolute right-2 top-0">
+          <SeloModo listingType={item.listingType} />
+        </div>
         <div className="flex items-center gap-1">
           <Button
             asChild
