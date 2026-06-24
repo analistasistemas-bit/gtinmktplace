@@ -161,13 +161,16 @@ export default function DetalheFinanceiro() {
   }, [vendas]);
 
   const exportar = () => {
-    const linhas = vendasOrdenadas.map((v) => ({
-      codigo: v.codigo, produto: v.descricao ?? `#${v.id}`, data: fmtData(v.data),
-      liberacao: fmtData(v.dataLiberacao),
-      situacao: v.dataLiberacao ? (new Date(v.dataLiberacao).getTime() <= Date.now() ? 'liberado' : 'a liberar') : '',
-      bruto: v.bruto, retido: v.retido, liquido: v.liquido,
-      markup: markupValor(v) != null ? `${Math.round(markupValor(v)! * 100)}%` : '',
-    }));
+    const linhas = vendasOrdenadas.map((v) => {
+      const mv = markupValor(v);
+      return {
+        codigo: v.codigo, produto: v.descricao ?? `#${v.id}`, data: fmtData(v.data),
+        liberacao: fmtData(v.dataLiberacao),
+        situacao: v.dataLiberacao ? (new Date(v.dataLiberacao).getTime() <= Date.now() ? 'liberado' : 'a liberar') : '',
+        bruto: v.bruto, retido: v.retido, liquido: v.liquido,
+        markup: mv != null ? `${Math.round(mv * 100)}%` : '',
+      };
+    });
     const csv = montarCsv(linhas, [
       { chave: 'codigo', titulo: 'Código' }, { chave: 'produto', titulo: 'Produto' },
       { chave: 'data', titulo: 'Data' }, { chave: 'liberacao', titulo: 'Liberação' },

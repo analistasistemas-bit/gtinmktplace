@@ -22,6 +22,8 @@ export function baixarCsv(nome: string, conteudo: string): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = nome;
+  document.body.appendChild(a);
   a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
