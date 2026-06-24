@@ -17,6 +17,18 @@ describe('resolverJanela', () => {
   });
 });
 
+describe('resolverJanela — range incompleto', () => {
+  it('não lança e devolve janela vazia quando as datas estão vazias', () => {
+    expect(() => resolverJanela({ tipo: 'range', desde: '', ate: '' })).not.toThrow();
+    const j = resolverJanela({ tipo: 'range', desde: '', ate: '' });
+    expect(j.desde).toBe(j.ate); // janela degenerada → sem vendas
+  });
+  it('resolve um range válido normalmente', () => {
+    const j = resolverJanela({ tipo: 'range', desde: '2026-06-01', ate: '2026-06-10' });
+    expect(j.desde < j.ate).toBe(true);
+  });
+});
+
 describe('periodo <-> params', () => {
   const mk = (o: Record<string, string>) => (k: string) => o[k] ?? null;
 
