@@ -113,6 +113,8 @@ export interface Variacao {
   comprimentoCm: number | null;
 }
 
+import type { FaixaAtacado } from './atacado';
+
 export interface Familia {
   id: string;
   loteId: string;
@@ -154,4 +156,7 @@ export interface Familia {
   erroMensagem: string | null;
   exibirComDesconto: boolean;
   descontoPct: number | null;
+  atacado: FaixaAtacado[] | null;
+  atacadoStatus: string | null;
+  atacadoErro: string | null;
 }

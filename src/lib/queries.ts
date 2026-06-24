@@ -13,6 +13,7 @@ import type {
   AnaliseMercado,
 } from './tipos-dominio';
 import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
+import type { FaixaAtacado } from './atacado';
 import type { PublicadoItem, StatusPublicado } from './publicados';
 import { dedupePublicados } from './publicados';
 
@@ -304,6 +305,9 @@ export function familiaFromRow(
     erroMensagem: r.erro_mensagem,
     exibirComDesconto: r.exibir_com_desconto,
     descontoPct: r.desconto_pct != null ? Number(r.desconto_pct) : null,
+    atacado: Array.isArray(r.atacado) ? (r.atacado as unknown as FaixaAtacado[]) : null,
+    atacadoStatus: r.atacado_status ?? null,
+    atacadoErro: r.atacado_erro ?? null,
   };
 }
 
