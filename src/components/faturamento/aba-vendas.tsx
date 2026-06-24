@@ -16,6 +16,8 @@ import { montarFotoResolver } from '@/lib/fotos-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
 import { agruparPorPedido, calcularKpisPedidos, type Pedido, type ItemPedido } from '@/lib/pedidos-faturamento';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildVendasReport } from '@/lib/export/adapters';
 import { Button } from '@/components/ui/button';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
@@ -413,6 +415,13 @@ export function AbaVendas() {
             <RefreshCw className={cn('mr-1.5 h-4 w-4', sincronizando && 'animate-spin')} />
             {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
           </Button>
+          <BotaoExportar
+            temExpansao
+            temKpis
+            montarReport={(config) =>
+              buildVendasReport({ pedidos: pedidosOrdenados, kpis, periodo, origem, filtroEnvio, config })
+            }
+          />
         </div>
       </div>
 

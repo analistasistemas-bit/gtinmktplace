@@ -7,6 +7,8 @@ import { useVendas } from '@/hooks/useVendas';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { agruparPorGeografia } from '@/lib/geografia-vendas';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildGeografiaReport } from '@/lib/export/adapters';
 import { Button } from '@/components/ui/button';
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
@@ -77,8 +79,9 @@ export function AbaGeografia() {
 
   return (
     <div className="space-y-4">
-      {/* Seletor de período */}
-      <div className="flex flex-wrap items-center gap-1">
+      {/* Seletor de período + exportar */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1">
         {PERIODOS.map((p) => (
           <Button
             key={p.dias}
@@ -111,6 +114,11 @@ export function AbaGeografia() {
             <Button type="submit" size="sm" className="h-7 px-2.5 text-xs" disabled={!rascunhoValido}>OK</Button>
           </form>
         )}
+        </div>
+        <BotaoExportar
+          temKpis
+          montarReport={(config) => buildGeografiaReport({ geo, periodo, config })}
+        />
       </div>
 
       {/* KPIs */}

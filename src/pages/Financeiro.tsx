@@ -11,6 +11,8 @@ import { AoVivo } from '@/components/ui/ao-vivo';
 import { periodoToParams, resolverJanela, janelaAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
 import { agruparPorPeriodo } from '@/lib/resumo-vendas';
 import { GraficoEvolucao } from '@/components/financeiro/grafico-evolucao';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildFinanceiroReport } from '@/lib/export/adapters';
 
 function Kpi({ icon: Icon, label, valor, sub, tom, valorCor, delta }: {
   icon: typeof Wallet; label: string; valor: string; sub?: string;
@@ -91,6 +93,12 @@ export default function Financeiro() {
         actions={
           <div className="flex items-center gap-3">
             <AoVivo isFetching={isFetching} />
+            <BotaoExportar
+              temKpis
+              montarReport={(config) =>
+                buildFinanceiroReport({ r, ticketLiquido, serie, periodo, config })
+              }
+            />
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
               <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
               {isFetching ? 'Atualizando…' : 'Atualizar'}

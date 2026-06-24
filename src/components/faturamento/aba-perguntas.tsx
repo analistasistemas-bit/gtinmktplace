@@ -8,6 +8,8 @@ import { fmtDataCurta } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildPerguntasReport } from '@/lib/export/adapters';
 import { toast } from 'sonner';
 
 function CardPergunta({ p }: { p: Pergunta }) {
@@ -101,6 +103,11 @@ export function AbaPerguntas() {
 
   return (
     <div className="space-y-3">
+      {lista.length > 0 && (
+        <div className="flex justify-end">
+          <BotaoExportar montarReport={() => buildPerguntasReport(lista)} />
+        </div>
+      )}
       {isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
       {lista.map((p) => <CardPergunta key={p.id} p={p} />)}
     </div>

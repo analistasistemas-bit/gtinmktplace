@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, Download, RefreshCw } from 'lucide-react';
-import { montarCsv, baixarCsv } from '@/lib/csv';
+import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -202,27 +203,6 @@ export default function DetalheFinanceiro() {
 
   const markupTotal = totaisFiltrados.markup;
 
-  const exportar = () => {
-    const linhas = vendasOrdenadas.map((v) => {
-      const mv = markupValor(v);
-      return {
-        codigo: v.codigo, produto: v.descricao ?? `#${v.id}`, data: fmtData(v.data),
-        liberacao: fmtData(v.dataLiberacao),
-        situacao: v.dataLiberacao ? (new Date(v.dataLiberacao).getTime() <= Date.now() ? 'liberado' : 'a liberar') : '',
-        bruto: v.bruto, retido: v.retido, liquido: v.liquido,
-        markup: mv != null ? `${Math.round(mv * 100)}%` : '',
-      };
-    });
-    const csv = montarCsv(linhas, [
-      { chave: 'codigo', titulo: 'Código' }, { chave: 'produto', titulo: 'Produto' },
-      { chave: 'data', titulo: 'Data' }, { chave: 'liberacao', titulo: 'Liberação' },
-      { chave: 'situacao', titulo: 'Situação' }, { chave: 'bruto', titulo: 'Bruto' },
-      { chave: 'retido', titulo: 'Retido' }, { chave: 'liquido', titulo: 'Líquido' },
-      { chave: 'markup', titulo: 'Markup' },
-    ]);
-    baixarCsv(`financeiro-${rotuloPeriodo(periodo).replace(/[^0-9a-z]+/gi, '-')}.csv`, csv);
-  };
-
   return (
     <div className="p-6">
       <Breadcrumbs items={[{ label: 'Financeiro', to: '/financeiro' }, { label: 'Detalhe do líquido' }]} />
@@ -232,9 +212,18 @@ export default function DetalheFinanceiro() {
         actions={
           <div className="flex items-center gap-2">
             <AoVivo isFetching={isFetching} />
-            <Button variant="outline" size="sm" onClick={exportar} disabled={vendasOrdenadas.length === 0}>
-              <Download className="mr-1.5 h-4 w-4" />Exportar CSV
-            </Button>
+            <BotaoExportar
+              temKpis
+              montarReport={(config) =>
+                buildFinanceiroDetalheReport({
+                  vendas: vendasOrdenadas,
+                  totais: totaisFiltrados,
+                  filtroLib,
+                  periodo,
+                  config,
+                })
+              }
+            />
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
               <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
               {isFetching ? 'Atualizando…' : 'Atualizar'}

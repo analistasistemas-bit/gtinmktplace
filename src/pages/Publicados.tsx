@@ -41,6 +41,11 @@ import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel,
 import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { PainelAnalise } from '@/components/painel-analise';
+import { fetchFamiliaPublicada } from '@/lib/queries';
+import { resumoViabilidade, type ResumoViabilidade } from '@/lib/analise-viabilidade';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildPublicadosReport } from '@/lib/export/adapters';
+import type { ExportConfig, ReportData } from '@/lib/export';
 import { useFamilia } from '@/hooks/useFamilia';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -412,6 +417,36 @@ export default function Publicados() {
     [publicados],
   );
 
+  // Exportação: monta o relatório do estado atual (filtrado/ordenado). Quando o
+  // usuário pede "linhas expandidas", busca as famílias dos itens exibidos para
+  // incluir o resumo de viabilidade (preço de publicação, custo, markup, concorrência).
+  const montarRelatorio = async (config: ExportConfig): Promise<ReportData> => {
+    let viabilidades: Map<string, ResumoViabilidade> | undefined;
+    if (config.expandido) {
+      viabilidades = new Map();
+      await Promise.all(
+        itensExibidos.map(async (it) => {
+          try {
+            const familia = await fetchFamiliaPublicada(it.familiaId);
+            viabilidades!.set(it.familiaId, resumoViabilidade(familia, it.precoAtual ?? it.precoPublicacao));
+          } catch {
+            // item sem família acessível → fica sem sublinha de viabilidade
+          }
+        }),
+      );
+    }
+    return buildPublicadosReport({
+      itens: itensExibidos,
+      totais: { faturamento: resumo.bruto, unidades: resumo.unidades, pedidos: resumo.pedidos },
+      markupPct,
+      lucro: resumo.lucro,
+      filtro,
+      periodo,
+      config,
+      viabilidades,
+    });
+  };
+
   if (loadingPublicados) {
     return (
       <div className="p-6 text-sm text-muted-foreground">Carregando publicados...</div>
@@ -431,15 +466,20 @@ export default function Publicados() {
       <PageHeader
         title="Publicados"
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { refetchStatus(); refetchMetricas(); }}
-            disabled={fetchingStatus || fetchingMetricas}
-          >
-            <RefreshCw className={cn('mr-1.5 h-4 w-4', (fetchingStatus || fetchingMetricas) && 'animate-spin')} />
-            {fetchingStatus || fetchingMetricas ? 'Atualizando…' : 'Atualizar'}
-          </Button>
+          <div className="flex items-center gap-2">
+            {publicados.length > 0 && (
+              <BotaoExportar temExpansao temKpis montarReport={montarRelatorio} />
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { refetchStatus(); refetchMetricas(); }}
+              disabled={fetchingStatus || fetchingMetricas}
+            >
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', (fetchingStatus || fetchingMetricas) && 'animate-spin')} />
+              {fetchingStatus || fetchingMetricas ? 'Atualizando…' : 'Atualizar'}
+            </Button>
+          </div>
         }
       />
 

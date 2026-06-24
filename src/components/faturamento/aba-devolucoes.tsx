@@ -5,6 +5,8 @@ import { fmtBRL } from '@/lib/formato';
 import { fmtDataCurta } from '@/lib/ml-status';
 import { StatusPill } from '@/components/ui/status-pill';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildDevolucoesReport } from '@/lib/export/adapters';
 
 const ACAO_LABEL: Record<string, string> = {
   send_money_back: 'Devolver dinheiro',
@@ -45,7 +47,11 @@ export function AbaDevolucoes() {
   }
 
   return (
-    <div className="rounded-lg border bg-card">
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <BotaoExportar montarReport={() => buildDevolucoesReport(lista)} />
+      </div>
+      <div className="rounded-lg border bg-card">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
@@ -81,6 +87,7 @@ export function AbaDevolucoes() {
         </TableBody>
       </Table>
       {isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
+      </div>
     </div>
   );
 }

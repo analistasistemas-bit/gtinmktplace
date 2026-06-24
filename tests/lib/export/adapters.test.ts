@@ -1,0 +1,143 @@
+import { describe, it, expect } from 'vitest';
+import {
+  buildVendasReport,
+  buildFinanceiroDetalheReport,
+  buildFinanceiroReport,
+  buildGeografiaReport,
+  buildPublicadosReport,
+  rotuloPeriodo,
+} from '@/lib/export/adapters';
+import type { ExportConfig } from '@/lib/export/tipos';
+import type { Pedido, KpisPedidos } from '@/lib/pedidos-faturamento';
+
+const cfg = (over: Partial<ExportConfig> = {}): ExportConfig => ({
+  formato: 'pdf',
+  expandido: false,
+  incluirKpis: true,
+  ...over,
+});
+
+const kpisVendas: KpisPedidos = {
+  pedidos: 2, unidades: 5, bruto: 300, ticket: 150, itensPorPedido: 2.5,
+  markup: 0.4, compradoresUnicos: 2, pctRecompra: 0, porStatusEnvio: {},
+};
+
+const pedido = (chave: string): Pedido => ({
+  chave, isPack: false, orderIds: [Number(chave)], data: '2026-06-10T00:00:00Z',
+  comprador_id: 1, comprador_nick: 'fulano', status: 'paid', statusDetail: null,
+  shipping_status: 'shipped', shipping_substatus: null, uf: 'SP', cidade: 'São Paulo',
+  unidades: 2, bruto: 150, frete: null, liquido: 120, custo: 80, markup: 0.5,
+  comissao: 20, rastreio: null, is_publiai: true, tem_devolucao: false,
+  itens: [
+    { id: 'i1', ml_item_id: 'MLB1', titulo: 'Fita', codigo: 'C1', cor: 'azul', ean: '789',
+      quantity: 2, unit_price: 75, imagem_path: null, custo: 80, liquido: 120, markup: 0.5 },
+  ],
+});
+
+describe('rotuloPeriodo', () => {
+  it('preset → "Últimos N dias"', () => {
+    expect(rotuloPeriodo({ tipo: 'preset', dias: 30 })).toBe('Últimos 30 dias');
+  });
+  it('range → intervalo de datas', () => {
+    const s = rotuloPeriodo({ tipo: 'range', desde: '2026-06-01', ate: '2026-06-30' });
+    expect(s).toContain('–');
+  });
+});
+
+describe('buildVendasReport', () => {
+  it('inclui kpis só quando incluirKpis', () => {
+    const com = buildVendasReport({ pedidos: [pedido('1')], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 30 }, origem: 'publiai', filtroEnvio: null, config: cfg() });
+    expect(com.kpis?.some((k) => k.label === 'Faturamento')).toBe(true);
+    const sem = buildVendasReport({ pedidos: [pedido('1')], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 30 }, origem: 'publiai', filtroEnvio: null, config: cfg({ incluirKpis: false }) });
+    expect(sem.kpis).toBeUndefined();
+  });
+
+  it('inclui sublinhas de itens só quando expandido', () => {
+    const exp = buildVendasReport({ pedidos: [pedido('1')], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 30 }, origem: 'todos', filtroEnvio: null, config: cfg({ expandido: true }) });
+    expect(exp.linhas[0].sublinhas?.linhas).toHaveLength(1);
+    const rec = buildVendasReport({ pedidos: [pedido('1')], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 30 }, origem: 'todos', filtroEnvio: null, config: cfg({ expandido: false }) });
+    expect(rec.linhas[0].sublinhas).toBeUndefined();
+  });
+
+  it('reflete o filtro de origem e envio no cabeçalho', () => {
+    const r = buildVendasReport({ pedidos: [], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 7 }, origem: 'fora', filtroEnvio: 'A caminho', config: cfg() });
+    expect(r.filtros).toContain('Origem: Fora');
+    expect(r.filtros).toContain('Envio: A caminho');
+  });
+});
+
+describe('buildFinanceiroDetalheReport', () => {
+  const venda = (over = {}) => ({
+    id: '1', orderId: 1, data: '2026-06-10T00:00:00Z', dataLiberacao: '2020-01-01T00:00:00Z',
+    descricao: 'Produto X', codigo: 'C9', bruto: 100, liquido: 80, retido: 20, estorno: 0, custo: 50, ...over,
+  });
+
+  it('Liberação inclui "liberado" quando data no passado (sem coluna Situação separada, como a tela)', () => {
+    const r = buildFinanceiroDetalheReport({ vendas: [venda()], totais: { bruto: 100, retido: 20, liquido: 80, markup: 0.6 }, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    expect(r.linhas[0].celulas.situacao).toBeUndefined();
+    expect(String(r.linhas[0].celulas.liberacao)).toContain('liberado');
+    expect(r.colunas.some((c) => c.chave === 'situacao')).toBe(false);
+  });
+
+  it('Liberação inclui "a liberar" quando data no futuro', () => {
+    const r = buildFinanceiroDetalheReport({ vendas: [venda({ dataLiberacao: '2099-01-01T00:00:00Z' })], totais: { bruto: 100, retido: 20, liquido: 80, markup: null }, filtroLib: 'aliberar', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    expect(String(r.linhas[0].celulas.liberacao)).toContain('a liberar');
+  });
+});
+
+const labels = (r: { kpis?: { label: string }[] }) => (r.kpis ?? []).map((k) => k.label);
+
+describe('buildPublicadosReport — KPIs batem com a tela', () => {
+  const base = { itens: [], totais: { faturamento: 926.89, unidades: 56, pedidos: 38 }, filtro: {}, periodo: { tipo: 'preset', dias: 30 } as const };
+
+  it('com custo: 6 KPIs incl. Ticket médio, Markup/Lucro no período', () => {
+    const r = buildPublicadosReport({ ...base, markupPct: 1.29, lucro: 262.67, config: cfg() });
+    expect(labels(r)).toEqual(['Faturamento', 'Unidades vendidas', 'Pedidos', 'Ticket médio', 'Markup no período', 'Lucro no período']);
+    expect(r.kpis?.find((k) => k.label === 'Ticket médio')?.valor).toContain('24,39'); // 926,89/38
+  });
+
+  it('sem custo: oculta Markup e Lucro (como a tela)', () => {
+    const r = buildPublicadosReport({ ...base, markupPct: null, lucro: 0, config: cfg() });
+    expect(labels(r)).toEqual(['Faturamento', 'Unidades vendidas', 'Pedidos', 'Ticket médio']);
+  });
+});
+
+describe('buildVendasReport — KPIs completos', () => {
+  it('inclui Itens / pedido e % recompra', () => {
+    const r = buildVendasReport({ pedidos: [], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 30 }, origem: 'todos', filtroEnvio: null, config: cfg() });
+    expect(labels(r)).toContain('Itens / pedido');
+    expect(labels(r)).toContain('% recompra');
+    expect(labels(r)).toContain('Compradores');
+  });
+});
+
+describe('buildFinanceiroReport — KPIs completos', () => {
+  it('inclui Vendas no período e rótulos da tela', () => {
+    const r = buildFinanceiroReport({
+      r: { liquido: 100, bruto: 200, descontos: 100, estornos: 0, pedidos: 5, markup: 0.5, margem: 0.3, lucro: 30, liberado: 60, aLiberar: 40, vendas: [] } as never,
+      ticketLiquido: 20, serie: [], periodo: { tipo: 'preset', dias: 30 }, config: cfg(),
+    });
+    expect(labels(r)).toEqual([
+      'Líquido das vendas', 'Faturamento bruto', 'Taxas e frete (ML)', 'Estornos',
+      'Ticket médio líquido', 'Já liberado', 'A liberar', 'Vendas no período',
+      'Markup no período', 'Lucro líquido no período',
+    ]);
+  });
+});
+
+describe('buildGeografiaReport', () => {
+  it('aninha cidades sob cada UF', () => {
+    const geo = {
+      porUf: [{ uf: 'SP', pedidos: 3, unidades: 5, valor: 300, pctPedidos: 75 }],
+      porCidade: [
+        { cidade: 'São Paulo', uf: 'SP', pedidos: 2, valor: 200 },
+        { cidade: 'Rio', uf: 'RJ', pedidos: 1, valor: 100 },
+      ],
+      estadosAtingidos: 2, totalPedidos: 3, semGeo: 0,
+    };
+    const r = buildGeografiaReport({ geo, periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    expect(r.linhas).toHaveLength(1); // só SP em porUf
+    expect(r.linhas[0].sublinhas?.linhas).toHaveLength(1); // só a cidade de SP
+    expect(r.linhas[0].sublinhas?.linhas[0].cidade).toBe('São Paulo');
+  });
+});

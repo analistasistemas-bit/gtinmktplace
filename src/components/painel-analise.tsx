@@ -4,6 +4,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import type { StatusTone } from '@/components/ui/status-pill';
 import { fmtBRL, fmtMilhar } from '@/lib/formato';
 import { familiaSemDimensoesValidas } from '@/lib/publicavel';
+import { resumoViabilidade } from '@/lib/analise-viabilidade';
 import type { Familia, Concorrencia } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
 
@@ -24,21 +25,16 @@ export function PainelAnalise({
   /** Modo real publicado, para destacar Clássico/Premium no card "Você recebe". */
   listingTypeReal?: 'classico' | 'premium' | null;
 }) {
+  // Números de viabilidade (preço de publicação, custo representativo) vêm da
+  // fonte única compartilhada com a exportação.
+  const { precoExibido, custo: custoRepresentativo } = resumoViabilidade(familia, precoOverride);
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
-  const precoPublicacao = baseVariacoes.length > 0
-    ? Math.min(...baseVariacoes.map((v) => v.precoPublicacao ?? v.preco))
-    : 0;
-  const precoExibido = precoOverride ?? precoPublicacao;
-
-  // Custo da variação cujo preço de publicação é o menor (a mesma que define precoPublicacao);
-  // empate → a primeira. Alimenta o markup do card "Você recebe".
   const variacaoRepresentativa = baseVariacoes.length > 0
     ? baseVariacoes.reduce((min, v) =>
         (v.precoPublicacao ?? v.preco) < (min.precoPublicacao ?? min.preco) ? v : min,
       baseVariacoes[0])
     : null;
-  const custoRepresentativo = variacaoRepresentativa?.custo ?? null;
 
   const proprio = familia.estrategiaPreco === 'PROPRIO';
   const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
