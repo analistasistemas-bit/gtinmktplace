@@ -11,6 +11,7 @@ import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
 import { subirFotoML } from '../ml/fotos.ts';
+import { aplicarPxQ } from '../ml/atacado.ts';
 import { mapearVariacoesExternas, mapearVariacoesPorSku, classificarErroCanal } from './mapeamento.ts';
 
 function chunk<T>(arr: T[], n: number): T[][] {
@@ -26,6 +27,7 @@ export const mercadoLivreConnector: ChannelConnector = {
     descricaoSeparada: true,
     catalogo: true,
     desconto: true,
+    atacado: true,
     dimensoesPacote: true,
   },
 
@@ -70,6 +72,11 @@ export const mercadoLivreConnector: ChannelConnector = {
   async garantirDescricao(ctx: ContextoCanal, itemExternoId: string, descricao: string): Promise<void> {
     const token = await ctx.getToken();
     await garantirDescricaoML(token, itemExternoId, descricao);
+  },
+
+  async aplicarAtacado(ctx: ContextoCanal, itemExternoId: string, precoBase: number, faixas): Promise<void> {
+    const token = await ctx.getToken();
+    await aplicarPxQ(token, itemExternoId, precoBase, faixas);
   },
 
   async atualizarAnuncio(ctx: ContextoCanal, a: AtualizacaoCanonica): Promise<ResultadoCanal<ResultadoAtualizacao>> {

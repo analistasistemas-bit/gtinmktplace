@@ -1,6 +1,7 @@
 // supabase/functions/_shared/canais/contrato.ts
 import type { AtributoItem } from '../ml/publicar.ts';
 import type { DimensoesPacote } from '../ml/pacote.ts';
+import type { FaixaAtacado } from '../ml/atacado.ts';
 
 /** Canais suportados. Expandir conforme novos adapters (ADR-0024). */
 export type CanalId = 'mercado_livre';
@@ -11,6 +12,7 @@ export interface Capabilities {
   descricaoSeparada: boolean; // descrição é recurso à parte (ML=true)
   catalogo: boolean;          // opt-in de catálogo/buybox (ML=true)
   desconto: boolean;
+  atacado: boolean;          // preço por quantidade (PxQ B2B)
   dimensoesPacote: boolean;
 }
 
@@ -141,6 +143,8 @@ export interface ChannelConnector {
   criarAnuncio(ctx: ContextoCanal, anuncio: AnuncioCanonico): Promise<ResultadoCanal<RefAnuncio>>;
   /** Garante a descrição (recurso separado). Best-effort no worker. */
   garantirDescricao(ctx: ContextoCanal, itemExternoId: string, descricao: string): Promise<void>;
+  /** Aplica preço de atacado (PxQ B2B) no item já criado. faixas vazio = limpa. Lança em falha. */
+  aplicarAtacado(ctx: ContextoCanal, itemExternoId: string, precoBase: number, faixas: FaixaAtacado[]): Promise<void>;
   /** Atualiza um anúncio existente (estoque / cores novas / preço / atributos). Não lança: erros viram ResultadoCanal.erro. */
   atualizarAnuncio(ctx: ContextoCanal, a: AtualizacaoCanonica): Promise<ResultadoCanal<ResultadoAtualizacao>>;
   /** Sincroniza a descrição ao vivo (resolve + push). Retorna a descrição a persistir, ou null se nada mudou. */
