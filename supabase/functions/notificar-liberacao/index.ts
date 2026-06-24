@@ -90,7 +90,11 @@ Deno.serve(async (req) => {
     }
 
     // Marca SEMPRE (mesmo sem Telegram ativo) para não reprocessar.
-    await admin.from('ml_vendas').update({ liberacao_notificada_em: hoje }).in('id', ids);
+    const { error: errMarca } = await admin
+      .from('ml_vendas')
+      .update({ liberacao_notificada_em: hoje })
+      .in('id', ids);
+    if (errMarca) console.error(`Falha ao marcar ${ids.length} vendas (user ${userId}):`, errMarca.message);
     notificados += ids.length;
   }
 
