@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularResumo, ratearLiquidoPorFrete, ehFaturavel } from '@/lib/resumo-vendas';
+import { calcularResumo, ratearLiquidoPorFrete, ehFaturavel, agruparPorPeriodo } from '@/lib/resumo-vendas';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -204,5 +204,19 @@ describe('calcularResumo — caixa/taxas/cobertura/margem', () => {
     const r = calcularResumo([vendaT1()], undefined, undefined, AGORA);
     expect(r.margem).toBeNull();
     expect(r.vendasComCusto).toBe(0);
+  });
+});
+
+describe('agruparPorPeriodo', () => {
+  it('agrupa líquido e bruto por dia, ordenado', () => {
+    const itens = [
+      { data: '2026-06-10T09:00:00Z', bruto: 100, liquido: 80 },
+      { data: '2026-06-10T18:00:00Z', bruto: 50, liquido: 40 },
+      { data: '2026-06-11T10:00:00Z', bruto: 30, liquido: 25 },
+    ];
+    const serie = agruparPorPeriodo(itens, 'dia');
+    expect(serie).toHaveLength(2);
+    expect(serie[0]).toMatchObject({ chave: '2026-06-10', rotulo: '10/06', bruto: 150, liquido: 120 });
+    expect(serie[1]).toMatchObject({ chave: '2026-06-11', liquido: 25 });
   });
 });
