@@ -207,6 +207,30 @@ describe('calcularResumo — caixa/taxas/cobertura/margem', () => {
   });
 });
 
+describe('calcularResumo — breakdown de taxas reconcilia com descontos', () => {
+  it('frete é o residual (descontos − comissão), não a soma crua do frete_vendedor duplicado em pack', () => {
+    // 2 pedidos do mesmo envio (pack): o ML grava o frete do envio inteiro em CADA pedido
+    // (frete_vendedor 20 repetido). Somar cru daria 40; o frete efetivo é o residual do retido.
+    const vendas = [
+      venda({ id: 'a', order_id: 1, shipping_id: 555, total_amount: 100, liquido: 70, sale_fee_total: 10, frete_vendedor: 20 }),
+      venda({ id: 'b', order_id: 2, shipping_id: 555, total_amount: 100, liquido: 78, sale_fee_total: 12, frete_vendedor: 20 }),
+    ];
+    const r = calcularResumo(vendas);
+    expect(r.descontos).toBe(52); // bruto 200 − líquido 148 (rateio é zero-soma)
+    expect(r.comissao).toBe(22); // 10 + 12 (sale_fee_total não duplica em pack)
+    expect(r.frete).toBe(30); // residual 52 − 22 (NÃO 40 da soma crua de frete_vendedor)
+    expect(r.comissao + r.frete).toBe(r.descontos); // breakdown SEMPRE fecha com o total exibido
+  });
+
+  it('frete nunca fica negativo quando a comissão excede o retido (ex.: reembolso)', () => {
+    const vendas = [
+      venda({ id: 'x', total_amount: 100, liquido: 99, sale_fee_total: 5 }), // descontos 1, comissão 5
+    ];
+    const r = calcularResumo(vendas);
+    expect(r.frete).toBe(0); // max(0, 1 − 5)
+  });
+});
+
 describe('agruparPorPeriodo', () => {
   it('agrupa líquido e bruto por dia, ordenado', () => {
     const itens = [

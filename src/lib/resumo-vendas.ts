@@ -68,7 +68,8 @@ export interface ResumoVendas {
   proximaLiberacao: string | null;
   /** Σ comissão do ML (sale_fee_total) das faturáveis. */
   comissao: number;
-  /** Σ frete do vendedor (frete_vendedor) das faturáveis. */
+  /** Frete efetivo pago pelo vendedor = descontos − comissão (residual do retido). NÃO é a soma de
+   *  frete_vendedor (que duplica em pack e é o bruto da etiqueta). comissão + frete == descontos. */
   frete: number;
   /** Nº de vendas faturáveis com custo cadastrado (base do lucro/markup/margem). */
   vendasComCusto: number;
@@ -117,7 +118,7 @@ export function calcularResumo(
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0, pedidos = 0;
   let liqComCusto = 0, custoTotal = 0;
-  let liberado = 0, aLiberar = 0, comissao = 0, frete = 0, vendasComCusto = 0;
+  let liberado = 0, aLiberar = 0, comissao = 0, vendasComCusto = 0;
   let proximaLiberacaoMs: number | null = null;
   let proximaLiberacao: string | null = null;
   const porItem: Record<string, { unidades: number; valor: number }> = {};
@@ -146,7 +147,6 @@ export function calcularResumo(
     if (custo != null && custo > 0) { liqComCusto += liq; custoTotal += custo; }
 
     comissao += v.sale_fee_total ?? 0;
-    frete += v.frete_vendedor ?? 0;
     if (custo != null && custo > 0) vendasComCusto += 1;
     if (v.money_release_date) {
       const ms = Date.parse(v.money_release_date);
@@ -179,10 +179,17 @@ export function calcularResumo(
   for (const id of Object.keys(porItem)) porItem[id].valor = round2(porItem[id].valor);
   vendasResumo.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
 
+  // Breakdown do retido: comissão = sale_fee_total (autoritativo, não duplica em pack); o "frete
+  // efetivo" é o RESIDUAL (descontos − comissão), não a soma crua de frete_vendedor — que o ML
+  // grava repetido em cada pedido do pack e é o frete BRUTO da etiqueta (antes de subsídio do ML).
+  // Como líquido = bruto − comissão − frete_efetivo, o residual É o frete real pago pelo vendedor e
+  // garante comissão + frete == descontos (o total exibido). Clamp em 0 p/ reembolsos (comissão > retido).
+  const descontos = round2(bruto - liquido);
+  const comissaoTotal = round2(comissao);
   return {
     bruto: round2(bruto),
     liquido: round2(liquido),
-    descontos: round2(bruto - liquido),
+    descontos,
     estornos: round2(estornos),
     pedidos,
     unidades,
@@ -192,8 +199,8 @@ export function calcularResumo(
     liberado: round2(liberado),
     aLiberar: round2(aLiberar),
     proximaLiberacao,
-    comissao: round2(comissao),
-    frete: round2(frete),
+    comissao: comissaoTotal,
+    frete: round2(Math.max(0, descontos - comissaoTotal)),
     vendasComCusto,
     totalVendas: pedidos,
     margem: custoTotal > 0 ? (liqComCusto - custoTotal) / liqComCusto : null,
