@@ -4,15 +4,10 @@ import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, Tr
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
-import { periodoToParams, resolverJanela, type PeriodoDias } from '@/lib/metricas';
-
-const PERIODOS: { dias: PeriodoDias; label: string }[] = [
-  { dias: 7, label: '7 dias' },
-  { dias: 30, label: '30 dias' },
-  { dias: 90, label: '90 dias' },
-];
+import { periodoToParams, resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
 
 function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
   icon: typeof Wallet; label: string; valor: string; sub?: string;
@@ -35,8 +30,8 @@ function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
 }
 
 export default function Financeiro() {
-  const [periodo, setPeriodo] = useState<PeriodoDias>(30);
-  const janela = useMemo(() => resolverJanela({ tipo: 'preset', dias: periodo }), [periodo]);
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela);
   const horaAtualizacao = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
@@ -44,7 +39,7 @@ export default function Financeiro() {
 
   const pctRetido = r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
   const ticketLiquido = r.pedidos > 0 ? r.liquido / r.pedidos : 0;
-  const queryDetalhe = new URLSearchParams(periodoToParams({ tipo: 'preset', dias: periodo })).toString();
+  const queryDetalhe = new URLSearchParams(periodoToParams(periodo)).toString();
   const podeDetalhar = r.pedidos > 0;
 
   // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
@@ -73,21 +68,45 @@ export default function Financeiro() {
       )}
 
       {/* Seletor de período */}
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Vendas aprovadas nos últimos</span>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Vendas aprovadas em</span>
         <div className="flex gap-1">
-          {PERIODOS.map((p) => (
+          {([7, 30, 90] as PeriodoDias[]).map((d) => (
             <Button
-              key={p.dias}
+              key={d}
               size="sm"
-              variant={periodo === p.dias ? 'default' : 'outline'}
+              variant={periodo.tipo === 'preset' && periodo.dias === d ? 'default' : 'outline'}
               className="h-7 px-2.5 text-xs"
-              onClick={() => setPeriodo(p.dias)}
+              onClick={() => setPeriodo({ tipo: 'preset', dias: d })}
             >
-              {p.label}
+              {d} dias
             </Button>
           ))}
+          <Button
+            size="sm"
+            variant={periodo.tipo === 'range' ? 'default' : 'outline'}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setPeriodo((p) =>
+              p.tipo === 'range' ? p : { tipo: 'range', desde: '', ate: '' })}
+          >
+            Personalizado
+          </Button>
         </div>
+        {periodo.tipo === 'range' && (
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date" value={periodo.desde} max={periodo.ate || undefined}
+              className="h-7 w-[9.5rem] text-xs"
+              onChange={(e) => setPeriodo((p) => p.tipo === 'range' ? { ...p, desde: e.target.value } : p)}
+            />
+            <span className="text-xs text-muted-foreground">até</span>
+            <Input
+              type="date" value={periodo.ate} min={periodo.desde || undefined}
+              className="h-7 w-[9.5rem] text-xs"
+              onChange={(e) => setPeriodo((p) => p.tipo === 'range' ? { ...p, ate: e.target.value } : p)}
+            />
+          </div>
+        )}
         {isFetching ? (
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
