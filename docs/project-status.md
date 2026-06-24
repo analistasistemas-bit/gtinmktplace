@@ -11,6 +11,7 @@
 - Proximo epico de produto: `E5` conector Shopee
 - Trilho de UX (preparacao para SaaS comercial): repaginacao visual premium + Tarefa 2/Onda 1 (workflow operacional) concluidas e em producao (2026-06-21)
 - Marketplace ativo em producao: Mercado Livre
+- Modulo Financeiro impecavel (ADR-0040, 2026-06-23): caixa (liberado/a liberar), lucro+margem, breakdown de taxas, evolucao temporal, comparativo de periodo, periodo personalizado, export CSV e notificacao Telegram de liberacao. Branch `worktree-financeiro-impecavel` — pendente validacao local + deploy (migration + edge `notificar-liberacao` + schedule QStash) e limpeza pos-validacao do caminho morto do MP.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
