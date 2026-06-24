@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { resolverJanela, periodoFromParams, periodoToParams } from '@/lib/metricas';
+import { resolverJanela, periodoFromParams, periodoToParams, janelaAnterior } from '@/lib/metricas';
 
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: vi.fn() } } }));
 
@@ -26,6 +26,15 @@ describe('resolverJanela — range incompleto', () => {
   it('resolve um range válido normalmente', () => {
     const j = resolverJanela({ tipo: 'range', desde: '2026-06-01', ate: '2026-06-10' });
     expect(j.desde < j.ate).toBe(true);
+  });
+});
+
+describe('janelaAnterior', () => {
+  it('devolve a janela anterior de mesma duração', () => {
+    const j = { desde: '2026-06-01T00:00:00.000Z', ate: '2026-06-11T00:00:00.000Z' }; // 10 dias
+    const a = janelaAnterior(j);
+    expect(a.ate).toBe('2026-06-01T00:00:00.000Z');
+    expect(a.desde).toBe('2026-05-22T00:00:00.000Z');
   });
 });
 

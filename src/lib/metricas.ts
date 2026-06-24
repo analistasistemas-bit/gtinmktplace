@@ -26,6 +26,13 @@ export function resolverJanela(p: Periodo): Janela {
   return { desde: desde.toISOString(), ate: ate.toISOString() };
 }
 
+/** Janela imediatamente anterior, de mesma duração: [desde - dur, desde]. */
+export function janelaAnterior(j: Janela): Janela {
+  const desdeMs = Date.parse(j.desde);
+  const dur = Date.parse(j.ate) - desdeMs;
+  return { desde: new Date(desdeMs - dur).toISOString(), ate: new Date(desdeMs).toISOString() };
+}
+
 /** Serializa o período para query string (?dias=30 ou ?de=…&ate=…). */
 export function periodoToParams(p: Periodo): Record<string, string> {
   return p.tipo === 'preset' ? { dias: String(p.dias) } : { de: p.desde, ate: p.ate };

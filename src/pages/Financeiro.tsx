@@ -1,19 +1,20 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, Coins, ChevronRight, CalendarClock } from 'lucide-react';
+import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, Coins, ChevronRight, CalendarClock, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
-import { periodoToParams, resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
+import { periodoToParams, resolverJanela, janelaAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
 
-function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
+function Kpi({ icon: Icon, label, valor, sub, tom, valorCor, delta }: {
   icon: typeof Wallet; label: string; valor: string; sub?: string;
   tom?: 'info' | 'success' | 'warning' | 'danger';
   /** Cor opcional aplicada ao valor (ex.: markup verde/vermelho). */
   valorCor?: string;
+  delta?: { texto: string; trend: 'up' | 'down' | 'neutral' };
 }) {
   const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
     : tom === 'danger' ? 'text-destructive' : 'text-info';
@@ -24,6 +25,13 @@ function Kpi({ icon: Icon, label, valor, sub, tom, valorCor }: {
         {label}
       </div>
       <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
+      {delta && (
+        <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
+          delta.trend === 'up' ? 'text-success' : delta.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
+          {delta.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : delta.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
+          {delta.texto}
+        </div>
+      )}
       {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
     </div>
   );
@@ -33,6 +41,15 @@ export default function Financeiro() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela);
+  const janelaAnt = useMemo(() => janelaAnterior(janela), [janela]);
+  const { resumo: rAnt } = useResumoVendas(janelaAnt);
+
+  const delta = (atual: number, anterior: number): { texto: string; trend: 'up' | 'down' | 'neutral' } => {
+    if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
+    const p = ((atual - anterior) / Math.abs(anterior)) * 100;
+    const trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
+    return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% vs. anterior`, trend };
+  };
   const horaAtualizacao = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     : null;
@@ -134,6 +151,13 @@ export default function Financeiro() {
               </span>
             </div>
             <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
+            {(() => { const d = delta(r.liquido, rAnt.liquido); return (
+              <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
+                d.trend === 'up' ? 'text-success' : d.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
+                {d.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : d.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
+                {d.texto}
+              </div>
+            ); })()}
             <div className="mt-1 text-xs text-muted-foreground">
               de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
             </div>
@@ -144,6 +168,13 @@ export default function Financeiro() {
               <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
             </div>
             <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
+            {(() => { const d = delta(r.liquido, rAnt.liquido); return (
+              <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
+                d.trend === 'up' ? 'text-success' : d.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
+                {d.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : d.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
+                {d.texto}
+              </div>
+            ); })()}
             <div className="mt-1 text-xs text-muted-foreground">
               de {fmtBRL(r?.bruto ?? 0)} faturados — {pctRetido.toFixed(1).replace('.', ',')}% retido pelo ML
             </div>
@@ -151,7 +182,7 @@ export default function Financeiro() {
         )}
 
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
-          <Kpi icon={Receipt} label="Faturamento bruto" valor={fmtBRL(r?.bruto ?? 0)} />
+          <Kpi icon={Receipt} label="Faturamento bruto" valor={fmtBRL(r?.bruto ?? 0)} delta={delta(r.bruto, rAnt.bruto)} />
           <Kpi icon={Percent} label="Taxas e frete (ML)" valor={fmtBRL(r?.descontos ?? 0)} tom="warning" sub={`comissão ${fmtBRL(r?.comissao ?? 0)} · frete ${fmtBRL(r?.frete ?? 0)}`} />
           <Kpi icon={RotateCcw} label="Estornos" valor={fmtBRL(r?.estornos ?? 0)} tom="danger" />
           <Kpi icon={Target} label="Ticket médio líquido" valor={fmtBRL(ticketLiquido)} />
@@ -185,6 +216,7 @@ export default function Financeiro() {
           label="Vendas no período"
           valor={fmtInt(r.pedidos)}
           tom="info"
+          delta={delta(r.pedidos, rAnt.pedidos)}
         />
         <Kpi
           icon={TrendingUp}
@@ -202,6 +234,7 @@ export default function Financeiro() {
           valor={r.margem != null ? fmtBRL(r.lucro) : '—'}
           valorCor={r.margem != null ? (r.lucro >= 0 ? 'text-success' : 'text-destructive') : undefined}
           tom={r.margem != null && r.lucro < 0 ? 'danger' : 'success'}
+          delta={delta(r.lucro, rAnt.lucro)}
           sub={r.margem != null
             ? `margem ${Math.round(r.margem * 100)}% · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
             : 'sem custo cadastrado nas vendas'}
