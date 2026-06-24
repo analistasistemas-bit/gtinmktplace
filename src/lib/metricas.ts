@@ -17,7 +17,20 @@ export function resolverJanela(p: Periodo): Janela {
   }
   const desde = new Date(`${p.desde}T00:00:00`);
   const ate = new Date(`${p.ate}T23:59:59.999`);
+  if (Number.isNaN(desde.getTime()) || Number.isNaN(ate.getTime())) {
+    // range incompleto/inválido (ex.: "Personalizado" sem datas preenchidas): janela vazia,
+    // a tela mostra zeros sem quebrar.
+    const agora = new Date().toISOString();
+    return { desde: agora, ate: agora };
+  }
   return { desde: desde.toISOString(), ate: ate.toISOString() };
+}
+
+/** Janela imediatamente anterior, de mesma duração: [desde - dur, desde]. */
+export function janelaAnterior(j: Janela): Janela {
+  const desdeMs = Date.parse(j.desde);
+  const dur = Date.parse(j.ate) - desdeMs;
+  return { desde: new Date(desdeMs - dur).toISOString(), ate: new Date(desdeMs).toISOString() };
 }
 
 /** Serializa o período para query string (?dias=30 ou ?de=…&ate=…). */

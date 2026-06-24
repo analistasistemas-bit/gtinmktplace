@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularResumo, ratearLiquidoPorFrete, ehFaturavel } from '@/lib/resumo-vendas';
+import { calcularResumo, ratearLiquidoPorFrete, ehFaturavel, agruparPorPeriodo } from '@/lib/resumo-vendas';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -142,5 +142,105 @@ describe('ratearLiquidoPorFrete', () => {
     expect(lPro.liquido).toBeCloseTo(7.36, 2);
     expect(r.liquido).toBeCloseTo(18.31, 2); // total do MP preservado (zero-soma)
     expect(r.bruto).toBeCloseTo(44.59, 2);
+  });
+});
+
+// ─── Task-1: caixa/taxas/cobertura/margem ────────────────────────────────────
+
+const AGORA = Date.parse('2026-06-15T00:00:00Z');
+
+const itemT1 = (over: Partial<VendaItem> = {}): VendaItem => ({
+  id: 'i1', ml_item_id: 'MLB1', variation_id: null, titulo: 'Fita', codigo: '001',
+  cor: null, ean: '789', quantity: 1, unit_price: 10, sale_fee: 0, is_publiai: true, ...over,
+});
+const vendaT1 = (over: Partial<Venda> = {}): Venda => ({
+  id: over.id ?? 'v1', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
+  date_closed: '2026-06-10T12:00:00Z', date_created: '2026-06-10T12:00:00Z',
+  comprador_nick: null, comprador_id: null, uf: null, cidade: null,
+  total_amount: 100, paid_amount: null, sale_fee_total: 12, frete_vendedor: 8, liquido: 80,
+  estorno: null, money_release_date: null, currency: 'BRL', shipping_id: null,
+  shipping_status: null, shipping_substatus: null, shipping_logistic: null, tracking_number: null,
+  is_publiai: true, tem_devolucao: false, itens: [itemT1()], ...over,
+});
+
+describe('calcularResumo — caixa/taxas/cobertura/margem', () => {
+  it('separa líquido liberado (passado) de a liberar (futuro) e acha a próxima liberação', () => {
+    const vendas = [
+      vendaT1({ id: 'a', liquido: 80, money_release_date: '2026-06-12T00:00:00Z' }), // liberado
+      vendaT1({ id: 'b', liquido: 50, money_release_date: '2026-06-20T00:00:00Z' }), // a liberar
+      vendaT1({ id: 'c', liquido: 30, money_release_date: '2026-06-18T00:00:00Z' }), // a liberar (próxima)
+    ];
+    const r = calcularResumo(vendas, undefined, undefined, AGORA);
+    expect(r.liberado).toBe(80);
+    expect(r.aLiberar).toBe(80);
+    expect(r.proximaLiberacao).toBe('2026-06-18T00:00:00Z');
+  });
+
+  it('soma comissão e frete só das faturáveis', () => {
+    const vendas = [
+      vendaT1({ id: 'a', sale_fee_total: 12, frete_vendedor: 8 }),
+      vendaT1({ id: 'b', status: 'cancelled', sale_fee_total: 99, frete_vendedor: 99 }),
+    ];
+    const r = calcularResumo(vendas, undefined, undefined, AGORA);
+    expect(r.comissao).toBe(12);
+    expect(r.frete).toBe(8);
+  });
+
+  it('expõe cobertura de custo e margem (lucro ÷ líquido com custo)', () => {
+    const resolver = (it: VendaItem) => (it.codigo === '001' ? 40 : null); // custo unit R$40
+    const vendas = [
+      vendaT1({ id: 'a', liquido: 80, itens: [itemT1({ codigo: '001', quantity: 1 })] }), // custo 40
+      vendaT1({ id: 'b', liquido: 50, itens: [itemT1({ codigo: '999', quantity: 1 })] }), // sem custo
+    ];
+    const r = calcularResumo(vendas, resolver, undefined, AGORA);
+    expect(r.totalVendas).toBe(2);
+    expect(r.vendasComCusto).toBe(1);
+    // lucro = 80 - 40 = 40 ; margem = 40 / 80 = 0.5
+    expect(r.lucro).toBe(40);
+    expect(r.margem).toBe(0.5);
+  });
+
+  it('margem null quando nenhuma venda tem custo', () => {
+    const r = calcularResumo([vendaT1()], undefined, undefined, AGORA);
+    expect(r.margem).toBeNull();
+    expect(r.vendasComCusto).toBe(0);
+  });
+});
+
+describe('calcularResumo — breakdown de taxas reconcilia com descontos', () => {
+  it('frete é o residual (descontos − comissão), não a soma crua do frete_vendedor duplicado em pack', () => {
+    // 2 pedidos do mesmo envio (pack): o ML grava o frete do envio inteiro em CADA pedido
+    // (frete_vendedor 20 repetido). Somar cru daria 40; o frete efetivo é o residual do retido.
+    const vendas = [
+      venda({ id: 'a', order_id: 1, shipping_id: 555, total_amount: 100, liquido: 70, sale_fee_total: 10, frete_vendedor: 20 }),
+      venda({ id: 'b', order_id: 2, shipping_id: 555, total_amount: 100, liquido: 78, sale_fee_total: 12, frete_vendedor: 20 }),
+    ];
+    const r = calcularResumo(vendas);
+    expect(r.descontos).toBe(52); // bruto 200 − líquido 148 (rateio é zero-soma)
+    expect(r.comissao).toBe(22); // 10 + 12 (sale_fee_total não duplica em pack)
+    expect(r.frete).toBe(30); // residual 52 − 22 (NÃO 40 da soma crua de frete_vendedor)
+    expect(r.comissao + r.frete).toBe(r.descontos); // breakdown SEMPRE fecha com o total exibido
+  });
+
+  it('frete nunca fica negativo quando a comissão excede o retido (ex.: reembolso)', () => {
+    const vendas = [
+      venda({ id: 'x', total_amount: 100, liquido: 99, sale_fee_total: 5 }), // descontos 1, comissão 5
+    ];
+    const r = calcularResumo(vendas);
+    expect(r.frete).toBe(0); // max(0, 1 − 5)
+  });
+});
+
+describe('agruparPorPeriodo', () => {
+  it('agrupa líquido e bruto por dia, ordenado', () => {
+    const itens = [
+      { data: '2026-06-10T09:00:00Z', bruto: 100, liquido: 80 },
+      { data: '2026-06-10T18:00:00Z', bruto: 50, liquido: 40 },
+      { data: '2026-06-11T10:00:00Z', bruto: 30, liquido: 25 },
+    ];
+    const serie = agruparPorPeriodo(itens, 'dia');
+    expect(serie).toHaveLength(2);
+    expect(serie[0]).toMatchObject({ chave: '2026-06-10', rotulo: '10/06', bruto: 150, liquido: 120 });
+    expect(serie[1]).toMatchObject({ chave: '2026-06-11', liquido: 25 });
   });
 });

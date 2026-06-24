@@ -60,6 +60,23 @@ export interface ResumoVendas {
   markup: number | null;
   /** Lucro do período (líquido − custo) das vendas com custo. */
   lucro: number;
+  /** Σ líquido das vendas já liberadas (money_release_date no passado). */
+  liberado: number;
+  /** Σ líquido das vendas ainda a liberar (money_release_date no futuro). */
+  aLiberar: number;
+  /** Menor money_release_date futuro (ISO), ou null se nada a liberar. */
+  proximaLiberacao: string | null;
+  /** Σ comissão do ML (sale_fee_total) das faturáveis. */
+  comissao: number;
+  /** Frete efetivo pago pelo vendedor = descontos − comissão (residual do retido). NÃO é a soma de
+   *  frete_vendedor (que duplica em pack e é o bruto da etiqueta). comissão + frete == descontos. */
+  frete: number;
+  /** Nº de vendas faturáveis com custo cadastrado (base do lucro/markup/margem). */
+  vendasComCusto: number;
+  /** Nº de vendas faturáveis no período (= pedidos), para a nota de cobertura. */
+  totalVendas: number;
+  /** Margem sobre a receita líquida: lucro ÷ líquido (com custo). null = sem custo. */
+  margem: number | null;
   /** ml_item_id → vendas do período (anúncios), p/ rankings da tela Publicados. */
   porItem: Record<string, { unidades: number; valor: number }>;
   /** Detalhe por venda, da mais recente para a mais antiga. */
@@ -96,10 +113,14 @@ function descricaoVenda(v: Venda): string | null {
  */
 export function calcularResumo(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
+  agoraMs: number = Date.now(),
 ): ResumoVendas {
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0, pedidos = 0;
   let liqComCusto = 0, custoTotal = 0;
+  let liberado = 0, aLiberar = 0, comissao = 0, vendasComCusto = 0;
+  let proximaLiberacaoMs: number | null = null;
+  let proximaLiberacao: string | null = null;
   const porItem: Record<string, { unidades: number; valor: number }> = {};
   const vendasResumo: VendaResumo[] = [];
 
@@ -125,6 +146,21 @@ export function calcularResumo(
     const custo = custoDaVenda(v, custoResolver);
     if (custo != null && custo > 0) { liqComCusto += liq; custoTotal += custo; }
 
+    comissao += v.sale_fee_total ?? 0;
+    if (custo != null && custo > 0) vendasComCusto += 1;
+    if (v.money_release_date) {
+      const ms = Date.parse(v.money_release_date);
+      if (ms <= agoraMs) {
+        liberado += liq;
+      } else {
+        aLiberar += liq;
+        if (proximaLiberacaoMs == null || ms < proximaLiberacaoMs) {
+          proximaLiberacaoMs = ms;
+          proximaLiberacao = v.money_release_date;
+        }
+      }
+    }
+
     vendasResumo.push({
       id: v.id,
       orderId: v.order_id,
@@ -143,16 +179,31 @@ export function calcularResumo(
   for (const id of Object.keys(porItem)) porItem[id].valor = round2(porItem[id].valor);
   vendasResumo.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
 
+  // Breakdown do retido: comissão = sale_fee_total (autoritativo, não duplica em pack); o "frete
+  // efetivo" é o RESIDUAL (descontos − comissão), não a soma crua de frete_vendedor — que o ML
+  // grava repetido em cada pedido do pack e é o frete BRUTO da etiqueta (antes de subsídio do ML).
+  // Como líquido = bruto − comissão − frete_efetivo, o residual É o frete real pago pelo vendedor e
+  // garante comissão + frete == descontos (o total exibido). Clamp em 0 p/ reembolsos (comissão > retido).
+  const descontos = round2(bruto - liquido);
+  const comissaoTotal = round2(comissao);
   return {
     bruto: round2(bruto),
     liquido: round2(liquido),
-    descontos: round2(bruto - liquido),
+    descontos,
     estornos: round2(estornos),
     pedidos,
     unidades,
     ticket: pedidos > 0 ? round2(bruto / pedidos) : 0,
     markup: custoTotal > 0 ? (liqComCusto - custoTotal) / custoTotal : null,
     lucro: round2(liqComCusto - custoTotal),
+    liberado: round2(liberado),
+    aLiberar: round2(aLiberar),
+    proximaLiberacao,
+    comissao: comissaoTotal,
+    frete: round2(Math.max(0, descontos - comissaoTotal)),
+    vendasComCusto,
+    totalVendas: pedidos,
+    margem: custoTotal > 0 ? (liqComCusto - custoTotal) / liqComCusto : null,
     porItem,
     vendas: vendasResumo,
   };
@@ -237,4 +288,29 @@ function ratearProporcional(total: number, base: number[], idxResto: number): nu
   const resto = round2(total - partes.reduce((s, p) => s + p, 0));
   partes[idxResto] = round2(partes[idxResto] + resto);
   return partes;
+}
+
+export interface PontoSerie { chave: string; rotulo: string; bruto: number; liquido: number }
+export interface ItemSerie { data: string | null; bruto: number; liquido: number }
+
+/** Série temporal (bruto/líquido) por dia ou semana. Recebe itens já faturáveis (a página passa
+ *  resumo.vendas, que só contém faturáveis). UTC na chave; rótulo DD/MM; ordenada crescente. */
+export function agruparPorPeriodo(itens: ItemSerie[], passo: 'dia' | 'semana'): PontoSerie[] {
+  const mapa = new Map<string, { rotulo: string; bruto: number; liquido: number }>();
+  for (const v of itens) {
+    if (!v.data) continue;
+    const d = new Date(v.data);
+    if (passo === 'semana') d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // âncora no domingo
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const chave = `${yyyy}-${mm}-${dd}`;
+    const acc = mapa.get(chave) ?? { rotulo: `${dd}/${mm}`, bruto: 0, liquido: 0 };
+    acc.bruto += v.bruto;
+    acc.liquido += v.liquido;
+    mapa.set(chave, acc);
+  }
+  return [...mapa.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    .map(([chave, a]) => ({ chave, rotulo: a.rotulo, bruto: round2(a.bruto), liquido: round2(a.liquido) }));
 }
