@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronDown, ChevronUp, AlertTriangle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -6,8 +7,10 @@ import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useDescontoPct } from '@/hooks/useConfiguracoes';
-import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia, useReprocessar } from '@/hooks/useFamiliaMutations';
+import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia, useReprocessar, useUpdateFamiliaAtacado } from '@/hooks/useFamiliaMutations';
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
+import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
+import { AtacadoEditor } from '@/components/atacado-editor';
 import { cn } from '@/lib/utils';
 import type { Familia } from '@/lib/tipos-dominio';
 import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado, familiaExigeCor } from '@/lib/publicavel';
@@ -67,6 +70,48 @@ function DescontoControle({ familia }: { familia: Familia }) {
             </span>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function AtacadoControle({ familia }: { familia: Familia }) {
+  const upd = useUpdateFamiliaAtacado(familia.loteId);
+  const [faixas, setFaixas] = useState<FaixaAtacado[]>(familia.atacado ?? []);
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const base = incluidas.length > 0 ? incluidas : familia.variacoes;
+  const precoBase = base.length > 0 ? Math.min(...base.map((v) => v.precoPublicacao ?? v.preco)) : 0;
+  const ativo = faixas.length > 0;
+  const erro = validarFaixas(faixas);
+  const dirty = JSON.stringify(faixas) !== JSON.stringify(familia.atacado ?? []);
+
+  return (
+    <div className="space-y-1 text-xs">
+      <div className="flex items-center gap-2">
+        <Checkbox
+          aria-label="Preço de atacado"
+          checked={ativo}
+          onCheckedChange={(v) => {
+            if (v) setFaixas(faixas.length ? faixas : [{ min_unidades: 5, desconto_pct: 5 }]);
+            else { setFaixas([]); upd.mutate({ familiaId: familia.id, faixas: [] }); }
+          }}
+        />
+        <span>Preço de atacado</span>
+        {familia.atacado && familia.atacado.length > 0 && (
+          <span className="text-muted-foreground">({familia.atacado.length} faixa(s) salva(s))</span>
+        )}
+      </div>
+      {ativo && (
+        <div className="pl-6">
+          <AtacadoEditor faixas={faixas} precoBase={precoBase} onChange={setFaixas} />
+          <Button
+            type="button" size="sm" className="mt-1 h-7 text-xs"
+            disabled={!!erro || !dirty || upd.isPending}
+            onClick={() => upd.mutate({ familiaId: familia.id, faixas })}
+          >
+            {upd.isPending ? 'Salvando…' : dirty ? 'Salvar atacado' : '✓ Salvo'}
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -251,6 +296,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               </StatusPill>
             )
           )}
+          {publicado && familia.atacado && familia.atacado.length > 0 && (
+            <StatusPill
+              tone={familia.atacadoStatus === 'erro' ? 'danger' : 'success'}
+              title={familia.atacadoStatus === 'erro' ? (familia.atacadoErro ?? 'Falha no atacado') : 'Preço de atacado aplicado'}
+            >
+              {familia.atacadoStatus === 'erro' ? 'atacado ⚠' : 'atacado ✓'}
+            </StatusPill>
+          )}
           {novasComFoto > 0 && (
             <StatusPill tone="warning" title="Cores novas que precisam de foto antes de publicar">
               📷 {novasComFoto} cor(es) nova(s)
@@ -300,8 +353,9 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         {expandida ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </span>
     </div>
-      <div className="px-4 pb-2 pl-[100px]">
+      <div className="px-4 pb-2 pl-[100px] space-y-1">
         <DescontoControle familia={familia} />
+        <AtacadoControle familia={familia} />
       </div>
     </div>
   );
