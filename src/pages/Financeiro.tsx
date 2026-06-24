@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { periodoToParams, resolverJanela, janelaAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
+import { agruparPorPeriodo } from '@/lib/resumo-vendas';
+import { GraficoEvolucao } from '@/components/financeiro/grafico-evolucao';
 
 function Kpi({ icon: Icon, label, valor, sub, tom, valorCor, delta }: {
   icon: typeof Wallet; label: string; valor: string; sub?: string;
@@ -67,6 +69,12 @@ export default function Financeiro() {
       {heroDelta.texto}
     </div>
   );
+
+  const passo = periodo.tipo === 'preset' && periodo.dias <= 31 ? 'dia'
+    : periodo.tipo === 'range'
+      ? ((Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana')
+      : 'semana';
+  const serie = useMemo(() => agruparPorPeriodo(r.vendas, passo), [r.vendas, passo]);
 
   // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
   // cadastrado (as demais não entram na base, senão distorceria). null = nenhuma com custo.
@@ -236,6 +244,11 @@ export default function Financeiro() {
             ? `margem ${Math.round(r.margem * 100)}% · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
             : 'sem custo cadastrado nas vendas'}
         />
+      </div>
+
+      <div className="mt-6 rounded-lg border bg-card p-4 shadow-sm">
+        <div className="mb-2 text-sm font-medium">Evolução do líquido ({passo === 'dia' ? 'por dia' : 'por semana'})</div>
+        <GraficoEvolucao serie={serie} />
       </div>
 
       <p className="mt-6 text-xs text-muted-foreground">
