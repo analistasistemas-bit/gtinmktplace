@@ -114,6 +114,16 @@ export default function DetalheFinanceiro() {
   const retido = r.descontos;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
 
+  // Filtro liberado/a liberar
+  const [filtroLib, setFiltroLib] = useState<'todos' | 'liberado' | 'aliberar'>('todos');
+  const liberadoDe = (iso: string | null) => iso != null && new Date(iso).getTime() <= Date.now();
+
+  const vendasFiltradas = useMemo(() => vendas.filter((v) => {
+    if (filtroLib === 'liberado') return liberadoDe(v.dataLiberacao);
+    if (filtroLib === 'aliberar') return v.dataLiberacao != null && !liberadoDe(v.dataLiberacao);
+    return true;
+  }), [vendas, filtroLib]);
+
   // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
   const [sort, setSort] = useState<Sort | null>(null);
   const toggleSort = (k: SortKey) => {
@@ -124,7 +134,7 @@ export default function DetalheFinanceiro() {
   };
 
   const vendasOrdenadas = useMemo(() => {
-    if (!sort) return vendas;
+    if (!sort) return vendasFiltradas;
     const val = (v: VendaResumo): string | number | null => {
       switch (sort.key) {
         case 'codigo': return v.codigo;
@@ -137,7 +147,7 @@ export default function DetalheFinanceiro() {
         case 'markup': return markupValor(v);
       }
     };
-    return [...vendas].sort((a, b) => {
+    return [...vendasFiltradas].sort((a, b) => {
       const va = val(a);
       const vb = val(b);
       if (va == null && vb == null) return 0;
@@ -148,7 +158,7 @@ export default function DetalheFinanceiro() {
         : String(va).localeCompare(String(vb), 'pt-BR');
       return sort.dir === 'asc' ? cmp : -cmp;
     });
-  }, [vendas, sort]);
+  }, [vendasFiltradas, sort]);
 
   // Markup agregado: só sobre as vendas com custo cadastrado (senão a base ficaria distorcida).
   const markupTotal = useMemo(() => {
@@ -220,6 +230,14 @@ export default function DetalheFinanceiro() {
         </div>
       </div>
 
+      {/* Filtro liberado/a liberar */}
+      <div className="mb-3 flex gap-1">
+        {([['todos', 'Todos'], ['liberado', 'Liberados'], ['aliberar', 'A liberar']] as const).map(([k, lbl]) => (
+          <Button key={k} size="sm" variant={filtroLib === k ? 'default' : 'outline'}
+            className="h-7 px-2.5 text-xs" onClick={() => setFiltroLib(k)}>{lbl}</Button>
+        ))}
+      </div>
+
       {/* Detalhe por venda */}
       <div className="rounded-md border">
         <Table>
@@ -263,7 +281,11 @@ export default function DetalheFinanceiro() {
                   <TableCell className="align-top whitespace-nowrap text-sm tabular-nums">{fmtData(v.data)}</TableCell>
                   <CelulaLiberacao iso={v.dataLiberacao} />
                   <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(v.bruto)}</TableCell>
-                  <TableCell className="align-top text-right text-sm tabular-nums text-warning">{fmtBRL(v.retido)}</TableCell>
+                  <TableCell className={cn('align-top text-right text-sm tabular-nums',
+                    v.retido < 0 ? 'text-success' : 'text-warning')}>
+                    {v.retido < 0 ? `+${fmtBRL(-v.retido)}` : fmtBRL(v.retido)}
+                    {v.retido < 0 && <span className="block text-xs text-muted-foreground">crédito</span>}
+                  </TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(v.liquido)}</TableCell>
                   <CelulaMarkup liquido={v.liquido} custo={v.custo} />
                 </TableRow>
