@@ -152,7 +152,7 @@ export default function Financeiro() {
 
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
           <Kpi icon={Receipt} label="Faturamento bruto" valor={fmtBRL(r?.bruto ?? 0)} />
-          <Kpi icon={Percent} label="Taxas e frete (ML)" valor={fmtBRL(r?.descontos ?? 0)} tom="warning" />
+          <Kpi icon={Percent} label="Taxas e frete (ML)" valor={fmtBRL(r?.descontos ?? 0)} tom="warning" sub={`comissão ${fmtBRL(r.comissao)} · frete ${fmtBRL(r.frete)}`} />
           <Kpi icon={RotateCcw} label="Estornos" valor={fmtBRL(r?.estornos ?? 0)} tom="danger" />
           <Kpi icon={Target} label="Ticket médio líquido" valor={fmtBRL(ticketLiquido)} />
         </div>
@@ -174,6 +174,16 @@ export default function Financeiro() {
           tom={markup && markup.pct < 0 ? 'danger' : 'success'}
           sub={markup
             ? `lucro ${fmtBRL(markup.lucro)} · ${markup.n} venda(s) c/ custo`
+            : 'sem custo cadastrado nas vendas'}
+        />
+        <Kpi
+          icon={TrendingUp}
+          label="Lucro líquido no período"
+          valor={r.margem != null ? fmtBRL(r.lucro) : '—'}
+          valorCor={r.margem != null ? (r.lucro >= 0 ? 'text-success' : 'text-destructive') : undefined}
+          tom={r.margem != null && r.lucro < 0 ? 'danger' : 'success'}
+          sub={r.margem != null
+            ? `margem ${Math.round(r.margem * 100)}% · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
             : 'sem custo cadastrado nas vendas'}
         />
       </div>
