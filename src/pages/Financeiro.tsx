@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
+import { AoVivo } from '@/components/ui/ao-vivo';
 import { periodoToParams, resolverJanela, janelaAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
 import { agruparPorPeriodo } from '@/lib/resumo-vendas';
 import { GraficoEvolucao } from '@/components/financeiro/grafico-evolucao';
@@ -88,10 +89,13 @@ export default function Financeiro() {
         title="Financeiro"
         subtitle="Vendas, líquido recebido e o que o Mercado Livre retém — por período."
         actions={
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-            <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
-            {isFetching ? 'Atualizando…' : 'Atualizar'}
-          </Button>
+          <div className="flex items-center gap-3">
+            <AoVivo isFetching={isFetching} />
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
+              {isFetching ? 'Atualizando…' : 'Atualizar'}
+            </Button>
+          </div>
         }
       />
 

@@ -14,6 +14,7 @@ import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas'
 import { calcularMarkup } from '@/lib/markup';
 import type { VendaResumo } from '@/lib/resumo-vendas';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
+import { AoVivo } from '@/components/ui/ao-vivo';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
@@ -229,7 +230,8 @@ export default function DetalheFinanceiro() {
         title="Detalhe do líquido"
         subtitle={`Composição do líquido recebido — ${rotuloPeriodo(periodo)}.`}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <AoVivo isFetching={isFetching} />
             <Button variant="outline" size="sm" onClick={exportar} disabled={vendasOrdenadas.length === 0}>
               <Download className="mr-1.5 h-4 w-4" />Exportar CSV
             </Button>
