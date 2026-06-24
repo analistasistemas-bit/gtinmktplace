@@ -1,5 +1,5 @@
 // Custo (R$) e peso (g) do produto por chave, lidos client-side de `variacoes` (RLS own), para o
-// markup e o rateio de frete do agregador (ADR-0038). Espelha o cruzamento do resumo-financeiro:
+// markup e o rateio de frete do agregador (ADR-0038). Cruzamento por chave:
 // variação → anúncio → GTIN. NÃO usar familias.custo_centavos (é custo de tokens de IA). Pura
 // exceto pela query inicial.
 import { supabase } from './supabase';
