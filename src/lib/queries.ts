@@ -406,6 +406,20 @@ export async function toggleDescontoLote(loteId: string, exibir: boolean): Promi
   if (error) throw error;
 }
 
+export async function updateFamiliaAtacado(familiaId: string, faixas: FaixaAtacado[]): Promise<void> {
+  const { error } = await supabase.from('familias')
+    .update({ atacado: faixas.length > 0 ? faixas : null, atacado_status: null, atacado_erro: null })
+    .eq('id', familiaId);
+  if (error) throw error;
+}
+
+export async function setAtacadoLote(loteId: string, faixas: FaixaAtacado[]): Promise<void> {
+  const { error } = await supabase.from('familias')
+    .update({ atacado: faixas.length > 0 ? faixas : null, atacado_status: null, atacado_erro: null })
+    .eq('lote_id', loteId);
+  if (error) throw error;
+}
+
 // ============================================================================
 // Publicados
 // ============================================================================

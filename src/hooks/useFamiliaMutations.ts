@@ -8,8 +8,11 @@ import {
   updateFamiliaExibirDesconto,
   updateFamiliaDescontoPct,
   toggleDescontoLote,
+  updateFamiliaAtacado,
+  setAtacadoLote,
   QK,
 } from '@/lib/queries';
+import type { FaixaAtacado } from '@/lib/atacado';
 import { regenerarCopyFamilia } from '@/lib/ai-copy';
 import { reprocessarFamilia } from '@/lib/reprocessar';
 import { definirCategoriaFamilia, type TipoCategoriaManual } from '@/lib/categoria';
@@ -108,6 +111,23 @@ export function useToggleDescontoLote(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (exibir: boolean) => toggleDescontoLote(loteId, exibir),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useUpdateFamiliaAtacado(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ familiaId, faixas }: { familiaId: string; faixas: FaixaAtacado[] }) =>
+      updateFamiliaAtacado(familiaId, faixas),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useSetAtacadoLote(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (faixas: FaixaAtacado[]) => setAtacadoLote(loteId, faixas),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }
