@@ -177,4 +177,15 @@ describe('Publicados', () => {
     fireEvent.click(toggle);
     expect(screen.getByRole('button', { name: 'Recolher análise' })).toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('clicar em qualquer lugar da linha também expande', () => {
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    // clica no título do produto (fora da seta) → a linha inteira é clicável
+    fireEvent.click(screen.getByText('COLA LIQUIDA SILICONE 250ML'));
+    expect(screen.getByRole('button', { name: 'Recolher análise' })).toHaveAttribute('aria-expanded', 'true');
+  });
 });

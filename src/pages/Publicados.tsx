@@ -134,12 +134,15 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
 
   return (
     <>
-    <TableRow className={cn(aberto && 'border-b-0')}>
+    <TableRow
+      onClick={() => setAberto((a) => !a)}
+      className={cn('cursor-pointer', aberto && 'border-b-0 bg-muted/20')}
+    >
       <TableCell className="whitespace-normal">
         <div className="flex items-start gap-1.5">
           <button
             type="button"
-            onClick={() => setAberto((a) => !a)}
+            onClick={(e) => { e.stopPropagation(); setAberto((a) => !a); }}
             aria-expanded={aberto}
             aria-label={aberto ? 'Recolher análise' : 'Expandir análise'}
             className="mt-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -182,6 +185,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
             size="sm"
             disabled={!item.mlPermalink}
             className="h-7 px-2 text-xs"
+            onClick={(e) => e.stopPropagation()}
           >
             {item.mlPermalink ? (
               <a href={item.mlPermalink} target="_blank" rel="noreferrer">{CONTEUDO_ML}</a>
@@ -199,6 +203,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
                 title="Remover"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                 disabled={removendo}
+                onClick={(e) => e.stopPropagation()}
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
