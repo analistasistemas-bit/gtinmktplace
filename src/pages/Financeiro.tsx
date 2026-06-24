@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, ChevronRight } from 'lucide-react';
+import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, Coins, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -152,14 +152,14 @@ export default function Financeiro() {
 
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
           <Kpi icon={Receipt} label="Faturamento bruto" valor={fmtBRL(r?.bruto ?? 0)} />
-          <Kpi icon={Percent} label="Taxas e frete (ML)" valor={fmtBRL(r?.descontos ?? 0)} tom="warning" sub={`comissão ${fmtBRL(r.comissao)} · frete ${fmtBRL(r.frete)}`} />
+          <Kpi icon={Percent} label="Taxas e frete (ML)" valor={fmtBRL(r?.descontos ?? 0)} tom="warning" sub={`comissão ${fmtBRL(r?.comissao ?? 0)} · frete ${fmtBRL(r?.frete ?? 0)}`} />
           <Kpi icon={RotateCcw} label="Estornos" valor={fmtBRL(r?.estornos ?? 0)} tom="danger" />
           <Kpi icon={Target} label="Ticket médio líquido" valor={fmtBRL(ticketLiquido)} />
         </div>
       </div>
 
       {/* Quantidade de vendas + markup do período */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Kpi
           icon={ShoppingBag}
           label="Vendas no período"
@@ -177,7 +177,7 @@ export default function Financeiro() {
             : 'sem custo cadastrado nas vendas'}
         />
         <Kpi
-          icon={TrendingUp}
+          icon={Coins}
           label="Lucro líquido no período"
           valor={r.margem != null ? fmtBRL(r.lucro) : '—'}
           valorCor={r.margem != null ? (r.lucro >= 0 ? 'text-success' : 'text-destructive') : undefined}
