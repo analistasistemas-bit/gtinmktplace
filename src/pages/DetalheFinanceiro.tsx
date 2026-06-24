@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, Download, RefreshCw } from 'lucide-react';
+import { montarCsv, baixarCsv } from '@/lib/csv';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -159,6 +160,24 @@ export default function DetalheFinanceiro() {
     return cst > 0 ? calcularMarkup(liq, cst).markup : null;
   }, [vendas]);
 
+  const exportar = () => {
+    const linhas = vendasOrdenadas.map((v) => ({
+      codigo: v.codigo, produto: v.descricao ?? `#${v.id}`, data: fmtData(v.data),
+      liberacao: fmtData(v.dataLiberacao),
+      situacao: v.dataLiberacao ? (new Date(v.dataLiberacao).getTime() <= Date.now() ? 'liberado' : 'a liberar') : '',
+      bruto: v.bruto, retido: v.retido, liquido: v.liquido,
+      markup: markupValor(v) != null ? `${Math.round(markupValor(v)! * 100)}%` : '',
+    }));
+    const csv = montarCsv(linhas, [
+      { chave: 'codigo', titulo: 'Código' }, { chave: 'produto', titulo: 'Produto' },
+      { chave: 'data', titulo: 'Data' }, { chave: 'liberacao', titulo: 'Liberação' },
+      { chave: 'situacao', titulo: 'Situação' }, { chave: 'bruto', titulo: 'Bruto' },
+      { chave: 'retido', titulo: 'Retido' }, { chave: 'liquido', titulo: 'Líquido' },
+      { chave: 'markup', titulo: 'Markup' },
+    ]);
+    baixarCsv(`financeiro-${rotuloPeriodo(periodo).replace(/[^0-9a-z]+/gi, '-')}.csv`, csv);
+  };
+
   return (
     <div className="p-6">
       <Breadcrumbs items={[{ label: 'Financeiro', to: '/financeiro' }, { label: 'Detalhe do líquido' }]} />
@@ -167,6 +186,9 @@ export default function DetalheFinanceiro() {
         subtitle={`Composição do líquido recebido — ${rotuloPeriodo(periodo)}.`}
         actions={
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={exportar} disabled={vendasOrdenadas.length === 0}>
+              <Download className="mr-1.5 h-4 w-4" />Exportar CSV
+            </Button>
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
               <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
               {isFetching ? 'Atualizando…' : 'Atualizar'}
