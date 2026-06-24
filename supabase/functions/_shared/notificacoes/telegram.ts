@@ -104,6 +104,14 @@ export interface NovaDevolucaoAlerta {
   moeda: string;
 }
 
+export function montarMensagemLiberacao(total: number, n: number, moeda: string): string {
+  const plural = n === 1 ? 'venda' : 'vendas';
+  return [
+    `💰 Hoje libera ${fmtBRL(total, moeda)} no seu saldo Mercado Pago`,
+    `Referente a ${n} ${plural} cujo prazo de liberação venceu hoje.`,
+  ].join('\n');
+}
+
 export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
   const valor = d.valor != null ? ` (${fmtBRL(d.valor, d.moeda)})` : '';
   const pedido = d.order_id ? ` do pedido ${d.order_id}` : '';
