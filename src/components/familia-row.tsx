@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, AlertTriangle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -78,6 +78,11 @@ function DescontoControle({ familia }: { familia: Familia }) {
 function AtacadoControle({ familia }: { familia: Familia }) {
   const upd = useUpdateFamiliaAtacado(familia.loteId);
   const [faixas, setFaixas] = useState<FaixaAtacado[]>(familia.atacado ?? []);
+  // Re-sincroniza quando o valor salvo muda no servidor (ex.: aplicar atacado no lote).
+  // Dep por conteúdo serializado: refetch que devolve o mesmo valor NÃO dispara (não
+  // atrapalha edição em andamento); só ressincroniza quando o conteúdo realmente muda.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setFaixas(familia.atacado ?? []); }, [JSON.stringify(familia.atacado ?? [])]);
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const base = incluidas.length > 0 ? incluidas : familia.variacoes;
   const precoBase = base.length > 0 ? Math.min(...base.map((v) => v.precoPublicacao ?? v.preco)) : 0;

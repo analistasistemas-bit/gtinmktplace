@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
 
     // Atacado (PxQ): sincroniza com o preço atual. Com faixas → reaplica; sem faixas mas já
     // aplicado antes → limpa (envia só a base). Best-effort, não derruba o update.
+    // Base do PxQ = precoFamilia (cores incluídas compartilham o mesmo preço, ADR-0041).
     try {
       const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
       if (precoFamilia != null && (faixasAtacado.length > 0 || familia.atacado_status === 'aplicado')) {

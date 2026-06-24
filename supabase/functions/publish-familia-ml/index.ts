@@ -235,6 +235,8 @@ Deno.serve(async (req) => {
     try {
       const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
       if (faixasAtacado.length > 0) {
+        // Base do PxQ = preço da família (cores incluídas compartilham o mesmo preço; o
+        // primeiro não-nulo == o menor, alinhado ao preview do front). ADR-0041.
         const baseRaw = ordenadas.find((v) => v.preco_publicacao != null)?.preco_publicacao;
         const base = baseRaw != null ? Number(baseRaw) : null;
         if (base != null) {

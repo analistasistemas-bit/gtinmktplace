@@ -304,7 +304,7 @@ export default function Revisao() {
                 >
                   {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setAtacadoAberto(true)}>
+                <Button variant="outline" size="sm" onClick={() => { setFaixasLote([{ min_unidades: 5, desconto_pct: 5 }]); setAtacadoAberto(true); }}>
                   Atacado no lote
                 </Button>
               </div>
