@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, Coins, ChevronRight } from 'lucide-react';
+import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, Coins, ChevronRight, CalendarClock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -156,6 +156,26 @@ export default function Financeiro() {
           <Kpi icon={RotateCcw} label="Estornos" valor={fmtBRL(r?.estornos ?? 0)} tom="danger" />
           <Kpi icon={Target} label="Ticket médio líquido" valor={fmtBRL(ticketLiquido)} />
         </div>
+      </div>
+
+      {/* Caixa: liberação dos recebimentos destas vendas (NÃO é o "A receber" do MP) */}
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Kpi
+          icon={Wallet}
+          label="Já liberado"
+          valor={fmtBRL(r?.liberado ?? 0)}
+          tom="success"
+          sub="recebimentos destas vendas já no saldo"
+        />
+        <Kpi
+          icon={CalendarClock}
+          label="A liberar"
+          valor={fmtBRL(r?.aLiberar ?? 0)}
+          tom="warning"
+          sub={r?.proximaLiberacao
+            ? `próxima em ${new Date(r.proximaLiberacao).toLocaleDateString('pt-BR')}`
+            : 'nada pendente de liberação'}
+        />
       </div>
 
       {/* Quantidade de vendas + markup do período */}
