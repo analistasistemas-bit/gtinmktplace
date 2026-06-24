@@ -20,6 +20,7 @@ export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
   lote: (loteId: string) => ['lote', loteId] as const,
   familias: (loteId: string) => ['familias', loteId] as const,
+  familia: (familiaId: string) => ['familia', familiaId] as const,
   publicados: ['publicados'] as const,
   statusPublicados: ['statusPublicados'] as const,
 };
@@ -57,6 +58,18 @@ export async function fetchFamilias(
     .order('codigo_pai');
   if (error) throw error;
   return (data ?? []) as (FamiliaRow & { variacoes: VariacaoRow[] })[];
+}
+
+// Carrega UMA família (com variações) por id e mapeia para o tipo de domínio. Usado pelo
+// expandir de Publicados, que precisa da análise completa (estratégia, concorrência, custo).
+export async function fetchFamiliaPublicada(familiaId: string): Promise<Familia> {
+  const { data, error } = await supabase
+    .from('familias')
+    .select('*, variacoes(*)')
+    .eq('id', familiaId)
+    .single();
+  if (error) throw error;
+  return familiaFromRow(data as FamiliaRow & { variacoes: VariacaoRow[] });
 }
 
 // ============================================================================
@@ -439,6 +452,7 @@ export interface StatusPublicadoItem {
   motivo: string | null;
   estoque: number | null;
   preco: number | null;
+  listingType?: 'classico' | 'premium' | null;
 }
 
 export interface ResultadoStatusPublicados {

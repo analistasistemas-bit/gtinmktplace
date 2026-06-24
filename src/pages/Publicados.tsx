@@ -40,6 +40,8 @@ import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
+import { PainelAnalise } from '@/components/painel-analise';
+import { useFamilia } from '@/hooks/useFamilia';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useVendas } from '@/hooks/useVendas';
@@ -111,13 +113,46 @@ const CONTEUDO_ML = (
   </>
 );
 
-function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
+const SELO_MODO: Record<'classico' | 'premium', { label: string; cls: string }> = {
+  classico: { label: 'Clássico', cls: 'border-border bg-muted text-muted-foreground' },
+  premium: { label: 'Premium', cls: 'border-primary/30 bg-primary/10 text-primary' },
+};
+
+function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null }) {
+  if (!listingType) return null;
+  const s = SELO_MODO[listingType];
   return (
-    <TableRow>
+    <span className={cn('inline-flex w-fit items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold', s.cls)}>
+      {s.label}
+    </span>
+  );
+}
+
+function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
+  const [aberto, setAberto] = useState(false);
+  const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
+
+  return (
+    <>
+    <TableRow
+      onClick={() => setAberto((a) => !a)}
+      className={cn('cursor-pointer', aberto && 'border-b-0 bg-muted/20')}
+    >
       <TableCell className="whitespace-normal">
-        <div className="max-w-[260px]">
-          <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
-          <p className="text-xs text-muted-foreground">{item.codigoPai}</p>
+        <div className="flex items-start gap-1.5">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setAberto((a) => !a); }}
+            aria-expanded={aberto}
+            aria-label={aberto ? 'Recolher análise' : 'Expandir análise'}
+            className="mt-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ChevronRight className={cn('h-4 w-4 transition-transform', aberto && 'rotate-90')} />
+          </button>
+          <div className="max-w-[260px]">
+            <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{item.codigoPai}</p>
+          </div>
         </div>
       </TableCell>
       <TableCell className="text-sm" title={item.fornecedor ?? undefined}>{primeiroNome(item.fornecedor) ?? '—'}</TableCell>
@@ -139,7 +174,10 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
         <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
       </TableCell>
       <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
-      <TableCell>
+      <TableCell className="relative">
+        <div className="absolute right-2 top-0">
+          <SeloModo listingType={item.listingType} />
+        </div>
         <div className="flex items-center gap-1">
           <Button
             asChild
@@ -147,6 +185,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
             size="sm"
             disabled={!item.mlPermalink}
             className="h-7 px-2 text-xs"
+            onClick={(e) => e.stopPropagation()}
           >
             {item.mlPermalink ? (
               <a href={item.mlPermalink} target="_blank" rel="noreferrer">{CONTEUDO_ML}</a>
@@ -164,6 +203,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
                 title="Remover"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                 disabled={removendo}
+                onClick={(e) => e.stopPropagation()}
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -191,6 +231,24 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
         </div>
       </TableCell>
     </TableRow>
+    {aberto && (
+      <TableRow className="hover:bg-transparent">
+        <TableCell colSpan={11} className="bg-muted/30 p-3">
+          {carregandoFamilia ? (
+            <p className="text-xs text-muted-foreground">carregando análise…</p>
+          ) : erroFamilia || !familia ? (
+            <p className="text-xs text-muted-foreground">não foi possível carregar a análise deste item.</p>
+          ) : (
+            <PainelAnalise
+              familia={familia}
+              precoOverride={item.precoAtual ?? item.precoPublicacao}
+              listingTypeReal={item.listingType ?? null}
+            />
+          )}
+        </TableCell>
+      </TableRow>
+    )}
+    </>
   );
 }
 
@@ -313,7 +371,7 @@ export default function Publicados() {
         valorVendido: v?.valor ?? null,
       };
       return s
-        ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, ...comVendas }
+        ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
         : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
   }, [publicados, statusData, resumo]);

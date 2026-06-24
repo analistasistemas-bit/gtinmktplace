@@ -13,12 +13,23 @@ const TONE_CONCORRENCIA: Record<Concorrencia, StatusTone> = {
   alta: 'warning',
 };
 
-export function PainelAnalise({ familia }: { familia: Familia }) {
+export function PainelAnalise({
+  familia,
+  precoOverride,
+  listingTypeReal,
+}: {
+  familia: Familia;
+  /** Quando definido, substitui o preço de publicação calculado (ex.: preço atual no ML). */
+  precoOverride?: number;
+  /** Modo real publicado, para destacar Clássico/Premium no card "Você recebe". */
+  listingTypeReal?: 'classico' | 'premium' | null;
+}) {
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
   const precoPublicacao = baseVariacoes.length > 0
     ? Math.min(...baseVariacoes.map((v) => v.precoPublicacao ?? v.preco))
     : 0;
+  const precoExibido = precoOverride ?? precoPublicacao;
 
   // Custo da variação cujo preço de publicação é o menor (a mesma que define precoPublicacao);
   // empate → a primeira. Alimenta o markup do card "Você recebe".
@@ -41,8 +52,8 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
       </span>
 
       <SemaforoPreco
-        preco={precoPublicacao}
-        piso={variacaoRepresentativa?.preco ?? precoPublicacao}
+        preco={precoExibido}
+        piso={variacaoRepresentativa?.preco ?? precoExibido}
         custo={custoRepresentativo}
         categoriaMlId={familia.categoriaMlId}
       />
@@ -146,7 +157,7 @@ export function PainelAnalise({ familia }: { familia: Familia }) {
 
         {/* Você recebe por venda (prioritário → flex-[2]; compara Clássico × Premium) */}
         <div className="min-w-[300px] flex-[2]">
-          <CardVoceRecebe preco={precoPublicacao} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} />
+          <CardVoceRecebe preco={precoExibido} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} real={listingTypeReal} />
         </div>
       </div>
     </div>

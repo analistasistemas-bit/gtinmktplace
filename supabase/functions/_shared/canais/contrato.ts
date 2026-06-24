@@ -80,6 +80,8 @@ export interface StatusCanal {
   motivo: string | null;
   estoque: number | null;
   preco: number | null;
+  /** Modo de exposição do anúncio no canal (ML: gold_special/gold_pro). null se indisponível. */
+  listingType: 'classico' | 'premium' | null;
 }
 
 /** Atualização de um anúncio já publicado (UPDATE), no modelo canônico. */
