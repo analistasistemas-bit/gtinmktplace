@@ -23,6 +23,7 @@ export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
   if (e.filtro.fornecedor) p.set('fornecedor', e.filtro.fornecedor);
   if (e.filtro.status) p.set('status', e.filtro.status);
   if (e.filtro.tipo) p.set('tipo', e.filtro.tipo);
+  if (e.filtro.somenteEncalhados) p.set('encalhados', '1');
   if (e.ord) {
     p.set('ord', e.ord.coluna);
     p.set('dir', e.ord.dir);
@@ -44,6 +45,8 @@ export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
     // Tipo agora é o rótulo exibido (categoria real do ML) — texto livre, como fornecedor.
     tipo: p.get('tipo') || null,
   };
+  // Só incluímos a chave quando ligada (ausente = não filtra), p/ não poluir o estado default.
+  if (p.get('encalhados') === '1') filtro.somenteEncalhados = true;
 
   const ord: OrdenacaoPublicados | null =
     ordCol && (COLUNAS as string[]).includes(ordCol)

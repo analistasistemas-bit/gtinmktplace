@@ -96,6 +96,13 @@ export interface FiltroPublicados {
   /** Rótulo exibido de tipo (categoria real do ML, ou o rótulo grosso como "Outro"). */
   tipo?: string | null;
   busca?: string;
+  /** Só "encalhados": anúncios ativos sem nenhuma venda no período (candidatos a revisão). */
+  somenteEncalhados?: boolean;
+}
+
+/** Anúncio encalhado: ativo e sem nenhuma venda no período. */
+export function ehEncalhado(i: PublicadoItem): boolean {
+  return i.status === 'ativo' && (i.unidadesVendidas ?? 0) === 0;
 }
 
 export function filtrarPublicados(
@@ -108,7 +115,8 @@ export function filtrarPublicados(
       (!f.fornecedor || i.fornecedor === f.fornecedor) &&
       (!f.status || i.status === f.status) &&
       (!f.tipo || rotuloTipo(i) === f.tipo) &&
-      (!q || i.titulo.toLowerCase().includes(q)),
+      (!q || i.titulo.toLowerCase().includes(q)) &&
+      (!f.somenteEncalhados || ehEncalhado(i)),
   );
 }
 
