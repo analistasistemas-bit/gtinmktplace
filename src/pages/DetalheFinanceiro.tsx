@@ -24,6 +24,7 @@ function fmtData(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
 
+
 /** Célula de liberação: data que o ML libera o recebimento + status (liberado/a liberar).
  *  Passado = já caiu no saldo (verde); futuro = ainda retido (âmbar). */
 function CelulaLiberacao({ iso }: { iso: string | null }) {
@@ -116,13 +117,15 @@ export default function DetalheFinanceiro() {
 
   // Filtro liberado/a liberar
   const [filtroLib, setFiltroLib] = useState<'todos' | 'liberado' | 'aliberar'>('todos');
-  const liberadoDe = (iso: string | null) => iso != null && new Date(iso).getTime() <= Date.now();
 
-  const vendasFiltradas = useMemo(() => vendas.filter((v) => {
-    if (filtroLib === 'liberado') return liberadoDe(v.dataLiberacao);
-    if (filtroLib === 'aliberar') return v.dataLiberacao != null && !liberadoDe(v.dataLiberacao);
-    return true;
-  }), [vendas, filtroLib]);
+  const vendasFiltradas = useMemo(() => {
+    const now = Date.now();
+    return vendas.filter((v) => {
+      if (filtroLib === 'liberado') return v.dataLiberacao != null && new Date(v.dataLiberacao).getTime() <= now;
+      if (filtroLib === 'aliberar') return v.dataLiberacao != null && new Date(v.dataLiberacao).getTime() > now;
+      return true;
+    });
+  }, [vendas, filtroLib]);
 
   // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
   const [sort, setSort] = useState<Sort | null>(null);
@@ -160,15 +163,28 @@ export default function DetalheFinanceiro() {
     });
   }, [vendasFiltradas, sort]);
 
-  // Markup agregado: só sobre as vendas com custo cadastrado (senão a base ficaria distorcida).
-  const markupTotal = useMemo(() => {
-    let liq = 0;
-    let cst = 0;
-    for (const v of vendas) {
-      if (v.custo != null && v.custo > 0) { liq += v.liquido; cst += v.custo; }
+  // Totais e markup agregado sobre as vendas FILTRADAS (coerente com o que está visível).
+  const totaisFiltrados = useMemo(() => {
+    let brutoF = 0;
+    let retidoF = 0;
+    let liquidoF = 0;
+    let liqMk = 0;
+    let cstMk = 0;
+    for (const v of vendasFiltradas) {
+      brutoF += v.bruto;
+      retidoF += v.retido;
+      liquidoF += v.liquido;
+      if (v.custo != null && v.custo > 0) { liqMk += v.liquido; cstMk += v.custo; }
     }
-    return cst > 0 ? calcularMarkup(liq, cst).markup : null;
-  }, [vendas]);
+    return {
+      bruto: Math.round(brutoF * 100) / 100,
+      retido: Math.round(retidoF * 100) / 100,
+      liquido: Math.round(liquidoF * 100) / 100,
+      markup: cstMk > 0 ? calcularMarkup(liqMk, cstMk).markup : null,
+    };
+  }, [vendasFiltradas]);
+
+  const markupTotal = totaisFiltrados.markup;
 
   const exportar = () => {
     const linhas = vendasOrdenadas.map((v) => {
@@ -296,10 +312,10 @@ export default function DetalheFinanceiro() {
           {vendasOrdenadas.length > 0 && (
             <TableFooter>
               <TableRow className="border-t font-medium">
-                <TableCell colSpan={4} className="text-sm">Subtotal</TableCell>
-                <TableCell className="text-right text-sm tabular-nums">{fmtBRL(bruto)}</TableCell>
-                <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(retido)}</TableCell>
-                <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(liquido)}</TableCell>
+                <TableCell colSpan={4} className="text-sm">Total</TableCell>
+                <TableCell className="text-right text-sm tabular-nums">{fmtBRL(totaisFiltrados.bruto)}</TableCell>
+                <TableCell className="text-right text-sm tabular-nums text-warning">{fmtBRL(totaisFiltrados.retido)}</TableCell>
+                <TableCell className="text-right text-sm tabular-nums text-success">{fmtBRL(totaisFiltrados.liquido)}</TableCell>
                 <TableCell className={cn(
                   'text-right text-sm tabular-nums',
                   markupTotal == null ? 'text-muted-foreground'
