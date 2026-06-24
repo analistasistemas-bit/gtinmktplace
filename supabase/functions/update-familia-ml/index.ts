@@ -4,6 +4,7 @@ import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/qu
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
+import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 
 interface Job { familia_id: string; lote_id: string; }
@@ -188,6 +189,22 @@ Deno.serve(async (req) => {
       status: 'publicado',
       publicado_em: new Date().toISOString(),
     }).eq('id', job.familia_id);
+
+    // Atacado (PxQ): sincroniza com o preço atual. Com faixas → reaplica; sem faixas mas já
+    // aplicado antes → limpa (envia só a base). Best-effort, não derruba o update.
+    const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
+    if (precoFamilia != null && (faixasAtacado.length > 0 || familia.atacado_status === 'aplicado')) {
+      try {
+        await conn.aplicarAtacado(ctx, familia.ml_item_id, precoFamilia, faixasAtacado);
+        await admin.from('familias')
+          .update({ atacado_status: faixasAtacado.length > 0 ? 'aplicado' : null, atacado_erro: null })
+          .eq('id', job.familia_id);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        console.error(`atacado (update) falhou para ${familia.ml_item_id}:`, m);
+        await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+      }
+    }
 
     // Catálogo (ADR-0021): reconcilia o vínculo das cores de forma DEFERIDA (mesmo motivo do
     // CREATE: a elegibilidade de cor nova leva minutos). Enfileira o job com delay/retry;
