@@ -72,7 +72,7 @@ export default function Financeiro() {
 
   const passo = periodo.tipo === 'preset' && periodo.dias <= 31 ? 'dia'
     : periodo.tipo === 'range'
-      ? ((Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana')
+      ? (!janela.desde || !janela.ate ? 'dia' : ((Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana'))
       : 'semana';
   const serie = useMemo(() => agruparPorPeriodo(r.vendas, passo), [r.vendas, passo]);
 

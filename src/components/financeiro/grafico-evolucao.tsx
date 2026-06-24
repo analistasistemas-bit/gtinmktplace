@@ -11,12 +11,12 @@ export function GraficoEvolucao({ serie }: { serie: PontoSerie[] }) {
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={serie} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-          <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} stroke="currentColor" className="text-muted-foreground" />
-          <YAxis tick={{ fontSize: 11 }} stroke="currentColor" className="text-muted-foreground"
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="rotulo" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+          <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)"
             tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))} width={40} />
           <Tooltip
-            formatter={(v, nome) => [fmtBRL(Number(v)), nome === 'liquido' ? 'Líquido' : 'Bruto']}
+            formatter={(v) => [fmtBRL(Number(v)), 'Líquido']}
             labelClassName="text-foreground" contentStyle={{ fontSize: 12 }} />
           <Bar dataKey="liquido" fill="var(--primary)" radius={[4, 4, 0, 0]} />
         </BarChart>
