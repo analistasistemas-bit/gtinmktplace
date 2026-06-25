@@ -82,38 +82,38 @@ describe('calcularResumo', () => {
 });
 
 describe('ratearLiquidoPorFrete', () => {
-  // Pack real (CV20260605013927): o ML concentrou TODO o frete de R$18,87 no pagamento do
-  // Búfalo, deixando-o com líquido 1,75 (markup -55%) e o Progresso com 16,56 (+115%). O rateio
-  // por peso redistribui o frete entre os dois e corrige a atribuição (zero-soma).
+  // Pack real (CV20260605013927): frete do envio R$18,87 gravado repetido nos dois pedidos. O rateio
+  // distribui o frete por peso e compõe o líquido econômico (bruto − comissão − frete), sem usar o
+  // net do MP (que era inconsistente — ADR-0042). Comissão real: Búfalo 2,01; Progresso 3,39.
   const buf = venda({
     id: 'buf', order_id: 2000017053071592, shipping_id: 47353836484, pack_id: 2000013639986103,
-    total_amount: 24.64, liquido: 1.75, frete_vendedor: 18.87,
+    total_amount: 24.64, sale_fee_total: 2.01, liquido: 1.75, frete_vendedor: 18.87,
     itens: [item({ id: 'buf-i', ml_item_id: 'MLBBUF', codigo: '03099962', quantity: 2, unit_price: 12.32, sale_fee: 2.01 })],
   });
   const pro = venda({
     id: 'pro', order_id: 2000017053073394, shipping_id: 47353836484, pack_id: 2000013639986103,
-    total_amount: 19.95, liquido: 16.56, frete_vendedor: 18.87,
+    total_amount: 19.95, sale_fee_total: 3.39, liquido: 16.56, frete_vendedor: 18.87,
     itens: [item({ id: 'pro-i', ml_item_id: 'MLBPRO', codigo: '01591851', quantity: 1, unit_price: 19.95, sale_fee: 3.39 })],
   });
   // Búfalo 58g × 2un = 116g; Progresso 112g × 1 = 112g.
   const pesoResolver = (it: VendaItem) =>
     it.codigo === '03099962' ? 58 : it.codigo === '01591851' ? 112 : null;
 
-  it('redistribui o frete do pack por peso, recompondo o líquido (zero-soma)', () => {
+  it('distribui o frete do pack por peso e compõe o líquido (bruto − comissão − frete)', () => {
     const m = ratearLiquidoPorFrete([buf, pro], pesoResolver);
-    // frete: 18,87 × 116/228 = 9,60 (Búfalo) e × 112/228 = 9,27 (Progresso);
-    // tarifa real do grupo = 44,59 − 18,87 − 18,31 = 7,41, rateada por bruto (4,09 / 3,32).
-    expect(m.get('buf')!.liquido).toBeCloseTo(10.95, 2); // 24,64 − 4,09 − 9,60
-    expect(m.get('pro')!.liquido).toBeCloseTo(7.36, 2);  // 19,95 − 3,32 − 9,27
-    expect(m.get('buf')!.liquido + m.get('pro')!.liquido).toBeCloseTo(18.31, 2); // soma preservada
+    // frete: 18,87 × 116/228 = 9,60 (Búfalo) e × 112/228 = 9,27 (Progresso).
+    expect(m.get('buf')!.liquido).toBeCloseTo(13.03, 2); // 24,64 − 2,01 − 9,60
+    expect(m.get('pro')!.liquido).toBeCloseTo(7.29, 2);  // 19,95 − 3,39 − 9,27
+    // Soma do grupo = bruto − comissão − frete = 44,59 − 5,40 − 18,87.
+    expect(m.get('buf')!.liquido + m.get('pro')!.liquido).toBeCloseTo(20.32, 2);
     expect(m.get('buf')!.frete).toBeCloseTo(9.6, 2);  // frete por peso, não os 18,87 inteiros
     expect(m.get('pro')!.frete).toBeCloseTo(9.27, 2);
   });
 
-  it('sem peso cadastrado cai no rateio por valor, mas ainda corrige a distorção e mantém a soma', () => {
+  it('sem peso cadastrado cai no rateio por valor, mantendo a soma do grupo', () => {
     const m = ratearLiquidoPorFrete([buf, pro]); // sem pesoResolver
     expect(m.get('buf')!.liquido).toBeGreaterThan(1.75); // Búfalo deixa de absorver o frete todo
-    expect(m.get('buf')!.liquido + m.get('pro')!.liquido).toBeCloseTo(18.31, 2);
+    expect(m.get('buf')!.liquido + m.get('pro')!.liquido).toBeCloseTo(20.32, 2);
   });
 
   it('pedido fora de pack (sem grupo) não entra no mapa — fica com o líquido cru', () => {
@@ -137,10 +137,10 @@ describe('ratearLiquidoPorFrete', () => {
     const r = calcularResumo([buf, pro], custoResolver, pesoResolver);
     const lBuf = r.vendas.find((v) => v.orderId === 2000017053071592)!;
     const lPro = r.vendas.find((v) => v.orderId === 2000017053073394)!;
-    expect(lBuf.liquido).toBeCloseTo(10.95, 2);
-    expect(lBuf.retido).toBeCloseTo(13.69, 2); // 24,64 − 10,95
-    expect(lPro.liquido).toBeCloseTo(7.36, 2);
-    expect(r.liquido).toBeCloseTo(18.31, 2); // total do MP preservado (zero-soma)
+    expect(lBuf.liquido).toBeCloseTo(13.03, 2);
+    expect(lBuf.retido).toBeCloseTo(11.61, 2); // 24,64 − 13,03
+    expect(lPro.liquido).toBeCloseTo(7.29, 2);
+    expect(r.liquido).toBeCloseTo(20.32, 2); // bruto − comissão − frete (44,59 − 5,40 − 18,87)
     expect(r.bruto).toBeCloseTo(44.59, 2);
   });
 });
@@ -210,15 +210,17 @@ describe('calcularResumo — caixa/taxas/cobertura/margem', () => {
 describe('calcularResumo — breakdown de taxas reconcilia com descontos', () => {
   it('frete é o residual (descontos − comissão), não a soma crua do frete_vendedor duplicado em pack', () => {
     // 2 pedidos do mesmo envio (pack): o ML grava o frete do envio inteiro em CADA pedido
-    // (frete_vendedor 20 repetido). Somar cru daria 40; o frete efetivo é o residual do retido.
+    // (frete_vendedor 20 repetido). O rateio conta o frete uma vez (20) e compõe o líquido como
+    // bruto − comissão − frete (ADR-0042); o net armazenado (70/78) é ignorado.
     const vendas = [
       venda({ id: 'a', order_id: 1, shipping_id: 555, total_amount: 100, liquido: 70, sale_fee_total: 10, frete_vendedor: 20 }),
       venda({ id: 'b', order_id: 2, shipping_id: 555, total_amount: 100, liquido: 78, sale_fee_total: 12, frete_vendedor: 20 }),
     ];
     const r = calcularResumo(vendas);
-    expect(r.descontos).toBe(52); // bruto 200 − líquido 148 (rateio é zero-soma)
+    // líquido = 200 − comissão 22 − frete 20 = 158 → descontos 42.
+    expect(r.descontos).toBe(42);
     expect(r.comissao).toBe(22); // 10 + 12 (sale_fee_total não duplica em pack)
-    expect(r.frete).toBe(30); // residual 52 − 22 (NÃO 40 da soma crua de frete_vendedor)
+    expect(r.frete).toBe(20); // frete do envio uma vez (NÃO 40 da soma crua), == residual descontos − comissão
     expect(r.comissao + r.frete).toBe(r.descontos); // breakdown SEMPRE fecha com o total exibido
   });
 

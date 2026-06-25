@@ -214,25 +214,27 @@ export function mapearPedidoParaVenda(
   const total = Number(pedido.total_amount ?? 0);
   const frete = opts.freteVendedor ?? null;
 
-  // Líquido/estorno/liberação reais: agregados dos pagamentos do pedido no Mercado Pago. Mesma
-  // lógica do menu Financeiro (ADR-0031/0038) — o líquido já desconta tarifa + frete subsidiado.
-  // Sem MP → líquido estimado; estorno/liberação ficam null.
-  let liquidoMP: number | null = null;
+  // Líquido = estimativa econômica `bruto − comissão − frete real do vendedor` (calcularLiquido).
+  // NÃO usamos o net_received_amount do MP: em envio cross-docking (`shp_cross_docking`) o pagamento
+  // do item é debitado o frete CHEIO da etiqueta e a parte do comprador volta num pagamento à parte
+  // (`marketplace_shipment`); além disso a comissão é cobrada FORA do pagamento (fee_details vazio
+  // na conta). Logo o net isolado desconta frete a mais e ignora a comissão → markup falso. O frete
+  // real do vendedor vem de `/shipments/{id}/costs` (senders[].cost), em `opts.freteVendedor`.
+  // Estorno/liberação seguem vindo do MP (informação confiável por pagamento). Ver ADR-0042.
   let estorno: number | null = null;
   let releaseDate: string | null = null;
   if (opts.liquidoPorPayment) {
-    let soma = 0, somaEstorno = 0, achou = false;
+    let somaEstorno = 0, achou = false;
     for (const pg of pedido.payments ?? []) {
       const id = pg?.id != null ? String(pg.id) : null;
       const d = id ? opts.liquidoPorPayment.get(id) : undefined;
       if (d) {
-        soma += d.net;
         somaEstorno += d.estorno;
         if (d.releaseDate && (!releaseDate || d.releaseDate > releaseDate)) releaseDate = d.releaseDate;
         achou = true;
       }
     }
-    if (achou) { liquidoMP = round2(soma); estorno = round2(somaEstorno); }
+    if (achou) estorno = round2(somaEstorno);
   }
 
   const venda: VendaRow = {
@@ -248,7 +250,7 @@ export function mapearPedidoParaVenda(
     paid_amount: num(pedido.paid_amount ?? null),
     sale_fee_total: saleFeeTotal,
     frete_vendedor: frete,
-    liquido: liquidoMP != null ? liquidoMP : calcularLiquido(total, saleFeeTotal, frete),
+    liquido: calcularLiquido(total, saleFeeTotal, frete),
     estorno,
     money_release_date: releaseDate,
     currency: pedido.currency_id ?? 'BRL',

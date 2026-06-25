@@ -193,12 +193,16 @@ describe('mapearPedidoParaVenda', () => {
     expect(itens[0].ean).toBe('7891521360659');
   });
 
-  it('líquido/estorno/liberação reais vêm do MP por pagamento (não da estimativa)', () => {
+  it('líquido é a estimativa econômica (bruto − comissão − frete); estorno/liberação vêm do MP', () => {
+    // ADR-0042: o net_received_amount do MP NÃO é o líquido da venda — em envio cross-docking o
+    // pagamento do item é debitado o frete CHEIO e o reembolso do comprador vem num pagamento à
+    // parte (marketplace_shipment); a comissão é cobrada fora do pagamento. O líquido econômico é
+    // bruto − comissão − frete real do vendedor. Estorno/liberação seguem vindo do MP.
     const { venda } = mapearPedidoParaVenda(pedidoBase, {
       idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 50,
       liquidoPorPayment: new Map([['1', { net: 6.3, estorno: 2.5, releaseDate: '2026-06-24T11:00:00Z' }]]),
     });
-    expect(venda.liquido).toBe(6.3); // usa MP, ignora estimativa negativa por frete
+    expect(venda.liquido).toBe(33); // 90.20 − 7.20 − 50, ignora o net (6.3) do MP
     expect(venda.estorno).toBe(2.5);
     expect(venda.money_release_date).toBe('2026-06-24T11:00:00Z');
   });

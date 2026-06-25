@@ -37,7 +37,7 @@ describe('agruparPorPedido', () => {
     expect(p.orderIds).toEqual([1, 2]);
     expect(p.bruto).toBe(50.4);          // 12.5 + 37.9
     expect(p.frete).toBe(40.4);          // uma vez, não 80.8
-    expect(p.liquido).toBe(42.46);       // 11 + 31.46
+    expect(p.liquido).toBe(8);           // bruto 50.4 − comissão 2 − frete 40.4 (ADR-0042)
     expect(p.unidades).toBe(2);
     expect(p.itens).toHaveLength(2);
   });
