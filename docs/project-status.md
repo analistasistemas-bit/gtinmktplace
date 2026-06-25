@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-06-21
+**Ultima atualizacao:** 2026-06-25
 
 ## Snapshot
 
@@ -11,7 +11,8 @@
 - Proximo epico de produto: `E5` conector Shopee
 - Trilho de UX (preparacao para SaaS comercial): repaginacao visual premium + Tarefa 2/Onda 1 (workflow operacional) concluidas e em producao (2026-06-21)
 - Marketplace ativo em producao: Mercado Livre
-- Modulo Financeiro impecavel (ADR-0040, 2026-06-23): caixa (liberado/a liberar), lucro+margem, breakdown de taxas, evolucao temporal, comparativo de periodo, periodo personalizado, export CSV e notificacao Telegram de liberacao. Branch `worktree-financeiro-impecavel` — pendente validacao local + deploy (migration + edge `notificar-liberacao` + schedule QStash) e limpeza pos-validacao do caminho morto do MP.
+- Modulo Financeiro impecavel (ADR-0040, 2026-06-23): caixa (liberado/a liberar), lucro+margem, breakdown de taxas, evolucao temporal, comparativo de periodo, periodo personalizado, export CSV e notificacao Telegram de liberacao. Branch `worktree-financeiro-impecavel` — pendente validacao local + deploy (migration + edge `notificar-liberacao` + schedule QStash).
+- Liquido economico correto em producao (ADR-0042, 2026-06-25): o `net_received_amount` do MP era inconsistente (cross-docking desconta frete cheio e ignora comissao; pack desconta comissao e ignora frete), gerando markup falso. Liquido passa a ser `bruto - comissao - frete real` de fontes autoritativas (`sale_fee` + `senders[].cost`), com rateio de pack net-independente. Faturamento e Financeiro batem (fonte unica `ml_vendas`). DB reconciliado (46 pedidos), 4 edges + front deployados, validado com browser-use. Caminho morto do MP ao vivo (`lib/financeiro.ts`, `useResumoFinanceiro`, edge `resumo-financeiro`) removido.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
