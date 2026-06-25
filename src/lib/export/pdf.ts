@@ -78,6 +78,35 @@ function desenharKpis(doc: jsPDF, data: ReportData, yInicial: number): number {
   return y + altura + 4;
 }
 
+/** Desenha os blocos-resumo (listas tituladas, ex.: "Top produtos") e devolve o Y final. */
+function desenharBlocos(doc: jsPDF, data: ReportData, yInicial: number): number {
+  if (!data.blocos?.length) return yInicial;
+  const larguraPagina = doc.internal.pageSize.getWidth();
+  let y = yInicial;
+
+  for (const bloco of data.blocos) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...COR_TEXTO);
+    doc.text(bloco.titulo, MARGEM, y);
+    y += 4.5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    for (const item of bloco.itens) {
+      // Rótulo à esquerda (truncado ao espaço antes do valor); valor à direita.
+      const rotulo = doc.splitTextToSize(item.label, larguraPagina - MARGEM * 2 - 40)[0] ?? item.label;
+      doc.setTextColor(...COR_TEXTO);
+      doc.text(rotulo, MARGEM + 2, y);
+      doc.setTextColor(...COR_SUAVE);
+      doc.text(item.valor, larguraPagina - MARGEM, y, { align: 'right' });
+      y += 4.5;
+    }
+    y += 2;
+  }
+  return y + 1;
+}
+
 function alinhar(colunas: Coluna[]): Record<number, { halign: 'left' | 'right' | 'center' }> {
   const m: Record<number, { halign: 'left' | 'right' | 'center' }> = {};
   colunas.forEach((c, i) => {
@@ -100,6 +129,7 @@ export function gerarPdf(data: ReportData): jsPDF {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   let y = desenharCabecalho(doc, data);
   y = desenharKpis(doc, data, y);
+  y = desenharBlocos(doc, data, y);
 
   const total = data.colunas.length;
   const body: RowInput[] = [];

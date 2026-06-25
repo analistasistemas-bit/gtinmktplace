@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import type { PublicadoItem } from '@/lib/publicados';
+import { calcularResumoPublicados } from '@/lib/resumo-publicados';
 import { periodoToParams, type Periodo } from '@/lib/metricas';
 
 interface Props {
@@ -48,25 +49,7 @@ export function DashboardPublicados({
   // Markup e lucro andam juntos: ambos só existem quando há custo cadastrado no período.
   const temCusto = markupPct != null;
 
-  const resumo = useMemo(() => {
-    const total = itens.length;
-    const ativos = itens.filter((i) => i.status === 'ativo').length;
-    const comProblema = itens.filter(
-      (i) => i.status === 'moderado' || i.status === 'inativo' || i.status === 'pausado',
-    ).length;
-    const encalhados = itens.filter(
-      (i) => i.status === 'ativo' && (i.unidadesVendidas ?? 0) === 0,
-    ).length;
-    const topFat = [...itens]
-      .filter((i) => (i.valorVendido ?? 0) > 0)
-      .sort((a, b) => (b.valorVendido ?? 0) - (a.valorVendido ?? 0))
-      .slice(0, 5);
-    const topUnid = [...itens]
-      .filter((i) => (i.unidadesVendidas ?? 0) > 0)
-      .sort((a, b) => (b.unidadesVendidas ?? 0) - (a.unidadesVendidas ?? 0))
-      .slice(0, 5);
-    return { total, ativos, comProblema, encalhados, topFat, topUnid };
-  }, [itens]);
+  const resumo = useMemo(() => calcularResumoPublicados(itens), [itens]);
 
   const ticket = totais.pedidos > 0 ? totais.faturamento / totais.pedidos : 0;
 

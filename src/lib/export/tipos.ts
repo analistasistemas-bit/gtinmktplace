@@ -37,6 +37,12 @@ export interface Linha {
   sublinhas?: Sublinhas;
 }
 
+/** Bloco-resumo titulado (lista label/valor), ex.: "Top produtos (faturamento)". */
+export interface BlocoResumo {
+  titulo: string;
+  itens: Kpi[];
+}
+
 export interface ReportData {
   /** Título do relatório, ex.: "Faturamento · Vendas". */
   titulo: string;
@@ -46,6 +52,8 @@ export interface ReportData {
   filtros?: string[];
   /** Preenchido apenas quando config.incluirKpis. */
   kpis?: Kpi[];
+  /** Blocos-resumo extras (listas tituladas), renderizados após os KPIs. Só quando config.incluirKpis. */
+  blocos?: BlocoResumo[];
   colunas: Coluna[];
   linhas: Linha[];
 }

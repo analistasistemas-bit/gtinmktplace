@@ -437,7 +437,9 @@ export default function Publicados() {
     }
     return buildPublicadosReport({
       itens: itensExibidos,
+      todosItens: merged,
       totais: { faturamento: resumo.bruto, unidades: resumo.unidades, pedidos: resumo.pedidos },
+      liquido: resumo.liquido,
       markupPct,
       lucro: resumo.lucro,
       filtro,

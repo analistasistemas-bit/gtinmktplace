@@ -1,6 +1,7 @@
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { fmtDataCurta, labelStatusPedido, labelStatusEnvio } from '@/lib/ml-status';
 import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/publicados';
+import { calcularResumoPublicados } from '@/lib/resumo-publicados';
 import type { Periodo } from '@/lib/metricas';
 import type { ResumoViabilidade } from '@/lib/analise-viabilidade';
 import type { Pedido, KpisPedidos } from '@/lib/pedidos-faturamento';
@@ -10,7 +11,7 @@ import type { Pergunta } from '@/lib/perguntas';
 import type { GeografiaVendas } from '@/lib/geografia-vendas';
 import type { ResumoVendas, VendaResumo, PontoSerie } from '@/lib/resumo-vendas';
 import { calcularMarkup } from '@/lib/markup';
-import type { ReportData, ExportConfig, Coluna, Kpi } from './tipos';
+import type { ReportData, ExportConfig, Coluna, Kpi, BlocoResumo } from './tipos';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -67,8 +68,13 @@ const STATUS_LABEL_PUB: Record<string, string> = {
 };
 
 interface PublicadosArgs {
+  /** Itens exibidos (filtrados/ordenados) — viram as linhas da tabela. */
   itens: PublicadoItem[];
+  /** TODOS os itens publicados — base de Saúde/Encalhados/Top, igual à tela. */
+  todosItens: PublicadoItem[];
   totais: { faturamento: number; unidades: number; pedidos: number };
+  /** Líquido recebido no período (banner "você recebe" na tela). */
+  liquido: number;
   markupPct: number | null;
   lucro: number;
   filtro: FiltroPublicados;
@@ -89,23 +95,43 @@ function filtrosPublicados(f: FiltroPublicados): string[] {
 }
 
 export function buildPublicadosReport(args: PublicadosArgs): ReportData {
-  const { itens, totais, markupPct, lucro, filtro, periodo, config, viabilidades } = args;
+  const { itens, todosItens, totais, liquido, markupPct, lucro, filtro, periodo, config, viabilidades } = args;
   // KPIs idênticos ao DashboardPublicados: Markup/Lucro só existem quando há custo cadastrado.
   const ticket = totais.pedidos > 0 ? totais.faturamento / totais.pedidos : 0;
   const temCusto = markupPct != null;
-  const kpis: Kpi[] = [
+  // Saúde/Encalhados/Top usam a base completa (todosItens), como na tela.
+  const saude = calcularResumoPublicados(todosItens);
+  const kpis: Kpi[] = [];
+  // Banner "Líquido das vendas (você recebe)": só aparece com pedidos no período (igual à tela).
+  if (totais.pedidos > 0) kpis.push({ label: 'Líquido das vendas (você recebe)', valor: fmtBRL(liquido) });
+  kpis.push(
     { label: 'Faturamento', valor: fmtBRL(totais.faturamento) },
     { label: 'Unidades vendidas', valor: String(totais.unidades) },
     { label: 'Pedidos', valor: String(totais.pedidos) },
     { label: 'Ticket médio', valor: fmtBRL(ticket) },
-  ];
+  );
   if (temCusto) kpis.push({ label: 'Markup no período', valor: fmtMarkupNum(markupPct) });
   if (temCusto && lucro != null) kpis.push({ label: 'Lucro no período', valor: fmtBRL(lucro) });
+  // Cards de saúde (espelham "Saúde dos anúncios" + "Encalhados" da tela).
+  kpis.push(
+    { label: 'Ativos', valor: `${saude.ativos}/${saude.total}` },
+    { label: 'Com problema', valor: String(saude.comProblema) },
+    { label: 'Encalhados (sem venda no período)', valor: String(saude.encalhados) },
+  );
+  // Bloco "Top produtos (faturamento)" — top 5, mesmo card da tela.
+  const blocos: BlocoResumo[] = [];
+  if (saude.topFat.length > 0) {
+    blocos.push({
+      titulo: 'Top produtos (faturamento)',
+      itens: saude.topFat.map((i) => ({ label: i.titulo, valor: fmtBRL(i.valorVendido ?? 0) })),
+    });
+  }
   return {
     titulo: 'Publicados',
     periodo: rotuloPeriodo(periodo),
     filtros: filtrosPublicados(filtro),
     kpis: config.incluirKpis ? kpis : undefined,
+    blocos: config.incluirKpis && blocos.length > 0 ? blocos : undefined,
     colunas: COLS_PUBLICADOS,
     linhas: itens.map((it) => {
       const via = config.expandido ? viabilidades?.get(it.familiaId) : undefined;

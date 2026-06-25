@@ -9,6 +9,7 @@ import {
 } from '@/lib/export/adapters';
 import type { ExportConfig } from '@/lib/export/tipos';
 import type { Pedido, KpisPedidos } from '@/lib/pedidos-faturamento';
+import type { PublicadoItem } from '@/lib/publicados';
 
 const cfg = (over: Partial<ExportConfig> = {}): ExportConfig => ({
   formato: 'pdf',
@@ -87,18 +88,59 @@ describe('buildFinanceiroDetalheReport', () => {
 
 const labels = (r: { kpis?: { label: string }[] }) => (r.kpis ?? []).map((k) => k.label);
 
-describe('buildPublicadosReport — KPIs batem com a tela', () => {
-  const base = { itens: [], totais: { faturamento: 926.89, unidades: 56, pedidos: 38 }, filtro: {}, periodo: { tipo: 'preset', dias: 30 } as const };
+const pub = (over: Partial<PublicadoItem> = {}): PublicadoItem =>
+  ({ familiaId: 'f', titulo: 'Produto', status: 'ativo', unidadesVendidas: 1, valorVendido: 100, ...over } as unknown as PublicadoItem);
 
-  it('com custo: 6 KPIs incl. Ticket médio, Markup/Lucro no período', () => {
+describe('buildPublicadosReport — KPIs batem com a tela', () => {
+  // todosItens = base de Saúde/Encalhados/Top: 2 ativos (1 encalhado), 1 com problema, top = Linha.
+  const todos = [
+    pub({ familiaId: 'a', titulo: 'Linha', status: 'ativo', valorVendido: 300, unidadesVendidas: 5 }),
+    pub({ familiaId: 'b', titulo: 'Cola', status: 'ativo', valorVendido: 0, unidadesVendidas: 0 }),
+    pub({ familiaId: 'c', titulo: 'Fita', status: 'pausado', valorVendido: 0, unidadesVendidas: 0 }),
+  ];
+  const base = {
+    itens: [], todosItens: todos, liquido: 602.92,
+    totais: { faturamento: 926.89, unidades: 56, pedidos: 38 },
+    filtro: {}, periodo: { tipo: 'preset', dias: 30 } as const,
+  };
+
+  it('com custo: inclui Líquido, 6 KPIs e cards de saúde, na ordem da tela', () => {
     const r = buildPublicadosReport({ ...base, markupPct: 1.29, lucro: 262.67, config: cfg() });
-    expect(labels(r)).toEqual(['Faturamento', 'Unidades vendidas', 'Pedidos', 'Ticket médio', 'Markup no período', 'Lucro no período']);
+    expect(labels(r)).toEqual([
+      'Líquido das vendas (você recebe)',
+      'Faturamento', 'Unidades vendidas', 'Pedidos', 'Ticket médio',
+      'Markup no período', 'Lucro no período',
+      'Ativos', 'Com problema', 'Encalhados (sem venda no período)',
+    ]);
+    expect(r.kpis?.find((k) => k.label === 'Líquido das vendas (você recebe)')?.valor).toContain('602,92');
     expect(r.kpis?.find((k) => k.label === 'Ticket médio')?.valor).toContain('24,39'); // 926,89/38
+    expect(r.kpis?.find((k) => k.label === 'Ativos')?.valor).toBe('2/3');
+    expect(r.kpis?.find((k) => k.label === 'Com problema')?.valor).toBe('1');
+    expect(r.kpis?.find((k) => k.label === 'Encalhados (sem venda no período)')?.valor).toBe('1');
+  });
+
+  it('bloco "Top produtos (faturamento)" espelha o card da tela', () => {
+    const r = buildPublicadosReport({ ...base, markupPct: 1.29, lucro: 262.67, config: cfg() });
+    const top = r.blocos?.find((b) => b.titulo === 'Top produtos (faturamento)');
+    expect(top?.itens[0].label).toBe('Linha');
+    expect(top?.itens[0].valor).toContain('300,00');
   });
 
   it('sem custo: oculta Markup e Lucro (como a tela)', () => {
     const r = buildPublicadosReport({ ...base, markupPct: null, lucro: 0, config: cfg() });
-    expect(labels(r)).toEqual(['Faturamento', 'Unidades vendidas', 'Pedidos', 'Ticket médio']);
+    expect(labels(r)).not.toContain('Markup no período');
+    expect(labels(r)).not.toContain('Lucro no período');
+  });
+
+  it('sem pedidos: oculta o banner Líquido (como a tela)', () => {
+    const r = buildPublicadosReport({ ...base, totais: { faturamento: 0, unidades: 0, pedidos: 0 }, markupPct: null, lucro: 0, config: cfg() });
+    expect(labels(r)).not.toContain('Líquido das vendas (você recebe)');
+  });
+
+  it('sem KPIs: não emite blocos', () => {
+    const r = buildPublicadosReport({ ...base, markupPct: 1.29, lucro: 262.67, config: cfg({ incluirKpis: false }) });
+    expect(r.kpis).toBeUndefined();
+    expect(r.blocos).toBeUndefined();
   });
 });
 

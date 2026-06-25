@@ -26,6 +26,13 @@ export function montarWorkbook(data: ReportData, opcoes: OpcoesWorkbook = {}): X
     resumo.push(['Indicador', 'Valor']);
     for (const k of data.kpis) resumo.push([k.label, k.valor]);
   }
+  if (data.blocos?.length) {
+    for (const bloco of data.blocos) {
+      resumo.push([]);
+      resumo.push([bloco.titulo, 'Valor']);
+      for (const it of bloco.itens) resumo.push([it.label, it.valor]);
+    }
+  }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumo), 'Resumo');
 
   // --- Aba Dados: tabela principal (+ sublinhas indentadas) ---
