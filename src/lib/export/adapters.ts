@@ -9,8 +9,7 @@ import type { Devolucao } from '@/lib/devolucoes';
 import { labelTipoDevolucao } from '@/lib/devolucoes';
 import type { Pergunta } from '@/lib/perguntas';
 import type { GeografiaVendas } from '@/lib/geografia-vendas';
-import type { ResumoVendas, VendaResumo, PontoSerie } from '@/lib/resumo-vendas';
-import { calcularMarkup } from '@/lib/markup';
+import type { ResumoVendas, PontoSerie } from '@/lib/resumo-vendas';
 import type { ReportData, ExportConfig, Coluna, Kpi, BlocoResumo } from './tipos';
 
 // ---------------------------------------------------------------------------
@@ -445,9 +444,11 @@ export function buildFinanceiroReport(args: FinanceiroArgs): ReportData {
 // ---------------------------------------------------------------------------
 
 const COLS_FIN_DETALHE: Coluna[] = [
-  { chave: 'codigo', titulo: 'Código' },
-  { chave: 'produto', titulo: 'Produto' },
   { chave: 'data', titulo: 'Data' },
+  { chave: 'comprador', titulo: 'Comprador' },
+  // A tela mostra miniaturas dos produtos; no export, os títulos dos itens (texto).
+  { chave: 'produtos', titulo: 'Produtos' },
+  { chave: 'unidades', titulo: 'Un.', alinhamento: DIR },
   { chave: 'liberacao', titulo: 'Liberação' },
   { chave: 'bruto', titulo: 'Bruto', alinhamento: DIR },
   { chave: 'retido', titulo: 'Retido (ML)', alinhamento: DIR },
@@ -460,7 +461,7 @@ const FILTRO_LIB_LABEL: Record<string, string> = {
 };
 
 interface FinanceiroDetalheArgs {
-  vendas: VendaResumo[];
+  pedidos: Pedido[];
   totais: { bruto: number; retido: number; liquido: number; markup: number | null };
   filtroLib: string;
   periodo: Periodo;
@@ -468,7 +469,7 @@ interface FinanceiroDetalheArgs {
 }
 
 export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): ReportData {
-  const { vendas, totais, filtroLib, periodo, config } = args;
+  const { pedidos, totais, filtroLib, periodo, config } = args;
   return {
     titulo: 'Financeiro · Detalhe',
     periodo: rotuloPeriodo(periodo),
@@ -482,23 +483,37 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
         ]
       : undefined,
     colunas: COLS_FIN_DETALHE,
-    linhas: vendas.map((v) => {
-      const mk = v.custo != null && v.custo > 0 ? calcularMarkup(v.liquido, v.custo).markup : null;
-      return {
-        celulas: {
-          codigo: v.codigo ?? '—',
-          produto: v.descricao ?? `#${v.id}`,
-          data: fmtData(v.data),
-          // Liberação = data + status (liberado/a liberar) na mesma coluna, como na tela.
-          liberacao: v.dataLiberacao
-            ? `${fmtData(v.dataLiberacao)} · ${new Date(v.dataLiberacao).getTime() <= Date.now() ? 'liberado' : 'a liberar'}`
-            : '—',
-          bruto: fmtBRL(v.bruto),
-          retido: fmtBRL(v.retido),
-          liquido: fmtBRL(v.liquido),
-          markup: fmtMarkupNum(mk),
-        },
-      };
-    }),
+    linhas: pedidos.map((p) => ({
+      celulas: {
+        data: fmtData(p.data),
+        comprador: p.comprador_nome ?? p.comprador_nick ?? '—',
+        produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
+        unidades: fmtInt(p.unidades),
+        // Liberação = data + status (liberado/a liberar) na mesma coluna, como na tela.
+        liberacao: p.money_release_date
+          ? `${fmtData(p.money_release_date)} · ${new Date(p.money_release_date).getTime() <= Date.now() ? 'liberado' : 'a liberar'}`
+          : '—',
+        bruto: fmtBRL(p.bruto),
+        retido: fmtBRL(Math.round((p.bruto - p.liquido) * 100) / 100),
+        liquido: fmtBRL(p.liquido),
+        markup: fmtMarkupNum(p.markup),
+      },
+      sublinhas: config.expandido
+        ? {
+            colunas: COLS_ITENS_PEDIDO,
+            linhas: p.itens.map((it) => ({
+              item: it.titulo ?? '—',
+              cor: it.cor ?? '—',
+              codigo: it.codigo ?? '—',
+              ean: it.ean ?? '—',
+              qtd: it.quantity,
+              preco: fmtBRL(it.unit_price),
+              custo: it.custo != null ? fmtBRL(it.custo) : '—',
+              liquido: fmtBRL(it.liquido),
+              markup: fmtMarkupNum(it.markup),
+            })),
+          }
+        : undefined,
+    })),
   };
 }
