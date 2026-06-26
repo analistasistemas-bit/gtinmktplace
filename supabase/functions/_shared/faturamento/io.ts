@@ -1,7 +1,7 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, normGtin, extrairGeo, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -85,7 +85,7 @@ export async function buscarFreteVendedor(token: string, shippingId: number | st
 /** Status do envio + geografia (cidade/UF do receiver_address) via /shipments/{id}. null em erro. */
 export async function buscarShipment(token: string, shippingId: number | string | null): Promise<{
   status: string | null; substatus: string | null; tracking: string | null; logistic: string | null;
-  cidade: string | null; uf: string | null;
+  cidade: string | null; uf: string | null; receiverNome: string | null;
 } | null> {
   if (shippingId == null) return null;
   try {
@@ -102,6 +102,7 @@ export async function buscarShipment(token: string, shippingId: number | string 
       logistic: s?.logistic?.type ?? s?.logistic_type ?? null,
       cidade: geo.cidade,
       uf: geo.uf,
+      receiverNome: extrairReceiverNome(s),
     };
   } catch {
     return null;
@@ -154,7 +155,7 @@ export async function upsertVenda(
   opts: { freteVendedor?: number | null;
           idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
           eanResolver?: (i: string | null, v: number | null) => string | null;
-          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null; cidade: string | null; uf: string | null } | null;
+          shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null; cidade: string | null; uf: string | null; receiverNome: string | null } | null;
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
           liquidoPorPayment?: Map<string, DadosPagamentoMP> },
@@ -171,6 +172,10 @@ export async function upsertVenda(
   const row = {
     user_id: userId,
     ...venda,
+    // Nome real do comprador: receiver_name do envio (melhor formatado, com acento) tem
+    // prioridade; cai para first_name+last_name do buyer (vem só no GET /orders/{id}, não no
+    // /orders/search do backfill). Mantém o que já houver se ambas as fontes faltarem.
+    comprador_nome: opts.shipment?.receiverNome ?? venda.comprador_nome,
     raw: pedido as unknown as Record<string, unknown>,
     shipping_status: opts.shipment?.status ?? null,
     shipping_substatus: opts.shipment?.substatus ?? null,

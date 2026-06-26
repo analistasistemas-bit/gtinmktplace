@@ -5,6 +5,7 @@ import {
   mapearPedidoParaVenda,
   calcularLiquido,
   extrairGeo,
+  extrairReceiverNome,
 } from '../venda';
 
 describe('extrairGeo', () => {
@@ -22,6 +23,19 @@ describe('extrairGeo', () => {
   });
   it('state.id sem prefixo BR- é mantido', () => {
     expect(extrairGeo({ destination: { shipping_address: { state: { id: 'SP' } } } })).toEqual({ cidade: null, uf: 'SP' });
+  });
+});
+
+describe('extrairReceiverNome', () => {
+  it('extrai o nome do destinatário de destination.receiver_name (formato novo do ML)', () => {
+    expect(extrairReceiverNome({ destination: { receiver_name: 'Bárbara Bertoldi' } })).toBe('Bárbara Bertoldi');
+  });
+  it('faz trim e devolve null para vazio/ausente/null', () => {
+    expect(extrairReceiverNome({ destination: { receiver_name: '  Ana Costa  ' } })).toBe('Ana Costa');
+    expect(extrairReceiverNome({ destination: { receiver_name: '   ' } })).toBeNull();
+    expect(extrairReceiverNome({ destination: {} })).toBeNull();
+    expect(extrairReceiverNome({ status: 'shipped' })).toBeNull();
+    expect(extrairReceiverNome(null)).toBeNull();
   });
 });
 
