@@ -204,3 +204,20 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     porStatusEnvio,
   };
 }
+
+const PREPOSICOES_NOME = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+/**
+ * Encurta o nome do comprador para "primeiro + segundo nome", pulando preposições
+ * (de/da/do/das/dos/e) na escolha do segundo. Ex.: "Maria de Fatima Braga" → "Maria Fatima";
+ * "Patricia Neves Moreira Leite" → "Patricia Neves". Mantém capitalização original.
+ * null/vazio → null.
+ */
+export function nomeCurtoComprador(nome: string | null | undefined): string | null {
+  if (!nome) return null;
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return null;
+  const primeiro = partes[0];
+  const segundo = partes.slice(1).find((p) => !PREPOSICOES_NOME.has(p.toLowerCase()));
+  return segundo ? `${primeiro} ${segundo}` : primeiro;
+}
