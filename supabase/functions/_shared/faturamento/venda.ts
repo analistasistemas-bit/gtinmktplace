@@ -51,6 +51,7 @@ export interface VendaRow {
   date_closed: string | null;
   comprador_id: number | null;
   comprador_nick: string | null;
+  comprador_nome: string | null;
   total_amount: number;
   paid_amount: number | null;
   sale_fee_total: number;
@@ -101,7 +102,7 @@ export interface PedidoML {
   currency_id?: string | null;
   total_amount?: number | null;
   paid_amount?: number | null;
-  buyer?: { id?: number | string | null; nickname?: string | null } | null;
+  buyer?: { id?: number | string | null; nickname?: string | null; first_name?: string | null; last_name?: string | null } | null;
   shipping?: { id?: number | string | null } | null;
   order_items?: Array<{
     item?: {
@@ -246,6 +247,7 @@ export function mapearPedidoParaVenda(
     date_closed: pedido.date_closed ?? null,
     comprador_id: num(pedido.buyer?.id ?? null),
     comprador_nick: pedido.buyer?.nickname ?? null,
+    comprador_nome: [pedido.buyer?.first_name, pedido.buyer?.last_name].filter(Boolean).join(' ').trim() || null,
     total_amount: round2(total),
     paid_amount: num(pedido.paid_amount ?? null),
     sale_fee_total: saleFeeTotal,

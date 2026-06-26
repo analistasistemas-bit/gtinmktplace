@@ -74,7 +74,7 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
 function valorOrdenacao(p: Pedido, k: SortKey): string | number | null {
   switch (k) {
     case 'data': return p.data ? Date.parse(p.data) : null;
-    case 'comprador': return p.comprador_nick;
+    case 'comprador': return p.comprador_nome ?? p.comprador_nick;
     case 'unidades': return p.unidades;
     case 'valor': return p.bruto;
     case 'liquido': return p.liquido;
@@ -164,7 +164,7 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
         <TableCell className="max-w-[140px] truncate">
           <span className="flex items-center gap-1">
             {p.isPack && <Layers className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pack" />}
-            {p.comprador_nick ?? '—'}
+            {p.comprador_nome ?? p.comprador_nick ?? '—'}
           </span>
         </TableCell>
         <TableCell><PilhaThumbs itens={p.itens} /></TableCell>
