@@ -2,13 +2,11 @@
 // thumbnail da visão por pedido do Faturamento (ADR-0039). Espelha a cadeia de resolução do custo
 // (variação → anúncio → GTIN) sem tocar em custos.ts, pra não arriscar o markup/rateio de frete.
 import { supabase } from './supabase';
+import { normGtin } from './gtin';
 import type { VendaItem } from './faturamento';
 
 /** Resolve o storage path da foto de um item de venda. null = sem foto cadastrada. */
 export type FotoResolver = (item: VendaItem) => string | null;
-
-/** GTIN normalizado (sem zeros à esquerda) para casar entre ML e planilha. */
-const normGtin = (g: string) => g.replace(/^0+/, '');
 
 export interface MapasFoto {
   /** ml_variation_id → imagem_path. */

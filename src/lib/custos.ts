@@ -3,11 +3,9 @@
 // variação → anúncio → GTIN. NÃO usar familias.custo_centavos (é custo de tokens de IA). Pura
 // exceto pela query inicial.
 import { supabase } from './supabase';
+import { normGtin } from './gtin';
 import type { CustoResolver, PesoResolver } from './resumo-vendas';
 import type { VendaItem } from './faturamento';
-
-/** GTIN normalizado (sem zeros à esquerda) para casar entre ML e planilha. */
-const normGtin = (g: string) => g.replace(/^0+/, '');
 
 /** Custo unitário (R$) + peso unitário (g) de um produto. */
 interface ValorProduto { custo: number; peso: number }

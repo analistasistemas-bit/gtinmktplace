@@ -64,62 +64,63 @@ function renderRoute(initialPath: string) {
 }
 
 describe('App routing', () => {
-  it('renderiza Dashboard na rota /', () => {
+  // Páginas são lazy (code-splitting): findBy* aguarda o Suspense resolver.
+  it('renderiza Dashboard na rota /', async () => {
     renderRoute('/');
-    expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
   });
 
-  it('renderiza NovoLote na rota /novo-lote', () => {
+  it('renderiza NovoLote na rota /novo-lote', async () => {
     renderRoute('/novo-lote');
-    expect(screen.getByRole('heading', { name: /novo lote/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /novo lote/i })).toBeInTheDocument();
   });
 
-  it('renderiza Progresso na rota /progresso/:loteId', () => {
+  it('renderiza Progresso na rota /progresso/:loteId', async () => {
     renderRoute('/progresso/lote-37');
-    expect(screen.getByRole('heading', { name: /processando/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /processando/i })).toBeInTheDocument();
   });
 
-  it('renderiza Revisao na rota /revisao/:loteId', () => {
+  it('renderiza Revisao na rota /revisao/:loteId', async () => {
     renderRoute('/revisao/lote-42');
     // Now uses a header with buscar input — assert on the placeholder text
-    expect(screen.getByPlaceholderText(/buscar por código ou nome/i)).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/buscar por código ou nome/i)).toBeInTheDocument();
   });
 
-  it('renderiza Relatorio na rota /relatorio/:loteId', () => {
+  it('renderiza Relatorio na rota /relatorio/:loteId', async () => {
     renderRoute('/relatorio/lote-41');
-    expect(screen.getByRole('heading', { name: /relat/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /relat/i })).toBeInTheDocument();
   });
 
-  it('renderiza Configuracoes na rota /configuracoes', () => {
+  it('renderiza Configuracoes na rota /configuracoes', async () => {
     renderRoute('/configuracoes');
-    expect(screen.getByRole('heading', { name: /config/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /config/i })).toBeInTheDocument();
   });
 
-  it('renderiza NotFound em rota desconhecida', () => {
+  it('renderiza NotFound em rota desconhecida', async () => {
     renderRoute('/rota-que-nao-existe');
-    expect(screen.getByText(/404/)).toBeInTheDocument();
+    expect(await screen.findByText(/404/)).toBeInTheDocument();
     expect(screen.getByText(/Página não encontrada/i)).toBeInTheDocument();
   });
 
-  it('renderiza Sidebar dentro das rotas com shell', () => {
+  it('renderiza Sidebar dentro das rotas com shell', async () => {
     renderRoute('/');
+    expect(await screen.findByRole('navigation')).toBeInTheDocument();
     expect(screen.getAllByText('PubliAI').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('navigation')).toBeInTheDocument();
   });
 
-  it('renderiza Login na rota /login (pública)', () => {
+  it('renderiza Login na rota /login (pública)', async () => {
     renderRoute('/login');
-    expect(screen.getByRole('heading', { name: /PubliAI/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /PubliAI/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument();
   });
 
-  it('renderiza Cadastro na rota /cadastro (pública)', () => {
+  it('renderiza Cadastro na rota /cadastro (pública)', async () => {
     renderRoute('/cadastro');
-    expect(screen.getByRole('heading', { name: /criar conta/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /criar conta/i })).toBeInTheDocument();
   });
 
-  it('renderiza ResetSenha na rota /reset-senha (pública)', () => {
+  it('renderiza ResetSenha na rota /reset-senha (pública)', async () => {
     renderRoute('/reset-senha');
-    expect(screen.getByRole('heading', { name: /recuperar senha/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /recuperar senha/i })).toBeInTheDocument();
   });
 });
