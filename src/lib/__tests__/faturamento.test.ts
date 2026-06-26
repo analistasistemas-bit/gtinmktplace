@@ -4,7 +4,7 @@ import { calcularKpis, type Venda } from '../faturamento';
 const venda = (over: Partial<Venda>): Venda => ({
   id: 'x', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
   date_closed: '2026-06-20T00:00:00Z', date_created: '2026-06-20T00:00:00Z',
-  comprador_id: null, comprador_nick: null, total_amount: 0, paid_amount: null, sale_fee_total: 0,
+  comprador_id: null, comprador_nick: null, comprador_nome: null, total_amount: 0, paid_amount: null, sale_fee_total: 0,
   frete_vendedor: null, liquido: null, estorno: null, money_release_date: null,
   currency: 'BRL', shipping_id: null, shipping_status: null,
   shipping_substatus: null, shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
