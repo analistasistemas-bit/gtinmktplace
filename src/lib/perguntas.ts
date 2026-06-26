@@ -34,6 +34,7 @@ async function postEdge<T>(fn: string, body: unknown): Promise<T> {
   });
   const json = await resp.json().catch(() => null);
   if (!resp.ok || json?.ok === false) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  if (json == null) throw new Error('Resposta inválida do servidor');
   return json as T;
 }
 

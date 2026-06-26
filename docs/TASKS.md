@@ -748,3 +748,5 @@ A revisão independente do spec (executada via agente crítico em 2026-05-26) le
 Espaço para observações, decisões pendentes pequenas, ideias durante a implementação:
 
 > _(adicione aqui conforme o projeto avança — exemplos: "operador prefere foto na esquerda", "categoria de fitas precisa de atributo X", etc.)_
+
+- [x] **Fix margem `-Infinity` + JSON nulo no Faturamento** (2026-06-26) — `calcularResumo` dividia por `liqComCusto` com guarda em `custoTotal` (venda com líquido 0 e custo > 0 → `-Infinity`); guarda corrigida para `liqComCusto > 0`. Também: `faturamento.ts`/`financeiro.ts`/`perguntas.ts` retornavam `null as T` quando o body 200 não era JSON válido — agora lançam erro. TDD (1 teste novo). 900 testes verdes. Só frontend.

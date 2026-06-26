@@ -203,7 +203,7 @@ export function calcularResumo(
     frete: round2(Math.max(0, descontos - comissaoTotal)),
     vendasComCusto,
     totalVendas: pedidos,
-    margem: custoTotal > 0 ? (liqComCusto - custoTotal) / liqComCusto : null,
+    margem: liqComCusto > 0 ? (liqComCusto - custoTotal) / liqComCusto : null,
     porItem,
     vendas: vendasResumo,
   };
