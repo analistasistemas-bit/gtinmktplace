@@ -14,7 +14,7 @@ import { useImageUrl } from '@/hooks/useImageUrl';
 import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
-import { agruparPorPedido, calcularKpisPedidos, type Pedido, type ItemPedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, type Pedido, type ItemPedido } from '@/lib/pedidos-faturamento';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildVendasReport } from '@/lib/export/adapters';
@@ -162,9 +162,9 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
         </TableCell>
         <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(p.data)}</TableCell>
         <TableCell className="max-w-[140px] truncate">
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1" title={p.comprador_nome ?? p.comprador_nick ?? undefined}>
             {p.isPack && <Layers className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pack" />}
-            {p.comprador_nome ?? p.comprador_nick ?? '—'}
+            {nomeCurtoComprador(p.comprador_nome) ?? p.comprador_nick ?? '—'}
           </span>
         </TableCell>
         <TableCell><PilhaThumbs itens={p.itens} /></TableCell>

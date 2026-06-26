@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agruparPorPedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, nomeCurtoComprador } from '@/lib/pedidos-faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
 
@@ -118,5 +118,25 @@ describe('calcularKpisPedidos', () => {
     const k = calcularKpisPedidos(agruparPorPedido(vendas));
     // comprador 100 tem 2 pedidos (recorrente) → 2 de 3 pedidos = 66.7%
     expect(k.pctRecompra).toBeCloseTo((2 / 3) * 100, 1);
+  });
+});
+
+describe('nomeCurtoComprador', () => {
+  it('mantém primeiro + segundo nome quando há dois', () => {
+    expect(nomeCurtoComprador('Bárbara Bertoldi')).toBe('Bárbara Bertoldi');
+    expect(nomeCurtoComprador('Patricia Neves Moreira Leite')).toBe('Patricia Neves');
+  });
+  it('pula preposições ao escolher o segundo nome', () => {
+    expect(nomeCurtoComprador('Maria de Fatima Braga')).toBe('Maria Fatima');
+    expect(nomeCurtoComprador('Ana da Silva')).toBe('Ana Silva');
+  });
+  it('nome único devolve só ele', () => {
+    expect(nomeCurtoComprador('Madonna')).toBe('Madonna');
+  });
+  it('normaliza espaços e devolve null para vazio/null', () => {
+    expect(nomeCurtoComprador('  João   Pedro  Costa ')).toBe('João Pedro');
+    expect(nomeCurtoComprador('')).toBeNull();
+    expect(nomeCurtoComprador(null)).toBeNull();
+    expect(nomeCurtoComprador(undefined)).toBeNull();
   });
 });
