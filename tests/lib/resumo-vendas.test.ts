@@ -75,6 +75,16 @@ describe('calcularResumo', () => {
     expect(r.ticket).toBe(35); // (20 + 50) / 2
   });
 
+  it('margem não vira -Infinity quando líquido é 0 e há custo (div por zero)', () => {
+    const resolver = (it: VendaItem) => (it.ml_item_id === 'COM' ? 5 : null);
+    const r = calcularResumo([
+      venda({ id: 'a', status: 'paid', total_amount: 10, liquido: 0,
+        itens: [item({ ml_item_id: 'COM', quantity: 1, unit_price: 10 })] }),
+    ], resolver);
+    expect(Number.isFinite(r.margem ?? 0)).toBe(true);
+    expect(r.margem).toBeNull();
+  });
+
   it('vazio → zeros e markup null', () => {
     const r = calcularResumo([]);
     expect(r).toMatchObject({ bruto: 0, liquido: 0, descontos: 0, estornos: 0, pedidos: 0, unidades: 0, ticket: 0, markup: null });
