@@ -41,8 +41,8 @@ describe('FamiliaRow', () => {
     );
     expect(screen.getByText(/Linha de Costura/)).toBeInTheDocument();
     expect(screen.getByText(/1043812/)).toBeInTheDocument();
-    expect(screen.getByText(/CREATE/)).toBeInTheDocument();
-    expect(screen.getByText(/R\$ 8,90/)).toBeInTheDocument();
+    expect(screen.getAllByText(/CREATE/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/R\$ 8,90/)[0]).toBeInTheDocument();
   });
 
   it('marca checkbox como checked quando selecionada=true', () => {

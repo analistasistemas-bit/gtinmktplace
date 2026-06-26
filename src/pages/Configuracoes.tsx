@@ -50,7 +50,7 @@ export default function Configuracoes() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader title="Configurações" />
 
       <div className="mx-auto flex max-w-2xl flex-col gap-4">

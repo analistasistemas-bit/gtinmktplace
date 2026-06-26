@@ -67,7 +67,7 @@ export function LoteCard({ lote }: { lote: Lote }) {
     <>
       <Link to={destinoDoLote(lote.status, lote.id)} className="block">
         <Card className="relative border border-border p-4 shadow-none ring-0 transition-colors hover:border-primary/40 hover:bg-accent hover:shadow-none">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-0">
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold">Lote #{lote.numero}</h3>

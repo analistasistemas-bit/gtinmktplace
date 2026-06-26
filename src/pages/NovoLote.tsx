@@ -67,7 +67,7 @@ export default function NovoLote() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Novo lote"
         subtitle="Envie a planilha. As imagens são opcionais: numa reposição de estoque, suba só a planilha."

@@ -15,13 +15,13 @@ export function JornadaLote({ status, compact = false, className }: Props) {
   const { indiceAtual, erro } = jornadaDoLote(status);
   const iconeSize = compact ? 'h-3 w-3' : 'h-4 w-4';
   return (
-    <ol className={cn('flex items-center', className)} aria-label="Progresso do lote">
+    <ol className={cn('flex items-center overflow-x-auto no-scrollbar py-1 shrink-0 w-full gap-2', className)} aria-label="Progresso do lote">
       {ETAPAS_JORNADA.map((etapa, i) => {
         const concluida = i < indiceAtual;
         const atual = i === indiceAtual;
         const comErro = atual && erro;
         return (
-          <li key={etapa.chave} className="flex items-center">
+          <li key={etapa.chave} className="flex items-center shrink-0">
             <div className="flex items-center gap-2">
               <span
                 aria-current={atual ? 'step' : undefined}
@@ -63,8 +63,8 @@ export function JornadaLote({ status, compact = false, className }: Props) {
               <span
                 aria-hidden="true"
                 className={cn(
-                  'h-px',
-                  compact ? 'w-4' : 'mx-3 w-8',
+                  'h-px shrink-0',
+                  compact ? 'w-4' : 'mx-2 w-6 sm:mx-3 sm:w-8',
                   concluida ? 'bg-success' : 'bg-border',
                 )}
               />

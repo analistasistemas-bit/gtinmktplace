@@ -48,7 +48,7 @@ export default function Progresso() {
   const temAnomalias = totalAnomalias(anomalias) > 0;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title={`Processando lote #${lote.numero}`}
         subtitle={`Status: ${lote.status} · ${prontas} de ${total} prontas${erradas > 0 ? ` · ${erradas} com erro` : ''}`}

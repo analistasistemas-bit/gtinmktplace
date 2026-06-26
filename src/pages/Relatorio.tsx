@@ -49,7 +49,7 @@ export default function Relatorio() {
   const pctPublicacao = totalPublicacao > 0 ? Math.round((processadas / totalPublicacao) * 100) : 0;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/' }, { label: `Lote #${lote.numero}` }]} />
       <PageHeader title={`Relatório · Lote #${lote.numero}`} />
       <div className="mb-6">

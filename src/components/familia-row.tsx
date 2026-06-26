@@ -43,7 +43,7 @@ function DescontoControle({ familia }: { familia: Familia }) {
     : 0;
   const de = calcularPrecoDe(precoVenda, pct);
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div className="flex flex-wrap items-center gap-2 text-xs">
       <Checkbox
         aria-label="Exibir com desconto"
         checked={familia.exibirComDesconto}
@@ -92,7 +92,7 @@ function AtacadoControle({ familia }: { familia: Familia }) {
 
   return (
     <div className="space-y-1 text-xs">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Checkbox
           aria-label="Preço de atacado"
           checked={ativo}
@@ -186,7 +186,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           onExpandir(familia.id);
         }
       }}
-      className="grid cursor-pointer select-none grid-cols-[24px_40px_1fr_80px_140px_40px] items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted/50"
+      className="grid cursor-pointer select-none grid-cols-[24px_40px_1fr_32px] sm:grid-cols-[24px_40px_1fr_80px_140px_40px] items-start sm:items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted/50"
     >
       <Checkbox
         aria-label="Selecionar família"
@@ -211,10 +211,13 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           }
         />
       )}
-      <div>
-        <div className="font-medium">{familia.titulo}</div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="min-w-0">
+        <div className="font-medium truncate">{familia.titulo}</div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
           <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
+          <span className="sm:hidden font-medium text-foreground flex items-center gap-1 border rounded px-1.5 py-0.5">
+            {familia.operacao} · R$ {formatarBRL(precoVendaMin)}
+          </span>
           {emErro && (
             <>
               <StatusPill tone="danger" title={familia.erroMensagem ?? undefined}>
@@ -339,10 +342,12 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           )}
         </div>
       </div>
-      <StatusPill tone={familia.operacao === 'CREATE' ? 'info' : 'neutral'}>
-        {familia.operacao}
-      </StatusPill>
-      <div className="flex items-center gap-1">
+      <div className="hidden sm:flex">
+        <StatusPill tone={familia.operacao === 'CREATE' ? 'info' : 'neutral'}>
+          {familia.operacao}
+        </StatusPill>
+      </div>
+      <div className="hidden sm:flex items-center gap-1">
         <span className="tabular-nums">
           R$ {formatarBRL(precoVendaMin)}
           {precoVendaMin !== precoVendaMax && `-${formatarBRL(precoVendaMax)}`}
@@ -358,7 +363,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         {expandida ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </span>
     </div>
-      <div className="px-4 pb-2 pl-[100px] space-y-1">
+      <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-1">
         <DescontoControle familia={familia} />
         <AtacadoControle familia={familia} />
       </div>

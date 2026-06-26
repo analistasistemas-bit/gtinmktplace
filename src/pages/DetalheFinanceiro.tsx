@@ -271,7 +271,7 @@ export default function DetalheFinanceiro() {
   const markupTotal = totaisFiltrados.markup;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Financeiro', to: '/financeiro' }, { label: 'Detalhe do líquido' }]} />
       <PageHeader
         title="Detalhe do líquido"

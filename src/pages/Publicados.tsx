@@ -143,7 +143,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
       onClick={() => setAberto((a) => !a)}
       className={cn('cursor-pointer', aberto && 'border-b-0 bg-muted/20')}
     >
-      <TableCell className="whitespace-normal">
+      <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
         <div className="flex items-start gap-1.5">
           <button
             type="button"
@@ -266,12 +266,13 @@ interface ThOrdenavelProps {
   label: string;
   ord: OrdenacaoPublicados | null;
   onOrdenar: (coluna: ColunaOrdenavel) => void;
+  className?: string;
 }
 
-function ThOrdenavel({ coluna, label, ord, onOrdenar }: ThOrdenavelProps) {
+function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelProps) {
   const ativo = ord?.coluna === coluna;
   return (
-    <TableHead>
+    <TableHead className={className}>
       <button
         type="button"
         onClick={() => onOrdenar(coluna)}
@@ -464,7 +465,7 @@ export default function Publicados() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Publicados"
         actions={
@@ -625,7 +626,7 @@ export default function Publicados() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
-                  <ThOrdenavel coluna="titulo" label="Título" ord={ord} onOrdenar={ordenarPor} />
+                  <ThOrdenavel coluna="titulo" label="Título" ord={ord} onOrdenar={ordenarPor} className="sticky left-0 z-10 bg-muted/50 sm:static sm:z-auto sm:bg-transparent" />
                   <ThOrdenavel coluna="fornecedor" label="Fornecedor" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="tipo" label="Tipo" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="precoPublicacao" label="Preço publicado" ord={ord} onOrdenar={ordenarPor} />

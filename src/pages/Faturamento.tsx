@@ -10,7 +10,7 @@ import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 export default function Faturamento() {
   const { data: naoRespondidas } = usePerguntasNaoRespondidas();
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Faturamento"
         subtitle="Vendas do Mercado Livre pedido a pedido, devoluções e perguntas — num lugar só."

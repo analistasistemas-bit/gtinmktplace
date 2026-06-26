@@ -204,7 +204,7 @@ export default function DetalheVendas() {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Publicados', to: '/publicados' }, { label: 'Detalhe de vendas' }]} />
       <PageHeader
         title="Detalhe de vendas"

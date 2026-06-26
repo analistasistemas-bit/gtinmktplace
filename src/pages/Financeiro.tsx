@@ -86,7 +86,7 @@ export default function Financeiro() {
     : null;
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Financeiro"
         subtitle="Vendas, líquido recebido e o que o Mercado Livre retém — por período."

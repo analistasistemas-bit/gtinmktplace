@@ -263,7 +263,7 @@ export default function Revisao() {
           className="mb-3"
           actions={
             loteId && familias.length > 0 ? (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {qtdErros > 0 && (
                   <Button
                     variant="destructive"
@@ -316,8 +316,8 @@ export default function Revisao() {
             <JornadaLote status={lote.status} />
           </div>
         )}
-        <div className="flex items-center gap-3 pb-3">
-          <Tabs value={filtro} onValueChange={(v) => setFiltro(v as FiltroOp)}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-3">
+          <Tabs value={filtro} onValueChange={(v) => setFiltro(v as FiltroOp)} className="w-full sm:w-auto">
             <TabsList>
               <TabsTrigger value="todos">
                 Todos <Badge variant="secondary" className="ml-1.5">{counts.todos}</Badge>

@@ -13,7 +13,7 @@ export default function RevisaoIndex() {
 
   if (!lotes || lotes.length === 0) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <EmptyState
           icon={ClipboardList}
           title="Nenhum lote para revisar ainda"

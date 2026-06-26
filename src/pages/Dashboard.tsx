@@ -50,7 +50,7 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader title="Dashboard" actions={novoLoteBtn} />
 
       <LotesEmAndamento lotes={lotes} />
