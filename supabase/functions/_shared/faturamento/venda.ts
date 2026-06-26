@@ -161,6 +161,13 @@ export function extrairGeo(shipment: unknown): { cidade: string | null; uf: stri
   return { cidade: cidade ?? null, uf };
 }
 
+/** Nome do destinatário do envio (shipment, x-format-new). null quando ausente. Pura. */
+export function extrairReceiverNome(shipment: unknown): string | null {
+  const s = shipment as { destination?: { receiver_name?: string | null } | null } | null | undefined;
+  const nome = s?.destination?.receiver_name ?? null;
+  return typeof nome === 'string' && nome.trim() ? nome.trim() : null;
+}
+
 const num = (v: unknown): number | null => {
   if (v == null) return null;
   const n = Number(v);
