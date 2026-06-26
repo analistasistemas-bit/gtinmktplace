@@ -42,3 +42,11 @@ Thumbs.db
 
 # Serena MCP (config local da ferramenta)
 .serena/
+
+# Ferramentas adicionais de IA/Agentes
+.agent/
+.agents/
+.gemini/
+skills-lock.json
+uninstall-serena-codex.sh
+
