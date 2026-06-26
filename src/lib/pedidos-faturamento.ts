@@ -37,6 +37,7 @@ export interface Pedido {
   data: string | null;
   comprador_id: number | null;
   comprador_nick: string | null;
+  comprador_nome: string | null;
   /** Status de pagamento representativo do grupo (do membro mais antigo). */
   status: string;
   statusDetail: string | null;
@@ -130,6 +131,7 @@ export function agruparPorPedido(
       data: primeiro.date_closed ?? primeiro.date_created,
       comprador_id: primeiro.comprador_id ?? null,
       comprador_nick: primeiro.comprador_nick,
+      comprador_nome: primeiro.comprador_nome ?? null,
       status: primeiro.status,
       statusDetail: primeiro.status_detail,
       shipping_status: primeiro.shipping_status,

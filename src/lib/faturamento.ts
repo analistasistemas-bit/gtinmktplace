@@ -28,6 +28,7 @@ export interface Venda {
   date_closed: string | null;
   date_created: string | null;
   comprador_nick: string | null;
+  comprador_nome: string | null;
   /** id numérico do comprador no ML (coluna ml_vendas.comprador_id), p/ detectar recompra. */
   comprador_id: number | null;
   /** UF do destinatário do envio (coluna ml_vendas.uf, sem prefixo "BR-"). */

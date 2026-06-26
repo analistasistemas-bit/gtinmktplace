@@ -241,7 +241,7 @@ export function buildVendasReport(args: VendasArgs): ReportData {
     linhas: pedidos.map((p) => ({
       celulas: {
         data: fmtDataCurta(p.data),
-        comprador: p.comprador_nick ?? '—',
+        comprador: p.comprador_nome ?? p.comprador_nick ?? '—',
         produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
         unidades: fmtInt(p.unidades),
         valor: fmtBRL(p.bruto),
