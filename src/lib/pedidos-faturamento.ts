@@ -56,6 +56,10 @@ export interface Pedido {
   frete: number | null;
   /** Líquido do pedido: soma do líquido (rateado) dos membros. */
   liquido: number;
+  /** money_release_date — quando o ML libera o recebimento (representativo do grupo). null = MP não informou. */
+  money_release_date: string | null;
+  /** Total estornado no pedido (Σ estorno dos membros), em R$. */
+  estorno: number;
   /** Custo total dos produtos do pedido. null = nenhum item com custo. */
   custo: number | null;
   markup: number | null;
@@ -136,6 +140,8 @@ export function agruparPorPedido(
       statusDetail: primeiro.status_detail,
       shipping_status: primeiro.shipping_status,
       shipping_substatus: primeiro.shipping_substatus,
+      money_release_date: primeiro.money_release_date,
+      estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
       unidades, bruto, frete, liquido, custo, markup, comissao,
       rastreio: primeiro.tracking_number,
       uf: primeiro.uf ?? null,
@@ -207,17 +213,24 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
 
 const PREPOSICOES_NOME = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
 
+/** Padroniza uma palavra para "Primeira Maiúscula" (resto minúsculo), respeitando acentos. */
+function capitalizarNome(palavra: string): string {
+  if (!palavra) return palavra;
+  return palavra.charAt(0).toLocaleUpperCase('pt-BR') + palavra.slice(1).toLocaleLowerCase('pt-BR');
+}
+
 /**
  * Encurta o nome do comprador para "primeiro + segundo nome", pulando preposições
  * (de/da/do/das/dos/e) na escolha do segundo. Ex.: "Maria de Fatima Braga" → "Maria Fatima";
- * "Patricia Neves Moreira Leite" → "Patricia Neves". Mantém capitalização original.
- * null/vazio → null.
+ * "Patricia Neves Moreira Leite" → "Patricia Neves". Padroniza o casing para Primeira Maiúscula
+ * ("PATRICIA C" → "Patricia C"; "sueli gonzaga" → "Sueli Gonzaga"). null/vazio → null.
  */
 export function nomeCurtoComprador(nome: string | null | undefined): string | null {
   if (!nome) return null;
   const partes = nome.trim().split(/\s+/).filter(Boolean);
   if (partes.length === 0) return null;
-  const primeiro = partes[0];
-  const segundo = partes.slice(1).find((p) => !PREPOSICOES_NOME.has(p.toLowerCase()));
+  const primeiro = capitalizarNome(partes[0]);
+  const segundoRaw = partes.slice(1).find((p) => !PREPOSICOES_NOME.has(p.toLowerCase()));
+  const segundo = segundoRaw ? capitalizarNome(segundoRaw) : undefined;
   return segundo ? `${primeiro} ${segundo}` : primeiro;
 }

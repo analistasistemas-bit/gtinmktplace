@@ -23,16 +23,17 @@ const kpisVendas: KpisPedidos = {
   markup: 0.4, compradoresUnicos: 2, pctRecompra: 0, porStatusEnvio: {},
 };
 
-const pedido = (chave: string): Pedido => ({
+const pedido = (chave: string, over: Partial<Pedido> = {}): Pedido => ({
   chave, isPack: false, orderIds: [Number(chave)], data: '2026-06-10T00:00:00Z',
-  comprador_id: 1, comprador_nick: 'fulano', status: 'paid', statusDetail: null,
+  comprador_id: 1, comprador_nick: 'fulano', comprador_nome: null, status: 'paid', statusDetail: null,
   shipping_status: 'shipped', shipping_substatus: null, uf: 'SP', cidade: 'São Paulo',
-  unidades: 2, bruto: 150, frete: null, liquido: 120, custo: 80, markup: 0.5,
-  comissao: 20, rastreio: null, is_publiai: true, tem_devolucao: false,
+  unidades: 2, bruto: 150, frete: null, liquido: 120, money_release_date: null, estorno: 0,
+  custo: 80, markup: 0.5, comissao: 20, rastreio: null, is_publiai: true, tem_devolucao: false,
   itens: [
     { id: 'i1', ml_item_id: 'MLB1', titulo: 'Fita', codigo: 'C1', cor: 'azul', ean: '789',
       quantity: 2, unit_price: 75, imagem_path: null, custo: 80, liquido: 120, markup: 0.5 },
   ],
+  ...over,
 });
 
 describe('rotuloPeriodo', () => {
@@ -68,21 +69,36 @@ describe('buildVendasReport', () => {
 });
 
 describe('buildFinanceiroDetalheReport', () => {
-  const venda = (over = {}) => ({
-    id: '1', orderId: 1, data: '2026-06-10T00:00:00Z', dataLiberacao: '2020-01-01T00:00:00Z',
-    descricao: 'Produto X', codigo: 'C9', bruto: 100, liquido: 80, retido: 20, estorno: 0, custo: 50, ...over,
-  });
+  const totais = { bruto: 150, retido: 30, liquido: 120, markup: 0.5 };
 
   it('Liberação inclui "liberado" quando data no passado (sem coluna Situação separada, como a tela)', () => {
-    const r = buildFinanceiroDetalheReport({ vendas: [venda()], totais: { bruto: 100, retido: 20, liquido: 80, markup: 0.6 }, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    const p = pedido('1', { comprador_nome: 'Maria de Fatima Braga', money_release_date: '2020-01-01T00:00:00Z' });
+    const r = buildFinanceiroDetalheReport({ pedidos: [p], totais, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
     expect(r.linhas[0].celulas.situacao).toBeUndefined();
     expect(String(r.linhas[0].celulas.liberacao)).toContain('liberado');
     expect(r.colunas.some((c) => c.chave === 'situacao')).toBe(false);
   });
 
+  it('primeiras colunas espelham o Faturamento: Data, Comprador, Produtos, Un.', () => {
+    const p = pedido('1', { comprador_nome: 'Maria de Fatima Braga' });
+    const r = buildFinanceiroDetalheReport({ pedidos: [p], totais, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    expect(r.colunas.slice(0, 4).map((c) => c.titulo)).toEqual(['Data', 'Comprador', 'Produtos', 'Un.']);
+    expect(r.linhas[0].celulas.comprador).toBe('Maria de Fatima Braga');
+    expect(r.linhas[0].celulas.unidades).toBe('2');
+    expect(r.linhas[0].celulas.produtos).toBe('C1'); // código do item (texto), como no Faturamento
+  });
+
   it('Liberação inclui "a liberar" quando data no futuro', () => {
-    const r = buildFinanceiroDetalheReport({ vendas: [venda({ dataLiberacao: '2099-01-01T00:00:00Z' })], totais: { bruto: 100, retido: 20, liquido: 80, markup: null }, filtroLib: 'aliberar', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    const p = pedido('1', { money_release_date: '2099-01-01T00:00:00Z' });
+    const r = buildFinanceiroDetalheReport({ pedidos: [p], totais: { ...totais, markup: null }, filtroLib: 'aliberar', periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
     expect(String(r.linhas[0].celulas.liberacao)).toContain('a liberar');
+  });
+
+  it('expandido: inclui sublinhas com os itens do pedido', () => {
+    const p = pedido('1');
+    const r = buildFinanceiroDetalheReport({ pedidos: [p], totais, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg({ expandido: true }) });
+    expect(r.linhas[0].sublinhas?.linhas).toHaveLength(1);
+    expect(r.linhas[0].sublinhas?.linhas[0].item).toBe('Fita');
   });
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, ChevronRight, DollarSign, ShoppingBag, Package, Target, TrendingUp,
-  RefreshCw, ExternalLink, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown,
+  RefreshCw, RotateCcw, ArrowUp, ArrowDown, ChevronsUpDown,
   Truck, Layers, Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -10,11 +10,12 @@ import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
-import { useImageUrl } from '@/hooks/useImageUrl';
 import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
-import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, type Pedido, type ItemPedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, type Pedido } from '@/lib/pedidos-faturamento';
+import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
+import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildVendasReport } from '@/lib/export/adapters';
@@ -104,42 +105,10 @@ function Kpi({ icon: Icon, label, valor, tom: tomProp, valorCor, sub }: {
   );
 }
 
-/** Miniatura quadrada da foto do produto (signed URL). Fallback: ícone de pacote. */
-function ThumbProduto({ path, titulo, size = 36 }: { path: string | null; titulo: string | null; size?: number }) {
-  const { data: url } = useImageUrl(path);
-  return (
-    <div
-      className="relative shrink-0 overflow-hidden rounded-md border bg-muted"
-      style={{ width: size, height: size }}
-      title={titulo ?? undefined}
-    >
-      {url
-        ? <img src={url} alt={titulo ?? ''} loading="lazy" className="h-full w-full object-cover" />
-        : <Package className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />}
-    </div>
-  );
-}
-
-/** Pilha de até 3 miniaturas dos produtos do pedido + contador "+N". */
-function PilhaThumbs({ itens }: { itens: ItemPedido[] }) {
-  const MAX = 3;
-  const visiveis = itens.slice(0, MAX);
-  const resto = itens.length - visiveis.length;
-  return (
-    <div className="flex items-center gap-1">
-      {visiveis.map((it) => <ThumbProduto key={it.id} path={it.imagem_path} titulo={it.titulo} />)}
-      {resto > 0 && <span className="text-xs font-medium tabular-nums text-muted-foreground">+{resto}</span>}
-    </div>
-  );
-}
-
 function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVisto?: () => void }) {
   const [aberto, setAberto] = useState(false);
   const pgto = labelStatusPedido(p.status);
   const envio = labelStatusEnvio(p.shipping_status, p.shipping_substatus);
-  const urlVenda = p.isPack
-    ? `https://www.mercadolivre.com.br/vendas/pacote/${p.chave}/detalhe`
-    : `https://www.mercadolivre.com.br/vendas/${p.orderIds[0]}/detalhe`;
   const markupCor = p.markup == null ? undefined
     : p.markup >= 0 ? 'text-success' : 'text-destructive';
 
@@ -191,64 +160,7 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
       {aberto && (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
           <TableCell colSpan={11} className="p-0">
-            <div className="px-10 py-3">
-              <div className="mb-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
-                <div>
-                  {p.isPack
-                    ? <>Pack <span className="font-medium text-foreground tabular-nums">{p.chave}</span></>
-                    : <>Pedido <span className="font-medium text-foreground tabular-nums">{p.orderIds[0]}</span></>}
-                </div>
-                <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.comissao)}</span></div>
-                <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{p.frete != null ? fmtBRL(p.frete) : '—'}</span></div>
-                <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>
-              </div>
-              <Table className="text-xs">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead>Cor</TableHead>
-                    <TableHead>Código</TableHead>
-                    <TableHead>EAN</TableHead>
-                    <TableHead className="text-right">Qtd</TableHead>
-                    <TableHead className="text-right">Preço un.</TableHead>
-                    <TableHead className="text-right">Custo</TableHead>
-                    <TableHead className="text-right">Líquido</TableHead>
-                    <TableHead className="text-right">Markup</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {p.itens.map((it) => {
-                    const mCor = it.markup == null ? undefined
-                      : it.markup >= 0 ? 'text-success' : 'text-destructive';
-                    return (
-                      <TableRow key={it.id}>
-                        <TableCell className="max-w-[280px] uppercase" title={it.titulo ?? ''}>
-                          <span className="flex items-center gap-2">
-                            <ThumbProduto path={it.imagem_path} titulo={it.titulo} size={28} />
-                            <span className="truncate">{it.titulo ?? '—'}</span>
-                          </span>
-                        </TableCell>
-                        <TableCell>{it.cor ?? '—'}</TableCell>
-                        <TableCell className="tabular-nums">{it.codigo ?? '—'}</TableCell>
-                        <TableCell className="tabular-nums">{it.ean ?? '—'}</TableCell>
-                        <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
-                        <TableCell className="text-right tabular-nums">{fmtBRL(it.unit_price)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{it.custo != null ? fmtBRL(it.custo) : '—'}</TableCell>
-                        <TableCell className="text-right tabular-nums text-success">{fmtBRL(it.liquido)}</TableCell>
-                        <TableCell className={cn('text-right tabular-nums', mCor)}>
-                          {it.markup != null ? fmtMarkup(it.markup) : '—'}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              <div className="mt-2">
-                <a href={urlVenda} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-info hover:underline">
-                  Ver no Mercado Livre <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-            </div>
+            <DetalhePedidoItens pedido={p} />
           </TableCell>
         </TableRow>
       )}

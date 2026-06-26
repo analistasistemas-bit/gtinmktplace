@@ -133,6 +133,12 @@ describe('nomeCurtoComprador', () => {
   it('nome único devolve só ele', () => {
     expect(nomeCurtoComprador('Madonna')).toBe('Madonna');
   });
+  it('padroniza casing para Primeira Maiúscula nos dois nomes', () => {
+    expect(nomeCurtoComprador('PATRICIA C')).toBe('Patricia C');
+    expect(nomeCurtoComprador('sueli gonzaga')).toBe('Sueli Gonzaga');
+    expect(nomeCurtoComprador('ROSELI Silva')).toBe('Roseli Silva');
+    expect(nomeCurtoComprador('MARIA DE FATIMA BRAGA')).toBe('Maria Fatima');
+  });
   it('normaliza espaços e devolve null para vazio/null', () => {
     expect(nomeCurtoComprador('  João   Pedro  Costa ')).toBe('João Pedro');
     expect(nomeCurtoComprador('')).toBeNull();
