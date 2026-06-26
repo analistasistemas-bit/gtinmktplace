@@ -1,27 +1,31 @@
 import { HashRouter, Routes, Route } from 'react-router-dom';
+import { Suspense, lazy } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { ProtectedRoute } from '@/components/protected-route';
-import Login from '@/pages/Login';
-import Cadastro from '@/pages/Cadastro';
-import ResetSenha from '@/pages/ResetSenha';
-import Dashboard from '@/pages/Dashboard';
-import NovoLote from '@/pages/NovoLote';
-import Progresso from '@/pages/Progresso';
-import Revisao from '@/pages/Revisao';
-import RevisaoIndex from '@/pages/RevisaoIndex';
-import Relatorio from '@/pages/Relatorio';
-import Configuracoes from '@/pages/Configuracoes';
-import Publicados from '@/pages/Publicados';
-import DetalheVendas from '@/pages/DetalheVendas';
-import Faturamento from '@/pages/Faturamento';
-import Financeiro from '@/pages/Financeiro';
-import DetalheFinanceiro from '@/pages/DetalheFinanceiro';
-import Viabilidade from '@/pages/Viabilidade';
-import StyleGuide from '@/pages/StyleGuide';
-import NotFound from '@/pages/NotFound';
+
+// Páginas carregadas sob demanda (code-splitting): tira recharts/jspdf/xlsx do bundle inicial.
+const Login = lazy(() => import('@/pages/Login'));
+const Cadastro = lazy(() => import('@/pages/Cadastro'));
+const ResetSenha = lazy(() => import('@/pages/ResetSenha'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const NovoLote = lazy(() => import('@/pages/NovoLote'));
+const Progresso = lazy(() => import('@/pages/Progresso'));
+const Revisao = lazy(() => import('@/pages/Revisao'));
+const RevisaoIndex = lazy(() => import('@/pages/RevisaoIndex'));
+const Relatorio = lazy(() => import('@/pages/Relatorio'));
+const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
+const Publicados = lazy(() => import('@/pages/Publicados'));
+const DetalheVendas = lazy(() => import('@/pages/DetalheVendas'));
+const Faturamento = lazy(() => import('@/pages/Faturamento'));
+const Financeiro = lazy(() => import('@/pages/Financeiro'));
+const DetalheFinanceiro = lazy(() => import('@/pages/DetalheFinanceiro'));
+const Viabilidade = lazy(() => import('@/pages/Viabilidade'));
+const StyleGuide = lazy(() => import('@/pages/StyleGuide'));
+const NotFound = lazy(() => import('@/pages/NotFound'));
 
 export function AppRoutes() {
   return (
+    <Suspense fallback={<div className="grid min-h-screen place-items-center"><div className="size-6 animate-spin rounded-full border-2 border-muted border-t-foreground" /></div>}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/cadastro" element={<Cadastro />} />
@@ -48,6 +52,7 @@ export function AppRoutes() {
 
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   );
 }
 
