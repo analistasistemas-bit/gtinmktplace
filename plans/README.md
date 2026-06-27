@@ -14,10 +14,10 @@ sua linha de status ao terminar.
 | 001  | ESLint deixa de varrer `.claude/` | P1 | S | — | DONE |
 | 002  | Remover worktrees órfãos (~437 MB) | P1 | S | — | DONE |
 | 003  | Associar labels aos inputs (a11y) | P2 | S | — | DONE |
-| 004  | Congelar `verify_jwt` por função em `config.toml` | P1 | S | — | TODO |
-| 005  | Retry do `process-familia` por status, não regex no texto | P1 | S | — | TODO |
-| 006  | `buscarVendas` sem baixar coluna `raw` | P1 | S | (coord. 013) | TODO |
-| 007  | `.env.example` com secrets de backend faltantes | P1 | S | — | TODO |
+| 004  | Congelar `verify_jwt` por função em `config.toml` | P1 | S | — | DONE (merged+push; **pendente deploy** das edges p/ valer) |
+| 005  | Retry do `process-familia` por status, não regex no texto | P1 | S | — | DONE (merged+push; testes verdes; **pendente deploy** do process-familia) |
+| 006  | `buscarVendas` sem baixar coluna `raw` | P1 | S | (coord. 013) | DONE (merged+push; validado ao vivo via browser-use) |
+| 007  | `.env.example` com secrets de backend faltantes | P1 | S | — | DONE (merged+push) |
 | 008  | Higiene de docs (índice ADRs, stack, staleness) | P2 | S | — | TODO |
 | 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | TODO |
 | 010  | CI mínimo (`.github`) | P2 | S | 009 | TODO |
