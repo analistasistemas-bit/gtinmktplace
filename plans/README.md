@@ -19,8 +19,8 @@ sua linha de status ao terminar.
 | 006  | `buscarVendas` sem baixar coluna `raw` | P1 | S | (coord. 013) | DONE (merged+push; validado ao vivo via browser-use) |
 | 007  | `.env.example` com secrets de backend faltantes | P1 | S | — | DONE (merged+push) |
 | 008  | Higiene de docs (índice ADRs, stack, staleness) | P2 | S | — | DONE (merged+push; índice 0001-0043, OpenRouter, banner ROADMAP, project-status corrigido; renumber dos ADRs dup fica p/ decisão sua) |
-| 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | TODO |
-| 010  | CI mínimo (`.github`) | P2 | S | 009 | TODO |
+| 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | DONE (merged+push; baseline 15 itens menores registrada — não corrigida; `no-import-prefix` excluída por ser idiomática Supabase) |
+| 010  | CI mínimo (`.github`) | P2 | S | 009 | DONE (merged+push; frontend bloqueante, backend-lint report-only até zerar baseline; falta Diego habilitar Actions no GitHub) |
 | 011  | Characterization tests de `custos.ts` (dinheiro) | P1 | S | — | TODO |
 | 012  | Unique key + upsert idempotente em `ml_vendas_itens` | P1 | M | (ideal após 011, 009) | TODO |
 | 013  | Paginar queries de dinheiro (teto ~1000) | P2 | M | coord. 006, 011 | TODO |
@@ -88,6 +88,12 @@ Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 
 ## Follow-ups destravados pelos planos
 
-- **Plan 009** destrava: corrigir o backlog do `deno lint` (incl. `_shared/ml/criar-item.ts:36`
-  `no-misleading-character-class`), fazer `deno check` resolver imports e tipar os handlers, e habilitar
-  `deno test` para testar a orquestração de `token.ts` (`getValidAccessToken`) e `io.ts` — o que estende o Plan 011.
+- **Plan 009 (DONE) — baseline do `deno lint` a zerar** (15 itens menores; `no-import-prefix` foi excluída por
+  ser convenção idiomática do Supabase Edge): **11** `no-explicit-any` (`_shared/anuncios/espelhar.ts:77`,
+  `regenerar-copy-familia:43,52`, `upload-imagens-lote/processar.ts` ×7), **2** `no-inner-declarations`
+  (`publish-familia-ml:121`, `update-familia-ml:84`), **1** `require-await` (`_shared/redis/client.ts:19`),
+  **1** `ban-unused-ignore` (`espelhar.ts:75`). Ao zerar, remover `continue-on-error` do job `backend-lint` (CI).
+  Nota: `criar-item.ts:36` (`no-misleading-character-class`) é regra do **ESLint**, NÃO do deno-lint — não
+  apareceu nesta baseline; tratar à parte se incomodar.
+- **Outros follow-ups do 009**: fazer `deno check` resolver imports e tipar os handlers; habilitar `deno test`
+  p/ a orquestração de `token.ts` (`getValidAccessToken`) e `io.ts` — o que estende o Plan 011.

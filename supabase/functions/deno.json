@@ -1,0 +1,15 @@
+{
+  "lint": {
+    "include": ["."],
+    "exclude": ["**/__tests__/**"],
+    "rules": {
+      "exclude": ["no-import-prefix"]
+    }
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "singleQuote": true,
+    "semiColons": true
+  }
+}
