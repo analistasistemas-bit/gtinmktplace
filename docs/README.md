@@ -74,14 +74,13 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
-> A tabela acima é uma seleção curada. O **índice completo** (0001–0043) está logo abaixo.
+> A tabela acima é uma seleção curada. O **índice completo** (0001–0045) está logo abaixo.
 
-## Índice completo de ADRs (0001–0043)
+## Índice completo de ADRs (0001–0045)
 
-> ⚠️ **Colisão de numeração:** existem **dois** ADRs com o número `0035` e **dois** com `0037`
-> (marcados ⚠️ abaixo). Citações soltas a "ADR-0035"/"ADR-0037" são ambíguas. Resolver isso
-> (renumerar para 0044/0045 vs. formalizar exceção à regra "nunca renumerar") é decisão do
-> operador — ver `plans/008` e `docs/decisions/README.md`.
+> A antiga colisão de numeração (dois `0035` e dois `0037`) foi **resolvida em 2026-06-27**:
+> `cor-no-titulo-mono-cor` virou **0044** e `vendas-catalogo-match-ean` virou **0045**. Cada
+> número agora mapeia para um único ADR. Detalhe em `docs/decisions/README.md`.
 
 | ADR | Decisão |
 |---|---|
@@ -119,17 +118,17 @@ docs/
 | 0032 | [KPIs de Publicados contam a conta inteira](decisions/0032-kpis-publicados-contam-conta-inteira.md) |
 | 0033 | [Retry interno de foto em processamento](decisions/0033-retry-interno-foto-em-processamento.md) |
 | 0034 | [Serialização da publicação ML](decisions/0034-serializacao-publicacao-ml.md) |
-| 0035 ⚠️ | [Cor no título (mono-cor)](decisions/0035-cor-no-titulo-mono-cor.md) — **colide com o 0035 abaixo** |
-| 0035 ⚠️ | [Monitoramento de anúncios moderados](decisions/0035-monitoramento-anuncios-moderados.md) — **colide com o 0035 acima** |
+| 0035 | [Monitoramento de anúncios moderados](decisions/0035-monitoramento-anuncios-moderados.md) |
 | 0036 | [Alerta de catálogo sem match](decisions/0036-alerta-catalogo-no-match.md) |
-| 0037 ⚠️ | [Módulo Faturamento (webhooks ML)](decisions/0037-modulo-faturamento-webhooks-ml.md) — **colide com o 0037 abaixo** |
-| 0037 ⚠️ | [Vendas: catálogo match por EAN](decisions/0037-vendas-catalogo-match-ean.md) — **colide com o 0037 acima** |
+| 0037 | [Módulo Faturamento (webhooks ML)](decisions/0037-modulo-faturamento-webhooks-ml.md) |
 | 0038 | [Fonte única `ml_vendas` para KPIs](decisions/0038-fonte-unica-ml-vendas-kpis.md) |
 | 0039 | [Faturamento por pedido + geografia + KPIs](decisions/0039-faturamento-por-pedido-geografia-kpis.md) |
 | 0040 | [Financeiro: caixa, evolução, notificação](decisions/0040-financeiro-caixa-evolucao-notificacao.md) |
 | 0041 | [Preço de atacado PxQ B2B](decisions/0041-preco-atacado-pxq-b2b.md) |
 | 0042 | [Líquido econômico (cross-docking)](decisions/0042-liquido-economico-cross-docking.md) |
 | 0043 | [Fluxo canônico de migrations](decisions/0043-fluxo-canonico-de-migrations.md) |
+| 0044 | [Cor no título mono-cor — anti-duplicado ML](decisions/0044-cor-no-titulo-mono-cor.md) *(ex-0035)* |
+| 0045 | [Atribuição de venda por EAN (catálogo ML)](decisions/0045-vendas-catalogo-match-ean.md) *(ex-0037)* |
 
 ## Status do projeto
 

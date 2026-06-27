@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
   const ids = [...new Set((familias ?? []).map((f) => f.ml_item_id as string))];
 
   // Mapa GTIN → ml_item_id da família dona dele: permite atribuir vendas de catálogo do ML ao
-  // produto do usuário por EAN, mesmo quando o pedido entra com o MLB do anúncio âncora (ADR-0037).
+  // produto do usuário por EAN, mesmo quando o pedido entra com o MLB do anúncio âncora (ADR-0045).
   const itemPorFamilia = new Map((familias ?? []).map((f) => [f.id as string, f.ml_item_id as string]));
   const mapaGtin: Record<string, string> = {};
   if (itemPorFamilia.size > 0) {

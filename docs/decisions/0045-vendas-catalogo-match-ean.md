@@ -1,4 +1,6 @@
-# ADR-0037 — Atribuição de venda por EAN (catálogo do ML)
+# ADR-0045 — Atribuição de venda por EAN (catálogo do ML)
+
+> Renumerado de ADR-0037 → ADR-0045 em 2026-06-27 (resolução de colisão de numeração; ver `README.md`).
 
 **Data:** 2026-06-22
 **Status:** aceito

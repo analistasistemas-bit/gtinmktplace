@@ -1,4 +1,6 @@
-# ADR-0035 — Cor no título de anúncios mono-cor (anti-duplicado do ML)
+# ADR-0044 — Cor no título de anúncios mono-cor (anti-duplicado do ML)
+
+> Renumerado de ADR-0035 → ADR-0044 em 2026-06-27 (resolução de colisão de numeração; ver `README.md`).
 
 **Status:** Aceito
 **Data:** 2026-06-22

@@ -76,7 +76,7 @@ export function extrairGtin(attrs: AtributoML[] | undefined | null): string | un
 }
 
 /**
- * Pura: atribui vendas de catálogo (itens externos) ao anúncio do usuário por GTIN (ADR-0037).
+ * Pura: atribui vendas de catálogo (itens externos) ao anúncio do usuário por GTIN (ADR-0045).
  * Item externo cujo GTIN ∈ mapaGtin tem unidades/valor somados em porItem[ml_item_id] e some do
  * externo; os demais continuam externos. Não muta os objetos de entrada.
  * - gtinPorItem: itemExternoId → GTIN (vindo da API; ausente quando não foi possível ler)
@@ -123,7 +123,7 @@ export function montarExternos(
 
 /**
  * Resolve título e GTIN de N itens via /items em lote (resiliente: bloco que falha é ignorado).
- * O GTIN serve para reclassificar venda de catálogo no produto do usuário (ADR-0037).
+ * O GTIN serve para reclassificar venda de catálogo no produto do usuário (ADR-0045).
  */
 async function buscarTitulosEGtins(
   token: string,
@@ -222,7 +222,7 @@ export async function lerVendasML(
 
   const agg = agregarPedidos(pedidos, escopo);
   // Enriquece os externos com título + GTIN; o GTIN reclassifica vendas de catálogo no produto
-  // do usuário (ADR-0037). Mesma chamada /items, sem custo extra de rede.
+  // do usuário (ADR-0045). Mesma chamada /items, sem custo extra de rede.
   const { titulos, gtins } = await buscarTitulosEGtins(token, Object.keys(agg.porItemExterno), signal);
   const { porItem, porItemExterno } = reclassificarPorGtin(agg.porItem, agg.porItemExterno, gtins, mapaGtin);
   return {
