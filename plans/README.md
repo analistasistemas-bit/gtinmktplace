@@ -18,7 +18,7 @@ sua linha de status ao terminar.
 | 005  | Retry do `process-familia` por status, não regex no texto | P1 | S | — | DONE (merged+push; testes verdes; **pendente deploy** do process-familia) |
 | 006  | `buscarVendas` sem baixar coluna `raw` | P1 | S | (coord. 013) | DONE (merged+push; validado ao vivo via browser-use) |
 | 007  | `.env.example` com secrets de backend faltantes | P1 | S | — | DONE (merged+push) |
-| 008  | Higiene de docs (índice ADRs, stack, staleness) | P2 | S | — | TODO |
+| 008  | Higiene de docs (índice ADRs, stack, staleness) | P2 | S | — | DONE (merged+push; índice 0001-0043, OpenRouter, banner ROADMAP, project-status corrigido; renumber dos ADRs dup fica p/ decisão sua) |
 | 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | TODO |
 | 010  | CI mínimo (`.github`) | P2 | S | 009 | TODO |
 | 011  | Characterization tests de `custos.ts` (dinheiro) | P1 | S | — | TODO |

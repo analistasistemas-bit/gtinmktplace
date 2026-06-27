@@ -74,6 +74,63 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
+> A tabela acima é uma seleção curada. O **índice completo** (0001–0043) está logo abaixo.
+
+## Índice completo de ADRs (0001–0043)
+
+> ⚠️ **Colisão de numeração:** existem **dois** ADRs com o número `0035` e **dois** com `0037`
+> (marcados ⚠️ abaixo). Citações soltas a "ADR-0035"/"ADR-0037" são ambíguas. Resolver isso
+> (renumerar para 0044/0045 vs. formalizar exceção à regra "nunca renumerar") é decisão do
+> operador — ver `plans/008` e `docs/decisions/README.md`.
+
+| ADR | Decisão |
+|---|---|
+| 0001 | [Stack tecnológico](decisions/0001-stack-tecnologico.md) |
+| 0002 | [MVP: aviamentos primeiro](decisions/0002-mvp-aviamentos-primeiro.md) |
+| 0003 | [Variações agrupadas por PAI](decisions/0003-variacoes-agrupadas-por-pai.md) |
+| 0004 | [Atribuição de cor](decisions/0004-atribuicao-de-cor.md) |
+| 0005 | [Lifecycle publish/update](decisions/0005-lifecycle-publish-and-update.md) |
+| 0006 | [QStash em vez de fila no Postgres](decisions/0006-qstash-em-vez-de-postgres-queue.md) |
+| 0007 | [Modelo de dados (4 tabelas)](decisions/0007-modelo-de-dados-4-tabelas.md) |
+| 0008 | [Estratégia de preço condicional](decisions/0008-estrategia-de-preco-condicional.md) |
+| 0009 | [Campos do payload ML + categoria determinística](decisions/0009-campos-payload-ml-e-categoria-deterministica.md) |
+| 0010 | [OpenRouter em vez de OpenAI direto](decisions/0010-openrouter-em-vez-de-openai-direto.md) |
+| 0011 | [Redirect URI via Edge Function](decisions/0011-redirect-uri-via-edge-function.md) |
+| 0012 | [Refresh token OAuth ML com lock Redis](decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) |
+| 0013 | [Edge cases da planilha no ingest](decisions/0013-edge-cases-da-planilha-no-ingest.md) |
+| 0014 | [Busca de concorrência](decisions/0014-busca-de-concorrencia.md) |
+| 0015 | [Potencial de venda via proxies](decisions/0015-potencial-de-venda-via-proxies.md) |
+| 0016 | [Publicação UPDATE / reposição de estoque](decisions/0016-publicacao-update-reposicao-estoque.md) |
+| 0017 | [Selo de desconto via API de promoções](decisions/0017-selo-de-desconto-via-api-de-promocoes.md) |
+| 0018 | [Dimensões e peso no payload ML](decisions/0018-dimensoes-e-peso-no-payload-ml.md) |
+| 0019 | [Exclusão de lote preserva publicados](decisions/0019-exclusao-lote-preserva-publicados.md) |
+| 0020 | [Estratégia de preço líquido mínimo](decisions/0020-estrategia-de-preco-liquido-minimo.md) |
+| 0021 | [Vinculação automática ao catálogo ML](decisions/0021-vinculacao-automatica-ao-catalogo-ml.md) |
+| 0022 | [Categoria "cola" e seletor manual](decisions/0022-categoria-cola-e-seletor-manual.md) |
+| 0023 | [Preço acima do abismo de tarifa fixa](decisions/0023-preco-acima-do-abismo-de-tarifa-fixa.md) |
+| 0024 | [Camada de abstração de canais](decisions/0024-camada-de-abstracao-de-canais.md) |
+| 0025 | [Modelo de dados multicanal](decisions/0025-modelo-de-dados-multicanal.md) |
+| 0026 | [Generalização da categorização/atributos por IA](decisions/0026-generalizacao-categorizacao-atributos-por-ia.md) |
+| 0027 | [Multi-tenancy (organizations)](decisions/0027-multi-tenancy-organizations.md) |
+| 0028 | [Monetização e billing](decisions/0028-monetizacao-e-billing.md) |
+| 0029 | [Cor sem foto entra desmarcada no CREATE](decisions/0029-cor-sem-foto-entra-desmarcada-no-create.md) |
+| 0030 | [Reprocessamento de família em erro](decisions/0030-reprocessamento-de-familia-em-erro.md) |
+| 0031 | [Integração financeira Mercado Pago](decisions/0031-integracao-financeira-mercado-pago.md) |
+| 0032 | [KPIs de Publicados contam a conta inteira](decisions/0032-kpis-publicados-contam-conta-inteira.md) |
+| 0033 | [Retry interno de foto em processamento](decisions/0033-retry-interno-foto-em-processamento.md) |
+| 0034 | [Serialização da publicação ML](decisions/0034-serializacao-publicacao-ml.md) |
+| 0035 ⚠️ | [Cor no título (mono-cor)](decisions/0035-cor-no-titulo-mono-cor.md) — **colide com o 0035 abaixo** |
+| 0035 ⚠️ | [Monitoramento de anúncios moderados](decisions/0035-monitoramento-anuncios-moderados.md) — **colide com o 0035 acima** |
+| 0036 | [Alerta de catálogo sem match](decisions/0036-alerta-catalogo-no-match.md) |
+| 0037 ⚠️ | [Módulo Faturamento (webhooks ML)](decisions/0037-modulo-faturamento-webhooks-ml.md) — **colide com o 0037 abaixo** |
+| 0037 ⚠️ | [Vendas: catálogo match por EAN](decisions/0037-vendas-catalogo-match-ean.md) — **colide com o 0037 acima** |
+| 0038 | [Fonte única `ml_vendas` para KPIs](decisions/0038-fonte-unica-ml-vendas-kpis.md) |
+| 0039 | [Faturamento por pedido + geografia + KPIs](decisions/0039-faturamento-por-pedido-geografia-kpis.md) |
+| 0040 | [Financeiro: caixa, evolução, notificação](decisions/0040-financeiro-caixa-evolucao-notificacao.md) |
+| 0041 | [Preço de atacado PxQ B2B](decisions/0041-preco-atacado-pxq-b2b.md) |
+| 0042 | [Líquido econômico (cross-docking)](decisions/0042-liquido-economico-cross-docking.md) |
+| 0043 | [Fluxo canônico de migrations](decisions/0043-fluxo-canonico-de-migrations.md) |
+
 ## Status do projeto
 
 - O snapshot confiável fica em [project-status.md](project-status.md).
@@ -82,11 +139,11 @@ docs/
 
 ## Stack confirmado
 
-- **Frontend:** React 18 + TypeScript + Vite + shadcn/ui + Tailwind + TanStack Query
+- **Frontend:** React 18 + TypeScript + Vite + shadcn/ui + Tailwind + TanStack Query + Zustand
 - **Backend / DB / Storage / Auth:** Supabase (Postgres + Edge Functions + Storage + Realtime)
 - **Hospedagem do frontend:** Render Static Site
 - **Fila + cache:** Upstash QStash (fila assíncrona com retry) + Upstash Redis (cache de concorrência)
-- **IA:** OpenAI GPT-4o-mini (copy) + OpenAI Vision (detecção de cor por foto)
+- **IA:** OpenRouter (gateway compatível com OpenAI SDK) com modelos OpenAI — GPT-4o-mini (copy) + GPT-4o Vision (detecção de cor por foto) — ver ADR-0010
 - **Integração externa:** Mercado Livre API (OAuth 2.0)
 
 ## Autoria
