@@ -27,7 +27,6 @@ sua linha de status ao terminar.
 | 014  | Lazy-load jspdf/xlsx (dynamic import) | P2 | M | — | TODO |
 | 015  | Fonte única de `round2` + BRL sem símbolo | P2 | S | — | TODO |
 | 016  | Teste de paridade preço/desconto FE↔BE | P3 | S | — | TODO |
-| 017  | `telegram_bot_token` via Vault (não texto puro) + rotação | P2 | L | coord. 004 | TODO |
 
 Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 
@@ -41,8 +40,6 @@ Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 4. **Integridade de dinheiro**: 011 (rede de testes) primeiro; depois 012 (unique key) e 013 (paginação).
    012 idealmente após 009 (deno check valida o `io.ts`) e 011.
 5. **Perf + tech-debt (P2/P3)**: 014, 015, 016.
-6. **Segurança (P2)**: 017 — `telegram_bot_token` para o Vault (espelha `ml_credentials`). L effort,
-   sequenciamento de deploy cuidadoso + rotação do token. Coordena com 004 (a edge function nova entra no `config.toml`).
 
 ## Dependency notes
 
@@ -70,9 +67,9 @@ Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 
 ## Findings NÃO selecionados para plano agora (reais, disponíveis se quiser)
 
-- ~~`telegram_bot_token` em texto puro~~ → **agora é o Plan 017** (selecionado depois). Token plaintext na
-  `configuracoes`, selecionável pelo cliente (RLS row-level, não por coluna); fix = Vault + edge function +
-  rotação do token.
+- **`telegram_bot_token` em texto puro** (security, HIGH conf, real): token plaintext na `configuracoes`,
+  selecionável pelo cliente (RLS row-level, não por coluna). **Declinado pelo operador** (2026-06-26): o fix
+  correto (Vault) implica **rotacionar** o token, e ele não quer esse overhead. Não re-auditar como pendente.
 - **Devoluções "no escuro"** (direction): `sync-devolucao` + IO existem, mas `devolucoes-io.ts:8-23` engole 403
   de permissão → operador vê "zero devoluções" indistinguível de "permissão bloqueada". Fix barato = distinguir
   403 de vazio na UI.
