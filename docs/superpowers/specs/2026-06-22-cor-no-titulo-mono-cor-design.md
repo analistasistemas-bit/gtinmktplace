@@ -73,6 +73,6 @@ Unitários de `garantirCorTitulo` em `_shared/ai/__tests__/`:
 
 ## Entrega
 
-- ADR-0035 (regra do projeto: decisão nova não-trivial).
+- ADR-0044 (regra do projeto: decisão nova não-trivial).
 - Branch isolada (worktree `prevencao-titulo-cor`); Diego valida; merge sob comando.
 - Deploy: `process-familia` e `regenerar-copy-familia` (ambas importam `_shared/ai/titulo.ts`).

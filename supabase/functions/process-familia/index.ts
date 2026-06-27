@@ -235,7 +235,7 @@ Deno.serve(async (req) => {
     // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final.
     // estrategia_preco já vem minúscula de sugerirPrecoVenda (bate com o enum); garante tipo_origem
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
-    // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0035): famílias-irmãs que
+    // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044): famílias-irmãs que
     // diferem só na cor (PAI separado) não podem ter título idêntico.
     const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
     const { error: persistErr } = await admin.from('familias').update({

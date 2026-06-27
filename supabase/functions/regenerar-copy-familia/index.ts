@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       })),
     });
 
-    // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0035).
+    // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
     const coresUnicas = [...new Set((familia.variacoes ?? [])
       .map((v: any) => v.cor as string | null).filter((c: string | null): c is string => !!c))];
     const tituloFinal = garantirCorTitulo(

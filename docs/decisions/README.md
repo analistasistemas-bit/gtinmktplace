@@ -43,6 +43,8 @@ O que decidimos fazer? Em uma ou duas frases diretas.
 
 ADRs são numerados sequencialmente (0001, 0002, ...) e **nunca são renumerados**. Mesmo que um ADR seja obsoletado, ele fica aqui — só muda o status.
 
+> **Exceção única (2026-06-27):** houve uma *colisão* de numeração — dois ADRs com `0035` e dois com `0037` (erro de criação, não um ADR settled a renomear). Para restaurar a invariante "1 número → 1 ADR", os de menor impacto de referência foram renumerados: `0035-cor-no-titulo-mono-cor` → **0044** e `0037-vendas-catalogo-match-ean` → **0045**. Isso resolve a ambiguidade e **não** é precedente para renumerar ADRs válidos.
+
 ## Lista atual
 
 Veja o [README principal](../README.md#onde-encontrar-o-quê) para a tabela completa dos ADRs vigentes.
