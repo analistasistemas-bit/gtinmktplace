@@ -8,11 +8,16 @@
 
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
+import { verificarAssinatura } from '../_shared/queue.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
 import { enviarTelegram, montarMensagemLiberacao } from '../_shared/notificacoes/telegram.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
+  if (req.method !== 'POST') return json({ erro: 'Method not allowed' }, 405);
+  // Função pública (verify_jwt=false): autentica pela assinatura do QStash, como os demais workers.
+  const body = await req.text();
+  if (!(await verificarAssinatura(req, body))) return json({ erro: 'Invalid signature' }, 401);
 
   const admin = adminClient();
 
