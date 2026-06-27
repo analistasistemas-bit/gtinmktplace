@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import type { Janela } from './metricas';
 import { labelStatusEnvio } from './ml-status';
 import { ehFaturavel } from './resumo-vendas';
+import { buscarTodasPaginas } from './paginacao-supabase';
 
 export type OrigemVenda = 'todos' | 'publiai' | 'fora';
 
@@ -55,19 +56,21 @@ export interface Venda {
   itens: VendaItem[];
 }
 
-/** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens. */
+/** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens.
+ *  Pagina (`.range`) para não truncar em ~1000 linhas (teto padrão do PostgREST). */
 export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'): Promise<Venda[]> {
-  let q = supabase
-    .from('ml_vendas')
-    .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
-    .gte('date_closed', janela.desde)
-    .lte('date_closed', janela.ate)
-    .order('date_closed', { ascending: false });
-  if (origem === 'publiai') q = q.eq('is_publiai', true);
-  if (origem === 'fora') q = q.eq('is_publiai', false);
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Venda[];
+  return buscarTodasPaginas<Venda>((de, ate) => {
+    let q = supabase
+      .from('ml_vendas')
+      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
+      .gte('date_closed', janela.desde)
+      .lte('date_closed', janela.ate)
+      .order('date_closed', { ascending: false })
+      .range(de, ate);
+    if (origem === 'publiai') q = q.eq('is_publiai', true);
+    if (origem === 'fora') q = q.eq('is_publiai', false);
+    return q as unknown as PromiseLike<{ data: Venda[] | null; error: { message: string } | null }>;
+  });
 }
 
 /** Dispara o backfill (botão "Sincronizar") para o próprio usuário. */

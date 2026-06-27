@@ -21,9 +21,9 @@ sua linha de status ao terminar.
 | 008  | Higiene de docs (índice ADRs, stack, staleness) | P2 | S | — | DONE (merged+push; índice 0001-0043, OpenRouter, banner ROADMAP, project-status corrigido; renumber dos ADRs dup fica p/ decisão sua) |
 | 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | DONE (merged+push; baseline 15 itens menores registrada — não corrigida; `no-import-prefix` excluída por ser idiomática Supabase) |
 | 010  | CI mínimo (`.github`) | P2 | S | 009 | DONE (merged+push; frontend bloqueante, backend-lint report-only até zerar baseline; falta Diego habilitar Actions no GitHub) |
-| 011  | Characterization tests de `custos.ts` (dinheiro) | P1 | S | — | TODO |
-| 012  | Unique key + upsert idempotente em `ml_vendas_itens` | P1 | M | (ideal após 011, 009) | TODO |
-| 013  | Paginar queries de dinheiro (teto ~1000) | P2 | M | coord. 006, 011 | TODO |
+| 011  | Characterization tests de `custos.ts` (dinheiro) | P1 | S | — | DONE (worktree; `montarMapasCusto` extraído + 11 testes; gate verde) |
+| 012  | Unique key + upsert idempotente em `ml_vendas_itens` | P1 | M | (ideal após 011, 009) | DONE (worktree; migration + upsert `io.ts`; **pendente operador**: `db push` + redeploy sync-venda/backfill/reconciliar) |
+| 013  | Paginar queries de dinheiro (teto ~1000) | P2 | M | coord. 006, 011 | DONE (worktree; helper `buscarTodasPaginas` + 4 testes; aplicado em `buscarVendas`/`buscarCustos`; validado via browser-use) |
 | 014  | Lazy-load jspdf/xlsx (dynamic import) | P2 | M | — | TODO |
 | 015  | Fonte única de `round2` + BRL sem símbolo | P2 | S | — | TODO |
 | 016  | Teste de paridade preço/desconto FE↔BE | P3 | S | — | TODO |
