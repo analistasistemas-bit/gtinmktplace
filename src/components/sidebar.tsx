@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, ListChecks, Settings, Package, Sparkles, Scale, Wallet, Receipt } from 'lucide-react';
+import { LayoutDashboard, Upload, ListChecks, Settings, Package, Scale, Wallet, Receipt } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/ui/logo';
 
 export const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -14,14 +15,7 @@ export const NAV_ITEMS = [
 ];
 
 export function BrandMark() {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Sparkles className="h-4 w-4" />
-      </div>
-      <span className="text-base font-semibold tracking-tight">PubliAI</span>
-    </div>
-  );
+  return <Logo />;
 }
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {

@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Logo } from '@/components/ui/logo';
 import { signIn } from '@/lib/auth';
 
 export default function Login() {
@@ -31,8 +32,8 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
       <Card className="w-full max-w-sm p-6">
-        <div className="mb-6 text-center">
-          <h1 className="text-h1">PubliAI</h1>
+        <div className="mb-6 flex flex-col items-center text-center">
+          <Logo className="mb-2" symbolClassName="h-9 w-9" />
           <p className="text-caption">Publicação de anúncios no Mercado Livre</p>
         </div>
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
