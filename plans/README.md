@@ -14,15 +14,15 @@ sua linha de status ao terminar.
 | 001  | ESLint deixa de varrer `.claude/` | P1 | S | — | DONE |
 | 002  | Remover worktrees órfãos (~437 MB) | P1 | S | — | DONE |
 | 003  | Associar labels aos inputs (a11y) | P2 | S | — | DONE |
-| 004  | Congelar `verify_jwt` por função em `config.toml` | P1 | S | — | DONE (merged+push; **pendente deploy** das edges p/ valer) |
-| 005  | Retry do `process-familia` por status, não regex no texto | P1 | S | — | DONE (merged+push; testes verdes; **pendente deploy** do process-familia) |
+| 004  | Congelar `verify_jwt` por função em `config.toml` | P1 | S | — | DONE (config.toml em produção; honrado nos deploys recentes — process-familia v47, sync-venda/backfill/reconciliar; demais herdam ao próximo redeploy) |
+| 005  | Retry do `process-familia` por status, não regex no texto | P1 | S | — | DONE (deployado — process-familia v47, verify_jwt=false) |
 | 006  | `buscarVendas` sem baixar coluna `raw` | P1 | S | (coord. 013) | DONE (merged+push; validado ao vivo via browser-use) |
 | 007  | `.env.example` com secrets de backend faltantes | P1 | S | — | DONE (merged+push) |
 | 008  | Higiene de docs (índice ADRs, stack, staleness) | P2 | S | — | DONE (merged+push; índice 0001-0043, OpenRouter, banner ROADMAP, project-status corrigido; renumber dos ADRs dup fica p/ decisão sua) |
-| 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | DONE (merged+push; baseline 15 itens menores registrada — não corrigida; `no-import-prefix` excluída por ser idiomática Supabase) |
-| 010  | CI mínimo (`.github`) | P2 | S | 009 | DONE (merged+push; frontend bloqueante, backend-lint report-only até zerar baseline; falta Diego habilitar Actions no GitHub) |
+| 009  | `deno lint`/`check` nas Edge Functions | P1 | M | — | DONE (merged+push; baseline de 15 itens ZERADA na Onda 5; `no-import-prefix` excluída por ser idiomática Supabase) |
+| 010  | CI mínimo (`.github`) | P2 | S | 009 | DONE (merged+push; frontend + backend-lint ambos BLOQUEANTES; falta Diego habilitar Actions no GitHub) |
 | 011  | Characterization tests de `custos.ts` (dinheiro) | P1 | S | — | DONE (worktree; `montarMapasCusto` extraído + 11 testes; gate verde) |
-| 012  | Unique key + upsert idempotente em `ml_vendas_itens` | P1 | M | (ideal após 011, 009) | DONE (worktree; migration + upsert `io.ts`; **pendente operador**: `db push` + redeploy sync-venda/backfill/reconciliar) |
+| 012  | Unique key + upsert idempotente em `ml_vendas_itens` | P1 | M | (ideal após 011, 009) | DONE (em produção: migration aplicada via `db push` — índice único confirmado; redeploy sync-venda v13/backfill v15/reconciliar v12) |
 | 013  | Paginar queries de dinheiro (teto ~1000) | P2 | M | coord. 006, 011 | DONE (worktree; helper `buscarTodasPaginas` + 4 testes; aplicado em `buscarVendas`/`buscarCustos`; validado via browser-use) |
 | 014  | Lazy-load jspdf/xlsx (dynamic import) | P2 | M | — | DONE (worktree; `exportar` async + `await import`; chunks pdf/xlsx/excel separados sob demanda; validado via browser-use) |
 | 015  | Fonte única de `round2` + BRL sem símbolo | P2 | S | — | DONE (worktree; `round2`/`fmtBRLSemSimbolo` em formato.ts + `_shared/dinheiro.ts`; 14 cópias trocadas; behavior-preserving, suíte verde) |
