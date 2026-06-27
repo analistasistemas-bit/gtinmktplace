@@ -18,7 +18,7 @@ rejeitados (ver seção final).
 |------|-------|----------|--------|------------|--------|
 | 001  | ESLint deixa de varrer `.claude/` | P1 | S | — | DONE (merged; verificado: probe=0, src 9err/7warn) |
 | 002  | Remover worktrees órfãos (~437 MB) | P1 | S | — | DONE (437 MB removidos; e5 intacto, worktree list limpo) |
-| 003  | Associar labels aos inputs (a11y) | P2 | S | — | TODO |
+| 003  | Associar labels aos inputs (a11y) | P2 | S | — | DONE (eslint=0, tsc=0, testes 11/11; verificado) |
 
 Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 
