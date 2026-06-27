@@ -55,7 +55,7 @@ export function BotaoExportar({
     setGerando(true);
     try {
       const data = await montarReport(config);
-      exportar(data, config.formato);
+      await exportar(data, config.formato);
     } finally {
       setGerando(false);
     }

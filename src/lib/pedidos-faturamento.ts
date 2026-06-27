@@ -6,8 +6,7 @@ import { ehFaturavel, ratearLiquidoPorFrete, type CustoResolver, type PesoResolv
 import type { FotoResolver } from './fotos-produto';
 import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from './formato';
 
 export interface ItemPedido {
   id: string;

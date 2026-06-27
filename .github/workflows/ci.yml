@@ -21,10 +21,7 @@ jobs:
 
   backend-lint:
     runs-on: ubuntu-latest
-    # Report-only por enquanto: o deno lint tem uma baseline de ~15 itens menores
-    # (no-explicit-any / no-inner-declarations / require-await, ver plans/009). Vira
-    # bloqueante (remover continue-on-error) quando o backlog for zerado.
-    continue-on-error: true
+    # Bloqueante: baseline do deno lint zerada na Onda 5 (plans/009). Mantenha em 0.
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2

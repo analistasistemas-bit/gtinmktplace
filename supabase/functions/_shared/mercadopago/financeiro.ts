@@ -14,8 +14,7 @@
 //
 // Fonte: /v1/payments/search com o Access Token de produção da conta (secret MP_ACCESS_TOKEN).
 import { ratearFreteCompartilhado } from './rateio.ts';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../dinheiro.ts';
 
 /** Recorte de um pagamento do MP usado para o resumo (demais campos são ignorados). */
 export interface PagamentoMP {

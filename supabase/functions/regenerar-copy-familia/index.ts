@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
       nome: familia.nome_pai,
       descricao_detalhado: familia.descricao_pai ?? '',
       unidade: (familia.unidade as string | null) ?? null,
-      variacoes: (familia.variacoes ?? []).map((v: any) => ({
+      variacoes: (familia.variacoes ?? []).map((v: Record<string, unknown>) => ({
         codigo: v.codigo,
         cor: v.cor,
         preco: v.preco ?? 0,
@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
     const coresUnicas = [...new Set((familia.variacoes ?? [])
-      .map((v: any) => v.cor as string | null).filter((c: string | null): c is string => !!c))];
+      .map((v: Record<string, unknown>) => v.cor as string | null).filter((c: string | null): c is string => !!c))];
     const tituloFinal = garantirCorTitulo(
       garantirMetragemTitulo(result.titulo, familia.nome_pai),
       coresUnicas.length === 1 ? coresUnicas[0] : null,

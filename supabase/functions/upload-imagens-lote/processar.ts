@@ -1,3 +1,4 @@
+import { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { classificarArquivo } from '../_shared/upload/match.ts';
 
 export type ResultadoProcessamento =
@@ -16,7 +17,7 @@ export async function processarArquivo(
   file: File,
   userId: string,
   loteId: string,
-  admin: any,
+  admin: SupabaseClient,
 ): Promise<ResultadoProcessamento> {
   const classificacao = classificarArquivo(file.name);
   if (classificacao.tipo === 'invalido') {
@@ -33,8 +34,8 @@ export async function processarArquivo(
       .eq('user_id', userId);
 
     if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
-    const familia = (familias as any[])?.find(
-      (f: any) => f.codigo_pai === classificacao.codigo,
+    const familia = (familias as Array<Record<string, unknown>>)?.find(
+      (f: Record<string, unknown>) => f.codigo_pai === classificacao.codigo,
     );
     if (!familia) return { tipo: 'capa_sem_match' };
 
@@ -59,8 +60,8 @@ export async function processarArquivo(
       .eq('user_id', userId);
 
     if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
-    const familia = (familias as any[])?.find(
-      (f: any) => f.codigo_pai === classificacao.codigo,
+    const familia = (familias as Array<Record<string, unknown>>)?.find(
+      (f: Record<string, unknown>) => f.codigo_pai === classificacao.codigo,
     );
     if (!familia) return { tipo: 'capa2_sem_match' };
 
@@ -85,8 +86,8 @@ export async function processarArquivo(
       .eq('user_id', userId);
 
     if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
-    const familia = (familias as any[])?.find(
-      (f: any) => f.codigo_pai === classificacao.codigo,
+    const familia = (familias as Array<Record<string, unknown>>)?.find(
+      (f: Record<string, unknown>) => f.codigo_pai === classificacao.codigo,
     );
     if (!familia) return { tipo: 'capa3_sem_match' };
 
@@ -112,7 +113,7 @@ export async function processarArquivo(
     .eq('familias.user_id', userId);
 
   if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
-  const variacao = (variacoes as any[])?.[0];
+  const variacao = (variacoes as Array<Record<string, unknown>>)?.[0];
   if (!variacao) return { tipo: 'sem_match' };
 
   const tinhaImagem = !!variacao.imagem_path;

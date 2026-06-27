@@ -2,6 +2,7 @@
 // Puro e testável: recebe Pedido[] e devolve GeografiaVendas sem I/O.
 import type { Pedido } from './pedidos-faturamento';
 import { ehFaturavel } from './resumo-vendas';
+import { round2 } from './formato';
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -72,7 +73,7 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
       uf,
       pedidos: acc.pedidos,
       unidades: acc.unidades,
-      valor: Math.round(acc.valor * 100) / 100,
+      valor: round2(acc.valor),
       pctPedidos: totalPedidos > 0 ? round1((acc.pedidos / totalPedidos) * 100) : 0,
     }))
     .sort((a, b) => b.pedidos - a.pedidos);
@@ -82,7 +83,7 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
       cidade: acc.cidade,
       uf: acc.uf,
       pedidos: acc.pedidos,
-      valor: Math.round(acc.valor * 100) / 100,
+      valor: round2(acc.valor),
     }))
     .sort((a, b) => b.pedidos - a.pedidos);
 

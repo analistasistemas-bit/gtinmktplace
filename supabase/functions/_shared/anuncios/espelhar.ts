@@ -2,6 +2,8 @@
 // montarAnuncioExterno é pura (testável); espelharAnuncioExterno é best-effort (não derruba a
 // publicação — o ml_* em familias/variacoes é a fonte de verdade).
 
+import { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+
 export type VariacaoEspelho = {
   codigo: string;
   ml_variation_id: string | null;
@@ -72,9 +74,8 @@ export function mesclarVariacoesExternas(
   return { ...(existente ?? {}), ...novo };
 }
 
-// deno-lint-ignore no-explicit-any
 export async function espelharAnuncioExterno(
-  admin: any,
+  admin: SupabaseClient,
   familia: FamiliaEspelho,
   variacoes: VariacaoEspelho[],
 ): Promise<void> {

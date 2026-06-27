@@ -2,8 +2,7 @@
 // `buscarVendas`. Os três menus — Publicados, Faturamento e Financeiro — derivam seus KPIs daqui,
 // então mostram exatamente o mesmo número para o mesmo período. Pura e testável (sem rede).
 import type { Venda, VendaItem } from './faturamento';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from './formato';
 
 /**
  * Status que contam como venda faturável (entram no bruto/líquido/unidades/pedidos), espelhando o
