@@ -14,7 +14,7 @@ export interface Pergunta {
 
 /** Lê as perguntas (não respondidas primeiro). RLS por user. */
 export async function buscarPerguntas(): Promise<Pergunta[]> {
-  const { data, error } = await (supabase as unknown as { from: (t: string) => any })
+  const { data, error } = await supabase
     .from('ml_perguntas')
     .select('id, question_id, item_id, item_titulo, texto, status, resposta, respondida_em, criada_em')
     .order('criada_em', { ascending: false });

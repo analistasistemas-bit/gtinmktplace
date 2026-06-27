@@ -57,8 +57,7 @@ export interface Venda {
 
 /** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens. */
 export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'): Promise<Venda[]> {
-  // database.types ainda não conhece as tabelas novas; cast localizado.
-  let q = (supabase as unknown as { from: (t: string) => any })
+  let q = supabase
     .from('ml_vendas')
     .select('*, itens:ml_vendas_itens(*)')
     .gte('date_closed', janela.desde)

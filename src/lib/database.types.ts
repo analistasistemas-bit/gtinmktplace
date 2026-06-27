@@ -370,6 +370,66 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_devolucoes: {
+        Row: {
+          aberto_em: string | null
+          acoes_pendentes: Json | null
+          atualizado_em: string
+          claim_id: number
+          criado_em: string
+          id: string
+          order_id: number | null
+          raw: Json | null
+          reason_id: string | null
+          reason_texto: string | null
+          return_status: string | null
+          return_status_money: string | null
+          stage: string | null
+          status: string | null
+          type: string | null
+          user_id: string
+          valor_em_jogo: number | null
+        }
+        Insert: {
+          aberto_em?: string | null
+          acoes_pendentes?: Json | null
+          atualizado_em?: string
+          claim_id: number
+          criado_em?: string
+          id?: string
+          order_id?: number | null
+          raw?: Json | null
+          reason_id?: string | null
+          reason_texto?: string | null
+          return_status?: string | null
+          return_status_money?: string | null
+          stage?: string | null
+          status?: string | null
+          type?: string | null
+          user_id: string
+          valor_em_jogo?: number | null
+        }
+        Update: {
+          aberto_em?: string | null
+          acoes_pendentes?: Json | null
+          atualizado_em?: string
+          claim_id?: number
+          criado_em?: string
+          id?: string
+          order_id?: number | null
+          raw?: Json | null
+          reason_id?: string | null
+          reason_texto?: string | null
+          return_status?: string | null
+          return_status_money?: string | null
+          stage?: string | null
+          status?: string | null
+          type?: string | null
+          user_id?: string
+          valor_em_jogo?: number | null
+        }
+        Relationships: []
+      }
       ml_moderacao: {
         Row: {
           alertado_em: string | null
@@ -403,6 +463,245 @@ export type Database = {
           resolvido_em?: string | null
           status?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      ml_perguntas: {
+        Row: {
+          atualizado_em: string
+          comprador_id: number | null
+          criada_em: string | null
+          id: string
+          item_id: string | null
+          item_titulo: string | null
+          question_id: number
+          raw: Json | null
+          respondida_em: string | null
+          resposta: string | null
+          status: string
+          texto: string
+          user_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          comprador_id?: number | null
+          criada_em?: string | null
+          id?: string
+          item_id?: string | null
+          item_titulo?: string | null
+          question_id: number
+          raw?: Json | null
+          respondida_em?: string | null
+          resposta?: string | null
+          status: string
+          texto?: string
+          user_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          comprador_id?: number | null
+          criada_em?: string | null
+          id?: string
+          item_id?: string | null
+          item_titulo?: string | null
+          question_id?: number
+          raw?: Json | null
+          respondida_em?: string | null
+          resposta?: string | null
+          status?: string
+          texto?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_vendas: {
+        Row: {
+          atualizado_em: string
+          cidade: string | null
+          comprador_id: number | null
+          comprador_nick: string | null
+          comprador_nome: string | null
+          criado_em: string
+          currency: string
+          date_closed: string | null
+          date_created: string | null
+          estorno: number | null
+          frete_vendedor: number | null
+          id: string
+          is_publiai: boolean
+          liberacao_notificada_em: string | null
+          liquido: number | null
+          money_release_date: string | null
+          order_id: number
+          pack_id: number | null
+          paid_amount: number | null
+          raw: Json | null
+          sale_fee_total: number
+          shipping_id: number | null
+          shipping_logistic: string | null
+          shipping_status: string | null
+          shipping_substatus: string | null
+          status: string
+          status_detail: string | null
+          tem_devolucao: boolean
+          total_amount: number
+          tracking_number: string | null
+          uf: string | null
+          user_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          cidade?: string | null
+          comprador_id?: number | null
+          comprador_nick?: string | null
+          comprador_nome?: string | null
+          criado_em?: string
+          currency?: string
+          date_closed?: string | null
+          date_created?: string | null
+          estorno?: number | null
+          frete_vendedor?: number | null
+          id?: string
+          is_publiai?: boolean
+          liberacao_notificada_em?: string | null
+          liquido?: number | null
+          money_release_date?: string | null
+          order_id: number
+          pack_id?: number | null
+          paid_amount?: number | null
+          raw?: Json | null
+          sale_fee_total?: number
+          shipping_id?: number | null
+          shipping_logistic?: string | null
+          shipping_status?: string | null
+          shipping_substatus?: string | null
+          status: string
+          status_detail?: string | null
+          tem_devolucao?: boolean
+          total_amount?: number
+          tracking_number?: string | null
+          uf?: string | null
+          user_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          cidade?: string | null
+          comprador_id?: number | null
+          comprador_nick?: string | null
+          comprador_nome?: string | null
+          criado_em?: string
+          currency?: string
+          date_closed?: string | null
+          date_created?: string | null
+          estorno?: number | null
+          frete_vendedor?: number | null
+          id?: string
+          is_publiai?: boolean
+          liberacao_notificada_em?: string | null
+          liquido?: number | null
+          money_release_date?: string | null
+          order_id?: number
+          pack_id?: number | null
+          paid_amount?: number | null
+          raw?: Json | null
+          sale_fee_total?: number
+          shipping_id?: number | null
+          shipping_logistic?: string | null
+          shipping_status?: string | null
+          shipping_substatus?: string | null
+          status?: string
+          status_detail?: string | null
+          tem_devolucao?: boolean
+          total_amount?: number
+          tracking_number?: string | null
+          uf?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      ml_vendas_itens: {
+        Row: {
+          codigo: string | null
+          cor: string | null
+          ean: string | null
+          id: string
+          is_publiai: boolean
+          ml_item_id: string | null
+          quantity: number
+          sale_fee: number
+          titulo: string | null
+          unit_price: number
+          user_id: string
+          variation_id: number | null
+          venda_id: string
+        }
+        Insert: {
+          codigo?: string | null
+          cor?: string | null
+          ean?: string | null
+          id?: string
+          is_publiai?: boolean
+          ml_item_id?: string | null
+          quantity?: number
+          sale_fee?: number
+          titulo?: string | null
+          unit_price?: number
+          user_id: string
+          variation_id?: number | null
+          venda_id: string
+        }
+        Update: {
+          codigo?: string | null
+          cor?: string | null
+          ean?: string | null
+          id?: string
+          is_publiai?: boolean
+          ml_item_id?: string | null
+          quantity?: number
+          sale_fee?: number
+          titulo?: string | null
+          unit_price?: number
+          user_id?: string
+          variation_id?: number | null
+          venda_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_vendas_itens_venda_id_fkey"
+            columns: ["venda_id"]
+            isOneToOne: false
+            referencedRelation: "ml_vendas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_webhook_eventos: {
+        Row: {
+          erro: string | null
+          id: string
+          processado_em: string | null
+          recebido_em: string
+          resource: string
+          topic: string
+          user_id: string | null
+        }
+        Insert: {
+          erro?: string | null
+          id?: string
+          processado_em?: string | null
+          recebido_em?: string
+          resource: string
+          topic: string
+          user_id?: string | null
+        }
+        Update: {
+          erro?: string | null
+          id?: string
+          processado_em?: string | null
+          recebido_em?: string
+          resource?: string
+          topic?: string
+          user_id?: string | null
         }
         Relationships: []
       }
