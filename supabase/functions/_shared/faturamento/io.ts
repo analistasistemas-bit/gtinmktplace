@@ -190,12 +190,15 @@ export async function upsertVenda(
   if (error) throw new Error(`upsert ml_vendas: ${error.message}`);
   const vendaId = up!.id as string;
 
-  // Substitui os itens (idempotente).
+  // Substitui os itens. Idempotente: unique (venda_id, ml_item_id, variation_id) impede
+  // duplicata quando dois syncs do mesmo pedido correm concorrentes (ver plans/012).
   await admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
   if (itens.length > 0) {
-    await admin.from('ml_vendas_itens').insert(
+    const { error: itensErr } = await admin.from('ml_vendas_itens').upsert(
       itens.map((i: VendaItemRow) => ({ user_id: userId, venda_id: vendaId, ...i })),
+      { onConflict: 'venda_id,ml_item_id,variation_id' },
     );
+    if (itensErr) throw new Error(`upsert ml_vendas_itens: ${itensErr.message}`);
   }
 
   const eraPaga = anterior?.status === 'paid';

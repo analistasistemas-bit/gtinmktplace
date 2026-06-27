@@ -4,11 +4,12 @@
 // exceto pela query inicial.
 import { supabase } from './supabase';
 import { normGtin } from './gtin';
+import { buscarTodasPaginas } from './paginacao-supabase';
 import type { CustoResolver, PesoResolver } from './resumo-vendas';
 import type { VendaItem } from './faturamento';
 
 /** Custo unitário (R$) + peso unitário (g) de um produto. */
-interface ValorProduto { custo: number; peso: number }
+export interface ValorProduto { custo: number; peso: number }
 
 export interface MapasCusto {
   /** ml_variation_id → custo/peso. */
@@ -19,24 +20,18 @@ export interface MapasCusto {
   porGtin: Map<string, ValorProduto>;
 }
 
-/** Lê custo + peso cadastrados das variações do usuário (RLS) e monta os mapas de resolução. */
-export async function buscarCustos(): Promise<MapasCusto> {
-  const { data, error } = await supabase
-    .from('variacoes')
-    .select('custo, peso_gramas, ml_variation_id, gtin, familias!inner(ml_item_id)')
-    .not('custo', 'is', null);
-  if (error) throw new Error(error.message);
-
+/** Monta os mapas de custo/peso a partir das linhas já lidas de `variacoes` (puro, testável).
+ *  Mantém a entrada de maior custo por chave (robusto a linhas duplicadas por re-importação);
+ *  o peso correspondente acompanha o custo escolhido. Linha com custo ≤ 0 é descartada. */
+export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCusto {
   const porVariacao = new Map<string, ValorProduto>();
   const porItem = new Map<string, ValorProduto>();
   const porGtin = new Map<string, ValorProduto>();
-  // Mantém a entrada de maior custo por chave (robusto a linhas duplicadas por re-importação);
-  // o peso correspondente acompanha o custo escolhido.
   const upsertMax = (m: Map<string, ValorProduto>, k: string, val: ValorProduto) => {
     if (val.custo > (m.get(k)?.custo ?? 0)) m.set(k, val);
   };
 
-  for (const v of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const v of rows) {
     const custo = Number(v.custo ?? 0);
     if (custo <= 0) continue;
     const peso = Number(v.peso_gramas ?? 0);
@@ -50,6 +45,18 @@ export async function buscarCustos(): Promise<MapasCusto> {
     if (gtin) upsertMax(porGtin, normGtin(gtin), val);
   }
   return { porVariacao, porItem, porGtin };
+}
+
+/** Lê custo + peso cadastrados das variações do usuário (RLS) e monta os mapas de resolução. */
+export async function buscarCustos(): Promise<MapasCusto> {
+  const rows = await buscarTodasPaginas<Record<string, unknown>>((de, ate) =>
+    supabase
+      .from('variacoes')
+      .select('custo, peso_gramas, ml_variation_id, gtin, familias!inner(ml_item_id)')
+      .not('custo', 'is', null)
+      .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
+  );
+  return montarMapasCusto(rows);
 }
 
 /** Resolve o produto de um item de venda na cadeia variação → anúncio → GTIN. null = não casou. */
