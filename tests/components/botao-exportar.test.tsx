@@ -27,7 +27,7 @@ beforeEach(() => exportarMock.mockClear());
 describe('BotaoExportar', () => {
   it('tela sem KPIs/expansão: escolher Excel dispara export direto (sem diálogo)', async () => {
     const user = userEvent.setup();
-    const montar = vi.fn((c: ExportConfig): ReportData => REPORT);
+    const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);
     render(<BotaoExportar montarReport={montar} />);
 
     await user.click(screen.getByRole('button', { name: /exportar/i }));
@@ -41,7 +41,7 @@ describe('BotaoExportar', () => {
 
   it('tela com KPIs+expansão: PDF abre diálogo; alternar p/ expandidas e confirmar', async () => {
     const user = userEvent.setup();
-    const montar = vi.fn((c: ExportConfig): ReportData => REPORT);
+    const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);
     render(<BotaoExportar temExpansao temKpis montarReport={montar} />);
 
     await user.click(screen.getByRole('button', { name: /exportar/i }));
@@ -61,7 +61,7 @@ describe('BotaoExportar', () => {
 
   it('Imprimir com "somente dados" passa incluirKpis=false', async () => {
     const user = userEvent.setup();
-    const montar = vi.fn((c: ExportConfig): ReportData => REPORT);
+    const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);
     render(<BotaoExportar temKpis montarReport={montar} />);
 
     await user.click(screen.getByRole('button', { name: /exportar/i }));

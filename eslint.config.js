@@ -27,6 +27,11 @@ export default tseslint.config(
         'warn',
         { allowConstantExport: true },
       ],
+      // Prefixo `_` marca parâmetro/variável intencionalmente não usado.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
   // Mocks de teste usam `as any` em respostas do Supabase; montar o tipo completo não agrega.
