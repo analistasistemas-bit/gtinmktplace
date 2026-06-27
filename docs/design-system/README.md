@@ -3,6 +3,10 @@
 > Fonte da verdade = `src/index.css` + a rota `/#/style-guide`.
 > Este guia é derivado do código real e deve ser mantido sincronizado com ele.
 
+**Catálogo vivo:** o projeto tem Storybook configurado (`.storybook/`). Rode
+`pnpm storybook` (porta 6006) para navegar tokens e componentes com toggle dark/light,
+ou `pnpm build-storybook` para o build estático. Stories ficam em `src/**/*.stories.tsx`.
+
 ---
 
 ## Sumário
