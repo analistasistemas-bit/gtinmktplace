@@ -1,8 +1,7 @@
 // Transformações puras do módulo Faturamento (ADR-0037). Sem Deno/npm — testável no vitest.
 // Converte o payload de /orders/{id} do ML em linhas de `ml_vendas` + `ml_vendas_itens`, e
 // faz o parse da notificação de webhook do ML.
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../dinheiro.ts';
 
 /** GTIN normalizado (sem zeros à esquerda) para casar entre ML e planilha. */
 export const normGtin = (g: string) => g.replace(/^0+/, '');

@@ -3,6 +3,7 @@ import type { Janela } from './metricas';
 import { labelStatusEnvio } from './ml-status';
 import { ehFaturavel } from './resumo-vendas';
 import { buscarTodasPaginas } from './paginacao-supabase';
+import { round2 } from './formato';
 
 export type OrigemVenda = 'todos' | 'publiai' | 'fora';
 
@@ -113,10 +114,10 @@ export function calcularKpis(vendas: Venda[]): KpisVendas {
   }
   return {
     porStatusEnvio,
-    faturamento: Math.round(faturamento * 100) / 100,
-    liquido: Math.round(liquido * 100) / 100,
+    faturamento: round2(faturamento),
+    liquido: round2(liquido),
     unidades,
     pedidos,
-    ticket: pedidos > 0 ? Math.round((faturamento / pedidos) * 100) / 100 : 0,
+    ticket: pedidos > 0 ? round2(faturamento / pedidos) : 0,
   };
 }

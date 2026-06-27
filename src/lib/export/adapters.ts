@@ -1,4 +1,4 @@
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, round2 } from '@/lib/formato';
 import { fmtDataCurta, labelStatusPedido, labelStatusEnvio } from '@/lib/ml-status';
 import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/publicados';
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
@@ -494,7 +494,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
           ? `${fmtData(p.money_release_date)} · ${new Date(p.money_release_date).getTime() <= Date.now() ? 'liberado' : 'a liberar'}`
           : '—',
         bruto: fmtBRL(p.bruto),
-        retido: fmtBRL(Math.round((p.bruto - p.liquido) * 100) / 100),
+        retido: fmtBRL(round2(p.bruto - p.liquido)),
         liquido: fmtBRL(p.liquido),
         markup: fmtMarkupNum(p.markup),
       },

@@ -24,9 +24,9 @@ sua linha de status ao terminar.
 | 011  | Characterization tests de `custos.ts` (dinheiro) | P1 | S | — | DONE (worktree; `montarMapasCusto` extraído + 11 testes; gate verde) |
 | 012  | Unique key + upsert idempotente em `ml_vendas_itens` | P1 | M | (ideal após 011, 009) | DONE (worktree; migration + upsert `io.ts`; **pendente operador**: `db push` + redeploy sync-venda/backfill/reconciliar) |
 | 013  | Paginar queries de dinheiro (teto ~1000) | P2 | M | coord. 006, 011 | DONE (worktree; helper `buscarTodasPaginas` + 4 testes; aplicado em `buscarVendas`/`buscarCustos`; validado via browser-use) |
-| 014  | Lazy-load jspdf/xlsx (dynamic import) | P2 | M | — | TODO |
-| 015  | Fonte única de `round2` + BRL sem símbolo | P2 | S | — | TODO |
-| 016  | Teste de paridade preço/desconto FE↔BE | P3 | S | — | TODO |
+| 014  | Lazy-load jspdf/xlsx (dynamic import) | P2 | M | — | DONE (worktree; `exportar` async + `await import`; chunks pdf/xlsx/excel separados sob demanda; validado via browser-use) |
+| 015  | Fonte única de `round2` + BRL sem símbolo | P2 | S | — | DONE (worktree; `round2`/`fmtBRLSemSimbolo` em formato.ts + `_shared/dinheiro.ts`; 14 cópias trocadas; behavior-preserving, suíte verde) |
+| 016  | Teste de paridade preço/desconto FE↔BE | P3 | S | — | DONE (worktree; `paridade-preco-fe-be.test.ts` compara calcularPrecoDe/pctEfetivo/amountComDesconto FE↔BE) |
 
 Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 
@@ -88,11 +88,11 @@ Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 
 ## Follow-ups destravados pelos planos
 
-- **Plan 009 (DONE) — baseline do `deno lint` a zerar** (15 itens menores; `no-import-prefix` foi excluída por
-  ser convenção idiomática do Supabase Edge): **11** `no-explicit-any` (`_shared/anuncios/espelhar.ts:77`,
-  `regenerar-copy-familia:43,52`, `upload-imagens-lote/processar.ts` ×7), **2** `no-inner-declarations`
-  (`publish-familia-ml:121`, `update-familia-ml:84`), **1** `require-await` (`_shared/redis/client.ts:19`),
-  **1** `ban-unused-ignore` (`espelhar.ts:75`). Ao zerar, remover `continue-on-error` do job `backend-lint` (CI).
+- **Plan 009 — baseline do `deno lint` ZERADA na Onda 5** (2026-06-27): os 15 itens corrigidos de forma
+  type-only/behavior-preserving (`any`→`SupabaseClient`/`Record<string,unknown>`; `async function signed`→
+  `const signed = async` preservando closure; `redisGet` sem `async` redundante; ignore morto removido).
+  `deno lint` = **Found 0 problems**. `continue-on-error` REMOVIDO do job `backend-lint` (agora bloqueante).
+  Mudança só de tipo → JS emitido idêntico, **não exigiu redeploy** das edges.
   Nota: `criar-item.ts:36` (`no-misleading-character-class`) é regra do **ESLint**, NÃO do deno-lint — não
   apareceu nesta baseline; tratar à parte se incomodar.
 - **Outros follow-ups do 009**: fazer `deno check` resolver imports e tipar os handlers; habilitar `deno test`

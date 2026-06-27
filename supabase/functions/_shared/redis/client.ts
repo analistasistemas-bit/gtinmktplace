@@ -16,7 +16,7 @@ async function call<T>(comando: (string | number)[]): Promise<T | null> {
   return json.result;
 }
 
-export async function redisGet(chave: string): Promise<string | null> {
+export function redisGet(chave: string): Promise<string | null> {
   return call<string>(['GET', chave]);
 }
 

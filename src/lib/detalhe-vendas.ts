@@ -1,7 +1,6 @@
 import type { Venda } from './faturamento';
 import { ehFaturavel, ratearLiquidoPorFrete, type CustoResolver, type PesoResolver } from './resumo-vendas';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from './formato';
 
 export interface LinhaVenda {
   id: string;

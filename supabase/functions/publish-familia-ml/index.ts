@@ -118,11 +118,11 @@ Deno.serve(async (req) => {
       : (familia.categoria_ml_id ? ((familia.atributos_faltantes as string[] | null) ?? []) : ['CATEGORIA']);
     if (faltam.length) throw new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`);
 
-    async function signed(path: string): Promise<string> {
+    const signed = async (path: string): Promise<string> => {
       const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
       if (error || !data) throw new Error(`Signed URL falhou para ${path}`);
       return data.signedUrl;
-    }
+    };
 
     // Capa: reusa o picture_id já subido (idempotente em retries).
     let capaPictureId: string | null = familia.capa_ml_picture_id ?? null;

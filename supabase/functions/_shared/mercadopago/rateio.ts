@@ -3,8 +3,7 @@
 // já existente entre as linhas. Corrige o markup por produto quando o ML concentra o frete
 // do envio no líquido de um único pagamento. Pura. Ver spec 2026-06-20-rateio-frete-pack.
 import type { VendaFinanceira } from './financeiro.ts';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../dinheiro.ts';
 
 /** Dados por pagamento usados no rateio (subconjunto de InfoCusto). */
 export interface InfoRateio {

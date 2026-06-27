@@ -4,6 +4,16 @@ export function fmtBRL(valor: number): string {
   return BRL.format(valor);
 }
 
+/** Arredonda a 2 casas (centavos). Fonte única do arredondamento monetário no frontend. */
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/** BRL sem símbolo (ex.: 1234.5 → "1.234,50"). Quem precisa de "R$ " prefixa. */
+export function fmtBRLSemSimbolo(n: number): string {
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 /** Inteiro com separador de milhar pt-BR (ex.: 23482 → "23.482"). */
 export function fmtInt(n: number): string {
   return new Intl.NumberFormat('pt-BR').format(n);

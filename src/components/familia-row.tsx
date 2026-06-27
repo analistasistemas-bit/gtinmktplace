@@ -12,6 +12,7 @@ import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { cn } from '@/lib/utils';
+import { fmtBRLSemSimbolo } from '@/lib/formato';
 import type { Familia } from '@/lib/tipos-dominio';
 import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado, familiaExigeCor } from '@/lib/publicavel';
 import { coresNovasComEstoque, coresSemFotoExcluidas } from '@/lib/revisao-variacoes';
@@ -23,10 +24,6 @@ interface FamiliaRowProps {
   onSelecionar: (id: string, valor: boolean) => void;
   onExpandir: (id: string) => void;
   onIrParaCritica?: (familiaId: string, codigo: string) => void;
-}
-
-function formatarBRL(valor: number): string {
-  return valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function DescontoControle({ familia }: { familia: Familia }) {
@@ -66,7 +63,7 @@ function DescontoControle({ familia }: { familia: Familia }) {
           <span>%</span>
           {de != null && (
             <span className="text-muted-foreground">
-              <s>R$ {formatarBRL(de)}</s> · R$ {formatarBRL(precoVenda)} · {pct}% OFF
+              <s>R$ {fmtBRLSemSimbolo(de)}</s> · R$ {fmtBRLSemSimbolo(precoVenda)} · {pct}% OFF
             </span>
           )}
         </>
@@ -216,7 +213,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
           <span>PAI {familia.codigoPai} · {familia.variacoes.length} cores</span>
           <span className="sm:hidden font-medium text-foreground flex items-center gap-1 border rounded px-1.5 py-0.5">
-            {familia.operacao} · R$ {formatarBRL(precoVendaMin)}
+            {familia.operacao} · R$ {fmtBRLSemSimbolo(precoVendaMin)}
           </span>
           {emErro && (
             <>
@@ -349,8 +346,8 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       </div>
       <div className="hidden sm:flex items-center gap-1">
         <span className="tabular-nums">
-          R$ {formatarBRL(precoVendaMin)}
-          {precoVendaMin !== precoVendaMax && `-${formatarBRL(precoVendaMax)}`}
+          R$ {fmtBRLSemSimbolo(precoVendaMin)}
+          {precoVendaMin !== precoVendaMax && `-${fmtBRLSemSimbolo(precoVendaMax)}`}
         </span>
         {familia.precoAbaixo20pc && (
           <AlertTriangle

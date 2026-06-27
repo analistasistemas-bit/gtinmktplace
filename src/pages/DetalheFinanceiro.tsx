@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRigh
 import { cn } from '@/lib/utils';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, round2 } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -23,8 +23,6 @@ import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
 import { AoVivo } from '@/components/ui/ao-vivo';
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;

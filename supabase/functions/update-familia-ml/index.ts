@@ -81,11 +81,11 @@ Deno.serve(async (req) => {
 
     const BUCKET = 'imagens';
     const TTL_SIGNED = 60 * 60 * 2;
-    async function signed(path: string): Promise<string> {
+    const signed = async (path: string): Promise<string> => {
       const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
       if (error || !data) throw new Error(`Signed URL falhou para ${path}`);
       return data.signedUrl;
-    }
+    };
 
     // Sobe a foto das cores novas (idempotente via ml_picture_id).
     const novasComFoto: Array<typeof novas[number] & { ml_picture_id: string | null }> = [];

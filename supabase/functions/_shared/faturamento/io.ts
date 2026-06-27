@@ -2,6 +2,7 @@
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { round2 } from '../dinheiro.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -76,7 +77,7 @@ export async function buscarFreteVendedor(token: string, shippingId: number | st
     const data = await resp.json();
     const senders = Array.isArray(data?.senders) ? data.senders : [];
     const soma = senders.reduce((acc: number, s: { cost?: number }) => acc + Number(s?.cost ?? 0), 0);
-    return Math.round(soma * 100) / 100;
+    return round2(soma);
   } catch {
     return null;
   }

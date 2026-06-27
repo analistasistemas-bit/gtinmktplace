@@ -2,15 +2,12 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { amountComDesconto, validarFaixas, MAX_FAIXAS, type FaixaAtacado } from '@/lib/atacado';
+import { fmtBRLSemSimbolo } from '@/lib/formato';
 
 interface Props {
   faixas: FaixaAtacado[];
   precoBase: number;
   onChange: (faixas: FaixaAtacado[]) => void;
-}
-
-function brl(v: number): string {
-  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Editor controlado de até 5 faixas de atacado (min unidades + % off) com preview. */
@@ -45,7 +42,7 @@ export function AtacadoEditor({ faixas, precoBase, onChange }: Props) {
             onChange={(e) => set(i, 'desconto_pct', Number(e.target.value))} />
           <span>% off</span>
           {precoBase > 0 && f.desconto_pct > 0 && f.desconto_pct < 100 && (
-            <span className="text-muted-foreground">→ R$ {brl(amountComDesconto(precoBase, f.desconto_pct))}</span>
+            <span className="text-muted-foreground">→ R$ {fmtBRLSemSimbolo(amountComDesconto(precoBase, f.desconto_pct))}</span>
           )}
           <Button type="button" variant="ghost" size="icon" className="h-6 w-6"
             aria-label="Remover faixa" onClick={() => remover(i)}>

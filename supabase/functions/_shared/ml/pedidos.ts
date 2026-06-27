@@ -4,7 +4,7 @@
 // MP) quanto o item e a quantidade. Validado na conta real: o id do pagamento do pedido bate
 // com o id do /payments do MP, e os pedidos de aviamento têm 1 item por pedido.
 
-const round2 = (n: number) => Math.round(n * 100) / 100;
+import { round2 } from '../dinheiro.ts';
 
 /** Recorte de um pedido do ML usado para mapear pagamento → item (demais campos ignorados). */
 export interface PedidoComPagamentos {
