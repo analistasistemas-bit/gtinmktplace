@@ -1,5 +1,11 @@
 # PubliAI — Roadmap
 
+> ⚠️ **Documento estratégico, não operativo.** O estado real e atual do produto está em
+> [project-status.md](project-status.md) e [TASKS.md](TASKS.md). Itens marcados aqui como
+> "não iniciado" / "em andamento" / "fora do MVP" podem **já estar em produção** (ex.: M4
+> Integração ML, análise de vendas/Faturamento, Financeiro, IA respondendo perguntas no ML).
+> Consulte `project-status.md` antes de usar este roadmap como fotografia do presente.
+
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
 **Última atualização:** 2026-05-29 (M4 bloco OAuth ML entregue)
