@@ -10,6 +10,7 @@ import { garantirMetragemTitulo, garantirCorTitulo } from '../_shared/ai/titulo.
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverCategoria } from '../_shared/categoria/resolver.ts';
@@ -271,8 +272,8 @@ Deno.serve(async (req) => {
       status: 'erro',
       erro_mensagem: msg,
     }).eq('id', job.familia_id);
-    // 5xx → QStash retenta. 4xx (já consumido com erro persistido) → 200.
-    const retry = !/4\d\d/.test(msg);
+    // Retenta transitórios (5xx/429/retentável); 4xx conhecido → 200 (já persistido). Ver plans/005.
+    const retry = decidirRetryPorErro(err);
     return new Response(`Erro: ${msg}`, {
       status: retry ? 500 : 200,
       headers: corsHeaders,

@@ -1,0 +1,70 @@
+# Config versionada das Edge Functions. Fonte da verdade do verify_jwt por função
+# (congelado do estado de produção em 2026-06-26). NÃO normalizar valores: espelha
+# exatamente o que está deployado e funcionando. Ver plans/004 e ADR-0037.
+project_id = "txvncrgkoynoxwopfkbp"
+
+# --- verify_jwt = false (públicas / QStash / callbacks ML) ---
+[functions.hello]
+verify_jwt = false
+[functions.process-familia]
+verify_jwt = false
+[functions.regenerar-copy-familia]
+verify_jwt = false
+[functions.ml-oauth-disconnect]
+verify_jwt = false
+[functions.ml-oauth-start]
+verify_jwt = false
+[functions.ml-oauth-callback]
+verify_jwt = false
+[functions.publish-familia-ml]
+verify_jwt = false
+[functions.calcular-tarifa-ml]
+verify_jwt = false
+[functions.update-familia-ml]
+verify_jwt = false
+[functions.remover-publicado]
+verify_jwt = false
+[functions.vincular-catalogo]
+verify_jwt = false
+[functions.reprocessar-familia]
+verify_jwt = false
+[functions.monitorar-moderados]
+verify_jwt = false
+[functions.sync-pergunta]
+verify_jwt = false
+[functions.sync-devolucao]
+verify_jwt = false
+[functions.notificar-liberacao]
+verify_jwt = false
+
+# --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
+[functions.ingest-lote]
+verify_jwt = true
+[functions.upload-imagens-lote]
+verify_jwt = true
+[functions.invalidar-cache-cor]
+verify_jwt = true
+[functions.publicar-familias]
+verify_jwt = true
+[functions.excluir-lote]
+verify_jwt = true
+[functions.status-publicados]
+verify_jwt = true
+[functions.definir-categoria-familia]
+verify_jwt = true
+[functions.analisar-viabilidade]
+verify_jwt = true
+[functions.metricas-vendas]
+verify_jwt = true
+[functions.ml-webhook]
+verify_jwt = true
+[functions.sync-venda]
+verify_jwt = true
+[functions.backfill-faturamento]
+verify_jwt = true
+[functions.reconciliar-faturamento]
+verify_jwt = true
+[functions.responder-pergunta]
+verify_jwt = true
+[functions.sugerir-resposta-pergunta]
+verify_jwt = true

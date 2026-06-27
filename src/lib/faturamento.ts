@@ -59,7 +59,7 @@ export interface Venda {
 export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'): Promise<Venda[]> {
   let q = supabase
     .from('ml_vendas')
-    .select('*, itens:ml_vendas_itens(*)')
+    .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
     .gte('date_closed', janela.desde)
     .lte('date_closed', janela.ate)
     .order('date_closed', { ascending: false });
