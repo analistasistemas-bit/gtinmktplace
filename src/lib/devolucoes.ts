@@ -19,7 +19,7 @@ export interface Devolucao {
 
 /** Lê as devoluções/claims (mais recentes primeiro). RLS por user. */
 export async function buscarDevolucoes(): Promise<Devolucao[]> {
-  const { data, error } = await (supabase as unknown as { from: (t: string) => any })
+  const { data, error } = await supabase
     .from('ml_devolucoes')
     .select('id, claim_id, order_id, stage, status, type, reason_texto, valor_em_jogo, return_status, return_status_money, acoes_pendentes, aberto_em')
     .order('aberto_em', { ascending: false });

@@ -17,7 +17,7 @@ export function usePerguntasNaoRespondidas() {
     queryKey: ['perguntasNaoRespondidas'],
     queryFn: async () => {
       try {
-        const { count, error } = await (supabase as unknown as { from: (t: string) => any })
+        const { count, error } = await supabase
           .from('ml_perguntas')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'UNANSWERED');
