@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel } from '../retry.ts';
+import { decidirErroCriarAnuncio, decidirRetryPorErro, mensagemErroFotoRecuperavel } from '../retry.ts';
 import type { ErroCanal } from '../../canais/contrato.ts';
 
 function erro(over: Partial<ErroCanal>): ErroCanal {
@@ -24,6 +24,27 @@ describe('decidirErroCriarAnuncio', () => {
   it('erro retentável de foto usa retries limitados do QStash', () => {
     expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 0)).toBe('retentar');
     expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 3)).toBe('definitivo');
+  });
+});
+
+describe('decidirRetryPorErro', () => {
+  it('429 (rate limit) retenta', () => {
+    expect(decidirRetryPorErro(Object.assign(new Error('rate'), { status: 429 }))).toBe(true);
+  });
+  it('5xx retenta', () => {
+    expect(decidirRetryPorErro(Object.assign(new Error('x'), { status: 503 }))).toBe(true);
+  });
+  it('4xx definitivo nao retenta', () => {
+    expect(decidirRetryPorErro(Object.assign(new Error('x'), { status: 400 }))).toBe(false);
+  });
+  it('status desconhecido retenta (default conservador)', () => {
+    expect(decidirRetryPorErro(new Error('Persist final: timeout'))).toBe(true);
+  });
+  it('retentavel sobrepoe status 4xx', () => {
+    expect(decidirRetryPorErro(Object.assign(new Error('x'), { status: 400, retentavel: true }))).toBe(true);
+  });
+  it('mensagem com "429" no texto (sem status) retenta — texto nao decide', () => {
+    expect(decidirRetryPorErro(new Error('429 Too Many Requests'))).toBe(true);
   });
 });
 
