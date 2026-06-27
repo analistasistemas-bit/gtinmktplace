@@ -77,8 +77,9 @@ export function ConfigTelegram() {
 
       <div className="space-y-3">
         <div>
-          <label className="mb-1 block text-xs font-medium">Chat ID</label>
+          <label htmlFor="telegram-chat-id" className="mb-1 block text-xs font-medium">Chat ID</label>
           <Input
+            id="telegram-chat-id"
             className="h-8 text-sm"
             value={chatId}
             placeholder="ex.: 123456789"
@@ -87,8 +88,9 @@ export function ConfigTelegram() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium">Bot token</label>
+          <label htmlFor="telegram-bot-token" className="mb-1 block text-xs font-medium">Bot token</label>
           <Input
+            id="telegram-bot-token"
             type="password"
             className="h-8 text-sm"
             value={botToken}
