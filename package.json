@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:check": "bash scripts/db-check.sh"
+    "db:check": "bash scripts/db-check.sh",
+    "lint:functions": "deno lint --config supabase/functions/deno.json",
+    "check:functions": "deno check --config supabase/functions/deno.json supabase/functions/**/*.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

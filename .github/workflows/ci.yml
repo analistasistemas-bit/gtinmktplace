@@ -1,0 +1,33 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  backend-lint:
+    runs-on: ubuntu-latest
+    # Report-only por enquanto: o deno lint tem uma baseline de ~15 itens menores
+    # (no-explicit-any / no-inner-declarations / require-await, ver plans/009). Vira
+    # bloqueante (remover continue-on-error) quando o backlog for zerado.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno lint --config supabase/functions/deno.json
