@@ -1,0 +1,59 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="c4n1" name="C4 N1 - Contexto">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1040" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="PubliAI — C4 Nível 1 · Diagrama de Contexto do Sistema" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="640" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Quem usa o PubliAI e com quais sistemas externos ele conversa." style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#6B7280;" vertex="1" parent="1">
+          <mxGeometry x="40" y="48" width="640" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="operador" value="&lt;b&gt;Operador (Diego)&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Pessoa]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#EDE9FE&quot;&gt;Importa planilhas + fotos, revisa e aprova os anúncios antes de publicar.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#5B21B6;strokeColor=#4C1D95;fontColor=#FFFFFF;fontSize=12;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="360" y="90" width="200" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="publiai" value="&lt;b&gt;PubliAI&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Sistema de software]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#EDE9FE&quot;&gt;Transforma planilhas de produtos em anúncios publicados em marketplaces, com IA de copy/visão e revisão humana.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#7C3AED;strokeColor=#5B21B6;fontColor=#FFFFFF;fontSize=13;shadow=1;arcSize=10;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="340" y="320" width="240" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="ml" value="&lt;b&gt;Mercado Livre&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Sistema externo]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot;&gt;Marketplace primário: OAuth, API de anúncios/pedidos e webhooks.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=12;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="800" y="320" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="openrouter" value="&lt;b&gt;OpenRouter&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Sistema externo]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot;&gt;Gateway de IA (OpenAI): geração de copy e detecção de cor por visão.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=12;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="mp" value="&lt;b&gt;Mercado Pago&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Sistema externo]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot;&gt;Origem dos dados financeiros: recebíveis e datas de liberação.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=12;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="620" y="540" width="200" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="telegram" value="&lt;b&gt;Telegram&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Sistema externo]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot;&gt;Canal de alertas operacionais (vendas, perguntas, moderação).&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=12;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="100" y="540" width="200" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e_op" value="Importa planilha + fotos,&#10;revisa e aprova" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#6D28D9;strokeWidth=1.5;rounded=1;" edge="1" parent="1" source="operador" target="publiai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ml_out" value="Publica/atualiza anúncios,&#10;lê pedidos (OAuth + API)" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="publiai" target="ml">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_ml_in" value="Webhooks de venda,&#10;pergunta e devolução" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;dashed=1;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="ml" target="publiai">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_or" value="Gera copy +&#10;detecta cor (IA)" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="publiai" target="openrouter">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mp" value="Lê recebíveis e&#10;liberações" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;" edge="1" parent="1" source="publiai" target="mp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_tg" value="Envia alertas" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;" edge="1" parent="1" source="publiai" target="telegram">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legenda&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B21B6&quot;&gt;■&lt;/font&gt; Pessoa&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#7C3AED&quot;&gt;■&lt;/font&gt; Sistema PubliAI&amp;nbsp;&amp;nbsp; &lt;font color=&quot;#6B7280&quot;&gt;■&lt;/font&gt; Sistema externo&lt;br&gt;→ relação&amp;nbsp;&amp;nbsp; ⇢ assíncrono (webhook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#D1D5DB;fontColor=#374151;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="720" y="20" width="300" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

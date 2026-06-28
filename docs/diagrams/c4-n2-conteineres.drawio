@@ -1,0 +1,103 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="c4n2" name="C4 N2 - Conteineres">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="740" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="PubliAI — C4 Nível 2 · Diagrama de Contêineres" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="700" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="As peças que compõem o PubliAI e como conversam entre si e com sistemas externos." style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#6B7280;" vertex="1" parent="1">
+          <mxGeometry x="40" y="48" width="700" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legenda&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#5B21B6&quot;&gt;■&lt;/font&gt; Pessoa&amp;nbsp; &lt;font color=&quot;#8B5CF6&quot;&gt;■&lt;/font&gt; Contêiner PubliAI&amp;nbsp; &lt;font color=&quot;#0D9488&quot;&gt;■&lt;/font&gt; Infra (Upstash)&amp;nbsp; &lt;font color=&quot;#6B7280&quot;&gt;■&lt;/font&gt; Externo&lt;br&gt;→ relação&amp;nbsp;&amp;nbsp; ⇢ assíncrono (fila/webhook)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#D1D5DB;fontColor=#374151;fontSize=10;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="20" width="380" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="operador" value="&lt;b&gt;Operador (Diego)&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Pessoa]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#5B21B6;strokeColor=#4C1D95;fontColor=#FFFFFF;fontSize=12;shadow=1;arcSize=14;verticalAlign=top;spacingTop=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary" value="PubliAI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#7C3AED;dashed=1;dashPattern=8 4;fontColor=#5B21B6;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=8;arcSize=2;" vertex="1" parent="1">
+          <mxGeometry x="250" y="110" width="870" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="frontend" value="&lt;b&gt;Frontend SPA&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Contêiner: React + Vite]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot;&gt;Interface do operador (Render). TanStack Query + Zustand + Auth.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="480" y="150" width="320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="edge" value="&lt;b&gt;Edge Functions&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Contêiner: Supabase / Deno]&lt;/i&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot;&gt;32 funções: ingest, IA, publicação, faturamento, monitoramento. Ver C4 N3.&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=12;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="480" y="320" width="320" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="pg" value="&lt;b&gt;Postgres&lt;/b&gt;&lt;br&gt;&lt;i&gt;[RLS]&lt;/i&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=10;shadow=1;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="280" y="530" width="120" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" value="&lt;b&gt;Auth&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Supabase]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=10;shadow=1;arcSize=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="430" y="545" width="110" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="storage" value="&lt;b&gt;Storage&lt;/b&gt;&lt;br&gt;&lt;i&gt;[bucket imagens]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=10;shadow=1;arcSize=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="570" y="545" width="110" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="vault" value="&lt;b&gt;Vault&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Secrets]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=10;shadow=1;arcSize=12;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="710" y="545" width="110" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="qstash" value="&lt;b&gt;QStash&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Fila · Upstash]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0D9488;strokeColor=#0F766E;fontColor=#FFFFFF;fontSize=10;shadow=1;arcSize=14;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="850" y="545" width="120" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="redis" value="&lt;b&gt;Redis&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Cache/locks · Upstash]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0D9488;strokeColor=#0F766E;fontColor=#FFFFFF;fontSize=10;shadow=1;arcSize=14;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="990" y="545" width="120" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="ml" value="&lt;b&gt;Mercado Livre&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Externo]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=14;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="150" width="180" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="or" value="&lt;b&gt;OpenRouter&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Externo · IA]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=14;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="270" width="180" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="mp" value="&lt;b&gt;Mercado Pago&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Externo]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=14;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="390" width="180" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="tg" value="&lt;b&gt;Telegram&lt;/b&gt;&lt;br&gt;&lt;i&gt;[Externo]&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=14;verticalAlign=top;spacingTop=8;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="510" width="180" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="Usa (HTTPS)" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#6D28D9;strokeWidth=1.5;" edge="1" parent="1" source="operador" target="frontend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="Chama (JWT)" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;" edge="1" parent="1" source="frontend" target="edge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="Lê/escreve (RLS)" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=0.1;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="edge" target="pg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="Fotos" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=0.4;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="edge" target="storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="Tokens" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=0.6;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="edge" target="vault">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eauth" value="Valida sessão" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="edge" target="auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="Enfileira" style="endArrow=block;html=1;fontSize=10;fontColor=#0F766E;strokeColor=#0F766E;strokeWidth=1.5;exitX=0.85;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="edge" target="qstash">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="Dispara workers" style="endArrow=block;html=1;fontSize=10;fontColor=#0F766E;strokeColor=#0F766E;strokeWidth=1.5;dashed=1;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="qstash" target="edge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="Cache + locks" style="endArrow=block;html=1;fontSize=10;fontColor=#0F766E;strokeColor=#0F766E;strokeWidth=1.5;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="edge" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" value="OAuth + API" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=1;exitY=0.2;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="edge" target="ml">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="Webhooks" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.35;entryDx=0;entryDy=0;" edge="1" parent="1" source="ml" target="edge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="Copy + visão (IA)" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=1;exitY=0.45;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="edge" target="or">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="Financeiro" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=1;exitY=0.7;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="edge" target="mp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="Alertas" style="endArrow=block;html=1;fontSize=10;fontColor=#374151;strokeColor=#4B5563;strokeWidth=1.5;exitX=0.95;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="edge" target="tg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -71,7 +71,7 @@ defasar — é parte da definição de pronto, não um passo opcional.
 | `supabase/config.toml` (`verify_jwt`) | `docs/reference/edge-functions.md` (tabela + inconsistências) |
 | `supabase/migrations/**` (schema, RLS, enums) | `docs/reference/modelo-de-dados.md` |
 | Termo de domínio novo/alterado (tipos, enums, conceito) | `docs/reference/glossario.md` |
-| Fluxo ponta a ponta, fila, integração externa, stack | `docs/explanation/arquitetura.md` |
+| Fluxo ponta a ponta, fila, integração externa, stack | `docs/explanation/arquitetura.md` + `docs/diagrams/` (C4/ERD/sequências) |
 | Scripts (`package.json`), `.env.example`, setup local | `docs/how-to/desenvolvimento-local.md` |
 | Processo de deploy / migrations | `docs/how-to/deploy-e-migrations.md` |
 | Procedimento operacional (reprocessar, OAuth, faturamento) | `docs/how-to/operacoes-rotineiras.md` + `docs/runbooks/` |
