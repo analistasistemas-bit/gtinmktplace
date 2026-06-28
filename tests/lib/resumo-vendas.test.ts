@@ -67,12 +67,24 @@ describe('calcularResumo', () => {
   it('markup só sobre vendas com custo; ticket = bruto/pedidos', () => {
     const resolver = (it: VendaItem) => (it.ml_item_id === 'COM' ? 4 : null);
     const r = calcularResumo([
-      venda({ id: 'a', total_amount: 20, liquido: 16, itens: [item({ ml_item_id: 'COM', quantity: 2, unit_price: 10 })] }),
-      venda({ id: 'b', total_amount: 50, liquido: 40, itens: [item({ ml_item_id: 'SEM', quantity: 1, unit_price: 50 })] }),
+      venda({ id: 'a', order_id: 1, total_amount: 20, liquido: 16, itens: [item({ ml_item_id: 'COM', quantity: 2, unit_price: 10 })] }),
+      venda({ id: 'b', order_id: 2, total_amount: 50, liquido: 40, itens: [item({ ml_item_id: 'SEM', quantity: 1, unit_price: 50 })] }),
     ], resolver);
     expect(r.markup).toBeCloseTo(1.0, 5); // (16 - 8) / 8
     expect(r.lucro).toBe(8);
     expect(r.ticket).toBe(35); // (20 + 50) / 2
+  });
+
+  it('conta pedido por pack (carrinho), não por order_id — alinhado ao Faturamento (ADR-0039)', () => {
+    // 3 order_id faturáveis: dois compartilham o mesmo pack_id (1 carrinho) + 1 avulso = 2 pedidos.
+    const r = calcularResumo([
+      venda({ id: 'a', order_id: 10, pack_id: 99, total_amount: 20 }),
+      venda({ id: 'b', order_id: 11, pack_id: 99, total_amount: 30 }),
+      venda({ id: 'c', order_id: 12, pack_id: null, total_amount: 50 }),
+    ]);
+    expect(r.pedidos).toBe(2);     // 1 pack (99) + 1 avulso (12), NÃO 3
+    expect(r.totalVendas).toBe(2);
+    expect(r.ticket).toBe(50);     // bruto 100 / 2 pedidos
   });
 
   it('margem não vira -Infinity quando líquido é 0 e há custo (div por zero)', () => {
@@ -199,8 +211,8 @@ describe('calcularResumo — caixa/taxas/cobertura/margem', () => {
   it('expõe cobertura de custo e margem (lucro ÷ líquido com custo)', () => {
     const resolver = (it: VendaItem) => (it.codigo === '001' ? 40 : null); // custo unit R$40
     const vendas = [
-      vendaT1({ id: 'a', liquido: 80, itens: [itemT1({ codigo: '001', quantity: 1 })] }), // custo 40
-      vendaT1({ id: 'b', liquido: 50, itens: [itemT1({ codigo: '999', quantity: 1 })] }), // sem custo
+      vendaT1({ id: 'a', order_id: 1, liquido: 80, itens: [itemT1({ codigo: '001', quantity: 1 })] }), // custo 40
+      vendaT1({ id: 'b', order_id: 2, liquido: 50, itens: [itemT1({ codigo: '999', quantity: 1 })] }), // sem custo
     ];
     const r = calcularResumo(vendas, resolver, undefined, AGORA);
     expect(r.totalVendas).toBe(2);
