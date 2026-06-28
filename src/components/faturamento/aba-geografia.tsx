@@ -57,8 +57,10 @@ export function AbaGeografia() {
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
 
   const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
+  const ehHoje = !modoCustom && periodo.tipo === 'hoje';
   const rascunhoValido = !!rascunho.desde && !!rascunho.ate && rascunho.desde <= rascunho.ate;
   const escolherPreset = (d: PeriodoDias) => { setModoCustom(false); setSelecionada(null); setPeriodo({ tipo: 'preset', dias: d }); };
+  const escolherHoje = () => { setModoCustom(false); setSelecionada(null); setPeriodo({ tipo: 'hoje' }); };
   const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
   const aplicarCustom = () => { if (rascunhoValido) { setSelecionada(null); setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); } };
 
@@ -82,6 +84,14 @@ export function AbaGeografia() {
       {/* Seletor de período + exportar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1">
+        <Button
+          size="sm"
+          variant={ehHoje ? 'default' : 'outline'}
+          className="h-7 px-2.5 text-xs"
+          onClick={escolherHoje}
+        >
+          Hoje
+        </Button>
         {PERIODOS.map((p) => (
           <Button
             key={p.dias}

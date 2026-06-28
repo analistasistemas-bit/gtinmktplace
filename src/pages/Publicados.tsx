@@ -520,7 +520,7 @@ export default function Publicados() {
           description="Publique um lote para ver seus anúncios aqui, com status ao vivo do Mercado Livre."
           action={
             <Button asChild>
-              <Link to="/novo-lote">Novo lote</Link>
+              <Link to="/lotes">Novo lote</Link>
             </Button>
           }
         />

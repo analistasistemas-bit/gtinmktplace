@@ -1,13 +1,19 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FolderPlus, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { FolderPlus, CheckCircle2, AlertTriangle, Loader2, PackageOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Pagination } from '@/components/ui/pagination';
 import { Dropzone } from '@/components/dropzone';
+import { LoteCard } from '@/components/lote-card';
+import { LotesEmAndamento } from '@/components/dashboard-lotes-andamento';
 import { acumularImagens, filtrarImagens } from '@/lib/acumular-imagens';
 import { colunasFaltando, lerCabecalhoXlsx, COLUNAS_OBRIGATORIAS_PLANILHA } from '@/lib/validar-planilha';
 import { useUploadLote } from '@/hooks/useUploadLote';
+import { useLotes } from '@/hooks/useLotes';
+import { usePaginacao } from '@/hooks/usePaginacao';
 
 type ValidacaoPlanilha =
   | { tipo: 'validando' }
@@ -15,13 +21,21 @@ type ValidacaoPlanilha =
   | { tipo: 'faltando'; colunas: string[] }
   | { tipo: 'ilegivel' };
 
-export default function NovoLote() {
+export default function Lotes() {
   const navigate = useNavigate();
   const [planilha, setPlanilha] = useState<File[]>([]);
   const [validacao, setValidacao] = useState<ValidacaoPlanilha | null>(null);
   const [imagens, setImagens] = useState<File[]>([]);
   const pastaInputRef = useRef<HTMLInputElement>(null);
   const { status, progresso, erro, iniciar } = useUploadLote();
+
+  const { data: lotes = [], isLoading, error } = useLotes();
+  const pag = usePaginacao(lotes);
+  const topoLista = useRef<HTMLDivElement>(null);
+  const irPara = (p: number) => {
+    pag.irPara(p);
+    topoLista.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Pré-validação no cliente: confere as colunas obrigatórias antes de enviar
   // (o backend revalida — defesa em profundidade).
@@ -69,7 +83,7 @@ export default function NovoLote() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader
-        title="Novo lote"
+        title="Lotes"
         subtitle="Envie a planilha. As imagens são opcionais: numa reposição de estoque, suba só a planilha."
       />
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
@@ -164,6 +178,41 @@ export default function NovoLote() {
         <Button onClick={handleProcessar} disabled={!podeProcessar || enviando} size="lg">
           {enviando ? 'Enviando...' : 'Processar'}
         </Button>
+      </div>
+
+      {/* ── Lotes: andamento + histórico (migrado do Dashboard) ── */}
+      <div className="mt-10">
+        <LotesEmAndamento lotes={lotes} />
+
+        <h2 className="mb-2 mt-2 text-sm font-medium text-muted-foreground">Histórico de lotes</h2>
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Carregando lotes...</div>
+        ) : error ? (
+          <div className="text-sm text-destructive">Erro ao carregar lotes: {(error as Error).message}</div>
+        ) : lotes.length === 0 ? (
+          <EmptyState
+            icon={PackageOpen}
+            title="Nenhum lote ainda"
+            description="Faça upload de uma planilha acima para começar."
+          />
+        ) : (
+          <div ref={topoLista} className="flex flex-col gap-3 scroll-mt-6">
+            {pag.itensPagina.map((lote) => (
+              <LoteCard key={lote.id} lote={lote} />
+            ))}
+            <Pagination
+              rotuloItem="lote"
+              paginaAtual={pag.paginaAtual}
+              totalPaginas={pag.totalPaginas}
+              inicio={pag.inicio}
+              fim={pag.fim}
+              total={pag.total}
+              tamanho={pag.tamanho}
+              onIrPara={irPara}
+              onTamanho={pag.setTamanho}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

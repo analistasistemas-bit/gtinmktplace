@@ -73,7 +73,7 @@ export default function Financeiro() {
     </div>
   );
 
-  const passo = periodo.tipo === 'preset' && periodo.dias <= 31 ? 'dia'
+  const passo = periodo.tipo === 'hoje' || (periodo.tipo === 'preset' && periodo.dias <= 31) ? 'dia'
     : periodo.tipo === 'range'
       ? (!janela.desde || !janela.ate ? 'dia' : ((Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana'))
       : 'semana';
@@ -117,6 +117,14 @@ export default function Financeiro() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Vendas aprovadas em</span>
         <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant={periodo.tipo === 'hoje' ? 'default' : 'outline'}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setPeriodo({ tipo: 'hoje' })}
+          >
+            Hoje
+          </Button>
           {([7, 30, 90] as PeriodoDias[]).map((d) => (
             <Button
               key={d}

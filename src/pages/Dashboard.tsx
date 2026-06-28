@@ -1,115 +1,366 @@
-import { useRef } from 'react';
+import { useMemo, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Plus,
-  PackageOpen,
-  Package,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  ClipboardList,
+  Plus, Wallet, Receipt, Coins, ShoppingBag, Target, PiggyBank, TrendingUp, Users,
+  ArrowUp, ArrowDown, ArrowRight, AlertTriangle, ChevronRight, Trophy, MapPin, CalendarClock,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
-import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { LoteCard } from '@/components/lote-card';
-import { LotesEmAndamento } from '@/components/dashboard-lotes-andamento';
-import { Pendencias } from '@/components/dashboard-pendencias';
+import { Skeleton } from '@/components/ui/skeleton';
+import { AoVivo } from '@/components/ui/ao-vivo';
+import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
+import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
+import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
+import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
+import { agruparPorPeriodo } from '@/lib/resumo-vendas';
+import { useResumoVendas } from '@/hooks/useResumoVendas';
+import { useVendas } from '@/hooks/useVendas';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
-import { usePaginacao } from '@/hooks/usePaginacao';
-import { Pagination } from '@/components/ui/pagination';
+import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
+import { useDevolucoes } from '@/hooks/useDevolucoes';
 import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
+import { montarPendencias } from '@/lib/pendencias';
+import { topProdutos, vendasPorUf, calendarioCaixa, montarAtencao } from '@/lib/cockpit';
+import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento';
+
+type Trend = 'up' | 'down' | 'neutral';
+function delta(atual: number, anterior: number): { texto: string; trend: Trend } {
+  if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
+  const p = ((atual - anterior) / Math.abs(anterior)) * 100;
+  const trend: Trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
+  return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% vs. anterior`, trend };
+}
+
+function fmtDia(iso: string): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+/** Card de destaque do topo (Faturamento / Líquido). Gradiente de marca, valor grande, delta e
+ *  drill-down para a tela de origem. */
+function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta, sub, className }: {
+  to: string;
+  destino: string;
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  cor: string;
+  valor: string;
+  valorCor?: string;
+  delta: { texto: string; trend: Trend };
+  sub: string;
+  className?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      aria-label={`${label} — ver ${destino}`}
+      className={cn('group block h-full rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm outline-none ring-offset-background transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-ring', className)}
+    >
+      <div className="mb-1 flex items-center justify-between gap-1.5 text-xs">
+        <span className={cn('flex items-center gap-1.5', cor)}>
+          <Icon className="h-4 w-4 shrink-0" /> {label}
+        </span>
+        <span className="flex items-center gap-0.5 text-muted-foreground">
+          {destino} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </div>
+      <div className={cn('text-3xl font-bold tabular-nums', valorCor)}>{valor}</div>
+      <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
+        delta.trend === 'up' ? 'text-success' : delta.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
+        {delta.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : delta.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
+        {delta.texto}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+    </Link>
+  );
+}
 
 export default function Dashboard() {
-  const { data: lotes = [], isLoading, error } = useLotes();
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const [metrica, setMetrica] = useState<MetricaGrafico>('liquido');
+  const janela = useMemo(() => resolverJanela(periodo), [periodo]);
+  const janelaAnt = useMemo(() => janelaAnterior(janela), [janela]);
+
+  const { resumo: r, isFetching, error } = useResumoVendas(janela);
+  const { resumo: rAnt } = useResumoVendas(janelaAnt);
+  const vendasRaw = useVendas(janela, 'todos'); // mesma chave de cache do useResumoVendas → sem request extra
+  const vendasRawAnt = useVendas(janelaAnt, 'todos'); // idem (já buscado pelo rAnt) → delta por pacote
+  const carregando = vendasRaw.isPending;
+
+  // Catálogo + pendências cross-módulo
+  const { data: lotes = [] } = useLotes();
   const { data: publicados = [] } = usePublicados();
-  const { data: statusData, isLoading: loadingStatus, isError: erroStatus } = useStatusPublicados();
+  const { data: statusData } = useStatusPublicados();
+  const perguntasQ = usePerguntasNaoRespondidas();
+  const devolucoesQ = useDevolucoes();
 
   const statusItens = statusData?.itens ?? [];
-  // Cards ao vivo indisponíveis quando a conta ML não está conectada OU a chamada falhou.
-  const semStatus = (statusData?.semCredencialML ?? false) || erroStatus;
+  const semStatus = statusData?.semCredencialML ?? false;
   const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
-  const pag = usePaginacao(lotes);
-  const topoRef = useRef<HTMLDivElement>(null);
+  const errosDestino = montarPendencias(kpis.comProblema, lotes).find((p) => p.chave === 'erro')?.destino ?? '/publicados';
+  const devolucoesAbertas = (devolucoesQ.data ?? []).filter((d) => (d.acoes_pendentes?.length ?? 0) > 0).length;
+  const atencao = montarAtencao({
+    aRevisar: kpis.aRevisar,
+    comProblema: semStatus ? 0 : kpis.comProblema,
+    erros: kpis.erros,
+    errosDestino,
+    perguntas: perguntasQ.data ?? 0,
+    devolucoes: devolucoesAbertas,
+  });
 
-  const irPara = (p: number) => {
-    pag.irPara(p);
-    topoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  // Gráfico: granularidade segue o período (dia até ~31d; senão semana). Espelha o Financeiro.
+  const passo = periodo.tipo === 'hoje' || (periodo.tipo === 'preset' && periodo.dias <= 31) ? 'dia'
+    : periodo.tipo === 'range'
+      ? (!janela.desde || !janela.ate ? 'dia'
+        : (Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana')
+      : 'semana';
+  const serie = useMemo(() => agruparPorPeriodo(r.vendas, passo), [r.vendas, passo]);
+
+  // Pedidos/ticket/compradores por PACOTE (agruparPorPedido) — mesmo nível do menu Faturamento
+  // (fonte da verdade): uma compra com vários itens conta como 1 pedido. O resumo (r.pedidos/
+  // r.ticket) conta por linha de ml_vendas, o que infla pedidos e reduz o ticket.
+  const kpisPedidos = useMemo(
+    () => calcularKpisPedidos(agruparPorPedido(vendasRaw.data ?? [])),
+    [vendasRaw.data],
+  );
+  const kpisPedidosAnt = useMemo(
+    () => calcularKpisPedidos(agruparPorPedido(vendasRawAnt.data ?? [])),
+    [vendasRawAnt.data],
+  );
+  const top = useMemo(() => topProdutos(vendasRaw.data ?? [], 5), [vendasRaw.data]);
+  const uf = useMemo(() => vendasPorUf(vendasRaw.data ?? []), [vendasRaw.data]);
+  const caixa = useMemo(() => calendarioCaixa(r.vendas), [r.vendas]);
+  const rankingUf = useMemo(
+    () => Object.entries(uf).sort((a, b) => b[1] - a[1]).slice(0, 5),
+    [uf],
+  );
+
+  const dLiquido = delta(r.liquido, rAnt.liquido);
+  const pctRetido = r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
 
   const novoLoteBtn = (
     <Button asChild>
-      <Link to="/novo-lote">
-        <Plus className="mr-1 h-4 w-4" />
-        Novo lote
-      </Link>
+      <Link to="/lotes"><Plus className="mr-1 h-4 w-4" /> Novo lote</Link>
     </Button>
   );
 
+  const catalogoSub = `${fmtInt(kpis.publicados)} ${kpis.publicados === 1 ? 'anúncio publicado' : 'anúncios publicados'}`
+    + (semStatus ? '' : ` · ${fmtInt(kpis.ativos)} ${kpis.ativos === 1 ? 'ativo' : 'ativos'}`);
+
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Dashboard" actions={novoLoteBtn} />
+      <PageHeader
+        title="Dashboard"
+        subtitle={catalogoSub}
+        actions={
+          <div className="flex items-center gap-3">
+            <AoVivo isFetching={isFetching} />
+            {novoLoteBtn}
+          </div>
+        }
+      />
 
-      <LotesEmAndamento lotes={lotes} />
-
-      <Pendencias comProblema={kpis.comProblema} lotes={lotes} />
-
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <KpiCard label="Anúncios publicados" value={kpis.publicados} icon={Package} variant="brand" to="/publicados" />
-        <KpiCard
-          label="Ativos"
-          value={semStatus ? '—' : kpis.ativos}
-          icon={CheckCircle2}
-          loading={loadingStatus}
-          hint={semStatus ? 'ML indisponível' : undefined}
-          to={semStatus ? undefined : '/publicados?status=ativo'}
-        />
-        <KpiCard
-          label="Com problema"
-          value={semStatus ? '—' : kpis.comProblema}
-          icon={AlertTriangle}
-          loading={loadingStatus}
-          hint={semStatus ? 'ML indisponível' : undefined}
-          to={semStatus ? undefined : '/publicados'}
-        />
-        <KpiCard label="Erros de publicação" value={kpis.erros} icon={XCircle} />
-        <KpiCard label="A revisar" value={kpis.aRevisar} icon={ClipboardList} />
-      </div>
-
-      {isLoading ? (
-        <div className="text-sm text-muted-foreground">Carregando lotes...</div>
-      ) : error ? (
-        <div className="text-sm text-destructive">
-          Erro ao carregar lotes: {(error as Error).message}
-        </div>
-      ) : lotes.length === 0 ? (
-        <EmptyState
-          icon={PackageOpen}
-          title="Nenhum lote ainda"
-          description='Faça upload de uma planilha para começar. Clique em "Novo lote".'
-          action={novoLoteBtn}
-        />
-      ) : (
-        <div ref={topoRef} className="flex flex-col gap-3 scroll-mt-6">
-          {pag.itensPagina.map((lote) => (
-            <LoteCard key={lote.id} lote={lote} />
-          ))}
-          <Pagination
-            rotuloItem="lote"
-            paginaAtual={pag.paginaAtual}
-            totalPaginas={pag.totalPaginas}
-            inicio={pag.inicio}
-            fim={pag.fim}
-            total={pag.total}
-            tamanho={pag.tamanho}
-            onIrPara={irPara}
-            onTamanho={pag.setTamanho}
-          />
+      {error && (
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          Falha ao ler as vendas. As métricas podem estar incompletas.
         </div>
       )}
+
+      <div className="mb-4">
+        <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} carregando={isFetching} />
+      </div>
+
+      {/* ── Destaque (Faturamento + Líquido) + 6 KPIs, todos da mesma altura ── */}
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5 lg:grid-rows-2">
+        {carregando ? (
+          <>
+            <div className="col-span-2 h-full rounded-lg border bg-card p-4 shadow-sm lg:col-span-2 lg:col-start-1 lg:row-start-1"><Skeleton className="h-4 w-32" /><Skeleton className="mt-3 h-8 w-40" /></div>
+            <div className="col-span-2 h-full rounded-lg border bg-card p-4 shadow-sm lg:col-span-2 lg:col-start-1 lg:row-start-2"><Skeleton className="h-4 w-32" /><Skeleton className="mt-3 h-8 w-40" /></div>
+          </>
+        ) : (
+          <>
+            <HeroVenda
+              to="/faturamento"
+              destino="Faturamento"
+              icon={Receipt}
+              label="Faturamento bruto"
+              cor="text-info"
+              valor={fmtBRL(r.bruto)}
+              delta={delta(r.bruto, rAnt.bruto)}
+              sub={`${fmtInt(kpisPedidos.pedidos)} pedidos · ${fmtInt(kpisPedidos.unidades)} unidades`}
+              className="col-span-2 lg:col-span-2 lg:col-start-1 lg:row-start-1"
+            />
+            <HeroVenda
+              to="/financeiro"
+              destino="Financeiro"
+              icon={Wallet}
+              label="Líquido das vendas"
+              cor="text-success"
+              valor={fmtBRL(r.liquido)}
+              valorCor="text-success"
+              delta={dLiquido}
+              sub={`o que você recebe — ${fmtBRL(r.descontos)} retido pelo ML (${pctRetido.toFixed(1).replace('.', ',')}%)`}
+              className="col-span-2 lg:col-span-2 lg:col-start-1 lg:row-start-2"
+            />
+          </>
+        )}
+
+        <KpiCard
+          label="Lucro líquido" icon={Coins} loading={carregando}
+          value={r.margem != null ? fmtBRL(r.lucro) : '—'}
+          {...(r.margem != null ? { delta: delta(r.lucro, rAnt.lucro).texto, deltaTrend: delta(r.lucro, rAnt.lucro).trend } : {})}
+          hint={r.margem != null
+            ? `margem ${Math.round(r.margem * 100)}% · ${r.vendasComCusto}/${r.totalVendas} c/ custo`
+            : 'sem custo cadastrado'}
+        />
+        <KpiCard
+          label="Markup no período" icon={TrendingUp} loading={carregando}
+          value={r.markup != null ? `${r.markup >= 0 ? '+' : ''}${Math.round(r.markup * 100)}%` : '—'}
+          valueClassName={r.markup != null ? (r.markup >= 0 ? 'text-success' : 'text-destructive') : undefined}
+          hint={r.markup != null ? `lucro ${fmtBRL(r.lucro)} · ${r.vendasComCusto} c/ custo` : 'sem custo cadastrado'}
+        />
+        <KpiCard
+          label="Compradores" icon={Users} loading={carregando} to="/faturamento"
+          value={fmtInt(kpisPedidos.compradoresUnicos)}
+          hint={`${kpisPedidos.pctRecompra.toFixed(1).replace('.', ',')}% recompra`}
+        />
+        <KpiCard
+          label="Pedidos" icon={ShoppingBag} loading={carregando} to="/faturamento"
+          value={fmtInt(kpisPedidos.pedidos)}
+          delta={delta(kpisPedidos.pedidos, kpisPedidosAnt.pedidos).texto} deltaTrend={delta(kpisPedidos.pedidos, kpisPedidosAnt.pedidos).trend}
+        />
+        <KpiCard
+          label="Ticket médio" icon={Target} loading={carregando} to="/faturamento"
+          value={fmtBRL(kpisPedidos.ticket)}
+          delta={delta(kpisPedidos.ticket, kpisPedidosAnt.ticket).texto} deltaTrend={delta(kpisPedidos.ticket, kpisPedidosAnt.ticket).trend}
+        />
+        <KpiCard
+          label="A receber" icon={PiggyBank} loading={carregando} to="/financeiro"
+          value={fmtBRL(r.aLiberar)}
+          hint={r.proximaLiberacao
+            ? `próxima em ${new Date(r.proximaLiberacao).toLocaleDateString('pt-BR')}`
+            : 'nada a liberar'}
+        />
+      </div>
+
+      {/* ── Precisa de atenção ─────────────────────────────────── */}
+      {atencao.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 text-sm font-medium text-warning">
+            <AlertTriangle className="h-4 w-4" /> Precisa de atenção
+          </span>
+          {atencao.map((a) => (
+            <Link
+              key={a.chave}
+              to={a.destino}
+              className="inline-flex items-center gap-1 rounded-full border border-warning/40 bg-warning/5 px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-warning/10"
+            >
+              {a.label}
+              <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {/* ── Evolução ───────────────────────────────────────────── */}
+      <div className="mb-4 rounded-lg border bg-card p-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="text-sm font-medium">
+            Evolução de vendas <span className="text-muted-foreground">({passo === 'dia' ? 'por dia' : 'por semana'})</span>
+          </div>
+          <div className="flex gap-1">
+            {(['liquido', 'pedidos'] as MetricaGrafico[]).map((m) => (
+              <Button
+                key={m} size="sm" variant={metrica === m ? 'default' : 'outline'}
+                className="h-7 px-2.5 text-xs" onClick={() => setMetrica(m)}
+              >
+                {m === 'liquido' ? 'Líquido' : 'Pedidos'}
+              </Button>
+            ))}
+          </div>
+        </div>
+        {carregando ? <Skeleton className="h-64 w-full" /> : <GraficoCockpit serie={serie} metrica={metrica} />}
+      </div>
+
+      {/* ── Top produtos | Liberações próximas ─────────────────── */}
+      <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-sm font-medium">
+              <Trophy className="h-4 w-4 text-primary" /> Top produtos do período
+            </div>
+            <Link to="/publicados" className="flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground">
+              Ver todos <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+          {top.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Sem vendas no período.</p>
+          ) : (
+            <ol className="flex flex-col gap-2">
+              {top.map((p, i) => (
+                <li key={p.mlItemId} className="flex items-center gap-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">{i + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm" title={p.titulo}>{p.titulo}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{fmtInt(p.unidades)} un</span>
+                  <span className="shrink-0 text-sm font-medium tabular-nums">{fmtBRL(p.valor)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-sm font-medium">
+              <CalendarClock className="h-4 w-4 text-primary" /> Liberações próximas
+            </div>
+            <span className="text-xs text-muted-foreground">a receber {fmtBRL(r.aLiberar)}</span>
+          </div>
+          {caixa.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Nada a liberar no horizonte.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {caixa.map((d) => (
+                <li key={d.data} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    <CalendarClock className="h-3.5 w-3.5" /> {fmtDia(d.data)}
+                  </span>
+                  <span className="font-medium tabular-nums text-success">{fmtBRL(d.total)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* ── Mapa de vendas por UF ──────────────────────────────── */}
+      <div className="rounded-lg border bg-card p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-1.5 text-sm font-medium">
+          <MapPin className="h-4 w-4 text-primary" /> Vendas por estado
+        </div>
+        {rankingUf.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Sem vendas com destino no período.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <MapaBrasil valores={uf} unidade="pedidos" />
+            <div className="flex flex-col justify-center gap-2">
+              {rankingUf.map(([sigla, qtd]) => (
+                <div key={sigla} className="flex items-center gap-3">
+                  <span className="w-8 shrink-0 text-sm font-semibold">{sigla}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${(qtd / rankingUf[0][1]) * 100}%` }} />
+                  </div>
+                  <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">{fmtInt(qtd)} ped.</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

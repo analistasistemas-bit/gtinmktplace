@@ -70,9 +70,14 @@ describe('App routing', () => {
     expect(await screen.findByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
   });
 
-  it('renderiza NovoLote na rota /novo-lote', async () => {
+  it('renderiza Lotes na rota /lotes', async () => {
+    renderRoute('/lotes');
+    expect(await screen.findByRole('heading', { name: 'Lotes' })).toBeInTheDocument();
+  });
+
+  it('mantém /novo-lote como alias da tela Lotes', async () => {
     renderRoute('/novo-lote');
-    expect(await screen.findByRole('heading', { name: /novo lote/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Lotes' })).toBeInTheDocument();
   });
 
   it('renderiza Progresso na rota /progresso/:loteId', async () => {
