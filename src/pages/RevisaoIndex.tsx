@@ -20,7 +20,7 @@ export default function RevisaoIndex() {
           description="Crie um lote para começar a revisar e publicar."
           action={
             <Button asChild>
-              <Link to="/novo-lote">Criar primeiro lote</Link>
+              <Link to="/lotes">Criar primeiro lote</Link>
             </Button>
           }
         />

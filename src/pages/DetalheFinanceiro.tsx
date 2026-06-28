@@ -62,6 +62,7 @@ function fmtMarkup(markup: number): string {
 // Deriva o rótulo do período JÁ RESOLVIDO (não do query cru) para o texto sempre
 // refletir a janela efetivamente consultada, mesmo com URL malformada.
 function rotuloPeriodo(periodo: Periodo): string {
+  if (periodo.tipo === 'hoje') return 'hoje';
   return periodo.tipo === 'preset'
     ? `últimos ${periodo.dias} dias`
     : `${periodo.desde} a ${periodo.ate}`;

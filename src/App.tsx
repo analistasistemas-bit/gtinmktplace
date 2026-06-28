@@ -8,7 +8,7 @@ const Login = lazy(() => import('@/pages/Login'));
 const Cadastro = lazy(() => import('@/pages/Cadastro'));
 const ResetSenha = lazy(() => import('@/pages/ResetSenha'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const NovoLote = lazy(() => import('@/pages/NovoLote'));
+const Lotes = lazy(() => import('@/pages/Lotes'));
 const Progresso = lazy(() => import('@/pages/Progresso'));
 const Revisao = lazy(() => import('@/pages/Revisao'));
 const RevisaoIndex = lazy(() => import('@/pages/RevisaoIndex'));
@@ -34,7 +34,8 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/novo-lote" element={<NovoLote />} />
+          <Route path="/lotes" element={<Lotes />} />
+          <Route path="/novo-lote" element={<Lotes />} />
           <Route path="/progresso/:loteId" element={<Progresso />} />
           <Route path="/revisao" element={<RevisaoIndex />} />
           <Route path="/revisao/:loteId" element={<Revisao />} />

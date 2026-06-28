@@ -34,10 +34,16 @@ export function SeletorPeriodo({ periodo, onPeriodo, carregando }: Props) {
   const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
 
   const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
+  const ehHoje = !modoCustom && periodo.tipo === 'hoje';
 
   const escolherPreset = (dias: PeriodoDias) => {
     setModoCustom(false);
     onPeriodo({ tipo: 'preset', dias });
+  };
+
+  const escolherHoje = () => {
+    setModoCustom(false);
+    onPeriodo({ tipo: 'hoje' });
   };
 
   const abrirCustom = () => {
@@ -55,6 +61,14 @@ export function SeletorPeriodo({ periodo, onPeriodo, carregando }: Props) {
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-muted-foreground">Vendas nos últimos</span>
       <div className="flex gap-1">
+        <Button
+          size="sm"
+          variant={ehHoje ? 'default' : 'outline'}
+          className="h-7 px-2.5 text-xs"
+          onClick={escolherHoje}
+        >
+          Hoje
+        </Button>
         {PERIODOS.map((p) => (
           <Button
             key={p.dias}

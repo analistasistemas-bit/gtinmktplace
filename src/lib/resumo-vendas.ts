@@ -285,13 +285,13 @@ function ratearProporcional(total: number, base: number[], idxResto: number): nu
   return partes;
 }
 
-export interface PontoSerie { chave: string; rotulo: string; bruto: number; liquido: number }
+export interface PontoSerie { chave: string; rotulo: string; bruto: number; liquido: number; pedidos: number }
 export interface ItemSerie { data: string | null; bruto: number; liquido: number }
 
-/** Série temporal (bruto/líquido) por dia ou semana. Recebe itens já faturáveis (a página passa
- *  resumo.vendas, que só contém faturáveis). UTC na chave; rótulo DD/MM; ordenada crescente. */
+/** Série temporal (bruto/líquido/nº de pedidos) por dia ou semana. Recebe itens já faturáveis (a
+ *  página passa resumo.vendas, um item por venda). UTC na chave; rótulo DD/MM; ordenada crescente. */
 export function agruparPorPeriodo(itens: ItemSerie[], passo: 'dia' | 'semana'): PontoSerie[] {
-  const mapa = new Map<string, { rotulo: string; bruto: number; liquido: number }>();
+  const mapa = new Map<string, { rotulo: string; bruto: number; liquido: number; pedidos: number }>();
   for (const v of itens) {
     if (!v.data) continue;
     const d = new Date(v.data);
@@ -300,12 +300,13 @@ export function agruparPorPeriodo(itens: ItemSerie[], passo: 'dia' | 'semana'): 
     const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(d.getUTCDate()).padStart(2, '0');
     const chave = `${yyyy}-${mm}-${dd}`;
-    const acc = mapa.get(chave) ?? { rotulo: `${dd}/${mm}`, bruto: 0, liquido: 0 };
+    const acc = mapa.get(chave) ?? { rotulo: `${dd}/${mm}`, bruto: 0, liquido: 0, pedidos: 0 };
     acc.bruto += v.bruto;
     acc.liquido += v.liquido;
+    acc.pedidos += 1;
     mapa.set(chave, acc);
   }
   return [...mapa.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([chave, a]) => ({ chave, rotulo: a.rotulo, bruto: round2(a.bruto), liquido: round2(a.liquido) }));
+    .map(([chave, a]) => ({ chave, rotulo: a.rotulo, bruto: round2(a.bruto), liquido: round2(a.liquido), pedidos: a.pedidos }));
 }
