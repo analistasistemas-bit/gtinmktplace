@@ -17,6 +17,7 @@ entender e operar o sistema:
 | Quero... | Vá para |
 |---|---|
 | Entender como o sistema funciona ponta a ponta | [explanation/arquitetura.md](explanation/arquitetura.md) |
+| Ver os diagramas (C4, ERD, sequências) | [diagrams/](diagrams/) |
 | Saber o significado exato de um termo do domínio | [reference/glossario.md](reference/glossario.md) |
 | Consultar o schema do banco (tabelas, RLS, enums) | [reference/modelo-de-dados.md](reference/modelo-de-dados.md) |
 | Consultar as Edge Functions (trigger, verify_jwt, idempotência) | [reference/edge-functions.md](reference/edge-functions.md) |
