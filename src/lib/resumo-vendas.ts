@@ -120,6 +120,10 @@ export function calcularResumo(
   // Um checkout vira N order_id com o mesmo pack_id (carrinho). "Pedido" conta o PACK, não a linha
   // — alinhado ao menu Faturamento (ADR-0039); contar order_id inflava nº de pedidos e ticket médio.
   const packsFaturaveis = new Set<string>();
+  // Custo/markup por PACK (não por linha): espelha agruparPorPedido/calcularKpisPedidos (menu
+  // Faturamento, fonte da verdade). Um pack conta se tiver QUALQUER item com custo, e entra com o
+  // líquido inteiro do pack — assim markup/lucro/"c/ custo" batem entre todas as telas.
+  const custoPorPack = new Map<string, { liquido: number; custo: number; temCusto: boolean }>();
   let liberado = 0, aLiberar = 0, comissao = 0, vendasComCusto = 0;
   let proximaLiberacaoMs: number | null = null;
   let proximaLiberacao: string | null = null;
@@ -146,10 +150,13 @@ export function calcularResumo(
     }
 
     const custo = custoDaVenda(v, custoResolver);
-    if (custo != null && custo > 0) { liqComCusto += liq; custoTotal += custo; }
+    const pk = String(v.pack_id ?? v.order_id);
+    const pc = custoPorPack.get(pk) ?? { liquido: 0, custo: 0, temCusto: false };
+    pc.liquido += liq;
+    if (custo != null && custo > 0) { pc.custo += custo; pc.temCusto = true; }
+    custoPorPack.set(pk, pc);
 
     comissao += v.sale_fee_total ?? 0;
-    if (custo != null && custo > 0) vendasComCusto += 1;
     if (v.money_release_date) {
       const ms = Date.parse(v.money_release_date);
       if (ms <= agoraMs) {
@@ -180,6 +187,16 @@ export function calcularResumo(
 
   for (const id of Object.keys(porItem)) porItem[id].valor = round2(porItem[id].valor);
   vendasResumo.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
+
+  // Fecha o markup/lucro por pack (round2 por pack, igual ao Faturamento). vendasComCusto agora é
+  // nº de PACKS com custo (≤ pedidos), eliminando o antigo "55/45" (numerador por linha > pacotes).
+  for (const pc of custoPorPack.values()) {
+    if (pc.temCusto && pc.custo > 0) {
+      liqComCusto += round2(pc.liquido);
+      custoTotal += round2(pc.custo);
+      vendasComCusto += 1;
+    }
+  }
 
   // Breakdown do retido: comissão = sale_fee_total (autoritativo, não duplica em pack); o "frete
   // efetivo" é o RESIDUAL (descontos − comissão), não a soma crua de frete_vendedor — que o ML

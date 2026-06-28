@@ -81,8 +81,9 @@ export default function Financeiro() {
 
   // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
   // cadastrado (as demais não entram na base, senão distorceria). null = nenhuma com custo.
+  // `n` usa r.vendasComCusto (nº de PACKS com custo) — mesma base do card Lucro, senão divergia.
   const markup = r.markup != null
-    ? { pct: r.markup, lucro: r.lucro, n: r.vendas.filter((v) => v.custo != null && v.custo > 0).length }
+    ? { pct: r.markup, lucro: r.lucro, n: r.vendasComCusto }
     : null;
 
   return (
