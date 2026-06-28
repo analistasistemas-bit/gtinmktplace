@@ -57,13 +57,13 @@ verify_jwt = true
 [functions.metricas-vendas]
 verify_jwt = true
 [functions.ml-webhook]
-verify_jwt = true
+verify_jwt = false
 [functions.sync-venda]
-verify_jwt = true
+verify_jwt = false
 [functions.backfill-faturamento]
-verify_jwt = true
+verify_jwt = false
 [functions.reconciliar-faturamento]
-verify_jwt = true
+verify_jwt = false
 [functions.responder-pergunta]
 verify_jwt = true
 [functions.sugerir-resposta-pergunta]

@@ -48,6 +48,38 @@ Use MCP/CLI antes de sugerir operação manual.
 6. Revise humano antes de publicar em marketplace.
 7. Prefira o caminho pragmático e verificável ao mais elegante.
 8. Atualize `TASKS.md` e a documentação afetada quando concluir trabalho relevante.
+9. **Toda mudança de código exige uma checagem de documentação** antes de concluir — ver
+   [Manutenção da documentação](#manutenção-da-documentação).
+
+## Manutenção da documentação
+
+A documentação técnica vive em `docs/` no padrão [Diátaxis](https://diataxis.fr/)
+(`explanation/`, `reference/`, `how-to/`, `tutorials/`). Índice em
+[docs/README.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/README.md).
+
+**Regra:** ao terminar qualquer mudança em `src/`, `supabase/functions/`,
+`supabase/migrations/` ou `supabase/config.toml`, **antes de concluir a tarefa**, consulte o
+mapa abaixo, abra a doc correspondente e atualize-a se a mudança a tornou desatualizada. Se
+não precisar mudar nada, diga explicitamente "docs conferidas, sem mudança". Não deixe a doc
+defasar — é parte da definição de pronto, não um passo opcional.
+
+### Mapa código → doc
+
+| Mudou... | Confira/atualize |
+|---|---|
+| `supabase/functions/**` (qualquer função) | `docs/reference/edge-functions.md` |
+| `supabase/config.toml` (`verify_jwt`) | `docs/reference/edge-functions.md` (tabela + inconsistências) |
+| `supabase/migrations/**` (schema, RLS, enums) | `docs/reference/modelo-de-dados.md` |
+| Termo de domínio novo/alterado (tipos, enums, conceito) | `docs/reference/glossario.md` |
+| Fluxo ponta a ponta, fila, integração externa, stack | `docs/explanation/arquitetura.md` |
+| Scripts (`package.json`), `.env.example`, setup local | `docs/how-to/desenvolvimento-local.md` |
+| Processo de deploy / migrations | `docs/how-to/deploy-e-migrations.md` |
+| Procedimento operacional (reprocessar, OAuth, faturamento) | `docs/how-to/operacoes-rotineiras.md` + `docs/runbooks/` |
+| Decisão arquitetural nova/alterada | novo ADR em `docs/decisions/` (regra 2) |
+| `src/pages/**` ou fluxo de uso visível ao operador | `docs/tutorials/` (docs de usuário, quando existirem) |
+
+Decisões arquiteturais continuam virando ADR (regras 1 e 2); o mapa acima cobre a **doc viva**
+que descreve o estado atual, não o registro imutável de decisão.
 
 ## Convenções essenciais
 
