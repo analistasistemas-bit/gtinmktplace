@@ -34,7 +34,7 @@ export default function Login() {
       <Card className="w-full max-w-sm p-6">
         <div className="mb-6 flex flex-col items-center text-center">
           <Logo className="mb-2" symbolClassName="h-9 w-9" />
-          <p className="text-caption">Publicação de anúncios no Mercado Livre</p>
+          <p className="text-caption">Publicação de anúncios para Marketplaces</p>
         </div>
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           <Input
