@@ -1,0 +1,63 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="seqfin" name="Sequencia - Financeiro">
+    <mxGraphModel dx="1300" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1580" pageHeight="740" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="PubliAI — Sequência · Financeiro (Mercado Pago)" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#1F2937;" vertex="1" parent="1">
+          <mxGeometry x="40" y="18" width="820" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;Legenda&lt;/b&gt;&amp;nbsp;&amp;nbsp; → síncrono&amp;nbsp;&amp;nbsp; ⇢ assíncrono (QStash)&amp;nbsp;&amp;nbsp; ⇠ resposta" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F9FAFB;strokeColor=#D1D5DB;fontColor=#374151;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="20" width="410" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="h_op" value="&lt;b&gt;Operador&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#5B21B6;strokeColor=#4C1D95;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="25" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_fe" value="&lt;b&gt;Frontend&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="245" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_qs" value="&lt;b&gt;QStash&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#FFFFFF&quot; style=&quot;font-size:9px&quot;&gt;schedule&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0D9488;strokeColor=#0F766E;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="475" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_ef" value="&lt;b&gt;Edge Financeiro&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#EDE9FE&quot; style=&quot;font-size:9px&quot;&gt;resumo-financeiro / notificar-liberacao&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="705" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_pg" value="&lt;b&gt;Postgres&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#8B5CF6;strokeColor=#6D28D9;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="925" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_ext" value="&lt;b&gt;Externos&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#F3F4F6&quot; style=&quot;font-size:9px&quot;&gt;Mercado Pago / ML&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1145" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="h_tg" value="&lt;b&gt;Telegram&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6B7280;strokeColor=#4B5563;fontColor=#FFFFFF;fontSize=11;shadow=1;arcSize=16;" vertex="1" parent="1">
+          <mxGeometry x="1365" y="70" width="170" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="ll_op" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="110" y="118" as="sourcePoint" /><mxPoint x="110" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="ll_fe" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="330" y="118" as="sourcePoint" /><mxPoint x="330" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="ll_qs" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="560" y="118" as="sourcePoint" /><mxPoint x="560" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="ll_ef" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="118" as="sourcePoint" /><mxPoint x="790" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="ll_pg" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1010" y="118" as="sourcePoint" /><mxPoint x="1010" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="ll_ext" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1230" y="118" as="sourcePoint" /><mxPoint x="1230" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="ll_tg" style="endArrow=none;html=1;dashed=1;strokeColor=#9CA3AF;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="1450" y="118" as="sourcePoint" /><mxPoint x="1450" y="640" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="phA" value="FASE A · Dashboard financeiro (a receber) — sob demanda" style="text;html=1;align=left;fontSize=11;fontStyle=1;fontColor=#7C3AED;" vertex="1" parent="1">
+          <mxGeometry x="30" y="140" width="460" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m1" value="1. abre o menu Financeiro" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="110" y="180" as="sourcePoint" /><mxPoint x="330" y="180" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m2" value="2. POST resumo-financeiro (JWT)" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="330" y="225" as="sourcePoint" /><mxPoint x="790" y="225" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m3" value="3. lê pagamentos (Mercado Pago) + pedidos (ML)" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="270" as="sourcePoint" /><mxPoint x="1230" y="270" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m4" value="4. lê custo do produto (variacoes)" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="315" as="sourcePoint" /><mxPoint x="1010" y="315" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m5" value="5. resumo: a receber · bruto / líquido / descontos" style="endArrow=open;html=1;fontSize=11;fontColor=#6B7280;strokeColor=#9CA3AF;strokeWidth=1.5;dashed=1;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="360" as="sourcePoint" /><mxPoint x="330" y="360" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="divider" style="endArrow=none;html=1;strokeColor=#E5E7EB;strokeWidth=1;dashed=1;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="30" y="400" as="sourcePoint" /><mxPoint x="1560" y="400" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="phB" value="FASE B · Notificação de liberação de caixa — agendado (QStash)" style="text;html=1;align=left;fontSize=11;fontStyle=1;fontColor=#7C3AED;" vertex="1" parent="1">
+          <mxGeometry x="30" y="412" width="500" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="m6" value="6. dispara notificar-liberacao (schedule, assinatura)" style="endArrow=block;html=1;fontSize=11;fontColor=#0F766E;strokeColor=#0F766E;strokeWidth=1.5;dashed=1;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="560" y="455" as="sourcePoint" /><mxPoint x="790" y="455" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m7" value="7. lê vendas liberadas hoje (ml_vendas.money_release_date, BRT)" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="500" as="sourcePoint" /><mxPoint x="1010" y="500" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m8" value="8. alerta: caixa liberado" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="545" as="sourcePoint" /><mxPoint x="1450" y="545" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="m9" value="9. marca liberacao_notificada_em (idempotente por dia)" style="endArrow=block;html=1;fontSize=11;fontColor=#1F2937;strokeColor=#4B5563;strokeWidth=1.5;verticalAlign=bottom;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="790" y="590" as="sourcePoint" /><mxPoint x="1010" y="590" as="targetPoint" /></mxGeometry></mxCell>
+        <mxCell id="note" value="&lt;b&gt;Nota:&lt;/b&gt; resumo-financeiro usa o secret MP_ACCESS_TOKEN (single-tenant). O saldo direto do MP retorna 403 — por isso o caixa é calculado por venda liberada (ADR-0031 / ADR-0040)." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEF9C3;strokeColor=#CA8A04;fontColor=#713F12;fontSize=10;align=left;verticalAlign=middle;spacingLeft=10;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="30" y="650" width="900" height="50" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
