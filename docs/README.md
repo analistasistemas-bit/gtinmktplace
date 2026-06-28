@@ -9,6 +9,24 @@ Sistema interno que transforma planilhas de produtos da empresa em anúncios pub
 - **Primeiro escopo:** aviamentos (linha, botão, fita) → tecidos em versão futura.
 - **Usuário-operador:** 1 funcionário interno; lotes típicos de ~50 produtos por família.
 
+## Documentação técnica (Diátaxis)
+
+Documentação organizada pelo framework [Diátaxis](https://diataxis.fr/). Comece por aqui para
+entender e operar o sistema:
+
+| Quero... | Vá para |
+|---|---|
+| Entender como o sistema funciona ponta a ponta | [explanation/arquitetura.md](explanation/arquitetura.md) |
+| Saber o significado exato de um termo do domínio | [reference/glossario.md](reference/glossario.md) |
+| Consultar o schema do banco (tabelas, RLS, enums) | [reference/modelo-de-dados.md](reference/modelo-de-dados.md) |
+| Consultar as Edge Functions (trigger, verify_jwt, idempotência) | [reference/edge-functions.md](reference/edge-functions.md) |
+| Rodar o projeto localmente | [how-to/desenvolvimento-local.md](how-to/desenvolvimento-local.md) |
+| Fazer deploy de functions / migrations | [how-to/deploy-e-migrations.md](how-to/deploy-e-migrations.md) |
+| Executar operações rotineiras (reprocessar, OAuth, faturamento) | [how-to/operacoes-rotineiras.md](how-to/operacoes-rotineiras.md) |
+
+> `tutorials/` está reservada para a documentação **de usuário** (guias passo a passo de
+> operação do app), próxima fase do esforço de documentação.
+
 ## Estrutura desta documentação
 
 ```
@@ -74,9 +92,9 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
-> A tabela acima é uma seleção curada. O **índice completo** (0001–0045) está logo abaixo.
+> A tabela acima é uma seleção curada. O **índice completo** (0001–0046) está logo abaixo.
 
-## Índice completo de ADRs (0001–0045)
+## Índice completo de ADRs (0001–0046)
 
 > A antiga colisão de numeração (dois `0035` e dois `0037`) foi **resolvida em 2026-06-27**:
 > `cor-no-titulo-mono-cor` virou **0044** e `vendas-catalogo-match-ean` virou **0045**. Cada
@@ -129,6 +147,7 @@ docs/
 | 0043 | [Fluxo canônico de migrations](decisions/0043-fluxo-canonico-de-migrations.md) |
 | 0044 | [Cor no título mono-cor — anti-duplicado ML](decisions/0044-cor-no-titulo-mono-cor.md) *(ex-0035)* |
 | 0045 | [Atribuição de venda por EAN (catálogo ML)](decisions/0045-vendas-catalogo-match-ean.md) *(ex-0037)* |
+| 0046 | [verify_jwt=false p/ webhook e workers de faturamento](decisions/0046-verify-jwt-false-workers-webhook-faturamento.md) |
 
 ## Status do projeto
 
