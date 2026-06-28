@@ -140,7 +140,6 @@ export default function Dashboard() {
   );
 
   const dLiquido = delta(r.liquido, rAnt.liquido);
-  const pctRetido = r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
 
   const novoLoteBtn = (
     <Button asChild>
@@ -203,7 +202,7 @@ export default function Dashboard() {
               valor={fmtBRL(r.liquido)}
               valorCor="text-success"
               delta={dLiquido}
-              sub={`o que você recebe — ${fmtBRL(r.descontos)} retido pelo ML (${pctRetido.toFixed(1).replace('.', ',')}%)`}
+              sub={`comissão ${fmtBRL(r.comissao)} · frete ${fmtBRL(r.frete)}`}
               className="col-span-2 lg:col-span-2 lg:col-start-1 lg:row-start-2"
             />
           </>
