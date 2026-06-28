@@ -49,7 +49,7 @@ export interface ResumoVendas {
   descontos: number;
   /** Total estornado no período. */
   estornos: number;
-  /** Quantidade de vendas (pedidos faturáveis). */
+  /** Quantidade de pedidos faturáveis (packs distintos: pack_id ?? order_id; ADR-0039). */
   pedidos: number;
   /** Unidades vendidas (soma das quantidades dos itens). */
   unidades: number;
@@ -72,7 +72,7 @@ export interface ResumoVendas {
   frete: number;
   /** Nº de vendas faturáveis com custo cadastrado (base do lucro/markup/margem). */
   vendasComCusto: number;
-  /** Nº de vendas faturáveis no período (= pedidos), para a nota de cobertura. */
+  /** Nº de pedidos faturáveis no período (= pedidos/packs), para a nota de cobertura. */
   totalVendas: number;
   /** Margem sobre a receita líquida: lucro ÷ líquido (com custo). null = sem custo. */
   margem: number | null;
@@ -115,8 +115,11 @@ export function calcularResumo(
   agoraMs: number = Date.now(),
 ): ResumoVendas {
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
-  let bruto = 0, liquido = 0, estornos = 0, unidades = 0, pedidos = 0;
+  let bruto = 0, liquido = 0, estornos = 0, unidades = 0;
   let liqComCusto = 0, custoTotal = 0;
+  // Um checkout vira N order_id com o mesmo pack_id (carrinho). "Pedido" conta o PACK, não a linha
+  // — alinhado ao menu Faturamento (ADR-0039); contar order_id inflava nº de pedidos e ticket médio.
+  const packsFaturaveis = new Set<string>();
   let liberado = 0, aLiberar = 0, comissao = 0, vendasComCusto = 0;
   let proximaLiberacaoMs: number | null = null;
   let proximaLiberacao: string | null = null;
@@ -130,7 +133,7 @@ export function calcularResumo(
     bruto += v.total_amount;
     liquido += liq;
     estornos += est;
-    pedidos += 1;
+    packsFaturaveis.add(String(v.pack_id ?? v.order_id));
 
     for (const it of v.itens) {
       unidades += it.quantity;
@@ -185,6 +188,7 @@ export function calcularResumo(
   // garante comissão + frete == descontos (o total exibido). Clamp em 0 p/ reembolsos (comissão > retido).
   const descontos = round2(bruto - liquido);
   const comissaoTotal = round2(comissao);
+  const pedidos = packsFaturaveis.size;
   return {
     bruto: round2(bruto),
     liquido: round2(liquido),
