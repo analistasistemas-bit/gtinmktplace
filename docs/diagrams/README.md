@@ -24,6 +24,7 @@
 | **ERD · Modelo de dados** | [erd-modelo-de-dados](erd-modelo-de-dados.drawio.png) | Tabelas, relações, RLS, chaves |
 | **Sequência · Publicação** | [seq-publicacao](seq-publicacao.drawio.png) | Pipeline ingest → IA → revisão → publicação ML |
 | **Sequência · Faturamento** | [seq-faturamento](seq-faturamento.drawio.png) | Webhook ML → dedup → workers → banco/alerta |
+| **Sequência · Financeiro** | [seq-financeiro](seq-financeiro.drawio.png) | Dashboard a receber (Mercado Pago) + notificação de liberação |
 
 ## Convenção visual
 
