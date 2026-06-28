@@ -213,15 +213,11 @@ export default function Dashboard() {
           label="Lucro líquido" icon={Coins} loading={carregando}
           value={r.margem != null ? fmtBRL(r.lucro) : '—'}
           {...(r.margem != null ? { delta: delta(r.lucro, rAnt.lucro).texto, deltaTrend: delta(r.lucro, rAnt.lucro).trend } : {})}
-          hint={r.margem != null
-            ? `margem ${Math.round(r.margem * 100)}% · ${r.vendasComCusto}/${r.totalVendas} c/ custo`
-            : 'sem custo cadastrado'}
         />
         <KpiCard
           label="Markup no período" icon={TrendingUp} loading={carregando}
           value={r.markup != null ? `${r.markup >= 0 ? '+' : ''}${Math.round(r.markup * 100)}%` : '—'}
           valueClassName={r.markup != null ? (r.markup >= 0 ? 'text-success' : 'text-destructive') : undefined}
-          hint={r.markup != null ? `lucro ${fmtBRL(r.lucro)} · ${r.vendasComCusto} c/ custo` : 'sem custo cadastrado'}
         />
         <KpiCard
           label="Compradores" icon={Users} loading={carregando} to="/faturamento"
