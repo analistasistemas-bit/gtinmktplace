@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-06-25
+**Ultima atualizacao:** 2026-06-29
 
 ## Snapshot
 
@@ -11,6 +11,7 @@
 - Proximo epico de produto: `E5` conector Shopee
 - Trilho de UX (preparacao para SaaS comercial): repaginacao visual premium + Tarefa 2/Onda 1 (workflow operacional) concluidas e em producao (2026-06-21)
 - Marketplace ativo em producao: Mercado Livre
+- Split de produto em N anuncios em producao (ADR-0048, 2026-06-29): produto com >100 cores publica em N anuncios ML (limites do ML: 100 variacoes + 99999 de estoque somado por anuncio). Worker isolado `publicar-split-ml`, particao alfabetica por cor com ancoragem (cor publicada nao migra de anuncio), titulo distinto por IA, cap de estoque no conector. Relatorio e Publicados mostram os N anuncios. Validado em producao: `02835002` (120 cores) em 2 anuncios (`MLB6914358210` 100 cores + `MLB4828349403` 18 cores). Tambem nesta entrega: cor nova com foto+estoque entra MARCADA por padrao no UPDATE (opt-out, ADR-0016 adendo). Follow-up: catalogo (opt-in) por-particao cobre so a particao 0.
 - Multiusuario com permissao de menu em producao (ADR-0047, 2026-06-29): operacao compartilhada (RLS via `is_membro_operacao()`, sem `org_id` ainda), tabela `profiles`, edge `usuarios` (admin-only) e tela Usuarios (convite por e-mail + checklist de menu + toggle Admin). E-mail transacional saiu do servico interno do Supabase para SMTP proprio via Resend (`publiai@daludi.com.br`); convite/reset validados (entrega + link `/#/definir-senha`). Antecipa parte do `E7`; isolamento real por empresa continua no E7.
 - Modulo Financeiro impecavel (ADR-0040, 2026-06-23): caixa (liberado/a liberar), lucro+margem, breakdown de taxas, evolucao temporal, comparativo de periodo, periodo personalizado, export CSV e notificacao Telegram de liberacao. Branch `worktree-financeiro-impecavel` — pendente validacao local + deploy (migration + edge `notificar-liberacao` + schedule QStash).
 - Liquido economico correto em producao (ADR-0042, 2026-06-25): o `net_received_amount` do MP era inconsistente (cross-docking desconta frete cheio e ignora comissao; pack desconta comissao e ignora frete), gerando markup falso. Liquido passa a ser `bruto - comissao - frete real` de fontes autoritativas (`sale_fee` + `senders[].cost`), com rateio de pack net-independente. Faturamento e Financeiro batem (fonte unica `ml_vendas`). DB reconciliado (46 pedidos), 4 edges + front deployados, validado com browser-use. O caminho do MP ao vivo (`lib/financeiro.ts`, `useResumoFinanceiro`, edge `resumo-financeiro`) ficou OBSOLETO, mas os arquivos NAO foram deletados — seguem como codigo morto sem call site no frontend (a tela usa `ml_vendas`), a limpar num passe futuro.
