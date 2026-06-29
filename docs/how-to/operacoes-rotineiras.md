@@ -110,3 +110,17 @@ só entrega para a equipe do projeto). Está configurado **SMTP próprio via Res
   o link aponta para `{{ .SiteURL }}/#/definir-senha?token_hash={{ .TokenHash }}&type=…`.
 - **Validar entrega:** API do Resend — `GET https://api.resend.com/emails?limit=5`
   (`Authorization: Bearer $RESEND_API_KEY`) mostra `last_event: delivered` e o HTML/link.
+- **Limite de envio:** o Supabase Auth tem rate limit **próprio** por hora
+  (`rate_limit_email_sent`), independente do Resend. O default do serviço interno é **2/hora** —
+  ele **não** sobe sozinho ao configurar SMTP. Está em **50/hora**. Se um convite falhar com
+  **"email rate limit exceeded"**, é esse teto; ajuste via Management API:
+  `PATCH /v1/projects/{ref}/config/auth` com `{"rate_limit_email_sent": <n>}`.
+
+### Diagnóstico de convite que falha
+
+A tela mostra a mensagem real da função. Causas comuns:
+
+- **"Esse e-mail já tem cadastro…"** (409) → o e-mail já existe; remova e convide de novo.
+- **"email rate limit exceeded"** (400) → estourou o `rate_limit_email_sent` da hora (ver acima).
+- Para ver o status real no servidor: `get_logs` (service `edge-function`) mostra o código HTTP
+  de `/usuarios`; `get_logs` (service `auth`) mostra os eventos `mail.send`/`user_invited`.
