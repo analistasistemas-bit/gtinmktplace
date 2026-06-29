@@ -1,7 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { enfileirarPublicacao, enfileirarAtualizacao, garantirFilaSerial } from '../_shared/queue.ts';
+import { enfileirarPublicacao, enfileirarAtualizacao, enfileirarSplit, garantirFilaSerial } from '../_shared/queue.ts';
+import { MAX_VARIACOES_ML } from '../_shared/split/particionar.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -51,16 +52,32 @@ Deno.serve(async (req) => {
     await garantirFilaSerial(user.id);
   }
 
+  // Split (ADR-0048): família com >100 cores incluídas vai para o worker de split (N anúncios),
+  // tanto no CREATE quanto no UPDATE. ≤100 segue o caminho normal (publish/update), intocado.
+  const idsParaEnfileirar = [...(novos ?? []), ...(updates ?? [])].map((f) => f.id);
+  const coresPorFamilia = new Map<string, number>();
+  if (idsParaEnfileirar.length > 0) {
+    const { data: vrs } = await admin.from('variacoes')
+      .select('familia_id').in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
+    for (const v of vrs ?? []) coresPorFamilia.set(v.familia_id, (coresPorFamilia.get(v.familia_id) ?? 0) + 1);
+  }
+  const ehSplit = (familiaId: string) => (coresPorFamilia.get(familiaId) ?? 0) > MAX_VARIACOES_ML;
+
   let enfileiradas = 0;
   let loteId: string | null = null;
   for (const f of novos ?? []) {
-    const messageId = await enfileirarPublicacao({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType }, user.id);
+    const job = { familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType };
+    const messageId = ehSplit(f.id)
+      ? await enfileirarSplit(job, user.id)
+      : await enfileirarPublicacao(job, user.id);
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     loteId = f.lote_id;
     enfileiradas++;
   }
   for (const f of updates ?? []) {
-    const messageId = await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id }, user.id);
+    const messageId = ehSplit(f.id)
+      ? await enfileirarSplit({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType }, user.id)
+      : await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id }, user.id);
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     loteId = f.lote_id;
     enfileiradas++;

@@ -69,6 +69,17 @@ export async function enfileirarAtualizacao(job: ProcessFamiliaJob, userId: stri
   return messageId;
 }
 
+// Split (ADR-0048): produto com >100 cores vai para o worker de split (N anúncios por partição),
+// não para publish/update. Mesma fila serial por usuário (uma escrita no ML por vez, ADR-0034).
+export async function enfileirarSplit(job: ProcessFamiliaJob, userId: string): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/publicar-split-ml`;
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFilaPublicacao(userId) })
+    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+  return messageId;
+}
+
 export interface VincularCatalogoJob { familia_id: string; }
 
 /**

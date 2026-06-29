@@ -22,6 +22,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.update-familia-ml]
 verify_jwt = false
+[functions.publicar-split-ml]
+verify_jwt = false
 [functions.remover-publicado]
 verify_jwt = false
 [functions.vincular-catalogo]

@@ -37,11 +37,18 @@ export type AnuncioExternoRow = {
   status: string;
   variacoes_externas: Record<string, VariacaoExterna>;
   publicado_em: string | null;
+  // ADR-0048: índice do anúncio dentro do produto (0 = caminho não-split, idêntico a hoje).
+  particao: number;
+  // ADR-0048: título do anúncio daquela partição (a IA nomeia partições >0). Só gravado quando
+  // informado — callers do caminho comum (publish/update/catálogo) preservam o que já existe.
+  titulo?: string | null;
 };
 
 export function montarAnuncioExterno(
   familia: FamiliaEspelho,
   variacoes: VariacaoEspelho[],
+  particao = 0,
+  titulo?: string | null,
 ): AnuncioExternoRow {
   const variacoes_externas: Record<string, VariacaoExterna> = {};
   for (const v of variacoes) {
@@ -52,7 +59,7 @@ export function montarAnuncioExterno(
     if (v.catalog_status && v.catalog_status !== 'pendente') entry.catalog_status = v.catalog_status;
     variacoes_externas[v.codigo] = entry;
   }
-  return {
+  const row: AnuncioExternoRow = {
     user_id: familia.user_id,
     canal: 'mercado_livre',
     codigo_pai: familia.codigo_pai,
@@ -61,7 +68,10 @@ export function montarAnuncioExterno(
     status: familia.status ?? 'publicado',
     variacoes_externas,
     publicado_em: familia.publicado_em ?? null,
+    particao,
   };
+  if (titulo !== undefined) row.titulo = titulo;
+  return row;
 }
 
 // Mescla o mapa existente com o novo (novo vence por código). Preserva cores de lotes
@@ -78,15 +88,19 @@ export async function espelharAnuncioExterno(
   admin: SupabaseClient,
   familia: FamiliaEspelho,
   variacoes: VariacaoEspelho[],
+  // ADR-0048: omitido → partição 0 (caminho não-split, idêntico a hoje).
+  opts: { particao?: number; titulo?: string | null } = {},
 ): Promise<void> {
   try {
-    const row = montarAnuncioExterno(familia, variacoes);
+    const particao = opts.particao ?? 0;
+    const row = montarAnuncioExterno(familia, variacoes, particao, opts.titulo);
     // Merge com o que já existe: o lote atual pode trazer só um subconjunto das cores
     // (reposição parcial); o upsert substituiria a row inteira e perderia as demais.
     const { data: existente } = await admin
       .from('anuncios_externos')
       .select('variacoes_externas')
       .eq('user_id', row.user_id).eq('canal', row.canal).eq('codigo_pai', row.codigo_pai)
+      .eq('particao', particao)
       .maybeSingle();
     row.variacoes_externas = mesclarVariacoesExternas(
       existente?.variacoes_externas as Record<string, VariacaoExterna> | undefined,
@@ -94,7 +108,7 @@ export async function espelharAnuncioExterno(
     );
     const { error } = await admin
       .from('anuncios_externos')
-      .upsert(row, { onConflict: 'user_id,canal,codigo_pai' });
+      .upsert(row, { onConflict: 'user_id,canal,codigo_pai,particao' });
     if (error) console.error('espelhar anuncios_externos falhou:', error.message);
   } catch (e) {
     console.error('espelhar anuncios_externos exceção:', (e as Error).message);
