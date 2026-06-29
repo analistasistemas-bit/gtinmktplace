@@ -35,7 +35,13 @@ Deno.serve(async (req) => {
         data: { nome: String(body.nome ?? ''), allowed_menus: sanitizeMenus(body.allowed_menus) },
         redirectTo: `${appUrl}/#/definir-senha`,
       });
-      if (error) return json({ error: error.message }, 400);
+      if (error) {
+        const duplicado = /already.*registered/i.test(error.message);
+        return json(
+          { error: duplicado ? 'Esse e-mail já tem cadastro. Para reenviar, remova o usuário e convide de novo.' : error.message },
+          duplicado ? 409 : 400,
+        );
+      }
       // Convidado como admin: o trigger já criou o profile; promovemos.
       if (body.is_admin === true && data.user?.id) {
         await db.from('profiles').update({ is_admin: true, updated_at: new Date().toISOString() }).eq('id', data.user.id);

@@ -31,7 +31,20 @@ interface UserRow {
 
 async function callUsuarios(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('usuarios', { body });
-  if (error) throw new Error((data as { error?: string })?.error ?? error.message);
+  if (error) {
+    // Em respostas não-2xx o invoke não popula `data`; a mensagem real está no corpo (error.context).
+    let msg = error.message;
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const j = await ctx.json();
+        if (j?.error) msg = j.error;
+      } catch {
+        /* mantém error.message */
+      }
+    }
+    throw new Error(msg);
+  }
   if (data?.error) throw new Error(data.error);
   return data;
 }
