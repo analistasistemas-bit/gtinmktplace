@@ -107,8 +107,11 @@ Espelho multicanal normalizado. Identidade estável independente de lote/famíli
 `id`, `user_id`, `canal` (`canal_externo`), `codigo_pai`, `item_externo_id`, `permalink`,
 `status`, `erro_mensagem`, `variacoes_externas jsonb` (mapa `codigo → {variation_id,
 catalog_product_id, catalog_listing_id, catalog_status}`), `metadados_canal jsonb`,
-`preco_override`, `publicado_em`. Único: `(user_id, canal, codigo_pai)`. Populado por
-dual-write dos workers + backfill na própria migration.
+`preco_override`, `publicado_em`, **`particao smallint`**, **`titulo`**. Único:
+`(user_id, canal, codigo_pai, particao)`. Populado por dual-write dos workers + backfill.
+*Split (ADR-0048, migration `20260629180206_anuncios_externos_particao.sql`):* um produto com
+>100 cores tem N linhas (uma por anúncio/partição); cada `variacoes_externas` é a **ancoragem**
+(sku → anúncio). Produto ≤100 cores tem só `particao=0` (idêntico ao modelo original ADR-0025).
 
 ---
 

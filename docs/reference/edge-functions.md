@@ -32,6 +32,7 @@
 | publicar-familias | true | HTTP (frontend) | não |
 | publish-familia-ml | false | QStash (fila serial) | sim (reusa picture_ids) |
 | update-familia-ml | false | QStash (fila serial) | sim |
+| publicar-split-ml | false | QStash (fila serial) | sim (item cravado cedo) |
 | regenerar-copy-familia | false | HTTP (JWT manual) | não |
 | definir-categoria-familia | true | HTTP (frontend) | não |
 | vincular-catalogo | false | QStash (delay 10min) | sim (upsert) |
@@ -113,6 +114,11 @@
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
+- **publicar-split-ml** *(worker, split — ADR-0048)* — produto com >100 cores publica em N anúncios
+  ("partições"). `publicar-familias` roteia >100 cores incluídas pra cá. Particiona alfabético com
+  ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.
+  Grava o item da partição cedo (anti-duplicação em retry); partição 0 herda `ml_item_id` existente.
+  Catálogo por-partição é follow-up (hoje cobre só a partição 0).
 - **regenerar-copy-familia** — regera título/descrição via IA sem republicar.
 - **definir-categoria-familia** — seletor manual de categoria (escape hatch p/ "outro"),
   monta atributos obrigatórios (ADR-0022).
