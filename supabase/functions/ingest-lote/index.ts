@@ -244,7 +244,9 @@ Deno.serve(async (req) => {
         if (cas) {
           const h = cas.herdados[codigo];
           // UPDATE: herda identidade no ML + cor + snapshot do diff; preço de publicação = planilha.
-          // Cor nova (sem variação no anúncio) entra DESMARCADA (opt-in).
+          // Cor casada (já no anúncio) sempre entra. Cor nova entra MARCADA se tiver foto E
+          // estoque (foto: igual CREATE; estoque>0: adendo 2026-06-16 — zerada dorme até repor).
+          // Cor nova sem foto/sem estoque entra desmarcada; o operador a reinclui na Revisão.
           variacoesUpdate.push({
             ...base,
             ml_variation_id: h?.ml_variation_id ?? null,
@@ -258,7 +260,7 @@ Deno.serve(async (req) => {
             // ADR-0016: UPDATE preserva o preço já publicado. Cor nova (sem preço anterior)
             // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
             preco_publicacao: h?.preco_publicacao ?? precoPubFamilia ?? v.PRECO,
-            excluida_da_publicacao: h?.ml_variation_id == null,
+            excluida_da_publicacao: h?.ml_variation_id == null && !(base.imagem_path != null && base.estoque > 0),
           });
         } else {
           // CREATE: cor sem foto entra DESMARCADA (mesma política do opt-in da cor nova

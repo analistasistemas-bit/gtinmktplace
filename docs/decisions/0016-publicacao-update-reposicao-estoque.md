@@ -219,3 +219,21 @@ zerada nasce desmarcada (`ingest-lote`), e cor casada que zerou continua indo ao
 zerar de fato no anúncio (vira `out_of_stock` no ML, reativando ao repor — `gold_special`/
 `gold_pro`, nunca `free`). Quando a reposição chega (estoque > 0), a cor volta a exigir
 cor/foto como qualquer cor nova publicável.
+
+## Adendo (2026-06-29) — Cor nova entra MARCADA por padrão (opt-out)
+
+**Contexto:** o adendo 2026-06-04 fez a cor nova nascer **desmarcada** (opt-in): o operador
+precisava marcar cada cor nova na Revisão antes de publicar. Na prática, ao subir um lote com
+dezenas/centenas de cores novas de uma linha (ex.: `02835002` "Linha p/ Costura 1500m"), todas
+nasciam de fora; o operador publicava o UPDATE e **só as cores já existentes subiam**, sem aviso
+de que as novas tinham ficado para trás (lote 46).
+
+**Decisão (a pedido do Diego):** inverte o default para **opt-out**. Cor nova nasce **marcada**
+(`excluida_da_publicacao=false`) quando tem **foto E estoque > 0**; senão nasce desmarcada e
+dorme (mantém a foto-obrigatória do adendo 2026-06-04 e o estoque-0-dorme do adendo 2026-06-16).
+O operador ainda pode **desmarcar** manualmente na Revisão as cores que não quiser adicionar — o
+controle continua, só muda o padrão. Cor casada (reposição) segue sempre incluída.
+
+**Implementação:** uma linha em `ingest-lote/index.ts` (ramo UPDATE) —
+`excluida_da_publicacao: h?.ml_variation_id == null && !(base.imagem_path != null && base.estoque > 0)`.
+Alinha o UPDATE à regra do CREATE (`excluida = imagem_path == null`), com o reforço de estoque.
