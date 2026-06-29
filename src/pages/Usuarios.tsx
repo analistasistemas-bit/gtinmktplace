@@ -70,13 +70,15 @@ export default function Usuarios() {
     },
   });
 
-  async function run(body: Record<string, unknown>, sucesso: string) {
+  async function run(body: Record<string, unknown>, sucesso: string): Promise<boolean> {
     try {
       await callUsuarios(body);
       toast.success(sucesso);
       await qc.invalidateQueries({ queryKey: ['profiles'] });
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha na operação');
+      return false;
     }
   }
 
@@ -156,12 +158,13 @@ export default function Usuarios() {
 function InviteDialog({ open, onOpenChange, onSubmit }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  onSubmit: (body: Record<string, unknown>, sucesso: string) => Promise<void>;
+  onSubmit: (body: Record<string, unknown>, sucesso: string) => Promise<boolean>;
 }) {
   const [email, setEmail] = useState('');
   const [nome, setNome] = useState('');
   const [menus, setMenus] = useState<string[]>([]);
   const [admin, setAdmin] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
   // Admin vê tudo: ao ligar, marca (e trava) todos os menus.
   function toggleAdmin(on: boolean) {
@@ -170,9 +173,13 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
   }
 
   async function enviar() {
-    await onSubmit({ action: 'invite', email, nome, allowed_menus: menus, is_admin: admin }, 'Convite enviado');
-    setEmail(''); setNome(''); setMenus([]); setAdmin(false);
-    onOpenChange(false);
+    setEnviando(true);
+    const ok = await onSubmit({ action: 'invite', email, nome, allowed_menus: menus, is_admin: admin }, 'Convite enviado');
+    setEnviando(false);
+    if (ok) {
+      setEmail(''); setNome(''); setMenus([]); setAdmin(false);
+      onOpenChange(false);
+    }
   }
 
   return (
@@ -192,7 +199,7 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
           </div>
         </div>
         <DialogFooter>
-          <Button onClick={enviar} disabled={!email}>Enviar convite</Button>
+          <Button onClick={enviar} disabled={!email || enviando}>{enviando ? 'Enviando…' : 'Enviar convite'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -202,11 +209,12 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
 function EditMenusDialog({ user, onClose, onSubmit }: {
   user: UserRow | null;
   onClose: () => void;
-  onSubmit: (body: Record<string, unknown>, sucesso: string) => Promise<void>;
+  onSubmit: (body: Record<string, unknown>, sucesso: string) => Promise<boolean>;
 }) {
   const [menus, setMenus] = useState<string[]>([]);
   const [nome, setNome] = useState('');
   const [carregado, setCarregado] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
 
   // Sincroniza o estado local quando abre p/ outro usuário.
   if (user && carregado !== user.id) {
@@ -217,8 +225,10 @@ function EditMenusDialog({ user, onClose, onSubmit }: {
 
   async function salvar() {
     if (!user) return;
-    await onSubmit({ action: 'update_menus', id: user.id, nome, allowed_menus: menus }, 'Menus atualizados');
-    onClose();
+    setSalvando(true);
+    const ok = await onSubmit({ action: 'update_menus', id: user.id, nome, allowed_menus: menus }, 'Menus atualizados');
+    setSalvando(false);
+    if (ok) onClose();
   }
 
   return (
@@ -230,7 +240,7 @@ function EditMenusDialog({ user, onClose, onSubmit }: {
           <MenuChecklist value={menus} onChange={setMenus} />
         </div>
         <DialogFooter>
-          <Button onClick={salvar}>Salvar</Button>
+          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
