@@ -29,6 +29,15 @@ function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean
 export default function Viabilidade() {
   const analise = useAnaliseViabilidade();
   const [gtins, setGtins] = useState('');
+  const [bip, setBip] = useState('');
+
+  // Leitor de código de barras: cada leitura (envia Enter) vira uma linha e limpa o campo.
+  const bipar = (code: string) => {
+    const v = code.trim();
+    if (!v) return;
+    setGtins((prev) => (prev && !prev.endsWith('\n') ? prev + '\n' : prev) + v + '\n');
+    setBip('');
+  };
 
   const onDrop = (files: File[]) => { if (files[0]) analise.mutate({ tipo: 'planilha', file: files[0] }); };
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -78,6 +87,12 @@ export default function Viabilidade() {
 
         <TabsContent value="gtins">
           <div className="space-y-2">
+            {/* eslint-disable-next-line jsx-a11y/no-autofocus -- campo de bipagem precisa do foco p/ o leitor */}
+            <input autoFocus value={bip} onChange={(e) => setBip(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); bipar(bip); } }}
+              inputMode="numeric" aria-label="Bipar código de barras"
+              placeholder="📷 Bipe o código de barras aqui — cada leitura vira uma linha abaixo"
+              className="w-full rounded-md border border-border bg-background p-2 text-sm" />
             <textarea value={gtins} onChange={(e) => setGtins(e.target.value)} rows={5}
               aria-label="GTINs, um por linha"
               placeholder="Um GTIN por linha" className="w-full rounded-md border border-border bg-background p-2 text-sm" />

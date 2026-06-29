@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Input } from '@/components/ui/input';
 import { fmtBRL } from '@/lib/formato';
+import { calcularMarkup } from '@/lib/markup';
 import {
   liquidoNoMercado, etiquetaParaMinimo, semaforoTipo,
   type ItemAnalisado, type ComissaoTipo,
@@ -23,6 +24,9 @@ function BlocoTipo({ titulo, c, menor, minimo, custo }: {
   const liquido = liquidoNoMercado(menor, c.saleFeeAmount);
   const etiqueta = etiquetaParaMinimo(minimo, c.percentual);
   const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo);
+  const temCusto = custo != null && custo > 0;
+  const mk = temCusto && liquido != null ? calcularMarkup(liquido, custo) : null;
+  const prejuizo = mk != null && mk.lucro < 0;
   return (
     <div className="rounded-md border border-border p-3">
       <div className="flex items-center justify-between">
@@ -30,8 +34,16 @@ function BlocoTipo({ titulo, c, menor, minimo, custo }: {
         <StatusPill tone={TOM[sem]}>{ROTULO[sem]}</StatusPill>
       </div>
       <dl className="mt-2 space-y-1 text-sm text-muted-foreground">
-        <div className="flex justify-between"><dt>Comissão</dt><dd>{c.percentual}% + {fmtBRL(c.fixa)}</dd></div>
+        <div className="flex justify-between"><dt>Comissão</dt><dd>−{fmtBRL(c.saleFeeAmount)} ({c.percentual}%)</dd></div>
         <div className="flex justify-between"><dt>Líquido se igualar o mercado</dt><dd>{liquido != null ? fmtBRL(liquido) : '—'}</dd></div>
+        {mk != null && (
+          <div className="flex justify-between">
+            <dt>{prejuizo ? 'Prejuízo' : 'Lucro'}</dt>
+            <dd className={prejuizo ? 'text-destructive' : 'text-success'}>
+              {fmtBRL(mk.lucro)} · markup {Math.round(mk.markup * 100)}%
+            </dd>
+          </div>
+        )}
         <div className="flex justify-between"><dt>Pra receber seu mínimo, anuncie a</dt><dd>{etiqueta != null ? fmtBRL(etiqueta) : '—'}</dd></div>
       </dl>
     </div>
