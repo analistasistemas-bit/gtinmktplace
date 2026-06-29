@@ -91,8 +91,16 @@ export default function Relatorio() {
           <li key={f.id} className="flex items-center justify-between gap-3 border-b py-2">
             <span className="truncate">{f.codigoPai} — {f.titulo}</span>
             <span className="flex items-center gap-2 text-xs">
-              {f.status === 'publicado' && f.mlPermalink && (
-                <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-primary underline">ver anúncio ↗</a>
+              {f.status === 'publicado' && (
+                f.anuncios.length > 1 ? (
+                  // Split (ADR-0048): produto em N anúncios → um link por partição.
+                  f.anuncios.map((a, i) => a.permalink && (
+                    <a key={a.particao} href={a.permalink} target="_blank" rel="noreferrer"
+                       title={a.titulo ?? ''} className="text-primary underline">ver anúncio {i + 1} ↗</a>
+                  ))
+                ) : f.mlPermalink ? (
+                  <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-primary underline">ver anúncio ↗</a>
+                ) : null
               )}
               {f.status === 'publicando' && <span className="text-muted-foreground">publicando…</span>}
               {f.status === 'erro' && (

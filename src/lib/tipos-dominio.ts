@@ -152,6 +152,9 @@ export interface Familia {
   variacoesSemCor: number;
   mlPermalink: string | null;
   mlItemId: string | null;
+  /** Anúncios publicados do produto (split ADR-0048): 1 no caso normal, N quando >100 cores.
+   *  Ordenado por partição (0 = principal). Vazio = sem espelho em anuncios_externos. */
+  anuncios: { particao: number; permalink: string | null; titulo: string | null }[];
   mudancaEstrutural: MudancaEstrutural | null;
   erroMensagem: string | null;
   exibirComDesconto: boolean;

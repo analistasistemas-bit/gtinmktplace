@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       anuncios_externos: {
@@ -24,10 +49,12 @@ export type Database = {
           id: string
           item_externo_id: string | null
           metadados_canal: Json
+          particao: number
           permalink: string | null
           preco_override: number | null
           publicado_em: string | null
           status: string
+          titulo: string | null
           user_id: string
           variacoes_externas: Json
         }
@@ -40,10 +67,12 @@ export type Database = {
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          particao?: number
           permalink?: string | null
           preco_override?: number | null
           publicado_em?: string | null
           status?: string
+          titulo?: string | null
           user_id: string
           variacoes_externas?: Json
         }
@@ -56,10 +85,12 @@ export type Database = {
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          particao?: number
           permalink?: string | null
           preco_override?: number | null
           publicado_em?: string | null
           status?: string
+          titulo?: string | null
           user_id?: string
           variacoes_externas?: Json
         }
@@ -859,6 +890,8 @@ export type Database = {
           refresh_token: string
         }[]
       }
+      is_admin: { Args: never; Returns: boolean }
+      is_membro_operacao: { Args: never; Returns: boolean }
       telegram_config_status: {
         Args: never
         Returns: {
@@ -1028,6 +1061,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       canal_externo: ["mercado_livre"],

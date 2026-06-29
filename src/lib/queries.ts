@@ -49,16 +49,46 @@ export async function fetchLote(id: string): Promise<LoteRow | null> {
   return data;
 }
 
+/** Anúncio (partição) de um produto em anuncios_externos — campos usados pela UI. */
+export type AnuncioExternoLite = {
+  codigo_pai: string;
+  particao: number;
+  permalink: string | null;
+  titulo: string | null;
+};
+
 export async function fetchFamilias(
   loteId: string
-): Promise<(FamiliaRow & { variacoes: VariacaoRow[] })[]> {
+): Promise<(FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos: AnuncioExternoLite[] })[]> {
   const { data, error } = await supabase
     .from('familias')
     .select('*, variacoes(*)')
     .eq('lote_id', loteId)
     .order('codigo_pai');
   if (error) throw error;
-  return (data ?? []) as (FamiliaRow & { variacoes: VariacaoRow[] })[];
+  const familias = (data ?? []) as (FamiliaRow & { variacoes: VariacaoRow[] })[];
+
+  // Split (ADR-0048): um produto pode ter N anúncios (partições) em anuncios_externos;
+  // familias.ml_permalink só carrega a partição 0. Busca os demais por codigo_pai (RLS filtra
+  // pelo usuário) para a UI mostrar todos os anúncios do produto.
+  const codigosPai = [...new Set(familias.map((f) => f.codigo_pai))];
+  const porCodigo = new Map<string, AnuncioExternoLite[]>();
+  if (codigosPai.length > 0) {
+    const { data: anuncios } = await supabase
+      .from('anuncios_externos')
+      .select('codigo_pai, particao, permalink, titulo')
+      .eq('canal', 'mercado_livre')
+      .in('codigo_pai', codigosPai);
+    for (const a of (anuncios ?? []) as AnuncioExternoLite[]) {
+      const lista = porCodigo.get(a.codigo_pai) ?? [];
+      lista.push(a);
+      porCodigo.set(a.codigo_pai, lista);
+    }
+  }
+  return familias.map((f) => ({
+    ...f,
+    anuncios_externos: (porCodigo.get(f.codigo_pai) ?? []).sort((a, b) => a.particao - b.particao),
+  }));
 }
 
 // Carrega UMA família (com variações) por id e mapeia para o tipo de domínio. Usado pelo
@@ -247,7 +277,7 @@ export async function urlCapaFamilia(capaStoragePath: string | null | undefined)
 }
 
 export function familiaFromRow(
-  r: FamiliaRow & { variacoes: VariacaoRow[] }
+  r: FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos?: AnuncioExternoLite[] }
 ): Familia {
   const variacoes = r.variacoes.map(variacaoFromRow);
   const precos = variacoes.map((v) => v.preco);
@@ -301,6 +331,9 @@ export function familiaFromRow(
     variacoesSemCor: variacoes.filter((v) => !v.cor && v.estoque > 0 && !v.excluidaDaPublicacao).length,
     mlPermalink: r.ml_permalink,
     mlItemId: r.ml_item_id,
+    anuncios: (r.anuncios_externos ?? []).map((a) => ({
+      particao: a.particao, permalink: a.permalink, titulo: a.titulo,
+    })),
     mudancaEstrutural: parseMudancaEstrutural(r.mudanca_estrutural),
     erroMensagem: r.erro_mensagem,
     exibirComDesconto: r.exibir_com_desconto,
