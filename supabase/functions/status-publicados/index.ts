@@ -15,7 +15,14 @@ Deno.serve(async (req) => {
   const admin = adminClient();
   const { data: familias } = await admin.from('familias')
     .select('ml_item_id').eq('user_id', user.id).not('ml_item_id', 'is', null);
-  const ids = [...new Set((familias ?? []).map((f) => f.ml_item_id as string))];
+  // Split (ADR-0048): anúncios de partições >0 vivem só em anuncios_externos; inclui seus ids
+  // para o status ao vivo cobrir TODOS os anúncios do produto, não só a partição 0.
+  const { data: extras } = await admin.from('anuncios_externos')
+    .select('item_externo_id').eq('user_id', user.id).not('item_externo_id', 'is', null);
+  const ids = [...new Set([
+    ...(familias ?? []).map((f) => f.ml_item_id as string),
+    ...(extras ?? []).map((e) => e.item_externo_id as string),
+  ])];
   if (ids.length === 0) {
     return new Response(JSON.stringify({ itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }

@@ -494,9 +494,35 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
     .order('publicado_em', { ascending: false });
   if (error) throw error;
   // 1 linha por anúncio (ml_item_id) — várias famílias compartilham o mesmo após ciclos de UPDATE.
-  return dedupePublicados(
+  const principais = dedupePublicados(
     (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: VariacaoPub[] })),
   );
+
+  // Split (ADR-0048): anúncios de partições >0 vivem só em anuncios_externos (familias.ml_item_id
+  // guarda só a partição 0). Adiciona-os como itens próprios, herdando os metadados do produto
+  // (fornecedor/tipo/categoria/preço/gtin) da família representativa do mesmo codigo_pai. Status e
+  // vendas são juntados por mlItemId no hook, então cada anúncio carrega os seus.
+  const { data: anuncios } = await supabase
+    .from('anuncios_externos')
+    .select('codigo_pai, item_externo_id, permalink, titulo, publicado_em')
+    .eq('canal', 'mercado_livre')
+    .not('item_externo_id', 'is', null);
+  const jaListados = new Set(principais.map((p) => p.mlItemId));
+  const repPorCodigo = new Map(principais.map((p) => [p.codigoPai, p]));
+  const extras: PublicadoItem[] = [];
+  for (const a of anuncios ?? []) {
+    if (!a.item_externo_id || jaListados.has(a.item_externo_id)) continue;
+    const rep = repPorCodigo.get(a.codigo_pai);
+    if (!rep) continue; // sem família representativa carregada — ignora
+    extras.push({
+      ...rep,
+      titulo: a.titulo ?? rep.titulo,
+      mlItemId: a.item_externo_id,
+      mlPermalink: a.permalink ?? null,
+      publicadoEm: a.publicado_em ?? rep.publicadoEm,
+    });
+  }
+  return [...principais, ...extras];
 }
 
 export interface StatusPublicadoItem {
