@@ -60,7 +60,7 @@
 | **Fila serial** | Fila QStash com `parallelism=1` por usuário, que serializa publicações no ML (ADR-0034) para evitar travamento por foto assíncrona. |
 | **Redis** | Cache + locks distribuídos da Upstash. Cache de cor/concorrência/tarifa (6h) e lock do refresh de token OAuth (ADR-0012). |
 | **Vault** | Cofre criptografado do Supabase onde ficam os tokens OAuth do ML. Tokens nunca em texto puro (regra inegociável). |
-| **RLS** | Row Level Security do Postgres. Toda tabela de domínio isola por `user_id` (ADR-0027). |
+| **RLS** | Row Level Security do Postgres. Hoje as tabelas de domínio liberam leitura/escrita a qualquer **membro autenticado** da operação (fase de operação compartilhada, ADR-0047); `user_id` permanece como `criado_por`. O isolamento por `org_id` chega no E7 (ADR-0027). |
 | **verify_jwt** | Flag por função no `config.toml`. `true` = o gateway exige JWT Supabase válido; `false` = função pública que autentica por conta própria (assinatura QStash, webhook, ou JWT manual). |
 
 ## Integrações externas
@@ -71,3 +71,13 @@
 | **MP** | Mercado Pago. Origem dos dados financeiros (líquido, liberação). Token único em `MP_ACCESS_TOKEN` (ADR-0031). |
 | **OpenRouter** | Gateway de IA compatível com OpenAI SDK. Copy + Vision (ADR-0010). |
 | **Telegram** | Canal de alertas operacionais (moderação, vendas, perguntas, liberações) (ADR-0035). |
+
+## Acesso e usuários
+
+| Termo | Definição |
+|---|---|
+| **Operação compartilhada** | O tenant único atual: todos os usuários autenticados enxergam e operam os **mesmos** dados (lotes, anúncios, faturamento). Não há isolamento por empresa — isso chega no E7 (`org_id`, ADR-0027). Decisão registrada em ADR-0047. |
+| **Usuário / Membro** | Conta de login no Supabase Auth pertencente à operação. Espelhada em `public.profiles` (`is_admin`, `is_active`, `allowed_menus`, `email`, `nome`). |
+| **Admin** | Usuário com `profiles.is_admin = true`. Gerencia usuários (criar, editar menus, ativar/desativar, promover outros admins) e enxerga **todos** os menus, independentemente de `allowed_menus`. |
+| **Permissão de menu** | Conjunto de menus que um usuário **não-admin** pode ver e acessar (`profiles.allowed_menus`, array de chaves de menu). Trava em dois níveis: esconde no sidebar e bloqueia a rota. Não é trava de backend (ver ADR-0047). |
+| **Chave de menu** | Identificador estável de um item de navegação (`dashboard`, `lotes`, `revisao`, `publicados`, `faturamento`, `financeiro`, `viabilidade`, `configuracoes`). `usuarios` é um menu extra exclusivo de admin, não atribuível. |
