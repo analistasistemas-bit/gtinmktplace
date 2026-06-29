@@ -13,6 +13,7 @@ import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
 import { subirFotoML } from '../ml/fotos.ts';
 import { aplicarPxQ, type FaixaAtacado } from '../ml/atacado.ts';
 import { mapearVariacoesExternas, mapearVariacoesPorSku, classificarErroCanal } from './mapeamento.ts';
+import { caparEstoque } from '../split/capar-estoque.ts';
 
 function chunk<T>(arr: T[], n: number): T[][] {
   const out: T[][] = [];
@@ -45,10 +46,14 @@ export const mercadoLivreConnector: ChannelConnector = {
       const schema = await lerSchemaAtributos(token, a.categoriaId ?? '');
       if (schema.length) aceitaEmptyGtin = schema.some((s) => s.id === 'EMPTY_GTIN_REASON');
     } catch { /* fallback hard-coded */ }
+    // Cap de estoque (ADR-0048): o ML rejeita anúncio cuja soma de available_quantity passa de
+    // 99.999. No-op quando a soma cabe; senão capa as cores de maior estoque (estoque real intacto
+    // no banco). Aplicado sobre o conjunto que vai ao ML — aqui, todas as variações do anúncio.
+    const capCriar = caparEstoque(a.variacoes.map((v) => ({ sku: v.sku, estoque: v.estoque })));
     const payload = montarPayloadItem(
       { titulo_ml: a.titulo, descricao_ml: a.descricao, categoria_ml_id: a.categoriaId, atributos_ml: a.atributos },
       a.variacoes.map((v) => ({
-        codigo: v.sku, cor: v.cor, estoque: v.estoque,
+        codigo: v.sku, cor: v.cor, estoque: capCriar.get(v.sku) ?? v.estoque,
         preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
       })),
       a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
@@ -84,7 +89,10 @@ export const mercadoLivreConnector: ChannelConnector = {
     try {
       // GET estado real → reenviar TODAS as variações (o ML deleta as omitidas).
       const atual = await buscarItemML(token, a.itemExternoId);
-      const desejados = a.existentes.map((e) => ({ codigo: e.sku, estoque: e.estoque }));
+      // Cap de estoque (ADR-0048): teto sobre o conjunto enviado (existentes + novas) p/ a soma
+      // do anúncio não passar de 99.999. No-op quando cabe. Estoque real intacto no banco.
+      const capUpd = caparEstoque([...a.existentes, ...a.novas].map((v) => ({ sku: v.sku, estoque: v.estoque })));
+      const desejados = a.existentes.map((e) => ({ codigo: e.sku, estoque: capUpd.get(e.sku) ?? e.estoque }));
       // Fotos comuns (capa2/capa3) são da família inteira → aplicam a TODAS as variações
       // existentes; inseridas logo após a líder de cada cor (capa3 sempre após capa2).
       const comuns = [a.capa2FotoId, a.capa3FotoId].filter((x): x is string => !!x);
@@ -104,7 +112,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         a.desconto ?? undefined, a.precoFamilia,
       );
       const novasPut = a.novas.map((v) => montarVariacaoNova(
-        { codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId },
+        { codigo: v.sku, cor: v.cor, estoque: capUpd.get(v.sku) ?? v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId },
         a.capaFotoId, a.capa2FotoId, a.capa3FotoId, a.categoriaId,
         a.desconto ? { pct: a.desconto.pct } : null,
       ));
