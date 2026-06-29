@@ -58,8 +58,7 @@ export default function Login() {
             {carregando ? 'Entrando…' : 'Entrar'}
           </Button>
         </form>
-        <div className="mt-4 flex justify-between text-xs text-muted-foreground">
-          <Link to="/cadastro" className="hover:underline">Criar conta</Link>
+        <div className="mt-4 flex justify-end text-xs text-muted-foreground">
           <Link to="/reset-senha" className="hover:underline">Esqueci a senha</Link>
         </div>
       </Card>

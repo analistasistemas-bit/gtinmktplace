@@ -705,6 +705,39 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          allowed_menus: string[]
+          created_at: string
+          email: string | null
+          id: string
+          is_active: boolean
+          is_admin: boolean
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          allowed_menus?: string[]
+          created_at?: string
+          email?: string | null
+          id: string
+          is_active?: boolean
+          is_admin?: boolean
+          nome?: string
+          updated_at?: string
+        }
+        Update: {
+          allowed_menus?: string[]
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          is_admin?: boolean
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       variacoes: {
         Row: {
           altura_cm: number | null

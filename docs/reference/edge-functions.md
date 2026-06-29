@@ -59,6 +59,8 @@
 | metricas-vendas | true | HTTP (frontend) | sim (leitura) |
 | analisar-viabilidade | true | HTTP (frontend) | não |
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
+| **Acesso / usuários** ||||
+| usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
 | **Utilitário** ||||
 | hello | false | HTTP (smoke test) | sim |
 
@@ -151,6 +153,13 @@
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015).
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria; cache Redis 6h.
+
+### Acesso / usuários
+
+- **usuarios** — gestão de usuários por **admin** (ADR-0047). `verify_jwt=true`; valida que o
+  chamador é admin (`requireUser` + `profiles.is_admin`) e usa `service_role`. Ações: `invite`
+  (`auth.admin.inviteUserByEmail` com `nome`/`allowed_menus` no metadata + `redirectTo` para
+  `/#/definir-senha`), `update_menus`, `set_active`, `set_admin`. Requer o secret `APP_URL`.
 
 ### Utilitário
 - **hello** — smoke test de deploy.

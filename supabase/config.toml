@@ -68,3 +68,5 @@ verify_jwt = false
 verify_jwt = true
 [functions.sugerir-resposta-pergunta]
 verify_jwt = true
+[functions.usuarios]
+verify_jwt = true

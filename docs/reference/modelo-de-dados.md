@@ -6,11 +6,27 @@
 
 ## Regras transversais
 
-- **RLS por `user_id`** em toda tabela de domínio: `(SELECT auth.uid()) = user_id` (ADR-0027).
+- **RLS de operação compartilhada** (ADR-0047): as tabelas de domínio liberam leitura/escrita a
+  qualquer membro autenticado via `public.is_membro_operacao()` (hoje `auth.role()='authenticated'`).
+  `user_id` permanece como `criado_por` (auditoria). O isolamento por `org_id` chega no E7 (ADR-0027),
+  redefinindo só o corpo de `is_membro_operacao()`.
 - **`atualizado_em`** mantido por trigger `moddatetime` na maioria das tabelas.
 - **Escritas sensíveis** (credenciais, faturamento) são bloqueadas para `authenticated` e só
   ocorrem via `service_role` (workers) ou RPC `security definer`.
 - **Tokens** nunca em colunas de texto — ficam no **Vault** (`vault.secrets`).
+
+## Acesso e usuários (ADR-0047)
+
+### `profiles`
+Espelho 1:1 de `auth.users` (`id` FK). Colunas: `email`, `nome`, `is_admin`, `is_active`,
+`allowed_menus text[]` (chaves de menu que um não-admin acessa), `created_at`, `updated_at`.
+Criado no signup pelo trigger `handle_new_user` (semeia `nome`/`allowed_menus` do
+`raw_user_meta_data` do convite). RLS: SELECT do próprio ou de admin; INSERT/UPDATE/DELETE só admin.
+
+**Helpers** (SECURITY DEFINER, `search_path=''`, execute só p/ `authenticated`):
+- `public.is_admin()` — o chamador tem `profiles.is_admin`.
+- `public.is_membro_operacao()` — o chamador é membro autenticado da operação (ponto único de
+  troca p/ o E7).
 
 ## Relações de domínio
 

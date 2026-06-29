@@ -7,7 +7,7 @@ import { AppRoutes } from '@/App';
 
 // As rotas protegidas dependem de useAuth; mockamos com um usuário válido
 // para que ProtectedRoute libere a renderização. As rotas públicas
-// (/login, /cadastro, /reset-senha) também funcionam com esse mock.
+// (/login, /reset-senha, /definir-senha) também funcionam com esse mock.
 vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({
     user: { id: 'u1', email: 'diego@empresa' },
@@ -16,11 +16,19 @@ vi.mock('@/hooks/useAuth', () => ({
   }),
 }));
 
+// Perfil admin: ProtectedRoute libera (is_active) e MenuGuard libera todas as rotas.
+vi.mock('@/hooks/useProfile', () => ({
+  useProfile: () => ({
+    profile: { id: 'u1', is_admin: true, is_active: true, allowed_menus: [], nome: 'Diego' },
+    isAdmin: true,
+    profileLoading: false,
+  }),
+}));
+
 // Topbar/signOut chamam supabase em runtime real; stubamos a lib de auth
 // (signOut etc.) para evitar contato com supabase nas rotas protegidas.
 vi.mock('@/lib/auth', () => ({
   signIn: vi.fn(),
-  signUp: vi.fn(),
   signOut: vi.fn(),
   sendPasswordReset: vi.fn(),
 }));
@@ -110,18 +118,13 @@ describe('App routing', () => {
   it('renderiza Sidebar dentro das rotas com shell', async () => {
     renderRoute('/');
     expect(await screen.findByRole('navigation')).toBeInTheDocument();
-    expect(screen.getAllByText('PubliAI').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText('PubliAI').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renderiza Login na rota /login (pública)', async () => {
     renderRoute('/login');
-    expect(await screen.findByRole('heading', { name: /PubliAI/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /entrar/i })).toBeInTheDocument();
-  });
-
-  it('renderiza Cadastro na rota /cadastro (pública)', async () => {
-    renderRoute('/cadastro');
-    expect(await screen.findByRole('heading', { name: /criar conta/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /entrar/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('PubliAI')).toBeInTheDocument();
   });
 
   it('renderiza ResetSenha na rota /reset-senha (pública)', async () => {

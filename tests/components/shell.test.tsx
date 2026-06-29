@@ -1,9 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SidebarNav } from '@/components/sidebar';
+import { MENU_KEYS } from '@/lib/menus';
+
+// Perfil não-admin com todos os 8 menus → renderiza exatamente os 8 links (sem Usuários).
+vi.mock('@/hooks/useProfile', () => ({
+  useProfile: () => ({
+    profile: { id: 'u1', is_admin: false, is_active: true, allowed_menus: [...MENU_KEYS], nome: 'Op' },
+    isAdmin: false,
+    profileLoading: false,
+  }),
+}));
 
 describe('ThemeToggle', () => {
   beforeEach(() => {

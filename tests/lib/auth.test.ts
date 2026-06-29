@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { signIn, signUp, signOut, sendPasswordReset } from '@/lib/auth';
+import { signIn, signOut, sendPasswordReset } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
       signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
       signOut: vi.fn(),
       resetPasswordForEmail: vi.fn(),
     },
@@ -38,18 +37,6 @@ describe('lib/auth', () => {
     await expect(signIn('a@b.co', 'wrong')).rejects.toThrow('Invalid login');
   });
 
-  it('signUp passes email/password to supabase', async () => {
-    vi.mocked(supabase.auth.signUp).mockResolvedValue({
-      data: { user: { id: 'u2' } as any, session: null },
-      error: null,
-    });
-    await signUp('new@b.co', 'pw12345678');
-    expect(supabase.auth.signUp).toHaveBeenCalledWith({
-      email: 'new@b.co',
-      password: 'pw12345678',
-    });
-  });
-
   it('signOut calls supabase signOut', async () => {
     vi.mocked(supabase.auth.signOut).mockResolvedValue({ error: null });
     await signOut();
@@ -62,6 +49,8 @@ describe('lib/auth', () => {
       error: null,
     } as any);
     await sendPasswordReset('a@b.co');
-    expect(supabase.auth.resetPasswordForEmail).toHaveBeenCalledWith('a@b.co');
+    expect(supabase.auth.resetPasswordForEmail).toHaveBeenCalledWith('a@b.co', {
+      redirectTo: `${window.location.origin}/#/definir-senha`,
+    });
   });
 });
