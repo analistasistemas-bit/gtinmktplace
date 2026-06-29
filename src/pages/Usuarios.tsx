@@ -36,15 +36,15 @@ async function callUsuarios(body: Record<string, unknown>) {
   return data;
 }
 
-function MenuChecklist({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+function MenuChecklist({ value, onChange, disabled }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
   function toggle(key: string, on: boolean) {
     onChange(on ? [...value, key] : value.filter((k) => k !== key));
   }
   return (
     <div className="grid grid-cols-2 gap-2">
       {MENU_KEYS.map((key) => (
-        <label key={key} className="flex items-center gap-2 text-sm">
-          <Checkbox checked={value.includes(key)} onCheckedChange={(c) => toggle(key, c === true)} />
+        <label key={key} className={`flex items-center gap-2 text-sm ${disabled ? 'opacity-60' : ''}`}>
+          <Checkbox checked={value.includes(key)} disabled={disabled} onCheckedChange={(c) => toggle(key, c === true)} />
           {MENU_LABEL[key]}
         </label>
       ))}
@@ -161,10 +161,17 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
   const [email, setEmail] = useState('');
   const [nome, setNome] = useState('');
   const [menus, setMenus] = useState<string[]>([]);
+  const [admin, setAdmin] = useState(false);
+
+  // Admin vê tudo: ao ligar, marca (e trava) todos os menus.
+  function toggleAdmin(on: boolean) {
+    setAdmin(on);
+    if (on) setMenus([...MENU_KEYS]);
+  }
 
   async function enviar() {
-    await onSubmit({ action: 'invite', email, nome, allowed_menus: menus }, 'Convite enviado');
-    setEmail(''); setNome(''); setMenus([]);
+    await onSubmit({ action: 'invite', email, nome, allowed_menus: menus, is_admin: admin }, 'Convite enviado');
+    setEmail(''); setNome(''); setMenus([]); setAdmin(false);
     onOpenChange(false);
   }
 
@@ -175,9 +182,13 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
         <div className="flex flex-col gap-3">
           <Input type="email" placeholder="email@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
+          <label className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+            <span className="font-medium">Administrador <span className="font-normal text-muted-foreground">(acesso total a todos os menus)</span></span>
+            <Switch checked={admin} onCheckedChange={toggleAdmin} />
+          </label>
           <div>
             <div className="mb-2 text-sm font-medium">Menus</div>
-            <MenuChecklist value={menus} onChange={setMenus} />
+            <MenuChecklist value={menus} onChange={setMenus} disabled={admin} />
           </div>
         </div>
         <DialogFooter>

@@ -36,6 +36,10 @@ Deno.serve(async (req) => {
         redirectTo: `${appUrl}/#/definir-senha`,
       });
       if (error) return json({ error: error.message }, 400);
+      // Convidado como admin: o trigger já criou o profile; promovemos.
+      if (body.is_admin === true && data.user?.id) {
+        await db.from('profiles').update({ is_admin: true, updated_at: new Date().toISOString() }).eq('id', data.user.id);
+      }
       return json({ ok: true, id: data.user?.id });
     }
     case 'update_menus': {
