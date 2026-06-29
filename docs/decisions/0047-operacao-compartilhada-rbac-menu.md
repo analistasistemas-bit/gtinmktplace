@@ -1,7 +1,7 @@
 # ADR-0047 — Operação compartilhada + controle de acesso por menu (fase pré-E7)
 
 **Data:** 2026-06-28
-**Status:** proposto
+**Status:** aceito (implementado e live em produção em 2026-06-29)
 **Decisores:** Diego
 **Relaciona:** antecede e será substituído em parte por ADR-0027 (multi-tenancy por `org_id`, épico E7); refina ADR-0007 (modelo de dados); toca ADR-0012 (credenciais ML)
 
@@ -81,3 +81,12 @@ Implementar uma **fase intermediária** de operação compartilhada + RBAC de me
 - Resolver a conexão ML da operação (não do chamador) para destravar publicação por membros —
   ou manter publicação só no admin até o E7.
 - `lotes.numero` segue global (sem mudança nesta fase).
+
+## Implementação (2026-06-29)
+
+Live em produção: migrations (`profiles`, helpers, trigger, backfill, swap de RLS + revogação
+de `anon`), edge function `usuarios` (admin-only), frontend (menu Usuários, MenuGuard,
+`/definir-senha`). **E-mail transacional resolvido**: SMTP próprio via **Resend**
+(`publiai@daludi.com.br`, domínio `daludi.com.br`) configurado no Supabase Auth + templates de
+Convite/Reset com `token_hash` + `site_url` de produção — validado (entrega + link). Detalhes
+operacionais em [operacoes-rotineiras.md](../how-to/operacoes-rotineiras.md#e-mail-transacional-smtp-via-resend).

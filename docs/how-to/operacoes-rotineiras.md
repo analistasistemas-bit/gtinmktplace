@@ -73,3 +73,40 @@ pnpm db:check
 ```
 
 Se divergir, ver [deploy-e-migrations.md](deploy-e-migrations.md#se-o-histórico-divergir).
+
+## Convidar usuário e definir acesso por menu (ADR-0047)
+
+Operação multiusuário/compartilhada: um **admin** cria os logins e escolhe quais menus cada um
+vê. Tela: **Usuários** na sidebar (só admin) → **Convidar usuário**.
+
+- **Convidar:** informe e-mail + nome e marque os menus. Ligue o switch **Administrador** para
+  acesso total (auto-marca e trava todos os menus e promove `is_admin`).
+- **Editar/desativar/promover:** na tabela de Usuários (switches Admin/Ativo e "Editar menus").
+  Usuário **desativado** é deslogado; usuário **sem nenhum menu** cai em `/sem-acesso`.
+- O convidado recebe o e-mail "Seu acesso ao PubliAI", clica em **Definir senha e entrar**
+  (`/#/definir-senha?token_hash=…&type=invite`), define a senha e entra.
+
+**Reenviar convite a um usuário que já existe** (reinvitar o mesmo e-mail dá "já registrado"):
+exclua e recrie. Excluir (cascata remove o `profiles`):
+
+```sql
+delete from auth.users where email = 'pessoa@empresa.com';
+```
+
+Depois é só clicar **Convidar usuário** de novo na tela.
+
+## E-mail transacional (SMTP via Resend)
+
+O e-mail de convite/reset **não** usa o serviço interno do Supabase (`@mail.app.supabase.io`,
+só entrega para a equipe do projeto). Está configurado **SMTP próprio via Resend**:
+
+- **Provedor:** Resend (free 3k/mês). Domínio de envio verificado: `daludi.com.br`.
+  Remetente: `publiai@daludi.com.br`. Secrets no `.env.local`: `RESEND_API_KEY`,
+  `RESEND_SENDER_EMAIL`.
+- **Onde mora:** a API key fica na **config de SMTP do Supabase Auth** (Management API:
+  `smtp_host=smtp.resend.com`, `smtp_port=465`, `smtp_user=resend`, `smtp_pass=<API key>`).
+  O frontend/edge **não** leem `.env.local` para isso — o Supabase é quem envia.
+- **Templates** (Convite/Reset) e `site_url` (= URL de produção) também estão na config do Auth;
+  o link aponta para `{{ .SiteURL }}/#/definir-senha?token_hash={{ .TokenHash }}&type=…`.
+- **Validar entrega:** API do Resend — `GET https://api.resend.com/emails?limit=5`
+  (`Authorization: Bearer $RESEND_API_KEY`) mostra `last_event: delivered` e o HTML/link.
