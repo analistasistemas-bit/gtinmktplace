@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Mensagem automática ao comprador — 2026-06-29
+
+- [x] **Mensagem de boas-vindas ao pagar** — `sync-venda` envia `POST /messages/packs/{packId}/sellers/{sellerId}/messages` na primeira transição `→ paid` (flag `novaPaga` já idempotente, sem coluna nova). Novo helper `_shared/ml/mensagem.ts`. Falha de mensagem é logada mas não trava o worker. `sync-venda` deployado (v17). Docs atualizadas (`edge-functions.md`).
+
 ## Split de produto em N anúncios ML (ADR-0048) — 2026-06-29
 
 - [x] **Cor nova entra MARCADA por padrão no UPDATE (opt-out)** — antes, cor nova num UPDATE nascia desmarcada (opt-in, ADR-0016 adendo 2026-06-04); ao subir lote com muitas cores novas todas ficavam de fora sem aviso. Invertido: cor nova com **foto E estoque** entra marcada; senão dorme. Operador ainda pode desmarcar na Revisão. `ingest-lote` (1 linha) + adendo no ADR-0016. `ingest-lote` deployado.
