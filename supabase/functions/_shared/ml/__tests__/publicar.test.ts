@@ -65,9 +65,17 @@ describe('montarPayloadItem', () => {
     const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '30001234' }], capaPictureId);
     expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
   });
-  it('GTIN preenchido porém malformado vai como GTIN literal (ML valida), nunca como "sem código"', () => {
+  it('GTIN com comprimento inválido (3 dígitos) é tratado como ausente → EMPTY_GTIN_REASON', () => {
     const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '123' }], capaPictureId);
-    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '123' }]);
+    expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
+  });
+  it('GTIN com 9 dígitos (código interno fornecedor, lote #48) é tratado como ausente → EMPTY_GTIN_REASON', () => {
+    const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '533100017' }], capaPictureId);
+    expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
+  });
+  it('GTIN com 13 dígitos (EAN-13 possivelmente com checksum errado) vai como GTIN literal → ML valida', () => {
+    const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '1234567890123' }], capaPictureId);
+    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '1234567890123' }]);
   });
   it('cor sem GTIN em categoria sem suporte (botão MLB270272) não envia GTIN nem EMPTY_GTIN_REASON', () => {
     const botao = { ...familia, categoria_ml_id: 'MLB270272' };

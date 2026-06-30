@@ -59,10 +59,16 @@ const LISTING_TYPE_PADRAO = 'gold_special';
 const CONDITION = 'new';
 const COR_UNITARIA = 'Único';
 
-// Ausência legítima de código universal: nulo/vazio ou código interno 3000* (não-EAN GS1).
-// Um GTIN preenchido (mesmo malformado) NÃO é ausência — vai ao ML, que valida o formato.
+// Ausência legítima de código universal: nulo/vazio, código interno 3000* (não-EAN GS1),
+// ou comprimento inválido (GTIN válido = 8, 12, 13 ou 14 dígitos). Códigos de 9 dígitos
+// são IDs internos de fornecedor, não GTINs reais — tratamos como ausentes para evitar
+// rejeição silenciosa pelo ML (ex.: lote #48 com gtin="533100017").
+const GTIN_COMPRIMENTOS_VALIDOS = new Set([8, 12, 13, 14]);
 export function gtinAusente(gtin: string | null): boolean {
-  return !gtin || gtin.trim() === '' || /^3000/.test(gtin);
+  if (!gtin || gtin.trim() === '') return true;
+  const digits = gtin.trim().replace(/\D/g, '');
+  if (/^3000/.test(digits)) return true;
+  return !GTIN_COMPRIMENTOS_VALIDOS.has(digits.length);
 }
 
 /** Ordena as fotos de uma variação. O ML usa a 1ª picture_id como capa da galeria
