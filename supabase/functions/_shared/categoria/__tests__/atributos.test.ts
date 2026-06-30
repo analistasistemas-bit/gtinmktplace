@@ -151,7 +151,7 @@ describe('extrairUnitsPerPack (quantidade no nome/descrição)', () => {
 
 describe('preencherUnitsPerPack (gate por schema)', () => {
   const schemaComUnits: AtributoSchema[] = [
-    { id: 'UNITS_PER_PACK', nome: 'Unidades por kit', required: true, conditionalRequired: false, valores: [] },
+    { id: 'UNITS_PER_PACK', nome: 'Unidades por kit', required: true, conditionalRequired: false, valueType: 'number', valores: [], allowedUnits: [], tags: [] },
   ];
   it('preenche value_name numérico quando a categoria expõe o atributo', () => {
     const out = preencherUnitsPerPack(schemaComUnits, [], 'ALFINETE 100UND');

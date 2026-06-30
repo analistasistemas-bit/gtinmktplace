@@ -2,11 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { montarAtributosBase, atributosFaltantesGenerico, rotuloParaTipo } from '../atributos';
 import type { AtributoSchema } from '../schema';
 
+const A = (o: Partial<AtributoSchema> & { id: string }): AtributoSchema => ({
+  nome: o.id, required: false, conditionalRequired: false, valueType: 'string', valores: [], allowedUnits: [], tags: [], ...o,
+});
 const SCHEMA: AtributoSchema[] = [
-  { id: 'BRAND', nome: 'Marca', required: true, conditionalRequired: false, valores: [] },
-  { id: 'MODEL', nome: 'Modelo', required: true, conditionalRequired: false, valores: [] },
-  { id: 'VOLTAGE', nome: 'Voltagem', required: false, conditionalRequired: true, valores: [{ id: '1', nome: '110V' }] },
-  { id: 'GTIN', nome: 'Código universal', required: false, conditionalRequired: true, valores: [] },
+  A({ id: 'BRAND', nome: 'Marca', required: true }),
+  A({ id: 'MODEL', nome: 'Modelo', required: true }),
+  A({ id: 'VOLTAGE', nome: 'Voltagem', conditionalRequired: true, valueType: 'list', valores: [{ id: '1', nome: '110V' }] }),
+  A({ id: 'GTIN', nome: 'Código universal', conditionalRequired: true }),
 ];
 
 describe('rotuloParaTipo', () => {
@@ -25,7 +28,7 @@ describe('montarAtributosBase', () => {
     expect(a.find((x) => x.id === 'VOLTAGE')).toBeUndefined();
   });
   it('marca vazia → fallback Avil; só inclui o que o schema expõe', () => {
-    const a = montarAtributosBase([{ id: 'BRAND', nome: 'Marca', required: true, conditionalRequired: false, valores: [] }], 'Caneta', '');
+    const a = montarAtributosBase([A({ id: 'BRAND', nome: 'Marca', required: true })], 'Caneta', '');
     expect(a).toEqual([{ id: 'BRAND', value_name: 'Avil' }]);
   });
 });
