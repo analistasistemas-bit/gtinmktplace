@@ -99,13 +99,20 @@ const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON']);
 
 /**
  * Atributos determinísticos universais para uma categoria PREVISTA (sem override): só o
- * que dá para saber sem IA — BRAND (fornecedor) e MODEL (nome). Atributos com closed-set
- * (ex.: VOLTAGE) ficam vazios → o E4 preenche por IA. Só inclui o que o schema expõe.
+ * que dá para saber sem IA — BRAND/MANUFACTURER (fornecedor) e MODEL (nome). Atributos com
+ * closed-set (ex.: VOLTAGE) ficam vazios → o E4 preenche por IA. Só inclui o que o schema expõe.
+ *
+ * MANUFACTURER (Fabricante) é obrigatório e texto-livre em algumas categorias (ex.: tecidos
+ * MLB439096); a IA só cobre closed-set, então nada o preenchia → travava na publicação sem
+ * campo na UI para corrigir. Espelhamos o fornecedor (mesma fonte do BRAND): para o nosso
+ * negócio fabricante = marca/fornecedor.
  */
 export function montarAtributosBase(schema: AtributoSchema[], nome: string, marca?: string): AtributoML[] {
   const ids = new Set(schema.map((a) => a.id));
+  const brand = marca?.trim() || MARCA;
   const attrs: AtributoML[] = [];
-  if (ids.has('BRAND')) attrs.push({ id: 'BRAND', value_name: marca?.trim() || MARCA });
+  if (ids.has('BRAND')) attrs.push({ id: 'BRAND', value_name: brand });
+  if (ids.has('MANUFACTURER')) attrs.push({ id: 'MANUFACTURER', value_name: brand });
   if (ids.has('MODEL')) attrs.push({ id: 'MODEL', value_name: nome });
   return attrs;
 }
