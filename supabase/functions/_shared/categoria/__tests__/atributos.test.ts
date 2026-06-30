@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, montarAtributosML, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack } from '../atributos';
+import { categoriaParaTipo, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack } from '../atributos';
 import type { AtributoSchema } from '../schema';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
@@ -167,5 +167,24 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
   });
   it('sem quantidade no texto → deixa faltante (não inventa)', () => {
     expect(preencherUnitsPerPack(schemaComUnits, [], 'AGULHA DE COSTURA')).toEqual([]);
+  });
+});
+
+describe('montarAtributosBase (MANUFACTURER = fornecedor)', () => {
+  const attr = (id: string): AtributoSchema =>
+    ({ id, nome: id, required: true, conditionalRequired: false, valueType: 'string', valores: [], allowedUnits: [], tags: [] });
+
+  it('preenche Fabricante (MANUFACTURER) espelhando a marca quando o schema o expõe', () => {
+    const out = montarAtributosBase([attr('BRAND'), attr('MANUFACTURER'), attr('MODEL')], 'Tecido Oxford', 'TRINITY');
+    expect(out).toEqual([
+      { id: 'BRAND', value_name: 'TRINITY' },
+      { id: 'MANUFACTURER', value_name: 'TRINITY' },
+      { id: 'MODEL', value_name: 'Tecido Oxford' },
+    ]);
+  });
+
+  it('não inclui MANUFACTURER quando a categoria não o expõe', () => {
+    const out = montarAtributosBase([attr('BRAND'), attr('MODEL')], 'Linha', 'Avil');
+    expect(out.some((a) => a.id === 'MANUFACTURER')).toBe(false);
   });
 });
