@@ -176,7 +176,22 @@ Deno.serve(async (req) => {
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
     if (cat.origem === 'regex') {
+      // Obrigatórios curados (BRAND, RIBBON_TYPE, MATERIAL…) — determinísticos, têm prioridade.
       atributosMl = montarAtributosML(tipo, claimed.nome_pai, fornecedor, claimed.descricao_pai ?? undefined);
+      // Enriquece com os demais atributos da categoria p/ melhorar a nota de qualidade do anúncio:
+      // closed-set opcionais (ex.: Formato da fita) + numéricos (ex.: Comprimento) via IA, validados
+      // contra o schema (nunca inventa) e sem sobrescrever os curados. Resiliente: falha → só os curados.
+      if (token && categoriaMlId) {
+        try {
+          const schema = await lerSchemaAtributos(token, categoriaMlId);
+          atributosMl = await preencherAtributosClosedSet(
+            schema, atributosMl,
+            { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
+            desempatarAtributosLLM,
+          );
+          atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
+        } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
+      }
     } else if (categoriaMlId && token) {
       try {
         const schema = await lerSchemaAtributos(token, categoriaMlId);

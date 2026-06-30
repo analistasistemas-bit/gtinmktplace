@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Atributos opcionais/numéricos por IA — nota de qualidade (ADR-0049) — 2026-06-29
+
+- [ ] **Anúncio preenche mais características (não só obrigatórias)** — anúncios de aviamentos saíam só com os obrigatórios (ex.: fita → `BRAND`+`RIBBON_TYPE`) → ML marca qualidade "ruim". O caminho regex do `process-familia` agora **enriquece** os obrigatórios curados com o schema da categoria: closed-set opcionais (ex.: *Formato da fita*) + numéricos (ex.: *Comprimento*/*Largura* extraídos da descrição), via IA validada contra o schema (nunca inventa); texto livre como `MODEL` fica de fora. `schema.ts` (`valueType`/`allowedUnits`), `atributos-llm-core.ts` (alvos closed-set opcionais + numéricos; ignora `COLOR`/`UNITS_PER_PACK`), `process-familia` (ramo regex). TDD: 57 testes nos módulos + 1043 na suíte, typecheck verde. [ADR-0049](decisions/0049-atributos-opcionais-e-numericos-por-ia.md). **Pendente:** validação local do Diego + deploy de `process-familia`.
+
 ## Mensagem automática ao comprador — 2026-06-29
 
 - [x] **Mensagem de boas-vindas ao pagar** — `sync-venda` envia `POST /messages/packs/{packId}/sellers/{sellerId}/messages` na primeira transição `→ paid` (flag `novaPaga` já idempotente, sem coluna nova). Novo helper `_shared/ml/mensagem.ts`. Falha de mensagem é logada mas não trava o worker. `sync-venda` deployado (v17). Docs atualizadas (`edge-functions.md`).
