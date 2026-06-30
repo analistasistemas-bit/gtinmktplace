@@ -1,6 +1,7 @@
 import { CircleCheck, CircleAlert, CircleX, CircleHelp, Truck } from 'lucide-react';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { useTarifaML } from '@/hooks/useTarifaML';
+import type { DimensoesFrete } from '@/lib/tarifa';
 import { calcularSemaforo, freteSobConta, type Semaforo } from '@/lib/semaforo';
 
 const CFG: Record<Semaforo, { tone: StatusTone; label: string; Icon: typeof CircleCheck }> = {
@@ -19,13 +20,16 @@ export function SemaforoPreco({
   piso,
   custo,
   categoriaMlId,
+  dimensoes,
 }: {
   preco: number;
   piso: number;
   custo: number | null;
   categoriaMlId: string | null;
+  /** Mesmas dimensões do card "Você recebe" — mantém o líquido consistente e dedupe na chamada. */
+  dimensoes?: DimensoesFrete | null;
 }) {
-  const { data, isLoading } = useTarifaML(preco, categoriaMlId);
+  const { data, isLoading } = useTarifaML(preco, categoriaMlId, dimensoes);
   const liquido = data ? data.classico.recebe : null;
   const sem: Semaforo = isLoading ? 'indisponivel' : calcularSemaforo(liquido, piso, custo);
   const cfg = CFG[sem];

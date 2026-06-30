@@ -35,6 +35,15 @@ export function PainelAnalise({
         (v.precoPublicacao ?? v.preco) < (min.precoPublicacao ?? min.preco) ? v : min,
       baseVariacoes[0])
     : null;
+  // Dimensões/peso da representativa (mesma variação do preço exibido) p/ o frete do vendedor.
+  const dimensoesRepresentativas = variacaoRepresentativa
+    ? {
+        alturaCm: variacaoRepresentativa.alturaCm,
+        larguraCm: variacaoRepresentativa.larguraCm,
+        comprimentoCm: variacaoRepresentativa.comprimentoCm,
+        pesoGramas: variacaoRepresentativa.pesoGramas,
+      }
+    : null;
 
   const proprio = familia.estrategiaPreco === 'PROPRIO';
   const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
@@ -52,6 +61,7 @@ export function PainelAnalise({
         piso={variacaoRepresentativa?.preco ?? precoExibido}
         custo={custoRepresentativo}
         categoriaMlId={familia.categoriaMlId}
+        dimensoes={dimensoesRepresentativas}
       />
 
       {familia.precoAbaixo20pc && (
@@ -153,7 +163,7 @@ export function PainelAnalise({
 
         {/* Você recebe por venda (prioritário → flex-[2]; compara Clássico × Premium) */}
         <div className="min-w-[300px] flex-[2]">
-          <CardVoceRecebe preco={precoExibido} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} real={listingTypeReal} />
+          <CardVoceRecebe preco={precoExibido} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} real={listingTypeReal} dimensoes={dimensoesRepresentativas} />
         </div>
       </div>
     </div>
