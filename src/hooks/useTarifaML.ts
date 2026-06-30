@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
-import { calcularTarifaML, type Tarifa } from '@/lib/tarifa';
+import { calcularTarifaML, type Tarifa, type DimensoesFrete } from '@/lib/tarifa';
 
 /**
- * Comissão ML (Clássico/Premium) para preço+categoria. Recalcula quando o preço muda
- * (faz parte da queryKey). `enabled` evita chamar sem categoria ou preço válido.
+ * Tarifa ML (Clássico/Premium) para preço+categoria, com `recebe` já líquido do frete do
+ * vendedor. Recalcula quando preço/dimensões mudam (fazem parte da queryKey). `enabled` evita
+ * chamar sem categoria ou preço válido. `dim` deve ser a mesma em todos os callers (card +
+ * semáforo) para o react-query deduplicar a chamada e manter o líquido consistente.
  */
-export function useTarifaML(preco: number, categoriaMlId: string | null) {
+export function useTarifaML(preco: number, categoriaMlId: string | null, dim?: DimensoesFrete | null) {
   return useQuery<Tarifa | null>({
-    queryKey: ['tarifa', categoriaMlId, preco],
-    queryFn: () => calcularTarifaML(preco, categoriaMlId as string),
+    queryKey: ['tarifa', categoriaMlId, preco, dim?.alturaCm, dim?.larguraCm, dim?.comprimentoCm, dim?.pesoGramas],
+    queryFn: () => calcularTarifaML(preco, categoriaMlId as string, dim),
     enabled: !!categoriaMlId && preco > 0,
     staleTime: 6 * 60 * 60 * 1000, // 6h, alinhado ao cache da edge
   });

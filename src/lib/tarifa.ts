@@ -10,12 +10,27 @@ export interface TarifaTipo {
 export interface Tarifa {
   classico: TarifaTipo;
   premium: TarifaTipo;
+  /** Frete que o vendedor absorve (frete grátis ao comprador). 0 quando o comprador paga. */
+  frete: number;
 }
 
-/** Calcula a comissão ML (Clássico/Premium) para preço+categoria. null em falha/indisponível. */
+/** Dimensões/peso da variação representativa — entram no cálculo do frete do vendedor. */
+export interface DimensoesFrete {
+  alturaCm: number | null;
+  larguraCm: number | null;
+  comprimentoCm: number | null;
+  pesoGramas: number | null;
+}
+
+/**
+ * Calcula a tarifa ML (Clássico/Premium) para preço+categoria, com o `recebe` já líquido do
+ * frete que o vendedor paga. null em falha/indisponível. `dim` opcional: sem dimensões válidas
+ * o frete vem 0 (o ML estimaria no anúncio).
+ */
 export async function calcularTarifaML(
   preco: number,
   categoriaMlId: string,
+  dim?: DimensoesFrete | null,
 ): Promise<Tarifa | null> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Não autenticado');
@@ -28,7 +43,18 @@ export async function calcularTarifaML(
         Authorization: `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ preco, categoria_ml_id: categoriaMlId }),
+      body: JSON.stringify({
+        preco,
+        categoria_ml_id: categoriaMlId,
+        dimensoes: dim
+          ? {
+              altura_cm: dim.alturaCm,
+              largura_cm: dim.larguraCm,
+              comprimento_cm: dim.comprimentoCm,
+              peso_gramas: dim.pesoGramas,
+            }
+          : null,
+      }),
     },
   );
   if (!r.ok) return null;

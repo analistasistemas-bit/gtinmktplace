@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { useTarifaML } from '@/hooks/useTarifaML';
 import { calcularMarkup } from '@/lib/markup';
-import type { TarifaTipo } from '@/lib/tarifa';
+import type { TarifaTipo, DimensoesFrete } from '@/lib/tarifa';
 
 function Coluna({
   titulo,
@@ -56,14 +56,17 @@ export function CardVoceRecebe({
   categoriaMlId,
   custo,
   real,
+  dimensoes,
 }: {
   preco: number;
   categoriaMlId: string | null;
   custo?: number | null;
   /** Modo realmente publicado: destaca a coluna Clássico ou Premium. */
   real?: 'classico' | 'premium' | null;
+  /** Dimensões/peso da variação representativa, para descontar o frete do vendedor. */
+  dimensoes?: DimensoesFrete | null;
 }) {
-  const { data, isLoading, isError } = useTarifaML(preco, categoriaMlId);
+  const { data, isLoading, isError } = useTarifaML(preco, categoriaMlId, dimensoes);
 
   return (
     <div className="rounded-md border p-2 shadow-sm">
@@ -87,7 +90,9 @@ export function CardVoceRecebe({
             <Coluna titulo="Premium" t={data.premium} melhor={data.premium.recebe > data.classico.recebe} custo={custo ?? null} real={real === 'premium'} />
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground">
-            ℹ️ Acima de R$19, o Mercado Livre dá frete grátis ao comprador por sua conta (varia por região).
+            {data.frete > 0
+              ? <>ℹ️ Já desconta o frete grátis ao comprador por sua conta: <span className="font-medium text-foreground">−{fmtBRL(data.frete)}</span> (estimado; varia por região).</>
+              : 'ℹ️ Acima de R$19, o Mercado Livre dá frete grátis ao comprador por sua conta (varia por região).'}
           </p>
         </>
       )}

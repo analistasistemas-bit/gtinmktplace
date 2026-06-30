@@ -26,4 +26,15 @@ describe('montarTarifa', () => {
     expect(t.classico.fixa).toBe(0);
     expect(t.classico.recebe).toBe(17.7);
   });
+  it('frete default 0: recebe = preço - comissão (retrocompat)', () => {
+    expect(montarTarifa(12.50, classico, premium).frete).toBe(0);
+  });
+  it('desconta o frete do vendedor do líquido (mesmo p/ Clássico e Premium)', () => {
+    // Espelha o caso do simulador ML: 29,90 − comissão − 6,55 de frete.
+    const c = { sale_fee_amount: 4.93, sale_fee_details: { percentage_fee: 16.5, fixed_fee: 0 } };
+    const t = montarTarifa(29.90, c, c, 6.55);
+    expect(t.frete).toBe(6.55);
+    expect(t.classico.recebe).toBe(18.42); // 29.90 - 4.93 - 6.55
+    expect(t.premium.recebe).toBe(18.42);
+  });
 });

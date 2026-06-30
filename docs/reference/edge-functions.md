@@ -159,7 +159,7 @@
 - **status-publicados** — lê status dos anúncios via conector multicanal (resiliente a "sem credencial").
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015).
-- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria; cache Redis 6h.
+- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete`. Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
 
 ### Acesso / usuários
 
