@@ -40,7 +40,7 @@ describe('vendasPorUf', () => {
 });
 
 const vr = (over: Partial<VendaResumo>): VendaResumo => ({
-  id: 'v', orderId: 1, data: '2026-06-20', dataLiberacao: null, descricao: null, codigo: null,
+  id: 'v', orderId: 1, pedidoChave: '1', data: '2026-06-20', dataLiberacao: null, descricao: null, codigo: null,
   bruto: 0, liquido: 0, retido: 0, estorno: 0, custo: null, ...over,
 });
 
