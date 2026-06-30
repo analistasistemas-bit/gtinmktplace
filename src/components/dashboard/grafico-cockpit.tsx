@@ -5,7 +5,15 @@ import type { PontoSerie } from '@/lib/resumo-vendas';
 export type MetricaGrafico = 'liquido' | 'pedidos';
 
 /** Evolução de vendas em área. Plota líquido (R$) ou nº de pedidos, conforme `metrica`. Vazio → aviso. */
-export function GraficoCockpit({ serie, metrica }: { serie: PontoSerie[]; metrica: MetricaGrafico }) {
+export function GraficoCockpit({
+  serie,
+  metrica,
+  rotuloDinheiro = 'Líquido',
+}: {
+  serie: PontoSerie[];
+  metrica: MetricaGrafico;
+  rotuloDinheiro?: string;
+}) {
   if (serie.length === 0) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">
@@ -13,7 +21,7 @@ export function GraficoCockpit({ serie, metrica }: { serie: PontoSerie[]; metric
       </div>
     );
   }
-  const ehDinheiro = metrica === 'liquido';
+const ehDinheiro = metrica === 'liquido';
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -35,7 +43,7 @@ export function GraficoCockpit({ serie, metrica }: { serie: PontoSerie[]; metric
             }
           />
           <Tooltip
-            formatter={(v) => [ehDinheiro ? fmtBRL(Number(v)) : fmtInt(Number(v)), ehDinheiro ? 'Líquido' : 'Pedidos']}
+            formatter={(v) => [ehDinheiro ? fmtBRL(Number(v)) : fmtInt(Number(v)), ehDinheiro ? rotuloDinheiro : 'Pedidos']}
             labelClassName="text-foreground"
             contentStyle={{ fontSize: 12 }}
           />

@@ -258,13 +258,29 @@ describe('calcularResumo — breakdown de taxas reconcilia com descontos', () =>
 describe('agruparPorPeriodo', () => {
   it('agrupa líquido e bruto por dia, ordenado', () => {
     const itens = [
-      { data: '2026-06-10T09:00:00Z', bruto: 100, liquido: 80 },
-      { data: '2026-06-10T18:00:00Z', bruto: 50, liquido: 40 },
-      { data: '2026-06-11T10:00:00Z', bruto: 30, liquido: 25 },
+      { data: '2026-06-10T09:00:00Z', bruto: 100, liquido: 80, pedidoChave: '1' },
+      { data: '2026-06-10T18:00:00Z', bruto: 50, liquido: 40, pedidoChave: '2' },
+      { data: '2026-06-11T10:00:00Z', bruto: 30, liquido: 25, pedidoChave: '3' },
     ];
     const serie = agruparPorPeriodo(itens, 'dia');
     expect(serie).toHaveLength(2);
-    expect(serie[0]).toMatchObject({ chave: '2026-06-10', rotulo: '10/06', bruto: 150, liquido: 120 });
-    expect(serie[1]).toMatchObject({ chave: '2026-06-11', liquido: 25 });
+    expect(serie[0]).toMatchObject({ chave: '2026-06-10', rotulo: '10/06', bruto: 150, liquido: 120, pedidos: 2 });
+    expect(serie[1]).toMatchObject({ chave: '2026-06-11', liquido: 25, pedidos: 1 });
+  });
+
+  it('usa o dia local, sem empurrar venda noturna para o dia seguinte', () => {
+    const serie = agruparPorPeriodo([{ data: '2026-06-29T23:30:00', bruto: 100, liquido: 80, pedidoChave: '1' }], 'dia');
+    expect(serie).toHaveLength(1);
+    expect(serie[0]).toMatchObject({ chave: '2026-06-29', rotulo: '29/06', bruto: 100, liquido: 80, pedidos: 1 });
+  });
+
+  it('conta pack como um pedido só quando o mesmo pack gera várias linhas no mesmo dia', () => {
+    const serie = agruparPorPeriodo([
+      { data: '2026-06-29T10:00:00', bruto: 100, liquido: 80, pedidoChave: 'pack-1' },
+      { data: '2026-06-29T10:05:00', bruto: 50, liquido: 40, pedidoChave: 'pack-1' },
+      { data: '2026-06-29T11:00:00', bruto: 30, liquido: 25, pedidoChave: 'pack-2' },
+    ], 'dia');
+    expect(serie).toHaveLength(1);
+    expect(serie[0]).toMatchObject({ chave: '2026-06-29', bruto: 180, liquido: 145, pedidos: 2 });
   });
 });

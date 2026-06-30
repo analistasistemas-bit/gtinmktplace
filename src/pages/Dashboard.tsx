@@ -81,7 +81,7 @@ function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta
 
 export default function Dashboard() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
-  const [metrica, setMetrica] = useState<MetricaGrafico>('liquido');
+const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturamento');
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const janelaAnt = useMemo(() => janelaAnterior(janela), [janela]);
 
@@ -118,7 +118,12 @@ export default function Dashboard() {
       ? (!janela.desde || !janela.ate ? 'dia'
         : (Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana')
       : 'semana';
-  const serie = useMemo(() => agruparPorPeriodo(r.vendas, passo), [r.vendas, passo]);
+const serie = useMemo(() => agruparPorPeriodo(r.vendas, passo), [r.vendas, passo]);
+const serieGrafico = useMemo(
+  () => (metrica === 'faturamento' ? serie.map((p) => ({ ...p, liquido: p.bruto })) : serie),
+  [metrica, serie],
+);
+const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liquido';
 
   // Pedidos/ticket/compradores por PACOTE (agruparPorPedido) — mesmo nível do menu Faturamento
   // (fonte da verdade): uma compra com vários itens conta como 1 pedido. O resumo (r.pedidos/
@@ -268,17 +273,25 @@ export default function Dashboard() {
             Evolução de vendas <span className="text-muted-foreground">({passo === 'dia' ? 'por dia' : 'por semana'})</span>
           </div>
           <div className="flex gap-1">
-            {(['liquido', 'pedidos'] as MetricaGrafico[]).map((m) => (
+{(['faturamento', 'liquido', 'pedidos'] as const).map((m) => (
               <Button
                 key={m} size="sm" variant={metrica === m ? 'default' : 'outline'}
                 className="h-7 px-2.5 text-xs" onClick={() => setMetrica(m)}
               >
-                {m === 'liquido' ? 'Líquido' : 'Pedidos'}
+                {m === 'faturamento' ? 'Faturamento' : m === 'liquido' ? 'Líquido' : 'Pedidos'}
               </Button>
             ))}
           </div>
         </div>
-        {carregando ? <Skeleton className="h-64 w-full" /> : <GraficoCockpit serie={serie} metrica={metrica} />}
+{carregando ? (
+  <Skeleton className="h-64 w-full" />
+) : (
+  <GraficoCockpit
+    serie={serieGrafico}
+    metrica={metricaGrafico}
+    rotuloDinheiro={metrica === 'faturamento' ? 'Faturamento' : 'Líquido'}
+  />
+)}
       </div>
 
       {/* ── Top produtos | Liberações próximas ─────────────────── */}

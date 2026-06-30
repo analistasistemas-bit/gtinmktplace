@@ -23,9 +23,10 @@ export type PesoResolver = (item: VendaItem) => number | null;
 
 /** Uma venda resumida para a tabela do detalhe financeiro (e afins). */
 export interface VendaResumo {
-  id: string;
-  orderId: number;
-  /** date_closed ?? date_created. */
+id: string;
+orderId: number;
+pedidoChave: string;
+/** date_closed ?? date_created. */
   data: string | null;
   /** money_release_date — data de liberação do recebimento (null = MP não informou). */
   dataLiberacao: string | null;
@@ -173,6 +174,7 @@ export function calcularResumo(
     vendasResumo.push({
       id: v.id,
       orderId: v.order_id,
+      pedidoChave: String(v.pack_id ?? v.order_id),
       data: v.date_closed ?? v.date_created,
       dataLiberacao: v.money_release_date,
       descricao: descricaoVenda(v),
@@ -303,25 +305,32 @@ function ratearProporcional(total: number, base: number[], idxResto: number): nu
 }
 
 export interface PontoSerie { chave: string; rotulo: string; bruto: number; liquido: number; pedidos: number }
-export interface ItemSerie { data: string | null; bruto: number; liquido: number }
+export interface ItemSerie { data: string | null; bruto: number; liquido: number; pedidoChave?: string | null }
 
 /** Série temporal (bruto/líquido/nº de pedidos) por dia ou semana. Recebe itens já faturáveis (a
  *  página passa resumo.vendas, um item por venda). UTC na chave; rótulo DD/MM; ordenada crescente. */
 export function agruparPorPeriodo(itens: ItemSerie[], passo: 'dia' | 'semana'): PontoSerie[] {
-  const mapa = new Map<string, { rotulo: string; bruto: number; liquido: number; pedidos: number }>();
+const mapa = new Map<string, { rotulo: string; bruto: number; liquido: number; pedidos: number; chaves: Set<string> }>();
   for (const v of itens) {
     if (!v.data) continue;
-    const d = new Date(v.data);
-    if (passo === 'semana') d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // âncora no domingo
-    const yyyy = d.getUTCFullYear();
-    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(d.getUTCDate()).padStart(2, '0');
+const d = new Date(v.data);
+if (passo === 'semana') d.setDate(d.getDate() - d.getDay()); // âncora no domingo local
+const yyyy = d.getFullYear();
+const mm = String(d.getMonth() + 1).padStart(2, '0');
+const dd = String(d.getDate()).padStart(2, '0');
     const chave = `${yyyy}-${mm}-${dd}`;
-    const acc = mapa.get(chave) ?? { rotulo: `${dd}/${mm}`, bruto: 0, liquido: 0, pedidos: 0 };
-    acc.bruto += v.bruto;
-    acc.liquido += v.liquido;
-    acc.pedidos += 1;
-    mapa.set(chave, acc);
+const acc = mapa.get(chave) ?? { rotulo: `${dd}/${mm}`, bruto: 0, liquido: 0, pedidos: 0, chaves: new Set<string>() };
+acc.bruto += v.bruto;
+acc.liquido += v.liquido;
+if (v.pedidoChave) {
+if (!acc.chaves.has(v.pedidoChave)) {
+acc.chaves.add(v.pedidoChave);
+acc.pedidos += 1;
+}
+} else {
+acc.pedidos += 1;
+}
+mapa.set(chave, acc);
   }
   return [...mapa.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
