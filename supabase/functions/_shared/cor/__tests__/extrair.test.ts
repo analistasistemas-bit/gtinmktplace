@@ -109,4 +109,19 @@ describe('extrairCorECodigo', () => {
     expect(extrairCorECodigo('FITA CETIM PROGRESSO N.1 1355 MARSALA 10MT'))
       .toEqual({ cor: 'Marsala', codigo: '1355' });
   });
+  it('metragem separada ("10 mt ...") não é código+cor → null (bug lote #48)', () => {
+    expect(extrairCorECodigo('Tecido Oxford Liso Branco de 10 mt para Uniforme e Decoração'))
+      .toBeNull();
+  });
+});
+
+describe('extrairCorDeVariacao com metragem separada (regressão lote #48)', () => {
+  it('cai no dicionário e acha a cor do nome, não a frase da metragem', () => {
+    expect(
+      extrairCorDeVariacao(
+        'Tecido Oxford Liso Branco de 10 mt para Uniforme e Decoração',
+        'Tecido Oxford Liso de 10 m para Uniforme e Decoração',
+      ),
+    ).toBe('Branco');
+  });
 });

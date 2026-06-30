@@ -64,6 +64,13 @@ const ACENTOS_COR: Record<string, string> = {
 const SO_LETRAS = /^\p{L}+$/u;
 const SO_DIGITOS = /^\d+$/;
 
+// Unidades de metragem/medida: "10 mt", "1 m", "50 cm" são MEDIDA, não "{código} {cor}".
+// Quando a metragem vem separada (não colada como "10MT"), o dígito parece código e as
+// palavras seguintes parecem cor — bug do lote #48 ("Mt Para Uniforme E Decoração 10").
+const UNIDADES_METRAGEM = new Set(['m', 'mt', 'mts', 'metro', 'metros', 'cm', 'mm', 'un', 'kg', 'g']);
+// Uma cor real tem 1-2 palavras; corrida maior é frase/descrição, não cor.
+const MAX_PALAVRAS_COR = 2;
+
 function titleCase(palavra: string): string {
   return palavra.charAt(0).toUpperCase() + palavra.slice(1).toLowerCase();
 }
@@ -82,12 +89,17 @@ export function extrairCorECodigo(nome: string): { cor: string; codigo: string }
   }
   if (idx < 0) return null;
 
+  // "10 mt ..." → o dígito é metragem, não código. Não é o padrão "{código} {cor}".
+  if (UNIDADES_METRAGEM.has(tokens[idx + 1].toLowerCase())) return null;
+
   const codigo = tokens[idx];
   const palavras: string[] = [];
   for (let i = idx + 1; i < tokens.length; i++) {
     if (!SO_LETRAS.test(tokens[i])) break; // tamanho (10MT) / token misto encerra a cor
     palavras.push(tokens[i]);
   }
+  // Corrida longa (ex.: "para uniforme e decoração") não é cor → cai no dicionário.
+  if (palavras.length > MAX_PALAVRAS_COR) return null;
   const cor = palavras
     .map((p) => {
       const up = p.toUpperCase();
