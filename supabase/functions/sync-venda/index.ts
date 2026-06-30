@@ -11,6 +11,7 @@ import {
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
 import { enviarTelegram, montarMensagemNovaVenda } from '../_shared/notificacoes/telegram.ts';
+import { enviarMensagemPedido } from '../_shared/ml/mensagem.ts';
 
 interface Job { user_id?: string; order_id?: string; shipping_id?: string }
 
@@ -66,6 +67,19 @@ Deno.serve(async (req) => {
         total: Number(pedido.total_amount ?? 0),
         moeda: pedido.currency_id ?? 'BRL',
       }));
+    }
+
+    // Mensagem automática ao comprador via ML (best-effort).
+    const { data: cred } = await admin.from('ml_credentials')
+      .select('ml_user_id').eq('user_id', userId).maybeSingle();
+    if (cred?.ml_user_id) {
+      const packId = pedido.pack_id ?? pedido.id;
+      await enviarMensagemPedido(
+        token,
+        packId,
+        cred.ml_user_id,
+        'Olá! Recebemos seu pedido e já estamos separando. Em caso de dúvida, fique à vontade para chamar aqui pelo chat. Obrigado pela compra! 🙏',
+      );
     }
   }
 
