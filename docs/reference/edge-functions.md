@@ -137,7 +137,8 @@
   roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions) ou `sync-devolucao`
   (claims). Nunca confia no corpo — o worker re-busca autenticado (ADR-0037).
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
-  upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram.
+  upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. `sync-venda` também
+  envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML).
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
