@@ -39,6 +39,8 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 - In command chains, prefix each segment: `rtk git add . && rtk git commit -m "msg"`
 - For debugging, use raw command without rtk prefix
 - `rtk proxy <cmd>` runs command without filtering but tracks usage
+- This workspace has CLI access to Render, Supabase, and Upstash; use those services directly when validation or diagnosis depends on real deployed or configured state.
+- For production-facing frontend changes, validate with the real deploy path (`pnpm build`) before pushing.
 <!-- /headroom:rtk-instructions -->
 
 # Ponytail, lazy senior dev mode
