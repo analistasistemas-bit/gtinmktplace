@@ -36,20 +36,21 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const variacoes = (familia.variacoes ?? []).map((v: Record<string, unknown>) => ({
+      codigo: String(v.codigo ?? ''),
+      cor: typeof v.cor === 'string' ? v.cor : null,
+      preco: Number(v.preco ?? 0),
+    }));
+
     const result = await gerarCopy({
       nome: familia.nome_pai,
       descricao_detalhado: familia.descricao_pai ?? '',
       unidade: (familia.unidade as string | null) ?? null,
-      variacoes: (familia.variacoes ?? []).map((v: Record<string, unknown>) => ({
-        codigo: v.codigo,
-        cor: v.cor,
-        preco: v.preco ?? 0,
-      })),
+      variacoes,
     });
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
-    const coresUnicas = [...new Set((familia.variacoes ?? [])
-      .map((v: Record<string, unknown>) => v.cor as string | null).filter((c: string | null): c is string => !!c))];
+    const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
     const tituloFinal = garantirCorTitulo(
       garantirMetragemTitulo(result.titulo, familia.nome_pai),
       coresUnicas.length === 1 ? coresUnicas[0] : null,

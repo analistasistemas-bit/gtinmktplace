@@ -16,6 +16,7 @@ const SCHEMA: AtributoSchema[] = [
   A({ id: 'VOLTAGE', nome: 'Voltagem', conditionalRequired: true, valueType: 'list', valores: [{ id: '1', nome: '110V' }, { id: '2', nome: '220V' }, { id: '3', nome: 'Bivolt' }] }),
   A({ id: 'RIBBON_FORMAT', nome: 'Formato da fita', valueType: 'list', valores: [{ id: '5', nome: 'Rolo' }, { id: '6', nome: 'Unidade' }] }), // opcional closed-set
   A({ id: 'LENGTH', nome: 'Comprimento', valueType: 'number_unit', allowedUnits: [{ id: 'cm', nome: 'cm' }, { id: 'm', nome: 'm' }] }), // numérico c/ unidade
+  A({ id: 'THICKNESS', nome: 'Espessura', valueType: 'number_unit', allowedUnits: [{ id: 'mm', nome: 'mm' }, { id: 'cm', nome: 'cm' }] }),
   A({ id: 'GTIN', nome: 'GTIN', conditionalRequired: true }),
   A({ id: 'COLOR', nome: 'Cor', valueType: 'list', valores: [{ id: '9', nome: 'Preto' }] }), // atributo de variação (IGNORAR)
   A({ id: 'MAIN_COLOR', nome: 'Cor principal', valueType: 'list', valores: [{ id: '9', nome: 'Preto' }], tags: ['variation_attribute'] }), // por variação
@@ -27,7 +28,7 @@ const base = [{ id: 'BRAND', value_name: 'Bosch' }, { id: 'MODEL', value_name: '
 describe('atributosAlvo', () => {
   it('closed-set (obrig. e opcional) + numéricos não preenchidos; ignora texto-livre, GTIN, COLOR', () => {
     const alvos = atributosAlvo(SCHEMA, base);
-    expect(alvos.map((a) => a.id)).toEqual(['VOLTAGE', 'RIBBON_FORMAT', 'LENGTH']);
+    expect(alvos.map((a) => a.id)).toEqual(['VOLTAGE', 'RIBBON_FORMAT', 'LENGTH', 'THICKNESS']);
     expect(alvos.find((a) => a.id === 'LENGTH')?.unidades).toEqual([{ id: 'cm', nome: 'cm' }, { id: 'm', nome: 'm' }]);
   });
   it('exclui variation_attribute, hidden/read_only e multivalued', () => {
@@ -37,7 +38,7 @@ describe('atributosAlvo', () => {
     expect(ids).not.toContain('PRODUCT_FEATURES');
   });
   it('atributo já preenchido → não é alvo', () => {
-    const r = atributosAlvo(SCHEMA, [...base, { id: 'VOLTAGE', value_id: '3' }, { id: 'RIBBON_FORMAT', value_id: '5' }, { id: 'LENGTH', value_name: '10 cm' }]);
+    const r = atributosAlvo(SCHEMA, [...base, { id: 'VOLTAGE', value_id: '3' }, { id: 'RIBBON_FORMAT', value_id: '5' }, { id: 'LENGTH', value_name: '10 cm' }, { id: 'THICKNESS', value_name: '2 mm' }]);
     expect(r).toEqual([]);
   });
 });
@@ -94,7 +95,7 @@ describe('montarPromptAtributos', () => {
 });
 
 describe('preencherAtributosClosedSet', () => {
-  const cheio = [...base, { id: 'VOLTAGE', value_id: '1' }, { id: 'RIBBON_FORMAT', value_id: '5' }, { id: 'LENGTH', value_name: '10 cm' }];
+  const cheio = [...base, { id: 'VOLTAGE', value_id: '1' }, { id: 'RIBBON_FORMAT', value_id: '5' }, { id: 'LENGTH', value_name: '10 cm' }, { id: 'THICKNESS', value_name: '2 mm' }];
   it('sem alvos → base, sem chamar IA', async () => {
     let chamou = false;
     const r = await preencherAtributosClosedSet(SCHEMA, cheio, { nome: 'X' }, async () => { chamou = true; return {}; });
@@ -105,6 +106,16 @@ describe('preencherAtributosClosedSet', () => {
     const r = await preencherAtributosClosedSet(SCHEMA, base, { nome: 'Fita', descricao: 'rolo 25m' }, async () => ({ RIBBON_FORMAT: '5', LENGTH: '2500 cm' }));
     expect(r).toContainEqual({ id: 'RIBBON_FORMAT', value_id: '5' });
     expect(r).toContainEqual({ id: 'LENGTH', value_name: '2500 cm' });
+  });
+  it('preenche espessura óbvia em mm sem depender da IA', async () => {
+    let alvosIa: string[] = [];
+    const r = await preencherAtributosClosedSet(SCHEMA, base, { nome: 'FIO DE MALHA EXTRA PREMIUM 25MM CORES' }, async (_input, alvos) => {
+      alvosIa = alvos.map((a) => a.id);
+      return {};
+    });
+
+    expect(r).toContainEqual({ id: 'THICKNESS', value_name: '25 mm' });
+    expect(alvosIa).not.toContain('THICKNESS');
   });
   it('IA falha → base (resiliente)', async () => {
     const r = await preencherAtributosClosedSet(SCHEMA, base, { nome: 'X' }, async () => { throw new Error('rede'); });

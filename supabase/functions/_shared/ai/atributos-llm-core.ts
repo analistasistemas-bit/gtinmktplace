@@ -74,6 +74,19 @@ function validarNumerico(bruto: string, unidades?: { id: string; nome: string }[
   return String(num); // número puro
 }
 
+function preencherMedidasObvias(input: InputAtributos, alvos: AtributoAlvo[]): AtributoML[] {
+  const alvo = alvos.find((a) => a.id === 'THICKNESS');
+  if (!alvo) return [];
+
+  const texto = `${input.nome} ${input.descricao ?? ''}`;
+  const m = texto.match(/\b(\d+(?:[.,]\d+)?)\s*(mm|cm)\b/i);
+  if (!m) return [];
+
+  // ponytail: cobre bitola/espessura explícita; dimensões ambíguas ficam com IA/operador.
+  const valor = validarNumerico(`${m[1]} ${m[2]}`, alvo.unidades);
+  return valor ? [{ id: alvo.id, value_name: valor }] : [];
+}
+
 /**
  * Valida a resposta da IA. Closed-set: só aceita value_id/value_name que casa com a lista.
  * Numérico: só aceita número (+ unidade permitida). Qualquer coisa fora disso é omitida (nunca inventa).
@@ -110,10 +123,13 @@ export async function preencherAtributosClosedSet(
   llm: (input: InputAtributos, alvos: AtributoAlvo[]) => Promise<Record<string, string>>,
 ): Promise<AtributoML[]> {
   const alvos = atributosAlvo(schema, base);
-  if (alvos.length === 0) return base;
-  const resp = await llm(input, alvos).catch(() => ({} as Record<string, string>));
-  const preenchidos = validarRespostaAtributos(resp, alvos);
-  return [...base, ...preenchidos];
+  const obvios = preencherMedidasObvias(input, alvos);
+  const baseComObvios = [...base, ...obvios];
+  const restantes = atributosAlvo(schema, baseComObvios);
+  if (restantes.length === 0) return baseComObvios;
+  const resp = await llm(input, restantes).catch(() => ({} as Record<string, string>));
+  const preenchidos = validarRespostaAtributos(resp, restantes);
+  return [...baseComObvios, ...preenchidos];
 }
 
 /** Prompt: para cada atributo, a lista de valores (closed-set) ou o formato numérico esperado. */
