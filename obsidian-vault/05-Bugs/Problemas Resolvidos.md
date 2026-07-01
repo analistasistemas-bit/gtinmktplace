@@ -17,6 +17,8 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 - **Cor + metragem separada** — planilha com "10 mt" no nome estava virando cor errada (lote #48).
 - **Comprador real nas vendas (Faturamento)** — ver [[Incidentes]] (nome do comprador: mascaramento
   intermitente do ML + regressão do fallback, 2026-07-01).
+- **Divergência de `verify_jwt` no faturamento (ADR-0046)** — ver [[Incidentes]] (webhooks/workers
+  rejeitados com 401 antes de rodar, faturamento em tempo real parado, 2026-06-28).
 - **Contagem de pedidos por pack** — Financeiro/Publicados contavam por `order_id` em vez de por
   pack, gerando divergência entre as duas telas.
 - **Markup/custo por pacote** — inconsistência entre telas no cálculo de KPI.
@@ -38,4 +40,5 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 Ver [[Incidentes]]: título duplicado (ADR-0044), foto assíncrona travando publicação (ADR-0033),
 vinculação de catálogo com ficha de kit (ADR-0021), moderação sem alerta (ADR-0035), lote #41
-com erro genérico (ADR-0030).
+com erro genérico (ADR-0030), divergência de `verify_jwt` no faturamento (ADR-0046), nome do
+comprador (mascaramento intermitente do ML + regressão do fallback).

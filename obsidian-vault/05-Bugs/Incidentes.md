@@ -57,6 +57,21 @@ Corrigido pelo ADR-0030: `gerarCopy` com 1 retry + erro rotulado por etapa, nova
 Resolvida em 2026-06-27: `cor-no-titulo-mono-cor` virou **0044** (ex-0035) e
 `vendas-catalogo-match-ean` virou **0045** (ex-0037). Detalhe em `docs/decisions/README.md`.
 
+## Divergência de `verify_jwt` derruba o faturamento em tempo real (2026-06-28)
+
+`ml-webhook`, `sync-venda`, `backfill-faturamento` e `reconciliar-faturamento` estavam com
+`verify_jwt=true` no `config.toml`, mas são acionadas por QStash/webhook (sem JWT Supabase) — o
+gateway rejeitava com **401 antes da função rodar**. `ml-webhook` enfileira `sync-venda`/
+`sync-pergunta`/`sync-devolucao`; com ele rejeitado, nada era enfileirado → faturamento em tempo
+real parado (dados só entravam por backfill manual).
+
+**Impacto real (function_edge_logs, 24h):** `ml-webhook` 221 requisições, 401 em 100%;
+`backfill-faturamento` 92 requisições, 401 em 100%. Mesma classe do incidente de
+`process-familia` (`reference_workers_qstash_verify_jwt`). Corrigido pelo
+[ADR-0046](../../docs/decisions/0046-verify-jwt-false-workers-webhook-faturamento.md):
+`verify_jwt=false` nas quatro funções (autenticação real continua interna, por assinatura
+QStash/`requireUser`).
+
 ## Nome do comprador: mascaramento intermitente do ML + regressão do fallback (2026-07-01)
 
 Diego reportou que a coluna Comprador voltou a mostrar o nick em vez do nome real (ex.:
