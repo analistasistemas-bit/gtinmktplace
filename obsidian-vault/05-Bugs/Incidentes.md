@@ -56,3 +56,25 @@ Corrigido pelo ADR-0030: `gerarCopy` com 1 retry + erro rotulado por etapa, nova
 
 Resolvida em 2026-06-27: `cor-no-titulo-mono-cor` virou **0044** (ex-0035) e
 `vendas-catalogo-match-ean` virou **0045** (ex-0037). Detalhe em `docs/decisions/README.md`.
+
+## Nome do comprador: mascaramento intermitente do ML + regressão do fallback (2026-07-01)
+
+Diego reportou que a coluna Comprador voltou a mostrar o nick em vez do nome real (ex.:
+"TELE859877" em vez de "Leonardo Teixeira") num pedido onde o próprio Mercado Livre exibia o
+nome completo na sua UI. Investigação (`systematic-debugging`) confirmou por dados reais de
+produção (não suposição): `GET /orders/{id}` **mascara `buyer.first_name/last_name` de forma
+intermitente** — o mesmo pedido (`2000017181156010`) veio com o dado completo às 14:55 e sem
+ele 5 minutos depois, na sincronização seguinte. Não é bloqueio de permissão (hipótese do
+endpoint CDA, `shops/cda/customers`, foi descartada com teste ao vivo).
+
+**Regressão dentro da própria correção:** um commit anterior no mesmo dia (via Codex) tinha
+removido o fallback pro `receiver_name` do envio achando que o buyer real sempre vinha — e como
+cada sync recalculava `comprador_nome` do zero, um sync sem o buyer **apagava** um nome real já
+capturado, substituindo pelo nome do destinatário do envio (que pode ser outra pessoa —
+presente, portaria).
+
+**Correção final:** nova função pura `escolherCompradorNome` prioriza nome real atual → nome já
+salvo (nunca regride) → destinatário do envio (só quando nunca teve nada melhor). 1 pedido com
+valor corrompido pela regressão corrigido manualmente via SQL (nome real já estava capturado no
+`raw.buyer` de um sync anterior). Ver [ADR-0037](../../docs/decisions/0037-modulo-faturamento-webhooks-ml.md)
+e `docs/TASKS.md` (2026-07-01).
