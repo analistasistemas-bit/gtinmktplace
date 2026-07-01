@@ -36,7 +36,7 @@ repositório. Documentação técnica formal complementar vive em `docs/` (Diát
 - [[Processamento IA]]
 - [[Publicação Mercado Livre]]
 - [[Publicação Shopee]] *(planejado — ainda não implementado, épico `E5`)*
-- [[Amazon]] *(sem plano nem código no projeto até o momento)*
+- [[Amazon]] *(pesquisa técnica registrada, sem épico numerado nem código — 4º na fila de canais)*
 
 ## Módulos
 
