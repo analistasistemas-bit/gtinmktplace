@@ -167,6 +167,21 @@ export function extrairReceiverNome(shipment: unknown): string | null {
   return typeof nome === 'string' && nome.trim() ? nome.trim() : null;
 }
 
+/**
+ * Nome do comprador a gravar neste sync. O ML é inconsistente ao retornar
+ * buyer.first_name/last_name (o mesmo pedido pode vir com e sem em syncs
+ * diferentes) — por isso nunca deixa um sync sem esse dado apagar um nome
+ * real já capturado antes. Prioridade: nome real agora → nome já salvo →
+ * nome do destinatário do envio (só quando nunca tivemos nada melhor). Pura.
+ */
+export function escolherCompradorNome(
+  buyerNomeAtual: string | null,
+  compradorNomeExistente: string | null,
+  receiverNome: string | null,
+): string | null {
+  return buyerNomeAtual ?? compradorNomeExistente ?? receiverNome ?? null;
+}
+
 const num = (v: unknown): number | null => {
   if (v == null) return null;
   const n = Number(v);
