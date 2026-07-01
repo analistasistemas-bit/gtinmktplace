@@ -18,7 +18,7 @@ export interface PrecoSugerido {
 }
 
 const MOTIVO_COMPETITIVO = 'concorrência presente — 5% abaixo do menor preço';
-const MOTIVO_GROSSUP = 'sem concorrência — preço cobre seu mínimo após comissão';
+const MOTIVO_GROSSUP = 'sem concorrência — preço cobre seu mínimo após comissão e frete';
 const MOTIVO_FALLBACK = 'sem concorrência — comissão indisponível, usando o piso';
 
 /**
@@ -33,12 +33,13 @@ export const PRECO_MIN_ACIMA_ABISMO = 12.55;
 export const PRECO_REF_COMISSAO = 20;
 
 /**
- * Preço cujo líquido (após comissão) ≥ piso, sempre acima do abismo da tarifa fixa
- * (ADR-0023). `percentual`/`fixa` devem vir da comissão lida ACIMA do abismo (fixa ≈ 0).
- * P = (piso + fixa)/(1 − pct), arredonda pra cima, e nunca abaixo de R$ 12,55.
+ * Preço cujo líquido (após comissão E frete que o vendedor absorve) ≥ piso, sempre acima
+ * do abismo da tarifa fixa (ADR-0023). `percentual`/`fixa` devem vir da comissão lida ACIMA
+ * do abismo (fixa ≈ 0). `frete` = custo de frete grátis que o vendedor paga (0 se comprador
+ * paga ou indisponível). P = (piso + fixa + frete)/(1 − pct), arredonda pra cima, nunca < R$ 12,55.
  */
-export function grossUp(piso: number, percentual: number, fixa: number): number {
-  const bruto = (piso + fixa) / (1 - percentual / 100);
+export function grossUp(piso: number, percentual: number, fixa: number, frete = 0): number {
+  const bruto = (piso + fixa + frete) / (1 - percentual / 100);
   return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(bruto));
 }
 
@@ -51,6 +52,7 @@ export function sugerirPrecoVenda(
   piso: number,
   conc: ConcorrenciaPreco,
   comissao: Comissao | null,
+  frete = 0,
 ): PrecoSugerido {
   if (conc.vendedores > 0 && conc.preco_min != null) {
     return {
@@ -60,11 +62,11 @@ export function sugerirPrecoVenda(
     };
   }
   if (comissao) {
-    return { preco: grossUp(piso, comissao.percentual, comissao.fixa), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };
+    return { preco: grossUp(piso, comissao.percentual, comissao.fixa, frete), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };
   }
   // Sem comissão: ainda empurra para fora da faixa cara (acima do abismo).
   return {
-    preco: Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(piso)),
+    preco: Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(piso + frete)),
     estrategia: 'proprio',
     motivo: MOTIVO_FALLBACK,
   };
