@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack } from '../atributos';
+import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack } from '../atributos';
 import type { AtributoSchema } from '../schema';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
@@ -11,6 +11,19 @@ describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
   });
   it('tipo "outro" não tem categoria (operador resolve)', () => {
     expect(categoriaParaTipo('outro')).toBe(null);
+  });
+});
+
+describe('tipoParaCategoria (lookup reverso p/ categoria vinda do preditor)', () => {
+  it('recupera o tipo das categorias-folha conhecidas', () => {
+    expect(tipoParaCategoria('MLB270273')).toBe('linha');
+    expect(tipoParaCategoria('MLB255054')).toBe('fita');
+    expect(tipoParaCategoria('MLB270272')).toBe('botao');
+    expect(tipoParaCategoria('MLB277319')).toBe('cola');
+  });
+  it('categoria desconhecida ou nula → "outro"', () => {
+    expect(tipoParaCategoria('MLB105305')).toBe('outro');
+    expect(tipoParaCategoria(null)).toBe('outro');
   });
 });
 

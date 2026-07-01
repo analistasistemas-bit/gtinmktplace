@@ -2,6 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Lote #49 — barbante recusado por atributo/tipo (ADR-0051) — 2026-07-01
+
+- [x] **Barbante classificado como `outro` → sem BRAND/MODEL → ML recusa** — investigado com `systematic-debugging` nos dados de produção. 3 famílias de barbante do lote #49 com `tipo_aviamento='outro'`, `categoria_ml_id=MLB270273` (Fios e Cadarços = a categoria de `linha`), `atributos_ml=[]`, `atributos_faltantes=[]`; na mesma categoria há 13 publicadas como `linha` (0 erros). Duas causas: (1) `barbante` faltava na regex de `linha` (`detectar.ts`); (2) sem override, o preditor acerta a categoria mas devolvia `tipo:'outro'` fixo → `process-familia` seguia o ramo genérico (schema+IA) que, ao falhar, deixa atributos e faltantes vazios → o gate do publish não bloqueia. Fix: `barbante`/`barbantes` na regex + `tipoParaCategoria` (lookup reverso categoria→tipo) no `resolver` + `process-familia` usa o caminho determinístico para todo tipo conhecido (`categoriaParaTipo(tipo)!=null`, não só `origem==='regex'`). TDD: casos novos em `detectar`/`resolver`/`atributos`; 1074 testes + tsc + `deno check` + eslint verdes. [ADR-0051](decisions/0051-tipo-aviamento-derivado-da-categoria-do-preditor.md).
+- [ ] **Deploy + reprocessamento das 3 famílias do lote #49** — pendente OK do Diego (produção).
+- [ ] **Dívida — falha silenciosa do ramo genérico:** quando `lerSchemaAtributos`/IA lança para uma categoria **não** conhecida, o `catch` em `process-familia` deixa `atributos_ml=[]` e `atributos_faltantes=[]`, tornando a família publicável sem obrigatórios (erro só aparece na recusa do ML). Mitigar marcando faltantes não-vazio (ex.: `['CATEGORIA']`) no catch para forçar revisão. Fora do escopo deste fix para mantê-lo focado.
+
 ## Comprador real nas vendas — correção da regressão + anti-flakiness (2026-07-01)
 
 - [x] **Coluna Comprador mostrando o nick em vez do nome real** — investigado com `systematic-debugging`: `GET /orders/{id}` mascara `buyer.first_name/last_name` por um tempo após a criação do pedido (não é bloqueio de permissão — hipótese de precisar do endpoint CDA descartada). Fix 1: `comprador_nome` volta a cair pro `receiver_name` do envio quando o buyer não vem (`supabase/functions/_shared/faturamento/io.ts`).

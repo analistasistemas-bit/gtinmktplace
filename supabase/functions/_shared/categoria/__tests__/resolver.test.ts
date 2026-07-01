@@ -95,4 +95,16 @@ describe('resolverCategoria', () => {
     expect(r.categoriaId).toBeNull();
     expect(r.tipo).toBe('outro');
   });
+
+  it('(k) preditor devolve categoria de aviamento conhecida → deriva o tipo (não fica "outro")', async () => {
+    // Nome que a regex NÃO cobre, mas o preditor do ML manda p/ Fios e Cadarços (MLB270273).
+    // Sem derivar o tipo, ficaria 'outro' e os obrigatórios BRAND/MODEL nunca seriam montados.
+    const fiosCat: CategoriaCandidata[] = [
+      { domainId: 'MLB-YARNS', domainName: 'Fios e Cadarços', categoriaId: 'MLB270273', categoriaNome: 'Fios e Cadarços de Armarinho' },
+    ];
+    const r = await resolverCategoria({ nome: 'NOVELO CRU ALGODAO 100G' }, deps(fiosCat));
+    expect(r.origem).toBe('preditor');
+    expect(r.categoriaId).toBe('MLB270273');
+    expect(r.tipo).toBe('linha');
+  });
 });

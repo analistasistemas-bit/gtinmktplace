@@ -7,7 +7,7 @@ const REGRAS: { tipo: TipoAviamento; termos: string[] }[] = [
   { tipo: 'fita', termos: ['fita', 'fitas', 'cetim', 'gorgorao', 'gorgurao', 'vies', 'organza', 'renda', 'veludo', 'fitilho'] },
   { tipo: 'botao', termos: ['botao', 'botoes', 'pressao'] },
   { tipo: 'cola', termos: ['cola', 'colas'] },
-  { tipo: 'linha', termos: ['linha', 'linhas', 'linhao', 'costura', 'cost', 'bobina', 'cone', 'fio', 'fios'] },
+  { tipo: 'linha', termos: ['linha', 'linhas', 'linhao', 'costura', 'cost', 'bobina', 'cone', 'fio', 'fios', 'barbante', 'barbantes'] },
 ];
 
 function normalizar(s: string): string {

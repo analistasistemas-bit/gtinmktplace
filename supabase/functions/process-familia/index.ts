@@ -13,7 +13,7 @@ import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverCategoria } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -176,8 +176,10 @@ Deno.serve(async (req) => {
 
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
-    if (cat.origem === 'regex') {
-      // Obrigatórios curados (BRAND, RIBBON_TYPE, MATERIAL…) — determinísticos, têm prioridade.
+    if (categoriaParaTipo(tipo) != null) {
+      // Tipo de aviamento conhecido (via regex OU categoria do preditor mapeada de volta ao
+      // tipo): obrigatórios curados (BRAND, MODEL, RIBBON_TYPE…) — determinísticos, têm
+      // prioridade e não dependem do schema/IA (que podem falhar e deixar atributos vazios).
       atributosMl = montarAtributosML(tipo, claimed.nome_pai, fornecedor, claimed.descricao_pai ?? undefined);
       // Enriquece com os demais atributos da categoria p/ melhorar a nota de qualidade do anúncio:
       // closed-set opcionais (ex.: Formato da fita) + numéricos (ex.: Comprimento) via IA, validados

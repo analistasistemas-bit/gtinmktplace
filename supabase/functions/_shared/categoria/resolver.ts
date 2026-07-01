@@ -1,5 +1,5 @@
 import { detectarTipoAviamento, type TipoAviamento } from './detectar.ts';
-import { categoriaParaTipo, rotuloParaTipo } from './atributos.ts';
+import { categoriaParaTipo, rotuloParaTipo, tipoParaCategoria } from './atributos.ts';
 import type { CategoriaCandidata } from '../ml/domain-discovery.ts';
 
 // Resolução de categoria em camadas (ADR-0026 / E3). Primeira que vencer manda:
@@ -80,7 +80,7 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
   // categoria errada — devolve manual p/ o operador escolher na Revisão.
   const pista = avaliarPistaForte(input, candidatos);
   if (pista?.tipo === 'escolhido' && pista.candidato.categoriaId !== topo.categoriaId) {
-    return { categoriaId: pista.candidato.categoriaId, categoriaNome: pista.candidato.categoriaNome, tipo: 'outro', origem: 'ia' };
+    return { categoriaId: pista.candidato.categoriaId, categoriaNome: pista.candidato.categoriaNome, tipo: tipoParaCategoria(pista.candidato.categoriaId), origem: 'ia' };
   }
   if (pista?.tipo === 'sem-candidato') {
     return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
@@ -92,9 +92,9 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
     const escolhidoId = await deps.llm(input, candidatos).catch(() => null);
     const escolhido = candidatos.find((c) => c.categoriaId === escolhidoId);
     if (escolhido && escolhido.categoriaId !== topo.categoriaId) {
-      return { categoriaId: escolhido.categoriaId, categoriaNome: escolhido.categoriaNome, tipo: 'outro', origem: 'ia' };
+      return { categoriaId: escolhido.categoriaId, categoriaNome: escolhido.categoriaNome, tipo: tipoParaCategoria(escolhido.categoriaId), origem: 'ia' };
     }
   }
 
-  return { categoriaId: topo.categoriaId, categoriaNome: topo.categoriaNome, tipo: 'outro', origem: 'preditor' };
+  return { categoriaId: topo.categoriaId, categoriaNome: topo.categoriaNome, tipo: tipoParaCategoria(topo.categoriaId), origem: 'preditor' };
 }

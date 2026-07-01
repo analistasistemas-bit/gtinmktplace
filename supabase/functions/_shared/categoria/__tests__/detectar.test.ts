@@ -8,6 +8,12 @@ describe('detectarTipoAviamento (ADR-0009)', () => {
     expect(detectarTipoAviamento('CONE 4000M COSTURA').tipo).toBe('linha');
   });
 
+  it('detecta barbante como linha (fio de algodão) — lote #49', () => {
+    expect(detectarTipoAviamento('BARBANTE BANDEIRANTE 4/6 570MT | 85% ALGODÃO').tipo).toBe('linha');
+    expect(detectarTipoAviamento('BARBANTE BANDEIRANTES 4/8 465MT | ALTA RESISTÊNCIA').tipo).toBe('linha');
+    expect(detectarTipoAviamento('Barbantes Coloridos').tipo).toBe('linha');
+  });
+
   it('detecta fita (tem prioridade sobre "costura" no texto)', () => {
     expect(detectarTipoAviamento('FITA CETIM PROGRESSO N.3 CORES 10MT').tipo).toBe('fita');
     expect(detectarTipoAviamento('Fita Gorgorão 22mm').tipo).toBe('fita');

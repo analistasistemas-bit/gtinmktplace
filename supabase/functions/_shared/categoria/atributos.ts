@@ -88,6 +88,16 @@ export function categoriaParaTipo(tipo: TipoAviamento): string | null {
   return CATEGORIA_POR_TIPO[tipo];
 }
 
+// Lookup reverso: quando o preditor do ML devolve uma categoria-folha que temos como
+// override (ex.: MLB270273 = Fios e Cadarços), recupera o tipo para aplicar os obrigatórios
+// curados (BRAND/MODEL…) em vez de 'outro' (que não montaria nada). null/desconhecida → 'outro'.
+export function tipoParaCategoria(categoriaId: string | null): TipoAviamento {
+  if (!categoriaId) return 'outro';
+  const par = (Object.entries(CATEGORIA_POR_TIPO) as [TipoAviamento, string | null][])
+    .find(([, cat]) => cat === categoriaId);
+  return par ? par[0] : 'outro';
+}
+
 /** Rótulo humano do tipo de aviamento (override). 'outro' → null. */
 export function rotuloParaTipo(tipo: TipoAviamento): string | null {
   return ROTULO_POR_TIPO[tipo];
