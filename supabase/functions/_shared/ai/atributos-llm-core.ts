@@ -97,15 +97,28 @@ function preencherMedidasObvias(input: InputAtributos, alvos: AtributoAlvo[]): A
   return valor ? [{ id: alvo.id, value_name: valor }] : [];
 }
 
-// Texto-livre só é aceito se constar (normalizado) no nome/descrição do produto — materializa
-// "inferir do texto, nunca inventar" (ADR-0052). Limita o comprimento p/ a IA não despejar a
-// frase inteira como valor.
+// Texto-livre só é aceito se as PALAVRAS do valor aparecerem, em sequência contígua, no
+// nome/descrição do produto — materializa "inferir do texto, nunca inventar" (ADR-0052).
+// Casa por token (não substring de caractere) p/ não aceitar fragmento de palavra
+// ("and" ⊂ "Bandeirante") nem valor multi-palavra espalhado. Piso de 2 chars descarta
+// fragmento trivial; teto evita a IA despejar a frase inteira. Incorreção semântica (uma
+// palavra real do texto, mas do atributo errado) não é invenção e fica p/ o prompt + a
+// revisão humana barrarem.
+const MIN_TEXTO_LIVRE = 2;
 const MAX_TEXTO_LIVRE = 60;
+function tokens(s: string): string[] {
+  return normalizar(s).split(/\s+/).filter(Boolean);
+}
 function validarTextoLivre(bruto: string, input: InputAtributos): string | null {
   const valor = bruto.trim();
-  if (!valor || valor.length > MAX_TEXTO_LIVRE) return null;
-  const fonte = normalizar(`${input.nome} ${input.descricao ?? ''}`);
-  return fonte.includes(normalizar(valor)) ? valor : null;
+  if (valor.length < MIN_TEXTO_LIVRE || valor.length > MAX_TEXTO_LIVRE) return null;
+  const alvo = tokens(valor);
+  if (alvo.length === 0) return null;
+  const fonte = tokens(`${input.nome} ${input.descricao ?? ''}`);
+  for (let i = 0; i + alvo.length <= fonte.length; i++) {
+    if (alvo.every((t, j) => fonte[i + j] === t)) return valor;
+  }
+  return null;
 }
 
 /**

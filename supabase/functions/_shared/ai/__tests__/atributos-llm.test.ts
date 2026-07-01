@@ -111,6 +111,20 @@ describe('validarRespostaAtributos (texto-livre, anti-invenção)', () => {
     const longo = 'x'.repeat(80);
     expect(validarRespostaAtributos({ LINE: longo }, alvos, { nome: longo })).toEqual([]);
   });
+  it('rejeita fragmento de palavra (não é token da fonte)', () => {
+    // "and" ⊂ "Bandeirante" no texto, mas não é palavra inteira → rejeitado
+    expect(validarRespostaAtributos({ LINE: 'and' }, alvos, input)).toEqual([]);
+  });
+  it('rejeita valor de 1 caractere (piso)', () => {
+    expect(validarRespostaAtributos({ LINE: 'a' }, alvos, input)).toEqual([]);
+  });
+  it('rejeita multi-palavra que não aparece em sequência contígua', () => {
+    expect(validarRespostaAtributos({ LINE: 'Anne Bandeirante' }, alvos, input)).toEqual([]);
+  });
+  it('aceita valor multi-palavra contíguo na fonte', () => {
+    const inp = { nome: 'Linha Anne Cores', descricao: '' };
+    expect(validarRespostaAtributos({ LINE: 'Anne Cores' }, alvos, inp)).toEqual([{ id: 'LINE', value_name: 'Anne Cores' }]);
+  });
 });
 
 describe('montarPromptAtributos', () => {
