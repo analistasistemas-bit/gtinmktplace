@@ -10,7 +10,8 @@ import type { AtributoML } from '../categoria/atributos.ts';
 export interface AtributoAlvo {
   id: string;
   nome: string;
-  valores: { id: string; nome: string }[];   // closed-set; vazio quando é numérico
+  tipo: 'closed' | 'numero' | 'texto';        // closed-set / numérico / texto-livre (só obrigatório)
+  valores: { id: string; nome: string }[];   // closed-set; vazio quando é numérico/texto
   unidades?: { id: string; nome: string }[]; // só p/ number_unit (ex.: cm, m)
 }
 export interface InputAtributos {
@@ -35,6 +36,12 @@ function ehNumerico(a: AtributoSchema): boolean {
   return a.valueType === 'number' || a.valueType === 'number_unit';
 }
 
+function tipoAlvo(a: AtributoSchema): 'closed' | 'numero' | 'texto' {
+  if (a.valores.length > 0) return 'closed';
+  if (ehNumerico(a)) return 'numero';
+  return 'texto';
+}
+
 /**
  * Atributos que a IA deve tentar preencher: closed-set (obrigatórios E opcionais) e numéricos
  * ainda vazios, excluindo os de variação/ocultos/read-only/multivalor. Quanto mais preenchido,
@@ -47,11 +54,14 @@ export function atributosAlvo(schema: AtributoSchema[], jaPreenchidos: AtributoM
       !IGNORAR.has(a.id) &&
       !presentes.has(a.id) &&
       !a.tags.some((t) => TAGS_EXCLUIR.has(t)) &&
-      (a.valores.length > 0 || ehNumerico(a)),
+      // closed-set e numéricos (obrig. e opcional) OU texto-livre SÓ quando obrigatório
+      (a.valores.length > 0 || ehNumerico(a) ||
+        (a.valueType === 'string' && (a.required || a.conditionalRequired))),
     )
     .map((a) => ({
       id: a.id,
       nome: a.nome,
+      tipo: tipoAlvo(a),
       valores: a.valores,
       unidades: a.valueType === 'number_unit' ? a.allowedUnits : undefined,
     }));
@@ -87,25 +97,41 @@ function preencherMedidasObvias(input: InputAtributos, alvos: AtributoAlvo[]): A
   return valor ? [{ id: alvo.id, value_name: valor }] : [];
 }
 
+// Texto-livre só é aceito se constar (normalizado) no nome/descrição do produto — materializa
+// "inferir do texto, nunca inventar" (ADR-0052). Limita o comprimento p/ a IA não despejar a
+// frase inteira como valor.
+const MAX_TEXTO_LIVRE = 60;
+function validarTextoLivre(bruto: string, input: InputAtributos): string | null {
+  const valor = bruto.trim();
+  if (!valor || valor.length > MAX_TEXTO_LIVRE) return null;
+  const fonte = normalizar(`${input.nome} ${input.descricao ?? ''}`);
+  return fonte.includes(normalizar(valor)) ? valor : null;
+}
+
 /**
  * Valida a resposta da IA. Closed-set: só aceita value_id/value_name que casa com a lista.
- * Numérico: só aceita número (+ unidade permitida). Qualquer coisa fora disso é omitida (nunca inventa).
+ * Numérico: só número (+ unidade permitida). Texto-livre: só se constar no texto do produto.
+ * Qualquer coisa fora disso é omitida (nunca inventa).
  */
 export function validarRespostaAtributos(
   resp: Record<string, string>,
   alvos: AtributoAlvo[],
+  input: InputAtributos,
 ): AtributoML[] {
   const out: AtributoML[] = [];
   for (const alvo of alvos) {
     const bruto = resp?.[alvo.id];
     if (bruto == null || bruto === '') continue;
-    if (alvo.valores.length > 0) {
+    if (alvo.tipo === 'closed') {
       const porId = alvo.valores.find((v) => v.id === String(bruto));
       const porNome = porId ? null : alvo.valores.find((v) => normalizar(v.nome) === normalizar(String(bruto)));
       const escolhido = porId ?? porNome;
       if (escolhido) out.push({ id: alvo.id, value_id: escolhido.id });
-    } else {
+    } else if (alvo.tipo === 'numero') {
       const valor = validarNumerico(String(bruto), alvo.unidades);
+      if (valor) out.push({ id: alvo.id, value_name: valor });
+    } else {
+      const valor = validarTextoLivre(String(bruto), input);
       if (valor) out.push({ id: alvo.id, value_name: valor });
     }
   }
@@ -128,21 +154,24 @@ export async function preencherAtributosClosedSet(
   const restantes = atributosAlvo(schema, baseComObvios);
   if (restantes.length === 0) return baseComObvios;
   const resp = await llm(input, restantes).catch(() => ({} as Record<string, string>));
-  const preenchidos = validarRespostaAtributos(resp, restantes);
+  const preenchidos = validarRespostaAtributos(resp, restantes, input);
   return [...baseComObvios, ...preenchidos];
 }
 
 /** Prompt: para cada atributo, a lista de valores (closed-set) ou o formato numérico esperado. */
 export function montarPromptAtributos(input: InputAtributos, alvos: AtributoAlvo[]): string {
   const blocos = alvos.map((a) => {
-    if (a.valores.length > 0) {
+    if (a.tipo === 'closed') {
       const vals = a.valores.slice(0, 60).map((v) => `${v.id} = ${v.nome}`).join('; ');
       return `- ${a.id} (${a.nome}): escolha um → ${vals}`;
     }
-    if (a.unidades && a.unidades.length > 0) {
-      return `- ${a.id} (${a.nome}): número + unidade (uma de: ${a.unidades.map((u) => u.nome).join(', ')}). Ex.: "10 ${a.unidades[0].nome}".`;
+    if (a.tipo === 'numero') {
+      if (a.unidades && a.unidades.length > 0) {
+        return `- ${a.id} (${a.nome}): número + unidade (uma de: ${a.unidades.map((u) => u.nome).join(', ')}). Ex.: "10 ${a.unidades[0].nome}".`;
+      }
+      return `- ${a.id} (${a.nome}): apenas o número.`;
     }
-    return `- ${a.id} (${a.nome}): apenas o número.`;
+    return `- ${a.id} (${a.nome}): copie exatamente do título/descrição; se não constar lá, omita (não invente).`;
   }).join('\n');
   return [
     `Produto: ${input.nome}`,
