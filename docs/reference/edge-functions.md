@@ -13,9 +13,6 @@
   (`verificarAssinatura`), JWT lido na mão (`requireUser`), ou endpoint público (OAuth/webhook).
 - Funções **não listadas** no `config.toml` assumem o **default `true`** (caso de `resumo-financeiro`).
 
-> ⚠️ Há divergências atuais entre `verify_jwt` e o modo de acionamento de algumas funções
-> de QStash/webhook — ver [Inconsistências conhecidas](#inconsistências-conhecidas-de-verify_jwt).
-
 ## Tabela-resumo
 
 | Função | verify_jwt | Trigger | Idempotente |
@@ -42,14 +39,14 @@
 | reprocessar-familia | false | HTTP (JWT manual) | sim (guard de status) |
 | invalidar-cache-cor | true | HTTP (frontend) | não |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
-| ml-webhook | true ⚠️ | Webhook do ML | sim (dedup) |
-| sync-venda | true ⚠️ | QStash worker | sim (upsert) |
+| ml-webhook | false | Webhook do ML | sim (dedup) |
+| sync-venda | false | QStash worker | sim (upsert) |
 | sync-pergunta | false | QStash worker | sim (upsert) |
 | sync-devolucao | false | QStash worker | sim (upsert) |
 | responder-pergunta | true | HTTP (frontend) | não |
 | sugerir-resposta-pergunta | true | HTTP (frontend) | não (stateless) |
-| backfill-faturamento | true ⚠️ | HTTP (JWT) **ou** QStash | sim (upsert) |
-| reconciliar-faturamento | true ⚠️ | QStash schedule | sim (upsert) |
+| backfill-faturamento | false | HTTP (JWT) **ou** QStash | sim (upsert) |
+| reconciliar-faturamento | false | QStash schedule | sim (upsert) |
 | **Financeiro (Mercado Pago)** ||||
 | resumo-financeiro | true (default) | HTTP (frontend) | não |
 | **Monitoramento / alertas** ||||
@@ -186,31 +183,13 @@
 
 ---
 
-## Inconsistências conhecidas de `verify_jwt` — INCIDENTE CONFIRMADO
+## Histórico — divergência de `verify_jwt` no faturamento (corrigida)
 
-> Divergência entre `config.toml` e o modo de acionamento, **confirmada em produção via logs
-> do edge gateway** (24h, 2026-06-28). Mesma classe do incidente
-> `reference_workers_qstash_verify_jwt` (deploy que travou lotes).
-
-O enfileirador (`_shared/queue.ts`) publica no QStash **sem** header `Authorization`, e o ML
-chama o webhook sem JWT Supabase. Funções com `verify_jwt=true` acionadas assim são
-**rejeitadas pelo gateway (401) antes de executar** sua própria checagem de assinatura.
-
-**Evidência (function_edge_logs, últimas 24h):**
-
-| Função | `verify_jwt` | Requisições | Resultado |
-|---|---|---|---|
-| `ml-webhook` | **true** | 221 | **401 (100%)** — webhooks do ML rejeitados |
-| `backfill-faturamento` | **true** | 92 | **401 (100%)** — backfill agendado rejeitado |
-| `monitorar-moderados` | false | 3 | 200 ✓ (controle) |
-| `notificar-liberacao` | false | 1 | 200 ✓ (controle) |
-
-**Cascata:** `sync-venda`/`sync-pergunta`/`sync-devolucao` são enfileiradas pelo `ml-webhook`.
-Como ele retorna 401, nada é enfileirado → faturamento em tempo real **parado** (dados só
-entram por backfill manual com JWT de usuário). `reconciliar-faturamento` (schedule, também
-`verify_jwt=true`) tende ao mesmo 401.
-
-**Correção (pendente de aprovação + ADR):** definir `verify_jwt=false` no `config.toml` para
-`ml-webhook`, `sync-venda`, `reconciliar-faturamento` e `backfill-faturamento` (todas já
-autenticam internamente: assinatura QStash e/ou `requireUser`), e **redeployar** essas
-funções. Equivale ao que já vale para `sync-pergunta`/`sync-devolucao` (corretas, `false`).
+Entre 2026-06-26 e 2026-06-28, `ml-webhook`, `sync-venda`, `backfill-faturamento` e
+`reconciliar-faturamento` estavam com `verify_jwt=true` no `config.toml` mas são acionadas por
+QStash/webhook (sem JWT Supabase) — o gateway rejeitava com 401 antes da função rodar,
+derrubando o faturamento em tempo real em cascata. Corrigido pelo
+[ADR-0046](../decisions/0046-verify-jwt-false-workers-webhook-faturamento.md)
+(`verify_jwt=false` nas quatro, autenticação real continua interna por assinatura/JWT). Confirmado
+em produção que segue `false`. Detalhe do incidente em
+`obsidian-vault/05-Bugs/Incidentes.md`.

@@ -9,20 +9,6 @@ Problemas identificados e **ainda abertos** (não resolvidos). Fonte: `docs/proj
 ("Riscos e ressalvas abertas"), `docs/reference/edge-functions.md`, `docs/TASKS.md`. Ver
 [[Incidentes]] (o que já foi corrigido), [[Problemas Resolvidos]].
 
-## ⚠️ Divergência de `verify_jwt` (confirmado em produção, correção pendente)
-
-Funções acionadas por QStash/webhook mas com `verify_jwt=true` no `config.toml` são rejeitadas
-pelo gateway (401) antes de rodar sua própria checagem — porque o enfileirador não envia
-`Authorization` e o ML não manda JWT no webhook.
-
-- `ml-webhook`: 221 requisições, 401 em 100%
-- `backfill-faturamento`: 92 requisições, 401 em 100%
-- Cascata: `sync-venda`/`sync-pergunta`/`sync-devolucao` nunca são enfileiradas → faturamento em
-  tempo real parado (só entra via backfill manual)
-
-Correção conhecida, pendente de aprovação + ADR: `verify_jwt=false` para as 4 funções listadas.
-Ver [[Edge Functions]].
-
 ## Retry de foto — cobertura parcial
 
 O retry de foto transiente foi reforçado e validado no `CREATE` (`publish-familia-ml`), mas o
