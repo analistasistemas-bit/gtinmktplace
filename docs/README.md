@@ -21,6 +21,7 @@ entender e operar o sistema:
 | Saber o significado exato de um termo do domínio | [reference/glossario.md](reference/glossario.md) |
 | Consultar o schema do banco (tabelas, RLS, enums) | [reference/modelo-de-dados.md](reference/modelo-de-dados.md) |
 | Consultar as Edge Functions (trigger, verify_jwt, idempotência) | [reference/edge-functions.md](reference/edge-functions.md) |
+| Saber por que um endpoint ML/MP pode estar bloqueado (permissão/reputação da conta) | [reference/ml-permissao-reputacao-padrao.md](reference/ml-permissao-reputacao-padrao.md) |
 | Rodar o projeto localmente | [how-to/desenvolvimento-local.md](how-to/desenvolvimento-local.md) |
 | Fazer deploy de functions / migrations | [how-to/deploy-e-migrations.md](how-to/deploy-e-migrations.md) |
 | Executar operações rotineiras (reprocessar, OAuth, faturamento) | [how-to/operacoes-rotineiras.md](how-to/operacoes-rotineiras.md) |
