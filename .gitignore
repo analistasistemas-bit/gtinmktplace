@@ -8,6 +8,9 @@ build/
 .vite/
 storybook-static/
 
+# Graphify (grafo de conhecimento gerado, regenerável via /graphify)
+graphify-out/
+
 # Env files (sensíveis)
 .env
 .env.local
