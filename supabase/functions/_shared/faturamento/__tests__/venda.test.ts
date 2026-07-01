@@ -6,6 +6,7 @@ import {
   calcularLiquido,
   extrairGeo,
   extrairReceiverNome,
+  escolherCompradorNome,
 } from '../venda';
 
 describe('extrairGeo', () => {
@@ -36,6 +37,21 @@ describe('extrairReceiverNome', () => {
     expect(extrairReceiverNome({ destination: {} })).toBeNull();
     expect(extrairReceiverNome({ status: 'shipped' })).toBeNull();
     expect(extrairReceiverNome(null)).toBeNull();
+  });
+});
+
+describe('escolherCompradorNome', () => {
+  it('prioriza o nome real vindo agora', () => {
+    expect(escolherCompradorNome('Leonardo Teixeira', 'Loni Giebmeier', 'Loni Giebmeier')).toBe('Leonardo Teixeira');
+  });
+  it('mantém o nome real já salvo quando o ML não manda o buyer nesse sync (não regride)', () => {
+    expect(escolherCompradorNome(null, 'Leonardo Teixeira', 'Loni Giebmeier')).toBe('Leonardo Teixeira');
+  });
+  it('usa o destinatário do envio só quando nunca teve nada melhor', () => {
+    expect(escolherCompradorNome(null, null, 'Loni Giebmeier')).toBe('Loni Giebmeier');
+  });
+  it('sem nenhuma fonte disponível → null (cai pro nick na UI)', () => {
+    expect(escolherCompradorNome(null, null, null)).toBeNull();
   });
 });
 

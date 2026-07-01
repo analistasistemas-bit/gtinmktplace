@@ -1,7 +1,7 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -166,17 +166,15 @@ export async function upsertVenda(
     infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,
     freteVendedor: opts.freteVendedor,
   });
-  // Estado anterior (para detectar "nova venda paga" e não realertar).
+  // Estado anterior (para detectar "nova venda paga" e não realertar, e não perder um
+  // comprador_nome real já capturado — o ML é inconsistente e às vezes some com o buyer).
   const { data: anterior } = await admin.from('ml_vendas')
-    .select('id, status').eq('user_id', userId).eq('order_id', venda.order_id).maybeSingle();
+    .select('id, status, comprador_nome').eq('user_id', userId).eq('order_id', venda.order_id).maybeSingle();
 
   const row = {
     user_id: userId,
     ...venda,
-    // Nome real do comprador (first_name+last_name) tem prioridade, mas o ML não retorna
-    // esses campos no GET /orders/{id} (confirmado em produção — só id/nickname). Cai para o
-    // nome do destinatário do envio (pode divergir do comprador em presentes/retirada por terceiros).
-    comprador_nome: venda.comprador_nome ?? opts.shipment?.receiverNome ?? null,
+    comprador_nome: escolherCompradorNome(venda.comprador_nome, anterior?.comprador_nome ?? null, opts.shipment?.receiverNome ?? null),
     raw: pedido as unknown as Record<string, unknown>,
     shipping_status: opts.shipment?.status ?? null,
     shipping_substatus: opts.shipment?.substatus ?? null,
