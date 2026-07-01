@@ -34,7 +34,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 
 | Termo | Definição |
 |---|---|
-| **Canal** | Um marketplace de destino (hoje só Mercado Livre). Abstraído pelo [[Integrações\|conector de canal]]. |
+| **Canal** | Um marketplace de destino (hoje só Mercado Livre). Abstraído pelo conector de canal — ver [[Integrações]]. |
 | **Conector (ChannelConnector)** | Interface única de operações de anúncio por canal (`_shared/canais/`). |
 | **Anúncio externo** | Espelho normalizado de produto-canal, identidade `(user_id, canal, codigo_pai)`. Tabela `anuncios_externos`. |
 | **Dual-write** | Workers gravam em `familias`/`variacoes` (fonte de verdade hoje) e em `anuncios_externos` (espelho). |
