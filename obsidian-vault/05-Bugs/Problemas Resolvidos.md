@@ -15,8 +15,8 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 - **Fabricante (MANUFACTURER) preenchido na categoria genérica** — atributo estava faltando na
   publicação (lote #48).
 - **Cor + metragem separada** — planilha com "10 mt" no nome estava virando cor errada (lote #48).
-- **Comprador real nas vendas (Faturamento)** — corrigido para usar o comprador de fato, não um
-  substituto.
+- **Comprador real nas vendas (Faturamento)** — ver [[Incidentes]] (nome do comprador: mascaramento
+  intermitente do ML + regressão do fallback, 2026-07-01).
 - **Contagem de pedidos por pack** — Financeiro/Publicados contavam por `order_id` em vez de por
   pack, gerando divergência entre as duas telas.
 - **Markup/custo por pacote** — inconsistência entre telas no cálculo de KPI.
