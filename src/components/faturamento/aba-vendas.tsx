@@ -13,7 +13,7 @@ import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
-import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, type Pedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
@@ -75,7 +75,7 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
 function valorOrdenacao(p: Pedido, k: SortKey): string | number | null {
   switch (k) {
     case 'data': return p.data ? Date.parse(p.data) : null;
-    case 'comprador': return p.comprador_nome ?? p.comprador_nick;
+    case 'comprador': return nomeExibicaoComprador(p);
     case 'unidades': return p.unidades;
     case 'valor': return p.bruto;
     case 'liquido': return p.liquido;
@@ -131,9 +131,9 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
         </TableCell>
         <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(p.data)}</TableCell>
         <TableCell className="max-w-[140px] truncate">
-          <span className="flex items-center gap-1" title={p.comprador_nome ?? p.comprador_nick ?? undefined}>
+          <span className="flex items-center gap-1" title={nomeExibicaoComprador(p)}>
             {p.isPack && <Layers className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pack" />}
-            {nomeCurtoComprador(p.comprador_nome) ?? p.comprador_nick ?? '—'}
+            {nomeCurtoComprador(p.comprador_nome) ?? nomeExibicaoComprador(p)}
           </span>
         </TableCell>
         <TableCell><PilhaThumbs itens={p.itens} /></TableCell>

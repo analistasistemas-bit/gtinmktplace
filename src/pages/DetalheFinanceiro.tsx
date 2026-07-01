@@ -14,7 +14,7 @@ import {
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularMarkup } from '@/lib/markup';
 import { calcularResumo } from '@/lib/resumo-vendas';
-import { agruparPorPedido, nomeCurtoComprador, type Pedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
 import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { useVendas } from '@/hooks/useVendas';
@@ -116,9 +116,9 @@ function LinhaDetalhe({ p }: { p: Pedido }) {
           prejuizo && 'border-l-2 border-l-destructive',
         )}>{fmtData(p.data)}</TableCell>
         <TableCell className="align-top text-sm">
-          <span className="flex max-w-[140px] items-center gap-1 truncate" title={p.comprador_nome ?? p.comprador_nick ?? undefined}>
+          <span className="flex max-w-[140px] items-center gap-1 truncate" title={nomeExibicaoComprador(p)}>
             {p.isPack && <Layers className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pack" />}
-            {nomeCurtoComprador(p.comprador_nome) ?? p.comprador_nick ?? '—'}
+            {nomeCurtoComprador(p.comprador_nome) ?? nomeExibicaoComprador(p)}
           </span>
           {p.estorno > 0 && (
             <span className="text-xs text-destructive">estornado {fmtBRL(p.estorno)}</span>
@@ -224,7 +224,7 @@ export default function DetalheFinanceiro() {
     const val = (p: Pedido): string | number | null => {
       switch (sort.key) {
         case 'data': return p.data;
-        case 'comprador': return p.comprador_nome ?? p.comprador_nick;
+        case 'comprador': return nomeExibicaoComprador(p);
         case 'unidades': return p.unidades;
         case 'liberacao': return p.money_release_date;
         case 'bruto': return p.bruto;

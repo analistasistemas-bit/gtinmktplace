@@ -4,7 +4,7 @@ import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/pub
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
 import type { Periodo } from '@/lib/metricas';
 import type { ResumoViabilidade } from '@/lib/analise-viabilidade';
-import type { Pedido, KpisPedidos } from '@/lib/pedidos-faturamento';
+import { nomeExibicaoComprador, type Pedido, type KpisPedidos } from '@/lib/pedidos-faturamento';
 import type { Devolucao } from '@/lib/devolucoes';
 import { labelTipoDevolucao } from '@/lib/devolucoes';
 import type { Pergunta } from '@/lib/perguntas';
@@ -241,7 +241,7 @@ export function buildVendasReport(args: VendasArgs): ReportData {
     linhas: pedidos.map((p) => ({
       celulas: {
         data: fmtDataCurta(p.data),
-        comprador: p.comprador_nome ?? p.comprador_nick ?? '—',
+        comprador: nomeExibicaoComprador(p),
         produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
         unidades: fmtInt(p.unidades),
         valor: fmtBRL(p.bruto),
@@ -487,7 +487,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
     linhas: pedidos.map((p) => ({
       celulas: {
         data: fmtData(p.data),
-        comprador: p.comprador_nome ?? p.comprador_nick ?? '—',
+        comprador: nomeExibicaoComprador(p),
         produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
         unidades: fmtInt(p.unidades),
         // Liberação = data + status (liberado/a liberar) na mesma coluna, como na tela.

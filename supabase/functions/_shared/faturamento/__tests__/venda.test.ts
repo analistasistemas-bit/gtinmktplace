@@ -143,6 +143,17 @@ describe('mapearPedidoParaVenda', () => {
     });
   });
 
+  it('mapeia nome real do comprador a partir do buyer do pedido', () => {
+    const { venda } = mapearPedidoParaVenda({
+      ...pedidoBase,
+      buyer: { id: 555, nickname: 'TELE859877', first_name: 'Leonardo', last_name: 'Teixeira' },
+    }, {
+      idsPubliai: new Set(),
+      codigoResolver: () => null,
+    });
+    expect(venda.comprador_nome).toBe('Leonardo Teixeira');
+  });
+
   it('is_publiai=false quando nenhum item é gerenciado pelo app', () => {
     const { venda, itens } = mapearPedidoParaVenda(pedidoBase, {
       idsPubliai: new Set(['OUTRO']),

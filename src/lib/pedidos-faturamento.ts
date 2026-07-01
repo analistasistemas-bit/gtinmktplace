@@ -233,3 +233,7 @@ export function nomeCurtoComprador(nome: string | null | undefined): string | nu
   const segundo = segundoRaw ? capitalizarNome(segundoRaw) : undefined;
   return segundo ? `${primeiro} ${segundo}` : primeiro;
 }
+
+export function nomeExibicaoComprador(p: Pick<Pedido, 'comprador_nome' | 'comprador_nick'>): string {
+  return p.comprador_nome ?? p.comprador_nick ?? '—';
+}

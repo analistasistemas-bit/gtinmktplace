@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agruparPorPedido, nomeCurtoComprador } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador } from '@/lib/pedidos-faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
 
@@ -144,5 +144,19 @@ describe('nomeCurtoComprador', () => {
     expect(nomeCurtoComprador('')).toBeNull();
     expect(nomeCurtoComprador(null)).toBeNull();
     expect(nomeCurtoComprador(undefined)).toBeNull();
+  });
+});
+
+describe('nomeExibicaoComprador', () => {
+  it('prioriza nome real do comprador', () => {
+    expect(nomeExibicaoComprador({ comprador_nome: 'Leonardo Teixeira', comprador_nick: 'leonardo.nick' })).toBe('Leonardo Teixeira');
+  });
+
+  it('usa nick quando nome real não veio do ML', () => {
+    expect(nomeExibicaoComprador({ comprador_nome: null, comprador_nick: 'leonardo.nick' })).toBe('leonardo.nick');
+  });
+
+  it('usa travessão quando não há nome nem nick', () => {
+    expect(nomeExibicaoComprador({ comprador_nome: null, comprador_nick: null })).toBe('—');
   });
 });

@@ -173,10 +173,7 @@ export async function upsertVenda(
   const row = {
     user_id: userId,
     ...venda,
-    // Nome real do comprador: receiver_name do envio (melhor formatado, com acento) tem
-    // prioridade; cai para first_name+last_name do buyer (vem só no GET /orders/{id}, não no
-    // /orders/search do backfill). Mantém o que já houver se ambas as fontes faltarem.
-    comprador_nome: opts.shipment?.receiverNome ?? venda.comprador_nome,
+    comprador_nome: venda.comprador_nome,
     raw: pedido as unknown as Record<string, unknown>,
     shipping_status: opts.shipment?.status ?? null,
     shipping_substatus: opts.shipment?.substatus ?? null,
