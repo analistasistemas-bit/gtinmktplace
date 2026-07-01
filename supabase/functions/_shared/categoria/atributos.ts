@@ -103,9 +103,17 @@ export function rotuloParaTipo(tipo: TipoAviamento): string | null {
   return ROTULO_POR_TIPO[tipo];
 }
 
-// GTIN e EMPTY_GTIN_REASON são resolvidos por variação na publicação (lógica de GTIN
-// existente), não no nível da família → não entram na lista de "faltantes" da Revisão.
-const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON']);
+// GTIN/EMPTY_GTIN_REASON e COLOR são resolvidos por variação na publicação (GTIN por SKU;
+// COLOR montado de variacoes.cor), não no nível da família → não entram nos "faltantes" da
+// Revisão. Sem ignorar COLOR, categorias que o exigem (comuns fora dos aviamentos) trancariam
+// como falso-faltante mesmo tendo cores — bloqueio indevido no SaaS multicategoria.
+const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR']);
+
+// Sentinela persistido em familias.atributos_faltantes quando NÃO foi possível validar os
+// obrigatórios de uma categoria genérica (schema indisponível/erro/sem token). O gate de
+// publicação trata qualquer faltante como bloqueio → a família para na Revisão em vez de ir
+// quebrada ao ML (regra de ouro do SaaS: nunca publicar sem validar os obrigatórios).
+export const FALTANTE_ATRIBUTOS_NAO_VALIDADOS = 'atributos da categoria (não validados — revise)';
 
 /**
  * Atributos determinísticos universais para uma categoria PREVISTA (sem override): só o

@@ -41,6 +41,25 @@ Duas causas compostas:
    derivado da categoria do preditor — monta os obrigatórios curados (`montarAtributosML`) e só então enriquece
    pelo schema/IA (ADR-0049). Os obrigatórios deixam de depender do schema/IA, que podem falhar.
 
+## Robustez para SaaS multicategoria (fecha a falha silenciosa)
+
+Como o app evoluirá para SaaS multiempresa (publicar **qualquer** produto, não só aviamentos), o
+caminho genérico (categoria via preditor, `tipo='outro'`) passa a nunca publicar às cegas:
+
+4. **Bloqueio seguro quando não dá para validar.** Em `process-familia`, se `lerSchemaAtributos`
+   falhar, vier vazio, ou faltar token, a família recebe `atributos_faltantes =
+   [FALTANTE_ATRIBUTOS_NAO_VALIDADOS]` e `atributos_ml = []` — o gate de publicação (que trata
+   qualquer faltante como bloqueio) **trava na Revisão** em vez de mandar o item quebrado ao ML.
+   Antes o `catch` engolia o erro e deixava tudo vazio → recusa silenciosa do ML na publicação.
+5. **`COLOR` deixa de ser falso-faltante.** `COLOR` entra em `FALTANTES_IGNORAR` (é atributo de
+   variação, montado de `variacoes.cor` na publicação). Sem isso, categorias que o exigem — comuns
+   fora dos aviamentos — trancariam mesmo tendo cores.
+
+Limite conhecido (Camada 2, roadmap SaaS, **não** neste ADR): para um produto não-aviamento cujo
+obrigatório a IA não infira, o operador ainda não tem **UI para editar atributos** nem **seletor de
+categoria livre** (`definir-categoria-familia` só cobre os 4 aviamentos). Hoje o produto trava com
+aviso claro (não publica errado), mas o destravamento manual dessas categorias é o próximo épico.
+
 ## Consequências
 
 - Barbante (e qualquer produto cujo preditor aponte para uma categoria de aviamento conhecida) sai com

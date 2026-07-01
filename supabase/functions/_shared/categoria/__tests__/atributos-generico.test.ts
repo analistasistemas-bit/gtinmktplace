@@ -43,4 +43,12 @@ describe('atributosFaltantesGenerico', () => {
     const tem = [{ id: 'BRAND', value_name: 'X' }, { id: 'MODEL', value_name: 'Y' }, { id: 'VOLTAGE', value_id: '1' }];
     expect(atributosFaltantesGenerico(tem, SCHEMA)).toEqual([]);
   });
+  it('ignora COLOR obrigatório (resolvido por variação, não falso-faltante no SaaS)', () => {
+    const schemaComCor: AtributoSchema[] = [
+      A({ id: 'BRAND', nome: 'Marca', required: true }),
+      A({ id: 'COLOR', nome: 'Cor', required: true }),
+    ];
+    const tem = [{ id: 'BRAND', value_name: 'X' }]; // COLOR nunca é montado na família
+    expect(atributosFaltantesGenerico(tem, schemaComCor)).toEqual([]);
+  });
 });

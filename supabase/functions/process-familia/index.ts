@@ -13,7 +13,7 @@ import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, categoriaParaTipo, FALTANTE_ATRIBUTOS_NAO_VALIDADOS, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverCategoria } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -195,9 +195,15 @@ Deno.serve(async (req) => {
           atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
         } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
       }
-    } else if (categoriaMlId && token) {
+    } else if (categoriaMlId) {
+      // Categoria genérica (não-aviamento): validar obrigatórios contra o schema da API (E3/E4).
+      // Regra de ouro do SaaS: se NÃO der para validar (sem token, schema indisponível/vazio ou
+      // erro da IA), não publicar às cegas — persiste faltante-sentinela p/ travar na Revisão.
       try {
+        if (!token) throw new Error('sem token p/ ler schema da categoria');
         const schema = await lerSchemaAtributos(token, categoriaMlId);
+        // Categoria real do ML sempre traz atributos no schema (mesmo poucos required); vazio ⇒ erro de leitura.
+        if (!schema || schema.length === 0) throw new Error('schema vazio da categoria');
         const base = montarAtributosBase(schema, claimed.nome_pai, fornecedor);
         // E4: IA preenche os obrigatórios closed-set (ex.: VOLTAGE) escolhendo dentro de values[].
         atributosMl = await preencherAtributosClosedSet(
@@ -208,8 +214,14 @@ Deno.serve(async (req) => {
         // UNITS_PER_PACK é numérico (sem closed-set) → a IA não cobre; extrai do nome/descrição.
         atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
         faltantes = atributosFaltantesGenerico(atributosMl, schema);
-      } catch (e) { console.error('schema/atributos falhou:', e); }
+      } catch (e) {
+        console.error('schema/atributos falhou:', e);
+        atributosMl = [];
+        faltantes = [FALTANTE_ATRIBUTOS_NAO_VALIDADOS];
+      }
     }
+    // categoriaMlId null (origem 'manual') → faltantes fica [] aqui, mas o gate de publicação
+    // bloqueia por categoria ausente até o operador escolhê-la na Revisão.
 
     // 5d. Estratégia de preço v2 (ADR-0020). PRECO = líquido mínimo desejado.
     // Com concorrente → mercado (× 0,95). Sem concorrente → gross-up (busca comissão 1x).
