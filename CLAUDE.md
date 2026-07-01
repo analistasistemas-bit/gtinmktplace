@@ -2,155 +2,308 @@
 
 > Este arquivo é o bootstrap curto do projeto. Leia primeiro. Estado atual e histórico detalhado vivem fora daqui.
 
-**Última atualização:** 2026-06-15
+**Última atualização:** 2026-07-01
 
-## O que é este projeto
+---
+
+# O que é este projeto
 
 PubliAI é um sistema interno que transforma planilhas de produtos em anúncios publicados em marketplaces, com foco inicial no Mercado Livre e evolução para operação multicanal.
 
-- Usuário-operador principal: Diego
-- Domínios principais: lotes, famílias, variações, anúncios externos
-- Primeiro marketplace em produção: Mercado Livre
-- Próximo épico planejado: `E5` conector Shopee
+**Usuário-operador principal:** Diego
 
-## Ordem de leitura
+**Domínios principais:** lotes, famílias, variações, anúncios externos
 
-Antes de tocar no código, leia nesta ordem:
+**Primeiro marketplace em produção:** Mercado Livre
 
-1. [docs/README.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/README.md)
-2. [docs/project-status.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-status.md)
-3. [docs/ROADMAP.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/ROADMAP.md)
-4. [docs/TASKS.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/TASKS.md)
-5. ADR relevante em [docs/decisions](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/decisions)
+**Próximo épico planejado:** E5 — Conector Shopee
 
-Se precisar de contexto histórico ou de validações anteriores, consulte:
+---
 
-- [docs/project-history.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-history.md)
-- [docs/auditoria-e1-e4-browser-use.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/auditoria-e1-e4-browser-use.md)
+# Fontes de conhecimento
 
-## MCPs prioritários
+Este projeto utiliza três fontes oficiais de contexto:
 
-Use MCP/CLI antes de sugerir operação manual.
+- **Graphify** → entendimento da arquitetura, dependências e impacto de mudanças.
+- **docs/** → documentação técnica oficial (Diátaxis).
+- **obsidian-vault/** → documentação viva do projeto (arquitetura, decisões, fluxos, roadmap e contexto).
 
-- `supabase-mcp-server`
-- `upstash`
-- `render`
-- `shadcn`
-- `context7`
+---
 
-## Regras operacionais inegociáveis
+# Ordem de leitura
 
-1. Leia o ADR relacionado antes de propor mudança arquitetural.
-2. Se a decisão for nova e não-trivial, escreva ADR antes da implementação.
-3. Edge Functions devem ser idempotentes.
-4. Tokens e segredos nunca vão para código ou repo.
-5. RLS por `user_id` ou `org_id` é obrigatória em tabela de domínio.
-6. Revise humano antes de publicar em marketplace.
-7. Prefira o caminho pragmático e verificável ao mais elegante.
-8. Atualize `TASKS.md` e a documentação afetada quando concluir trabalho relevante.
-9. **Toda mudança de código exige uma checagem de documentação** antes de concluir — ver
-   [Manutenção da documentação](#manutenção-da-documentação).
+Antes de tocar no código, siga esta ordem:
 
-## Manutenção da documentação
+1. Consulte o **Graphify** para entender arquitetura e impacto.
+2. Leia:
+   - docs/README.md
+   - docs/project-status.md
+   - docs/ROADMAP.md
+   - docs/TASKS.md
+3. Consulte o ADR relacionado em `docs/decisions/`.
 
-A documentação técnica vive em `docs/` no padrão [Diátaxis](https://diataxis.fr/)
-(`explanation/`, `reference/`, `how-to/`, `tutorials/`). Índice em
-[docs/README.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/README.md).
+Se precisar de contexto histórico:
 
-**Regra:** ao terminar qualquer mudança em `src/`, `supabase/functions/`,
-`supabase/migrations/` ou `supabase/config.toml`, **antes de concluir a tarefa**, consulte o
-mapa abaixo, abra a doc correspondente e atualize-a se a mudança a tornou desatualizada. Se
-não precisar mudar nada, diga explicitamente "docs conferidas, sem mudança". Não deixe a doc
-defasar — é parte da definição de pronto, não um passo opcional.
+- docs/project-history.md
+- docs/auditoria-e1-e4-browser-use.md
 
-### Mapa código → doc
+---
 
-| Mudou... | Confira/atualize |
-|---|---|
-| `supabase/functions/**` (qualquer função) | `docs/reference/edge-functions.md` |
-| `supabase/config.toml` (`verify_jwt`) | `docs/reference/edge-functions.md` (tabela + inconsistências) |
-| `supabase/migrations/**` (schema, RLS, enums) | `docs/reference/modelo-de-dados.md` |
-| Termo de domínio novo/alterado (tipos, enums, conceito) | `docs/reference/glossario.md` |
-| Fluxo ponta a ponta, fila, integração externa, stack | `docs/explanation/arquitetura.md` + `docs/diagrams/` (C4/ERD/sequências) |
-| Scripts (`package.json`), `.env.example`, setup local | `docs/how-to/desenvolvimento-local.md` |
-| Processo de deploy / migrations | `docs/how-to/deploy-e-migrations.md` |
-| Procedimento operacional (reprocessar, OAuth, faturamento) | `docs/how-to/operacoes-rotineiras.md` + `docs/runbooks/` |
-| Decisão arquitetural nova/alterada | novo ADR em `docs/decisions/` (regra 2) |
-| `src/pages/**` ou fluxo de uso visível ao operador | `docs/tutorials/` (docs de usuário, quando existirem) |
+# Uso obrigatório do Graphify
 
-Decisões arquiteturais continuam virando ADR (regras 1 e 2); o mapa acima cobre a **doc viva**
-que descreve o estado atual, não o registro imutável de decisão.
+Antes de investigar arquitetura, fluxos, dependências ou impacto de mudanças:
 
-## Convenções essenciais
+- Consulte o Graphify.
+- Identifique os módulos envolvidos.
+- Leia apenas os arquivos realmente necessários.
+- Antes de editar código, explique quais arquivos serão impactados.
+- Após mudanças estruturais relevantes, atualize o Graphify.
 
-### Stack
+---
 
-- Frontend: React 18 + TypeScript + Vite + shadcn/ui + Tailwind + TanStack Query + Zustand
-- Backend: Supabase (Postgres, Edge Functions, Storage, Auth)
-- Fila/cache: QStash + Redis
-- IA: OpenRouter com modelos OpenAI
+# MCPs prioritários
 
-### Domínio
+Sempre prefira MCP/CLI antes de sugerir operação manual.
 
-- `PAI = 0` na planilha significa agrupador, nunca item vendável.
-- Uma `familia` vira 1 anúncio.
-- Uma `variacao` vira 1 SKU/cor dentro do anúncio.
-- `CREATE` cria anúncio novo; `UPDATE` atualiza anúncio existente.
+Prioridade:
 
-### Planilha
+- supabase-mcp-server
+- upstash
+- render
+- shadcn
+- context7
 
-Colunas obrigatórias:
+---
 
-`CODIGO`, `PAI`, `NOME`, `UNIDADE`, `GTIN`, `CUSTO`, `PRECO`, `ESTOQUE`, `DESCRICAO_DETALHADO`, `PESO_GRAMAS`, `ALTURA_CM`, `LARGURA_CM`, `COMPRIMENTO_CM`, `FORNECEDOR`
+# Regras operacionais inegociáveis
 
-### Arquivos
+- Leia o ADR relacionado antes de propor mudança arquitetural.
+- Se a decisão for nova e não-trivial, escreva um ADR antes da implementação.
+- Edge Functions devem ser idempotentes.
+- Tokens e segredos nunca vão para código ou repositório.
+- RLS por `user_id` ou `org_id` é obrigatória em tabelas de domínio.
+- Sempre existe revisão humana antes da publicação em marketplaces.
+- Prefira o caminho pragmático e verificável ao mais elegante.
+- Atualize `TASKS.md` e a documentação afetada ao concluir trabalho relevante.
+- Toda mudança relevante deve passar pela verificação da documentação antes de ser considerada concluída.
 
-- Foto de variação: `00CODIGO.ext`
-- Capa comum: `CAPA_00CODIGO.ext`
-- Segunda foto comum: `CAPA2_00CODIGO.ext`
-- Terceira foto comum: `CAPA3_00CODIGO.ext`
+---
 
-## ADRs mais recorrentes
+# Manutenção da documentação
 
-Consulte o arquivo completo em [docs/decisions](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/decisions). Estes são os que mais orientam mudanças do estado atual:
+A documentação possui dois papéis:
 
-- `0003` variações agrupadas por pai
-- `0004` atribuição de cor
-- `0005` lifecycle publish/update
-- `0006` QStash em vez de fila no Postgres
-- `0007` modelo de dados base
-- `0016` UPDATE com reposição/cor nova
-- `0018` dimensões e peso no payload
-- `0021` vinculação ao catálogo
-- `0024` camada de abstração de canais
-- `0025` modelo multicanal `anuncios_externos`
-- `0026` categoria genérica + atributos por IA
-- `0027` multi-tenancy
-- `0028` billing
+## docs/
 
-## Estado atual resumido
+Documentação técnica oficial seguindo o padrão Diátaxis.
 
-Resumo vivo em [docs/project-status.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-status.md).
+## obsidian-vault/
 
-- E1, E1b, E2, E3 e E4 validados em produção
-- `process-familia`, `publish-familia-ml` e `remover-publicado` acabaram de ser revalidados/deployados
-- `anuncios_externos` já é parte ativa do fluxo
-- Taxonomia canônica ficou adiada para quando houver 2º canal
-- Próximo passo de produto: Shopee (`E5`)
+Base de conhecimento viva do projeto.
 
-## O que nunca fazer
+Sempre que houver:
 
-- Inventar dado de produto que não existe na planilha, foto ou contexto real
-- Publicar sem revisão humana
-- Quebrar idempotência de worker
-- Salvar token em texto puro
-- Ignorar policy de acesso
-- Criar tabela/fluxo estrutural sem ADR
-- Mexer em anúncio real de produção fora de fluxo controlado de teste/correção
+- mudança arquitetural
+- novo módulo
+- novo fluxo
+- integração
+- decisão técnica importante
 
-## Histórico
+Atualize também o Obsidian Vault.
 
-Histórico operacional e institucional em:
+---
 
-- [docs/project-history.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-history.md)
-- [docs/TASKS.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/TASKS.md)
+## Regra de conclusão
+
+Antes de concluir qualquer alteração relevante:
+
+1. Consultar o Graphify.
+2. Implementar a mudança.
+3. Verificar a documentação em `docs/`.
+4. Atualizar o `obsidian-vault/` quando houver impacto arquitetural ou funcional.
+5. Informar explicitamente se:
+   - documentação atualizada; ou
+   - documentação conferida sem necessidade de alterações.
+
+---
+
+# Mapa código → documentação
+
+| Mudou... | Atualize |
+|----------|----------|
+| supabase/functions/** | docs/reference/edge-functions.md |
+| supabase/config.toml | docs/reference/edge-functions.md |
+| supabase/migrations/** | docs/reference/modelo-de-dados.md |
+| termos de domínio | docs/reference/glossario.md |
+| arquitetura, fluxos, integrações | docs/explanation/arquitetura.md + diagrams |
+| scripts, setup | docs/how-to/desenvolvimento-local.md |
+| deploy ou migrations | docs/how-to/deploy-e-migrations.md |
+| procedimentos operacionais | docs/how-to/operacoes-rotineiras.md |
+| nova decisão arquitetural | docs/decisions/ |
+| fluxo do operador | docs/tutorials/ |
+
+---
+
+# Convenções essenciais
+
+## Stack
+
+Frontend
+
+- React 18
+- TypeScript
+- Vite
+- shadcn/ui
+- Tailwind
+- TanStack Query
+- Zustand
+
+Backend
+
+- Supabase
+- PostgreSQL
+- Edge Functions
+- Storage
+- Auth
+
+Infraestrutura
+
+- QStash
+- Redis
+
+IA
+
+- OpenRouter
+- Modelos OpenAI
+
+---
+
+# Domínio
+
+- PAI = 0 representa agrupador.
+- Uma família gera um anúncio.
+- Uma variação gera um SKU.
+- CREATE cria anúncio.
+- UPDATE atualiza anúncio existente.
+
+---
+
+# Planilha
+
+Campos obrigatórios:
+
+- CODIGO
+- PAI
+- NOME
+- UNIDADE
+- GTIN
+- CUSTO
+- PRECO
+- ESTOQUE
+- DESCRICAO_DETALHADO
+- PESO_GRAMAS
+- ALTURA_CM
+- LARGURA_CM
+- COMPRIMENTO_CM
+- FORNECEDOR
+
+---
+
+# Arquivos
+
+Fotos das variações:
+
+- 00CODIGO.ext
+
+Fotos comuns:
+
+- CAPA_00CODIGO.ext
+- CAPA2_00CODIGO.ext
+- CAPA3_00CODIGO.ext
+
+---
+
+# Agent Skills
+
+Issue Tracker
+
+GitHub Issues:
+
+analistasistemas-bit/gtinmktplace
+
+Labels:
+
+- needs-info
+- ready-for-agent
+- ready-for-human
+- wontfix
+
+Referências principais:
+
+- CLAUDE.md
+- docs/README.md
+- docs/decisions/
+- docs/agents/
+
+---
+
+# ADRs recorrentes
+
+Consulte `docs/decisions/`.
+
+Mais relevantes:
+
+- 0003 variações agrupadas por pai
+- 0004 atribuição de cor
+- 0005 lifecycle publish/update
+- 0006 QStash
+- 0007 modelo de dados
+- 0016 UPDATE com reposição
+- 0018 dimensões e peso
+- 0021 catálogo
+- 0024 abstração de canais
+- 0025 anúncios multicanal
+- 0026 IA para atributos
+- 0027 multi-tenancy
+- 0028 billing
+
+---
+
+# Estado atual
+
+Resumo atualizado:
+
+- docs/project-status.md
+
+Situação:
+
+- E1 até E4 em produção.
+- anuncios_externos ativo.
+- process-familia validado.
+- publish-familia-ml validado.
+- remover-publicado validado.
+- Taxonomia canônica adiada para segundo canal.
+- Próximo épico: Shopee.
+
+---
+
+# O que nunca fazer
+
+Nunca:
+
+- inventar dados de produto;
+- publicar sem revisão humana;
+- quebrar idempotência;
+- salvar tokens em texto puro;
+- ignorar RLS;
+- criar estrutura sem ADR;
+- alterar anúncios reais fora do fluxo controlado.
+
+---
+
+# Histórico
+
+Histórico completo:
+
+- docs/project-history.md
+- docs/TASKS.md
