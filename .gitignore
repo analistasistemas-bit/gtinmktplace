@@ -18,6 +18,9 @@ storybook-static/
 .idea/
 .DS_Store
 
+# Obsidian (config local do app, não o conteúdo do vault)
+obsidian-vault/.obsidian/
+
 # Logs
 *.log
 npm-debug.log*
