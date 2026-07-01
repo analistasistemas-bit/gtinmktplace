@@ -173,7 +173,10 @@ export async function upsertVenda(
   const row = {
     user_id: userId,
     ...venda,
-    comprador_nome: venda.comprador_nome,
+    // Nome real do comprador (first_name+last_name) tem prioridade, mas o ML não retorna
+    // esses campos no GET /orders/{id} (confirmado em produção — só id/nickname). Cai para o
+    // nome do destinatário do envio (pode divergir do comprador em presentes/retirada por terceiros).
+    comprador_nome: venda.comprador_nome ?? opts.shipment?.receiverNome ?? null,
     raw: pedido as unknown as Record<string, unknown>,
     shipping_status: opts.shipment?.status ?? null,
     shipping_substatus: opts.shipment?.substatus ?? null,
