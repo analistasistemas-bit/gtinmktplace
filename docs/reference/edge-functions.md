@@ -102,9 +102,11 @@
 
 ### Processamento / publicação
 - **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor
-  (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria, monta
+  (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria/tipo, monta
   atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão **e frete**
-  grátis do vendedor, ADR-0050) e análise de mercado; marca `pronto`/`erro`.
+  grátis do vendedor, ADR-0050) e análise de mercado; marca `pronto`/`erro`. Tipo derivado da
+  categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
+  na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034).
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado

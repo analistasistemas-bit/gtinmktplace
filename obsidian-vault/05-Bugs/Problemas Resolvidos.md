@@ -10,6 +10,14 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Barbante recusado por atributo/tipo (lote #49, ADR-0051)** — "BARBANTE" não estava na regex de
+  `linha` → caía em `tipo='outro'`; o preditor do ML acertava a categoria (MLB270273, Fios e Cadarços)
+  mas o código fixava `tipo='outro'`, então `BRAND`/`MODEL` nunca eram montados e o ML recusava. Fix:
+  `barbante` na regex + `tipoParaCategoria` (deriva o tipo da categoria do preditor) + `process-familia`
+  monta obrigatórios curados para todo tipo conhecido. **Robustez SaaS** junto: caminho genérico nunca
+  publica sem validar (schema/IA falha → trava na Revisão com sentinela, não vai quebrado ao ML) e
+  `COLOR` deixa de ser falso-faltante. Camada 2 (UI de atributos + categoria livre) pendente. As 3
+  famílias do #49 reprocessadas e prontas.
 - **Frete no preço sugerido (PRÓPRIO)** — o gross-up só descontava a comissão; o preço
   sugerido do ramo próprio agora cobre comissão **+ frete grátis** do vendedor, garantindo
   o líquido mínimo (PRECO da planilha). O semáforo do item passou a considerar as dimensões
