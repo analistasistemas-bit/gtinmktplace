@@ -10,6 +10,11 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Frete no preço sugerido (PRÓPRIO)** — o gross-up só descontava a comissão; o preço
+  sugerido do ramo próprio agora cobre comissão **+ frete grátis** do vendedor, garantindo
+  o líquido mínimo (PRECO da planilha). O semáforo do item passou a considerar as dimensões
+  e concorda com o da família. No competitivo o preço segue puro mercado por design (o
+  semáforo avisa). Lote #49: R$19,80 → R$27,45 (ADR-0050).
 - **GTIN de comprimento inválido tratado como ausente** — GTIN com tamanho fora do padrão
   passou a ser rejeitado como se não existisse, em vez de propagar um valor inválido.
 - **Fabricante (MANUFACTURER) preenchido na categoria genérica** — atributo estava faltando na
