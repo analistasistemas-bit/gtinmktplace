@@ -143,6 +143,12 @@ export function VariacaoCard({
           piso={variacao.preco}
           custo={variacao.custo}
           categoriaMlId={categoriaMlId}
+          dimensoes={{
+            alturaCm: variacao.alturaCm,
+            larguraCm: variacao.larguraCm,
+            comprimentoCm: variacao.comprimentoCm,
+            pesoGramas: variacao.pesoGramas,
+          }}
         />
       </div>
     </div>

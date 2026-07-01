@@ -8,10 +8,11 @@ import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { sugerirPrecoVenda, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
+import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
+import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverCategoria } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
@@ -67,7 +68,7 @@ Deno.serve(async (req) => {
     // 2. Carregar variações
     const { data: variacoes, error: varErr } = await admin
       .from('variacoes')
-      .select('id, codigo, gtin, cor, cor_origem, nome, preco, preco_editado_pelo_operador, imagem_path')
+      .select('id, codigo, gtin, cor, cor_origem, nome, preco, preco_editado_pelo_operador, imagem_path, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', job.familia_id);
     if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
 
@@ -217,29 +218,48 @@ Deno.serve(async (req) => {
     const competitivo = conc.vendedores > 0 && conc.preco_min != null;
 
     let comissao: { percentual: number; fixa: number } | null = null;
+    let frete = 0;
     if (!competitivo && categoriaMlId && token) {
       try {
         // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
         // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
         const lp = await buscarListingPrice(token, PRECO_REF_COMISSAO, categoriaMlId, 'gold_special');
         comissao = comissaoDe(lp);
+        // Frete grátis que o vendedor absorve também entra no gross-up: o líquido tem que
+        // cobrir o piso depois de comissão E frete (ADR-0020). Avaliado no preço de 1ª passada
+        // (só comissão) — que já cai na faixa de frete grátis, dando o list_cost representativo.
+        // Dimensões da variação de menor preço (a "representativa" do painel de análise).
+        // Resiliente: sem credencial/dimensões/rede → frete 0 (comportamento anterior).
+        const { data: cred } = await admin
+          .from('ml_credentials').select('ml_user_id').eq('user_id', userId).maybeSingle();
+        if (cred?.ml_user_id && resolvidas.length) {
+          const rep = resolvidas.reduce((m, v) => (Number(v.preco) < Number(m.preco) ? v : m), resolvidas[0]);
+          const dimRep = {
+            altura_cm: rep.altura_cm != null ? Number(rep.altura_cm) : null,
+            largura_cm: rep.largura_cm != null ? Number(rep.largura_cm) : null,
+            comprimento_cm: rep.comprimento_cm != null ? Number(rep.comprimento_cm) : null,
+            peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
+          };
+          const precoPrimeiraPassada = grossUp(precoMinFamilia, comissao.percentual, comissao.fixa);
+          frete = await buscarFreteVendedor(token, String(cred.ml_user_id), precoPrimeiraPassada, categoriaMlId, dimRep);
+        }
       } catch (e) {
         // Resiliente: sem comissão o gross-up cai no piso; o semáforo mostra "indisponível".
-        console.error('comissão p/ gross-up falhou:', e);
+        console.error('comissão/frete p/ gross-up falhou:', e);
       }
     }
 
     const updatesPreco = resolvidas
       .filter((v) => !v.preco_editado_pelo_operador)
       .map((v) => {
-        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao);
+        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete);
         return admin.from('variacoes')
           .update({ preco_publicacao: preco })
           .eq('id', v.id);
       });
     await Promise.all(updatesPreco);
 
-    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao);
+    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete);
 
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =
