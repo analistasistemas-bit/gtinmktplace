@@ -115,6 +115,21 @@ export interface Variacao {
 
 import type { FaixaAtacado } from './atacado';
 
+export interface AtributoMl {
+  id: string;
+  value_id: string | null;
+  value_name: string | null;
+}
+
+// Atributo obrigatório faltante, com a forma editável (Camada 2B). Espelha CampoFaltante do backend.
+export interface CampoFaltante {
+  id: string;
+  nome: string;
+  tipo: 'closed' | 'numero' | 'texto';
+  valores: { id: string; nome: string }[];
+  unidades?: { id: string; nome: string }[];
+}
+
 export interface Familia {
   id: string;
   loteId: string;
@@ -133,6 +148,7 @@ export interface Familia {
   categoriaNome: string | null;
   tipoOrigem: TipoOrigem | null;
   atributosFaltantes: string[] | null;
+  atributosMl: AtributoMl[];
   precoMin: number;
   precoMax: number;
   precoAbaixo20pc: boolean;

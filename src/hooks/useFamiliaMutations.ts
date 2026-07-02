@@ -10,6 +10,7 @@ import {
   toggleDescontoLote,
   updateFamiliaAtacado,
   setAtacadoLote,
+  salvarAtributoFamilia,
   QK,
 } from '@/lib/queries';
 import type { FaixaAtacado } from '@/lib/atacado';
@@ -49,6 +50,16 @@ export function useUpdateFamiliaDescricao(loteId: string) {
   return useMutation({
     mutationFn: ({ id, descricao }: { id: string; descricao: string }) =>
       updateFamiliaDescricao(id, descricao),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+// Camada 2B: salva um atributo faltante completado pelo operador (fallback).
+export function useSalvarAtributo(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ familiaId, atributoId, valor }: { familiaId: string; atributoId: string; valor: string }) =>
+      salvarAtributoFamilia(familiaId, atributoId, valor),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

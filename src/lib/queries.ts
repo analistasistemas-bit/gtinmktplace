@@ -11,6 +11,8 @@ import type {
   EstrategiaPreco,
   Concorrencia,
   AnaliseMercado,
+  AtributoMl,
+  CampoFaltante,
 } from './tipos-dominio';
 import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 import type { FaixaAtacado } from './atacado';
@@ -276,6 +278,31 @@ export async function urlCapaFamilia(capaStoragePath: string | null | undefined)
   }
 }
 
+// Camada 2B (ADR-0052): fallback de atributos via edge function atributos-familia.
+async function chamarAtributosFamilia(body: Record<string, unknown>): Promise<Response> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Não autenticado');
+  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/atributos-familia`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `Erro ${res.status}`);
+  return res;
+}
+
+export async function listarFaltantesAtributos(familiaId: string): Promise<CampoFaltante[]> {
+  const res = await chamarAtributosFamilia({ action: 'faltantes', familia_id: familiaId });
+  const json = await res.json() as { campos: CampoFaltante[] };
+  return json.campos;
+}
+
+export async function salvarAtributoFamilia(familiaId: string, atributoId: string, valor: string): Promise<string[]> {
+  const res = await chamarAtributosFamilia({ action: 'salvar', familia_id: familiaId, atributo_id: atributoId, valor });
+  const json = await res.json() as { atributos_faltantes: string[] };
+  return json.atributos_faltantes;
+}
+
 export function familiaFromRow(
   r: FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos?: AnuncioExternoLite[] }
 ): Familia {
@@ -309,6 +336,7 @@ export function familiaFromRow(
     categoriaNome: r.categoria_nome,
     tipoOrigem: r.tipo_origem,
     atributosFaltantes: (r.atributos_faltantes as string[] | null) ?? null,
+    atributosMl: (r.atributos_ml as AtributoMl[] | null) ?? [],
     precoMin,
     precoMax,
     precoAbaixo20pc,
