@@ -7,6 +7,7 @@ import type { ResumoViabilidade } from '@/lib/analise-viabilidade';
 import { nomeExibicaoComprador, type Pedido, type KpisPedidos } from '@/lib/pedidos-faturamento';
 import type { Devolucao } from '@/lib/devolucoes';
 import { labelTipoDevolucao } from '@/lib/devolucoes';
+import { labelStatusLiberacao, statusLiberacao } from '@/lib/status-liberacao';
 import type { Pergunta } from '@/lib/perguntas';
 import type { GeografiaVendas } from '@/lib/geografia-vendas';
 import type { ResumoVendas, PontoSerie } from '@/lib/resumo-vendas';
@@ -458,7 +459,7 @@ const COLS_FIN_DETALHE: Coluna[] = [
 ];
 
 const FILTRO_LIB_LABEL: Record<string, string> = {
-  todos: 'Todos', liberado: 'Liberado', aliberar: 'A liberar',
+  todos: 'Todos', liberado: 'Liberado', aliberar: 'A liberar', sacado: 'Sacados',
 };
 
 interface FinanceiroDetalheArgs {
@@ -490,10 +491,13 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
         comprador: nomeExibicaoComprador(p),
         produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
         unidades: fmtInt(p.unidades),
-        // Liberação = data + status (liberado/a liberar) na mesma coluna, como na tela.
-        liberacao: p.money_release_date
-          ? `${fmtData(p.money_release_date)} · ${new Date(p.money_release_date).getTime() <= Date.now() ? 'liberado' : 'a liberar'}`
-          : '—',
+        liberacao: (() => {
+          const status = statusLiberacao({ money_release_date: p.money_release_date, sacado_em: p.sacado_em });
+          if (status === 'sem_data') return '—';
+          return p.money_release_date
+            ? `${fmtData(p.money_release_date)} · ${labelStatusLiberacao(status)}`
+            : labelStatusLiberacao(status);
+        })(),
         bruto: fmtBRL(p.bruto),
         retido: fmtBRL(round2(p.bruto - p.liquido)),
         liquido: fmtBRL(p.liquido),

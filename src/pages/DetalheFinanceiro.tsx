@@ -526,8 +526,9 @@ export default function DetalheFinanceiro() {
         por peso. O "líquido" é o que sobra para o vendedor. O "markup" usa o custo cadastrado na
         importação da planilha: (líquido − custo) ÷ custo; pedidos sem custo cadastrado ou de produtos
         fora do PubliAI mostram "—". "Liberação" é a data em que o Mercado Livre libera aquele
-        recebimento para saque ("a liberar" = ainda retido; "liberado" = já no saldo). Linhas destacadas
-        em vermelho são pedidos no prejuízo (líquido abaixo do custo). Clique no cabeçalho para ordenar.
+        recebimento para saque ("a liberar" = ainda retido; "liberado" = já no saldo; "sacado" =
+        marcado manualmente como já sacado pelo usuário). Linhas destacadas em vermelho são pedidos
+        no prejuízo (líquido abaixo do custo). Clique no cabeçalho para ordenar.
       </p>
     </div>
   );
