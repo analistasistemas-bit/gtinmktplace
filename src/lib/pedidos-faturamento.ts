@@ -33,6 +33,8 @@ export interface Pedido {
   /** Verdadeiro quando agrupa >1 order_id do mesmo pack. */
   isPack: boolean;
   orderIds: number[];
+  /** IDs das linhas ml_vendas agrupadas neste pedido. */
+  vendaIds: string[];
   data: string | null;
   comprador_id: number | null;
   comprador_nick: string | null;
@@ -57,6 +59,10 @@ export interface Pedido {
   liquido: number;
   /** money_release_date — quando o ML libera o recebimento (representativo do grupo). null = MP não informou. */
   money_release_date: string | null;
+  /** Quando todas as vendas do pedido foram marcadas como sacadas. null se nenhuma/parte não sacada. */
+  sacado_em: string | null;
+  /** Usuário da primeira marcação de saque do grupo, quando o pedido inteiro está sacado. */
+  sacado_por: string | null;
   /** Total estornado no pedido (Σ estorno dos membros), em R$. */
   estorno: number;
   /** Custo total dos produtos do pedido. null = nenhum item com custo. */
@@ -127,10 +133,14 @@ export function agruparPorPedido(
     const markup = custo != null && custo > 0 ? calcularMarkup(liquido, custo).markup : null;
 
     const primeiro = membros[0];
+    const grupoSacado = membros.every((v) => v.sacado_em != null);
+    const sacado_em = grupoSacado ? membros[0].sacado_em : null;
+    const sacado_por = grupoSacado ? membros[0].sacado_por : null;
     pedidos.push({
       chave,
       isPack: primeiro.pack_id != null && membros.length > 1,
       orderIds: membros.map((v) => v.order_id),
+      vendaIds: membros.map((v) => v.id),
       data: primeiro.date_closed ?? primeiro.date_created,
       comprador_id: primeiro.comprador_id ?? null,
       comprador_nick: primeiro.comprador_nick,
@@ -140,6 +150,8 @@ export function agruparPorPedido(
       shipping_status: primeiro.shipping_status,
       shipping_substatus: primeiro.shipping_substatus,
       money_release_date: primeiro.money_release_date,
+      sacado_em,
+      sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
       unidades, bruto, frete, liquido, custo, markup, comissao,
       rastreio: primeiro.tracking_number,

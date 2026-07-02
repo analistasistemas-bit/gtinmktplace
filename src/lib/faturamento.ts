@@ -46,6 +46,10 @@ export interface Venda {
   estorno: number | null;
   /** money_release_date — quando o ML libera o recebimento. Coluna ml_vendas (ADR-0038). */
   money_release_date: string | null;
+  /** Quando o usuário marcou manualmente este recebimento como sacado. */
+  sacado_em: string | null;
+  /** Usuário que marcou o recebimento como sacado. */
+  sacado_por: string | null;
   currency: string;
   shipping_id: number | null;
   shipping_status: string | null;
@@ -63,7 +67,7 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
   return buscarTodasPaginas<Venda>((de, ate) => {
     let q = supabase
       .from('ml_vendas')
-      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
+      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
       .gte('date_closed', janela.desde)
       .lte('date_closed', janela.ate)
       .order('date_closed', { ascending: false })
@@ -87,6 +91,20 @@ export async function sincronizarFaturamento(dias = 90): Promise<{ sincronizados
   if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
   if (json == null) throw new Error('Resposta inválida do servidor');
   return json as { sincronizados: number };
+}
+
+export async function registrarSaque(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { data, error } = await supabase.rpc('registrar_saque_ml_vendas', { p_ids: ids });
+  if (error) throw new Error(error.message);
+  return data ?? 0;
+}
+
+export async function desfazerSaque(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { data, error } = await supabase.rpc('desfazer_saque_ml_vendas', { p_ids: ids });
+  if (error) throw new Error(error.message);
+  return data ?? 0;
 }
 
 /** KPIs agregados das vendas exibidas. */

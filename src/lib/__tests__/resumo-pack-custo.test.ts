@@ -12,6 +12,7 @@ const venda = (over: Partial<Venda>): Venda => ({
   date_closed: '2026-06-20T00:00:00Z', date_created: '2026-06-20T00:00:00Z',
   comprador_id: null, comprador_nick: null, comprador_nome: null, total_amount: 0, paid_amount: null,
   sale_fee_total: 0, frete_vendedor: null, liquido: null, estorno: null, money_release_date: null,
+  sacado_em: null, sacado_por: null,
   currency: 'BRL', shipping_id: null, shipping_status: null, shipping_substatus: null,
   shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
   uf: null, cidade: null, itens: [], ...over,
@@ -46,5 +47,16 @@ describe('calcularResumo — custo/markup por pack (alinhado ao Faturamento)', (
     const kp = calcularKpisPedidos(agruparPorPedido([v1, v2], resolver));
     expect(r.markup).toBeCloseTo(kp.markup as number, 6);
     expect(r.pedidos).toBe(kp.pedidos);
+  });
+
+  it('carrega vendaIds e so propaga saque quando o pedido inteiro esta sacado', () => {
+    const pedidos = agruparPorPedido([
+      venda({ id: 'a', order_id: 1, pack_id: 9, sacado_em: '2026-07-02T10:00:00Z', sacado_por: 'u1' }),
+      venda({ id: 'b', order_id: 2, pack_id: 9, sacado_em: null, sacado_por: null }),
+    ], resolver);
+
+    expect(pedidos[0]?.vendaIds).toEqual(['a', 'b']);
+    expect(pedidos[0]?.sacado_em).toBeNull();
+    expect(pedidos[0]?.sacado_por).toBeNull();
   });
 });
