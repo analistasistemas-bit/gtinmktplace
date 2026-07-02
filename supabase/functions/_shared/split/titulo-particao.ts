@@ -4,7 +4,7 @@
 // tentam a IA (só as cores daquela partição) e, se ela falhar/colidir, caem num determinístico
 // que crava uma cor da partição no título-base — garantindo ≤60 chars, distinto entre partições.
 
-import { garantirCorTitulo, garantirMetragemTitulo } from '../ai/titulo.ts';
+import { garantirCorTitulo, garantirMetragemTitulo, garantirTipoProdutoTitulo } from '../ai/titulo.ts';
 // gerarCopy é importado dinamicamente dentro de gerarTituloParticao: a cadeia do copywriter
 // (cliente OpenRouter, specifiers npm:/jsr:) só carrega no runtime Deno. Mantê-la fora do topo
 // deixa o fallback determinístico (e seu teste vitest) importável sem puxar esse grafo.
@@ -54,7 +54,7 @@ export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<s
       unidade: opts.unidade ?? null,
       variacoes: opts.cores.map((c) => ({ codigo: c.codigo, cor: c.cor, preco: c.preco })),
     });
-    const titulo = garantirMetragemTitulo(out.titulo, opts.nome); // ≤60, metragem preservada
+    const titulo = garantirMetragemTitulo(garantirTipoProdutoTitulo(out.titulo, out.tipo_produto_busca), opts.nome); // ≤60, metragem preservada, tipo de produto garantido (ADR-0054)
     // Se a IA repetir o título-base, não serve (ML bloqueia idênticos) → cai no determinístico.
     if (titulo.trim() && titulo.trim() !== opts.tituloBase.trim()) return titulo;
   } catch (e) {
