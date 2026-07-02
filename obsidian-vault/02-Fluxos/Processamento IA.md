@@ -1,6 +1,6 @@
 ---
 tags: [fluxos, ia]
-atualizado: 2026-07-01
+atualizado: 2026-07-02
 ---
 
 # Processamento IA
@@ -28,9 +28,18 @@ flowchart TD
 
 ## Copy e categoria
 
-- **Copy** — `_shared/ai/copywriter.ts` via OpenRouter (SDK compatível OpenAI)
+- **Copy** — `_shared/ai/copywriter.ts` via OpenRouter (SDK compatível OpenAI). Também extrai
+  `tipo_produto_busca` (substantivo do tipo de produto, grounded em nome/descrição — ADR-0054),
+  reaproveitado tanto na categoria quanto no título.
 - **Categoria** — `_shared/categoria/*`: `resolverCategoria` em camadas
-  (override → preditor → LLM de desempate → manual)
+  (override → preditor com nome bruto + query limpa em paralelo → LLM de desempate → manual).
+  Desde ADR-0054: candidatos de categoria genérica ("Outros" etc.) nunca são resposta final
+  automática; a IA de desempate roda sempre que houver candidato específico (não só quando
+  ambíguo) e pode abster-se deliberadamente (`category_id: null`) em vez de escolher o
+  menos-pior — abstenção e falha técnica da IA são tratadas em caminhos diferentes.
+- **Título** — `garantirTipoProdutoTitulo` (`_shared/ai/titulo.ts`) prefixa o tipo de produto
+  quando ausente do `nome_pai` mas presente na descrição (ADR-0054); conectado em
+  `process-familia`, `regenerar-copy-familia` e `titulo-particao.ts` (split ADR-0048).
 - **Atributos obrigatórios** — `_shared/categoria/atributos.ts` +
   `_shared/ai/atributos-llm*.ts`, preenchimento closed-set (IA só escolhe `value_id` de lista
   permitida)

@@ -107,6 +107,11 @@
   grátis do vendedor, ADR-0050) e análise de mercado; marca `pronto`/`erro`. Tipo derivado da
   categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
   na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).
+  `gerarCopy` também extrai `tipo_produto_busca` (substantivo do tipo de produto grounded em
+  nome/descrição) — alimenta uma 2ª busca no preditor de categoria (paralela à busca pelo nome
+  bruto) e garante o tipo de produto no título quando ausente do nome; candidatos de categoria
+  com nome genérico ("Outros" etc.) nunca são aceitos como resposta final, caem em manual
+  (ADR-0054).
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034).
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
