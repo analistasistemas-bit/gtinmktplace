@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { escolherCandidatoValido, montarPromptDesempate } from '../categoria-llm-core';
+import { escolherCandidatoValido, montarPromptDesempate, ehAbstencaoDeliberada } from '../categoria-llm-core';
 import type { CategoriaCandidata } from '../../ml/domain-discovery';
 
 const candidatos: CategoriaCandidata[] = [
@@ -34,5 +34,22 @@ describe('montarPromptDesempate', () => {
   it('instrui a IA a devolver null quando nenhum candidato serve, mesmo sendo o único', () => {
     const p = montarPromptDesempate({ nome: 'X' }, candidatos);
     expect(p.toLowerCase()).toContain('null');
+  });
+});
+
+describe('ehAbstencaoDeliberada', () => {
+  it('literal JSON null → true', () => {
+    expect(ehAbstencaoDeliberada(null)).toBe(true);
+  });
+  it('string "null" (achado empírico: gpt-4o-mini devolve isso, não o literal) → true', () => {
+    expect(ehAbstencaoDeliberada('null')).toBe(true);
+    expect(ehAbstencaoDeliberada('NULL')).toBe(true);
+    expect(ehAbstencaoDeliberada(' null ')).toBe(true);
+  });
+  it('category_id válido → false', () => {
+    expect(ehAbstencaoDeliberada('MLB430376')).toBe(false);
+  });
+  it('undefined → false (não é abstenção, é ausência — tratado como falha técnica em outro lugar)', () => {
+    expect(ehAbstencaoDeliberada(undefined)).toBe(false);
   });
 });

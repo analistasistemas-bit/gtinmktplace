@@ -13,6 +13,18 @@ export function escolherCandidatoValido(
   return candidatos.some((c) => c.categoriaId === respostaId) ? respostaId : null;
 }
 
+/**
+ * Detecta abstenção deliberada do LLM ("nenhum candidato serve"). Achado empírico (2026-07-02,
+ * chamadas reais contra gpt-4o-mini via OpenRouter com SCHEMA_DESEMPATE): o modelo devolve a
+ * STRING "null" em vez do literal JSON null, mesmo em modo strict com type:['string','null'].
+ * Trata os dois como a mesma coisa — não pode ser confundido com falha técnica (ver
+ * categoria-llm.ts: abstenção → resolver cai em manual; falha técnica → cai no topo).
+ */
+export function ehAbstencaoDeliberada(categoryId: string | null | undefined): boolean {
+  if (categoryId === null) return true;
+  return typeof categoryId === 'string' && categoryId.trim().toLowerCase() === 'null';
+}
+
 /** Prompt do desempate: lista "category_id — domínio > categoria". */
 export function montarPromptDesempate(input: InputCategoria, candidatos: CategoriaCandidata[]): string {
   const lista = candidatos
