@@ -28,8 +28,18 @@ Deno.serve(async (req) => {
   if (error || !familia) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
   if (!familia.categoria_ml_id) return new Response('Família sem categoria', { status: 400, headers: corsHeaders });
 
-  const token = await getValidAccessToken(familia.user_id);
-  const schema = await lerSchemaAtributos(token, familia.categoria_ml_id);
+  // Token/schema são falíveis (sem credencial ML, timeout, rede). Sem tratamento, um throw
+  // vira 500 e o editor some silenciosamente enquanto o gate segue bloqueando. Retorna erro
+  // explícito p/ o front exibir "não foi possível carregar" em vez de sumir.
+  let schema;
+  try {
+    const token = await getValidAccessToken(familia.user_id);
+    schema = await lerSchemaAtributos(token, familia.categoria_ml_id);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return new Response(`Não foi possível carregar os atributos da categoria: ${msg}`,
+      { status: 502, headers: corsHeaders });
+  }
   const atuais = (familia.atributos_ml as AtributoML[] | null) ?? [];
 
   if (body.action === 'faltantes') {

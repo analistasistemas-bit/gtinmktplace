@@ -60,7 +60,11 @@ export function useSalvarAtributo(loteId: string) {
   return useMutation({
     mutationFn: ({ familiaId, atributoId, valor }: { familiaId: string; atributoId: string; valor: string }) =>
       salvarAtributoFamilia(familiaId, atributoId, valor),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+    onSuccess: (_data, { familiaId }) => {
+      qc.invalidateQueries({ queryKey: QK.familias(loteId) });
+      // Rebusca a lista do editor (queryKey própria) p/ o campo salvo sumir na hora.
+      qc.invalidateQueries({ queryKey: ['faltantes-atributos', familiaId] });
+    },
   });
 }
 

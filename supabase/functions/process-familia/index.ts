@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, unidade, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -176,9 +176,10 @@ Deno.serve(async (req) => {
 
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
-    if (claimed.atributos_editados_pelo_operador) {
-      // Camada 2B (ADR-0052): o operador completou atributos manualmente na Revisão. Não
-      // recalcular — preserva a edição contra o reprocessamento (espelha título/descrição).
+    if (claimed.atributos_editados_pelo_operador && categoriaMlId === claimed.categoria_ml_id) {
+      // Camada 2B (ADR-0052): o operador completou atributos manualmente na Revisão. Preserva a
+      // edição contra o reprocessamento (espelha título/descrição) — SÓ se a categoria não mudou;
+      // se o preditor recalcular outra categoria, a edição é de outro schema → deixa recalcular.
       atributosMl = (claimed.atributos_ml as AtributoML[] | null) ?? [];
       faltantes = (claimed.atributos_faltantes as string[] | null) ?? [];
     } else if (categoriaParaTipo(tipo) != null) {

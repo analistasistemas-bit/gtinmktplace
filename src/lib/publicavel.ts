@@ -59,6 +59,12 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
     motivos.push('Ainda em processamento (aguarde ficar "pronta")');
   }
 
+  // Camada 2B (ADR-0052): obrigatórios que a IA não resolveu travam a publicação (CREATE e
+  // UPDATE) até o operador completá-los na Revisão — nunca publicar sem os required do ML.
+  if (familia.atributosFaltantes && familia.atributosFaltantes.length > 0) {
+    motivos.push(`Atributos obrigatórios faltando: ${familia.atributosFaltantes.join(', ')}`);
+  }
+
   if (familia.operacao === 'UPDATE') {
     if (!familia.mlItemId) motivos.push('Sem anúncio publicado para atualizar');
     const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
@@ -80,11 +86,6 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
 
   // CREATE: regras completas (categoria, cor, foto, preço por cor).
   if (!familia.categoriaMlId) motivos.push('Categoria indefinida');
-  // Camada 2B (ADR-0052): obrigatórios que a IA não resolveu travam a publicação até o
-  // operador completá-los na Revisão (nunca publicar sem os required do ML).
-  if (familia.atributosFaltantes && familia.atributosFaltantes.length > 0) {
-    motivos.push(`Atributos obrigatórios faltando: ${familia.atributosFaltantes.join(', ')}`);
-  }
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const exigeCor = familiaExigeCor(familia);
   if (incluidas.length === 0) {

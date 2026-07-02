@@ -1,10 +1,13 @@
 import type { AtributoSchema } from './schema.ts';
-import type { AtributoML } from './atributos.ts';
+import { TAGS_NAO_FALTANTE, type AtributoML } from './atributos.ts';
 
 // COLOR/GTIN/EMPTY_GTIN_REASON são resolvidos por variação/publicação; não editáveis aqui.
 const IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR']);
-const TAGS_EXCLUIR = new Set(['read_only', 'hidden', 'variation_attribute', 'multivalued']);
-const MAX_TEXTO = 60;
+// Reusa o MESMO conjunto de tags do gate (atributosFaltantesGenerico) — os dois têm de concordar,
+// senão um obrigatório contado no gate mas omitido aqui travaria a publicação sem campo p/ corrigir.
+const TAGS_EXCLUIR = TAGS_NAO_FALTANTE;
+// Teto generoso: é o operador digitando o dado real (não a IA). Evita 422 em MODEL/descrições longas.
+const MAX_TEXTO = 255;
 
 export type CampoFaltante = {
   id: string;

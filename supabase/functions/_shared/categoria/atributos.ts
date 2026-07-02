@@ -109,6 +109,12 @@ export function rotuloParaTipo(tipo: TipoAviamento): string | null {
 // como falso-faltante mesmo tendo cores — bloqueio indevido no SaaS multicategoria.
 const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR']);
 
+// Tags que tiram o atributo do escopo de "faltante acionável": read_only/hidden (não editável),
+// variation_attribute (vem da variação) e multivalued (não montamos lista). DEVE casar com o
+// filtro do editor (faltantes-editaveis.ts) — se o gate contasse um destes como faltante mas o
+// editor não o mostrasse, a família ficaria impublicável sem campo para corrigir.
+export const TAGS_NAO_FALTANTE = new Set(['read_only', 'hidden', 'variation_attribute', 'multivalued']);
+
 // Sentinela persistido em familias.atributos_faltantes quando NÃO foi possível validar os
 // obrigatórios de uma categoria genérica (schema indisponível/erro/sem token). O gate de
 // publicação trata qualquer faltante como bloqueio → a família para na Revisão em vez de ir
@@ -142,7 +148,11 @@ export function montarAtributosBase(schema: AtributoSchema[], nome: string, marc
 export function atributosFaltantesGenerico(temAtributos: AtributoML[], schema: AtributoSchema[]): string[] {
   const presentes = new Set(temAtributos.filter((a) => a.value_name || a.value_id).map((a) => a.id));
   return schema
-    .filter((a) => (a.required || a.conditionalRequired) && !FALTANTES_IGNORAR.has(a.id) && !presentes.has(a.id))
+    .filter((a) =>
+      (a.required || a.conditionalRequired) &&
+      !FALTANTES_IGNORAR.has(a.id) &&
+      !a.tags.some((t) => TAGS_NAO_FALTANTE.has(t)) &&
+      !presentes.has(a.id))
     .map((a) => a.nome);
 }
 
