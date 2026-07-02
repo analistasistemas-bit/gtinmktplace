@@ -2,12 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Planos E7 + E6 — SaaS multi-empresa (ADR-0027) e orquestração multicanal — 2026-07-02
+## Planos E7 + E6 + E6b — SaaS multi-empresa, multicanal e estoque único — 2026-07-02
 
 - [x] **Planos de implementação escritos e aprovados como documento** — análise profunda do código (RLS/modelo de dados + camada de canais) e planos completos, com decisão de **ordem E7 → E6** (E7 primeiro: isolamento por org é o objetivo SaaS; E6 nasce tenant-aware; validação real do E6 com 2 canais depende do E5 Shopee). Planos: [E7 multi-tenancy](superpowers/plans/2026-07-02-e7-multi-tenancy-org-id.md) (7 fases expand→migrate→contract, suite executável de isolamento cross-tenant, `marketplace_connections` por org resolvendo a pendência do ADR-0047) · [E6 orquestração](superpowers/plans/2026-07-02-e6-orquestracao-multicanal.md) (worker genérico `publicar-anuncio`, estado por canal em `anuncios_externos`, caminho ML intocado).
 - [x] **Decisão (Diego, 2026-07-02): próximo épico = E7** — ordem E7 → E6 aprovada; E5 (Shopee) fica para depois. Cada PONTO DE DEPLOY do plano E7 segue exigindo OK explícito.
+- [x] **Épico novo E6b — Estoque único e sincronização cross-canal (2026-07-02)** — venda paga em qualquer canal → baixa atômica idempotente no estoque canônico (ledger `estoque_movimentos` + `baixar_estoque`) → push de valores absolutos aos demais canais (`sincronizar-estoque`, fila serial por org) → reconciliação diária. Registrado no doc mestre (seção E6b) e com plano completo: [E6b estoque único](superpowers/plans/2026-07-02-e6b-estoque-unico-cross-canal.md). Executa após E7+E6; validação plena (2 canais reais) depende do E5.
 - [ ] **Execução do E7** — próximo passo (iniciar pela Task 1: ADR-0027).
 - [ ] **Execução do E6** — após E7 concluído.
+- [ ] **Execução do E6b** — após E6 concluído (pré-voo obrigatório na Task 2 do plano).
 
 ## Lote #49 — barbante recusado por atributo/tipo (ADR-0051) — 2026-07-01
 

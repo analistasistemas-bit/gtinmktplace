@@ -234,6 +234,15 @@ aos poucos"). Os pesos são estimativas grossas relativas.
 - E6.5 Frontend: seleção de canais na Revisão; status por canal na tela Publicados.
 - **Critério de saída:** uma família publica em ML + Shopee simultaneamente; falha de um canal não afeta o outro.
 
+#### Épico E6b — Estoque único e sincronização cross-canal (`ADR-0054`) *(adicionado 2026-07-02)*
+**Objetivo:** estoque único por empresa — venda paga em qualquer canal dá baixa atômica no estoque canônico e propaga o novo valor aos demais canais (anti-oversell, risco 🟠 do §9).
+- E6b.1 Ledger `estoque_movimentos` + função `baixar_estoque` (idempotência por referência venda+item).
+- E6b.2 Gancho na transição `novaPaga` do `sync-venda` (mesmo gancho da mensagem ao comprador); a venda nunca falha por estoque.
+- E6b.3 Contrato ganha `atualizarEstoque` (push de valores **absolutos**, não delta); worker `sincronizar-estoque` (fila serial por org); canal de origem não recebe eco; split (ADR-0048) empurra por partição via `variacoes_externas`.
+- E6b.4 Reconciliação diária re-push (`reconciliar-estoque`) + ajuste manual registrado no ledger.
+- **Critério de saída:** venda no ML atualiza o anúncio Shopee real e vice-versa (pleno após E5); infraestrutura provada por conector fake antes disso.
+- **Plano completo:** [2026-07-02-e6b-estoque-unico-cross-canal.md](../plans/2026-07-02-e6b-estoque-unico-cross-canal.md). Executa após E7+E6; fio Shopee liga no E5.
+
 ### FASE 3 — Virar SaaS comercial (encanamento; risco alto — só quando houver interessado externo)
 
 #### Épico E7 — Multi-tenancy (`ADR-0027`)

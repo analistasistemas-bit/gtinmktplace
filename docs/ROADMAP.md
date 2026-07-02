@@ -269,7 +269,7 @@ multi-tenant, multi-marketplace, para qualquer produto** — comercializável. A
 |---|---|---|
 | **0 — Fundação** | E1 Camada de abstração de canais · E2 Modelo de dados multicanal (`anuncios_externos`) | ML atrás de uma interface; catálogo agnóstico (sem mudança visível) |
 | **1 — Qualquer produto** | E3 Taxonomia canônica + categoria por IA · E4 Atributos por IA (closed-set) | Sai do regex por nicho; aceita qualquer segmento |
-| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal | Publica em ML + Shopee de uma fonte única |
+| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · E6b Estoque único cross-canal | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada |
 | **3 — Virar SaaS** | E7 Multi-tenancy · E8 Billing (Asaas) + LGPD · E9 Operação SaaS | Multi-cliente, cobrável, escalável |
 
 **Decisões-chave:** strangler in-place (D1) · Shopee como 2º canal (D2) · assinatura por planos + metering
