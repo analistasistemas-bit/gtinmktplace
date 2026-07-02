@@ -11,6 +11,7 @@ import {
 import { StatusPill } from '@/components/ui/status-pill';
 import { useDefinirCategoria } from '@/hooks/useFamiliaMutations';
 import { CATEGORIAS_MANUAIS, type TipoCategoriaManual } from '@/lib/categoria';
+import { EditorAtributosFaltantes } from '@/components/editor-atributos-faltantes';
 import type { Familia, TipoAviamento } from '@/lib/tipos-dominio';
 
 function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
@@ -67,10 +68,13 @@ export function CardCategoria({ familia }: { familia: Familia }) {
             </StatusPill>
           )}
           {familia.atributosFaltantes && familia.atributosFaltantes.length > 0 && (
-            <p className="mt-1.5 flex items-start gap-1 text-xs text-warning">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-              <span>Faltam: {familia.atributosFaltantes.join(', ')}</span>
-            </p>
+            <>
+              <p className="mt-1.5 flex items-start gap-1 text-xs text-warning">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>Faltam: {familia.atributosFaltantes.join(', ')}</span>
+              </p>
+              <EditorAtributosFaltantes familiaId={familia.id} loteId={familia.loteId} />
+            </>
           )}
         </>
       )}

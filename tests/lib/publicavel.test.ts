@@ -38,6 +38,14 @@ describe('familiaPublicavel', () => {
   it('status erro é publicável (permite re-tentar após falha)', () => {
     expect(familiaPublicavel(fam({ status: 'erro' })).ok).toBe(true);
   });
+  it('atributos obrigatórios faltando bloqueiam a publicação (Camada 2B)', () => {
+    const r = familiaPublicavel(fam({ atributosFaltantes: ['Modelo'] }));
+    expect(r.ok).toBe(false);
+    expect(r.motivos.join(' ')).toMatch(/Modelo/);
+  });
+  it('sem faltantes → publicável (não afeta o caminho feliz)', () => {
+    expect(familiaPublicavel(fam({ atributosFaltantes: [] })).ok).toBe(true);
+  });
   it('UPDATE com ml_item_id e ≥1 cor casada é publicável', () => {
     const r = familiaPublicavel(fam({
       operacao: 'UPDATE', mlItemId: 'MLB123',
