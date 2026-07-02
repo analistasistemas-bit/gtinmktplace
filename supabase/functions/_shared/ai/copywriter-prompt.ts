@@ -9,6 +9,34 @@ export interface InputCopy {
   categoria_hint?: 'linhas' | 'botoes' | 'fitas';
 }
 
+function normalizar(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function tokens(s: string): string[] {
+  return normalizar(s).split(/\s+/).filter(Boolean);
+}
+
+const MIN_PALAVRA_SIGNIFICATIVA = 3; // abaixo disso é preposição/artigo (de/e/a/o...), nunca conta
+
+/**
+ * Regra de ouro (mesmo espírito anti-invenção do ADR-0052, adaptado): só aceita
+ * tipo_produto_busca se ALGUMA palavra dele (>=3 letras) constar literalmente em nome ou
+ * descrição. Zero palavras significativas na frase → REJEITA (nunca aceita por padrão).
+ * Diferente de validarTextoLivre (atributos-llm-core.ts): aqui é frase de BUSCA, pode
+ * combinar o substantivo grounded com contexto de uso genérico já permitido no prompt
+ * (ex.: "barbante de croche" quando só "barbante" está na fonte) — não é valor extraído.
+ */
+export function validarTipoProdutoBusca(tipoProdutoBusca: string, nome: string, descricao: string): string {
+  const valor = tipoProdutoBusca?.trim() ?? '';
+  if (!valor) return '';
+  const fonte = new Set(tokens(`${nome} ${descricao}`));
+  const palavrasRelevantes = tokens(valor).filter((w) => w.length >= MIN_PALAVRA_SIGNIFICATIVA);
+  if (palavrasRelevantes.length === 0) return '';
+  const grounded = palavrasRelevantes.some((w) => fonte.has(w));
+  return grounded ? valor : '';
+}
+
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.
 
 ═══════════════════════════════════════════════════════
@@ -21,12 +49,18 @@ Se um dado não foi fornecido, OMITA o bullet correspondente. NÃO escreva "Não
 Aplicações de uso genéricas do tipo de produto (ex.: "linha serve para costura em geral, reparos, artesanato") SÃO PERMITIDAS por serem conhecimento de domínio público.
 
 ═══════════════════════════════════════════════════════
+TIPO DE PRODUTO (campo tipo_produto_busca)
+═══════════════════════════════════════════════════════
+Preencha "tipo_produto_busca" com um substantivo curto (2-5 palavras) que identifica O QUE o produto FISICAMENTE É (ex.: "barbante de crochê", "fita de cetim", "tesoura de costura", "bainha adesiva"). REGRA ABSOLUTA: só preencha se essa palavra aparecer literalmente no nome OU na descrição — nunca infira o tipo só a partir da marca. Se nenhuma palavra do tipo de produto aparecer no texto-fonte, devolva "" (vazio).
+
+═══════════════════════════════════════════════════════
 TÍTULO
 ═══════════════════════════════════════════════════════
 - Até 60 caracteres.
 - Formato: \`MARCA MODELO MEDIDA | CARACTERÍSTICA PRINCIPAL | DIFERENCIAL\`
 - Exemplo: \`FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | RESISTENTE\`
 - TUDO EM CAPS.
+- Se o NOME do produto não contém uma palavra que identifique o tipo do produto (ex.: "EUROROMA 4/6 CORES 600G" não diz o que é), mas a descrição diz (ex.: "BARBANTE"), esse substantivo é OBRIGATÓRIO como primeiro segmento do título — à frente até da marca. Prioridade de conteúdo quando faltar espaço: TIPO DE PRODUTO > MEDIDA > MARCA > DIFERENCIAL (corte o DIFERENCIAL antes de cortar o tipo).
 - SE o nome do produto contém medida ou quantidade (ex.: 10MT, 100MT, 50M, 1KG, 500G), inclua-a OBRIGATORIAMENTE no título logo após o modelo. É dado crucial que diferencia o produto (10MT e 100MT são produtos distintos; 1KG e 500G também) — priorize a medida real sobre adjetivos genéricos de "DIFERENCIAL".
 - O segmento "DIFERENCIAL" é OPCIONAL. Só inclua se a palavra/frase couber INTEIRA dentro dos 60 caracteres. NUNCA corte uma palavra no meio nem termine o título com conectivo solto (ex.: "... VERSÁTIL E", "... DE", "... COM"). Prefira um título mais curto e completo (ex.: "... | 100% POLIÉSTER") a um terminado em fragmento.
 - NUNCA mencione quantidade de cores nem "Disponível em N cores".

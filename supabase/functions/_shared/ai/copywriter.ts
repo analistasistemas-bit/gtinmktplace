@@ -1,13 +1,14 @@
 import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
-import { type InputCopy, SYSTEM, montarUserPrompt } from './copywriter-prompt.ts';
+import { type InputCopy, SYSTEM, montarUserPrompt, validarTipoProdutoBusca } from './copywriter-prompt.ts';
 
 export type { InputCopy };
 
 export interface OutputCopy {
   titulo: string;
   descricao: string;
+  tipo_produto_busca: string;
   tokens_input: number;
   tokens_output: number;
   custo_centavos: number;
@@ -23,8 +24,11 @@ const SCHEMA = {
       // /clampTitulo, que derruba segmentos/palavras inteiras sem cortar (bug lote #26).
       titulo: { type: 'string' },
       descricao: { type: 'string' },
+      // Substantivo curto do tipo de produto (ex.: "barbante de crochê"), grounded contra
+      // nome+descrição em validarTipoProdutoBusca (ADR-0054) — nunca confiado cru.
+      tipo_produto_busca: { type: 'string' },
     },
-    required: ['titulo', 'descricao'],
+    required: ['titulo', 'descricao', 'tipo_produto_busca'],
     additionalProperties: false,
   },
   strict: true,
@@ -53,7 +57,7 @@ async function chamarCopy(input: InputCopy): Promise<OutputCopy> {
   );
   const conteudo = resp.choices[0]?.message?.content;
   if (!conteudo) throw new Error('resposta vazia');
-  let parsed: { titulo: string; descricao: string };
+  let parsed: { titulo: string; descricao: string; tipo_produto_busca: string };
   try {
     parsed = JSON.parse(conteudo);
   } catch (e) {
@@ -63,6 +67,7 @@ async function chamarCopy(input: InputCopy): Promise<OutputCopy> {
   return {
     titulo: parsed.titulo,
     descricao: parsed.descricao,
+    tipo_produto_busca: validarTipoProdutoBusca(parsed.tipo_produto_busca, input.nome, input.descricao_detalhado),
     tokens_input: usage.prompt_tokens,
     tokens_output: usage.completion_tokens,
     custo_centavos: custoCentavos(MODELO_COPY, usage),
