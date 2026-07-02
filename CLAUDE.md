@@ -1,138 +1,120 @@
 # CLAUDE.md — Bootstrap do projeto PubliAI
 
-> Este arquivo é o bootstrap curto do projeto. Leia primeiro. Estado atual e histórico detalhado vivem fora daqui.
+> Bootstrap curto. Estado atual e histórico vivem em `docs/` — não duplicar aqui.
 
-**Última atualização:** 2026-07-01
+**Última atualização:** 2026-07-02
 
 ---
 
 # O que é este projeto
 
-PubliAI é um sistema interno que transforma planilhas de produtos em anúncios publicados em marketplaces, com foco inicial no Mercado Livre e evolução para operação multicanal.
+PubliAI transforma planilhas de produtos em anúncios publicados em marketplaces.
+Primeiro canal em produção: **Mercado Livre**. Próximo épico: **E5 — Shopee**.
+Operador principal: Diego. Domínios: lotes, famílias, variações, anúncios externos.
 
-**Usuário-operador principal:** Diego
-
-**Domínios principais:** lotes, famílias, variações, anúncios externos
-
-**Primeiro marketplace em produção:** Mercado Livre
-
-**Próximo épico planejado:** E5 — Conector Shopee
+- Estado atual: `docs/project-status.md` (fonte única)
+- Histórico: `docs/project-history.md`, `docs/TASKS.md`, `docs/auditoria-e1-e4-browser-use.md`
 
 ---
 
-# Fontes de conhecimento
+# Comandos
 
-Este projeto utiliza três fontes oficiais de contexto:
-
-- **Graphify** → entendimento da arquitetura, dependências e impacto de mudanças.
-- **docs/** → documentação técnica oficial (Diátaxis).
-- **obsidian-vault/** → documentação viva do projeto (arquitetura, decisões, fluxos, roadmap e contexto).
-
----
-
-# Ordem de leitura
-
-Antes de tocar no código, siga esta ordem:
-
-1. Consulte o **Graphify** para entender arquitetura e impacto.
-2. Leia:
-   - docs/README.md
-   - docs/project-status.md
-   - docs/ROADMAP.md
-   - docs/TASKS.md
-3. Consulte o ADR relacionado em `docs/decisions/`.
-
-Se precisar de contexto histórico:
-
-- docs/project-history.md
-- docs/auditoria-e1-e4-browser-use.md
+- Dev: `pnpm dev` | Build: `pnpm build` | Lint: `pnpm lint`
+- Testes: `pnpm test` (vitest; exige `.env.test` — sem ele o supabase.ts lança no boot)
+- Migrations: **só** `supabase migration new` + `supabase db push`; validar com `npm run db:check`. Nunca `apply_migration`/painel para DDL (ADR-0043).
+- Edge functions: deploy sempre via CLI completa; mudança em `_shared/` → redeployar todas as funções afetadas e conferir versão pós-deploy.
+- Worktrees: copiar `.env.local` (gitignored) antes de subir dev, senão a app abre branca.
 
 ---
 
-# Uso obrigatório do Graphify
+# Fontes de conhecimento e investigação
 
-Antes de investigar arquitetura, fluxos, dependências ou impacto de mudanças:
+Ordem obrigatória antes de tocar código:
 
-- Consulte o Graphify.
-- Identifique os módulos envolvidos.
-- Leia apenas os arquivos realmente necessários.
-- Antes de editar código, explique quais arquivos serão impactados.
-- Após mudanças estruturais relevantes, atualize o Graphify.
+1. **Graphify** — arquitetura, dependências, impacto de mudanças.
+2. **docs/** — `README.md`, `project-status.md`, `ROADMAP.md`, `TASKS.md` + ADR relacionado em `docs/decisions/`.
+3. **obsidian-vault/** — documentação viva (decisões, fluxos, roadmap, contexto).
+
+Protocolo de investigação (antes de qualquer `grep`/`rg`):
+
+1. Graphify → `obsidian-vault/` → `docs/` → identificar no máx. 5 arquivos candidatos → só então abrir arquivos.
+2. Busca global só se as fontes acima não bastarem, e sempre com escopo (`src/`, `supabase/functions/`, `docs/`). Proibido `grep -R` / `rg termo .` sem escopo.
+3. Ao investigar problema, responder primeiro com: hipótese inicial, módulos prováveis, arquivos candidatos, plano de investigação.
+
+Após mudança estrutural relevante, atualizar o Graphify.
+
+---
+
+# Roteamento de modelos (economia de tokens)
+
+A sessão principal roda no Opus. Delegar execução a subagents com `model` explícito conforme a demanda:
+
+| Demanda | Modelo | Exemplos |
+|---|---|---|
+| Planejamento, arquitetura, ADR, debug difícil, revisão de segurança | opus | novo épico, decisão de schema, incidente em produção |
+| Implementação padrão, refactor, testes, edge functions | sonnet | feature já planejada, correção com causa conhecida |
+| Busca de código, leitura de docs, rename, formatação, resumo | haiku | localizar arquivo, extrair lista, atualizar doc simples |
+
+Regras:
+- Nunca rebaixar modelo em: migrations, RLS, publicação em marketplace, código financeiro.
+- Tarefa "simples" que revelar complexidade → escalar para o modelo acima e avisar.
+- Planejamento fica no loop principal (Opus); só a execução desce de modelo.
 
 ---
 
 # MCPs prioritários
 
-Sempre prefira MCP/CLI antes de sugerir operação manual.
-
-Prioridade:
-
-- supabase-mcp-server
-- upstash
-- render
-- shadcn
-- context7
+CLI nativo primeiro, MCP como fallback, manual como último recurso.
+Prioridade MCP: supabase-mcp-server, upstash, render, shadcn, context7.
 
 ---
 
 # Regras operacionais inegociáveis
 
-- Leia o ADR relacionado antes de propor mudança arquitetural.
-- Se a decisão for nova e não-trivial, escreva um ADR antes da implementação.
-- Edge Functions devem ser idempotentes.
-- Tokens e segredos nunca vão para código ou repositório.
-- RLS por `user_id` ou `org_id` é obrigatória em tabelas de domínio.
-- Sempre existe revisão humana antes da publicação em marketplaces.
-- Prefira o caminho pragmático e verificável ao mais elegante.
-- Atualize `TASKS.md` e a documentação afetada ao concluir trabalho relevante.
-- Toda mudança relevante deve passar pela verificação da documentação antes de ser considerada concluída.
+- Ler o ADR relacionado antes de propor mudança arquitetural; decisão nova e não-trivial → escrever ADR **antes** da implementação.
+- Edge Functions idempotentes. Workers chamados pelo QStash: `verify_jwt=false`.
+- Tokens e segredos nunca em código ou repositório.
+- RLS por `user_id` ou `org_id` obrigatória em tabelas de domínio.
+- Sempre há revisão humana antes de publicar em marketplace.
+- Trabalho de dev sai em branch/worktree — nunca editar a main direto (app em produção).
+- Preferir o caminho pragmático e verificável ao mais elegante.
 
 ---
 
-# Manutenção da documentação
+# Domínio
 
-A documentação possui dois papéis:
-
-## docs/
-
-Documentação técnica oficial seguindo o padrão Diátaxis.
-
-## obsidian-vault/
-
-Base de conhecimento viva do projeto.
-
-Sempre que houver:
-
-- mudança arquitetural
-- novo módulo
-- novo fluxo
-- integração
-- decisão técnica importante
-
-Atualize também o Obsidian Vault.
+- `PAI = 0` → agrupador. Uma família → um anúncio. Uma variação → um SKU.
+- CREATE cria anúncio; UPDATE atualiza anúncio existente.
+- Custo real do produto: `variacoes.custo` (R$). `familias.custo_centavos` é custo de tokens de IA — nunca usar para markup/preço.
 
 ---
 
-## Regra de conclusão
+# Planilha
 
-Antes de concluir qualquer alteração relevante:
-
-1. Consultar o Graphify.
-2. Implementar a mudança.
-3. Verificar a documentação em `docs/`.
-4. Atualizar o `obsidian-vault/` quando houver impacto arquitetural ou funcional.
-5. Informar explicitamente se:
-   - documentação atualizada; ou
-   - documentação conferida sem necessidade de alterações.
+Campos obrigatórios: `CODIGO, PAI, NOME, UNIDADE, GTIN, CUSTO, PRECO, ESTOQUE, DESCRICAO_DETALHADO, PESO_GRAMAS, ALTURA_CM, LARGURA_CM, COMPRIMENTO_CM, FORNECEDOR`
 
 ---
 
-# Mapa código → documentação
+# Arquivos de fotos
+
+- Variações: `00CODIGO.ext`
+- Comuns: `CAPA_00CODIGO.ext`, `CAPA2_00CODIGO.ext`, `CAPA3_00CODIGO.ext`
+
+---
+
+# Documentação (manutenção + conclusão)
+
+Dois papéis: `docs/` (técnica oficial, Diátaxis) e `obsidian-vault/` (base viva).
+
+Regra de conclusão de qualquer alteração relevante:
+
+1. Consultar Graphify → implementar → verificar `docs/` → atualizar `obsidian-vault/` se houver impacto arquitetural/funcional — **no mesmo commit da entrega**.
+2. Atualizar `TASKS.md` quando concluir trabalho relevante.
+3. Informar explicitamente: documentação atualizada **ou** conferida sem necessidade de alterações.
 
 | Mudou... | Atualize |
 |----------|----------|
-| supabase/functions/** | docs/reference/edge-functions.md |
-| supabase/config.toml | docs/reference/edge-functions.md |
+| supabase/functions/**, supabase/config.toml | docs/reference/edge-functions.md |
 | supabase/migrations/** | docs/reference/modelo-de-dados.md |
 | termos de domínio | docs/reference/glossario.md |
 | arquitetura, fluxos, integrações | docs/explanation/arquitetura.md + diagrams |
@@ -144,166 +126,28 @@ Antes de concluir qualquer alteração relevante:
 
 ---
 
-# Convenções essenciais
+# Stack
 
-## Stack
-
-Frontend
-
-- React 18
-- TypeScript
-- Vite
-- shadcn/ui
-- Tailwind
-- TanStack Query
-- Zustand
-
-Backend
-
-- Supabase
-- PostgreSQL
-- Edge Functions
-- Storage
-- Auth
-
-Infraestrutura
-
-- QStash
-- Redis
-
-IA
-
-- OpenRouter
-- Modelos OpenAI
+- Frontend: React 18, TypeScript, Vite, shadcn/ui, Tailwind, TanStack Query, Zustand
+- Backend: Supabase (PostgreSQL, Edge Functions, Storage, Auth)
+- Infra: QStash, Redis | IA: OpenRouter (modelos OpenAI)
 
 ---
 
-# Domínio
+# Issue Tracker
 
-- PAI = 0 representa agrupador.
-- Uma família gera um anúncio.
-- Uma variação gera um SKU.
-- CREATE cria anúncio.
-- UPDATE atualiza anúncio existente.
-
----
-
-# Planilha
-
-Campos obrigatórios:
-
-- CODIGO
-- PAI
-- NOME
-- UNIDADE
-- GTIN
-- CUSTO
-- PRECO
-- ESTOQUE
-- DESCRICAO_DETALHADO
-- PESO_GRAMAS
-- ALTURA_CM
-- LARGURA_CM
-- COMPRIMENTO_CM
-- FORNECEDOR
-
----
-
-# Arquivos
-
-Fotos das variações:
-
-- 00CODIGO.ext
-
-Fotos comuns:
-
-- CAPA_00CODIGO.ext
-- CAPA2_00CODIGO.ext
-- CAPA3_00CODIGO.ext
-
----
-
-# Agent Skills
-
-Issue Tracker
-
-GitHub Issues:
-
-analistasistemas-bit/gtinmktplace
-
-Labels:
-
-- needs-info
-- ready-for-agent
-- ready-for-human
-- wontfix
-
-Referências principais:
-
-- CLAUDE.md
-- docs/README.md
-- docs/decisions/
-- docs/agents/
+GitHub Issues: `analistasistemas-bit/gtinmktplace`
+Labels: `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`
+Referências: CLAUDE.md, docs/README.md, docs/decisions/, docs/agents/
 
 ---
 
 # ADRs recorrentes
 
-Consulte `docs/decisions/`.
-
-Mais relevantes:
-
-- 0003 variações agrupadas por pai
-- 0004 atribuição de cor
-- 0005 lifecycle publish/update
-- 0006 QStash
-- 0007 modelo de dados
-- 0016 UPDATE com reposição
-- 0018 dimensões e peso
-- 0021 catálogo
-- 0024 abstração de canais
-- 0025 anúncios multicanal
-- 0026 IA para atributos
-- 0027 multi-tenancy
-- 0028 billing
-
----
-
-# Estado atual
-
-Resumo atualizado:
-
-- docs/project-status.md
-
-Situação:
-
-- E1 até E4 em produção.
-- anuncios_externos ativo.
-- process-familia validado.
-- publish-familia-ml validado.
-- remover-publicado validado.
-- Taxonomia canônica adiada para segundo canal.
-- Próximo épico: Shopee.
+Consulte `docs/decisions/`. Mais relevantes: 0003 (variações por pai), 0004 (cor), 0005 (lifecycle publish/update), 0006 (QStash), 0007 (modelo de dados), 0016 (UPDATE com reposição), 0018 (dimensões/peso), 0021 (catálogo), 0024 (abstração de canais), 0025 (multicanal), 0026 (IA p/ atributos), 0027 (multi-tenancy), 0028 (billing), 0043 (migrations canal único).
 
 ---
 
 # O que nunca fazer
 
-Nunca:
-
-- inventar dados de produto;
-- publicar sem revisão humana;
-- quebrar idempotência;
-- salvar tokens em texto puro;
-- ignorar RLS;
-- criar estrutura sem ADR;
-- alterar anúncios reais fora do fluxo controlado.
-
----
-
-# Histórico
-
-Histórico completo:
-
-- docs/project-history.md
-- docs/TASKS.md
+Nunca: inventar dados de produto; publicar sem revisão humana; quebrar idempotência; salvar tokens em texto puro; ignorar RLS; criar estrutura sem ADR; alterar anúncios reais fora do fluxo controlado; usar `familias.custo_centavos` como custo de produto; editar a main direto.
