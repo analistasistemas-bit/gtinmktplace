@@ -571,6 +571,8 @@ export type Database = {
           paid_amount: number | null
           raw: Json | null
           sale_fee_total: number
+          sacado_em: string | null
+          sacado_por: string | null
           shipping_id: number | null
           shipping_logistic: string | null
           shipping_status: string | null
@@ -605,6 +607,8 @@ export type Database = {
           paid_amount?: number | null
           raw?: Json | null
           sale_fee_total?: number
+          sacado_em?: string | null
+          sacado_por?: string | null
           shipping_id?: number | null
           shipping_logistic?: string | null
           shipping_status?: string | null
@@ -639,6 +643,8 @@ export type Database = {
           paid_amount?: number | null
           raw?: Json | null
           sale_fee_total?: number
+          sacado_em?: string | null
+          sacado_por?: string | null
           shipping_id?: number | null
           shipping_logistic?: string | null
           shipping_status?: string | null
@@ -885,6 +891,10 @@ export type Database = {
     }
     Functions: {
       delete_ml_credentials: { Args: { p_user_id: string }; Returns: undefined }
+      desfazer_saque_ml_vendas: {
+        Args: { p_ids: string[] }
+        Returns: number
+      }
       get_ml_tokens: {
         Args: { p_user_id: string }
         Returns: {
@@ -895,6 +905,10 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_membro_operacao: { Args: never; Returns: boolean }
+      registrar_saque_ml_vendas: {
+        Args: { p_ids: string[] }
+        Returns: number
+      }
       telegram_config_status: {
         Args: never
         Returns: {
