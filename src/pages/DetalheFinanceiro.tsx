@@ -1,22 +1,27 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight, RefreshCw, Layers } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight, RefreshCw, Layers, CheckCircle2, RotateCcw } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
 import { fmtBRL, fmtInt, round2 } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularMarkup } from '@/lib/markup';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
 import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
+import { labelStatusLiberacao, statusLiberacao, type StatusLiberacao } from '@/lib/status-liberacao';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
@@ -36,18 +41,19 @@ function fmtData(iso: string | null): string {
 /** Retido (ML) do pedido: bruto − líquido (taxas + frete). */
 const retidoDe = (p: Pedido): number => round2(p.bruto - p.liquido);
 
-/** Célula de liberação: data que o ML libera o recebimento + status (liberado/a liberar).
- *  Passado = já caiu no saldo (verde); futuro = ainda retido (âmbar). */
-function CelulaLiberacao({ iso }: { iso: string | null }) {
-  if (!iso) {
+function CelulaLiberacao({ iso, sacadoEm }: { iso: string | null; sacadoEm: string | null }) {
+  const status = statusLiberacao({ money_release_date: iso, sacado_em: sacadoEm });
+  if (status === 'sem_data') {
     return <TableCell className="align-top whitespace-nowrap text-sm tabular-nums text-muted-foreground">—</TableCell>;
   }
-  const liberado = new Date(iso).getTime() <= Date.now();
   return (
     <TableCell className="align-top whitespace-nowrap text-sm tabular-nums">
       <span className="block">{fmtData(iso)}</span>
-      <span className={cn('text-xs', liberado ? 'text-success' : 'text-warning')}>
-        {liberado ? 'liberado' : 'a liberar'}
+      <span className={cn(
+        'text-xs',
+        status === 'sacado' ? 'text-primary' : status === 'liberado' ? 'text-success' : 'text-warning',
+      )}>
+        {labelStatusLiberacao(status)}
       </span>
     </TableCell>
   );
@@ -97,7 +103,15 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
 }
 
 /** Linha de um pedido — expansível (clique) para ver os itens com custo/líquido/markup, como no Faturamento. */
-function LinhaDetalhe({ p }: { p: Pedido }) {
+function LinhaDetalhe({
+  p,
+  selecionado,
+  onSelecionar,
+}: {
+  p: Pedido;
+  selecionado: boolean;
+  onSelecionar: (checked: boolean) => void;
+}) {
   const [aberto, setAberto] = useState(false);
   // Pedido no prejuízo: o líquido recebido ficou abaixo do custo (markup negativo).
   const prejuizo = p.custo != null && p.custo > 0 && p.liquido < p.custo;
@@ -106,10 +120,21 @@ function LinhaDetalhe({ p }: { p: Pedido }) {
     <>
       <TableRow
         className={cn('cursor-pointer hover:bg-muted/40', prejuizo && 'bg-destructive/10')}
-        onClick={() => setAberto((a) => !a)}
+        data-state={selecionado ? 'selected' : undefined}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('[role="checkbox"]')) return;
+          setAberto((a) => !a);
+        }}
       >
-        <TableCell className="w-8 align-top">
-          {aberto ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        <TableCell className="w-12 align-top">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={selecionado}
+              onCheckedChange={(checked) => onSelecionar(checked === true)}
+              aria-label={`Selecionar pedido ${p.chave}`}
+            />
+            {aberto ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          </div>
         </TableCell>
         <TableCell className={cn(
           'align-top whitespace-nowrap text-sm tabular-nums',
@@ -126,7 +151,7 @@ function LinhaDetalhe({ p }: { p: Pedido }) {
         </TableCell>
         <TableCell className="align-top"><PilhaThumbs itens={p.itens} /></TableCell>
         <TableCell className="align-top whitespace-nowrap text-right text-sm tabular-nums">{fmtInt(p.unidades)}</TableCell>
-        <CelulaLiberacao iso={p.money_release_date} />
+        <CelulaLiberacao iso={p.money_release_date} sacadoEm={p.sacado_em} />
         <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(p.bruto)}</TableCell>
         <TableCell className={cn('align-top text-right text-sm tabular-nums', retido < 0 ? 'text-success' : 'text-warning')}>
           {retido < 0 ? `+${fmtBRL(-retido)}` : fmtBRL(retido)}
@@ -153,6 +178,7 @@ function LinhaDetalhe({ p }: { p: Pedido }) {
 
 export default function DetalheFinanceiro() {
   const [search] = useSearchParams();
+  const queryClient = useQueryClient();
   const periodo = useMemo(() => periodoFromParams((k) => search.get(k)), [search]);
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
 
@@ -183,14 +209,17 @@ export default function DetalheFinanceiro() {
   const retido = r.descontos;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
 
-  // Filtro liberado/a liberar
-  const [filtroLib, setFiltroLib] = useState<'todos' | 'liberado' | 'aliberar'>('todos');
+  type FiltroLib = 'todos' | 'liberado' | 'aliberar' | 'sacado';
+  const [filtroLib, setFiltroLib] = useState<FiltroLib>('todos');
+  const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
 
   const pedidosFiltrados = useMemo(() => {
     const now = Date.now();
     return pedidos.filter((p) => {
-      if (filtroLib === 'liberado') return p.money_release_date != null && new Date(p.money_release_date).getTime() <= now;
-      if (filtroLib === 'aliberar') return p.money_release_date != null && new Date(p.money_release_date).getTime() > now;
+      const status = statusLiberacao({ money_release_date: p.money_release_date, sacado_em: p.sacado_em }, now);
+      if (filtroLib === 'liberado') return status === 'liberado';
+      if (filtroLib === 'aliberar') return status === 'aliberar';
+      if (filtroLib === 'sacado') return status === 'sacado';
       return true;
     });
   }, [pedidos, filtroLib]);
@@ -245,6 +274,79 @@ export default function DetalheFinanceiro() {
       return sort.dir === 'asc' ? cmp : -cmp;
     });
   }, [pedidosFiltrados, sort]);
+
+  const idsVisiveis = useMemo(() => new Set(pedidosOrdenados.map((p) => p.chave)), [pedidosOrdenados]);
+  const selecionadosVisiveis = pedidosOrdenados.filter((p) => selecionados.has(p.chave));
+  const todosVisiveisSelecionados = pedidosOrdenados.length > 0 && pedidosOrdenados.every((p) => selecionados.has(p.chave));
+
+  function setSelecionado(chave: string, checked: boolean) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(chave); else next.delete(chave);
+      return next;
+    });
+  }
+
+  function selecionarVisiveis(checked: boolean) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      for (const id of idsVisiveis) {
+        if (checked) next.add(id); else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  const mutationRegistrar = useMutation({
+    mutationFn: registrarSaque,
+    onSuccess: (atualizados, ids) => {
+      const ignorados = ids.length - atualizados;
+      toast.success(`${atualizados} pedido(s) marcado(s) como sacado(s)`, {
+        description: ignorados > 0 ? `${ignorados} registro(s) ignorado(s).` : undefined,
+      });
+      setSelecionados(new Set());
+      queryClient.invalidateQueries({ queryKey: ['vendas'] });
+    },
+    onError: (e) => toast.error('Falha ao registrar saque', { description: e instanceof Error ? e.message : 'Erro desconhecido' }),
+  });
+
+  const mutationDesfazer = useMutation({
+    mutationFn: desfazerSaque,
+    onSuccess: (atualizados, ids) => {
+      const ignorados = ids.length - atualizados;
+      toast.success(`${atualizados} pedido(s) voltou/voltaram para liberado`, {
+        description: ignorados > 0 ? `${ignorados} registro(s) ignorado(s).` : undefined,
+      });
+      setSelecionados(new Set());
+      queryClient.invalidateQueries({ queryKey: ['vendas'] });
+    },
+    onError: (e) => toast.error('Falha ao desfazer saque', { description: e instanceof Error ? e.message : 'Erro desconhecido' }),
+  });
+
+  function vendaIdsPorStatus(statusEsperado: StatusLiberacao): string[] {
+    const now = Date.now();
+    return selecionadosVisiveis
+      .filter((p) => statusLiberacao({ money_release_date: p.money_release_date, sacado_em: p.sacado_em }, now) === statusEsperado)
+      .flatMap((p) => p.vendaIds);
+  }
+
+  function onRegistrarSaque() {
+    const ids = vendaIdsPorStatus('liberado');
+    if (ids.length === 0) {
+      toast.error('Selecione pedido(s) liberado(s).');
+      return;
+    }
+    mutationRegistrar.mutate(ids);
+  }
+
+  function onDesfazerSaque() {
+    const ids = vendaIdsPorStatus('sacado');
+    if (ids.length === 0) {
+      toast.error('Selecione pedido(s) sacado(s).');
+      return;
+    }
+    mutationDesfazer.mutate(ids);
+  }
 
   // Totais e markup agregado sobre os pedidos FILTRADOS (coerente com o que está visível).
   const totaisFiltrados = useMemo(() => {
@@ -319,12 +421,29 @@ export default function DetalheFinanceiro() {
         </div>
       </div>
 
-      {/* Filtro liberado/a liberar */}
-      <div className="mb-3 flex gap-1">
-        {([['todos', 'Todos'], ['liberado', 'Liberados'], ['aliberar', 'A liberar']] as const).map(([k, lbl]) => (
-          <Button key={k} size="sm" variant={filtroLib === k ? 'default' : 'outline'}
-            className="h-7 px-2.5 text-xs" onClick={() => setFiltroLib(k)}>{lbl}</Button>
-        ))}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1">
+          {([
+            ['todos', 'Todos'],
+            ['liberado', 'Liberados'],
+            ['aliberar', 'A liberar'],
+            ['sacado', 'Sacados'],
+          ] as const).map(([k, lbl]) => (
+            <Button key={k} size="sm" variant={filtroLib === k ? 'default' : 'outline'}
+              className="h-7 px-2.5 text-xs" onClick={() => setFiltroLib(k)}>{lbl}</Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{selecionadosVisiveis.length} selecionado(s)</span>
+          <Button size="sm" variant="outline" onClick={onRegistrarSaque}
+            disabled={selecionadosVisiveis.length === 0 || mutationRegistrar.isPending || mutationDesfazer.isPending}>
+            <CheckCircle2 className="mr-1.5 h-4 w-4" />Registrar saque
+          </Button>
+          <Button size="sm" variant="outline" onClick={onDesfazerSaque}
+            disabled={selecionadosVisiveis.length === 0 || mutationRegistrar.isPending || mutationDesfazer.isPending}>
+            <RotateCcw className="mr-1.5 h-4 w-4" />Desfazer saque
+          </Button>
+        </div>
       </div>
 
       {/* Detalhe por pedido */}
@@ -332,7 +451,13 @@ export default function DetalheFinanceiro() {
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
-              <TableHead className="w-8" />
+              <TableHead className="w-12">
+                <Checkbox
+                  checked={todosVisiveisSelecionados}
+                  onCheckedChange={(checked) => selecionarVisiveis(checked === true)}
+                  aria-label="Selecionar pedidos visíveis"
+                />
+              </TableHead>
               <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
               <ThSort k="comprador" label="Comprador" sort={sort} onSort={toggleSort} />
               <TableHead>Produtos</TableHead>
@@ -352,7 +477,14 @@ export default function DetalheFinanceiro() {
                 </TableCell>
               </TableRow>
             ) : (
-              pedidosOrdenados.map((p) => <LinhaDetalhe key={p.chave} p={p} />)
+              pedidosOrdenados.map((p) => (
+                <LinhaDetalhe
+                  key={p.chave}
+                  p={p}
+                  selecionado={selecionados.has(p.chave)}
+                  onSelecionar={(checked) => setSelecionado(p.chave, checked)}
+                />
+              ))
             )}
           </TableBody>
           {pedidosOrdenados.length > 0 && (
