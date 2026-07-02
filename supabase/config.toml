@@ -40,6 +40,8 @@ verify_jwt = false
 verify_jwt = false
 
 # --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
+[functions.atributos-familia]
+verify_jwt = true
 [functions.ingest-lote]
 verify_jwt = true
 [functions.upload-imagens-lote]
