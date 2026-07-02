@@ -45,7 +45,7 @@
 | D-E7.5 | Workers continuam service_role; a defesa é **propagação obrigatória de `org_id`** (claim `RETURNING org_id`, webhook via connections) + `NOT NULL` que **falha alto** se algum caminho esquecer | RLS não protege service_role por definição; a blindagem é estrutural + auditoria função-por-função (Task 16) + suite de isolamento (Task 9). |
 | D-E7.6 | Storage: **paths não mudam** (`{user_id}/...`); SELECT vira "dono do path pertence à minha org"; INSERT/UPDATE/DELETE continuam "own" | Zero movimentação de objetos; isolamento garantido via join `profiles.org_id`. |
 | D-E7.7 | `MP_ACCESS_TOKEN` (Mercado Pago) vira segredo por org no Vault (`configuracoes.mp_access_token_secret_id`); org sem MP → enriquecimento **pula com log** (graceful) | Dado financeiro da Avil não pode vazar para outra org nem o contrário. |
-| D-E7.8 | Criação de org: **só super-admin** (Diego), via edge `usuarios` action `create_org`. Sem self-service até o E8 (billing) | Porta de entrada controlada; signup público continua removido. |
+| D-E7.8 | Criação de org: **só super-admin** (Diego), via edge `usuarios` action `create_org`, com **página própria `/organizacoes`** (não uma seção na tela Usuários) — decisão Diego 2026-07-02: a página vai crescer (futuro painel de administração do SaaS: planos, uso, saúde por empresa). Sem self-service até o E8 (billing) | Porta de entrada controlada; signup público continua removido; página dedicada dá espaço às funcionalidades futuras sem retrabalho. |
 
 ## Estrutura de arquivos
 
@@ -60,7 +60,7 @@
 - `supabase/functions/_shared/auth.ts` (requireUserOrg) · `_shared/ml/token.ts` (token por conexão) · `_shared/faturamento/io.ts` (resolver por connections) · `_shared/anuncios/espelhar.ts` (org no upsert) · `_shared/categoria/atributos.ts` (marca por org) · `_shared/redis/cache-cor.ts` (chave por org) · `_shared/queue.ts` (payloads com org implícito via linha; fila serial por org)
 - Workers: `process-familia`, `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`, `ingest-lote`, `ml-webhook`, `sync-venda`, `sync-pergunta`, `sync-devolucao`, `backfill-faturamento`, `reconciliar-faturamento`, `monitorar-moderados`, `notificar-liberacao`, `remover-publicado`, `vincular-catalogo`, `reprocessar-familia`, `regenerar-copy-familia`, `ml-oauth-start`, `ml-oauth-callback`, `ml-oauth-disconnect`
 - Edges autenticadas: `usuarios`, `publicar-familias`, `status-publicados`, `metricas-vendas`, `atributos-familia`, `ingest-lote`, `upload-imagens-lote`, `invalidar-cache-cor`, `excluir-lote`, `definir-categoria-familia`, `analisar-viabilidade`, `responder-pergunta`, `sugerir-resposta-pergunta`, `resumo-financeiro`
-- Front: `src/lib/auth-store*` (Profile.org_id), `src/lib/queries.ts` (configuracoes por org), `src/pages/Usuarios*` (convite carrega org), exibição do nº do lote
+- Front: `src/lib/auth-store*` (Profile.org_id), `src/lib/queries.ts` (configuracoes por org), `src/pages/Usuarios*` (convite carrega org), **nova página `src/pages/Organizacoes.tsx`** (rota `/organizacoes`, só super-admin), exibição do nº do lote
 
 ---
 
@@ -708,12 +708,12 @@ update public.organizations o set lote_seq = coalesce((select max(numero_org) fr
 
 ### Task 15: Front org-aware + gestão de usuários/orgs
 
-**Files:** Modify: tipo `Profile` + auth-store · `supabase/functions/usuarios/index.ts` · `src/pages/Usuarios*.tsx`
+**Files:** Modify: tipo `Profile` + auth-store · `supabase/functions/usuarios/index.ts` · `src/pages/Usuarios*.tsx` · Create: `src/pages/Organizacoes.tsx` (+ rota `/organizacoes` + item de menu)
 
 - [ ] **Step 1:** `Profile` ganha `org_id: string` e `is_super_admin: boolean` (select do auth-store já lê `profiles`; incluir colunas).
-- [ ] **Step 2: Edge `usuarios`:** todas as actions passam a validar com `requireUserOrg`; `invite` inclui `org_id: orgId` (a org do admin chamador) no `data` do `inviteUserByEmail` (o `handle_new_user` da Task 2 consome); `update_menus`/`set_active`/`set_admin` só atuam em perfis `org_id = orgId` do chamador. Nova action **`create_org`** (só `is_super_admin`): `{ nome, slug, marca_padrao, admin_email, admin_nome }` → insere org + convida o primeiro admin com `{ org_id, is_admin: true }` (o trigger cria o perfil; um UPDATE service_role marca `is_admin = true`).
-- [ ] **Step 3: UI:** tela Usuarios inalterada para admins (o escopo org é transparente); se `is_super_admin`, seção extra "Organizações" (criar org + convidar admin — formulário simples).
-- [ ] **Step 4:** Baseline + browser-use: convite de membro (org herdada), criação de org-teste pelo super-admin, login do admin da org nova vendo tela vazia (nenhum dado da Avil!).
+- [ ] **Step 2: Edge `usuarios`:** todas as actions passam a validar com `requireUserOrg`; `invite` inclui `org_id: orgId` (a org do admin chamador) no `data` do `inviteUserByEmail` (o `handle_new_user` da Task 2 consome); `update_menus`/`set_active`/`set_admin` só atuam em perfis `org_id = orgId` do chamador. Novas actions **`create_org`** e **`list_orgs`** (ambas só `is_super_admin`): `create_org` recebe `{ nome, slug, marca_padrao, admin_email, admin_nome }` → insere org + convida o primeiro admin com `{ org_id, is_admin: true }` (o trigger cria o perfil; um UPDATE service_role marca `is_admin = true`); `list_orgs` retorna todas as orgs com contadores (`membros`, `criado_em`) — o super-admin enxerga além da própria org, por isso via edge service_role, não via RLS.
+- [ ] **Step 3: UI — página própria `/organizacoes` (D-E7.8):** nova `src/pages/Organizacoes.tsx`, rota guardada por `is_super_admin` (guard de rota + item de menu "Organizações" visível só ao super-admin; usuário sem flag que digitar a URL → `/sem-acesso`, mesmo padrão do `MenuGuard`). Conteúdo v1: tabela das empresas (a **Avil aparece de fábrica** — criada pelo backfill da Task 2) com nome/slug/nº de membros/data + botão "Nova empresa" (formulário: nome, slug, marca padrão, e-mail e nome do primeiro admin). A página é a semente do futuro painel de administração do SaaS (planos, uso, saúde por empresa — E8/E9); a tela Usuarios fica inalterada para admins comuns.
+- [ ] **Step 4:** Baseline + browser-use: convite de membro (org herdada); criação de org-teste pelo super-admin **pela página `/organizacoes`**; membro comum não vê o menu nem acessa a rota; login do admin da org nova vendo tela vazia (nenhum dado da Avil!).
 - [ ] **Step 5: Commit** — `git commit -m "feat(e7): convites por org + criação de organizações (super-admin)"`
 
 ---
