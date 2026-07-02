@@ -358,7 +358,7 @@ export default function DetalheFinanceiro() {
       if (status === statusEsperado) {
         ids.push(...pedido.vendaIds);
       } else {
-        ignoradosCliente += 1;
+      ignoradosCliente += pedido.vendaIds.length;
       }
     }
     return { ids, ignoradosCliente };
