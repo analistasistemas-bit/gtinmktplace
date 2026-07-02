@@ -138,7 +138,11 @@ Pedido: `order_id` (único com `user_id`), `pack_id`, `status`, `status_detail`,
 Valores: `total_amount`, `paid_amount`, `sale_fee_total`, `frete_vendedor`, `liquido`
 (do MP quando há `MP_ACCESS_TOKEN`, senão estimado), `estorno`, `currency`.
 Envio: `shipping_id/status/substatus/logistic`, `tracking_number`.
-Financeiro: `money_release_date`, `liberacao_notificada_em` (ADR-0040).
+Financeiro: `money_release_date`, `liberacao_notificada_em` (ADR-0040),
+`sacado_em`/`sacado_por` (*migration `20260702162832_ml_vendas_saque.sql`*) — marca manual de
+saque no Financeiro > Detalhe do líquido, escrita só via RPCs `security definer`
+`registrar_saque_ml_vendas(uuid[])` / `desfazer_saque_ml_vendas(uuid[])`
+(exigem `is_membro_operacao()`; `registrar` só marca linhas com `money_release_date` já liberado).
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
 Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)`.
 
