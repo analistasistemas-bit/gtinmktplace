@@ -492,7 +492,11 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
         produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
         unidades: fmtInt(p.unidades),
         liberacao: (() => {
-          const status = statusLiberacao({ money_release_date: p.money_release_date, sacado_em: p.sacado_em });
+          const status = statusLiberacao({
+            money_release_date: p.money_release_date,
+            sacado_em: p.sacado_em,
+            temMembrosSemDataLiberacao: p.temMembrosSemDataLiberacao,
+          });
           if (status === 'sem_data') return '—';
           return p.money_release_date
             ? `${fmtData(p.money_release_date)} · ${labelStatusLiberacao(status)}`

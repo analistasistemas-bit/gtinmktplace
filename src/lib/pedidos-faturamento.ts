@@ -59,6 +59,8 @@ export interface Pedido {
   liquido: number;
   /** money_release_date — quando o ML libera o recebimento (representativo do grupo). null = MP não informou. */
   money_release_date: string | null;
+  /** Há venda ainda não sacada sem money_release_date no grupo. */
+  temMembrosSemDataLiberacao: boolean;
   /** Quando todas as vendas do pedido foram marcadas como sacadas. null se nenhuma/parte não sacada. */
   sacado_em: string | null;
   /** Usuário da primeira marcação de saque do grupo, quando o pedido inteiro está sacado. */
@@ -134,6 +136,17 @@ export function agruparPorPedido(
 
     const primeiro = membros[0];
     const grupoSacado = membros.every((v) => v.sacado_em != null);
+    const pendentes = membros.filter((v) => v.sacado_em == null);
+    const baseLiberacao = grupoSacado ? membros : pendentes;
+    const datasLiberacaoPendentes = baseLiberacao
+      .map((v) => v.money_release_date)
+      .filter((data): data is string => data != null);
+    const money_release_date = datasLiberacaoPendentes.length > 0
+      ? datasLiberacaoPendentes.reduce((maisRecente, data) => (
+        Date.parse(data) > Date.parse(maisRecente) ? data : maisRecente
+      ))
+      : null;
+    const temMembrosSemDataLiberacao = pendentes.some((v) => v.money_release_date == null);
     const sacado_em = grupoSacado ? membros[0].sacado_em : null;
     const sacado_por = grupoSacado ? membros[0].sacado_por : null;
     pedidos.push({
@@ -149,7 +162,8 @@ export function agruparPorPedido(
       statusDetail: primeiro.status_detail,
       shipping_status: primeiro.shipping_status,
       shipping_substatus: primeiro.shipping_substatus,
-      money_release_date: primeiro.money_release_date,
+      money_release_date,
+      temMembrosSemDataLiberacao,
       sacado_em,
       sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),

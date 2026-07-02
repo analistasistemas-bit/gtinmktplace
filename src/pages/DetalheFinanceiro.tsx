@@ -41,8 +41,18 @@ function fmtData(iso: string | null): string {
 /** Retido (ML) do pedido: bruto − líquido (taxas + frete). */
 const retidoDe = (p: Pedido): number => round2(p.bruto - p.liquido);
 
-function CelulaLiberacao({ iso, sacadoEm }: { iso: string | null; sacadoEm: string | null }) {
-  const status = statusLiberacao({ money_release_date: iso, sacado_em: sacadoEm });
+function CelulaLiberacao({
+  iso, sacadoEm, temMembrosSemDataLiberacao,
+}: {
+  iso: string | null;
+  sacadoEm: string | null;
+  temMembrosSemDataLiberacao: boolean;
+}) {
+  const status = statusLiberacao({
+    money_release_date: iso,
+    sacado_em: sacadoEm,
+    temMembrosSemDataLiberacao,
+  });
   if (status === 'sem_data') {
     return <TableCell className="align-top whitespace-nowrap text-sm tabular-nums text-muted-foreground">—</TableCell>;
   }
@@ -151,7 +161,11 @@ function LinhaDetalhe({
         </TableCell>
         <TableCell className="align-top"><PilhaThumbs itens={p.itens} /></TableCell>
         <TableCell className="align-top whitespace-nowrap text-right text-sm tabular-nums">{fmtInt(p.unidades)}</TableCell>
-        <CelulaLiberacao iso={p.money_release_date} sacadoEm={p.sacado_em} />
+        <CelulaLiberacao
+          iso={p.money_release_date}
+          sacadoEm={p.sacado_em}
+          temMembrosSemDataLiberacao={p.temMembrosSemDataLiberacao}
+        />
         <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(p.bruto)}</TableCell>
         <TableCell className={cn('align-top text-right text-sm tabular-nums', retido < 0 ? 'text-success' : 'text-warning')}>
           {retido < 0 ? `+${fmtBRL(-retido)}` : fmtBRL(retido)}
@@ -216,7 +230,11 @@ export default function DetalheFinanceiro() {
   const pedidosFiltrados = useMemo(() => {
     const now = Date.now();
     return pedidos.filter((p) => {
-      const status = statusLiberacao({ money_release_date: p.money_release_date, sacado_em: p.sacado_em }, now);
+      const status = statusLiberacao({
+        money_release_date: p.money_release_date,
+        sacado_em: p.sacado_em,
+        temMembrosSemDataLiberacao: p.temMembrosSemDataLiberacao,
+      }, now);
       if (filtroLib === 'liberado') return status === 'liberado';
       if (filtroLib === 'aliberar') return status === 'aliberar';
       if (filtroLib === 'sacado') return status === 'sacado';
@@ -304,7 +322,7 @@ export default function DetalheFinanceiro() {
     onSuccess: (atualizados, vars) => {
       const ignoradosBackend = vars.ids.length - atualizados;
       const ignorados = vars.ignoradosCliente + ignoradosBackend;
-      toast.success(`${atualizados} pedido(s) marcado(s) como sacado(s)`, {
+      toast.success(`${atualizados} registro(s) marcado(s) como sacado(s)`, {
         description: ignorados > 0 ? `${ignorados} registro(s) ignorado(s).` : undefined,
       });
       setSelecionados(new Set());
@@ -318,7 +336,7 @@ export default function DetalheFinanceiro() {
     onSuccess: (atualizados, vars) => {
       const ignoradosBackend = vars.ids.length - atualizados;
       const ignorados = vars.ignoradosCliente + ignoradosBackend;
-      toast.success(`${atualizados} pedido(s) voltou/voltaram para liberado`, {
+      toast.success(`${atualizados} registro(s) voltaram para liberado`, {
         description: ignorados > 0 ? `${ignorados} registro(s) ignorado(s).` : undefined,
       });
       setSelecionados(new Set());
@@ -332,7 +350,11 @@ export default function DetalheFinanceiro() {
     const ids: string[] = [];
     let ignoradosCliente = 0;
     for (const pedido of selecionadosVisiveis) {
-      const status = statusLiberacao({ money_release_date: pedido.money_release_date, sacado_em: pedido.sacado_em }, now);
+      const status = statusLiberacao({
+        money_release_date: pedido.money_release_date,
+        sacado_em: pedido.sacado_em,
+        temMembrosSemDataLiberacao: pedido.temMembrosSemDataLiberacao,
+      }, now);
       if (status === statusEsperado) {
         ids.push(...pedido.vendaIds);
       } else {

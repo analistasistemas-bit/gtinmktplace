@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { calcularResumo, type CustoResolver } from '../resumo-vendas';
 import { agruparPorPedido, calcularKpisPedidos } from '../pedidos-faturamento';
+import { statusLiberacao } from '../status-liberacao';
 import type { Venda, VendaItem } from '../faturamento';
 
 const item = (over: Partial<VendaItem>): VendaItem => ({
@@ -58,5 +59,24 @@ describe('calcularResumo — custo/markup por pack (alinhado ao Faturamento)', (
     expect(pedidos[0]?.vendaIds).toEqual(['a', 'b']);
     expect(pedidos[0]?.sacado_em).toBeNull();
     expect(pedidos[0]?.sacado_por).toBeNull();
+  });
+
+  it('deriva o status do pack por todos os membros, nao pela primeira venda', () => {
+    const agora = Date.parse('2026-07-02T12:00:00Z');
+    const [mistoFuturo, mistoSemData, todoLiberado, todoSacado] = agruparPorPedido([
+      venda({ id: 'a', order_id: 1, pack_id: 11, money_release_date: '2026-07-01T00:00:00Z' }),
+      venda({ id: 'b', order_id: 2, pack_id: 11, money_release_date: '2026-07-03T00:00:00Z' }),
+      venda({ id: 'c', order_id: 3, pack_id: 12, money_release_date: '2026-07-01T00:00:00Z' }),
+      venda({ id: 'd', order_id: 4, pack_id: 12, money_release_date: null }),
+      venda({ id: 'e', order_id: 5, pack_id: 13, money_release_date: '2026-07-01T00:00:00Z' }),
+      venda({ id: 'f', order_id: 6, pack_id: 13, money_release_date: '2026-07-02T00:00:00Z' }),
+      venda({ id: 'g', order_id: 7, pack_id: 14, money_release_date: '2026-07-01T00:00:00Z', sacado_em: '2026-07-02T10:00:00Z', sacado_por: 'u1' }),
+      venda({ id: 'h', order_id: 8, pack_id: 14, money_release_date: null, sacado_em: '2026-07-02T11:00:00Z', sacado_por: 'u2' }),
+    ], resolver);
+
+    expect(statusLiberacao(mistoFuturo, agora)).toBe('aliberar');
+    expect(statusLiberacao(mistoSemData, agora)).toBe('sem_data');
+    expect(statusLiberacao(todoLiberado, agora)).toBe('liberado');
+    expect(statusLiberacao(todoSacado, agora)).toBe('sacado');
   });
 });

@@ -23,6 +23,20 @@ describe('statusLiberacao', () => {
     expect(statusLiberacao({ money_release_date: null, sacado_em: null }, agora)).toBe('sem_data');
   });
 
+  it('mantem pack com membro sem data fora de liberado depois que a ultima data passa', () => {
+    expect(statusLiberacao({
+      money_release_date: '2026-07-03T00:00:00Z',
+      sacado_em: null,
+      temMembrosSemDataLiberacao: true,
+    }, agora)).toBe('aliberar');
+
+    expect(statusLiberacao({
+      money_release_date: '2026-07-01T00:00:00Z',
+      sacado_em: null,
+      temMembrosSemDataLiberacao: true,
+    }, agora)).toBe('sem_data');
+  });
+
   it('expoe rotulos da UI', () => {
     expect(labelStatusLiberacao('aliberar')).toBe('a liberar');
     expect(labelStatusLiberacao('liberado')).toBe('liberado');
