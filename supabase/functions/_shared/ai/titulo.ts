@@ -111,6 +111,40 @@ function normalizarBusca(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 }
 
+const MIN_PALAVRA_SIGNIFICATIVA_TITULO = 3;
+
+// Garante que o TIPO DE PRODUTO apareça no título quando ele não está no nome_pai mas foi
+// extraído (grounded) da descrição pelo copywriter (tipo_produto_busca, ADR-0054). Sem isso
+// nomes só de marca+especificação (ex.: "EUROROMA 4/6 CORES 600G 610MT") geram título sem
+// dizer o que o produto É (bug lote #50: título sem "BARBANTE"). Roda ANTES de
+// garantirMetragemTitulo/garantirCorTitulo na composição (prefixo, não sufixo — o tipo de
+// produto lidera o título, igual ao exemplo do prompt "FITA CETIM PROGRESSO...").
+// Se não há palavra significativa (>=3 letras) pra verificar ausência com segurança, não
+// mexe no título — prefixar às cegas arriscaria duplicar (ex.: "FIO FIO DE COSTURA 100M").
+export function garantirTipoProdutoTitulo(titulo: string, tipoProdutoBusca: string): string {
+  const tipo = tipoProdutoBusca?.trim();
+  if (!tipo) return titulo;
+  const palavrasTipo = normalizarBusca(tipo).split(/\s+/).filter((w) => w.length >= MIN_PALAVRA_SIGNIFICATIVA_TITULO);
+  if (palavrasTipo.length === 0) return titulo;
+
+  const tituloNorm = normalizarBusca(titulo);
+  const jaPresente = palavrasTipo.some((w) => new RegExp(`\\b${w}\\b`).test(tituloNorm));
+  if (jaPresente) return titulo;
+
+  let candidato = `${tipo.toUpperCase()} ${titulo}`;
+  if (candidato.length <= TITULO_MAX) return candidato;
+
+  const partes = candidato.split(' | ');
+  while (partes.length > 1 && partes.join(' | ').length > TITULO_MAX) partes.pop();
+  candidato = partes.join(' | ');
+  if (candidato.length > TITULO_MAX) {
+    const palavras = candidato.split(/\s+/);
+    while (palavras.length > 1 && palavras.join(' ').length > TITULO_MAX) palavras.pop();
+    candidato = palavras.join(' ');
+  }
+  return removerCaudaConectiva(candidato);
+}
+
 // Garante que a cor apareça no título quando o anúncio é de cor ÚNICA (mono-cor). Sem isso,
 // duas famílias-irmãs que diferem só na cor (PAI separado na planilha) geram títulos idênticos
 // e o ML baixa a segunda como duplicado ("Era igual a outro anúncio"). Rede de segurança
