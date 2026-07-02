@@ -108,7 +108,7 @@ Dois papéis: `docs/` (técnica oficial, Diátaxis) e `obsidian-vault/` (base vi
 
 Regra de conclusão de qualquer alteração relevante:
 
-1. Consultar Graphify → implementar → verificar `docs/` → atualizar `obsidian-vault/` se houver impacto arquitetural/funcional — **no mesmo commit da entrega**.
+1. Consultar Graphify → implementar → **`pnpm lint` + `pnpm test` passando** → verificar `docs/` → atualizar `obsidian-vault/` se houver impacto arquitetural/funcional — **no mesmo commit da entrega**.
 2. Atualizar `TASKS.md` quando concluir trabalho relevante.
 3. Informar explicitamente: documentação atualizada **ou** conferida sem necessidade de alterações.
 
