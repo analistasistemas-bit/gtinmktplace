@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-01
+atualizado: 2026-07-02
 ---
 
 # Changelog
@@ -8,6 +8,14 @@ atualizado: 2026-07-01
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-07-02
+
+- Fix categoria/título — tipo de produto genérico via IA (lote #50, ADR-0054): categoria "Outros"
+  nunca mais é resposta final automática; busca de categoria no ML roda com nome bruto + query
+  limpa (`tipo_produto_busca`, extraída pelo copywriter); IA de desempate pode abster-se
+  deliberadamente; título ganha o tipo de produto quando ausente do nome. Deployado em
+  `process-familia`, `regenerar-copy-familia`, `publicar-split-ml`.
 
 ## 2026-06-29
 
