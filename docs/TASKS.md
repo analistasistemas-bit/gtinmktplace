@@ -2,6 +2,13 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Planos E7 + E6 — SaaS multi-empresa (ADR-0027) e orquestração multicanal — 2026-07-02
+
+- [x] **Planos de implementação escritos e aprovados como documento** — análise profunda do código (RLS/modelo de dados + camada de canais) e planos completos, com decisão de **ordem E7 → E6** (E7 primeiro: isolamento por org é o objetivo SaaS; E6 nasce tenant-aware; validação real do E6 com 2 canais depende do E5 Shopee). Planos: [E7 multi-tenancy](superpowers/plans/2026-07-02-e7-multi-tenancy-org-id.md) (7 fases expand→migrate→contract, suite executável de isolamento cross-tenant, `marketplace_connections` por org resolvendo a pendência do ADR-0047) · [E6 orquestração](superpowers/plans/2026-07-02-e6-orquestracao-multicanal.md) (worker genérico `publicar-anuncio`, estado por canal em `anuncios_externos`, caminho ML intocado).
+- [x] **Decisão (Diego, 2026-07-02): próximo épico = E7** — ordem E7 → E6 aprovada; E5 (Shopee) fica para depois. Cada PONTO DE DEPLOY do plano E7 segue exigindo OK explícito.
+- [ ] **Execução do E7** — próximo passo (iniciar pela Task 1: ADR-0027).
+- [ ] **Execução do E6** — após E7 concluído.
+
 ## Lote #49 — barbante recusado por atributo/tipo (ADR-0051) — 2026-07-01
 
 - [x] **Barbante classificado como `outro` → sem BRAND/MODEL → ML recusa** — investigado com `systematic-debugging` nos dados de produção. 3 famílias de barbante do lote #49 com `tipo_aviamento='outro'`, `categoria_ml_id=MLB270273` (Fios e Cadarços = a categoria de `linha`), `atributos_ml=[]`, `atributos_faltantes=[]`; na mesma categoria há 13 publicadas como `linha` (0 erros). Duas causas: (1) `barbante` faltava na regex de `linha` (`detectar.ts`); (2) sem override, o preditor acerta a categoria mas devolvia `tipo:'outro'` fixo → `process-familia` seguia o ramo genérico (schema+IA) que, ao falhar, deixa atributos e faltantes vazios → o gate do publish não bloqueia. Fix: `barbante`/`barbantes` na regex + `tipoParaCategoria` (lookup reverso categoria→tipo) no `resolver` + `process-familia` usa o caminho determinístico para todo tipo conhecido (`categoriaParaTipo(tipo)!=null`, não só `origem==='regex'`). TDD: casos novos em `detectar`/`resolver`/`atributos`; 1074 testes + tsc + `deno check` + eslint verdes. [ADR-0051](decisions/0051-tipo-aviamento-derivado-da-categoria-do-preditor.md).
