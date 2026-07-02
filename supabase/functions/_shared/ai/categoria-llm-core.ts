@@ -26,6 +26,7 @@ export function montarPromptDesempate(input: InputCategoria, candidatos: Categor
     lista,
     '',
     'Escolha a que melhor descreve o produto. Responda APENAS com o category_id exato da lista.',
+    'Se NENHUMA categoria da lista descrever de fato este produto, responda category_id null — mesmo que exista só uma opção na lista. Não escolha a menos pior só por ser a única disponível.',
   ].filter(Boolean).join('\n');
 }
 
@@ -33,7 +34,7 @@ export const SCHEMA_DESEMPATE = {
   name: 'categoria_escolhida',
   schema: {
     type: 'object',
-    properties: { category_id: { type: 'string' } },
+    properties: { category_id: { type: ['string', 'null'] } },
     required: ['category_id'],
     additionalProperties: false,
   },

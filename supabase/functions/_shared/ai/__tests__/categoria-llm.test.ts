@@ -30,4 +30,9 @@ describe('montarPromptDesempate', () => {
   it('inclui a descrição quando presente', () => {
     expect(montarPromptDesempate({ nome: 'X', descricao: 'demolidor 1500W' }, candidatos)).toContain('demolidor 1500W');
   });
+
+  it('instrui a IA a devolver null quando nenhum candidato serve, mesmo sendo o único', () => {
+    const p = montarPromptDesempate({ nome: 'X' }, candidatos);
+    expect(p.toLowerCase()).toContain('null');
+  });
 });
