@@ -20,6 +20,10 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
+- **Marca manual de saque no Financeiro** (ADR-0053) — deployada 2026-07-02: estado `sacado` no
+  Detalhe do líquido (checkbox + `Registrar`/`Desfazer saque` + filtro `Sacados`); campos
+  `sacado_em`/`sacado_por` em `ml_vendas` via RPCs `security definer`. Migration aplicada via MCP
+  (CLI bloqueado por IPv6 nesta rede).
 - **Módulo Financeiro impecável** (ADR-0040) — validado e deployado 2026-07-02 (migration +
   `notificar-liberacao` + schedule QStash diário)
 - **Módulo Faturamento** (ADR-0037) — webhooks ML no DevCenter + schedule QStash horário
