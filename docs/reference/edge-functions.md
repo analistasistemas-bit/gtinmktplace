@@ -122,6 +122,10 @@
 - **regenerar-copy-familia** — regera título/descrição via IA sem republicar.
 - **definir-categoria-familia** — seletor manual de categoria (escape hatch p/ "outro"),
   monta atributos obrigatórios (ADR-0022).
+- **atributos-familia** *(JWT)* — fallback da Camada 2B (ADR-0052): `action:'faltantes'` lista os
+  obrigatórios não preenchidos COM schema (tipo/valores) e `action:'salvar'` valida um valor
+  server-side, faz merge em `atributos_ml`, marca `atributos_editados_pelo_operador` e recalcula
+  `atributos_faltantes`. Base do editor inline na Revisão.
 - **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; alerta Telegram
   em no-match/ficha divergente (ADR-0021/0036).
 

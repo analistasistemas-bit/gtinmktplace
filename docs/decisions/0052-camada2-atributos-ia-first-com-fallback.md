@@ -1,7 +1,7 @@
 # ADR-0052 — Camada 2: atributos IA-first (inferência de texto-livre do próprio produto) + fallback manual
 
 **Data:** 2026-07-01
-**Status:** aceito (design travado via grilling; implementação em fases nas branches do épico)
+**Status:** aceito e implementado — Camada 2A (inferência de texto-livre) e Camada 2B (fallback editor) concluídas e em produção (2026-07-01)
 **Decisores:** Diego
 **Relaciona:** estende [ADR-0026](0026-generalizacao-categorizacao-atributos-por-ia.md) (E4 — atributos por IA), revisa [ADR-0049](0049-atributos-opcionais-e-numericos-por-ia.md) (que excluía texto-livre por inteiro) e continua [ADR-0051](0051-tipo-aviamento-derivado-da-categoria-do-preditor.md) (robustez: nunca publicar sem validar)
 
