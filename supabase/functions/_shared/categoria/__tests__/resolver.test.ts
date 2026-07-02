@@ -108,3 +108,77 @@ describe('resolverCategoria', () => {
     expect(r.tipo).toBe('linha');
   });
 });
+
+describe('resolverCategoria — tipo_produto_busca + candidatos genéricos + abstenção (ADR-0054)', () => {
+  const generico: CategoriaCandidata = { domainId: 'MLB-ARTS_AND_CRAFTS', domainName: 'Artes e artesanatos', categoriaId: 'MLB1371', categoriaNome: 'Outros' };
+  const fiosCat: CategoriaCandidata = { domainId: 'MLB-SEWING_AND_CRAFT_THREADS', domainName: 'Fios para costura', categoriaId: 'MLB270273', categoriaNome: 'Fios e Cadarços de Armarinho' };
+
+  it('(l) só candidato genérico ("Outros") → manual, nunca aceita como resposta final', async () => {
+    const r = await resolverCategoria(
+      { nome: 'BAINHA INSTANTÂNEA 4MT UND' },
+      { preditor: async () => [generico] },
+    );
+    expect(r.origem).toBe('manual');
+    expect(r.categoriaId).toBeNull();
+  });
+
+  it('(m) busca bruta falha, tipoProdutoBusca acha candidato específico bom → resolve', async () => {
+    const r = await resolverCategoria(
+      { nome: 'EUROROMA 4/6 CORES 600G 610MT', tipoProdutoBusca: 'barbante de crochê' },
+      {
+        preditor: async (q) => (q === 'barbante de crochê' ? [fiosCat] : []),
+      },
+    );
+    expect(r.categoriaId).toBe('MLB270273');
+    expect(r.tipo).toBe('linha');
+  });
+
+  it('(n) LLM abstém deliberadamente (null) mesmo com 1 candidato específico → manual, não aceita o falso-amigo', async () => {
+    const especifico: CategoriaCandidata = { domainId: 'MLB-BICYCLE_TIRE_REPAIR_KITS', domainName: 'Kit de remendos de bicicletas', categoriaId: 'MLB67966', categoriaNome: 'Remendos' };
+    const r = await resolverCategoria(
+      { nome: 'REMENDO MAGICO 1MT UND' },
+      { preditor: async () => [especifico], llm: async () => null },
+    );
+    expect(r.origem).toBe('manual');
+    expect(r.categoriaId).toBeNull();
+  });
+
+  it('(o) LLM falha tecnicamente (undefined) → cai no topo específico (resiliente, como hoje)', async () => {
+    const especifico: CategoriaCandidata = { domainId: 'MLB-X', domainName: 'X', categoriaId: 'MLB1', categoriaNome: 'Categoria Específica' };
+    const r = await resolverCategoria(
+      { nome: 'Produto qualquer' },
+      { preditor: async () => [especifico], llm: async () => undefined },
+    );
+    expect(r.origem).toBe('preditor');
+    expect(r.categoriaId).toBe('MLB1');
+  });
+
+  it('(p) mistura genérico + específico: LLM só vê o específico e escolhe', async () => {
+    const r = await resolverCategoria(
+      { nome: 'X' },
+      { preditor: async () => [generico, fiosCat], llm: async (_i, cands) => {
+          expect(cands.some((c) => c.categoriaNome === 'Outros')).toBe(false);
+          return 'MLB270273';
+        } },
+    );
+    expect(r.categoriaId).toBe('MLB270273');
+  });
+
+  it('(q) tipoProdutoBusca vazio → só 1 chamada ao preditor (sem 2ª busca desnecessária)', async () => {
+    let chamadas = 0;
+    await resolverCategoria(
+      { nome: 'Caderno', tipoProdutoBusca: '' },
+      { preditor: async () => { chamadas++; return []; } },
+    );
+    expect(chamadas).toBe(1);
+  });
+
+  it('(r) dedup: mesmo category_id nas duas buscas não duplica candidato', async () => {
+    const r = await resolverCategoria(
+      { nome: 'EUROROMA', tipoProdutoBusca: 'linha euroroma' },
+      { preditor: async () => [fiosCat] },
+    );
+    expect(r.categoriaId).toBe('MLB270273');
+    expect(r.origem).toBe('preditor');
+  });
+});

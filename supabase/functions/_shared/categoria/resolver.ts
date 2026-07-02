@@ -9,6 +9,9 @@ export type OrigemCategoria = 'regex' | 'preditor' | 'ia' | 'manual';
 export interface InputCategoria {
   nome: string;
   descricao?: string;
+  /** Substantivo do tipo de produto, grounded pelo copywriter (ADR-0054). Alimenta uma 2ª
+   * busca ao preditor quando o nome bruto é ruído de SKU (ex.: "EUROROMA 4/6 CORES 600G"). */
+  tipoProdutoBusca?: string;
 }
 
 export interface ResultadoCategoria {
@@ -20,7 +23,35 @@ export interface ResultadoCategoria {
 
 export interface DepsResolver {
   preditor: (nome: string) => Promise<CategoriaCandidata[]>;
-  llm?: (input: InputCategoria, candidatos: CategoriaCandidata[]) => Promise<string | null>;
+  /**
+   * 3 estados (ADR-0054): string = category_id escolhido; null = abstenção DELIBERADA
+   * ("nenhum candidato serve" — resolver trava em manual); undefined = falha TÉCNICA
+   * (resolver cai no topo específico, comportamento resiliente de sempre).
+   */
+  llm?: (input: InputCategoria, candidatos: CategoriaCandidata[]) => Promise<string | null | undefined>;
+}
+
+// Nomes de categoria genéricos/catch-all que o Mercado Livre usa como bucket residual (ex.:
+// "Outros" — validado via API real: MLB1371, MLB190440, MLB270264 são literalmente "Outros"
+// em domínios distintos). Nunca podem ser a resposta final automática (ADR-0054, lote #50).
+const TERMOS_GENERICOS = ['outro', 'outros', 'outra', 'outras', 'diverso', 'diversos', 'diversa', 'diversas', 'geral', 'general', 'otro', 'otros'];
+
+function ehCategoriaGenerica(nomeCategoria: string): boolean {
+  const n = normalizarTexto(nomeCategoria);
+  return TERMOS_GENERICOS.some((t) => n.includes(t));
+}
+
+/** Une candidatos de 2 buscas (bruta + limpa), dedup por categoriaId, bruta-primeiro (preserva
+ * os casos que já classificam corretamente com o nome cru — regressão dos lotes 42-49). */
+function mesclarCandidatos(a: CategoriaCandidata[], b: CategoriaCandidata[]): CategoriaCandidata[] {
+  const vistos = new Set<string>();
+  const out: CategoriaCandidata[] = [];
+  for (const c of [...a, ...b]) {
+    if (vistos.has(c.categoriaId)) continue;
+    vistos.add(c.categoriaId);
+    out.push(c);
+  }
+  return out;
 }
 
 // Pistas fortes de vertical: termos inequívocos no título (ferramenta elétrica)
@@ -67,8 +98,17 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
     return { categoriaId: catOverride, categoriaNome: rotuloParaTipo(tipo), tipo, origem: 'regex' };
   }
 
-  // 2. Preditor nativo do ML.
-  const candidatos = await deps.preditor(input.nome).catch(() => [] as CategoriaCandidata[]);
+  // 2. Preditor nativo do ML — busca pelo nome bruto SEMPRE; busca pela query limpa
+  // (tipo_produto_busca, ADR-0054) só quando ela existe, em paralelo. Nomes tipo SKU
+  // (marca+especificação, ex.: "EUROROMA 4/6 CORES 600G 610MT") são ruído pra busca
+  // textual do ML — a query limpa resolve sem descartar o que já funciona hoje (a
+  // busca bruta continua rodando e entra primeiro no merge, preservando os lotes 42-49).
+  const buscaLimpa = input.tipoProdutoBusca?.trim();
+  const [brutos, limpos] = await Promise.all([
+    deps.preditor(input.nome).catch(() => [] as CategoriaCandidata[]),
+    buscaLimpa ? deps.preditor(buscaLimpa).catch(() => [] as CategoriaCandidata[]) : Promise.resolve([] as CategoriaCandidata[]),
+  ]);
+  const candidatos = mesclarCandidatos(brutos, limpos);
   if (candidatos.length === 0) {
     return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
   }
@@ -86,15 +126,30 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
     return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
   }
 
-  // 2b. Desempate LLM — só em ambiguidade real (≥2 domains distintos) e com closed-set.
-  const domains = new Set(candidatos.map((c) => c.domainId));
-  if (deps.llm && domains.size >= 2) {
-    const escolhidoId = await deps.llm(input, candidatos).catch(() => null);
-    const escolhido = candidatos.find((c) => c.categoriaId === escolhidoId);
-    if (escolhido && escolhido.categoriaId !== topo.categoriaId) {
-      return { categoriaId: escolhido.categoriaId, categoriaNome: escolhido.categoriaNome, tipo: tipoParaCategoria(escolhido.categoriaId), origem: 'ia' };
+  // 3. Candidatos genéricos ("Outros" etc.) nunca são resposta final automática (ADR-0054,
+  // lote #50) — separados ANTES de qualquer decisão. Zero candidato específico → manual.
+  const especificos = candidatos.filter((c) => !ehCategoriaGenerica(c.categoriaNome));
+  if (especificos.length === 0) {
+    return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
+  }
+  const topoEspecifico = especificos[0];
+
+  // 4. Desempate LLM — roda sempre que houver ≥1 candidato específico (não só em
+  // ambiguidade). Abstenção deliberada (null) → manual, nunca aceita o falso-amigo
+  // que sobrou. Falha técnica (undefined) → cai no topo específico (resiliente).
+  if (deps.llm) {
+    const resultado = await deps.llm(input, especificos).catch(() => undefined as string | null | undefined);
+    if (resultado === null) {
+      return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
     }
+    if (typeof resultado === 'string') {
+      const escolhido = especificos.find((c) => c.categoriaId === resultado);
+      if (escolhido && escolhido.categoriaId !== topoEspecifico.categoriaId) {
+        return { categoriaId: escolhido.categoriaId, categoriaNome: escolhido.categoriaNome, tipo: tipoParaCategoria(escolhido.categoriaId), origem: 'ia' };
+      }
+    }
+    // resultado undefined (falha técnica) ou string fora do closed-set: cai no fallback abaixo.
   }
 
-  return { categoriaId: topo.categoriaId, categoriaNome: topo.categoriaNome, tipo: tipoParaCategoria(topo.categoriaId), origem: 'preditor' };
+  return { categoriaId: topoEspecifico.categoriaId, categoriaNome: topoEspecifico.categoriaNome, tipo: tipoParaCategoria(topoEspecifico.categoriaId), origem: 'preditor' };
 }
