@@ -297,10 +297,13 @@ export default function DetalheFinanceiro() {
     });
   }
 
+  type SaqueMutationVars = { ids: string[]; ignoradosCliente: number };
+
   const mutationRegistrar = useMutation({
-    mutationFn: registrarSaque,
-    onSuccess: (atualizados, ids) => {
-      const ignorados = ids.length - atualizados;
+    mutationFn: ({ ids }: SaqueMutationVars) => registrarSaque(ids),
+    onSuccess: (atualizados, vars) => {
+      const ignoradosBackend = vars.ids.length - atualizados;
+      const ignorados = vars.ignoradosCliente + ignoradosBackend;
       toast.success(`${atualizados} pedido(s) marcado(s) como sacado(s)`, {
         description: ignorados > 0 ? `${ignorados} registro(s) ignorado(s).` : undefined,
       });
@@ -311,9 +314,10 @@ export default function DetalheFinanceiro() {
   });
 
   const mutationDesfazer = useMutation({
-    mutationFn: desfazerSaque,
-    onSuccess: (atualizados, ids) => {
-      const ignorados = ids.length - atualizados;
+    mutationFn: ({ ids }: SaqueMutationVars) => desfazerSaque(ids),
+    onSuccess: (atualizados, vars) => {
+      const ignoradosBackend = vars.ids.length - atualizados;
+      const ignorados = vars.ignoradosCliente + ignoradosBackend;
       toast.success(`${atualizados} pedido(s) voltou/voltaram para liberado`, {
         description: ignorados > 0 ? `${ignorados} registro(s) ignorado(s).` : undefined,
       });
@@ -323,29 +327,37 @@ export default function DetalheFinanceiro() {
     onError: (e) => toast.error('Falha ao desfazer saque', { description: e instanceof Error ? e.message : 'Erro desconhecido' }),
   });
 
-  function vendaIdsPorStatus(statusEsperado: StatusLiberacao): string[] {
+  function vendaIdsPorStatus(statusEsperado: StatusLiberacao): SaqueMutationVars {
     const now = Date.now();
-    return selecionadosVisiveis
-      .filter((p) => statusLiberacao({ money_release_date: p.money_release_date, sacado_em: p.sacado_em }, now) === statusEsperado)
-      .flatMap((p) => p.vendaIds);
+    const ids: string[] = [];
+    let ignoradosCliente = 0;
+    for (const pedido of selecionadosVisiveis) {
+      const status = statusLiberacao({ money_release_date: pedido.money_release_date, sacado_em: pedido.sacado_em }, now);
+      if (status === statusEsperado) {
+        ids.push(...pedido.vendaIds);
+      } else {
+        ignoradosCliente += 1;
+      }
+    }
+    return { ids, ignoradosCliente };
   }
 
   function onRegistrarSaque() {
-    const ids = vendaIdsPorStatus('liberado');
+    const { ids, ignoradosCliente } = vendaIdsPorStatus('liberado');
     if (ids.length === 0) {
       toast.error('Selecione pedido(s) liberado(s).');
       return;
     }
-    mutationRegistrar.mutate(ids);
+    mutationRegistrar.mutate({ ids, ignoradosCliente });
   }
 
   function onDesfazerSaque() {
-    const ids = vendaIdsPorStatus('sacado');
+    const { ids, ignoradosCliente } = vendaIdsPorStatus('sacado');
     if (ids.length === 0) {
       toast.error('Selecione pedido(s) sacado(s).');
       return;
     }
-    mutationDesfazer.mutate(ids);
+    mutationDesfazer.mutate({ ids, ignoradosCliente });
   }
 
   // Totais e markup agregado sobre os pedidos FILTRADOS (coerente com o que está visível).
