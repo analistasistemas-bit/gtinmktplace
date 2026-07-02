@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, unidade')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, unidade, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -176,7 +176,12 @@ Deno.serve(async (req) => {
 
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
-    if (categoriaParaTipo(tipo) != null) {
+    if (claimed.atributos_editados_pelo_operador) {
+      // Camada 2B (ADR-0052): o operador completou atributos manualmente na Revisão. Não
+      // recalcular — preserva a edição contra o reprocessamento (espelha título/descrição).
+      atributosMl = (claimed.atributos_ml as AtributoML[] | null) ?? [];
+      faltantes = (claimed.atributos_faltantes as string[] | null) ?? [];
+    } else if (categoriaParaTipo(tipo) != null) {
       // Tipo de aviamento conhecido (via regex OU categoria do preditor mapeada de volta ao
       // tipo): obrigatórios curados (BRAND, MODEL, RIBBON_TYPE…) — determinísticos, têm
       // prioridade e não dependem do schema/IA (que podem falhar e deixar atributos vazios).

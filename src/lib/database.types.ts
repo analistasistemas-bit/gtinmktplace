@@ -132,6 +132,7 @@ export type Database = {
           atacado: Json | null
           atacado_erro: string | null
           atacado_status: string | null
+          atributos_editados_pelo_operador: boolean
           atributos_faltantes: Json | null
           atributos_ml: Json
           atualizado_em: string
@@ -191,6 +192,7 @@ export type Database = {
           atacado?: Json | null
           atacado_erro?: string | null
           atacado_status?: string | null
+          atributos_editados_pelo_operador?: boolean
           atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
@@ -250,6 +252,7 @@ export type Database = {
           atacado?: Json | null
           atacado_erro?: string | null
           atacado_status?: string | null
+          atributos_editados_pelo_operador?: boolean
           atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
