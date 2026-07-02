@@ -45,6 +45,7 @@ Thumbs.db
 
 # Agent session/worktree artifacts
 .claude/
+.worktrees/
 .superpowers/
 
 # Serena MCP (config local da ferramenta)
@@ -56,4 +57,3 @@ Thumbs.db
 .gemini/
 skills-lock.json
 uninstall-serena-codex.sh
-
