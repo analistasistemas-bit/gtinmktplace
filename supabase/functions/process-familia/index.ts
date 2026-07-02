@@ -6,7 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo } from '../_shared/ai/titulo.ts';
+import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
 
     const fornecedor = (claimed.fornecedor as string | null) ?? undefined;
     const cat = await resolverCategoria(
-      { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
+      { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, tipoProdutoBusca: copy.tipo_produto_busca },
       {
         preditor: (q) => (token ? buscarCategoriaPreditor(token, q) : Promise.resolve([])),
         llm: desempatarCategoriaLLM,
@@ -295,7 +295,7 @@ Deno.serve(async (req) => {
     const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: garantirCorTitulo(
-        garantirMetragemTitulo(copy.titulo, claimed.nome_pai),
+        garantirMetragemTitulo(garantirTipoProdutoTitulo(copy.titulo, copy.tipo_produto_busca), claimed.nome_pai),
         coresUnicas.length === 1 ? coresUnicas[0] : null,
         coresUnicas.length,
       ),
