@@ -6,7 +6,7 @@ import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, 
 import type { FotoResolver } from './fotos-produto';
 import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
-import { round2 } from './formato';
+import { round2, fmtBRLSemSimbolo } from './formato';
 
 export interface ItemPedido {
   id: string;
@@ -279,9 +279,10 @@ export function pedidoCasaBusca(p: Pedido, query: string): boolean {
   if (!q) return true;
   const campos = [
     nomeExibicaoComprador(p),
+    p.chave,
     ...p.orderIds.map(String),
-    String(p.bruto).replace('.', ','),
-    String(p.liquido).replace('.', ','),
+    fmtBRLSemSimbolo(p.bruto),
+    fmtBRLSemSimbolo(p.liquido),
     ...p.itens.flatMap((it) => [it.titulo, it.codigo]),
   ];
   return campos.some((c) => c?.toLowerCase().includes(q));

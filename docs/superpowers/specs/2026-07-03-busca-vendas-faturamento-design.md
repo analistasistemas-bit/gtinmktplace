@@ -26,7 +26,9 @@ Um único `Input` de texto livre casa (case-insensitive, `includes`) contra:
 - Nome do comprador (`nomeExibicaoComprador`)
 - Título e código de cada item do pedido (`itens[].titulo`, `itens[].codigo`)
 - Número do pedido (`orderIds`, `chave`)
-- Valor bruto e líquido do pedido, como texto (`String(bruto)`, `String(liquido)`)
+- Valor bruto e líquido do pedido, no mesmo formato exibido na tela
+  (`fmtBRLSemSimbolo`, ex. "1.234,50") — não o `String(number)` cru, que o
+  operador nunca vê na UI
 
 ## UI
 

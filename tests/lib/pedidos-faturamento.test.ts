@@ -203,9 +203,21 @@ describe('pedidoCasaBusca', () => {
     expect(pedidoCasaBusca(p, '42')).toBe(true);
   });
 
-  it('casa por valor bruto ou líquido como texto', () => {
-    expect(pedidoCasaBusca(p, '150,5')).toBe(true);
+  it('casa por valor bruto ou líquido no formato exibido na tela (fmtBRLSemSimbolo)', () => {
+    // bruto=150.5 → "150,50" na tela (não "150,5", que o usuário nunca vê)
+    expect(pedidoCasaBusca(p, '150,50')).toBe(true);
     expect(pedidoCasaBusca(p, '130,25')).toBe(true);
+  });
+
+  it('casa valor com separador de milhar como exibido na tela', () => {
+    const pack = agruparPorPedido([venda({ order_id: 1, pack_id: 1, total_amount: 1234.5, liquido: 1000 })])[0];
+    expect(pedidoCasaBusca(pack, '1.234,50')).toBe(true);
+  });
+
+  it('casa pack pela chave (pack_id), não presente em orderIds', () => {
+    const pack = agruparPorPedido([venda({ order_id: 10, pack_id: 999, itens: [item({ id: 'x' })] })])[0];
+    expect(pack.chave).toBe('999');
+    expect(pedidoCasaBusca(pack, '999')).toBe(true);
   });
 
   it('não casa termo ausente', () => {
