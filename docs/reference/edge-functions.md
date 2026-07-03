@@ -208,3 +208,17 @@ derrubando o faturamento em tempo real em cascata. Corrigido pelo
 (`verify_jwt=false` nas quatro, autenticação real continua interna por assinatura/JWT). Confirmado
 em produção que segue `false`. Detalhe do incidente em
 `obsidian-vault/05-Bugs/Incidentes.md`.
+
+## Histórico — catálogo truncado em 1000 linhas quebrava casamento por GTIN (corrigida)
+
+`carregarCatalogo` (`_shared/faturamento/io.ts`) lia `variacoes`/`familias` sem paginação
+(`.range()`). Contas com mais de ~1000 variações (teto padrão do PostgREST sem `ORDER BY`) perdiam
+produtos silenciosamente do mapa `infoPorGtin` — o casamento "venda de catálogo → PubliAI por GTIN"
+(ADR-0037) nunca encontrava esses produtos, mesmo cadastrados há semanas. Sintoma: vendas de
+catálogo ficavam permanentemente em "Fora do PubliAI" sem código/EAN (tela Publicados → Detalhe de
+vendas). Não era timing nem deploy desatualizado — era truncamento silencioso da query, presente
+desde a implementação original do casamento por GTIN (10 dias antes de ser percebido). Corrigido com
+`paginarTudo` (mesma técnica de `buscarTodasPaginas` do frontend, `src/lib/paginacao-supabase.ts`)
+em `carregarCatalogo`. Redeploy: `sync-venda`, `backfill-faturamento`, `reconciliar-faturamento`,
+`ml-webhook`. Backfill reprocessou o histórico e reclassificou os itens afetados. Detalhe em
+`obsidian-vault/09-Logs/Changelog.md` (2026-07-03).
