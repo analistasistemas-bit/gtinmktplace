@@ -19,11 +19,12 @@ import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas'
 import { calcularMarkup } from '@/lib/markup';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
-import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
+import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { labelStatusLiberacao, statusLiberacao, type StatusLiberacao } from '@/lib/status-liberacao';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
@@ -199,13 +200,20 @@ export default function DetalheFinanceiro() {
   const vendasQ = useVendas(janela, 'todos');
   const custosQ = useCustos();
   const fotosQ = useFotosProduto();
+  const aliquotasQ = useAliquotas();
   const isFetching = vendasQ.isFetching;
   const error = vendasQ.isError;
 
   // Banner agregado (líquido/bruto/retido do período) — mesma fonte dos outros menus (ADR-0038).
   const r = useMemo(
-    () => calcularResumo(vendasQ.data ?? [], montarCustoResolver(custosQ.data), montarPesoResolver(custosQ.data)),
-    [vendasQ.data, custosQ.data],
+    () => calcularResumo(
+      vendasQ.data ?? [],
+      montarCustoResolver(custosQ.data),
+      montarPesoResolver(custosQ.data),
+      undefined,
+      montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
+    ),
+    [vendasQ.data, custosQ.data, aliquotasQ.data],
   );
   // Tabela por PEDIDO (pack agrupado), igual ao Faturamento, p/ análise detalhada por item.
   const pedidos = useMemo(
@@ -214,8 +222,9 @@ export default function DetalheFinanceiro() {
       montarCustoResolver(custosQ.data),
       montarPesoResolver(custosQ.data),
       montarFotoResolver(fotosQ.data),
+      montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
     ),
-    [vendasQ.data, custosQ.data, fotosQ.data],
+    [vendasQ.data, custosQ.data, fotosQ.data, aliquotasQ.data],
   );
 
   const bruto = r.bruto;

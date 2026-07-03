@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador } from '@/lib/pedidos-faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
-import type { CustoResolver } from '@/lib/resumo-vendas';
+import type { CustoResolver, AliquotaResolver } from '@/lib/resumo-vendas';
 
 function item(over: Partial<VendaItem> = {}): VendaItem {
   return {
@@ -69,6 +69,27 @@ describe('agruparPorPedido', () => {
     expect(i2.liquido).toBe(16);
     expect(i1.markup).toBeCloseTo((8 - 5) / 5, 5);   // 0.6
     expect(i2.markup).toBeCloseTo((16 - 10) / 10, 5); // 0.6
+  });
+
+  it('imposto por origem reduz o markup do item e do pedido (ADR-0055)', () => {
+    const custo: CustoResolver = () => 40;      // custo unitário 40
+    const aliquota: AliquotaResolver = () => 10; // 10%
+    const vendas = [venda({
+      id: 'a', order_id: 1, pack_id: null, total_amount: 100, liquido: 80,
+      itens: [item({ id: 'i1', unit_price: 100, quantity: 1 })],
+    })];
+
+    const semImposto = agruparPorPedido(vendas, custo)[0];
+    const comImposto = agruparPorPedido(vendas, custo, undefined, undefined, aliquota)[0];
+
+    expect(semImposto.imposto).toBe(0);
+    expect(semImposto.markup).toBeCloseTo(1.0, 5);   // (80 − 40) / 40
+    expect(comImposto.imposto).toBe(10);             // 100 × 10%
+    expect(comImposto.itens[0].imposto).toBe(10);
+    expect(comImposto.markup).toBeCloseTo(0.75, 5);  // (80 − 10 − 40) / 40
+    expect(comImposto.markup!).toBeLessThan(semImposto.markup!);
+    // KPI agregado desconta o imposto do líquido com custo.
+    expect(calcularKpisPedidos([comImposto]).markup).toBeCloseTo(0.75, 5);
   });
 
   it('sem custo cadastrado → markup null', () => {

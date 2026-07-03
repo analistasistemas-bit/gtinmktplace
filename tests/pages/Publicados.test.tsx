@@ -22,6 +22,9 @@ vi.mock('@/hooks/useVendas', () => ({
 vi.mock('@/hooks/useCustos', () => ({
   useCustos: () => useCustosMock(),
 }));
+vi.mock('@/hooks/useConfiguracoes', () => ({
+  useAliquotas: () => ({ data: { nacional: 8, importado: 16 } }),
+}));
 
 vi.mock('@/hooks/useStatusPublicados', () => ({
   useStatusPublicados: () => useStatusPublicadosMock(),

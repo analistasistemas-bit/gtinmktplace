@@ -147,6 +147,8 @@ export interface Familia {
   categoriaMlId: string | null;
   categoriaNome: string | null;
   tipoOrigem: TipoOrigem | null;
+  /** Origem do produto p/ imposto (ADR-0055): nacional | importado. */
+  origem: 'nacional' | 'importado';
   atributosFaltantes: string[] | null;
   atributosMl: AtributoMl[];
   precoMin: number;

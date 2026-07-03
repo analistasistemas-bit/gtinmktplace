@@ -51,8 +51,9 @@ import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo } from '@/lib/resumo-vendas';
-import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
+import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -309,9 +310,16 @@ export default function Publicados() {
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
   const { data: vendas, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useVendas(janela, 'todos');
   const { data: custos } = useCustos();
+  const { data: aliquotas } = useAliquotas();
   const resumo = useMemo(
-    () => calcularResumo(vendas ?? [], montarCustoResolver(custos), montarPesoResolver(custos)),
-    [vendas, custos],
+    () => calcularResumo(
+      vendas ?? [],
+      montarCustoResolver(custos),
+      montarPesoResolver(custos),
+      undefined,
+      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+    ),
+    [vendas, custos, aliquotas],
   );
   const markupPct = resumo.markup;
 

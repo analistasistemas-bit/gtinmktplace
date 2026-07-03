@@ -8,6 +8,10 @@ describe('liquidoNoMercado', () => {
   it('null quando não há menor preço', () => {
     expect(liquidoNoMercado(null, 3.5)).toBeNull();
   });
+  it('subtrai também o imposto quando informado (ADR-0055)', () => {
+    // 100 − 15 comissão − 8 imposto = 77
+    expect(liquidoNoMercado(100, 15, 8)).toBeCloseTo(77, 2);
+  });
 });
 
 describe('etiquetaParaMinimo (gross-up acima do abismo)', () => {

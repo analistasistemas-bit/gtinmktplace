@@ -39,6 +39,11 @@ function Coluna({
       <div className="text-[11px] text-muted-foreground">
         comissão −{fmtBRL(t.comissao)} ({t.percentual}%)
       </div>
+      {t.imposto > 0 && (
+        <div className="text-[11px] text-muted-foreground">
+          imposto −{fmtBRL(t.imposto)}
+        </div>
+      )}
       {temCusto && (
         <div className={cn('mt-0.5 text-[11px]', prejuizo ? 'text-destructive' : 'text-success')}>
           {prejuizo ? 'prejuízo ' : 'lucro '}
@@ -57,6 +62,7 @@ export function CardVoceRecebe({
   custo,
   real,
   dimensoes,
+  aliquotaPct = 0,
 }: {
   preco: number;
   categoriaMlId: string | null;
@@ -65,8 +71,10 @@ export function CardVoceRecebe({
   real?: 'classico' | 'premium' | null;
   /** Dimensões/peso da variação representativa, para descontar o frete do vendedor. */
   dimensoes?: DimensoesFrete | null;
+  /** Alíquota de imposto por origem em % (ADR-0055); 0 = sem imposto. */
+  aliquotaPct?: number;
 }) {
-  const { data, isLoading, isError } = useTarifaML(preco, categoriaMlId, dimensoes);
+  const { data, isLoading, isError } = useTarifaML(preco, categoriaMlId, dimensoes, aliquotaPct);
 
   return (
     <div className="rounded-md border p-2 shadow-sm">

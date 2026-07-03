@@ -149,6 +149,7 @@ Deno.serve(async (req) => {
           lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
           nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
           fornecedor: g.fornecedor,
+          origem: g.origem,
           operacao: 'CREATE', status: 'pendente',
           capa_storage_path: matchCapa(codigosFoto, lote.imagens_paths) ?? null,
           capa2_storage_path: matchCapa2(codigosFoto, lote.imagens_paths) ?? null,
@@ -162,6 +163,7 @@ Deno.serve(async (req) => {
         lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
         fornecedor: g.fornecedor,
+        origem: g.origem,
         operacao: 'UPDATE',
         // Com cor nova: 'pendente' p/ o process-familia resolver a cor das novas (ADR-0004).
         // Sem cor nova: 'pronto' direto, sem IA.

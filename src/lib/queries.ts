@@ -335,6 +335,7 @@ export function familiaFromRow(
     categoriaMlId: r.categoria_ml_id,
     categoriaNome: r.categoria_nome,
     tipoOrigem: r.tipo_origem,
+    origem: r.origem,
     atributosFaltantes: (r.atributos_faltantes as string[] | null) ?? null,
     atributosMl: (r.atributos_ml as AtributoMl[] | null) ?? [],
     precoMin,
@@ -385,6 +386,25 @@ export async function upsertDescontoPct(pct: number): Promise<void> {
   if (!user) throw new Error('sem sessão');
   const { error } = await supabase.from('configuracoes')
     .upsert({ user_id: user.id, desconto_pct: pct, atualizado_em: new Date().toISOString() });
+  if (error) throw error;
+}
+
+export async function fetchAliquotas(): Promise<{ nacional: number; importado: number }> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { nacional: 8, importado: 16 };
+  const { data } = await supabase.from('configuracoes')
+    .select('aliquota_nacional_pct, aliquota_importado_pct').eq('user_id', user.id).maybeSingle();
+  return {
+    nacional: data?.aliquota_nacional_pct != null ? Number(data.aliquota_nacional_pct) : 8,
+    importado: data?.aliquota_importado_pct != null ? Number(data.aliquota_importado_pct) : 16,
+  };
+}
+
+export async function upsertAliquotas(a: { nacional: number; importado: number }): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ user_id: user.id, aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado, atualizado_em: new Date().toISOString() });
   if (error) throw error;
 }
 

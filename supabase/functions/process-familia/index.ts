@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador')
+    .select('id, user_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -237,6 +237,16 @@ Deno.serve(async (req) => {
       : 0;
     const competitivo = conc.vendedores > 0 && conc.preco_min != null;
 
+    // Imposto por origem (ADR-0055): entra no gross-up para o preço cobrir o imposto.
+    const { data: cfgAliq } = await admin
+      .from('configuracoes')
+      .select('aliquota_nacional_pct, aliquota_importado_pct')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const aliquotaPct = claimed.origem === 'importado'
+      ? Number(cfgAliq?.aliquota_importado_pct ?? 16)
+      : Number(cfgAliq?.aliquota_nacional_pct ?? 8);
+
     let comissao: { percentual: number; fixa: number } | null = null;
     let frete = 0;
     if (!competitivo && categoriaMlId && token) {
@@ -260,7 +270,7 @@ Deno.serve(async (req) => {
             comprimento_cm: rep.comprimento_cm != null ? Number(rep.comprimento_cm) : null,
             peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
           };
-          const precoPrimeiraPassada = grossUp(precoMinFamilia, comissao.percentual, comissao.fixa);
+          const precoPrimeiraPassada = grossUp(precoMinFamilia, comissao.percentual, comissao.fixa, 0, aliquotaPct);
           frete = await buscarFreteVendedor(token, String(cred.ml_user_id), precoPrimeiraPassada, categoriaMlId, dimRep);
         }
       } catch (e) {
@@ -272,14 +282,14 @@ Deno.serve(async (req) => {
     const updatesPreco = resolvidas
       .filter((v) => !v.preco_editado_pelo_operador)
       .map((v) => {
-        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete);
+        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct);
         return admin.from('variacoes')
           .update({ preco_publicacao: preco })
           .eq('id', v.id);
       });
     await Promise.all(updatesPreco);
 
-    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete);
+    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct);
 
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =

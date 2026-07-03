@@ -2,7 +2,7 @@
 // numa única linha — um carrinho do cliente vira um pedido, e os produtos vão para o detalhe.
 // Reaproveita o rateio de frete (ratearLiquidoPorFrete) e o custo (CustoResolver). Pura e testável.
 import type { Venda, VendaItem } from './faturamento';
-import { ehFaturavel, ratearLiquidoPorFrete, type CustoResolver, type PesoResolver } from './resumo-vendas';
+import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
 import type { FotoResolver } from './fotos-produto';
 import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
@@ -23,7 +23,9 @@ export interface ItemPedido {
   custo: number | null;
   /** Líquido atribuído ao item: rateio do líquido do pedido por valor bruto do item. */
   liquido: number;
-  /** (líquido − custo) ÷ custo. null sem custo. */
+  /** Imposto do item = valor de venda × alíquota(origem). 0 sem origem/alíquota (ADR-0055). */
+  imposto: number;
+  /** (líquido − imposto − custo) ÷ custo. null sem custo. */
   markup: number | null;
 }
 
@@ -69,6 +71,8 @@ export interface Pedido {
   estorno: number;
   /** Custo total dos produtos do pedido. null = nenhum item com custo. */
   custo: number | null;
+  /** Imposto total do pedido (Σ imposto dos itens), em R$ (ADR-0055). */
+  imposto: number;
   markup: number | null;
   comissao: number;
   rastreio: string | null;
@@ -91,7 +95,7 @@ function custoDoItem(it: VendaItem, resolver?: CustoResolver): number | null {
  */
 export function agruparPorPedido(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
-  fotoResolver?: FotoResolver,
+  fotoResolver?: FotoResolver, aliquotaResolver?: AliquotaResolver,
 ): Pedido[] {
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
   const liquidoMembro = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
@@ -118,21 +122,26 @@ export function agruparPorPedido(
 
     let custoTotal = 0;
     let temCusto = false;
+    let impostoTotal = 0;
     const itens: ItemPedido[] = itensFlat.map((it) => {
       const custo = custoDoItem(it, custoResolver);
       if (custo != null) { custoTotal += custo; temCusto = true; }
+      const imposto = impostoDoItem(it, aliquotaResolver);
+      impostoTotal += imposto;
       const valorItem = it.unit_price * it.quantity;
       const liqItem = valorItens > 0 ? round2((liquido * valorItem) / valorItens) : 0;
-      const markup = custo != null && custo > 0 ? calcularMarkup(liqItem, custo).markup : null;
+      const liqItemComImposto = round2(liqItem - imposto);
+      const markup = custo != null && custo > 0 ? calcularMarkup(liqItemComImposto, custo).markup : null;
       return {
         id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
         cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
-        custo, liquido: liqItem, markup,
+        custo, liquido: liqItem, imposto, markup,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;
-    const markup = custo != null && custo > 0 ? calcularMarkup(liquido, custo).markup : null;
+    const imposto = round2(impostoTotal);
+    const markup = custo != null && custo > 0 ? calcularMarkup(round2(liquido - imposto), custo).markup : null;
 
     const primeiro = membros[0];
     const grupoSacado = membros.every((v) => v.sacado_em != null);
@@ -167,7 +176,7 @@ export function agruparPorPedido(
       sacado_em,
       sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
-      unidades, bruto, frete, liquido, custo, markup, comissao,
+      unidades, bruto, frete, liquido, custo, imposto, markup, comissao,
       rastreio: primeiro.tracking_number,
       uf: primeiro.uf ?? null,
       cidade: primeiro.cidade ?? null,
@@ -212,7 +221,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     faturaveis += 1;
     bruto += p.bruto;
     unidades += p.unidades;
-    if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
+    if (p.custo != null && p.custo > 0) { liqComCusto += round2(p.liquido - p.imposto); custoTotal += p.custo; }
     if (p.comprador_id != null) {
       pedidosPorComprador.set(p.comprador_id, (pedidosPorComprador.get(p.comprador_id) ?? 0) + 1);
     }

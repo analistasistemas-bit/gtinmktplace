@@ -34,6 +34,20 @@ describe('grossUp (preço cujo líquido ≥ piso)', () => {
   it('piso acima da fronteira (R$ 11,50, 12%) → 11,50/0,88=13,06 → 13,10 (passa do abismo)', () => {
     expect(grossUp(11.5, 12, 0)).toBeCloseTo(13.1, 2);
   });
+
+  // ADR-0055: imposto por origem entra no denominador junto com a comissão.
+  it('imposto 8% (nacional): piso 17,50, 11,5%, frete 6,75 → (24,25/0,805)=30,12 → 30,15', () => {
+    const preco = grossUp(17.5, 11.5, 0, 6.75, 8);
+    expect(preco).toBeCloseTo(30.15, 2);
+    // líquido após comissão + frete + imposto cobre o piso
+    expect(preco - preco * 0.115 - 6.75 - preco * 0.08).toBeGreaterThanOrEqual(17.5);
+  });
+  it('imposto 16% (importado) sobe o preço vs 8%', () => {
+    expect(grossUp(17.5, 11.5, 0, 6.75, 16)).toBeGreaterThan(grossUp(17.5, 11.5, 0, 6.75, 8));
+  });
+  it('guard: comissão + imposto ≥ 100% não divide por ≤0 → cai no piso acima do abismo', () => {
+    expect(grossUp(20, 90, 0, 0, 15)).toBeCloseTo(20, 2);
+  });
 });
 
 describe('sugerirPrecoVenda', () => {

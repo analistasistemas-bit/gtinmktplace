@@ -1,4 +1,5 @@
 import type { ItemAnalise } from './tipos.ts';
+import { normalizarOrigem } from '../parser.ts';
 
 const COLUNAS = ['NOME', 'UNIDADE', 'GTIN', 'PRECO', 'CUSTO'] as const;
 
@@ -62,6 +63,7 @@ export function extrairItensAnalise(
       unidade: r.UNIDADE != null ? String(r.UNIDADE).trim() : null,
       minimo,
       custo,
+      origem: normalizarOrigem(r.ORIGEM != null ? String(r.ORIGEM) : undefined),
     });
   }
 

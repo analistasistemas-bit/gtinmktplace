@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchDescontoPct, upsertDescontoPct,
+  fetchAliquotas, upsertAliquotas,
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
 } from '@/lib/queries';
 
@@ -12,6 +13,17 @@ export function useSalvarDescontoPct() {
   return useMutation({
     mutationFn: (pct: number) => upsertDescontoPct(pct),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'desconto_pct'] }),
+  });
+}
+
+export function useAliquotas() {
+  return useQuery({ queryKey: ['configuracoes', 'aliquotas'], queryFn: fetchAliquotas });
+}
+export function useSalvarAliquotas() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (a: { nacional: number; importado: number }) => upsertAliquotas(a),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'aliquotas'] }),
   });
 }
 

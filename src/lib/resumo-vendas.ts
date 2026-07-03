@@ -21,6 +21,9 @@ export type CustoResolver = (item: VendaItem) => number | null;
 /** Resolve o peso unitário (g) de um item vendido, ou null se não houver peso cadastrado. */
 export type PesoResolver = (item: VendaItem) => number | null;
 
+/** Resolve a alíquota de imposto (%) de um item pela origem da família, ou null se não mapeada. */
+export type AliquotaResolver = (item: VendaItem) => number | null;
+
 /** Uma venda resumida para a tabela do detalhe financeiro (e afins). */
 export interface VendaResumo {
 id: string;
@@ -95,6 +98,19 @@ function custoDaVenda(v: Venda, resolver?: CustoResolver): number | null {
   return achou ? round2(total) : null;
 }
 
+/** Imposto (R$) de um item (ADR-0055): valor de venda (unit × qtd) × alíquota(origem)/100. 0 sem alíquota. */
+export function impostoDoItem(it: VendaItem, resolver?: AliquotaResolver): number {
+  const pct = resolver?.(it) ?? null;
+  return pct != null && pct > 0 ? round2((it.unit_price * it.quantity * pct) / 100) : 0;
+}
+
+/** Imposto total (R$) de uma venda: soma do imposto dos itens. */
+function impostoDaVenda(v: Venda, resolver?: AliquotaResolver): number {
+  let total = 0;
+  for (const it of v.itens) total += impostoDoItem(it, resolver);
+  return round2(total);
+}
+
 /** Descrição curta da venda: título (1 item) ou "N itens". */
 function descricaoVenda(v: Venda): string | null {
   if (v.itens.length === 1) return v.itens[0].titulo ?? null;
@@ -113,7 +129,7 @@ function descricaoVenda(v: Venda): string | null {
  */
 export function calcularResumo(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
-  agoraMs: number = Date.now(),
+  agoraMs: number = Date.now(), aliquotaResolver?: AliquotaResolver,
 ): ResumoVendas {
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0;
@@ -124,7 +140,7 @@ export function calcularResumo(
   // Custo/markup por PACK (não por linha): espelha agruparPorPedido/calcularKpisPedidos (menu
   // Faturamento, fonte da verdade). Um pack conta se tiver QUALQUER item com custo, e entra com o
   // líquido inteiro do pack — assim markup/lucro/"c/ custo" batem entre todas as telas.
-  const custoPorPack = new Map<string, { liquido: number; custo: number; temCusto: boolean }>();
+  const custoPorPack = new Map<string, { liquido: number; custo: number; imposto: number; temCusto: boolean }>();
   let liberado = 0, aLiberar = 0, comissao = 0, vendasComCusto = 0;
   let proximaLiberacaoMs: number | null = null;
   let proximaLiberacao: string | null = null;
@@ -152,8 +168,9 @@ export function calcularResumo(
 
     const custo = custoDaVenda(v, custoResolver);
     const pk = String(v.pack_id ?? v.order_id);
-    const pc = custoPorPack.get(pk) ?? { liquido: 0, custo: 0, temCusto: false };
+    const pc = custoPorPack.get(pk) ?? { liquido: 0, custo: 0, imposto: 0, temCusto: false };
     pc.liquido += liq;
+    pc.imposto += impostoDaVenda(v, aliquotaResolver);
     if (custo != null && custo > 0) { pc.custo += custo; pc.temCusto = true; }
     custoPorPack.set(pk, pc);
 
@@ -194,7 +211,8 @@ export function calcularResumo(
   // nº de PACKS com custo (≤ pedidos), eliminando o antigo "55/45" (numerador por linha > pacotes).
   for (const pc of custoPorPack.values()) {
     if (pc.temCusto && pc.custo > 0) {
-      liqComCusto += round2(pc.liquido);
+      // Imposto (ADR-0055) reduz o líquido que entra no markup/lucro/margem — igual ao Faturamento.
+      liqComCusto += round2(pc.liquido - pc.imposto);
       custoTotal += round2(pc.custo);
       vendasComCusto += 1;
     }

@@ -69,6 +69,9 @@ Grupos de colunas:
   `descricao_pai`, `unidade`. Único: `(lote_id, codigo_pai)`.
 - **Lifecycle:** `status` (`familia_status`), `operacao` (`operacao_ml`).
 - **Categorização:** `tipo_aviamento`, `tipo_origem`, `categoria_ml_id`, `categoria_nome`.
+- **Origem/imposto (ADR-0055):** `origem` (enum `origem_produto` `nacional`/`importado`,
+  default `nacional`), lida da coluna opcional `ORIGEM` da planilha (linha PAI).
+  *Migration `20260703113001_imposto_origem_e_aliquotas.sql`.*
 - **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`.
 - **Concorrência/mercado:** `analise_mercado jsonb`, `concorrencia_*`.
 - **Preço:** `estrategia_preco`, `estrategia_motivo`, `custo_centavos` (ADR-0020/0042),
@@ -177,10 +180,12 @@ Anúncios moderados/pausados + coordenação de alertas. *Migration `20260622115
 Índice único parcial `(user_id, ml_item_id) WHERE resolvido_em IS NULL` (evita alerta duplicado).
 
 ### `configuracoes`
-Settings por usuário. *Migrations `20260606120614` + `20260622121259` (ADR-0017/0035/0040).*
+Settings por usuário. *Migrations `20260606120614` + `20260622121259` (ADR-0017/0035/0040) +
+`20260703113001` (ADR-0055).*
 `user_id` (PK), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token`
 (sensível — nunca retornado; lido via RPC `telegram_config_status()` que só informa
-`tem_token boolean`).
+`tem_token boolean`), `aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16)
+— alíquotas globais por usuário, sem override por família (ADR-0055).
 
 ---
 

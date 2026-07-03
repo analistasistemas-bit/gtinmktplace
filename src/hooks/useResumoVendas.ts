@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { useVendas } from './useVendas';
 import { useCustos } from './useCustos';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo, type ResumoVendas } from '@/lib/resumo-vendas';
-import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
+import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import type { Janela } from '@/lib/metricas';
 
 /**
@@ -18,9 +19,16 @@ export function useResumoVendas(janela: Janela): {
 } {
   const vendasQ = useVendas(janela, 'todos');
   const custosQ = useCustos();
+  const aliquotasQ = useAliquotas();
   const resumo = useMemo(
-    () => calcularResumo(vendasQ.data ?? [], montarCustoResolver(custosQ.data), montarPesoResolver(custosQ.data)),
-    [vendasQ.data, custosQ.data],
+    () => calcularResumo(
+      vendasQ.data ?? [],
+      montarCustoResolver(custosQ.data),
+      montarPesoResolver(custosQ.data),
+      undefined,
+      montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
+    ),
+    [vendasQ.data, custosQ.data, aliquotasQ.data],
   );
   return {
     resumo,

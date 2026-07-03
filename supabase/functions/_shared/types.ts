@@ -13,6 +13,7 @@ export interface PlanilhaRow {
   LARGURA_CM: number;
   COMPRIMENTO_CM: number;
   FORNECEDOR: string;
+  ORIGEM?: string;
 }
 
 export interface FamiliaAgrupada {
@@ -21,6 +22,7 @@ export interface FamiliaAgrupada {
   descricao_pai: string;
   unidade: string;
   fornecedor: string;
+  origem: 'nacional' | 'importado';
   variacoes: PlanilhaRow[];
 }
 

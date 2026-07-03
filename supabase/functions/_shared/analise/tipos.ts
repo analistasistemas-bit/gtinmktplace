@@ -6,6 +6,8 @@ export interface ItemAnalise {
   /** PRECO da planilha = líquido mínimo desejado. null no modo GTIN sem preencher. */
   minimo: number | null;
   custo: number | null;
+  /** Origem tributária (ADR-0055); ausência → 'nacional'. */
+  origem: 'nacional' | 'importado';
 }
 
 /** Comissão real do ML num preço, por tipo de anúncio (vinda de listing_prices). */
@@ -33,6 +35,8 @@ export interface ItemAnalisado {
   unidade: string | null;
   minimo: number | null;
   custo: number | null;
+  /** Origem tributária (ADR-0055); ausência → 'nacional'. */
+  origem: 'nacional' | 'importado';
   existeNoML: boolean;
   mercado?: Mercado;
   classico?: ComissaoTipo;

@@ -33,13 +33,17 @@ export const PRECO_MIN_ACIMA_ABISMO = 12.55;
 export const PRECO_REF_COMISSAO = 20;
 
 /**
- * Preço cujo líquido (após comissão E frete que o vendedor absorve) ≥ piso, sempre acima
+ * Preço cujo líquido (após comissão, frete que o vendedor absorve E imposto) ≥ piso, sempre acima
  * do abismo da tarifa fixa (ADR-0023). `percentual`/`fixa` devem vir da comissão lida ACIMA
  * do abismo (fixa ≈ 0). `frete` = custo de frete grátis que o vendedor paga (0 se comprador
- * paga ou indisponível). P = (piso + fixa + frete)/(1 − pct), arredonda pra cima, nunca < R$ 12,55.
+ * paga ou indisponível). `aliquotaPct` = imposto por origem em % (ADR-0055; 0 = sem imposto).
+ * P = (piso + fixa + frete)/(1 − pct − aliquota), arredonda pra cima, nunca < R$ 12,55.
  */
-export function grossUp(piso: number, percentual: number, fixa: number, frete = 0): number {
-  const bruto = (piso + fixa + frete) / (1 - percentual / 100);
+export function grossUp(piso: number, percentual: number, fixa: number, frete = 0, aliquotaPct = 0): number {
+  const denom = 1 - percentual / 100 - aliquotaPct / 100;
+  // Guard: comissão + imposto ≥ 100% tornaria o gross-up impossível (÷ ≤ 0); cai no piso acima do abismo.
+  if (denom <= 0) return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(piso + fixa + frete));
+  const bruto = (piso + fixa + frete) / denom;
   return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(bruto));
 }
 
@@ -53,6 +57,7 @@ export function sugerirPrecoVenda(
   conc: ConcorrenciaPreco,
   comissao: Comissao | null,
   frete = 0,
+  aliquotaPct = 0,
 ): PrecoSugerido {
   if (conc.vendedores > 0 && conc.preco_min != null) {
     return {
@@ -62,7 +67,7 @@ export function sugerirPrecoVenda(
     };
   }
   if (comissao) {
-    return { preco: grossUp(piso, comissao.percentual, comissao.fixa, frete), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };
+    return { preco: grossUp(piso, comissao.percentual, comissao.fixa, frete, aliquotaPct), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };
   }
   // Sem comissão: ainda empurra para fora da faixa cara (acima do abismo).
   return {

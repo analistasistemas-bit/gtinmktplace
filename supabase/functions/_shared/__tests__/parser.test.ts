@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agruparPorPai } from '../parser';
+import { agruparPorPai, normalizarOrigem } from '../parser';
 import type { PlanilhaRow } from '../types';
 
 function row(p: Partial<PlanilhaRow> & { CODIGO: string; PAI: string }): PlanilhaRow {
@@ -19,6 +19,18 @@ function row(p: Partial<PlanilhaRow> & { CODIGO: string; PAI: string }): Planilh
     ...p,
   };
 }
+
+describe('normalizarOrigem', () => {
+  it.each([
+    ['IMPORTADO', 'importado'],
+    ['NACIONAL', 'nacional'],
+    ['', 'nacional'],
+    [undefined, 'nacional'],
+    ['xyz', 'nacional'],
+  ] as const)('%s → %s', (input, esperado) => {
+    expect(normalizarOrigem(input)).toBe(esperado);
+  });
+});
 
 describe('agruparPorPai', () => {
   it('caso feliz: 1 PAI + 2 filhos → 1 família com 2 variações, sem anomalias', () => {
@@ -83,6 +95,18 @@ describe('agruparPorPai', () => {
     ];
     const { grupos } = agruparPorPai(rows);
     expect(grupos[0].fornecedor).toBe('LINHAS SETTA LTDA');
+  });
+
+  it('popula origem a partir da linha PAI, default nacional', () => {
+    const rows = [
+      row({ CODIGO: '100', PAI: '0', NOME: 'LINHA', ORIGEM: 'IMPORTADO' }),
+      row({ CODIGO: '101', PAI: '100' }),
+      row({ CODIGO: '200', PAI: '0', NOME: 'SEM ORIGEM' }),
+      row({ CODIGO: '201', PAI: '200' }),
+    ];
+    const { grupos } = agruparPorPai(rows);
+    expect(grupos.find((g) => g.codigo_pai === '00000100')!.origem).toBe('importado');
+    expect(grupos.find((g) => g.codigo_pai === '00000200')!.origem).toBe('nacional');
   });
 
   it('combinação das três anomalias coexiste num só lote', () => {

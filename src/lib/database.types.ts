@@ -98,6 +98,8 @@ export type Database = {
       }
       configuracoes: {
         Row: {
+          aliquota_importado_pct: number
+          aliquota_nacional_pct: number
           atualizado_em: string
           criado_em: string
           desconto_pct: number
@@ -107,6 +109,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          aliquota_importado_pct?: number
+          aliquota_nacional_pct?: number
           atualizado_em?: string
           criado_em?: string
           desconto_pct?: number
@@ -116,6 +120,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          aliquota_importado_pct?: number
+          aliquota_nacional_pct?: number
           atualizado_em?: string
           criado_em?: string
           desconto_pct?: number
@@ -172,6 +178,7 @@ export type Database = {
           nome_pai: string
           observacao_operador: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
+          origem: Database["public"]["Enums"]["origem_produto"]
           publicado_em: string | null
           qstash_message_id: string | null
           sale_terms: Json
@@ -232,6 +239,7 @@ export type Database = {
           nome_pai: string
           observacao_operador?: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
+          origem?: Database["public"]["Enums"]["origem_produto"]
           publicado_em?: string | null
           qstash_message_id?: string | null
           sale_terms?: Json
@@ -292,6 +300,7 @@ export type Database = {
           nome_pai?: string
           observacao_operador?: string | null
           operacao?: Database["public"]["Enums"]["operacao_ml"]
+          origem?: Database["public"]["Enums"]["origem_produto"]
           publicado_em?: string | null
           qstash_message_id?: string | null
           sale_terms?: Json
@@ -950,6 +959,7 @@ export type Database = {
         | "concluido"
         | "erro"
       operacao_ml: "CREATE" | "UPDATE"
+      origem_produto: "nacional" | "importado"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
       tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola"
       tipo_origem: "regex" | "ia" | "manual" | "preditor"
@@ -1104,6 +1114,7 @@ export const Constants = {
         "erro",
       ],
       operacao_ml: ["CREATE", "UPDATE"],
+      origem_produto: ["nacional", "importado"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
       tipo_aviamento: ["linha", "botao", "fita", "outro", "cola"],
       tipo_origem: ["regex", "ia", "manual", "preditor"],

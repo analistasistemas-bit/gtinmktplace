@@ -7,6 +7,7 @@ import { familiaSemDimensoesValidas } from '@/lib/publicavel';
 import { resumoViabilidade } from '@/lib/analise-viabilidade';
 import type { Familia, Concorrencia } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 
 const TONE_CONCORRENCIA: Record<Concorrencia, StatusTone> = {
   sem: 'neutral',
@@ -28,6 +29,9 @@ export function PainelAnalise({
   // Números de viabilidade (preço de publicação, custo representativo) vêm da
   // fonte única compartilhada com a exportação.
   const { precoExibido, custo: custoRepresentativo } = resumoViabilidade(familia, precoOverride);
+  // Imposto por origem (ADR-0055): alíquota aplicada no líquido do card e do semáforo.
+  const { data: aliquotas } = useAliquotas();
+  const aliquotaPct = familia.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
   const variacaoRepresentativa = baseVariacoes.length > 0
@@ -62,6 +66,7 @@ export function PainelAnalise({
         custo={custoRepresentativo}
         categoriaMlId={familia.categoriaMlId}
         dimensoes={dimensoesRepresentativas}
+        aliquotaPct={aliquotaPct}
       />
 
       {familia.precoAbaixo20pc && (
@@ -163,7 +168,7 @@ export function PainelAnalise({
 
         {/* Você recebe por venda (prioritário → flex-[2]; compara Clássico × Premium) */}
         <div className="min-w-[300px] flex-[2]">
-          <CardVoceRecebe preco={precoExibido} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} real={listingTypeReal} dimensoes={dimensoesRepresentativas} />
+          <CardVoceRecebe preco={precoExibido} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} real={listingTypeReal} dimensoes={dimensoesRepresentativas} aliquotaPct={aliquotaPct} />
         </div>
       </div>
     </div>

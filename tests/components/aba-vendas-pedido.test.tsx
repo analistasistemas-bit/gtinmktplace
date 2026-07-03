@@ -57,6 +57,9 @@ vi.mock('@/hooks/useVendas', () => ({
 vi.mock('@/hooks/useCustos', () => ({
   useCustos: () => ({ data: undefined }),
 }));
+vi.mock('@/hooks/useConfiguracoes', () => ({
+  useAliquotas: () => ({ data: { nacional: 8, importado: 16 } }),
+}));
 vi.mock('@/hooks/useFotosProduto', () => ({
   useFotosProduto: () => ({ data: undefined }),
 }));

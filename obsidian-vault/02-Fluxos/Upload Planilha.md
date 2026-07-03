@@ -1,6 +1,6 @@
 ---
 tags: [fluxos, ingest]
-atualizado: 2026-07-01
+atualizado: 2026-07-03
 ---
 
 # Upload Planilha
@@ -12,6 +12,11 @@ Primeira etapa do [[Fluxo Completo]]. Edge function `ingest-lote`
 
 `CODIGO`, `PAI`, `NOME`, `UNIDADE`, `GTIN`, `CUSTO`, `PRECO`, `ESTOQUE`,
 `DESCRICAO_DETALHADO`, `PESO_GRAMAS`, `ALTURA_CM`, `LARGURA_CM`, `COMPRIMENTO_CM`, `FORNECEDOR`.
+
+## Colunas opcionais
+
+- **ORIGEM** — `NACIONAL`/`IMPORTADO`, lida só da linha PAI (como `FORNECEDOR`). Base do
+  imposto sobre a venda (ADR-0055). Ausente/vazio/inválido → `nacional`.
 
 ## O que a função faz (`_shared/parser.ts`)
 

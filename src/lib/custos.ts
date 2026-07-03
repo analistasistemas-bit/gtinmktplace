@@ -5,11 +5,14 @@
 import { supabase } from './supabase';
 import { normGtin } from './gtin';
 import { buscarTodasPaginas } from './paginacao-supabase';
-import type { CustoResolver, PesoResolver } from './resumo-vendas';
+import type { CustoResolver, PesoResolver, AliquotaResolver } from './resumo-vendas';
 import type { VendaItem } from './faturamento';
 
-/** Custo unitário (R$) + peso unitário (g) de um produto. */
-export interface ValorProduto { custo: number; peso: number }
+/** Origem do produto p/ imposto (familias.origem). null = não cadastrada. */
+export type OrigemProduto = 'nacional' | 'importado' | null;
+
+/** Custo unitário (R$) + peso unitário (g) + origem (imposto) de um produto. */
+export interface ValorProduto { custo: number; peso: number; origem: OrigemProduto }
 
 export interface MapasCusto {
   /** ml_variation_id → custo/peso. */
@@ -35,11 +38,14 @@ export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCus
     const custo = Number(v.custo ?? 0);
     if (custo <= 0) continue;
     const peso = Number(v.peso_gramas ?? 0);
-    const val: ValorProduto = { custo, peso };
     const varId = v.ml_variation_id as string | null;
     const gtin = v.gtin as string | null;
-    const fams = v.familias as { ml_item_id: string | null } | { ml_item_id: string | null }[] | null;
-    const itemId = (Array.isArray(fams) ? fams[0]?.ml_item_id : fams?.ml_item_id) ?? null;
+    type FamLite = { ml_item_id: string | null; origem?: OrigemProduto };
+    const fams = v.familias as FamLite | FamLite[] | null;
+    const fam = Array.isArray(fams) ? fams[0] : fams;
+    const itemId = fam?.ml_item_id ?? null;
+    const origem = (fam?.origem as OrigemProduto) ?? null;
+    const val: ValorProduto = { custo, peso, origem };
     if (varId != null) upsertMax(porVariacao, String(varId), val);
     if (itemId != null) upsertMax(porItem, String(itemId), val);
     if (gtin) upsertMax(porGtin, normGtin(gtin), val);
@@ -52,7 +58,7 @@ export async function buscarCustos(): Promise<MapasCusto> {
   const rows = await buscarTodasPaginas<Record<string, unknown>>((de, ate) =>
     supabase
       .from('variacoes')
-      .select('custo, peso_gramas, ml_variation_id, gtin, familias!inner(ml_item_id)')
+      .select('custo, peso_gramas, ml_variation_id, gtin, familias!inner(ml_item_id, origem)')
       .not('custo', 'is', null)
       .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
   );
@@ -87,5 +93,18 @@ export function montarPesoResolver(m: MapasCusto | undefined): PesoResolver {
   return (item) => {
     const p = resolverProduto(m, item)?.peso ?? 0;
     return p > 0 ? p : null;
+  };
+}
+
+/** Resolver de alíquota de imposto (%) p/ o markup: origem da família → alíquota global do usuário.
+ *  null = origem não mapeada (item sem custo/família casada) → sem imposto. */
+export function montarAliquotaResolver(
+  m: MapasCusto | undefined, aliquotas: { nacional: number; importado: number },
+): AliquotaResolver {
+  return (item) => {
+    const origem = resolverProduto(m, item)?.origem;
+    if (origem === 'importado') return aliquotas.importado;
+    if (origem === 'nacional') return aliquotas.nacional;
+    return null;
   };
 }

@@ -10,8 +10,8 @@ describe('extrairItensAnalise', () => {
     const { itens, ignorados } = extrairItensAnalise(rows);
     expect(ignorados).toBe(0);
     expect(itens).toEqual([
-      { gtin: '3000025438427', nome: 'LINHA 150 15000MT', unidade: 'UN', minimo: 39.9, custo: 21.16 },
-      { gtin: '3000025438267', nome: 'LINHA 150 15000MT (P)', unidade: 'UN', minimo: 21.16, custo: 39.9 },
+      { gtin: '3000025438427', nome: 'LINHA 150 15000MT', unidade: 'UN', minimo: 39.9, custo: 21.16, origem: 'nacional' },
+      { gtin: '3000025438267', nome: 'LINHA 150 15000MT (P)', unidade: 'UN', minimo: 21.16, custo: 39.9, origem: 'nacional' },
     ]);
   });
 
@@ -52,6 +52,16 @@ describe('extrairItensAnalise', () => {
     const { itens, ignorados } = extrairItensAnalise(rows);
     expect(itens.map((i) => i.gtin)).toEqual(['789']);
     expect(ignorados).toBe(2);
+  });
+
+  it('lê ORIGEM (opcional); ausente/vazio/inválido → nacional, IMPORTADO → importado', () => {
+    const rows = [
+      { NOME: 'A', UNIDADE: 'UN', GTIN: '1', PRECO: 5, CUSTO: 2 },
+      { NOME: 'B', UNIDADE: 'UN', GTIN: '2', PRECO: 5, CUSTO: 2, ORIGEM: 'importado' },
+      { NOME: 'C', UNIDADE: 'UN', GTIN: '3', PRECO: 5, CUSTO: 2, ORIGEM: '' },
+    ];
+    const { itens } = extrairItensAnalise(rows);
+    expect(itens.map((i) => i.origem)).toEqual(['nacional', 'importado', 'nacional']);
   });
 
   it('lança erro claro quando falta uma das 5 colunas obrigatórias', () => {

@@ -96,15 +96,17 @@
 ### Ingest de planilha
 - **ingest-lote** — valida colunas, agrupa variações por PAI, casa fotos, detecta CREATE vs
   UPDATE, cria `familias`+`variacoes` e enfileira as pendentes (`enfileirarFamilia`). Edge
-  cases em ADR-0013.
+  cases em ADR-0013. Grava `familias.origem` a partir da coluna opcional `ORIGEM` da linha PAI
+  (ausente/vazio/inválido → `nacional`, ADR-0055).
 - **upload-imagens-lote** — recebe FormData de imagens e casa por nome de arquivo
   (`00CODIGO`, `CAPA_…`, `CAPA2_…`, `CAPA3_…`) com variações/família.
 
 ### Processamento / publicação
 - **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor
   (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria/tipo, monta
-  atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão **e frete**
-  grátis do vendedor, ADR-0050) e análise de mercado; marca `pronto`/`erro`. Tipo derivado da
+  atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão, **frete**
+  grátis do vendedor e **imposto por origem**, ADR-0050/ADR-0055) e análise de mercado;
+  marca `pronto`/`erro`. Tipo derivado da
   categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
   na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).
   `gerarCopy` também extrai `tipo_produto_busca` (substantivo do tipo de produto grounded em
@@ -167,8 +169,9 @@
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status dos anúncios via conector multicanal (resiliente a "sem credencial").
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
-- **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015).
-- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete`. Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
+- **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);
+  margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055).
+- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
 
 ### Acesso / usuários
 

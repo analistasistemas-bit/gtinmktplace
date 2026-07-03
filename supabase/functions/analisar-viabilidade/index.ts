@@ -12,7 +12,7 @@ const LOTE = 5; // concorrência limitada p/ não estourar a API do ML
 async function analisarItem(userId: string, item: ItemAnalise): Promise<ItemAnalisado> {
   const base: ItemAnalisado = {
     gtin: item.gtin, nome: item.nome, unidade: item.unidade,
-    minimo: item.minimo, custo: item.custo, existeNoML: false,
+    minimo: item.minimo, custo: item.custo, origem: item.origem, existeNoML: false,
   };
   try {
     const conc = await buscarConcorrencia(userId, {
@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
           unidade: null,
           minimo: typeof x.minimo === 'number' ? x.minimo : null,
           custo: typeof x.custo === 'number' ? x.custo : null,
+          origem: 'nacional',
         }));
     } else {
       return json({ erro: 'modo inválido (use "planilha" com arquivoBase64 ou "gtins" com itens)' }, 400);

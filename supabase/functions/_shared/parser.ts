@@ -21,6 +21,11 @@ export function limparNomeProduto(nome: string): string {
   return nome.replace(/\s*\(P\)\s*$/i, '');
 }
 
+// ORIGEM é coluna opcional (só a linha PAI conta); ausente/vazio/inválido → 'nacional'.
+export function normalizarOrigem(valor?: string): 'nacional' | 'importado' {
+  return String(valor).toUpperCase().trim() === 'IMPORTADO' ? 'importado' : 'nacional';
+}
+
 // ADR-0013: as três anomalias de dados são não-bloqueantes — a linha problemática
 // é descartada e contabilizada no resumo do lote; a importação prossegue.
 export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
@@ -80,6 +85,7 @@ export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
       descricao_pai: pai.DESCRICAO_DETALHADO,
       unidade: pai.UNIDADE,
       fornecedor: pai.FORNECEDOR,
+      origem: normalizarOrigem(pai.ORIGEM),
       variacoes,
     });
   }

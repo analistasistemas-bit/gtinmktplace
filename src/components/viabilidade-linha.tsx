@@ -4,6 +4,7 @@ import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Input } from '@/components/ui/input';
 import { fmtBRL } from '@/lib/formato';
 import { calcularMarkup } from '@/lib/markup';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import {
   liquidoNoMercado, etiquetaParaMinimo, semaforoTipo,
   type ItemAnalisado, type ComissaoTipo,
@@ -17,13 +18,16 @@ const ROTULO: Record<Semaforo, string> = {
   verde: 'Viável', amarelo: 'Apertado', vermelho: 'Inviável', indisponivel: '—',
 };
 
-function BlocoTipo({ titulo, c, menor, minimo, custo }: {
+function round2(n: number): number { return Math.round(n * 100) / 100; }
+
+function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct }: {
   titulo: string; c: ComissaoTipo; menor: number | null;
-  minimo: number | null; custo: number | null;
+  minimo: number | null; custo: number | null; aliquotaPct: number;
 }) {
-  const liquido = liquidoNoMercado(menor, c.saleFeeAmount);
-  const etiqueta = etiquetaParaMinimo(minimo, c.percentual);
-  const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo);
+  const imposto = round2((menor ?? 0) * aliquotaPct / 100);
+  const liquido = liquidoNoMercado(menor, c.saleFeeAmount, imposto);
+  const etiqueta = etiquetaParaMinimo(minimo, c.percentual, aliquotaPct);
+  const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo, imposto);
   const temCusto = custo != null && custo > 0;
   const mk = temCusto && liquido != null ? calcularMarkup(liquido, custo) : null;
   const prejuizo = mk != null && mk.lucro < 0;
@@ -35,6 +39,9 @@ function BlocoTipo({ titulo, c, menor, minimo, custo }: {
       </div>
       <dl className="mt-2 space-y-1 text-sm text-muted-foreground">
         <div className="flex justify-between"><dt>Comissão</dt><dd>−{fmtBRL(c.saleFeeAmount)} ({c.percentual}%)</dd></div>
+        {imposto > 0 && (
+          <div className="flex justify-between"><dt>Imposto</dt><dd>−{fmtBRL(imposto)} ({aliquotaPct}%)</dd></div>
+        )}
         <div className="flex justify-between"><dt>Líquido se igualar o mercado</dt><dd>{liquido != null ? fmtBRL(liquido) : '—'}</dd></div>
         {mk != null && (
           <div className="flex justify-between">
@@ -54,6 +61,8 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
   const [aberto, setAberto] = useState(false);
   const [minimo, setMinimo] = useState<number | null>(item.minimo);
   const [custo, setCusto] = useState<number | null>(item.custo);
+  const { data: aliquotas } = useAliquotas();
+  const aliquotaPct = item.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
 
   if (!item.existeNoML) {
     return (
@@ -72,8 +81,9 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
   }
 
   const c = item.classico!;
-  const semaforo = semaforoTipo(item.mercado!.menor, c.saleFeeAmount, minimo, custo);
-  const liquido = liquidoNoMercado(item.mercado!.menor, c.saleFeeAmount);
+  const impostoResumo = round2((item.mercado!.menor ?? 0) * aliquotaPct / 100);
+  const semaforo = semaforoTipo(item.mercado!.menor, c.saleFeeAmount, minimo, custo, impostoResumo);
+  const liquido = liquidoNoMercado(item.mercado!.menor, c.saleFeeAmount, impostoResumo);
 
   return (
     <>
@@ -113,8 +123,8 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <BlocoTipo titulo="Clássico" c={item.classico!} menor={item.mercado!.menor} minimo={minimo} custo={custo} />
-              <BlocoTipo titulo="Premium" c={item.premium!} menor={item.mercado!.menor} minimo={minimo} custo={custo} />
+              <BlocoTipo titulo="Clássico" c={item.classico!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} />
+              <BlocoTipo titulo="Premium" c={item.premium!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} />
             </div>
           </td>
         </tr>

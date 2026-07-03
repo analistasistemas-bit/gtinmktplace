@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Imposto por origem (nacional/importado) — 2026-07-03
+
+- [x] **Imposto sobre a venda entra no preço e no markup** — coluna opcional `ORIGEM`
+  (`NACIONAL`/`IMPORTADO`) na planilha (linha PAI, default `nacional`) grava `familias.origem`
+  (enum `origem_produto`, não confundir com `tipo_origem`). Duas alíquotas parametrizáveis em
+  Configurações (`aliquota_nacional_pct` default 8%, `aliquota_importado_pct` default 16%,
+  globais por usuário, sem override por família). Imposto = preço × alíquota, descontado do
+  líquido junto com comissão e frete e somado ao gross-up do preço sugerido, reduzindo
+  markup/lucro/"Vale a pena" em todas as telas (análise de publicação, viabilidade item-a-item,
+  faturamento pós-venda). [ADR-0055](decisions/0055-imposto-por-origem-nacional-importado.md).
+
 ## Planos E7 + E6 + E6b — SaaS multi-empresa, multicanal e estoque único — 2026-07-02
 
 - [x] **Planos de implementação escritos e aprovados como documento** — análise profunda do código (RLS/modelo de dados + camada de canais) e planos completos, com decisão de **ordem E7 → E6** (E7 primeiro: isolamento por org é o objetivo SaaS; E6 nasce tenant-aware; validação real do E6 com 2 canais depende do E5 Shopee). Planos: [E7 multi-tenancy](superpowers/plans/2026-07-02-e7-multi-tenancy-org-id.md) (7 fases expand→migrate→contract, suite executável de isolamento cross-tenant, `marketplace_connections` por org resolvendo a pendência do ADR-0047) · [E6 orquestração](superpowers/plans/2026-07-02-e6-orquestracao-multicanal.md) (worker genérico `publicar-anuncio`, estado por canal em `anuncios_externos`, caminho ML intocado).

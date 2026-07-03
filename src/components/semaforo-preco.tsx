@@ -21,6 +21,7 @@ export function SemaforoPreco({
   custo,
   categoriaMlId,
   dimensoes,
+  aliquotaPct = 0,
 }: {
   preco: number;
   piso: number;
@@ -28,8 +29,10 @@ export function SemaforoPreco({
   categoriaMlId: string | null;
   /** Mesmas dimensões do card "Você recebe" — mantém o líquido consistente e dedupe na chamada. */
   dimensoes?: DimensoesFrete | null;
+  /** Mesma alíquota do card "Você recebe" (ADR-0055) — mantém o líquido e o dedupe consistentes. */
+  aliquotaPct?: number;
 }) {
-  const { data, isLoading } = useTarifaML(preco, categoriaMlId, dimensoes);
+  const { data, isLoading } = useTarifaML(preco, categoriaMlId, dimensoes, aliquotaPct);
   const liquido = data ? data.classico.recebe : null;
   const sem: Semaforo = isLoading ? 'indisponivel' : calcularSemaforo(liquido, piso, custo);
   const cfg = CFG[sem];

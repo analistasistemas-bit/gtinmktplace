@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useMlConnection } from '@/hooks/useMlConnection';
-import { useDescontoPct, useSalvarDescontoPct } from '@/hooks/useConfiguracoes';
+import { useDescontoPct, useSalvarDescontoPct, useAliquotas, useSalvarAliquotas } from '@/hooks/useConfiguracoes';
 import { ConfigTelegram } from '@/components/config-telegram';
 import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
@@ -26,6 +26,18 @@ export default function Configuracoes() {
   useEffect(() => {
     if (descontoPct != null) setPctInput(String(descontoPct));
   }, [descontoPct]);
+
+  const { data: aliquotas } = useAliquotas();
+  const salvarAliquotas = useSalvarAliquotas();
+  const [nacionalInput, setNacionalInput] = useState('8');
+  const [importadoInput, setImportadoInput] = useState('16');
+
+  useEffect(() => {
+    if (aliquotas != null) {
+      setNacionalInput(String(aliquotas.nacional));
+      setImportadoInput(String(aliquotas.importado));
+    }
+  }, [aliquotas]);
 
   const mlConectado = searchParams.get('ml_conectado') === 'true';
   const mlErro = searchParams.get('ml_erro');
@@ -170,6 +182,53 @@ export default function Configuracoes() {
             <span className="text-sm">%</span>
             {salvar.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
             {salvar.isSuccess && !salvar.isPending && (
+              <span className="text-xs text-success">✓ Salvo</span>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Imposto por origem</h2>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Alíquota aplicada conforme a origem do produto (nacional ou importado).
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">Nacional</span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                className="h-8 w-20 text-sm"
+                value={nacionalInput}
+                onChange={(e) => setNacionalInput(e.target.value)}
+                onBlur={() => {
+                  const n = Number(nacionalInput);
+                  if (n >= 0 && n <= 100) salvarAliquotas.mutate({ nacional: n, importado: Number(importadoInput) });
+                }}
+              />
+              <span className="text-sm">%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm">Importado</span>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                className="h-8 w-20 text-sm"
+                value={importadoInput}
+                onChange={(e) => setImportadoInput(e.target.value)}
+                onBlur={() => {
+                  const n = Number(importadoInput);
+                  if (n >= 0 && n <= 100) salvarAliquotas.mutate({ nacional: Number(nacionalInput), importado: n });
+                }}
+              />
+              <span className="text-sm">%</span>
+            </div>
+            {salvarAliquotas.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+            {salvarAliquotas.isSuccess && !salvarAliquotas.isPending && (
               <span className="text-xs text-success">✓ Salvo</span>
             )}
           </div>
