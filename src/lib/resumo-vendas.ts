@@ -59,9 +59,9 @@ export interface ResumoVendas {
   unidades: number;
   /** Ticket médio (bruto ÷ pedidos). */
   ticket: number;
-  /** Markup do período: (líquido − custo) ÷ custo, só sobre vendas com custo. null = sem custo. */
+  /** Markup do período: (líquido − imposto − custo) ÷ custo, só sobre vendas com custo. null = sem custo. */
   markup: number | null;
-  /** Lucro do período (líquido − custo) das vendas com custo. */
+  /** Lucro do período (líquido − imposto − custo) das vendas com custo. */
   lucro: number;
   /** Σ líquido das vendas já liberadas (money_release_date no passado). */
   liberado: number;
@@ -74,6 +74,8 @@ export interface ResumoVendas {
   /** Frete efetivo pago pelo vendedor = descontos − comissão (residual do retido). NÃO é a soma de
    *  frete_vendedor (que duplica em pack e é o bruto da etiqueta). comissão + frete == descontos. */
   frete: number;
+  /** Σ imposto por origem (ADR-0055) das faturáveis. Reduz lucro/markup/margem, não o líquido do ML. */
+  imposto: number;
   /** Nº de vendas faturáveis com custo cadastrado (base do lucro/markup/margem). */
   vendasComCusto: number;
   /** Nº de pedidos faturáveis no período (= pedidos/packs), para a nota de cobertura. */
@@ -133,7 +135,7 @@ export function calcularResumo(
 ): ResumoVendas {
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0;
-  let liqComCusto = 0, custoTotal = 0;
+  let liqComCusto = 0, custoTotal = 0, impostoPeriodo = 0;
   // Um checkout vira N order_id com o mesmo pack_id (carrinho). "Pedido" conta o PACK, não a linha
   // — alinhado ao menu Faturamento (ADR-0039); contar order_id inflava nº de pedidos e ticket médio.
   const packsFaturaveis = new Set<string>();
@@ -170,7 +172,9 @@ export function calcularResumo(
     const pk = String(v.pack_id ?? v.order_id);
     const pc = custoPorPack.get(pk) ?? { liquido: 0, custo: 0, imposto: 0, temCusto: false };
     pc.liquido += liq;
-    pc.imposto += impostoDaVenda(v, aliquotaResolver);
+    const impV = impostoDaVenda(v, aliquotaResolver);
+    pc.imposto += impV;
+    impostoPeriodo += impV;
     if (custo != null && custo > 0) { pc.custo += custo; pc.temCusto = true; }
     custoPorPack.set(pk, pc);
 
@@ -241,6 +245,7 @@ export function calcularResumo(
     proximaLiberacao,
     comissao: comissaoTotal,
     frete: round2(Math.max(0, descontos - comissaoTotal)),
+    imposto: round2(impostoPeriodo),
     vendasComCusto,
     totalVendas: pedidos,
     margem: liqComCusto > 0 ? (liqComCusto - custoTotal) / liqComCusto : null,

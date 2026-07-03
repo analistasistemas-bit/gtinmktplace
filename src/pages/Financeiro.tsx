@@ -262,7 +262,7 @@ export default function Financeiro() {
           tom={r.margem != null && r.lucro < 0 ? 'danger' : 'success'}
           delta={delta(r.lucro, rAnt.lucro)}
           sub={r.margem != null
-            ? `margem ${Math.round(r.margem * 100)}% · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
+            ? `margem ${Math.round(r.margem * 100)}%${r.imposto > 0 ? ` · imposto ${fmtBRL(r.imposto)}` : ''} · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
             : 'sem custo cadastrado nas vendas'}
         />
       </div>

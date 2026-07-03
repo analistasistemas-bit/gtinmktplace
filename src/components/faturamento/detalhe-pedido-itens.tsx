@@ -30,6 +30,7 @@ export function DetalhePedidoItens({ pedido: p }: { pedido: Pedido }) {
         </div>
         <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.comissao)}</span></div>
         <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{p.frete != null ? fmtBRL(p.frete) : '—'}</span></div>
+        <div>Imposto <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.imposto)}</span></div>
         <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>
       </div>
       <Table className="text-xs">
