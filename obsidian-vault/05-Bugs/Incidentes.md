@@ -1,12 +1,35 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-07-01
+atualizado: 2026-07-03
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## Publicados "Indisponível" para membros não-donos (2026-07-03)
+
+Com 3 membros na operação compartilhada (Diego admin, Michael, Samuel), a tela **Publicados**
+mostrava tudo com status **"Indisponível"**, colunas Estoque/Preço/Vendas em `—`, card **Ativos
+0/61** e **Encalhados 0** — para quem **não é dono** dos anúncios. Só o Diego via os dados
+corretos.
+
+**Causa raiz:** descompasso de multi-tenancy do ADR-0047. A **lista** de anúncios virou
+compartilhada (RLS `is_membro_operacao()`), mas o **enriquecimento ao vivo** e as **ações** do ML
+continuaram escopados ao chamador: `.eq('user_id', user.id)` + `getValidAccessToken(user.id)`. Só
+o Diego é dono das 81 famílias e tem a **única** `ml_credentials` (conta AVILBV, `ml_user_id`
+1003820507). Para Michael/Samuel, `status-publicados`/`metricas-vendas` devolviam `{ itens: [] }`
+→ o front caía no fallback `'indisponivel'`. Não é concorrência (os 3 ao mesmo tempo foi
+coincidência). O mesmo descompasso impedia publicar/remover/reprocessar/responder perguntas e
+faria um lote ingerido por membro não-dono **duplicar** anúncios (viraria CREATE).
+
+**Correção (ADR-0056 — `docs/decisions/0056-*`):** helper `_shared/ml/operacao.ts`
+`userIdCredencialOperacaoML(admin)` (conexão ML da operação); 10 edge functions passam a usar
+escopo + token + gravação da **operação**. `ingest-lote` grava `familias/variacoes.user_id` = dono
+da conta ML (invariante que os 7 workers de publicação já assumem → intocados); operador fica em
+`lotes.user_id`. Fila serial (ADR-0034) keyed por `familias.user_id`. Ponto único de troca para o
+E7 (multi-org). Deploy CLI 10/10; `deno check` + `pnpm lint` + 1156 testes verdes.
 
 ## Título duplicado derruba anúncio (2026-06-22)
 

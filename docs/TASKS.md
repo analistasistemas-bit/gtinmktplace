@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Multi-tenant: operações do ML usam escopo/token da operação — 2026-07-03
+
+- [x] **Publicados "Indisponível" para membros não-donos** — descompasso do ADR-0047 (lista
+  compartilhada × enriquecimento/ações escopados ao chamador). Helper `_shared/ml/operacao.ts`
+  `userIdCredencialOperacaoML` + 10 edge functions (`status-publicados`, `metricas-vendas`,
+  `publicar-familias`, `remover-publicado`, `reprocessar-familia`, `regenerar-copy-familia`,
+  `definir-categoria-familia`, `responder-pergunta`, `calcular-tarifa-ml`, `ingest-lote`) passam a
+  usar escopo + token + gravação da operação; `ingest-lote` grava `familias/variacoes.user_id` =
+  dono da conta ML (workers de publicação intocados) e casa anteriores por `codigo_pai` em toda a
+  operação (evita duplicar anúncio). Deploy CLI 10/10; `deno check` + `pnpm lint` + 1156 testes
+  verdes. [ADR-0056](decisions/0056-enriquecimento-ao-vivo-escopo-da-operacao.md).
+- [ ] **Validação runtime pendente** — logar como Michael/Samuel e confirmar Publicados igual ao Diego.
+
 ## Imposto por origem (nacional/importado) — 2026-07-03
 
 - [x] **Imposto sobre a venda entra no preço e no markup** — coluna opcional `ORIGEM`
