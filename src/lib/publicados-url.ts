@@ -19,7 +19,7 @@ const COLUNAS: ColunaOrdenavel[] = [
 /** Serializa o estado da Publicados em query params (omite os defaults). */
 export function estadoParaParams(e: EstadoPublicados): URLSearchParams {
   const p = new URLSearchParams();
-  if (e.filtro.busca?.trim()) p.set('q', e.filtro.busca.trim());
+  if (e.filtro.busca?.trim()) p.set('q', e.filtro.busca);
   if (e.filtro.fornecedor) p.set('fornecedor', e.filtro.fornecedor);
   if (e.filtro.status) p.set('status', e.filtro.status);
   if (e.filtro.tipo) p.set('tipo', e.filtro.tipo);

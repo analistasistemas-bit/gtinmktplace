@@ -76,6 +76,11 @@ describe('estadoParaParams', () => {
     expect(estadoParaParams({ ...vazio, filtro: { ...vazio.filtro, busca: '   ' } }).has('q')).toBe(false);
   });
 
+  it('preserva espaço à direita (senão o round-trip pela URL corta o espaço a cada tecla e trava a digitação de frases)', () => {
+    const p = estadoParaParams({ ...vazio, filtro: { ...vazio.filtro, busca: 'fita ' } });
+    expect(p.get('q')).toBe('fita ');
+  });
+
   it('serializa e lê o filtro de encalhados (encalhados=1)', () => {
     const p = estadoParaParams({ ...vazio, filtro: { ...vazio.filtro, somenteEncalhados: true } });
     expect(p.get('encalhados')).toBe('1');

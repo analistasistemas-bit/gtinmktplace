@@ -117,7 +117,12 @@ export function filtrarPublicados(
       (!f.fornecedor || i.fornecedor === f.fornecedor) &&
       (!f.status || i.status === f.status) &&
       (!f.tipo || rotuloTipo(i) === f.tipo) &&
-      (!q || i.titulo.toLowerCase().includes(q)) &&
+      (!q ||
+        i.titulo.toLowerCase().includes(q) ||
+        i.codigoPai.toLowerCase().includes(q) ||
+        (i.fornecedor ?? '').toLowerCase().includes(q) ||
+        rotuloTipo(i).toLowerCase().includes(q) ||
+        (i.gtin ?? '').toLowerCase().includes(q)) &&
       (!f.somenteEncalhados || ehEncalhado(i)),
   );
 }

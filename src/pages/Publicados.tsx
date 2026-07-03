@@ -568,7 +568,7 @@ export default function Publicados() {
           {/* Filtros */}
           <div className="mb-3 flex flex-wrap gap-2">
             <Input
-              placeholder="Buscar por título…"
+              placeholder="Buscar por título, código, fornecedor…"
               value={filtro.busca ?? ''}
               onChange={(e) => setFiltro((f) => ({ ...f, busca: e.target.value }))}
               className="h-8 w-[200px] text-sm"

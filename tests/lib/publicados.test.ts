@@ -104,6 +104,11 @@ describe('filtrarPublicados', () => {
     expect(result.map((i) => i.familiaId)).toEqual(['f1', 'f4']);
   });
 
+  it('busca também encontra por código do pai e fornecedor, não só pelo título', () => {
+    expect(filtrarPublicados(fixtures, { busca: '00300001' }).map((i) => i.familiaId)).toEqual(['f3']);
+    expect(filtrarPublicados(fixtures, { busca: 'coats' }).map((i) => i.familiaId)).toEqual(['f2', 'f4']);
+  });
+
   it('filtro combinado fornecedor + status restringe mais que cada um isolado', () => {
     // fornecedor='Avil' → f1, f3 (2 itens)
     // status='ativo'   → f1, f3 (2 itens, mas por coincidência iguais)
