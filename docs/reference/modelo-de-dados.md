@@ -153,6 +153,8 @@ Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*
 `venda_id` (FK→ml_vendas, cascade), `ml_item_id`, `variation_id`, `titulo`, `codigo`, `cor`,
 `ean`, `quantity`, `unit_price`, `sale_fee`, `is_publiai`.
+`sale_fee` é a tarifa do ML **por unidade**; a comissão do pedido (`ml_vendas.sale_fee_total`)
+é `Σ(sale_fee × quantity)` — sem `× quantity` o líquido de pedidos com qtd>1 fica inflado.
 
 ### `ml_devolucoes`
 Claims/devoluções. *Migration `20260622193401_faturamento_devolucoes.sql` (ADR-0037).*

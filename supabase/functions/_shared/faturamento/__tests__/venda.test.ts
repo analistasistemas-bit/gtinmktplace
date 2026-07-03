@@ -141,7 +141,7 @@ describe('mapearPedidoParaVenda', () => {
     expect(venda.status).toBe('paid');
     expect(venda.comprador_nick).toBe('COMPRADOR1');
     expect(venda.total_amount).toBe(90.2);
-    expect(venda.sale_fee_total).toBe(7.2);
+    expect(venda.sale_fee_total).toBe(14.4); // sale_fee 7.20 é POR UNIDADE × 2 un = 14.40
     expect(venda.shipping_id).toBe(40404);
     expect(venda.is_publiai).toBe(true);
     expect(itens).toHaveLength(1);
@@ -207,14 +207,29 @@ describe('mapearPedidoParaVenda', () => {
       freteVendedor: 10,
     });
     expect(venda.frete_vendedor).toBe(10);
-    // 90.20 - 7.20 - 10 = 73.00
-    expect(venda.liquido).toBe(73);
+    // 90.20 - (7.20 × 2 un) - 10 = 65.80
+    expect(venda.liquido).toBe(65.8);
   });
 
   it('sem frete informado: líquido = total - comissão', () => {
     const { venda } = mapearPedidoParaVenda(pedidoBase, { idsPubliai: new Set(), codigoResolver: () => null });
     expect(venda.frete_vendedor).toBeNull();
-    expect(venda.liquido).toBe(83); // 90.20 - 7.20
+    expect(venda.liquido).toBe(75.8); // 90.20 - (7.20 × 2 un)
+  });
+
+  it('sale_fee é POR UNIDADE: comissão total = sale_fee × quantity (regressão qty>1)', () => {
+    // Caso real (pedido 2000017176641832): 3 un, sale_fee 2.06/un → tarifa ML 6.18, não 2.06.
+    const pedido = {
+      ...pedidoBase,
+      total_amount: 36.36,
+      order_items: [{ item: { id: 'MLB111', title: 'FITA', variation_id: null }, quantity: 3, unit_price: 12.12, sale_fee: 2.06 }],
+    };
+    const { venda, itens } = mapearPedidoParaVenda(pedido, {
+      idsPubliai: new Set(['MLB111']), codigoResolver: () => '01813412', freteVendedor: 16.95,
+    });
+    expect(venda.sale_fee_total).toBe(6.18);      // 2.06 × 3
+    expect(itens[0].sale_fee).toBe(2.06);          // item guarda o valor unitário cru
+    expect(venda.liquido).toBe(13.23);             // 36.36 - 6.18 - 16.95 (= "Total" do ML)
   });
 
   it('venda de catálogo: casa PubliAI por GTIN quando o item.id não bate', () => {
@@ -243,7 +258,7 @@ describe('mapearPedidoParaVenda', () => {
       idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 50,
       liquidoPorPayment: new Map([['1', { net: 6.3, estorno: 2.5, releaseDate: '2026-06-24T11:00:00Z' }]]),
     });
-    expect(venda.liquido).toBe(33); // 90.20 − 7.20 − 50, ignora o net (6.3) do MP
+    expect(venda.liquido).toBe(25.8); // 90.20 − (7.20 × 2 un) − 50, ignora o net (6.3) do MP
     expect(venda.estorno).toBe(2.5);
     expect(venda.money_release_date).toBe('2026-06-24T11:00:00Z');
   });

@@ -55,7 +55,8 @@ export function mapearPagamentoParaItem(
       const varId = oi?.item?.variation_id;
       if (varId != null) variacoes.add(String(varId));
       quantidade += Number(oi?.quantity ?? 0);
-      tarifa += Number(oi?.sale_fee ?? 0);
+      // sale_fee é a tarifa POR UNIDADE — a comissão do item é sale_fee × quantidade.
+      tarifa += Number(oi?.sale_fee ?? 0) * Number(oi?.quantity ?? 0);
     }
     // Só pedidos com exatamente um item distinto (custo inequívoco).
     if (ids.size !== 1) continue;

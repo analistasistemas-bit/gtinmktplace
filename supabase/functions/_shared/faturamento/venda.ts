@@ -200,8 +200,9 @@ export function mapearPedidoParaVenda(
   const itens: VendaItemRow[] = itensRaw.map((oi) => {
     const mlItemId = oi?.item?.id ?? null;
     const variationId = num(oi?.item?.variation_id ?? null);
+    // sale_fee do ML é a tarifa POR UNIDADE; a comissão do pedido é sale_fee × quantidade.
     const saleFee = round2(Number(oi?.sale_fee ?? 0));
-    saleFeeTotal += saleFee;
+    saleFeeTotal += saleFee * Number(oi?.quantity ?? 0);
 
     // 1) Match direto pelo ml_item_id (anúncio do próprio vendedor).
     let itemPubliai = mlItemId != null && opts.idsPubliai.has(mlItemId);
