@@ -32,11 +32,12 @@ Deno.serve(async (req) => {
     return new Response('familia_id e tipo (linha/fita/botao/cola) obrigatórios', { status: 400, headers: corsHeaders });
   }
 
+  // Operação compartilhada (ADR-0047/0056): a RLS is_membro_operacao já restringe à
+  // operação; qualquer membro define a categoria. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
     .select('id, nome_pai, descricao_pai, fornecedor')
     .eq('id', body.familia_id)
-    .eq('user_id', user.id)
     .maybeSingle();
 
   if (error || !familia) {
@@ -61,8 +62,7 @@ Deno.serve(async (req) => {
       atributos_ml,
       atributos_faltantes: [], // aviamento manual: montarAtributosML preenche todos os obrigatórios
     })
-    .eq('id', body.familia_id)
-    .eq('user_id', user.id);
+    .eq('id', body.familia_id);
 
   if (upErr) {
     return new Response(`Erro ao atualizar: ${upErr.message}`, { status: 500, headers: corsHeaders });

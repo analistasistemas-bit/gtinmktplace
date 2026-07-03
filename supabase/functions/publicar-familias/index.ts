@@ -8,8 +8,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  let user;
-  try { user = await requireUser(req); }
+  // Gate de auth: só membro autenticado da operação (ADR-0047/0056).
+  try { await requireUser(req); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const { familia_ids, listing_type_id } = await req.json().catch(() => ({}));
@@ -21,16 +21,16 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
 
-  // Claim CREATE: 'pronto'/'erro', ainda não publicado.
+  // Claim CREATE: 'pronto'/'erro', ainda não publicado. Escopo da operação (sem filtro por
+  // user.id): qualquer membro publica as famílias selecionadas (ADR-0047/0056).
   const { data: novos, error: errC } = await admin
     .from('familias')
     .update({ status: 'publicando', erro_mensagem: null })
     .in('id', familia_ids)
-    .eq('user_id', user.id)
     .eq('operacao', 'CREATE')
     .in('status', ['pronto', 'erro'])
     .is('ml_item_id', null)
-    .select('id, lote_id');
+    .select('id, lote_id, user_id');
   if (errC) return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
 
   // Claim UPDATE: 'pronto'/'erro', já publicado (tem ml_item_id herdado).
@@ -38,18 +38,19 @@ Deno.serve(async (req) => {
     .from('familias')
     .update({ status: 'publicando', erro_mensagem: null })
     .in('id', familia_ids)
-    .eq('user_id', user.id)
     .eq('operacao', 'UPDATE')
     .in('status', ['pronto', 'erro'])
     .not('ml_item_id', 'is', null)
-    .select('id, lote_id');
+    .select('id, lote_id, user_id');
   if (errU) return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
 
-  // Serializa as escritas no ML deste usuário (ADR-0034): parallelism=1 evita publicações
-  // concorrentes que tornam o processamento de foto do ML lento (causa do travamento com
-  // vários produtos). Publica uma de cada vez, ~segundos cada.
-  if ((novos?.length ?? 0) + (updates?.length ?? 0) > 0) {
-    await garantirFilaSerial(user.id);
+  // Serializa as escritas no ML por CONTA de vendedor (ADR-0034): parallelism=1 evita
+  // publicações concorrentes que tornam o processamento de foto do ML lento. A fila é keyed
+  // pelo dono da família (familias.user_id = conta ML da operação, ADR-0056) — o mesmo id que
+  // o worker usa para resolver o token —, não pelo chamador. Publica uma de cada vez.
+  const donos = [...new Set([...(novos ?? []), ...(updates ?? [])].map((f) => f.user_id as string))];
+  for (const dono of donos) {
+    await garantirFilaSerial(dono);
   }
 
   // Split (ADR-0048): família com >100 cores incluídas vai para o worker de split (N anúncios),
@@ -68,16 +69,16 @@ Deno.serve(async (req) => {
   for (const f of novos ?? []) {
     const job = { familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType };
     const messageId = ehSplit(f.id)
-      ? await enfileirarSplit(job, user.id)
-      : await enfileirarPublicacao(job, user.id);
+      ? await enfileirarSplit(job, f.user_id as string)
+      : await enfileirarPublicacao(job, f.user_id as string);
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     loteId = f.lote_id;
     enfileiradas++;
   }
   for (const f of updates ?? []) {
     const messageId = ehSplit(f.id)
-      ? await enfileirarSplit({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType }, user.id)
-      : await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id }, user.id);
+      ? await enfileirarSplit({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType }, f.user_id as string)
+      : await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id }, f.user_id as string);
     await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
     loteId = f.lote_id;
     enfileiradas++;

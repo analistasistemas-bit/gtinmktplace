@@ -8,6 +8,7 @@ import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
 import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { userIdCredencialOperacaoML } from '../_shared/ml/operacao.ts';
 import * as XLSX from 'npm:xlsx@^0.18';
 
 Deno.serve(async (req) => {
@@ -30,12 +31,16 @@ Deno.serve(async (req) => {
   }
 
   const admin = adminClient();
+  // Dono da conta ML da operação (ADR-0056): as famílias/variações criadas ficam com esse
+  // user_id — é o id que os workers usam para resolver o token ML. Sem credencial na operação,
+  // cai no chamador (comportamento antigo). Quem subiu o lote continua registrado em lotes.user_id.
+  const ownerUserId = (await userIdCredencialOperacaoML(admin)) ?? user.id;
 
+  // Escopo da operação (ADR-0047/0056): o lote pode ter sido criado por qualquer membro.
   const { data: lote, error: loteErr } = await admin
     .from('lotes')
     .select('*')
     .eq('id', lote_id)
-    .eq('user_id', user.id)
     .single();
   if (loteErr || !lote) {
     return new Response(`Lote ${lote_id} não encontrado`, { status: 404, headers: corsHeaders });
@@ -88,10 +93,12 @@ Deno.serve(async (req) => {
     }
 
     const codigosPai = grupos.map((g) => g.codigo_pai);
+    // Escopo da operação (ADR-0056): buscar anteriores de TODA a operação por codigo_pai.
+    // Com filtro por user.id, um membro não-dono não veria o anúncio já publicado por outro →
+    // trataria como CREATE e DUPLICARIA o anúncio no ML. A operação compartilha os anúncios.
     const { data: anteriores } = await admin
       .from('familias')
       .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
-      .eq('user_id', user.id)
       .in('codigo_pai', codigosPai)
       .not('ml_item_id', 'is', null)
       .order('publicado_em', { ascending: false, nullsFirst: false });
@@ -130,7 +137,7 @@ Deno.serve(async (req) => {
       const ant = anteriorPorPai.get(g.codigo_pai);
       if (!cas || !ant?.ml_item_id || cas.mudancaEstrutural.novas.length === 0) continue;
       try {
-        if (!tokenML) tokenML = await getValidAccessToken(user.id);
+        if (!tokenML) tokenML = await getValidAccessToken(ownerUserId);
         const existentes = await buscarVariacoesExistentesML(tokenML, ant.ml_item_id);
         casamentoPorPai.set(g.codigo_pai, reconciliarCasamentoComML(cas, existentes));
       } catch (e) {
@@ -146,7 +153,7 @@ Deno.serve(async (req) => {
       if (!ant) {
         // CREATE — comportamento atual.
         return {
-          lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
+          lote_id: lote.id, user_id: ownerUserId, codigo_pai: g.codigo_pai,
           nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
           fornecedor: g.fornecedor,
           origem: g.origem,
@@ -160,7 +167,7 @@ Deno.serve(async (req) => {
       const cas = casamentoPorPai.get(g.codigo_pai)!;
       const temCorNova = cas.mudancaEstrutural.novas.length > 0;
       return {
-        lote_id: lote.id, user_id: user.id, codigo_pai: g.codigo_pai,
+        lote_id: lote.id, user_id: ownerUserId, codigo_pai: g.codigo_pai,
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
         fornecedor: g.fornecedor,
         origem: g.origem,
@@ -230,7 +237,7 @@ Deno.serve(async (req) => {
         const codigo = normalizarCodigo(v.CODIGO);
         const base = {
           familia_id: familiaId,
-          user_id: user.id,
+          user_id: ownerUserId,
           codigo,
           nome: v.NOME,
           gtin: v.GTIN,

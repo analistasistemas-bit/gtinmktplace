@@ -97,7 +97,9 @@
 - **ingest-lote** — valida colunas, agrupa variações por PAI, casa fotos, detecta CREATE vs
   UPDATE, cria `familias`+`variacoes` e enfileira as pendentes (`enfileirarFamilia`). Edge
   cases em ADR-0013. Grava `familias.origem` a partir da coluna opcional `ORIGEM` da linha PAI
-  (ausente/vazio/inválido → `nacional`, ADR-0055).
+  (ausente/vazio/inválido → `nacional`, ADR-0055). Escopo da operação (ADR-0056): casa anteriores
+  por `codigo_pai` em toda a operação (evita duplicar anúncio de outro membro) e grava
+  `familias/variacoes.user_id` com o dono da conta ML da operação (o operador fica em `lotes.user_id`).
 - **upload-imagens-lote** — recebe FormData de imagens e casa por nome de arquivo
   (`00CODIGO`, `CAPA_…`, `CAPA2_…`, `CAPA3_…`) com variações/família.
 
@@ -115,7 +117,9 @@
   com nome genérico ("Outros" etc.) nunca são aceitos como resposta final, caem em manual
   (ADR-0054).
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
-  (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034).
+  (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). Escopo da operação (ADR-0056):
+  publica as famílias selecionadas sem filtrar por chamador; a fila serial é keyed por
+  `familias.user_id` (a conta ML), o mesmo id que o worker usa para o token.
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
@@ -168,7 +172,9 @@
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status dos anúncios via conector multicanal (resiliente a "sem credencial").
+  Escopo e token da **operação** (todos os anúncios + credencial ML compartilhada), não do chamador (ADR-0056).
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
+  Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);
   margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055).
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).

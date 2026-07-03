@@ -18,9 +18,10 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  let user;
+  // Gate de auth: só membro autenticado da operação (ADR-0047/0056). O escopo das
+  // famílias é a operação inteira, não o chamador.
   try {
-    user = await requireUser(req);
+    await requireUser(req);
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
@@ -42,7 +43,6 @@ Deno.serve(async (req) => {
   let q = admin
     .from('familias')
     .select('id, lote_id')
-    .eq('user_id', user.id)
     .eq('status', 'erro');
   q = body.familia_id ? q.eq('id', body.familia_id) : q.eq('lote_id', body.lote_id!);
 
@@ -66,7 +66,6 @@ Deno.serve(async (req) => {
       .from('familias')
       .update({ status: 'pendente', erro_mensagem: null })
       .eq('id', f.id)
-      .eq('user_id', user.id)
       .eq('status', 'erro')
       .select('id')
       .maybeSingle();
@@ -93,8 +92,7 @@ Deno.serve(async (req) => {
     await admin
       .from('lotes')
       .update({ status: 'processando' })
-      .in('id', [...lotesAfetados])
-      .eq('user_id', user.id);
+      .in('id', [...lotesAfetados]);
   }
 
   return new Response(

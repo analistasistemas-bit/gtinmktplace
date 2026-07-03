@@ -24,11 +24,12 @@ Deno.serve(async (req) => {
     return new Response('familia_id obrigatório', { status: 400, headers: corsHeaders });
   }
 
+  // Operação compartilhada (ADR-0047/0056): qualquer membro regenera a copy de qualquer
+  // família; a RLS is_membro_operacao já restringe à operação. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
     .select('id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
     .eq('id', body.familia_id)
-    .eq('user_id', user.id)
     .maybeSingle();
 
   if (error || !familia) {
