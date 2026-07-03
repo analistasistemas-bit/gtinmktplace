@@ -27,6 +27,12 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   (seção "Seus anúncios (PubliAI)"), padrão do Publicados. URL construída do `ml_item_id`
   (`produto.mercadolivre.com.br/MLB-<id>`) — cobre 100%, inclusive vendas cujo item foi
   republicado e não está mais em `familias`.
+- Fix: ordenação das tabelas "Ao vivo" não persistia. O `sort` vivia em `useState` local, que
+  era zerado a cada remount — trocar de aba no Faturamento (Radix `TabsContent` desmonta a aba
+  inativa) ou sair/voltar de um detalhe. Novo hook `useSessionState` (persiste em
+  `sessionStorage`) substitui os 3 `useState<Sort>` (aba-vendas, Detalhe do líquido, Detalhe de
+  vendas — chave por seção). Auto-refresh de 45s segue ativo; a ordenação escolhida agora
+  sobrevive a remount e refetch. Validado no app real (browser-use).
 
 ## 2026-07-02
 

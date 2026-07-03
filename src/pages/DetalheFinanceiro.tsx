@@ -25,6 +25,7 @@ import { labelStatusLiberacao, statusLiberacao, type StatusLiberacao } from '@/l
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
@@ -252,7 +253,7 @@ export default function DetalheFinanceiro() {
   }, [pedidos, filtroLib]);
 
   // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
-  const [sort, setSort] = useState<Sort | null>(null);
+  const [sort, setSort] = useSessionState<Sort | null>('sort:detalhe-financeiro', null);
   const toggleSort = (k: SortKey) => {
     const textual = k === 'comprador';
     setSort((s) => (s?.key === k

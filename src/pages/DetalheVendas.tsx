@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import { periodoFromParams, resolverJanela, periodoToParams, type Periodo } from
 import { montarDetalheVendas, type LinhaVenda, type SecaoVendas } from '@/lib/detalhe-vendas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
+import { useSessionState } from '@/hooks/useSessionState';
 
 /** URL do anúncio no ML a partir do ml_item_id (ex.: MLB123 → produto.mercadolivre.com.br/MLB-123). */
 function urlAnuncioML(mlItemId: string): string {
@@ -79,8 +80,9 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
   /** Linka o título ao anúncio no ML (só seção PubliAI, cujo LinhaVenda.id é o ml_item_id). */
   linkavel?: boolean;
 }) {
-  // Ordenação local da seção: textuais começam A→Z; numéricas em maior→menor.
-  const [sort, setSort] = useState<Sort | null>(null);
+  // Ordenação da seção: textuais começam A→Z; numéricas em maior→menor.
+  // Persistida por seção (sobrevive a remount/refetch); chave = título da seção.
+  const [sort, setSort] = useSessionState<Sort | null>(`sort:detalhe-vendas:${titulo}`, null);
   const toggleSort = (k: SortKey) => {
     const textual = k === 'codigo' || k === 'ean' || k === 'titulo';
     setSort((s) => (s?.key === k

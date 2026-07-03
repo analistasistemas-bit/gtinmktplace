@@ -10,6 +10,7 @@ import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
@@ -235,7 +236,7 @@ export function AbaVendas() {
     [pedidos, filtroEnvio],
   );
 
-  const [sort, setSort] = useState<Sort | null>(null);
+  const [sort, setSort] = useSessionState<Sort | null>('sort:faturamento-vendas', null);
   const toggleSort = (k: SortKey) => {
     const textual = k === 'comprador' || k === 'pagamento' || k === 'envio';
     setSort((s) => (s?.key === k
