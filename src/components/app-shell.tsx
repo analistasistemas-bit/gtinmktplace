@@ -13,9 +13,9 @@ export function AppShell() {
         <Sidebar />
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar onOpenMobile={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-auto bg-muted/30">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-muted/30">
           <Outlet />
         </main>
       </div>

@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix overflow horizontal / responsividade — 2026-07-03
+
+- [x] **Telas escapavam das margens (desktop 15" Windows) e panavam lateralmente (mobile)** —
+  causa raiz no shell: a coluna de conteúdo (`flex flex-1 flex-col`) tinha `min-width:auto`
+  implícito, então tabelas largas a expandiam além da viewport e o `main` (`overflow-auto`) panava
+  a página inteira. Fix: `min-w-0` na coluna + `main` → `overflow-y-auto overflow-x-hidden`
+  (`app-shell.tsx`); tabela crua da Viabilidade envolvida em `overflow-x-auto` + padding de página
+  (`Viabilidade.tsx`); cards do `painel-analise` empilham `w-full` no mobile (piso de largura só a
+  partir de `sm`). Verificação: `pnpm lint` + `pnpm build` verdes; medição headless logada = 0
+  overflow em 22 medições (10 rotas × 1366/375, incluindo linha de Publicados expandida).
+
 ## Multi-tenant: operações do ML usam escopo/token da operação — 2026-07-03
 
 - [x] **Publicados "Indisponível" para membros não-donos** — descompasso do ADR-0047 (lista

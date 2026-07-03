@@ -13,16 +13,18 @@ const COLS = ['Produto', 'Menor ML', 'Vendedores', 'Seu mínimo', 'Líquido se i
 function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean }) {
   if (itens.length === 0) return null;
   return (
-    <table className="w-full border-collapse text-sm">
-      <thead>
-        <tr className="text-left text-xs uppercase text-muted-foreground">
-          {COLS.map((c) => <th key={c} className="px-3 py-2 font-medium">{c}</th>)}
-        </tr>
-      </thead>
-      <tbody>
-        {itens.map((it) => <ViabilidadeLinha key={it.gtin} item={it} editavel={editavel} />)}
-      </tbody>
-    </table>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] border-collapse text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase text-muted-foreground">
+            {COLS.map((c) => <th key={c} className="px-3 py-2 font-medium">{c}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {itens.map((it) => <ViabilidadeLinha key={it.gtin} item={it} editavel={editavel} />)}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -57,7 +59,7 @@ export default function Viabilidade() {
     : 'Analisando os produtos da planilha no Mercado Livre…';
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <PageHeader title="Análise de viabilidade"
         subtitle="Veja, antes de subir um lote, se os produtos já vendem no ML e se o preço é viável." />
 

@@ -92,7 +92,7 @@ export function PainelAnalise({
       <div className="flex flex-wrap gap-2">
         {/* Estratégia + Concorrência (agrupados num box compacto: a tela prioriza
             Potencial de venda e Você recebe, que ficam maiores ao lado) */}
-        <div className="flex min-w-[180px] flex-1 flex-col gap-2 rounded-md border bg-card p-2">
+        <div className="flex w-full flex-1 flex-col gap-2 rounded-md border bg-card p-2 sm:w-auto sm:min-w-[180px]">
           <div>
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Coins className="h-3.5 w-3.5" /> Estratégia
@@ -124,7 +124,7 @@ export function PainelAnalise({
 
         {/* Potencial de venda (prioritário → flex-[2], mais largura) */}
         {familia.analiseMercado && (
-          <div className="min-w-[240px] flex-[2] rounded-md border bg-card p-2">
+          <div className="w-full flex-[2] rounded-md border bg-card p-2 sm:w-auto sm:min-w-[240px]">
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" /> Potencial de venda
             </div>
@@ -167,7 +167,7 @@ export function PainelAnalise({
         )}
 
         {/* Você recebe por venda (prioritário → flex-[2]; compara Clássico × Premium) */}
-        <div className="min-w-[300px] flex-[2]">
+        <div className="w-full flex-[2] sm:w-auto sm:min-w-[300px]">
           <CardVoceRecebe preco={precoExibido} categoriaMlId={familia.categoriaMlId} custo={custoRepresentativo} real={listingTypeReal} dimensoes={dimensoesRepresentativas} aliquotaPct={aliquotaPct} />
         </div>
       </div>
