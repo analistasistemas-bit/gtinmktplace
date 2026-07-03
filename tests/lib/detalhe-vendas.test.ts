@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { montarDetalheVendas } from '@/lib/detalhe-vendas';
+import { calcularResumo } from '@/lib/resumo-vendas';
 import type { Venda, VendaItem } from '@/lib/faturamento';
-import type { CustoResolver } from '@/lib/resumo-vendas';
+import type { CustoResolver, AliquotaResolver } from '@/lib/resumo-vendas';
 
 /** CustoResolver por ml_item_id → custo unitário (R$). */
 const custoPorItem = (mapa: Record<string, number>): CustoResolver =>
@@ -168,6 +169,24 @@ describe('montarDetalheVendas — markup e lucro por produto', () => {
     // M1: liq80/custo10 ; M2: liq60/custo30 → Σliq140 Σcusto40 → lucro100, markup 2,5
     expect(r.app.lucro).toBe(100);
     expect(r.app.markup).toBeCloseTo(2.5);
+  });
+
+  it('desconta imposto no markup/lucro (ADR-0055) e bate com o KPI (calcularResumo)', () => {
+    // Regressão da divergência Detalhe (65%) vs KPI (27%): com o mesmo aliquotaResolver, o markup
+    // do Detalhe de vendas tem que ser IGUAL ao do KPI — ambos descontam imposto do líquido.
+    const aliq: AliquotaResolver = () => 10; // 10% sobre o valor de venda
+    const v = venda({ total_amount: 100, liquido: 80, itens: [item({ ml_item_id: 'MLB1', quantity: 1, unit_price: 100 })] });
+    const custo = custoPorItem({ MLB1: 40 });
+
+    const d = montarDetalheVendas([v], custo, undefined, aliq);
+    const l = d.app.linhas.find((x) => x.id === 'MLB1')!;
+    // líquido 80 − imposto 10 (100×10%) − custo 40 = 30 → markup 0,75
+    expect(l.lucro).toBe(30);
+    expect(l.markup).toBeCloseTo(0.75);
+
+    const kpi = calcularResumo([v], custo, undefined, Date.parse('2026-07-03T00:00:00Z'), aliq);
+    expect(d.app.markup as number).toBeCloseTo(kpi.markup as number, 6);
+    expect(d.app.lucro).toBe(kpi.lucro);
   });
 
   it('usa líquido RATEADO em pack com frete compartilhado', () => {

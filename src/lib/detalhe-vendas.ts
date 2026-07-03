@@ -1,5 +1,5 @@
 import type { Venda } from './faturamento';
-import { ehFaturavel, ratearLiquidoPorFrete, type CustoResolver, type PesoResolver } from './resumo-vendas';
+import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
 import { round2 } from './formato';
 
 export interface LinhaVenda {
@@ -12,9 +12,9 @@ export interface LinhaVenda {
   unidades: number;
   valor: number;
   pctTotal: number;
-  /** Markup ponderado do produto no período: (Σ líquido − Σ custo) / Σ custo. null = sem custo. */
+  /** Markup ponderado do produto: (Σ líquido − Σ imposto − Σ custo) / Σ custo (ADR-0055). null = sem custo. */
   markup: number | null;
-  /** Lucro do produto no período: Σ líquido − Σ custo. null = sem custo. */
+  /** Lucro do produto no período: Σ líquido − Σ imposto − Σ custo (ADR-0055). null = sem custo. */
   lucro: number | null;
 }
 export interface SecaoVendas {
@@ -22,7 +22,7 @@ export interface SecaoVendas {
   unidades: number;
   valor: number;
   pctTotal: number;
-  /** Lucro consolidado da seção (Σ líquido − Σ custo dos itens com custo). */
+  /** Lucro consolidado da seção (Σ líquido − Σ imposto − Σ custo dos itens com custo). */
   lucro: number;
   /** Markup ponderado da seção. null = nenhum item com custo. */
   markup: number | null;
@@ -34,6 +34,8 @@ interface Grupo {
   valor: number;
   /** Líquido atribuído ao produto (rateado por item, igual ao Faturamento). */
   liquido: number;
+  /** Imposto acumulado do produto no período (Σ imposto dos itens — ADR-0055). */
+  imposto: number;
   /** Custo total acumulado (custo unitário × qtd) dos itens com custo. */
   custo: number;
   temCusto: boolean;
@@ -43,20 +45,22 @@ interface Grupo {
   publiai: boolean;
 }
 
-/** Lucro/markup de um par (líquido, custo): null quando não há custo (>0). */
-function lucroMarkup(liquido: number, custo: number, temCusto: boolean): { lucro: number | null; markup: number | null } {
+/** Lucro/markup de um trio (líquido, imposto, custo): null quando não há custo (>0). Imposto reduz
+ *  o líquido antes do markup/lucro, igual ao Faturamento/KPIs (ADR-0055). */
+function lucroMarkup(liquido: number, imposto: number, custo: number, temCusto: boolean): { lucro: number | null; markup: number | null } {
   if (!temCusto || custo <= 0) return { lucro: null, markup: null };
-  return { lucro: round2(liquido - custo), markup: (liquido - custo) / custo };
+  const liquidoComImposto = liquido - imposto;
+  return { lucro: round2(liquidoComImposto - custo), markup: (liquidoComImposto - custo) / custo };
 }
 
 function secao(grupos: Grupo[], linhas: LinhaVenda[], total: number): SecaoVendas {
   const unidades = linhas.reduce((a, l) => a + l.unidades, 0);
   const valor = round2(linhas.reduce((a, l) => a + l.valor, 0));
-  // Consolidado ponderado: soma líquido e custo só dos produtos com custo.
+  // Consolidado ponderado: soma líquido (já líquido de imposto) e custo só dos produtos com custo.
   let liqComCusto = 0;
   let custoTotal = 0;
   for (const g of grupos) {
-    if (g.temCusto && g.custo > 0) { liqComCusto += g.liquido; custoTotal += g.custo; }
+    if (g.temCusto && g.custo > 0) { liqComCusto += g.liquido - g.imposto; custoTotal += g.custo; }
   }
   return {
     linhas,
@@ -75,13 +79,15 @@ function secao(grupos: Grupo[], linhas: LinhaVenda[], total: number): SecaoVenda
  * vendas faturáveis (paid/partially_refunded/refunded).
  *
  * Markup/lucro por produto (média ponderada): quando `custoResolver` é informado, acumula por
- * produto o líquido e o custo das vendas do período e calcula `(Σ líquido − Σ custo) / Σ custo` —
- * o mesmo número do consolidado da tela Publicados. O líquido por item reusa o rateio de frete de
+ * produto o líquido, o imposto (ADR-0055) e o custo das vendas do período e calcula
+ * `(Σ líquido − Σ imposto − Σ custo) / Σ custo` — o MESMO número dos KPIs de Publicados/Faturamento/
+ * Financeiro (imposto descontado do líquido). O líquido por item reusa o rateio de frete de
  * pack (`ratearLiquidoPorFrete`, igual ao Faturamento), então um pack não infla um produto e zera
  * o outro. Sem custo cadastrado, markup/lucro ficam null (a UI mostra "—").
  */
 export function montarDetalheVendas(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
+  aliquotaResolver?: AliquotaResolver,
 ): DetalheVendas {
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
   const liquidoPedido = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
@@ -99,12 +105,14 @@ export function montarDetalheVendas(
     for (const it of v.itens) {
       const key = it.ml_item_id ?? it.id;
       const g = grupos.get(key)
-        ?? { unidades: 0, valor: 0, liquido: 0, custo: 0, temCusto: false, titulo: null, codigo: null, ean: null, publiai: it.is_publiai };
+        ?? { unidades: 0, valor: 0, liquido: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, codigo: null, ean: null, publiai: it.is_publiai };
       const valorItem = it.unit_price * it.quantity;
       g.unidades += it.quantity;
       g.valor += valorItem;
       // Rateio do líquido do pedido pelo valor bruto do item (igual a agruparPorPedido).
       g.liquido += valorItens > 0 ? (liqPedido * valorItem) / valorItens : 0;
+      // Imposto por item (ADR-0055): reduz o líquido no markup/lucro, igual ao Faturamento/KPIs.
+      g.imposto += impostoDoItem(it, aliquotaResolver);
       const custoUnit = custoResolver?.(it) ?? null;
       if (custoUnit != null && custoUnit > 0) { g.custo += custoUnit * it.quantity; g.temCusto = true; }
       g.titulo ??= it.titulo;
@@ -121,7 +129,7 @@ export function montarDetalheVendas(
   const app: LinhaVenda[] = [];
   const externo: LinhaVenda[] = [];
   for (const [id, g] of grupos) {
-    const { lucro, markup } = lucroMarkup(g.liquido, g.custo, g.temCusto);
+    const { lucro, markup } = lucroMarkup(g.liquido, g.imposto, g.custo, g.temCusto);
     const linha: LinhaVenda = {
       id,
       titulo: g.titulo ?? id,

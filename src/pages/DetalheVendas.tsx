@@ -20,7 +20,8 @@ import { useSessionState } from '@/hooks/useSessionState';
 function urlAnuncioML(mlItemId: string): string {
   return `https://produto.mercadolivre.com.br/${mlItemId.replace(/^MLB/, 'MLB-')}`;
 }
-import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
+import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
@@ -217,9 +218,15 @@ export default function DetalheVendas() {
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número do card de Faturamento.
   const { data: vendas = [], isFetching, refetch, isError } = useVendas(janela, 'todos');
   const { data: custos } = useCustos();
+  const { data: aliquotas } = useAliquotas();
   const detalhe = useMemo(
-    () => montarDetalheVendas(vendas, montarCustoResolver(custos), montarPesoResolver(custos)),
-    [vendas, custos],
+    () => montarDetalheVendas(
+      vendas,
+      montarCustoResolver(custos),
+      montarPesoResolver(custos),
+      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+    ),
+    [vendas, custos, aliquotas],
   );
 
   return (
