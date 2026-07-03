@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,11 @@ import { periodoFromParams, resolverJanela, periodoToParams, type Periodo } from
 import { montarDetalheVendas, type LinhaVenda, type SecaoVendas } from '@/lib/detalhe-vendas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
+
+/** URL do anúncio no ML a partir do ml_item_id (ex.: MLB123 → produto.mercadolivre.com.br/MLB-123). */
+function urlAnuncioML(mlItemId: string): string {
+  return `https://produto.mercadolivre.com.br/${mlItemId.replace(/^MLB/, 'MLB-')}`;
+}
 import { montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 
 function pct(n: number): string {
@@ -69,8 +74,10 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
   );
 }
 
-function SecaoTabela({ titulo, sub, secao, mostrarMargem = false }: {
+function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = false }: {
   titulo: string; sub?: string; secao: SecaoVendas; mostrarMargem?: boolean;
+  /** Linka o título ao anúncio no ML (só seção PubliAI, cujo LinhaVenda.id é o ml_item_id). */
+  linkavel?: boolean;
 }) {
   // Ordenação local da seção: textuais começam A→Z; numéricas em maior→menor.
   const [sort, setSort] = useState<Sort | null>(null);
@@ -144,7 +151,16 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false }: {
                   <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.codigo ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.ean ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm">
-                    <span className="block max-w-[420px] whitespace-normal break-words uppercase">{l.titulo}</span>
+                    <div className="flex items-start gap-2">
+                      <span className="block max-w-[420px] whitespace-normal break-words uppercase">{l.titulo}</span>
+                      {linkavel && l.id.startsWith('MLB') && (
+                        <Button asChild variant="ghost" size="sm" className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground">
+                          <a href={urlAnuncioML(l.id)} target="_blank" rel="noreferrer" title="Ver anúncio no Mercado Livre">
+                            <ExternalLink className="mr-1 h-3 w-3" /> ML
+                          </a>
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{l.unidades}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(l.valor)}</TableCell>
@@ -266,7 +282,7 @@ export default function DetalheVendas() {
         </div>
       </div>
 
-      <SecaoTabela titulo="Seus anúncios (PubliAI)" secao={detalhe.app} mostrarMargem />
+      <SecaoTabela titulo="Seus anúncios (PubliAI)" secao={detalhe.app} mostrarMargem linkavel />
       <SecaoTabela titulo="Fora do PubliAI" sub="publicados direto no ML" secao={detalhe.externo} />
     </div>
   );

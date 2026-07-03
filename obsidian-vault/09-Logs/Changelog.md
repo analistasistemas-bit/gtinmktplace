@@ -23,6 +23,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   (ao lado de Comissão ML / Frete vendedor; compartilhado com o Detalhe do líquido no Financeiro)
   e no sub do KPI "Lucro líquido no período". `imposto` exposto em `ResumoVendas`. Não entra em
   "Taxas e frete (ML)"/"Líquido você recebe" (retenção do ML, não tributo do vendedor).
+- Link para o anúncio no ML em Publicados → Detalhe de vendas: botão discreto ↗ ML por produto
+  (seção "Seus anúncios (PubliAI)"), padrão do Publicados. URL construída do `ml_item_id`
+  (`produto.mercadolivre.com.br/MLB-<id>`) — cobre 100%, inclusive vendas cujo item foi
+  republicado e não está mais em `familias`.
 
 ## 2026-07-02
 
