@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca } from '@/lib/pedidos-faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver, AliquotaResolver } from '@/lib/resumo-vendas';
 
@@ -179,5 +179,40 @@ describe('nomeExibicaoComprador', () => {
 
   it('usa travessão quando não há nome nem nick', () => {
     expect(nomeExibicaoComprador({ comprador_nome: null, comprador_nick: null })).toBe('—');
+  });
+});
+
+describe('pedidoCasaBusca', () => {
+  const p = agruparPorPedido([venda({
+    order_id: 42, pack_id: null, comprador_nome: 'Leonardo Teixeira', comprador_nick: 'leonardo.nick',
+    total_amount: 150.5, liquido: 130.25,
+    itens: [item({ titulo: 'FITA CETIM VERMELHA', codigo: 'FC-001' })],
+  })])[0];
+
+  it('casa por nome do comprador (case-insensitive)', () => {
+    expect(pedidoCasaBusca(p, 'leonardo')).toBe(true);
+    expect(pedidoCasaBusca(p, 'LEONARDO teixeira')).toBe(true);
+  });
+
+  it('casa por título ou código do produto', () => {
+    expect(pedidoCasaBusca(p, 'cetim')).toBe(true);
+    expect(pedidoCasaBusca(p, 'FC-001')).toBe(true);
+  });
+
+  it('casa por número do pedido', () => {
+    expect(pedidoCasaBusca(p, '42')).toBe(true);
+  });
+
+  it('casa por valor bruto ou líquido como texto', () => {
+    expect(pedidoCasaBusca(p, '150,5')).toBe(true);
+    expect(pedidoCasaBusca(p, '130,25')).toBe(true);
+  });
+
+  it('não casa termo ausente', () => {
+    expect(pedidoCasaBusca(p, 'inexistente')).toBe(false);
+  });
+
+  it('busca vazia sempre casa', () => {
+    expect(pedidoCasaBusca(p, '')).toBe(true);
   });
 });

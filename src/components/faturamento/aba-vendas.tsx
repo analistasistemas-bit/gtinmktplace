@@ -15,13 +15,14 @@ import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
-import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca, type Pedido } from '@/lib/pedidos-faturamento';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
 import { labelStatusPedido, labelStatusEnvio, fmtDataCurta } from '@/lib/ml-status';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildVendasReport } from '@/lib/export/adapters';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { toast } from 'sonner';
@@ -225,15 +226,18 @@ export function AbaVendas() {
   const marcarVisto = (chave: string) =>
     setNovosChaves((prev) => { const n = new Set(prev); n.delete(chave); return n; });
 
+  // Busca livre (comprador, produto, nº do pedido, valor)
+  const [busca, setBusca] = useState('');
+
   // Filtro por status de envio (clique no card de contagem, toggle)
   const [filtroEnvio, setFiltroEnvio] = useState<string | null>(null);
   const toggleFiltroEnvio = (status: string) =>
     setFiltroEnvio((f) => (f === status ? null : status));
   const pedidosFiltrados = useMemo(
-    () => filtroEnvio == null
-      ? pedidos
-      : pedidos.filter((p) => labelStatusEnvio(p.shipping_status, p.shipping_substatus).label === filtroEnvio),
-    [pedidos, filtroEnvio],
+    () => pedidos
+      .filter((p) => pedidoCasaBusca(p, busca))
+      .filter((p) => filtroEnvio == null || labelStatusEnvio(p.shipping_status, p.shipping_substatus).label === filtroEnvio),
+    [pedidos, busca, filtroEnvio],
   );
 
   const [sort, setSort] = useSessionState<Sort | null>('sort:faturamento-vendas', null);
@@ -324,6 +328,12 @@ export function AbaVendas() {
               </Button>
             ))}
           </div>
+          <Input
+            placeholder="Buscar por cliente, produto, pedido, valor…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="h-7 w-[220px] text-xs"
+          />
         </div>
         <div className="flex items-center gap-2">
           <span
@@ -428,6 +438,11 @@ export function AbaVendas() {
         {!isFetching && (vendas ?? []).length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">
             Nenhuma venda no período. Clique em <span className="font-medium">Sincronizar</span> para importar do Mercado Livre.
+          </div>
+        )}
+        {(vendas ?? []).length > 0 && pedidosOrdenados.length === 0 && (
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+            Nenhum pedido encontrado para essa busca/filtro.
           </div>
         )}
         {isFetching && (vendas ?? []).length === 0 && (

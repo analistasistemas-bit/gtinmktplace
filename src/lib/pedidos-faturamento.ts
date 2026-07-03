@@ -272,3 +272,17 @@ export function nomeCurtoComprador(nome: string | null | undefined): string | nu
 export function nomeExibicaoComprador(p: Pick<Pedido, 'comprador_nome' | 'comprador_nick'>): string {
   return p.comprador_nome ?? p.comprador_nick ?? '—';
 }
+
+/** Busca livre (aba Vendas): casa comprador, produto (título/código), nº do pedido e valores. */
+export function pedidoCasaBusca(p: Pedido, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const campos = [
+    nomeExibicaoComprador(p),
+    ...p.orderIds.map(String),
+    String(p.bruto).replace('.', ','),
+    String(p.liquido).replace('.', ','),
+    ...p.itens.flatMap((it) => [it.titulo, it.codigo]),
+  ];
+  return campos.some((c) => c?.toLowerCase().includes(q));
+}
