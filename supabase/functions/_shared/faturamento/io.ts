@@ -21,23 +21,44 @@ export interface Catalogo {
   infoPorGtin: Map<string, { codigo: string | null; ean: string | null }>;
 }
 
+/** Lê todas as páginas de uma query, evitando o teto padrão (~1000 linhas) do PostgREST —
+ *  equivalente Deno de `buscarTodasPaginas` (src/lib/paginacao-supabase.ts). Sem isso, contas com
+ *  mais de 1000 variações perdem produtos silenciosamente no casamento por GTIN/código. */
+async function paginarTudo<T>(
+  pagina: (de: number, ate: number) => PromiseLike<{ data: T[] | null }>,
+  tamanho = 1000,
+): Promise<T[]> {
+  const todas: T[] = [];
+  for (let de = 0; ; de += tamanho) {
+    const { data } = await pagina(de, de + tamanho - 1);
+    const lote = data ?? [];
+    todas.push(...lote);
+    if (lote.length < tamanho) break;
+  }
+  return todas;
+}
+
 /** Resolvedores (código/EAN) por (ml_item_id, variation_id) + conjunto de ids do PubliAI. */
 export async function carregarCatalogo(admin: SupabaseClient, userId: string): Promise<Catalogo> {
-  const { data: familias } = await admin.from('familias')
-    .select('id, ml_item_id, codigo_pai').eq('user_id', userId).not('ml_item_id', 'is', null);
+  const familias = await paginarTudo<{ id: string; ml_item_id: string | null; codigo_pai: string | null }>(
+    (de, ate) => admin.from('familias')
+      .select('id, ml_item_id, codigo_pai').eq('user_id', userId).not('ml_item_id', 'is', null).range(de, ate),
+  );
   const famPorId = new Map<string, { mlItemId: string; codigoPai: string | null }>();
   const idsPubliai = new Set<string>();
-  for (const f of familias ?? []) {
+  for (const f of familias) {
     famPorId.set(f.id as string, { mlItemId: f.ml_item_id as string, codigoPai: f.codigo_pai as string | null });
     idsPubliai.add(f.ml_item_id as string);
   }
-  const { data: variacoes } = await admin.from('variacoes')
-    .select('familia_id, codigo, gtin, ml_variation_id').eq('user_id', userId);
+  const variacoes = await paginarTudo<{ familia_id: string; codigo: string | null; gtin: string | null; ml_variation_id: string | null }>(
+    (de, ate) => admin.from('variacoes')
+      .select('familia_id, codigo, gtin, ml_variation_id').eq('user_id', userId).range(de, ate),
+  );
   // chave "itemId:varId" → valor da variação; fallback "itemId" → primeiro valor da família.
   const codPorVar = new Map<string, string>(), codPorItem = new Map<string, string>();
   const eanPorVar = new Map<string, string>(), eanPorItem = new Map<string, string>();
   const infoPorGtin = new Map<string, { codigo: string | null; ean: string | null }>();
-  for (const v of variacoes ?? []) {
+  for (const v of variacoes) {
     const fam = famPorId.get(v.familia_id as string);
     if (!fam) continue;
     const cod = v.codigo as string | null, ean = v.gtin as string | null;
