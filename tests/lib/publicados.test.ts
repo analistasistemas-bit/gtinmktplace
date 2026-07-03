@@ -109,6 +109,16 @@ describe('filtrarPublicados', () => {
     expect(filtrarPublicados(fixtures, { busca: 'coats' }).map((i) => i.familiaId)).toEqual(['f2', 'f4']);
   });
 
+  it('busca encontra por código ou GTIN de uma variação (não só do pai)', () => {
+    // Anúncio cujo codigo_pai é 03096955, mas contém a variação 03096963 (GTIN 3000030969633).
+    const itens: PublicadoItem[] = [
+      { ...fixtures[0], codigoPai: '03096955', identificadores: ['03096963', '3000030969633'] },
+      ...fixtures.slice(1),
+    ];
+    expect(filtrarPublicados(itens, { busca: '03096963' }).map((i) => i.familiaId)).toEqual(['f1']);
+    expect(filtrarPublicados(itens, { busca: '3000030969633' }).map((i) => i.familiaId)).toEqual(['f1']);
+  });
+
   it('filtro combinado fornecedor + status restringe mais que cada um isolado', () => {
     // fornecedor='Avil' → f1, f3 (2 itens)
     // status='ativo'   → f1, f3 (2 itens, mas por coincidência iguais)

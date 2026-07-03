@@ -518,10 +518,15 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): 
   // EAN representativo do anúncio: a variação principal; senão a 1ª publicável com GTIN.
   const principal = base.find((v) => v.codigo === r.variacao_principal_codigo);
   const gtin = principal?.gtin ?? base.find((v) => v.gtin)?.gtin ?? null;
+  // Códigos e GTINs de cada variação, para a busca achar o anúncio por qualquer um deles.
+  const identificadores = base
+    .flatMap((v) => [v.codigo, v.gtin])
+    .filter((s): s is string => !!s);
   return {
     familiaId: r.id,
     codigoPai: r.codigo_pai,
     gtin,
+    identificadores,
     titulo: r.titulo_ml ?? r.nome_pai ?? '(sem título)',
     fornecedor: r.fornecedor ?? null,
     tipo: r.tipo_aviamento ?? null,

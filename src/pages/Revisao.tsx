@@ -51,7 +51,11 @@ export function filtrarFamilias(
     return (
       f.titulo.toLowerCase().includes(buscaLower) ||
       f.codigoPai.includes(buscaLower) ||
-      f.variacoes.some((v) => v.codigo.toLowerCase().includes(buscaLower))
+      f.variacoes.some(
+        (v) =>
+          v.codigo.toLowerCase().includes(buscaLower) ||
+          (v.gtin ?? '').toLowerCase().includes(buscaLower),
+      )
     );
   });
 }

@@ -13,6 +13,8 @@ export interface PublicadoItem {
   codigoPai: string;
   /** EAN/GTIN representativo do anúncio (variação principal, ou a 1ª publicável). null se ausente. */
   gtin: string | null;
+  /** Códigos e GTINs de todas as variações incluídas — a busca casa por qualquer um deles. */
+  identificadores?: string[];
   titulo: string;
   fornecedor: string | null;
   /** Tipo interno (enum de aviamento). Grosso: tudo fora dos 4 aviamentos é 'outro'. */
@@ -122,7 +124,8 @@ export function filtrarPublicados(
         i.codigoPai.toLowerCase().includes(q) ||
         (i.fornecedor ?? '').toLowerCase().includes(q) ||
         rotuloTipo(i).toLowerCase().includes(q) ||
-        (i.gtin ?? '').toLowerCase().includes(q)) &&
+        (i.gtin ?? '').toLowerCase().includes(q) ||
+        (i.identificadores ?? []).some((c) => c.toLowerCase().includes(q))) &&
       (!f.somenteEncalhados || ehEncalhado(i)),
   );
 }

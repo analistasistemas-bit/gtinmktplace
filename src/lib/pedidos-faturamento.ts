@@ -283,7 +283,7 @@ export function pedidoCasaBusca(p: Pedido, query: string): boolean {
     ...p.orderIds.map(String),
     fmtBRLSemSimbolo(p.bruto),
     fmtBRLSemSimbolo(p.liquido),
-    ...p.itens.flatMap((it) => [it.titulo, it.codigo]),
+    ...p.itens.flatMap((it) => [it.titulo, it.codigo, it.ean]),
   ];
   return campos.some((c) => c?.toLowerCase().includes(q));
 }
