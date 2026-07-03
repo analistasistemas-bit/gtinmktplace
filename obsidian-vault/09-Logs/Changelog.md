@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-02
+atualizado: 2026-07-03
 ---
 
 # Changelog
@@ -8,6 +8,17 @@ atualizado: 2026-07-02
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-07-03
+
+- Imposto por origem (nacional/importado) no preço e markup (ADR-0055): planilha ganha coluna
+  `ORIGEM` (opcional, lida da linha PAI → `familias.origem`, enum `origem_produto`); alíquotas
+  parametrizáveis em Configurações (nacional 8% / importado 16%, por usuário). Imposto =
+  `preço × alíquota` descontado do líquido em "Você recebe", "Vale a pena" e markup em todas as
+  telas (análise de publicação, viabilidade item-a-item, faturamento pós-venda); gross-up do
+  preço sugerido passa a `÷(1 − comissão% − alíquota%)`. Migration + edge functions
+  (`process-familia`, `analisar-viabilidade`, `ingest-lote`) deployadas. Planilha "Geral
+  Publicado" aplicada: 217 custos corrigidos, 57 famílias marcadas importado.
 
 ## 2026-07-02
 
