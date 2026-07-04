@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix: genérico descartado quando a IA rejeita um falso-amigo + busca sempre disponível — 2026-07-04
+
+- [x] **Achado ao vivo (mesmo dia do ADR-0058): a Bainha do lote 51 ainda travava**, mesmo com o
+  fallback genérico novo. Causa raiz: o preditor do ML devolvia, na mesma busca, o genérico
+  correto do segmento (`MLB1371` "Outros" — Artes e artesanatos) **e** um específico falso-amigo
+  ("Bainhas para Facas", homônimo de bainha de tecido); a IA de desempate corretamente recusava o
+  específico errado, mas o resolver então caía direto em `manual`, jogando fora o genérico certo
+  que já estava na mesma lista. Fix: `resolverCategoria` resgata pro melhor genérico disponível em
+  qualquer ponto que devolveria `manual` (não só quando não sobra específico nenhum) — nunca
+  escolhe um específico errado, só evita descartar um genérico que o ML já tinha respondido.
+- [x] **Segundo achado, ao vivo também**: o operador digitou literalmente "outros" no campo de
+  busca livre pra tentar "forçar" o fallback — o ML devolveu buckets "Outros" de domínios de
+  veículos náuticos (`MLB1905` e afins, coincidência textual). Como a categoria escolhida
+  manualmente grava `tipo_origem='manual'` (não `'generico'`), o link de busca desaparecia
+  completamente — o operador ficou sem nenhuma forma visível de corrigir. Fix: `CardCategoria`
+  ganha um "Trocar categoria" sempre alcançável pra qualquer categoria já definida, não só a
+  genérica automática, com `useEffect` garantindo abertura automática quando o card já montado
+  vira genérico num refetch ao vivo (ex.: reprocessar com a tela aberta).
+- Verificação: 22 testes novos/atualizados (resolver.test.ts + card-categoria.test.tsx), revisão
+  adversarial (3 agentes independentes: lógica do resolver, estados da UI, cenário ponta a ponta)
+  sem achados bloqueantes, 1169 testes verdes, build/lint limpos. `docs/decisions/0058-*.md`
+  (adendo). Branch `fix-trocar-categoria-sempre-disponivel`.
+
 ## Categoria de seleção livre + "Outros" como fallback visível — 2026-07-04
 
 - [x] **Famílias fora dos 4 aviamentos conhecidos (ex.: "BAINHA INSTANTÂNEA 4MT UND", lote 51)

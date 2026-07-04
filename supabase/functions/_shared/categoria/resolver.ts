@@ -118,35 +118,48 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
   }
 
   const topo = candidatos[0];
+  // Genéricos da lista COMPLETA (não só quando "só sobrou genérico"): usado como rede de
+  // segurança sempre que o fluxo abaixo desistiria de um específico. Ex. real (ADR-0058,
+  // lote 51): "BAINHA INSTANTÂNEA" traz ["Outros"/genérico, "Bainhas para Facas"/específico
+  // errado] — o específico é rejeitado (falso-amigo), mas o genérico do SEGMENTO certo
+  // (Artes e artesanatos) estava disponível o tempo todo; travar em manual jogava fora essa
+  // informação. Nunca escolhe um específico errado — só resgata um genérico já candidato.
+  const genericos = candidatos.filter((c) => ehCategoriaGenerica(c.categoriaNome));
+  const genericoOuManual = (): ResultadoCategoria => {
+    if (genericos.length === 0) return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
+    const g = genericos[0];
+    return { categoriaId: g.categoriaId, categoriaNome: g.categoriaNome, tipo: tipoParaCategoria(g.categoriaId), origem: 'generico' };
+  };
 
   // Pista forte de vertical: corrige top-1 incompatível quando há candidato
   // compatível; se a pista existe mas nenhum candidato bate, não auto-atribui
-  // categoria errada — devolve manual p/ o operador escolher na Revisão.
+  // categoria errada — cai no genérico do segmento se houver, senão manual.
   const pista = avaliarPistaForte(input, candidatos);
   if (pista?.tipo === 'escolhido' && pista.candidato.categoriaId !== topo.categoriaId) {
     return { categoriaId: pista.candidato.categoriaId, categoriaNome: pista.candidato.categoriaNome, tipo: tipoParaCategoria(pista.candidato.categoriaId), origem: 'ia' };
   }
   if (pista?.tipo === 'sem-candidato') {
-    return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
+    return genericoOuManual();
   }
 
   // 3. Candidatos genéricos ("Outros" etc.) nunca vencem um específico (ADR-0054, lote #50)
   // — separados ANTES de qualquer decisão. Zero candidato específico → aplica o genérico
-  // (topo) como fallback visível em vez de travar a família (ADR-0058): o operador vê o
-  // selo de aviso na Revisão e busca/troca quando quiser — nunca fica escondido.
+  // (topo, que aqui é necessariamente um deles) como fallback visível em vez de travar a
+  // família (ADR-0058): o operador vê o selo de aviso na Revisão e busca/troca quando quiser.
   const especificos = candidatos.filter((c) => !ehCategoriaGenerica(c.categoriaNome));
   if (especificos.length === 0) {
-    return { categoriaId: topo.categoriaId, categoriaNome: topo.categoriaNome, tipo: tipoParaCategoria(topo.categoriaId), origem: 'generico' };
+    return genericoOuManual();
   }
   const topoEspecifico = especificos[0];
 
   // 4. Desempate LLM — roda sempre que houver ≥1 candidato específico (não só em
-  // ambiguidade). Abstenção deliberada (null) → manual, nunca aceita o falso-amigo
-  // que sobrou. Falha técnica (undefined) → cai no topo específico (resiliente).
+  // ambiguidade). Abstenção deliberada (null): nunca aceita o falso-amigo que sobrou —
+  // cai no genérico do segmento se a busca também trouxe um (ADR-0058), senão manual.
+  // Falha técnica (undefined) → cai no topo específico (resiliente, comportamento de sempre).
   if (deps.llm) {
     const resultado = await deps.llm(input, especificos).catch(() => undefined as string | null | undefined);
     if (resultado === null) {
-      return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
+      return genericoOuManual();
     }
     if (typeof resultado === 'string') {
       const escolhido = especificos.find((c) => c.categoriaId === resultado);

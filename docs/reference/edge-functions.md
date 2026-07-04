@@ -114,10 +114,11 @@
   `gerarCopy` também extrai `tipo_produto_busca` (substantivo do tipo de produto grounded em
   nome/descrição) — alimenta uma 2ª busca no preditor de categoria (paralela à busca pelo nome
   bruto) e garante o tipo de produto no título quando ausente do nome; candidatos de categoria
-  com nome genérico ("Outros" etc.) nunca vencem um candidato específico (ADR-0054), mas sem
-  nenhum específico o topo genérico é aplicado como fallback visível (`tipo_origem='generico'`,
-  badge de aviso na Revisão) em vez de bloquear a família (ADR-0058); zero candidato ou pista
-  forte sem candidato compatível seguem caindo em manual.
+  com nome genérico ("Outros" etc.) nunca vencem um candidato específico (ADR-0054), mas o
+  genérico da lista é aplicado como fallback visível (`tipo_origem='generico'`, badge de aviso
+  na Revisão) sempre que o fluxo abandonaria um específico — sem candidato específico, ou com
+  candidato(s) mas a IA de desempate abstém do falso-amigo — em vez de bloquear a família
+  (ADR-0058, adendo 2026-07-04); só cai em `manual` quando não sobra genérico nenhum pra resgatar.
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). Escopo da operação (ADR-0056):
   publica as famílias selecionadas sem filtrar por chamador; a fila serial é keyed por

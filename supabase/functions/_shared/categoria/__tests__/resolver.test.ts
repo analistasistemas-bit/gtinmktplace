@@ -145,6 +145,34 @@ describe('resolverCategoria — tipo_produto_busca + candidatos genéricos + abs
     expect(r.categoriaId).toBeNull();
   });
 
+  it('(n2) LLM abstém do específico (falso-amigo) MAS há genérico do segmento na lista → cai no genérico, não em manual (ADR-0058, caso real "BAINHA" lote 51)', async () => {
+    // Reprodução exata do caso real: domain_discovery pra "bainha" devolve o genérico correto
+    // do segmento (Artes e artesanatos → Outros, MLB1371) JUNTO com um específico falso-amigo
+    // (Bainhas para Facas). O LLM corretamente recusa o específico; antes disso virava 'manual'
+    // e descartava o genérico correto que já estava na lista. Agora resgata o genérico.
+    const especificoFalsoAmigo: CategoriaCandidata = { domainId: 'MLB-KNIFE_SHEATHS', domainName: 'Bainhas para facas', categoriaId: 'MLB433161', categoriaNome: 'Bainhas para Facas' };
+    const r = await resolverCategoria(
+      { nome: 'BAINHA INSTANTÂNEA 4MT UND' },
+      { preditor: async () => [generico, especificoFalsoAmigo], llm: async () => null },
+    );
+    expect(r.origem).toBe('generico');
+    expect(r.categoriaId).toBe('MLB1371');
+    expect(r.categoriaNome).toBe('Outros');
+  });
+
+  it('(n3) pista forte sem candidato compatível MAS há genérico na lista → cai no genérico, não em manual', async () => {
+    const furadeiraSemCandidatoMasComGenerico: CategoriaCandidata[] = [
+      { domainId: 'MLB-NETWORK_GATEWAYS', domainName: 'Adaptadores e Gateways', categoriaId: 'MLB11400', categoriaNome: 'Adaptadores e Gateways' },
+      { domainId: 'MLB-TOOLS_MISC', domainName: 'Ferramentas diversas', categoriaId: 'MLB999001', categoriaNome: 'Outros' },
+    ];
+    const r = await resolverCategoria(
+      { nome: 'AUDITORIA REVALIDACAO FURADEIRA 650W BIVOLT' },
+      { preditor: async () => furadeiraSemCandidatoMasComGenerico },
+    );
+    expect(r.origem).toBe('generico');
+    expect(r.categoriaId).toBe('MLB999001');
+  });
+
   it('(o) LLM falha tecnicamente (undefined) → cai no topo específico (resiliente, como hoje)', async () => {
     const especifico: CategoriaCandidata = { domainId: 'MLB-X', domainName: 'X', categoriaId: 'MLB1', categoriaNome: 'Categoria Específica' };
     const r = await resolverCategoria(
