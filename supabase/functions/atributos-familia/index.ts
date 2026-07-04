@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
       return new Response(`Não foi possível autenticar com o ML: ${msg}`, { status: 502, headers: corsHeaders });
     }
     const query = (body.query ?? '').trim();
-    const candidatos = query ? await buscarCategoriaPreditor(token, query) : [];
+    const candidatos = query ? await buscarCategoriaPreditor(token, query).catch(() => []) : [];
     let sugestaoConcorrente: CategoriaCandidata | null = null;
     if (familia.concorrencia_categoria_id) {
       const nome = await buscarNomeCategoria(token, familia.concorrencia_categoria_id).catch(() => null);
@@ -53,6 +53,9 @@ Deno.serve(async (req) => {
   // Ações abaixo (faltantes/salvar) exigem categoria já definida.
   if (!familia.categoria_ml_id) return new Response('Família sem categoria', { status: 400, headers: corsHeaders });
 
+  // Token/schema são falíveis (sem credencial ML, timeout, rede). Sem tratamento, um throw vira
+  // 500 e o editor some silenciosamente enquanto o gate segue bloqueando. Retorna erro explícito
+  // p/ o front exibir "não foi possível carregar" em vez de sumir.
   let schema;
   try {
     const token = await getValidAccessToken(familia.user_id);
