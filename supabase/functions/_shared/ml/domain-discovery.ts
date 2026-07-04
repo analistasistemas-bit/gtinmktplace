@@ -51,3 +51,26 @@ export async function buscarCategoriaPreditor(token: string, query: string): Pro
   await redisSet(key, JSON.stringify(candidatos), TTL_S).catch(() => {});
   return candidatos;
 }
+
+const TTL_NOME_S = 30 * 24 * 60 * 60; // mesmo TTL de buscarCategoriaPreditor — nome de categoria muda raro.
+
+/**
+ * Nome humano de uma categoria pelo ID (GET /categories/{id}). Usado só para a sugestão do
+ * concorrente (ADR-0057) — os resultados de busca já trazem o nome via domain_discovery.
+ * Resiliente: rede/4xx → null (sugestão simplesmente não aparece). Cacheado no Redis.
+ */
+export async function buscarNomeCategoria(token: string, categoriaId: string): Promise<string | null> {
+  if (!categoriaId) return null;
+  const key = `catnome:${categoriaId}`;
+  const cached = await redisGet(key).catch(() => null);
+  if (cached) return cached;
+
+  const r = await fetch(`https://api.mercadolibre.com/categories/${categoriaId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const json = await r.json().catch(() => null) as { name?: string } | null;
+  const nome = json?.name ?? null;
+  if (nome) await redisSet(key, nome, TTL_NOME_S).catch(() => {});
+  return nome;
+}
