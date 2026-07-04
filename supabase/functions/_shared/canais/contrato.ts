@@ -151,6 +151,8 @@ export interface ChannelConnector {
   sincronizarDescricao(ctx: ContextoCanal, itemExternoId: string, descricaoAtual: string, cores: string[]): Promise<string | null>;
   /** Lê o status de N anúncios em lote. Lança se o token falhar (sem credencial). */
   lerStatus(ctx: ContextoCanal, itemExternoIds: string[]): Promise<Record<string, StatusCanal>>;
+  /** Pausa/reativa o anúncio (ADR-0060). Não lança: erros viram ResultadoCanal.erro. */
+  atualizarStatus(ctx: ContextoCanal, itemExternoId: string, status: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
   /**
    * Agrega vendas do período (limites inclusive, ISO 8601). `totais` cobrem toda a conta do
    * vendedor; `porItem` fica restrito aos itens do escopo (anúncios gerenciados pelo app).

@@ -1,6 +1,6 @@
 ---
 tags: [modulo, marketplace]
-atualizado: 2026-07-01
+atualizado: 2026-07-04
 ---
 
 # Marketplace
@@ -25,6 +25,9 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
 - **Moderação** — `monitorar-moderados` varre anúncios pausados/moderados e alerta Telegram
 - **Remoção** — `remover-publicado` (limpa registro local, ML intocado) e `excluir-lote`
   (preserva publicados)
+- **Pausar/reativar** — toggle na linha (só admin, `atualizar-status-publicado`); pausar exige
+  confirmação, reativar é direto. Sem persistência local de status — invalida o cache de
+  status ao vivo após a ação (ADR-0060)
 - **Split de produto** — produtos com >100 cores aparecem como N anúncios; ver
   [[Publicação Mercado Livre]]
 
@@ -35,5 +38,5 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
 
 ## Hooks
 
-`usePublicados`, `useStatusPublicados`, `useRemoverPublicado`, `useExcluirLote`,
-`usePaginacao`.
+`usePublicados`, `useStatusPublicados`, `useRemoverPublicado`, `usePausarReativarPublicado`,
+`useExcluirLote`, `usePaginacao`.

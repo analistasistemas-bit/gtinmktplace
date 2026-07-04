@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -56,6 +56,8 @@ import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
+import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
+import { useProfile } from '@/hooks/useProfile';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
 import { FiltrosAtivos, type ChaveFiltro } from '@/components/filtros-ativos';
@@ -111,6 +113,9 @@ interface LinhaProps {
   item: PublicadoItem;
   onRemover: (familiaId: string) => void;
   removendo: boolean;
+  onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => void;
+  pausando: boolean;
+  isAdmin: boolean;
 }
 
 const CONTEUDO_ML = (
@@ -135,10 +140,18 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
   );
 }
 
-function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
+function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, isAdmin }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:publicados:${item.familiaId}`, false);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
+
+  // Toggle só faz sentido entre ativo⇄pausado (ADR-0060). Moderado/encerrado/etc. ficam desabilitados.
+  const podeAlternar = item.status === 'ativo' || item.status === 'pausado';
+  const motivoDesabilitado = !isAdmin
+    ? 'Somente administradores podem pausar/reativar anúncios'
+    : !podeAlternar
+      ? 'Não é possível alternar o status deste anúncio'
+      : undefined;
 
   return (
     <>
@@ -199,6 +212,52 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
               <span>{CONTEUDO_ML}</span>
             )}
           </Button>
+
+          {item.status === 'pausado' ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Reativar"
+              title={motivoDesabilitado ?? 'Reativar'}
+              className="h-7 px-2 text-xs"
+              disabled={!isAdmin || !podeAlternar || pausando}
+              onClick={(e) => { e.stopPropagation(); onPausarReativar(item.mlItemId, 'ativo'); }}
+            >
+              <Play className="h-3 w-3" />
+            </Button>
+          ) : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Pausar"
+                  title={motivoDesabilitado ?? 'Pausar'}
+                  className="h-7 px-2 text-xs"
+                  disabled={!isAdmin || !podeAlternar || pausando}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Pause className="h-3 w-3" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Pausar anúncio?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    O anúncio deixa de aparecer na busca e não pode mais ser comprado no
+                    Mercado Livre até você reativar. Ele continua nesta tela — o vínculo
+                    local de UPDATE não é afetado.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onPausarReativar(item.mlItemId, 'pausado')}>
+                    Pausar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -304,6 +363,8 @@ export default function Publicados() {
   const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
+  const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
+  const { isAdmin } = useProfile();
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
@@ -329,6 +390,7 @@ export default function Publicados() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { filtro, ord, pagina, tamanho } = useMemo(() => paramsParaEstado(searchParams), [searchParams]);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
+  const [pausandoId, setPausandoId] = useState<string | null>(null);
 
   const aplicar = useCallback(
     (mudanca: (atual: EstadoPublicados) => Partial<EstadoPublicados>) => {
@@ -369,6 +431,19 @@ export default function Publicados() {
           description: err instanceof Error ? err.message : String(err),
         }),
       onSettled: () => setRemovendoId(null),
+    });
+  };
+
+  // Desabilita só a linha em pausa/reativação (não todas).
+  const handlePausarReativar = (mlItemId: string, novoStatus: 'ativo' | 'pausado') => {
+    setPausandoId(mlItemId);
+    pausarReativar({ mlItemId, status: novoStatus }, {
+      onSuccess: () => toast.success(novoStatus === 'pausado' ? 'Anúncio pausado' : 'Anúncio reativado'),
+      onError: (err) =>
+        toast.error(novoStatus === 'pausado' ? 'Falha ao pausar' : 'Falha ao reativar', {
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      onSettled: () => setPausandoId(null),
     });
   };
 
@@ -520,6 +595,13 @@ export default function Publicados() {
         </div>
       )}
 
+      {/* Erro de pausar/reativar */}
+      {erroPausar && (
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {(erroPausar as Error).message}
+        </div>
+      )}
+
       {/* Estado vazio */}
       {publicados.length === 0 ? (
         <EmptyState
@@ -659,6 +741,9 @@ export default function Publicados() {
                       item={item}
                       onRemover={handleRemover}
                       removendo={removendo && removendoId === item.familiaId}
+                      onPausarReativar={handlePausarReativar}
+                      pausando={pausandoOuReativando && pausandoId === item.mlItemId}
+                      isAdmin={isAdmin}
                     />
                   ))
                 )}

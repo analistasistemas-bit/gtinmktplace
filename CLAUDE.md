@@ -86,6 +86,7 @@ Prioridade MCP: supabase-mcp-server, upstash, render, shadcn, context7.
 - `PAI = 0` → agrupador. Uma família → um anúncio. Uma variação → um SKU.
 - CREATE cria anúncio; UPDATE atualiza anúncio existente.
 - Custo real do produto: `variacoes.custo` (R$). `familias.custo_centavos` é custo de tokens de IA — nunca usar para markup/preço.
+- **Pausar** um anúncio: some da busca/compra no ML, mas continua na tela Publicados (o vínculo local não é afetado — isso só acontece em "Remover"). **Reativar**: volta a aparecer na busca. Ação restrita a admin (ADR-0060).
 
 ---
 

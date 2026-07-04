@@ -6,7 +6,7 @@ import { lerVendasML } from '../ml/vendas.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
-import { buscarItemML, atualizarItemML } from '../ml/atualizar-item.ts';
+import { buscarItemML, atualizarItemML, atualizarStatusML } from '../ml/atualizar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
@@ -177,6 +177,16 @@ export const mercadoLivreConnector: ChannelConnector = {
     const out: Record<string, StatusCanal> = {};
     for (const id of ids) out[id] = parseStatusML(porId.get(id) ?? null);
     return out;
+  },
+
+  async atualizarStatus(ctx: ContextoCanal, itemExternoId: string, status: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>> {
+    const token = await ctx.getToken();
+    try {
+      await atualizarStatusML(token, itemExternoId, status === 'ativo' ? 'active' : 'paused');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, erro: classificarErroCanal(e) };
+    }
   },
 
   async lerMetricasVendas(

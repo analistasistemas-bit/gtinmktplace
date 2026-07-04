@@ -17,3 +17,14 @@ export async function requireUser(req: Request): Promise<AuthedUser> {
   }
   return { id: data.user.id, email: data.user.email ?? null };
 }
+
+// Gate mais estrito que requireUser: exige profiles.is_admin (ADR-0060 — pausar/reativar
+// anúncio é a 1ª ação de escrita restrita a admin, não só a membro autenticado).
+export async function requireAdmin(req: Request): Promise<AuthedUser> {
+  const user = await requireUser(req);
+  const { data } = await adminClient().from('profiles').select('is_admin').eq('id', user.id).maybeSingle();
+  if (!data?.is_admin) {
+    throw new Response('Somente administradores podem executar esta ação', { status: 403 });
+  }
+  return user;
+}

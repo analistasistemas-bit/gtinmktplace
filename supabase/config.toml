@@ -54,6 +54,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.status-publicados]
 verify_jwt = true
+[functions.atualizar-status-publicado]
+verify_jwt = true
 [functions.definir-categoria-familia]
 verify_jwt = true
 [functions.analisar-viabilidade]

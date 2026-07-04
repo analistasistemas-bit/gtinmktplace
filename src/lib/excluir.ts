@@ -25,3 +25,6 @@ export const removerPublicado = (familiaId: string) =>
     'remover-publicado',
     { familia_id: familiaId },
   );
+
+export const pausarReativarPublicado = (mlItemId: string, status: 'ativo' | 'pausado') =>
+  chamarEdge<{ ok: true }>('atualizar-status-publicado', { ml_item_id: mlItemId, status });

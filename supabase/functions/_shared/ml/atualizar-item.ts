@@ -61,3 +61,14 @@ export async function atualizarItemML(
   if (!resp.ok) throw erroML(resp.status, json);
   return { variations: (json as { variations?: ResultadoUpdate['variations'] }).variations ?? [] };
 }
+
+// Pausa/reativa o anúncio (ADR-0060). PUT parcial: só o campo status, preserva o resto.
+export async function atualizarStatusML(accessToken: string, itemId: string, status: 'active' | 'paused'): Promise<void> {
+  const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw erroML(resp.status, json);
+}

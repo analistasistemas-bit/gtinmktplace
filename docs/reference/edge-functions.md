@@ -54,6 +54,7 @@
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
+| atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
 | metricas-vendas | true | HTTP (frontend) | sim (leitura) |
 | analisar-viabilidade | true | HTTP (frontend) | não |
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
@@ -68,7 +69,7 @@
 
 | Módulo | Provê |
 |---|---|
-| `auth.ts` | `requireUser(req)` — valida Bearer token contra o Supabase Auth |
+| `auth.ts` | `requireUser(req)` — valida Bearer token contra o Supabase Auth; `requireAdmin(req)` — idem + exige `profiles.is_admin` (ADR-0060) |
 | `cors.ts` | Headers CORS padrão (inclui `upstash-signature`) |
 | `supabase.ts` | `adminClient()` (service_role) e `userClient(jwt)` (respeita RLS) |
 | `queue.ts` | QStash: `enfileirarFamilia/Publicacao/Atualizacao/VinculacaoCatalogo`, `garantirFilaSerial`, `verificarAssinatura` |
@@ -182,6 +183,10 @@
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status dos anúncios via conector multicanal (resiliente a "sem credencial").
   Escopo e token da **operação** (todos os anúncios + credencial ML compartilhada), não do chamador (ADR-0056).
+- **atualizar-status-publicado** — pausa/reativa um anúncio (`{ml_item_id, status}`) via
+  `ChannelConnector.atualizarStatus` (PUT parcial `status` no ML). Gate `requireAdmin` (não só
+  `requireUser`) — primeira ação de escrita restrita a admin do projeto (ADR-0060). Token da
+  operação, mesmo padrão do `status-publicados`.
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
   Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);
