@@ -275,6 +275,15 @@ describe('dedupePublicados', () => {
     expect(out[0].familiaId).toBe('orig');
   });
 
+  it('une identificadores de todas as linhas do grupo (busca acha código de ciclo novo)', () => {
+    const out = dedupePublicados([
+      base({ familiaId: 'orig', publicadoEm: '2026-06-04T00:00:00Z', identificadores: ['00445975'] }),
+      base({ familiaId: 'novo', publicadoEm: '2026-06-16T00:00:00Z', identificadores: ['00445975', '01813412'] }),
+    ]);
+    expect(out[0].familiaId).toBe('orig'); // representante segue o mais antigo
+    expect(out[0].identificadores).toContain('01813412'); // mas a busca acha o código do ciclo novo
+  });
+
   it('preenche fornecedor de qualquer linha do grupo quando o representante não tem', () => {
     const out = dedupePublicados([
       base({ familiaId: 'rep', publicadoEm: '2026-06-04T00:00:00Z', fornecedor: null }),

@@ -10,6 +10,15 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Busca da Publicados não achava código de variação de ciclos de UPDATE (2026-07-03)** — buscar
+  por código/GTIN de variação (ex.: `01813412`) na tela Publicados dava "Nenhum resultado" para
+  **alguns** produtos, mesmo com o fix anterior de `identificadores` (5febb1d). Causa raiz: vários
+  ciclos de UPDATE geram várias `familias` com o mesmo `ml_item_id`; `dedupePublicados` (`publicados.ts`)
+  elege como representante a família **mais antiga** (preserva a data de publicação original) e a busca
+  usava só os `identificadores` dela. Quando a variação buscada nasceu num ciclo posterior (a antiga
+  tinha, p.ex., 1 só variação), o código nunca entrava no índice de busca. Fix: `dedupePublicados` passa
+  a **unir** os `identificadores` de todas as famílias do grupo, mantendo o representante mais antigo
+  para o resto. Teste de regressão trava a invariante.
 - **Markup por produto divergente: Detalhe de vendas × Detalhe do pedido (2026-07-03)** — o mesmo
   produto mostrava markups diferentes (ex.: cód. 03096963 → +843% no Detalhe de vendas vs +592% no
   Detalhe do pedido). Causa raiz: `montarDetalheVendas` (`detalhe-vendas.ts`) rateava o líquido **por

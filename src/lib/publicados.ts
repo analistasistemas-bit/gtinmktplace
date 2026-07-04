@@ -70,7 +70,10 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
       return 0;
     })[0];
     const fornecedor = rep.fornecedor ?? grupo.find((g) => g.fornecedor)?.fornecedor ?? null;
-    out.push({ ...rep, fornecedor });
+    // União dos identificadores de todos os ciclos: o representante é o mais antigo, mas a busca
+    // precisa achar o anúncio por qualquer código/GTIN de variação (inclusive de ciclos de UPDATE).
+    const identificadores = [...new Set(grupo.flatMap((g) => g.identificadores ?? []))];
+    out.push({ ...rep, fornecedor, identificadores });
   }
   return out;
 }
