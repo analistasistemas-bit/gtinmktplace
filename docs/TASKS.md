@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix markup por produto divergente (Detalhe de vendas × Detalhe do pedido) — 2026-07-03
+
+- [x] **Mesmo produto mostrava markups diferentes nas duas telas** (ex.: cód. 03096963 → +843% no
+  Detalhe de vendas vs +592% no Detalhe do pedido). Causa raiz: `montarDetalheVendas`
+  (`detalhe-vendas.ts`) rateava o líquido **por linha de order_id**; num pack com um order_id por
+  produto, o item leve/barato (fita) ficava com o líquido inteiro do seu order_id (quase sem frete,
+  rateado por peso) e inflava o markup. Fix: poolar o líquido por **pack** (`pack_id ?? order_id`) e
+  redistribuir por valor bruto com o mesmo `round2` por item do `agruparPorPedido` (menu Faturamento,
+  fonte da verdade — ADR-0055). Agora o markup por produto bate 1:1 entre as telas. Teste de
+  regressão em `tests/lib/detalhe-vendas.test.ts` trava a invariante. Verificação: 1158 testes
+  verdes; lint do arquivo limpo.
+
 ## Fix overflow horizontal / responsividade — 2026-07-03
 
 - [x] **Telas escapavam das margens (desktop 15" Windows) e panavam lateralmente (mobile)** —

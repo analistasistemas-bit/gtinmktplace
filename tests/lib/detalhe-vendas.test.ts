@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { montarDetalheVendas } from '@/lib/detalhe-vendas';
 import { calcularResumo } from '@/lib/resumo-vendas';
+import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
-import type { CustoResolver, AliquotaResolver } from '@/lib/resumo-vendas';
+import type { CustoResolver, AliquotaResolver, PesoResolver } from '@/lib/resumo-vendas';
 
 /** CustoResolver por ml_item_id → custo unitário (R$). */
 const custoPorItem = (mapa: Record<string, number>): CustoResolver =>
@@ -187,6 +188,40 @@ describe('montarDetalheVendas — markup e lucro por produto', () => {
     const kpi = calcularResumo([v], custo, undefined, Date.parse('2026-07-03T00:00:00Z'), aliq);
     expect(d.app.markup as number).toBeCloseTo(kpi.markup as number, 6);
     expect(d.app.lucro).toBe(kpi.lucro);
+  });
+
+  it('markup por produto BATE com o Detalhe do pedido em pack de 1 order_id por item (regressão fita 03096963)', () => {
+    // Pack real 2000013532233489: 3 order_ids (um por produto), frete R$26,40 repetido em cada linha.
+    // A fita é leve+barata → no rateio de frete por peso quase não paga frete. Ratear o líquido POR
+    // LINHA dava à fita o líquido inteiro do seu order_id (markup ~843%); poolar por pack e redistribuir
+    // por valor (igual ao agruparPorPedido) traz o markup para o valor canônico (~592%).
+    const cola = item({ id: 'i_cola', ml_item_id: 'MB_COLA', codigo: '02841053', quantity: 2, unit_price: 37.9 });
+    const fita = item({ id: 'i_fita', ml_item_id: 'MB_FITA', codigo: '03096963', quantity: 1, unit_price: 12.55 });
+    const linha = item({ id: 'i_linha', ml_item_id: 'MB_LINHA', codigo: '02543842', quantity: 1, unit_price: 45.1 });
+    const base = (over: Partial<Venda>): Venda => venda({
+      pack_id: 999, shipping_id: 77, frete_vendedor: 26.4, status: 'paid', ...over,
+    });
+    const vendas = [
+      base({ id: 'o_cola', order_id: 208, total_amount: 75.8, sale_fee_total: 12.88, itens: [cola] }),
+      base({ id: 'o_fita', order_id: 162, total_amount: 12.55, sale_fee_total: 2.13, itens: [fita] }),
+      base({ id: 'o_linha', order_id: 164, total_amount: 45.1, sale_fee_total: 7.44, itens: [linha] }),
+    ];
+    const custo = custoPorItem({ MB_COLA: 15.57, MB_FITA: 0.86, MB_LINHA: 21.12 });
+    // Fita leve, cola/linha pesadas → rateio de frete por peso deixa quase todo o frete na cola/linha.
+    const peso: PesoResolver = (it) => ({ MB_COLA: 1000, MB_FITA: 50, MB_LINHA: 300 }[it.ml_item_id ?? ''] ?? null);
+    const aliq: AliquotaResolver = () => 16; // importado
+
+    const d = montarDetalheVendas(vendas, custo, peso, aliq);
+    const [pedido] = agruparPorPedido(vendas, custo, peso, undefined, aliq);
+
+    // Invariante: o markup por produto no Detalhe de vendas é o MESMO do Detalhe do pedido.
+    for (const it of pedido.itens) {
+      const linhaDetalhe = d.app.linhas.find((l) => l.id === it.ml_item_id)!;
+      expect(linhaDetalhe.markup).toBeCloseTo(it.markup as number, 6);
+    }
+    // E o total da seção continua batendo com o líquido do pack (redistribuição não cria/some líquido).
+    const somaLiquidoItens = pedido.itens.reduce((s, it) => s + it.liquido, 0);
+    expect(somaLiquidoItens).toBeCloseTo(pedido.liquido, 2);
   });
 
   it('usa líquido RATEADO em pack com frete compartilhado', () => {

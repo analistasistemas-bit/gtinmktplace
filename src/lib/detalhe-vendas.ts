@@ -92,6 +92,20 @@ export function montarDetalheVendas(
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
   const liquidoPedido = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
 
+  // Pool do líquido por PACK (pack_id ?? order_id), igual ao agruparPorPedido (menu Faturamento,
+  // fonte da verdade). Num pack com um order_id por produto, ratear por linha dava à fita leve/barata
+  // o líquido inteiro do seu order_id (quase sem frete, rateado por peso) e inflava o markup por
+  // produto; poolar o líquido do pack e redistribuir por valor bruto alinha o markup entre as telas.
+  const liquidoPorPack = new Map<string, number>();
+  const valorItensPorPack = new Map<string, number>();
+  for (const v of vendas) {
+    if (!ehFaturavel(v.status)) continue;
+    const pk = String(v.pack_id ?? v.order_id);
+    liquidoPorPack.set(pk, (liquidoPorPack.get(pk) ?? 0) + liquidoPedido(v));
+    const valorV = v.itens.reduce((s, it) => s + it.unit_price * it.quantity, 0);
+    valorItensPorPack.set(pk, (valorItensPorPack.get(pk) ?? 0) + valorV);
+  }
+
   let total = 0;
   let pedidos = 0;
   const grupos = new Map<string, Grupo>();
@@ -100,8 +114,9 @@ export function montarDetalheVendas(
     if (!ehFaturavel(v.status)) continue;
     total += v.total_amount;
     pedidos += 1;
-    const liqPedido = liquidoPedido(v);
-    const valorItens = v.itens.reduce((s, it) => s + it.unit_price * it.quantity, 0);
+    const pk = String(v.pack_id ?? v.order_id);
+    const liqPack = round2(liquidoPorPack.get(pk) ?? 0);
+    const valorPack = valorItensPorPack.get(pk) ?? 0;
     for (const it of v.itens) {
       const key = it.ml_item_id ?? it.id;
       const g = grupos.get(key)
@@ -109,8 +124,9 @@ export function montarDetalheVendas(
       const valorItem = it.unit_price * it.quantity;
       g.unidades += it.quantity;
       g.valor += valorItem;
-      // Rateio do líquido do pedido pelo valor bruto do item (igual a agruparPorPedido).
-      g.liquido += valorItens > 0 ? (liqPedido * valorItem) / valorItens : 0;
+      // Líquido do item = líquido do PACK inteiro rateado por valor bruto (igual a agruparPorPedido,
+      // com o mesmo round2 por item para o markup por produto bater 1:1 com o Detalhe do pedido).
+      g.liquido += valorPack > 0 ? round2((liqPack * valorItem) / valorPack) : 0;
       // Imposto por item (ADR-0055): reduz o líquido no markup/lucro, igual ao Faturamento/KPIs.
       g.imposto += impostoDoItem(it, aliquotaResolver);
       const custoUnit = custoResolver?.(it) ?? null;
