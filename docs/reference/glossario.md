@@ -26,6 +26,7 @@
 | **UPDATE** | Operação que atualiza um anúncio existente — reposição de estoque, preço ou cor nova (`operacao_ml = UPDATE`). Ver ADR-0005, ADR-0016. |
 | **Revisão humana** | Etapa obrigatória entre processamento e publicação. Nenhum anúncio vai ao ar sem aprovação do operador (regra inegociável). |
 | **Reprocessar** | Re-enfileirar uma família travada em `erro` resetando o status para `pendente` (ADR-0030, função `reprocessar-familia`). |
+| **Pausar / Reativar** | Alterna a visibilidade de um anúncio já publicado no marketplace (`ativo` ⇄ `pausado`) sem afetar o vínculo local de UPDATE nem os dados do produto. Ação restrita a admin, feita via `ChannelConnector.atualizarStatus` (ADR-0060). Distinto de "Remover" (que só apaga o vínculo local; o anúncio no ML continua ativo). |
 | **Publicável / viabilidade** | Conjunto de checagens (foto, cor, preço, categoria) que liberam ou bloqueiam a publicação. Fonte única em `src/lib/publicavel.ts`. |
 
 ## Estados (enums)

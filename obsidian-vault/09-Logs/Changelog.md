@@ -31,6 +31,19 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   reprocessamento ao vivo confirmou busca funcionando com candidatos reais do ML e a sugestão do
   concorrente aparecendo corretamente como não-aplicável sozinha.
 
+- **Feat: pausar/reativar anúncio publicado no Mercado Livre (ADR-0060).** Novo 3º ícone na linha
+  da tela Publicados (`Pause`/`Play`), restrito a **admin** — primeira ação de escrita do projeto
+  gated por `profiles.is_admin`, não só por membro autenticado da operação. `ChannelConnector`
+  ganha `atualizarStatus` (contrato multicanal, ADR-0024), implementado no conector ML via
+  `PUT /items/{id}` com `{status}`; nova edge function `atualizar-status-publicado`
+  (`requireAdmin` + token da operação, mesmo padrão do `status-publicados`/ADR-0056).
+  Confirmação (`AlertDialog`) só ao pausar; reativar é direto. Sem persistência local de status —
+  a ação invalida o cache de status ao vivo (`QK.statusPublicados`), forçando reconsulta real no
+  ML. Validado end-to-end no browser contra o Mercado Livre real: pausou e reativou um anúncio de
+  baixo risco (zero vendas no período), terminou como "Ativo". Deploy da função nova via CLI
+  (v1, ACTIVE) durante a implementação; redeploy completo das demais funções afetadas (mesmos
+  `_shared` importados, comportamento inalterado) feito no fechamento da branch.
+
 ## 2026-07-03
 
 - **Fix: linha expandida "para detalhar" recolhia ao trocar de tela/aba ou no refetch.** Mesma
