@@ -13,6 +13,7 @@ import type {
   AnaliseMercado,
   AtributoMl,
   CampoFaltante,
+  CategoriaCandidata,
 } from './tipos-dominio';
 import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 import type { FaixaAtacado } from './atacado';
@@ -303,6 +304,13 @@ export async function salvarAtributoFamilia(familiaId: string, atributoId: strin
   return json.atributos_faltantes;
 }
 
+export async function buscarCategoriaML(
+  familiaId: string, query: string,
+): Promise<{ candidatos: CategoriaCandidata[]; sugestaoConcorrente: CategoriaCandidata | null }> {
+  const res = await chamarAtributosFamilia({ action: 'buscar-categoria', familia_id: familiaId, query });
+  return res.json();
+}
+
 export function familiaFromRow(
   r: FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos?: AnuncioExternoLite[] }
 ): Familia {
@@ -335,6 +343,7 @@ export function familiaFromRow(
     categoriaMlId: r.categoria_ml_id,
     categoriaNome: r.categoria_nome,
     tipoOrigem: r.tipo_origem,
+    concorrenciaCategoriaId: r.concorrencia_categoria_id,
     origem: r.origem,
     atributosFaltantes: (r.atributos_faltantes as string[] | null) ?? null,
     atributosMl: (r.atributos_ml as AtributoMl[] | null) ?? [],

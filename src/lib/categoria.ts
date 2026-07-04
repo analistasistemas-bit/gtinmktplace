@@ -1,20 +1,20 @@
 import { supabase } from './supabase';
 import type { TipoAviamento } from './tipos-dominio';
 
-export type TipoCategoriaManual = Exclude<TipoAviamento, 'outro'>;
-
-// Tipos com categoria-folha ML mapeada, oferecidos no seletor manual da Revisão.
-export const CATEGORIAS_MANUAIS: { tipo: TipoCategoriaManual; rotulo: string }[] = [
+// Rótulos de exibição dos tipos de aviamento conhecidos (fallback quando categoriaNome vier vazio
+// de dados antigos). Não é mais a lista de opções do seletor — isso agora é busca livre (ADR-0057).
+export const CATEGORIAS_MANUAIS: { tipo: Exclude<TipoAviamento, 'outro'>; rotulo: string }[] = [
   { tipo: 'linha', rotulo: 'Fios e Cadarços' },
   { tipo: 'fita', rotulo: 'Fita de Cetim' },
   { tipo: 'botao', rotulo: 'Botões' },
   { tipo: 'cola', rotulo: 'Bastões de Cola' },
 ];
 
-export async function definirCategoriaFamilia(
+export async function definirCategoriaLivre(
   familiaId: string,
-  tipo: TipoCategoriaManual,
-): Promise<{ categoria_ml_id: string; tipo_aviamento: TipoAviamento }> {
+  categoriaMlId: string,
+  categoriaNome: string,
+): Promise<{ categoria_ml_id: string; categoria_nome: string; tipo_aviamento: TipoAviamento; atributos_faltantes: string[] }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Não autenticado');
 
@@ -26,7 +26,7 @@ export async function definirCategoriaFamilia(
         Authorization: `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ familia_id: familiaId, tipo }),
+      body: JSON.stringify({ familia_id: familiaId, categoria_ml_id: categoriaMlId, categoria_nome: categoriaNome }),
     },
   );
 

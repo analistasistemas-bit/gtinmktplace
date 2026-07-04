@@ -25,6 +25,7 @@ function familiaBase(over: Partial<Familia> = {}): Familia {
       preco_max: 17.02, total_ofertas: 8, frete_gratis: 0, full: 0,
       lideres: 4, maior_vendas: 52000, ranking_categoria: null, produto_desde: '2024-03-05',
     },
+    concorrenciaCategoriaId: null,
     ...over,
   };
 }

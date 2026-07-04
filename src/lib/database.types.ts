@@ -151,6 +151,7 @@ export type Database = {
           categoria_ml_id: string | null
           categoria_nome: string | null
           codigo_pai: string
+          concorrencia_categoria_id: string | null
           concorrencia_classe: Database["public"]["Enums"]["classe_concorrencia"]
           concorrencia_origem: Database["public"]["Enums"]["origem_concorrencia"]
           concorrencia_preco_min: number | null
@@ -212,6 +213,7 @@ export type Database = {
           categoria_ml_id?: string | null
           categoria_nome?: string | null
           codigo_pai: string
+          concorrencia_categoria_id?: string | null
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
           concorrencia_origem?: Database["public"]["Enums"]["origem_concorrencia"]
           concorrencia_preco_min?: number | null
@@ -273,6 +275,7 @@ export type Database = {
           categoria_ml_id?: string | null
           categoria_nome?: string | null
           codigo_pai?: string
+          concorrencia_categoria_id?: string | null
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
           concorrencia_origem?: Database["public"]["Enums"]["origem_concorrencia"]
           concorrencia_preco_min?: number | null

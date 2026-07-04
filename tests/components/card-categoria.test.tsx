@@ -27,6 +27,7 @@ function familiaBase(over: Partial<Familia> = {}): Familia {
     tokensInput: null, tokensOutput: null, custoCentavos: null,
     tituloEditadoPeloOperador: false, descricaoEditadaPeloOperador: false,
     variacoesSemCor: 0, analiseMercado: null,
+    concorrenciaCategoriaId: null,
     ...over,
   };
 }

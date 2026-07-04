@@ -130,6 +130,12 @@ export interface CampoFaltante {
   unidades?: { id: string; nome: string }[];
 }
 
+export interface CategoriaCandidata {
+  categoriaId: string;
+  categoriaNome: string;
+  domainName: string;
+}
+
 export interface Familia {
   id: string;
   loteId: string;
@@ -147,6 +153,8 @@ export interface Familia {
   categoriaMlId: string | null;
   categoriaNome: string | null;
   tipoOrigem: TipoOrigem | null;
+  /** category_id do concorrente (ADR-0057) — sugestão não-vinculante no seletor de categoria. */
+  concorrenciaCategoriaId: string | null;
   /** Origem do produto p/ imposto (ADR-0055): nacional | importado. */
   origem: 'nacional' | 'importado';
   atributosFaltantes: string[] | null;
