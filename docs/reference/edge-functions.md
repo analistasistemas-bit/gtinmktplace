@@ -114,8 +114,10 @@
   `gerarCopy` também extrai `tipo_produto_busca` (substantivo do tipo de produto grounded em
   nome/descrição) — alimenta uma 2ª busca no preditor de categoria (paralela à busca pelo nome
   bruto) e garante o tipo de produto no título quando ausente do nome; candidatos de categoria
-  com nome genérico ("Outros" etc.) nunca são aceitos como resposta final, caem em manual
-  (ADR-0054).
+  com nome genérico ("Outros" etc.) nunca vencem um candidato específico (ADR-0054), mas sem
+  nenhum específico o topo genérico é aplicado como fallback visível (`tipo_origem='generico'`,
+  badge de aviso na Revisão) em vez de bloquear a família (ADR-0058); zero candidato ou pista
+  forte sem candidato compatível seguem caindo em manual.
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). Escopo da operação (ADR-0056):
   publica as famílias selecionadas sem filtrar por chamador; a fila serial é keyed por
@@ -131,12 +133,18 @@
   Grava o item da partição cedo (anti-duplicação em retry); partição 0 herda `ml_item_id` existente.
   Catálogo por-partição é follow-up (hoje cobre só a partição 0).
 - **regenerar-copy-familia** — regera título/descrição via IA sem republicar.
-- **definir-categoria-familia** — seletor manual de categoria (escape hatch p/ "outro"),
-  monta atributos obrigatórios (ADR-0022).
+- **definir-categoria-familia** — grava a categoria escolhida pelo operador (busca livre,
+  ADR-0057): `{familia_id, categoria_ml_id, categoria_nome}` (substitui o contrato antigo de 4
+  tipos fixos, ADR-0009/0022). Categoria conhecida (linha/fita/botao/cola) → caminho curado
+  (`montarAtributosML`); categoria livre/genérica → `resolverAtributosGenericos` (mesmo fluxo
+  schema+IA do process-familia, reusado).
 - **atributos-familia** *(JWT)* — fallback da Camada 2B (ADR-0052): `action:'faltantes'` lista os
   obrigatórios não preenchidos COM schema (tipo/valores) e `action:'salvar'` valida um valor
   server-side, faz merge em `atributos_ml`, marca `atributos_editados_pelo_operador` e recalcula
-  `atributos_faltantes`. Base do editor inline na Revisão.
+  `atributos_faltantes`. Base do editor inline na Revisão. `action:'buscar-categoria'` (ADR-0057)
+  busca categorias reais do ML por texto livre (`buscarCategoriaPreditor`) e devolve também a
+  sugestão não-vinculante da categoria do concorrente (`concorrencia_categoria_id` →
+  `buscarNomeCategoria`), sem exigir categoria já definida.
 - **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; alerta Telegram
   em no-match/ficha divergente (ADR-0021/0036).
 

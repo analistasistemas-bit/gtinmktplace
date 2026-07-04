@@ -36,7 +36,7 @@
 | `familia_status` | `pendente`, `processando`, `pronto`, `publicando`, `publicado`, `erro` | `familias.status` |
 | `operacao_ml` | `CREATE`, `UPDATE` | `familias.operacao` |
 | `tipo_aviamento` | `linha`, `botao`, `fita`, `cola`, `outro` | `familias.tipo_aviamento` |
-| `tipo_origem` | `regex`, `ia`, `manual`, `preditor` | origem da categorização |
+| `tipo_origem` | `regex`, `ia`, `manual`, `preditor`, `generico` | origem da categorização |
 | `origem_produto` | `nacional`, `importado` | `familias.origem` (procedência p/ imposto) |
 | `estrategia_preco` | `proprio`, `competitivo`, `manual` | `familias.estrategia_preco` |
 | `cor_origem` | `descricao`, `vision`, `manual` | `variacoes.cor_origem` |
