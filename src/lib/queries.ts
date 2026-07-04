@@ -417,6 +417,22 @@ export async function upsertAliquotas(a: { nacional: number; importado: number }
   if (error) throw error;
 }
 
+export async function fetchDescontoConcorrenciaPct(): Promise<number> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 5;
+  const { data } = await supabase.from('configuracoes')
+    .select('desconto_concorrencia_pct').eq('user_id', user.id).maybeSingle();
+  return data?.desconto_concorrencia_pct != null ? Number(data.desconto_concorrencia_pct) : 5;
+}
+
+export async function upsertDescontoConcorrenciaPct(pct: number): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ user_id: user.id, desconto_concorrencia_pct: pct, atualizado_em: new Date().toISOString() });
+  if (error) throw error;
+}
+
 export async function updateFamiliaExibirDesconto(familiaId: string, exibir: boolean): Promise<void> {
   const { error } = await supabase.from('familias')
     .update({ exibir_com_desconto: exibir }).eq('id', familiaId);

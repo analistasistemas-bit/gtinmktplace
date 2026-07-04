@@ -233,12 +233,14 @@ Deno.serve(async (req) => {
     // Imposto por origem (ADR-0055): entra no gross-up para o preço cobrir o imposto.
     const { data: cfgAliq } = await admin
       .from('configuracoes')
-      .select('aliquota_nacional_pct, aliquota_importado_pct')
+      .select('aliquota_nacional_pct, aliquota_importado_pct, desconto_concorrencia_pct')
       .eq('user_id', userId)
       .maybeSingle();
     const aliquotaPct = claimed.origem === 'importado'
       ? Number(cfgAliq?.aliquota_importado_pct ?? 16)
       : Number(cfgAliq?.aliquota_nacional_pct ?? 8);
+    // ADR-0059: desconto sobre o menor preço concorrente, configurável (default 5%).
+    const descontoConcorrenciaPct = Number(cfgAliq?.desconto_concorrencia_pct ?? 5);
 
     let comissao: { percentual: number; fixa: number } | null = null;
     let frete = 0;
@@ -275,14 +277,14 @@ Deno.serve(async (req) => {
     const updatesPreco = resolvidas
       .filter((v) => !v.preco_editado_pelo_operador)
       .map((v) => {
-        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct);
+        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct);
         return admin.from('variacoes')
           .update({ preco_publicacao: preco })
           .eq('id', v.id);
       });
     await Promise.all(updatesPreco);
 
-    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct);
+    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct);
 
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =

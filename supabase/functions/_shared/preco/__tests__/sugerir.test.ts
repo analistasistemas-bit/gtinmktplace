@@ -90,4 +90,11 @@ describe('sugerirPrecoVenda', () => {
     expect(r.estrategia).toBe('proprio');
     expect(r.preco).toBeCloseTo(23, 2);
   });
+
+  // ADR-0059: percentual configurável (default 5% quando omitido).
+  it('descontoConcorrenciaPct customizado (10%) → menor × 0,90', () => {
+    const r = sugerirPrecoVenda(10, { vendedores: 3, preco_min: 30 }, null, 0, 0, 10);
+    expect(r.preco).toBeCloseTo(27, 2);
+    expect(r.motivo).toBe('concorrência presente — 10% abaixo do menor preço');
+  });
 });

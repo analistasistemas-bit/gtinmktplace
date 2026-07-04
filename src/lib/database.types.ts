@@ -102,6 +102,7 @@ export type Database = {
           aliquota_nacional_pct: number
           atualizado_em: string
           criado_em: string
+          desconto_concorrencia_pct: number
           desconto_pct: number
           telegram_ativo: boolean
           telegram_bot_token: string | null
@@ -113,6 +114,7 @@ export type Database = {
           aliquota_nacional_pct?: number
           atualizado_em?: string
           criado_em?: string
+          desconto_concorrencia_pct?: number
           desconto_pct?: number
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
@@ -124,6 +126,7 @@ export type Database = {
           aliquota_nacional_pct?: number
           atualizado_em?: string
           criado_em?: string
+          desconto_concorrencia_pct?: number
           desconto_pct?: number
           telegram_ativo?: boolean
           telegram_bot_token?: string | null

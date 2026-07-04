@@ -45,7 +45,8 @@ Frete grátis acima de ~R$ 19 (custo não exposto pela API) entra como **badge s
 
 - Só CREATE (UPDATE preserva preço — ADR-0016).
 - Respeita `preco_editado_pelo_operador`.
-- 5% e thresholds fixos (config futura).
+- ~~5% e thresholds fixos (config futura).~~ Percentual configurável desde ADR-0059
+  (`configuracoes.desconto_concorrencia_pct`, menu Configurações); thresholds seguem fixos.
 - Falha do ML / categoria indefinida → preço cai para o piso + semáforo "indisponível".
 - Sem migration: reusa `preco_publicacao`, `variacoes.preco`, `variacoes.custo`,
   `estrategia_preco`/`estrategia_motivo`.

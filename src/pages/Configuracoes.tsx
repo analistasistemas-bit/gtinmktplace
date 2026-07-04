@@ -9,7 +9,11 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useMlConnection } from '@/hooks/useMlConnection';
-import { useDescontoPct, useSalvarDescontoPct, useAliquotas, useSalvarAliquotas } from '@/hooks/useConfiguracoes';
+import {
+  useDescontoPct, useSalvarDescontoPct,
+  useDescontoConcorrenciaPct, useSalvarDescontoConcorrenciaPct,
+  useAliquotas, useSalvarAliquotas,
+} from '@/hooks/useConfiguracoes';
 import { ConfigTelegram } from '@/components/config-telegram';
 import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
@@ -26,6 +30,14 @@ export default function Configuracoes() {
   useEffect(() => {
     if (descontoPct != null) setPctInput(String(descontoPct));
   }, [descontoPct]);
+
+  const { data: descontoConcorrenciaPct } = useDescontoConcorrenciaPct();
+  const salvarDescontoConcorrencia = useSalvarDescontoConcorrenciaPct();
+  const [descontoConcInput, setDescontoConcInput] = useState('5');
+
+  useEffect(() => {
+    if (descontoConcorrenciaPct != null) setDescontoConcInput(String(descontoConcorrenciaPct));
+  }, [descontoConcorrenciaPct]);
 
   const { data: aliquotas } = useAliquotas();
   const salvarAliquotas = useSalvarAliquotas();
@@ -130,6 +142,33 @@ export default function Configuracoes() {
         </Card>
 
         <ConfigTelegram />
+
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Desconto sobre concorrência</h2>
+          <p className="mb-2 text-xs text-muted-foreground">
+            Quando há concorrente, o preço sugerido fica esse percentual abaixo do menor preço encontrado (ADR-0059). Padrão 5%.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={99}
+              step={1}
+              className="h-8 w-20 text-sm"
+              value={descontoConcInput}
+              onChange={(e) => setDescontoConcInput(e.target.value)}
+              onBlur={() => {
+                const n = Number(descontoConcInput);
+                if (n >= 0 && n < 100) salvarDescontoConcorrencia.mutate(n);
+              }}
+            />
+            <span className="text-sm">%</span>
+            {salvarDescontoConcorrencia.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+            {salvarDescontoConcorrencia.isSuccess && !salvarDescontoConcorrencia.isPending && (
+              <span className="text-xs text-success">✓ Salvo</span>
+            )}
+          </div>
+        </Card>
 
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold">Estratégia de preço</h2>

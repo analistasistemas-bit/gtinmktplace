@@ -183,11 +183,13 @@ Anúncios moderados/pausados + coordenação de alertas. *Migration `20260622115
 
 ### `configuracoes`
 Settings por usuário. *Migrations `20260606120614` + `20260622121259` (ADR-0017/0035/0040) +
-`20260703113001` (ADR-0055).*
+`20260703113001` (ADR-0055) + `20260704120000` (ADR-0059).*
 `user_id` (PK), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token`
 (sensível — nunca retornado; lido via RPC `telegram_config_status()` que só informa
 `tem_token boolean`), `aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16)
-— alíquotas globais por usuário, sem override por família (ADR-0055).
+— alíquotas globais por usuário, sem override por família (ADR-0055) —, `desconto_concorrencia_pct`
+(default 5) — percentual abaixo do menor concorrente aplicado por `sugerirPrecoVenda` (ADR-0059,
+antes fixo em 5%).
 
 ---
 

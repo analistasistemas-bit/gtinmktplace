@@ -17,7 +17,7 @@ export interface PrecoSugerido {
   motivo: string;
 }
 
-const MOTIVO_COMPETITIVO = 'concorrência presente — 5% abaixo do menor preço';
+const motivoCompetitivo = (pct: number) => `concorrência presente — ${pct}% abaixo do menor preço`;
 const MOTIVO_GROSSUP = 'sem concorrência — preço cobre seu mínimo após comissão e frete';
 const MOTIVO_FALLBACK = 'sem concorrência — comissão indisponível, usando o piso';
 
@@ -48,9 +48,10 @@ export function grossUp(piso: number, percentual: number, fixa: number, frete = 
 }
 
 /**
- * Sugere o preço de venda (ADR-0020 + ADR-0023). `piso` = PRECO da planilha (líquido mínimo).
- * Com concorrente → mercado (× 0,95). Sem concorrente → gross-up que cobre o piso e fica
- * acima do abismo de R$ 12,50 (onde o ML deixa de cobrar a tarifa fixa de 50%).
+ * Sugere o preço de venda (ADR-0020 + ADR-0023 + ADR-0059). `piso` = PRECO da planilha
+ * (líquido mínimo). Com concorrente → mercado (× (1 − descontoConcorrenciaPct/100), configurável
+ * em Configurações, default 5%). Sem concorrente → gross-up que cobre o piso e fica acima do
+ * abismo de R$ 12,50 (onde o ML deixa de cobrar a tarifa fixa de 50%).
  */
 export function sugerirPrecoVenda(
   piso: number,
@@ -58,12 +59,13 @@ export function sugerirPrecoVenda(
   comissao: Comissao | null,
   frete = 0,
   aliquotaPct = 0,
+  descontoConcorrenciaPct = 5,
 ): PrecoSugerido {
   if (conc.vendedores > 0 && conc.preco_min != null) {
     return {
-      preco: arredondar5Proximo(conc.preco_min * 0.95),
+      preco: arredondar5Proximo(conc.preco_min * (1 - descontoConcorrenciaPct / 100)),
       estrategia: 'competitivo',
-      motivo: MOTIVO_COMPETITIVO,
+      motivo: motivoCompetitivo(descontoConcorrenciaPct),
     };
   }
   if (comissao) {
