@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { filtrarPublicados, ordenarPublicados, primeiroNome, rotuloTipo } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, rotuloTipo } from '@/lib/publicados';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
@@ -163,8 +163,6 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
           </div>
         </div>
       </TableCell>
-      <TableCell className="text-sm" title={item.fornecedor ?? undefined}>{primeiroNome(item.fornecedor) ?? '—'}</TableCell>
-      <TableCell className="text-sm">{rotuloTipo(item)}</TableCell>
       <TableCell className="text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</TableCell>
       <TableCell className="text-sm tabular-nums">
         {item.estoque != null ? item.estoque : '—'}
@@ -241,7 +239,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
     </TableRow>
     {aberto && (
       <TableRow className="hover:bg-transparent">
-        <TableCell colSpan={11} className="whitespace-normal bg-muted/30 p-3">
+        <TableCell colSpan={9} className="whitespace-normal bg-muted/30 p-3">
           {carregandoFamilia ? (
             <p className="text-xs text-muted-foreground">carregando análise…</p>
           ) : erroFamilia || !familia ? (
@@ -637,8 +635,6 @@ export default function Publicados() {
               <TableHeader>
                 <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
                   <ThOrdenavel coluna="titulo" label="Título" ord={ord} onOrdenar={ordenarPor} className="sticky left-0 z-10 bg-muted/50 sm:static sm:z-auto sm:bg-transparent" />
-                  <ThOrdenavel coluna="fornecedor" label="Fornecedor" ord={ord} onOrdenar={ordenarPor} />
-                  <ThOrdenavel coluna="tipo" label="Tipo" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="precoPublicacao" label="Preço publicado" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="estoque" label="Estoque atual" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="precoAtual" label="Preço atual" ord={ord} onOrdenar={ordenarPor} />
@@ -652,7 +648,7 @@ export default function Publicados() {
               <TableBody>
                 {itensExibidos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-6 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={9} className="py-6 text-center text-sm text-muted-foreground">
                       Nenhum resultado para os filtros aplicados.
                     </TableCell>
                   </TableRow>
