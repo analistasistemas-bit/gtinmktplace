@@ -2,6 +2,16 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Campo de busca no Detalhe de vendas — 2026-07-03
+
+- [x] **Detalhe de vendas (Publicados › `/publicados/vendas`) ganhou campo de busca** por
+  título/código/EAN, mesmo padrão do `Input` usado em Publicados. Filtra as duas seções (Seus
+  anúncios PubliAI / Fora do PubliAI); o subtotal do rodapé passa a refletir só as linhas
+  filtradas (senão o número da seção inteira ficava enganoso ao lado de 1-2 linhas exibidas).
+  Mensagem "Nenhum resultado para a busca." diferencia de "Sem vendas no período." quando o filtro
+  não bate com nada. `DetalheVendas.tsx`. Frontend-only, sem ADR (não é decisão arquitetural).
+  Verificação: 1160 testes verdes, lint limpo, validado no app real (browser-use).
+
 ## Fix markup por produto divergente (Detalhe de vendas × Detalhe do pedido) — 2026-07-03
 
 - [x] **Mesmo produto mostrava markups diferentes nas duas telas** (ex.: cód. 03096963 → +843% no

@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
@@ -109,10 +110,11 @@ function ThSort({ k, label, sort, onSort, align = 'left' }: {
   );
 }
 
-function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = false }: {
+function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = false, busca = '' }: {
   titulo: string; sub?: string; secao: SecaoVendas; mostrarMargem?: boolean;
   /** Linka o título ao anúncio no ML (só seção PubliAI, cujo LinhaVenda.id é o ml_item_id). */
   linkavel?: boolean;
+  busca?: string;
 }) {
   // Ordenação da seção: textuais começam A→Z; numéricas em maior→menor.
   // Persistida por seção (sobrevive a remount/refetch); chave = título da seção.
@@ -125,7 +127,15 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
   };
 
   const linhas = useMemo(() => {
-    if (!sort) return secao.linhas;
+    let base = secao.linhas;
+    const q = busca.trim().toLowerCase();
+    if (q) {
+      base = base.filter((l) =>
+        l.titulo.toLowerCase().includes(q)
+        || (l.codigo ?? '').toLowerCase().includes(q)
+        || (l.ean ?? '').toLowerCase().includes(q));
+    }
+    if (!sort) return base;
     const val = (l: LinhaVenda): string | number | null => {
       switch (sort.key) {
         case 'codigo': return l.codigo;
@@ -140,7 +150,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
         case 'lucro': return l.lucro;
       }
     };
-    return [...secao.linhas].sort((a, b) => {
+    return [...base].sort((a, b) => {
       const va = val(a);
       const vb = val(b);
       if (va == null && vb == null) return 0;
@@ -151,7 +161,28 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
         : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
       return sort.dir === 'asc' ? cmp : -cmp;
     });
-  }, [secao.linhas, sort]);
+  }, [secao.linhas, sort, busca]);
+
+  // Com busca ativa, o subtotal do rodapé reflete só as linhas filtradas (senão o número
+  // confunde: mostra 4 linhas na tela mas soma o total da seção inteira). Sem busca, usa
+  // secao.* como sempre (evita reintroduzir arredondamento onde já não havia).
+  const totais = useMemo(() => {
+    if (!busca.trim()) return secao;
+    const unidades = linhas.reduce((a, l) => a + l.unidades, 0);
+    const valor = linhas.reduce((a, l) => a + l.valor, 0);
+    const pctTotal = linhas.reduce((a, l) => a + l.pctTotal, 0);
+    const comissao = linhas.reduce((a, l) => a + l.taxas.comissao, 0);
+    const frete = linhas.reduce((a, l) => a + l.taxas.frete, 0);
+    const imposto = linhas.reduce((a, l) => a + l.taxas.imposto, 0);
+    const custo = linhas.reduce((a, l) => a + (l.custo ?? 0), 0);
+    const lucro = linhas.reduce((a, l) => a + (l.lucro ?? 0), 0);
+    return {
+      unidades, valor, pctTotal,
+      taxas: { total: comissao + frete + imposto, comissao, frete, imposto },
+      custo, lucro,
+      markup: custo > 0 ? lucro / custo : null,
+    };
+  }, [linhas, secao, busca]);
 
   // 7 colunas-base (inclui Taxas) + coluna do link ML (linkável) + (custo, markup, lucro) na margem.
   const colSpanVazio = 7 + (linkavel ? 1 : 0) + (mostrarMargem ? 3 : 0);
@@ -186,7 +217,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
             {linhas.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={colSpanVazio} className="py-4 text-center text-sm text-muted-foreground">
-                  Sem vendas no período.
+                  {busca.trim() ? 'Nenhum resultado para a busca.' : 'Sem vendas no período.'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -237,25 +268,25 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
             <TableFooter>
               <TableRow className="border-t font-medium">
                 <TableCell colSpan={colSpanSubtotal} className="text-sm">Subtotal</TableCell>
-                <TableCell className="text-right text-sm tabular-nums">{secao.unidades}</TableCell>
-                <TableCell className="text-right text-sm tabular-nums">{fmtBRL(secao.valor)}</TableCell>
-                <TableCell className="text-right text-sm tabular-nums">{pct(secao.pctTotal)}</TableCell>
+                <TableCell className="text-right text-sm tabular-nums">{totais.unidades}</TableCell>
+                <TableCell className="text-right text-sm tabular-nums">{fmtBRL(totais.valor)}</TableCell>
+                <TableCell className="text-right text-sm tabular-nums">{pct(totais.pctTotal)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                  <CelulaTaxas taxas={secao.taxas} />
+                  <CelulaTaxas taxas={totais.taxas} />
                 </TableCell>
                 {mostrarMargem && (
                   <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                    {secao.custo > 0 ? fmtBRL(secao.custo) : '—'}
+                    {totais.custo > 0 ? fmtBRL(totais.custo) : '—'}
                   </TableCell>
                 )}
                 {mostrarMargem && (
-                  <TableCell className={cn('text-right text-sm tabular-nums', corValor(secao.markup))}>
-                    {secao.markup != null ? fmtMarkup(secao.markup) : '—'}
+                  <TableCell className={cn('text-right text-sm tabular-nums', corValor(totais.markup))}>
+                    {totais.markup != null ? fmtMarkup(totais.markup) : '—'}
                   </TableCell>
                 )}
                 {mostrarMargem && (
-                  <TableCell className={cn('text-right text-sm tabular-nums', corValor(secao.lucro))}>
-                    {secao.markup != null ? fmtBRL(secao.lucro) : '—'}
+                  <TableCell className={cn('text-right text-sm tabular-nums', corValor(totais.lucro))}>
+                    {totais.markup != null ? fmtBRL(totais.lucro) : '—'}
                   </TableCell>
                 )}
               </TableRow>
@@ -269,6 +300,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
 }
 
 export default function DetalheVendas() {
+  const [busca, setBusca] = useState('');
   const [search, setSearch] = useSearchParams();
   const periodo = useMemo(() => periodoFromParams((k) => search.get(k)), [search]);
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
@@ -351,8 +383,17 @@ export default function DetalheVendas() {
         </div>
       </div>
 
-      <SecaoTabela titulo="Seus anúncios (PubliAI)" secao={detalhe.app} mostrarMargem linkavel />
-      <SecaoTabela titulo="Fora do PubliAI" sub="publicados direto no ML" secao={detalhe.externo} />
+      <div className="mb-3">
+        <Input
+          placeholder="Buscar por título, código, EAN…"
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          className="h-8 w-[280px] text-sm"
+        />
+      </div>
+
+      <SecaoTabela titulo="Seus anúncios (PubliAI)" secao={detalhe.app} mostrarMargem linkavel busca={busca} />
+      <SecaoTabela titulo="Fora do PubliAI" sub="publicados direto no ML" secao={detalhe.externo} busca={busca} />
     </div>
   );
 }
