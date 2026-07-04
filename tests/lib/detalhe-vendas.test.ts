@@ -224,6 +224,21 @@ describe('montarDetalheVendas — markup e lucro por produto', () => {
     expect(somaLiquidoItens).toBeCloseTo(pedido.liquido, 2);
   });
 
+  it('taxas por produto = comissão + frete + imposto e fecha valor − taxas − custo = lucro', () => {
+    const aliq: AliquotaResolver = () => 10; // 10% sobre o valor de venda
+    const v = venda({ total_amount: 100, liquido: 70, itens: [item({ ml_item_id: 'MLB1', quantity: 1, unit_price: 100, sale_fee: 12 })] });
+    const r = montarDetalheVendas([v], custoPorItem({ MLB1: 40 }), undefined, aliq);
+    const l = r.app.linhas.find((x) => x.id === 'MLB1')!;
+    expect(l.taxas.comissao).toBe(12);            // sale_fee 12 × 1
+    expect(l.taxas.imposto).toBe(10);             // 100 × 10%
+    expect(l.taxas.frete).toBe(18);               // retido (100−70) − comissão 12
+    expect(l.taxas.total).toBe(40);               // 12 + 18 + 10 = valor − líquido + imposto
+    expect(l.valor - l.taxas.total - (l.custo ?? 0)).toBe(l.lucro); // invariante
+    expect(l.lucro).toBe(20);                     // líquido 70 − imposto 10 − custo 40
+    // Subtotal da seção replica a soma.
+    expect(r.app.taxas.total).toBe(40);
+  });
+
   it('usa líquido RATEADO em pack com frete compartilhado', () => {
     const r = montarDetalheVendas(
       [

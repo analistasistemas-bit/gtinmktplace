@@ -12,6 +12,8 @@ export interface LinhaVenda {
   unidades: number;
   valor: number;
   pctTotal: number;
+  /** Taxas do produto no período: comissão + frete + imposto (= valor − líquido + imposto). */
+  taxas: Taxas;
   /** Custo total do produto no período (custo unitário × qtd). null = sem custo cadastrado. */
   custo: number | null;
   /** Markup ponderado do produto: (Σ líquido − Σ imposto − Σ custo) / Σ custo (ADR-0055). null = sem custo. */
@@ -19,11 +21,25 @@ export interface LinhaVenda {
   /** Lucro do produto no período: Σ líquido − Σ imposto − Σ custo (ADR-0055). null = sem custo. */
   lucro: number | null;
 }
+/** Taxas do ML/fisco de um produto ou seção: soma + breakdown p/ o tooltip. */
+export interface Taxas {
+  /** comissão + frete + imposto. */
+  total: number;
+  /** Σ sale_fee × qtd (comissão do ML). */
+  comissao: number;
+  /** Frete pago pelo vendedor, resíduo: (valor − líquido) − comissão. */
+  frete: number;
+  /** Σ imposto por origem (ADR-0055). */
+  imposto: number;
+}
+
 export interface SecaoVendas {
   linhas: LinhaVenda[];
   unidades: number;
   valor: number;
   pctTotal: number;
+  /** Taxas consolidadas da seção (comissão + frete + imposto). */
+  taxas: Taxas;
   /** Custo total consolidado da seção (Σ custo dos itens com custo). */
   custo: number;
   /** Lucro consolidado da seção (Σ líquido − Σ imposto − Σ custo dos itens com custo). */
@@ -38,6 +54,8 @@ interface Grupo {
   valor: number;
   /** Líquido atribuído ao produto (rateado por item, igual ao Faturamento). */
   liquido: number;
+  /** Comissão do ML acumulada (Σ sale_fee × qtd dos itens). */
+  comissao: number;
   /** Imposto acumulado do produto no período (Σ imposto dos itens — ADR-0055). */
   imposto: number;
   /** Custo total acumulado (custo unitário × qtd) dos itens com custo. */
@@ -57,13 +75,31 @@ function lucroMarkup(liquido: number, imposto: number, custo: number, temCusto: 
   return { lucro: round2(liquidoComImposto - custo), markup: (liquidoComImposto - custo) / custo };
 }
 
+/** Taxas (comissão + frete + imposto) de um trio valor/líquido/comissão + imposto. O frete é o
+ *  resíduo do retido (valor − líquido − comissão), mesma filosofia do `resumo-vendas.ts` (o retido
+ *  do ML é comissão + frete), garantindo taxas.total = valor − líquido + imposto e, com o custo,
+ *  valor − taxas − custo = lucro exibido. */
+function taxasDe(valor: number, liquido: number, comissao: number, imposto: number): Taxas {
+  const com = round2(comissao);
+  const frete = round2(valor - liquido - com);
+  const imp = round2(imposto);
+  return { total: round2(com + frete + imp), comissao: com, frete, imposto: imp };
+}
+
 function secao(grupos: Grupo[], linhas: LinhaVenda[], total: number): SecaoVendas {
   const unidades = linhas.reduce((a, l) => a + l.unidades, 0);
   const valor = round2(linhas.reduce((a, l) => a + l.valor, 0));
   // Consolidado ponderado: soma líquido (já líquido de imposto) e custo só dos produtos com custo.
   let liqComCusto = 0;
   let custoTotal = 0;
+  // Taxas da seção somam TODOS os produtos (independe de ter custo cadastrado).
+  let liquidoTotal = 0;
+  let comissaoTotal = 0;
+  let impostoTotal = 0;
   for (const g of grupos) {
+    liquidoTotal += g.liquido;
+    comissaoTotal += g.comissao;
+    impostoTotal += g.imposto;
     if (g.temCusto && g.custo > 0) { liqComCusto += g.liquido - g.imposto; custoTotal += g.custo; }
   }
   return {
@@ -71,6 +107,7 @@ function secao(grupos: Grupo[], linhas: LinhaVenda[], total: number): SecaoVenda
     unidades,
     valor,
     pctTotal: total > 0 ? (valor / total) * 100 : 0,
+    taxas: taxasDe(valor, liquidoTotal, comissaoTotal, impostoTotal),
     custo: round2(custoTotal),
     lucro: custoTotal > 0 ? round2(liqComCusto - custoTotal) : 0,
     markup: custoTotal > 0 ? (liqComCusto - custoTotal) / custoTotal : null,
@@ -125,10 +162,11 @@ export function montarDetalheVendas(
     for (const it of v.itens) {
       const key = it.ml_item_id ?? it.id;
       const g = grupos.get(key)
-        ?? { unidades: 0, valor: 0, liquido: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, codigo: null, ean: null, publiai: it.is_publiai };
+        ?? { unidades: 0, valor: 0, liquido: 0, comissao: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, codigo: null, ean: null, publiai: it.is_publiai };
       const valorItem = it.unit_price * it.quantity;
       g.unidades += it.quantity;
       g.valor += valorItem;
+      g.comissao += it.sale_fee * it.quantity;
       // Líquido do item = líquido do PACK inteiro rateado por valor bruto (igual a agruparPorPedido,
       // com o mesmo round2 por item para o markup por produto bater 1:1 com o Detalhe do pedido).
       g.liquido += valorPack > 0 ? round2((liqPack * valorItem) / valorPack) : 0;
@@ -160,6 +198,7 @@ export function montarDetalheVendas(
       unidades: g.unidades,
       valor: round2(g.valor),
       pctTotal: pct(g.valor),
+      taxas: taxasDe(round2(g.valor), g.liquido, g.comissao, g.imposto),
       custo: g.temCusto && g.custo > 0 ? round2(g.custo) : null,
       markup,
       lucro,

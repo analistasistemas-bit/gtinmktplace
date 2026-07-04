@@ -10,8 +10,9 @@ import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { periodoFromParams, resolverJanela, periodoToParams, type Periodo } from '@/lib/metricas';
-import { montarDetalheVendas, type LinhaVenda, type SecaoVendas } from '@/lib/detalhe-vendas';
+import { montarDetalheVendas, type LinhaVenda, type SecaoVendas, type Taxas } from '@/lib/detalhe-vendas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -48,8 +49,40 @@ function rotuloPeriodo(periodo: Periodo): string {
     : `${periodo.desde} a ${periodo.ate}`;
 }
 
-type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal' | 'custo' | 'markup' | 'lucro';
+type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal' | 'taxas' | 'custo' | 'markup' | 'lucro';
 type Sort = { key: SortKey; dir: 'asc' | 'desc' };
+
+/** Célula "Taxas": mostra a soma e, no hover, o balão com comissão + frete + imposto. */
+function CelulaTaxas({ taxas, className }: { taxas: Taxas; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn('cursor-help underline decoration-dotted underline-offset-2', className)}>
+          {fmtBRL(taxas.total)}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left">
+        <div className="min-w-[9.5rem] space-y-0.5">
+          <LinhaTaxa label="Comissão ML" v={taxas.comissao} />
+          <LinhaTaxa label="Frete" v={taxas.frete} />
+          <LinhaTaxa label="Imposto" v={taxas.imposto} />
+          <div className="mt-1 border-t border-background/25 pt-1">
+            <LinhaTaxa label="Total" v={taxas.total} forte />
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function LinhaTaxa({ label, v, forte = false }: { label: string; v: number; forte?: boolean }) {
+  return (
+    <div className={cn('flex justify-between gap-4', forte && 'font-semibold')}>
+      <span>{label}</span>
+      <span className="tabular-nums">{fmtBRL(v)}</span>
+    </div>
+  );
+}
 
 /** Cabeçalho clicável que ordena a seção pela coluna (seta indica direção). */
 function ThSort({ k, label, sort, onSort, align = 'left' }: {
@@ -101,6 +134,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
         case 'unidades': return l.unidades;
         case 'valor': return l.valor;
         case 'pctTotal': return l.pctTotal;
+        case 'taxas': return l.taxas.total;
         case 'custo': return l.custo;
         case 'markup': return l.markup;
         case 'lucro': return l.lucro;
@@ -119,8 +153,8 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
     });
   }, [secao.linhas, sort]);
 
-  // 6 colunas-base + coluna do link ML (linkável) + (custo, markup, lucro) na margem.
-  const colSpanVazio = 6 + (linkavel ? 1 : 0) + (mostrarMargem ? 3 : 0);
+  // 7 colunas-base (inclui Taxas) + coluna do link ML (linkável) + (custo, markup, lucro) na margem.
+  const colSpanVazio = 7 + (linkavel ? 1 : 0) + (mostrarMargem ? 3 : 0);
   // Colunas cobertas pelo rótulo "Subtotal" no rodapé (Código, EAN, Título [, ML]).
   const colSpanSubtotal = 3 + (linkavel ? 1 : 0);
 
@@ -130,6 +164,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
         <h2 className="text-sm font-semibold">{titulo}</h2>
         {sub && <span className="text-xs text-muted-foreground">{sub}</span>}
       </div>
+      <TooltipProvider delayDuration={100}>
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -141,6 +176,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
               <ThSort k="unidades" label="Unid." sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="valor" label="Valor" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="pctTotal" label="% total" sort={sort} onSort={toggleSort} align="right" />
+              <ThSort k="taxas" label="Taxas" sort={sort} onSort={toggleSort} align="right" />
               {mostrarMargem && <ThSort k="custo" label="Custo" sort={sort} onSort={toggleSort} align="right" />}
               {mostrarMargem && <ThSort k="markup" label="Markup" sort={sort} onSort={toggleSort} align="right" />}
               {mostrarMargem && <ThSort k="lucro" label="Lucro" sort={sort} onSort={toggleSort} align="right" />}
@@ -175,6 +211,9 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
                   <TableCell className="align-top text-right text-sm tabular-nums">{l.unidades}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(l.valor)}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{pct(l.pctTotal)}</TableCell>
+                  <TableCell className="align-top text-right text-sm tabular-nums text-muted-foreground">
+                    <CelulaTaxas taxas={l.taxas} />
+                  </TableCell>
                   {mostrarMargem && (
                     <TableCell className="align-top text-right text-sm tabular-nums text-muted-foreground">
                       {l.custo != null ? fmtBRL(l.custo) : '—'}
@@ -201,6 +240,9 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
                 <TableCell className="text-right text-sm tabular-nums">{secao.unidades}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(secao.valor)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{pct(secao.pctTotal)}</TableCell>
+                <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                  <CelulaTaxas taxas={secao.taxas} />
+                </TableCell>
                 {mostrarMargem && (
                   <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
                     {secao.custo > 0 ? fmtBRL(secao.custo) : '—'}
@@ -221,6 +263,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
           )}
         </Table>
       </div>
+      </TooltipProvider>
     </div>
   );
 }
