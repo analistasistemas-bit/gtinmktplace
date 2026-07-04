@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-03
+atualizado: 2026-07-04
 ---
 
 # Changelog
@@ -8,6 +8,28 @@ atualizado: 2026-07-03
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-07-04
+
+- **Feat: categoria de seleção livre + "Outros" como fallback visível (ADR-0057/0058).** Famílias
+  fora dos 4 tipos de aviamento conhecidos (linha/fita/botão/cola) ficavam travadas pra sempre em
+  "Categoria indefinida" — pendência aberta desde o ADR-0022 (11/06), nunca fechada; caso real:
+  "BAINHA INSTANTÂNEA 4MT UND" (lote 51). `CardCategoria` troca o seletor fixo de 4 opções por
+  busca livre no `domain_discovery` do ML (`buscarCategoriaPreditor`, já existia); `definir-categoria-familia`
+  generaliza o contrato pra `{categoria_ml_id, categoria_nome}` (quebra intencional do contrato
+  antigo — app de deploy único, sem consumidor externo); `resolverAtributosGenericos` extraído do
+  `process-familia` pra reuso sem duplicar lógica entre o fluxo automático e o manual. Categoria do
+  concorrente (já calculada, antes descartada) vira sugestão clicável **não-vinculante** — nunca
+  aplicada sem clique explícito (travado por teste de regressão específico, ADR-0054: validado ao
+  vivo que a categoria do concorrente pra bainha é "Brinquedos de Pegadinhas", colisão de catálogo).
+  ADR-0058 (mesmo dia, a pedido do Diego): quando o preditor só acha candidatos genéricos
+  ("Outros"), a família deixa de travar — aplica o genérico como fallback visível (`tipo_origem='generico'`,
+  selo de aviso na Revisão), busca continua disponível pra trocar; revisão humana antes de publicar
+  segue obrigatória (regra inalterada). `process-familia` não mudou (branch já era baseado em
+  categoria/tipo, não em origem). Migrations aditivas (`concorrencia_categoria_id`, enum
+  `tipo_origem` + `'generico'`); 1165 testes verdes; validado no app real (browser-use):
+  reprocessamento ao vivo confirmou busca funcionando com candidatos reais do ML e a sugestão do
+  concorrente aparecendo corretamente como não-aplicável sozinha.
 
 ## 2026-07-03
 

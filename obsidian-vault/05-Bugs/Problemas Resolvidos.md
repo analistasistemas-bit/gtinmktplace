@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-01
+atualizado: 2026-07-04
 ---
 
 # Problemas Resolvidos
@@ -10,6 +10,18 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Famílias fora dos 4 aviamentos travavam pra sempre em "Categoria indefinida" (2026-07-04,
+  ADR-0057/0058)** — o seletor manual de categoria só oferecia linha/fita/botão/cola; qualquer
+  produto fora desses 4 tipos (ex.: "BAINHA INSTANTÂNEA 4MT UND", lote 51) ficava bloqueado sem
+  saída. Causa raiz: pendência aberta desde o ADR-0022 (11/06) e nunca fechada — cada ADR seguinte
+  melhorou o resolver automático e deixou o escape manual intacto. Fix: `CardCategoria` ganha busca
+  livre no `domain_discovery` do ML; `definir-categoria-familia` generaliza pra aceitar qualquer
+  categoria; categoria do concorrente (já calculada, descartada antes) vira sugestão não-vinculante
+  (nunca aplicada sem clique — validado ao vivo que pra bainha ela é "Brinquedos de Pegadinhas",
+  confirma o motivo do ADR-0054 de nunca aceitar isso automaticamente). Fecha a "Camada 2 (UI de
+  atributos + categoria livre)" que o fix do barbante (lote #49, abaixo) tinha deixado pendente.
+  ADR-0058 (mesmo dia): "Outros" vira fallback visível em vez de bloqueio quando não há candidato
+  específico algum.
 - **Busca da Publicados não achava código de variação de ciclos de UPDATE (2026-07-03)** — buscar
   por código/GTIN de variação (ex.: `01813412`) na tela Publicados dava "Nenhum resultado" para
   **alguns** produtos, mesmo com o fix anterior de `identificadores` (5febb1d). Causa raiz: vários
