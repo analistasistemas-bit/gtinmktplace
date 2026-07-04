@@ -40,6 +40,7 @@ const FAMILIAS_FAKE: Familia[] = [
     tituloEditadoPeloOperador: false,
     descricaoEditadaPeloOperador: false,
     variacoesSemCor: 0,
+    concorrenciaCategoriaId: null,
   },
   {
     id: 'b',
@@ -68,6 +69,7 @@ const FAMILIAS_FAKE: Familia[] = [
     tituloEditadoPeloOperador: false,
     descricaoEditadaPeloOperador: false,
     variacoesSemCor: 0,
+    concorrenciaCategoriaId: null,
   },
 ];
 

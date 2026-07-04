@@ -27,7 +27,7 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
   // chamada de rede por card renderizado quando a Revisão lista várias famílias indefinidas de
   // uma vez. Idempotente (só a 1ª vez por card).
   const carregarSugestao = () => {
-    if (sugestaoCarregada) return;
+    if (sugestaoCarregada || !familia.concorrenciaCategoriaId) return;
     setSugestaoCarregada(true);
     buscarCategoriaML(familia.id, '').then((r) => setSugestao(r.sugestaoConcorrente)).catch(() => {});
   };

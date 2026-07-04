@@ -75,6 +75,7 @@ function fam(over: Partial<Familia>): Familia {
     custoCentavos: null, tituloEditadoPeloOperador: false,
     descricaoEditadaPeloOperador: false, variacoesSemCor: 0,
     mlPermalink: null, mlItemId: 'MLB1', erroMensagem: null, mudancaEstrutural: null,
+    concorrenciaCategoriaId: null,
     ...over,
   } as Familia;
 }

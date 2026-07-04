@@ -13,6 +13,7 @@ function mk(over: Partial<Familia> & { id: string }): Familia {
     estrategiaPreco: 'PROPRIO', estrategiaMotivo: '', concorrencia: 'sem',
     precoMin: 10, precoMax: 10, precoAbaixo20pc: false, tipoAviamento: 'linha',
     categoriaMlId: 'MLB123', variacoes: [{ ...varOk }], status: 'pronto', variacoesSemCor: 0,
+    concorrenciaCategoriaId: null,
     ...over,
   } as Familia;
 }

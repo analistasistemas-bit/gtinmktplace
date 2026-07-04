@@ -22,6 +22,7 @@ const FAMILIAS: Familia[] = [
       { codigo: '997765', cor: 'rosa', corHex: '#f472b6', preco: 1, estoque: 10 },
     ],
     status: 'pronto',
+    concorrenciaCategoriaId: null,
   },
   {
     id: 'b',
@@ -40,6 +41,7 @@ const FAMILIAS: Familia[] = [
       { codigo: '300001', cor: 'azul', corHex: '#2563eb', preco: 1, estoque: 5 },
     ],
     status: 'pronto',
+    concorrenciaCategoriaId: null,
   },
 ];
 
@@ -175,6 +177,7 @@ describe('filtrarFamilias', () => {
       tituloEditadoPeloOperador: false,
       descricaoEditadaPeloOperador: false,
       variacoesSemCor: 0,
+      concorrenciaCategoriaId: null,
     };
 
     const incompleta: Familia = {
@@ -204,6 +207,7 @@ describe('filtrarFamilias', () => {
       tituloEditadoPeloOperador: false,
       descricaoEditadaPeloOperador: false,
       variacoesSemCor: 0,
+      concorrenciaCategoriaId: null,
     };
 
     expect(familiaPublicavel(completa).ok).toBe(true);

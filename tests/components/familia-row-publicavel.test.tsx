@@ -25,7 +25,8 @@ function fam(over: Partial<Familia>): Familia {
     precoMin: 9, precoMax: 9, precoAbaixo20pc: false, capaStoragePath: null,
     variacoes: [cor({})], status: 'pronto', tokensInput: null, tokensOutput: null,
     custoCentavos: null, tituloEditadoPeloOperador: false,
-    descricaoEditadaPeloOperador: false, variacoesSemCor: 0, ...over,
+    descricaoEditadaPeloOperador: false, variacoesSemCor: 0,
+    concorrenciaCategoriaId: null, ...over,
   };
 }
 

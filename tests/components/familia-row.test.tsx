@@ -26,6 +26,7 @@ const FAMILIA: Familia = {
     { codigo: '1043812-01', cor: 'Vermelho', corHex: '#dc2626', preco: 8.9, estoque: 50 },
   ],
   status: 'pronto',
+  concorrenciaCategoriaId: null,
 };
 
 describe('FamiliaRow', () => {

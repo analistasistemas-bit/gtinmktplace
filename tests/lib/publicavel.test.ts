@@ -22,6 +22,7 @@ function fam(over: Partial<Familia>): Familia {
     custoCentavos: null, tituloEditadoPeloOperador: false,
     descricaoEditadaPeloOperador: false, variacoesSemCor: 0,
     mlPermalink: null, mlItemId: null, erroMensagem: null, mudancaEstrutural: null,
+    concorrenciaCategoriaId: null,
     ...over,
   };
 }

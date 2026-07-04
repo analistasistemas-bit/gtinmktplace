@@ -62,6 +62,7 @@ function familia(over: Partial<Familia>): Familia {
     erroMensagem: null,
     exibirComDesconto: false,
     descontoPct: null,
+    concorrenciaCategoriaId: null,
     ...over,
   };
 }
