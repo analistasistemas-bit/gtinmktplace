@@ -39,10 +39,10 @@ describe('CardCategoria', () => {
     expect(screen.getByText(/MLB255054/)).toBeInTheDocument();
   });
 
-  it('categoria indefinida (tipo outro / sem id) alerta + oferece seletor', () => {
+  it('categoria indefinida (tipo outro / sem id) alerta + oferece busca', () => {
     renderCard(familiaBase({ tipoAviamento: 'outro', categoriaMlId: null }));
     expect(screen.getByText(/categoria indefinida/i)).toBeInTheDocument();
-    expect(screen.getByText(/escolher categoria/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/buscar categoria/i)).toBeInTheDocument();
   });
 
   it('cola: mostra "Bastões de Cola" quando definida', () => {
