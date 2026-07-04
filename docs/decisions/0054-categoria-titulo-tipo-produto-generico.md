@@ -110,3 +110,12 @@ grounded) faz o pipeline se comportar exatamente como hoje (1 busca, sem prefixo
 completo, reverter o wiring em `process-familia/index.ts`, `regenerar-copy-familia/index.ts` e
 `titulo-particao.ts` (não passar `tipoProdutoBusca`) e reverter `resolver.ts` pro comportamento anterior
 (gate de ambiguidade `domains.size >= 2` em vez de "sempre que houver específico").
+
+## Adendo (2026-07-04) — decisão 3 revisada pelo ADR-0058
+
+A decisão 3 ("genéricos nunca são resposta final automática" → família trava em `manual`) foi **revisada** pelo
+[ADR-0058](0058-categoria-generica-fallback-visivel.md): o bloqueio total gerava atrito real sem ganho de segurança
+proporcional, já que a Revisão humana antes de publicar sempre foi obrigatória. "Outros" passa a ser aplicado como
+fallback **visível** (selo de aviso + busca livre do [ADR-0057](0057-categoria-selecao-livre-e-sugestao-concorrente.md)
+sempre disponível pra trocar) em vez de travar a família. As demais decisões deste ADR (dual query, candidatos
+genéricos separados antes da IA de desempate, IA pode abster-se) permanecem inalteradas.

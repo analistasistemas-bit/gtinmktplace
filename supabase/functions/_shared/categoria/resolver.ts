@@ -4,7 +4,10 @@ import type { CategoriaCandidata } from '../ml/domain-discovery.ts';
 
 // Resolução de categoria em camadas (ADR-0026 / E3). Primeira que vencer manda:
 // override → preditor (domain_discovery) → desempate LLM (ambíguo) → manual.
-export type OrigemCategoria = 'regex' | 'preditor' | 'ia' | 'manual';
+// 'generico' (ADR-0058): só candidato genérico ("Outros") disponível — aplicado como
+// fallback visível (badge de aviso no front + busca sempre disponível pra trocar), não
+// mais um bloqueio. Distinto de 'manual' (verdadeiro impasse, nenhum candidato serve).
+export type OrigemCategoria = 'regex' | 'preditor' | 'ia' | 'manual' | 'generico';
 
 export interface InputCategoria {
   nome: string;
@@ -33,7 +36,8 @@ export interface DepsResolver {
 
 // Nomes de categoria genéricos/catch-all que o Mercado Livre usa como bucket residual (ex.:
 // "Outros" — validado via API real: MLB1371, MLB190440, MLB270264 são literalmente "Outros"
-// em domínios distintos). Nunca podem ser a resposta final automática (ADR-0054, lote #50).
+// em domínios distintos). Nunca vencem um candidato específico (ADR-0054, lote #50); sem
+// nenhum específico, viram fallback visível em vez de bloqueio (ADR-0058).
 const TERMOS_GENERICOS = ['outro', 'outros', 'outra', 'outras', 'diverso', 'diversos', 'diversa', 'diversas', 'geral', 'general', 'otro', 'otros'];
 
 function ehCategoriaGenerica(nomeCategoria: string): boolean {
@@ -126,11 +130,13 @@ export async function resolverCategoria(input: InputCategoria, deps: DepsResolve
     return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
   }
 
-  // 3. Candidatos genéricos ("Outros" etc.) nunca são resposta final automática (ADR-0054,
-  // lote #50) — separados ANTES de qualquer decisão. Zero candidato específico → manual.
+  // 3. Candidatos genéricos ("Outros" etc.) nunca vencem um específico (ADR-0054, lote #50)
+  // — separados ANTES de qualquer decisão. Zero candidato específico → aplica o genérico
+  // (topo) como fallback visível em vez de travar a família (ADR-0058): o operador vê o
+  // selo de aviso na Revisão e busca/troca quando quiser — nunca fica escondido.
   const especificos = candidatos.filter((c) => !ehCategoriaGenerica(c.categoriaNome));
   if (especificos.length === 0) {
-    return { categoriaId: null, categoriaNome: null, tipo: 'outro', origem: 'manual' };
+    return { categoriaId: topo.categoriaId, categoriaNome: topo.categoriaNome, tipo: tipoParaCategoria(topo.categoriaId), origem: 'generico' };
   }
   const topoEspecifico = especificos[0];
 

@@ -113,13 +113,15 @@ describe('resolverCategoria — tipo_produto_busca + candidatos genéricos + abs
   const generico: CategoriaCandidata = { domainId: 'MLB-ARTS_AND_CRAFTS', domainName: 'Artes e artesanatos', categoriaId: 'MLB1371', categoriaNome: 'Outros' };
   const fiosCat: CategoriaCandidata = { domainId: 'MLB-SEWING_AND_CRAFT_THREADS', domainName: 'Fios para costura', categoriaId: 'MLB270273', categoriaNome: 'Fios e Cadarços de Armarinho' };
 
-  it('(l) só candidato genérico ("Outros") → manual, nunca aceita como resposta final', async () => {
+  it('(l) só candidato genérico ("Outros") → aplica como fallback visível (ADR-0058), não trava mais', async () => {
     const r = await resolverCategoria(
       { nome: 'BAINHA INSTANTÂNEA 4MT UND' },
       { preditor: async () => [generico] },
     );
-    expect(r.origem).toBe('manual');
-    expect(r.categoriaId).toBeNull();
+    expect(r.origem).toBe('generico');
+    expect(r.categoriaId).toBe('MLB1371');
+    expect(r.categoriaNome).toBe('Outros');
+    expect(r.tipo).toBe('outro');
   });
 
   it('(m) busca bruta falha, tipoProdutoBusca acha candidato específico bom → resolve', async () => {
