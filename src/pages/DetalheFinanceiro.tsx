@@ -124,7 +124,8 @@ function LinhaDetalhe({
   selecionado: boolean;
   onSelecionar: (checked: boolean) => void;
 }) {
-  const [aberto, setAberto] = useState(false);
+  // Expansão persistida (sobrevive a sair/voltar do detalhe e ao refetch), como o sort.
+  const [aberto, setAberto] = useSessionState(`expand:detalhe-financeiro:${p.chave}`, false);
   // Pedido no prejuízo: o líquido recebido ficou abaixo do custo (markup negativo).
   const prejuizo = p.custo != null && p.custo > 0 && p.liquido < p.custo;
   const retido = retidoDe(p);

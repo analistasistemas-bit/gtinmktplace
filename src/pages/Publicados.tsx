@@ -46,6 +46,7 @@ import { resumoViabilidade, type ResumoViabilidade } from '@/lib/analise-viabili
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildPublicadosReport } from '@/lib/export/adapters';
 import type { ExportConfig, ReportData } from '@/lib/export';
+import { useSessionState } from '@/hooks/useSessionState';
 import { useFamilia } from '@/hooks/useFamilia';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -135,7 +136,8 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
 }
 
 function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
-  const [aberto, setAberto] = useState(false);
+  // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
+  const [aberto, setAberto] = useSessionState(`expand:publicados:${item.familiaId}`, false);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
 
   return (

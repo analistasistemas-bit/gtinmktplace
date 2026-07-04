@@ -66,6 +66,7 @@ function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
 
 describe('Publicados', () => {
   beforeEach(() => {
+    sessionStorage.clear(); // expansão da linha agora persiste em sessionStorage; isolar entre casos
     HTMLElement.prototype.scrollIntoView = vi.fn();
     usePublicadosMock.mockReturnValue({
       data: [itemBase()],

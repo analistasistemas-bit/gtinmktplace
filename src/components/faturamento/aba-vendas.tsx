@@ -109,7 +109,8 @@ function Kpi({ icon: Icon, label, valor, tom: tomProp, valorCor, sub }: {
 }
 
 function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVisto?: () => void }) {
-  const [aberto, setAberto] = useState(false);
+  // Expansão persistida (sobrevive a remount por troca de aba e ao refetch de 45s), como o sort.
+  const [aberto, setAberto] = useSessionState(`expand:faturamento-vendas:${p.chave}`, false);
   const pgto = labelStatusPedido(p.status);
   const envio = labelStatusEnvio(p.shipping_status, p.shipping_substatus);
   const markupCor = p.markup == null ? undefined

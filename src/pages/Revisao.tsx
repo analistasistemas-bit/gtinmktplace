@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
 import { Pagination } from '@/components/ui/pagination';
 import { usePaginacao } from '@/hooks/usePaginacao';
+import { useSessionState } from '@/hooks/useSessionState';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { JornadaLote } from '@/components/jornada-lote';
@@ -74,7 +75,9 @@ export default function Revisao() {
   // e com estoque — a que precisa de foto). Desligado por padrão.
   const [soComCoresNovas, setSoComCoresNovas] = useState(false);
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
-  const [expandidas, setExpandidas] = useState<Set<string>>(new Set());
+  // Expansão persistida por lista (sobrevive a sair/voltar da tela e ao refetch das famílias),
+  // como o sort. Array em vez de Set porque sessionStorage é JSON (Set não serializa).
+  const [expandidas, setExpandidas] = useSessionState<string[]>('expand:revisao', []);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [progresso, setProgresso] = useState<{ feito: number; total: number } | null>(null);
   const [confirmando, setConfirmando] = useState(false);
@@ -205,16 +208,11 @@ export default function Revisao() {
   }
 
   function toggleExpansao(id: string) {
-    setExpandidas((prev) => {
-      const novo = new Set(prev);
-      if (novo.has(id)) novo.delete(id);
-      else novo.add(id);
-      return novo;
-    });
+    setExpandidas((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
   function irParaCritica(familiaId: string, codigo: string) {
-    setExpandidas((prev) => new Set(prev).add(familiaId));
+    setExpandidas((prev) => (prev.includes(familiaId) ? prev : [...prev, familiaId]));
     setFocoCritica({ familiaId, codigo });
   }
 
@@ -435,12 +433,12 @@ export default function Revisao() {
                 <FamiliaRow
                   familia={familia}
                   selecionada={selecionadas.has(familia.id)}
-                  expandida={expandidas.has(familia.id)}
+                  expandida={expandidas.includes(familia.id)}
                   onSelecionar={toggleSelecao}
                   onExpandir={toggleExpansao}
                   onIrParaCritica={irParaCritica}
                 />
-                {expandidas.has(familia.id) && (
+                {expandidas.includes(familia.id) && (
                   <FamiliaExpanded
                     familia={familia}
                     focoCodigo={focoCritica?.familiaId === familia.id ? focoCritica.codigo : null}

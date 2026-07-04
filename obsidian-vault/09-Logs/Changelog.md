@@ -11,6 +11,17 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-07-03
 
+- **Fix: linha expandida "para detalhar" recolhia ao trocar de tela/aba ou no refetch.** Mesma
+  causa do fix de ordenação (`62eeeba`): o `aberto` vivia em `useState` local por linha, zerado a
+  cada remount (troca de aba no Faturamento desmonta o `TabsContent`; sair/voltar de um detalhe;
+  refetch de 45s remonta as linhas; ordenar/filtrar/paginar reordena e remonta). Trocado por
+  `useSessionState` (o hook do fix de sort) com chave estável por linha em: **aba-vendas**
+  (`expand:faturamento-vendas:${chave}`), **DetalheFinanceiro** (`expand:detalhe-financeiro:${chave}`),
+  **Publicados** (`expand:publicados:${familiaId}`). **Revisão** tinha o estado num `Set` no nível da
+  página (zerava ao sair/voltar): virou `useSessionState<string[]>('expand:revisao', [])` (array
+  porque sessionStorage é JSON e `Set` não serializa). A expansão escolhida sobrevive a remount e
+  refetch; limpa ao fechar a aba do browser. Teste `Publicados.test.tsx` passou a limpar
+  `sessionStorage` no `beforeEach` (expansão persistente vazava entre casos). Frontend-only.
 - **Feat: coluna "Taxas" no Detalhe de vendas (Publicados › `/publicados/vendas`)** com balão no
   hover (Tooltip shadcn) abrindo o breakdown **comissão + frete + imposto**. Taxas por produto =
   `valor − líquido + imposto`; comissão real (`Σ sale_fee × qtd`), frete como resíduo do retido
