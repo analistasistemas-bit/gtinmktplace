@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicados — ocultar colunas Fornecedor/Tipo da tabela — 2026-07-04
+
+- [x] **Colunas Fornecedor e Tipo removidas da tabela de Publicados** (pedido do Diego). Os filtros
+  de Fornecedor e Tipo (dropdowns) já operavam sobre os dados independente da coluna aparecer na
+  tabela — nenhuma mudança de lógica de filtro foi necessária, só remoção das duas colunas
+  (`ThOrdenavel` + `TableCell`) e ajuste do `colSpan`. Validado no browser: colunas ausentes,
+  filtros combinados (Fornecedor + Tipo) reduzindo a lista corretamente. Só frontend. Merge → main
+  → deploy (commit `3d72b60`).
+
 ## Fix: genérico descartado quando a IA rejeita um falso-amigo + busca sempre disponível — 2026-07-04
 
 - [x] **Achado ao vivo (mesmo dia do ADR-0058): a Bainha do lote 51 ainda travava**, mesmo com o
