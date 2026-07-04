@@ -360,7 +360,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         {expandida ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </span>
     </div>
-      <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-1">
+      <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-4">
         <DescontoControle familia={familia} />
         <AtacadoControle familia={familia} />
       </div>
