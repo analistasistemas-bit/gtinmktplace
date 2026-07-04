@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Categoria de seleção livre + "Outros" como fallback visível — 2026-07-04
+
+- [x] **Famílias fora dos 4 aviamentos conhecidos (ex.: "BAINHA INSTANTÂNEA 4MT UND", lote 51)
+  ficavam travadas para sempre** — o seletor manual só oferecia linha/fita/botão/cola. Causa
+  raiz: pendência aberta desde o ADR-0022 (11/06), nunca fechada. ADR-0057: `CardCategoria` troca
+  o seletor fixo por busca livre no `domain_discovery` do ML (reusa `buscarCategoriaPreditor` já
+  existente); `definir-categoria-familia` generaliza o contrato para `{categoria_ml_id,
+  categoria_nome}`; `resolverAtributosGenericos` extraído do `process-familia` p/ reuso sem
+  duplicar lógica. Categoria do concorrente (já calculada, antes descartada) vira sugestão
+  clicável não-vinculante — nunca aplicada sem clique explícito (trava de regressão pro
+  incidente do ADR-0054).
+- [x] **ADR-0058 (mesmo dia, a pedido do Diego):** quando o preditor só acha candidatos genéricos
+  ("Outros"), a família deixa de travar em `manual` — aplica o genérico como fallback visível
+  (`tipo_origem='generico'`, selo de aviso na Revisão) e a busca continua disponível pra trocar.
+  Revisão humana antes de publicar continua obrigatória (regra inalterada); zero mudança no
+  `process-familia` (branch já era baseado em `categoria_ml_id`/`tipo`, não em `origem`).
+  Migrations aditivas (`concorrencia_categoria_id`, enum `tipo_origem` + `'generico'`), 1165
+  testes verdes, edge functions (`process-familia`, `definir-categoria-familia`,
+  `atributos-familia`) deployadas e versão conferida. Branch `fix-categoria-selecao-livre`.
+
 ## Campo de busca no Detalhe de vendas — 2026-07-03
 
 - [x] **Detalhe de vendas (Publicados › `/publicados/vendas`) ganhou campo de busca** por
