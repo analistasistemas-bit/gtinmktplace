@@ -239,7 +239,7 @@ function LinhaTabela({ item, onRemover, removendo }: LinhaProps) {
     </TableRow>
     {aberto && (
       <TableRow className="hover:bg-transparent">
-        <TableCell colSpan={11} className="bg-muted/30 p-3">
+        <TableCell colSpan={11} className="whitespace-normal bg-muted/30 p-3">
           {carregandoFamilia ? (
             <p className="text-xs text-muted-foreground">carregando análise…</p>
           ) : erroFamilia || !familia ? (
