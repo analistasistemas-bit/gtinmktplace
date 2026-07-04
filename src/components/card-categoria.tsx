@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Tag, Sparkles, AlertTriangle, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -100,6 +100,16 @@ export function CardCategoria({ familia }: { familia: Familia }) {
   // Genérico (ADR-0058): "Outros" já aplicado como fallback visível — a família não está mais
   // bloqueada, mas o selo de aviso chama atenção pra buscar uma categoria melhor se quiser.
   const categoriaGenerica = familia.tipoOrigem === 'generico';
+  // Busca pra trocar categoria: sempre alcançável (não só quando genérica) — qualquer categoria
+  // já definida pode estar errada (ex.: o operador escolheu manualmente e quer corrigir depois).
+  // Some por padrão pra não poluir o caso feliz; abre sozinha quando genérica (sinal de baixa
+  // confiança) ou ao clicar em "Trocar categoria". useEffect (não só o useState inicial) porque
+  // o card pode virar genérico num refetch AO VIVO sem remontar (ex.: reprocessar com a tela
+  // aberta, mesma key `familia.id`) — sem isso a busca ficava fechada até 1 clique extra.
+  const [buscaAberta, setBuscaAberta] = useState(categoriaGenerica);
+  useEffect(() => {
+    if (categoriaGenerica) setBuscaAberta(true);
+  }, [categoriaGenerica]);
 
   return (
     <div
@@ -141,10 +151,18 @@ export function CardCategoria({ familia }: { familia: Familia }) {
               <EditorAtributosFaltantes familiaId={familia.id} loteId={familia.loteId} />
             </>
           )}
-          {categoriaGenerica && (
+          {buscaAberta ? (
             <div className="mt-1.5 border-t pt-1.5">
               <BuscaCategoria familia={familia} />
             </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setBuscaAberta(true)}
+              className="mt-1.5 text-left text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Trocar categoria
+            </button>
           )}
         </>
       )}

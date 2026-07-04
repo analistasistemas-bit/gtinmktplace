@@ -68,3 +68,24 @@ nenhum pro operador — a família publicava (ou quase publicava) sem revisão. 
 Trocar o `return` do passo 3 em `resolver.ts` de volta pra `{ categoriaId: null, categoriaNome: null, tipo: 'outro',
 origem: 'manual' }` restaura o comportamento do ADR-0054/0057. O valor de enum `'generico'` pode ficar sem uso (enums
 Postgres não encolhem, mas isso é inofensivo).
+
+## Adendo (2026-07-04) — resgate pro genérico também quando a IA descarta um específico
+
+Caso real (lote 51, "BAINHA INSTANTÂNEA 4MT UND"): o preditor do ML devolveu, na mesma busca, o genérico correto do
+segmento (`MLB1371` "Outros" — Artes e artesanatos) **e** um específico falso-amigo ("Bainhas para Facas" — bainha
+de faca, homônimo de bainha de tecido). A IA de desempate corretamente recusou o específico errado, mas o resolver
+então caía direto em `manual` — descartando o genérico correto que já estava na mesma lista de candidatos. A
+família ficava bloqueada mesmo tendo a categoria certa (do segmento) disponível o tempo todo.
+
+Fix: `resolverCategoria` agora computa `genericos` da lista COMPLETA de candidatos (não só quando não sobra nenhum
+específico) e resgata pro melhor genérico disponível em todo ponto que devolveria `manual` — exceto quando o
+preditor não devolve candidato nenhum (nada pra resgatar). Nunca escolhe um específico errado; só evita jogar fora
+um genérico que já estava na resposta do ML. Testes `(n2)`/`(n3)` em `resolver.test.ts` reproduzem o caso real.
+
+Separadamente, `CardCategoria` ganhou um link "Trocar categoria" sempre visível pra qualquer categoria já definida
+(não só a genérica automática) — sem isso, um operador que escolhesse manualmente uma categoria errada pela busca
+(`tipo_origem='manual'`, não `'generico'`) ficava sem nenhuma forma visível de buscar de novo. Foi exatamente o que
+aconteceu ao vivo: o operador digitou literalmente "outros" no campo de busca, o ML devolveu buckets "Outros" de
+domínios de veículos náuticos (`MLB1905` e afins — coincidência textual, não erro do sistema), e a categoria errada
+ficou permanentemente presa sem saída visível. Corrigido com um toggle sempre presente + `useEffect` sincronizando
+a abertura automática quando a categoria vira genérica num refetch ao vivo (card já montado, sem remount).

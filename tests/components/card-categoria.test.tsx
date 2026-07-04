@@ -100,6 +100,37 @@ describe('CardCategoria', () => {
     expect(screen.queryByText(/Sugerida por IA/i)).not.toBeInTheDocument();
   });
 
+  it('categoria definida (qualquer origem) sempre oferece "Trocar categoria", mesmo sem ser genérica', () => {
+    renderCard(familiaBase()); // tipoOrigem 'regex', categoria MLB255054 definida
+    // Busca some por padrão (evita poluir o caso feliz)...
+    expect(screen.queryByPlaceholderText(/buscar categoria/i)).not.toBeInTheDocument();
+    // ...mas o link pra trocar está sempre alcançável.
+    const trocar = screen.getByRole('button', { name: /trocar categoria/i });
+    fireEvent.click(trocar);
+    // Ao clicar, a busca abre — mesmo pra uma categoria já "correta"/curada.
+    expect(screen.getByPlaceholderText(/buscar categoria/i)).toBeInTheDocument();
+  });
+
+  it('família vira genérica num refetch ao vivo (sem remount, ex.: reprocessar com a tela aberta) → busca abre sozinha', () => {
+    // useState(categoriaGenerica) só roda na 1ª montagem; sem o useEffect de sincronização,
+    // a busca ficava fechada até 1 clique extra quando o card já estava montado (mesma key
+    // familia.id) e um refetch trazia tipoOrigem='generico' pela 1ª vez.
+    const { rerender } = renderCard(familiaBase({ tipoAviamento: 'outro', categoriaMlId: null }));
+    expect(screen.getByPlaceholderText(/buscar categoria/i)).toBeInTheDocument(); // indefinida: sempre aberta
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    rerender(
+      <QueryClientProvider client={qc}>
+        <CardCategoria familia={familiaBase({
+          tipoAviamento: 'outro', categoriaMlId: 'MLB1371', categoriaNome: 'Outros', tipoOrigem: 'generico',
+        })} />
+      </QueryClientProvider>,
+    );
+    // Definida (não mais bloqueio vermelho) E a busca continua visível, aberta automaticamente.
+    expect(screen.queryByText(/categoria indefinida/i)).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/buscar categoria/i)).toBeInTheDocument();
+  });
+
   it('ADR-0054: sugestão do concorrente só aplica com clique explícito, nunca ao carregar', async () => {
     buscarCategoriaMLMock.mockResolvedValue({
       candidatos: [],
