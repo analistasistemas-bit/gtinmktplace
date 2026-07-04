@@ -12,6 +12,8 @@ export interface LinhaVenda {
   unidades: number;
   valor: number;
   pctTotal: number;
+  /** Custo total do produto no período (custo unitário × qtd). null = sem custo cadastrado. */
+  custo: number | null;
   /** Markup ponderado do produto: (Σ líquido − Σ imposto − Σ custo) / Σ custo (ADR-0055). null = sem custo. */
   markup: number | null;
   /** Lucro do produto no período: Σ líquido − Σ imposto − Σ custo (ADR-0055). null = sem custo. */
@@ -22,6 +24,8 @@ export interface SecaoVendas {
   unidades: number;
   valor: number;
   pctTotal: number;
+  /** Custo total consolidado da seção (Σ custo dos itens com custo). */
+  custo: number;
   /** Lucro consolidado da seção (Σ líquido − Σ imposto − Σ custo dos itens com custo). */
   lucro: number;
   /** Markup ponderado da seção. null = nenhum item com custo. */
@@ -67,6 +71,7 @@ function secao(grupos: Grupo[], linhas: LinhaVenda[], total: number): SecaoVenda
     unidades,
     valor,
     pctTotal: total > 0 ? (valor / total) * 100 : 0,
+    custo: round2(custoTotal),
     lucro: custoTotal > 0 ? round2(liqComCusto - custoTotal) : 0,
     markup: custoTotal > 0 ? (liqComCusto - custoTotal) / custoTotal : null,
   };
@@ -155,6 +160,7 @@ export function montarDetalheVendas(
       unidades: g.unidades,
       valor: round2(g.valor),
       pctTotal: pct(g.valor),
+      custo: g.temCusto && g.custo > 0 ? round2(g.custo) : null,
       markup,
       lucro,
     };

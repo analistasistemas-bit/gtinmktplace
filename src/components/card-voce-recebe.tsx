@@ -92,6 +92,9 @@ export function CardVoceRecebe({
         <>
           <p className="mb-1 text-xs text-muted-foreground">
             preço de publicação <span className="font-medium text-foreground">{fmtBRL(preco)}</span>
+            {custo != null && custo > 0 && (
+              <> · custo do produto <span className="font-medium text-foreground">{fmtBRL(custo)}</span></>
+            )}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <Coluna titulo="Clássico" t={data.classico} melhor={data.classico.recebe >= data.premium.recebe} custo={custo ?? null} real={real === 'classico'} />

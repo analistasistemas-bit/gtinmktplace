@@ -48,7 +48,7 @@ function rotuloPeriodo(periodo: Periodo): string {
     : `${periodo.desde} a ${periodo.ate}`;
 }
 
-type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal' | 'markup' | 'lucro';
+type SortKey = 'codigo' | 'ean' | 'titulo' | 'unidades' | 'valor' | 'pctTotal' | 'custo' | 'markup' | 'lucro';
 type Sort = { key: SortKey; dir: 'asc' | 'desc' };
 
 /** Cabeçalho clicável que ordena a seção pela coluna (seta indica direção). */
@@ -101,6 +101,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
         case 'unidades': return l.unidades;
         case 'valor': return l.valor;
         case 'pctTotal': return l.pctTotal;
+        case 'custo': return l.custo;
         case 'markup': return l.markup;
         case 'lucro': return l.lucro;
       }
@@ -118,8 +119,10 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
     });
   }, [secao.linhas, sort]);
 
-  // 6 colunas-base + (markup, lucro) quando a seção mostra margem.
-  const colSpanVazio = mostrarMargem ? 8 : 6;
+  // 6 colunas-base + coluna do link ML (linkável) + (custo, markup, lucro) na margem.
+  const colSpanVazio = 6 + (linkavel ? 1 : 0) + (mostrarMargem ? 3 : 0);
+  // Colunas cobertas pelo rótulo "Subtotal" no rodapé (Código, EAN, Título [, ML]).
+  const colSpanSubtotal = 3 + (linkavel ? 1 : 0);
 
   return (
     <div className="mb-6">
@@ -134,9 +137,11 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
               <ThSort k="codigo" label="Código" sort={sort} onSort={toggleSort} />
               <ThSort k="ean" label="EAN" sort={sort} onSort={toggleSort} />
               <ThSort k="titulo" label="Título" sort={sort} onSort={toggleSort} />
+              {linkavel && <TableHead className="w-12" />}
               <ThSort k="unidades" label="Unid." sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="valor" label="Valor" sort={sort} onSort={toggleSort} align="right" />
               <ThSort k="pctTotal" label="% total" sort={sort} onSort={toggleSort} align="right" />
+              {mostrarMargem && <ThSort k="custo" label="Custo" sort={sort} onSort={toggleSort} align="right" />}
               {mostrarMargem && <ThSort k="markup" label="Markup" sort={sort} onSort={toggleSort} align="right" />}
               {mostrarMargem && <ThSort k="lucro" label="Lucro" sort={sort} onSort={toggleSort} align="right" />}
             </TableRow>
@@ -154,20 +159,27 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
                   <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.codigo ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.ean ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm">
-                    <div className="flex items-start gap-2">
-                      <span className="block max-w-[420px] whitespace-normal break-words uppercase">{l.titulo}</span>
-                      {linkavel && l.id.startsWith('MLB') && (
-                        <Button asChild variant="ghost" size="sm" className="h-6 shrink-0 px-1.5 text-xs text-muted-foreground">
+                    <span className="block max-w-[420px] whitespace-normal break-words uppercase">{l.titulo}</span>
+                  </TableCell>
+                  {linkavel && (
+                    <TableCell className="align-top">
+                      {l.id.startsWith('MLB') && (
+                        <Button asChild variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground">
                           <a href={urlAnuncioML(l.id)} target="_blank" rel="noreferrer" title="Ver anúncio no Mercado Livre">
                             <ExternalLink className="mr-1 h-3 w-3" /> ML
                           </a>
                         </Button>
                       )}
-                    </div>
-                  </TableCell>
+                    </TableCell>
+                  )}
                   <TableCell className="align-top text-right text-sm tabular-nums">{l.unidades}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(l.valor)}</TableCell>
                   <TableCell className="align-top text-right text-sm tabular-nums">{pct(l.pctTotal)}</TableCell>
+                  {mostrarMargem && (
+                    <TableCell className="align-top text-right text-sm tabular-nums text-muted-foreground">
+                      {l.custo != null ? fmtBRL(l.custo) : '—'}
+                    </TableCell>
+                  )}
                   {mostrarMargem && (
                     <TableCell className={cn('align-top text-right text-sm tabular-nums', corValor(l.markup))}>
                       {l.markup != null ? fmtMarkup(l.markup) : '—'}
@@ -185,10 +197,15 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
           {linhas.length > 0 && (
             <TableFooter>
               <TableRow className="border-t font-medium">
-                <TableCell colSpan={3} className="text-sm">Subtotal</TableCell>
+                <TableCell colSpan={colSpanSubtotal} className="text-sm">Subtotal</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{secao.unidades}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{fmtBRL(secao.valor)}</TableCell>
                 <TableCell className="text-right text-sm tabular-nums">{pct(secao.pctTotal)}</TableCell>
+                {mostrarMargem && (
+                  <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                    {secao.custo > 0 ? fmtBRL(secao.custo) : '—'}
+                  </TableCell>
+                )}
                 {mostrarMargem && (
                   <TableCell className={cn('text-right text-sm tabular-nums', corValor(secao.markup))}>
                     {secao.markup != null ? fmtMarkup(secao.markup) : '—'}
