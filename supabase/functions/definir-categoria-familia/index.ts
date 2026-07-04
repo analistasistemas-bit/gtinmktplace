@@ -1,14 +1,16 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
-import { categoriaParaTipo, montarAtributosML, rotuloParaTipo } from '../_shared/categoria/atributos.ts';
-import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
+import { montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atributos.ts';
+import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
+import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 
-// Seletor manual de categoria (escape hatch do ADR-0009): o operador escolhe a
-// categoria de uma família que a detecção por regex deixou em 'outro'. Reusa o
-// código canônico de _shared para montar os atributos obrigatórios (sem duplicar
-// a lógica no frontend e arriscar drift). Só tipos com categoria-folha mapeada.
-const TIPOS_VALIDOS: TipoAviamento[] = ['linha', 'fita', 'botao', 'cola'];
-
+// Seletor de categoria livre (ADR-0057, estende o escape hatch do ADR-0009/0022): o operador
+// escolhe qualquer categoria real do ML (busca em atributos-familia/buscar-categoria). Categoria
+// conhecida (linha/fita/botao/cola) → caminho curado (montarAtributosML, zero mudança de
+// comportamento). Categoria genérica → resolverAtributosGenericos (mesmo fluxo do process-familia,
+// sem duplicar lógica). Contrato antigo {tipo} removido: app de deploy único, sem consumidor externo.
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') {
@@ -24,19 +26,20 @@ Deno.serve(async (req) => {
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
 
-  let body: { familia_id?: string; tipo?: string };
+  let body: { familia_id?: string; categoria_ml_id?: string; categoria_nome?: string };
   try { body = await req.json(); } catch { return new Response('Bad JSON', { status: 400, headers: corsHeaders }); }
 
-  const tipo = body.tipo as TipoAviamento;
-  if (!body.familia_id || !TIPOS_VALIDOS.includes(tipo)) {
-    return new Response('familia_id e tipo (linha/fita/botao/cola) obrigatórios', { status: 400, headers: corsHeaders });
+  const categoriaMlId = body.categoria_ml_id?.trim();
+  const categoriaNome = body.categoria_nome?.trim();
+  if (!body.familia_id || !categoriaMlId || !categoriaNome) {
+    return new Response('familia_id, categoria_ml_id e categoria_nome obrigatórios', { status: 400, headers: corsHeaders });
   }
 
   // Operação compartilhada (ADR-0047/0056): a RLS is_membro_operacao já restringe à
   // operação; qualquer membro define a categoria. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, nome_pai, descricao_pai, fornecedor')
+    .select('id, user_id, nome_pai, descricao_pai, fornecedor')
     .eq('id', body.familia_id)
     .maybeSingle();
 
@@ -44,23 +47,41 @@ Deno.serve(async (req) => {
     return new Response(`Família não encontrada: ${error?.message ?? ''}`, { status: 404, headers: corsHeaders });
   }
 
-  const categoria_ml_id = categoriaParaTipo(tipo);
-  const atributos_ml = montarAtributosML(
-    tipo,
-    familia.nome_pai,
-    familia.fornecedor ?? undefined,
-    familia.descricao_pai ?? undefined,
-  );
+  const tipo = tipoParaCategoria(categoriaMlId);
+
+  let atributosMl;
+  let atributosFaltantes: string[];
+  if (tipo !== 'outro') {
+    // Categoria conhecida (linha/fita/botao/cola): caminho curado, sem chamada de rede.
+    atributosMl = montarAtributosML(tipo, familia.nome_pai, familia.fornecedor ?? undefined, familia.descricao_pai ?? undefined);
+    atributosFaltantes = [];
+  } else {
+    let token: string | null = null;
+    try { token = await getValidAccessToken(familia.user_id); } catch (e) { console.error('token p/ atributos genéricos falhou:', e); }
+    const r = await resolverAtributosGenericos(
+      categoriaMlId,
+      { nome: familia.nome_pai, descricao: familia.descricao_pai ?? undefined, fornecedor: familia.fornecedor ?? undefined },
+      {
+        lerSchema: (id) => {
+          if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));
+          return lerSchemaAtributos(token, id);
+        },
+        llm: desempatarAtributosLLM,
+      },
+    );
+    atributosMl = r.atributosMl;
+    atributosFaltantes = r.faltantes;
+  }
 
   const { error: upErr } = await sb
     .from('familias')
     .update({
-      categoria_ml_id,
-      categoria_nome: rotuloParaTipo(tipo),
+      categoria_ml_id: categoriaMlId,
+      categoria_nome: categoriaNome,
       tipo_aviamento: tipo,
       tipo_origem: 'manual',
-      atributos_ml,
-      atributos_faltantes: [], // aviamento manual: montarAtributosML preenche todos os obrigatórios
+      atributos_ml: atributosMl,
+      atributos_faltantes: atributosFaltantes,
     })
     .eq('id', body.familia_id);
 
@@ -69,7 +90,7 @@ Deno.serve(async (req) => {
   }
 
   return new Response(
-    JSON.stringify({ categoria_ml_id, tipo_aviamento: tipo }),
+    JSON.stringify({ categoria_ml_id: categoriaMlId, categoria_nome: categoriaNome, tipo_aviamento: tipo, atributos_faltantes: atributosFaltantes }),
     { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } },
   );
 });
