@@ -26,8 +26,9 @@ export interface AnaliseMercado {
 export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'cola' | 'outro';
 
 // Origem da resolução de categoria (ADR-0026 / E3). regex/manual = alta confiança;
-// preditor = média (domain_discovery do ML); ia = baixa (desempate LLM).
-export type TipoOrigem = 'regex' | 'preditor' | 'ia' | 'manual';
+// preditor = média (domain_discovery do ML); ia = baixa (desempate LLM);
+// generico = "Outros" aplicado como fallback visível, busque uma melhor (ADR-0058).
+export type TipoOrigem = 'regex' | 'preditor' | 'ia' | 'manual' | 'generico';
 
 export type FamiliaStatus =
   | 'pendente'

@@ -965,7 +965,7 @@ export type Database = {
       origem_produto: "nacional" | "importado"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
       tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola"
-      tipo_origem: "regex" | "ia" | "manual" | "preditor"
+      tipo_origem: "regex" | "ia" | "manual" | "preditor" | "generico"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1120,7 +1120,7 @@ export const Constants = {
       origem_produto: ["nacional", "importado"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
       tipo_aviamento: ["linha", "botao", "fita", "outro", "cola"],
-      tipo_origem: ["regex", "ia", "manual", "preditor"],
+      tipo_origem: ["regex", "ia", "manual", "preditor", "generico"],
     },
   },
 } as const

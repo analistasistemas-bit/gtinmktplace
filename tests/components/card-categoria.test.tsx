@@ -79,6 +79,22 @@ describe('CardCategoria', () => {
     expect(screen.getByText(/Faltam:\s*Voltagem/i)).toBeInTheDocument();
   });
 
+  it('ADR-0058: categoria genérica ("Outros") aparece definida, com selo de aviso e busca disponível pra trocar', () => {
+    renderCard(familiaBase({
+      tipoAviamento: 'outro', categoriaMlId: 'MLB1371',
+      categoriaNome: 'Outros', tipoOrigem: 'generico', atributosFaltantes: null,
+    }));
+    // Definida (não mostra o alerta de bloqueio "categoria indefinida").
+    expect(screen.queryByText(/categoria indefinida/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Outros$/)).toBeInTheDocument();
+    expect(screen.getByText(/MLB1371/)).toBeInTheDocument();
+    // Selo de aviso distinto do de "Sugerida por IA".
+    expect(screen.getByText(/Categoria genérica/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Sugerida por IA/i)).not.toBeInTheDocument();
+    // Busca continua disponível pra trocar.
+    expect(screen.getByPlaceholderText(/buscar categoria/i)).toBeInTheDocument();
+  });
+
   it('override (regex) não mostra selo de sugestão', () => {
     renderCard(familiaBase()); // tipoOrigem 'regex'
     expect(screen.queryByText(/Sugerida por IA/i)).not.toBeInTheDocument();

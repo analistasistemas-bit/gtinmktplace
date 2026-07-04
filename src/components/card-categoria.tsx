@@ -53,7 +53,6 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-xs font-medium text-destructive">Categoria indefinida — busque antes de publicar</p>
       {sugestao && (
         <button
           type="button"
@@ -98,6 +97,9 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
 
 export function CardCategoria({ familia }: { familia: Familia }) {
   const categoriaIndefinida = !familia.categoriaMlId;
+  // Genérico (ADR-0058): "Outros" já aplicado como fallback visível — a família não está mais
+  // bloqueada, mas o selo de aviso chama atenção pra buscar uma categoria melhor se quiser.
+  const categoriaGenerica = familia.tipoOrigem === 'generico';
 
   return (
     <div
@@ -110,7 +112,10 @@ export function CardCategoria({ familia }: { familia: Familia }) {
         <Tag className="h-3.5 w-3.5" /> Categoria
       </div>
       {categoriaIndefinida ? (
-        <BuscaCategoria familia={familia} />
+        <>
+          <p className="mb-1.5 text-xs font-medium text-destructive">Categoria indefinida — busque antes de publicar</p>
+          <BuscaCategoria familia={familia} />
+        </>
       ) : (
         <>
           <p className="text-sm font-medium">
@@ -122,6 +127,11 @@ export function CardCategoria({ familia }: { familia: Familia }) {
               <Sparkles className="h-3 w-3" /> Sugerida por IA — confira
             </StatusPill>
           )}
+          {categoriaGenerica && (
+            <StatusPill tone="warning" className="mt-1.5">
+              <AlertTriangle className="h-3 w-3" /> Categoria genérica — busque uma melhor se quiser
+            </StatusPill>
+          )}
           {familia.atributosFaltantes && familia.atributosFaltantes.length > 0 && (
             <>
               <p className="mt-1.5 flex items-start gap-1 text-xs text-warning">
@@ -130,6 +140,11 @@ export function CardCategoria({ familia }: { familia: Familia }) {
               </p>
               <EditorAtributosFaltantes familiaId={familia.id} loteId={familia.loteId} />
             </>
+          )}
+          {categoriaGenerica && (
+            <div className="mt-1.5 border-t pt-1.5">
+              <BuscaCategoria familia={familia} />
+            </div>
           )}
         </>
       )}
