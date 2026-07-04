@@ -10,6 +10,14 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Markup por produto divergente: Detalhe de vendas × Detalhe do pedido (2026-07-03)** — o mesmo
+  produto mostrava markups diferentes (ex.: cód. 03096963 → +843% no Detalhe de vendas vs +592% no
+  Detalhe do pedido). Causa raiz: `montarDetalheVendas` (`detalhe-vendas.ts`) rateava o líquido **por
+  linha de order_id**; num pack com um order_id por produto, o item leve/barato (fita) ficava com o
+  líquido inteiro do seu order_id (frete rateado por peso quase não pesa nele) e inflava o markup. Fix:
+  poolar o líquido por **pack** (`pack_id ?? order_id`) e redistribuir por valor bruto com o mesmo
+  `round2` por item do `agruparPorPedido` (menu Faturamento, fonte da verdade — ADR-0055). Markup por
+  produto passa a bater 1:1 entre as telas; teste de regressão trava a invariante.
 - **Barbante recusado por atributo/tipo (lote #49, ADR-0051)** — "BARBANTE" não estava na regex de
   `linha` → caía em `tipo='outro'`; o preditor do ML acertava a categoria (MLB270273, Fios e Cadarços)
   mas o código fixava `tipo='outro'`, então `BRAND`/`MODEL` nunca eram montados e o ML recusava. Fix:
