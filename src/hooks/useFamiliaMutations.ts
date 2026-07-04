@@ -16,7 +16,7 @@ import {
 import type { FaixaAtacado } from '@/lib/atacado';
 import { regenerarCopyFamilia } from '@/lib/ai-copy';
 import { reprocessarFamilia } from '@/lib/reprocessar';
-import { definirCategoriaFamilia, type TipoCategoriaManual } from '@/lib/categoria';
+import { definirCategoriaLivre } from '@/lib/categoria';
 
 export function useUpdateVariacaoPreco(loteId: string) {
   const qc = useQueryClient();
@@ -113,11 +113,11 @@ export function useUpdateDescontoPctFamilia(loteId: string) {
   });
 }
 
-export function useDefinirCategoria(loteId: string) {
+export function useDefinirCategoriaLivre(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ familiaId, tipo }: { familiaId: string; tipo: TipoCategoriaManual }) =>
-      definirCategoriaFamilia(familiaId, tipo),
+    mutationFn: ({ familiaId, categoriaMlId, categoriaNome }: { familiaId: string; categoriaMlId: string; categoriaNome: string }) =>
+      definirCategoriaLivre(familiaId, categoriaMlId, categoriaNome),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }
