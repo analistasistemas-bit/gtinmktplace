@@ -13,7 +13,8 @@ import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, montarAtributosBase, atributosFaltantesGenerico, preencherUnitsPerPack, categoriaParaTipo, FALTANTE_ATRIBUTOS_NAO_VALIDADOS, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, preencherUnitsPerPack, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -202,29 +203,21 @@ Deno.serve(async (req) => {
         } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
       }
     } else if (categoriaMlId) {
-      // Categoria genérica (não-aviamento): validar obrigatórios contra o schema da API (E3/E4).
-      // Regra de ouro do SaaS: se NÃO der para validar (sem token, schema indisponível/vazio ou
-      // erro da IA), não publicar às cegas — persiste faltante-sentinela p/ travar na Revisão.
-      try {
-        if (!token) throw new Error('sem token p/ ler schema da categoria');
-        const schema = await lerSchemaAtributos(token, categoriaMlId);
-        // Categoria real do ML sempre traz atributos no schema (mesmo poucos required); vazio ⇒ erro de leitura.
-        if (!schema || schema.length === 0) throw new Error('schema vazio da categoria');
-        const base = montarAtributosBase(schema, claimed.nome_pai, fornecedor);
-        // E4: IA preenche os obrigatórios closed-set (ex.: VOLTAGE) escolhendo dentro de values[].
-        atributosMl = await preencherAtributosClosedSet(
-          schema, base,
-          { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
-          desempatarAtributosLLM,
-        );
-        // UNITS_PER_PACK é numérico (sem closed-set) → a IA não cobre; extrai do nome/descrição.
-        atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
-        faltantes = atributosFaltantesGenerico(atributosMl, schema);
-      } catch (e) {
-        console.error('schema/atributos falhou:', e);
-        atributosMl = [];
-        faltantes = [FALTANTE_ATRIBUTOS_NAO_VALIDADOS];
-      }
+      // Categoria genérica (não-aviamento): _shared/categoria/resolver-atributos-genericos.ts
+      // (mesmo fluxo reusado pelo seletor manual de categoria livre, ADR-0057).
+      const r = await resolverAtributosGenericos(
+        categoriaMlId,
+        { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, fornecedor },
+        {
+          lerSchema: (id) => {
+            if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));
+            return lerSchemaAtributos(token, id);
+          },
+          llm: desempatarAtributosLLM,
+        },
+      );
+      atributosMl = r.atributosMl;
+      faltantes = r.faltantes;
     }
     // categoriaMlId null (origem 'manual') → faltantes fica [] aqui, mas o gate de publicação
     // bloqueia por categoria ausente até o operador escolhê-la na Revisão.
@@ -317,6 +310,7 @@ Deno.serve(async (req) => {
       concorrencia_preco_min: concorrencia.preco_min,
       concorrencia_origem: concorrencia.origem,
       concorrencia_classe: concorrencia.classe,
+      concorrencia_categoria_id: concorrencia.ofertas?.category_id ?? null,
       estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
       tipo_aviamento: tipo,
