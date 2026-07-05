@@ -17,4 +17,7 @@ drop index if exists public.variacoes_familia_id_idx;
 
 -- Fix C
 drop index if exists public.familias_status_idx;
-create index familias_lote_id_status_idx on public.familias (lote_id, status);
+-- idempotente: 20260527125643_familias_variacoes.sql já cria este índice idêntico
+-- (edição retroativa daquela migration). Sem `if not exists`, o replay do zero
+-- (ensaio/novo ambiente) falha ao recriar. Behavior-preserving em produção (já aplicada).
+create index if not exists familias_lote_id_status_idx on public.familias (lote_id, status);
