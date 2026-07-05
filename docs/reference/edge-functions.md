@@ -69,15 +69,15 @@
 
 | Módulo | Provê |
 |---|---|
-| `auth.ts` | `requireUser(req)` — valida Bearer token contra o Supabase Auth; `requireAdmin(req)` — idem + exige `profiles.is_admin` (ADR-0060) |
+| `auth.ts` | `requireUser(req)` — valida Bearer token contra o Supabase Auth; `requireAdmin(req)` — idem + exige `profiles.is_admin` (ADR-0060); `requireUserOrg(req)` — idem + resolve `{userId, orgId, isAdmin}` do `profiles` do chamador (403 se inativo/sem org) — identidade padrão por organização (ADR-0027) |
 | `cors.ts` | Headers CORS padrão (inclui `upstash-signature`) |
 | `supabase.ts` | `adminClient()` (service_role) e `userClient(jwt)` (respeita RLS) |
 | `queue.ts` | QStash: `enfileirarFamilia/Publicacao/Atualizacao/VinculacaoCatalogo`, `garantirFilaSerial`, `verificarAssinatura` |
-| `ml/*` | Integração ML: token/OAuth, criar/atualizar item, descrição, concorrência, catálogo, tarifa, atacado |
+| `ml/*` | Integração ML: `token.ts` → `getValidAccessTokenConexao(conexao)` (token da **conexão** da org, ADR-0027; substitui o antigo `getValidAccessToken(userId)`), criar/atualizar item, descrição, concorrência, catálogo, tarifa, atacado |
 | `ai/*` | OpenRouter: copywriter, vision (cor), título, resposta a pergunta, categoria/atributos por LLM |
-| `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector` |
+| `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027) |
 | `redis/*` | Client Redis + caches (cor, concorrência, tarifa) |
-| `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN) |
+| `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
 | `mercadopago/*` | API MP (pagamentos) + rateio financeiro |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
 | `notificacoes/*` | Telegram (vendas, perguntas, devoluções, liberações, moderados, catálogo) |
@@ -88,11 +88,12 @@
 ## Por domínio
 
 ### OAuth / conexão ML
-- **ml-oauth-start** — gera `state` (UUID, TTL 10min no Redis) e monta a URL de autorização.
-  Secrets: `ML_CLIENT_ID`, `ML_REDIRECT_URI`.
+- **ml-oauth-start** — gera `state` (UUID, TTL 10min no Redis, guarda `{user_id, org_id}` —
+  ADR-0027) e monta a URL de autorização. Secrets: `ML_CLIENT_ID`, `ML_REDIRECT_URI`.
 - **ml-oauth-callback** — troca `code` por access/refresh token e grava via
-  `upsert_ml_credentials` (Vault). Endpoint público (redirect do ML).
-- **ml-oauth-disconnect** — remove credenciais (`delete_ml_credentials`).
+  `upsert_marketplace_connection` (Vault, conexão da **org** do `state`, ADR-0027). Endpoint
+  público (redirect do ML).
+- **ml-oauth-disconnect** — remove a conexão (`delete_marketplace_connection`).
 
 ### Ingest de planilha
 - **ingest-lote** — valida colunas, agrupa variações por PAI, casa fotos, detecta CREATE vs
@@ -195,10 +196,15 @@
 
 ### Acesso / usuários
 
-- **usuarios** — gestão de usuários por **admin** (ADR-0047). `verify_jwt=true`; valida que o
-  chamador é admin (`requireUser` + `profiles.is_admin`) e usa `service_role`. Ações: `invite`
-  (`auth.admin.inviteUserByEmail` com `nome`/`allowed_menus` no metadata + `redirectTo` para
-  `/#/definir-senha`), `update_menus`, `set_active`, `set_admin`. Requer o secret `APP_URL`.
+- **usuarios** — gestão de usuários por **admin**, escopada à organização do chamador (ADR-0047 +
+  ADR-0027). `verify_jwt=true`; valida que o chamador é admin ativo com `org_id`
+  (`requireUser` + `profiles`) e usa `service_role`. Ações: `invite` (`auth.admin.inviteUserByEmail`
+  com `nome`/`allowed_menus`/**`org_id`** — herda a org do admin — no metadata + `redirectTo` para
+  `/#/definir-senha`), `update_menus`, `set_active`, `set_admin` (as três últimas escopadas
+  `.eq('org_id', orgId)` — só atuam em perfis da própria org). Ações de **super-admin** (D-E7.8,
+  `profiles.is_super_admin`): **`list_orgs`** (lista organizações + contagem de membros) e
+  **`create_org`** (cria a organização e convida seu primeiro admin; rollback da org se o convite
+  falhar). Requer o secret `APP_URL`.
 
 ### Utilitário
 - **hello** — smoke test de deploy.
@@ -207,6 +213,14 @@
 
 ## Padrões transversais
 
+- **Identidade por organização (ADR-0027, E7):** funções autenticadas resolvem `requireUserOrg(req)`
+  → `{userId, orgId, isAdmin}` em vez de só `userId`. O token do canal vem de
+  `resolverConexao(admin, orgId, 'mercado_livre')` (`_shared/canais/conexao.ts`) +
+  `getValidAccessTokenConexao(conexao)` (`_shared/ml/token.ts`) — **não existe mais**
+  `getValidAccessToken(userId)` nem leitura de `ml_credentials` no código (tabela congelada, ver
+  [modelo-de-dados.md](modelo-de-dados.md)). Webhooks e jobs sem chamador HTTP (sync/reconciliar)
+  resolvem a org via `resolverIdentidade`/`resolverOrgPorUserId` (`_shared/faturamento/io.ts`),
+  que buscam em `marketplace_connections`.
 - **Idempotência (regra inegociável):** claims atômicos (`UPDATE … WHERE status=…`), upserts,
   reuso de `picture_id`/IDs já gravados, guards de status. Workers podem ser reexecutados pelo
   retry do QStash sem duplicar efeito.

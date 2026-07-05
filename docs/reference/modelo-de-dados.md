@@ -6,44 +6,85 @@
 
 ## Regras transversais
 
-- **RLS de operação compartilhada** (ADR-0047): as tabelas de domínio liberam leitura/escrita a
-  qualquer membro autenticado via `public.is_membro_operacao()` (hoje `auth.role()='authenticated'`).
-  `user_id` permanece como `criado_por` (auditoria). O isolamento por `org_id` chega no E7 (ADR-0027),
-  redefinindo só o corpo de `is_membro_operacao()`.
+- **RLS por organização** (ADR-0027, E7): as 12 tabelas de domínio + storage liberam
+  leitura/escrita ao membro cuja `org_id` bate com `org_id = (select public.current_org_id())`.
+  `public.is_membro_operacao()` (ADR-0047) foi **dropada** — era o gancho intermediário da fase de
+  operação compartilhada. `user_id`/`criado_por` permanece como auditoria de quem criou a linha,
+  não mais como escopo de isolamento.
+- **`org_id_default()`** (trigger `BEFORE INSERT`) preenche `org_id` a partir de
+  `current_org_id()` quando o INSERT não o informa — cobre os INSERTs autenticados do frontend.
+  Workers `service_role` (sem `auth.uid()`) **precisam setar `org_id` explicitamente**; o `NOT NULL`
+  falha alto se algum caminho esquecer.
 - **`atualizado_em`** mantido por trigger `moddatetime` na maioria das tabelas.
 - **Escritas sensíveis** (credenciais, faturamento) são bloqueadas para `authenticated` e só
   ocorrem via `service_role` (workers) ou RPC `security definer`.
 - **Tokens** nunca em colunas de texto — ficam no **Vault** (`vault.secrets`).
 
-## Acesso e usuários (ADR-0047)
+## Organizações e multi-tenancy (ADR-0027, E7)
+
+### `organizations`
+O tenant. Hoje 1 linha (**Avil** — `slug='avil'`), dona de todos os dados atuais (backfill do E7).
+*Migration `20260705163656_e7_organizations.sql`.*
+
+`id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
+`lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,
+`atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
+só via `service_role` (edge `usuarios`, action `create_org`, restrita a super-admin).
+
+### `marketplace_connections`
+**Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
+não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration
+`20260705171224_e7_marketplace_connections.sql`.*
+
+`id`, `org_id` (FK organizations), `canal` (`canal_externo`), `conta_externa_id` (ml_user_id do
+vendedor — não é segredo), `conta_label` (nickname), `scope`, `expires_at`,
+`access_token_secret_id`/`refresh_token_secret_id` (FK→`vault.secrets`), `criado_por` (FK
+auth.users), `criado_em`, `atualizado_em`. Único `(org_id, canal)`. RLS: SELECT do membro da
+própria org; INSERT/UPDATE/DELETE só via RPC `service_role`. A migração de dados reusa os
+**mesmos** `secret_id` da `ml_credentials` existente — zero re-criptografia.
+
+## Acesso e usuários (ADR-0047 + ADR-0027)
 
 ### `profiles`
 Espelho 1:1 de `auth.users` (`id` FK). Colunas: `email`, `nome`, `is_admin`, `is_active`,
-`allowed_menus text[]` (chaves de menu que um não-admin acessa), `created_at`, `updated_at`.
-Criado no signup pelo trigger `handle_new_user` (semeia `nome`/`allowed_menus` do
-`raw_user_meta_data` do convite). RLS: SELECT do próprio ou de admin; INSERT/UPDATE/DELETE só admin.
+`allowed_menus text[]` (chaves de menu que um não-admin acessa), `created_at`, `updated_at`,
+**`org_id`** (FK organizations, `NOT NULL` — a organização do usuário, ADR-0027), **`is_super_admin`**
+(boolean, default `false` — só Diego; único papel que cria organizações via `create_org`).
+Criado no signup pelo trigger `handle_new_user` (semeia `nome`/`allowed_menus`/**`org_id`** do
+`raw_user_meta_data` do convite). RLS: SELECT do próprio ou de admin **da mesma org**;
+INSERT/UPDATE/DELETE só admin, escopado à própria org.
 
 **Helpers** (SECURITY DEFINER, `search_path=''`, execute só p/ `authenticated`):
 - `public.is_admin()` — o chamador tem `profiles.is_admin`.
-- `public.is_membro_operacao()` — o chamador é membro autenticado da operação (ponto único de
-  troca p/ o E7).
+- `public.current_org_id()` — retorna a `org_id` do chamador ativo (`is_active`); **pivô da RLS
+  por organização** (ADR-0027). `STABLE`, cacheado 1× por statement no initplan.
+- `public.is_super_admin()` — o chamador tem `profiles.is_super_admin`.
+- `public.is_membro_operacao()` — **dropada** (E7, migration `20260705165828_e7_rls_org.sql`);
+  era o gancho intermediário da operação compartilhada (ADR-0047), substituído por `current_org_id()`.
 
 ## Relações de domínio
 
 ```
+organizations (1) ──< profiles (N)
+              │
+              └────< marketplace_connections (1 por canal) ──► tokens no Vault
+
 lotes (1) ──< familias (N) ──< variacoes (N)
                   │
-                  └─ espelhado em ── anuncios_externos  [(user_id, canal, codigo_pai)]
+                  └─ espelhado em ── anuncios_externos  [(org_id, canal, codigo_pai, particao)]
 
-ml_credentials (1 por user) ──► tokens OAuth no Vault
+ml_credentials (1 por user, DEPRECADA) ──► tokens OAuth no Vault
 
 ml_vendas (1 por pedido) ──< ml_vendas_itens (N) ──► match com variacoes por GTIN/EAN
 ml_vendas ──► ml_devolucoes (por order_id)
 ml_perguntas        (independente, respondível pelo app)
 ml_moderacao        (1 linha aberta por item moderado)
-ml_webhook_eventos  (dedup de webhooks)
-configuracoes (1 por user)
+ml_webhook_eventos  (dedup de webhooks; org_id NULLABLE — eventos de vendedor desconhecido)
+configuracoes (1 por org)
 ```
+
+Todas as 12 tabelas de domínio + `ml_webhook_eventos` têm `org_id` (FK organizations, indexado);
+`NOT NULL` em todas exceto `ml_webhook_eventos` (ADR-0027).
 
 ---
 
@@ -52,11 +93,13 @@ configuracoes (1 por user)
 ### `lotes`
 Um upload de planilha + imagens; inicia o pipeline. *Migration `20260527123422_enums_lotes_storage.sql` (ADR-0007).*
 
-Colunas-chave: `id`, `user_id` (FK auth.users), `numero` (sequência, "Lote #N"),
-`status` (`lote_status`), `planilha_path`, `imagens_paths text[]`,
+Colunas-chave: `id`, `user_id` (FK auth.users), `org_id` (FK organizations, ADR-0027),
+`numero` (sequência global, legado), **`numero_org`** (sequência **por org**, "Lote #N" exibido
+pelo front — `numero_org ?? numero`; gerada por `proximo_numero_lote(org)`), único
+`(org_id, numero_org)`, `status` (`lote_status`), `planilha_path`, `imagens_paths text[]`,
 `total_familias` / `total_publicadas` / `total_erros` (mantidos por trigger),
 `erro_mensagem`, `criado_em`, `atualizado_em`.
-Índice: `(user_id, criado_em DESC)`. RLS por `user_id`.
+Índice: `(user_id, criado_em DESC)`, `(org_id)`. RLS por organização (`org_id = current_org_id()`).
 Trigger `update_lote_counters` recalcula contadores e faz a transição `processando → revisao`
 quando todas as famílias saem de pendente/processando (*`20260609132501_lote_transicao_revisao.sql`*).
 
@@ -65,8 +108,8 @@ Um PAI = um anúncio. Guarda identidade, resultado da IA, estado de publicação
 edição. *Migration `20260527125643_familias_variacoes.sql` (ADR-0007/0008/0009).*
 
 Grupos de colunas:
-- **Identidade:** `lote_id` (FK→lotes, cascade), `user_id`, `codigo_pai`, `nome_pai`,
-  `descricao_pai`, `unidade`. Único: `(lote_id, codigo_pai)`.
+- **Identidade:** `lote_id` (FK→lotes, cascade), `user_id`, `org_id` (FK organizations,
+  ADR-0027), `codigo_pai`, `nome_pai`, `descricao_pai`, `unidade`. Único: `(lote_id, codigo_pai)`.
 - **Lifecycle:** `status` (`familia_status`), `operacao` (`operacao_ml`).
 - **Categorização:** `tipo_aviamento`, `tipo_origem`, `categoria_ml_id`, `categoria_nome`.
 - **Origem/imposto (ADR-0055):** `origem` (enum `origem_produto` `nacional`/`importado`,
@@ -84,15 +127,16 @@ Grupos de colunas:
   `editado_em`, `observacao_operador`.
 - **Processamento:** `erro_mensagem`, `qstash_message_id`, `variacao_principal_codigo` (ADR-0044).
 
-Índices por `(user_id, codigo_pai)`, `(user_id, ml_item_id)`, `(lote_id, status)`. RLS por `user_id`.
+Índices por `(user_id, codigo_pai)`, `(user_id, ml_item_id)`, `(lote_id, status)`, `(org_id)`.
+RLS por organização (`org_id = current_org_id()`, ADR-0027).
 
 ### `variacoes`
 Um SKU/cor = uma variação do anúncio. *Migration `20260527125643_familias_variacoes.sql`
 (ADR-0003/0004/0018).*
 
 Grupos:
-- **Identidade:** `familia_id` (FK→familias, cascade), `user_id`, `codigo`, `nome`, `gtin`.
-  Único: `(familia_id, codigo)`.
+- **Identidade:** `familia_id` (FK→familias, cascade), `user_id`, `org_id` (FK organizations,
+  ADR-0027), `codigo`, `nome`, `gtin`. Único: `(familia_id, codigo)`.
 - **Estoque/preço:** `estoque`, `estoque_anterior`, `preco`, `preco_publicacao`,
   `preco_editado_pelo_operador`, `custo`.
 - **Dimensões:** `peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`.
@@ -107,11 +151,13 @@ Grupos:
 Espelho multicanal normalizado. Identidade estável independente de lote/família.
 *Migration `20260614152627_anuncios_externos.sql` (ADR-0025).*
 
-`id`, `user_id`, `canal` (`canal_externo`), `codigo_pai`, `item_externo_id`, `permalink`,
-`status`, `erro_mensagem`, `variacoes_externas jsonb` (mapa `codigo → {variation_id,
-catalog_product_id, catalog_listing_id, catalog_status}`), `metadados_canal jsonb`,
-`preco_override`, `publicado_em`, **`particao smallint`**, **`titulo`**. Único:
-`(user_id, canal, codigo_pai, particao)`. Populado por dual-write dos workers + backfill.
+`id`, `user_id`, `org_id` (FK organizations, ADR-0027), `canal` (`canal_externo`), `codigo_pai`,
+`item_externo_id`, `permalink`, `status`, `erro_mensagem`, `variacoes_externas jsonb` (mapa
+`codigo → {variation_id, catalog_product_id, catalog_listing_id, catalog_status}`),
+`metadados_canal jsonb`, `preco_override`, `publicado_em`, **`particao smallint`**, **`titulo`**.
+Único: **`(org_id, canal, codigo_pai, particao)`** (era `(user_id, canal, codigo_pai, particao)`
+até o E7 — a identidade do anúncio passou a ser da **organização**, não do usuário, ADR-0027/0025).
+Populado por dual-write dos workers + backfill.
 *Split (ADR-0048, migration `20260629180206_anuncios_externos_particao.sql`):* um produto com
 >100 cores tem N linhas (uma por anúncio/partição); cada `variacoes_externas` é a **ancoragem**
 (sku → anúncio). Produto ≤100 cores tem só `particao=0` (idêntico ao modelo original ADR-0025).
@@ -120,13 +166,16 @@ catalog_product_id, catalog_listing_id, catalog_status}`), `metadados_canal json
 
 ## Credenciais
 
-### `ml_credentials`
+### `ml_credentials` — **deprecada (remoção pendente, Task 17)**
 Tokens OAuth do ML por usuário; tokens no Vault. *Migration `20260527141015_ml_credentials_vault.sql`.*
+**Substituída por `marketplace_connections` no E7** (ADR-0027, D-E7.4) — a tabela e as RPCs abaixo
+ficam **congeladas** (não lidas nem escritas pelo código atual); o drop é diferido para a Task 17,
+depois de ~1 semana estável em produção.
 
-`user_id` (PK), `ml_user_id`, `ml_nickname`, `scope`, `expires_at`,
-`access_token_secret_id`/`refresh_token_secret_id` (FK→`vault.secrets`).
-SELECT pelo dono; INSERT/UPDATE/DELETE só via RPC `service_role`:
-`upsert_ml_credentials`, `get_ml_tokens`, `delete_ml_credentials`.
+`user_id` (PK), `org_id` (adicionado no E7, `NOT NULL`, sem novo tráfego), `ml_user_id`,
+`ml_nickname`, `scope`, `expires_at`, `access_token_secret_id`/`refresh_token_secret_id`
+(FK→`vault.secrets`). SELECT pelo dono; INSERT/UPDATE/DELETE só via RPC `service_role`:
+`upsert_ml_credentials`, `get_ml_tokens`, `delete_ml_credentials` — **idem, deprecadas**.
 
 ---
 
@@ -182,21 +231,29 @@ Anúncios moderados/pausados + coordenação de alertas. *Migration `20260622115
 Índice único parcial `(user_id, ml_item_id) WHERE resolvido_em IS NULL` (evita alerta duplicado).
 
 ### `configuracoes`
-Settings por usuário. *Migrations `20260606120614` + `20260622121259` (ADR-0017/0035/0040) +
-`20260703113001` (ADR-0055) + `20260704120000` (ADR-0059).*
-`user_id` (PK), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token`
-(sensível — nunca retornado; lido via RPC `telegram_config_status()` que só informa
-`tem_token boolean`), `aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16)
-— alíquotas globais por usuário, sem override por família (ADR-0055) —, `desconto_concorrencia_pct`
-(default 5) — percentual abaixo do menor concorrente aplicado por `sugerirPrecoVenda` (ADR-0059,
-antes fixo em 5%).
+Settings por **organização** desde o E7 (era por usuário). *Migrations `20260606120614` +
+`20260622121259` (ADR-0017/0035/0040) + `20260703113001` (ADR-0055) + `20260704120000`
+(ADR-0059) + `20260705174455_e7_config_org.sql` (ADR-0027).*
+`user_id` (PK, legado), `org_id` (FK organizations, `NOT NULL`, **único** — 1 configuração por
+org), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token` (sensível —
+nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`),
+`aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16) — alíquotas por org,
+sem override por família (ADR-0055) —, `desconto_concorrencia_pct` (default 5) — percentual
+abaixo do menor concorrente aplicado por `sugerirPrecoVenda` (ADR-0059, antes fixo em 5%) —,
+**`mp_access_token_secret_id`** (FK→`vault.secrets`, ADR-0027 D-E7.7): token Mercado Pago
+**por org**; lido via RPC `get_mp_token(org)`, com fallback ao `MP_ACCESS_TOKEN` de instância
+quando a org não tem secret configurado (zero regressão — a Avil segue no fallback até o secret
+ser semeado manualmente).
 
 ---
 
 ## Storage
 
-Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}`. RLS:
-acesso só quando `auth.uid()` == primeiro segmento do path. *Migration `20260527123422`.*
+Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}` — **não mudaram
+no E7** (ADR-0027, D-E7.6). RLS: SELECT quando o dono do path (1º segmento) pertence à **minha
+organização** (`profiles.org_id = current_org_id()`, join por `storage.foldername(name)[1]`);
+INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration `20260527123422`
++ `20260705165828_e7_rls_org.sql`.*
 
 ---
 
@@ -205,10 +262,19 @@ acesso só quando `auth.uid()` == primeiro segmento do path. *Migration `2026052
 | Função | Papel |
 |---|---|
 | `update_lote_counters()` | Trigger: recalcula contadores de `lotes` + transição de status |
-| `upsert_ml_credentials(...)` | Grava credenciais criando/atualizando secrets no Vault |
-| `get_ml_tokens(user_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
-| `delete_ml_credentials(user_id)` | Remove credenciais + secrets |
+| `current_org_id()` | **Pivô da RLS por org** (ADR-0027): `org_id` do chamador ativo (`is_active`) |
+| `is_super_admin()` | O chamador tem `profiles.is_super_admin` |
+| `org_id_default()` | Trigger `BEFORE INSERT`: preenche `org_id` do INSERT a partir de `current_org_id()` quando ausente |
+| `proximo_numero_lote(org)` | Incrementa `organizations.lote_seq` e retorna o próximo `numero_org` (row-lock na org) |
+| `upsert_marketplace_connection(...)` | Grava conexão de canal por org, criando/atualizando secrets no Vault |
+| `get_connection_tokens(connection_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
+| `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
+| `get_mp_token(org)` | Lê o secret do Mercado Pago da org no Vault; `null` se a org não configurou (caller cai no fallback de instância) |
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
+| ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
+| ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
+| ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |
+| ~~`is_membro_operacao()`~~ | **Dropada** (E7) — substituída por `current_org_id()` na RLS |
 
 ---
 
@@ -216,5 +282,6 @@ acesso só quando `auth.uid()` == primeiro segmento do path. *Migration `2026052
 
 - Sem `catalogo_interno` (cache cross-lote) — substituível por query em `familias`.
 - Sem `jobs_log` — auditoria de fila vive no dashboard Upstash + `qstash_message_id`.
-- Sem `org_id` ainda — multi-tenancy por `user_id`; organizações são o épico futuro E7 (ADR-0027).
+- Sem `organization_members`/papéis finos (m2m) — 1 organização por usuário (`profiles.org_id`),
+  decisão consciente do E7 (ADR-0027, D-E7.1/D-E7.2); m2m e enum de papéis ficam para o E8 (billing).
 - `canal_externo` só tem `mercado_livre` — ganha valor novo quando entrar o 2º canal.

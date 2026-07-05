@@ -33,7 +33,9 @@ Detalhes e justificativas em ADR-0001 (stack), ADR-0006 (QStash), ADR-0010 (Open
    efeito colateral duplicado (claims atômicos, upserts, reuso de IDs).
 3. **Assíncrono por fila.** Trabalho pesado (IA, publicação no ML) sai do request HTTP e vai
    para o QStash, que dá retry. O frontend acompanha por status no banco.
-4. **Multi-tenant por `user_id` + RLS.** Cada usuário só enxerga os próprios dados (ADR-0027).
+4. **Multi-tenant por `org_id` + RLS (ADR-0027).** Cada organização (empresa cliente) só enxerga
+   os próprios dados — o isolamento é por `org_id`, não por usuário; usuários da mesma empresa
+   compartilham tudo (operação compartilhada, ADR-0047).
 5. **Segredos fora do código.** Tokens OAuth no Vault; chaves de API em Supabase Secrets.
 6. **Multicanal por abstração.** A lógica de publicação fala com um *conector* de canal, não
    com o ML diretamente (ADR-0024/0025) — preparado para o 2º marketplace.
@@ -107,6 +109,30 @@ usuário: as publicações de uma conta acontecem uma de cada vez. Ver ADR-0034 
 > ⚠️ Há divergências atuais de `verify_jwt` no `config.toml` para funções acionadas por
 > QStash/webhook — ver a nota no fim de [edge-functions.md](../reference/edge-functions.md).
 
+## Multi-tenancy (`org_id`, ADR-0027)
+
+Da E1 ao E6, "multi-usuário" significava **operação compartilhada** (ADR-0047): qualquer usuário
+autenticado via `is_membro_operacao()` enxergava e operava os mesmos dados — um tenant só (a Avil).
+O E7 introduz o **discriminador `org_id`** para virar SaaS multi-empresa, sem trocar de padrão
+(shared DB + shared schema, não schema/DB por tenant — não escala no orçamento do projeto):
+
+- **`organizations`** é o tenant. Cada `profiles` pertence a exatamente 1 org (`org_id NOT NULL`);
+  sem `organization_members`/papéis finos por ora — YAGNI enquanto for 1 admin por empresa
+  (D-E7.1/D-E7.2 do ADR-0027).
+- **`current_org_id()`** é o pivô: função `SECURITY DEFINER STABLE` que devolve a org do chamador
+  ativo. Toda policy de RLS nas 12 tabelas de domínio + storage virou `org_id = (select
+  current_org_id())` — substituindo `is_membro_operacao()`, que foi dropada. `STABLE` cacheia a
+  chamada 1× por statement (initplan), então o custo por linha é só o índice em `org_id`.
+- **`marketplace_connections`** substitui `ml_credentials`: a credencial do canal (ex.: token OAuth
+  do ML) é da **organização**, não do usuário que conectou — qualquer membro da org publica.
+- **O maior risco é estrutural, não de RLS.** Workers/edge functions usam `service_role`, que
+  **contorna RLS por definição** — a RLS nova não os protege sozinha. A blindagem real é a
+  **propagação obrigatória de `org_id`** em todo caminho de escrita: `requireUserOrg(req)` resolve
+  `{userId, orgId, isAdmin}` no início de cada função autenticada; workers sem chamador HTTP
+  (webhook, sync, reconciliação) resolvem a org via `marketplace_connections`
+  (`resolverIdentidade`/`resolverOrgPorUserId`); e a coluna `org_id NOT NULL` falha alto (erro de
+  INSERT) se algum caminho esquecer de propagá-la — defesa estrutural, não só convenção de código.
+
 ## Multicanal (preparação para o 2º marketplace)
 
 Hoje só existe o Mercado Livre, mas a arquitetura já separa **o que publicar** de **onde
@@ -114,8 +140,9 @@ publicar**:
 
 - **Conector de canal** (`_shared/canais/`): interface única (`criarAnuncio`,
   `atualizarAnuncio`, `lerStatus`, …). `MercadoLivreConnector` delega às funções `_shared/ml/*`.
-- **`anuncios_externos`**: espelho normalizado com identidade `(user_id, canal, codigo_pai)`,
-  estável mesmo quando lotes/famílias mudam. Workers fazem dual-write nele.
+- **`anuncios_externos`**: espelho normalizado com identidade `(org_id, canal, codigo_pai,
+  particao)` — da **organização**, não do usuário, desde o E7 (ADR-0027) —, estável mesmo quando
+  lotes/famílias mudam. Workers fazem dual-write nele.
 
 A fonte de verdade ainda são as colunas `ml_*` em `familias`/`variacoes`; `anuncios_externos`
 é o espelho que vira fonte quando entrar o 2º canal (Shopee, épico E5). Ver ADR-0024/0025 e a

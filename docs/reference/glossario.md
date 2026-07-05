@@ -64,7 +64,7 @@
 | **Fila serial** | Fila QStash com `parallelism=1` por usuário, que serializa publicações no ML (ADR-0034) para evitar travamento por foto assíncrona. |
 | **Redis** | Cache + locks distribuídos da Upstash. Cache de cor/concorrência/tarifa (6h) e lock do refresh de token OAuth (ADR-0012). |
 | **Vault** | Cofre criptografado do Supabase onde ficam os tokens OAuth do ML. Tokens nunca em texto puro (regra inegociável). |
-| **RLS** | Row Level Security do Postgres. Hoje as tabelas de domínio liberam leitura/escrita a qualquer **membro autenticado** da operação (fase de operação compartilhada, ADR-0047); `user_id` permanece como `criado_por`. O isolamento por `org_id` chega no E7 (ADR-0027). |
+| **RLS** | Row Level Security do Postgres. As tabelas de domínio liberam leitura/escrita ao membro cuja `org_id` bate com a do chamador (`org_id = current_org_id()`, isolamento por organização, ADR-0027, E7); `user_id` permanece como `criado_por` (auditoria). Substitui a fase de operação compartilhada (ADR-0047), cujo `is_membro_operacao()` foi dropado. |
 | **verify_jwt** | Flag por função no `config.toml`. `true` = o gateway exige JWT Supabase válido; `false` = função pública que autentica por conta própria (assinatura QStash, webhook, ou JWT manual). |
 
 ## Integrações externas
@@ -80,8 +80,12 @@
 
 | Termo | Definição |
 |---|---|
-| **Operação compartilhada** | O tenant único atual: todos os usuários autenticados enxergam e operam os **mesmos** dados (lotes, anúncios, faturamento). Não há isolamento por empresa — isso chega no E7 (`org_id`, ADR-0027). Decisão registrada em ADR-0047. |
-| **Usuário / Membro** | Conta de login no Supabase Auth pertencente à operação. Espelhada em `public.profiles` (`is_admin`, `is_active`, `allowed_menus`, `email`, `nome`). |
-| **Admin** | Usuário com `profiles.is_admin = true`. Gerencia usuários (criar, editar menus, ativar/desativar, promover outros admins) e enxerga **todos** os menus, independentemente de `allowed_menus`. |
+| **Organização / Org** | O tenant no SaaS: uma empresa cliente do PubliAI. Isola 100% dos dados (`organizations`, `org_id` em toda tabela de domínio + storage). Hoje 1 org (**Avil**, dona de todos os dados anteriores ao E7). Cada usuário pertence a exatamente 1 org (`profiles.org_id`, sem trocar). Decisão registrada em ADR-0027 (E7). |
+| **Operação compartilhada** | Dentro de uma organização, todos os membros enxergam e operam os **mesmos** dados (lotes, anúncios, faturamento) — não há papéis finos por usuário, só `is_admin`. Decisão registrada em ADR-0047; o isolamento **entre** organizações é o `org_id` do ADR-0027. |
+| **Super-admin** | `profiles.is_super_admin = true` — hoje só Diego. Único papel que cria organizações novas (edge `usuarios`, actions `create_org`/`list_orgs`, página `/organizacoes`). Sem self-service até o E8 (billing). ADR-0027 (D-E7.8). |
+| **current_org_id()** | Função SQL `SECURITY DEFINER STABLE` — pivô do isolamento por organização. Devolve a `org_id` do chamador autenticado ativo (`profiles.is_active`); toda policy de RLS das tabelas de domínio + storage usa `org_id = (select current_org_id())`. Cacheada 1× por statement (initplan). ADR-0027. |
+| **Marketplace connection** | Credencial de um canal (ex.: OAuth do Mercado Livre) pertencente a uma **organização**, não a um usuário. Tabela `marketplace_connections`, única por `(org_id, canal)`; substitui `ml_credentials` (deprecada) — qualquer membro da org publica com a mesma conexão. ADR-0027 (D-E7.4). |
+| **Usuário / Membro** | Conta de login no Supabase Auth pertencente a uma organização. Espelhada em `public.profiles` (`org_id`, `is_admin`, `is_super_admin`, `is_active`, `allowed_menus`, `email`, `nome`). |
+| **Admin** | Usuário com `profiles.is_admin = true`. Gerencia usuários **da própria organização** (criar, editar menus, ativar/desativar, promover outros admins) e enxerga **todos** os menus, independentemente de `allowed_menus`. |
 | **Permissão de menu** | Conjunto de menus que um usuário **não-admin** pode ver e acessar (`profiles.allowed_menus`, array de chaves de menu). Trava em dois níveis: esconde no sidebar e bloqueia a rota. Não é trava de backend (ver ADR-0047). |
-| **Chave de menu** | Identificador estável de um item de navegação (`dashboard`, `lotes`, `revisao`, `publicados`, `faturamento`, `financeiro`, `viabilidade`, `configuracoes`). `usuarios` é um menu extra exclusivo de admin, não atribuível. |
+| **Chave de menu** | Identificador estável de um item de navegação (`dashboard`, `lotes`, `revisao`, `publicados`, `faturamento`, `financeiro`, `viabilidade`, `configuracoes`). `usuarios` é um menu extra exclusivo de admin, não atribuível. `organizacoes` é exclusivo de super-admin. |
