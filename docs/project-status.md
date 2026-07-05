@@ -6,9 +6,26 @@
 
 ## Snapshot
 
-- Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`
-- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`
-- Proximo epico: `E7` multi-tenancy → `E6` orquestracao multicanal (decisao 2026-07-02; planos prontos em `superpowers/plans/`); `E5` Shopee depois
+- Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy EM PRODUCAO (2026-07-05)**
+- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`
+- Proximo epico: `E6` orquestracao multicanal (nasce tenant-aware); `E5` Shopee depois
+
+### E7 — Multi-tenancy por `org_id` (SaaS multi-empresa) EM PRODUCAO (2026-07-05)
+
+Isolamento total por organizacao (ADR-0027). Rollout autonomo validado ponta a ponta:
+migracao *expand→migrate→contract* em 6 migrations (org `organizations` + `org_id` aditivo
+nas 12 tabelas → backfill Avil → NOT NULL + uniques por org → **swap de RLS** de
+`is_membro_operacao()` para `org_id = current_org_id()` → `marketplace_connections` (credencial
+por org, RPCs Vault, cutover do token por conexao) → config/telegram/marca/cache/MP e numeracao
+de lote por org). Frontend org-aware + pagina `/organizacoes` (super-admin). Ensaiado do zero em
+Supabase local (`db reset`) antes de producao; **suite executavel de isolamento cross-tenant**
+(`scripts/verificar-isolamento-tenant.ts`) provou 39 assercoes PASS **contra producao** (2 orgs
+sinteticas, zero visibilidade cruzada, calibrada com vazamento injetado). `get_advisors` sem
+achado de RLS; 36 edge functions redeployadas (token cutover validado ao vivo via
+`status-publicados`); frontend deployado no Render e validado com browser (Dashboard/Publicados/
+Financeiro/Organizacoes, zero regressao para a Avil, zero erro de console). Backup logico pre-rollout
+guardado. Pendencia diferida (Task 17, apos ~1 semana estavel): `drop table ml_credentials` + RPCs
+antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquitetura) + Graphify.
 - Trilho de UX (preparacao para SaaS comercial): repaginacao visual premium + Tarefa 2/Onda 1 (workflow operacional) concluidas e em producao (2026-06-21)
 - Marketplace ativo em producao: Mercado Livre
 - Split de produto em N anuncios em producao (ADR-0048, 2026-06-29): produto com >100 cores publica em N anuncios ML (limites do ML: 100 variacoes + 99999 de estoque somado por anuncio). Worker isolado `publicar-split-ml`, particao alfabetica por cor com ancoragem (cor publicada nao migra de anuncio), titulo distinto por IA, cap de estoque no conector. Relatorio e Publicados mostram os N anuncios. Validado em producao: `02835002` (120 cores) em 2 anuncios (`MLB6914358210` 100 cores + `MLB4828349403` 18 cores). Tambem nesta entrega: cor nova com foto+estoque entra MARCADA por padrao no UPDATE (opt-out, ADR-0016 adendo). Follow-up: catalogo (opt-in) por-particao cobre so a particao 0.
@@ -67,11 +84,11 @@ Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem
 - **E4 — publicação real de vertical nova (furadeira) ainda não comprovada ponta a ponta no ML.** Foi validada até Revisão/banco (categoria `MLB189007` + `VOLTAGE` closed-set + publicabilidade); o único CREATE real de prova da reauditoria foi com a família de fita. Decisão (2026-06-15): não forçar um publish sintético; fechar esse fluxo quando uma furadeira real entrar num lote de produção normal.
 - `ROADMAP.md` ficou para contexto estratégico; o estado operativo confiável está neste arquivo e em `TASKS.md`
 
-## Proximo foco (decidido por Diego em 2026-07-02)
+## Proximo foco
 
-`E7` — multi-tenancy (SaaS multi-empresa), seguido de `E6` (orquestracao multicanal). `E5` (Shopee) fica para depois. Racional: objetivo SaaS multi-empresa com isolamento por org; E6 nasce tenant-aware; validacao real do E6 depende do E5. Planos completos:
+`E6` — orquestracao multicanal (agora nasce tenant-aware, sobre o E7 ja em producao). `E5` (Shopee) depois; validacao real do E6 depende do E5.
 
-- [Plano E7](superpowers/plans/2026-07-02-e7-multi-tenancy-org-id.md) — 7 fases expand→migrate→contract, RLS por `org_id`, `marketplace_connections`, suite executavel de isolamento cross-tenant
+- [Plano E7](superpowers/plans/2026-07-02-e7-multi-tenancy-org-id.md) — **CONCLUIDO em producao (2026-07-05)**; falta so a Task 17 (limpeza diferida: drop `ml_credentials` + docs de referencia + Graphify) apos ~1 semana estavel
 - [Plano E6](superpowers/plans/2026-07-02-e6-orquestracao-multicanal.md) — worker generico `publicar-anuncio`, estado por canal em `anuncios_externos`, caminho ML intocado
 
 ## Fontes de verdade
