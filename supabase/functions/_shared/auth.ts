@@ -1,4 +1,7 @@
 import { adminClient } from './supabase.ts';
+import { resolverOrgDoPerfil, type PerfilOrgRow } from './auth-org.ts';
+
+export { resolverOrgDoPerfil, type PerfilOrgRow };
 
 export interface AuthedUser {
   id: string;
@@ -27,4 +30,18 @@ export async function requireAdmin(req: Request): Promise<AuthedUser> {
     throw new Response('Somente administradores podem executar esta ação', { status: 403 });
   }
   return user;
+}
+
+/** Identidade completa do chamador autenticado: user + org (403 se inativo/sem org). */
+export async function requireUserOrg(req: Request): Promise<{ userId: string; orgId: string; isAdmin: boolean }> {
+  const user = await requireUser(req);
+  const { data, error } = await adminClient()
+    .from('profiles').select('org_id, is_active, is_admin').eq('id', user.id).single();
+  if (error || !data) throw new Response(JSON.stringify({ error: 'perfil não encontrado' }), { status: 403 });
+  try {
+    const { orgId, isAdmin } = resolverOrgDoPerfil(data as PerfilOrgRow);
+    return { userId: user.id, orgId, isAdmin };
+  } catch {
+    throw new Response(JSON.stringify({ error: 'perfil inativo ou sem organização' }), { status: 403 });
+  }
 }
