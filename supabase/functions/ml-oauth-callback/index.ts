@@ -28,23 +28,35 @@ Deno.serve(async (req) => {
 
   if (!code || !state) return redirect('ml_erro=state');
 
-  const userId = await redisGet(`oauth:ml:state:${state}`);
-  if (!userId) return redirect('ml_erro=state');
+  const raw = await redisGet(`oauth:ml:state:${state}`);
+  if (!raw) return redirect('ml_erro=state');
   await redisDel(`oauth:ml:state:${state}`); // uso único
+
+  let userId: string, orgId: string;
+  try {
+    const parsed = JSON.parse(raw) as { user_id: string; org_id: string };
+    if (!parsed.user_id || !parsed.org_id) throw new Error('state incompleto');
+    userId = parsed.user_id;
+    orgId = parsed.org_id;
+  } catch {
+    return redirect('ml_erro=state');
+  }
 
   try {
     const tok = await trocarCodePorToken(code);
     const nickname = await buscarNickname(tok.user_id, tok.access_token);
     const expiresAt = new Date(Date.now() + tok.expires_in * 1000).toISOString();
 
-    const { error } = await adminClient().rpc('upsert_ml_credentials', {
-      p_user_id: userId,
-      p_ml_user_id: String(tok.user_id),
-      p_ml_nickname: nickname,
+    const { error } = await adminClient().rpc('upsert_marketplace_connection', {
+      p_org_id: orgId,
+      p_canal: 'mercado_livre',
+      p_conta_externa_id: String(tok.user_id),
+      p_conta_label: nickname,
       p_access_token: tok.access_token,
       p_refresh_token: tok.refresh_token,
       p_scope: tok.scope ?? null,
       p_expires_at: expiresAt,
+      p_criado_por: userId,
     });
     if (error) throw new Error(error.message);
 

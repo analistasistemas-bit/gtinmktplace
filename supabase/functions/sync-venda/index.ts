@@ -4,7 +4,8 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
@@ -27,8 +28,13 @@ Deno.serve(async (req) => {
   if (!userId) return new Response('user_id obrigatório', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
+  const orgId = await resolverOrgPorUserId(admin, userId);
+  const conexao = orgId ? await resolverConexao(admin, orgId, 'mercado_livre') : null;
   let token: string;
-  try { token = await getValidAccessToken(userId); }
+  try {
+    if (!conexao) throw new Error('sem conexão ML');
+    token = await getValidAccessTokenConexao(conexao);
+  }
   catch { return new Response(JSON.stringify({ ok: false, semCredencial: true }), { status: 200, headers: corsHeaders }); }
 
   // Resolve order_id: direto, ou via shipping_id (busca a venda já registrada com esse envio).
@@ -43,7 +49,6 @@ Deno.serve(async (req) => {
   const pedido = await buscarPedido(token, orderId);
   if (!pedido) return new Response(JSON.stringify({ ok: false, naoEncontrado: true }), { status: 200, headers: corsHeaders });
 
-  const orgId = await resolverOrgPorUserId(admin, userId);
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
   const shippingId = pedido.shipping?.id ?? null;
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
@@ -71,14 +76,12 @@ Deno.serve(async (req) => {
     }
 
     // Mensagem automática ao comprador via ML (best-effort).
-    const { data: cred } = await admin.from('ml_credentials')
-      .select('ml_user_id').eq('user_id', userId).maybeSingle();
-    if (cred?.ml_user_id) {
+    if (conexao?.contaExternaId) {
       const packId = pedido.pack_id ?? pedido.id;
       await enviarMensagemPedido(
         token,
         packId,
-        cred.ml_user_id,
+        conexao.contaExternaId,
         'Olá! Recebemos seu pedido e já estamos separando. Em caso de dúvida, fique à vontade para chamar aqui pelo chat. Obrigado pela compra! 🙏',
       );
     }

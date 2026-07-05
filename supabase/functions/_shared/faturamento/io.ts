@@ -6,21 +6,21 @@ import { round2 } from '../dinheiro.ts';
 
 const API = 'https://api.mercadolibre.com';
 
-/** Resolve user_id + org_id (org da linha-mãe ml_credentials) a partir do ml_user_id (vendedor
- *  no ML). null se desconhecido. org_id nullable até a Fase 3 (E7) — pode vir null. */
+/** Resolve user_id (criado_por) + org_id a partir do ml_user_id (vendedor no ML), via
+ *  marketplace_connections (E7 — ml_credentials está congelada). null se desconhecido. */
 export async function resolverIdentidade(
   admin: SupabaseClient, mlUserId: number | string,
 ): Promise<{ userId: string; orgId: string } | null> {
-  const { data } = await admin.from('ml_credentials')
-    .select('user_id, org_id').eq('ml_user_id', String(mlUserId)).maybeSingle();
-  if (!data?.user_id) return null;
-  return { userId: data.user_id as string, orgId: data.org_id as string };
+  const { data } = await admin.from('marketplace_connections')
+    .select('criado_por, org_id').eq('canal', 'mercado_livre').eq('conta_externa_id', String(mlUserId)).maybeSingle();
+  if (!data?.criado_por) return null;
+  return { userId: data.criado_por as string, orgId: data.org_id as string };
 }
 
-/** Resolve org_id a partir do user_id local (mesma credencial ML). null se sem credencial. */
+/** Resolve org_id a partir do user_id local (criado_por da conexão ML). null se sem conexão. */
 export async function resolverOrgPorUserId(admin: SupabaseClient, userId: string): Promise<string | null> {
-  const { data } = await admin.from('ml_credentials')
-    .select('org_id').eq('user_id', userId).maybeSingle();
+  const { data } = await admin.from('marketplace_connections')
+    .select('org_id').eq('canal', 'mercado_livre').eq('criado_por', userId).maybeSingle();
   return (data?.org_id as string | undefined) ?? null;
 }
 

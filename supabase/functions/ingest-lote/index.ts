@@ -7,8 +7,8 @@ import { enfileirarFamilia } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
 import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { userIdCredencialOperacaoML } from '../_shared/ml/operacao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import * as XLSX from 'npm:xlsx@^0.18';
 
 Deno.serve(async (req) => {
@@ -17,9 +17,9 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  let callerId: string;
+  let callerId: string, orgId: string;
   try {
-    ({ userId: callerId } = await requireUserOrg(req));
+    ({ userId: callerId, orgId } = await requireUserOrg(req));
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
@@ -31,10 +31,10 @@ Deno.serve(async (req) => {
   }
 
   const admin = adminClient();
-  // Dono da conta ML da operação (ADR-0056): as famílias/variações criadas ficam com esse
-  // user_id — é o id que os workers usam para resolver o token ML. Sem credencial na operação,
-  // cai no chamador (comportamento antigo). Quem subiu o lote continua registrado em lotes.user_id.
-  const ownerUserId = (await userIdCredencialOperacaoML(admin)) ?? callerId;
+  // E7: o token ML agora resolve por org_id (marketplace_connections), não mais por user_id —
+  // então familias/variações passam a ficar com o user_id de quem realmente subiu o lote
+  // (callerId), em vez de herdar o dono de uma credencial legada.
+  const ownerUserId = callerId;
 
   // Escopo da operação (ADR-0047/0056): o lote pode ter sido criado por qualquer membro.
   const { data: lote, error: loteErr } = await admin
@@ -131,13 +131,17 @@ Deno.serve(async (req) => {
     // desatualizado (lote excluído, cor adicionada fora do app), marcando como "nova"
     // uma cor que JÁ existe no anúncio. Só consulta o ML nas famílias com suposta cor
     // nova (raro). Falha de ML/token → mantém o casamento local (resiliente).
+    const conexaoReconciliacao = await resolverConexao(admin, orgId, 'mercado_livre');
     let tokenML: string | null = null;
     for (const g of grupos) {
       const cas = casamentoPorPai.get(g.codigo_pai);
       const ant = anteriorPorPai.get(g.codigo_pai);
       if (!cas || !ant?.ml_item_id || cas.mudancaEstrutural.novas.length === 0) continue;
       try {
-        if (!tokenML) tokenML = await getValidAccessToken(ownerUserId);
+        if (!tokenML) {
+          if (!conexaoReconciliacao) throw new Error('Organização sem conexão com o Mercado Livre');
+          tokenML = await getValidAccessTokenConexao(conexaoReconciliacao);
+        }
         const existentes = await buscarVariacoesExistentesML(tokenML, ant.ml_item_id);
         casamentoPorPai.set(g.codigo_pai, reconciliarCasamentoComML(cas, existentes));
       } catch (e) {

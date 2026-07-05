@@ -2,9 +2,9 @@
 // (podendo ter sido sugerido por IA) — revisão humana sempre.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { requireUser } from '../_shared/auth.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { userIdCredencialOperacaoML } from '../_shared/ml/operacao.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { buscarPergunta, responderAnswer, upsertPergunta, buscarTituloItem } from '../_shared/faturamento/perguntas-io.ts';
 
 interface Body { question_id?: number; text?: string }
@@ -13,8 +13,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  // Gate de auth: só membro autenticado da operação (a conta ML usada é a da operação).
-  try { await requireUser(req); }
+  // Gate de auth: só membro autenticado da operação (a conta ML usada é a da própria org).
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -32,13 +33,19 @@ Deno.serve(async (req) => {
   }
 
   const admin = adminClient();
-  // Conexão ML da operação, não a do chamador (ADR-0056): qualquer membro responde pela conta da operação.
-  const ownerUserId = await userIdCredencialOperacaoML(admin);
-  if (!ownerUserId) {
+  // Conexão ML da org (E7), não a do chamador: qualquer membro responde pela conta da organização.
+  const { data: cxRow } = await admin.from('marketplace_connections')
+    .select('id, org_id, canal, conta_externa_id, expires_at, criado_por')
+    .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle();
+  const conexao = mapearConexao(cxRow ?? null);
+  if (!conexao) {
     return new Response(JSON.stringify({ ok: false, erro: 'Conta ML não conectada.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
+  // ml_perguntas.user_id é a mesma chave usada pelo sync-pergunta (resolverIdentidade → criado_por
+  // da conexão) — preciso bater com o onConflict 'user_id,question_id' para não duplicar linha.
+  const donoPergunta = (cxRow?.criado_por as string | null) ?? null;
   let token: string;
-  try { token = await getValidAccessToken(ownerUserId); }
+  try { token = await getValidAccessTokenConexao(conexao); }
   catch { return new Response(JSON.stringify({ ok: false, erro: 'Conta ML não conectada.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
 
   try {
@@ -51,9 +58,9 @@ Deno.serve(async (req) => {
 
   // Re-busca a pergunta (agora respondida) e atualiza a tabela.
   const atualizada = await buscarPergunta(token, String(body.question_id));
-  if (atualizada) {
+  if (atualizada && donoPergunta) {
     const titulo = await buscarTituloItem(token, atualizada.item_id ?? null);
-    await upsertPergunta(admin, ownerUserId, atualizada, titulo);
+    await upsertPergunta(admin, donoPergunta, orgId, atualizada, titulo);
   }
 
   return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

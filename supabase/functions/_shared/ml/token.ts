@@ -1,6 +1,7 @@
 import { adminClient } from '../supabase.ts';
 import { redisSetNX, redisDel } from '../redis/client.ts';
 import { precisaRenovar } from './refresh-decisao.ts';
+import type { ConexaoCanal } from '../canais/conexao.ts';
 
 const TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
 const BUFFER_MS = 5 * 60 * 1000;
@@ -51,46 +52,48 @@ export function refreshTokenML(refreshToken: string): Promise<TokenML> {
   return postToken({ grant_type: 'refresh_token', refresh_token: refreshToken });
 }
 
-async function lerTokens(userId: string) {
-  const { data, error } = await adminClient().rpc('get_ml_tokens', { p_user_id: userId });
-  if (error) throw new Error(`get_ml_tokens: ${error.message}`);
-  const row = (data as Array<{ access_token: string; refresh_token: string; expires_at: string }>)?.[0];
-  if (!row) throw new Error(`Sem credenciais ML para o usuário ${userId}`);
+async function lerTokensConexao(connectionId: string) {
+  const { data, error } = await adminClient().rpc('get_connection_tokens', { p_connection_id: connectionId });
+  if (error) throw new Error(`get_connection_tokens: ${error.message}`);
+  const row = (data as Array<{ access_token: string; refresh_token: string; expires_at: string; conta_externa_id: string | null }>)?.[0];
+  if (!row) throw new Error(`Sem conexão de canal para ${connectionId}`);
   return row;
 }
 
-async function gravarRotacao(userId: string, tok: TokenML) {
-  // Mantém ml_user_id/nickname existentes (refresh não retorna nickname).
+async function gravarRotacaoConexao(conexao: ConexaoCanal, tok: TokenML) {
+  // Preserva conta_externa_id/label/scope/criado_por existentes (refresh não os retorna).
   const { data: meta } = await adminClient()
-    .from('ml_credentials')
-    .select('ml_user_id, ml_nickname')
-    .eq('user_id', userId)
+    .from('marketplace_connections')
+    .select('conta_externa_id, conta_label, scope, criado_por')
+    .eq('id', conexao.id)
     .maybeSingle();
   const expiresAt = new Date(Date.now() + tok.expires_in * 1000).toISOString();
-  const { error } = await adminClient().rpc('upsert_ml_credentials', {
-    p_user_id: userId,
-    p_ml_user_id: meta?.ml_user_id ?? String(tok.user_id),
-    p_ml_nickname: meta?.ml_nickname ?? null,
+  const { error } = await adminClient().rpc('upsert_marketplace_connection', {
+    p_org_id: conexao.orgId,
+    p_canal: conexao.canal,
+    p_conta_externa_id: meta?.conta_externa_id ?? String(tok.user_id),
+    p_conta_label: meta?.conta_label ?? null,
     p_access_token: tok.access_token,
     p_refresh_token: tok.refresh_token,
-    p_scope: tok.scope ?? null,
+    p_scope: tok.scope ?? meta?.scope ?? null,
     p_expires_at: expiresAt,
+    p_criado_por: meta?.criado_por ?? null,
   });
-  if (error) throw new Error(`upsert_ml_credentials: ${error.message}`);
+  if (error) throw new Error(`upsert_marketplace_connection: ${error.message}`);
 }
 
 /**
- * Retorna um access token válido para o usuário, renovando proativamente
- * (buffer de 5 min) com lock distribuído (ADR-0012) para não quebrar o
- * refresh_token rotativo quando várias famílias rodam em paralelo.
+ * Retorna um access token válido para a CONEXÃO da org (E7), renovando
+ * proativamente (buffer de 5 min) com lock distribuído (ADR-0012) para não
+ * quebrar o refresh_token rotativo quando várias famílias rodam em paralelo.
  */
-export async function getValidAccessToken(userId: string): Promise<string> {
-  const row = await lerTokens(userId);
+export async function getValidAccessTokenConexao(conexao: ConexaoCanal): Promise<string> {
+  const row = await lerTokensConexao(conexao.id);
   if (!precisaRenovar(Date.parse(row.expires_at), Date.now(), BUFFER_MS)) {
     return row.access_token;
   }
 
-  const lockKey = `lock:ml:refresh:${userId}`;
+  const lockKey = `lock:token:refresh:${conexao.id}`;
   const pegouLock = await redisSetNX(lockKey, '1', LOCK_TTL_S);
 
   if (pegouLock) {
@@ -101,7 +104,7 @@ export async function getValidAccessToken(userId: string): Promise<string> {
       if (!tok.access_token || !tok.refresh_token) {
         throw new Error('ML não retornou tokens completos na rotação');
       }
-      await gravarRotacao(userId, tok);
+      await gravarRotacaoConexao(conexao, tok);
       return tok.access_token;
     } finally {
       await redisDel(lockKey);
@@ -111,7 +114,7 @@ export async function getValidAccessToken(userId: string): Promise<string> {
   // Outro processo está renovando: espera o expires_at avançar e relê.
   for (let i = 0; i < REFRESH_WAIT_TRIES; i++) {
     await sleep(REFRESH_WAIT_MS);
-    const r2 = await lerTokens(userId);
+    const r2 = await lerTokensConexao(conexao.id);
     if (!precisaRenovar(Date.parse(r2.expires_at), Date.now(), BUFFER_MS)) {
       return r2.access_token;
     }

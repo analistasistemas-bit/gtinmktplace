@@ -1,8 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { userIdCredencialOperacaoML } from '../_shared/ml/operacao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { montarTarifa } from '../_shared/ml/tarifa.ts';
 import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
@@ -26,8 +26,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  // Gate de auth: só membro autenticado; a conta ML usada é a da operação (ADR-0056).
-  try { await requireUser(req); }
+  // Gate de auth: só membro autenticado; a conta ML usada é a da própria org.
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const { preco, categoria_ml_id, dimensoes } = await req.json().catch(() => ({}));
@@ -40,28 +41,26 @@ Deno.serve(async (req) => {
     new Response(JSON.stringify(body), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   const admin = adminClient();
-  // Conexão ML da operação, não a do chamador (ADR-0056): tarifa/frete usam a conta da operação.
-  const ownerUserId = await userIdCredencialOperacaoML(admin);
-  if (!ownerUserId) return json({ erro: true });
+  // Conexão ML da org (E7), não a do chamador: tarifa/frete usam a conta da organização.
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  if (!conexao) return json({ erro: true });
 
   const precoKey = preco.toFixed(2);
   // Frete depende do peso/dimensões e da reputação do vendedor → entram na chave.
   const dimKey = `${dim.altura_cm ?? 0}x${dim.largura_cm ?? 0}x${dim.comprimento_cm ?? 0}x${dim.peso_gramas ?? 0}`;
-  const cacheKey = `tarifa:v2:${ownerUserId}:${categoria_ml_id}:${precoKey}:${dimKey}`;
+  const cacheKey = `tarifa:v2:${orgId}:${categoria_ml_id}:${precoKey}:${dimKey}`;
 
   try {
     const cached = await redisGet(cacheKey);
     if (cached) return json(JSON.parse(cached));
 
-    const token = await getValidAccessToken(ownerUserId);
-    const { data: cred } = await admin
-      .from('ml_credentials').select('ml_user_id').eq('user_id', ownerUserId).maybeSingle();
+    const token = await getValidAccessTokenConexao(conexao);
 
     const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, preco, categoria_ml_id, 'gold_special'),
       buscarListingPrice(token, preco, categoria_ml_id, 'gold_pro'),
-      cred?.ml_user_id
-        ? buscarFreteVendedor(token, String(cred.ml_user_id), preco, categoria_ml_id, dim)
+      conexao.contaExternaId
+        ? buscarFreteVendedor(token, conexao.contaExternaId, preco, categoria_ml_id, dim)
         : Promise.resolve(0),
     ]);
     const tarifa = montarTarifa(preco, classicoML, premiumML, frete);

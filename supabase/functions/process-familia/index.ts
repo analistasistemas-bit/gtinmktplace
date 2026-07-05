@@ -9,7 +9,8 @@ import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
@@ -64,6 +65,8 @@ Deno.serve(async (req) => {
   }
 
   const userId = claimed.user_id as string;
+  const orgId = claimed.org_id as string;
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
 
   try {
     // 2. Carregar variações
@@ -152,7 +155,8 @@ Deno.serve(async (req) => {
     });
 
     // 5b. Busca de concorrência (1x por família) — ADR-0014. Resiliente: erro → "nenhuma".
-    const concorrencia = await buscarConcorrencia(userId, {
+    // Sem conexão ML: buscarConcorrencia lança internamente e cai no próprio catch → NENHUMA.
+    const concorrencia = await buscarConcorrencia(conexao, {
       nome_pai: claimed.nome_pai,
       variacoes: resolvidas.map((v) => ({ gtin: v.gtin })),
     });
@@ -162,7 +166,7 @@ Deno.serve(async (req) => {
     // gross-up). Resiliente: falha de token/rede → cai p/ override-ou-'outro', nunca quebra.
     // Calculado ANTES do preço porque o gross-up usa categoriaMlId.
     let token: string | null = null;
-    try { token = await getValidAccessToken(userId); } catch (e) { console.error('token p/ categoria/preço falhou:', e); }
+    try { if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre'); token = await getValidAccessTokenConexao(conexao); } catch (e) { console.error('token p/ categoria/preço falhou:', e); }
 
     const fornecedor = (claimed.fornecedor as string | null) ?? undefined;
     const cat = await resolverCategoria(
@@ -255,9 +259,7 @@ Deno.serve(async (req) => {
         // (só comissão) — que já cai na faixa de frete grátis, dando o list_cost representativo.
         // Dimensões da variação de menor preço (a "representativa" do painel de análise).
         // Resiliente: sem credencial/dimensões/rede → frete 0 (comportamento anterior).
-        const { data: cred } = await admin
-          .from('ml_credentials').select('ml_user_id').eq('user_id', userId).maybeSingle();
-        if (cred?.ml_user_id && resolvidas.length) {
+        if (conexao?.contaExternaId && resolvidas.length) {
           const rep = resolvidas.reduce((m, v) => (Number(v.preco) < Number(m.preco) ? v : m), resolvidas[0]);
           const dimRep = {
             altura_cm: rep.altura_cm != null ? Number(rep.altura_cm) : null,
@@ -266,7 +268,7 @@ Deno.serve(async (req) => {
             peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
           };
           const precoPrimeiraPassada = grossUp(precoMinFamilia, comissao.percentual, comissao.fixa, 0, aliquotaPct);
-          frete = await buscarFreteVendedor(token, String(cred.ml_user_id), precoPrimeiraPassada, categoriaMlId, dimRep);
+          frete = await buscarFreteVendedor(token, conexao.contaExternaId, precoPrimeiraPassada, categoriaMlId, dimRep);
         }
       } catch (e) {
         // Resiliente: sem comissão o gross-up cai no piso; o semáforo mostra "indisponível".
@@ -289,7 +291,7 @@ Deno.serve(async (req) => {
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =
       concorrencia.origem === 'gtin' && concorrencia.product_id && concorrencia.ofertas
-        ? await analisarMercado(userId, concorrencia.product_id, categoriaMlId, concorrencia.ofertas)
+        ? await analisarMercado(conexao, concorrencia.product_id, categoriaMlId, concorrencia.ofertas)
         : null;
 
     // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final.

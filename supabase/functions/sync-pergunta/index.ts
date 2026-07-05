@@ -2,7 +2,8 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { buscarPergunta, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
@@ -19,15 +20,19 @@ Deno.serve(async (req) => {
   if (!job.user_id || !job.question_id) return new Response('user_id/question_id obrigatórios', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
+  const orgId = await resolverOrgPorUserId(admin, job.user_id);
   let token: string;
-  try { token = await getValidAccessToken(job.user_id); }
+  try {
+    const conexao = orgId ? await resolverConexao(admin, orgId, 'mercado_livre') : null;
+    if (!conexao) throw new Error('sem conexão ML');
+    token = await getValidAccessTokenConexao(conexao);
+  }
   catch { return new Response(JSON.stringify({ ok: false, semCredencial: true }), { status: 200, headers: corsHeaders }); }
 
   const pergunta = await buscarPergunta(token, job.question_id);
   if (!pergunta) return new Response(JSON.stringify({ ok: false, naoEncontrada: true }), { status: 200, headers: corsHeaders });
 
   const titulo = await buscarTituloItem(token, pergunta.item_id ?? null);
-  const orgId = await resolverOrgPorUserId(admin, job.user_id);
   const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo);
 
   if (novaNaoRespondida) {

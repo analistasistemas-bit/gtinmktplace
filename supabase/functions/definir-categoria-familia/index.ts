@@ -1,8 +1,10 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { userClient } from '../_shared/supabase.ts';
+import { userClient, adminClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 
@@ -25,6 +27,10 @@ Deno.serve(async (req) => {
   const sb = userClient(auth.slice(7));
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: { familia_id?: string; categoria_ml_id?: string; categoria_nome?: string };
   try { body = await req.json(); } catch { return new Response('Bad JSON', { status: 400, headers: corsHeaders }); }
@@ -57,7 +63,11 @@ Deno.serve(async (req) => {
     atributosFaltantes = [];
   } else {
     let token: string | null = null;
-    try { token = await getValidAccessToken(familia.user_id); } catch (e) { console.error('token p/ atributos genéricos falhou:', e); }
+    try {
+      const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
+      if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+      token = await getValidAccessTokenConexao(conexao);
+    } catch (e) { console.error('token p/ atributos genéricos falhou:', e); }
     const r = await resolverAtributosGenericos(
       categoriaMlId,
       { nome: familia.nome_pai, descricao: familia.descricao_pai ?? undefined, fornecedor: familia.fornecedor ?? undefined },

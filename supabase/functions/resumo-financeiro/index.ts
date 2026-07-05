@@ -1,12 +1,13 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import {
   agregarFinanceiro, buscarPagamentosMP, getContaId, montarInfoPorPagamento,
   type InfoCusto, type ResumoFinanceiro,
 } from '../_shared/mercadopago/financeiro.ts';
 import { buscarGtinsDosItens, buscarPedidosML, mapearPagamentoParaItem } from '../_shared/ml/pedidos.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 
 interface Body { desde?: string; ate?: string }
 
@@ -24,10 +25,13 @@ const normGtin = (g: string) => g.replace(/^0+/, '');
  */
 async function infoPorPagamentoDoPeriodo(
   userId: string,
+  orgId: string,
   intervalo: { desde: string; ate: string },
 ): Promise<Record<string, InfoCusto>> {
   try {
-    const tokenML = await getValidAccessToken(userId);
+    const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
+    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const tokenML = await getValidAccessTokenConexao(conexao);
     const pedidos = await buscarPedidosML(tokenML, intervalo);
     const itemPorPagamento = mapearPagamentoParaItem(pedidos);
 
@@ -89,8 +93,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  let user;
-  try { user = await requireUser(req); }
+  let userId: string, orgId: string;
+  try { ({ userId, orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -116,7 +120,7 @@ Deno.serve(async (req) => {
     // não derruba o financeiro se o ML falhar.
     const [pagamentos, infoPorPagamento] = await Promise.all([
       buscarPagamentosMP(token),
-      infoPorPagamentoDoPeriodo(user.id, intervalo),
+      infoPorPagamentoDoPeriodo(userId, orgId, intervalo),
     ]);
     const resumo = agregarFinanceiro(pagamentos, { ...intervalo, contaId }, infoPorPagamento);
     return json(resumo);

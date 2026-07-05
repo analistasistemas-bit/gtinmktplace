@@ -1,5 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { userClient, adminClient } from '../_shared/supabase.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -7,16 +9,17 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) {
-    return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  }
-  const { data: { user } } = await userClient(auth.slice(7)).auth.getUser();
-  if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
-  const { error } = await adminClient().rpc('delete_ml_credentials', { p_user_id: user.id });
+  const admin = adminClient();
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  if (!conexao) return new Response('OK', { status: 200, headers: corsHeaders }); // idempotente: já desconectado
+
+  const { error } = await admin.rpc('delete_marketplace_connection', { p_connection_id: conexao.id });
   if (error) {
-    console.error('delete_ml_credentials:', error.message);
+    console.error('delete_marketplace_connection:', error.message);
     return new Response('Erro ao desconectar conta ML', { status: 500, headers: corsHeaders });
   }
   return new Response('OK', { status: 200, headers: corsHeaders });

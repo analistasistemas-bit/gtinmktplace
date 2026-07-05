@@ -1,14 +1,24 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { diffModerados, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
-import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
+import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
 
 interface ConfigTelegram { token: string | null; chatId: string | null; ativo: boolean }
+
+// E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
+type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
+interface ConexaoRow {
+  id: string; org_id: string; canal: string;
+  conta_externa_id: string | null; expires_at: string | null; criado_por: string | null;
+}
+function mapCx(row: ConexaoRow): ConexaoComDono {
+  return { ...mapearConexao(row)!, criadoPor: row.criado_por };
+}
 
 async function lerConfigTelegram(admin: ReturnType<typeof adminClient>, userId: string): Promise<ConfigTelegram> {
   const { data } = await admin.from('configuracoes')
@@ -21,12 +31,13 @@ async function lerConfigTelegram(admin: ReturnType<typeof adminClient>, userId: 
   };
 }
 
-// Varre os itens publicados de um usuário, registra novos moderados / recuperados e
+// Varre os itens publicados de uma org, registra novos moderados / recuperados e
 // alerta no Telegram (se ativo). Retorna a contagem de novos.
-async function processarUsuario(admin: ReturnType<typeof adminClient>, conn: ReturnType<typeof getConnector>, userId: string): Promise<number> {
+async function processarConexao(admin: ReturnType<typeof adminClient>, conn: ReturnType<typeof getConnector>, cx: ConexaoComDono): Promise<number> {
+  const orgId = cx.orgId;
   const { data: familias } = await admin.from('familias')
     .select('ml_item_id, nome_pai, ml_permalink')
-    .eq('user_id', userId).not('ml_item_id', 'is', null);
+    .eq('org_id', orgId).not('ml_item_id', 'is', null);
   const porItem = new Map<string, { nome: string | null; permalink: string | null }>();
   for (const f of familias ?? []) {
     porItem.set(f.ml_item_id as string, { nome: f.nome_pai as string | null, permalink: f.ml_permalink as string | null });
@@ -36,9 +47,9 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, conn: Ret
 
   let statusPorId;
   try {
-    statusPorId = await conn.lerStatus({ getToken: () => getValidAccessToken(userId) }, ids);
+    statusPorId = await conn.lerStatus({ getToken: () => getValidAccessTokenConexao(cx) }, ids);
   } catch {
-    console.warn(`monitorar-moderados: sem credencial ML p/ ${userId}, pulando`);
+    console.warn(`monitorar-moderados: sem credencial ML p/ org ${orgId}, pulando`);
     return 0;
   }
 
@@ -47,19 +58,20 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, conn: Ret
     .map((id) => ({ ml_item_id: id, status: 'moderado', motivo: statusPorId[id]?.motivo ?? null }));
 
   const { data: abertos } = await admin.from('ml_moderacao')
-    .select('ml_item_id').eq('user_id', userId).is('resolvido_em', null);
+    .select('ml_item_id').eq('org_id', orgId).is('resolvido_em', null);
 
   const { novos, resolvidos } = diffModerados(correntes, (abertos ?? []) as { ml_item_id: string }[]);
 
   if (resolvidos.length > 0) {
     await admin.from('ml_moderacao')
       .update({ resolvido_em: new Date().toISOString(), atualizado_em: new Date().toISOString() })
-      .eq('user_id', userId).is('resolvido_em', null).in('ml_item_id', resolvidos);
+      .eq('org_id', orgId).is('resolvido_em', null).in('ml_item_id', resolvidos);
   }
 
   if (novos.length === 0) return 0;
 
-  const orgId = await resolverOrgPorUserId(admin, userId);
+  const userId = cx.criadoPor; // proxy legado: ml_moderacao.user_id ainda NOT NULL
+  if (!userId) return 0;
   await admin.from('ml_moderacao').insert(
     novos.map((n) => ({ user_id: userId, org_id: orgId, ml_item_id: n.ml_item_id, status: n.status, motivo: n.motivo })),
   );
@@ -77,7 +89,7 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, conn: Ret
     if (enviou) {
       await admin.from('ml_moderacao')
         .update({ alertado_em: new Date().toISOString() })
-        .eq('user_id', userId).is('resolvido_em', null)
+        .eq('org_id', orgId).is('resolvido_em', null)
         .in('ml_item_id', novos.map((n) => n.ml_item_id));
     }
   }
@@ -92,16 +104,21 @@ Deno.serve(async (req) => {
   const admin = adminClient();
 
   // Dois modos de chamada:
-  //  - QStash (agendado): assinatura válida → processa TODOS os usuários.
-  //  - Usuário logado (botões da tela): JWT válido → escopo só ao próprio usuário.
+  //  - QStash (agendado): assinatura válida → processa TODAS as conexões (todas as orgs).
+  //  - Usuário logado (botões da tela): JWT válido → escopo só à própria org (E7).
   const temAssinatura = !!req.headers.get('upstash-signature');
   let scopedUserId: string | null = null;
+  let scopedOrgId: string | null = null;
   if (temAssinatura) {
     if (!(await verificarAssinatura(req, body))) {
       return new Response('Invalid signature', { status: 401, headers: corsHeaders });
     }
   } else {
-    try { scopedUserId = (await requireUser(req)).id; }
+    try {
+      const r = await requireUserOrg(req);
+      scopedUserId = r.userId;
+      scopedOrgId = r.orgId;
+    }
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   }
 
@@ -123,17 +140,18 @@ Deno.serve(async (req) => {
   }
 
   const conn = getConnector('mercado_livre');
-  let userIds: string[];
-  if (scopedUserId) {
-    userIds = [scopedUserId];
-  } else {
-    const { data: contas } = await admin.from('ml_credentials').select('user_id');
-    userIds = (contas ?? []).map((c) => c.user_id as string);
-  }
+  let query = admin.from('marketplace_connections')
+    .select('id, org_id, canal, conta_externa_id, expires_at, criado_por').eq('canal', 'mercado_livre');
+  if (scopedOrgId) query = query.eq('org_id', scopedOrgId);
+  const { data: conexoesRaw } = await query;
 
   let totalNovos = 0;
-  for (const userId of userIds) {
-    totalNovos += await processarUsuario(admin, conn, userId);
+  for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
+    try {
+      totalNovos += await processarConexao(admin, conn, mapCx(row));
+    } catch (e) {
+      console.error(`monitorar-moderados: falhou para org ${row.org_id}:`, e instanceof Error ? e.message : e);
+    }
   }
 
   return new Response(JSON.stringify({ ok: true, novos: totalNovos }), {

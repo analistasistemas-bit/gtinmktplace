@@ -1,9 +1,9 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { humanizarErroVendasML } from '../_shared/ml/erro-vendas.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { userIdCredencialOperacaoML } from '../_shared/ml/operacao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import type { MetricasVendasCanal } from '../_shared/canais/contrato.ts';
 
@@ -16,8 +16,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  // Gate de auth: só membro autenticado da operação (o token ML usado é o da operação).
-  try { await requireUser(req); }
+  // Gate de auth: só membro autenticado da operação (o token ML usado é o da própria org).
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -28,10 +29,9 @@ Deno.serve(async (req) => {
   }
 
   const admin = adminClient();
-  // Escopo da operação, não do chamador (ADR-0056): mesma fronteira da lista compartilhada
-  // (RLS is_membro_operacao, ADR-0047). Sem filtro por user.id — o E7 troca por org_id.
+  // Escopo da organização (E7): mesma fronteira da lista compartilhada (RLS org_id, D-E7.3).
   const { data: familias } = await admin.from('familias')
-    .select('id, ml_item_id').not('ml_item_id', 'is', null);
+    .select('id, ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null);
   const ids = [...new Set((familias ?? []).map((f) => f.ml_item_id as string))];
 
   // Mapa GTIN → ml_item_id da família dona dele: permite atribuir vendas de catálogo do ML ao
@@ -55,12 +55,12 @@ Deno.serve(async (req) => {
   }
 
   const conn = getConnector('mercado_livre');
-  // Token da conexão ML da operação, não a do chamador (ADR-0056).
-  const operacaoUserId = await userIdCredencialOperacaoML(admin);
-  if (!operacaoUserId) {
+  // Token da conexão ML da org (E7), não a do chamador.
+  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  if (!conexao) {
     return new Response(JSON.stringify({ semCredencialML: true, ...vazio }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
-  const ctx = { getToken: () => getValidAccessToken(operacaoUserId) };
+  const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
   let metricas: MetricasVendasCanal;
   try {
     metricas = await conn.lerMetricasVendas(ctx, { desde: body.desde, ate: body.ate }, ids, mapaGtin);
@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
     // Distingue falta de credencial (token) de falha na leitura de pedidos (ex.: a app não
     // tem a permissão funcional de Pedidos no DevCenter do ML → 403 PolicyAgent). Antes isso
     // era mascarado como "0 vendas"; agora a UI mostra um aviso claro.
-    const semCred = /credenci|sem credenci|get_ml_tokens|oauth\/token|users\/me/i.test(msg);
+    const semCred = /credenci|sem credenci|conexão|get_connection_tokens|oauth\/token|users\/me/i.test(msg);
     const payload = semCred
       ? { semCredencialML: true, ...vazio }
     : { erroVendas: humanizarErroVendasML(msg), ...vazio };

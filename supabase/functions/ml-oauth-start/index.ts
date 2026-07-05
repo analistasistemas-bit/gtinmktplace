@@ -1,5 +1,5 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { userClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { redisSet } from '../_shared/redis/client.ts';
 import { montarAuthUrl } from '../_shared/ml/auth-url.ts';
 
@@ -11,15 +11,12 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) {
-    return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  }
-  const { data: { user } } = await userClient(auth.slice(7)).auth.getUser();
-  if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let userId: string, orgId: string;
+  try { ({ userId, orgId } = await requireUserOrg(req)); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const state = crypto.randomUUID();
-  await redisSet(`oauth:ml:state:${state}`, user.id, STATE_TTL_S);
+  await redisSet(`oauth:ml:state:${state}`, JSON.stringify({ user_id: userId, org_id: orgId }), STATE_TTL_S);
 
   const authUrl = montarAuthUrl(
     state,

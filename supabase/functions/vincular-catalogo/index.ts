@@ -1,7 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { vincularVariacoesCatalogo, deveAlertarCatalogoNoMatch } from '../_shared/ml/catalogo.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { enviarTelegram, montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
@@ -40,7 +41,9 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skip: true, motivo: 'sem variações' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const token = await getValidAccessToken(familia.user_id);
+    const conexao = await resolverConexao(admin, familia.org_id, 'mercado_livre');
+    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const token = await getValidAccessTokenConexao(conexao);
     const resumo = await vincularVariacoesCatalogo(token, admin, familia.ml_item_id, variacoes);
     console.log(`catálogo (job) ${familia.ml_item_id}: ${JSON.stringify(resumo)}`);
 

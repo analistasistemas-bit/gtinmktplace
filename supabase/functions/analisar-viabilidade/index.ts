@@ -1,7 +1,9 @@
 import * as XLSX from 'npm:xlsx@^0.18';
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
@@ -9,13 +11,13 @@ import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
 
 const LOTE = 5; // concorrência limitada p/ não estourar a API do ML
 
-async function analisarItem(userId: string, item: ItemAnalise): Promise<ItemAnalisado> {
+async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Promise<ItemAnalisado> {
   const base: ItemAnalisado = {
     gtin: item.gtin, nome: item.nome, unidade: item.unidade,
     minimo: item.minimo, custo: item.custo, origem: item.origem, existeNoML: false,
   };
   try {
-    const conc = await buscarConcorrencia(userId, {
+    const conc = await buscarConcorrencia(conexao, {
       nome_pai: item.nome, variacoes: [{ gtin: item.gtin }],
     });
     const menor = conc.ofertas?.preco_min ?? conc.preco_min;
@@ -25,7 +27,8 @@ async function analisarItem(userId: string, item: ItemAnalise): Promise<ItemAnal
     const categoria = conc.ofertas?.category_id ?? null;
     if (!categoria) return base;
 
-    const token = await getValidAccessToken(userId);
+    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const token = await getValidAccessTokenConexao(conexao);
     const [classicoML, premiumML] = await Promise.all([
       buscarListingPrice(token, menor, categoria, 'gold_special'),
       buscarListingPrice(token, menor, categoria, 'gold_pro'),
@@ -52,11 +55,11 @@ async function analisarItem(userId: string, item: ItemAnalise): Promise<ItemAnal
   }
 }
 
-async function emLotes(userId: string, itens: ItemAnalise[]): Promise<ItemAnalisado[]> {
+async function emLotes(conexao: ConexaoCanal | null, itens: ItemAnalise[]): Promise<ItemAnalisado[]> {
   const out: ItemAnalisado[] = [];
   for (let i = 0; i < itens.length; i += LOTE) {
     const fatia = itens.slice(i, i + LOTE);
-    out.push(...(await Promise.all(fatia.map((it) => analisarItem(userId, it)))));
+    out.push(...(await Promise.all(fatia.map((it) => analisarItem(conexao, it)))));
   }
   return out;
 }
@@ -65,8 +68,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  let user;
-  try { user = await requireUser(req); }
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const json = (body: unknown, status = 200) =>
@@ -106,6 +109,7 @@ Deno.serve(async (req) => {
   if (itens.length === 0) return json({ itens: [], ignorados });
 
   console.log(`analisar-viabilidade: ${itens.length} itens, ${ignorados} ignorados`);
-  const analisados = await emLotes(user.id, itens);
+  const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
+  const analisados = await emLotes(conexao, itens);
   return json({ itens: analisados, ignorados });
 });

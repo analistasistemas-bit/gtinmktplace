@@ -1,6 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { userClient } from '../_shared/supabase.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { userClient, adminClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { atributosFaltantesGenerico, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { faltantesEditaveis, validarValorAtributo } from '../_shared/categoria/faltantes-editaveis.ts';
@@ -18,6 +20,11 @@ Deno.serve(async (req) => {
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
 
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
+
   let body: { action?: string; familia_id?: string; atributo_id?: string; valor?: string; query?: string };
   try { body = await req.json(); } catch { return new Response('Bad JSON', { status: 400, headers: corsHeaders }); }
   if (!body.familia_id) return new Response('familia_id obrigatório', { status: 400, headers: corsHeaders });
@@ -30,7 +37,10 @@ Deno.serve(async (req) => {
 
   if (body.action === 'buscar-categoria') {
     let token: string;
-    try { token = await getValidAccessToken(familia.user_id); }
+    try {
+      if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+      token = await getValidAccessTokenConexao(conexao);
+    }
     catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return new Response(`Não foi possível autenticar com o ML: ${msg}`, { status: 502, headers: corsHeaders });
@@ -58,7 +68,8 @@ Deno.serve(async (req) => {
   // p/ o front exibir "não foi possível carregar" em vez de sumir.
   let schema;
   try {
-    const token = await getValidAccessToken(familia.user_id);
+    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const token = await getValidAccessTokenConexao(conexao);
     schema = await lerSchemaAtributos(token, familia.categoria_ml_id);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

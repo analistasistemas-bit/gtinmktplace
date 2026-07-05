@@ -1,4 +1,5 @@
-import { getValidAccessToken } from './token.ts';
+import { getValidAccessTokenConexao } from './token.ts';
+import type { ConexaoCanal } from '../canais/conexao.ts';
 import { escolherIdentificador, type FamiliaParaBusca } from '../concorrencia/identificador.ts';
 import { parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../concorrencia/parse.ts';
 import { classificarConcorrencia } from '../concorrencia/classificar.ts';
@@ -33,7 +34,7 @@ async function mlGet(url: string, token: string): Promise<unknown | null> {
  * `origem='titulo'` mas não quantifica (PRÓPRIO seguro). Erro/timeout → NENHUMA.
  */
 export async function buscarConcorrencia(
-  userId: string,
+  conexao: ConexaoCanal | null,
   familia: FamiliaParaBusca,
 ): Promise<ResultadoConcorrencia> {
   try {
@@ -57,7 +58,8 @@ export async function buscarConcorrencia(
       };
     }
 
-    const token = await getValidAccessToken(userId);
+    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const token = await getValidAccessTokenConexao(conexao);
 
     const busca = await mlGet(
       `${API}/products/search?status=active&site_id=MLB&q=${encodeURIComponent(ident.valor)}`,

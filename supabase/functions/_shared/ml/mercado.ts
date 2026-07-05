@@ -1,4 +1,5 @@
-import { getValidAccessToken } from './token.ts';
+import { getValidAccessTokenConexao } from './token.ts';
+import type { ConexaoCanal } from '../canais/conexao.ts';
 import { redisGet, redisSet } from '../redis/client.ts';
 import { agregarMercado, posicaoNoRanking, type ReputacaoVendedor } from './mercado-agregar.ts';
 import type { DadosOfertas } from '../concorrencia/tipos.ts';
@@ -73,7 +74,7 @@ async function produtoDesde(token: string, productId: string): Promise<string | 
 }
 
 export async function analisarMercado(
-  userId: string,
+  conexao: ConexaoCanal | null,
   productId: string,
   categoriaMlId: string | null,
   ofertas: DadosOfertas,
@@ -89,7 +90,8 @@ export async function analisarMercado(
     produto_desde: null,
   };
   try {
-    const token = await getValidAccessToken(userId);
+    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const token = await getValidAccessTokenConexao(conexao);
     const reps = await Promise.all(
       ofertas.seller_ids.map((id) =>
         reputacaoVendedor(token, id).catch(() => ({ lider: false, vendas: 0 })),

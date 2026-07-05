@@ -1,7 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
-import { getValidAccessToken } from '../_shared/ml/token.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
@@ -38,7 +39,12 @@ Deno.serve(async (req) => {
   if (!familia) return new Response('familia não encontrada', { status: 404, headers: corsHeaders });
 
   const conn = getConnector('mercado_livre');
-  const ctx = { getToken: () => getValidAccessToken(familia.user_id) };
+  const conexao = await resolverConexao(admin, familia.org_id, 'mercado_livre');
+  const ctx = {
+    getToken: () => conexao
+      ? getValidAccessTokenConexao(conexao)
+      : Promise.reject(new Error('Organização sem conexão com o Mercado Livre')),
+  };
 
   // Idempotência: só processa o claim ativo ('publicando'). Re-entrega do QStash após
   // o lote já ter sido finalizado (status 'publicado'/'erro') é ignorada sem reprocessar.
