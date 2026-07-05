@@ -4,7 +4,7 @@
 
 **Goal:** Isolar 100% dos dados por organização (empresa) — cada empresa vê **somente** seus próprios dados — sem quebrar nada do que fatura hoje (todos os dados atuais pertencem à org **Avil**).
 
-**Architecture:** Migração *expand → migrate → contract* em 7 fases: cria `organizations` + `org_id` aditivo → código passa a gravar `org_id` (RLS antiga ainda vale) → `NOT NULL` + swap de uniques → **swap de RLS** (`is_membro_operacao()` → `org_id = current_org_id()`) → credenciais por org (`marketplace_connections`) → configs por org → gate final com **suite de isolamento cross-tenant executável**. Cada fase é deployável e reversível isoladamente; para os usuários da Avil o comportamento é idêntico do início ao fim.
+**Architecture:** Migração *expand → migrate → contract* em 7 fases: cria `organizations` + `org_id` aditivo → código passa a gravar `org_id` (RLS antiga ainda vale) → `NOT NULL` + swap de uniques → **swap de RLS** (`is_membro_operacao()` → `org_id = current_org_id()`) → credenciais por org (`marketplace_connections`) → configs por org → gate final com **suite de isolamento cross-tenant executável**. Cada fase é deployável e reversível isoladamente; para os usuários da Avil o comportamento é idêntico do início ao fim. **Toda a sequência de migrations (Fases 1→4) é ensaiada primeiro num banco descartável (Fase 0.5) antes de tocar produção.**
 
 **Tech Stack:** Supabase (Postgres RLS, Vault, Edge Functions Deno), QStash/Redis (Upstash), React+TS+TanStack Query, vitest.
 
@@ -17,6 +17,7 @@
 - **TDD:** função pura nova → teste RED antes (vitest; shared modules Deno são testados via `supabase/functions/**/__tests__/` já incluído no vitest).
 - **Baseline de verificação (rodar íntegro em todo checkpoint):** `pnpm test` (≥1103 verdes) + `npx tsc --noEmit` + `deno check` dos workers tocados + `pnpm lint` + `pnpm build`.
 - **Produção:** app está em produção; branch isolada (nunca editar main); **cada "PONTO DE DEPLOY" abaixo só executa com OK explícito do Diego**; migrations reversíveis (seção "Reversão" em cada task de migration).
+- **Rede de segurança (adicionada 2026-07-05):** (1) **Ensaio geral primeiro** — a sequência completa de migrations+backfill (Fases 1→4) roda antes num banco descartável (Fase 0.5) com a suite de isolamento passando lá; produção só recebe o que já deu certo no ensaio. (2) **Backup imediatamente antes das Fases 3 e 4** — os dois passos de volta mais cara; a seção "Reversão" restaura schema, não dados. (3) **Suite antes do swap:** a Task 9 executa ANTES da Task 8 (vermelho contra a RLS antiga → swap → verde; ver nota da Fase 4). (4) **Validação de runtime real em cada PONTO DE DEPLOY:** browser-use no app em produção (fluxo lote→revisão→publicados→financeiro), em janela de baixo movimento da operação; **nenhuma outra mudança em paralelo** durante o épico. (5) **Um épico por vez:** E6 só começa com E7 estável em produção por alguns dias de operação normal.
 - **Segurança:** tokens só no Vault; RLS obrigatória em toda tabela de domínio; `get_advisors` (security) após cada migration; nunca publicar no ML sem revisão humana.
 - **Nomes fixos deste plano (consistência entre tasks):** tabela `organizations`; colunas `org_id`; helpers SQL `public.current_org_id()`, `public.is_super_admin()`; helper Deno `requireUserOrg`; tabela `marketplace_connections`; RPCs `get_connection_tokens`, `upsert_marketplace_connection`, `delete_marketplace_connection`; resolvedor `resolverConexao`; token `getValidAccessTokenConexao`.
 
@@ -80,6 +81,23 @@
 git add docs/decisions/0027-multi-tenancy-organizations.md
 git commit -m "docs(adr-0027): multi-tenancy detalhado — org única por usuário, current_org_id, connections por org"
 ```
+
+---
+
+# FASE 0.5 — Ensaio geral em banco descartável (rede de segurança)
+
+### Task 1b: Ensaiar Fases 1→4 fora de produção
+
+**Objetivo:** nenhuma migration do E7 chega a produção sem ter rodado antes, na mesma ordem, num banco com o schema de produção. Transforma o swap de RLS de "torcer para dar certo" em "repetir o que já deu certo".
+
+> Nota de sequência: as migrations das Tasks 2/3/7/8 e a suite da Task 9 são **escritas** nas suas fases normais; esta task **executa** todas elas contra o banco de ensaio antes do primeiro `db push` em produção. Na prática: escrever tudo primeiro (código das Fases 1→4 na branch), ensaiar aqui, só então iniciar os pushes/deploys de produção fase a fase.
+
+- [ ] **Step 1: Criar o banco de ensaio.** Preferência: branch de banco do Supabase (`supabase branches create e7-ensaio` — recurso pago, **confirmar custo com o Diego antes**). Fallback sem custo: stack local (`supabase start` + `supabase db reset`, que aplica todas as migrations do repo do zero) + seed mínimo (1 user, 1 lote/família/variação, 1 linha de `configuracoes` e `ml_credentials` fake) — valida DDL, backfill e policies; não valida volume.
+- [ ] **Step 2: Rodar a sequência completa contra o ensaio** — migrations das Tasks 2, 3, 7 e 8 na ordem, depois a suite da Task 9 apontando para o banco de ensaio (`SUPABASE_URL`/keys do ensaio via env). Asserções de edge functions (item 5 da suite) podem ser puladas no ensaio via flag `--skip-edges`; os itens de tabela/storage/escrita cruzada são obrigatórios. Expected: suite 100% PASS no ensaio.
+- [ ] **Step 3: Retroalimentar divergências.** Qualquer ajuste que o ensaio exigir (nome real de constraint, ordem de comandos, cast) volta para o arquivo de migration **antes** do push em produção; o ensaio se repete até rodar limpo de ponta a ponta.
+- [ ] **Step 4: Descartar o banco de ensaio** (delete da branch / `supabase stop`).
+
+> **STOP:** se o ensaio não rodar limpo de ponta a ponta, produção não recebe nenhuma migration — corrigir e re-ensaiar.
 
 ---
 
@@ -378,6 +396,8 @@ Callers (passam `familia.org_id`): `publish-familia-ml/index.ts`, `update-famili
 
 # FASE 3 — Contração: NOT NULL + uniques por org
 
+> **Checkpoint de backup (obrigatório):** imediatamente antes do `db push` desta fase, backup manual no painel Supabase (Database → Backups) e PITR confirmado como ativo. Este é o 1º dos 2 passos de volta cara — a seção "Reversão" restaura o schema, não os dados.
+
 ### Task 7: Migration `e7_org_id_not_null`
 
 **Files:**
@@ -429,7 +449,16 @@ create unique index configuracoes_org_uniq on public.configuracoes (org_id);
 
 # FASE 4 — O swap de RLS (o coração do isolamento)
 
+> **Ordem de execução invertida (2026-07-05): a Task 9 executa ANTES da Task 8.** Fluxo desta fase:
+> (1) escrever a suite (Task 9, Steps 1 e 3) e rodá-la contra a RLS antiga — **esperado: FAIL nas
+> asserções cross-tenant** (prova que a suite detecta vazamento; se passar contra a RLS antiga, a
+> suite está furada — corrigir a suite antes de prosseguir); (2) **checkpoint de backup** (manual +
+> PITR, como na Fase 3); (3) aplicar o swap (Task 8); (4) rodar a suite de novo — **esperado: 100%
+> PASS**. Qualquer FAIL pós-swap = aplicar a Reversão da Task 8 imediatamente, antes de investigar.
+
 ### Task 8: Migration `e7_rls_org` — policies por org em 12 tabelas + storage
+
+> **Pré-requisito:** suite da Task 9 já escrita e rodada contra a RLS antiga (ver nota da fase acima).
 
 **Files:**
 - Create: `supabase/migrations/<ts>_e7_rls_org.sql`
@@ -546,12 +575,17 @@ const TABELAS = ['lotes','familias','variacoes','anuncios_externos','ml_credenti
   'ml_vendas_itens','ml_perguntas','ml_devolucoes','ml_moderacao','ml_webhook_eventos','configuracoes'];
 ```
 
-Implementar com `@supabase/supabase-js` (dois clients: service e anon-com-sessão), `console.table` do resultado, e cleanup em `finally`. Cada item 2-6 acima vira uma função `assertX()` própria — nenhuma asserção pode ser pulada silenciosamente.
+Implementar com `@supabase/supabase-js` (dois clients: service e anon-com-sessão), `console.table` do resultado, e cleanup em `finally`. Cada item 2-6 acima vira uma função `assertX()` própria — nenhuma asserção pode ser pulada silenciosamente. Flag `--skip-edges` pula só o item 5 (para o ensaio da Fase 0.5, onde as edges não estão servidas); o script imprime aviso explícito quando a flag está ativa.
 
-- [ ] **Step 2: Rodar contra produção pós-swap**
+- [ ] **Step 2: Rodar PRÉ-swap (calibração da suite)**
 
-Run: `pnpm tsx scripts/verificar-isolamento-tenant.ts`
-Expected: todas PASS. Qualquer FAIL = **parar e corrigir antes de qualquer outra task**.
+Run: `pnpm tsx scripts/verificar-isolamento-tenant.ts` (com a RLS antiga ainda ativa)
+Expected: **FAIL nas asserções cross-tenant** — a RLS antiga (`is_membro_operacao()`) deixa o usuário B ver dados da Avil, e a suite precisa acusar isso. Se a suite passar aqui, ela está furada: corrigir a suite antes de aplicar a Task 8.
+
+- [ ] **Step 2b: Rodar PÓS-swap (a prova)**
+
+Run: `pnpm tsx scripts/verificar-isolamento-tenant.ts` (após a migration da Task 8)
+Expected: todas PASS. Qualquer FAIL = **aplicar a Reversão da Task 8 imediatamente** e só então investigar.
 
 - [ ] **Step 3: Commit** — `git commit -m "test(e7): suite executável de isolamento cross-tenant"`
 
