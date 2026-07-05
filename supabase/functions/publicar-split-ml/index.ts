@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
           catalog_product_id: null, catalog_listing_id: null, catalog_status: null,
         }));
         await espelharAnuncioExterno(admin, {
-          user_id: familia.user_id, codigo_pai: familia.codigo_pai,
+          user_id: familia.user_id, org_id: familia.org_id, codigo_pai: familia.codigo_pai,
           ml_item_id: itemIdP, ml_permalink: permalinkP, publicado_em: new Date().toISOString(),
         }, varsRef, { particao: p, titulo: tituloP });
 
@@ -295,6 +295,7 @@ Deno.serve(async (req) => {
         .eq('familia_id', job.familia_id).in('codigo', coresP.map((v) => v.codigo));
       await espelharAnuncioExterno(admin, {
         user_id: familia.user_id,
+        org_id: familia.org_id,
         codigo_pai: familia.codigo_pai,
         ml_item_id: itemIdP,
         ml_permalink: permalinkP,

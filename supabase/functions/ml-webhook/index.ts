@@ -5,7 +5,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { qstashClient } from '../_shared/queue.ts';
 import { parseWebhookNotification } from '../_shared/faturamento/venda.ts';
-import { resolverUserId } from '../_shared/faturamento/io.ts';
+import { resolverIdentidade } from '../_shared/faturamento/io.ts';
 
 // topic → função worker + nome do campo do id no job.
 const ROTA: Record<string, { fn: string; campo: string }> = {
@@ -32,12 +32,13 @@ Deno.serve(async (req) => {
   if (!rota) return ok(); // tópico não tratado: ack e ignora.
 
   const admin = adminClient();
-  const userId = await resolverUserId(admin, ev.mlUserId);
-  if (!userId) return ok(); // vendedor desconhecido: ack e ignora.
+  const identidade = await resolverIdentidade(admin, ev.mlUserId);
+  if (!identidade) return ok(); // vendedor desconhecido: ack e ignora.
+  const { userId, orgId } = identidade;
 
   // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira.
   const { error: dupErr } = await admin.from('ml_webhook_eventos')
-    .insert({ user_id: userId, topic: ev.topic, resource: ev.resource });
+    .insert({ user_id: userId, org_id: orgId, topic: ev.topic, resource: ev.resource });
   if (dupErr) return ok(); // unique violation (duplicado) ou outro: ack mesmo assim.
 
   try {

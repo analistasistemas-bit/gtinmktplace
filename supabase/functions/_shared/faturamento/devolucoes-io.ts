@@ -45,14 +45,14 @@ export async function buscarClaimsSeller(token: string): Promise<ClaimML[]> {
 
 /** Upsert de um claim. Retorna se é novo (para alerta) e marca a venda com tem_devolucao. */
 export async function upsertDevolucao(
-  admin: SupabaseClient, userId: string, claim: ClaimML, ret: ReturnML | null,
+  admin: SupabaseClient, userId: string, orgId: string | null, claim: ClaimML, ret: ReturnML | null,
 ): Promise<{ nova: boolean; row: ReturnType<typeof mapearDevolucao> }> {
   const row = mapearDevolucao(claim, ret);
   const { data: anterior } = await admin.from('ml_devolucoes')
     .select('id').eq('user_id', userId).eq('claim_id', row.claim_id).maybeSingle();
   const nova = !anterior;
   await admin.from('ml_devolucoes').upsert({
-    user_id: userId, ...row, raw: claim as unknown as Record<string, unknown>, atualizado_em: new Date().toISOString(),
+    user_id: userId, org_id: orgId, ...row, raw: claim as unknown as Record<string, unknown>, atualizado_em: new Date().toISOString(),
   }, { onConflict: 'user_id,claim_id' });
 
   // Marca a venda relacionada (atalho p/ badge na aba Vendas).

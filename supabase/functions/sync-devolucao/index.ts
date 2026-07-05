@@ -4,6 +4,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarClaim, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
 import { enviarTelegram, montarMensagemNovaDevolucao } from '../_shared/notificacoes/telegram.ts';
 
@@ -26,7 +27,8 @@ Deno.serve(async (req) => {
   if (!claim) return new Response(JSON.stringify({ ok: false, naoEncontrado: true }), { status: 200, headers: corsHeaders });
   const ret = await buscarReturn(token, job.claim_id);
 
-  const { nova, row } = await upsertDevolucao(admin, job.user_id, claim, ret);
+  const orgId = await resolverOrgPorUserId(admin, job.user_id);
+  const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret);
 
   if (nova) {
     const cfg = await lerConfigTelegram(admin, job.user_id);

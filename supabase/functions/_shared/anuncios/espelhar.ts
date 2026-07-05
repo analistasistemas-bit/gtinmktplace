@@ -14,6 +14,7 @@ export type VariacaoEspelho = {
 
 export type FamiliaEspelho = {
   user_id: string;
+  org_id: string;
   codigo_pai: string;
   ml_item_id: string | null;
   ml_permalink: string | null;
@@ -30,6 +31,7 @@ export type VariacaoExterna = {
 
 export type AnuncioExternoRow = {
   user_id: string;
+  org_id: string;
   canal: 'mercado_livre';
   codigo_pai: string;
   item_externo_id: string | null;
@@ -61,6 +63,7 @@ export function montarAnuncioExterno(
   }
   const row: AnuncioExternoRow = {
     user_id: familia.user_id,
+    org_id: familia.org_id,
     canal: 'mercado_livre',
     codigo_pai: familia.codigo_pai,
     item_externo_id: familia.ml_item_id,

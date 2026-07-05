@@ -1,5 +1,5 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matchCapa3, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
@@ -17,9 +17,9 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  let user;
+  let callerId: string;
   try {
-    user = await requireUser(req);
+    ({ userId: callerId } = await requireUserOrg(req));
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
   // Dono da conta ML da operação (ADR-0056): as famílias/variações criadas ficam com esse
   // user_id — é o id que os workers usam para resolver o token ML. Sem credencial na operação,
   // cai no chamador (comportamento antigo). Quem subiu o lote continua registrado em lotes.user_id.
-  const ownerUserId = (await userIdCredencialOperacaoML(admin)) ?? user.id;
+  const ownerUserId = (await userIdCredencialOperacaoML(admin)) ?? callerId;
 
   // Escopo da operação (ADR-0047/0056): o lote pode ter sido criado por qualquer membro.
   const { data: lote, error: loteErr } = await admin
@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
       if (!ant) {
         // CREATE — comportamento atual.
         return {
-          lote_id: lote.id, user_id: ownerUserId, codigo_pai: g.codigo_pai,
+          lote_id: lote.id, user_id: ownerUserId, org_id: lote.org_id, codigo_pai: g.codigo_pai,
           nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
           fornecedor: g.fornecedor,
           origem: g.origem,
@@ -167,7 +167,7 @@ Deno.serve(async (req) => {
       const cas = casamentoPorPai.get(g.codigo_pai)!;
       const temCorNova = cas.mudancaEstrutural.novas.length > 0;
       return {
-        lote_id: lote.id, user_id: ownerUserId, codigo_pai: g.codigo_pai,
+        lote_id: lote.id, user_id: ownerUserId, org_id: lote.org_id, codigo_pai: g.codigo_pai,
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
         fornecedor: g.fornecedor,
         origem: g.origem,
@@ -238,6 +238,7 @@ Deno.serve(async (req) => {
         const base = {
           familia_id: familiaId,
           user_id: ownerUserId,
+          org_id: lote.org_id,
           codigo,
           nome: v.NOME,
           gtin: v.GTIN,

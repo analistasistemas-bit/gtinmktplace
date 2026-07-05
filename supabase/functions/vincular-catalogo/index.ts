@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: familia } = await admin.from('familias')
-    .select('user_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em').eq('id', job.familia_id).single();
+    .select('user_id, org_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em').eq('id', job.familia_id).single();
   // Sem item publicado não há o que vincular (família removida/erro) — encerra sem retry.
   if (!familia?.ml_item_id) {
     return new Response(JSON.stringify({ skip: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -55,6 +55,7 @@ Deno.serve(async (req) => {
       .eq('familia_id', job.familia_id);
     await espelharAnuncioExterno(admin, {
       user_id: familia.user_id,
+      org_id: familia.org_id,
       codigo_pai: familia.codigo_pai,
       ml_item_id: familia.ml_item_id,
       ml_permalink: familia.ml_permalink ?? null,

@@ -5,7 +5,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
-import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
+import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor, resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
@@ -32,6 +32,7 @@ Deno.serve(async (req) => {
     try { token = await getValidAccessToken(userId); } catch { continue; }
     let pedidos;
     try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
+    const orgId = await resolverOrgPorUserId(admin, userId);
     const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
     const [liquidoPorPayment, gtinPorItem] = await Promise.all([
       carregarLiquidoMP(),
@@ -44,7 +45,7 @@ Deno.serve(async (req) => {
           buscarFreteVendedor(token, shippingId),
           buscarShipment(token, shippingId),
         ]);
-        await upsertVenda(admin, userId, pedido, {
+        await upsertVenda(admin, userId, orgId, pedido, {
           freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
         });
         total++;
@@ -59,7 +60,7 @@ Deno.serve(async (req) => {
         try {
           const itemId = q.item_id ?? null;
           if (itemId && !titulos.has(itemId)) titulos.set(itemId, await buscarTituloItem(token, itemId));
-          await upsertPergunta(admin, userId, q, itemId ? titulos.get(itemId) ?? null : null);
+          await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
         } catch { /* segue */ }
       }
     } catch { /* segue */ }
@@ -70,7 +71,7 @@ Deno.serve(async (req) => {
       for (const claim of claims) {
         try {
           const ret = await buscarReturn(token, String(claim.id));
-          await upsertDevolucao(admin, userId, claim, ret);
+          await upsertDevolucao(admin, userId, orgId, claim, ret);
         } catch { /* segue */ }
       }
     } catch { /* segue */ }

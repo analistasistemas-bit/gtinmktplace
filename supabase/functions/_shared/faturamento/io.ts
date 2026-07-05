@@ -6,11 +6,22 @@ import { round2 } from '../dinheiro.ts';
 
 const API = 'https://api.mercadolibre.com';
 
-/** Resolve o user_id local a partir do ml_user_id (vendedor no ML). null se desconhecido. */
-export async function resolverUserId(admin: SupabaseClient, mlUserId: number | string): Promise<string | null> {
+/** Resolve user_id + org_id (org da linha-mãe ml_credentials) a partir do ml_user_id (vendedor
+ *  no ML). null se desconhecido. org_id nullable até a Fase 3 (E7) — pode vir null. */
+export async function resolverIdentidade(
+  admin: SupabaseClient, mlUserId: number | string,
+): Promise<{ userId: string; orgId: string } | null> {
   const { data } = await admin.from('ml_credentials')
-    .select('user_id').eq('ml_user_id', String(mlUserId)).maybeSingle();
-  return (data?.user_id as string | undefined) ?? null;
+    .select('user_id, org_id').eq('ml_user_id', String(mlUserId)).maybeSingle();
+  if (!data?.user_id) return null;
+  return { userId: data.user_id as string, orgId: data.org_id as string };
+}
+
+/** Resolve org_id a partir do user_id local (mesma credencial ML). null se sem credencial. */
+export async function resolverOrgPorUserId(admin: SupabaseClient, userId: string): Promise<string | null> {
+  const { data } = await admin.from('ml_credentials')
+    .select('org_id').eq('user_id', userId).maybeSingle();
+  return (data?.org_id as string | undefined) ?? null;
 }
 
 export interface Catalogo {
@@ -173,6 +184,7 @@ export async function buscarPedidosPeriodo(
 export async function upsertVenda(
   admin: SupabaseClient,
   userId: string,
+  orgId: string | null,
   pedido: PedidoML,
   opts: { freteVendedor?: number | null;
           idsPubliai: Set<string>; codigoResolver: (i: string | null, v: number | null) => string | null;
@@ -194,6 +206,7 @@ export async function upsertVenda(
 
   const row = {
     user_id: userId,
+    org_id: orgId,
     ...venda,
     comprador_nome: escolherCompradorNome(venda.comprador_nome, anterior?.comprador_nome ?? null, opts.shipment?.receiverNome ?? null),
     raw: pedido as unknown as Record<string, unknown>,
@@ -215,7 +228,7 @@ export async function upsertVenda(
   await admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
   if (itens.length > 0) {
     const { error: itensErr } = await admin.from('ml_vendas_itens').upsert(
-      itens.map((i: VendaItemRow) => ({ user_id: userId, venda_id: vendaId, ...i })),
+      itens.map((i: VendaItemRow) => ({ user_id: userId, org_id: orgId, venda_id: vendaId, ...i })),
       { onConflict: 'venda_id,ml_item_id,variation_id' },
     );
     if (itensErr) throw new Error(`upsert ml_vendas_itens: ${itensErr.message}`);

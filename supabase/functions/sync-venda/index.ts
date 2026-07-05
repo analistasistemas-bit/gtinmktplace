@@ -6,7 +6,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import {
-  buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda,
+  buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
   const pedido = await buscarPedido(token, orderId);
   if (!pedido) return new Response(JSON.stringify({ ok: false, naoEncontrado: true }), { status: 200, headers: corsHeaders });
 
+  const orgId = await resolverOrgPorUserId(admin, userId);
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
   const shippingId = pedido.shipping?.id ?? null;
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
@@ -52,7 +53,7 @@ Deno.serve(async (req) => {
     carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 
-  const { novaPaga, itens } = await upsertVenda(admin, userId, pedido, {
+  const { novaPaga, itens } = await upsertVenda(admin, userId, orgId, pedido, {
     freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
   });
 

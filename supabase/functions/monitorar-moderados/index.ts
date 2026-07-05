@@ -5,6 +5,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { diffModerados, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
+import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
 
 interface ConfigTelegram { token: string | null; chatId: string | null; ativo: boolean }
@@ -58,8 +59,9 @@ async function processarUsuario(admin: ReturnType<typeof adminClient>, conn: Ret
 
   if (novos.length === 0) return 0;
 
+  const orgId = await resolverOrgPorUserId(admin, userId);
   await admin.from('ml_moderacao').insert(
-    novos.map((n) => ({ user_id: userId, ml_item_id: n.ml_item_id, status: n.status, motivo: n.motivo })),
+    novos.map((n) => ({ user_id: userId, org_id: orgId, ml_item_id: n.ml_item_id, status: n.status, motivo: n.motivo })),
   );
 
   // Alerta no Telegram só se ativo e com credenciais; só marca alertado_em se enviou.

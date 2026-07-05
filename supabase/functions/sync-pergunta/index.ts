@@ -4,6 +4,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessToken } from '../_shared/ml/token.ts';
 import { buscarPergunta, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
+import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
 import { enviarTelegram, montarMensagemNovaPergunta } from '../_shared/notificacoes/telegram.ts';
 
@@ -26,7 +27,8 @@ Deno.serve(async (req) => {
   if (!pergunta) return new Response(JSON.stringify({ ok: false, naoEncontrada: true }), { status: 200, headers: corsHeaders });
 
   const titulo = await buscarTituloItem(token, pergunta.item_id ?? null);
-  const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, pergunta, titulo);
+  const orgId = await resolverOrgPorUserId(admin, job.user_id);
+  const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo);
 
   if (novaNaoRespondida) {
     const cfg = await lerConfigTelegram(admin, job.user_id);

@@ -3,6 +3,7 @@ import { montarAnuncioExterno, mesclarVariacoesExternas } from '../espelhar';
 
 const FAMILIA = {
   user_id: 'u1',
+  org_id: 'org1',
   codigo_pai: '00445916',
   ml_item_id: 'MLB123',
   ml_permalink: 'https://ml/MLB123',
@@ -14,6 +15,7 @@ describe('montarAnuncioExterno', () => {
     const row = montarAnuncioExterno(FAMILIA, []);
     expect(row.canal).toBe('mercado_livre');
     expect(row.user_id).toBe('u1');
+    expect(row.org_id).toBe('org1');
     expect(row.codigo_pai).toBe('00445916');
     expect(row.item_externo_id).toBe('MLB123');
     expect(row.permalink).toBe('https://ml/MLB123');

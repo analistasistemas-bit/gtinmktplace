@@ -270,6 +270,7 @@ Deno.serve(async (req) => {
       .eq('familia_id', job.familia_id);
     await espelharAnuncioExterno(admin, {
       user_id: familia.user_id,
+      org_id: familia.org_id,
       codigo_pai: familia.codigo_pai,
       ml_item_id: ref.itemExternoId,
       ml_permalink: ref.permalink ?? null,

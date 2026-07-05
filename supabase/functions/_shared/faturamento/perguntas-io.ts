@@ -60,14 +60,14 @@ export async function responderAnswer(token: string, questionId: number, text: s
 
 /** Upsert de uma pergunta. Retorna se virou "nova não respondida" (para alerta). */
 export async function upsertPergunta(
-  admin: SupabaseClient, userId: string, q: PerguntaML, itemTitulo: string | null,
+  admin: SupabaseClient, userId: string, orgId: string | null, q: PerguntaML, itemTitulo: string | null,
 ): Promise<{ novaNaoRespondida: boolean; row: ReturnType<typeof mapearPergunta> }> {
   const row = mapearPergunta(q);
   const { data: anterior } = await admin.from('ml_perguntas')
     .select('status').eq('user_id', userId).eq('question_id', row.question_id).maybeSingle();
   const eraConhecida = !!anterior;
   await admin.from('ml_perguntas').upsert({
-    user_id: userId, ...row, item_titulo: itemTitulo,
+    user_id: userId, org_id: orgId, ...row, item_titulo: itemTitulo,
     raw: q as unknown as Record<string, unknown>, atualizado_em: new Date().toISOString(),
   }, { onConflict: 'user_id,question_id' });
   const novaNaoRespondida = !eraConhecida && row.status === 'UNANSWERED';
