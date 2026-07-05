@@ -99,10 +99,12 @@ export async function espelharAnuncioExterno(
     const row = montarAnuncioExterno(familia, variacoes, particao, opts.titulo);
     // Merge com o que já existe: o lote atual pode trazer só um subconjunto das cores
     // (reposição parcial); o upsert substituiria a row inteira e perderia as demais.
+    // E7: a identidade do anúncio é da ORG (unique org_id,canal,codigo_pai,particao) —
+    // membros diferentes da mesma org compartilham a linha. Pre-read e onConflict por org.
     const { data: existente } = await admin
       .from('anuncios_externos')
       .select('variacoes_externas')
-      .eq('user_id', row.user_id).eq('canal', row.canal).eq('codigo_pai', row.codigo_pai)
+      .eq('org_id', row.org_id).eq('canal', row.canal).eq('codigo_pai', row.codigo_pai)
       .eq('particao', particao)
       .maybeSingle();
     row.variacoes_externas = mesclarVariacoesExternas(
@@ -111,7 +113,7 @@ export async function espelharAnuncioExterno(
     );
     const { error } = await admin
       .from('anuncios_externos')
-      .upsert(row, { onConflict: 'user_id,canal,codigo_pai,particao' });
+      .upsert(row, { onConflict: 'org_id,canal,codigo_pai,particao' });
     if (error) console.error('espelhar anuncios_externos falhou:', error.message);
   } catch (e) {
     console.error('espelhar anuncios_externos exceção:', (e as Error).message);

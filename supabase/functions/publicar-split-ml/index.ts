@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
     // Ancoragem (partições já no ar) + particionamento das cores incluídas.
     const { data: linhas } = await admin.from('anuncios_externos')
       .select('particao, item_externo_id, permalink, titulo, variacoes_externas')
-      .eq('user_id', familia.user_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
+      .eq('org_id', familia.org_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
     const ancoragem = montarAncoragem(linhas ?? []);
     const mapaParticao = particionar(
       variacoesComFoto.map((v) => ({ sku: v.codigo, cor: v.cor })),

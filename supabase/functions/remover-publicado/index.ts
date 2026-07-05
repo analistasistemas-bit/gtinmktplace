@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: alvo } = await admin.from('familias')
-    .select('id, codigo_pai, ml_item_id')
+    .select('id, codigo_pai, ml_item_id, org_id')
     .eq('id', familia_id).maybeSingle();
   if (!alvo) return new Response('Família não encontrada', { status: 404, headers: corsHeaders });
   // Invariante ADR-0019: este escape hatch só remove famílias PUBLICADAS.
@@ -59,6 +59,7 @@ Deno.serve(async (req) => {
   await admin.from('familias').delete().in('id', alvos.map((f) => f.id));
   await admin.from('anuncios_externos')
     .delete()
+    .eq('org_id', alvo.org_id)          // E7: escopo por org — não apagar anúncio de outra org com mesmo codigo_pai
     .eq('canal', 'mercado_livre')
     .eq('codigo_pai', alvo.codigo_pai);
 
