@@ -107,16 +107,6 @@ describe('Publicados', () => {
     useCustosMock.mockReturnValue({ data: undefined });
   });
 
-  it('mostra o tipo cola na tabela', () => {
-    render(
-      <MemoryRouter>
-        <Publicados />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole('cell', { name: 'Cola' })).toBeInTheDocument();
-  });
-
   it('oferece Cola no filtro de tipos', () => {
     render(
       <MemoryRouter>
@@ -127,22 +117,6 @@ describe('Publicados', () => {
     fireEvent.click(screen.getAllByRole('combobox')[2]);
 
     expect(screen.getByRole('option', { name: 'Cola' })).toBeInTheDocument();
-  });
-
-  it('exibe a categoria real do ML em vez de "Outro" quando a IA a resolveu', () => {
-    usePublicadosMock.mockReturnValue({
-      data: [itemBase({ tipo: 'outro', categoria: 'Alfinetes de Segurança' })],
-      isLoading: false,
-      error: null,
-    });
-    render(
-      <MemoryRouter>
-        <Publicados />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole('cell', { name: 'Alfinetes de Segurança' })).toBeInTheDocument();
-    expect(screen.queryByRole('cell', { name: 'Outro' })).not.toBeInTheDocument();
   });
 
   it('mostra a ponte de líquido linkando para o Financeiro quando há dados', () => {

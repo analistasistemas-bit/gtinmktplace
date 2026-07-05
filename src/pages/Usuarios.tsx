@@ -202,9 +202,9 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
         <div className="flex flex-col gap-3">
           <Input type="email" placeholder="email@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-          <label className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
+          <label htmlFor="convite-admin" className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
             <span className="font-medium">Administrador <span className="font-normal text-muted-foreground">(acesso total a todos os menus)</span></span>
-            <Switch checked={admin} onCheckedChange={toggleAdmin} />
+            <Switch id="convite-admin" checked={admin} onCheckedChange={toggleAdmin} />
           </label>
           <div>
             <div className="mb-2 text-sm font-medium">Menus</div>
