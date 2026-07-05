@@ -2,12 +2,9 @@
 // placeholder fixo (0,1cm/100g); com a planilha real, repassamos ao ML via os
 // atributos SELLER_PACKAGE_* (writable; dimensões em cm, peso em g).
 
-export interface DimensoesPacote {
-  altura_cm: number | null;
-  largura_cm: number | null;
-  comprimento_cm: number | null;
-  peso_gramas: number | null;
-}
+// E6 (ADR-0061): o tipo é dono no contrato; importado p/ uso local e re-exportado p/ compat.
+import type { DimensoesPacote } from '../canais/contrato.ts';
+export type { DimensoesPacote };
 
 export interface AtributoPacote {
   id: string;

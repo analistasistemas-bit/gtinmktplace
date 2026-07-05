@@ -1,7 +1,24 @@
 // supabase/functions/_shared/canais/contrato.ts
-import type { AtributoItem } from '../ml/publicar.ts';
-import type { DimensoesPacote } from '../ml/pacote.ts';
-import type { FaixaAtacado } from '../ml/atacado.ts';
+// E6 (ADR-0061): os tipos canônicos do payload são donos AQUI (o contrato), não em
+// ml/*. Os módulos ML re-exportam para não quebrar imports existentes (inversão de
+// dependência: o canal genérico não depende do ML).
+
+/** Atributo de item no formato canônico (id + valor por nome ou id). */
+export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
+
+/** Dimensões/peso da embalagem para frete (ADR-0018): cm e gramas. */
+export interface DimensoesPacote {
+  altura_cm: number | null;
+  largura_cm: number | null;
+  comprimento_cm: number | null;
+  peso_gramas: number | null;
+}
+
+/** Faixa de preço por quantidade / atacado (ADR-0041). */
+export interface FaixaAtacado {
+  min_unidades: number;
+  desconto_pct: number;
+}
 
 /** Canais suportados. Expandir conforme novos adapters (ADR-0024). */
 export type CanalId = 'mercado_livre';

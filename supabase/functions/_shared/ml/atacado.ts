@@ -1,7 +1,6 @@
-export interface FaixaAtacado {
-  min_unidades: number;
-  desconto_pct: number;
-}
+// E6 (ADR-0061): o tipo é dono no contrato; importado p/ uso local e re-exportado p/ compat.
+import type { FaixaAtacado } from '../canais/contrato.ts';
+export type { FaixaAtacado };
 
 export interface PrecoPxQ {
   type: 'standard';

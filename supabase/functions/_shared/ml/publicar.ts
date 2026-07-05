@@ -2,7 +2,9 @@ import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '..
 import { calcularPrecoDe } from '../preco/desconto.ts';
 import { montarAtributosPacote, type DimensoesPacote } from './pacote.ts';
 
-export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
+// E6 (ADR-0061): o tipo é dono no contrato; importado p/ uso local e re-exportado p/ compat.
+import type { AtributoItem } from '../canais/contrato.ts';
+export type { AtributoItem };
 export interface PictureRef { id: string; }
 export interface VariacaoItem {
   attribute_combinations: AtributoItem[];
