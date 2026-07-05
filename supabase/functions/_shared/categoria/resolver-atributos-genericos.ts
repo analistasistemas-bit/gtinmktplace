@@ -34,11 +34,12 @@ export async function resolverAtributosGenericos(
   categoriaMlId: string,
   input: InputAtributosGenericos,
   deps: DepsAtributosGenericos,
+  marcaPadrao?: string,
 ): Promise<ResultadoAtributosGenericos> {
   try {
     const schema = await deps.lerSchema(categoriaMlId);
     if (!schema || schema.length === 0) throw new Error('schema vazio da categoria');
-    const base = montarAtributosBase(schema, input.nome, input.fornecedor);
+    const base = montarAtributosBase(schema, input.nome, input.fornecedor, marcaPadrao);
     let atributosMl = await preencherAtributosClosedSet(
       schema, base, { nome: input.nome, descricao: input.descricao }, deps.llm,
     );

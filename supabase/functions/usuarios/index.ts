@@ -18,21 +18,25 @@ Deno.serve(async (req) => {
 
   const db = adminClient();
 
-  // Só admin opera aqui.
-  const { data: me } = await db.from('profiles').select('is_admin').eq('id', caller.id).single();
-  if (!me?.is_admin) return json({ error: 'forbidden' }, 403);
+  // E7: identidade org do chamador. Só admin ativo com org opera aqui.
+  const { data: me } = await db.from('profiles')
+    .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
+  if (!me || !me.is_active || !me.org_id) return json({ error: 'forbidden' }, 403);
+  if (!me.is_admin) return json({ error: 'forbidden' }, 403);
+  const orgId = me.org_id as string;
 
   const body = await req.json().catch(() => ({}));
   const action = body.action as string;
   const sanitizeMenus = (m: unknown) => (Array.isArray(m) ? m.filter((x) => MENU_KEYS.includes(x)) : []);
+  const appUrl = Deno.env.get('APP_URL') ?? '';
 
   switch (action) {
     case 'invite': {
       const email = String(body.email ?? '').trim().toLowerCase();
       if (!email) return json({ error: 'email obrigatório' }, 400);
-      const appUrl = Deno.env.get('APP_URL') ?? '';
+      // E7: novo usuário herda a org do admin que convida (handle_new_user consome org_id).
       const { data, error } = await db.auth.admin.inviteUserByEmail(email, {
-        data: { nome: String(body.nome ?? ''), allowed_menus: sanitizeMenus(body.allowed_menus) },
+        data: { nome: String(body.nome ?? ''), allowed_menus: sanitizeMenus(body.allowed_menus), org_id: orgId },
         redirectTo: `${appUrl}/#/definir-senha`,
       });
       if (error) {
@@ -42,16 +46,17 @@ Deno.serve(async (req) => {
           duplicado ? 409 : 400,
         );
       }
-      // Convidado como admin: o trigger já criou o profile; promovemos.
+      // Convidado como admin: o trigger já criou o profile (com org_id); promovemos.
       if (body.is_admin === true && data.user?.id) {
         await db.from('profiles').update({ is_admin: true, updated_at: new Date().toISOString() }).eq('id', data.user.id);
       }
       return json({ ok: true, id: data.user?.id });
     }
     case 'update_menus': {
+      // E7: só atua em perfis da MESMA org do chamador.
       const { error } = await db.from('profiles')
         .update({ allowed_menus: sanitizeMenus(body.allowed_menus), nome: body.nome ?? undefined, updated_at: new Date().toISOString() })
-        .eq('id', body.id);
+        .eq('id', body.id).eq('org_id', orgId);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
     }
@@ -59,7 +64,7 @@ Deno.serve(async (req) => {
       if (body.id === caller.id && !body.is_active) return json({ error: 'não pode se desativar' }, 400);
       const { error } = await db.from('profiles')
         .update({ is_active: !!body.is_active, updated_at: new Date().toISOString() })
-        .eq('id', body.id);
+        .eq('id', body.id).eq('org_id', orgId);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
     }
@@ -67,9 +72,53 @@ Deno.serve(async (req) => {
       if (body.id === caller.id && !body.is_admin) return json({ error: 'não pode se rebaixar' }, 400);
       const { error } = await db.from('profiles')
         .update({ is_admin: !!body.is_admin, updated_at: new Date().toISOString() })
-        .eq('id', body.id);
+        .eq('id', body.id).eq('org_id', orgId);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
+    }
+    // ---- Ações de super-admin (D-E7.8): gestão de organizações ---------------
+    case 'list_orgs': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const { data: orgs } = await db.from('organizations')
+        .select('id, nome, slug, criado_em').order('criado_em');
+      const result = [];
+      for (const o of orgs ?? []) {
+        const { count } = await db.from('profiles')
+          .select('id', { count: 'exact', head: true }).eq('org_id', o.id);
+        result.push({ id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em, membros: count ?? 0 });
+      }
+      return json({ orgs: result });
+    }
+    case 'create_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const nome = String(body.nome ?? '').trim();
+      const slug = String(body.slug ?? '').trim().toLowerCase();
+      const marcaPadrao = body.marca_padrao ? String(body.marca_padrao) : null;
+      const adminEmail = String(body.admin_email ?? '').trim().toLowerCase();
+      const adminNome = String(body.admin_nome ?? '');
+      if (!nome || !slug || !adminEmail) return json({ error: 'nome, slug e admin_email obrigatórios' }, 400);
+
+      const { data: org, error: orgErr } = await db.from('organizations')
+        .insert({ nome, slug, marca_padrao: marcaPadrao }).select('id').single();
+      if (orgErr) {
+        const dup = /duplicate|unique/i.test(orgErr.message);
+        return json({ error: dup ? 'Já existe uma empresa com esse slug.' : orgErr.message }, dup ? 409 : 400);
+      }
+
+      // Convida o primeiro admin da org nova; o trigger cria o profile com a org.
+      const { data: inv, error: invErr } = await db.auth.admin.inviteUserByEmail(adminEmail, {
+        data: { nome: adminNome, allowed_menus: MENU_KEYS, org_id: org.id },
+        redirectTo: `${appUrl}/#/definir-senha`,
+      });
+      if (invErr) {
+        await db.from('organizations').delete().eq('id', org.id); // rollback: org sem admin não serve
+        const dup = /already.*registered/i.test(invErr.message);
+        return json({ error: dup ? 'Esse e-mail já tem cadastro em outra empresa.' : invErr.message }, dup ? 409 : 400);
+      }
+      if (inv.user?.id) {
+        await db.from('profiles').update({ is_admin: true, org_id: org.id, updated_at: new Date().toISOString() }).eq('id', inv.user.id);
+      }
+      return json({ ok: true, org_id: org.id });
     }
     default:
       return json({ error: 'ação inválida' }, 400);

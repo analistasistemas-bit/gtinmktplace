@@ -45,6 +45,19 @@ Deno.serve(async (req) => {
   if (loteErr || !lote) {
     return new Response(`Lote ${lote_id} não encontrado`, { status: 404, headers: corsHeaders });
   }
+
+  // Numeração de lote por org (Task 14). O INSERT do lote é feito no cliente
+  // (src/hooks/useUploadLote.ts) sem numero_org — e tem de ser assim: a RPC
+  // proximo_numero_lote é service_role-only (revogada de authenticated). Este é o
+  // 1º ponto server-side que toca o lote; atribui o número da org (idempotente).
+  if (lote.numero_org == null) {
+    const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
+    if (numeroOrg != null) {
+      await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', lote.id);
+      lote.numero_org = numeroOrg;
+    }
+  }
+
   if (lote.status !== 'importando') {
     return new Response(
       JSON.stringify({ loteId: lote.id, totalFamilias: lote.total_familias, jaProcessado: true }),

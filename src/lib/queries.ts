@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { signedUrl } from './storage';
+import { useAuthStore } from '@/stores/auth-store';
 import type { Database } from './database.types';
 import type {
   Lote,
@@ -129,7 +130,7 @@ function mapConcorrenciaClasse(
 export function loteFromRow(r: LoteRow): Lote {
   return {
     id: r.id,
-    numero: r.numero,
+    numero: r.numero_org ?? r.numero,
     criadoEm: r.criado_em,
     status: r.status as LoteStatus,
     totalFamilias: r.total_familias,
@@ -383,26 +384,27 @@ export function familiaFromRow(
 }
 
 export async function fetchDescontoPct(): Promise<number> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return 15;
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!orgId) return 15;
   const { data } = await supabase.from('configuracoes')
-    .select('desconto_pct').eq('user_id', user.id).maybeSingle();
+    .select('desconto_pct').eq('org_id', orgId).maybeSingle();
   return data?.desconto_pct != null ? Number(data.desconto_pct) : 15;
 }
 
 export async function upsertDescontoPct(pct: number): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('sem sessão');
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!user || !orgId) throw new Error('sem sessão');
   const { error } = await supabase.from('configuracoes')
-    .upsert({ user_id: user.id, desconto_pct: pct, atualizado_em: new Date().toISOString() });
+    .upsert({ org_id: orgId, user_id: user.id, desconto_pct: pct, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 
 export async function fetchAliquotas(): Promise<{ nacional: number; importado: number }> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { nacional: 8, importado: 16 };
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!orgId) return { nacional: 8, importado: 16 };
   const { data } = await supabase.from('configuracoes')
-    .select('aliquota_nacional_pct, aliquota_importado_pct').eq('user_id', user.id).maybeSingle();
+    .select('aliquota_nacional_pct, aliquota_importado_pct').eq('org_id', orgId).maybeSingle();
   return {
     nacional: data?.aliquota_nacional_pct != null ? Number(data.aliquota_nacional_pct) : 8,
     importado: data?.aliquota_importado_pct != null ? Number(data.aliquota_importado_pct) : 16,
@@ -411,25 +413,27 @@ export async function fetchAliquotas(): Promise<{ nacional: number; importado: n
 
 export async function upsertAliquotas(a: { nacional: number; importado: number }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('sem sessão');
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!user || !orgId) throw new Error('sem sessão');
   const { error } = await supabase.from('configuracoes')
-    .upsert({ user_id: user.id, aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado, atualizado_em: new Date().toISOString() });
+    .upsert({ org_id: orgId, user_id: user.id, aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 
 export async function fetchDescontoConcorrenciaPct(): Promise<number> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return 5;
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!orgId) return 5;
   const { data } = await supabase.from('configuracoes')
-    .select('desconto_concorrencia_pct').eq('user_id', user.id).maybeSingle();
+    .select('desconto_concorrencia_pct').eq('org_id', orgId).maybeSingle();
   return data?.desconto_concorrencia_pct != null ? Number(data.desconto_concorrencia_pct) : 5;
 }
 
 export async function upsertDescontoConcorrenciaPct(pct: number): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('sem sessão');
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!user || !orgId) throw new Error('sem sessão');
   const { error } = await supabase.from('configuracoes')
-    .upsert({ user_id: user.id, desconto_concorrencia_pct: pct, atualizado_em: new Date().toISOString() });
+    .upsert({ org_id: orgId, user_id: user.id, desconto_concorrencia_pct: pct, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 
@@ -463,14 +467,17 @@ export async function fetchTelegramConfig(): Promise<TelegramConfig> {
 export async function salvarTelegramConfig(input: { chatId: string; ativo: boolean; botToken?: string }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('sem sessão');
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!orgId) throw new Error('sem organização');
   const tokenLimpo = input.botToken?.trim();
   const { error } = await supabase.from('configuracoes').upsert({
+    org_id: orgId,
     user_id: user.id,
     telegram_chat_id: input.chatId || null,
     telegram_ativo: input.ativo,
     atualizado_em: new Date().toISOString(),
     ...(tokenLimpo ? { telegram_bot_token: tokenLimpo } : {}),
-  });
+  }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 

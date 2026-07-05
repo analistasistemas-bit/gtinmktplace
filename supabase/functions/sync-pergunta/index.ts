@@ -35,8 +35,8 @@ Deno.serve(async (req) => {
   const titulo = await buscarTituloItem(token, pergunta.item_id ?? null);
   const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo);
 
-  if (novaNaoRespondida) {
-    const cfg = await lerConfigTelegram(admin, job.user_id);
+  if (novaNaoRespondida && orgId) {
+    const cfg = await lerConfigTelegram(admin, orgId);
     if (cfg.ativo) {
       await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaPergunta({
         question_id: row.question_id, texto: row.texto, item_titulo: titulo,

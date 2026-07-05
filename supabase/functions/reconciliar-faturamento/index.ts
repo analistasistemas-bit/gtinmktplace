@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
       try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-        carregarLiquidoMP(),
+        carregarLiquidoMP(admin, orgId),
         carregarGtinsFallback(token, pedidos, idsPubliai),
       ]);
       for (const pedido of pedidos) {

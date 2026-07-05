@@ -55,11 +55,16 @@ Deno.serve(async (req) => {
 
   const tipo = tipoParaCategoria(categoriaMlId);
 
+  // Marca padrão por org (D-E7.3): fallback do BRAND/MANUFACTURER quando o produto não
+  // traz marca própria. Default 'Avil' preservado dentro de montarAtributosML/Base.
+  const { data: orgRow } = await adminClient().from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
+  const marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
+
   let atributosMl;
   let atributosFaltantes: string[];
   if (tipo !== 'outro') {
     // Categoria conhecida (linha/fita/botao/cola): caminho curado, sem chamada de rede.
-    atributosMl = montarAtributosML(tipo, familia.nome_pai, familia.fornecedor ?? undefined, familia.descricao_pai ?? undefined);
+    atributosMl = montarAtributosML(tipo, familia.nome_pai, familia.fornecedor ?? undefined, familia.descricao_pai ?? undefined, marcaPadrao);
     atributosFaltantes = [];
   } else {
     let token: string | null = null;
@@ -78,6 +83,7 @@ Deno.serve(async (req) => {
         },
         llm: desempatarAtributosLLM,
       },
+      marcaPadrao,
     );
     atributosMl = r.atributosMl;
     atributosFaltantes = r.faltantes;

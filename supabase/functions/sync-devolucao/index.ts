@@ -35,8 +35,8 @@ Deno.serve(async (req) => {
 
   const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret);
 
-  if (nova) {
-    const cfg = await lerConfigTelegram(admin, job.user_id);
+  if (nova && orgId) {
+    const cfg = await lerConfigTelegram(admin, orgId);
     if (cfg.ativo) {
       await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaDevolucao({
         claim_id: row.claim_id, order_id: row.order_id, tipo: row.type ?? 'claim',

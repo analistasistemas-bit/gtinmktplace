@@ -103,6 +103,14 @@ describe('montarAtributosML', () => {
     expect(montarAtributosML('fita', 'FITA CETIM', '   ')).toContainEqual({ id: 'BRAND', value_name: 'Avil' });
     expect(montarAtributosML('botao', 'BOTAO', '')).toContainEqual({ id: 'BRAND', value_name: 'Avil' });
   });
+
+  it('marcaPadrao customizada (org sem marca própria no produto) substitui o fallback "Avil" (E7)', () => {
+    expect(montarAtributosML('linha', 'LINHA X', undefined, undefined, 'MarcaOrgX'))
+      .toContainEqual({ id: 'BRAND', value_name: 'MarcaOrgX' });
+    // marca explícita do produto ainda vence sobre a marcaPadrao da org.
+    expect(montarAtributosML('linha', 'LINHA X', 'FornecedorY', undefined, 'MarcaOrgX'))
+      .toContainEqual({ id: 'BRAND', value_name: 'FornecedorY' });
+  });
 });
 
 describe('ehDuplaFace (detecção no texto da planilha)', () => {
@@ -199,5 +207,10 @@ describe('montarAtributosBase (MANUFACTURER = fornecedor)', () => {
   it('não inclui MANUFACTURER quando a categoria não o expõe', () => {
     const out = montarAtributosBase([attr('BRAND'), attr('MODEL')], 'Linha', 'Avil');
     expect(out.some((a) => a.id === 'MANUFACTURER')).toBe(false);
+  });
+
+  it('marcaPadrao customizada (E7): usa a marca da org quando o produto não tem marca própria', () => {
+    const out = montarAtributosBase([attr('BRAND')], 'Tecido X', undefined, 'MarcaOrgX');
+    expect(out).toEqual([{ id: 'BRAND', value_name: 'MarcaOrgX' }]);
   });
 });

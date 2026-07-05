@@ -48,7 +48,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   }
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
   const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-    carregarLiquidoMP(),
+    carregarLiquidoMP(admin, orgId),
     carregarGtinsFallback(token, pedidos, idsPubliai),
   ]);
   let n = 0;

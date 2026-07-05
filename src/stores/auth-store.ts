@@ -8,6 +8,8 @@ export interface Profile {
   is_active: boolean;
   allowed_menus: string[];
   nome: string;
+  org_id: string;
+  is_super_admin: boolean;
 }
 
 interface AuthState {
@@ -52,7 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   loadProfile: async (userId) => {
     const { data } = await supabase
       .from('profiles')
-      .select('id,is_admin,is_active,allowed_menus,nome')
+      .select('id,is_admin,is_active,allowed_menus,nome,org_id,is_super_admin')
       .eq('id', userId)
       .maybeSingle();
     set({ profile: (data as Profile) ?? null, profileLoading: false });

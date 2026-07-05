@@ -9,6 +9,7 @@ const Login = lazy(() => import('@/pages/Login'));
 const DefinirSenha = lazy(() => import('@/pages/DefinirSenha'));
 const ResetSenha = lazy(() => import('@/pages/ResetSenha'));
 const Usuarios = lazy(() => import('@/pages/Usuarios'));
+const Organizacoes = lazy(() => import('@/pages/Organizacoes'));
 const SemAcesso = lazy(() => import('@/pages/SemAcesso'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Lotes = lazy(() => import('@/pages/Lotes'));
@@ -53,6 +54,7 @@ export function AppRoutes() {
             <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />
             <Route path="/viabilidade" element={<Viabilidade />} />
             <Route path="/usuarios" element={<Usuarios />} />
+            <Route path="/organizacoes" element={<Organizacoes />} />
             <Route path="/style-guide" element={<StyleGuide />} />
           </Route>
         </Route>

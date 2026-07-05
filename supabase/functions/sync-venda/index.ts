@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
     buscarShipment(token, shippingId),
-    carregarLiquidoMP(),
+    carregarLiquidoMP(admin, orgId),
     carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 
@@ -63,8 +63,8 @@ Deno.serve(async (req) => {
   });
 
   // Alerta de nova venda paga (só se Telegram ativo). Usa os itens já com EAN resolvido (catálogo/GTIN).
-  if (novaPaga) {
-    const cfg = await lerConfigTelegram(admin, userId);
+  if (novaPaga && orgId) {
+    const cfg = await lerConfigTelegram(admin, orgId);
     if (cfg.ativo) {
       await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaVenda({
         order_id: Number(pedido.id),

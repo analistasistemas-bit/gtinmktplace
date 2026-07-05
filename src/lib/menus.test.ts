@@ -13,6 +13,12 @@ describe('menus', () => {
   it('não-admin com allowed_menus inválido não enxerga nada', () => {
     expect(visibleMenus({ ...base, allowed_menus: ['inexistente'] })).toEqual([]);
   });
+  it('super-admin vê organizacoes mesmo sem ser admin', () => {
+    expect(visibleMenus({ ...base, is_super_admin: true })).toEqual(['organizacoes']);
+  });
+  it('admin + super-admin vê tudo + usuarios + organizacoes', () => {
+    expect(visibleMenus({ ...base, is_admin: true, is_super_admin: true })).toEqual([...MENU_KEYS, 'usuarios', 'organizacoes']);
+  });
   it('mapeia subrotas pra chave de menu', () => {
     expect(menuKeyForPath('/')).toBe('dashboard');
     expect(menuKeyForPath('/revisao/123')).toBe('revisao');

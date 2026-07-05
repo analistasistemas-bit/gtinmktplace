@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { chamarIngest } from '@/lib/ingest';
+import { useAuthStore } from '@/stores/auth-store';
 
 export type UploadStatus = 'idle' | 'criando' | 'enviando' | 'processando' | 'concluido' | 'erro';
 
@@ -20,10 +21,12 @@ export function useUploadLote() {
       const { data: ud } = await supabase.auth.getUser();
       const userId = ud.user?.id;
       if (!userId) throw new Error('Sem sessão');
+      const orgId = useAuthStore.getState().profile?.org_id;
+      if (!orgId) throw new Error('Sem organização');
 
       const { data: lote, error } = await supabase
         .from('lotes')
-        .insert({ user_id: userId, status: 'importando' })
+        .insert({ user_id: userId, org_id: orgId, status: 'importando' })
         .select()
         .single();
       if (error || !lote) throw error ?? new Error('Falha criando lote');

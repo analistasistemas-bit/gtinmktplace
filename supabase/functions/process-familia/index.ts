@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
 
       // Cache Redis
       try {
-        const cached = await cacheCorGet(userId, v.codigo);
+        const cached = await cacheCorGet(orgId, v.codigo);
         if (cached) return { ...v, cor: cached.cor, cor_origem: cached.origem };
       } catch (e) {
         console.warn(`Cache miss (erro): ${(e as Error).message}`);
@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
         if (signErr || !signed?.signedUrl) return v;
         const visionResult = await extrairCorPorVision(signed.signedUrl);
         try {
-          await cacheCorSet(userId, v.codigo, { cor: visionResult.cor, origem: 'vision' });
+          await cacheCorSet(orgId, v.codigo, { cor: visionResult.cor, origem: 'vision' });
         } catch (e) {
           console.warn(`Cache set falhou: ${(e as Error).message}`);
         }
@@ -169,6 +169,10 @@ Deno.serve(async (req) => {
     try { if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre'); token = await getValidAccessTokenConexao(conexao); } catch (e) { console.error('token p/ categoria/preço falhou:', e); }
 
     const fornecedor = (claimed.fornecedor as string | null) ?? undefined;
+    // Marca padrão por org (D-E7.3): fallback do BRAND/MANUFACTURER quando o produto não
+    // traz marca própria. Default 'Avil' preservado dentro de montarAtributosML/Base.
+    const { data: orgRow } = await admin.from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
+    const marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
     const cat = await resolverCategoria(
       { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, tipoProdutoBusca: copy.tipo_produto_busca },
       {
@@ -191,7 +195,7 @@ Deno.serve(async (req) => {
       // Tipo de aviamento conhecido (via regex OU categoria do preditor mapeada de volta ao
       // tipo): obrigatórios curados (BRAND, MODEL, RIBBON_TYPE…) — determinísticos, têm
       // prioridade e não dependem do schema/IA (que podem falhar e deixar atributos vazios).
-      atributosMl = montarAtributosML(tipo, claimed.nome_pai, fornecedor, claimed.descricao_pai ?? undefined);
+      atributosMl = montarAtributosML(tipo, claimed.nome_pai, fornecedor, claimed.descricao_pai ?? undefined, marcaPadrao);
       // Enriquece com os demais atributos da categoria p/ melhorar a nota de qualidade do anúncio:
       // closed-set opcionais (ex.: Formato da fita) + numéricos (ex.: Comprimento) via IA, validados
       // contra o schema (nunca inventa) e sem sobrescrever os curados. Resiliente: falha → só os curados.
@@ -219,6 +223,7 @@ Deno.serve(async (req) => {
           },
           llm: desempatarAtributosLLM,
         },
+        marcaPadrao,
       );
       atributosMl = r.atributosMl;
       faltantes = r.faltantes;

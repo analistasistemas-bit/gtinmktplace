@@ -7,8 +7,7 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import { diffModerados, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
-
-interface ConfigTelegram { token: string | null; chatId: string | null; ativo: boolean }
+import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
 
 // E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
 type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
@@ -18,17 +17,6 @@ interface ConexaoRow {
 }
 function mapCx(row: ConexaoRow): ConexaoComDono {
   return { ...mapearConexao(row)!, criadoPor: row.criado_por };
-}
-
-async function lerConfigTelegram(admin: ReturnType<typeof adminClient>, userId: string): Promise<ConfigTelegram> {
-  const { data } = await admin.from('configuracoes')
-    .select('telegram_bot_token, telegram_chat_id, telegram_ativo')
-    .eq('user_id', userId).maybeSingle();
-  return {
-    token: (data?.telegram_bot_token as string | null) ?? null,
-    chatId: (data?.telegram_chat_id as string | null) ?? null,
-    ativo: Boolean(data?.telegram_ativo),
-  };
 }
 
 // Varre os itens publicados de uma org, registra novos moderados / recuperados e
@@ -77,7 +65,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, conn: Ret
   );
 
   // Alerta no Telegram só se ativo e com credenciais; só marca alertado_em se enviou.
-  const cfg = await lerConfigTelegram(admin, userId);
+  const cfg = await lerConfigTelegram(admin, orgId);
   if (cfg.ativo) {
     const itensAlerta: ItemAlerta[] = novos.map((n) => ({
       ml_item_id: n.ml_item_id,
@@ -107,7 +95,6 @@ Deno.serve(async (req) => {
   //  - QStash (agendado): assinatura válida → processa TODAS as conexões (todas as orgs).
   //  - Usuário logado (botões da tela): JWT válido → escopo só à própria org (E7).
   const temAssinatura = !!req.headers.get('upstash-signature');
-  let scopedUserId: string | null = null;
   let scopedOrgId: string | null = null;
   if (temAssinatura) {
     if (!(await verificarAssinatura(req, body))) {
@@ -115,9 +102,7 @@ Deno.serve(async (req) => {
     }
   } else {
     try {
-      const r = await requireUserOrg(req);
-      scopedUserId = r.userId;
-      scopedOrgId = r.orgId;
+      ({ orgId: scopedOrgId } = await requireUserOrg(req));
     }
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   }
@@ -125,9 +110,9 @@ Deno.serve(async (req) => {
   let payload: { teste?: boolean } = {};
   try { payload = body ? JSON.parse(body) : {}; } catch { /* body vazio/QStash */ }
 
-  // Ação "Enviar teste" (só usuário logado): manda uma mensagem fixa pro Telegram dele.
-  if (payload.teste && scopedUserId) {
-    const cfg = await lerConfigTelegram(admin, scopedUserId);
+  // Ação "Enviar teste" (só usuário logado): manda uma mensagem fixa pro Telegram da org.
+  if (payload.teste && scopedOrgId) {
+    const cfg = await lerConfigTelegram(admin, scopedOrgId);
     if (!cfg.token || !cfg.chatId) {
       return new Response(JSON.stringify({ ok: false, erro: 'Configure o bot token e o chat ID antes de testar.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

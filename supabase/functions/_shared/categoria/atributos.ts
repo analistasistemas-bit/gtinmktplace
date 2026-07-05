@@ -131,9 +131,11 @@ export const FALTANTE_ATRIBUTOS_NAO_VALIDADOS = 'atributos da categoria (não va
  * campo na UI para corrigir. Espelhamos o fornecedor (mesma fonte do BRAND): para o nosso
  * negócio fabricante = marca/fornecedor.
  */
-export function montarAtributosBase(schema: AtributoSchema[], nome: string, marca?: string): AtributoML[] {
+export function montarAtributosBase(
+  schema: AtributoSchema[], nome: string, marca?: string, marcaPadrao: string = MARCA,
+): AtributoML[] {
   const ids = new Set(schema.map((a) => a.id));
-  const brand = marca?.trim() || MARCA;
+  const brand = marca?.trim() || marcaPadrao;
   const attrs: AtributoML[] = [];
   if (ids.has('BRAND')) attrs.push({ id: 'BRAND', value_name: brand });
   if (ids.has('MANUFACTURER')) attrs.push({ id: 'MANUFACTURER', value_name: brand });
@@ -194,9 +196,11 @@ export function preencherUnitsPerPack(
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */
-export function montarAtributosML(tipo: TipoAviamento, nome: string, marca?: string, detalhe?: string): AtributoML[] {
+export function montarAtributosML(
+  tipo: TipoAviamento, nome: string, marca?: string, detalhe?: string, marcaPadrao: string = MARCA,
+): AtributoML[] {
   const texto = normalizar(nome ?? '');
-  const brand = marca?.trim() || MARCA;
+  const brand = marca?.trim() || marcaPadrao;
   switch (tipo) {
     case 'linha':
     case 'cola':

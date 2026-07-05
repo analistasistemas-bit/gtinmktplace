@@ -1,16 +1,18 @@
 export const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'configuracoes'] as const;
-export type MenuKey = (typeof MENU_KEYS)[number] | 'usuarios';
+export type MenuKey = (typeof MENU_KEYS)[number] | 'usuarios' | 'organizacoes';
 
 export interface MenuProfile {
   is_admin: boolean;
   is_active: boolean;
   allowed_menus: string[];
+  is_super_admin?: boolean;
 }
 
 // Menus visíveis para o perfil. Admin vê tudo + o menu exclusivo 'usuarios'.
+// Super-admin (só Diego, D-E7.8) vê 'organizacoes' independente de is_admin.
 export function visibleMenus(p: MenuProfile): MenuKey[] {
-  if (p.is_admin) return [...MENU_KEYS, 'usuarios'];
-  return MENU_KEYS.filter((k) => p.allowed_menus.includes(k));
+  const menus: MenuKey[] = p.is_admin ? [...MENU_KEYS, 'usuarios'] : MENU_KEYS.filter((k) => p.allowed_menus.includes(k));
+  return p.is_super_admin ? [...menus, 'organizacoes'] : menus;
 }
 
 // Primeiro segmento da rota → chave de menu. '/' = dashboard. null = rota sem menu (libera).
@@ -27,6 +29,7 @@ const PREFIX: Record<string, MenuKey> = {
   viabilidade: 'viabilidade',
   configuracoes: 'configuracoes',
   usuarios: 'usuarios',
+  organizacoes: 'organizacoes',
 };
 
 export function menuKeyForPath(pathname: string): MenuKey | null {

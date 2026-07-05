@@ -1,17 +1,27 @@
 // Enriquecimento das vendas (ADR-0037): líquido real (Mercado Pago) e GTIN p/ vendas de
 // catálogo. Reusa os helpers do financeiro (ADR-0031) e do _shared/ml. Não testado por vitest.
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { buscarPagamentosMP, getContaId } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
 import type { PedidoML, DadosPagamentoMP } from './venda.ts';
 
 /**
  * paymentId → dados do MP (líquido, estorno, data de liberação) das vendas da própria conta.
- * Mesma fonte do menu Financeiro (ADR-0038). Sem MP_ACCESS_TOKEN ou em erro → mapa vazio (cai na
- * estimativa; estorno/liberação ficam null).
+ * Mesma fonte do menu Financeiro (ADR-0038). Token por org (Vault, RPC get_mp_token) com
+ * fallback ao MP_ACCESS_TOKEN de instância quando a org não tem secret configurado (D-E7.7 —
+ * zero regressão para a Avil, único tenant com MP hoje). Sem token ou em erro → mapa vazio
+ * (cai na estimativa; estorno/liberação ficam null).
  */
-export async function carregarLiquidoMP(lookbackDias = 120): Promise<Map<string, DadosPagamentoMP>> {
+export async function carregarLiquidoMP(
+  admin: SupabaseClient, orgId: string | null, lookbackDias = 120,
+): Promise<Map<string, DadosPagamentoMP>> {
   const out = new Map<string, DadosPagamentoMP>();
-  const token = Deno.env.get('MP_ACCESS_TOKEN');
+  let token: string | null = null;
+  if (orgId) {
+    const { data: tok } = await admin.rpc('get_mp_token', { p_org_id: orgId });
+    token = (tok as string | null) ?? null;
+  }
+  token ??= Deno.env.get('MP_ACCESS_TOKEN') ?? null;
   if (!token) return out;
   try {
     const contaId = await getContaId(token);

@@ -1,5 +1,5 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { userClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { cacheCorInvalidar } from '../_shared/redis/cache-cor.ts';
 
 Deno.serve(async (req) => {
@@ -8,12 +8,9 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) {
-    return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  }
-  const { data: { user } } = await userClient(auth.slice(7)).auth.getUser();
-  if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: { codigo?: string };
   try {
@@ -26,7 +23,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    await cacheCorInvalidar(user.id, body.codigo);
+    await cacheCorInvalidar(orgId, body.codigo);
     return new Response('OK', { status: 200, headers: corsHeaders });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

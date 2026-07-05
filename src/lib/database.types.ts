@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
   graphql_public: {
     Tables: {
       [_ in never]: never
@@ -49,6 +44,7 @@ export type Database = {
           id: string
           item_externo_id: string | null
           metadados_canal: Json
+          org_id: string
           particao: number
           permalink: string | null
           preco_override: number | null
@@ -67,6 +63,7 @@ export type Database = {
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          org_id: string
           particao?: number
           permalink?: string | null
           preco_override?: number | null
@@ -85,6 +82,7 @@ export type Database = {
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          org_id?: string
           particao?: number
           permalink?: string | null
           preco_override?: number | null
@@ -94,7 +92,15 @@ export type Database = {
           user_id?: string
           variacoes_externas?: Json
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "anuncios_externos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       configuracoes: {
         Row: {
@@ -104,6 +110,8 @@ export type Database = {
           criado_em: string
           desconto_concorrencia_pct: number
           desconto_pct: number
+          mp_access_token_secret_id: string | null
+          org_id: string
           telegram_ativo: boolean
           telegram_bot_token: string | null
           telegram_chat_id: string | null
@@ -116,6 +124,8 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          mp_access_token_secret_id?: string | null
+          org_id: string
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
@@ -128,12 +138,22 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          mp_access_token_secret_id?: string | null
+          org_id?: string
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "configuracoes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       familias: {
         Row: {
@@ -182,6 +202,7 @@ export type Database = {
           nome_pai: string
           observacao_operador: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
+          org_id: string
           origem: Database["public"]["Enums"]["origem_produto"]
           publicado_em: string | null
           qstash_message_id: string | null
@@ -244,6 +265,7 @@ export type Database = {
           nome_pai: string
           observacao_operador?: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
+          org_id: string
           origem?: Database["public"]["Enums"]["origem_produto"]
           publicado_em?: string | null
           qstash_message_id?: string | null
@@ -306,6 +328,7 @@ export type Database = {
           nome_pai?: string
           observacao_operador?: string | null
           operacao?: Database["public"]["Enums"]["operacao_ml"]
+          org_id?: string
           origem?: Database["public"]["Enums"]["origem_produto"]
           publicado_em?: string | null
           qstash_message_id?: string | null
@@ -330,6 +353,13 @@ export type Database = {
             referencedRelation: "lotes"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "familias_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
       lotes: {
@@ -342,6 +372,8 @@ export type Database = {
           id: string
           imagens_paths: string[]
           numero: number
+          numero_org: number | null
+          org_id: string
           planilha_path: string | null
           status: Database["public"]["Enums"]["lote_status"]
           total_erros: number
@@ -358,6 +390,8 @@ export type Database = {
           id?: string
           imagens_paths?: string[]
           numero?: number
+          numero_org?: number | null
+          org_id: string
           planilha_path?: string | null
           status?: Database["public"]["Enums"]["lote_status"]
           total_erros?: number
@@ -374,6 +408,8 @@ export type Database = {
           id?: string
           imagens_paths?: string[]
           numero?: number
+          numero_org?: number | null
+          org_id?: string
           planilha_path?: string | null
           status?: Database["public"]["Enums"]["lote_status"]
           total_erros?: number
@@ -381,7 +417,68 @@ export type Database = {
           total_publicadas?: number
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "lotes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketplace_connections: {
+        Row: {
+          access_token_secret_id: string | null
+          atualizado_em: string
+          canal: Database["public"]["Enums"]["canal_externo"]
+          conta_externa_id: string | null
+          conta_label: string | null
+          criado_em: string
+          criado_por: string | null
+          expires_at: string | null
+          id: string
+          org_id: string
+          refresh_token_secret_id: string | null
+          scope: string | null
+        }
+        Insert: {
+          access_token_secret_id?: string | null
+          atualizado_em?: string
+          canal: Database["public"]["Enums"]["canal_externo"]
+          conta_externa_id?: string | null
+          conta_label?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          expires_at?: string | null
+          id?: string
+          org_id: string
+          refresh_token_secret_id?: string | null
+          scope?: string | null
+        }
+        Update: {
+          access_token_secret_id?: string | null
+          atualizado_em?: string
+          canal?: Database["public"]["Enums"]["canal_externo"]
+          conta_externa_id?: string | null
+          conta_label?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          expires_at?: string | null
+          id?: string
+          org_id?: string
+          refresh_token_secret_id?: string | null
+          scope?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketplace_connections_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_credentials: {
         Row: {
@@ -391,6 +488,7 @@ export type Database = {
           expires_at: string
           ml_nickname: string | null
           ml_user_id: string
+          org_id: string
           refresh_token_secret_id: string
           scope: string | null
           user_id: string
@@ -402,6 +500,7 @@ export type Database = {
           expires_at: string
           ml_nickname?: string | null
           ml_user_id: string
+          org_id: string
           refresh_token_secret_id: string
           scope?: string | null
           user_id: string
@@ -413,11 +512,20 @@ export type Database = {
           expires_at?: string
           ml_nickname?: string | null
           ml_user_id?: string
+          org_id?: string
           refresh_token_secret_id?: string
           scope?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ml_credentials_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_devolucoes: {
         Row: {
@@ -428,6 +536,7 @@ export type Database = {
           criado_em: string
           id: string
           order_id: number | null
+          org_id: string
           raw: Json | null
           reason_id: string | null
           reason_texto: string | null
@@ -447,6 +556,7 @@ export type Database = {
           criado_em?: string
           id?: string
           order_id?: number | null
+          org_id: string
           raw?: Json | null
           reason_id?: string | null
           reason_texto?: string | null
@@ -466,6 +576,7 @@ export type Database = {
           criado_em?: string
           id?: string
           order_id?: number | null
+          org_id?: string
           raw?: Json | null
           reason_id?: string | null
           reason_texto?: string | null
@@ -477,7 +588,15 @@ export type Database = {
           user_id?: string
           valor_em_jogo?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ml_devolucoes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_moderacao: {
         Row: {
@@ -487,6 +606,7 @@ export type Database = {
           id: string
           ml_item_id: string
           motivo: string | null
+          org_id: string
           resolvido_em: string | null
           status: string
           user_id: string
@@ -498,6 +618,7 @@ export type Database = {
           id?: string
           ml_item_id: string
           motivo?: string | null
+          org_id: string
           resolvido_em?: string | null
           status: string
           user_id: string
@@ -509,11 +630,20 @@ export type Database = {
           id?: string
           ml_item_id?: string
           motivo?: string | null
+          org_id?: string
           resolvido_em?: string | null
           status?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ml_moderacao_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_perguntas: {
         Row: {
@@ -523,6 +653,7 @@ export type Database = {
           id: string
           item_id: string | null
           item_titulo: string | null
+          org_id: string
           question_id: number
           raw: Json | null
           respondida_em: string | null
@@ -538,6 +669,7 @@ export type Database = {
           id?: string
           item_id?: string | null
           item_titulo?: string | null
+          org_id: string
           question_id: number
           raw?: Json | null
           respondida_em?: string | null
@@ -553,6 +685,7 @@ export type Database = {
           id?: string
           item_id?: string | null
           item_titulo?: string | null
+          org_id?: string
           question_id?: number
           raw?: Json | null
           respondida_em?: string | null
@@ -561,7 +694,15 @@ export type Database = {
           texto?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ml_perguntas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_vendas: {
         Row: {
@@ -574,20 +715,19 @@ export type Database = {
           currency: string
           date_closed: string | null
           date_created: string | null
-          estorno: number | null
           frete_vendedor: number | null
           id: string
           is_publiai: boolean
           liberacao_notificada_em: string | null
           liquido: number | null
-          money_release_date: string | null
           order_id: number
+          org_id: string
           pack_id: number | null
           paid_amount: number | null
           raw: Json | null
-          sale_fee_total: number
           sacado_em: string | null
           sacado_por: string | null
+          sale_fee_total: number
           shipping_id: number | null
           shipping_logistic: string | null
           shipping_status: string | null
@@ -610,20 +750,19 @@ export type Database = {
           currency?: string
           date_closed?: string | null
           date_created?: string | null
-          estorno?: number | null
           frete_vendedor?: number | null
           id?: string
           is_publiai?: boolean
           liberacao_notificada_em?: string | null
           liquido?: number | null
-          money_release_date?: string | null
           order_id: number
+          org_id: string
           pack_id?: number | null
           paid_amount?: number | null
           raw?: Json | null
-          sale_fee_total?: number
           sacado_em?: string | null
           sacado_por?: string | null
+          sale_fee_total?: number
           shipping_id?: number | null
           shipping_logistic?: string | null
           shipping_status?: string | null
@@ -646,20 +785,19 @@ export type Database = {
           currency?: string
           date_closed?: string | null
           date_created?: string | null
-          estorno?: number | null
           frete_vendedor?: number | null
           id?: string
           is_publiai?: boolean
           liberacao_notificada_em?: string | null
           liquido?: number | null
-          money_release_date?: string | null
           order_id?: number
+          org_id?: string
           pack_id?: number | null
           paid_amount?: number | null
           raw?: Json | null
-          sale_fee_total?: number
           sacado_em?: string | null
           sacado_por?: string | null
+          sale_fee_total?: number
           shipping_id?: number | null
           shipping_logistic?: string | null
           shipping_status?: string | null
@@ -672,7 +810,22 @@ export type Database = {
           uf?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ml_vendas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_vendas_sacado_por_fkey"
+            columns: ["sacado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_vendas_itens: {
         Row: {
@@ -682,6 +835,7 @@ export type Database = {
           id: string
           is_publiai: boolean
           ml_item_id: string | null
+          org_id: string
           quantity: number
           sale_fee: number
           titulo: string | null
@@ -697,6 +851,7 @@ export type Database = {
           id?: string
           is_publiai?: boolean
           ml_item_id?: string | null
+          org_id: string
           quantity?: number
           sale_fee?: number
           titulo?: string | null
@@ -712,6 +867,7 @@ export type Database = {
           id?: string
           is_publiai?: boolean
           ml_item_id?: string | null
+          org_id?: string
           quantity?: number
           sale_fee?: number
           titulo?: string | null
@@ -721,6 +877,13 @@ export type Database = {
           venda_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ml_vendas_itens_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ml_vendas_itens_venda_id_fkey"
             columns: ["venda_id"]
@@ -734,6 +897,7 @@ export type Database = {
         Row: {
           erro: string | null
           id: string
+          org_id: string | null
           processado_em: string | null
           recebido_em: string
           resource: string
@@ -743,6 +907,7 @@ export type Database = {
         Insert: {
           erro?: string | null
           id?: string
+          org_id?: string | null
           processado_em?: string | null
           recebido_em?: string
           resource: string
@@ -752,11 +917,50 @@ export type Database = {
         Update: {
           erro?: string | null
           id?: string
+          org_id?: string | null
           processado_em?: string | null
           recebido_em?: string
           resource?: string
           topic?: string
           user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_webhook_eventos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          atualizado_em: string
+          criado_em: string
+          id: string
+          lote_seq: number
+          marca_padrao: string | null
+          nome: string
+          slug: string
+        }
+        Insert: {
+          atualizado_em?: string
+          criado_em?: string
+          id?: string
+          lote_seq?: number
+          marca_padrao?: string | null
+          nome: string
+          slug: string
+        }
+        Update: {
+          atualizado_em?: string
+          criado_em?: string
+          id?: string
+          lote_seq?: number
+          marca_padrao?: string | null
+          nome?: string
+          slug?: string
         }
         Relationships: []
       }
@@ -768,7 +972,9 @@ export type Database = {
           id: string
           is_active: boolean
           is_admin: boolean
+          is_super_admin: boolean
           nome: string
+          org_id: string
           updated_at: string
         }
         Insert: {
@@ -778,7 +984,9 @@ export type Database = {
           id: string
           is_active?: boolean
           is_admin?: boolean
+          is_super_admin?: boolean
           nome?: string
+          org_id: string
           updated_at?: string
         }
         Update: {
@@ -788,10 +996,20 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_admin?: boolean
+          is_super_admin?: boolean
           nome?: string
+          org_id?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       variacoes: {
         Row: {
@@ -820,6 +1038,7 @@ export type Database = {
           ml_picture_id: string | null
           ml_variation_id: string | null
           nome: string | null
+          org_id: string
           peso_gramas: number | null
           preco: number
           preco_editado_pelo_operador: boolean
@@ -852,6 +1071,7 @@ export type Database = {
           ml_picture_id?: string | null
           ml_variation_id?: string | null
           nome?: string | null
+          org_id: string
           peso_gramas?: number | null
           preco: number
           preco_editado_pelo_operador?: boolean
@@ -884,6 +1104,7 @@ export type Database = {
           ml_picture_id?: string | null
           ml_variation_id?: string | null
           nome?: string | null
+          org_id?: string
           peso_gramas?: number | null
           preco?: number
           preco_editado_pelo_operador?: boolean
@@ -898,6 +1119,13 @@ export type Database = {
             referencedRelation: "familias"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "variacoes_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
@@ -905,10 +1133,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      current_org_id: { Args: never; Returns: string }
+      delete_marketplace_connection: {
+        Args: { p_connection_id: string }
+        Returns: undefined
+      }
       delete_ml_credentials: { Args: { p_user_id: string }; Returns: undefined }
-      desfazer_saque_ml_vendas: {
-        Args: { p_ids: string[] }
-        Returns: number
+      desfazer_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      get_connection_tokens: {
+        Args: { p_connection_id: string }
+        Returns: {
+          access_token: string
+          conta_externa_id: string
+          expires_at: string
+          refresh_token: string
+        }[]
       }
       get_ml_tokens: {
         Args: { p_user_id: string }
@@ -918,12 +1157,11 @@ export type Database = {
           refresh_token: string
         }[]
       }
+      get_mp_token: { Args: { p_org_id: string }; Returns: string }
       is_admin: { Args: never; Returns: boolean }
-      is_membro_operacao: { Args: never; Returns: boolean }
-      registrar_saque_ml_vendas: {
-        Args: { p_ids: string[] }
-        Returns: number
-      }
+      is_super_admin: { Args: never; Returns: boolean }
+      proximo_numero_lote: { Args: { p_org: string }; Returns: number }
+      registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
       telegram_config_status: {
         Args: never
         Returns: {
@@ -931,6 +1169,20 @@ export type Database = {
           chat_id: string
           tem_token: boolean
         }[]
+      }
+      upsert_marketplace_connection: {
+        Args: {
+          p_access_token: string
+          p_canal: Database["public"]["Enums"]["canal_externo"]
+          p_conta_externa_id: string
+          p_conta_label: string
+          p_criado_por: string
+          p_expires_at: string
+          p_org_id: string
+          p_refresh_token: string
+          p_scope: string
+        }
+        Returns: string
       }
       upsert_ml_credentials: {
         Args: {
@@ -965,8 +1217,8 @@ export type Database = {
         | "concluido"
         | "erro"
       operacao_ml: "CREATE" | "UPDATE"
-      origem_produto: "nacional" | "importado"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
+      origem_produto: "nacional" | "importado"
       tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola"
       tipo_origem: "regex" | "ia" | "manual" | "preditor" | "generico"
     }
@@ -1120,10 +1372,11 @@ export const Constants = {
         "erro",
       ],
       operacao_ml: ["CREATE", "UPDATE"],
-      origem_produto: ["nacional", "importado"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
+      origem_produto: ["nacional", "importado"],
       tipo_aviamento: ["linha", "botao", "fita", "outro", "cola"],
       tipo_origem: ["regex", "ia", "manual", "preditor", "generico"],
     },
   },
 } as const
+

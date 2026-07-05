@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
 
   const { data: vendas, error } = await admin
     .from('ml_vendas')
-    .select('id, user_id, liquido, money_release_date, status')
+    .select('id, org_id, liquido, money_release_date, status')
     .gte('money_release_date', desde)
     .lt('money_release_date', ate)
     .is('liberacao_notificada_em', null)
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
   // Garante que o fuso -03:00 explícito na query e a comparação JS coincidam.
   const vendasHoje = (vendas as Array<{
     id: string;
-    user_id: string;
+    org_id: string;
     liquido: number | null;
     money_release_date: string;
     status: string;
@@ -69,20 +69,20 @@ Deno.serve(async (req) => {
     return json({ notificados: 0, usuarios: 0 });
   }
 
-  // Agrupa por user_id.
-  const porUser = new Map<string, { ids: string[]; total: number }>();
+  // Agrupa por org_id (E7 — config do Telegram é por organização, não por usuário).
+  const porOrg = new Map<string, { ids: string[]; total: number }>();
   for (const v of vendasHoje) {
-    const acc = porUser.get(v.user_id) ?? { ids: [], total: 0 };
+    const acc = porOrg.get(v.org_id) ?? { ids: [], total: 0 };
     acc.ids.push(v.id);
     acc.total += v.liquido ?? 0;
-    porUser.set(v.user_id, acc);
+    porOrg.set(v.org_id, acc);
   }
 
   let usuarios = 0;
   let notificados = 0;
 
-  for (const [userId, { ids, total }] of porUser) {
-    const cfg = await lerConfigTelegram(admin, userId);
+  for (const [orgId, { ids, total }] of porOrg) {
+    const cfg = await lerConfigTelegram(admin, orgId);
 
     if (cfg.ativo && cfg.token && cfg.chatId && total > 0) {
       const totalArredondado = Math.round(total * 100) / 100;
@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
       .from('ml_vendas')
       .update({ liberacao_notificada_em: hoje })
       .in('id', ids);
-    if (errMarca) console.error(`Falha ao marcar ${ids.length} vendas (user ${userId}):`, errMarca.message);
+    if (errMarca) console.error(`Falha ao marcar ${ids.length} vendas (org ${orgId}):`, errMarca.message);
     notificados += ids.length;
   }
 
