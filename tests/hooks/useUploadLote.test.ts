@@ -11,6 +11,11 @@ vi.mock('@/lib/ingest', () => ({
   chamarIngest: vi.fn(async () => ({ loteId: 'l1', totalFamilias: 3 })),
 }));
 
+// E7: o insert do lote carimba org_id do perfil (auth-store).
+vi.mock('@/stores/auth-store', () => ({
+  useAuthStore: { getState: () => ({ profile: { org_id: 'org1' } }) },
+}));
+
 vi.mock('@/lib/supabase', () => {
   const single = vi.fn().mockResolvedValue({
     data: { id: 'l1', user_id: 'u1' },
