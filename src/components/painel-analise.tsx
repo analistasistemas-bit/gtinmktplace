@@ -87,9 +87,10 @@ export function PainelAnalise({
         </div>
       )}
 
-      {/* Cards em linha única responsiva (largura total): a tela prioriza a análise.
-          Cada card cresce (flex-1) com um piso de largura; quebram em linhas quando faltar espaço. */}
-      <div className="flex flex-wrap gap-2">
+      {/* Mobile: empilha (flex-col, cada card largura total) — sem isso o flex-1 força
+          flex-basis:0% e os cards se espremem numa linha só, cortando o texto do "Você recebe".
+          sm+: linha responsiva, cada card cresce (flex-1) com piso de largura, quebrando quando faltar espaço. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {/* Estratégia + Concorrência (agrupados num box compacto: a tela prioriza
             Potencial de venda e Você recebe, que ficam maiores ao lado) */}
         <div className="flex w-full flex-1 flex-col gap-2 rounded-md border bg-card p-2 sm:w-auto sm:min-w-[180px]">
