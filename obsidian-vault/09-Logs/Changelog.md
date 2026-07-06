@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-04
+atualizado: 2026-07-06
 ---
 
 # Changelog
@@ -10,6 +10,18 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
 ## 2026-07-06
+
+- **Fix: "vs. anterior" do filtro "Hoje" (Dashboard/Financeiro) comparava com o pedaço errado de
+  ontem.** Diego notou +14% em Pedidos no "Hoje" mesmo com 8 pedidos hoje vs. 11 ontem no dia
+  inteiro — número não batia nem como "ontem inteiro" nem como "ontem até a mesma hora de agora".
+  Causa: `janelaAnterior()` desloca a janela atual pela sua **duração decorrida** — fórmula certa
+  pra presets/range (blocos fechados de N dias), quebrada pra "hoje" (janela que cresce o dia
+  todo): deslocar por poucas horas decorridas cola a comparação no fim de ontem (ex.: ontem
+  11h47→meia-noite), perdendo a manhã inteira. Fix: `tipo: 'hoje'` desloca a janela inteira em
+  exatamente 24h (ontem 00:00 → ontem na mesma hora de agora); presets/range inalterados. Achado à
+  parte, não corrigido: `src/lib/__tests__/metricas-hoje.test.ts` nunca roda — fora do `include` do
+  `vitest.config.ts`. TDD (1 teste novo em `tests/lib/metricas.test.ts`, o arquivo que roda de
+  fato); 1206 testes verdes. Só frontend. Merge → main → deploy live.
 
 - **Feat: mapa "Vendas por estado" (Dashboard) clicável — mostra pedidos e valor.** Pedido do
   Diego, com um requisito específico de mobile: nada de popover/tooltip (hover não existe em
