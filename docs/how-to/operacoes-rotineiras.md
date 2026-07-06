@@ -122,22 +122,18 @@ usuário — qualquer membro dela publica). O `ML_CLIENT_ID` é o mesmo app do P
 > **Pré-requisito externo:** o app do PubliAI no ML DevCenter precisa estar em produção/aprovado
 > para aceitar contas de terceiros (em modo de teste só contas de teste autorizam).
 
-**Remover uma empresa** — ainda **não há ação na UI** (`delete_org`). Remoção manual via
-`service_role` (respeitar a ordem — FKs sem cascade para `organizations`):
+**Remover uma empresa** — na tela `/admin`, botão **"Excluir"** na linha da empresa →
+confirmação digitando o **slug**. A ação `delete_org` (edge `usuarios`, super-admin) apaga todos
+os dados da org (`lotes` cascateia famílias/variações; `ml_vendas` cascateia itens; demais
+tabelas `org_id` explicitamente), os **membros** (`auth.users`) e a organização. **Travas:**
+super-admin não exclui a **própria** empresa (protege a Avil); a linha da própria org mostra
+"sua empresa" em vez do botão.
 
-```sql
--- substitua o slug
-with org as (select id from public.organizations where slug = '<slug>')
-delete from public.marketplace_connections where org_id in (select id from org);
-delete from public.configuracoes           where org_id in (select id from org);
-delete from public.profiles                 where org_id in (select id from org);
--- apague os auth.users dos membros (cascata limpa profiles remanescentes) e por fim a org:
--- delete from auth.users where id in (<ids dos membros>);
-delete from public.organizations where slug = '<slug>';
-```
+> ⚠️ Isto remove só os **registros locais**. Anúncios já publicados **não** são despublicados do
+> marketplace, e o secret da conexão fica órfão no Vault (inofensivo).
 
 Validado ponta a ponta em 2026-07-06 (criação via `/admin`, isolamento confirmado — admin da
-empresa nova via 0 lotes/famílias da Avil — e remoção completa).
+empresa nova viu 0 lotes/famílias da Avil — trava da própria empresa, e exclusão completa pela UI).
 
 ## E-mail transacional (SMTP via Resend)
 
