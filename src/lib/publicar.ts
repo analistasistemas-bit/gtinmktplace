@@ -11,14 +11,18 @@ export async function setVariacaoExcluida(variacaoId: string, excluida: boolean)
 
 export interface ResultadoPublicar {
   enfileiradas: number;
+  porCanal?: Record<string, number>;
+  canaisIgnorados?: string[];
 }
 
 export type ListingType = 'gold_special' | 'gold_pro';
 
-/** Dispara a publicação CREATE das famílias selecionadas (edge enfileira no QStash). */
+/** Dispara a publicação das famílias selecionadas nos canais escolhidos (edge enfileira no
+ *  QStash). `canais` default ['mercado_livre'] → comportamento atual inalterado (E6/ADR-0061). */
 export async function publicarFamilias(
   familiaIds: string[],
   listingTypeId: ListingType = 'gold_special',
+  canais: string[] = ['mercado_livre'],
 ): Promise<ResultadoPublicar> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão ativa');
@@ -29,7 +33,7 @@ export async function publicarFamilias(
       Authorization: `Bearer ${session.access_token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ familia_ids: familiaIds, listing_type_id: listingTypeId }),
+    body: JSON.stringify({ familia_ids: familiaIds, listing_type_id: listingTypeId, canais }),
   });
   if (!resp.ok) {
     const texto = await resp.text();
