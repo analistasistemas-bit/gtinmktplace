@@ -590,9 +590,21 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
   // vendas são juntados por mlItemId no hook, então cada anúncio carrega os seus.
   const { data: anuncios } = await supabase
     .from('anuncios_externos')
-    .select('codigo_pai, item_externo_id, permalink, titulo, publicado_em')
+    .select('codigo_pai, item_externo_id, permalink, titulo, publicado_em, variacoes_externas')
     .eq('canal', 'mercado_livre')
     .not('item_externo_id', 'is', null);
+
+  // Fonte de verdade da qtd. de variações publicadas por anúncio: `variacoes_externas`
+  // (mantido por dual-write dos workers). A família representativa é só a do 1º ciclo de
+  // publicação — se o produto ganhou variações em ciclos de UPDATE depois, a contagem pelas
+  // suas `variacoes` própria subconta o anúncio.
+  const qtdPorAnuncio = new Map(
+    (anuncios ?? [])
+      .filter((a): a is typeof a & { item_externo_id: string } => !!a.item_externo_id)
+      .map((a) => [a.item_externo_id, Object.keys((a.variacoes_externas as Record<string, unknown>) ?? {}).length]),
+  );
+  const comContagem = principais.map((p) => ({ ...p, qtdVariacoes: qtdPorAnuncio.get(p.mlItemId) ?? 0 }));
+
   const jaListados = new Set(principais.map((p) => p.mlItemId));
   const repPorCodigo = new Map(principais.map((p) => [p.codigoPai, p]));
   const extras: PublicadoItem[] = [];
@@ -606,9 +618,10 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       mlItemId: a.item_externo_id,
       mlPermalink: a.permalink ?? null,
       publicadoEm: a.publicado_em ?? rep.publicadoEm,
+      qtdVariacoes: qtdPorAnuncio.get(a.item_externo_id) ?? 0,
     });
   }
-  return [...principais, ...extras];
+  return [...comContagem, ...extras];
 }
 
 export interface StatusPublicadoItem {

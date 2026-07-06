@@ -110,9 +110,9 @@ const pub = (over: Partial<PublicadoItem> = {}): PublicadoItem =>
 describe('buildPublicadosReport — KPIs batem com a tela', () => {
   // todosItens = base de Saúde/Encalhados/Top: 2 ativos (1 encalhado), 1 com problema, top = Linha.
   const todos = [
-    pub({ familiaId: 'a', titulo: 'Linha', status: 'ativo', valorVendido: 300, unidadesVendidas: 5 }),
-    pub({ familiaId: 'b', titulo: 'Cola', status: 'ativo', valorVendido: 0, unidadesVendidas: 0 }),
-    pub({ familiaId: 'c', titulo: 'Fita', status: 'pausado', valorVendido: 0, unidadesVendidas: 0 }),
+    pub({ familiaId: 'a', titulo: 'Linha', status: 'ativo', valorVendido: 300, unidadesVendidas: 5, qtdVariacoes: 10 }),
+    pub({ familiaId: 'b', titulo: 'Cola', status: 'ativo', valorVendido: 0, unidadesVendidas: 0, qtdVariacoes: 5 }),
+    pub({ familiaId: 'c', titulo: 'Fita', status: 'pausado', valorVendido: 0, unidadesVendidas: 0, qtdVariacoes: 3 }),
   ];
   const base = {
     itens: [], todosItens: todos, liquido: 602.92,
@@ -126,12 +126,13 @@ describe('buildPublicadosReport — KPIs batem com a tela', () => {
       'Líquido das vendas (você recebe)',
       'Faturamento', 'Unidades vendidas', 'Pedidos', 'Ticket médio',
       'Markup no período', 'Lucro no período',
-      'Ativos', 'Com problema', 'Encalhados (sem venda no período)',
+      'Ativos', 'Com problema', 'Variações publicadas', 'Encalhados (sem venda no período)',
     ]);
     expect(r.kpis?.find((k) => k.label === 'Líquido das vendas (você recebe)')?.valor).toContain('602,92');
     expect(r.kpis?.find((k) => k.label === 'Ticket médio')?.valor).toContain('24,39'); // 926,89/38
     expect(r.kpis?.find((k) => k.label === 'Ativos')?.valor).toBe('2/3');
     expect(r.kpis?.find((k) => k.label === 'Com problema')?.valor).toBe('1');
+    expect(r.kpis?.find((k) => k.label === 'Variações publicadas')?.valor).toBe('18'); // 10+5+3
     expect(r.kpis?.find((k) => k.label === 'Encalhados (sem venda no período)')?.valor).toBe('1');
   });
 

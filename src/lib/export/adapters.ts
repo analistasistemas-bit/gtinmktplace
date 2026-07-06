@@ -117,6 +117,7 @@ export function buildPublicadosReport(args: PublicadosArgs): ReportData {
   kpis.push(
     { label: 'Ativos', valor: `${saude.ativos}/${saude.total}` },
     { label: 'Com problema', valor: String(saude.comProblema) },
+    { label: 'Variações publicadas', valor: String(saude.variacoesPublicadas) },
     { label: 'Encalhados (sem venda no período)', valor: String(saude.encalhados) },
   );
   // Bloco "Top produtos (faturamento)" — top 5, mesmo card da tela.

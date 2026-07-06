@@ -5,6 +5,7 @@ export interface ResumoPublicados {
   ativos: number;
   comProblema: number;
   encalhados: number;
+  variacoesPublicadas: number;
   topFat: PublicadoItem[];
   topUnid: PublicadoItem[];
 }
@@ -23,6 +24,7 @@ export function calcularResumoPublicados(itens: PublicadoItem[]): ResumoPublicad
   const encalhados = itens.filter(
     (i) => i.status === 'ativo' && (i.unidadesVendidas ?? 0) === 0,
   ).length;
+  const variacoesPublicadas = itens.reduce((acc, i) => acc + (i.qtdVariacoes ?? 0), 0);
   const topFat = [...itens]
     .filter((i) => (i.valorVendido ?? 0) > 0)
     .sort((a, b) => (b.valorVendido ?? 0) - (a.valorVendido ?? 0))
@@ -31,5 +33,5 @@ export function calcularResumoPublicados(itens: PublicadoItem[]): ResumoPublicad
     .filter((i) => (i.unidadesVendidas ?? 0) > 0)
     .sort((a, b) => (b.unidadesVendidas ?? 0) - (a.unidadesVendidas ?? 0))
     .slice(0, 5);
-  return { total, ativos, comProblema, encalhados, topFat, topUnid };
+  return { total, ativos, comProblema, encalhados, variacoesPublicadas, topFat, topUnid };
 }

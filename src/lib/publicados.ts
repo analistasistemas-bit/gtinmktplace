@@ -38,6 +38,8 @@ export interface PublicadoItem {
   // preenchidos pelas métricas de venda do período (merge por mlItemId):
   unidadesVendidas?: number | null;
   valorVendido?: number | null;
+  /** Quantidade de variações publicadas neste anúncio (excluídas da publicação não contam). */
+  qtdVariacoes?: number;
 }
 
 /**
