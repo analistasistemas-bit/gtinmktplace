@@ -95,6 +95,50 @@ delete from auth.users where email = 'pessoa@empresa.com';
 
 Depois é só clicar **Convidar usuário** de novo na tela.
 
+## Adicionar uma empresa-cliente (multi-tenant, E7 — ADR-0027)
+
+Cada empresa é uma **organização** (`org_id`) com dados 100% isolados por RLS
+(`org_id = current_org_id()`). O `.env.local` é da **plataforma** — nunca se cria `.env` por
+empresa. Só **super-admin** (`is_super_admin`, hoje só o Diego) cria empresas (D-E7.8).
+
+**1. Criar a empresa** — link **"Admin da plataforma"** no topo (só super-admin) → tela
+**`/admin`** → **"Nova empresa"**. Informe nome, slug (único, minúsculo), marca padrão,
+**e-mail + nome do primeiro admin dela**. Isso cria a `organizations`, convida o admin e marca
+o `profiles` dele com o `org_id` novo (`is_admin=true`).
+
+**2. O admin da empresa entra** — recebe o convite ("Definir senha e entrar"), loga e já cai
+isolado na org dele (só vê os próprios dados).
+
+**3. Ele conecta a conta do marketplace** — **Configurações → "Conectar Mercado Livre"** →
+autoriza com a **conta ML da empresa dele**. O `ml-oauth-callback` grava a conexão em
+`marketplace_connections` no `org_id` dele, com token no Vault (é a conexão **da org**, não do
+usuário — qualquer membro dela publica). O `ML_CLIENT_ID` é o mesmo app do PubliAI para todas
+(OAuth = 1 app, N contas autorizando).
+
+> **Quem conecta o ML é sempre um usuário daquela empresa.** Como o modelo é **1 usuário = 1 org**
+> (D-E7.1), o super-admin não opera dentro de outra empresa nem conecta o ML por ela. Multi-org
+> por usuário foi adiado (E8).
+>
+> **Pré-requisito externo:** o app do PubliAI no ML DevCenter precisa estar em produção/aprovado
+> para aceitar contas de terceiros (em modo de teste só contas de teste autorizam).
+
+**Remover uma empresa** — ainda **não há ação na UI** (`delete_org`). Remoção manual via
+`service_role` (respeitar a ordem — FKs sem cascade para `organizations`):
+
+```sql
+-- substitua o slug
+with org as (select id from public.organizations where slug = '<slug>')
+delete from public.marketplace_connections where org_id in (select id from org);
+delete from public.configuracoes           where org_id in (select id from org);
+delete from public.profiles                 where org_id in (select id from org);
+-- apague os auth.users dos membros (cascata limpa profiles remanescentes) e por fim a org:
+-- delete from auth.users where id in (<ids dos membros>);
+delete from public.organizations where slug = '<slug>';
+```
+
+Validado ponta a ponta em 2026-07-06 (criação via `/admin`, isolamento confirmado — admin da
+empresa nova via 0 lotes/famílias da Avil — e remoção completa).
+
 ## E-mail transacional (SMTP via Resend)
 
 O e-mail de convite/reset **não** usa o serviço interno do Supabase (`@mail.app.supabase.io`,
