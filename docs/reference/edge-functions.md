@@ -30,6 +30,7 @@
 | publish-familia-ml | false | QStash (fila serial) | sim (reusa picture_ids) |
 | update-familia-ml | false | QStash (fila serial) | sim |
 | publicar-split-ml | false | QStash (fila serial) | sim (item cravado cedo) |
+| publicar-anuncio | false | QStash (fila serial por canal) | sim (claim atômico por canal) |
 | regenerar-copy-familia | false | HTTP (JWT manual) | não |
 | definir-categoria-familia | true | HTTP (frontend) | não |
 | vincular-catalogo | false | QStash (delay 10min) | sim (upsert) |
@@ -72,10 +73,10 @@
 | `auth.ts` | `requireUser(req)` — valida Bearer token contra o Supabase Auth; `requireAdmin(req)` — idem + exige `profiles.is_admin` (ADR-0060); `requireUserOrg(req)` — idem + resolve `{userId, orgId, isAdmin}` do `profiles` do chamador (403 se inativo/sem org) — identidade padrão por organização (ADR-0027) |
 | `cors.ts` | Headers CORS padrão (inclui `upstash-signature`) |
 | `supabase.ts` | `adminClient()` (service_role) e `userClient(jwt)` (respeita RLS) |
-| `queue.ts` | QStash: `enfileirarFamilia/Publicacao/Atualizacao/VinculacaoCatalogo`, `garantirFilaSerial`, `verificarAssinatura` |
+| `queue.ts` | QStash: `enfileirarFamilia/Publicacao/Atualizacao/VinculacaoCatalogo`, `garantirFilaSerial`, `verificarAssinatura`; **E6 (ADR-0061):** `enfileirarPublicacaoCanal`, `garantirFilaSerialCanal`, `filaCanal` — fila serial por `(canal, org)` |
 | `ml/*` | Integração ML: `token.ts` → `getValidAccessTokenConexao(conexao)` (token da **conexão** da org, ADR-0027; substitui o antigo `getValidAccessToken(userId)`), criar/atualizar item, descrição, concorrência, catálogo, tarifa, atacado |
 | `ai/*` | OpenRouter: copywriter, vision (cor), título, resposta a pergunta, categoria/atributos por LLM |
-| `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027) |
+| `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027); **E6 (ADR-0061):** `estado.ts` → máquina de estado por canal (`garantirAnuncioExterno`, `claimAnuncioExterno`, `decidirOperacaoCanal`); `registry.ts` suporta conectores injetáveis em teste (`registrarConectorParaTeste`); `fake.ts` conector de teste |
 | `redis/*` | Client Redis + caches (cor, concorrência, tarifa) |
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
 | `mercadopago/*` | API MP (pagamentos) + rateio financeiro |
@@ -122,9 +123,11 @@
   candidato(s) mas a IA de desempate abstém do falso-amigo — em vez de bloquear a família
   (ADR-0058, adendo 2026-07-04); só cai em `manual` quando não sobra genérico nenhum pra resgatar.
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
-  (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). Escopo da operação (ADR-0056):
-  publica as famílias selecionadas sem filtrar por chamador; a fila serial é keyed por
-  `familias.user_id` (a conta ML), o mesmo id que o worker usa para o token.
+  (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). **E6 (ADR-0061):** aceita
+  `canais[]` (default `['mercado_livre']`); fan-out: ML segue no worker `publish-familia-ml`;
+  cada canal ≠ ML enfileira para o worker genérico `publicar-anuncio` via fila serial
+  `publish-{canal}-{orgId}`. Escopo da operação (ADR-0056): publica as famílias selecionadas
+  sem filtrar por chamador.
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
@@ -135,6 +138,12 @@
   ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.
   Grava o item da partição cedo (anti-duplicação em retry); partição 0 herda `ml_item_id` existente.
   Catálogo por-partição é follow-up (hoje cobre só a partição 0).
+- **publicar-anuncio** *(worker genérico, E6 — ADR-0061)* — publica 1 família em 1 canal ≠ ML.
+  Claim atômico por `(org, canal, codigo_pai)`: `pendente|erro → publicando`. Resolve a conexão da
+  org, monta anúncio canônico, executa CREATE/UPDATE via conector, persiste em `anuncios_externos`.
+  Idempotência: claim já ocupado (publicando/publicado) → devolve 200 sem reprocessar. Fila serial
+  por `(canal, org)` garante rate limit por conta de vendedor (D-E6.4). Transitório (5xx/429) →
+  mantém `publicando` e retorna 500 para o QStash retentar.
 - **regenerar-copy-familia** — regera título/descrição via IA sem republicar.
 - **definir-categoria-familia** — grava a categoria escolhida pelo operador (busca livre,
   ADR-0057): `{familia_id, categoria_ml_id, categoria_nome}` (substitui o contrato antigo de 4
@@ -153,7 +162,9 @@
 
 ### Remoção / reprocessamento
 - **remover-publicado** — remove todas as linhas publicadas de um mesmo `codigo_pai` (global
-  por user+codigo_pai), limpa storage e `anuncios_externos`; bloqueia se há UPDATE em voo.
+  por org+codigo_pai), limpa storage e `anuncios_externos`; bloqueia se há UPDATE em voo.
+  **E6 (ADR-0061):** aceita `canal` (default `'mercado_livre'`) — remove só da linha
+  `(org_id, canal, codigo_pai)` especificada, sem afetar o produto em outros canais.
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
 - **reprocessar-familia** — reseta `erro→pendente` e re-enfileira (guard idempotente, ADR-0030).
 - **invalidar-cache-cor** — limpa o cache Redis de cor de um código (após refazer a foto).
@@ -182,12 +193,14 @@
 - **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040).
 
 ### Status / métricas / viabilidade
-- **status-publicados** — lê status dos anúncios via conector multicanal (resiliente a "sem credencial").
-  Escopo e token da **operação** (todos os anúncios + credencial ML compartilhada), não do chamador (ADR-0056).
-- **atualizar-status-publicado** — pausa/reativa um anúncio (`{ml_item_id, status}`) via
-  `ChannelConnector.atualizarStatus` (PUT parcial `status` no ML). Gate `requireAdmin` (não só
-  `requireUser`) — primeira ação de escrita restrita a admin do projeto (ADR-0060). Token da
-  operação, mesmo padrão do `status-publicados`.
+- **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
+  (resiliente a "sem credencial"). **E6 (ADR-0061):** agrupa `familias.ml_item_id` + `anuncios_externos`
+  por canal, lê em lote por canal. Escopo e token da **operação** (todos os anúncios da org),
+  não do chamador (ADR-0056).
+- **atualizar-status-publicado** — pausa/reativa um anúncio (`{ml_item_id, status, canal?}`)
+  via `ChannelConnector.atualizarStatus` (PUT parcial `status`). Gate `requireAdmin` (não só
+  `requireUser`) — primeira ação de escrita restrita a admin do projeto (ADR-0060). **E6 (ADR-0061):**
+  canal opcional (default `'mercado_livre'`). Token da operação, mesmo padrão do `status-publicados`.
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
   Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);

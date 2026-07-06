@@ -133,20 +133,58 @@ O E7 introduz o **discriminador `org_id`** para virar SaaS multi-empresa, sem tr
   (`resolverIdentidade`/`resolverOrgPorUserId`); e a coluna `org_id NOT NULL` falha alto (erro de
   INSERT) se algum caminho esquecer de propagá-la — defesa estrutural, não só convenção de código.
 
-## Multicanal (preparação para o 2º marketplace)
+## Multicanal com fan-out por (família, canal) — E6 (ADR-0061)
 
-Hoje só existe o Mercado Livre, mas a arquitetura já separa **o que publicar** de **onde
-publicar**:
+Hoje: Mercado Livre + suporte para canais futuros. A arquitetura separa **o que publicar** de
+**onde publicar** via abstração de conector; desde o E6, a orquestração de publicação faz
+**fan-out por família×canal** com máquinas de estado e filas independentes por canal.
 
-- **Conector de canal** (`_shared/canais/`): interface única (`criarAnuncio`,
-  `atualizarAnuncio`, `lerStatus`, …). `MercadoLivreConnector` delega às funções `_shared/ml/*`.
-- **`anuncios_externos`**: espelho normalizado com identidade `(org_id, canal, codigo_pai,
-  particao)` — da **organização**, não do usuário, desde o E7 (ADR-0027) —, estável mesmo quando
-  lotes/famílias mudam. Workers fazem dual-write nele.
+### Orquestração do fan-out
 
-A fonte de verdade ainda são as colunas `ml_*` em `familias`/`variacoes`; `anuncios_externos`
-é o espelho que vira fonte quando entrar o 2º canal (Shopee, épico E5). Ver ADR-0024/0025 e a
-spec de evolução SaaS em `docs/superpowers/specs/`.
+`publicar-familias(familia_ids[], canais[])` executa dois caminhos em paralelo:
+
+1. **Mercado Livre (intocado, D-E6.1):** se `canais` inclui `'mercado_livre'`, enfileira cada
+   família em `publish-ml-{userId}` (fila serial por conta ML). Workers `publish-familia-ml` /
+   `update-familia-ml` / `publicar-split-ml` executam **byte-a-byte como sempre** — nenhuma mudança
+   desde E1, sem risco de regressão.
+
+2. **Canais extras (E6 novo, D-E6.2):** para cada `canal ≠ 'mercado_livre'`:
+   - `garantirAnuncioExterno`: garante linha em `anuncios_externos(org_id, canal, codigo_pai, particao=0)`
+     com status `pendente` (ignoreDuplicates: não rebaixa estado existente).
+   - `claimAnuncioExterno`: atomic claim `pendente|erro → publicando`. Idempotente: re-entrega
+     já ocupada retorna null (nada a fazer).
+   - `enfileirarPublicacaoCanal`: enfileira job em fila serial `publish-{canal}-{orgId}`
+     (rate limit por conta de vendedor, D-E6.4).
+   - Worker `publicar-anuncio` (genérico):
+     - Resolve `marketplace_connections` da org → token do canal.
+     - Monta `AnuncioCanonico` (canônico, agnóstico de canal).
+     - Executa `criarAnuncio` / `atualizarAnuncio` via conector.
+     - Persiste resultado em `anuncios_externos` (status: `publicando → publicado | erro`).
+
+### Máquinas de estado e isolamento
+
+- **Por canal:** cada linha em `anuncios_externos` é uma máquina de estado independente
+  (`pendente → publicando → publicado | erro`, check-constraint). Falha no Shopee não afeta
+  o Mercado Livre.
+- **Isolamento estrutural (D-E6.2):** workers de canais extras **nunca** tocam em `familias.status`.
+  O estado de ingest/revisão permanece no ML; o estado de publicação por canal vive em
+  `anuncios_externos`. `familias.status` continua sendo a visão da revisão (CREATE/UPDATE para
+  o ML são decididos ali; canais extras decidem por `item_externo_id` nulo/preenchido).
+
+### Conector, registry e injeção de teste
+
+- **Conector multicanal** (`_shared/canais/contrato.ts`): interface única (`criarAnuncio`,
+  `atualizarAnuncio`, `lerStatus`, `atualizarStatus`, …).
+- **`MercadoLivreConnector`** delega a `_shared/ml/*` (foto, item, descrição, atacado, catálogo).
+- **Registry** (`_shared/canais/registry.ts`): `getConnector(canal)` busca mapa hardcoded +
+  extras injetáveis. Em teste: `registrarConectorParaTeste()` injeta conector fake
+  (`_shared/canais/fake.ts`), prova ponta a ponta sem 2º canal real. **Em produção:** mapa vazio,
+  fake some do bundle (não é importado fora de `__tests__`).
+
+### Próximo passo (E5)
+
+Shopee = preencher `ShopeeConnector` implementando a mesma interface + registrar no registry +
+adicionar `'shopee'` ao enum `canal_externo`. A orquestração já cobre tudo.
 
 ## Módulos além da publicação
 

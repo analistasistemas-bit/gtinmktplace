@@ -149,15 +149,20 @@ Grupos:
 
 ### `anuncios_externos`
 Espelho multicanal normalizado. Identidade estável independente de lote/família.
-*Migration `20260614152627_anuncios_externos.sql` (ADR-0025).*
+*Migrations `20260614152627_anuncios_externos.sql` (ADR-0025) + `20260705234110_e6_anuncios_externos_estado.sql` (ADR-0061).*
 
 `id`, `user_id`, `org_id` (FK organizations, ADR-0027), `canal` (`canal_externo`), `codigo_pai`,
-`item_externo_id`, `permalink`, `status`, `erro_mensagem`, `variacoes_externas jsonb` (mapa
+`item_externo_id`, `permalink`, **`status`** (`pendente|publicando|publicado|erro`, check-constraint;
+E6/ADR-0061), `erro_mensagem`, `variacoes_externas jsonb` (mapa
 `codigo → {variation_id, catalog_product_id, catalog_listing_id, catalog_status}`),
-`metadados_canal jsonb`, `preco_override`, `publicado_em`, **`particao smallint`**, **`titulo`**.
+`metadados_canal jsonb`, `preco_override`, `publicado_em`, **`particao smallint`**, **`titulo`**,
+**`qstash_message_id`** (rastreio do job do fan-out, diagnóstico/idempotência; E6/ADR-0061).
 Único: **`(org_id, canal, codigo_pai, particao)`** (era `(user_id, canal, codigo_pai, particao)`
 até o E7 — a identidade do anúncio passou a ser da **organização**, não do usuário, ADR-0027/0025).
-Populado por dual-write dos workers + backfill.
+Populado por dual-write dos workers + backfill. **E6 (ADR-0061) — Estado por canal:** cada linha
+é uma máquina de estado independente (`pendente → publicando → publicado | erro`); claim atômico
+em `(org_id, canal, codigo_pai, particao=0)` garante `pendente|erro → publicando` antes do worker
+processar (idempotência em re-entrega de QStash).
 *Split (ADR-0048, migration `20260629180206_anuncios_externos_particao.sql`):* um produto com
 >100 cores tem N linhas (uma por anúncio/partição); cada `variacoes_externas` é a **ancoragem**
 (sku → anúncio). Produto ≤100 cores tem só `particao=0` (idêntico ao modelo original ADR-0025).
