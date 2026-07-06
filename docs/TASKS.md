@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Dashboard — mapa "Vendas por estado" clicável (pedidos + valor) — 2026-07-06
+
+- [x] **Clicar num estado do mapa (Dashboard) mostra pedidos e valor vendido no período**,
+  pedido do Diego (mobile-friendly: linha compacta de uma linha só, não popover/tooltip — hover
+  não funciona em toque). `MapaBrasil` já tinha `selecionada`/`onSelecionar` (usado em
+  Faturamento › Geografia); só faltava ligar no Dashboard. Aproveitado para trocar a fonte da
+  contagem por UF de `vendasPorUf` (contava por **linha** de `ml_vendas`) para
+  `agruparPorGeografia(pedidos)` (mesma agregação de Faturamento › Geografia, nível de
+  **pacote/pedido**) — dá o valor por UF de graça e fecha uma pequena divergência de contagem que
+  já existia entre o mapa do Dashboard e o resto do app. `vendasPorUf` (`cockpit.ts`) mantido —
+  ainda tem teste próprio, sem outro uso a remover. 1205 testes verdes; build/lint ok. Validado
+  local (dev) antes do merge, sob comando "atualizar" do Diego. Merge → main (rebase limpo sobre
+  `1ad2cab`) → deploy live (commit `c32e6a4`).
+
 ## Publicados — KPI "Variações publicadas" no card de saúde — 2026-07-06
 
 - [x] **Novo KPI "Variações publicadas" no card "Saúde dos anúncios" (Publicados)**, pedido do

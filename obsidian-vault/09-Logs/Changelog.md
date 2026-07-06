@@ -11,6 +11,16 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-07-06
 
+- **Feat: mapa "Vendas por estado" (Dashboard) clicável — mostra pedidos e valor.** Pedido do
+  Diego, com um requisito específico de mobile: nada de popover/tooltip (hover não existe em
+  toque) — uma linha compacta abaixo do mapa (`UF · N pedidos · valor`), que aparece ao clicar e
+  some ao clicar de novo. `MapaBrasil` já tinha os props `selecionada`/`onSelecionar` (usados em
+  Faturamento › Geografia); só faltava ligar no Dashboard. Efeito colateral bom: a contagem por UF
+  passou de `vendasPorUf` (linha de `ml_vendas`, podia inflar pacotes multi-item) para
+  `agruparPorGeografia(pedidos)` — mesma fonte de Faturamento › Geografia, nível de pedido —
+  ganhando o valor por UF de graça e fechando uma divergência de contagem que já existia entre o
+  mapa do Dashboard e o resto do app. 1205 testes verdes. Só frontend.
+
 - **Feat/Fix: KPI "Variações publicadas" no card "Saúde dos anúncios" (Publicados).** Pedido do
   Diego. A 1ª tentativa contava `variacoes` da família **representante** de cada anúncio, que
   `dedupePublicados` elege como a mais **antiga** por `ml_item_id` — mesmo root-cause do fix de
