@@ -18,16 +18,19 @@ import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
 import { agruparPorPeriodo } from '@/lib/resumo-vendas';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { useVendas } from '@/hooks/useVendas';
+import { useCustos } from '@/hooks/useCustos';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
 import { montarPendencias } from '@/lib/pendencias';
 import { topProdutos, calendarioCaixa, montarAtencao } from '@/lib/cockpit';
 import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento';
 import { agruparPorGeografia } from '@/lib/geografia-vendas';
+import { montarAliquotaResolver, montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 
 type Trend = 'up' | 'down' | 'neutral';
 function delta(atual: number, anterior: number): { texto: string; trend: Trend } {
@@ -90,6 +93,8 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const { resumo: rAnt } = useResumoVendas(janelaAnt);
   const vendasRaw = useVendas(janela, 'todos'); // mesma chave de cache do useResumoVendas → sem request extra
   const vendasRawAnt = useVendas(janelaAnt, 'todos'); // idem (já buscado pelo rAnt) → delta por pacote
+  const { data: custos } = useCustos();
+  const { data: aliquotas } = useAliquotas();
   const carregando = vendasRaw.isPending;
 
   // Catálogo + pendências cross-módulo
@@ -129,11 +134,26 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
   // Pedidos/ticket/compradores por PACOTE (agruparPorPedido) — mesmo nível do menu Faturamento
   // (fonte da verdade): uma compra com vários itens conta como 1 pedido. O resumo (r.pedidos/
   // r.ticket) conta por linha de ml_vendas, o que infla pedidos e reduz o ticket.
-  const pedidos = useMemo(() => agruparPorPedido(vendasRaw.data ?? []), [vendasRaw.data]);
+  const pedidos = useMemo(
+    () => agruparPorPedido(
+      vendasRaw.data ?? [],
+      montarCustoResolver(custos),
+      montarPesoResolver(custos),
+      undefined,
+      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+    ),
+    [vendasRaw.data, custos, aliquotas],
+  );
   const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
   const kpisPedidosAnt = useMemo(
-    () => calcularKpisPedidos(agruparPorPedido(vendasRawAnt.data ?? [])),
-    [vendasRawAnt.data],
+    () => calcularKpisPedidos(agruparPorPedido(
+      vendasRawAnt.data ?? [],
+      montarCustoResolver(custos),
+      montarPesoResolver(custos),
+      undefined,
+      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+    )),
+    [vendasRawAnt.data, custos, aliquotas],
   );
   const top = useMemo(() => topProdutos(vendasRaw.data ?? [], 5), [vendasRaw.data]);
   // Mesma agregação por UF do menu Faturamento › Geografia (pedidos + valor no nível de pacote).
@@ -221,9 +241,11 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
         )}
 
         <KpiCard
-          label="Lucro líquido" icon={Coins} loading={carregando}
-          value={r.margem != null ? fmtBRL(r.lucro) : '—'}
-          {...(r.margem != null ? { delta: delta(r.lucro, rAnt.lucro).texto, deltaTrend: delta(r.lucro, rAnt.lucro).trend } : {})}
+          label="Líquido no faturamento" icon={Coins} loading={carregando} to="/faturamento"
+          value={fmtBRL(kpisPedidos.liquido)}
+          delta={delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).texto}
+          deltaTrend={delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).trend}
+          hint={r.margem != null ? `lucro ${fmtBRL(r.lucro)}` : undefined}
         />
         <KpiCard
           label="Markup no período" icon={TrendingUp} loading={carregando}

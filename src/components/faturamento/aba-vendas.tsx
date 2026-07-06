@@ -368,6 +368,7 @@ export function AbaVendas() {
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(kpis.bruto)} tom="success" />
+        <Kpi icon={DollarSign} label="Líquido" valor={fmtBRL(kpis.liquido)} tom="success" valorCor="text-success" />
         <Kpi icon={ShoppingBag} label="Pedidos" valor={fmtInt(kpis.pedidos)} tom="info" />
         <Kpi icon={Package} label="Unidades" valor={fmtInt(kpis.unidades)} tom="info" />
         <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(kpis.ticket)} tom="info" />

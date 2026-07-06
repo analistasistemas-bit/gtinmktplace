@@ -148,6 +148,7 @@ describe('calcularKpisPedidos', () => {
     const k = calcularKpisPedidos(agruparPorPedido(vendas));
     expect(k.pedidos).toBe(2);             // 1 pack + 1 solo
     expect(k.unidades).toBe(4);            // 1 + 1 + 2
+    expect(k.liquido).toBe(27);
     expect(k.ticket).toBe(50);            // (50 + 50) / 2
     expect(k.itensPorPedido).toBe(2);     // 4 / 2
     expect(k.compradoresUnicos).toBe(2);  // comprador 100 e 200
@@ -160,6 +161,7 @@ describe('calcularKpisPedidos', () => {
     ];
     const k = calcularKpisPedidos(agruparPorPedido(vendas));
     expect(k.pedidos).toBe(1);
+    expect(k.liquido).toBe(9);
     expect(Object.values(k.porStatusEnvio).reduce((a, b) => a + b, 0)).toBe(2); // conta os 2 pedidos
   });
 

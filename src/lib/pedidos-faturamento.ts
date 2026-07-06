@@ -216,6 +216,8 @@ export interface KpisPedidos {
   unidades: number;
   /** Faturamento bruto das vendas faturáveis no período. */
   bruto: number;
+  /** Soma do líquido exibido nos pedidos faturáveis. */
+  liquido: number;
   /** Bruto ÷ pedidos. */
   ticket: number;
   /** Unidades ÷ pedidos. */
@@ -231,7 +233,7 @@ export interface KpisPedidos {
 
 /** Agrega KPIs operacionais a partir dos pedidos. Monetários só sobre faturáveis (ADR-0038). */
 export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
-  let bruto = 0, unidades = 0, faturaveis = 0, liqComCusto = 0, custoTotal = 0;
+  let bruto = 0, liquido = 0, unidades = 0, faturaveis = 0, liqComCusto = 0, custoTotal = 0;
   const porStatusEnvio: Record<string, number> = {};
   const pedidosPorComprador = new Map<number, number>();
 
@@ -241,6 +243,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     if (!ehFaturavel(p.status)) continue;
     faturaveis += 1;
     bruto += p.bruto;
+    liquido += p.liquido;
     unidades += p.unidades;
     if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
     if (p.comprador_id != null) {
@@ -257,6 +260,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     pedidos: faturaveis,
     unidades,
     bruto: round2(bruto),
+    liquido: round2(liquido),
     ticket: faturaveis > 0 ? round2(bruto / faturaveis) : 0,
     itensPorPedido: faturaveis > 0 ? round2(unidades / faturaveis) : 0,
     markup: custoTotal > 0 ? (liqComCusto - custoTotal) / custoTotal : null,
