@@ -153,7 +153,8 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
   );
 
   const catalogoSub = `${fmtInt(kpis.publicados)} ${kpis.publicados === 1 ? 'anúncio publicado' : 'anúncios publicados'}`
-    + (semStatus ? '' : ` · ${fmtInt(kpis.ativos)} ${kpis.ativos === 1 ? 'ativo' : 'ativos'}`);
+    + (semStatus ? '' : ` · ${fmtInt(kpis.ativos)} ${kpis.ativos === 1 ? 'ativo' : 'ativos'}`)
+    + ` · ${fmtInt(kpis.variacoesPublicadas)} variações publicadas`;
 
   return (
     <div className="p-4 sm:p-6">

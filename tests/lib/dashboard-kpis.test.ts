@@ -12,10 +12,11 @@ function lote(over: Partial<Lote>): Lote {
     ...over,
   };
 }
-function pub(id: string): PublicadoItem {
+function pub(id: string, qtdVariacoes?: number): PublicadoItem {
   return {
     familiaId: id, codigoPai: id, titulo: id, fornecedor: null, tipo: null,
     precoPublicacao: 0, descricao: null, mlItemId: 'MLB' + id, mlPermalink: null, publicadoEm: null,
+    qtdVariacoes,
   };
 }
 function st(status: StatusPublicadoItem['status']): StatusPublicadoItem {
@@ -25,7 +26,7 @@ function st(status: StatusPublicadoItem['status']): StatusPublicadoItem {
 describe('calcularKpisDashboard', () => {
   it('tudo zero para entradas vazias', () => {
     expect(calcularKpisDashboard([], [], [])).toEqual({
-      publicados: 0, ativos: 0, comProblema: 0, erros: 0, aRevisar: 0,
+      publicados: 0, ativos: 0, comProblema: 0, erros: 0, aRevisar: 0, variacoesPublicadas: 0,
     });
   });
 
@@ -60,5 +61,10 @@ describe('calcularKpisDashboard', () => {
       [], [],
     );
     expect(r.aRevisar).toBe(2);
+  });
+
+  it('variacoesPublicadas = soma de qtdVariacoes dos anúncios (0 quando ausente)', () => {
+    const r = calcularKpisDashboard([], [pub('a', 5), pub('b', 3), pub('c')], []);
+    expect(r.variacoesPublicadas).toBe(8);
   });
 });

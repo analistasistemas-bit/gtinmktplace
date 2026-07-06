@@ -8,6 +8,7 @@ export interface KpisDashboard {
   comProblema: number;
   erros: number;
   aRevisar: number;
+  variacoesPublicadas: number;
 }
 
 const STATUS_PROBLEMA: ReadonlySet<StatusPublicado> = new Set<StatusPublicado>([
@@ -27,5 +28,6 @@ export function calcularKpisDashboard(
     comProblema: statusItens.filter((s) => STATUS_PROBLEMA.has(s.status)).length,
     erros: lotes.reduce((acc, l) => acc + l.totalErros, 0),
     aRevisar: lotes.filter((l) => l.status === 'revisao').length,
+    variacoesPublicadas: publicados.reduce((acc, p) => acc + (p.qtdVariacoes ?? 0), 0),
   };
 }
