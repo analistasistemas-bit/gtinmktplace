@@ -102,7 +102,11 @@ export default function Relatorio() {
                   <a href={f.mlPermalink} target="_blank" rel="noreferrer" className="text-primary underline">ver anúncio ↗</a>
                 ) : null
               )}
-              {f.status === 'publicando' && <span className="text-muted-foreground">publicando…</span>}
+              {f.status === 'publicando' && (
+                <span className="flex items-center gap-1.5 text-info">
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin" />publicando…
+                </span>
+              )}
               {f.status === 'erro' && (
                 <>
                   <span className="max-w-xs truncate text-destructive" title={f.erroMensagem ?? ''}>{f.erroMensagem ?? 'erro'}</span>

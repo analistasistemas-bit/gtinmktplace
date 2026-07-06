@@ -252,6 +252,7 @@ export default function Revisao() {
   );
 
   async function confirmarPublicacao() {
+    if (!loteId) return;
     setPublicando(true);
     const total = selecionadas.size;
     // Só canais escolhidos vale com o grupo visível (>1 conexão); com 1 conexão o
@@ -259,6 +260,12 @@ export default function Revisao() {
     const canais = mostrarSeletorCanais ? [...canaisSelecionados] : ['mercado_livre'];
     try {
       await publicarFamilias([...selecionadas], listingType, canais);
+      // A edge `publicar-familias` já fez o claim síncrono (status→'publicando') antes de
+      // enfileirar. Invalidar aqui força o Relatório a buscar esse status real já no mount —
+      // sem isso, a cache 'pronto' da Revisão (staleTime 30s) mostrava "não publicada (não
+      // selecionada)" por ~15s até o worker/realtime tocar a linha, parecendo travado.
+      qc.invalidateQueries({ queryKey: QK.familias(loteId) });
+      qc.invalidateQueries({ queryKey: QK.lote(loteId) });
       setSelecionadas(new Set());
       setConfirmando(false);
       toast.success(`${total} família(s) enfileirada(s) para publicação`, {
