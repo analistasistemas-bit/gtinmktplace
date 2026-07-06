@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Dicionário de cores — Salmon (inglês) e Rosa Pink (composta) — 2026-07-06
+
+- [x] **Lote #24**: "Salmon" caía em "Outra" e "Rosa Pink" virava só "Rosa" ao processar a
+  planilha (`process-familia` → `_shared/cor/dicionario.ts`). Causa: dicionário só tinha
+  "salmão/salmao" (faltava a grafia inglesa) e "rosa"/"pink" tinham sinônimos do mesmo tamanho —
+  o sort por especificidade empatava e o match de primeiro-encontrado sempre pegava "rosa"
+  primeiro. Fix: sinônimo `'salmon'` adicionado a Salmão + nova entrada composta `Rosa Pink`.
+  2 testes de regressão adicionados; 1209 testes verdes. Deploy: 10 edge functions que bundlam
+  `_shared/cor/` (process-familia, regenerar-copy-familia, publish-familia-ml, update-familia-ml,
+  publicar-anuncio, publicar-split-ml, status-publicados, atualizar-status-publicado,
+  monitorar-moderados, metricas-vendas) — verify_jwt conferido pós-deploy, sem drift.
+
 ## Dashboard — mapa "Vendas por estado" clicável (pedidos + valor) — 2026-07-06
 
 - [x] **Clicar num estado do mapa (Dashboard) mostra pedidos e valor vendido no período**,
