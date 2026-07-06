@@ -9,6 +9,17 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-07-05
+
+- **Fix: conexão ML de empresa nova aparecia "não conectada" na UI.** O hook `useMlConnection`
+  (`src/hooks/useMlConnection.ts`) ainda lia a tabela **congelada** `ml_credentials` (ADR-0027),
+  enquanto o callback OAuth grava em `marketplace_connections`. Toda conexão feita após a migração
+  ficava invisível no front — só a AVIL aparecia (linha legada de 2026-06-17). A DSA (empresa nova)
+  estava corretamente conectada (`$ANALISTA$`, id 9757132) em `marketplace_connections`, mas a tela
+  lia a tabela errada. Corrigido: hook lê `marketplace_connections` (filtro `canal='mercado_livre'`,
+  RLS `select org` já escopa por `current_org_id()`). `ml_credentials` agora está morta no front
+  (drop da tabela é follow-up). Validado em runtime (login DSA → "Conectado como $ANALISTA$").
+
 ## 2026-07-04
 
 - **Feat: categoria de seleção livre + "Outros" como fallback visível (ADR-0057/0058).** Famílias

@@ -13,16 +13,19 @@ export function useMlConnection() {
     queryKey: ['ml-connection'],
     staleTime: 5 * 60 * 1000, // estado só muda por ação explícita; invalidamos no disconnect
     queryFn: async () => {
+      // Fonte da conexão é marketplace_connections (ADR-0027); ml_credentials é tabela
+      // congelada — conexões novas só existem aqui. RLS escopa por org (current_org_id()).
       const { data, error } = await supabase
-        .from('ml_credentials')
-        .select('ml_nickname, ml_user_id, scope')
+        .from('marketplace_connections')
+        .select('conta_label, conta_externa_id, scope')
+        .eq('canal', 'mercado_livre')
         .maybeSingle();
       if (error) throw error;
       if (!data) return { conectado: false, nickname: null, mlUserId: null, scope: null };
       return {
         conectado: true,
-        nickname: data.ml_nickname,
-        mlUserId: data.ml_user_id,
+        nickname: data.conta_label,
+        mlUserId: data.conta_externa_id,
         scope: data.scope,
       };
     },
