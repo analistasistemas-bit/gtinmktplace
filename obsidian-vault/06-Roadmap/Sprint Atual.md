@@ -13,8 +13,7 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > **E7 (Multi-tenancy) e E6 (Orquestração multicanal) concluídos e em produção.** Restam no
 > épico do 2º canal o **E5 — Shopee** (conector real) e o **E6b** (estoque único cross-canal);
 > a validação plena de E6/E6b com 2 canais depende do E5. Próximo passo natural: **E5**.
-> Antes de iniciar o E5, re-rodar o Graphify (bloqueado hoje pela quota diária do Gemini free
-> tier). Planos em `docs/superpowers/plans/2026-07-02-*`; ADRs de referência [[ADRs|ADR-0027]]
+> Planos em `docs/superpowers/plans/2026-07-02-*`; ADRs de referência [[ADRs|ADR-0027]]
 > (multi-tenancy) e ADR-0061 (orquestração multicanal).
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
