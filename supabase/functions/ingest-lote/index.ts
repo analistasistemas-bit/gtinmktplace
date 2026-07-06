@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
     // trataria como CREATE e DUPLICARIA o anúncio no ML. A operação compartilha os anúncios.
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
       .in('codigo_pai', codigosPai)
       .not('ml_item_id', 'is', null)
       .order('publicado_em', { ascending: false, nullsFirst: false });
@@ -200,6 +200,7 @@ Deno.serve(async (req) => {
         titulo_ml: ant.titulo_ml,
         descricao_ml: ant.descricao_ml,
         categoria_ml_id: ant.categoria_ml_id,
+        categoria_nome: ant.categoria_nome,
         atributos_ml: ant.atributos_ml,
         tipo_aviamento: ant.tipo_aviamento,
         capa_ml_picture_id: ant.capa_ml_picture_id,

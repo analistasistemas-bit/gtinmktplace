@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Ingest UPDATE — herdar `categoria_nome` (categoria "—" na Revisão) — 2026-07-06
+
+- [x] **Lote #26**: família UPDATE aparecia com categoria "—" na Revisão embora o produto já
+  estivesse publicado. Causa: `ingest-lote` herdava `categoria_ml_id` da família publicada mas
+  **não** `categoria_nome` (ausente do select do anterior e do insert do UPDATE). O ID vinha certo
+  (MLB439096) — a publicação usa o ID, então nunca publicou na categoria errada; só o **nome**
+  (display) faltava → "—". Sem relação com o ADR-0062 (que mexeu só na publicação). Fix: incluir
+  `categoria_nome` no select e no insert de UPDATE do `ingest-lote`. Backfill do banco: 46 famílias
+  históricas com o gap corrigidas (nome copiado de irmã com mesmo `categoria_ml_id`; MLB277319 sem
+  fonte local → nome obtido da API pública de categorias do ML = "Bastãoes de Cola"). 1217 testes
+  verdes; eslint/deno lint ok.
+
 ## UPDATE ML — renomear cor de variação existente + fotos comuns duplicando (ADR-0062) — 2026-07-06
 
 - [x] **Lote #24/#25 (anúncio MLB4831319319)**: publicar o UPDATE não renomeava a cor de
