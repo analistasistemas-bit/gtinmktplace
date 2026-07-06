@@ -10,6 +10,13 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **KPI "Variações publicadas" (Publicados) subcontava produtos que cresceram em UPDATE (2026-07-06)**
+  — mesma causa raiz do fix de busca por código abaixo (2026-07-03): a família **representante** de
+  cada anúncio (`dedupePublicados`) é a mais **antiga** por `ml_item_id`; contar `variacoes` só dela
+  ignora variações adicionadas em ciclos de UPDATE posteriores. Passou por um número errado por
+  contagem duplicada (1268 — somava variações de todas as linhas de família, não só a atual) antes
+  de reconciliar. Fix: contar por `anuncios_externos.variacoes_externas` (espelho do worker), não
+  pela família. Confirmado ao vivo contra a API do ML: 856 variações em anúncios ativos.
 - **Famílias fora dos 4 aviamentos travavam pra sempre em "Categoria indefinida" (2026-07-04,
   ADR-0057/0058)** — o seletor manual de categoria só oferecia linha/fita/botão/cola; qualquer
   produto fora desses 4 tipos (ex.: "BAINHA INSTANTÂNEA 4MT UND", lote 51) ficava bloqueado sem

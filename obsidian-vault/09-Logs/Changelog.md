@@ -9,6 +9,21 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-07-06
+
+- **Feat/Fix: KPI "Variações publicadas" no card "Saúde dos anúncios" (Publicados).** Pedido do
+  Diego. A 1ª tentativa contava `variacoes` da família **representante** de cada anúncio, que
+  `dedupePublicados` elege como a mais **antiga** por `ml_item_id` — mesmo root-cause do fix de
+  busca por código de 2026-07-03: produto que cresceu em ciclos de UPDATE fica subcontado pela
+  família antiga. Passou por 1268 (bug de contagem: somava variações de **todas** as linhas de
+  família, duplicando por ciclo de UPDATE) e 678/676 (só a família mais antiga) até reconciliar
+  contra a fonte certa. Fix definitivo: `qtdVariacoes` por anúncio vem de
+  `anuncios_externos.variacoes_externas` (mantido pelos workers no publish), somado no resumo e
+  espelhado no relatório exportado. Validado contra 4 fontes independentes — incluindo consulta ao
+  vivo autenticada à API do Mercado Livre feita direto no Postgres (extensão `http` + `vault`, token
+  nunca sai do servidor) — todas convergindo em **856** variações publicadas em anúncios ativos.
+  1203 testes verdes. Só frontend.
+
 ## 2026-07-05
 
 - **Fix: conexão ML de empresa nova aparecia "não conectada" na UI.** O hook `useMlConnection`

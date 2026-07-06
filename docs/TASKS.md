@@ -2,7 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Publicados — ocultar colunas Fornecedor/Tipo da tabela — 2026-07-04
+## Publicados — KPI "Variações publicadas" no card de saúde — 2026-07-06
+
+- [x] **Novo KPI "Variações publicadas" no card "Saúde dos anúncios" (Publicados)**, pedido do
+  Diego. Contagem inicial usava as `variacoes` da família **representante** de cada anúncio
+  (`publicadoFromRow`/`dedupePublicados` elegem a mais **antiga** por `ml_item_id`) — mesma classe
+  de bug do fix de busca por código de 2026-07-03 (ver [[Problemas Resolvidos]]): produto que ganhou
+  variações em ciclos de UPDATE fica subcontado pela família antiga. 3 números errados no caminho
+  (1268 → contagem duplicada somando todas as linhas de família por ciclo de UPDATE; 678/676 → só a
+  família mais antiga) antes de reconciliar contra a fonte certa. Fix: `qtdVariacoes` por anúncio
+  passa a vir de `anuncios_externos.variacoes_externas` (espelho mantido pelos workers no publish),
+  somado no `calcularResumoPublicados` (`resumo-publicados.ts`) e espelhado no relatório exportado
+  (`export/adapters.ts`). Validado contra 4 fontes independentes, incluindo chamada ao vivo à API do
+  ML autenticada via a extensão `http` + `vault` direto no Postgres (sem expor token): todas convergem em **856**
+  variações publicadas em anúncios ativos. 1203 testes verdes. Merge → main → deploy live
+  (commit `16ac2bb`).
 
 - [x] **Colunas Fornecedor e Tipo removidas da tabela de Publicados** (pedido do Diego). Os filtros
   de Fornecedor e Tipo (dropdowns) já operavam sobre os dados independente da coluna aparecer na
