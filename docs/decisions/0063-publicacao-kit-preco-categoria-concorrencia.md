@@ -33,10 +33,12 @@ subsistema diferente — daí a sensação de "cada lote, um erro novo":
    acima da concorrência, publica no piso e sinaliza no `estrategia_motivo` ("piso viável — pouco
    competitivo"), deixando o operador decidir ajustar/não publicar. Comissão/frete passam a ser
    buscados também no caminho competitivo.
-3. **Categoria via catálogo:** quando o preditor textual cai em genérica/manual, usa a categoria
-   onde os CONCORRENTES anunciam o mesmo produto (`concorrencia.ofertas.category_id`, do
-   `/products/{id}/items`), resolvendo o nome via `buscarNomeCategoria`. Só sobrepõe quando
-   desistiríamos e a do catálogo é folha real (não genérica). Compõe com o fix #4.
+3. **Categoria via NOME de catálogo:** quando o preditor textual cai em genérica/manual (nome
+   ruidoso), re-roda o preditor com o NOME CANÔNICO do produto de catálogo achado pela concorrência
+   (`concorrencia.product_name`, ex.: "Fio Barroco Maxcolor Brilho ... Crochê") e pega o 1º
+   candidato específico. Verificado na API: o `category_id` do produto de catálogo NÃO é exposto
+   (só `domain_id`), mas o nome canônico resolve — o do BRILHO → MLB271471 "Lãs". Compõe com o
+   fix #4 (que acha o produto de catálogo). Resiliente: só genérico/falha → mantém o texto.
 4. **Concorrência:** `product_identifier={gtin}` em vez de `q={gtin}`, e tenta até 5 EANs da
    família (as cores são o mesmo produto de catálogo; nem todo EAN está indexado). Alinha com
    `catalogo.ts` (que já acertava).

@@ -17,7 +17,7 @@ import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, categoriaParaTipo, tipoParaCategoria, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria, ehCategoriaGenerica } from '../_shared/categoria/resolver.ts';
-import { buscarCategoriaPreditor, buscarNomeCategoria } from '../_shared/ml/domain-discovery.ts';
+import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
@@ -185,19 +185,21 @@ Deno.serve(async (req) => {
     let categoriaNome = cat.categoriaNome;
     let categoriaOrigem = cat.origem;
 
-    // Categoria via catálogo do ML (lote #27): quando o preditor TEXTUAL cai em genérica
-    // ("Outros") ou manual — nome ruidoso tipo "BARROCO MAXCOLOR BRILHO 200GR" —, a categoria
-    // onde os CONCORRENTES anunciam o mesmo produto (do /products/{id}/items via GTIN) é um sinal
-    // muito mais confiável. Só sobrepõe quando desistiríamos e a do catálogo é uma folha real
-    // (não genérica). Idempotente e resiliente: falha/rede → mantém o resultado do preditor.
-    const catCatalogoId = concorrencia.ofertas?.category_id ?? null;
-    if ((cat.origem === 'generico' || cat.origem === 'manual') && catCatalogoId && token) {
-      const nomeCat = await buscarNomeCategoria(token, catCatalogoId).catch(() => null);
-      if (nomeCat && !ehCategoriaGenerica(nomeCat)) {
-        categoriaMlId = catCatalogoId;
-        categoriaNome = nomeCat;
-        tipo = tipoParaCategoria(catCatalogoId);
-        categoriaOrigem = 'preditor'; // categoria vinda de dado real do ML (concorrentes), não do texto
+    // Categoria via NOME de catálogo (lote #27): quando o preditor TEXTUAL cai em genérica
+    // ("Outros") ou manual por nome ruidoso ("BARROCO MAXCOLOR BRILHO 200GR"), mas a concorrência
+    // achou o produto no catálogo do ML, o NOME CANÔNICO do catálogo ("Fio Barroco Maxcolor Brilho
+    // ... Crochê") resolve a categoria certa. Re-roda o preditor com ele e pega o 1º candidato
+    // específico. Verificado: o nome de catálogo do BRILHO → MLB271471 "Lãs". O category_id do
+    // produto de catálogo NÃO é exposto pela API (só domain_id), por isso vamos pelo nome.
+    // Resiliente: falha/rede/só genérico → mantém o resultado do preditor textual.
+    if ((cat.origem === 'generico' || cat.origem === 'manual') && concorrencia.product_name && token) {
+      const candidatos = await buscarCategoriaPreditor(token, concorrencia.product_name).catch(() => []);
+      const especifico = candidatos.find((c) => !ehCategoriaGenerica(c.categoriaNome));
+      if (especifico) {
+        categoriaMlId = especifico.categoriaId;
+        categoriaNome = especifico.categoriaNome;
+        tipo = tipoParaCategoria(especifico.categoriaId);
+        categoriaOrigem = 'preditor'; // categoria vinda do nome canônico do catálogo, não do texto sujo
       }
     }
 

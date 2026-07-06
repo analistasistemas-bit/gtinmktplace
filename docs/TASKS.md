@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Categoria genérica (BRILHO / lote #27) — resolver pelo nome de catálogo — ADR-0063 — 2026-07-06
+
+- [x] **Resíduo do lote #27**: família BRILHO ficava categoria "Outros" mesmo com o produto no
+  catálogo do ML. Causa: o `category_id` do produto de catálogo **não é exposto** pela API (só
+  `domain_id=MLB-YARNS`) — verificado ao vivo via extensão `http`. Fix (revisa o fix 3 do ADR-0063):
+  quando o preditor textual cai em genérico/manual, re-roda o preditor com o **nome canônico do
+  catálogo** (`concorrencia.product_name`, "Fio Barroco Maxcolor Brilho ... Crochê") → resolve
+  MLB271471 "Lãs" (confirmado na API). 1221 testes verdes; deno lint + check ok.
+
 ## Publicação — 4 bugs do lote #27 (kit, preço, categoria, concorrência) — ADR-0063 — 2026-07-06
 
 - [x] **Lote #27 (barbante Barroco Maxcolor)**, 4 falhas independentes corrigidas (ADR-0063):
