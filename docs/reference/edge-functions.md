@@ -133,6 +133,9 @@
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
+  Renomeia a cor de variação já publicada (envia COLOR só quando muda vs. o ML — ADR-0062; o ML
+  pode recusar em variação com vendas). Fotos comuns (capa2/capa3) só são reenviadas ao criar cor
+  nova — reposição/rename não toca fotos (evita duplicação na galeria, ADR-0062).
 - **publicar-split-ml** *(worker, split — ADR-0048)* — produto com >100 cores publica em N anúncios
   ("partições"). `publicar-familias` roteia >100 cores incluídas pra cá. Particiona alfabético com
   ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.

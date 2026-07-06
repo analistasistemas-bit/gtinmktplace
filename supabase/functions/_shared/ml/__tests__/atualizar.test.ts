@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../atualizar';
+import { corDaVariacaoML } from '../atualizar-item';
+
+describe('corDaVariacaoML', () => {
+  it('extrai o value_name do atributo COLOR', () => {
+    expect(corDaVariacaoML([{ id: 'GTIN', value_name: '789' }, { id: 'COLOR', value_name: 'Rosa Pink' }])).toBe('Rosa Pink');
+  });
+  it('null quando não há COLOR', () => {
+    expect(corDaVariacaoML([{ id: 'GTIN', value_name: '789' }])).toBeNull();
+  });
+  it('null quando o argumento não é array', () => {
+    expect(corDaVariacaoML(undefined)).toBeNull();
+    expect(corDaVariacaoML(null)).toBeNull();
+  });
+  it('COLOR com value_name vazio → null', () => {
+    expect(corDaVariacaoML([{ id: 'COLOR', value_name: '' }])).toBeNull();
+  });
+});
 
 const atuais = [
   { id: 'V1', seller_custom_field: '00000101', available_quantity: 5 },
@@ -86,6 +103,37 @@ describe('montarVariacoesUpdate', () => {
     const a = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
     const out = montarVariacoesUpdate(a, [{ codigo: '1', estoque: 9 }], undefined, { pct: 15, precoPorCodigo: { '1': 12.29 } }, 99);
     expect(out[0]).toMatchObject({ price: 12.29, original_price: 14.46 });
+  });
+
+  // Bug lote #24/#25: renomear a cor de uma variação JÁ publicada não ia ao ML porque
+  // o PUT nunca incluía COLOR das existentes. Agora envia COLOR quando (e só quando) muda.
+  const atuaisCor = [
+    { id: 'V1', seller_custom_field: '02710013', available_quantity: 5, cor: 'Rosa' },
+    { id: 'V2', seller_custom_field: '03083284', available_quantity: 5, cor: 'Outra' },
+  ];
+  it('envia COLOR na variação existente quando a cor mudou (Rosa → Rosa Pink)', () => {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+      '02710013': 'Rosa Pink',
+    });
+    expect(r.find((v) => v.id === 'V1')?.attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Rosa Pink' }]);
+  });
+  it('NÃO envia COLOR quando a cor desejada é igual à do ML (idempotente)', () => {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+      '02710013': 'Rosa',
+    });
+    expect(r.find((v) => v.id === 'V1')).not.toHaveProperty('attribute_combinations');
+  });
+  it('NÃO envia COLOR de variação cujo código não está no mapa de cor desejada', () => {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+      '02710013': 'Rosa Pink',
+    });
+    expect(r.find((v) => v.id === 'V2')).not.toHaveProperty('attribute_combinations');
+  });
+  it('cor desejada vazia/nula não vira COLOR (não zera a cor no ML)', () => {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+      '02710013': '',
+    });
+    expect(r.find((v) => v.id === 'V1')).not.toHaveProperty('attribute_combinations');
   });
 });
 

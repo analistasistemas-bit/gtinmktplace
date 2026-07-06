@@ -13,6 +13,18 @@ function erroML(status: number, json: unknown): Error {
   return e;
 }
 
+// Extrai o value_name do atributo COLOR das attribute_combinations do ML (null se ausente).
+export function corDaVariacaoML(attributeCombinations: unknown): string | null {
+  if (!Array.isArray(attributeCombinations)) return null;
+  for (const a of attributeCombinations) {
+    if (a && typeof a === 'object' && (a as { id?: string }).id === 'COLOR') {
+      const nome = (a as { value_name?: string | null }).value_name;
+      return nome != null && nome !== '' ? nome : null;
+    }
+  }
+  return null;
+}
+
 // Estado real do anúncio: ids + seller_custom_field + estoque de cada variação.
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
   const url = `https://api.mercadolibre.com/items/${itemId}?attributes=id,variations,pictures`;
@@ -25,6 +37,8 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     available_quantity: (v.available_quantity as number) ?? 0,
     // IDs reais das fotos no item (o ML re-hospeda; diferem dos IDs de upload cacheados).
     picture_ids: ((v.picture_ids as string[] | undefined) ?? []).filter(Boolean),
+    // Cor (COLOR) atual no ML — p/ só reenviar COLOR quando o nome muda (ADR-0062).
+    cor: corDaVariacaoML(v.attribute_combinations),
   }));
   const pictures = (json.pictures ?? [])
     .map((p: Record<string, unknown>) => p.id as string)

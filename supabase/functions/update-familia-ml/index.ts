@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
     // todas; foto da cor nova também em item.pictures). Não lança: erro vira ResultadoCanal.
     const res = await conn.atualizarAnuncio(ctx, {
       itemExternoId: familia.ml_item_id,
-      existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque })),
+      existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque, cor: v.cor })),
       novas: novasComFoto.map((v) => ({
         sku: v.codigo, cor: v.cor, estoque: v.estoque,
         preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,

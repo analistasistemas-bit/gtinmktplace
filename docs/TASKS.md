@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## UPDATE ML — renomear cor de variação existente + fotos comuns duplicando (ADR-0062) — 2026-07-06
+
+- [x] **Lote #24/#25 (anúncio MLB4831319319)**: publicar o UPDATE não renomeava a cor de
+  variação já publicada no ML, e as fotos CAPA2/CAPA3 duplicavam a cada publicação. Causas:
+  (1) `montarVariacoesUpdate` nunca enviava COLOR das variações existentes — só de cores novas;
+  (2) dedupe de fotos comparava id de upload (cacheado) vs id re-hospedado pelo ML → nunca casava,
+  reinserindo capa2/capa3 a cada publish (até em reposição pura de estoque). Fix (ADR-0062):
+  `buscarItemML` captura a cor atual do ML (`corDaVariacaoML`); `montarVariacoesUpdate` envia COLOR
+  só quando a cor muda vs. o ML (idempotente); fotos comuns só (re)enviadas ao criar cor nova.
+  Contrato `AtualizacaoCanonica.existentes` passou a carregar `cor` (callers: update-familia-ml,
+  publicar-split-ml, publicar-anuncio). Testes: 1217 verdes (+ regressões de COLOR e `corDaVariacaoML`).
+  eslint 0 erros, deno lint ok. Limitação residual documentada no ADR (adicionar cor nova a anúncio
+  com capa2/capa3 ainda pode duplicar; ML pode recusar rename de cor em variação com vendas — anúncio
+  já quebrado é limpo manual no painel). Docs: ADR-0062 + edge-functions.md.
+
 ## Dicionário de cores — Salmon (inglês) e Rosa Pink (composta) — 2026-07-06
 
 - [x] **Lote #24**: "Salmon" caía em "Outra" e "Rosa Pink" virava só "Rosa" ao processar a

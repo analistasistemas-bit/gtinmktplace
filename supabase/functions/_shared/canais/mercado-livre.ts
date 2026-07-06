@@ -93,23 +93,20 @@ export const mercadoLivreConnector: ChannelConnector = {
       // do anúncio não passar de 99.999. No-op quando cabe. Estoque real intacto no banco.
       const capUpd = caparEstoque([...a.existentes, ...a.novas].map((v) => ({ sku: v.sku, estoque: v.estoque })));
       const desejados = a.existentes.map((e) => ({ codigo: e.sku, estoque: capUpd.get(e.sku) ?? e.estoque }));
-      // Fotos comuns (capa2/capa3) são da família inteira → aplicam a TODAS as variações
-      // existentes; inseridas logo após a líder de cada cor (capa3 sempre após capa2).
-      const comuns = [a.capa2FotoId, a.capa3FotoId].filter((x): x is string => !!x);
-      const picsPorCodigo: Record<string, string[]> = {};
-      if (comuns.length > 0) {
-        for (const av of atual.variations) {
-          const codigo = av.seller_custom_field ?? '';
-          const atuaisPics = av.picture_ids ?? [];
-          picsPorCodigo[codigo] = [...new Set(
-            [atuaisPics[0], ...comuns, ...atuaisPics.slice(1)].filter((x): x is string => !!x),
-          )];
-        }
-      }
+      // Renomear cor de variação já publicada (ADR-0062): sku → cor desejada no banco.
+      const corDesejadaPorCodigo: Record<string, string | null> = {};
+      for (const e of a.existentes) corDesejadaPorCodigo[e.sku] = e.cor;
+      // Fotos comuns (capa2/capa3) só entram ao CRIAR variação nova — a nova as referencia e o
+      // ML exige que estejam em item.pictures. Em update SEM cor nova (reposição de estoque /
+      // correção de nome), as variações existentes JÁ têm suas fotos no anúncio; reenviar
+      // duplicaria, porque o id de upload cacheado difere do id re-hospedado pelo ML e o dedupe
+      // por id nunca casa (bug lote #24/#25 — fotos CAPA2/CAPA3 acumulando). ADR-0062.
+      const criandoNovas = a.novas.length > 0;
       const existentes = montarVariacoesUpdate(
         atual.variations, desejados,
-        comuns.length > 0 ? picsPorCodigo : undefined,
+        undefined,
         a.desconto ?? undefined, a.precoFamilia,
+        corDesejadaPorCodigo,
       );
       const novasPut = a.novas.map((v) => montarVariacaoNova(
         { codigo: v.sku, cor: v.cor, estoque: capUpd.get(v.sku) ?? v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId },
@@ -121,11 +118,10 @@ export const mercadoLivreConnector: ChannelConnector = {
         ...(a.marca ? [{ id: 'BRAND', value_name: a.marca }] : []),
         ...(a.dimensoes ? montarAtributosPacote(a.dimensoes) : []),
       ];
-      // Ao criar variação nova, a foto dela precisa estar também em item.pictures.
+      // Só reenvia item.pictures ao criar variação nova (a foto dela precisa estar no item).
       const novasPicIds = novasPut.flatMap((v) => v.picture_ids);
-      const precisaPictures = novasPut.length > 0 || comuns.length > 0;
-      const pictures = precisaPictures
-        ? [...new Set([...atual.pictures, ...comuns, ...novasPicIds])]
+      const pictures = criandoNovas
+        ? [...new Set([...atual.pictures, ...novasPicIds])]
         : undefined;
       const resultado = await atualizarItemML(token, a.itemExternoId, [...existentes, ...novasPut], atributosItem, pictures);
       // O PUT nem sempre ecoa seller_custom_field nas variações criadas; o GET ecoa de forma

@@ -78,11 +78,11 @@ function montarAtualizacao(
   itemExternoId: string,
   variacoesExternas: Record<string, VariacaoExterna>,
 ): AtualizacaoCanonica {
-  const existentes: Array<{ sku: string; estoque: number }> = [];
+  const existentes: Array<{ sku: string; estoque: number; cor: string | null }> = [];
   const novas: VariacaoCanonica[] = [];
   for (const v of variacoes) {
     if (variacoesExternas[v.codigo]) {
-      existentes.push({ sku: v.codigo, estoque: v.estoque });
+      existentes.push({ sku: v.codigo, estoque: v.estoque, cor: v.cor });
     } else {
       novas.push({
         sku: v.codigo, cor: v.cor, estoque: v.estoque,

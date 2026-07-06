@@ -57,9 +57,11 @@ export interface MLVariacaoAtual {
   seller_custom_field?: string | null;
   available_quantity: number;
   picture_ids?: string[];
+  /** Nome da cor (atributo COLOR) atualmente no ML — usado p/ só reenviar COLOR quando muda. */
+  cor?: string | null;
 }
 export interface EstoqueDesejado { codigo: string; estoque: number; }
-export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; original_price?: number; }
+export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; original_price?: number; attribute_combinations?: AtributoVar[]; }
 
 // Reenvia TODAS as variações atuais do anúncio (o ML deleta as omitidas). Por
 // padrão só available_quantity — sem price, para o ML preservar o preço de venda
@@ -71,18 +73,27 @@ export interface VariacaoUpdate { id: string | number; available_quantity: numbe
 // o anúncio inteiro; e o operador quer que a alteração de preço alcance a família
 // já publicada. Idempotente quando o preço não mudou. O desconto, se ativo, tem
 // precedência (já define price/original_price por código).
+// `corDesejadaPorCodigo` (bug lote #24/#25): renomear a cor de uma variação já publicada.
+// Só inclui COLOR quando a cor desejada é não-vazia E difere da que está no ML (idempotente;
+// não toca variação cuja cor não mudou). Atenção: o ML pode recusar troca de COLOR em variação
+// com vendas — nesse caso o PUT falha e o erro chega ao operador (ADR-0062).
 export function montarVariacoesUpdate(
   atuais: MLVariacaoAtual[],
   desejados: EstoqueDesejado[],
   picsPorCodigo?: Record<string, string[]>,
   desconto?: { pct: number; precoPorCodigo: Record<string, number | null> } | null,
   precoFamilia?: number | null,
+  corDesejadaPorCodigo?: Record<string, string | null>,
 ): VariacaoUpdate[] {
   const estoquePorCodigo = new Map(desejados.map((d) => [d.codigo, d.estoque]));
   return atuais.map((a) => {
     const codigo = a.seller_custom_field ?? '';
     const novo = estoquePorCodigo.get(codigo);
     const base: VariacaoUpdate = { id: a.id, available_quantity: novo ?? a.available_quantity };
+    const corDesejada = corDesejadaPorCodigo?.[codigo];
+    if (corDesejada && corDesejada !== a.cor) {
+      base.attribute_combinations = [{ id: 'COLOR', value_name: corDesejada }];
+    }
     const pics = picsPorCodigo?.[codigo];
     if (pics && pics.length > 0) base.picture_ids = [...new Set(pics)];
     if (desconto) {

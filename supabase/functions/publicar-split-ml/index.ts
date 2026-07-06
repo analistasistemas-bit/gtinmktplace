@@ -261,7 +261,7 @@ Deno.serve(async (req) => {
         } : null;
         const res = await conn.atualizarAnuncio(ctx, {
           itemExternoId,
-          existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque })),
+          existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque, cor: v.cor })),
           novas: novas.map((v) => ({
             sku: v.codigo, cor: v.cor, estoque: v.estoque,
             preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,

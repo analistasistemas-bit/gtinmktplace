@@ -106,8 +106,9 @@ export interface StatusCanal {
 /** Atualização de um anúncio já publicado (UPDATE), no modelo canônico. */
 export interface AtualizacaoCanonica {
   itemExternoId: string;
-  /** Cores já vinculadas (repor estoque): sku → estoque desejado. */
-  existentes: Array<{ sku: string; estoque: number }>;
+  /** Cores já vinculadas (repor estoque): sku + estoque desejado + cor atual no banco
+   *  (p/ reenviar COLOR ao ML quando o nome da cor muda — ADR-0062). */
+  existentes: Array<{ sku: string; estoque: number; cor: string | null }>;
   /** Cores novas a criar como variação. */
   novas: VariacaoCanonica[];
   capaFotoId: string | null;
