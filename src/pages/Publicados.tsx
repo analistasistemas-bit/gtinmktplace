@@ -594,16 +594,25 @@ export default function Publicados() {
         </div>
       )}
 
-      {/* Banner de anúncios moderados pelo ML */}
+      {/* Banner de anúncios moderados pelo ML — clicável, filtra a lista por "Moderado" */}
       {totalModerados > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+        <button
+          type="button"
+          onClick={() => setFiltro((f) => ({ ...f, status: f.status === 'moderado' ? null : 'moderado' }))}
+          aria-pressed={filtro.status === 'moderado'}
+          className={cn(
+            'mb-4 flex w-full items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition-colors hover:bg-warning/20',
+            filtro.status === 'moderado' && 'ring-2 ring-warning/50',
+          )}
+        >
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
             {totalModerados === 1
-              ? '1 anúncio moderado pelo Mercado Livre — verifique abaixo.'
-              : `${totalModerados} anúncios moderados pelo Mercado Livre — verifique abaixo.`}
+              ? '1 anúncio moderado pelo Mercado Livre — clique para ver.'
+              : `${totalModerados} anúncios moderados pelo Mercado Livre — clique para ver.`}
           </span>
-        </div>
+          {filtro.status === 'moderado' && <span className="font-medium">• filtrando</span>}
+        </button>
       )}
 
       {/* Erro de remoção */}
