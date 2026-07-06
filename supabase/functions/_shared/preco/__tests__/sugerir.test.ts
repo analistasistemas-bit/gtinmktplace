@@ -58,28 +58,10 @@ describe('sugerirPrecoVenda', () => {
       motivo: 'concorrência presente — 5% abaixo do menor preço',
     });
   });
-  it('competitivo acima do piso viável → usa o preço competitivo', () => {
-    // concorrente 30 → 28,50; piso viável grossUp(10,13%)=~11,50 < 28,50 → competitivo vence.
-    const r = sugerirPrecoVenda(10, { vendedores: 3, preco_min: 30 }, { percentual: 13, fixa: 0 });
+  it('concorrente R$ 12 → 11,40 competitivo (ignora comissão no preço)', () => {
+    const r = sugerirPrecoVenda(10, { vendedores: 5, preco_min: 12 }, { percentual: 30, fixa: 6 });
     expect(r.estrategia).toBe('competitivo');
-    expect(r.preco).toBeCloseTo(28.5, 2);
-    expect(r.motivo).toBe('concorrência presente — 5% abaixo do menor preço');
-  });
-
-  // Lote #27: bater o concorrente daria prejuízo → nunca abaixo do piso viável.
-  it('competitivo ABAIXO do piso viável (com comissão) → publica no piso e avisa', () => {
-    // barbante: concorrente 23,61 → competitivo ~22,43; mas piso grossUp(20,95, 13%, frete 6,55, 8%)
-    // ≈ 34,80 > competitivo → usa o piso.
-    const r = sugerirPrecoVenda(20.95, { vendedores: 11, preco_min: 23.61 }, { percentual: 13, fixa: 0 }, 6.55, 8);
-    expect(r.preco).toBeGreaterThan(22.43);
-    expect(r.preco).toBeCloseTo(grossUp(20.95, 13, 0, 6.55, 8), 2);
-    expect(r.motivo).toContain('piso viável');
-  });
-
-  it('competitivo abaixo do piso mas SEM comissão → mantém competitivo (não dá pra floorar)', () => {
-    const r = sugerirPrecoVenda(20.95, { vendedores: 11, preco_min: 23.61 }, null);
-    expect(r.estrategia).toBe('competitivo');
-    expect(r.preco).toBeCloseTo(22.45, 2);
+    expect(r.preco).toBeCloseTo(11.4, 2);
   });
   it('sem concorrente com comissão → proprio (gross-up)', () => {
     const r = sugerirPrecoVenda(20, { vendedores: 0, preco_min: null }, { percentual: 13, fixa: 0 });

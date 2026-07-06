@@ -18,8 +18,6 @@ export interface PrecoSugerido {
 }
 
 const motivoCompetitivo = (pct: number) => `concorrência presente — ${pct}% abaixo do menor preço`;
-const motivoPisoAcimaConc = (precoComp: number) =>
-  `concorrência a R$ ${precoComp.toFixed(2)} não cobre custo/comissão/frete — preço no piso viável (pouco competitivo)`;
 const MOTIVO_GROSSUP = 'sem concorrência — preço cobre seu mínimo após comissão e frete';
 const MOTIVO_FALLBACK = 'sem concorrência — comissão indisponível, usando o piso';
 
@@ -64,17 +62,11 @@ export function sugerirPrecoVenda(
   descontoConcorrenciaPct = 5,
 ): PrecoSugerido {
   if (conc.vendedores > 0 && conc.preco_min != null) {
-    const precoComp = arredondar5Proximo(conc.preco_min * (1 - descontoConcorrenciaPct / 100));
-    // Nunca abaixo do piso viável (lote #27): bater o concorrente não pode dar prejuízo. Quando
-    // temos comissão, calcula o gross-up (cobre custo+comissão+frete+imposto); se ele for MAIOR
-    // que o preço competitivo, publica no piso e avisa (o operador decide ajustar/não publicar).
-    if (comissao) {
-      const pisoViavel = grossUp(piso, comissao.percentual, comissao.fixa, frete, aliquotaPct);
-      if (pisoViavel > precoComp) {
-        return { preco: pisoViavel, estrategia: 'competitivo', motivo: motivoPisoAcimaConc(precoComp) };
-      }
-    }
-    return { preco: precoComp, estrategia: 'competitivo', motivo: motivoCompetitivo(descontoConcorrenciaPct) };
+    return {
+      preco: arredondar5Proximo(conc.preco_min * (1 - descontoConcorrenciaPct / 100)),
+      estrategia: 'competitivo',
+      motivo: motivoCompetitivo(descontoConcorrenciaPct),
+    };
   }
   if (comissao) {
     return { preco: grossUp(piso, comissao.percentual, comissao.fixa, frete, aliquotaPct), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };

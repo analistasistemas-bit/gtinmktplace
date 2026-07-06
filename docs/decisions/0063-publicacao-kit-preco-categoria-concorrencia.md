@@ -1,8 +1,15 @@
 # ADR-0063: Publicação — kit condicional, piso de preço, categoria via catálogo, concorrência por product_identifier
 
-**Status:** Aceito
+**Status:** Aceito — **exceto a decisão #2 (preço), REVERTIDA em 2026-07-06**
 **Data:** 2026-07-06
 **Decisores:** Diego
+
+> ⚠️ **Decisão #2 (preço — "nunca abaixo do piso viável" no ramo competitivo) foi REVERTIDA.**
+> Ela violava o ADR-0020 e o ADR-0050, que definem: **com concorrente o preço é PURO MERCADO
+> (menor × 0,95); o gross-up/frete é EXCLUSIVO do ramo sem concorrência.** O piso no ramo
+> competitivo gerava preço acima de todo o mercado (ex.: R$ 34,40 vs concorrente R$ 19,47) e o
+> selo "COMPETITIVO/Vale a pena" mentiroso. As decisões #1 (kit), #3 (categoria) e #4
+> (concorrência) permanecem válidas.
 
 ## Contexto
 

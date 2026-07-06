@@ -257,6 +257,7 @@ Deno.serve(async (req) => {
     const precoMinFamilia = resolvidas.length
       ? Math.min(...resolvidas.map((v) => Number(v.preco)))
       : 0;
+    const competitivo = conc.vendedores > 0 && conc.preco_min != null;
 
     // Imposto por origem (ADR-0055): entra no gross-up para o preço cobrir o imposto.
     const { data: cfgAliq } = await admin
@@ -270,11 +271,9 @@ Deno.serve(async (req) => {
     // ADR-0059: desconto sobre o menor preço concorrente, configurável (default 5%).
     const descontoConcorrenciaPct = Number(cfgAliq?.desconto_concorrencia_pct ?? 5);
 
-    // Comissão/frete buscados SEMPRE (inclusive competitivo): o ramo competitivo agora usa o
-    // gross-up como piso (nunca vender no prejuízo, lote #27), então precisa de comissão+frete.
     let comissao: { percentual: number; fixa: number } | null = null;
     let frete = 0;
-    if (categoriaMlId && token) {
+    if (!competitivo && categoriaMlId && token) {
       try {
         // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
         // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
