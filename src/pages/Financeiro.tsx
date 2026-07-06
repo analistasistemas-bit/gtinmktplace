@@ -46,7 +46,7 @@ export default function Financeiro() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela);
-  const janelaAnt = useMemo(() => janelaAnterior(janela), [janela]);
+  const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const { resumo: rAnt } = useResumoVendas(janelaAnt);
 
   const delta = (atual: number, anterior: number): { texto: string; trend: 'up' | 'down' | 'neutral' } => {

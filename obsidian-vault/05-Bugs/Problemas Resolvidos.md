@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-04
+atualizado: 2026-07-06
 ---
 
 # Problemas Resolvidos
@@ -10,6 +10,13 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **"vs. anterior" do filtro "Hoje" (Dashboard/Financeiro) comparava com o pedaço errado de ontem
+  (2026-07-06)** — `janelaAnterior()` desloca a janela atual pela sua duração decorrida (certo pra
+  presets/range, blocos fechados de N dias); "hoje" cresce o dia todo, então deslocar por poucas
+  horas colava a comparação no fim de ontem (ex.: ontem 11h47→meia-noite), perdendo a manhã. Diego
+  notou pelo Pedidos: +14% com 8 hoje vs. 11 ontem no dia inteiro, número que não fechava de
+  nenhuma forma intuitiva. Fix: "hoje" desloca a janela inteira em 24h (ontem 00:00 → ontem mesma
+  hora de agora).
 - **KPI "Variações publicadas" (Publicados) subcontava produtos que cresceram em UPDATE (2026-07-06)**
   — mesma causa raiz do fix de busca por código abaixo (2026-07-03): a família **representante** de
   cada anúncio (`dedupePublicados`) é a mais **antiga** por `ml_item_id`; contar `variacoes` só dela
