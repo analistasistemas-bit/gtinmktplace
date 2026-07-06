@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 const MENU_LABEL: Record<MenuKey, string> = {
   dashboard: 'Dashboard', lotes: 'Lotes', revisao: 'Revisão', publicados: 'Publicados',
   faturamento: 'Faturamento', financeiro: 'Financeiro', viabilidade: 'Viabilidade',
-  configuracoes: 'Configurações', usuarios: 'Usuários', organizacoes: 'Organizações',
+  configuracoes: 'Configurações', usuarios: 'Usuários',
 };
 
 interface UserRow {

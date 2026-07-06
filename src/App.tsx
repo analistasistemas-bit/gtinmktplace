@@ -1,7 +1,9 @@
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import { AppShell } from '@/components/app-shell';
+import { AdminShell } from '@/components/admin-shell';
 import { ProtectedRoute } from '@/components/protected-route';
+import { SuperAdminRoute } from '@/components/super-admin-route';
 import { MenuGuard } from '@/components/menu-guard';
 
 // Páginas carregadas sob demanda (code-splitting): tira recharts/jspdf/xlsx do bundle inicial.
@@ -54,8 +56,14 @@ export function AppRoutes() {
             <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />
             <Route path="/viabilidade" element={<Viabilidade />} />
             <Route path="/usuarios" element={<Usuarios />} />
-            <Route path="/organizacoes" element={<Organizacoes />} />
             <Route path="/style-guide" element={<StyleGuide />} />
+          </Route>
+        </Route>
+
+        {/* Painel de plataforma (super-admin, D-E7.8): layout próprio, fora da operação de empresa. */}
+        <Route element={<SuperAdminRoute />}>
+          <Route element={<AdminShell />}>
+            <Route path="/admin" element={<Organizacoes />} />
           </Route>
         </Route>
       </Route>
