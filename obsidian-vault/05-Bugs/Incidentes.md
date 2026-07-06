@@ -144,3 +144,36 @@ só (re)enviadas ao criar cor nova. Ver [ADR-0062](../../docs/decisions/0062-upd
 **Limitações (ADR-0062):** o ML pode recusar rename de COLOR em variação com vendas → anúncio já
 quebrado se limpa manual no painel; adicionar cor nova a anúncio com capa2/capa3 ainda pode duplicar
 (falta rastrear o id re-hospedado — ADR futuro).
+
+## Lote #27: 4 bugs de publicação (kit, preço, categoria, concorrência) + resíduo BRILHO (2026-07-06)
+
+Barbante Barroco Maxcolor (3 famílias). Cada família expôs uma falha diferente — "cada lote, um
+erro novo". Todas corrigidas ([ADR-0063](../../docs/decisions/0063-publicacao-kit-preco-categoria-concorrencia.md)):
+
+1. **"Unidades por kit" num produto avulso.** `UNITS_PER_PACK` é `conditional_required` no ML (só
+   obrigatório SE for kit — confirmado na API para MLB271471), mas `atributosFaltantesGenerico`
+   tratava todo `conditional_required` como obrigatório-duro → travava a Revisão. Fix:
+   `preencherUnitsPerPack` assume 1 (produto avulso) quando não há contagem clara.
+2. **Preço competitivo no prejuízo.** O ramo competitivo do `sugerirPrecoVenda` cravava
+   `concorrente × (1−desc%)` ignorando custo/comissão/frete/imposto. Para barbante barato + frete
+   por conta do vendedor, o preço saía abaixo do custo. Fix (decisão do Diego): `max(competitivo,
+   gross-up)` — nunca abaixo do piso viável; avisa quando o piso passa da concorrência. Comissão/
+   frete passaram a ser buscados também no caminho competitivo. Efeito: cores que apareciam
+   "Prejuízo"/"Abaixo do mínimo" viraram "Vale a pena".
+3. **Categoria "Outros".** O preditor de categoria é textual; nomes ruidosos ("BARROCO MAXCOLOR
+   BRILHO 200GR") caíam na genérica. Fix: quando cai em genérico E a concorrência achou o produto
+   no catálogo, re-roda o preditor com o **nome canônico do catálogo** (`concorrencia.product_name`,
+   "Fio Barroco Maxcolor Brilho ... Crochê") → resolve "Lãs". **Verificado ao vivo via extensão
+   `http` do Postgres** (token no Vault, RPC `get_connection_tokens`): o `category_id` do produto de
+   catálogo NÃO é exposto pela API (só `domain_id=MLB-YARNS`), por isso a resolução é pelo nome.
+4. **"Sem concorrência" com concorrência óbvia.** `buscarConcorrencia` usava
+   `/products/search?q={gtin}` (busca textual frágil) em vez de `product_identifier={gtin}` (lookup
+   oficial de EAN — que o módulo de catálogo já acertava, `catalogo.ts`), e tentava só 1 EAN. Fix:
+   `product_identifier` + tenta até 5 EANs. Resultado: 01890131 subiu de 0→4 concorrentes.
+
+**Resíduo aceito (não é bug):** o BRILHO segue **concorrência 0** — o produto de catálogo dele
+(MLB22537928 etc.) genuinamente tem **0 vendedores ativos**. A concorrência que existe está em
+anúncios sem vínculo de catálogo / outro EAN; pegá-los exigiria fallback por título (opção não
+escolhida). A categoria do BRILHO foi corrigida para "Lãs".
+
+Validado ao vivo (banco + browser-use no Chrome do Diego) reprocessando as 3 famílias do lote #27.
