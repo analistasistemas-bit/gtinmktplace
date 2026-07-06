@@ -6,9 +6,29 @@
 
 ## Snapshot
 
-- Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy EM PRODUCAO (2026-07-05)**
-- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`
-- Proximo epico: `E6` orquestracao multicanal (nasce tenant-aware); `E5` Shopee depois
+- Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**
+- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`
+- Proximo epico: `E5` Shopee (agora o worker generico `publicar-anuncio` do E6 espera so o conector); depois E6b (estoque unico)
+
+### E6 — Orquestracao multicanal EM PRODUCAO (2026-07-06)
+
+Fan-out por (familia, canal) (ADR-0061). O caminho ML que fatura fica **intocado** (dentro de
+`if(incluiML)` em `publicar-familias`, byte-a-byte); canais ≠ ML entram pelo worker generico
+**`publicar-anuncio`** (QStash, verify_jwt=false) — resolve conexao por org (E7), monta o
+`AnuncioCanonico` (builder `montarAnuncioCanonico` extraido do publish-familia-ml, behavior-preserving),
+publica via `ChannelConnector`, persiste em `anuncios_externos`. Estado por canal em
+`anuncios_externos.status` (`pendente|publicando|publicado|erro`, check-constraint + `qstash_message_id`);
+o roteador claima atomicamente, o worker so verifica `status='publicando'` (retry do QStash re-executa).
+Fila serial por (canal, org). Isolamento D-E6.2: um job (familia,canal) nunca toca `familias.status` nem
+outro canal. `status-publicados`/`remover-publicado` parametrizados por canal; UI (seletor de canais na
+Revisao, chip em Publicados) aparece so com >1 canal — **com 1 canal a tela e identica ao pre-E6**.
+Conector **fake** prova a infra ponta a ponta sem 2º canal real (D-E6.5). Validado: gate local (db reset
+E7+E6, suite de isolamento 39 PASS, 1203 testes, tsc/lint/build/deno check); migration + 36 edges em
+producao; `status-publicados` por canal ao vivo (66 anuncios, canal=mercado_livre); frontend no Render
+validado com browser (Publicados/Revisao/Financeiro identicos, sem seletor/chip, zero erro de console);
+isolamento E7 re-provado contra prod pos-E6 (39 PASS). **Diferido (D-E6.7):** "ML + Shopee simultaneos"
+fecha com o E5; a regressao de publicacao ML REAL (criar 1 anuncio de teste) fica para o fluxo controlado
+do Diego — a extracao e coberta por testes CREATE + caracterizacao + status-publicados ao vivo.
 
 ### E7 — Multi-tenancy por `org_id` (SaaS multi-empresa) EM PRODUCAO (2026-07-05)
 
