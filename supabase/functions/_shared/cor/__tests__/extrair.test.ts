@@ -34,6 +34,16 @@ describe('extrairCorDoTexto', () => {
   });
 });
 
+describe('extrairCorDoTexto — regressão lote #24', () => {
+  it('Salmon (grafia inglesa) → Salmão', () => {
+    expect(extrairCorDoTexto(['Tecido Oxford Liso Salmon de 10 mt para Uniforme e Decoração'])).toBe('Salmão');
+  });
+
+  it('Rosa Pink não perde o Pink (cor composta cadastrada no dicionário)', () => {
+    expect(extrairCorDoTexto(['Tecido Oxford Liso Rosa Pink de 10 mt para Uniforme e Decoração'])).toBe('Rosa Pink');
+  });
+});
+
 describe('extrairCorDeVariacao', () => {
   // A descrição detalhada é prosa de marketing por família: contém cores incidentais
   // que não nomeiam a cor do produto. Documenta o falso positivo que motivou o helper.
