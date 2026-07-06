@@ -25,8 +25,9 @@ import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
 import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
 import { montarPendencias } from '@/lib/pendencias';
-import { topProdutos, vendasPorUf, calendarioCaixa, montarAtencao } from '@/lib/cockpit';
+import { topProdutos, calendarioCaixa, montarAtencao } from '@/lib/cockpit';
 import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento';
+import { agruparPorGeografia } from '@/lib/geografia-vendas';
 
 type Trend = 'up' | 'down' | 'neutral';
 function delta(atual: number, anterior: number): { texto: string; trend: Trend } {
@@ -128,20 +129,25 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
   // Pedidos/ticket/compradores por PACOTE (agruparPorPedido) — mesmo nível do menu Faturamento
   // (fonte da verdade): uma compra com vários itens conta como 1 pedido. O resumo (r.pedidos/
   // r.ticket) conta por linha de ml_vendas, o que infla pedidos e reduz o ticket.
-  const kpisPedidos = useMemo(
-    () => calcularKpisPedidos(agruparPorPedido(vendasRaw.data ?? [])),
-    [vendasRaw.data],
-  );
+  const pedidos = useMemo(() => agruparPorPedido(vendasRaw.data ?? []), [vendasRaw.data]);
+  const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
   const kpisPedidosAnt = useMemo(
     () => calcularKpisPedidos(agruparPorPedido(vendasRawAnt.data ?? [])),
     [vendasRawAnt.data],
   );
   const top = useMemo(() => topProdutos(vendasRaw.data ?? [], 5), [vendasRaw.data]);
-  const uf = useMemo(() => vendasPorUf(vendasRaw.data ?? []), [vendasRaw.data]);
+  // Mesma agregação por UF do menu Faturamento › Geografia (pedidos + valor no nível de pacote).
+  const geoUf = useMemo(() => agruparPorGeografia(pedidos), [pedidos]);
+  const uf = useMemo(
+    () => Object.fromEntries(geoUf.porUf.map((u) => [u.uf, u.pedidos])),
+    [geoUf],
+  );
+  const [ufSelecionada, setUfSelecionada] = useState<string | null>(null);
+  const ufSelecionadaInfo = geoUf.porUf.find((u) => u.uf === ufSelecionada) ?? null;
   const caixa = useMemo(() => calendarioCaixa(r.vendas), [r.vendas]);
   const rankingUf = useMemo(
-    () => Object.entries(uf).sort((a, b) => b[1] - a[1]).slice(0, 5),
-    [uf],
+    () => geoUf.porUf.slice(0, 5).map((u): [string, number] => [u.uf, u.pedidos]),
+    [geoUf],
   );
 
   const dLiquido = delta(r.liquido, rAnt.liquido);
@@ -355,7 +361,22 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
           <p className="py-6 text-center text-sm text-muted-foreground">Sem vendas com destino no período.</p>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <MapaBrasil valores={uf} unidade="pedidos" />
+            <div className="flex flex-col gap-2">
+              <MapaBrasil
+                valores={uf}
+                unidade="pedidos"
+                selecionada={ufSelecionada}
+                onSelecionar={(sigla) => setUfSelecionada((s) => (s === sigla ? null : sigla))}
+              />
+              {ufSelecionadaInfo && (
+                <div className="flex items-center justify-between rounded-md bg-primary/10 px-3 py-1.5 text-xs">
+                  <span className="font-semibold">{ufSelecionadaInfo.uf}</span>
+                  <span className="text-muted-foreground">
+                    {fmtInt(ufSelecionadaInfo.pedidos)} {ufSelecionadaInfo.pedidos === 1 ? 'pedido' : 'pedidos'} · {fmtBRL(ufSelecionadaInfo.valor)}
+                  </span>
+                </div>
+              )}
+            </div>
             <div className="flex flex-col justify-center gap-2">
               {rankingUf.map(([sigla, qtd]) => (
                 <div key={sigla} className="flex items-center gap-3">
