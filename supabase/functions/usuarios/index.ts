@@ -120,6 +120,37 @@ Deno.serve(async (req) => {
       }
       return json({ ok: true, org_id: org.id });
     }
+    case 'delete_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const alvo = String(body.org_id ?? '');
+      if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
+      // Trava principal: nunca a própria org (protege a operação do super-admin, ex.: Avil).
+      if (alvo === me.org_id) return json({ error: 'Não é possível excluir a sua própria empresa.' }, 400);
+
+      const { data: alvoOrg } = await db.from('organizations').select('id').eq('id', alvo).single();
+      if (!alvoOrg) return json({ error: 'Empresa não encontrada.' }, 404);
+
+      const { data: membros } = await db.from('profiles').select('id').eq('org_id', alvo);
+
+      // Dados por org: org_id → organizations é NO ACTION, então deleta explícito.
+      // 'lotes' cascateia familias→variacoes; 'ml_vendas' cascateia ml_vendas_itens.
+      // Vault: o secret da conexão não é removido aqui (órfão inofensivo). Os anúncios
+      // no marketplace NÃO são despublicados — isto apaga só os registros locais da org.
+      const tabelas = ['lotes', 'ml_vendas', 'anuncios_externos', 'ml_perguntas', 'ml_devolucoes',
+        'ml_moderacao', 'ml_webhook_eventos', 'ml_credentials', 'configuracoes', 'marketplace_connections'];
+      for (const t of tabelas) {
+        const { error } = await db.from(t).delete().eq('org_id', alvo);
+        // tolera tabela já removida (ex.: ml_credentials após cleanup do E7)
+        if (error && !/does not exist|could not find the table|42P01/i.test(error.message)) {
+          return json({ error: `Falha ao limpar ${t}: ${error.message}` }, 500);
+        }
+      }
+      await db.from('profiles').delete().eq('org_id', alvo);
+      for (const m of membros ?? []) await db.auth.admin.deleteUser(m.id as string);
+      const { error: eOrg } = await db.from('organizations').delete().eq('id', alvo);
+      if (eOrg) return json({ error: eOrg.message }, 500);
+      return json({ ok: true });
+    }
     default:
       return json({ error: 'ação inválida' }, 400);
   }

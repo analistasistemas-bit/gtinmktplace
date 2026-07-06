@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { useProfile } from '@/hooks/useProfile';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,9 @@ async function callUsuarios(body: Record<string, unknown>) {
 
 export default function Organizacoes() {
   const qc = useQueryClient();
+  const { profile } = useProfile();
   const [novaOpen, setNovaOpen] = useState(false);
+  const [delOrg, setDelOrg] = useState<OrgRow | null>(null);
 
   const { data: orgs = [], isLoading } = useQuery({
     queryKey: ['organizacoes'],
@@ -65,17 +68,27 @@ export default function Organizacoes() {
               <TableHead>Slug</TableHead>
               <TableHead>Membros</TableHead>
               <TableHead>Criada em</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={4} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={5} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
             ) : orgs.map((o) => (
               <TableRow key={o.id}>
                 <TableCell className="font-medium">{o.nome}</TableCell>
                 <TableCell className="text-muted-foreground">{o.slug}</TableCell>
                 <TableCell>{o.membros}</TableCell>
                 <TableCell>{new Date(o.criado_em).toLocaleDateString('pt-BR')}</TableCell>
+                <TableCell className="text-right">
+                  {profile?.org_id === o.id ? (
+                    <span className="text-xs text-muted-foreground">sua empresa</span>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDelOrg(o)}>
+                      Excluir
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -87,7 +100,62 @@ export default function Organizacoes() {
         onOpenChange={setNovaOpen}
         onCreated={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
       />
+      <ExcluirOrgDialog
+        org={delOrg}
+        onClose={() => setDelOrg(null)}
+        onDeleted={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
+      />
     </div>
+  );
+}
+
+function ExcluirOrgDialog({ org, onClose, onDeleted }: {
+  org: OrgRow | null;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [confirmSlug, setConfirmSlug] = useState('');
+  const [excluindo, setExcluindo] = useState(false);
+  useEffect(() => { setConfirmSlug(''); }, [org?.id]);
+
+  async function excluir() {
+    if (!org) return;
+    setExcluindo(true);
+    try {
+      await callUsuarios({ action: 'delete_org', org_id: org.id });
+      toast.success('✓ Empresa excluída');
+      onClose();
+      onDeleted();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao excluir empresa');
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!org} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Excluir {org?.nome}</DialogTitle></DialogHeader>
+        <div className="flex flex-col gap-3 text-sm">
+          <p className="text-muted-foreground">
+            Isto apaga <strong>todos os dados</strong> da empresa (lotes, anúncios, vendas, usuários)
+            e <strong>não pode ser desfeito</strong>. Anúncios já publicados no marketplace <strong>não</strong> são
+            removidos de lá — só os registros locais.
+          </p>
+          <p className="text-muted-foreground">
+            Para confirmar, digite o slug <code className="rounded bg-muted px-1 text-foreground">{org?.slug}</code>:
+          </p>
+          <Input value={confirmSlug} onChange={(e) => setConfirmSlug(e.target.value)} placeholder={org?.slug} />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={excluindo}>Cancelar</Button>
+          <Button variant="destructive" onClick={excluir} disabled={confirmSlug !== org?.slug || excluindo}>
+            {excluindo ? 'Excluindo…' : 'Excluir empresa'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
