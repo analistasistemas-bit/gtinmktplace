@@ -63,4 +63,25 @@ describe('classificarErroCanal', () => {
     expect(r.retentavel).toBe(false);
     expect(r.mensagemOperador).toBe('título inválido');
   });
+
+  it('marca 401 como AUTENTICACAO não retentável (reconectar)', () => {
+    const e = Object.assign(new Error('unauthorized'), { status: 401 });
+    const r = classificarErroCanal(e);
+    expect(r.codigo).toBe('AUTENTICACAO');
+    expect(r.retentavel).toBe(false);
+  });
+
+  it('marca 403 como AUTENTICACAO não retentável (reconectar)', () => {
+    const e = Object.assign(new Error('forbidden'), { status: 403 });
+    const r = classificarErroCanal(e);
+    expect(r.codigo).toBe('AUTENTICACAO');
+    expect(r.retentavel).toBe(false);
+  });
+
+  it('marca 429 como RATE_LIMIT retentável', () => {
+    const e = Object.assign(new Error('too many requests'), { status: 429 });
+    const r = classificarErroCanal(e);
+    expect(r.codigo).toBe('RATE_LIMIT');
+    expect(r.retentavel).toBe(true);
+  });
 });

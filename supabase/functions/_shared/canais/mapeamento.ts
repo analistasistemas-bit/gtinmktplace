@@ -36,5 +36,14 @@ export function classificarErroCanal(e: unknown): ErroCanal {
   const retentavelNativo = (e as { retentavel?: boolean }).retentavel === true;
   const retentavel = retentavelNativo || (typeof status === 'number' && (status >= 500 || status === 429));
   const mensagemOperador = e instanceof Error ? e.message : String(e);
-  return { codigo: retentavelNativo ? 'FOTO' : 'DESCONHECIDO', mensagemOperador, retentavel, status, raw: e };
+  // E6 (ADR-0061/D-E6.6): 401/403 e 429 mudam a decisão de retry/reconexão — só esses dois
+  // códigos novos além de FOTO/DESCONHECIDO (YAGNI nos outros 9 de ErroCanalCodigo).
+  const codigo = retentavelNativo
+    ? 'FOTO'
+    : status === 401 || status === 403
+      ? 'AUTENTICACAO'
+      : status === 429
+        ? 'RATE_LIMIT'
+        : 'DESCONHECIDO';
+  return { codigo, mensagemOperador, retentavel, status, raw: e };
 }

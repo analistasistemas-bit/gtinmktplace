@@ -27,6 +27,8 @@ export interface PublicadoItem {
   mlPermalink: string | null;
   publicadoEm: string | null;
   // preenchidos pelo status ao vivo (merge no hook):
+  /** Canal do anúncio (E6/ADR-0061). Vem do status ao vivo; sem ele, assume 'mercado_livre'. */
+  canal?: string;
   status?: StatusPublicado;
   estoque?: number | null;
   precoAtual?: number | null;

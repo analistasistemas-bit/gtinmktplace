@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, RotateCw } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,12 +21,13 @@ import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existen
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLote } from '@/hooks/useLotes';
 import { uploadImagensLote } from '@/lib/upload-imagens';
-import { QK } from '@/lib/queries';
+import { QK, fetchConexoes } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '@/lib/publicavel';
 import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
+import { deveMostrarSeletorCanais } from '@/lib/canais-ui';
 import { useToggleDescontoLote, useReprocessar, useSetAtacadoLote } from '@/hooks/useFamiliaMutations';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
@@ -83,6 +84,11 @@ export default function Revisao() {
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [listingType, setListingType] = useState<ListingType>('gold_special');
+  // Seleção de canais (E6/ADR-0061): ML sempre pré-marcado. O grupo só aparece com >1
+  // conexão na org (deveMostrarSeletorCanais) — hoje é sempre 1 (ML), então fica oculto.
+  const { data: conexoes = [] } = useQuery({ queryKey: QK.conexoes, queryFn: fetchConexoes });
+  const [canaisSelecionados, setCanaisSelecionados] = useState<Set<string>>(new Set(['mercado_livre']));
+  const mostrarSeletorCanais = deveMostrarSeletorCanais(conexoes.length);
   // Variação-alvo ao clicar no selo de pendência do pai: expande + rola até ela.
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
@@ -207,6 +213,15 @@ export default function Revisao() {
     });
   }
 
+  function toggleCanal(canal: string, marcar: boolean) {
+    setCanaisSelecionados((prev) => {
+      const novo = new Set(prev);
+      if (marcar) novo.add(canal);
+      else novo.delete(canal);
+      return novo;
+    });
+  }
+
   function toggleExpansao(id: string) {
     setExpandidas((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -239,8 +254,11 @@ export default function Revisao() {
   async function confirmarPublicacao() {
     setPublicando(true);
     const total = selecionadas.size;
+    // Só canais escolhidos vale com o grupo visível (>1 conexão); com 1 conexão o
+    // comportamento é o default de sempre (['mercado_livre']) — zero mudança.
+    const canais = mostrarSeletorCanais ? [...canaisSelecionados] : ['mercado_livre'];
     try {
-      await publicarFamilias([...selecionadas], listingType);
+      await publicarFamilias([...selecionadas], listingType, canais);
       setSelecionadas(new Set());
       setConfirmando(false);
       toast.success(`${total} família(s) enfileirada(s) para publicação`, {
@@ -542,6 +560,23 @@ export default function Revisao() {
                     <span className="block text-sm font-medium text-foreground">{opt.rotulo}</span>
                     <span className="block text-[11px]">{opt.desc}</span>
                   </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {mostrarSeletorCanais && (
+            <div className="mt-1">
+              <span className="block text-xs font-semibold text-muted-foreground">Publicar em</span>
+              <div className="mt-1 flex flex-wrap gap-3">
+                {conexoes.map((cx) => (
+                  <label key={cx.canal} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                    <Checkbox
+                      checked={canaisSelecionados.has(cx.canal)}
+                      onCheckedChange={(v) => toggleCanal(cx.canal, v === true)}
+                      aria-label={`Publicar em ${cx.contaLabel ?? cx.canal}`}
+                    />
+                    {cx.contaLabel ?? cx.canal}
+                  </label>
                 ))}
               </div>
             </div>

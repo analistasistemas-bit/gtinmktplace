@@ -12,7 +12,8 @@ Deno.serve(async (req) => {
   try { await requireUser(req); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
-  const { familia_id } = await req.json().catch(() => ({}));
+  // canal (E6/ADR-0061): default 'mercado_livre' — chamadas atuais (sem o campo) ficam idênticas.
+  const { familia_id, canal = 'mercado_livre' } = await req.json().catch(() => ({}));
   if (!familia_id) return new Response('familia_id obrigatório', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
@@ -60,7 +61,7 @@ Deno.serve(async (req) => {
   await admin.from('anuncios_externos')
     .delete()
     .eq('org_id', alvo.org_id)          // E7: escopo por org — não apagar anúncio de outra org com mesmo codigo_pai
-    .eq('canal', 'mercado_livre')
+    .eq('canal', canal)
     .eq('codigo_pai', alvo.codigo_pai);
 
   // Reconta (ou remove se vazio) cada lote afetado. Remover não "conclui" o lote → setConcluido=false.

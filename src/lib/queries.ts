@@ -28,6 +28,7 @@ export const QK = {
   familia: (familiaId: string) => ['familia', familiaId] as const,
   publicados: ['publicados'] as const,
   statusPublicados: ['statusPublicados'] as const,
+  conexoes: ['conexoes'] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];
@@ -612,6 +613,9 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
 
 export interface StatusPublicadoItem {
   ml_item_id: string;
+  /** Canal do anúncio (E6/ADR-0061). Default 'mercado_livre' na leitura para compat com
+   *  respostas antigas (o backend sempre envia hoje; guarda defensiva no consumo). */
+  canal?: string;
   status: StatusPublicado;
   motivo: string | null;
   estoque: number | null;
@@ -641,4 +645,18 @@ export async function fetchStatusPublicados(): Promise<ResultadoStatusPublicados
   const json = await resp.json().catch(() => ({ itens: [] }));
   if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
   return json as ResultadoStatusPublicados;
+}
+
+/** Conexões de canal da org (E7 marketplace_connections, RLS já escopa por org). */
+export interface Conexao {
+  canal: string;
+  contaLabel: string | null;
+}
+
+export async function fetchConexoes(): Promise<Conexao[]> {
+  const { data, error } = await supabase
+    .from('marketplace_connections')
+    .select('canal, conta_label');
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ canal: r.canal, contaLabel: r.conta_label }));
 }

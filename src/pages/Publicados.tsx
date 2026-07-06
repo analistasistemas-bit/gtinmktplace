@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -36,6 +37,7 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { filtrarPublicados, ordenarPublicados, rotuloTipo } from '@/lib/publicados';
+import { deveMostrarChipCanal } from '@/lib/canais-ui';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
@@ -116,7 +118,11 @@ interface LinhaProps {
   onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => void;
   pausando: boolean;
   isAdmin: boolean;
+  /** Chip do canal (E6/ADR-0061): só quando a org publica em >1 canal. */
+  mostrarChipCanal: boolean;
 }
+
+const NOME_CANAL: Record<string, string> = { mercado_livre: 'Mercado Livre' };
 
 const CONTEUDO_ML = (
   <>
@@ -140,7 +146,7 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
   );
 }
 
-function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, isAdmin }: LinhaProps) {
+function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, isAdmin, mostrarChipCanal }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:publicados:${item.familiaId}`, false);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
@@ -173,6 +179,11 @@ function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, i
           <div className="max-w-[260px]">
             <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{item.codigoPai}</p>
+            {mostrarChipCanal && (
+              <Badge variant="outline" className="mt-1">
+                {NOME_CANAL[item.canal ?? 'mercado_livre'] ?? item.canal}
+              </Badge>
+            )}
           </div>
         </div>
       </TableCell>
@@ -460,10 +471,17 @@ export default function Publicados() {
         valorVendido: v?.valor ?? null,
       };
       return s
-        ? { ...item, status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
+        ? { ...item, canal: s.canal ?? 'mercado_livre', status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
         : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
   }, [publicados, statusData, resumo]);
+
+  // Chip do canal (E6/ADR-0061): só aparece quando a org publica em >1 canal — hoje é
+  // sempre 'mercado_livre', então fica sempre oculto (zero mudança visual).
+  const mostrarChipCanal = useMemo(
+    () => deveMostrarChipCanal(new Set(merged.map((i) => i.canal ?? 'mercado_livre')).size),
+    [merged],
+  );
 
   const totalModerados = useMemo(
     () => merged.filter((i) => i.status === 'moderado').length,
@@ -744,6 +762,7 @@ export default function Publicados() {
                       onPausarReativar={handlePausarReativar}
                       pausando={pausandoOuReativando && pausandoId === item.mlItemId}
                       isAdmin={isAdmin}
+                      mostrarChipCanal={mostrarChipCanal}
                     />
                   ))
                 )}

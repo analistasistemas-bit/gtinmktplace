@@ -22,31 +22,48 @@ Deno.serve(async (req) => {
   // Split (ADR-0048): anúncios de partições >0 vivem só em anuncios_externos; inclui seus ids
   // para o status ao vivo cobrir TODOS os anúncios do produto, não só a partição 0.
   const { data: extras } = await admin.from('anuncios_externos')
-    .select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null);
-  const ids = [...new Set([
-    ...(familias ?? []).map((f) => f.ml_item_id as string),
-    ...(extras ?? []).map((e) => e.item_externo_id as string),
-  ])];
-  if (ids.length === 0) {
+    .select('item_externo_id, canal').eq('org_id', orgId).not('item_externo_id', 'is', null);
+
+  // E6 (ADR-0061): agrupa os ids por canal — familias.ml_item_id é sempre ML (dual-write);
+  // anuncios_externos carrega o canal de cada linha. Hoje só existe 'mercado_livre', então o
+  // agrupamento devolve exatamente o mesmo grupo único de antes.
+  const idsPorCanal = new Map<string, Set<string>>();
+  const addId = (canal: string, id: string) => {
+    if (!idsPorCanal.has(canal)) idsPorCanal.set(canal, new Set());
+    idsPorCanal.get(canal)!.add(id);
+  };
+  for (const f of familias ?? []) addId('mercado_livre', f.ml_item_id as string);
+  for (const e of extras ?? []) addId(e.canal, e.item_externo_id as string);
+
+  const totalIds = [...idsPorCanal.values()].reduce((n, s) => n + s.size, 0);
+  if (totalIds === 0) {
     return new Response(JSON.stringify({ itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
-  // Leitura de status em lote via conector (ADR-0024). getToken falha sem credencial ML →
-  // lerStatus lança → semCredencialML. Erro de bloco vira 'indisponivel' (não trava a tela).
-  const conn = getConnector('mercado_livre');
-  // Token da conexão ML da org (E7), não a do chamador.
-  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
-  if (!conexao) {
-    return new Response(JSON.stringify({ semCredencialML: true, itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-  }
-  const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
-  let statusPorId: Record<string, StatusCanal>;
-  try {
-    statusPorId = await conn.lerStatus(ctx, ids);
-  } catch {
-    return new Response(JSON.stringify({ semCredencialML: true, itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  // Leitura de status em lote por canal, via conector (ADR-0024). Canal sem conexão (ou cuja
+  // leitura falha — getToken sem credencial válida) fica de fora do lote; para 'mercado_livre'
+  // preserva o fallback semCredencialML de antes (hoje o único canal com dados reais).
+  const itens: Array<{ ml_item_id: string; canal: string } & Partial<StatusCanal>> = [];
+  let semCredencialML = false;
+  for (const [canal, idsSet] of idsPorCanal) {
+    const ids = [...idsSet];
+    const conexao = await resolverConexao(admin, orgId, canal);
+    if (!conexao) {
+      if (canal === 'mercado_livre') semCredencialML = true;
+      continue;
+    }
+    const conn = getConnector(canal);
+    const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
+    try {
+      const statusPorId = await conn.lerStatus(ctx, ids);
+      for (const id of ids) itens.push({ ml_item_id: id, canal, ...statusPorId[id] });
+    } catch {
+      if (canal === 'mercado_livre') semCredencialML = true;
+    }
   }
 
-  const itens = ids.map((id) => ({ ml_item_id: id, ...statusPorId[id] }));
+  if (semCredencialML && itens.length === 0) {
+    return new Response(JSON.stringify({ semCredencialML: true, itens: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
   return new Response(JSON.stringify({ itens }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });
