@@ -186,8 +186,10 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
     const base = [{ id: 'UNITS_PER_PACK', value_name: '50' }];
     expect(preencherUnitsPerPack(schemaComUnits, base, 'ALFINETE 100UND')).toEqual(base);
   });
-  it('sem quantidade no texto → deixa faltante (não inventa)', () => {
-    expect(preencherUnitsPerPack(schemaComUnits, [], 'AGULHA DE COSTURA')).toEqual([]);
+  it('sem quantidade no texto → assume 1 (produto avulso, não é kit — lote #27)', () => {
+    expect(preencherUnitsPerPack(schemaComUnits, [], 'AGULHA DE COSTURA')).toEqual([
+      { id: 'UNITS_PER_PACK', value_name: '1' },
+    ]);
   });
 });
 

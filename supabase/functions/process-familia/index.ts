@@ -14,10 +14,10 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, preencherUnitsPerPack, categoriaParaTipo, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, preencherUnitsPerPack, categoriaParaTipo, tipoParaCategoria, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
-import { resolverCategoria } from '../_shared/categoria/resolver.ts';
-import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
+import { resolverCategoria, ehCategoriaGenerica } from '../_shared/categoria/resolver.ts';
+import { buscarCategoriaPreditor, buscarNomeCategoria } from '../_shared/ml/domain-discovery.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
@@ -180,8 +180,26 @@ Deno.serve(async (req) => {
         llm: desempatarCategoriaLLM,
       },
     );
-    const tipo = cat.tipo;
-    const categoriaMlId = cat.categoriaId;
+    let tipo = cat.tipo;
+    let categoriaMlId = cat.categoriaId;
+    let categoriaNome = cat.categoriaNome;
+    let categoriaOrigem = cat.origem;
+
+    // Categoria via catálogo do ML (lote #27): quando o preditor TEXTUAL cai em genérica
+    // ("Outros") ou manual — nome ruidoso tipo "BARROCO MAXCOLOR BRILHO 200GR" —, a categoria
+    // onde os CONCORRENTES anunciam o mesmo produto (do /products/{id}/items via GTIN) é um sinal
+    // muito mais confiável. Só sobrepõe quando desistiríamos e a do catálogo é uma folha real
+    // (não genérica). Idempotente e resiliente: falha/rede → mantém o resultado do preditor.
+    const catCatalogoId = concorrencia.ofertas?.category_id ?? null;
+    if ((cat.origem === 'generico' || cat.origem === 'manual') && catCatalogoId && token) {
+      const nomeCat = await buscarNomeCategoria(token, catCatalogoId).catch(() => null);
+      if (nomeCat && !ehCategoriaGenerica(nomeCat)) {
+        categoriaMlId = catCatalogoId;
+        categoriaNome = nomeCat;
+        tipo = tipoParaCategoria(catCatalogoId);
+        categoriaOrigem = 'preditor'; // categoria vinda de dado real do ML (concorrentes), não do texto
+      }
+    }
 
     let atributosMl: AtributoML[] = [];
     let faltantes: string[] = [];
@@ -237,7 +255,6 @@ Deno.serve(async (req) => {
     const precoMinFamilia = resolvidas.length
       ? Math.min(...resolvidas.map((v) => Number(v.preco)))
       : 0;
-    const competitivo = conc.vendedores > 0 && conc.preco_min != null;
 
     // Imposto por origem (ADR-0055): entra no gross-up para o preço cobrir o imposto.
     const { data: cfgAliq } = await admin
@@ -251,9 +268,11 @@ Deno.serve(async (req) => {
     // ADR-0059: desconto sobre o menor preço concorrente, configurável (default 5%).
     const descontoConcorrenciaPct = Number(cfgAliq?.desconto_concorrencia_pct ?? 5);
 
+    // Comissão/frete buscados SEMPRE (inclusive competitivo): o ramo competitivo agora usa o
+    // gross-up como piso (nunca vender no prejuízo, lote #27), então precisa de comissão+frete.
     let comissao: { percentual: number; fixa: number } | null = null;
     let frete = 0;
-    if (!competitivo && categoriaMlId && token) {
+    if (categoriaMlId && token) {
       try {
         // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
         // pegaríamos a tarifa fixa de 50% e o gross-up subestimaria o preço.
@@ -323,9 +342,9 @@ Deno.serve(async (req) => {
       estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
       tipo_aviamento: tipo,
-      tipo_origem: cat.origem,
+      tipo_origem: categoriaOrigem,
       categoria_ml_id: categoriaMlId,
-      categoria_nome: cat.categoriaNome,
+      categoria_nome: categoriaNome,
       atributos_ml: atributosMl,
       atributos_faltantes: faltantes,
       analise_mercado: analiseMercado,

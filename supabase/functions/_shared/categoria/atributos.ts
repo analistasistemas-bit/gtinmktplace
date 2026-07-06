@@ -177,9 +177,12 @@ export function extrairUnitsPerPack(nome: string, descricao?: string): number | 
 }
 
 /**
- * Preenche UNITS_PER_PACK a partir da quantidade no nome/descrição. Só age se a categoria
- * expõe o atributo e ele ainda está vazio; sem quantidade clara, deixa faltante (operador
- * completa). Não interfere na detecção de ficha-kit do catálogo (que lê a ficha do ML, não isto).
+ * Preenche UNITS_PER_PACK quando a categoria o expõe e ele está vazio. UNITS_PER_PACK é
+ * `conditional_required` no ML (só obrigatório SE o item for kit) — nosso domínio vende unidade
+ * avulsa. Extrai a quantidade do nome/descrição ("N unidades") para kits reais; sem contagem
+ * clara, assume 1 (produto avulso) em vez de deixar faltante. Sem isso, um barbante/linha avulso
+ * travava a Revisão pedindo "Unidades por kit" mesmo não sendo kit (lote #27). Não interfere na
+ * ficha-kit do catálogo (que lê a ficha do ML, não isto).
  */
 export function preencherUnitsPerPack(
   schema: AtributoSchema[],
@@ -190,8 +193,7 @@ export function preencherUnitsPerPack(
   const exposto = schema.some((a) => a.id === 'UNITS_PER_PACK');
   const jaTem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
   if (!exposto || jaTem) return atributos;
-  const n = extrairUnitsPerPack(nome, descricao);
-  if (n == null) return atributos;
+  const n = extrairUnitsPerPack(nome, descricao) ?? 1;
   return [...atributos, { id: 'UNITS_PER_PACK', value_name: String(n) }];
 }
 

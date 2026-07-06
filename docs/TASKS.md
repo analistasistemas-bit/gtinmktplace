@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicação — 4 bugs do lote #27 (kit, preço, categoria, concorrência) — ADR-0063 — 2026-07-06
+
+- [x] **Lote #27 (barbante Barroco Maxcolor)**, 4 falhas independentes corrigidas (ADR-0063):
+  1. **Kit:** `UNITS_PER_PACK` (conditional_required no ML) travava a Revisão pedindo "unidades por
+     kit" num produto avulso. `preencherUnitsPerPack` passa a assumir 1 quando não há contagem clara.
+  2. **Preço no prejuízo:** ramo competitivo do `sugerirPrecoVenda` ignorava custo/comissão/frete.
+     Agora `max(competitivo, gross-up)` — nunca abaixo do piso viável; avisa quando o piso passa da
+     concorrência (decisão do Diego). Comissão/frete buscados também no caminho competitivo.
+  3. **Categoria "Outros":** preditor textual caía na genérica; agora usa a categoria dos
+     concorrentes no catálogo (`ofertas.category_id` + `buscarNomeCategoria`) quando desistiria.
+  4. **Concorrência 0:** `product_identifier={gtin}` em vez de `q={gtin}` (busca textual frágil),
+     tentando até 5 EANs da família. Alinha com o módulo de catálogo.
+  1221 testes verdes; deno lint + deno check + eslint ok. Deploy: process-familia + os shared
+  (`_shared/preco`, `_shared/categoria`, `_shared/concorrencia`, `_shared/ml/concorrencia`).
+
 ## Ingest UPDATE — herdar `categoria_nome` (categoria "—" na Revisão) — 2026-07-06
 
 - [x] **Lote #26**: família UPDATE aparecia com categoria "—" na Revisão embora o produto já

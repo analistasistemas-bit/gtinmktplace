@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { escolherIdentificador } from '../identificador';
+import { escolherIdentificador, gtinsValidos } from '../identificador';
+
+describe('gtinsValidos', () => {
+  it('lista todos os GTINs válidos e distintos, descartando internos (3000*) e vazios', () => {
+    const fam = {
+      nome_pai: 'Barbante X',
+      variacoes: [{ gtin: '7891113465397' }, { gtin: '30001111' }, { gtin: null }, { gtin: '7891113482943' }, { gtin: '7891113465397' }],
+    };
+    expect(gtinsValidos(fam)).toEqual(['7891113465397', '7891113482943']);
+  });
+  it('lista vazia quando nenhum GTIN é válido', () => {
+    expect(gtinsValidos({ nome_pai: 'X', variacoes: [{ gtin: null }, { gtin: '30009999' }] })).toEqual([]);
+  });
+});
 
 describe('escolherIdentificador', () => {
   it('usa o GTIN da 1ª variação com GTIN válido', () => {

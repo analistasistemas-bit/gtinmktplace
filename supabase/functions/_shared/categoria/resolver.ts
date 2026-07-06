@@ -40,7 +40,7 @@ export interface DepsResolver {
 // nenhum específico, viram fallback visível em vez de bloqueio (ADR-0058).
 const TERMOS_GENERICOS = ['outro', 'outros', 'outra', 'outras', 'diverso', 'diversos', 'diversa', 'diversas', 'geral', 'general', 'otro', 'otros'];
 
-function ehCategoriaGenerica(nomeCategoria: string): boolean {
+export function ehCategoriaGenerica(nomeCategoria: string): boolean {
   const n = normalizarTexto(nomeCategoria);
   return TERMOS_GENERICOS.some((t) => n.includes(t));
 }
