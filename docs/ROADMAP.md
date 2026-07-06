@@ -279,6 +279,30 @@ subagent-driven` quando iniciado.
 
 ---
 
+## 🚀 Fase 4 — Features complementares do SaaS (pós-fundação)
+
+**Status:** 📋 Proposto (2026-07-05, gerado via `improve` — não substitui E1–E9, constrói em cima deles)
+**Documento:** [../plans/direction-features-saas-2026-07-05.md](../plans/direction-features-saas-2026-07-05.md)
+
+Recursos de valor comercial acima da fundação multicanal/multi-tenant. Cada um vira seu próprio
+`spec → ADR → plano` quando priorizado; nenhum tem data ou compromisso ainda.
+
+| Épico | Feature | Valor | Esforço |
+|---|---|---|---|
+| **E10** | Onboarding reverso — importar anúncios já publicados | Aquisição — condição de lançamento comercial | L |
+| **E11** | Repricing contínuo com guard-rails (Smart Pricing como serviço) | Diferencial pago (plano Pro/Scale) | M–L |
+| **E12** | Saúde do anúncio — Listing Health Score + correção 1-clique por IA | Retenção + upsell | M |
+| **E13** | Central de perguntas multicanal com auto-resposta governada | Retenção (reputação do seller) | M |
+| **E14** | Copiloto de vendas — insights de IA sobre Financeiro/Faturamento | Retenção + marketing | M |
+| **E15** | Estúdio de fotos IA (fundo branco, padronização de capa) | Aquisição (dor universal de PME) | M |
+| **E16** | Central de notificações de eventos (Telegram/e-mail) | Quick win de percepção de valor | S–M |
+
+**Sequência recomendada:** E10 (condição de lançamento) e E16 (quick win) primeiro; E11/E12 como
+features pagas do plano Pro; E13/E14/E15 conforme tração. Detalhe, evidência e trade-offs de cada
+item no documento de direção linkado acima.
+
+---
+
 ## Trilho paralelo — App Mercado Livre Developers
 
 **Status:** ✅ Pronto pra M4 (2026-05-27)

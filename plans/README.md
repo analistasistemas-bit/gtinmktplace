@@ -51,6 +51,12 @@ Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 - **009 → 012 (soft)**: `deno check` (009) é a única forma hoje de validar estaticamente o `io.ts` que o 012 edita.
 - 015 é behavior-preserving (mesma matemática/formato) — a rede de testes existente é a guarda.
 
+## Documentos de direção
+
+- [direction-features-saas-2026-07-05.md](direction-features-saas-2026-07-05.md) — 7 sugestões de
+  features para o SaaS multi-marketplace (onboarding reverso, repricing, health score, perguntas
+  multicanal, copiloto de vendas, estúdio de fotos IA, notificações), complementares aos épicos E5–E9.
+
 ## Findings considered and rejected (não re-auditar)
 
 - **"RLS faltando nas tabelas de domínio"**: **FALSO**. Verificado no banco de produção (read-only): as 12
