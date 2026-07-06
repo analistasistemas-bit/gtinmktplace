@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, backend, edge-functions]
-atualizado: 2026-07-01
+atualizado: 2026-07-06
 ---
 
 # Edge Functions
@@ -20,7 +20,7 @@ primeiro). ~35 funções Deno em `supabase/functions/`. Ver [[Backend]], [[Segur
 |---|---|
 | **OAuth / conexão ML** | ml-oauth-start, ml-oauth-callback, ml-oauth-disconnect |
 | **Ingest de planilha** | ingest-lote, upload-imagens-lote |
-| **Processamento / publicação** | process-familia, publicar-familias, publish-familia-ml, update-familia-ml, publicar-split-ml, regenerar-copy-familia, definir-categoria-familia, vincular-catalogo |
+| **Processamento / publicação** | process-familia, publicar-familias, publish-familia-ml, update-familia-ml, publicar-split-ml, **publicar-anuncio** (worker genérico p/ canais ≠ ML), regenerar-copy-familia, definir-categoria-familia, vincular-catalogo |
 | **Remoção / reprocessamento** | remover-publicado, excluir-lote, reprocessar-familia, invalidar-cache-cor |
 | **Faturamento** | ml-webhook, sync-venda, sync-pergunta, sync-devolucao, responder-pergunta, sugerir-resposta-pergunta, backfill-faturamento, reconciliar-faturamento |
 | **Financeiro (MP)** | resumo-financeiro |
@@ -38,6 +38,11 @@ Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (mó
 - **Fila serial de publicação** — `garantirFilaSerial(userId)` → `parallelism=1` por usuário,
   evita duas publicações concorrentes da mesma conta colidirem no ML.
 - **Dedup de webhook** — `(topic, resource)` único em `ml_webhook_eventos`.
+- **Fan-out multicanal (E6, ADR-0061)** — `publicar-familias` publica ML dentro de `if(incluiML)`
+  (intocado) e, para cada canal extra conectado pela org, faz claim próprio na linha de
+  `anuncios_externos` e enfileira `publicar-anuncio`. O worker **verifica** o status (não
+  re-claima), preservando a idempotência do retry do QStash. Auth do gateway agora por
+  `requireUserOrg` (org do E7).
 
 ## ⚠️ Incidente conhecido — divergência de `verify_jwt`
 

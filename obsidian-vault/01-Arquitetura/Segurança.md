@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, seguranca]
-atualizado: 2026-07-01
+atualizado: 2026-07-06
 ---
 
 # Segurança
@@ -36,9 +36,13 @@ Ver ⚠️ divergência conhecida de `verify_jwt` em [[Edge Functions]].
 
 ## RLS (Row Level Security)
 
-- **Operação compartilhada** — tabelas de domínio liberam leitura/escrita a qualquer membro
-  autenticado via `is_membro_operacao()`. `user_id` fica como `criado_por` (auditoria).
-  Isolamento real por empresa (`org_id`) é o épico `E7`.
+- **Isolamento por org (E7, ADR-0027, em produção)** — tabelas de domínio filtram por
+  `org_id = current_org_id()` (RLS), substituindo o antigo `is_membro_operacao()` de operação
+  compartilhada. `user_id` fica como `criado_por` (auditoria). Migração `expand → migrate →
+  contract`; isolamento provado por suíte hermética (39 asserções) contra produção.
+- **Canais ≠ ML (E6, ADR-0061)** — credencial por org em `marketplace_connections`; estado por
+  canal em `anuncios_externos` com claim atômico (`status pendente|erro → publicando`). Falha de
+  um canal nunca toca outro nem o fluxo ML. Ver [[Edge Functions]].
 - **Escritas sensíveis** (credenciais, faturamento) bloqueadas para `authenticated`; só
   `service_role` ou RPC `security definer`.
 - **Storage** — bucket `imagens` privado, RLS por prefixo de path (`auth.uid()`).

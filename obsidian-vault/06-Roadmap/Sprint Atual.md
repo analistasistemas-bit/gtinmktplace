@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-02
+atualizado: 2026-07-06
 ---
 
 # Sprint Atual
@@ -8,17 +8,25 @@ atualizado: 2026-07-02
 Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 `docs/project-status.md`. Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-07-02)
+## 📍 Passo atual (2026-07-06)
 
-> **Próximo épico: E7 — Multi-tenancy** (decisão Diego 2026-07-02), seguido de **E6**
-> (orquestração multicanal) e **E6b** (estoque único cross-canal, épico novo). O `E5` (Shopee)
-> fica para depois. Os três planos de implementação estão completos em
-> `docs/superpowers/plans/` (`2026-07-02-e7-*`, `2026-07-02-e6-*`, `2026-07-02-e6b-*`).
-> Racional: o objetivo é SaaS multi-empresa com isolamento por org; o E6 nasce tenant-aware;
-> a validação real de E6/E6b com 2 canais depende do E5. A execução do E7 inicia pela Task 1
-> (reescrever [[ADRs|ADR-0027]]) e cada ponto de deploy exige OK explícito do Diego.
+> **E7 (Multi-tenancy) e E6 (Orquestração multicanal) concluídos e em produção.** Restam no
+> épico do 2º canal o **E5 — Shopee** (conector real) e o **E6b** (estoque único cross-canal);
+> a validação plena de E6/E6b com 2 canais depende do E5. Próximo passo natural: **E5**.
+> Antes de iniciar o E5, re-rodar o Graphify (bloqueado hoje pela quota diária do Gemini free
+> tier). Planos em `docs/superpowers/plans/2026-07-02-*`; ADRs de referência [[ADRs|ADR-0027]]
+> (multi-tenancy) e ADR-0061 (orquestração multicanal).
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
+
+- **E6 — Orquestração multicanal** (ADR-0061) — em produção 2026-07-06: fan-out por
+  `(família, canal)`; caminho ML **intocado** (roda dentro de `if(incluiML)`); worker genérico
+  `publicar-anuncio`; estado por canal em `anuncios_externos` (claim atômico); UI de seleção de
+  canal aparece só com >1 canal. Default `['mercado_livre']` → chamadas atuais 100% compatíveis.
+- **E7 — Multi-tenancy** (ADR-0027) — em produção 2026-07-05/06: isolamento por `org_id`
+  (`current_org_id()`) substitui `is_membro_operacao()` em toda tabela de domínio; estratégia
+  `expand → migrate → contract`; suíte hermética de isolamento (39 asserções) validada contra
+  produção; zero regressão na conta Avil.
 
 - **Marca manual de saque no Financeiro** (ADR-0053) — deployada 2026-07-02: estado `sacado` no
   Detalhe do líquido (checkbox + `Registrar`/`Desfazer saque` + filtro `Sacados`); campos
