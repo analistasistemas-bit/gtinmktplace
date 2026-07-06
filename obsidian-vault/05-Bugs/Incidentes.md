@@ -116,3 +116,31 @@ salvo (nunca regride) → destinatário do envio (só quando nunca teve nada mel
 valor corrompido pela regressão corrigido manualmente via SQL (nome real já estava capturado no
 `raw.buyer` de um sync anterior). Ver [ADR-0037](../../docs/decisions/0037-modulo-faturamento-webhooks-ml.md)
 e `docs/TASKS.md` (2026-07-01).
+
+## Cor do lote #24/#25: "Salmon"/"Rosa Pink" + rename e fotos no UPDATE (2026-07-06)
+
+Diego enviou 4 cores para um tecido Oxford já publicado (`02989182`, anúncio `MLB4831319319`).
+"Salmon" caiu em "Outra" e "Rosa Pink" virou só "Rosa". Investigação em três camadas:
+
+**1. Dicionário de cores incompleto.** `_shared/cor/dicionario.ts` só tinha "salmão/salmao"
+(faltava a grafia inglesa "salmon"), e "rosa"/"pink" tinham sinônimos do mesmo tamanho — o sort
+por especificidade empatava e o match de primeiro-encontrado sempre pegava "rosa". Fix: sinônimo
+`salmon` em Salmão + entrada composta `Rosa Pink`. Deploy das funções que bundlam `_shared/cor/`.
+
+**2. Reprocessar não conserta cor já publicada.** No UPDATE, `ingest-lote` **herda** a cor da
+família publicada (`cor: h?.cor ?? null`) e `process-familia` pula a resolução quando a cor já vem
+setada (`if (v.cor) return v`). Além disso, "reprocessar" no app = **excluir o lote e re-ingerir**
+(novo `numero_org`), então a correção manual feita no lote antigo (#24) foi descartada ao virar #25.
+Cores já publicadas ficam congeladas; o fix do dicionário só age em cor genuinamente nova. Corrigido
+editando a cor direto nas `variacoes` da família **publicada** (fonte da herança) + do lote em revisão.
+
+**3. Publicar o UPDATE não propagava ao ML (ADR-0062).** Dois bugs no fluxo de publicação:
+(a) `montarVariacoesUpdate` nunca enviava COLOR das variações **existentes** (só das novas) → rename
+não ia ao ML; (b) fotos comuns CAPA2/CAPA3 duplicavam porque o dedupe comparava id de **upload**
+cacheado vs id **re-hospedado** pelo ML — nunca casava, reinserindo a cada publish (até em reposição).
+Fix: `buscarItemML` captura a cor atual (`corDaVariacaoML`); envia COLOR só quando muda; fotos comuns
+só (re)enviadas ao criar cor nova. Ver [ADR-0062](../../docs/decisions/0062-update-cor-existente-e-fotos-comuns.md).
+
+**Limitações (ADR-0062):** o ML pode recusar rename de COLOR em variação com vendas → anúncio já
+quebrado se limpa manual no painel; adicionar cor nova a anúncio com capa2/capa3 ainda pode duplicar
+(falta rastrear o id re-hospedado — ADR futuro).
