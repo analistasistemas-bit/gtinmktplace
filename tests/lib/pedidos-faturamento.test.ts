@@ -98,6 +98,39 @@ describe('agruparPorPedido', () => {
     expect(p.markup).toBeNull();
     expect(p.itens[0].markup).toBeNull();
   });
+
+  it('pack cancelado zera líquido/imposto e nula custo/markup, mesmo com custo e frete duplicado por pedido', () => {
+    // Reproduz o bug relatado: pack de 2 pedidos cancelado. Antes do fix, o líquido cru (não
+    // rateado, pois ratearLiquidoPorFrete pula não-faturáveis) somado ao imposto ainda calculado
+    // dava markup ~-200% em vez de "—".
+    const custo: CustoResolver = (it) => (it.id === 'i1' ? 1.53 : 1.91);
+    const aliquota: AliquotaResolver = () => 8; // nunca deve aparecer num pedido cancelado
+    const vendas = [
+      venda({
+        id: 'a', order_id: 1, pack_id: 99, status: 'cancelled', total_amount: 12.80,
+        sale_fee_total: 1.42, frete_vendedor: 11.30, liquido: 0.08,
+        itens: [item({ id: 'i1', unit_price: 12.80 })],
+      }),
+      venda({
+        id: 'b', order_id: 2, pack_id: 99, status: 'cancelled', total_amount: 13.68,
+        sale_fee_total: 1.62, frete_vendedor: 11.30, liquido: 0.76,
+        itens: [item({ id: 'i2', unit_price: 13.68 })],
+      }),
+    ];
+    const p = agruparPorPedido(vendas, custo, undefined, undefined, aliquota)[0];
+    expect(p.liquido).toBe(0);
+    expect(p.imposto).toBe(0);
+    expect(p.custo).toBeNull();
+    expect(p.markup).toBeNull();
+    for (const it of p.itens) {
+      expect(it.liquido).toBe(0);
+      expect(it.imposto).toBe(0);
+      expect(it.markup).toBeNull();
+    }
+    // Custo do produto continua visível (é atributo do item, não da venda cancelada).
+    expect(p.itens.find((x) => x.id === 'i1')?.custo).toBe(1.53);
+    expect(calcularKpisPedidos([p]).pedidos).toBe(0);
+  });
 });
 
 import { calcularKpisPedidos } from '@/lib/pedidos-faturamento';

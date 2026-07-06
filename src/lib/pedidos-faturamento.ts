@@ -98,7 +98,10 @@ export function agruparPorPedido(
   fotoResolver?: FotoResolver, aliquotaResolver?: AliquotaResolver,
 ): Pedido[] {
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
-  const liquidoMembro = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
+  // Venda cancelada não gera líquido (ADR-0038: só faturável entra nos KPIs monetários). Sem essa
+  // trava, o líquido cru (ratearLiquidoPorFrete pula não-faturáveis) duplicava o frete de pack e o
+  // markup do pedido/item ficava absurdamente negativo em vez de "—".
+  const liquidoMembro = (v: Venda) => (ehFaturavel(v.status) ? rateio.get(v.id)?.liquido ?? v.liquido ?? 0 : 0);
 
   const grupos = new Map<string, Venda[]>();
   for (const v of vendas) {
@@ -116,22 +119,33 @@ export function agruparPorPedido(
     const frete = freteMax > 0 ? round2(freteMax) : null;
     const comissao = round2(membros.reduce((s, v) => s + v.sale_fee_total, 0));
 
-    const itensFlat = membros.flatMap((v) => v.itens);
-    const unidades = itensFlat.reduce((s, i) => s + i.quantity, 0);
-    const valorItens = itensFlat.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+    const itensFlat = membros.flatMap((v) => {
+      const faturavel = ehFaturavel(v.status);
+      return v.itens.map((it) => ({ it, faturavel }));
+    });
+    const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
+    // Base do rateio: só o valor dos itens faturáveis — um item cancelado não "rouba" fatia do
+    // líquido (que também só soma membros faturáveis; ver liquidoMembro acima).
+    const valorItensFaturaveis = itensFlat
+      .filter(({ faturavel }) => faturavel)
+      .reduce((s, { it }) => s + it.unit_price * it.quantity, 0);
 
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map((it) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel }) => {
       const custo = custoDoItem(it, custoResolver);
-      if (custo != null) { custoTotal += custo; temCusto = true; }
-      const imposto = impostoDoItem(it, aliquotaResolver);
+      if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
+      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver) : 0;
       impostoTotal += imposto;
       const valorItem = it.unit_price * it.quantity;
-      const liqItem = valorItens > 0 ? round2((liquido * valorItem) / valorItens) : 0;
+      const liqItem = faturavel && valorItensFaturaveis > 0
+        ? round2((liquido * valorItem) / valorItensFaturaveis)
+        : 0;
       const liqItemComImposto = round2(liqItem - imposto);
-      const markup = custo != null && custo > 0 ? calcularMarkup(liqItemComImposto, custo).markup : null;
+      const markup = faturavel && custo != null && custo > 0
+        ? calcularMarkup(liqItemComImposto, custo).markup
+        : null;
       return {
         id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
         cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
