@@ -84,7 +84,7 @@ export default function Dashboard() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
 const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturamento');
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
-  const janelaAnt = useMemo(() => janelaAnterior(janela), [janela]);
+  const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
 
   const { resumo: r, isFetching, error } = useResumoVendas(janela);
   const { resumo: rAnt } = useResumoVendas(janelaAnt);

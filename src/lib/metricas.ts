@@ -34,8 +34,18 @@ export function resolverJanela(p: Periodo): Janela {
   return { desde: desde.toISOString(), ate: ate.toISOString() };
 }
 
-/** Janela imediatamente anterior, de mesma duração: [desde - dur, desde]. */
-export function janelaAnterior(j: Janela): Janela {
+/** Janela imediatamente anterior. Presets/range: mesma duração, encostada no início da atual
+ *  ([desde - dur, desde]). 'hoje': a janela cresce o dia todo, então deslocar pela duração
+ *  decorrida não dá "ontem" — dá um pedaço de ontem colado à meia-noite. Usa o dia anterior no
+ *  mesmo ponto do relógio (ontem 00:00 → ontem mesma hora de agora). */
+export function janelaAnterior(j: Janela, p?: Periodo): Janela {
+  if (p?.tipo === 'hoje') {
+    const DIA_MS = 24 * 60 * 60 * 1000;
+    return {
+      desde: new Date(Date.parse(j.desde) - DIA_MS).toISOString(),
+      ate: new Date(Date.parse(j.ate) - DIA_MS).toISOString(),
+    };
+  }
   const desdeMs = Date.parse(j.desde);
   const dur = Date.parse(j.ate) - desdeMs;
   return { desde: new Date(desdeMs - dur).toISOString(), ate: new Date(desdeMs).toISOString() };

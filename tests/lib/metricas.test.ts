@@ -36,6 +36,17 @@ describe('janelaAnterior', () => {
     expect(a.ate).toBe('2026-06-01T00:00:00.000Z');
     expect(a.desde).toBe('2026-05-22T00:00:00.000Z');
   });
+
+  it('"hoje": compara com ontem no mesmo horário, não desloca pela duração decorrida (bug real)', () => {
+    // "hoje" cresce o dia todo — deslocar pela duração decorrida (ex.: 12h) dá um pedaço de
+    // ontem colado à meia-noite (ontem 12:00→24:00), não "ontem até a mesma hora de agora".
+    const j = { desde: '2026-07-06T00:00:00.000Z', ate: '2026-07-06T12:00:00.000Z' }; // hoje, 12h decorridas
+    const semTipo = janelaAnterior(j); // comportamento genérico (bug): desloca pelas 12h decorridas
+    expect(semTipo).toEqual({ desde: '2026-07-05T12:00:00.000Z', ate: '2026-07-06T00:00:00.000Z' });
+
+    const a = janelaAnterior(j, { tipo: 'hoje' }); // fix: ontem, mesmo ponto do relógio
+    expect(a).toEqual({ desde: '2026-07-05T00:00:00.000Z', ate: '2026-07-05T12:00:00.000Z' });
+  });
 });
 
 describe('periodo <-> params', () => {
