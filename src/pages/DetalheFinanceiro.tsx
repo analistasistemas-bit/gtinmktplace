@@ -18,7 +18,7 @@ import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularMarkup } from '@/lib/markup';
 import { calcularResumo } from '@/lib/resumo-vendas';
-import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, retidoDoPedido, type Pedido } from '@/lib/pedidos-faturamento';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { labelStatusLiberacao, statusLiberacao, type StatusLiberacao } from '@/lib/status-liberacao';
@@ -39,9 +39,6 @@ function fmtData(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');
 }
-
-/** Retido (ML) do pedido: bruto − líquido (taxas + frete). */
-const retidoDe = (p: Pedido): number => round2(p.bruto - p.liquido);
 
 function CelulaLiberacao({
   iso, sacadoEm, temMembrosSemDataLiberacao,
@@ -128,7 +125,7 @@ function LinhaDetalhe({
   const [aberto, setAberto] = useSessionState(`expand:detalhe-financeiro:${p.chave}`, false);
   // Pedido no prejuízo: o líquido recebido ficou abaixo do custo (markup negativo).
   const prejuizo = p.custo != null && p.custo > 0 && p.liquido < p.custo;
-  const retido = retidoDe(p);
+  const retido = retidoDoPedido(p);
   return (
     <>
       <TableRow
@@ -286,7 +283,7 @@ export default function DetalheFinanceiro() {
         case 'unidades': return p.unidades;
         case 'liberacao': return p.money_release_date;
         case 'bruto': return p.bruto;
-        case 'retido': return retidoDe(p);
+        case 'retido': return retidoDoPedido(p);
         case 'liquido': return p.liquido;
         case 'markup': return p.markup;
       }
@@ -402,7 +399,7 @@ export default function DetalheFinanceiro() {
     let cstMk = 0;
     for (const p of pedidosFiltrados) {
       brutoF += p.bruto;
-      retidoF += retidoDe(p);
+      retidoF += retidoDoPedido(p);
       liquidoF += p.liquido;
       if (p.custo != null && p.custo > 0) { liqMk += p.liquido; cstMk += p.custo; }
     }
@@ -555,13 +552,15 @@ export default function DetalheFinanceiro() {
       <p className="mt-4 text-xs text-muted-foreground">
         Cada linha é um pedido do período (carrinho do cliente; packs agrupados, igual ao Faturamento);
         clique para ver os itens com custo, líquido e markup. "Retido" é o que o ML/MP desconta da venda
-        (taxas + frete). Em pedidos com vários produtos (mesmo envio), o frete é rateado entre os itens
-        por peso. O "líquido" é o que sobra para o vendedor. O "markup" usa o custo cadastrado na
-        importação da planilha: (líquido − custo) ÷ custo; pedidos sem custo cadastrado ou de produtos
-        fora do PubliAI mostram "—". "Liberação" é a data em que o Mercado Livre libera aquele
-        recebimento para saque ("a liberar" = ainda retido; "liberado" = já no saldo; "sacado" =
-        marcado manualmente como já sacado pelo usuário). Linhas destacadas em vermelho são pedidos
-        no prejuízo (líquido abaixo do custo). Clique no cabeçalho para ordenar.
+        (comissão + frete). Em pedidos com vários produtos (mesmo envio), o frete é rateado entre os itens
+        por peso. O "líquido" aqui já desconta o imposto estimado por origem (nacional/importado,
+        ADR-0055) — é a mesma base do "markup": (líquido − custo) ÷ custo. Por isso pode ser um pouco menor
+        que o "Líquido total" do banner acima, que é o dinheiro que efetivamente cai na conta (sem esse
+        imposto). Pedidos sem custo cadastrado ou de produtos fora do PubliAI mostram "—". "Liberação" é a
+        data em que o Mercado Livre libera aquele recebimento para saque ("a liberar" = ainda retido;
+        "liberado" = já no saldo; "sacado" = marcado manualmente como já sacado pelo usuário). Linhas
+        destacadas em vermelho são pedidos no prejuízo (líquido abaixo do custo). Clique no cabeçalho para
+        ordenar.
       </p>
     </div>
   );

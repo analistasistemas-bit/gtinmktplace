@@ -1,10 +1,10 @@
-import { fmtBRL, fmtInt, round2 } from '@/lib/formato';
+import { fmtBRL, fmtInt } from '@/lib/formato';
 import { fmtDataCurta, labelStatusPedido, labelStatusEnvio } from '@/lib/ml-status';
 import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/publicados';
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
 import type { Periodo } from '@/lib/metricas';
 import type { ResumoViabilidade } from '@/lib/analise-viabilidade';
-import { nomeExibicaoComprador, type Pedido, type KpisPedidos } from '@/lib/pedidos-faturamento';
+import { nomeExibicaoComprador, retidoDoPedido, type Pedido, type KpisPedidos } from '@/lib/pedidos-faturamento';
 import type { Devolucao } from '@/lib/devolucoes';
 import { labelTipoDevolucao } from '@/lib/devolucoes';
 import { labelStatusLiberacao, statusLiberacao } from '@/lib/status-liberacao';
@@ -504,7 +504,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
             : labelStatusLiberacao(status);
         })(),
         bruto: fmtBRL(p.bruto),
-        retido: fmtBRL(round2(p.bruto - p.liquido)),
+        retido: fmtBRL(retidoDoPedido(p)),
         liquido: fmtBRL(p.liquido),
         markup: fmtMarkupNum(p.markup),
       },

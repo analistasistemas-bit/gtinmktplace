@@ -21,11 +21,11 @@ export interface ItemPedido {
   imagem_path: string | null;
   /** Custo total do item (custo unitário × qtd), em R$. null = sem custo cadastrado. */
   custo: number | null;
-  /** Líquido atribuído ao item: rateio do líquido do pedido por valor bruto do item. */
+  /** Líquido atribuído ao item (rateio por valor bruto do item), já líquido do imposto — mesma base do markup (ADR-0055). */
   liquido: number;
   /** Imposto do item = valor de venda × alíquota(origem). 0 sem origem/alíquota (ADR-0055). */
   imposto: number;
-  /** (líquido − imposto − custo) ÷ custo. null sem custo. */
+  /** (líquido − custo) ÷ custo, com líquido já líquido do imposto. null sem custo. */
   markup: number | null;
 }
 
@@ -57,7 +57,7 @@ export interface Pedido {
   bruto: number;
   /** Frete do envio (uma vez por pack). null = sem frete. */
   frete: number | null;
-  /** Líquido do pedido: soma do líquido (rateado) dos membros. */
+  /** Líquido do pedido (soma do líquido rateado dos membros), já líquido do imposto — mesma base do markup (ADR-0055). Use `retidoDoPedido` para o retido real do ML (sem imposto). */
   liquido: number;
   /** money_release_date — quando o ML libera o recebimento (representativo do grupo). null = MP não informou. */
   money_release_date: string | null;
@@ -150,12 +150,13 @@ export function agruparPorPedido(
         id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
         cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
-        custo, liquido: liqItem, imposto, markup,
+        custo, liquido: liqItemComImposto, imposto, markup,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;
     const imposto = round2(impostoTotal);
-    const markup = custo != null && custo > 0 ? calcularMarkup(round2(liquido - imposto), custo).markup : null;
+    const liquidoComImposto = round2(liquido - imposto);
+    const markup = custo != null && custo > 0 ? calcularMarkup(liquidoComImposto, custo).markup : null;
 
     const primeiro = membros[0];
     const grupoSacado = membros.every((v) => v.sacado_em != null);
@@ -190,7 +191,7 @@ export function agruparPorPedido(
       sacado_em,
       sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
-      unidades, bruto, frete, liquido, custo, imposto, markup, comissao,
+      unidades, bruto, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
       rastreio: primeiro.tracking_number,
       uf: primeiro.uf ?? null,
       cidade: primeiro.cidade ?? null,
@@ -201,6 +202,12 @@ export function agruparPorPedido(
   }
   pedidos.sort((a, b) => Date.parse(b.data ?? '') - Date.parse(a.data ?? ''));
   return pedidos;
+}
+
+/** Retido real do ML (comissão + frete) de um pedido: bruto − líquido − imposto — já que `liquido`
+ *  aqui é líquido do imposto (ADR-0055), diferente do dinheiro que efetivamente sai na venda. */
+export function retidoDoPedido(p: Pick<Pedido, 'bruto' | 'liquido' | 'imposto'>): number {
+  return round2(p.bruto - p.liquido - p.imposto);
 }
 
 export interface KpisPedidos {
@@ -235,7 +242,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     faturaveis += 1;
     bruto += p.bruto;
     unidades += p.unidades;
-    if (p.custo != null && p.custo > 0) { liqComCusto += round2(p.liquido - p.imposto); custoTotal += p.custo; }
+    if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
     if (p.comprador_id != null) {
       pedidosPorComprador.set(p.comprador_id, (pedidosPorComprador.get(p.comprador_id) ?? 0) + 1);
     }
