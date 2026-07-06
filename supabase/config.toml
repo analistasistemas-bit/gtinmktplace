@@ -28,6 +28,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.vincular-catalogo]
 verify_jwt = false
+[functions.publicar-anuncio]
+verify_jwt = false
 [functions.reprocessar-familia]
 verify_jwt = false
 [functions.monitorar-moderados]

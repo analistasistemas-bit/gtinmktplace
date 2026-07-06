@@ -80,6 +80,31 @@ export async function enfileirarSplit(job: ProcessFamiliaJob, userId: string): P
   return messageId;
 }
 
+// E6 (ADR-0061): fan-out por (canal, org) — o worker genérico publicar-anuncio atende
+// canais ≠ ML; o ML continua na fila `publish-ml-${userId}` acima (D-E6.1, intocada).
+export interface PublicarAnuncioJob { familia_id: string; lote_id: string; canal: string; }
+
+/** Fila serial por (canal, org): rate limit do canal é por conta de vendedor (D-E6.4). */
+export function filaCanal(canal: string, orgId: string): string {
+  return `publish-${canal}-${orgId}`;
+}
+
+/** Garante a fila serial (parallelism=1) do (canal, org). Idempotente; espelha garantirFilaSerial. */
+export async function garantirFilaSerialCanal(nomeFila: string): Promise<void> {
+  await qstashClient().queue({ queueName: nomeFila }).upsert({ parallelism: 1 });
+}
+
+export async function enfileirarPublicacaoCanal(job: PublicarAnuncioJob, orgId: string): Promise<string> {
+  const nomeFila = filaCanal(job.canal, orgId);
+  await garantirFilaSerialCanal(nomeFila);
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/publicar-anuncio`;
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFila })
+    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+  return messageId;
+}
+
 export interface VincularCatalogoJob { familia_id: string; }
 
 /**

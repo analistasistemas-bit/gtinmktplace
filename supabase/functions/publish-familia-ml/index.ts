@@ -3,20 +3,15 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
-import { ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
-import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { atributosFaltantes, categoriaParaTipo } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
-import type { AnuncioCanonico } from '../_shared/canais/contrato.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
+import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
-
-const BUCKET = 'imagens';
-const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona (gap §569)
 
 // Foto recém-enviada fica alguns segundos "em processamento" no ML; criar o item nesse
 // intervalo devolve item.pictures.unavailable ("envie a foto novamente") — um 400 transitório
@@ -107,15 +102,6 @@ Deno.serve(async (req) => {
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Sem cores incluídas para publicar');
 
-    let desconto: { pct: number } | null = null;
-    if (familia.exibir_com_desconto) {
-      const { data: cfg } = await admin.from('configuracoes')
-        .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
-      const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
-      const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
-      desconto = { pct: pctEfetivo(fam, global) };
-    }
-
     // Gate de atributos obrigatórios. Aviamento conhecido (override) → validador por-tipo (atual);
     // categoria prevista/manual → lista genérica persistida (E3/E4, schema da API); sem categoria → bloqueia.
     const tipoAviamento = (familia.tipo_aviamento ?? 'outro') as TipoAviamento;
@@ -124,67 +110,7 @@ Deno.serve(async (req) => {
       : (familia.categoria_ml_id ? ((familia.atributos_faltantes as string[] | null) ?? []) : ['CATEGORIA']);
     if (faltam.length) throw new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`);
 
-    const signed = async (path: string): Promise<string> => {
-      const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
-      if (error || !data) throw new Error(`Signed URL falhou para ${path}`);
-      return data.signedUrl;
-    };
-
-    // Capa: reusa o picture_id já subido (idempotente em retries).
-    let capaPictureId: string | null = familia.capa_ml_picture_id ?? null;
-    if (!capaPictureId && familia.capa_storage_path) {
-      capaPictureId = await conn.subirFoto(ctx, await signed(familia.capa_storage_path));
-      await admin.from('familias').update({ capa_ml_picture_id: capaPictureId }).eq('id', job.familia_id);
-    }
-
-    let capa2PictureId: string | null = familia.capa2_ml_picture_id ?? null;
-    if (!capa2PictureId && familia.capa2_storage_path) {
-      capa2PictureId = await conn.subirFoto(ctx, await signed(familia.capa2_storage_path));
-      await admin.from('familias').update({ capa2_ml_picture_id: capa2PictureId }).eq('id', job.familia_id);
-    }
-
-    let capa3PictureId: string | null = familia.capa3_ml_picture_id ?? null;
-    if (!capa3PictureId && familia.capa3_storage_path) {
-      capa3PictureId = await conn.subirFoto(ctx, await signed(familia.capa3_storage_path));
-      await admin.from('familias').update({ capa3_ml_picture_id: capa3PictureId }).eq('id', job.familia_id);
-    }
-
-    const variacoesComFoto = [];
-    for (const v of variacoes) {
-      let picId = v.ml_picture_id as string | null;
-      if (!picId && v.imagem_path) {
-        picId = await conn.subirFoto(ctx, await signed(v.imagem_path));
-        await admin.from('variacoes').update({ ml_picture_id: picId }).eq('id', v.id);
-      }
-      variacoesComFoto.push({ ...v, ml_picture_id: picId });
-    }
-
-    const ordenadas = ordenarVariacoesPrincipal(variacoesComFoto, familia.variacao_principal_codigo ?? null);
-    // Dimensões/peso (ADR-0018): da variação representativa (a principal, 1ª ordenada).
-    const rep = ordenadas[0];
-    const dimensoes = rep ? {
-      altura_cm: rep.altura_cm != null ? Number(rep.altura_cm) : null,
-      largura_cm: rep.largura_cm != null ? Number(rep.largura_cm) : null,
-      comprimento_cm: rep.comprimento_cm != null ? Number(rep.comprimento_cm) : null,
-      peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
-    } : null;
-
-    const anuncio: AnuncioCanonico = {
-      titulo: familia.titulo_ml,
-      descricao: familia.descricao_ml,
-      categoriaId: familia.categoria_ml_id,
-      atributos: familia.atributos_ml ?? [],
-      capaFotoId: capaPictureId,
-      capa2FotoId: capa2PictureId,
-      capa3FotoId: capa3PictureId,
-      listingTypeId: job.listing_type_id,
-      desconto,
-      dimensoes,
-      variacoes: ordenadas.map((v) => ({
-        sku: v.codigo, cor: v.cor, estoque: v.estoque,
-        preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,
-      })),
-    };
+    const anuncio = await montarAnuncioCanonico(admin, conn, ctx, familia, variacoes, job.listing_type_id);
 
     let res = await conn.criarAnuncio(ctx, anuncio);
     // Retry interno para a foto ainda em processamento no ML: espera curta e re-tenta na
@@ -243,7 +169,7 @@ Deno.serve(async (req) => {
       if (faixasAtacado.length > 0) {
         // Base do PxQ = preço da família (cores incluídas compartilham o mesmo preço; o
         // primeiro não-nulo == o menor, alinhado ao preview do front). ADR-0041.
-        const baseRaw = ordenadas.find((v) => v.preco_publicacao != null)?.preco_publicacao;
+        const baseRaw = anuncio.variacoes.find((v) => v.preco != null)?.preco;
         const base = baseRaw != null ? Number(baseRaw) : null;
         if (base != null) {
           try {
