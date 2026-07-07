@@ -58,7 +58,10 @@ export function VariacaoCard({
     // variável (pior com o selo "frete por sua conta") — antes espremia cor/GTIN a ~0;
     // agora fica sozinho na 3ª linha, de largura livre.
     <div className="rounded-md bg-background p-2 text-sm">
-      <div className="flex items-start gap-3">
+      {/* flex-wrap: no mobile, preço + estoque quebram para a 2ª linha (a soma das colunas
+          shrink-0 + cor/GTIN min-150 não cabe em ~374px e antes estourava para ~555px, deixando
+          arrastar a página no iOS). No desktop cabe tudo numa linha só (não quebra). */}
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
         {imgUrl ? (
           <img
             src={imgUrl}
