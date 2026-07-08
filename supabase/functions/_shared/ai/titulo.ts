@@ -103,6 +103,37 @@ export function garantirMetragemTitulo(titulo: string, nomePai: string): string 
   return candidato;
 }
 
+// Adjetivos de marketing que a IA (gpt-4o-mini) às vezes inventa no título mesmo com a regra
+// anti-alucinação no prompt — o prompt não GARANTE (bug real do lote #28: "NOVO NOVELO ANNE
+// 500MT..." onde "NOVO" não existia na planilha nem na descrição). Guard determinístico: some
+// só quando o termo é grounded (aparece como token na fonte); senão remove.
+const MARKETING_TERMOS = new Set([
+  'novo', 'nova', 'novos', 'novas', 'lancamento', 'inedito', 'exclusivo', 'exclusiva',
+  'original', 'originais', 'premium', 'importado', 'importada', 'imperdivel',
+]);
+
+// Normaliza um token para comparação: sem acento, minúsculo, só letras (ignora pontuação/números
+// grudados, ex.: "100%" ou "NOVO,"). Comparação é sempre por TOKEN inteiro, nunca substring —
+// não pode confundir "NOVO" com "NOVELO" (tokens distintos).
+function normalizarToken(w: string): string {
+  return w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+}
+
+// Remove do título os adjetivos de marketing da lista fechada acima que NÃO estão presentes
+// (como token) no texto-fonte (nome + descrição). Se o termo genuinamente consta na fonte,
+// mantém. Puro/determinístico — não depende de IA. Reutiliza removerCaudaConectiva para limpar
+// conectivos que a remoção deixe soltos no fim.
+export function removerMarketingNaoGrounded(titulo: string, nome: string, descricao: string): string {
+  const fonte = new Set(`${nome} ${descricao}`.split(/\s+/).filter(Boolean).map(normalizarToken));
+  const palavras = titulo.split(/\s+/).filter(Boolean);
+  const mantidas = palavras.filter((p) => {
+    const norm = normalizarToken(p);
+    return !MARKETING_TERMOS.has(norm) || fonte.has(norm);
+  });
+  const segmentos = mantidas.join(' ').split('|').map((s) => s.trim()).filter(Boolean);
+  return removerCaudaConectiva(segmentos.join(' | '));
+}
+
 // Placeholder que o copywriter usa quando a variação não tem cor identificada — não é cor real.
 const COR_NAO_IDENTIFICADA = '(sem cor identificada)';
 

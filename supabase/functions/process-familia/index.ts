@@ -6,7 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo } from '../_shared/ai/titulo.ts';
+import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -327,7 +327,7 @@ Deno.serve(async (req) => {
     const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: garantirCorTitulo(
-        garantirMetragemTitulo(garantirTipoProdutoTitulo(copy.titulo, copy.tipo_produto_busca), claimed.nome_pai),
+        garantirMetragemTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(copy.titulo, claimed.nome_pai, claimed.descricao_pai ?? ''), copy.tipo_produto_busca), claimed.nome_pai),
         coresUnicas.length === 1 ? coresUnicas[0] : null,
         coresUnicas.length,
       ),
