@@ -60,6 +60,7 @@ export function agregarConcorrencia(produtos: ProdutoConcorrencia[]): ResultadoC
 
   const ofertas: DadosOfertas = {
     vendedores, preco_min, preco_max, total_ofertas, frete_gratis, full, seller_ids, category_id,
+    ofertas_detalhe: [], // ponytail: agregação real é escopo de task futura
   };
 
   return {

@@ -51,11 +51,11 @@ describe('parseItensProduto', () => {
   it('payload vazio → tudo zerado', () => {
     expect(parseItensProduto({ results: [] })).toEqual({
       vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
-      frete_gratis: 0, full: 0, seller_ids: [], category_id: null,
+      frete_gratis: 0, full: 0, seller_ids: [], category_id: null, ofertas_detalhe: [],
     });
     expect(parseItensProduto(null)).toEqual({
       vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
-      frete_gratis: 0, full: 0, seller_ids: [], category_id: null,
+      frete_gratis: 0, full: 0, seller_ids: [], category_id: null, ofertas_detalhe: [],
     });
   });
 
@@ -81,5 +81,31 @@ describe('parseItensProduto', () => {
     const r = parseItensProduto(json);
     expect(r.frete_gratis).toBe(2);
     expect(r.full).toBe(1);
+  });
+
+  it('monta ofertas_detalhe com o par {seller_id, preco} de cada oferta', () => {
+    const r = parseItensProduto({
+      results: [
+        { seller_id: 1, price: 30 },
+        { seller_id: 2, price: 25 },
+      ],
+    });
+    expect(r.ofertas_detalhe).toEqual([
+      { seller_id: 1, preco: 30 },
+      { seller_id: 2, preco: 25 },
+    ]);
+  });
+
+  it('ofertas_detalhe: price ausente/<=0 → preco null', () => {
+    const r = parseItensProduto({ results: [{ seller_id: 1 }, { seller_id: 2, price: 0 }] });
+    expect(r.ofertas_detalhe).toEqual([
+      { seller_id: 1, preco: null },
+      { seller_id: 2, preco: null },
+    ]);
+  });
+
+  it('ofertas_detalhe: seller_id ausente → seller_id null', () => {
+    const r = parseItensProduto({ results: [{ price: 10 }] });
+    expect(r.ofertas_detalhe).toEqual([{ seller_id: null, preco: 10 }]);
   });
 });

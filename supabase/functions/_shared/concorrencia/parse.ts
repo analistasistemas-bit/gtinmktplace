@@ -29,7 +29,7 @@ interface MLItem {
 export function parseItensProduto(json: unknown): DadosOfertas {
   const vazio: DadosOfertas = {
     vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
-    frete_gratis: 0, full: 0, seller_ids: [], category_id: null,
+    frete_gratis: 0, full: 0, seller_ids: [], category_id: null, ofertas_detalhe: [],
   };
   const results = (json as { results?: MLItem[] } | null)?.results;
   if (!Array.isArray(results) || results.length === 0) return vazio;
@@ -49,6 +49,10 @@ export function parseItensProduto(json: unknown): DadosOfertas {
   const category_id = results
     .map((r) => r.category_id)
     .find((c): c is string => typeof c === 'string' && c.length > 0) ?? null;
+  const ofertas_detalhe = results.map((r) => ({
+    seller_id: r.seller_id != null ? Number(r.seller_id) : null,
+    preco: typeof r.price === 'number' && r.price > 0 ? r.price : null,
+  }));
 
   return {
     vendedores: sellers.length > 0 ? sellers.length : results.length,
@@ -59,5 +63,6 @@ export function parseItensProduto(json: unknown): DadosOfertas {
     full,
     seller_ids: sellers,
     category_id,
+    ofertas_detalhe,
   };
 }

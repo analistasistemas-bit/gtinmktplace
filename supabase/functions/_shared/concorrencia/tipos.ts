@@ -12,6 +12,11 @@ export interface ResultadoConcorrencia {
   ofertas?: DadosOfertas;
 }
 
+export interface OfertaVendedor {
+  seller_id: number | null;
+  preco: number | null;
+}
+
 export interface DadosOfertas {
   vendedores: number;
   preco_min: number | null;
@@ -22,4 +27,6 @@ export interface DadosOfertas {
   seller_ids: number[];
   /** category_id do produto, lido das ofertas (GET /products/{id} não retorna esse campo). */
   category_id: string | null;
+  /** Par {seller_id, preco} de cada oferta, na ordem recebida do ML. */
+  ofertas_detalhe: OfertaVendedor[];
 }
