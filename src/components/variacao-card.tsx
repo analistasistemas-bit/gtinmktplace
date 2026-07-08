@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
@@ -37,6 +37,13 @@ export function VariacaoCard({
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
   const [trocaStatus, setTrocaStatus] = useState<SaveStatus>(undefined);
+
+  const precoExterno = variacao.precoPublicacao ?? variacao.preco;
+  const [valorStr, setValorStr] = useState(() => precoExterno.toString().replace('.', ','));
+
+  useEffect(() => {
+    setValorStr(precoExterno.toString().replace('.', ','));
+  }, [precoExterno]);
 
   async function lidarTrocaFoto(arquivo: File) {
     const ext = arquivo.name.split('.').pop()?.toLowerCase() ?? 'jpeg';
@@ -105,11 +112,29 @@ export function VariacaoCard({
         <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">
           <div className="flex items-center gap-1">
             <Input
-              type="number"
-              step="0.01"
-              value={variacao.precoPublicacao ?? variacao.preco}
-              onChange={(e) => onMudarPreco(variacao.codigo, parseFloat(e.target.value) || 0)}
-              onBlur={() => onSalvarPreco?.(variacao.codigo)}
+              type="text"
+              inputMode="decimal"
+              value={valorStr}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+                  setValorStr(val);
+                  const parsed = parseFloat(val.replace(',', '.'));
+                  if (!isNaN(parsed) && parsed > 0) {
+                    onMudarPreco(variacao.codigo, parsed);
+                  }
+                }
+              }}
+              onBlur={() => {
+                const parsed = parseFloat(valorStr.replace(',', '.'));
+                if (!isNaN(parsed) && parsed > 0) {
+                  onMudarPreco(variacao.codigo, parsed);
+                  setValorStr(parsed.toString().replace('.', ','));
+                } else {
+                  setValorStr(precoExterno.toString().replace('.', ','));
+                }
+                onSalvarPreco?.(variacao.codigo);
+              }}
               className="h-7 w-24"
             />
             <div className="min-w-0 shrink-0 whitespace-nowrap">
