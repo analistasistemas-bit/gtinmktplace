@@ -14,6 +14,7 @@ import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, bu
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { chunk } from '../_shared/faturamento/utils.ts';
 
 interface Body { dias?: number; desde?: string; ate?: string }
 
@@ -41,34 +42,8 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   if (!userId) return 0;
   let token: string;
   try { token = await getValidAccessTokenConexao(cx); } catch { return 0; }
-  let pedidos;
-  try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch (e) {
-    console.warn(`backfill: erro lendo pedidos da org ${orgId}: ${(e as Error).message}`);
-    return 0;
-  }
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
-  const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-    carregarLiquidoMP(admin, orgId),
-    carregarGtinsFallback(token, pedidos, idsPubliai),
-  ]);
-  let n = 0;
-  for (const pedido of pedidos) {
-    try {
-      const shippingId = pedido.shipping?.id ?? null;
-      const [frete, shipment] = await Promise.all([
-        buscarFreteVendedor(token, shippingId),
-        buscarShipment(token, shippingId),
-      ]);
-      await upsertVenda(admin, userId, orgId, pedido, {
-        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
-      });
-      n++;
-    } catch (e) {
-      console.warn(`backfill: erro upsert pedido ${pedido.id}: ${(e as Error).message}`);
-    }
-  }
 
-  // Perguntas (sem alerta no backfill — só importa o estado atual).
+  // 1. Perguntas (sem alerta no backfill — só importa o estado atual).
   try {
     const perguntas = await buscarPerguntasSeller(token);
     const titulos = new Map<string, string | null>();
@@ -83,7 +58,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
     console.warn(`backfill: erro lendo perguntas de ${userId}: ${(e as Error).message}`);
   }
 
-  // Devoluções/claims (sem alerta no backfill).
+  // 2. Devoluções/claims (sem alerta no backfill).
   try {
     const claims = await buscarClaimsSeller(token);
     for (const claim of claims) {
@@ -94,6 +69,38 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
     }
   } catch (e) {
     console.warn(`backfill: erro lendo claims de ${userId}: ${(e as Error).message}`);
+  }
+
+  // 3. Vendas
+  let pedidos;
+  try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch (e) {
+    console.warn(`backfill: erro lendo pedidos da org ${orgId}: ${(e as Error).message}`);
+    return 0;
+  }
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+  const [liquidoPorPayment, gtinPorItem] = await Promise.all([
+    carregarLiquidoMP(admin, orgId),
+    carregarGtinsFallback(token, pedidos, idsPubliai),
+  ]);
+
+  let n = 0;
+  const lotes = chunk(pedidos, 5);
+  for (const lote of lotes) {
+    await Promise.all(lote.map(async (pedido) => {
+      try {
+        const shippingId = pedido.shipping?.id ?? null;
+        const [frete, shipment] = await Promise.all([
+          buscarFreteVendedor(token, shippingId),
+          buscarShipment(token, shippingId),
+        ]);
+        await upsertVenda(admin, userId, orgId, pedido, {
+          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+        });
+        n++;
+      } catch (e) {
+        console.warn(`backfill: erro upsert pedido ${pedido.id}: ${(e as Error).message}`);
+      }
+    }));
   }
 
   return n;
