@@ -314,7 +314,12 @@ export async function buscarCategoriaML(
 }
 
 export function familiaFromRow(
-  r: FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos?: AnuncioExternoLite[] }
+  r: FamiliaRow & {
+    variacoes: VariacaoRow[];
+    anuncios_externos?: AnuncioExternoLite[];
+    // ponytail: coluna aditiva (ADR-0065) — database.types.ts ainda não regenerado (db push pendente).
+    preco_reancorado_lider?: boolean;
+  }
 ): Familia {
   const variacoes = r.variacoes.map(variacaoFromRow);
   const precos = variacoes.map((v) => v.preco);
@@ -336,6 +341,7 @@ export function familiaFromRow(
     operacao: r.operacao as OperacaoML,
     estrategiaPreco: mapEstrategiaPreco(r.estrategia_preco),
     estrategiaMotivo: r.estrategia_motivo ?? '',
+    precoReancoradoLider: r.preco_reancorado_lider ?? false,
     concorrencia: mapConcorrenciaClasse(r.concorrencia_classe),
     concorrenciaVendedores: r.concorrencia_vendedores,
     concorrenciaPrecoMin:

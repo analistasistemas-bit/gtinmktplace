@@ -14,6 +14,7 @@ function familiaBase(over: Partial<Familia> = {}): Familia {
     id: 'f1', loteId: 'l1', codigoPai: '00445975',
     titulo: 'FITA CETIM N.3', descricao: '', operacao: 'CREATE',
     estrategiaPreco: 'PROPRIO', estrategiaMotivo: 'nosso preço já é mais competitivo que o mercado',
+    precoReancoradoLider: false,
     concorrencia: 'alta', concorrenciaVendedores: 6, concorrenciaPrecoMin: 12.62,
     tipoAviamento: 'fita', categoriaMlId: 'MLB255054',
     precoMin: 2.95, precoMax: 2.95, precoAbaixo20pc: false,
@@ -40,6 +41,17 @@ describe('PainelAnalise', () => {
   it('estratégia COMPETITIVO', () => {
     renderWithClient(<PainelAnalise familia={familiaBase({ estrategiaPreco: 'COMPETITIVO', estrategiaMotivo: 'concorrência presente — bater menor preço' })} />);
     expect(screen.getByText('COMPETITIVO')).toBeInTheDocument();
+    expect(screen.queryByText(/âncora líder/i)).not.toBeInTheDocument();
+  });
+
+  it('preço reancorado no piso-líder mostra selo distinto e o motivo', () => {
+    renderWithClient(<PainelAnalise familia={familiaBase({
+      estrategiaPreco: 'COMPETITIVO',
+      estrategiaMotivo: 'menor preço dava prejuízo; ancorado no piso dos MercadoLíderes (R$12,62)',
+      precoReancoradoLider: true,
+    })} />);
+    expect(screen.getByText(/âncora líder/i)).toBeInTheDocument();
+    expect(screen.getByText(/ancorado no piso dos MercadoLíderes/i)).toBeInTheDocument();
   });
 
   it('concorrência alta mostra vendedores e menor preço', () => {

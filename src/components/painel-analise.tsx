@@ -50,7 +50,9 @@ export function PainelAnalise({
     : null;
 
   const proprio = familia.estrategiaPreco === 'PROPRIO';
-  const labelEstrategia = proprio ? 'PRÓPRIO' : 'COMPETITIVO';
+  const labelEstrategia = familia.precoReancoradoLider
+    ? 'COMPETITIVO · âncora líder'
+    : proprio ? 'PRÓPRIO' : 'COMPETITIVO';
   const temConcorrencia = familia.concorrenciaVendedores > 0;
   const semDimensoes = familiaSemDimensoesValidas(familia);
 
@@ -98,7 +100,7 @@ export function PainelAnalise({
             <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Coins className="h-3.5 w-3.5" /> Estratégia
             </div>
-            <StatusPill tone={proprio ? 'info' : 'warning'}>
+            <StatusPill tone={familia.precoReancoradoLider ? 'danger' : proprio ? 'info' : 'warning'}>
               {labelEstrategia}
             </StatusPill>
             <p className="mt-1 text-xs text-muted-foreground">{familia.estrategiaMotivo}</p>

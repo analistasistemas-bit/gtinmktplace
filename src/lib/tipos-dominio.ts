@@ -146,6 +146,8 @@ export interface Familia {
   operacao: OperacaoML;
   estrategiaPreco: EstrategiaPreco;
   estrategiaMotivo: string;
+  /** Preço reancorado no piso dos MercadoLíderes por prejuízo no competitivo (ADR-0065). */
+  precoReancoradoLider: boolean;
   concorrencia: Concorrencia;
   concorrenciaVendedores: number;
   concorrenciaPrecoMin: number | null;
