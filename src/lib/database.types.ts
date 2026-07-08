@@ -110,6 +110,7 @@ export type Database = {
           criado_em: string
           desconto_concorrencia_pct: number
           desconto_pct: number
+          reancora_lider_ativa: boolean
           mp_access_token_secret_id: string | null
           org_id: string
           telegram_ativo: boolean
@@ -124,6 +125,7 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          reancora_lider_ativa?: boolean
           mp_access_token_secret_id?: string | null
           org_id: string
           telegram_ativo?: boolean
@@ -138,6 +140,7 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          reancora_lider_ativa?: boolean
           mp_access_token_secret_id?: string | null
           org_id?: string
           telegram_ativo?: boolean
@@ -188,6 +191,7 @@ export type Database = {
           editado_em: string | null
           erro_mensagem: string | null
           estrategia_motivo: string | null
+          preco_reancorado_lider: boolean
           estrategia_preco:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
@@ -251,6 +255,7 @@ export type Database = {
           editado_em?: string | null
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
+          preco_reancorado_lider?: boolean
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
@@ -314,6 +319,7 @@ export type Database = {
           editado_em?: string | null
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
+          preco_reancorado_lider?: boolean
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null

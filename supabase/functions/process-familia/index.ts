@@ -333,6 +333,9 @@ Deno.serve(async (req) => {
 
     // Decisão FAMÍLIA-level (pior caso de custo): o mesmo pisoLider/custo se aplica a
     // todas as cores, senão o preço competitivo divergiria entre variações da família.
+    // Invariante: só é família-level-safe porque este worker roda no CREATE fresco — nenhuma
+    // variação tem preco_editado_pelo_operador ainda. Se um dia repricar família já revisada,
+    // a flag (família) poderia mentir sobre uma variação com preço manual (ver ADR-0065/e6dee14).
     const maiorCustoFamilia = resolvidas.length ? Math.max(...resolvidas.map((v) => Number(v.custo))) : 0;
     const reancora = { ativa: reancoraAtiva, pisoLider, custo: maiorCustoFamilia, comissao };
 
