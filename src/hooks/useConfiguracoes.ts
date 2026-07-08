@@ -3,6 +3,7 @@ import {
   fetchDescontoPct, upsertDescontoPct,
   fetchDescontoConcorrenciaPct, upsertDescontoConcorrenciaPct,
   fetchAliquotas, upsertAliquotas,
+  fetchReancoraLiderAtiva, upsertReancoraLiderAtiva,
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
 } from '@/lib/queries';
 
@@ -36,6 +37,17 @@ export function useSalvarAliquotas() {
   return useMutation({
     mutationFn: (a: { nacional: number; importado: number }) => upsertAliquotas(a),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'aliquotas'] }),
+  });
+}
+
+export function useReancoraLiderAtiva() {
+  return useQuery({ queryKey: ['configuracoes', 'reancora_lider_ativa'], queryFn: fetchReancoraLiderAtiva });
+}
+export function useSalvarReancoraLiderAtiva() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ativa: boolean) => upsertReancoraLiderAtiva(ativa),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'reancora_lider_ativa'] }),
   });
 }
 

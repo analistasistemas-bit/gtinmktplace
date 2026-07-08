@@ -438,6 +438,23 @@ export async function upsertDescontoConcorrenciaPct(pct: number): Promise<void> 
   if (error) throw error;
 }
 
+export async function fetchReancoraLiderAtiva(): Promise<boolean> {
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!orgId) return false;
+  const { data } = await supabase.from('configuracoes')
+    .select('reancora_lider_ativa').eq('org_id', orgId).maybeSingle();
+  return data?.reancora_lider_ativa ?? false;
+}
+
+export async function upsertReancoraLiderAtiva(ativa: boolean): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!user || !orgId) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ org_id: orgId, user_id: user.id, reancora_lider_ativa: ativa, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
+  if (error) throw error;
+}
+
 export async function updateFamiliaExibirDesconto(familiaId: string, exibir: boolean): Promise<void> {
   const { error } = await supabase.from('familias')
     .update({ exibir_com_desconto: exibir }).eq('id', familiaId);

@@ -8,11 +8,13 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Switch } from '@/components/ui/switch';
 import { useMlConnection } from '@/hooks/useMlConnection';
 import {
   useDescontoPct, useSalvarDescontoPct,
   useDescontoConcorrenciaPct, useSalvarDescontoConcorrenciaPct,
   useAliquotas, useSalvarAliquotas,
+  useReancoraLiderAtiva, useSalvarReancoraLiderAtiva,
 } from '@/hooks/useConfiguracoes';
 import { ConfigTelegram } from '@/components/config-telegram';
 import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
@@ -38,6 +40,9 @@ export default function Configuracoes() {
   useEffect(() => {
     if (descontoConcorrenciaPct != null) setDescontoConcInput(String(descontoConcorrenciaPct));
   }, [descontoConcorrenciaPct]);
+
+  const { data: reancoraLiderAtiva } = useReancoraLiderAtiva();
+  const salvarReancoraLiderAtiva = useSalvarReancoraLiderAtiva();
 
   const { data: aliquotas } = useAliquotas();
   const salvarAliquotas = useSalvarAliquotas();
@@ -168,6 +173,25 @@ export default function Configuracoes() {
               <span className="text-xs text-success">✓ Salvo</span>
             )}
           </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Ancorar preço no piso dos MercadoLíderes quando der prejuízo</h2>
+            <Switch
+              checked={reancoraLiderAtiva ?? false}
+              onCheckedChange={(v) => salvarReancoraLiderAtiva.mutate(v)}
+              aria-label="Ancorar preço no piso dos MercadoLíderes quando der prejuízo"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Quando um produto dá prejuízo no import, usa o menor preço entre os concorrentes
+            MercadoLíder em vez do menor preço global (ADR-0065).
+          </p>
+          {salvarReancoraLiderAtiva.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+          {salvarReancoraLiderAtiva.isSuccess && !salvarReancoraLiderAtiva.isPending && (
+            <span className="text-xs text-success">✓ Salvo</span>
+          )}
         </Card>
 
         <Card className="p-4">
