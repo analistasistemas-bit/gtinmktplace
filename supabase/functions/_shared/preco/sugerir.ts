@@ -19,10 +19,10 @@ export interface PrecoSugerido {
   reancorado: boolean;
 }
 
-/** Re-âncora no piso dos MercadoLíderes quando o preço competitivo dá prejuízo real. */
+/** Re-âncora no preço do MercadoLíder com mais vendas quando o preço competitivo dá prejuízo real. */
 export interface ReancoraLider {
   ativa: boolean;
-  pisoLider: number | null;
+  precoAncoraLider: number | null;
   custo: number;
   comissao: Comissao | null;
 }
@@ -77,16 +77,16 @@ export function sugerirPrecoVenda(
     let reancorado = false;
     let motivo = motivoCompetitivo(descontoConcorrenciaPct);
     const precoCompetitivo = arredondar5Proximo(precoBase * (1 - descontoConcorrenciaPct / 100));
-    // Só re-ancora se houver prejuízo real no preço competitivo (nunca sobe acima do pisoLider).
+    // Só re-ancora se houver prejuízo real no preço competitivo (nunca sobe acima do precoAncoraLider).
     if (
       reancora?.ativa &&
-      reancora.pisoLider != null &&
-      reancora.pisoLider > precoBase &&
+      reancora.precoAncoraLider != null &&
+      reancora.precoAncoraLider > precoBase &&
       liquidoClassico(precoCompetitivo, reancora.comissao, frete, aliquotaPct) < reancora.custo
     ) {
-      precoBase = reancora.pisoLider;
+      precoBase = reancora.precoAncoraLider;
       reancorado = true;
-      motivo = `menor preço dava prejuízo; ancorado no piso dos MercadoLíderes (R$${reancora.pisoLider.toFixed(2)})`;
+      motivo = `menor preço dava prejuízo; ancorado no preço do maior vendedor MercadoLíder (R$${reancora.precoAncoraLider.toFixed(2)})`;
     }
     return {
       preco: arredondar5Proximo(precoBase * (1 - descontoConcorrenciaPct / 100)),

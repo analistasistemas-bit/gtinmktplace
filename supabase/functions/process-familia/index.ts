@@ -10,7 +10,7 @@ import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, r
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
-import { calcularPisoLider } from '../_shared/preco/piso-lider.ts';
+import { calcularPrecoLiderMaisVendas } from '../_shared/preco/piso-lider.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
@@ -272,12 +272,12 @@ Deno.serve(async (req) => {
       : Number(cfgAliq?.aliquota_nacional_pct ?? 8);
     // ADR-0059: desconto sobre o menor preço concorrente, configurável (default 5%).
     const descontoConcorrenciaPct = Number(cfgAliq?.desconto_concorrencia_pct ?? 5);
-    // ADR-0065: toggle da re-âncora no piso dos MercadoLíderes.
+    // ADR-0065: toggle da re-âncora no preço do MercadoLíder com mais vendas.
     const reancoraAtiva = Boolean(cfgAliq?.reancora_lider_ativa);
 
     let comissao: { percentual: number; fixa: number } | null = null;
     let frete = 0;
-    let pisoLider: number | null = null;
+    let precoAncoraLider: number | null = null;
     if (!competitivo && categoriaMlId && token) {
       try {
         // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
@@ -306,14 +306,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ADR-0065: re-âncora no piso dos MercadoLíderes — só no ramo competitivo, gated pelo
+    // ADR-0065: re-âncora no preço do MercadoLíder com mais vendas — só no ramo competitivo, gated pelo
     // toggle. O gatilho 🔴 avalia o líquido do PREÇO COMPETITIVO, então comissão e faixa de
     // frete são estimadas nesse preço (não no da âncora). Resiliente: falha → sem re-âncora.
     if (competitivo && reancoraAtiva && categoriaMlId && token) {
       try {
         const lp = await buscarListingPrice(token, PRECO_REF_COMISSAO, categoriaMlId, 'gold_special');
         comissao = comissaoDe(lp);
-        pisoLider = await calcularPisoLider(token, concorrencia.ofertas?.ofertas_detalhe ?? []);
+        precoAncoraLider = await calcularPrecoLiderMaisVendas(token, concorrencia.ofertas?.ofertas_detalhe ?? []);
         if (conexao?.contaExternaId && resolvidas.length) {
           const rep = resolvidas.reduce((m, v) => (Number(v.preco) < Number(m.preco) ? v : m), resolvidas[0]);
           const dimRep = {
@@ -327,17 +327,17 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         console.error('comissão/piso-líder p/ re-âncora falhou:', e);
-        pisoLider = null;
+        precoAncoraLider = null;
       }
     }
 
-    // Decisão FAMÍLIA-level (pior caso de custo): o mesmo pisoLider/custo se aplica a
+    // Decisão FAMÍLIA-level (pior caso de custo): o mesmo precoAncoraLider/custo se aplica a
     // todas as cores, senão o preço competitivo divergiria entre variações da família.
     // Invariante: só é família-level-safe porque este worker roda no CREATE fresco — nenhuma
     // variação tem preco_editado_pelo_operador ainda. Se um dia repricar família já revisada,
     // a flag (família) poderia mentir sobre uma variação com preço manual (ver ADR-0065/e6dee14).
     const maiorCustoFamilia = resolvidas.length ? Math.max(...resolvidas.map((v) => Number(v.custo))) : 0;
-    const reancora = { ativa: reancoraAtiva, pisoLider, custo: maiorCustoFamilia, comissao };
+    const reancora = { ativa: reancoraAtiva, precoAncoraLider, custo: maiorCustoFamilia, comissao };
 
     const updatesPreco = resolvidas
       .filter((v) => !v.preco_editado_pelo_operador)

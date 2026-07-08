@@ -110,7 +110,7 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     const semParam = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 22.39 }, null, frete, aliquota);
     const comAtivaFalse = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 22.39 }, null, frete, aliquota, 5, {
       ativa: false,
-      pisoLider: 25.73,
+      precoAncoraLider: 25.73,
       custo: 12.79,
       comissao,
     });
@@ -121,7 +121,7 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
   it('2. ativa:true mas líquido competitivo ≥ custo (sem 🔴) → sem re-âncora', () => {
     const r = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 22.39 }, null, frete, aliquota, 5, {
       ativa: true,
-      pisoLider: 25.73,
+      precoAncoraLider: 25.73,
       custo: 9, // liquido(21.25) ≈ 10,56 ≥ 9 → não é prejuízo
       comissao,
     });
@@ -129,10 +129,10 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     expect(r.reancorado).toBe(false);
   });
 
-  it('3. ativa:true, 🔴, pisoLider:null → sem re-âncora', () => {
+  it('3. ativa:true, 🔴, precoAncoraLider:null → sem re-âncora', () => {
     const r = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 22.39 }, null, frete, aliquota, 5, {
       ativa: true,
-      pisoLider: null,
+      precoAncoraLider: null,
       custo: 12.79, // liquido(21.25) ≈ 10,56 < 12,79 → 🔴
       comissao,
     });
@@ -140,10 +140,10 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     expect(r.reancorado).toBe(false);
   });
 
-  it('4. ativa:true, 🔴, pisoLider > preco_min → re-ancora no pisoLider', () => {
+  it('4. ativa:true, 🔴, precoAncoraLider > preco_min → re-ancora no precoAncoraLider', () => {
     const r = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 22.39 }, null, frete, aliquota, 5, {
       ativa: true,
-      pisoLider: 25.73,
+      precoAncoraLider: 25.73,
       custo: 12.79,
       comissao,
     });
@@ -151,20 +151,20 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     expect(r.reancorado).toBe(true);
     expect(r.preco).toBeCloseTo(24.45, 2); // arredondar5Proximo(25.73 * 0.95)
     expect(r.preco).toBeLessThanOrEqual(25.73);
-    expect(r.motivo).toContain('piso dos MercadoLíderes');
+    expect(r.motivo).toContain('maior vendedor MercadoLíder');
     expect(r.motivo).toContain('25.73');
   });
 
-  it('5. ativa:true, 🔴, e mesmo pisoLider−desc ainda dá prejuízo → ainda re-ancora (sem gross-up, sem exceder pisoLider)', () => {
+  it('5. ativa:true, 🔴, e mesmo precoAncoraLider−desc ainda dá prejuízo → ainda re-ancora (sem gross-up, sem exceder precoAncoraLider)', () => {
     const r = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 10 }, null, 0, 0, 5, {
       ativa: true,
-      pisoLider: 12,
+      precoAncoraLider: 12,
       custo: 1000, // nenhum preço competitivo cobriria esse custo
       comissao,
     });
     expect(r.estrategia).toBe('competitivo');
     expect(r.reancorado).toBe(true);
-    expect(r.preco).toBeCloseTo(11.4, 2); // arredondar5Proximo(12 * 0.95) — nunca acima do pisoLider
+    expect(r.preco).toBeCloseTo(11.4, 2); // arredondar5Proximo(12 * 0.95) — nunca acima do precoAncoraLider
     expect(r.preco).toBeLessThanOrEqual(12);
     // 🔴 honesto: líquido no preço re-ancorado ainda fica abaixo do custo
     expect(r.preco - r.preco * 0.115 - 1000).toBeLessThan(0);
@@ -173,7 +173,7 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
   it('6. ramo próprio (sem concorrência) → reancorado:false mesmo com reancora.ativa:true', () => {
     const r = sugerirPrecoVenda(20, { vendedores: 0, preco_min: null }, { percentual: 13, fixa: 0 }, 0, 0, 5, {
       ativa: true,
-      pisoLider: 100,
+      precoAncoraLider: 100,
       custo: 0,
       comissao,
     });
@@ -181,10 +181,10 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     expect(r.reancorado).toBe(false);
   });
 
-  it('7. borda: pisoLider === preco_min (comparação estrita >) → sem re-âncora', () => {
+  it('7. borda: precoAncoraLider === preco_min (comparação estrita >) → sem re-âncora', () => {
     const r = sugerirPrecoVenda(0, { vendedores: 5, preco_min: 25.73 }, null, frete, aliquota, 5, {
       ativa: true,
-      pisoLider: 25.73,
+      precoAncoraLider: 25.73,
       custo: 1000, // 🔴 garantido
       comissao,
     });

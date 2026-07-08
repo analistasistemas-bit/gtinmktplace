@@ -87,3 +87,22 @@ toggle** (`configuracoes.reancora_lider_ativa`, por org, default false):
 2. Para remover o código: em `sugerirPrecoVenda`, ignorar o 7º parâmetro; remover o bloco gated do
    `process-familia`, `_shared/preco/{piso-lider,liquido}.ts`, e a captura de `ofertas_detalhe` se
    não usada por mais nada. Colunas são aditivas (podem ficar).
+
+## Correção pós-validação ao vivo (2026-07-08)
+
+A regra original (acima) era "menor preço entre os concorrentes MercadoLíder". Validando ao vivo
+contra a família **Anne 500m**, essa regra escolhia um líder pequeno (13.180 vendas, R$22,50) em
+vez do concorrente que o operador realmente queria copiar — o líder estabelecido da categoria
+(61.706 vendas, R$29,98).
+
+**Regra corrigida:** a âncora passa a ser o **preço do concorrente MercadoLíder com MAIS
+VENDAS** entre as ofertas, não o menor preço entre eles. Desempate: vendas iguais → menor preço
+entre os empatados. Um vendedor com ofertas em mais de uma cor (preços diferentes, cada cor é um
+catálogo distinto no ML) usa o **menor preço dele mesmo**.
+
+Implementação: `_shared/preco/piso-lider.ts` — `precoLiderMaisVendas` (pura, antes
+`pisoLiderDeOfertas`) + `calcularPrecoLiderMaisVendas` (fetcher, antes `calcularPisoLider`).
+`ReancoraLider.pisoLider` renomeado para `ReancoraLider.precoAncoraLider` em `sugerir.ts` (o nome
+"piso" ficaria enganoso, já que não é mais o menor preço). O resto do design desta ADR —
+gating por 🔴 honesto, nunca gross-up, nunca excede a âncora, decisão família-level, toggle —
+continua válido e inalterado; só mudou QUAL preço vira a âncora.

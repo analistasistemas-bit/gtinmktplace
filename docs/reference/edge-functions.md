@@ -116,9 +116,10 @@
   vendedores distinto, produto representativo = mais barato. Negative caching por GTIN
   (tombstone 6h) elimina buscas inúteis a cada reprocess. Com o toggle
   `configuracoes.reancora_lider_ativa` ligado (ADR-0065), quando o preço competitivo dá
-  prejuízo real (líquido Clássico < custo) a família é reancorada no **piso dos
-  MercadoLíderes** (menor preço entre concorrentes `power_seller_status ≠ null`) × desconto,
-  gravando `familias.preco_reancorado_lider`; nunca sobe acima desse piso nem faz gross-up.
+  prejuízo real (líquido Clássico < custo) a família é reancorada no **preço do MercadoLíder
+  com mais vendas** (entre concorrentes `power_seller_status ≠ null`; empate de vendas
+  desempata pelo menor preço; vendedor com múltiplas cores usa o menor preço dele) × desconto,
+  gravando `familias.preco_reancorado_lider`; nunca sobe acima desse preço nem faz gross-up.
   Tipo derivado da
   categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
   na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).

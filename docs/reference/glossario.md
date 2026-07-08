@@ -17,8 +17,8 @@
 | **Aviamento** | Categoria de produto do MVP: linha, botão, fita, cola, outro (`tipo_aviamento`). Primeiro escopo do produto (ADR-0002). |
 | **ORIGEM** | Coluna **opcional** da planilha (lida só da linha PAI): `NACIONAL`/`IMPORTADO`, procedência do produto e base do imposto sobre a venda. Ausente/vazio/inválido → `nacional`. Grava `familias.origem` (enum `origem_produto`). ⚠️ Distinto de `tipo_origem` (origem da **categorização ML**: regex/ia/manual/preditor) — conceitos não relacionados (ADR-0055). |
 | **Alíquota de imposto** | Percentual de imposto sobre o preço de venda, parametrizável por origem em Configurações (`configuracoes.aliquota_nacional_pct` default 8%, `aliquota_importado_pct` default 16%). Descontado do líquido junto com comissão e frete, e somado ao gross-up do preço sugerido (ADR-0055). |
-| **Piso-líder** | Menor preço entre os concorrentes **MercadoLíder** de uma família (`power_seller_status ≠ null`). Base da re-âncora quando o preço competitivo dá prejuízo (ADR-0065). |
-| **Re-âncora (de preço)** | Trocar a base do preço competitivo de `menor_preço` para o **piso-líder** quando o preço competitivo deixa o líquido Clássico < custo (prejuízo real, 🔴). Gated pelo toggle `configuracoes.reancora_lider_ativa`; sinalizada por `familias.preco_reancorado_lider` + selo. Nunca sobe acima do piso-líder nem faz gross-up no ramo competitivo (ADR-0065). |
+| **Preço-líder (de referência)** | Preço do concorrente MercadoLíder com **MAIS VENDAS** de uma família (não o menor preço). Base da re-âncora quando o preço competitivo dá prejuízo (ADR-0065). |
+| **Re-âncora (de preço)** | Trocar a base do preço competitivo de `menor_preço` para o **preço-líder (de referência)** quando o preço competitivo deixa o líquido Clássico < custo (prejuízo real, 🔴). Gated pelo toggle `configuracoes.reancora_lider_ativa`; sinalizada por `familias.preco_reancorado_lider` + selo. Nunca sobe acima do preço-líder nem faz gross-up no ramo competitivo (ADR-0065). |
 
 ## Lifecycle e operações
 
