@@ -191,7 +191,7 @@
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML).
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
-  ou todos os usuários (QStash). Não busca shipment (frete fica nulo).
+  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546).
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
   de todos os usuários com credencial (cobre webhooks perdidos).
 
