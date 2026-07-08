@@ -114,7 +114,12 @@
   marca `pronto`/`erro`. Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
   válidas** em paralelo (pool 6 workers, cap 60 GTINs) → menor preço global, faixa min–max,
   vendedores distinto, produto representativo = mais barato. Negative caching por GTIN
-  (tombstone 6h) elimina buscas inúteis a cada reprocess. Tipo derivado da
+  (tombstone 6h) elimina buscas inúteis a cada reprocess. Com o toggle
+  `configuracoes.reancora_lider_ativa` ligado (ADR-0065), quando o preço competitivo dá
+  prejuízo real (líquido Clássico < custo) a família é reancorada no **piso dos
+  MercadoLíderes** (menor preço entre concorrentes `power_seller_status ≠ null`) × desconto,
+  gravando `familias.preco_reancorado_lider`; nunca sobe acima desse piso nem faz gross-up.
+  Tipo derivado da
   categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
   na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).
   `gerarCopy` também extrai `tipo_produto_busca` (substantivo do tipo de produto grounded em
