@@ -9,6 +9,8 @@ import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
+import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
+import { calcularPisoLider } from '../_shared/preco/piso-lider.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
@@ -72,7 +74,7 @@ Deno.serve(async (req) => {
     // 2. Carregar variações
     const { data: variacoes, error: varErr } = await admin
       .from('variacoes')
-      .select('id, codigo, gtin, cor, cor_origem, nome, preco, preco_editado_pelo_operador, imagem_path, peso_gramas, altura_cm, largura_cm, comprimento_cm')
+      .select('id, codigo, gtin, cor, cor_origem, nome, preco, custo, preco_editado_pelo_operador, imagem_path, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', job.familia_id);
     if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
 
@@ -262,7 +264,7 @@ Deno.serve(async (req) => {
     // Imposto por origem (ADR-0055): entra no gross-up para o preço cobrir o imposto.
     const { data: cfgAliq } = await admin
       .from('configuracoes')
-      .select('aliquota_nacional_pct, aliquota_importado_pct, desconto_concorrencia_pct')
+      .select('aliquota_nacional_pct, aliquota_importado_pct, desconto_concorrencia_pct, reancora_lider_ativa')
       .eq('user_id', userId)
       .maybeSingle();
     const aliquotaPct = claimed.origem === 'importado'
@@ -270,9 +272,12 @@ Deno.serve(async (req) => {
       : Number(cfgAliq?.aliquota_nacional_pct ?? 8);
     // ADR-0059: desconto sobre o menor preço concorrente, configurável (default 5%).
     const descontoConcorrenciaPct = Number(cfgAliq?.desconto_concorrencia_pct ?? 5);
+    // ADR-0065: toggle da re-âncora no piso dos MercadoLíderes.
+    const reancoraAtiva = Boolean(cfgAliq?.reancora_lider_ativa);
 
     let comissao: { percentual: number; fixa: number } | null = null;
     let frete = 0;
+    let pisoLider: number | null = null;
     if (!competitivo && categoriaMlId && token) {
       try {
         // ADR-0023: lê a comissão ACIMA do abismo de R$ 12,50; no piso (precoMinFamilia)
@@ -301,17 +306,47 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ADR-0065: re-âncora no piso dos MercadoLíderes — só no ramo competitivo, gated pelo
+    // toggle. O gatilho 🔴 avalia o líquido do PREÇO COMPETITIVO, então comissão e faixa de
+    // frete são estimadas nesse preço (não no da âncora). Resiliente: falha → sem re-âncora.
+    if (competitivo && reancoraAtiva && categoriaMlId && token) {
+      try {
+        const lp = await buscarListingPrice(token, PRECO_REF_COMISSAO, categoriaMlId, 'gold_special');
+        comissao = comissaoDe(lp);
+        pisoLider = await calcularPisoLider(token, concorrencia.ofertas?.ofertas_detalhe ?? []);
+        if (conexao?.contaExternaId && resolvidas.length) {
+          const rep = resolvidas.reduce((m, v) => (Number(v.preco) < Number(m.preco) ? v : m), resolvidas[0]);
+          const dimRep = {
+            altura_cm: rep.altura_cm != null ? Number(rep.altura_cm) : null,
+            largura_cm: rep.largura_cm != null ? Number(rep.largura_cm) : null,
+            comprimento_cm: rep.comprimento_cm != null ? Number(rep.comprimento_cm) : null,
+            peso_gramas: rep.peso_gramas != null ? Number(rep.peso_gramas) : null,
+          };
+          const precoEstimado = arredondar5Proximo(conc.preco_min! * (1 - descontoConcorrenciaPct / 100));
+          frete = await buscarFreteVendedor(token, conexao.contaExternaId, precoEstimado, categoriaMlId, dimRep);
+        }
+      } catch (e) {
+        console.error('comissão/piso-líder p/ re-âncora falhou:', e);
+        pisoLider = null;
+      }
+    }
+
+    // Decisão FAMÍLIA-level (pior caso de custo): o mesmo pisoLider/custo se aplica a
+    // todas as cores, senão o preço competitivo divergiria entre variações da família.
+    const maiorCustoFamilia = resolvidas.length ? Math.max(...resolvidas.map((v) => Number(v.custo))) : 0;
+    const reancora = { ativa: reancoraAtiva, pisoLider, custo: maiorCustoFamilia, comissao };
+
     const updatesPreco = resolvidas
       .filter((v) => !v.preco_editado_pelo_operador)
       .map((v) => {
-        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct);
+        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct, reancora);
         return admin.from('variacoes')
           .update({ preco_publicacao: preco })
           .eq('id', v.id);
       });
     await Promise.all(updatesPreco);
 
-    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct);
+    const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct, reancora);
 
     // 5e. Potencial de venda (ADR-0015) — só quando há produto de catálogo (origem gtin).
     const analiseMercado =
@@ -342,6 +377,7 @@ Deno.serve(async (req) => {
       concorrencia_categoria_id: concorrencia.ofertas?.category_id ?? null,
       estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
+      preco_reancorado_lider: estrategiaFamilia.reancorado,
       tipo_aviamento: tipo,
       tipo_origem: categoriaOrigem,
       categoria_ml_id: categoriaMlId,
