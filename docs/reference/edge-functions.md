@@ -111,7 +111,10 @@
   (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria/tipo, monta
   atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão, **frete**
   grátis do vendedor e **imposto por origem**, ADR-0050/ADR-0055) e análise de mercado;
-  marca `pronto`/`erro`. Tipo derivado da
+  marca `pronto`/`erro`. Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
+  válidas** em paralelo (pool 6 workers, cap 60 GTINs) → menor preço global, faixa min–max,
+  vendedores distinto, produto representativo = mais barato. Negative caching por GTIN
+  (tombstone 6h) elimina buscas inúteis a cada reprocess. Tipo derivado da
   categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
   na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).
   `gerarCopy` também extrai `tipo_produto_busca` (substantivo do tipo de produto grounded em

@@ -1,6 +1,6 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-07-03
+atualizado: 2026-07-08
 ---
 
 # Incidentes
@@ -177,3 +177,41 @@ anúncios sem vínculo de catálogo / outro EAN; pegá-los exigiria fallback por
 escolhida). A categoria do BRILHO foi corrigida para "Lãs".
 
 Validado ao vivo (banco + browser-use no Chrome do Diego) reprocessando as 3 famílias do lote #27.
+
+## Lote #28: concorrência só olhava a 1ª cor (menor preço falso) + copy inventava "NOVO" (2026-07-08)
+
+Linha Anne 500m (46 cores, cada uma um produto de catálogo distinto no ML) expôs dois bugs
+independentes na mesma entrega.
+
+**Parte 1 — Concorrência agregada (ADR-0064):**
+
+A busca de concorrência parava no **1º GTIN que casava** no catálogo do ML — premissa do lote
+#27 (todas as cores = mesmo produto). Falsa para o Anne: cada cor tem GTIN + produto de catálogo
+(MLB ID) próprios, com preços diferentes. A 1ª cor que casou foi a Sereia 9490 (`MLB28400021`,
+R$ 32,90), reportada como "menor preço da concorrência" da família toda — silenciando cores bem
+mais baratas nunca consultadas (ex.: Branca 8001 → `MLB26672898`, R$ 22,39). Operador via um
+"menor preço" acima do mercado real, com risco de precificação errada.
+
+**Correção:** `buscarConcorrencia` passou a resolver **TODAS as variações válidas** em paralelo
+(pool 6 workers, cap 60 GTINs) + nova função pura `agregarConcorrencia` combina os produtos: menor
+preço = mínimo global, faixa = min–max global, vendedores = união distinta de seller_ids, ofertas
+somadas, produto representativo = o da cor mais barata. Adicionado **negative caching** (tombstone
+por GTIN) para EANs sem produto, evitando refazer as buscas inúteis a cada reprocess; erro
+transitório (timeout/rede) não vira tombstone e não descarta os hits já resolvidos. Sem mudança de
+schema nem de frontend (mesmos campos, valores corrigidos). Contrato de `buscarConcorrencia`
+inalterado — callers `process-familia` e `analisar-viabilidade` seguem funcionando. Ver
+[ADR-0064](../../docs/decisions/0064-concorrencia-agregada-por-variacao.md).
+
+**Parte 2 — Copy IA inventava "NOVO":**
+
+No mesmo lote, o copywriter de IA (OpenRouter) inventou "NOVO" no título ("NOVO NOVELO ANNE 500MT
+| 100% ALGODÃO MERCERIZADO") — palavra que não existe na planilha nem na descrição fonte (provável
+eco de "NOVELO"). A regra anti-alucinação do prompt só cobria specs técnicas; foi estendida para
+proibir **adjetivos de marketing não-grounded** ("novo", "lançamento", "exclusivo", "original",
+"premium", "importado") salvo se a palavra constar no nome/descrição de origem. Fix já em `main`
+(commit `0254e70`), listado aqui por proximidade de timing.
+
+**Validação (Parte 1):** ao vivo contra a API do ML (token real da org Avil) exercitando parse +
+`agregarConcorrencia` sobre os 44 GTINs válidos do Anne → 43 cores com catálogo, menor preço
+agregado **R$ 22,39** (Branca 8001) vs. R$ 32,90 do código antigo; 48 vendedores distintos.
+Testes unitários do agregador: 11 casos. Suíte completa verde.

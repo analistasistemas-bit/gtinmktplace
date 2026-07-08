@@ -14,8 +14,10 @@ export function escolherIdentificador(
 }
 
 /** Todos os GTINs válidos e distintos da família (ordem das variações). Usado pela busca de
- * concorrência para tentar mais de um EAN: as cores da mesma família são o MESMO produto de
- * catálogo, mas nem todo EAN de cor está indexado no ML — um pode casar quando o 1º não casa. */
+ * concorrência para resolver TODAS as cores: cada cor da família pode ser um produto de
+ * catálogo DISTINTO no ML — parar no 1º GTIN que casasse reportava o preço de UMA cor como
+ * se fosse o da família inteira (bug lote #28, ADR-0064). Por isso buscamos todos os GTINs
+ * válidos e agregamos com `agregarConcorrencia`. */
 export function gtinsValidos(familia: FamiliaParaBusca): string[] {
   const out: string[] = [];
   const vistos = new Set<string>();
