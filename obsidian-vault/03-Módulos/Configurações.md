@@ -24,9 +24,13 @@ Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (t
   usuário (`useDescontoConcorrenciaPct`, `useSalvarDescontoConcorrenciaPct`). Aplicado em
   `sugerirPrecoVenda` quando há concorrente: `preço = menor_concorrente × (1 − pct/100)`
   (ADR-0059, antes fixo em 5% no ADR-0020).
+- **Re-âncora no maior vendedor MercadoLíder** — `reancora_lider_ativa` (default false,
+  `useReancoraLiderAtiva`, `useSalvarReancoraLiderAtiva`). Quando ligado, se o preço
+  competitivo der prejuízo real, `sugerirPrecoVenda` re-ancora no preço do concorrente
+  MercadoLíder com mais vendas em vez do menor preço global (ADR-0065).
 
 ## Tabela `configuracoes`
 
 `user_id` (PK), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token`
-(sensível), `aliquota_nacional_pct`, `aliquota_importado_pct`, `desconto_concorrencia_pct`.
-Uma linha por usuário.
+(sensível), `aliquota_nacional_pct`, `aliquota_importado_pct`, `desconto_concorrencia_pct`,
+`reancora_lider_ativa`. Uma linha por usuário.

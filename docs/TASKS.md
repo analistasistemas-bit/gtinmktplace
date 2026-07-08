@@ -2,6 +2,41 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Preço ancorado no maior vendedor MercadoLíder ao dar prejuízo — ADR-0065 — 2026-07-08
+
+- [x] **Regra:** no CREATE, quando o preço competitivo de uma família dá prejuízo real
+  (líquido Clássico < custo), re-ancora no preço do concorrente **MercadoLíder com mais
+  vendas** (empate → menor preço; vendedor em várias cores → menor preço dele) em vez do
+  menor preço global (frequentemente vendedor sem nota/sem imposto). Gated por toggle
+  `configuracoes.reancora_lider_ativa` (Configurações); sinalizado por
+  `familias.preco_reancorado_lider` + selo "COMPETITIVO · âncora líder" na Revisão.
+  Nunca sobe acima do preço-âncora nem faz gross-up no ramo competitivo — não repete o
+  "piso viável" revertido em `e6dee14` (2026-07-06). Novas funções puras
+  `precoLiderMaisVendas`/`calcularPrecoLiderMaisVendas` (`_shared/preco/piso-lider.ts`) e
+  `liquidoClassico` (`_shared/preco/liquido.ts`). 1264 testes verdes; `pnpm build` ok.
+  Validado ao vivo (família Anne 500m, lote #28): reancorou para R$29,98 (vendedor de
+  61.706 vendas) em vez do menor preço entre líderes (R$22,50, 13.180 vendas) — a 1ª
+  versão da regra usava "menor preço entre líderes"; corrigida para "mais vendas" após o
+  Diego notar a divergência (`main` 092e8cb).
+
+## Concorrência agregada por variação (lote #28) — ADR-0064 — 2026-07-08
+
+- [x] **Lote #28 (Anne 500m):** `buscarConcorrencia` parava no 1º GTIN que casasse no
+  catálogo — falso para famílias cujas cores são produtos de catálogo distintos, reportava
+  o preço de UMA cor (R$32,90) como se fosse o menor preço da família toda (havia cores a
+  R$22,39). Corrigido: resolve TODOS os GTINs válidos em paralelo (pool 6, cap 60) e agrega
+  via `agregarConcorrencia` (menor preço global, união de vendedores, representativo = mais
+  barato); negative caching (tombstone) evita refazer buscas a cada reprocess; falha
+  parcial de rede degrada para os hits em cache em vez de zerar tudo. Verificado ao vivo
+  contra o ML (44 GTINs → min real R$22,39). Deploy: `process-familia`,
+  `analisar-viabilidade` (`main` 78110a1).
+- [x] **Bônus (mesmo lote):** IA de copy inventava "NOVO" no título (alucinação de
+  marketing, não coberta pela regra anti-alucinação original). Guard determinístico
+  `removerMarketingNaoGrounded` remove termos de marketing que não constam na fonte
+  (nome/descrição) — prompt sozinho não bastava (reincidiu num reprocesso mesmo já
+  deployado). Encadeado em `process-familia`, `regenerar-copy-familia`, split
+  (`main` 1dd6898).
+
 ## Categoria genérica (BRILHO / lote #27) — resolver pelo nome de catálogo — ADR-0063 — 2026-07-06
 
 - [x] **Resíduo do lote #27**: família BRILHO ficava categoria "Outros" mesmo com o produto no
