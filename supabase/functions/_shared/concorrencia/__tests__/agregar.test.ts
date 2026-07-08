@@ -6,7 +6,7 @@ import type { DadosOfertas } from '../tipos';
 function ofertas(parcial: Partial<DadosOfertas>): DadosOfertas {
   return {
     vendedores: 0, preco_min: null, preco_max: null, total_ofertas: 0,
-    frete_gratis: 0, full: 0, seller_ids: [], category_id: null,
+    frete_gratis: 0, full: 0, seller_ids: [], category_id: null, ofertas_detalhe: [],
     ...parcial,
   };
 }
@@ -104,6 +104,39 @@ describe('agregarConcorrencia', () => {
     const r = agregarConcorrencia([a, b]);
     expect(r.vendedores).toBe(6);
     expect(r.classe).toBe('alta');
+  });
+
+  it('ofertas_detalhe: concatena as ofertas de todas as cores, na ordem dos produtos', () => {
+    const a = produto({
+      product_id: 'MLB1',
+      ofertas: ofertas({ ofertas_detalhe: [{ seller_id: 1, preco: 30 }, { seller_id: 2, preco: 28 }] }),
+    });
+    const b = produto({
+      product_id: 'MLB2',
+      ofertas: ofertas({ ofertas_detalhe: [{ seller_id: 3, preco: 25 }, { seller_id: 1, preco: 26 }] }),
+    });
+    const r = agregarConcorrencia([a, b]);
+    expect(r.ofertas?.ofertas_detalhe).toEqual([
+      { seller_id: 1, preco: 30 },
+      { seller_id: 2, preco: 28 },
+      { seller_id: 3, preco: 25 },
+      { seller_id: 1, preco: 26 },
+    ]);
+  });
+
+  it('ofertas_detalhe: entrada de cache legada sem o campo não quebra e é ignorada', () => {
+    const legado = produto({
+      product_id: 'MLB1',
+      ofertas: ofertas({ ofertas_detalhe: [{ seller_id: 5, preco: 12 }] }),
+    });
+    // Simula ofertas cacheado antes do deploy (sem ofertas_detalhe).
+    delete (legado.ofertas as unknown as Record<string, unknown>).ofertas_detalhe;
+    const novo = produto({
+      product_id: 'MLB2',
+      ofertas: ofertas({ ofertas_detalhe: [{ seller_id: 7, preco: 9 }] }),
+    });
+    const r = agregarConcorrencia([legado, novo]);
+    expect(r.ofertas?.ofertas_detalhe).toEqual([{ seller_id: 7, preco: 9 }]);
   });
 
   it('guard: lista vazia lança erro', () => {

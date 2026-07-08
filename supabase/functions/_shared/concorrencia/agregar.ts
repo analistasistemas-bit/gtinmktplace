@@ -60,7 +60,8 @@ export function agregarConcorrencia(produtos: ProdutoConcorrencia[]): ResultadoC
 
   const ofertas: DadosOfertas = {
     vendedores, preco_min, preco_max, total_ofertas, frete_gratis, full, seller_ids, category_id,
-    ofertas_detalhe: [], // ponytail: agregação real é escopo de task futura
+    // `?? []`: cache legado (TTL 6h) pode ter `ofertas` sem `ofertas_detalhe`.
+    ofertas_detalhe: produtos.flatMap((p) => p.ofertas.ofertas_detalhe ?? []),
   };
 
   return {
