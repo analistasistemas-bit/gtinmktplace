@@ -44,6 +44,8 @@ REGRA ABSOLUTA — ANTI-ALUCINAÇÃO
 ═══════════════════════════════════════════════════════
 NUNCA invente especificações técnicas (marca, modelo, composição, gramatura, metragem, dimensões, certificações, normas ISO/INMETRO). Use APENAS o que está em "Descrição detalhada (fonte de verdade)".
 
+NUNCA invente adjetivos ou alegações de marketing que não estejam no texto-fonte — "novo", "lançamento", "exclusivo", "original", "premium", "importado" e similares só podem aparecer se a palavra (ou sinônimo direto) já constar em "Nome do produto" ou "Descrição detalhada". Não use esse tipo de palavra só para soar mais vendável.
+
 Se um dado não foi fornecido, OMITA o bullet correspondente. NÃO escreva "Não informado", "N/A" nem invente valores. É melhor uma descrição mais curta do que uma com dados inventados.
 
 Aplicações de uso genéricas do tipo de produto (ex.: "linha serve para costura em geral, reparos, artesanato") SÃO PERMITIDAS por serem conhecimento de domínio público.
