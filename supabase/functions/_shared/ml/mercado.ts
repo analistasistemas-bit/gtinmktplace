@@ -32,7 +32,7 @@ async function mlGet(url: string, token: string): Promise<unknown | null> {
   return resp.json();
 }
 
-async function reputacaoVendedor(token: string, sellerId: number): Promise<ReputacaoVendedor> {
+export async function reputacaoVendedor(token: string, sellerId: number): Promise<ReputacaoVendedor> {
   const chave = `cache:seller:${sellerId}`;
   try {
     const cache = await redisGet(chave);
