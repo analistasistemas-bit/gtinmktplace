@@ -118,7 +118,9 @@ Grupos de colunas:
 - **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`.
 - **Concorrência/mercado:** `analise_mercado jsonb`, `concorrencia_*`.
 - **Preço:** `estrategia_preco`, `estrategia_motivo`, `custo_centavos` (ADR-0020/0042),
-  `exibir_com_desconto`, `desconto_pct`.
+  `exibir_com_desconto`, `desconto_pct`, `preco_reancorado_lider` (bool, default false,
+  migration `20260708144126`, ADR-0065 — flag família-level: o preço foi reancorado no piso
+  dos MercadoLíderes por estar dando prejuízo).
 - **Atacado (ADR-0041):** `atacado jsonb`, `atacado_status`, `atacado_erro`.
 - **Fotos do PAI:** `capa_storage_path`/`capa_ml_picture_id` e `capa2_*`, `capa3_*`.
 - **Envio (ADR-0009/0018):** `shipping_mode`, `frete_gratis`, `sale_terms jsonb`.
@@ -245,6 +247,8 @@ nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_to
 `aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16) — alíquotas por org,
 sem override por família (ADR-0055) —, `desconto_concorrencia_pct` (default 5) — percentual
 abaixo do menor concorrente aplicado por `sugerirPrecoVenda` (ADR-0059, antes fixo em 5%) —,
+`reancora_lider_ativa` (default false, migration `20260708144126`, ADR-0065) — liga a re-âncora
+do preço no menor preço entre concorrentes MercadoLíder quando o preço competitivo dá prejuízo —,
 **`mp_access_token_secret_id`** (FK→`vault.secrets`, ADR-0027 D-E7.7): token Mercado Pago
 **por org**; lido via RPC `get_mp_token(org)`, com fallback ao `MP_ACCESS_TOKEN` de instância
 quando a org não tem secret configurado (zero regressão — a Avil segue no fallback até o secret
