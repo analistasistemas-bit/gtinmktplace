@@ -1,4 +1,5 @@
 import { arredondar5Proximo, arredondar5Cima } from './arredondar.ts';
+import { liquidoClassico } from './liquido.ts';
 
 export interface ConcorrenciaPreco {
   vendedores: number;
@@ -15,6 +16,15 @@ export interface PrecoSugerido {
   preco: number;
   estrategia: 'proprio' | 'competitivo';
   motivo: string;
+  reancorado: boolean;
+}
+
+/** Re-âncora no piso dos MercadoLíderes quando o preço competitivo dá prejuízo real. */
+export interface ReancoraLider {
+  ativa: boolean;
+  pisoLider: number | null;
+  custo: number;
+  comissao: Comissao | null;
 }
 
 const motivoCompetitivo = (pct: number) => `concorrência presente — ${pct}% abaixo do menor preço`;
@@ -60,21 +70,39 @@ export function sugerirPrecoVenda(
   frete = 0,
   aliquotaPct = 0,
   descontoConcorrenciaPct = 5,
+  reancora?: ReancoraLider,
 ): PrecoSugerido {
   if (conc.vendedores > 0 && conc.preco_min != null) {
+    let precoBase = conc.preco_min;
+    let reancorado = false;
+    let motivo = motivoCompetitivo(descontoConcorrenciaPct);
+    const precoCompetitivo = arredondar5Proximo(precoBase * (1 - descontoConcorrenciaPct / 100));
+    // Só re-ancora se houver prejuízo real no preço competitivo (nunca sobe acima do pisoLider).
+    if (
+      reancora?.ativa &&
+      reancora.pisoLider != null &&
+      reancora.pisoLider > precoBase &&
+      liquidoClassico(precoCompetitivo, reancora.comissao, frete, aliquotaPct) < reancora.custo
+    ) {
+      precoBase = reancora.pisoLider;
+      reancorado = true;
+      motivo = `menor preço dava prejuízo; ancorado no piso dos MercadoLíderes (R$${reancora.pisoLider.toFixed(2)})`;
+    }
     return {
-      preco: arredondar5Proximo(conc.preco_min * (1 - descontoConcorrenciaPct / 100)),
+      preco: arredondar5Proximo(precoBase * (1 - descontoConcorrenciaPct / 100)),
       estrategia: 'competitivo',
-      motivo: motivoCompetitivo(descontoConcorrenciaPct),
+      motivo,
+      reancorado,
     };
   }
   if (comissao) {
-    return { preco: grossUp(piso, comissao.percentual, comissao.fixa, frete, aliquotaPct), estrategia: 'proprio', motivo: MOTIVO_GROSSUP };
+    return { preco: grossUp(piso, comissao.percentual, comissao.fixa, frete, aliquotaPct), estrategia: 'proprio', motivo: MOTIVO_GROSSUP, reancorado: false };
   }
   // Sem comissão: ainda empurra para fora da faixa cara (acima do abismo).
   return {
     preco: Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(piso + frete)),
     estrategia: 'proprio',
     motivo: MOTIVO_FALLBACK,
+    reancorado: false,
   };
 }
