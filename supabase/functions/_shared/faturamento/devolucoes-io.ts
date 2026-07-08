@@ -25,20 +25,32 @@ export async function buscarReturn(token: string, claimId: string): Promise<Retu
 
 /** Varre /post-purchase/v1/claims/search do vendedor. Para o backfill. */
 export async function buscarClaimsSeller(token: string): Promise<ClaimML[]> {
-  const headers = { Authorization: `Bearer ${token}` };
+  const statuses = ['opened', 'closed'];
   const out: ClaimML[] = [];
+  const headers = { Authorization: `Bearer ${token}` };
   const limit = 50;
-  let offset = 0;
-  while (offset < 2000) {
-    const params = new URLSearchParams({ sort: 'date_desc', offset: String(offset), limit: String(limit) });
-    const resp = await fetch(`${API}/post-purchase/v1/claims/search?${params}`, { headers });
-    if (!resp.ok) { if (offset === 0) throw new Error(`ML /claims ${resp.status}`); break; }
-    const data = await resp.json();
-    const results: ClaimML[] = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.results) ? data.results : []);
-    out.push(...results);
-    const total = Number(data?.paging?.total ?? out.length);
-    offset += limit;
-    if (results.length === 0 || offset >= total) break;
+
+  for (const status of statuses) {
+    let offset = 0;
+    while (offset < 2000) {
+      const params = new URLSearchParams({
+        status,
+        sort: 'date_desc',
+        offset: String(offset),
+        limit: String(limit)
+      });
+      const resp = await fetch(`${API}/post-purchase/v1/claims/search?${params}`, { headers });
+      if (!resp.ok) {
+        if (offset === 0) throw new Error(`ML /claims ${resp.status}`);
+        break;
+      }
+      const data = await resp.json();
+      const results: ClaimML[] = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.results) ? data.results : []);
+      out.push(...results);
+      const total = Number(data?.paging?.total ?? out.length);
+      offset += limit;
+      if (results.length === 0 || offset >= total) break;
+    }
   }
   return out;
 }
