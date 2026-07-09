@@ -11,6 +11,25 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-07-09
 
+- **Fix: markup do Faturamento › Vendas divergia do Dashboard/Publicados/Financeiro.** Diego pediu
+  pra investigar por que o Faturamento mostrava +38% de markup enquanto Dashboard, Publicados e
+  Financeiro mostravam +37%. Descartei diferença de filtro/período/origem comparando ao vivo (via
+  browser-use, Chrome do Diego) os mesmos 187 pedidos/382 unidades nas duas telas — a divergência
+  era real, não dado desatualizado. Causa: `custoDaVenda` (`resumo-vendas.ts`, fonte de
+  Dashboard/Publicados/Financeiro via `calcularResumo`) somava o custo bruto de todos os itens de
+  um pedido e arredondava a **soma inteira** uma única vez; `custoDoItem`
+  (`pedidos-faturamento.ts`, Faturamento — chamada de "fonte da verdade" no próprio comentário do
+  código) arredonda **cada item individualmente** antes de somar. Como `variacoes.custo` é
+  `numeric` sem escala fixa (pode ter mais de 2 casas), um pedido com 2+ itens (média do
+  Faturamento: 2,0 itens/pedido) acumula centavos de diferença entre os dois caminhos de
+  arredondamento — suficiente, somado em ~187 pedidos, pra deslocar o markup agregado em um ponto
+  percentual inteiro. Fix: `custoDaVenda` passou a arredondar por item também, alinhando com a
+  "fonte da verdade" do Faturamento. Não mexe em imposto/ADR-0055 (esse já usava a mesma
+  granularidade por item nos dois caminhos). 1 teste de regressão novo reproduzindo o cenário
+  (custo de 3 casas em pedido de 2 itens), 1277 testes verdes, lint limpo. Só frontend
+  (`src/lib/resumo-vendas.ts`), sem migration/edge function. Commit `b5ecbc4`, deploy Render
+  confirmado `live`.
+
 - **Fix: "Líquido" no Financeiro › Detalhe do líquido não pode mais descontar imposto (ADR-0066,
   refina ADR-0055).** Diego reportou pedido com R$ 38,15 recebidos no Mercado Pago aparecendo como
   R$ 31,75 na tabela — divergência de exatamente 8% (alíquota nacional). Causa: essa tela já tinha

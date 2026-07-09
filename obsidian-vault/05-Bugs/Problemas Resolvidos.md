@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-06
+atualizado: 2026-07-09
 ---
 
 # Problemas Resolvidos
@@ -10,6 +10,13 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Markup do Faturamento › Vendas divergia do Dashboard/Publicados/Financeiro (2026-07-09)** —
+  +38% no Faturamento vs. +37% nas outras 3 telas, confirmado ao vivo com os mesmos 187
+  pedidos/382 unidades (não era filtro/período). Causa: `custoDaVenda` (Dashboard/Publicados/
+  Financeiro) somava o custo bruto do pedido inteiro e arredondava 1x no final; `custoDoItem`
+  (Faturamento, a "fonte da verdade") arredonda por item antes de somar — como `variacoes.custo`
+  é `numeric` sem escala fixa, pedidos multi-item acumulam centavos de diferença entre os dois
+  caminhos. Fix: `custoDaVenda` passou a arredondar por item também.
 - **"vs. anterior" do filtro "Hoje" (Dashboard/Financeiro) comparava com o pedaço errado de ontem
   (2026-07-06)** — `janelaAnterior()` desloca a janela atual pela sua duração decorrida (certo pra
   presets/range, blocos fechados de N dias); "hoje" cresce o dia todo, então deslocar por poucas

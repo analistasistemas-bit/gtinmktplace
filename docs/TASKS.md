@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Markup do Faturamento divergia do Dashboard/Publicados/Financeiro — 2026-07-09
+
+- [x] Diego notou +38% no Faturamento › Vendas vs. +37% no Dashboard/Publicados/Financeiro,
+  mesmos 187 pedidos/382 unidades (confirmado ao vivo via browser-use, descartando filtro/período).
+  Causa: `custoDaVenda` (`resumo-vendas.ts`, usada por Dashboard/Publicados/Financeiro) somava o
+  custo bruto de todos os itens do pedido e arredondava 1x no final; `custoDoItem`
+  (`pedidos-faturamento.ts`, Faturamento — a "fonte da verdade" segundo o próprio comentário do
+  código) arredonda por ITEM antes de somar. Como `variacoes.custo` é `numeric` sem escala fixa,
+  pedidos multi-item (média 2 itens/pedido) acumulavam centavos de diferença entre os dois
+  caminhos, suficiente pra deslocar o markup agregado em pontos percentuais inteiros. Fix:
+  `custoDaVenda` também arredonda por item. 1 teste de regressão novo, 1277 testes verdes.
+  Só frontend, sem migration/edge function.
+
 ## Financeiro > Detalhe do líquido: "Líquido" não pode descontar imposto — 2026-07-09
 
 - [x] Diego reportou pedido com R$ 38,15 recebidos no MP aparecendo como R$ 31,75 na tabela.
