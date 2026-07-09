@@ -15,8 +15,13 @@ function fmtMarkup(m: number): string {
  * Conteúdo expansível de um pedido (linha aberta): meta (pedido/pack, comissão, frete, rastreio),
  * tabela de itens com custo/líquido/markup por item, e link p/ o Mercado Livre. Compartilhado entre
  * o menu Faturamento e o Detalhe do líquido (Financeiro) — mesma análise detalhada nos dois.
+ *
+ * `liquidoBruto`: no Financeiro (Detalhe do líquido) a coluna "Líquido" tem que bater com o dinheiro
+ * que efetivamente cai no Mercado Pago — nunca pode descontar o imposto estimado (ADR-0055). O
+ * Faturamento continua mostrando o líquido já líquido de imposto (default). O Markup não muda: nos
+ * dois casos usa `it.markup`, que continua calculado líquido de imposto.
  */
-export function DetalhePedidoItens({ pedido: p }: { pedido: Pedido }) {
+export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido: Pedido; liquidoBruto?: boolean }) {
   const urlVenda = p.isPack
     ? `https://www.mercadolivre.com.br/vendas/pacote/${p.chave}/detalhe`
     : `https://www.mercadolivre.com.br/vendas/${p.orderIds[0]}/detalhe`;
@@ -65,7 +70,9 @@ export function DetalhePedidoItens({ pedido: p }: { pedido: Pedido }) {
                 <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtBRL(it.unit_price)}</TableCell>
                 <TableCell className="text-right tabular-nums">{it.custo != null ? fmtBRL(it.custo) : '—'}</TableCell>
-                <TableCell className="text-right tabular-nums text-success">{fmtBRL(it.liquido)}</TableCell>
+                <TableCell className="text-right tabular-nums text-success">
+                  {fmtBRL(liquidoBruto ? it.liquido + it.imposto : it.liquido)}
+                </TableCell>
                 <TableCell className={cn('text-right tabular-nums', mCor)}>
                   {it.markup != null ? fmtMarkup(it.markup) : '—'}
                 </TableCell>

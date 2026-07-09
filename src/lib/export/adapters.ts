@@ -505,7 +505,8 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
         })(),
         bruto: fmtBRL(p.bruto),
         retido: fmtBRL(retidoDoPedido(p)),
-        liquido: fmtBRL(p.liquido),
+        // Bate com o Mercado Pago: não desconta imposto (ver DetalheFinanceiro.tsx).
+        liquido: fmtBRL(p.liquido + p.imposto),
         markup: fmtMarkupNum(p.markup),
       },
       sublinhas: config.expandido
@@ -519,7 +520,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
               qtd: it.quantity,
               preco: fmtBRL(it.unit_price),
               custo: it.custo != null ? fmtBRL(it.custo) : '—',
-              liquido: fmtBRL(it.liquido),
+              liquido: fmtBRL(it.liquido + it.imposto),
               markup: fmtMarkupNum(it.markup),
             })),
           }

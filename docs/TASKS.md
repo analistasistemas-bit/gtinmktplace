@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Financeiro > Detalhe do líquido: "Líquido" não pode descontar imposto — 2026-07-09
+
+- [x] Diego reportou pedido com R$ 38,15 recebidos no MP aparecendo como R$ 31,75 na tabela.
+  Causa: a tela tinha dois cálculos de "líquido" coexistindo (banner sem imposto, tabela com
+  imposto descontado). Fix escopado só ao Financeiro (ADR-0066, refina ADR-0055): "Líquido"
+  nunca desconta imposto (bate com o MP); "Markup" continua líquido de imposto. Faturamento >
+  Vendas e Publicados > Detalhe de vendas inalterados. Ver [[Changelog]] 2026-07-09.
+
 ## Dicionário de cores — sinônimos e compostos faltando (lote #30) — 2026-07-09
 
 - [x] **Lote #30 (Tecido Helanca Light):** não era violação da regra "descrição vs Vision"

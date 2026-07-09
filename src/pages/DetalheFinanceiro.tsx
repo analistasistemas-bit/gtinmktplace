@@ -171,7 +171,7 @@ function LinhaDetalhe({
           {retido < 0 ? `+${fmtBRL(-retido)}` : fmtBRL(retido)}
           {retido < 0 && <span className="block text-xs text-muted-foreground">crédito</span>}
         </TableCell>
-        <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(p.liquido)}</TableCell>
+        <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(p.liquido + p.imposto)}</TableCell>
         <TableCell className={cn(
           'align-top text-right text-sm font-medium tabular-nums',
           p.markup == null ? 'text-muted-foreground' : p.markup >= 0 ? 'text-success' : 'text-destructive',
@@ -182,7 +182,7 @@ function LinhaDetalhe({
       {aberto && (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
           <TableCell colSpan={10} className="p-0">
-            <DetalhePedidoItens pedido={p} />
+            <DetalhePedidoItens pedido={p} liquidoBruto />
           </TableCell>
         </TableRow>
       )}
@@ -284,7 +284,7 @@ export default function DetalheFinanceiro() {
         case 'liberacao': return p.money_release_date;
         case 'bruto': return p.bruto;
         case 'retido': return retidoDoPedido(p);
-        case 'liquido': return p.liquido;
+        case 'liquido': return p.liquido + p.imposto;
         case 'markup': return p.markup;
       }
     };
@@ -400,7 +400,9 @@ export default function DetalheFinanceiro() {
     for (const p of pedidosFiltrados) {
       brutoF += p.bruto;
       retidoF += retidoDoPedido(p);
-      liquidoF += p.liquido;
+      // Total exibido bate com o Mercado Pago: não desconta imposto (ver comentário no header).
+      liquidoF += p.liquido + p.imposto;
+      // Markup continua líquido de imposto (ADR-0055), independente do que "Líquido" exibe.
       if (p.custo != null && p.custo > 0) { liqMk += p.liquido; cstMk += p.custo; }
     }
     return {
@@ -553,14 +555,14 @@ export default function DetalheFinanceiro() {
         Cada linha é um pedido do período (carrinho do cliente; packs agrupados, igual ao Faturamento);
         clique para ver os itens com custo, líquido e markup. "Retido" é o que o ML/MP desconta da venda
         (comissão + frete). Em pedidos com vários produtos (mesmo envio), o frete é rateado entre os itens
-        por peso. O "líquido" aqui já desconta o imposto estimado por origem (nacional/importado,
-        ADR-0055) — é a mesma base do "markup": (líquido − custo) ÷ custo. Por isso pode ser um pouco menor
-        que o "Líquido total" do banner acima, que é o dinheiro que efetivamente cai na conta (sem esse
-        imposto). Pedidos sem custo cadastrado ou de produtos fora do PubliAI mostram "—". "Liberação" é a
-        data em que o Mercado Livre libera aquele recebimento para saque ("a liberar" = ainda retido;
-        "liberado" = já no saldo; "sacado" = marcado manualmente como já sacado pelo usuário). Linhas
-        destacadas em vermelho são pedidos no prejuízo (líquido abaixo do custo). Clique no cabeçalho para
-        ordenar.
+        por peso. O "líquido" aqui é sempre o dinheiro que efetivamente cai na conta — nunca desconta
+        imposto — e bate com o "Líquido total" do banner acima e com o Mercado Pago. O "markup" é a exceção:
+        continua líquido do imposto estimado por origem (nacional/importado, ADR-0055), pra refletir a
+        margem real do produto: (líquido − imposto − custo) ÷ custo. Pedidos sem custo cadastrado ou de
+        produtos fora do PubliAI mostram "—". "Liberação" é a data em que o Mercado Livre libera aquele
+        recebimento para saque ("a liberar" = ainda retido; "liberado" = já no saldo; "sacado" = marcado
+        manualmente como já sacado pelo usuário). Linhas destacadas em vermelho são pedidos no prejuízo
+        (líquido, já descontado o imposto, abaixo do custo). Clique no cabeçalho para ordenar.
       </p>
     </div>
   );
