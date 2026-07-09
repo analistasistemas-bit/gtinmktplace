@@ -58,3 +58,20 @@ regex dedicado, `preencherUnitsPerPack`).
 - Custo de IA: o ramo regex passa a fazer 1 chamada extra ao LLM quando há atributo a preencher;
   zero chamada quando não há alvo.
 - Revisão humana segue como gate final (atributo sugerido por IA é confirmável na Revisão).
+
+## Adendo — 2026-07-09: grounding numérico nunca foi implementado (lote #30)
+
+A decisão 2 dizia "só se claro no título/descrição", mas a validação (`validarNumerico` em
+`atributos-llm-core.ts`) checava só **formato** (número + unidade permitida), sem checar se o
+número constava no texto — diferente do texto-livre, que já tem essa trava desde o
+[ADR-0052](0052-camada2-atributos-ia-first-com-fallback.md). Resultado: a IA podia "chutar" um
+número plausível para um atributo numérico opcional sem lastro no produto. Caso real: família do
+lote #30 (tecido, peso real 660g na planilha) publicou com o atributo de categoria `WEIGHT` (ficha
+técnica do item, distinto de `SELLER_PACKAGE_WEIGHT`/frete) em "120 g" — a IA inventou um peso
+plausível de tecido leve porque o título/descrição não mencionava peso nenhum.
+
+Fix: `validarRespostaAtributos` (numero) agora exige que o número extraído conste no
+`nome`/`descricao` (mesma invariante do texto-livre, tolerância de ponto flutuante para
+vírgula/ponto decimal). Fecha a lacuna para **todo** atributo numérico opcional, não só `WEIGHT`.
+Correção do item já publicado (MLB7132904138) fica para o fluxo normal de reprocessamento —
+fora de escopo deste ADR.

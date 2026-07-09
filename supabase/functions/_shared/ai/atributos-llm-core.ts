@@ -4,7 +4,10 @@ import type { AtributoML } from '../categoria/atributos.ts';
 // Partes puras do preenchimento de atributos por IA, testáveis sem rede (ADR-0026 / E4).
 // Cobre os atributos que melhoram a nota de qualidade do anúncio (não só os obrigatórios):
 //   - closed-set (values[]): a IA escolhe DENTRO da lista da categoria; nunca inventa.
-//   - numéricos (number/number_unit): a IA extrai número (+ unidade permitida) só se claro no texto.
+//   - numéricos (number/number_unit): a IA extrai número (+ unidade permitida), só aceito se o
+//     número constar no título/descrição — mesma invariante anti-invenção do texto-livre
+//     (ADR-0052), fechando a lacuna que deixava a IA "chutar" um número plausível sem lastro no
+//     texto (ex.: WEIGHT inventado por não haver peso no texto — lote #30, 2026-07-09).
 // Texto livre (string sem values, ex.: MODEL) fica de fora — risco alto de invenção.
 
 export interface AtributoAlvo {
@@ -109,6 +112,15 @@ const MAX_TEXTO_LIVRE = 60;
 function tokens(s: string): string[] {
   return normalizar(s).split(/\s+/).filter(Boolean);
 }
+
+// Mesma trava anti-invenção do texto-livre, para número: só aceita se o valor extraído aparecer
+// como número no título/descrição (tolerância de ponto flutuante p/ "13,00" == 13).
+function numeroConstaNoTexto(num: number, input: InputAtributos): boolean {
+  const texto = `${input.nome} ${input.descricao ?? ''}`;
+  const nums = [...texto.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => parseFloat(m[0].replace(',', '.')));
+  return nums.some((n) => Math.abs(n - num) < 1e-9);
+}
+
 function validarTextoLivre(bruto: string, input: InputAtributos): string | null {
   const valor = bruto.trim();
   if (valor.length < MIN_TEXTO_LIVRE || valor.length > MAX_TEXTO_LIVRE) return null;
@@ -123,8 +135,8 @@ function validarTextoLivre(bruto: string, input: InputAtributos): string | null 
 
 /**
  * Valida a resposta da IA. Closed-set: só aceita value_id/value_name que casa com a lista.
- * Numérico: só número (+ unidade permitida). Texto-livre: só se constar no texto do produto.
- * Qualquer coisa fora disso é omitida (nunca inventa).
+ * Numérico: só número (+ unidade permitida) que também conste no texto do produto. Texto-livre:
+ * só se constar no texto do produto. Qualquer coisa fora disso é omitida (nunca inventa).
  */
 export function validarRespostaAtributos(
   resp: Record<string, string>,
@@ -142,7 +154,7 @@ export function validarRespostaAtributos(
       if (escolhido) out.push({ id: alvo.id, value_id: escolhido.id });
     } else if (alvo.tipo === 'numero') {
       const valor = validarNumerico(String(bruto), alvo.unidades);
-      if (valor) out.push({ id: alvo.id, value_name: valor });
+      if (valor && numeroConstaNoTexto(parseFloat(valor), input)) out.push({ id: alvo.id, value_name: valor });
     } else {
       const valor = validarTextoLivre(String(bruto), input);
       if (valor) out.push({ id: alvo.id, value_name: valor });

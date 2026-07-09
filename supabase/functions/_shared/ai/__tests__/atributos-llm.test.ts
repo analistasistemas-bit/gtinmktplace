@@ -25,7 +25,7 @@ const SCHEMA: AtributoSchema[] = [
   A({ id: 'PRODUCT_FEATURES', nome: 'Características', valueType: 'list', valores: [{ id: '8', nome: 'X' }], tags: ['multivalued', 'read_only'] }), // multivalor
 ];
 const base = [{ id: 'BRAND', value_name: 'Bosch' }, { id: 'MODEL', value_name: 'Furadeira X' }, { id: 'LINE', value_name: 'X' }];
-const SEM_FONTE = { nome: '' }; // closed-set/numérico não usam a fonte; texto-livre tem describe próprio
+const SEM_FONTE = { nome: '' }; // closed-set não usa a fonte; numérico/texto-livre têm describe próprio
 
 describe('atributosAlvo', () => {
   it('closed-set (obrig. e opcional) + numéricos não preenchidos; ignora GTIN, COLOR (base já tem texto-livre)', () => {
@@ -75,25 +75,34 @@ describe('validarRespostaAtributos (closed-set)', () => {
 
 describe('validarRespostaAtributos (numérico)', () => {
   const alvos = atributosAlvo(SCHEMA, base);
-  it('número + unidade permitida → value_name', () => {
-    expect(validarRespostaAtributos({ LENGTH: '2500 cm' }, alvos, SEM_FONTE)).toContainEqual({ id: 'LENGTH', value_name: '2500 cm' });
+  const comFonte = { nome: 'Fita 2500 cm com 2,5 m de sobra' };
+  it('número + unidade permitida, e grounded no texto → value_name', () => {
+    expect(validarRespostaAtributos({ LENGTH: '2500 cm' }, alvos, comFonte)).toContainEqual({ id: 'LENGTH', value_name: '2500 cm' });
   });
   it('aceita vírgula decimal e normaliza', () => {
-    expect(validarRespostaAtributos({ LENGTH: '2,5 m' }, alvos, SEM_FONTE)).toContainEqual({ id: 'LENGTH', value_name: '2.5 m' });
+    expect(validarRespostaAtributos({ LENGTH: '2,5 m' }, alvos, comFonte)).toContainEqual({ id: 'LENGTH', value_name: '2.5 m' });
   });
   it('unidade fora da lista → omitido (não chuta unidade)', () => {
-    expect(validarRespostaAtributos({ LENGTH: '10 polegadas' }, alvos, SEM_FONTE)).toEqual([]);
+    expect(validarRespostaAtributos({ LENGTH: '10 polegadas' }, alvos, comFonte)).toEqual([]);
   });
   it('sem unidade num number_unit → omitido', () => {
-    expect(validarRespostaAtributos({ LENGTH: '10' }, alvos, SEM_FONTE)).toEqual([]);
+    expect(validarRespostaAtributos({ LENGTH: '10' }, alvos, comFonte)).toEqual([]);
   });
   it('não-número → omitido', () => {
-    expect(validarRespostaAtributos({ LENGTH: 'grande' }, alvos, SEM_FONTE)).toEqual([]);
+    expect(validarRespostaAtributos({ LENGTH: 'grande' }, alvos, comFonte)).toEqual([]);
   });
   it('unidade permitida vazia ("") + número sem unidade → omitido (não vira "2500 ")', () => {
     const alvoUnidVazia = atributosAlvo([A({ id: 'LEN2', valueType: 'number_unit', allowedUnits: [{ id: '', nome: '' }, { id: 'cm', nome: 'cm' }] })], []);
-    expect(validarRespostaAtributos({ LEN2: '2500' }, alvoUnidVazia, SEM_FONTE)).toEqual([]);
-    expect(validarRespostaAtributos({ LEN2: '2500 cm' }, alvoUnidVazia, SEM_FONTE)).toEqual([{ id: 'LEN2', value_name: '2500 cm' }]);
+    expect(validarRespostaAtributos({ LEN2: '2500' }, alvoUnidVazia, comFonte)).toEqual([]);
+    expect(validarRespostaAtributos({ LEN2: '2500 cm' }, alvoUnidVazia, comFonte)).toEqual([{ id: 'LEN2', value_name: '2500 cm' }]);
+  });
+  it('rejeita número que NÃO consta no texto (invenção — bug real: WEIGHT 120g "chutado" p/ produto sem peso no título/descrição)', () => {
+    const semPeso = { nome: 'Tecido Helanca Light Lycra Tensionada 3,00 X 1,80 Metros' };
+    expect(validarRespostaAtributos({ LENGTH: '120 cm' }, alvos, semPeso)).toEqual([]);
+  });
+  it('número correto em formato diferente da fonte ainda é aceito (mesmo valor, vírgula vs ponto)', () => {
+    const inp = { nome: 'Tecido 3,00 X 1,80 Metros' };
+    expect(validarRespostaAtributos({ LENGTH: '3 m' }, alvos, inp)).toEqual([{ id: 'LENGTH', value_name: '3 m' }]);
   });
 });
 
@@ -154,9 +163,14 @@ describe('preencherAtributosClosedSet', () => {
     expect(r).toEqual(cheio);
   });
   it('com alvo → IA preenche (closed-set + numérico) e faz merge', async () => {
+    const r = await preencherAtributosClosedSet(SCHEMA, base, { nome: 'Fita', descricao: 'rolo 25m' }, async () => ({ RIBBON_FORMAT: '5', LENGTH: '25 m' }));
+    expect(r).toContainEqual({ id: 'RIBBON_FORMAT', value_id: '5' });
+    expect(r).toContainEqual({ id: 'LENGTH', value_name: '25 m' });
+  });
+  it('IA "chuta" numérico não grounded no texto → omitido mesmo em formato válido', async () => {
     const r = await preencherAtributosClosedSet(SCHEMA, base, { nome: 'Fita', descricao: 'rolo 25m' }, async () => ({ RIBBON_FORMAT: '5', LENGTH: '2500 cm' }));
     expect(r).toContainEqual({ id: 'RIBBON_FORMAT', value_id: '5' });
-    expect(r).toContainEqual({ id: 'LENGTH', value_name: '2500 cm' });
+    expect(r.find((a) => a.id === 'LENGTH')).toBeUndefined();
   });
   it('preenche espessura óbvia em mm sem depender da IA', async () => {
     let alvosIa: string[] = [];

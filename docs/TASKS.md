@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Atributo numérico "WEIGHT" inventado pela IA (peso errado no ML, lote #30) — ADR-0049 (adendo) — 2026-07-09
+
+- [x] Diego reportou peso errado na ficha técnica do anúncio do lote #30 (tecido, "Peso:
+  120 g" no ML) mesmo com `PESO_GRAMAS=660` correto e igual em todas as 10 variações na
+  planilha/banco. Confirmado via banco: **não é** o peso de frete (`SELLER_PACKAGE_WEIGHT`,
+  que estava correto em 660g) — é o atributo de ficha técnica `WEIGHT` em `atributos_ml`,
+  preenchido por IA, sem qualquer relação com `peso_gramas`. Causa raiz: `validarNumerico`
+  (`atributos-llm-core.ts`) só validava formato do número que a IA extraía, sem checar se
+  o número constava no título/descrição — ao contrário do texto-livre, que já tem essa trava
+  desde o ADR-0052. O título do lote #30 não menciona peso nenhum; a IA "chutou" 120g
+  (gramatura plausível de tecido leve) e passou pela validação.
+  Fix: `validarRespostaAtributos` (numérico) agora exige grounding no nome/descrição, mesma
+  invariante do texto-livre — fecha a lacuna para qualquer atributo numérico opcional, não só
+  `WEIGHT`. Ver adendo 2026-07-09 no [ADR-0049](decisions/0049-atributos-opcionais-e-numericos-por-ia.md).
+  1279 testes verdes (36 novos/ajustados em `atributos-llm.test.ts`). Correção do item já
+  publicado (MLB7132904138) e deploy de `process-familia`/`resolver-atributos-genericos`
+  ficam para depois da validação do Diego.
+
 ## Markup do Faturamento divergia do Dashboard/Publicados/Financeiro — 2026-07-09
 
 - [x] Diego notou +38% no Faturamento › Vendas vs. +37% no Dashboard/Publicados/Financeiro,
