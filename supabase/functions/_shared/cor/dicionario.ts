@@ -29,7 +29,7 @@ export const DICIONARIO_CORES: CorCanonica[] = [
   { canonica: 'Lilás', sinonimos: ['lilás', 'lilas'] },
   { canonica: 'Marrom', sinonimos: ['marrom', 'castanho'] },
   { canonica: 'Marrom Café', sinonimos: ['marrom café', 'café', 'cafe'] },
-  { canonica: 'Bege', sinonimos: ['bege'] },
+  { canonica: 'Bege', sinonimos: ['bege', 'champagne', 'marfim', 'marfin'] },
   { canonica: 'Cru', sinonimos: ['cru', 'crua', 'natural'] },
   { canonica: 'Cinza', sinonimos: ['cinza'] },
   { canonica: 'Cinza Claro', sinonimos: ['cinza claro'] },
