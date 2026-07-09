@@ -120,21 +120,32 @@ export function filtrarPublicados(
   itens: PublicadoItem[],
   f: FiltroPublicados,
 ): PublicadoItem[] {
-  const q = (f.busca ?? '').trim().toLowerCase();
-  return itens.filter(
-    (i) =>
-      (!f.fornecedor || i.fornecedor === f.fornecedor) &&
-      (!f.status || i.status === f.status) &&
-      (!f.tipo || rotuloTipo(i) === f.tipo) &&
-      (!q ||
-        i.titulo.toLowerCase().includes(q) ||
-        i.codigoPai.toLowerCase().includes(q) ||
-        (i.fornecedor ?? '').toLowerCase().includes(q) ||
-        rotuloTipo(i).toLowerCase().includes(q) ||
-        (i.gtin ?? '').toLowerCase().includes(q) ||
-        (i.identificadores ?? []).some((c) => c.toLowerCase().includes(q))) &&
-      (!f.somenteEncalhados || ehEncalhado(i)),
-  );
+  const queryStr = (f.busca ?? '').trim().toLowerCase();
+  const termosBusca = queryStr ? queryStr.split(/\s+/) : [];
+
+  return itens.filter((i) => {
+    if (f.fornecedor && i.fornecedor !== f.fornecedor) return false;
+    if (f.status && i.status !== f.status) return false;
+    if (f.tipo && rotuloTipo(i) !== f.tipo) return false;
+    if (f.somenteEncalhados && !ehEncalhado(i)) return false;
+
+    if (termosBusca.length > 0) {
+      const textoBuscavel = [
+        i.titulo,
+        i.codigoPai,
+        i.fornecedor ?? '',
+        rotuloTipo(i),
+        i.gtin ?? '',
+        ...(i.identificadores ?? []),
+      ].join(' ').toLowerCase();
+
+      // O texto buscável do item precisa conter TODOS os termos (ordem não importa)
+      const matchBusca = termosBusca.every((termo) => textoBuscavel.includes(termo));
+      if (!matchBusca) return false;
+    }
+
+    return true;
+  });
 }
 
 // ── Ordenação por coluna ────────────────────────────────────────────────────
