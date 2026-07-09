@@ -19,6 +19,13 @@
   lote já estava ingerido (status `pronto`, ainda não publicado), as 6 variações afetadas
   foram corrigidas direto no banco (`UPDATE variacoes SET cor=…`, só onde
   `cor_editada_pelo_operador=false`) em vez de reprocessar a família inteira.
+- [x] **Inconsistência no fix 1:** `Champagne`/`Marfin` tinham virado sinônimo de `Bege`
+  (colapsava pro genérico) em vez de cor própria, ao contrário do critério usado pros outros 4
+  compostos (preservar o nome que o fornecedor deu). Diego notou pela tela — `Bege` continuava
+  igual. Corrigido: `Champagne` e `Marfim` (normaliza "Marfin" → "Marfim") viram cores
+  canônicas próprias. Redeploy `process-familia` (v82); `variacoes.cor` do lote #30 atualizado
+  de novo pros 2 códigos. As 10 variações do lote agora preservam o nome específico do
+  fornecedor de ponta a ponta.
 
 ## Preço ancorado no maior vendedor MercadoLíder ao dar prejuízo — ADR-0065 — 2026-07-08
 
