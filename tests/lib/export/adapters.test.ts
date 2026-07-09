@@ -10,6 +10,7 @@ import {
 import type { ExportConfig } from '@/lib/export/tipos';
 import type { Pedido, KpisPedidos } from '@/lib/pedidos-faturamento';
 import type { PublicadoItem } from '@/lib/publicados';
+import { fmtBRL } from '@/lib/formato';
 
 const cfg = (over: Partial<ExportConfig> = {}): ExportConfig => ({
   formato: 'pdf',
@@ -28,10 +29,10 @@ const pedido = (chave: string, over: Partial<Pedido> = {}): Pedido => ({
   comprador_id: 1, comprador_nick: 'fulano', comprador_nome: null, status: 'paid', statusDetail: null,
   shipping_status: 'shipped', shipping_substatus: null, uf: 'SP', cidade: 'São Paulo',
   unidades: 2, bruto: 150, frete: null, liquido: 120, money_release_date: null, estorno: 0,
-  custo: 80, markup: 0.5, comissao: 20, rastreio: null, is_publiai: true, tem_devolucao: false,
+  custo: 80, imposto: 12, markup: 0.5, comissao: 20, rastreio: null, is_publiai: true, tem_devolucao: false,
   itens: [
     { id: 'i1', ml_item_id: 'MLB1', titulo: 'Fita', codigo: 'C1', cor: 'azul', ean: '789',
-      quantity: 2, unit_price: 75, imagem_path: null, custo: 80, liquido: 120, markup: 0.5 },
+      quantity: 2, unit_price: 75, imagem_path: null, custo: 80, liquido: 120, imposto: 12, markup: 0.5 },
   ],
   ...over,
 });
@@ -66,6 +67,13 @@ describe('buildVendasReport', () => {
     expect(r.filtros).toContain('Origem: Fora');
     expect(r.filtros).toContain('Envio: A caminho');
   });
+
+  it('líquido continua líquido de imposto (ADR-0055) — fora do escopo da correção do Financeiro', () => {
+    const p = pedido('1');
+    const r = buildVendasReport({ pedidos: [p], kpis: kpisVendas, periodo: { tipo: 'preset', dias: 30 }, origem: 'todos', filtroEnvio: null, config: cfg({ expandido: true }) });
+    expect(r.linhas[0].celulas.liquido).toBe(fmtBRL(p.liquido));
+    expect(r.linhas[0].sublinhas?.linhas[0].liquido).toBe(fmtBRL(p.itens[0].liquido));
+  });
 });
 
 describe('buildFinanceiroDetalheReport', () => {
@@ -99,6 +107,14 @@ describe('buildFinanceiroDetalheReport', () => {
     const r = buildFinanceiroDetalheReport({ pedidos: [p], totais, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg({ expandido: true }) });
     expect(r.linhas[0].sublinhas?.linhas).toHaveLength(1);
     expect(r.linhas[0].sublinhas?.linhas[0].item).toBe('Fita');
+  });
+
+  it('líquido nunca desconta imposto — tem que bater com o Mercado Pago; markup continua líquido de imposto', () => {
+    const p = pedido('1'); // liquido=120, imposto=12 → líquido bruto 132; markup=0.5 (inalterado)
+    const r = buildFinanceiroDetalheReport({ pedidos: [p], totais, filtroLib: 'todos', periodo: { tipo: 'preset', dias: 30 }, config: cfg({ expandido: true }) });
+    expect(r.linhas[0].celulas.liquido).toBe(fmtBRL(132));
+    expect(r.linhas[0].sublinhas?.linhas[0].liquido).toBe(fmtBRL(132));
+    expect(r.linhas[0].celulas.markup).toBe('+50%');
   });
 });
 

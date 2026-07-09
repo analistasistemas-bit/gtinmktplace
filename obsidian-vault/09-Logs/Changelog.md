@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-06
+atualizado: 2026-07-09
 ---
 
 # Changelog
@@ -8,6 +8,24 @@ atualizado: 2026-07-06
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-07-09
+
+- **Fix: "Líquido" no Financeiro › Detalhe do líquido não pode mais descontar imposto (ADR-0066,
+  refina ADR-0055).** Diego reportou pedido com R$ 38,15 recebidos no Mercado Pago aparecendo como
+  R$ 31,75 na tabela — divergência de exatamente 8% (alíquota nacional). Causa: essa tela já tinha
+  dois cálculos de "líquido" coexistindo — o banner "Líquido total" (via `calcularResumo`) nunca
+  descontou imposto, mas a tabela de pedidos abaixo (via `agruparPorPedido`, código compartilhado
+  com Faturamento › Vendas) descontava, seguindo a regra "todas as telas" da ADR-0055. Regra nova:
+  nessa tela específica "Líquido" nunca desconta imposto (bate 1:1 com o Mercado Pago); "Markup"
+  continua líquido de imposto, sem mudança. Escopo restrito ao Financeiro — Faturamento › Vendas e
+  Publicados › Detalhe de vendas continuam mostrando líquido já líquido de imposto. Implementado
+  como prop `liquidoBruto` em `DetalhePedidoItens` (default `false`, ligada só no
+  `DetalheFinanceiro.tsx`) — sem mudar o formato de `Pedido`/`ItemPedido`. Export "Financeiro ·
+  Detalhe" ajustado junto. Achado à parte: o fixture de teste de `adapters.test.ts` nunca setava
+  `imposto` (campo obrigatório do tipo `Pedido`/`ItemPedido`), mascarado porque nenhum teste
+  conferia o valor exato da célula "líquido" — corrigido junto com 2 testes novos. 1276 testes
+  verdes. Só frontend.
 
 ## 2026-07-06
 
