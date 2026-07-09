@@ -137,12 +137,12 @@ describe('extrairCorDeVariacao com metragem separada (regressão lote #48)', () 
 });
 
 describe('extrairCorDoTexto — regressão lote #30', () => {
-  it('Champagne (sinônimo de Bege) presente no nome não caía no dicionário', () => {
-    expect(extrairCorDoTexto(['Tecido Helanca Light Champagne Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Bege');
+  it('Champagne é cor própria (não colapsa pra "Bege")', () => {
+    expect(extrairCorDoTexto(['Tecido Helanca Light Champagne Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Champagne');
   });
 
-  it('Marfin (sinônimo de Bege) presente no nome não caía no dicionário', () => {
-    expect(extrairCorDoTexto(['Tecido Helanca Light Marfin Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Bege');
+  it('Marfin é reconhecido e normalizado pra "Marfim" (não colapsa pra "Bege")', () => {
+    expect(extrairCorDoTexto(['Tecido Helanca Light Marfin Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Marfim');
   });
 
   it('Azul Petróleo mantém o qualificador (não colapsa pra "Petróleo")', () => {
