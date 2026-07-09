@@ -152,4 +152,12 @@ describe('extrairCorDoTexto — regressão lote #30', () => {
   it('Cinza Médio mantém o qualificador (não colapsa pra "Cinza")', () => {
     expect(extrairCorDoTexto(['Tecido Helanca Light Cinza Médio Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Cinza Médio');
   });
+
+  it('Amarelo Canário mantém o qualificador (não colapsa pra "Amarelo")', () => {
+    expect(extrairCorDoTexto(['Tecido Helanca Light Amarelo Canário Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Amarelo Canário');
+  });
+
+  it('Roxo Médio mantém o qualificador (não colapsa pra "Roxo")', () => {
+    expect(extrairCorDoTexto(['Tecido Helanca Light Roxo Médio Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Roxo Médio');
+  });
 });
