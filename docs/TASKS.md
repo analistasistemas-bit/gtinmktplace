@@ -16,9 +16,9 @@
   Fix: `validarRespostaAtributos` (numérico) agora exige grounding no nome/descrição, mesma
   invariante do texto-livre — fecha a lacuna para qualquer atributo numérico opcional, não só
   `WEIGHT`. Ver adendo 2026-07-09 no [ADR-0049](decisions/0049-atributos-opcionais-e-numericos-por-ia.md).
-  1279 testes verdes (36 novos/ajustados em `atributos-llm.test.ts`). Correção do item já
-  publicado (MLB7132904138) e deploy de `process-familia`/`resolver-atributos-genericos`
-  ficam para depois da validação do Diego.
+  1279 testes verdes (36 novos/ajustados em `atributos-llm.test.ts`). Deploy confirmado
+  (`process-familia` v83, `definir-categoria-familia` v14). Anúncio já publicado
+  (MLB7132904138) corrigido manualmente por Diego no painel do ML — sem pendência.
 
 ## Markup do Faturamento divergia do Dashboard/Publicados/Financeiro — 2026-07-09
 

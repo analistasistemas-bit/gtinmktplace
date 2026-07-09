@@ -28,11 +28,11 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   opcional, não só `WEIGHT`. 1279 testes verdes (36 novos/ajustados em `atributos-llm.test.ts`,
   incluindo caso que reproduz o bug do lote #30), lint limpo. Deploy confirmado em produção
   (`process-familia` v83, `definir-categoria-familia` v14, `verify_jwt` conferido pós-deploy).
-  Correção do anúncio já publicado (MLB7132904138) ficou manual, direto no painel do ML — o app
-  não tem hoje um caminho de UPDATE que resincroniza atributos de ficha técnica com um anúncio
-  já publicado (só `SELLER_PACKAGE_*`/frete, `BRAND`, preço, estoque, fotos e descrição são
-  resincronizados; atributos gerais só são enviados uma vez, no CREATE — lacuna própria, fora de
-  escopo deste fix). PR #6, commit `f3a59b0` (squash) em `main`.
+  Correção do anúncio já publicado (MLB7132904138) feita manualmente por Diego no painel do ML
+  — o app não tem hoje um caminho de UPDATE que resincroniza atributos de ficha técnica com um
+  anúncio já publicado (só `SELLER_PACKAGE_*`/frete, `BRAND`, preço, estoque, fotos e descrição
+  são resincronizados; atributos gerais só são enviados uma vez, no CREATE — lacuna própria,
+  fora de escopo deste fix). PR #6, commit `f3a59b0` (squash) em `main`.
 
 - **Fix: markup do Faturamento › Vendas divergia do Dashboard/Publicados/Financeiro.** Diego pediu
   pra investigar por que o Faturamento mostrava +38% de markup enquanto Dashboard, Publicados e
