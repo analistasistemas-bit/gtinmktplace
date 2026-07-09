@@ -144,4 +144,12 @@ describe('extrairCorDoTexto — regressão lote #30', () => {
   it('Marfin (sinônimo de Bege) presente no nome não caía no dicionário', () => {
     expect(extrairCorDoTexto(['Tecido Helanca Light Marfin Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Bege');
   });
+
+  it('Azul Petróleo mantém o qualificador (não colapsa pra "Petróleo")', () => {
+    expect(extrairCorDoTexto(['Tecido Helanca Light Azul Petróleo Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Azul Petróleo');
+  });
+
+  it('Cinza Médio mantém o qualificador (não colapsa pra "Cinza")', () => {
+    expect(extrairCorDoTexto(['Tecido Helanca Light Cinza Médio Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Cinza Médio');
+  });
 });
