@@ -15,6 +15,7 @@ export interface Devolucao {
   return_status_money: string | null;
   acoes_pendentes: AcaoPendente[] | null;
   aberto_em: string | null;
+  pack_id?: number | null;
 }
 
 /** Lê as devoluções/claims (mais recentes primeiro). RLS por user. */
@@ -24,7 +25,27 @@ export async function buscarDevolucoes(): Promise<Devolucao[]> {
     .select('id, claim_id, order_id, stage, status, type, reason_texto, valor_em_jogo, return_status, return_status_money, acoes_pendentes, aberto_em')
     .order('aberto_em', { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as Devolucao[];
+  
+  const devolucoes = (data ?? []) as Devolucao[];
+  const orderIds = devolucoes.map(d => d.order_id).filter((id): id is number => id != null);
+  
+  if (orderIds.length > 0) {
+    const { data: vendasData } = await supabase
+      .from('ml_vendas')
+      .select('order_id, pack_id')
+      .in('order_id', orderIds);
+      
+    if (vendasData) {
+      const packMap = new Map(vendasData.map(v => [v.order_id, v.pack_id]));
+      devolucoes.forEach(d => {
+        if (d.order_id != null) {
+          d.pack_id = packMap.get(d.order_id) ?? null;
+        }
+      });
+    }
+  }
+  
+  return devolucoes;
 }
 
 const TIPO_LABEL: Record<string, string> = {
