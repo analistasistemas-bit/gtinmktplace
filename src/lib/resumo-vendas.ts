@@ -88,14 +88,17 @@ export interface ResumoVendas {
   vendas: VendaResumo[];
 }
 
-/** Custo total (R$) de uma venda: soma custoUnit × qtd dos itens com custo. null se nenhum tem. */
+/** Custo total (R$) de uma venda: soma custoUnit × qtd dos itens com custo, arredondado por ITEM
+ *  antes de somar — mesma granularidade de `custoDoItem` (pedidos-faturamento.ts), senão um pedido
+ *  multi-item com custo de mais de 2 casas decimais (`variacoes.custo` é `numeric` sem escala fixa)
+ *  fecha em centavo diferente do Faturamento e desalinha o markup agregado entre as telas. */
 function custoDaVenda(v: Venda, resolver?: CustoResolver): number | null {
   if (!resolver) return null;
   let total = 0;
   let achou = false;
   for (const it of v.itens) {
     const unit = resolver(it);
-    if (unit != null && unit > 0) { total += unit * it.quantity; achou = true; }
+    if (unit != null && unit > 0) { total += round2(unit * it.quantity); achou = true; }
   }
   return achou ? round2(total) : null;
 }

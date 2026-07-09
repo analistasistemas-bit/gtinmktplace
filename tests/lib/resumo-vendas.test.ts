@@ -75,6 +75,21 @@ describe('calcularResumo', () => {
     expect(r.ticket).toBe(35); // (20 + 50) / 2
   });
 
+  it('soma custo arredondando por ITEM (não o pedido inteiro de uma vez) — bate com o Faturamento', () => {
+    // custo com 3 casas (variacoes.custo é numeric sem escala fixa): 1,005 × 2 itens.
+    // round2 por item: 1,00 + 1,00 = 2,00. Se arredondasse a soma bruta (1,005+1,005=2,01 em float),
+    // o custo do pedido fecharia 1 centavo mais alto e o markup agregado divergiria do Faturamento.
+    const resolver = () => 1.005;
+    const r = calcularResumo([
+      venda({ id: 'a', total_amount: 20, liquido: 18, itens: [
+        item({ id: 'a1', ml_item_id: 'X1', quantity: 1, unit_price: 10 }),
+        item({ id: 'a2', ml_item_id: 'X2', quantity: 1, unit_price: 10 }),
+      ] }),
+    ], resolver);
+    expect(r.lucro).toBe(16);       // 18 − 2,00 (não 15,99)
+    expect(r.markup).toBeCloseTo(8.0, 5); // (18 − 2) / 2
+  });
+
   it('conta pedido por pack (carrinho), não por order_id — alinhado ao Faturamento (ADR-0039)', () => {
     // 3 order_id faturáveis: dois compartilham o mesmo pack_id (1 carrinho) + 1 avulso = 2 pedidos.
     const r = calcularResumo([
