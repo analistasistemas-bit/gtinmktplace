@@ -13,6 +13,12 @@
   Fix: 4 sinônimos/compostos novos em `dicionario.ts`, seguindo o precedente já usado
   (`Azul Royal`, `Rosa Pink`, `Cinza Claro/Escuro`). 1265 testes verdes (4 regressões novas);
   deploy `process-familia` (v80).
+- [x] **Auditoria dos 10 códigos do lote #30** (não só os 5 visíveis na tela) achou mais 2
+  casos do mesmo bug: `Amarelo Canário` → `Amarelo` e `Roxo Médio` → `Roxo`. +2 compostos no
+  dicionário, +2 regressões (1263 testes verdes), redeploy `process-familia` (v81). Como o
+  lote já estava ingerido (status `pronto`, ainda não publicado), as 6 variações afetadas
+  foram corrigidas direto no banco (`UPDATE variacoes SET cor=…`, só onde
+  `cor_editada_pelo_operador=false`) em vez de reprocessar a família inteira.
 
 ## Preço ancorado no maior vendedor MercadoLíder ao dar prejuízo — ADR-0065 — 2026-07-08
 
