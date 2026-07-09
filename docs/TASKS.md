@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Dicionário de cores — sinônimos e compostos faltando (lote #30) — 2026-07-09
+
+- [x] **Lote #30 (Tecido Helanca Light):** não era violação da regra "descrição vs Vision"
+  (ADR-0004 — a Camada 1 já lê corretamente `nome`/`nome_pai`, exclui a descrição de
+  propósito). Duas falhas de cobertura do dicionário: (1) `Champagne` e `Marfin` (sinônimos
+  de Bege) ausentes, caíam no fallback Vision gastando chamada de IA à toa; (2) `Azul
+  Petróleo` e `Cinza Médio` casavam só no sinônimo curto já cadastrado (`Petróleo`, `Cinza`)
+  e perdiam o qualificador, sem cair no Vision (achava uma cor "válida", mas menos precisa).
+  Fix: 4 sinônimos/compostos novos em `dicionario.ts`, seguindo o precedente já usado
+  (`Azul Royal`, `Rosa Pink`, `Cinza Claro/Escuro`). 1265 testes verdes (4 regressões novas);
+  deploy `process-familia` (v80).
+
 ## Preço ancorado no maior vendedor MercadoLíder ao dar prejuízo — ADR-0065 — 2026-07-08
 
 - [x] **Regra:** no CREATE, quando o preço competitivo de uma família dá prejuízo real
