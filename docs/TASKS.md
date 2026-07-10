@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Editor manual de atributos travava MATERIAL em closed-set (Pingentes, lote #31, PAI 02954524) — ADR-0052 — 2026-07-10
+
+- [x] Diego: dropdown "Complete para publicar" só oferecia Alpaca/Ouro/Prata/Vidro (sugestões do ML),
+  sem opção de digitar "100% Poliéster". Mesmo bug do fix desta manhã (`MATERIAL` é `value_type=string`,
+  texto-livre — os values que acompanham são sugestão, não lista fechada), mas o fix de hoje cedo só
+  cobriu o preenchimento por IA (`atributos-llm-core.ts`); `tipoDe` em
+  `_shared/categoria/faltantes-editaveis.ts` (editor manual, mesmo cálculo duplicado) não tinha recebido
+  a correção. Fix: mesma checagem `valueType === 'string' → texto`, antes de olhar `valores.length`. +2
+  testes (`faltantesEditaveis` classifica como texto; `validarValorAtributo` aceita valor fora das
+  sugestões). 762 testes verdes (`_shared`), lint limpo.
+
 ## Publicação travada por `item.pictures.unavailable` — race de propagação da foto no ML (lote #31) — ADR-0033 — 2026-07-10
 
 - [x] Diego: publicação do lápis (PAI 02844281) falhando 2× com "Problema nas fotos... Ocorreu um erro

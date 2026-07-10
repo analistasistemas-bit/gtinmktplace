@@ -24,6 +24,9 @@ function ehNumerico(a: AtributoSchema): boolean {
   return a.valueType === 'number' || a.valueType === 'number_unit';
 }
 function tipoDe(a: AtributoSchema): 'closed' | 'numero' | 'texto' {
+  // value_type=string é texto-livre no ML: os valores que o acompanham são SUGESTÕES, não uma
+  // lista fechada (essa é value_type=list). Mesmo fix de atributosAlvo (atributos-llm-core.ts).
+  if (a.valueType === 'string') return 'texto';
   if (a.valores.length > 0) return 'closed';
   if (ehNumerico(a)) return 'numero';
   return 'texto';

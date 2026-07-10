@@ -13,20 +13,26 @@ const SCHEMA: AtributoSchema[] = [
   A({ id: 'COLOR', nome: 'Cor', required: true, valueType: 'list', valores: [{ id: '9', nome: 'Preto' }] }), // variação → ignorado
   A({ id: 'IMPORT', nome: 'Imposto', required: true, valueType: 'list', valores: [{ id: '7', nome: '0%' }], tags: ['read_only'] }), // read-only → ignorado
   A({ id: 'NOTE', nome: 'Observação', required: false }), // opcional → não é faltante
+  // string com sugestões (não lista fechada) — ex.: MATERIAL em Pingentes (lote #31)
+  A({ id: 'MATERIAL', nome: 'Material', required: true, valueType: 'string', valores: [{ id: '1', nome: 'Alpaca' }, { id: '2', nome: 'Ouro' }] }),
 ];
 
 describe('faltantesEditaveis', () => {
   it('lista obrigatórios não preenchidos com tipo/valores; ignora COLOR/read-only/opcional', () => {
     const campos = faltantesEditaveis(SCHEMA, [{ id: 'BRAND', value_name: 'Avil' }]);
-    expect(campos.map((c) => c.id)).toEqual(['MODEL', 'VOLTAGE', 'LENGTH']);
+    expect(campos.map((c) => c.id)).toEqual(['MODEL', 'VOLTAGE', 'LENGTH', 'MATERIAL']);
     expect(campos.find((c) => c.id === 'MODEL')?.tipo).toBe('texto');
     expect(campos.find((c) => c.id === 'VOLTAGE')?.tipo).toBe('closed');
     expect(campos.find((c) => c.id === 'VOLTAGE')?.valores).toEqual([{ id: '1', nome: '110V' }, { id: '2', nome: '220V' }]);
     expect(campos.find((c) => c.id === 'LENGTH')?.tipo).toBe('numero');
     expect(campos.find((c) => c.id === 'LENGTH')?.unidades).toEqual([{ id: 'cm', nome: 'cm' }]);
   });
+  it('MATERIAL (value_type=string com sugestões) é texto-livre, não closed-set', () => {
+    const campos = faltantesEditaveis(SCHEMA, [{ id: 'BRAND', value_name: 'Avil' }]);
+    expect(campos.find((c) => c.id === 'MATERIAL')?.tipo).toBe('texto');
+  });
   it('tudo preenchido → []', () => {
-    const cheio = [{ id: 'MODEL', value_name: 'X' }, { id: 'VOLTAGE', value_id: '1' }, { id: 'LENGTH', value_name: '10 cm' }, { id: 'BRAND', value_name: 'Avil' }];
+    const cheio = [{ id: 'MODEL', value_name: 'X' }, { id: 'VOLTAGE', value_id: '1' }, { id: 'LENGTH', value_name: '10 cm' }, { id: 'BRAND', value_name: 'Avil' }, { id: 'MATERIAL', value_name: '100% Poliéster' }];
     expect(faltantesEditaveis(SCHEMA, cheio)).toEqual([]);
   });
 });
@@ -52,6 +58,9 @@ describe('validarValorAtributo', () => {
   });
   it('texto vazio → null', () => {
     expect(validarValorAtributo(SCHEMA, 'MODEL', '   ')).toBeNull();
+  });
+  it('MATERIAL (string com sugestões) aceita valor fora das sugestões', () => {
+    expect(validarValorAtributo(SCHEMA, 'MATERIAL', '100% Poliéster')).toEqual({ id: 'MATERIAL', value_name: '100% Poliéster' });
   });
   it('atributo fora do schema → null', () => {
     expect(validarValorAtributo(SCHEMA, 'XPTO', 'x')).toBeNull();

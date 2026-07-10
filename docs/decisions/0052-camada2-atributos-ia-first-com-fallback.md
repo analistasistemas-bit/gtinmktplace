@@ -62,3 +62,11 @@ Fix: `value_type=string` é sempre texto-livre — os `values` são sugestão, n
 `value_type=list`). Passa pela regra de ouro e aceita o valor extraído da descrição. Sem regressão para
 `list`/`number`. As 2 famílias afetadas do Lote 31 foram corrigidas (02954818 resolvido; 02954524 segue no
 fallback manual por não haver material na fonte).
+
+### Adendo (2026-07-10) — mesmo bug no fallback manual (`faltantes-editaveis.ts`)
+
+02954524 (fallback manual, citado acima) expôs a mesma classificação errada num segundo lugar: `tipoDe`
+em `_shared/categoria/faltantes-editaveis.ts` (editor "Complete para publicar") duplica `tipoAlvo` mas não
+tinha recebido o fix — `MATERIAL` continuava aparecendo como `Select` fechado (Alpaca/Ouro/Prata/Vidro),
+sem opção de digitar "100% Poliéster". Mesma correção aplicada: `value_type=string` → sempre `texto`,
+checado antes de `valores.length`.
