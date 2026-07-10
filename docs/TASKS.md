@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cor `Outra` (veredito do Vision) vazava para título e descrição do anúncio (lote #31) — ADR-0044 — 2026-07-10
+
+- [x] Diego reportou "OUTRA" no título e na descrição de um anúncio sem cor real
+  (`LÁPIS COMUM FANTASIA POTE C/72UND OUTRA`, PAI 02844281, pote multicolorido). Causa raiz:
+  `'Outra'` é o veredito do Vision para "não identifiquei a cor" (dúvida/multicolor; ver `ai/vision.ts`,
+  regra 3 do prompt), mas era tratado como cor real. O guard de `garantirCorTitulo` (`ai/titulo.ts`) só
+  barrava o placeholder `(sem cor identificada)`, não `'Outra'` → cravava "OUTRA" no título; e
+  `montarUserPrompt` (`ai/copywriter-prompt.ts`) listava `- Outra` em "Cores disponíveis" → a IA
+  copywriter escrevia "Outra" na descrição. Divergência de sentinelas (placeholder tratado, `'Outra'`
+  esquecido). Fix de raiz: predicado único `ehCorIndefinida()` em `_shared/cor/indefinida.ts` que
+  reconhece os sentinelas de "não é cor real" (`'Outra'` e o placeholder), consumido em dois pontos:
+  título (`garantirCorTitulo` não crava cor indefinida) e descrição (`montarUserPrompt` só lista cores
+  reais; sem nenhuma cor real, o prompt manda a IA OMITIR a seção 🎨 CORES DISPONÍVEIS — nunca listar
+  placeholder). Cobre os dois fluxos de persistência (ADR-0044): `process-familia` e
+  `regenerar-copy-familia`. `vision.ts` intocado — `'Outra'` segue como sinal de validação manual na
+  Revisão, só não vaza para o anúncio. +5 testes (`titulo-cor`, `copywriter-prompt`); 1289 verdes,
+  lint limpo. Deploy: `process-familia` v86, `regenerar-copy-familia` v24. Lote #31: copy regenerada.
+
 ## Atributo `string` com valores sugeridos tratado como closed-set (Material faltante nos Pingentes, lote #31) — ADR-0052 (adendo) — 2026-07-10
 
 - [x] Diego reportou "Atributos obrigatórios faltando: Material" em dois pingentes búfalo
