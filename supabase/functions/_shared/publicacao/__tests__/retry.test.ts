@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decidirErroCriarAnuncio, decidirRetryPorErro, mensagemErroFotoRecuperavel } from '../retry.ts';
+import { decidirErroCriarAnuncio, decidirRetryPorErro, decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../retry.ts';
 import type { ErroCanal } from '../../canais/contrato.ts';
 
 function erro(over: Partial<ErroCanal>): ErroCanal {
@@ -47,6 +47,19 @@ describe('decidirRetryPorErro', () => {
   });
   it('mensagem com "429" no texto (sem status) retenta — texto nao decide', () => {
     expect(decidirRetryPorErro(new Error('429 Too Many Requests'))).toBe(true);
+  });
+});
+
+describe('decidirRetryTransitorio (UPDATE/split — erro por exceção)', () => {
+  it('foto retentável (item.pictures.unavailable) retenta até cobrir a propagação, depois desiste', () => {
+    const foto = Object.assign(new Error('unavailable'), { status: 400, retentavel: true });
+    expect(decidirRetryTransitorio(foto, 0)).toBe('retentar');
+    expect(decidirRetryTransitorio(foto, 3)).toBe('retentar');
+    expect(decidirRetryTransitorio(foto, 5)).toBe('definitivo');
+  });
+  it('5xx retenta; 4xx não-retentável é definitivo já na primeira', () => {
+    expect(decidirRetryTransitorio(Object.assign(new Error('x'), { status: 503 }), 0)).toBe('retentar');
+    expect(decidirRetryTransitorio(Object.assign(new Error('x'), { status: 400 }), 0)).toBe('definitivo');
   });
 });
 

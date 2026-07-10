@@ -27,3 +27,12 @@ export function decidirRetryPorErro(err: unknown): boolean {
   if (status >= 500 || status === 429) return true;
   return false;
 }
+
+/** Versão de `decidirErroCriarAnuncio` para workers que sinalizam erro por EXCEÇÃO (UPDATE/split):
+ *  retenta transitório (5xx/429 ou foto retentável — item.pictures.unavailable, ainda propagando)
+ *  enquanto houver tentativa do QStash; ao esgotar, definitivo. Requer que o erro carregue `status`
+ *  e `retentavel` (o worker deve repassá-los ao lançar). */
+export function decidirRetryTransitorio(err: unknown, tentativasQstash: number): DecisaoErroPublicacao {
+  if (!decidirRetryPorErro(err)) return 'definitivo';
+  return tentativasQstash < MAX_RETRIES_TRANSIENTES ? 'retentar' : 'definitivo';
+}

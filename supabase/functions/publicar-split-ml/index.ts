@@ -20,17 +20,12 @@ import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAncoragem } from '../_shared/split/ancoragem.ts';
 import { particionar } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
+import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona.
-
-// Foto recém-enviada fica alguns segundos "em processamento" no ML; criar o item nesse intervalo
-// devolve item.pictures.unavailable. Re-tenta o POST /items na mesma execução (igual ao publish).
-const FOTO_RETRY_TENTATIVAS = 3;
-const FOTO_RETRY_INTERVALO_MS = 4000;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Idêntico ao publish/update: reavalia o status do lote quando o worker some da fila.
 async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId: string): Promise<void> {
@@ -45,18 +40,16 @@ async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId
 
 type Conn = ReturnType<typeof getConnector>;
 
-// Cria o anúncio retentando o erro transitório de foto (foto ainda processando no ML). Em falha
-// definitiva, lança Error com o status HTTP nativo → o catch externo decide retry (5xx) ou erro.
-async function criarComRetryFoto(conn: Conn, ctx: ContextoCanal, anuncio: AnuncioCanonico) {
-  let res = await conn.criarAnuncio(ctx, anuncio);
-  for (let i = 0; i < FOTO_RETRY_TENTATIVAS && !res.ok && res.erro!.codigo === 'FOTO'; i++) {
-    await sleep(FOTO_RETRY_INTERVALO_MS);
-    res = await conn.criarAnuncio(ctx, anuncio);
-  }
+// Cria o anúncio da partição. Em falha, lança Error com status + retentavel → o catch externo
+// retenta via QStash (foto ainda propagando: item.pictures.unavailable, reusando o picture_id;
+// o retryDelay cobre a propagação de minutos, ADR-0033) ou marca erro definitivo.
+async function criarAnuncioParticao(conn: Conn, ctx: ContextoCanal, anuncio: AnuncioCanonico) {
+  const res = await conn.criarAnuncio(ctx, anuncio);
   if (!res.ok) {
     const e = res.erro!;
-    const err = new Error(e.mensagemOperador) as Error & { status?: number };
+    const err = new Error(e.mensagemOperador) as Error & { status?: number; retentavel?: boolean };
     err.status = e.status;
+    err.retentavel = e.retentavel;
     throw err;
   }
   return res.valor!;
@@ -220,7 +213,7 @@ Deno.serve(async (req) => {
             preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,
           })),
         };
-        const ref = await criarComRetryFoto(conn, ctx, anuncio);
+        const ref = await criarAnuncioParticao(conn, ctx, anuncio);
         itemIdP = ref.itemExternoId;
         permalinkP = ref.permalink ?? null;
 
@@ -277,8 +270,9 @@ Deno.serve(async (req) => {
         });
         if (!res.ok) {
           const e = res.erro!;
-          const err = new Error(e.mensagemOperador) as Error & { status?: number };
+          const err = new Error(e.mensagemOperador) as Error & { status?: number; retentavel?: boolean };
           err.status = e.status;
+          err.retentavel = e.retentavel;
           throw err;
         }
         const persistidas = new Set<string>();
@@ -327,13 +321,18 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const status = (err as { status?: number }).status;
-    // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
-    if (status && (status >= 500 || status === 429)) {
+    const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
+    const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
+    // 5xx/429 ou foto ainda propagando (item.pictures.unavailable): reusa o picture_id e retenta
+    // via QStash (o retryDelay cobre a propagação de minutos, ADR-0033).
+    if (decidirRetryTransitorio(err, tentativas) === 'retentar') {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
-    // 4xx ou erro local: definitivo — persiste erro e reavalia o lote.
-    await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+    // Esgotou os retries ou erro definitivo: persiste erro e reavalia o lote.
+    await admin.from('familias').update({
+      status: 'erro',
+      erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
+    }).eq('id', job.familia_id);
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ erro: msg }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }

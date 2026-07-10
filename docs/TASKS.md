@@ -25,6 +25,13 @@
   que quebrava) → QStash retentou reusando o mesmo picture_id e **publicou** (item `MLB4875716733`,
   após ~6 min de retries, sem intervenção manual). A margem generosa (5×90s) absorveu a propagação de
   ~5 min desta foto.
+- [x] Estendido a UPDATE e split (mesma race, encontrada na revisão): `update-familia-ml` e
+  `publicar-split-ml` só retentavam `5xx/429` — o erro de foto (`400` retentável) caía em erro definitivo.
+  Novo `decidirRetryTransitorio` (`publicacao/retry.ts`); ambos passaram a propagar `retentavel` ao lançar
+  e a retentar a foto via QStash reusando o `picture_id`; removido o retry interno de 12s do split. No
+  UPDATE, a limpeza `ml_picture_id=null` (fallback p/ "Picture id does not exist") foi movida para SÓ
+  após esgotar os retries — antes rodava a cada erro e reiniciava o relógio de propagação. +2 testes;
+  deploy `update-familia-ml` v42, `publicar-split-ml` v13.
 
 ## Cor `Outra` (veredito do Vision) vazava para título e descrição do anúncio (lote #31) — ADR-0044 — 2026-07-10
 

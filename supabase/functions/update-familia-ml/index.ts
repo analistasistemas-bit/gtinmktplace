@@ -7,6 +7,7 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
+import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -159,8 +160,9 @@ Deno.serve(async (req) => {
     if (!res.ok) {
       const e = res.erro!;
       const err = new Error(e.mensagemOperador);
-      // Repassa o HTTP status p/ o catch: 5xx/429 → retenta; senão erro + limpeza dos caches.
+      // Repassa status + retentavel p/ o catch: 5xx/429 ou foto ainda propagando → retenta.
       (err as { status?: number }).status = e.status;
+      (err as { retentavel?: boolean }).retentavel = e.retentavel;
       throw err;
     }
 
@@ -245,15 +247,21 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const status = (err as { status?: number }).status;
-    // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
-    if (status && (status >= 500 || status === 429)) {
+    const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
+    const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
+    // 5xx/429 ou foto ainda propagando (item.pictures.unavailable): reusa as fotos já subidas e
+    // retenta via QStash (o retryDelay cobre a propagação, ADR-0033). NÃO limpa aqui — re-subir
+    // reinicia o relógio de propagação (lote #31).
+    if (decidirRetryTransitorio(err, tentativas) === 'retentar') {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
-    await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
-    // Limpa os caches de foto efêmeros para o próximo retry re-subir fresco: as cores
-    // novas ainda não anexadas (ml_variation_id null) e as capas subidas neste attempt.
-    // Sem isto, o id de upload expirado reaparece no retry → "Picture id ... does not exist".
+    await admin.from('familias').update({
+      status: 'erro',
+      erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
+    }).eq('id', job.familia_id);
+    // Esgotou os retries: limpa os caches de foto efêmeros p/ o próximo attempt manual re-subir
+    // fresco (cobre picture id inválido/expirado — "Picture id does not exist"): cores novas ainda
+    // não anexadas (ml_variation_id null) e as capas subidas neste attempt.
     await admin.from('variacoes').update({ ml_picture_id: null })
       .eq('familia_id', job.familia_id).is('ml_variation_id', null);
     const limparCapas: Record<string, null> = {};
