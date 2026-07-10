@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-09
+atualizado: 2026-07-10
 ---
 
 # Problemas Resolvidos
@@ -10,6 +10,20 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Publicação travando com "Problema nas fotos" — `item.pictures.unavailable`, lote #31 (2026-07-10)** —
+  o ML processa a picture de forma assíncrona: ela fica `status: ACTIVE` em ~2s, mas só vira
+  **utilizável no `POST /items` após MINUTOS** (medido ~142s a ~5 min, com o token real da conta via
+  `POST /items/validate`). O retry cobria só ~1 min → erro sempre para produto de 1 foto; multi-cor
+  escapava pela folga de subir várias fotos. Corrigiu a **premissa de tempo** do ADR-0033: removido o
+  retry interno de 12s, `retryDelay` do QStash 10s→90s (retries 5), **reusando o mesmo `picture_id`**
+  (re-subir reinicia a propagação — a mensagem "envie novamente" é cilada). Estendido a UPDATE e split
+  (que só retentavam 5xx/429). Confirmado ao vivo: `MLB4875716733`. Lição: `ACTIVE` da picture ≠
+  disponível para o item; tratar como "aguardar a mesma foto propagar", nunca re-subir. Ver [[Incidentes]].
+- **Cor "Outra" do Vision vazando p/ título e descrição do anúncio, lote #31 (2026-07-10)** — `'Outra'`
+  é o veredito do Vision para "não identifiquei a cor", mas era tratado como cor real: aparecia como
+  "OUTRA" no título e na seção de cores da descrição de um produto sem cor. Fix: predicado único
+  `ehCorIndefinida` barra os sentinelas no título (`garantirCorTitulo`) e omite a seção de cores da
+  descrição quando não há cor real (ADR-0044).
 - **Markup do Faturamento › Vendas divergia do Dashboard/Publicados/Financeiro (2026-07-09)** —
   +38% no Faturamento vs. +37% nas outras 3 telas, confirmado ao vivo com os mesmos 187
   pedidos/382 unidades (não era filtro/período). Causa: `custoDaVenda` (Dashboard/Publicados/

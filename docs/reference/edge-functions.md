@@ -144,12 +144,13 @@
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
   Renomeia a cor de variação já publicada (envia COLOR só quando muda vs. o ML — ADR-0062; o ML
   pode recusar em variação com vendas). Fotos comuns (capa2/capa3) só são reenviadas ao criar cor
-  nova — reposição/rename não toca fotos (evita duplicação na galeria, ADR-0062).
+  nova — reposição/rename não toca fotos (evita duplicação na galeria, ADR-0062). Erro de foto ainda
+  propagando: retenta via QStash reusando o `picture_id`; limpa o cache só ao esgotar (ADR-0033).
 - **publicar-split-ml** *(worker, split — ADR-0048)* — produto com >100 cores publica em N anúncios
   ("partições"). `publicar-familias` roteia >100 cores incluídas pra cá. Particiona alfabético com
   ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.
   Grava o item da partição cedo (anti-duplicação em retry); partição 0 herda `ml_item_id` existente.
-  Catálogo por-partição é follow-up (hoje cobre só a partição 0).
+  Catálogo por-partição é follow-up (hoje cobre só a partição 0). Retry de foto via QStash (ADR-0033).
 - **publicar-anuncio** *(worker genérico, E6 — ADR-0061)* — publica 1 família em 1 canal ≠ ML.
   Claim atômico por `(org, canal, codigo_pai)`: `pendente|erro → publicando`. Resolve a conexão da
   org, monta anúncio canônico, executa CREATE/UPDATE via conector, persiste em `anuncios_externos`.

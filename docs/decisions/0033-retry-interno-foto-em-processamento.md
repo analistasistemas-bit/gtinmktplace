@@ -69,3 +69,33 @@ Decisão: em `enfileirarPublicacao`/`enfileirarAtualizacao`, trocar o backoff ex
 retry interno, a publicação conclui em dezenas de segundos (não minutos). O retry interno
 segue cobrindo o caso rápido (publica na 1ª invocação). A validação real é em produção,
 observando os tempos `CREATED→DELIVERED` no QStash.
+
+## Adendo (2026-07-10): a propagação da foto é de MINUTOS — retry interno removido, `retryDelay` 90s, estendido a UPDATE/split
+
+Incidente (lote #31, PAI 02844281, 1 cor): publicação falhando repetidamente com
+`item.pictures.unavailable`. Investigação com o token real da conta (reproduzindo o erro via
+`POST /items/validate`) desmontou a **premissa de tempo** deste ADR:
+
+- A picture fica `status: ACTIVE` (todas as `variations` geradas) em **~2s** — mas o ML só a torna
+  **utilizável no `POST /items` após MINUTOS**: medido ~142s numa amostra isolada e **~5 min** na
+  publicação real de confirmação (varia). Até lá, todo `POST /items` que a referencia é rejeitado.
+- Logo, o **retry interno** (~12s) e o **`retryDelay: 10s × 5` (~50s)** do adendo anterior **nunca
+  alcançavam** a janela real → a família esgotava os retries e caía em `erro`. Produto de 1 foto não
+  tinha folga; multi-cor escapava porque subir várias fotos já consumia o tempo de propagação.
+
+Correções:
+1. **Removido o retry interno** de `publish-familia-ml` (12s nunca alcança minutos — puro desperdício
+   de execução).
+2. **`retryDelay: '10000' → '90000'` (90s)**, `retries: 5` (constantes `RETRIES_PUBLICACAO_ML` /
+   `RETRY_DELAY_PUBLICACAO_ML` em `_shared/queue.ts`; `MAX_RETRIES_TRANSIENTES` 3→5). Cobertura
+   ~7,5 min, com folga sobre a propagação observada. Continua **reusando o mesmo `picture_id`**.
+3. **Estendido a UPDATE e split**: `update-familia-ml` e `publicar-split-ml` só retentavam `5xx/429`
+   — o erro de foto (400 retentável) caía em erro definitivo. Novo `decidirRetryTransitorio`
+   (`retry.ts`); ambos propagam `retentavel` ao lançar. No UPDATE, a limpeza de `ml_picture_id`
+   (fallback p/ "Picture id does not exist") passou a rodar **só ao esgotar** os retries — antes
+   rodava a cada erro e reiniciava o relógio de propagação (o mesmo anti-padrão que este ADR já
+   combatia no CREATE).
+
+Confirmado end-to-end: republicação real do lote #31 com foto NOVA → publicou (`MLB4875716733`)
+após ~6 min de retries, sem intervenção. Deploy: `publicar-familias`, `publish-familia-ml`,
+`update-familia-ml`, `publicar-split-ml`.

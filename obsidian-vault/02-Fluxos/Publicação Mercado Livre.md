@@ -1,6 +1,6 @@
 ---
 tags: [fluxos, publicacao, mercado-livre]
-atualizado: 2026-07-01
+atualizado: 2026-07-10
 ---
 
 # Publicação Mercado Livre
@@ -54,6 +54,16 @@ Validado em produção: `02835002` (120 cores) em 2 anúncios (`MLB6914358210` 1
 
 Publicações concorrentes da mesma conta colidiam no ML (foto assíncrona ainda indisponível →
 item travado em "publicando"). `garantirFilaSerial(userId)` força `parallelism=1` por usuário.
+
+## Foto assíncrona — retry de propagação (ADR-0033)
+
+`POST /pictures` (source URL) processa a foto de forma assíncrona: ela fica `status: ACTIVE` em ~2s,
+mas o ML só a torna **utilizável no `POST /items` após MINUTOS** (~142s a ~5 min, varia). Antes disso
+devolve `item.pictures.unavailable` ("Ocorreu um erro ao processar a foto. Por favor, envie-a
+novamente."). Os três workers (CREATE/UPDATE/split) **reusam o mesmo `picture_id`** e retentam via
+QStash — `retryDelay: 90s`, `retries: 5` (~7,5 min de cobertura). **Nunca re-subir a foto no retry**:
+é a mesma imagem do storage e só reinicia o relógio de propagação (a mensagem "envie novamente" é
+cilada). Lote #31 → `MLB4875716733`.
 
 ## Vínculo de catálogo (`vincular-catalogo`)
 
