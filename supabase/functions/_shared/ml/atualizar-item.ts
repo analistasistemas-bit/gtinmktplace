@@ -86,3 +86,17 @@ export async function atualizarStatusML(accessToken: string, itemId: string, sta
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw erroML(resp.status, json);
 }
+
+// Corrige o título de um anúncio já publicado (ex.: remediar texto gerado com dado obsoleto —
+// ADR-0044/lote #31, cor 'Outra' vazando para o título). PUT parcial: só o campo title, título
+// é item-level (não por variação), preserva o resto do anúncio. Não existia mecanismo de update
+// de título pós-publicação até este fix — Revisão só edita título ANTES de publicar.
+export async function atualizarTituloML(accessToken: string, itemId: string, titulo: string): Promise<void> {
+  const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: titulo }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw erroML(resp.status, json);
+}

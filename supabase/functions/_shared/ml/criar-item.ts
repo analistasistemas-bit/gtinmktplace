@@ -58,8 +58,16 @@ export function atualizarSecaoCores(descricao: string, cores: string[]): string 
   let fim = inicio;
   while (fim < linhas.length && /^\s*-\s+/.test(linhas[fim])) fim++;
 
-  const novaLista = ordenarCoresAlfabetica(cores).map((c) => `- ${c}`);
   const depois = linhas.slice(fim);
+  // Sem nenhuma cor real (o chamador já filtrou cor indefinida/'Outra', ADR-0044): remove a
+  // seção inteira (cabeçalho incluso) em vez de deixar "🎨 CORES DISPONÍVEIS" pendurado sem
+  // item — espelha o comportamento do CREATE (copywriter-prompt.ts) sem cor real.
+  if (cores.length === 0) {
+    if (depois.length > 0 && depois[0].trim() !== '') depois.unshift('');
+    return [...linhas.slice(0, headerIdx), ...depois].join('\n');
+  }
+
+  const novaLista = ordenarCoresAlfabetica(cores).map((c) => `- ${c}`);
   if (depois.length > 0 && depois[0].trim() !== '') depois.unshift('');
   return [...linhas.slice(0, headerIdx + 1), '', ...novaLista, ...depois].join('\n');
 }

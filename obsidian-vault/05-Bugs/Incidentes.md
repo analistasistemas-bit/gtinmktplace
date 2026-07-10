@@ -239,3 +239,29 @@ DELIVERED 1:54:39` = 6min19s. Fila serial (`parallelism:1`) amplificava: lote de
 3. Retry vira rede de segurança fina: 30s×10 (era 90s×5).
 
 Ver [ADR-0033](../../docs/decisions/0033-retry-interno-foto-em-processamento.md) (adendo da tarde).
+
+---
+
+## 2026-07-10 — Cor "Outra" vazando: gap no UPDATE ao vivo + 14 anúncios já publicados com o defeito
+
+**Sintoma:** Diego reportou "OUTRA" no título de um produto (screenshot). Investigação mostrou que
+não era regressão do fix da manhã (`ehCorIndefinida`) — era dado processado ANTES do fix (título/
+descrição só são calculados no processamento, publicar não recalcula).
+
+**Alcance real, achado ao investigar:** 15 famílias no banco com o vazamento, **14 já publicadas
+no Mercado Livre**, retroagindo a 12/06 (quase um mês). Uma publicou hoje 18:20 — **depois** do fix
+— porque o texto já persistido (de antes do fix) foi simplesmente reusado no publish.
+
+**Bug ativo adicional (não só dado velho):** o fluxo de UPDATE em anúncio já publicado
+(`update-familia-ml` → `sincronizarDescricao`) filtrava só `cor != null`, sem excluir o sentinela
+`'Outra'` — o mesmo vazamento, caminho diferente, ainda no código em produção. Corrigido com o
+mesmo guard `ehCorIndefinida()` do CREATE.
+
+**Gap de capacidade:** não existia mecanismo para corrigir o **título** de um anúncio já publicado
+(só a descrição tinha push pós-publicação). Título só era editável antes de publicar. Adicionada
+`atualizarTituloML()`.
+
+**Remediação:** corrigidos título+descrição das 15 famílias no banco e ressincronizados no ML para
+as 14 já publicadas, priorizando as 9 com "OUTRA" visível no título.
+
+Ver [ADR-0044](../../docs/decisions/0044-cor-no-titulo-mono-cor.md) (adendo 2026-07-10).

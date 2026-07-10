@@ -49,3 +49,38 @@ Regras:
 - **Edge — UPDATE que adiciona 2ª cor a uma família antes mono-cor:** o título não é regenerado no
   fluxo de UPDATE, então pode manter a cor antiga cravada. Aceito; o operador regenera a copy se quiser.
 - Deploy: `process-familia` e `regenerar-copy-familia` (ambas importam `_shared/ai/titulo.ts`).
+
+## Adendo (2026-07-10): gap no UPDATE ao vivo + remediação retroativa do incidente do lote #31
+
+O fix de hoje cedo (`ehCorIndefinida()`, ver TASKS.md "Cor `Outra` vazava...") cobriu **CREATE**
+(`process-familia`) e **regeneração manual** (`regenerar-copy-familia`), mas não o fluxo de
+**UPDATE de anúncio já publicado**: `update-familia-ml` calculava a lista de cores da descrição
+filtrando só `cor != null`, sem excluir o sentinela `'Outra'`. Ou seja, se uma família com
+variação `cor='Outra'` sofresse qualquer sincronização de descrição (cor nova adicionada, por
+exemplo), `'Outra'` voltaria a vazar — o mesmo bug, caminho diferente, ainda ativo em produção
+enquanto isto não for corrigido.
+
+Fix: `update-familia-ml` agora filtra `ehCorIndefinida()` (mesmo guard do CREATE) ao montar a
+lista de cores antes de chamar `sincronizarDescricao`. `atualizarSecaoCores` (`ml/criar-item.ts`)
+passou a remover a seção "🎨 CORES DISPONÍVEIS" inteira quando a lista de cores reais fica vazia
+(antes deixava o cabeçalho pendurado sem nenhum item).
+
+**Achado adicional ao investigar o alcance:** não existia nenhum mecanismo para corrigir o
+**título** de um anúncio já publicado — só a descrição (`garantirDescricaoML`) tem push pós-
+publicação. Título só era editável (`updateFamiliaTitulo`) ANTES de publicar, sem sincronizar
+com o ML depois. Adicionada `atualizarTituloML()` (`ml/atualizar-item.ts`), PUT parcial
+`{title}`, espelhando `atualizarStatusML`.
+
+**Remediação retroativa (revisita a linha 47 "não retroativo" desta ADR, só para este incidente
+confirmado):** o levantamento no banco achou **15 famílias** com o vazamento — **9 com "OUTRA"
+no título** (todas já publicadas no ML, uma delas às 18:20 do mesmo dia, **depois** do fix de
+hoje cedo, porque publicar reusa texto já persistido em vez de recalcular) e mais **5-6 só na
+descrição** (retroagindo a 12/06 — bem anterior ao "lote #31" que motivou o fix original).
+Corrigidos título+descrição no banco e ressincronizados no ML via `atualizarTituloML`/
+`garantirDescricaoML` para os já publicados; corrigido só no banco para a família ainda não
+publicada. Este é um saneamento pontual do incidente — a política "não retroativo" da linha 47
+continua valendo para melhorias futuras de cor-no-título; não é uma mudança de política geral.
+
+Deploy: `update-familia-ml` (filtro + `atualizarSecaoCores`), `publish-familia-ml`/
+`publicar-anuncio` (recompilam `_shared/ml/criar-item.ts` e `_shared/ml/atualizar-item.ts`, sem
+mudança funcional para eles).

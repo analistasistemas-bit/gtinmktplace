@@ -150,6 +150,8 @@
   pode recusar em variação com vendas). Fotos comuns (capa2/capa3) só são reenviadas ao criar cor
   nova — reposição/rename não toca fotos (evita duplicação na galeria, ADR-0062). Erro de foto ainda
   propagando: retenta via QStash reusando o `picture_id`; limpa o cache só ao esgotar (ADR-0033).
+  Lista de cores da descrição exclui cor indefinida (`'Outra'` do Vision, `ehCorIndefinida()`) antes
+  de sincronizar — mesmo guard do CREATE (ADR-0044, adendo 2026-07-10).
 - **publicar-split-ml** *(worker, split — ADR-0048)* — produto com >100 cores publica em N anúncios
   ("partições"). `publicar-familias` roteia >100 cores incluídas pra cá. Particiona alfabético com
   ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.
