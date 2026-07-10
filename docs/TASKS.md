@@ -11,7 +11,9 @@
   `_shared/categoria/faltantes-editaveis.ts` (editor manual, mesmo cálculo duplicado) não tinha recebido
   a correção. Fix: mesma checagem `valueType === 'string' → texto`, antes de olhar `valores.length`. +2
   testes (`faltantesEditaveis` classifica como texto; `validarValorAtributo` aceita valor fora das
-  sugestões). 762 testes verdes (`_shared`), lint limpo.
+  sugestões). 762 testes verdes (`_shared`), lint limpo. Deploy: `atributos-familia` v7. **Confirmado
+  end-to-end**: Diego digitou "100% Poliester" no campo (agora texto-livre), família publicou sem
+  intervenção adicional (`MLB4875907185`).
 
 ## Publicação travada por `item.pictures.unavailable` — race de propagação da foto no ML (lote #31) — ADR-0033 — 2026-07-10
 

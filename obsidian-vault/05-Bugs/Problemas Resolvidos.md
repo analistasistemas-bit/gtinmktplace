@@ -10,6 +10,13 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Editor manual "Complete para publicar" travava MATERIAL em closed-set, lote #31 (2026-07-10)** —
+  `MATERIAL` (Pingentes, PAI 02954524) é `value_type=string` no ML (texto-livre; os values que o
+  acompanham são sugestão, não lista fechada), mas o dropdown do editor manual só oferecia as 4
+  sugestões (Alpaca/Ouro/Prata/Vidro), sem opção de digitar "100% Poliéster". Mesma classe do fix da
+  manhã (ADR-0052), só que num segundo lugar: `tipoDe` em `_shared/categoria/faltantes-editaveis.ts`
+  duplicava `tipoAlvo` (`atributos-llm-core.ts`, já corrigido) sem o mesmo fix. Corrigido, deploy
+  `atributos-familia` v7. Confirmado ao vivo: Diego digitou o valor, família publicou (`MLB4875907185`).
 - **Publicação travando com "Problema nas fotos" — `item.pictures.unavailable`, lote #31 (2026-07-10)** —
   o ML processa a picture de forma assíncrona: ela fica `status: ACTIVE` em ~2s, mas só vira
   **utilizável no `POST /items` após MINUTOS** (medido ~142s a ~5 min, com o token real da conta via
