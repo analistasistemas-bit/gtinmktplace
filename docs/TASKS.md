@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Atributo `string` com valores sugeridos tratado como closed-set (Material faltante nos Pingentes, lote #31) — ADR-0052 (adendo) — 2026-07-10
+
+- [x] Diego reportou "Atributos obrigatórios faltando: Material" em dois pingentes búfalo
+  (PAI 02954524 e 02954818, categoria Pingentes MLB7017). Causa raiz: `MATERIAL` é
+  `value_type=string` (texto-livre no ML) com 4 valores *sugeridos*; `tipoAlvo`
+  (`atributos-llm-core.ts`) classificava por `valores.length>0` antes de `valueType`, tratando o
+  atributo como closed-set estrito — a IA só podia escolher entre as sugestões e a regra de ouro
+  (`validarTextoLivre`, ADR-0052) nunca rodava, descartando "poliéster" que constava na descrição
+  do 14,5cm. Fix: `value_type=string` é sempre texto-livre (values são sugestão, não lista
+  fechada) → passa pela regra de ouro. +4 casos em `atributos-llm.test.ts` (203 verdes no conjunto
+  ai+categoria), lint limpo. Ver adendo 2026-07-10 no
+  [ADR-0052](decisions/0052-camada2-atributos-ia-first-com-fallback.md). Deploy confirmado
+  (`process-familia` v84, `definir-categoria-familia` v15). Lote #31: 02954818 resolvido
+  (Material=Poliéster, ajustado direto no banco — família não publicada); 02954524 fica no fallback
+  manual da Revisão (descrição de origem sem material; ADR-0052 impede a IA de inventar). Commit
+  `701bb6a`.
+
 ## Atributo numérico "WEIGHT" inventado pela IA (peso errado no ML, lote #30) — ADR-0049 (adendo) — 2026-07-09
 
 - [x] Diego reportou peso errado na ficha técnica do anúncio do lote #30 (tecido, "Peso:

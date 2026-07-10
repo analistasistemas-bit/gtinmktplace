@@ -9,6 +9,27 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-07-10
+
+- **Fix: atributo obrigatório `string` com valores sugeridos era tratado como closed-set (Material
+  faltante nos Pingentes, lote #31, ADR-0052 adendo).** Diego reportou "Atributos obrigatórios
+  faltando: Material" em dois pingentes decorativos búfalo (PAI 02954524 e 02954818, categoria
+  Pingentes MLB7017). Investigação: o obrigatório `MATERIAL` é `value_type=string` (texto-livre no
+  ML) mas vem acompanhado de 4 valores *sugeridos* (Alpaca/Ouro/Prata/Vidro). Causa raiz: `tipoAlvo`
+  (`_shared/ai/atributos-llm-core.ts`) decidia o tipo por `valores.length > 0` **antes** de olhar
+  `valueType`, classificando o atributo como closed-set estrito — a IA era instruída a escolher só
+  entre as 4 sugestões e a regra de ouro anti-invenção (`validarTextoLivre`, ADR-0052) nunca rodava.
+  Resultado: "poliéster", presente na descrição do 14,5cm ("FABRICADO EM 100% POLIÉSTER"), era
+  descartado por não estar entre as sugestões. Fix: `value_type=string` é sempre texto-livre (os
+  `values` são sugestão, não lista fechada — essa é `value_type=list`) → passa pela regra de ouro e
+  aceita o valor extraído do texto. Vale para qualquer atributo string obrigatório de qualquer
+  categoria; sem regressão para `list`/`number`. +4 casos em `atributos-llm.test.ts` (38 verdes no
+  arquivo, 203 no conjunto ai+categoria), lint limpo. Deploy confirmado (`process-familia` v84,
+  `definir-categoria-familia` v15, `verify_jwt` conferido). Famílias do lote #31: 02954818 resolvido
+  (Material=Poliéster, dado real da descrição, ajustado direto no banco por não estar publicada);
+  02954524 segue no fallback manual da Revisão — a descrição de origem dele não menciona material e o
+  ADR-0052 impede a IA de inventar. Commit `701bb6a`.
+
 ## 2026-07-09
 
 - **Fix: IA inventava atributo numérico opcional sem lastro no texto (peso errado no ML, lote
