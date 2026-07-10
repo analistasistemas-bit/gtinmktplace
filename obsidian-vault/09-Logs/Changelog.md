@@ -287,6 +287,12 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 - `E3` — categoria genérica por preditor/LLM
 - `E4` — atributos obrigatórios por IA closed-set
 
+## 2026-07-10
+
+- Fix: cache Redis de schema ML no formato antigo (pós-ADR-0049) fazia `atributosAlvo` estourar e
+  zerava o enriquecimento IA de atributos (fita sem Comprimento/Largura). Chave versionada
+  `attrs:v2:` + guard defensivo + flush do cache. Ver [[Incidentes]] e ADR-0049 (adendo). (PR #11)
+
 ## Correções recentes (commits na `main`, sem data de doc)
 
 GTIN de comprimento inválido tratado como ausente; Fabricante preenchido na categoria genérica;
