@@ -75,3 +75,27 @@ Fix: `validarRespostaAtributos` (numero) agora exige que o número extraído con
 vírgula/ponto decimal). Fecha a lacuna para **todo** atributo numérico opcional, não só `WEIGHT`.
 Correção do item já publicado (MLB7132904138) fica para o fluxo normal de reprocessamento —
 fora de escopo deste ADR.
+
+## Adendo — 2026-07-10: cache Redis stale derrubava o enriquecimento inteiro (fita, MLB255054)
+
+Este ADR (2026-06-29) adicionou `valueType`/`allowedUnits`/`tags` ao `parseAtributosSchema`
+(`schema.ts`). Mas o schema é cacheado no Redis por **30 dias** (`attrs:<categoria>`), e as
+entradas gravadas **antes** deste commit ficaram no shape antigo (sem esses 3 campos). Num cache
+hit, `lerSchemaAtributos` devolvia o objeto velho; `atributosAlvo` fazia `a.tags.some(...)` com
+`a.tags === undefined` → **`TypeError`**, engolido pelo try/catch de `process-familia`
+(log genérico `'enriquecimento de atributos (regex) falhou'`). O item ficava só com os atributos
+determinísticos de `montarAtributosML` — **zero** enriquecimento por IA. Sintoma: toda fita
+(MLB255054) saía sem `WIDTH`/`LENGTH`/`RIBBON_FORMAT`/`MATERIAL` mesmo com o dado claro no texto
+(caso real: MLB4876171545, "Fita Refletiva 5cmx100m"). Atingia **toda categoria cacheada antes de
+29/06 e ainda dentro do TTL** — silencioso desde então.
+
+Fix (2 partes):
+1. **Versão no shape do cache**: chave passou a `attrs:v2:<categoria>` (`schema.ts`, `CACHE_VER`).
+   Qualquer mudança futura de shape bumpa a versão → entradas antigas ficam órfãs e expiram
+   sozinhas, nunca são lidas com shape incompatível.
+2. **Guard defensivo**: `atributosAlvo` usa `(a.tags ?? [])` — degrada pra "sem tag de exclusão"
+   em vez de estourar e derrubar o enriquecimento inteiro (regressão coberta por teste).
+
+Remediação imediata: flush das chaves `attrs:*` antigas no Redis (o código em produção já emitia o
+shape novo, então o próximo publish refez o fetch correto sem esperar o deploy). Itens já
+publicados degradados (MLB4876171545 e as outras fitas do lote) corrigem no reprocessamento normal.

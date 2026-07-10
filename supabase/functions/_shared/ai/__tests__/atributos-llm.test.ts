@@ -55,6 +55,13 @@ describe('atributosAlvo', () => {
     const r = atributosAlvo(SCHEMA, [...base, { id: 'VOLTAGE', value_id: '3' }, { id: 'RIBBON_FORMAT', value_id: '5' }, { id: 'LENGTH', value_name: '10 cm' }, { id: 'THICKNESS', value_name: '2 mm' }]);
     expect(r).toEqual([]);
   });
+  it('schema de shape antigo (sem tags, de cache stale) não estoura — degrada, não derruba o enriquecimento', () => {
+    // Regressão: cache Redis do shape pré-047f3ae (sem tags/valueType/allowedUnits) fazia
+    // a.tags.some(...) estourar TypeError, engolido pelo try/catch em process-familia → item
+    // ficava só com atributos determinísticos (WIDTH/LENGTH nunca preenchidos nas fitas).
+    const stale = [{ id: 'LENGTH', nome: 'Comprimento', required: false, conditionalRequired: false, valores: [] }] as unknown as AtributoSchema[];
+    expect(() => atributosAlvo(stale, [])).not.toThrow();
+  });
 });
 
 describe('validarRespostaAtributos (closed-set)', () => {
