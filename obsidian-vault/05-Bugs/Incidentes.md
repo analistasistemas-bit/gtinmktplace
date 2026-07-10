@@ -1,12 +1,44 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-07-08
+atualizado: 2026-07-10
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## 2026-07-10 — Cache Redis de schema no formato antigo zerava o enriquecimento IA de atributos (fita)
+
+**Sintoma:** Diego reportou que a IA não preencheu Comprimento/Largura em "Características
+principais" de uma Fita Refletiva Fluorescente 5cmx100m (MLB4876171545), mesmo com "5 cm de largura
+e 100 metros de comprimento" claro na descrição gerada pela própria IA.
+
+**Causa raiz (não era o que parecia):** o [ADR-0049](../../docs/decisions/0049-atributos-opcionais-e-numericos-por-ia.md)
+(29/06) adicionou `valueType`/`allowedUnits`/`tags` ao `parseAtributosSchema`, mas o schema é
+cacheado no Redis por **30 dias** (`attrs:<categoria>`). Entradas gravadas antes de 29/06 ficaram no
+shape antigo (sem `tags`). Num cache hit, `atributosAlvo` fazia `a.tags.some(...)` com
+`a.tags===undefined` → **TypeError**, engolido pelo try/catch de `process-familia` (log genérico).
+O item saía só com os atributos determinísticos de `montarAtributosML` → **zero** enriquecimento por
+IA. Atingia **toda categoria cacheada antes de 29/06 dentro do TTL** — silencioso por ~11 dias.
+
+**Diagnóstico (padrão replicável):** comparar irmãos do mesmo lote — famílias de categorias
+cacheadas depois de 29/06 enriqueciam normal; as de antes ficavam peladas. Confirmado inspecionando
+o Redis direto (`GET attrs:MLB255054` no shape antigo vs `attrs:MLB105311` no novo). Descartadas 3
+teorias erradas antes (ambiguidade de texto, gap copywriter-vs-atributos, falha aleatória de LLM) —
+o dado estava claro na descrição bruta; o problema era o schema nunca chegar aos alvos.
+
+**Fix (PR #11, ADR-0049 adendo):** (1) versão no shape da chave → `attrs:v2:<categoria>`
+(`CACHE_VER`), mudança futura de shape expira as entradas antigas sozinha; (2) guard `(a.tags ?? [])`
+em `atributosAlvo` — degrada em vez de estourar-e-engolir. Teste de regressão adicionado.
+
+**Remediação imediata (sem esperar deploy):** flush das 22 chaves `attrs:*` no Redis — o código em
+produção já emitia o shape novo, então o próximo publish refez o fetch correto. Itens já publicados
+degradados (MLB4876171545 + fitas do lote) corrigem no reprocessamento normal.
+
+**Lição:** qualquer cache com TTL longo + shape versionável precisa de versão na chave; sem isso, a
+mudança de formato do parser não invalida o que já está cacheado. E um `catch(() => ({}))` que
+iguala falha técnica e omissão deliberada esconde bug — o que segurou este por 11 dias.
 
 ## Publicados "Indisponível" para membros não-donos (2026-07-03)
 
