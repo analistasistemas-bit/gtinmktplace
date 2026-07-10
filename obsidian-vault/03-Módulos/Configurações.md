@@ -1,6 +1,6 @@
 ---
 tags: [modulo, configuracoes]
-atualizado: 2026-07-08
+atualizado: 2026-07-09
 ---
 
 # Configurações
@@ -23,7 +23,9 @@ Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (t
   `useVerificarModeradosAgora`). Token nunca retornado pela API — só `tem_token boolean`.
 - **Alíquota de imposto por origem** — `aliquota_nacional_pct` (default 8%) e
   `aliquota_importado_pct` (default 16%), por org, sem override por família.
-  Descontada do líquido e somada ao gross-up do preço sugerido em todas as telas (ADR-0055).
+  Descontada do líquido e somada ao gross-up do preço sugerido em todas as telas (ADR-0055),
+  **exceto** o "Líquido" em Financeiro › Detalhe do líquido, que nunca desconta imposto — bate
+  1:1 com o Mercado Pago (ADR-0066). O Markup dessa tela continua líquido de imposto normalmente.
 - **Desconto sobre concorrência** — `desconto_concorrencia_pct` (default 5%), por org
   (`useDescontoConcorrenciaPct`, `useSalvarDescontoConcorrenciaPct`). Aplicado em
   `sugerirPrecoVenda` quando há concorrente: `preço = menor_concorrente × (1 − pct/100)`
