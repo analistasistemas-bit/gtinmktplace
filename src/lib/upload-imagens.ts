@@ -57,7 +57,7 @@ export async function subirCapaFamilia(
 export async function removerCapaFamilia(familiaId: string, capaStoragePath: string): Promise<void> {
   const { error: upErr } = await supabase
     .from('familias')
-    .update({ capa_storage_path: null })
+    .update({ capa_storage_path: null, capa_ml_picture_id: null })
     .eq('id', familiaId);
   if (upErr) throw new Error(upErr.message);
   const { error: rmErr } = await supabase.storage.from('imagens').remove([capaStoragePath]);
@@ -86,7 +86,7 @@ export async function subirCapa2Familia(
 export async function removerCapa2Familia(familiaId: string, capa2StoragePath: string): Promise<void> {
   const { error: upErr } = await supabase
     .from('familias')
-    .update({ capa2_storage_path: null })
+    .update({ capa2_storage_path: null, capa2_ml_picture_id: null })
     .eq('id', familiaId);
   if (upErr) throw new Error(upErr.message);
   const { error: rmErr } = await supabase.storage.from('imagens').remove([capa2StoragePath]);
@@ -115,7 +115,7 @@ export async function subirCapa3Familia(
 export async function removerCapa3Familia(familiaId: string, capa3StoragePath: string): Promise<void> {
   const { error: upErr } = await supabase
     .from('familias')
-    .update({ capa3_storage_path: null })
+    .update({ capa3_storage_path: null, capa3_ml_picture_id: null })
     .eq('id', familiaId);
   if (upErr) throw new Error(upErr.message);
   const { error: rmErr } = await supabase.storage.from('imagens').remove([capa3StoragePath]);

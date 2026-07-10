@@ -13,6 +13,8 @@ import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
 import { calcularPrecoLiderMaisVendas } from '../_shared/preco/piso-lider.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { getConnector } from '../_shared/canais/registry.ts';
+import { preSubirFotosFamilia } from '../_shared/anuncios/pre-subir-fotos.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
@@ -79,6 +81,22 @@ Deno.serve(async (req) => {
     if (varErr) throw new Error(`Variacoes: ${varErr.message}`);
 
     type Variacao = NonNullable<typeof variacoes>[number];
+
+    // Pré-upload das fotos ao ML (ADR-0033): antecipa a propagação (~2,5 min, pior caso ~5 min) para
+    // que, no publish, o item.create ache o picture_id já pronto e crie o anúncio em segundos — em vez
+    // de esperar os retries do QStash cobrirem a janela. Roda enquanto o resto do processamento
+    // (copy/categoria/preço) segue, dando ainda mais folga de propagação. Best-effort e idempotente:
+    // falha aqui não trava o processamento (o montar-canonico re-sobe no publish como rede de segurança).
+    if (conexao) {
+      try {
+        const conn = getConnector('mercado_livre');
+        const ctxFoto = { getToken: () => getValidAccessTokenConexao(conexao) };
+        const subiu = await preSubirFotosFamilia(admin, conn, ctxFoto, job.familia_id);
+        if (subiu > 0) console.log(`pré-upload: ${subiu} foto(s) da família ${job.familia_id} enviadas ao ML`);
+      } catch (e) {
+        console.warn(`pré-upload de fotos falhou (segue sem bloquear): ${(e as Error).message}`);
+      }
+    }
 
     // 3. Resolver cor de cada variação (pool máx 5 paralelas)
     const resolvidas = await pool(POOL_VISION, variacoes ?? [], async (v: Variacao) => {

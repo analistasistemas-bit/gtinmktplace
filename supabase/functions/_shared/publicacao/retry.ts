@@ -2,9 +2,10 @@ import type { ErroCanal } from '../canais/contrato.ts';
 
 export type DecisaoErroPublicacao = 'retentar' | 'definitivo';
 
-// Casa com RETRIES_PUBLICACAO_ML (_shared/queue.ts): a propagação da foto no ML (~2,5 min, lote #31)
-// exige mais tentativas que os 3 antigos para o item.pictures.unavailable assentar.
-const MAX_RETRIES_TRANSIENTES = 5;
+// Casa com RETRIES_PUBLICACAO_ML (_shared/queue.ts): rede de segurança para o item.pictures.unavailable
+// quando a foto ainda não propagou no publish (o pré-upload em process-familia cobre o caso comum).
+// 10 tentativas × 30s = ~5 min, o pior caso de propagação medido (lote #31).
+const MAX_RETRIES_TRANSIENTES = 10;
 
 export function decidirErroCriarAnuncio(erro: ErroCanal, tentativasQstash: number): DecisaoErroPublicacao {
   if (!erro.retentavel) return 'definitivo';

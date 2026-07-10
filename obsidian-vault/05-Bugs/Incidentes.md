@@ -215,3 +215,27 @@ proibir **adjetivos de marketing não-grounded** ("novo", "lançamento", "exclus
 `agregarConcorrencia` sobre os 44 GTINs válidos do Anne → 43 cores com catálogo, menor preço
 agregado **R$ 22,39** (Branca 8001) vs. R$ 32,90 do código antigo; 48 vendedores distintos.
 Testes unitários do agregador: 11 casos. Suíte completa verde.
+
+---
+
+## 2026-07-10 — Publish despencou para >5 min/anúncio (era segundos) — propagação da foto no caminho crítico
+
+**Sintoma:** operador relatou que dias antes publicava vários anúncios em segundos e passou a levar
+>5 min por anúncio de 1 foto. Regressão iniciada no mesmo dia.
+
+**Causa-raiz** (confirmada nos logs reais do QStash): o fix da manhã (retry 90s×5 para o
+`item.pictures.unavailable`) deixou a espera da propagação da foto **no caminho crítico**. O
+`subirFoto` (`POST /pictures`) rodava dentro do worker de publish, então o ML não tinha vantagem
+nenhuma: todo publish de foto nova falhava na 1ª tentativa e ficava preso nos `retryDelay` de 90s até
+a foto ficar utilizável no `POST /items` (~2,5–5 min). Log real: `CREATED 1:48:20 → 4×RETRY(90s) →
+DELIVERED 1:54:39` = 6min19s. Fila serial (`parallelism:1`) amplificava: lote de N = N×6 min.
+
+**Correção (2 etapas):**
+1. **Pré-upload** das fotos no `process-familia` (`_shared/anuncios/pre-subir-fotos.ts`): a propagação
+   corre antes do publish → `POST /items` acha o `picture_id` pronto → publica em segundos.
+2. **Invalidação** do `*_ml_picture_id` na troca/remoção de foto (`upload-imagens-lote/processar.ts`,
+   `src/lib/upload-imagens.ts`) — sem isso, reusaríamos a imagem antiga cacheada pelo ML. Corrige
+   também bug latente do UPDATE.
+3. Retry vira rede de segurança fina: 30s×10 (era 90s×5).
+
+Ver [ADR-0033](../../docs/decisions/0033-retry-interno-foto-em-processamento.md) (adendo da tarde).
