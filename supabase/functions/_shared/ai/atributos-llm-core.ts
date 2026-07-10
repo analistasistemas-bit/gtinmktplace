@@ -40,6 +40,10 @@ function ehNumerico(a: AtributoSchema): boolean {
 }
 
 function tipoAlvo(a: AtributoSchema): 'closed' | 'numero' | 'texto' {
+  // value_type=string é texto-livre no ML: os valores que o acompanham são SUGESTÕES, não uma
+  // lista fechada (essa é value_type=list). Tratar como texto-livre (regra de ouro ADR-0052) para
+  // aceitar valor extraído da descrição fora das sugestões (ex.: MATERIAL "poliéster" em Pingentes).
+  if (a.valueType === 'string') return 'texto';
   if (a.valores.length > 0) return 'closed';
   if (ehNumerico(a)) return 'numero';
   return 'texto';

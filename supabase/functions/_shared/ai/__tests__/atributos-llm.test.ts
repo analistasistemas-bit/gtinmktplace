@@ -136,6 +136,32 @@ describe('validarRespostaAtributos (texto-livre, anti-invenção)', () => {
   });
 });
 
+// value_type=string com valores SUGERIDOS (ex.: MATERIAL de Pingentes: Alpaca/Ouro/Prata/Vidro).
+// No ML, value_type=string é texto-livre; os valores são sugestão, não lista fechada (value_type=list).
+// Deve ser tratado como texto-livre (regra de ouro ADR-0052), não como closed-set estrito.
+describe('value_type=string obrigatório com valores sugeridos (MATERIAL)', () => {
+  const MATERIAL = A({
+    id: 'MATERIAL', nome: 'Material', required: true, valueType: 'string',
+    valores: [{ id: '1', nome: 'Alpaca' }, { id: '2', nome: 'Ouro' }, { id: '3', nome: 'Prata' }, { id: '4', nome: 'Vidro' }],
+  });
+  const alvos = atributosAlvo([MATERIAL], []);
+  const input = { nome: 'Pingente Decorativo Búfalo', descricao: 'Fabricado em 100% poliéster de alta qualidade.' };
+
+  it('é classificado como tipo "texto", não "closed"', () => {
+    expect(alvos.find((a) => a.id === 'MATERIAL')?.tipo).toBe('texto');
+  });
+  it('aceita valor de texto-livre fora da lista sugerida se constar na descrição', () => {
+    expect(validarRespostaAtributos({ MATERIAL: 'poliéster' }, alvos, input)).toEqual([{ id: 'MATERIAL', value_name: 'poliéster' }]);
+  });
+  it('aceita valor sugerido da lista quando consta no texto', () => {
+    const inp = { nome: 'Pingente de Prata 925', descricao: '' };
+    expect(validarRespostaAtributos({ MATERIAL: 'Prata' }, alvos, inp)).toEqual([{ id: 'MATERIAL', value_name: 'Prata' }]);
+  });
+  it('rejeita material inventado que não consta no texto (não chuta da lista)', () => {
+    expect(validarRespostaAtributos({ MATERIAL: 'Ouro' }, alvos, input)).toEqual([]);
+  });
+});
+
 describe('montarPromptAtributos', () => {
   it('lista valores closed-set e formato numérico', () => {
     const p = montarPromptAtributos({ nome: 'Fita', descricao: 'rolo 25m veludo' }, atributosAlvo(SCHEMA, base));

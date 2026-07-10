@@ -50,3 +50,15 @@ Diretriz do Diego (grilling 2026-07-01): **a IA deve resolver ao máximo; interv
   chamada extra quando não houver alvo.
 - Dívida multi-tenant registrada à parte: marca padrão `Avil` hard-coded (`atributos.ts`) → config por
   empresa quando houver multi-tenant real.
+
+## Correção (2026-07-10) — atributo `string` com valores sugeridos era tratado como closed-set
+
+Bug encontrado no Lote 31 (Pingentes MLB7017): o obrigatório `MATERIAL` (`value_type=string`, texto-livre
+no ML, mas acompanhado de 4 valores *sugeridos*) ficava faltante mesmo quando o material constava no texto
+(ex.: "FABRICADO EM 100% POLIÉSTER"). Causa: `tipoAlvo` em `_shared/ai/atributos-llm-core.ts` decidia o tipo
+por `valores.length > 0` **antes** de olhar `valueType`, classificando o atributo como closed-set estrito. A
+IA era então instruída a escolher só entre as sugestões e a regra de ouro (`validarTextoLivre`) nunca rodava.
+Fix: `value_type=string` é sempre texto-livre — os `values` são sugestão, não lista fechada (essa é
+`value_type=list`). Passa pela regra de ouro e aceita o valor extraído da descrição. Sem regressão para
+`list`/`number`. As 2 famílias afetadas do Lote 31 foram corrigidas (02954818 resolvido; 02954524 segue no
+fallback manual por não haver material na fonte).
