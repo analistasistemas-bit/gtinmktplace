@@ -2,6 +2,30 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicação travada por `item.pictures.unavailable` — race de propagação da foto no ML (lote #31) — ADR-0033 — 2026-07-10
+
+- [x] Diego: publicação do lápis (PAI 02844281) falhando 2× com "Problema nas fotos... Ocorreu um erro
+  ao processar a foto. Por favor, envie-a novamente.". **Investigação sistemática (skill debug), causa
+  raiz reproduzida via `POST /items/validate` com o token real da conta:** a foto NÃO estava com defeito
+  — `POST /pictures` (source URL) deixa a picture `ACTIVE` em ~2s, mas o ML só a torna **utilizável no
+  `POST /items` após MINUTOS** (varia: ~142s numa amostra isolada, ~5 min na publicação real de
+  confirmação); antes disso devolve `item.pictures.unavailable`. O publish criava
+  o item quase imediatamente e a cobertura de retry (interno 12s + QStash 3×10s ≈ 42s) **não alcançava**
+  essa janela → erro sempre. Produto de 1 variação (1 foto) não tinha folga; multi-cor (ex.: FIO CHARME, 12
+  fotos) escapava porque subir várias fotos já consumia o tempo de propagação. A mensagem "envie
+  novamente" é cilada: re-upar cria nova picture e **reinicia** o relógio de propagação.
+- [x] Hipótese inicial ("picture envenenada/terminal") **refutada** por evidência: `GET /pictures/{id}`
+  mostrou as pictures `ACTIVE` com todas as variations. O commit que descartava o `picture_id` ao errar
+  (baseado nessa hipótese) foi **revertido** — descartar PIORA (reinicia a propagação).
+- [x] Fix (raiz): reusar o mesmo `picture_id` (não re-subir) e dar ao QStash tempo de cobrir a
+  propagação. `queue.ts`: `retryDelay` 10s→90s e `retries` 3→5 nas escritas ML (cobre ~7,5 min);
+  `retry.ts`: `MAX_RETRIES_TRANSIENTES` 3→5; `publish-familia-ml`: removido o retry interno de 12s
+  (inútil — a foto leva minutos). 1289 testes verdes, lint limpo. Deploy: `publicar-familias`,
+  `publish-familia-ml`. **Confirmado end-to-end**: republicação real do lote #31 com foto NOVA (cenário
+  que quebrava) → QStash retentou reusando o mesmo picture_id e **publicou** (item `MLB4875716733`,
+  após ~6 min de retries, sem intervenção manual). A margem generosa (5×90s) absorveu a propagação de
+  ~5 min desta foto.
+
 ## Cor `Outra` (veredito do Vision) vazava para título e descrição do anúncio (lote #31) — ADR-0044 — 2026-07-10
 
 - [x] Diego reportou "OUTRA" no título e na descrição de um anúncio sem cor real

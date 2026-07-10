@@ -18,12 +18,14 @@ describe('decidirErroCriarAnuncio', () => {
 
   it('5xx retentável usa retries do QStash enquanto houver tentativa', () => {
     expect(decidirErroCriarAnuncio(erro({ retentavel: true, status: 503 }), 0)).toBe('retentar');
-    expect(decidirErroCriarAnuncio(erro({ retentavel: true, status: 503 }), 3)).toBe('definitivo');
+    expect(decidirErroCriarAnuncio(erro({ retentavel: true, status: 503 }), 5)).toBe('definitivo');
   });
 
-  it('erro retentável de foto usa retries limitados do QStash', () => {
+  it('erro retentável de foto retenta até cobrir a propagação da picture (~2,5 min), depois desiste', () => {
+    // A foto propaga em ~142s (lote #31); os retries precisam durar mais que isso antes de desistir.
     expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 0)).toBe('retentar');
-    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 3)).toBe('definitivo');
+    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 3)).toBe('retentar');
+    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 5)).toBe('definitivo');
   });
 });
 

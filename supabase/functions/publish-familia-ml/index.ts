@@ -13,14 +13,6 @@ import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel } from '../_shared
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
-// Foto recém-enviada fica alguns segundos "em processamento" no ML; criar o item nesse
-// intervalo devolve item.pictures.unavailable ("envie a foto novamente") — um 400 transitório
-// que some assim que a foto processa. Em vez de devolver 500 e esperar o backoff longo do
-// QStash (minutos em 'publicando'), re-tentamos o POST /items na mesma execução.
-const FOTO_RETRY_TENTATIVAS = 3;
-const FOTO_RETRY_INTERVALO_MS = 4000;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 // Reavalia o status do lote quando o worker some da fila (sucesso ou erro definitivo).
 // Sem famílias 'publicando' → 'concluido', ou 'revisao' se ainda restam publicáveis ('pronto').
 async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId: string): Promise<void> {
@@ -112,20 +104,15 @@ Deno.serve(async (req) => {
 
     const anuncio = await montarAnuncioCanonico(admin, conn, ctx, familia, variacoes, job.listing_type_id);
 
-    let res = await conn.criarAnuncio(ctx, anuncio);
-    // Retry interno para a foto ainda em processamento no ML: espera curta e re-tenta na
-    // mesma execução, reusando os picture_ids já enviados (não limpa cache aqui). Resolve em
-    // segundos; se esgotar, cai no tratamento abaixo (rede de segurança do QStash).
-    for (let i = 0; i < FOTO_RETRY_TENTATIVAS && !res.ok && res.erro!.codigo === 'FOTO'; i++) {
-      await sleep(FOTO_RETRY_INTERVALO_MS);
-      res = await conn.criarAnuncio(ctx, anuncio);
-    }
+    const res = await conn.criarAnuncio(ctx, anuncio);
     if (!res.ok) {
       const e = res.erro!;
       const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
-      // Erro de foto é transiente (a foto recém-enviada ainda processa no ML). NÃO limpamos
-      // o cache de picture_ids: re-subir a mesma imagem só reinicia o processamento e nunca
-      // assenta. Reusar o mesmo picture_id no retry deixa o ML terminar e o item publica.
+      // item.pictures.unavailable: a foto recém-subida ainda propaga no ML (~2,5 min, medido no
+      // lote #31 — ACTIVE em ~2s, mas utilizável no POST /items só em ~142s). NÃO re-subimos nem
+      // limpamos o picture_id (re-subir reinicia o relógio de propagação); reusamos o mesmo id e
+      // retentamos via QStash, cujo retryDelay (queue.ts) cobre a janela. Só marca 'erro' visível
+      // quando esgotam os retries.
       if (decidirErroCriarAnuncio(e, tentativas) === 'retentar') {
         return new Response(e.mensagemOperador, { status: 500, headers: corsHeaders });
       }

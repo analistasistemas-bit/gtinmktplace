@@ -48,15 +48,22 @@ export async function garantirFilaSerial(userId: string): Promise<void> {
   await qstashClient().queue({ queueName: nomeFilaPublicacao(userId) }).upsert({ parallelism: 1 });
 }
 
-// retryDelay curto + retries: rede de segurança p/ erro transiente de foto (ADR-0033). retries=3
-// casa com MAX_RETRIES_TRANSIENTES do worker (_shared/publicacao/retry.ts). A fila serial já
-// elimina a concorrência que era a causa principal da lentidão, então o retry raramente dispara.
+// Retry das escritas no ML (CREATE/UPDATE/split). A foto recém-subida (POST /pictures com source
+// URL) fica ~140s INDISPONÍVEL para o POST /items: o ML devolve item.pictures.unavailable enquanto
+// propaga (lote #31, medido: status ACTIVE em ~2s, mas utilizável no item só em ~142s). O retry
+// reusa o MESMO picture_id — re-subir a foto só reinicia esse relógio. retries × retryDelay tem de
+// cobrir a janela de propagação; retryDelay antigo (10s×3 ≈ 40s) não cobria e travava 1 foto isolada
+// (multi-cor escapava pela folga de subir várias fotos). retries casa com MAX_RETRIES_TRANSIENTES
+// (_shared/publicacao/retry.ts). ADR-0033.
+const RETRIES_PUBLICACAO_ML = 5;
+const RETRY_DELAY_PUBLICACAO_ML = '90000'; // 90s × 5 ≈ 7,5 min de cobertura (propagação ~2,5 min)
+
 export async function enfileirarPublicacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/publish-familia-ml`;
   const { messageId } = await qstashClient()
     .queue({ queueName: nomeFilaPublicacao(userId) })
-    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
   return messageId;
 }
 
@@ -65,7 +72,7 @@ export async function enfileirarAtualizacao(job: ProcessFamiliaJob, userId: stri
   const target = `${url}/functions/v1/update-familia-ml`;
   const { messageId } = await qstashClient()
     .queue({ queueName: nomeFilaPublicacao(userId) })
-    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
   return messageId;
 }
 
@@ -76,7 +83,7 @@ export async function enfileirarSplit(job: ProcessFamiliaJob, userId: string): P
   const target = `${url}/functions/v1/publicar-split-ml`;
   const { messageId } = await qstashClient()
     .queue({ queueName: nomeFilaPublicacao(userId) })
-    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
   return messageId;
 }
 
@@ -101,7 +108,7 @@ export async function enfileirarPublicacaoCanal(job: PublicarAnuncioJob, orgId: 
   const target = `${url}/functions/v1/publicar-anuncio`;
   const { messageId } = await qstashClient()
     .queue({ queueName: nomeFila })
-    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
   return messageId;
 }
 
