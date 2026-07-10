@@ -47,7 +47,9 @@ export async function processarArquivo(
       .upload(path, new Uint8Array(bytes), { contentType: file.type, upsert: true });
     if (upErr) return { tipo: 'invalido', erro: `Storage: ${upErr.message}` };
 
-    await admin.from('familias').update({ capa_storage_path: path }).eq('id', familia.id);
+    // Zera o picture_id do ML: se a foto foi trocada (upsert no mesmo path), o id antigo aponta para
+    // a imagem que o ML já cacheou — reusá-lo publicaria a foto velha. Nulo força novo upload/propagação.
+    await admin.from('familias').update({ capa_storage_path: path, capa_ml_picture_id: null }).eq('id', familia.id);
 
     return { tipo: 'capa_ok' };
   }
@@ -73,7 +75,7 @@ export async function processarArquivo(
       .upload(path, new Uint8Array(bytes), { contentType: file.type, upsert: true });
     if (upErr) return { tipo: 'invalido', erro: `Storage: ${upErr.message}` };
 
-    await admin.from('familias').update({ capa2_storage_path: path }).eq('id', familia.id);
+    await admin.from('familias').update({ capa2_storage_path: path, capa2_ml_picture_id: null }).eq('id', familia.id);
 
     return { tipo: 'capa2_ok' };
   }
@@ -99,7 +101,7 @@ export async function processarArquivo(
       .upload(path, new Uint8Array(bytes), { contentType: file.type, upsert: true });
     if (upErr) return { tipo: 'invalido', erro: `Storage: ${upErr.message}` };
 
-    await admin.from('familias').update({ capa3_storage_path: path }).eq('id', familia.id);
+    await admin.from('familias').update({ capa3_storage_path: path, capa3_ml_picture_id: null }).eq('id', familia.id);
 
     return { tipo: 'capa3_ok' };
   }
@@ -128,9 +130,10 @@ export async function processarArquivo(
   // Ao ganhar foto, a cor que tinha vindo desmarcada por falta de imagem volta para a
   // publicação (re-inclui). Só quando NÃO tinha imagem antes: cor que já tinha foto e
   // foi excluída na mão é decisão do operador e fica preservada.
+  // ml_picture_id: null sempre — foto trocada invalida o id antigo (ML cacheou a imagem velha).
   const patch = tinhaImagem
-    ? { imagem_path: path }
-    : { imagem_path: path, excluida_da_publicacao: false };
+    ? { imagem_path: path, ml_picture_id: null }
+    : { imagem_path: path, ml_picture_id: null, excluida_da_publicacao: false };
   await admin.from('variacoes').update(patch).eq('id', variacao.id);
 
   return { tipo: tinhaImagem ? 'ja_tinha' : 'ok' };

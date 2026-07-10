@@ -99,3 +99,38 @@ Correções:
 Confirmado end-to-end: republicação real do lote #31 com foto NOVA → publicou (`MLB4875716733`)
 após ~6 min de retries, sem intervenção. Deploy: `publicar-familias`, `publish-familia-ml`,
 `update-familia-ml`, `publicar-split-ml`.
+
+## Adendo (2026-07-10, tarde): pré-upload da foto no `process-familia` — o retry saía do caminho crítico
+
+Sintoma reportado pelo operador: dias atrás publicava vários anúncios em **segundos**; passou a
+levar **>5 min por anúncio de 1 foto**. Regressão iniciada no mesmo dia dos adendos acima.
+
+Causa-raiz (confirmada nos logs reais do QStash): o adendo anterior deixou a espera da propagação
+**no caminho crítico**. O `subirFoto` (`POST /pictures`) rodava dentro do worker de publish (só na
+1ª tentativa), então o ML tinha **zero** vantagem: todo publish de foto nova falhava na tentativa 1
+com `item.pictures.unavailable` e ficava preso nos `retryDelay` de 90s até a foto propagar. Exemplo
+real: `CREATED 1:48:20 → 4× RETRY(90s) → DELIVERED 1:54:39` = **6min19s**. Amplificador: a fila é
+serial (`parallelism:1`), então um lote de N anúncios levava N×6 min.
+
+Decisão: **antecipar o upload da foto** para fora do caminho crítico do publish.
+
+1. **Pré-upload (`process-familia` → `_shared/anuncios/pre-subir-fotos.ts`)**: assim que a família é
+   processada, sobe ao ML as fotos cujo `picture_id` ainda não foi persistido e grava o id (mesmas
+   colunas `capa*_ml_picture_id` / `variacoes.ml_picture_id` que o `montarAnuncioCanonico` já reusa).
+   A propagação (~2,5 min, pior caso ~5 min) corre em paralelo ao restante do processamento e à
+   revisão do operador; no publish o `POST /items` acha o `picture_id` já propagado e cria o anúncio
+   **de primeira, em segundos**. Best-effort e idempotente — se falhar, o `montarAnuncioCanonico`
+   re-sobe no publish (rede de segurança, comportamento anterior).
+2. **Invalidação do `picture_id` na troca de foto** (correção de correção): como o id passa a existir
+   ANTES do publish, trocar/remover a foto tem de **zerar** o id — senão reusaríamos a imagem que o ML
+   já cacheou e publicaríamos a foto velha. `upload-imagens-lote/processar.ts` (troca/upload) e
+   `src/lib/upload-imagens.ts` (remoção de capa) passam a setar `*_ml_picture_id: null`. Isso também
+   corrige um bug latente do UPDATE, que já reusava id de foto trocada.
+3. **Retry vira rede de segurança de granularidade fina**: `RETRY_DELAY_PUBLICACAO_ML` 90s→**30s** e
+   `RETRIES_PUBLICACAO_ML` 5→**10** (`MAX_RETRIES_TRANSIENTES` 5→10). Cobre ~5 min com passo de 30s,
+   sem passar do ponto. Só dispara quando o operador publica antes de a foto assentar — o caso comum
+   agora publica sem nenhum retry.
+
+Efeito esperado: publish de foto nova volta a **segundos** (não depende mais de esperar a propagação),
+e lotes deixam de acumular N×minutos na fila serial. Deploy: `publicar-familias`, `publish-familia-ml`,
+`update-familia-ml`, `publicar-split-ml`, `process-familia`, `upload-imagens-lote`.

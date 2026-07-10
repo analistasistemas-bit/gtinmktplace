@@ -131,6 +131,10 @@
   na Revisão) sempre que o fluxo abandonaria um específico — sem candidato específico, ou com
   candidato(s) mas a IA de desempate abstém do falso-amigo — em vez de bloquear a família
   (ADR-0058, adendo 2026-07-04); só cai em `manual` quando não sobra genérico nenhum pra resgatar.
+  **Pré-upload de foto (ADR-0033, 2026-07-10):** sobe ao ML as fotos ainda sem `picture_id` e
+  persiste o id (`_shared/anuncios/pre-subir-fotos.ts`), tirando a propagação (~2,5 min) do caminho
+  crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.
+  Best-effort/idempotente; a troca de foto zera o `*_ml_picture_id` (`upload-imagens-lote`).
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). **E6 (ADR-0061):** aceita
   `canais[]` (default `['mercado_livre']`); fan-out: ML segue no worker `publish-familia-ml`;

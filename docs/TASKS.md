@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publish voltou a segundos: pré-upload da foto tira a propagação do ML do caminho crítico — ADR-0033 — 2026-07-10
+
+- [x] Regressão do dia: publish de 1 foto passou a levar >5 min (era segundos). Causa: o adendo da
+  manhã deixou a espera da propagação da foto (~2,5–5 min) NO caminho crítico do publish — o `subirFoto`
+  rodava dentro do worker, então todo publish falhava com `item.pictures.unavailable` e esperava os
+  `retryDelay` de 90s. Confirmado em logs reais do QStash (`CREATED→DELIVERED` ~6 min, 4–5 retries).
+  Amplificado pela fila serial (`parallelism:1`): lote de N = N×6 min.
+- [x] **Etapa 0 (mitigação):** `RETRY_DELAY_PUBLICACAO_ML` 90s→30s, `RETRIES_PUBLICACAO_ML` 5→10,
+  `MAX_RETRIES_TRANSIENTES` 5→10 — granularidade fina, vira rede de segurança.
+- [x] **Etapa 1 (fix real):** pré-upload das fotos no `process-familia`
+  (`_shared/anuncios/pre-subir-fotos.ts`) → propagação corre antes do publish → `POST /items` de
+  primeira, em segundos. + invalidação do `*_ml_picture_id` na troca/remoção de foto
+  (`upload-imagens-lote/processar.ts`, `src/lib/upload-imagens.ts`) — evita publicar foto velha
+  cacheada; corrige bug latente do UPDATE. Testes: `retry.test.ts` (boundary 10) + novo
+  `pre-subir-fotos.test.ts`. `pnpm lint`/`pnpm test` (1297) e `deno check` verdes.
+- [x] Deploy: `publicar-familias`, `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`,
+  `process-familia`, `upload-imagens-lote`.
+
 ## Editor manual de atributos travava MATERIAL em closed-set (Pingentes, lote #31, PAI 02954524) — ADR-0052 — 2026-07-10
 
 - [x] Diego: dropdown "Complete para publicar" só oferecia Alpaca/Ouro/Prata/Vidro (sugestões do ML),

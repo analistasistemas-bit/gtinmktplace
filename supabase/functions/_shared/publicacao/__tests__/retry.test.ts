@@ -18,14 +18,15 @@ describe('decidirErroCriarAnuncio', () => {
 
   it('5xx retentável usa retries do QStash enquanto houver tentativa', () => {
     expect(decidirErroCriarAnuncio(erro({ retentavel: true, status: 503 }), 0)).toBe('retentar');
-    expect(decidirErroCriarAnuncio(erro({ retentavel: true, status: 503 }), 5)).toBe('definitivo');
+    expect(decidirErroCriarAnuncio(erro({ retentavel: true, status: 503 }), 10)).toBe('definitivo');
   });
 
-  it('erro retentável de foto retenta até cobrir a propagação da picture (~2,5 min), depois desiste', () => {
-    // A foto propaga em ~142s (lote #31); os retries precisam durar mais que isso antes de desistir.
+  it('erro retentável de foto retenta até cobrir a propagação da picture (~5 min), depois desiste', () => {
+    // Rede de segurança quando a foto ainda não propagou no publish (o pré-upload cobre o caso comum);
+    // 10 tentativas × 30s = ~5 min, o pior caso medido (lote #31).
     expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 0)).toBe('retentar');
-    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 3)).toBe('retentar');
-    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 5)).toBe('definitivo');
+    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 5)).toBe('retentar');
+    expect(decidirErroCriarAnuncio(erro({ codigo: 'FOTO', retentavel: true, status: 400 }), 10)).toBe('definitivo');
   });
 });
 
@@ -54,8 +55,8 @@ describe('decidirRetryTransitorio (UPDATE/split — erro por exceção)', () => 
   it('foto retentável (item.pictures.unavailable) retenta até cobrir a propagação, depois desiste', () => {
     const foto = Object.assign(new Error('unavailable'), { status: 400, retentavel: true });
     expect(decidirRetryTransitorio(foto, 0)).toBe('retentar');
-    expect(decidirRetryTransitorio(foto, 3)).toBe('retentar');
-    expect(decidirRetryTransitorio(foto, 5)).toBe('definitivo');
+    expect(decidirRetryTransitorio(foto, 5)).toBe('retentar');
+    expect(decidirRetryTransitorio(foto, 10)).toBe('definitivo');
   });
   it('5xx retenta; 4xx não-retentável é definitivo já na primeira', () => {
     expect(decidirRetryTransitorio(Object.assign(new Error('x'), { status: 503 }), 0)).toBe('retentar');

@@ -48,15 +48,15 @@ export async function garantirFilaSerial(userId: string): Promise<void> {
   await qstashClient().queue({ queueName: nomeFilaPublicacao(userId) }).upsert({ parallelism: 1 });
 }
 
-// Retry das escritas no ML (CREATE/UPDATE/split). A foto recém-subida (POST /pictures com source
-// URL) fica ~140s INDISPONÍVEL para o POST /items: o ML devolve item.pictures.unavailable enquanto
-// propaga (lote #31, medido: status ACTIVE em ~2s, mas utilizável no item só em ~142s). O retry
-// reusa o MESMO picture_id — re-subir a foto só reinicia esse relógio. retries × retryDelay tem de
-// cobrir a janela de propagação; retryDelay antigo (10s×3 ≈ 40s) não cobria e travava 1 foto isolada
-// (multi-cor escapava pela folga de subir várias fotos). retries casa com MAX_RETRIES_TRANSIENTES
-// (_shared/publicacao/retry.ts). ADR-0033.
-const RETRIES_PUBLICACAO_ML = 5;
-const RETRY_DELAY_PUBLICACAO_ML = '90000'; // 90s × 5 ≈ 7,5 min de cobertura (propagação ~2,5 min)
+// Rede de segurança do retry das escritas no ML (CREATE/UPDATE/split). Com o pré-upload das fotos
+// no process-familia (pre-subir-fotos.ts), a propagação corre ANTES do publish e o item.create
+// costuma achar o picture_id já propagado → publica de primeira, sem retry. Este retry só dispara
+// quando o operador publica antes de a foto assentar. Reusa o MESMO picture_id (re-subir reinicia o
+// relógio de propagação). Granularidade fina: retryDelay 30s (antes 90s) evita passar do ponto —
+// foto pronta em ~142s aterrissa em ~150s, não em 180s. retries × retryDelay cobre ~5 min (pior caso
+// medido). retries casa com MAX_RETRIES_TRANSIENTES (_shared/publicacao/retry.ts). ADR-0033.
+const RETRIES_PUBLICACAO_ML = 10;
+const RETRY_DELAY_PUBLICACAO_ML = '30000'; // 30s × 10 = 5 min de cobertura, granularidade fina
 
 export async function enfileirarPublicacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
