@@ -52,10 +52,15 @@ export function nomesObrigatorios(schema: AtributoSchema[]): string[] {
 
 const TTL_S = 30 * 24 * 60 * 60;
 
+// Versão do shape do schema cacheado. Bumpar quando parseAtributosSchema mudar de forma
+// (ex.: v2 = valueType/allowedUnits/tags, commit 047f3ae) — entradas do shape antigo ficam
+// órfãs e expiram sozinhas, em vez de serem lidas e estourarem TypeError em atributosAlvo.
+const CACHE_VER = 'v2';
+
 /** Lê o schema de atributos da categoria. Resiliente: rede/4xx → []. Cacheado no Redis. */
 export async function lerSchemaAtributos(token: string, categoriaId: string): Promise<AtributoSchema[]> {
   if (!categoriaId) return [];
-  const key = `attrs:${categoriaId}`;
+  const key = `attrs:${CACHE_VER}:${categoriaId}`;
   const cached = await redisGet(key).catch(() => null);
   if (cached) return JSON.parse(cached) as AtributoSchema[];
 

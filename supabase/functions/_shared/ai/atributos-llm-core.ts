@@ -60,7 +60,9 @@ export function atributosAlvo(schema: AtributoSchema[], jaPreenchidos: AtributoM
     .filter((a) =>
       !IGNORAR.has(a.id) &&
       !presentes.has(a.id) &&
-      !a.tags.some((t) => TAGS_EXCLUIR.has(t)) &&
+      // ?? [] defende contra schema de shape antigo (sem tags) vindo de cache stale: degrada
+      // pra "sem tag de exclusão" em vez de estourar TypeError e derrubar o enriquecimento inteiro.
+      !(a.tags ?? []).some((t) => TAGS_EXCLUIR.has(t)) &&
       // closed-set e numéricos (obrig. e opcional) OU texto-livre SÓ quando obrigatório
       (a.valores.length > 0 || ehNumerico(a) ||
         (a.valueType === 'string' && (a.required || a.conditionalRequired))),
