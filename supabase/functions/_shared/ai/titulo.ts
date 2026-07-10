@@ -1,3 +1,5 @@
+import { ehCorIndefinida } from '../cor/indefinida.ts';
+
 const TITULO_MAX = 60;
 
 // Captura metragem real do nome (ex.: "100MT", "10MT", "50 METROS", "30 M").
@@ -134,9 +136,6 @@ export function removerMarketingNaoGrounded(titulo: string, nome: string, descri
   return removerCaudaConectiva(segmentos.join(' | '));
 }
 
-// Placeholder que o copywriter usa quando a variação não tem cor identificada — não é cor real.
-const COR_NAO_IDENTIFICADA = '(sem cor identificada)';
-
 // Normaliza para a comparação "cor já está no título": sem acento, em CAPS.
 function normalizarBusca(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
@@ -183,8 +182,8 @@ export function garantirTipoProdutoTitulo(titulo: string, tipoProdutoBusca: stri
 // Multi-cor (variação de cor real) NÃO leva cor no título — retorna o título intacto.
 export function garantirCorTitulo(titulo: string, cor: string | null, nCores: number): string {
   if (nCores !== 1) return titulo;
-  const corLimpa = cor?.trim();
-  if (!corLimpa || corLimpa === COR_NAO_IDENTIFICADA) return titulo;
+  const corLimpa = cor?.trim() ?? '';
+  if (ehCorIndefinida(corLimpa)) return titulo;
 
   // Já contém a cor (palavra inteira, ignorando acento e caixa)? Não duplica.
   const corNorm = normalizarBusca(corLimpa).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

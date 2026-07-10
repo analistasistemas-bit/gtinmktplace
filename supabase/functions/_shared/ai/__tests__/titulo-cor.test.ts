@@ -42,6 +42,11 @@ describe('garantirCorTitulo', () => {
     expect(garantirCorTitulo(titulo, '(sem cor identificada)', 1)).toBe(titulo);
   });
 
+  it('não crava "Outra" — veredito do Vision para cor não identificada (lote #31)', () => {
+    const titulo = 'LÁPIS COMUM FANTASIA POTE C/72UND | ESTAMPAS VIBRANTES';
+    expect(garantirCorTitulo(titulo, 'Outra', 1)).toBe(titulo);
+  });
+
   it('derruba o diferencial para caber a cor em 60 chars', () => {
     const out = garantirCorTitulo(
       'ALFINETE DE SEGURANÇA N.02 100UND | 100% FERRO | RESISTENTE',

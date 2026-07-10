@@ -1,4 +1,5 @@
 import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
+import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { rotuloQuantidade } from './unidade.ts';
 
 export interface InputCopy {
@@ -135,10 +136,12 @@ TOM E ESTILO
 Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 🎨 📦 🚚) e nos bullets (✔ • -). Evite emojis decorativos no meio dos parágrafos.`;
 
 export function montarUserPrompt(input: InputCopy): string {
-  const coresUnicas = ordenarCoresAlfabetica(Array.from(
-    new Set(input.variacoes.map((v) => v.cor ?? '(sem cor identificada)'))
+  // Só cores REAIS entram na descrição. 'Outra' (veredito do Vision) e o placeholder de cor
+  // não-identificada são descartados — não viram item da lista nem placeholder. Sem nenhuma cor
+  // real (produto sem cor, como o pote de lápis do lote #31), a seção 🎨 CORES é omitida.
+  const coresReais = ordenarCoresAlfabetica(Array.from(
+    new Set(input.variacoes.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c)))
   ));
-  const lista = coresUnicas.map((c) => `- ${c}`).join('\n');
   const unidade = input.unidade?.trim();
   const rotulo = rotuloQuantidade(input.unidade ?? null);
   return [
@@ -146,8 +149,9 @@ export function montarUserPrompt(input: InputCopy): string {
     `Descrição detalhada (fonte de verdade):`,
     input.descricao_detalhado,
     ``,
-    `Cores disponíveis:`,
-    lista,
+    coresReais.length > 0
+      ? `Cores disponíveis:\n${coresReais.map((c) => `- ${c}`).join('\n')}`
+      : `Este produto NÃO tem variação de cor. NÃO escreva a seção "🎨 CORES DISPONÍVEIS" nem cite cores.`,
     unidade ? `Unidade de venda: ${unidade}` : '',
     rotulo ? `Rótulo sugerido para a quantidade: "${rotulo}"` : '',
     input.categoria_hint ? `Categoria sugerida: ${input.categoria_hint}` : '',
