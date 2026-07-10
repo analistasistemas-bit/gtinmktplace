@@ -8,6 +8,7 @@ import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -186,7 +187,9 @@ Deno.serve(async (req) => {
     // muda) ou descrição corrigida/regenerada (texto muda). Reposição pura → não reenvia. O
     // conector resolve contra a descrição ao vivo e devolve a nova a persistir (ou null).
     if (familia.descricao_ml) {
-      const cores = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
+      // Exclui cor indefinida ('Outra' do Vision, ADR-0044/lote #31) — não é cor real,
+      // não pode entrar na lista de cores da descrição (mesmo guard do CREATE).
+      const cores = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c)))];
       const nova = await conn.sincronizarDescricao(ctx, familia.ml_item_id, familia.descricao_ml as string, cores);
       if (nova) {
         await admin.from('familias').update({ descricao_ml: nova }).eq('id', job.familia_id);

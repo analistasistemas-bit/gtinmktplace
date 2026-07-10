@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cor "Outra" vazando: gap no UPDATE ao vivo + remediação de 15 anúncios já publicados — ADR-0044 — 2026-07-10
+
+- [x] Diego reportou "OUTRA" no título de um produto ainda não publicado (screenshot). Investigação:
+  não é regressão do fix desta manhã (`ehCorIndefinida`, TASKS.md 11:16) — é dado processado 3h34min
+  ANTES do fix, nunca reprocessado (título/descrição só são calculados no processamento, não no publish).
+- [x] Levantamento no banco achou alcance bem maior: **15 famílias** afetadas, **14 já publicadas no
+  ML** (9 com "OUTRA" no título, todas com "- Outra" na lista de cores da descrição), retroagindo a
+  **12/06** — quase um mês, não só o "lote #31" de hoje. Uma delas publicou hoje **18:20, depois** do
+  fix, porque publicar reusa texto já persistido.
+- [x] Achado ativo (não só dado velho): `update-familia-ml` (fluxo de UPDATE em anúncio já publicado)
+  filtrava só `cor != null` na lista de cores da descrição, sem excluir `'Outra'` — o mesmo bug,
+  caminho diferente, ainda live. Fix: filtro `ehCorIndefinida()` + `atualizarSecaoCores` agora remove
+  a seção de cores inteira quando não sobra nenhuma cor real (antes deixava cabeçalho pendurado vazio).
+- [x] Gap adicional: não existia mecanismo para corrigir **título** de anúncio já publicado (só
+  descrição). Nova `atualizarTituloML()` (`ml/atualizar-item.ts`), PUT parcial `{title}`.
+- [x] Remediação retroativa: título+descrição corrigidos no banco para as 15 famílias e
+  ressincronizados no ML (`atualizarTituloML`/`garantirDescricaoML`) para as 14 já publicadas,
+  priorizando as 9 com "OUTRA" no título. Ver detalhe/resultado no ADR-0044 (adendo).
+- [x] Testes: `descricao.test.ts` (+1, lista vazia remove seção); 1298 verdes, lint limpo, deno check ok.
+
 ## Publish voltou a segundos: pré-upload da foto tira a propagação do ML do caminho crítico — ADR-0033 — 2026-07-10
 
 - [x] Regressão do dia: publish de 1 foto passou a levar >5 min (era segundos). Causa: o adendo da

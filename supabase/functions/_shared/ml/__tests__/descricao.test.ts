@@ -48,6 +48,15 @@ describe('atualizarSecaoCores', () => {
     expect(atualizarSecaoCores(semCabecalho, ['Azul'])).toBe(semCabecalho);
   });
 
+  it('sem nenhuma cor real (lista vazia) — remove a seção inteira, não deixa cabeçalho pendurado (ADR-0044)', () => {
+    const out = atualizarSecaoCores(DESCRICAO, []);
+    expect(out).not.toContain('CORES DISPONÍVEIS');
+    expect(out).not.toContain('- Branco');
+    expect(out).toContain('🧵 LINHA PROFISSIONAL');
+    expect(out).toContain('📦 CONTEÚDO DA EMBALAGEM');
+    expect(out).toContain('• 1 unidade');
+  });
+
   it('mantém a seção seguinte separada por linha em branco', () => {
     const out = atualizarSecaoCores(DESCRICAO, ['Azul']);
     expect(out).toContain('- Azul\n\n📦 CONTEÚDO DA EMBALAGEM');
