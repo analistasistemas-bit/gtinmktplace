@@ -95,6 +95,20 @@ export function montarMensagemNovaPergunta(p: NovaPerguntaAlerta): string {
   ].join('\n');
 }
 
+export interface NovaMensagemAlerta {
+  texto: string;
+  item_titulo: string | null;
+}
+
+export function montarMensagemNovaMensagem(m: NovaMensagemAlerta): string {
+  const sobre = m.item_titulo ? ` sobre "${m.item_titulo}"` : '';
+  return [
+    `💬 Nova mensagem do comprador${sobre}:`,
+    `"${m.texto}"`,
+    `Responda pelo PubliAI (menu Faturamento › Mensagens).`,
+  ].join('\n');
+}
+
 export interface NovaDevolucaoAlerta {
   claim_id: number;
   order_id: number | null;
