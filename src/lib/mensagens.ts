@@ -9,7 +9,6 @@ export interface Mensagem {
   texto: string;
   item_titulo: string | null;
   data_ml: string | null;
-  lida: boolean;
 }
 
 /** Uma conversa = todas as mensagens de um pack, em ordem cronológica. */
@@ -18,15 +17,16 @@ export interface Conversa {
   order_id: string | null;
   item_titulo: string | null;
   mensagens: Mensagem[];
-  naoLidas: number;
+  /** Aguardando resposta = a última mensagem é do comprador (ainda não respondemos). ADR-0067. */
+  aguardando: boolean;
   ultima: string | null;
 }
 
-/** Lê as mensagens (cronológica) e agrupa por pack. Conversas com não-lidas primeiro. */
+/** Lê as mensagens (cronológica) e agrupa por pack. Conversas aguardando resposta primeiro. */
 export async function buscarConversas(): Promise<Conversa[]> {
   const { data, error } = await supabase
     .from('ml_mensagens')
-    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, data_ml, lida')
+    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, data_ml')
     .order('data_ml', { ascending: true });
   if (error) throw new Error(error.message);
   const lista = (data ?? []) as Mensagem[];
@@ -35,18 +35,23 @@ export async function buscarConversas(): Promise<Conversa[]> {
   for (const m of lista) {
     let c = porPack.get(m.pack_id);
     if (!c) {
-      c = { pack_id: m.pack_id, order_id: m.order_id, item_titulo: m.item_titulo, mensagens: [], naoLidas: 0, ultima: null };
+      c = { pack_id: m.pack_id, order_id: m.order_id, item_titulo: m.item_titulo, mensagens: [], aguardando: false, ultima: null };
       porPack.set(m.pack_id, c);
     }
     c.mensagens.push(m);
     if (m.item_titulo && !c.item_titulo) c.item_titulo = m.item_titulo;
-    if (m.direcao === 'recebida' && !m.lida) c.naoLidas++;
     c.ultima = m.data_ml;
   }
   const conversas = [...porPack.values()];
-  // Não-lidas no topo; depois mais recentes.
+  // Aguardando = última mensagem (cronológica) é do comprador — some quando há resposta nossa
+  // (pelo PubliAI OU pelo painel do ML, que o backfill/webhook traz como 'enviada').
+  for (const c of conversas) {
+    const ultima = c.mensagens[c.mensagens.length - 1];
+    c.aguardando = ultima?.direcao === 'recebida';
+  }
+  // Aguardando no topo; depois mais recentes.
   return conversas.sort((a, b) =>
-    Number(b.naoLidas > 0) - Number(a.naoLidas > 0) || (b.ultima ?? '').localeCompare(a.ultima ?? ''));
+    Number(b.aguardando) - Number(a.aguardando) || (b.ultima ?? '').localeCompare(a.ultima ?? ''));
 }
 
 async function postEdge<T>(fn: string, body: unknown): Promise<T> {
@@ -70,10 +75,4 @@ export function responderMensagem(pack_id: string, text: string): Promise<{ ok: 
 /** Sugestão de IA — reusa a mesma função de perguntas (texto do comprador + título do item). */
 export function sugerirRespostaMensagem(texto: string, item_titulo: string | null): Promise<{ ok: true; sugestao: string }> {
   return postEdge('sugerir-resposta-pergunta', { pergunta: texto, item_titulo });
-}
-
-/** Marca as recebidas de um pack como lidas (limpa o badge). RPC estreita, ADR-0067. */
-export async function marcarConversaLida(pack_id: string): Promise<void> {
-  const { error } = await supabase.rpc('marcar_mensagens_lidas', { p_pack_id: pack_id });
-  if (error) throw new Error(error.message);
 }

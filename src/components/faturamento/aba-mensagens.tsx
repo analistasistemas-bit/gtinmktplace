@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Send, MessagesSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
-import { responderMensagem, sugerirRespostaMensagem, marcarConversaLida, type Conversa } from '@/lib/mensagens';
+import { responderMensagem, sugerirRespostaMensagem, type Conversa } from '@/lib/mensagens';
 import { fmtDataCurta } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,13 +17,6 @@ function CardConversa({ c }: { c: Conversa }) {
   const [enviando, setEnviando] = useState(false);
 
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
-
-  function marcarLida() {
-    if (c.naoLidas === 0) return;
-    marcarConversaLida(c.pack_id)
-      .then(() => qc.invalidateQueries({ queryKey: ['mensagensNaoLidas'] }))
-      .catch(() => { /* silencioso: marcar lida não é crítico */ });
-  }
 
   async function sugerir() {
     if (!ultimaRecebida) return;
@@ -45,14 +38,13 @@ function CardConversa({ c }: { c: Conversa }) {
       toast.success('Mensagem enviada.');
       setTexto('');
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
-      await qc.invalidateQueries({ queryKey: ['mensagensNaoLidas'] });
     } catch (e) {
       toast.error(`Falha ao enviar: ${(e as Error).message}`);
     } finally { setEnviando(false); }
   }
 
   return (
-    <div className={cn('rounded-lg border bg-card p-4', c.naoLidas > 0 && 'border-warning/40')}>
+    <div className={cn('rounded-lg border bg-card p-4', c.aguardando && 'border-warning/40')}>
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
@@ -60,7 +52,7 @@ function CardConversa({ c }: { c: Conversa }) {
             <span> · {fmtDataCurta(c.ultima)}</span>
           </div>
         </div>
-        {c.naoLidas > 0 && <StatusPill tone="warning">{c.naoLidas} não lida{c.naoLidas > 1 ? 's' : ''}</StatusPill>}
+        {c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
       </div>
 
       <div className="mb-3 space-y-2">
@@ -83,7 +75,6 @@ function CardConversa({ c }: { c: Conversa }) {
         <Textarea
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
-          onFocus={marcarLida}
           placeholder="Escreva ao comprador ou use a sugestão da IA…"
           rows={2}
           maxLength={350}

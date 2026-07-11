@@ -11,6 +11,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-07-11
 
+- **Feat: alerta global de "aguardando resposta" no avatar (ADR-0067 refino).** Badge no ícone do
+  usuário (qualquer tela) somando perguntas pendentes + conversas cuja última mensagem é do
+  comprador; some quando respondido — pelo PubliAI **ou** pelo painel do ML. Substitui o "não lida"
+  (que limpava só por abrir). Só frontend.
 - **Feat: mensagens pós-venda do ML no PubliAI (ADR-0067).** Mensagens do comprador (chat pós-venda,
   canal `/messages/packs`) eram invisíveis — a aba Perguntas só ingere perguntas pré-venda
   (`/questions`). Nova aba **Faturamento › Mensagens** espelhando Perguntas: worker `sync-mensagem`
