@@ -36,6 +36,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.sync-pergunta]
 verify_jwt = false
+[functions.sync-mensagem]
+verify_jwt = false
 [functions.sync-devolucao]
 verify_jwt = false
 [functions.notificar-liberacao]
@@ -73,6 +75,8 @@ verify_jwt = false
 [functions.reconciliar-faturamento]
 verify_jwt = false
 [functions.responder-pergunta]
+verify_jwt = true
+[functions.responder-mensagem]
 verify_jwt = true
 [functions.sugerir-resposta-pergunta]
 verify_jwt = true

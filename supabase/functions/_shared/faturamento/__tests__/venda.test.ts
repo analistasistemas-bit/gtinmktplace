@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseWebhookNotification,
   extrairIdDoResource,
+  extrairPackIdDeMensagem,
   mapearPedidoParaVenda,
   calcularLiquido,
   extrairGeo,
@@ -65,6 +66,17 @@ describe('extrairIdDoResource', () => {
   it('null para resource vazio', () => {
     expect(extrairIdDoResource('')).toBeNull();
     expect(extrairIdDoResource('/orders/')).toBeNull();
+  });
+});
+
+describe('extrairPackIdDeMensagem', () => {
+  it('extrai o pack de /messages/packs/123/sellers/456 (não o seller)', () => {
+    expect(extrairPackIdDeMensagem('/messages/packs/123/sellers/456')).toBe('123');
+  });
+  it('null quando não há segmento packs', () => {
+    expect(extrairPackIdDeMensagem('/messages/999')).toBeNull();
+    expect(extrairPackIdDeMensagem('')).toBeNull();
+    expect(extrairPackIdDeMensagem(null)).toBeNull();
   });
 });
 

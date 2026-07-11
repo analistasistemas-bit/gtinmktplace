@@ -651,6 +651,54 @@ export type Database = {
           },
         ]
       }
+      ml_mensagens: {
+        Row: {
+          atualizado_em: string
+          data_ml: string | null
+          direcao: string
+          id: string
+          item_titulo: string | null
+          lida: boolean
+          message_id: string
+          order_id: string | null
+          org_id: string | null
+          pack_id: string
+          raw: Json | null
+          texto: string
+          user_id: string
+        }
+        Insert: {
+          atualizado_em?: string
+          data_ml?: string | null
+          direcao: string
+          id?: string
+          item_titulo?: string | null
+          lida?: boolean
+          message_id: string
+          order_id?: string | null
+          org_id?: string | null
+          pack_id: string
+          raw?: Json | null
+          texto?: string
+          user_id: string
+        }
+        Update: {
+          atualizado_em?: string
+          data_ml?: string | null
+          direcao?: string
+          id?: string
+          item_titulo?: string | null
+          lida?: boolean
+          message_id?: string
+          order_id?: string | null
+          org_id?: string | null
+          pack_id?: string
+          raw?: Json | null
+          texto?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ml_perguntas: {
         Row: {
           atualizado_em: string
@@ -1172,6 +1220,7 @@ export type Database = {
       get_mp_token: { Args: { p_org_id: string }; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
       telegram_config_status: {

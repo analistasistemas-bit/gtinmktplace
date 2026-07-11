@@ -19,6 +19,16 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   Envio centralizado em `notificarCategoria` (`_shared/notificacoes/config.ts`); os 6 workers passam a
   informar sua categoria. Backfill preserva quem recebe hoje. Validado end-to-end no browser (login →
   editar → salvar → persistência → badges) + migration/CHECK. Testes verdes, lint/deno/build ok.
+- **Feat: alerta global de "aguardando resposta" no avatar (ADR-0067 refino).** Badge no ícone do
+  usuário (qualquer tela) somando perguntas pendentes + conversas cuja última mensagem é do
+  comprador; some quando respondido — pelo PubliAI **ou** pelo painel do ML. Substitui o "não lida"
+  (que limpava só por abrir). Só frontend.
+- **Feat: mensagens pós-venda do ML no PubliAI (ADR-0067).** Mensagens do comprador (chat pós-venda,
+  canal `/messages/packs`) eram invisíveis — a aba Perguntas só ingere perguntas pré-venda
+  (`/questions`). Nova aba **Faturamento › Mensagens** espelhando Perguntas: worker `sync-mensagem`
+  (topic `messages` no webhook), tabela `ml_mensagens`, backfill via "Sincronizar", resposta
+  (`responder-mensagem`, ≤350 chars) e alerta Telegram. Validado no Supabase local via Playwright.
+  Pendente deploy + habilitar topic `messages` no DevCenter ML.
 
 ## 2026-07-10
 
@@ -297,6 +307,12 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 - `E2` — modelo multicanal `anuncios_externos`
 - `E3` — categoria genérica por preditor/LLM
 - `E4` — atributos obrigatórios por IA closed-set
+
+## 2026-07-10
+
+- Fix: cache Redis de schema ML no formato antigo (pós-ADR-0049) fazia `atributosAlvo` estourar e
+  zerava o enriquecimento IA de atributos (fita sem Comprimento/Largura). Chave versionada
+  `attrs:v2:` + guard defensivo + flush do cache. Ver [[Incidentes]] e ADR-0049 (adendo). (PR #11)
 
 ## Correções recentes (commits na `main`, sem data de doc)
 

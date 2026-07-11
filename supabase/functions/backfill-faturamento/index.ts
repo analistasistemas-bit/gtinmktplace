@@ -13,6 +13,7 @@ import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
+import { buscarMensagensPack, upsertMensagens, listarPacksDeVendas } from '../_shared/faturamento/mensagens-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
 
@@ -101,6 +102,22 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
         console.warn(`backfill: erro upsert pedido ${pedido.id}: ${(e as Error).message}`);
       }
     }));
+  }
+
+  // 4. Mensagens pós-venda (ADR-0067). Sem alerta no backfill — só popula o estado atual.
+  //    Roda após as vendas para ter os packs em ml_vendas. 1 GET por pack.
+  if (cx.contaExternaId) {
+    try {
+      const packs = await listarPacksDeVendas(admin, userId);
+      for (const p of packs) {
+        try {
+          const msgs = await buscarMensagensPack(token, p.packId, cx.contaExternaId);
+          if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p.orderId, p.itemTitulo, cx.contaExternaId, msgs);
+        } catch { /* segue */ }
+      }
+    } catch (e) {
+      console.warn(`backfill: erro lendo mensagens de ${userId}: ${(e as Error).message}`);
+    }
   }
 
   return n;

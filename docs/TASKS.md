@@ -22,6 +22,31 @@
   Testes verdes (novos: `sanitizarDestinatario`, `notificarCategoria`, `lerDestinatarios`), lint +
   deno check + build ok.
 
+## Mensagens pós-venda do ML: canal invisível no PubliAI ganha ingestão + aba — ADR-0067 — 2026-07-11
+
+- [x] Diego reportou que uma mensagem do comprador (chat pós-venda, "preciso de mais 50m…") não
+  aparecia no PubliAI. Investigação: é outro canal — a aba Perguntas só ingere perguntas pré-venda
+  (`/questions`); mensagens pós-venda vivem em `/messages/packs` e não eram ingeridas (webhook não
+  escutava o topic `messages`; único uso de `/messages` era o envio de boas-vindas).
+- [x] ADR-0067 escrito. Implementado espelhando o fluxo de Perguntas: migration `ml_mensagens` +
+  RLS + RPC `marcar_mensagens_lidas`; mapper puro + IO com testes; worker `sync-mensagem`
+  (QStash); rota `messages` no `ml-webhook` (extrai `pack_id` do resource, não o seller);
+  `backfill-faturamento` passo 4 (puxa mensagens dos packs); `responder-mensagem` (≤350 chars,
+  variante que lança); front: lib/hook/aba-mensagens + badge de não-lidas; alerta Telegram.
+- [x] Verificação: lint 0 erros, vitest 1306 verdes, tsc front limpo, deno check nas 4 functions.
+  Validado em runtime no Supabase local via Playwright — a aba renderiza a conversa da Anne Marie,
+  badge "1", pill "não lida", caixa de resposta; RPC de marcar-lida grava no DB (RLS-scoped).
+- [x] Migration validada aplicando-a **limpa** (drop + re-run) e revalidando pelo browser sem
+  nenhum grant manual — os `grant` de tabela estão explícitos no arquivo (não dependem de default
+  privileges), espelhando o grant explícito da RPC.
+- [ ] **Pendências (Diego):** aplicar migration + deploy das functions em prod; **habilitar o topic
+  `messages` no DevCenter ML** (sem isso não chega webhook — mas o "Sincronizar" já puxa via
+  backfill); conferir o `resource` real da 1ª notificação `messages` (parse defensivo cobre o caso
+  comum `/messages/packs/{pack}/sellers/{seller}`); **dedup**: se o resource for pack-level, a 2ª
+  mensagem do pack dedupa em `ml_webhook_eventos` e não reenfileira — mitigado pelo "Sincronizar"
+  que re-puxa o pack inteiro. `responder-mensagem` (envio real ao ML) e webhook ao vivo só dá pra
+  validar pós-deploy + token ML.
+
 ## Cor "Outra" vazando: gap no UPDATE ao vivo + remediação de 15 anúncios já publicados — ADR-0044 — 2026-07-10
 
 - [x] Diego reportou "OUTRA" no título de um produto ainda não publicado (screenshot). Investigação:

@@ -4,7 +4,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { qstashClient } from '../_shared/queue.ts';
-import { parseWebhookNotification } from '../_shared/faturamento/venda.ts';
+import { parseWebhookNotification, extrairPackIdDeMensagem } from '../_shared/faturamento/venda.ts';
 import { resolverIdentidade } from '../_shared/faturamento/io.ts';
 
 // topic → função worker + nome do campo do id no job.
@@ -13,6 +13,7 @@ const ROTA: Record<string, { fn: string; campo: string }> = {
   shipments: { fn: 'sync-venda', campo: 'shipping_id' },
   questions: { fn: 'sync-pergunta', campo: 'question_id' },
   claims: { fn: 'sync-devolucao', campo: 'claim_id' },
+  messages: { fn: 'sync-mensagem', campo: 'pack_id' },
 };
 
 const ok = () => new Response(JSON.stringify({ ok: true }), {
@@ -41,11 +42,15 @@ Deno.serve(async (req) => {
     .insert({ user_id: userId, org_id: orgId, topic: ev.topic, resource: ev.resource });
   if (dupErr) return ok(); // unique violation (duplicado) ou outro: ack mesmo assim.
 
+  // `messages`: o id do job é o pack, não o último segmento do resource (que é o seller).
+  const idJob = ev.topic === 'messages' ? extrairPackIdDeMensagem(ev.resource) : ev.resourceId;
+  if (!idJob) return ok(); // resource sem pack: ack e ignora.
+
   try {
     const target = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${rota.fn}`;
     await qstashClient().publishJSON({
       url: target,
-      body: { user_id: userId, [rota.campo]: ev.resourceId },
+      body: { user_id: userId, [rota.campo]: idJob },
       retries: 3,
     });
   } catch (e) {
