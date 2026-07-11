@@ -1,4 +1,4 @@
--- Destinatários de notificação Telegram por usuário e categoria (ADR-0067).
+-- Destinatários de notificação Telegram por usuário e categoria (ADR-0068).
 -- Antes: 1 chat_id por org (configuracoes.telegram_chat_id) recebia tudo.
 -- Agora: cada profile pode ter seu telegram_chat_id e assinar categorias específicas.
 -- O bot (token) continua único por org (configuracoes); só o DESTINO passa a ser por profile.

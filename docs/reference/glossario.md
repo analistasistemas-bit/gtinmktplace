@@ -76,9 +76,9 @@
 | **ML** | Mercado Livre. Marketplace primário. OAuth 2.0, API de items, webhooks. |
 | **MP** | Mercado Pago. Origem dos dados financeiros (líquido, liberação). Token único em `MP_ACCESS_TOKEN` (ADR-0031). |
 | **OpenRouter** | Gateway de IA compatível com OpenAI SDK. Copy + Vision (ADR-0010). |
-| **Telegram** | Canal de alertas operacionais (moderação, vendas, perguntas, liberações). Um **bot por organização** (`configuracoes.telegram_bot_token` + `telegram_ativo` como interruptor-mestre); os destinos são por pessoa (ADR-0035, ADR-0067). |
-| **Destinatário de notificação** | Um `profile` da org com `telegram_chat_id` preenchido que recebe as **categorias** assinadas em `profiles.telegram_categorias`. Gerenciado só por admin, na tela Usuários (edge `usuarios`, action `update_notificacoes`). Sem `chat_id` ou fora do interruptor-mestre da org → não recebe. ADR-0067. |
-| **Categoria de notificação** | Eixo de assinatura das notificações Telegram. Cinco fixas: `vendas`, `perguntas`, `pos_venda`, `financeiro`, `moderacao` (esta agrupa anúncio moderado + catálogo sem match). Fonte canônica em `_shared/notificacoes/categorias.ts`, espelhada no front. ADR-0067. |
+| **Telegram** | Canal de alertas operacionais (moderação, vendas, perguntas, liberações). Um **bot por organização** (`configuracoes.telegram_bot_token` + `telegram_ativo` como interruptor-mestre); os destinos são por pessoa (ADR-0035, ADR-0068). |
+| **Destinatário de notificação** | Um `profile` da org com `telegram_chat_id` preenchido que recebe as **categorias** assinadas em `profiles.telegram_categorias`. Gerenciado só por admin, na tela Usuários (edge `usuarios`, action `update_notificacoes`). Sem `chat_id` ou fora do interruptor-mestre da org → não recebe. ADR-0068. |
+| **Categoria de notificação** | Eixo de assinatura das notificações Telegram. Cinco fixas: `vendas`, `perguntas`, `pos_venda`, `financeiro`, `moderacao` (esta agrupa anúncio moderado + catálogo sem match). Fonte canônica em `_shared/notificacoes/categorias.ts`, espelhada no front. ADR-0068. |
 
 ## Acesso e usuários
 

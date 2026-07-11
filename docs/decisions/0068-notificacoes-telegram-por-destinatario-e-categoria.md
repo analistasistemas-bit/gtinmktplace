@@ -1,4 +1,4 @@
-# ADR-0067 — Notificações Telegram por destinatário e categoria
+# ADR-0068 — Notificações Telegram por destinatário e categoria
 
 **Data:** 2026-07-11
 **Status:** aceito

@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Notificações Telegram por destinatário e categoria — ADR-0067 — 2026-07-11
+## Notificações Telegram por destinatário e categoria — ADR-0068 — 2026-07-11
 
 - [x] Antes: 1 chat_id por org (`configuracoes.telegram_chat_id`) recebia tudo — só o super-admin.
   Agora cada usuário cadastrado pode receber, e o admin escolhe quem recebe quais **categorias**

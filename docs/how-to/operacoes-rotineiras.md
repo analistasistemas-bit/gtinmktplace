@@ -95,7 +95,7 @@ delete from auth.users where email = 'pessoa@empresa.com';
 
 Depois é só clicar **Convidar usuário** de novo na tela.
 
-## Configurar quem recebe notificações no Telegram (ADR-0067)
+## Configurar quem recebe notificações no Telegram (ADR-0068)
 
 Cada usuário cadastrado pode receber alertas do Telegram, e o **admin** escolhe **quem recebe
 quais categorias** (Vendas, Perguntas, Pós-venda, Financeiro, Moderação). O bot é **um só por

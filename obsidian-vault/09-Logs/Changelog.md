@@ -11,7 +11,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-07-11
 
-- **Feature: notificações Telegram por destinatário e categoria (ADR-0067).** Antes o Telegram tinha
+- **Feature: notificações Telegram por destinatário e categoria (ADR-0068).** Antes o Telegram tinha
   1 destino por org (só Diego recebia tudo). Agora cada usuário cadastrado pode receber, e o admin
   escolhe **quem recebe quais categorias** (Vendas, Perguntas, Pós-venda, Financeiro, Moderação) na
   tela **Usuários** (dialog "Notificações": Chat ID + checkboxes). O bot continua único por org
