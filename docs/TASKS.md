@@ -16,10 +16,16 @@
 - [x] Verificação: lint 0 erros, vitest 1306 verdes, tsc front limpo, deno check nas 4 functions.
   Validado em runtime no Supabase local via Playwright — a aba renderiza a conversa da Anne Marie,
   badge "1", pill "não lida", caixa de resposta; RPC de marcar-lida grava no DB (RLS-scoped).
-- [ ] **Pendências (Diego):** aplicar migration + deploy das functions em prod (`supabase db push`
-  concede os grants de tabela automaticamente, como nas irmãs); **habilitar o topic `messages` no
-  DevCenter ML** (sem isso não chega webhook — mas o "Sincronizar" já puxa via backfill); conferir
-  o formato real do `resource` da 1ª notificação `messages` (parse defensivo já cobre o caso comum).
+- [x] Migration validada aplicando-a **limpa** (drop + re-run) e revalidando pelo browser sem
+  nenhum grant manual — os `grant` de tabela estão explícitos no arquivo (não dependem de default
+  privileges), espelhando o grant explícito da RPC.
+- [ ] **Pendências (Diego):** aplicar migration + deploy das functions em prod; **habilitar o topic
+  `messages` no DevCenter ML** (sem isso não chega webhook — mas o "Sincronizar" já puxa via
+  backfill); conferir o `resource` real da 1ª notificação `messages` (parse defensivo cobre o caso
+  comum `/messages/packs/{pack}/sellers/{seller}`); **dedup**: se o resource for pack-level, a 2ª
+  mensagem do pack dedupa em `ml_webhook_eventos` e não reenfileira — mitigado pelo "Sincronizar"
+  que re-puxa o pack inteiro. `responder-mensagem` (envio real ao ML) e webhook ao vivo só dá pra
+  validar pós-deploy + token ML.
 
 ## Cor "Outra" vazando: gap no UPDATE ao vivo + remediação de 15 anúncios já publicados — ADR-0044 — 2026-07-10
 

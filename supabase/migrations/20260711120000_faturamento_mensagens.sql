@@ -25,6 +25,11 @@ create index ml_mensagens_user_lida_idx on public.ml_mensagens (user_id, lida) w
 
 alter table public.ml_mensagens enable row level security;
 
+-- Grants explícitos (não dependemos das default privileges ambientes do db push): o app lê como
+-- `authenticated`, filtrado por RLS. Escrita real é só do worker (service role bypassa RLS).
+grant select on public.ml_mensagens to authenticated;
+grant all on public.ml_mensagens to anon, authenticated;
+
 -- Leitura própria; escrita só do worker (service role bypassa RLS).
 create policy "ml_mensagens: select own" on public.ml_mensagens
   for select using ((select auth.uid()) = user_id);
