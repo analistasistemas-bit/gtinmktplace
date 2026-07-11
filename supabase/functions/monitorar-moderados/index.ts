@@ -7,7 +7,7 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import { diffModerados, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
-import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
+import { lerConfigTelegram, notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 // E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
 type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
@@ -64,22 +64,19 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, conn: Ret
     novos.map((n) => ({ user_id: userId, org_id: orgId, ml_item_id: n.ml_item_id, status: n.status, motivo: n.motivo })),
   );
 
-  // Alerta no Telegram só se ativo e com credenciais; só marca alertado_em se enviou.
-  const cfg = await lerConfigTelegram(admin, orgId);
-  if (cfg.ativo) {
-    const itensAlerta: ItemAlerta[] = novos.map((n) => ({
-      ml_item_id: n.ml_item_id,
-      titulo: porItem.get(n.ml_item_id)?.nome ?? null,
-      motivo: n.motivo,
-      permalink: porItem.get(n.ml_item_id)?.permalink ?? null,
-    }));
-    const enviou = await enviarTelegram(cfg.token, cfg.chatId, montarMensagemModerados(itensAlerta));
-    if (enviou) {
-      await admin.from('ml_moderacao')
-        .update({ alertado_em: new Date().toISOString() })
-        .eq('org_id', orgId).is('resolvido_em', null)
-        .in('ml_item_id', novos.map((n) => n.ml_item_id));
-    }
+  // Alerta aos destinatários da categoria 'moderacao'; só marca alertado_em se ao menos um recebeu.
+  const itensAlerta: ItemAlerta[] = novos.map((n) => ({
+    ml_item_id: n.ml_item_id,
+    titulo: porItem.get(n.ml_item_id)?.nome ?? null,
+    motivo: n.motivo,
+    permalink: porItem.get(n.ml_item_id)?.permalink ?? null,
+  }));
+  const enviados = await notificarCategoria(admin, orgId, 'moderacao', montarMensagemModerados(itensAlerta));
+  if (enviados > 0) {
+    await admin.from('ml_moderacao')
+      .update({ alertado_em: new Date().toISOString() })
+      .eq('org_id', orgId).is('resolvido_em', null)
+      .in('ml_item_id', novos.map((n) => n.ml_item_id));
   }
   return novos.length;
 }

@@ -71,13 +71,14 @@ export function ConfigTelegram() {
         </div>
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Receba um aviso no Telegram quando o Mercado Livre moderar um anúncio. A verificação roda
-        automaticamente a cada 6h.
+        Configure aqui o bot da empresa (token) e o interruptor-geral dos alertas. <strong>Quem recebe
+        cada tipo de notificação</strong> (vendas, perguntas, pós-venda, financeiro, moderação) é definido
+        por usuário na tela <strong>Usuários</strong>. A verificação de moderação roda a cada 6h.
       </p>
 
       <div className="space-y-3">
         <div>
-          <label htmlFor="telegram-chat-id" className="mb-1 block text-xs font-medium">Chat ID</label>
+          <label htmlFor="telegram-chat-id" className="mb-1 block text-xs font-medium">Chat ID para teste de conexão</label>
           <Input
             id="telegram-chat-id"
             className="h-8 text-sm"
@@ -86,6 +87,10 @@ export function ConfigTelegram() {
             onChange={(e) => setChatId(e.target.value)}
             onBlur={() => { if (chatId !== (cfg?.chatId ?? '')) persistir({ chatId }); }}
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Usado só pelo botão "Enviar teste" abaixo. Não é para onde as notificações vão — isso é por
+            usuário em Usuários.
+          </p>
         </div>
         <div>
           <label htmlFor="telegram-bot-token" className="mb-1 block text-xs font-medium">Bot token</label>

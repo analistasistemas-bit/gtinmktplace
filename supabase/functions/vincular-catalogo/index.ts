@@ -5,7 +5,8 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { vincularVariacoesCatalogo, deveAlertarCatalogoNoMatch } from '../_shared/ml/catalogo.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
-import { enviarTelegram, montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
+import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 interface Job { familia_id: string; }
 
@@ -71,20 +72,12 @@ Deno.serve(async (req) => {
     // ANTES da pausa. Best-effort: falha de Telegram não derruba o opt-in (que já assentou).
     if (deveAlertarCatalogoNoMatch(resumo)) {
       try {
-        const { data: cfg } = await admin.from('configuracoes')
-          .select('telegram_bot_token, telegram_chat_id, telegram_ativo')
-          .eq('user_id', familia.user_id).maybeSingle();
-        if (cfg?.telegram_ativo && cfg.telegram_bot_token && cfg.telegram_chat_id) {
-          const cores = [...new Set((varsEspelho ?? [])
-            .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto')
-            .map((v) => (v as { cor?: string | null }).cor)
-            .filter((c): c is string => !!c))];
-          await enviarTelegram(
-            cfg.telegram_bot_token as string,
-            cfg.telegram_chat_id as string,
-            montarMensagemCatalogoNoMatch({ ml_item_id: familia.ml_item_id, titulo: familia.nome_pai ?? null, cores }),
-          );
-        }
+        const cores = [...new Set((varsEspelho ?? [])
+          .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto')
+          .map((v) => (v as { cor?: string | null }).cor)
+          .filter((c): c is string => !!c))];
+        await notificarCategoria(admin, familia.org_id, 'moderacao',
+          montarMensagemCatalogoNoMatch({ ml_item_id: familia.ml_item_id, titulo: familia.nome_pai ?? null, cores }));
       } catch (e) {
         console.error(`alerta catálogo no-match falhou para ${familia.ml_item_id}:`, (e as Error).message);
       }

@@ -10,8 +10,8 @@ import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
-import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
-import { enviarTelegram, montarMensagemNovaVenda } from '../_shared/notificacoes/telegram.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemNovaVenda } from '../_shared/notificacoes/telegram.ts';
 import { enviarMensagemPedido } from '../_shared/ml/mensagem.ts';
 
 interface Job { user_id?: string; order_id?: string; shipping_id?: string }
@@ -62,18 +62,16 @@ Deno.serve(async (req) => {
     freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
   });
 
-  // Alerta de nova venda paga (só se Telegram ativo). Usa os itens já com EAN resolvido (catálogo/GTIN).
+  // Alerta de nova venda paga aos destinatários da categoria 'vendas'. Usa os itens já com EAN
+  // resolvido (catálogo/GTIN). notificarCategoria respeita o interruptor-mestre da org.
   if (novaPaga && orgId) {
-    const cfg = await lerConfigTelegram(admin, orgId);
-    if (cfg.ativo) {
-      await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaVenda({
-        order_id: Number(pedido.id),
-        comprador: pedido.buyer?.nickname ?? null,
-        itens: itens.map((i) => ({ titulo: i.titulo, quantity: i.quantity, ean: i.ean })),
-        total: Number(pedido.total_amount ?? 0),
-        moeda: pedido.currency_id ?? 'BRL',
-      }));
-    }
+    await notificarCategoria(admin, orgId, 'vendas', montarMensagemNovaVenda({
+      order_id: Number(pedido.id),
+      comprador: pedido.buyer?.nickname ?? null,
+      itens: itens.map((i) => ({ titulo: i.titulo, quantity: i.quantity, ean: i.ean })),
+      total: Number(pedido.total_amount ?? 0),
+      moeda: pedido.currency_id ?? 'BRL',
+    }));
 
     // Mensagem automática ao comprador via ML (best-effort).
     if (conexao?.contaExternaId) {

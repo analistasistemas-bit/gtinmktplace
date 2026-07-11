@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { MENU_KEYS, type MenuKey } from '@/lib/menus';
+import { CATEGORIAS_NOTIFICACAO, CATEGORIA_LABEL, CATEGORIA_DESCRICAO, type CategoriaNotificacao } from '@/lib/notificacoes-categorias';
 import { PageHeader } from '@/components/ui/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,8 @@ interface UserRow {
   is_admin: boolean;
   is_active: boolean;
   allowed_menus: string[];
+  telegram_chat_id: string | null;
+  telegram_categorias: string[];
 }
 
 async function callUsuarios(body: Record<string, unknown>) {
@@ -70,13 +73,14 @@ export default function Usuarios() {
   const { user } = useAuth();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editUser, setEditUser] = useState<UserRow | null>(null);
+  const [editNotif, setEditNotif] = useState<UserRow | null>(null);
 
   const { data: usuarios = [], isLoading } = useQuery({
     queryKey: ['profiles'],
     queryFn: async (): Promise<UserRow[]> => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id,email,nome,is_admin,is_active,allowed_menus')
+        .select('id,email,nome,is_admin,is_active,allowed_menus,telegram_chat_id,telegram_categorias')
         .order('created_at');
       if (error) throw error;
       return data as UserRow[];
@@ -109,6 +113,7 @@ export default function Usuarios() {
             <TableRow>
               <TableHead>Usuário</TableHead>
               <TableHead>Menus</TableHead>
+              <TableHead>Notificações</TableHead>
               <TableHead>Admin</TableHead>
               <TableHead>Ativo</TableHead>
               <TableHead className="text-right">Ações</TableHead>
@@ -116,7 +121,7 @@ export default function Usuarios() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
             ) : usuarios.map((u) => {
               const isSelf = u.id === user?.id;
               return (
@@ -137,6 +142,19 @@ export default function Usuarios() {
                     )}
                   </TableCell>
                   <TableCell>
+                    {!u.telegram_chat_id
+                      ? <span className="text-xs text-muted-foreground">sem chat</span>
+                      : u.telegram_categorias.length === 0
+                        ? <span className="text-xs text-muted-foreground">nenhuma</span>
+                        : (
+                          <div className="flex flex-wrap gap-1">
+                            {u.telegram_categorias.map((c) => (
+                              <Badge key={c} variant="secondary">{CATEGORIA_LABEL[c as CategoriaNotificacao] ?? c}</Badge>
+                            ))}
+                          </div>
+                        )}
+                  </TableCell>
+                  <TableCell>
                     <Switch
                       checked={u.is_admin}
                       disabled={isSelf}
@@ -151,9 +169,14 @@ export default function Usuarios() {
                     />
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" disabled={u.is_admin} onClick={() => setEditUser(u)}>
-                      Editar menus
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setEditNotif(u)}>
+                        Notificações
+                      </Button>
+                      <Button variant="outline" size="sm" disabled={u.is_admin} onClick={() => setEditUser(u)}>
+                        Editar menus
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -164,6 +187,7 @@ export default function Usuarios() {
 
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} onSubmit={run} />
       <EditMenusDialog user={editUser} onClose={() => setEditUser(null)} onSubmit={run} />
+      <NotificacoesDialog user={editNotif} onClose={() => setEditNotif(null)} onSubmit={run} />
     </div>
   );
 }
@@ -213,6 +237,87 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
         </div>
         <DialogFooter>
           <Button onClick={enviar} disabled={!email || enviando}>{enviando ? 'Enviando…' : 'Enviar convite'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NotificacoesDialog({ user, onClose, onSubmit }: {
+  user: UserRow | null;
+  onClose: () => void;
+  onSubmit: (body: Record<string, unknown>, sucesso: string) => Promise<boolean>;
+}) {
+  const [chatId, setChatId] = useState('');
+  const [cats, setCats] = useState<string[]>([]);
+  const [carregado, setCarregado] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
+  // Sincroniza o estado local quando abre p/ outro usuário.
+  if (user && carregado !== user.id) {
+    setChatId(user.telegram_chat_id ?? '');
+    setCats(user.telegram_categorias);
+    setCarregado(user.id);
+  }
+
+  function toggle(key: string, on: boolean) {
+    setCats((prev) => (on ? [...prev, key] : prev.filter((k) => k !== key)));
+  }
+
+  async function salvar() {
+    if (!user) return;
+    setSalvando(true);
+    const ok = await onSubmit(
+      { action: 'update_notificacoes', id: user.id, telegram_chat_id: chatId.trim(), telegram_categorias: cats },
+      'Notificações atualizadas',
+    );
+    setSalvando(false);
+    if (ok) onClose();
+  }
+
+  const semChat = !chatId.trim() && cats.length > 0;
+
+  return (
+    <Dialog open={!!user} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Notificações Telegram — {user?.nome || user?.email}</DialogTitle></DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label htmlFor="notif-chat-id" className="mb-1 block text-sm font-medium">Chat ID do Telegram</label>
+            <Input
+              id="notif-chat-id"
+              placeholder="ex.: 123456789"
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              A pessoa fala com <code>@userinfobot</code> no Telegram para descobrir o número do Chat ID.
+              Depois deve abrir o bot da empresa e mandar qualquer mensagem uma vez, senão o Telegram bloqueia o envio.
+              Vazio = não recebe.
+            </p>
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-medium">Categorias</div>
+            <div className="flex flex-col gap-2">
+              {CATEGORIAS_NOTIFICACAO.map((key) => (
+                <label key={key} htmlFor={`notif-cat-${key}`} className="flex items-start gap-2 text-sm">
+                  <Checkbox id={`notif-cat-${key}`} checked={cats.includes(key)} onCheckedChange={(c) => toggle(key, c === true)} />
+                  <span>
+                    <span className="font-medium">{CATEGORIA_LABEL[key]}</span>
+                    <span className="block text-xs text-muted-foreground">{CATEGORIA_DESCRICAO[key]}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+          {semChat && (
+            <p className="text-xs text-amber-600 dark:text-amber-500">
+              Sem Chat ID este usuário não vai receber — preencha o campo acima.
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

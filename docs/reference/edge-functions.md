@@ -81,7 +81,7 @@
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
 | `mercadopago/*` | API MP (pagamentos) + rateio financeiro |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
-| `notificacoes/*` | Telegram (vendas, perguntas, devoluções, liberações, moderados, catálogo) |
+| `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os destinatários por categoria e envia (`config.ts`); `categorias.ts` (5 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Destino por profile, bot por org (ADR-0067) |
 | `parser.ts` | Validação de colunas da planilha, agrupamento por PAI, matching de fotos |
 
 ---
@@ -232,8 +232,10 @@
   ADR-0027). `verify_jwt=true`; valida que o chamador é admin ativo com `org_id`
   (`requireUser` + `profiles`) e usa `service_role`. Ações: `invite` (`auth.admin.inviteUserByEmail`
   com `nome`/`allowed_menus`/**`org_id`** — herda a org do admin — no metadata + `redirectTo` para
-  `/#/definir-senha`), `update_menus`, `set_active`, `set_admin` (as três últimas escopadas
-  `.eq('org_id', orgId)` — só atuam em perfis da própria org). Ações de **super-admin** (D-E7.8,
+  `/#/definir-senha`), `update_menus`, `set_active`, `set_admin`, `update_notificacoes` (destino
+  Telegram do usuário: `telegram_chat_id` + `telegram_categorias`, sanitizado por
+  `sanitizarDestinatario`, ADR-0067) — as quatro escopadas `.eq('org_id', orgId)`, só atuam em
+  perfis da própria org. Ações de **super-admin** (D-E7.8,
   `profiles.is_super_admin`): **`list_orgs`** (lista organizações + contagem de membros) e
   **`create_org`** (cria a organização e convida seu primeiro admin; rollback da org se o convite
   falhar). Requer o secret `APP_URL`.

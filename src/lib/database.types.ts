@@ -981,6 +981,8 @@ export type Database = {
           is_super_admin: boolean
           nome: string
           org_id: string
+          telegram_categorias: string[]
+          telegram_chat_id: string | null
           updated_at: string
         }
         Insert: {
@@ -993,6 +995,8 @@ export type Database = {
           is_super_admin?: boolean
           nome?: string
           org_id: string
+          telegram_categorias?: string[]
+          telegram_chat_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -1005,6 +1009,8 @@ export type Database = {
           is_super_admin?: boolean
           nome?: string
           org_id?: string
+          telegram_categorias?: string[]
+          telegram_chat_id?: string | null
           updated_at?: string
         }
         Relationships: [

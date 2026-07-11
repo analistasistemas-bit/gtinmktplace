@@ -9,6 +9,17 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-07-11
+
+- **Feature: notificações Telegram por destinatário e categoria (ADR-0067).** Antes o Telegram tinha
+  1 destino por org (só Diego recebia tudo). Agora cada usuário cadastrado pode receber, e o admin
+  escolhe **quem recebe quais categorias** (Vendas, Perguntas, Pós-venda, Financeiro, Moderação) na
+  tela **Usuários** (dialog "Notificações": Chat ID + checkboxes). O bot continua único por org
+  (`configuracoes`); o destino virou por profile (`profiles.telegram_chat_id`/`telegram_categorias`).
+  Envio centralizado em `notificarCategoria` (`_shared/notificacoes/config.ts`); os 6 workers passam a
+  informar sua categoria. Backfill preserva quem recebe hoje. Validado end-to-end no browser (login →
+  editar → salvar → persistência → badges) + migration/CHECK. Testes verdes, lint/deno/build ok.
+
 ## 2026-07-10
 
 - **Fix: atributo obrigatório `string` com valores sugeridos era tratado como closed-set (Material

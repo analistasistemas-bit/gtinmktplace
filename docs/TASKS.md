@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Notificações Telegram por destinatário e categoria — ADR-0067 — 2026-07-11
+
+- [x] Antes: 1 chat_id por org (`configuracoes.telegram_chat_id`) recebia tudo — só o super-admin.
+  Agora cada usuário cadastrado pode receber, e o admin escolhe quem recebe quais **categorias**
+  (Vendas, Perguntas, Pós-venda, Financeiro, Moderação).
+- [x] Schema: `profiles.telegram_chat_id` + `telegram_categorias text[]` (CHECK das 5 categorias);
+  bot/token continuam por org. Backfill preserva quem recebe hoje (`configuracoes.user_id` → profile,
+  todas as categorias) — verificado read-only que a única org ativa resolve.
+- [x] Backend: `notificarCategoria(admin, orgId, categoria, texto)` (`_shared/notificacoes/config.ts`)
+  resolve destinatários e envia; os 6 call sites (sync-venda/pergunta/devolucao, notificar-liberacao,
+  monitorar-moderados, vincular-catalogo) passam a informar sua categoria. `vincular-catalogo` deixou
+  de ler config inline por `user_id` (legado) e usa `notificarCategoria` por `org_id`.
+- [x] UI: tela **Usuários** ganha coluna Notificações + dialog (Chat ID + checkboxes), via edge
+  function `usuarios` ação `update_notificacoes` (sanitiza chat_id numérico e categorias). Campo Chat
+  ID em Configurações relabelado para "teste de conexão".
+- [x] Validado end-to-end no browser (Playwright, Supabase local): login → editar → salvar →
+  persistência → re-render das badges; trust-boundary (chat inválido → 400); migration + CHECK.
+  Testes verdes (novos: `sanitizarDestinatario`, `notificarCategoria`, `lerDestinatarios`), lint +
+  deno check + build ok.
+
 ## Cor "Outra" vazando: gap no UPDATE ao vivo + remediação de 15 anúncios já publicados — ADR-0044 — 2026-07-10
 
 - [x] Diego reportou "OUTRA" no título de um produto ainda não publicado (screenshot). Investigação:

@@ -6,8 +6,8 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { buscarClaim, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
-import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
-import { enviarTelegram, montarMensagemNovaDevolucao } from '../_shared/notificacoes/telegram.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemNovaDevolucao } from '../_shared/notificacoes/telegram.ts';
 
 interface Job { user_id?: string; claim_id?: string }
 
@@ -36,13 +36,10 @@ Deno.serve(async (req) => {
   const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret);
 
   if (nova && orgId) {
-    const cfg = await lerConfigTelegram(admin, orgId);
-    if (cfg.ativo) {
-      await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaDevolucao({
-        claim_id: row.claim_id, order_id: row.order_id, tipo: row.type ?? 'claim',
-        motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL',
-      }));
-    }
+    await notificarCategoria(admin, orgId, 'pos_venda', montarMensagemNovaDevolucao({
+      claim_id: row.claim_id, order_id: row.order_id, tipo: row.type ?? 'claim',
+      motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL',
+    }));
   }
   await admin.from('ml_webhook_eventos').update({ processado_em: new Date().toISOString() })
     .eq('topic', 'claims').eq('resource', `/claims/${job.claim_id}`);

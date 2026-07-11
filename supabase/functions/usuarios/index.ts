@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
+import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 
 const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'configuracoes'];
 
@@ -56,6 +57,16 @@ Deno.serve(async (req) => {
       // E7: só atua em perfis da MESMA org do chamador.
       const { error } = await db.from('profiles')
         .update({ allowed_menus: sanitizeMenus(body.allowed_menus), nome: body.nome ?? undefined, updated_at: new Date().toISOString() })
+        .eq('id', body.id).eq('org_id', orgId);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+    case 'update_notificacoes': {
+      // Destinatário Telegram: chat_id (numérico, opcional) + categorias assinadas. Só na MESMA org.
+      const san = sanitizarDestinatario(body);
+      if (!san.ok) return json({ error: san.erro }, 400);
+      const { error } = await db.from('profiles')
+        .update({ telegram_chat_id: san.chatId, telegram_categorias: san.categorias, updated_at: new Date().toISOString() })
         .eq('id', body.id).eq('org_id', orgId);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });

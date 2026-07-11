@@ -6,8 +6,8 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { buscarPergunta, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
-import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
-import { enviarTelegram, montarMensagemNovaPergunta } from '../_shared/notificacoes/telegram.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemNovaPergunta } from '../_shared/notificacoes/telegram.ts';
 
 interface Job { user_id?: string; question_id?: string }
 
@@ -36,12 +36,9 @@ Deno.serve(async (req) => {
   const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo);
 
   if (novaNaoRespondida && orgId) {
-    const cfg = await lerConfigTelegram(admin, orgId);
-    if (cfg.ativo) {
-      await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaPergunta({
-        question_id: row.question_id, texto: row.texto, item_titulo: titulo,
-      }));
-    }
+    await notificarCategoria(admin, orgId, 'perguntas', montarMensagemNovaPergunta({
+      question_id: row.question_id, texto: row.texto, item_titulo: titulo,
+    }));
   }
   await admin.from('ml_webhook_eventos').update({ processado_em: new Date().toISOString() })
     .eq('topic', 'questions').eq('resource', `/questions/${job.question_id}`);

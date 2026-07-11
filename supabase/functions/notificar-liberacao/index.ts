@@ -9,8 +9,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
-import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
-import { enviarTelegram, montarMensagemLiberacao } from '../_shared/notificacoes/telegram.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemLiberacao } from '../_shared/notificacoes/telegram.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -82,16 +82,15 @@ Deno.serve(async (req) => {
   let notificados = 0;
 
   for (const [orgId, { ids, total }] of porOrg) {
-    const cfg = await lerConfigTelegram(admin, orgId);
-
-    if (cfg.ativo && cfg.token && cfg.chatId && total > 0) {
+    if (total > 0) {
       const totalArredondado = Math.round(total * 100) / 100;
-      const enviado = await enviarTelegram(
-        cfg.token,
-        cfg.chatId,
+      const enviados = await notificarCategoria(
+        admin,
+        orgId,
+        'financeiro',
         montarMensagemLiberacao(totalArredondado, ids.length, 'BRL'),
       );
-      if (enviado) usuarios += 1;
+      if (enviados > 0) usuarios += 1;
     }
 
     // Marca SEMPRE (mesmo sem Telegram ativo) para não reprocessar.
