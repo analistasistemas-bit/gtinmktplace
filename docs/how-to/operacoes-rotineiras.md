@@ -95,6 +95,37 @@ delete from auth.users where email = 'pessoa@empresa.com';
 
 Depois é só clicar **Convidar usuário** de novo na tela.
 
+## Configurar quem recebe notificações no Telegram (ADR-0067)
+
+Cada usuário cadastrado pode receber alertas do Telegram, e o **admin** escolhe **quem recebe
+quais categorias** (Vendas, Perguntas, Pós-venda, Financeiro, Moderação). O bot é **um só por
+empresa**; o que muda por pessoa é o destino (Chat ID) e as categorias.
+
+**Pré-requisito (uma vez):** em **Configurações → Alertas no Telegram**, cole o **Bot token**
+(criado no `@BotFather` com `/newbot`) e ligue o interruptor **Ativo**. Esse interruptor é geral:
+desligado, **ninguém** recebe.
+
+**Para cada pessoa que vai receber:**
+
+1. **Ela descobre o Chat ID dela:** no Telegram, abre conversa com `@userinfobot`, manda `/start`;
+   ele responde `Id: 123456789`. Copiar só o número.
+2. **Ela libera o bot da empresa** (passo que todos esquecem): abrir o **bot da empresa** e mandar
+   qualquer mensagem uma vez (ex.: `oi`). Sem isso o Telegram bloqueia o bot de escrever pra ela.
+3. **O admin cadastra o destinatário:** tela **Usuários** → na linha da pessoa, botão
+   **Notificações** → cola o **Chat ID** → marca as **categorias** → **Salvar**. As categorias
+   assinadas aparecem como etiquetas na linha.
+
+**Regras:**
+
+- **Chat ID vazio = não recebe**, mesmo com categorias marcadas.
+- Cada pessoa recebe **só** as categorias marcadas para ela.
+- Para tirar alguém: abra **Notificações** e desmarque tudo (ou apague o Chat ID).
+- O campo **"Chat ID para teste de conexão"** em Configurações é só do botão **Enviar teste** —
+  não é o destino das notificações reais.
+- Categorias: **Vendas** (venda paga), **Perguntas** (pergunta de comprador), **Pós-venda**
+  (devolução/reclamação), **Financeiro** (liberação de saldo MP), **Moderação** (anúncio moderado
+  + catálogo sem match).
+
 ## Adicionar uma empresa-cliente (multi-tenant, E7 — ADR-0027)
 
 Cada empresa é uma **organização** (`org_id`) com dados 100% isolados por RLS
