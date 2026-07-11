@@ -9,6 +9,15 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-07-11
+
+- **Feat: mensagens pós-venda do ML no PubliAI (ADR-0067).** Mensagens do comprador (chat pós-venda,
+  canal `/messages/packs`) eram invisíveis — a aba Perguntas só ingere perguntas pré-venda
+  (`/questions`). Nova aba **Faturamento › Mensagens** espelhando Perguntas: worker `sync-mensagem`
+  (topic `messages` no webhook), tabela `ml_mensagens`, backfill via "Sincronizar", resposta
+  (`responder-mensagem`, ≤350 chars) e alerta Telegram. Validado no Supabase local via Playwright.
+  Pendente deploy + habilitar topic `messages` no DevCenter ML.
+
 ## 2026-07-10
 
 - **Fix: atributo obrigatório `string` com valores sugeridos era tratado como closed-set (Material

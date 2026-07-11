@@ -23,6 +23,15 @@ export function extrairIdDoResource(resource: string | null | undefined): string
   return ultimo && /^\d+$/.test(ultimo) ? ultimo : null;
 }
 
+/** Extrai o pack_id do resource de uma notificação `messages` (`/messages/packs/123/sellers/456`
+ *  → `123`). O último segmento é o seller, por isso não serve `extrairIdDoResource`. null se ausente.
+ *  ponytail: shape confirmado só na 1ª notificação real (topic pendente no DevCenter, ADR-0067). */
+export function extrairPackIdDeMensagem(resource: string | null | undefined): string | null {
+  if (!resource) return null;
+  const m = resource.match(/\/packs\/(\d+)/);
+  return m ? m[1] : null;
+}
+
 /** Normaliza a notificação do ML. null quando faltam campos obrigatórios. */
 export function parseWebhookNotification(raw: unknown): WebhookEvento | null {
   if (!raw || typeof raw !== 'object') return null;

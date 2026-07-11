@@ -43,8 +43,10 @@
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
 | sync-pergunta | false | QStash worker | sim (upsert) |
+| sync-mensagem | false | QStash worker | sim (upsert) |
 | sync-devolucao | false | QStash worker | sim (upsert) |
 | responder-pergunta | true | HTTP (frontend) | não |
+| responder-mensagem | true | HTTP (frontend) | não |
 | sugerir-resposta-pergunta | true | HTTP (frontend) | não (stateless) |
 | backfill-faturamento | false | HTTP (JWT) **ou** QStash | sim (upsert) |
 | reconciliar-faturamento | false | QStash schedule | sim (upsert) |
@@ -190,15 +192,23 @@
 
 ### Faturamento
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,
-  roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions) ou `sync-devolucao`
-  (claims). Nunca confia no corpo — o worker re-busca autenticado (ADR-0037).
+  roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions), `sync-devolucao`
+  (claims) ou `sync-mensagem` (messages). Nunca confia no corpo — o worker re-busca autenticado
+  (ADR-0037). Para `messages`, extrai o `pack_id` do resource (`/messages/packs/{pack}/...`),
+  não o último segmento (que é o seller) — ADR-0067.
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
   upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. `sync-venda` também
   envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
+- **sync-mensagem** *(worker)* — busca o pack de mensagens pós-venda
+  (`GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale`), upsert idempotente por
+  `message_id` em `ml_mensagens`, alerta Telegram em nova mensagem recebida (ADR-0067).
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
-- **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML).
+- **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
+  re-busca o pack e marca as recebidas como lidas. Reusa `sugerir-resposta-pergunta` para a
+  sugestão de IA (ADR-0067).
+- **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
-  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546).
+  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
   de todos os usuários com credencial (cobre webhooks perdidos).
 
