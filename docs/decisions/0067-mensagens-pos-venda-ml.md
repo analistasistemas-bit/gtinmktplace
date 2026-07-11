@@ -55,6 +55,18 @@ Uma linha por mensagem (não por conversa). RLS por `user_id`/`org_id`; **read-o
 YAGNI explícito na v1: **sem anexos** (`message_attachments`), **sem threading próprio**
 (ordena por `data_ml`), **sem templates de resposta**.
 
+### 3b. "Aguardando resposta" e alerta global no avatar (refino 2026-07-11)
+
+Feedback do Diego: o alerta deve ficar aceso no avatar do usuário (em qualquer tela) **até
+respondido**, não até "lido". Como o operador responde tanto pelo PubliAI quanto pelo painel do
+ML, o sinal correto é **stateless e agnóstico ao canal**: uma conversa está *aguardando resposta*
+quando **sua última mensagem é do comprador** (`recebida`). Assim que existe uma resposta nossa —
+enviada pelo PubliAI ou trazida do ML pelo backfill/webhook como `enviada` — a conversa deixa de
+aguardar e o alerta some. Substitui o modelo anterior de `lida` marcado ao abrir a conversa (que
+limpava o alerta só por visualizar, contrariando "até respondido"). O badge no avatar (`UserMenu`)
+soma **perguntas `UNANSWERED` + conversas aguardando** e some quando tudo é respondido. A coluna
+`lida`/RPC `marcar_mensagens_lidas` ficam vestigiais (mantidas para um futuro read-receipt).
+
 ### 3. Exibição — nova aba "Mensagens" em Faturamento
 
 Nova aba ao lado de *Perguntas*, espelhando `aba-perguntas.tsx`: lista agrupada por pedido,

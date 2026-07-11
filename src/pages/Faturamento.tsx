@@ -7,11 +7,11 @@ import { AbaPerguntas } from '@/components/faturamento/aba-perguntas';
 import { AbaMensagens } from '@/components/faturamento/aba-mensagens';
 import { AbaGeografia } from '@/components/faturamento/aba-geografia';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
-import { useMensagensNaoLidas } from '@/hooks/useMensagens';
+import { useMensagensAguardando } from '@/hooks/useMensagens';
 
 export default function Faturamento() {
   const { data: naoRespondidas } = usePerguntasNaoRespondidas();
-  const { data: mensagensNaoLidas } = useMensagensNaoLidas();
+  const mensagensAguardando = useMensagensAguardando();
   return (
     <div className="p-4 sm:p-6">
       <PageHeader
@@ -32,9 +32,9 @@ export default function Faturamento() {
           </TabsTrigger>
           <TabsTrigger value="mensagens">
             <MessagesSquare className="h-4 w-4" />Mensagens
-            {mensagensNaoLidas != null && mensagensNaoLidas > 0 && (
+            {mensagensAguardando > 0 && (
               <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-                {mensagensNaoLidas}
+                {mensagensAguardando}
               </span>
             )}
           </TabsTrigger>
