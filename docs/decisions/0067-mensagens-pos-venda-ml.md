@@ -1,7 +1,7 @@
 # ADR-0067 — Mensagens pós-venda do Mercado Livre (inbox do pedido)
 
 **Data:** 2026-07-11
-**Status:** Proposto (esboço — não implementado).
+**Status:** Aceito — implementado na branch `worktree-adr-mensagens-pos-venda` (PR #13). Validado em runtime no Supabase local (aba renderiza a conversa, badge, RPC `marcar_mensagens_lidas`). **Pendente de deploy + habilitar topic `messages` no DevCenter ML** para o fluxo ao vivo (ver "Pendências").
 **Contexto relacionado:** ADR-0037 (webhook + workers de faturamento), ADR-0038 (fonte única `ml_vendas`), ADR-0040 (notificação Telegram), ADR-0046 (`verify_jwt=false` nos workers), fluxo atual de Perguntas (`_shared/faturamento/perguntas-io.ts`, `sync-pergunta`).
 
 ## Contexto
@@ -72,10 +72,13 @@ faltou no incidente. A aba própria não impede o link para o detalhe.
 Reusar o padrão de `montarMensagemNovaPergunta` → `montarMensagemNovaMensagem`, disparado no
 worker quando entra mensagem **recebida** nova, respeitando `lerConfigTelegram`.
 
-### 5. Backfill (opcional, fase 2)
+### 5. Backfill — puxado para a v1
 
-Espelhar `backfill-faturamento` para varrer packs de pedidos recentes e popular o histórico.
-Não bloqueia a v1 (o webhook já cobre o fluxo daqui pra frente).
+Originalmente previsto para a fase 2, o backfill foi **incluído na v1** como veículo de
+validação (não depende do topic `messages` no DevCenter, ainda pendente). Implementado como
+**passo 4 do `backfill-faturamento`**: após as vendas, varre os packs conhecidos em `ml_vendas`
+e puxa as mensagens de cada um (1 GET/pack, sem alerta). É o que o botão "Sincronizar" da aba
+Vendas dispara — então mensagens pós-venda entram junto com o histórico, mesmo antes do webhook.
 
 ## Consequências
 

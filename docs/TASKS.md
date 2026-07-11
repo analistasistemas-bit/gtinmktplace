@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Mensagens pós-venda do ML: canal invisível no PubliAI ganha ingestão + aba — ADR-0067 — 2026-07-11
+
+- [x] Diego reportou que uma mensagem do comprador (chat pós-venda, "preciso de mais 50m…") não
+  aparecia no PubliAI. Investigação: é outro canal — a aba Perguntas só ingere perguntas pré-venda
+  (`/questions`); mensagens pós-venda vivem em `/messages/packs` e não eram ingeridas (webhook não
+  escutava o topic `messages`; único uso de `/messages` era o envio de boas-vindas).
+- [x] ADR-0067 escrito. Implementado espelhando o fluxo de Perguntas: migration `ml_mensagens` +
+  RLS + RPC `marcar_mensagens_lidas`; mapper puro + IO com testes; worker `sync-mensagem`
+  (QStash); rota `messages` no `ml-webhook` (extrai `pack_id` do resource, não o seller);
+  `backfill-faturamento` passo 4 (puxa mensagens dos packs); `responder-mensagem` (≤350 chars,
+  variante que lança); front: lib/hook/aba-mensagens + badge de não-lidas; alerta Telegram.
+- [x] Verificação: lint 0 erros, vitest 1306 verdes, tsc front limpo, deno check nas 4 functions.
+  Validado em runtime no Supabase local via Playwright — a aba renderiza a conversa da Anne Marie,
+  badge "1", pill "não lida", caixa de resposta; RPC de marcar-lida grava no DB (RLS-scoped).
+- [ ] **Pendências (Diego):** aplicar migration + deploy das functions em prod (`supabase db push`
+  concede os grants de tabela automaticamente, como nas irmãs); **habilitar o topic `messages` no
+  DevCenter ML** (sem isso não chega webhook — mas o "Sincronizar" já puxa via backfill); conferir
+  o formato real do `resource` da 1ª notificação `messages` (parse defensivo já cobre o caso comum).
+
 ## Cor "Outra" vazando: gap no UPDATE ao vivo + remediação de 15 anúncios já publicados — ADR-0044 — 2026-07-10
 
 - [x] Diego reportou "OUTRA" no título de um produto ainda não publicado (screenshot). Investigação:
