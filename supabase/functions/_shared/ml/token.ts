@@ -2,6 +2,7 @@ import { adminClient } from '../supabase.ts';
 import { redisSetNX, redisDel } from '../redis/client.ts';
 import { precisaRenovar } from './refresh-decisao.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
+import { MLApiError } from './erro-ml.ts';
 
 const TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
 const BUFFER_MS = 5 * 60 * 1000;
@@ -33,7 +34,7 @@ async function postToken(params: Record<string, string>): Promise<TokenML> {
     }),
   });
   if (!resp.ok) {
-    throw new Error(`ML /oauth/token ${resp.status}: ${await resp.text()}`);
+    throw new MLApiError(resp.status, `ML /oauth/token ${resp.status}: ${await resp.text()}`);
   }
   return resp.json() as Promise<TokenML>;
 }

@@ -3,6 +3,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
+import { MLApiError } from '../ml/erro-ml.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -91,10 +92,10 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
   return { idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem), infoPorGtin };
 }
 
-/** GET /orders/{id}. null em erro. */
-export async function buscarPedido(token: string, orderId: string): Promise<PedidoML | null> {
+/** GET /orders/{id}. Lança MLApiError(status) em erro (caller classifica via classificarErroML). */
+export async function buscarPedido(token: string, orderId: string): Promise<PedidoML> {
   const resp = await fetch(`${API}/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!resp.ok) return null;
+  if (!resp.ok) throw new MLApiError(resp.status, `ML /orders/${orderId} ${resp.status}`);
   return await resp.json() as PedidoML;
 }
 

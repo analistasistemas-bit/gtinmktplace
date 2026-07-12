@@ -1,17 +1,21 @@
 // IO de devoluções/claims (ADR-0037, post-purchase). Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearDevolucao, type ClaimML, type ReturnML } from './devolucao.ts';
+import { MLApiError } from '../ml/erro-ml.ts';
 
 const API = 'https://api.mercadolibre.com';
 
-/** GET /post-purchase/v1/claims/{id}. null em erro. */
-export async function buscarClaim(token: string, claimId: string): Promise<ClaimML | null> {
+/** GET /post-purchase/v1/claims/{id}. Lança MLApiError(status) em erro (caller classifica via
+ * classificarErroML). */
+export async function buscarClaim(token: string, claimId: string): Promise<ClaimML> {
   const resp = await fetch(`${API}/post-purchase/v1/claims/${claimId}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!resp.ok) return null;
+  if (!resp.ok) throw new MLApiError(resp.status, `ML /claims/${claimId} ${resp.status}`);
   return await resp.json() as ClaimML;
 }
 
-/** GET dos returns de um claim (status/dinheiro). null se ausente/erro. */
+/** GET dos returns de um claim (status/dinheiro). null se ausente/erro. NÃO convertido para
+ * MLApiError nesta fase: "sem return ainda" é estado de negócio válido e comum (claim aberto sem
+ * devolução formalizada), não erro de liveness — ver decisão registrada no plano 039/Step 4. */
 export async function buscarReturn(token: string, claimId: string): Promise<ReturnML | null> {
   try {
     const resp = await fetch(`${API}/post-purchase/v2/claims/${claimId}/returns`, { headers: { Authorization: `Bearer ${token}` } });

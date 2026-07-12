@@ -1,15 +1,16 @@
 // IO de perguntas (ADR-0037): chamadas à API do ML e persistência. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearPergunta, type PerguntaML } from './pergunta.ts';
+import { MLApiError } from '../ml/erro-ml.ts';
 
 const API = 'https://api.mercadolibre.com';
 
-/** GET /questions/{id}. null em erro. */
-export async function buscarPergunta(token: string, questionId: string): Promise<PerguntaML | null> {
+/** GET /questions/{id}. Lança MLApiError(status) em erro (caller classifica via classificarErroML). */
+export async function buscarPergunta(token: string, questionId: string): Promise<PerguntaML> {
   const resp = await fetch(`${API}/questions/${questionId}?api_version=4`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!resp.ok) return null;
+  if (!resp.ok) throw new MLApiError(resp.status, `ML /questions/${questionId} ${resp.status}`);
   return await resp.json() as PerguntaML;
 }
 
