@@ -1193,6 +1193,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      contar_conversas_aguardando: { Args: never; Returns: number }
       current_org_id: { Args: never; Returns: string }
       delete_marketplace_connection: {
         Args: { p_connection_id: string }

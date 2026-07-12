@@ -38,6 +38,7 @@ function CardConversa({ c }: { c: Conversa }) {
       toast.success('Mensagem enviada.');
       setTexto('');
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
+      await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
     } catch (e) {
       toast.error(`Falha ao enviar: ${(e as Error).message}`);
     } finally { setEnviando(false); }

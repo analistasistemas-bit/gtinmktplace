@@ -27,9 +27,13 @@ export async function buscarConversas(): Promise<Conversa[]> {
   const { data, error } = await supabase
     .from('ml_mensagens')
     .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, data_ml')
-    .order('data_ml', { ascending: true });
+    // 1000 últimas mensagens; paginação real se a aba crescer. Ordena desc (mais recentes
+    // primeiro) para o .limit() pegar as certas, depois reverte para a ordem cronológica
+    // ascendente que o resto da função espera.
+    .order('data_ml', { ascending: false })
+    .limit(1000);
   if (error) throw new Error(error.message);
-  const lista = (data ?? []) as Mensagem[];
+  const lista = ((data ?? []) as Mensagem[]).reverse();
 
   const porPack = new Map<string, Conversa>();
   for (const m of lista) {

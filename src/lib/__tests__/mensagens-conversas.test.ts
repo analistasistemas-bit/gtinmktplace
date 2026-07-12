@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Mensagem } from '../mensagens';
 
+// buscarConversas agora encadeia .order().limit(1000) e reverte o array (plan 036) — o mock
+// representa o retorno bruto do Postgrest (desc + limit); mockOrder segue sendo o ponto de
+// controle dos fixtures, só que agora por trás de um `.limit()` na cadeia.
 const { mockOrder } = vi.hoisted(() => ({ mockOrder: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({
-  supabase: { from: () => ({ select: () => ({ order: mockOrder }) }) },
+  supabase: { from: () => ({ select: () => ({ order: () => ({ limit: mockOrder }) }) }) },
 }));
 
 const { buscarConversas } = await import('../mensagens');
@@ -29,8 +32,8 @@ describe('buscarConversas', () => {
   it('pack com última mensagem do comprador → aguardando: true; badge conta 1', async () => {
     mockOrder.mockResolvedValueOnce({
       data: [
-        msg({ id: '1', message_id: 'm1', direcao: 'enviada', data_ml: '2026-07-10T10:00:00Z' }),
         msg({ id: '2', message_id: 'm2', direcao: 'recebida', data_ml: '2026-07-10T11:00:00Z' }),
+        msg({ id: '1', message_id: 'm1', direcao: 'enviada', data_ml: '2026-07-10T10:00:00Z' }),
       ],
       error: null,
     });
@@ -43,8 +46,8 @@ describe('buscarConversas', () => {
   it('pack respondido (última é enviada) → aguardando: false', async () => {
     mockOrder.mockResolvedValueOnce({
       data: [
-        msg({ id: '1', message_id: 'm1', direcao: 'recebida', data_ml: '2026-07-10T10:00:00Z' }),
         msg({ id: '2', message_id: 'm2', direcao: 'enviada', data_ml: '2026-07-10T11:00:00Z' }),
+        msg({ id: '1', message_id: 'm1', direcao: 'recebida', data_ml: '2026-07-10T10:00:00Z' }),
       ],
       error: null,
     });
@@ -56,12 +59,12 @@ describe('buscarConversas', () => {
   it('multi-pack: aguardando vem antes; entre não-aguardando, mais recente primeiro', async () => {
     mockOrder.mockResolvedValueOnce({
       data: [
-        // pack "antigo-respondido": não aguardando, ultima mais antiga
-        msg({ id: '1', pack_id: 'antigo-respondido', message_id: 'm1', direcao: 'enviada', data_ml: '2026-07-10T08:00:00Z' }),
-        // pack "recente-respondido": não aguardando, ultima mais recente
-        msg({ id: '2', pack_id: 'recente-respondido', message_id: 'm2', direcao: 'enviada', data_ml: '2026-07-10T12:00:00Z' }),
         // pack "aguardando": última é do comprador
         msg({ id: '3', pack_id: 'aguardando', message_id: 'm3', direcao: 'recebida', data_ml: '2026-07-10T09:00:00Z' }),
+        // pack "recente-respondido": não aguardando, ultima mais recente
+        msg({ id: '2', pack_id: 'recente-respondido', message_id: 'm2', direcao: 'enviada', data_ml: '2026-07-10T12:00:00Z' }),
+        // pack "antigo-respondido": não aguardando, ultima mais antiga
+        msg({ id: '1', pack_id: 'antigo-respondido', message_id: 'm1', direcao: 'enviada', data_ml: '2026-07-10T08:00:00Z' }),
       ],
       error: null,
     });
@@ -79,9 +82,10 @@ describe('buscarConversas', () => {
   it('data_ml: null no fim do array decide o aguardando (comportamento atual; plan 037 muda)', async () => {
     mockOrder.mockResolvedValueOnce({
       data: [
-        msg({ id: '1', message_id: 'm1', direcao: 'recebida', data_ml: '2026-07-10T10:00:00Z' }),
-        // última mensagem retornada pela query, com data_ml null — ainda assim decide `aguardando`.
+        // última mensagem cronológica (data_ml null) — vem primeiro no retorno bruto porque a
+        // query real é desc+limit e o código reverte para cronológica ascendente antes de agrupar.
         msg({ id: '2', message_id: 'm2', direcao: 'enviada', data_ml: null }),
+        msg({ id: '1', message_id: 'm1', direcao: 'recebida', data_ml: '2026-07-10T10:00:00Z' }),
       ],
       error: null,
     });
