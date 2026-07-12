@@ -63,7 +63,11 @@ Deno.serve(async (req) => {
   let capa3SubidaAgora = false;
 
   try {
-    if (!familia.ml_item_id) throw new Error('Família UPDATE sem ml_item_id herdado (400)');
+    if (!familia.ml_item_id) {
+      const err = new Error('Família UPDATE sem ml_item_id herdado (400)') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
 
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
@@ -71,7 +75,11 @@ Deno.serve(async (req) => {
       .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', job.familia_id)
       .eq('excluida_da_publicacao', false);
-    if (!variacoes || variacoes.length === 0) throw new Error('Nenhuma cor incluída para atualizar (400)');
+    if (!variacoes || variacoes.length === 0) {
+      const err = new Error('Nenhuma cor incluída para atualizar (400)') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
 
     let desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null = null;
     if (familia.exibir_com_desconto) {
@@ -180,7 +188,9 @@ Deno.serve(async (req) => {
     // no próximo UPDATE). Falha explícita para o operador conferir antes de republicar.
     const novasSemVinculo = novasComFoto.filter((v) => !persistidas.has(v.codigo));
     if (novasSemVinculo.length > 0) {
-      throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`);
+      const err = new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`) as Error & { status?: number };
+      err.status = 400;
+      throw err;
     }
 
     // Sincroniza a descrição do anúncio (ADR-0016 adendo 2026-06-07): cor nova (seção de cores

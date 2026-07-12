@@ -91,14 +91,22 @@ Deno.serve(async (req) => {
   try {
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
-    if (!variacoes || variacoes.length === 0) throw new Error('Sem cores incluídas para publicar');
+    if (!variacoes || variacoes.length === 0) {
+      const err = new Error('Sem cores incluídas para publicar') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
 
     // Gate de atributos obrigatórios (igual ao publish): vale para todas as partições.
     const tipoAviamento = (familia.tipo_aviamento ?? 'outro') as TipoAviamento;
     const faltam = categoriaParaTipo(tipoAviamento) != null
       ? atributosFaltantes(tipoAviamento, familia.atributos_ml ?? [])
       : (familia.categoria_ml_id ? ((familia.atributos_faltantes as string[] | null) ?? []) : ['CATEGORIA']);
-    if (faltam.length) throw new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`);
+    if (faltam.length) {
+      const err = new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`) as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
 
     let descontoPct: number | null = null;
     if (familia.exibir_com_desconto) {
@@ -285,7 +293,9 @@ Deno.serve(async (req) => {
         }
         const novasSemVinculo = novas.filter((v) => !persistidas.has(v.codigo));
         if (novasSemVinculo.length > 0) {
-          throw new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} na partição ${p} — confira no ML antes de republicar para não duplicar (400)`);
+          const err = new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} na partição ${p} — confira no ML antes de republicar para não duplicar (400)`) as Error & { status?: number };
+          err.status = 400;
+          throw err;
         }
       }
 
