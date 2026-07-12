@@ -11,6 +11,7 @@ export default mergeConfig(
       setupFiles: ['./src/test/setup.ts'],
       include: [
         './tests/**/*.test.{ts,tsx}',
+        './src/**/__tests__/**/*.test.{ts,tsx}',
         './supabase/functions/**/__tests__/**/*.test.ts',
       ],
     },
