@@ -1,12 +1,35 @@
 ---
 tags: [roadmap, backlog]
-atualizado: 2026-07-06
+atualizado: 2026-07-12
 ---
 
 # Backlog
 
-Fonte: `docs/ROADMAP.md` ("Evolução v2 — SaaS multicanal" + "Escopo fora do MVP"). Ver
-[[Próximas Features]], [[Sprint Atual]].
+Fonte: `docs/ROADMAP.md` ("Evolução v2 — SaaS multicanal" + "Escopo fora do MVP") e
+`docs/Roadmap-Estrategico-PubliAI-v2.md` (revisão de CTO, PR #15, 2026-07-12 — reordena as 50
+funcionalidades em 8 fases de construção da empresa; supersede o score de priorização antigo).
+Ver [[Próximas Features]], [[Sprint Atual]].
+
+## Roadmap estratégico v2 — 8 fases (docs/Roadmap-Estrategico-PubliAI-v2.md)
+
+Sem cronograma fixo — a capacidade real define o ritmo; as fases definem ordem e critério de
+saída. Mudanças de fundo vs. o plano anterior: **Shopee deixa de ser "Versão 2.0" e roda em
+paralelo à Fase 1** (já desbloqueado pelo E6); billing vira **mínimo viável** (venda manual
+assistida para os 3–5 primeiros clientes, em vez de billing completo antes da 1ª venda);
+telemetria de IA é promovida a Fase 0; nova funcionalidade 51 — **Dashboard Mission Control**.
+
+| Fase | Objetivo | Status |
+|---|---|---|
+| 0 — Fundação técnica | nenhum tenant novo multiplica dívida (outbox, paginação, RBAC, audit trail, control tower, telemetria IA) | 🟡 liveness (ADR-0069) feito; resto pendente |
+| 1 — Fundação comercial | qualquer cliente cria conta, testa, paga sem intervenção humana (billing mínimo Asaas) | 📋 pendente, roda em paralelo ao E5 |
+| 2 — Produto operacional | PubliAI vira painel principal (Dashboard Mission Control — feature 51) | 📋 pendente |
+| 3 — PMF multicanal | validar a tese: Shopee real + estoque único cross-canal (E5/E6b) | 📋 próximo passo técnico |
+| 4 — Retenção | Health Score, simulador de margem, repricing, inbox multicanal | 📋 futuro |
+| 5 — Plataforma | API v2, webhooks completos, integrações ERP | 📋 futuro |
+| 6 — Moat | benchmark, packs verticais, autopilot, digital twin (exige dados de produção) | 📋 futuro |
+| 7 — Enterprise | SSO/SCIM, white label — só após PMF provado | 📋 futuro |
+
+## Evolução v2 — 10 épicos técnicos (abordagem strangler fig)
 
 ## Evolução v2 — 10 épicos (abordagem strangler fig)
 

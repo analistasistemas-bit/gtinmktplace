@@ -123,8 +123,10 @@ Regra de conclusão de qualquer alteração relevante:
 | scripts, setup | docs/how-to/desenvolvimento-local.md |
 | deploy ou migrations | docs/how-to/deploy-e-migrations.md |
 | procedimentos operacionais | docs/how-to/operacoes-rotineiras.md |
-| nova decisão arquitetural | docs/decisions/ |
+| nova decisão arquitetural | docs/decisions/ **e** obsidian-vault/04-Decisões/Índice de ADRs.md |
 | fluxo do operador | docs/tutorials/ |
+| docs/ROADMAP.md ou novo doc de roadmap estratégico | obsidian-vault/06-Roadmap/ |
+| épico concluído/mudou (project-status.md) | obsidian-vault/06-Roadmap/Sprint Atual.md |
 
 ---
 

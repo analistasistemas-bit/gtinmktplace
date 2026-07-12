@@ -1,6 +1,6 @@
 ---
 tags: [adr, template]
-atualizado: 2026-07-01
+atualizado: 2026-07-12
 ---
 
 # ADR Template
@@ -41,7 +41,6 @@ O que decidimos fazer? Em uma ou duas frases diretas.
 
 ## Índice completo
 
-Este vault espelha só [[ADR-001]] e [[ADR-002]] como exemplo/ponto de partida. O histórico
-completo (49 ADRs até `0049`) vive em `docs/decisions/` — índice navegável em
-`docs/decisions/README.md` e `docs/README.md`. Ver [[Arquitetura Geral]] para os ADRs mais
-citados no dia a dia.
+Este vault espelha em detalhe só [[ADR-001]] e [[ADR-002]], como exemplo/ponto de partida.
+O histórico completo (69 ADRs até `0069`) tem título + link em [[Índice de ADRs]]; o conteúdo
+(contexto, alternativas, consequências) vive em `docs/decisions/` — fonte de verdade.

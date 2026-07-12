@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-06
+atualizado: 2026-07-12
 ---
 
 # Sprint Atual
@@ -12,9 +12,10 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 > **E7 (Multi-tenancy) e E6 (Orquestração multicanal) concluídos e em produção.** Restam no
 > épico do 2º canal o **E5 — Shopee** (conector real) e o **E6b** (estoque único cross-canal);
-> a validação plena de E6/E6b com 2 canais depende do E5. Próximo passo natural: **E5**.
-> Planos em `docs/superpowers/plans/2026-07-02-*`; ADRs de referência [[ADRs|ADR-0027]]
-> (multi-tenancy) e ADR-0061 (orquestração multicanal).
+> a validação plena de E6/E6b com 2 canais depende do E5. Próximo passo natural: **E5** — e,
+> pela revisão de CTO do roadmap v2 (2026-07-12), deve rodar **em paralelo** à Fase 1 comercial
+> (billing mínimo), não mais adiado. Planos em `docs/superpowers/plans/2026-07-02-*`; ADRs de
+> referência ADR-0027 (multi-tenancy) e ADR-0061 (orquestração multicanal) — ver [[Índice de ADRs]].
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
@@ -43,4 +44,4 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 ## Ver também
 
 - [[Backlog]] — os épicos da evolução SaaS (agora com E6b)
-- [[Publicação Shopee]] — pesquisa do épico `E5` (adiado para depois de E7/E6)
+- [[Publicação Shopee]] — pesquisa do épico `E5`, agora antecipado (roadmap v2, 2026-07-12)
