@@ -6,6 +6,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { qstashClient } from '../_shared/queue.ts';
 import { parseWebhookNotification, extrairPackIdDeMensagem } from '../_shared/faturamento/venda.ts';
 import { resolverIdentidade } from '../_shared/faturamento/io.ts';
+import { deveThrottlar, JANELA_THROTTLE_MS } from '../_shared/ml/throttle-webhook.ts';
 
 // topic → função worker + nome do campo do id no job.
 const ROTA: Record<string, { fn: string; campo: string }> = {
@@ -36,6 +37,18 @@ Deno.serve(async (req) => {
   const identidade = await resolverIdentidade(admin, ev.mlUserId);
   if (!identidade) return ok(); // vendedor desconhecido: ack e ignora.
   const { userId, orgId } = identidade;
+
+  // Throttle (INT-018/033): protege contra atacante que conhece o mlUserId público de um
+  // vendedor e forja notificações para inflar a tabela + gasto de QStash. Falha na contagem
+  // (query dá erro etc.) NUNCA bloqueia o vendedor legítimo: cai no comportamento de hoje.
+  try {
+    const desde = new Date(Date.now() - JANELA_THROTTLE_MS).toISOString();
+    const { count, error: countErr } = await admin.from('ml_webhook_eventos')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .gte('recebido_em', desde);
+    if (!countErr && deveThrottlar(count ?? 0)) return ok(); // acima do limite: dropa (ACK, sem insert/enqueue); reconciliar-faturamento recupera.
+  } catch { /* fail-open: segue o fluxo normal abaixo. */ }
 
   // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira.
   const { error: dupErr } = await admin.from('ml_webhook_eventos')
