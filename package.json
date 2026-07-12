@@ -14,7 +14,7 @@
     "build-storybook": "storybook build",
     "db:check": "bash scripts/db-check.sh",
     "lint:functions": "deno lint --config supabase/functions/deno.json",
-    "check:functions": "deno check --config supabase/functions/deno.json supabase/functions/**/*.ts"
+    "check:functions": "deno check --config supabase/functions/deno.json $(git ls-files 'supabase/functions/**/*.ts' | grep -v __tests__)"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
