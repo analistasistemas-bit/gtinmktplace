@@ -43,6 +43,12 @@ auth.users), `criado_em`, `atualizado_em`. Único `(org_id, canal)`. RLS: SELECT
 própria org; INSERT/UPDATE/DELETE só via RPC `service_role`. A migração de dados reusa os
 **mesmos** `secret_id` da `ml_credentials` existente — zero re-criptografia.
 
+Liveness da integração (ADR-0069, migration `20260712171338_liveness_marketplace_connections.sql`):
+`ultima_sincronizacao_ok_em timestamptz` (última sync bem-sucedida de qualquer worker/reconciliação)
+e `auth_alerta_em timestamptz` (marcado na 1ª falha 401/403 detectada, resetado a `null` no próximo
+sucesso — anti-spam do alerta Telegram categoria `integracao`). Escritas via `registrarSyncOk`/
+`registrarFalhaAuth` (`_shared/ml/liveness.ts`), só `service_role` (sem policy de UPDATE extra).
+
 ## Acesso e usuários (ADR-0047 + ADR-0027)
 
 ### `profiles`
@@ -52,7 +58,8 @@ Espelho 1:1 de `auth.users` (`id` FK). Colunas: `email`, `nome`, `is_admin`, `is
 (boolean, default `false` — só Diego; único papel que cria organizações via `create_org`),
 `telegram_chat_id`, `telegram_categorias text[]` (destinatário Telegram por perfil, ADR-0068 —
 CHECK `profiles_telegram_categorias_validas` restringe a `vendas`/`perguntas`/`pos_venda`/
-`financeiro`/`moderacao`/`mensagens`; categoria sem nenhum assinante não envia nada).
+`financeiro`/`moderacao`/`mensagens`/`integracao` (ADR-0069, migration
+`20260712171337_integracao_categoria_notificacao.sql`); categoria sem nenhum assinante não envia nada).
 Criado no signup pelo trigger `handle_new_user` (semeia `nome`/`allowed_menus`/**`org_id`** do
 `raw_user_meta_data` do convite). RLS: SELECT do próprio ou de admin **da mesma org**;
 INSERT/UPDATE/DELETE só admin, escopado à própria org.

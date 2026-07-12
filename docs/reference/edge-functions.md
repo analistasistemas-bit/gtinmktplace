@@ -207,6 +207,15 @@
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
   upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. `sync-venda` também
   envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
+  Liveness da integração (ADR-0069): erro no token ou no fetch do recurso é classificado via
+  `classificarErroML` — 401/403 (`permanente-auth`) grava `marketplace_connections.auth_alerta_em`
+  e alerta `notificarCategoria(..., 'integracao', ...)` só na 1ª falha (200, sem retry); 404
+  mantém `naoEncontrado`/`naoEncontrada` (200); qualquer outro erro é `transiente` (502, QStash
+  re-tenta). Sucesso grava `ultima_sincronizacao_ok_em` e reseta `auth_alerta_em`
+  (`registrarSyncOk`/`registrarFalhaAuth` em `_shared/ml/liveness.ts`). **Gap conhecido:** a
+  classificação cobre 401/403 no fetch do recurso e no token, mas não o `POST /oauth/token` de
+  refresh — que a ADR-0012 já documentou devolvendo **400** (não 401) para refresh_token inválido;
+  hoje isso cai em `transiente`, sem alerta (ver relatório do plan 039).
 - **sync-mensagem** *(worker)* — busca o pack de mensagens pós-venda
   (`GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale`), upsert idempotente por
   `message_id` em `ml_mensagens` (contagem de "novas recebidas" via retorno do próprio upsert
@@ -223,7 +232,10 @@
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
-  de todos os usuários com credencial (cobre webhooks perdidos).
+  de todos os usuários com credencial (cobre webhooks perdidos). Liveness (ADR-0069): só o catch
+  do token classifica (`registrarFalhaAuth`/alerta 'integracao' em 401/403); os catches internos
+  de pedidos/perguntas/claims (`buscarPedidosPeriodo` etc.) continuam "segue" sem classificar —
+  não é backstop de auth-liveness para esses casos, só para falha no token em si.
 
 ### Financeiro (Mercado Pago)
 - **resumo-financeiro** — agrega pagamentos do MP (bruto/líquido/descontos) e cruza com custo
