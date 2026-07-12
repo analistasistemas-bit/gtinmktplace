@@ -75,19 +75,27 @@ export function humanizarErroML(status: number, json: unknown): string {
 
 export class MLApiError extends Error {
   readonly status: number | null;
-  constructor(status: number | null, message: string) {
+  readonly oauthError: string | null;
+  constructor(status: number | null, message: string, oauthError: string | null = null) {
     super(message);
     this.name = 'MLApiError';
     this.status = status;
+    this.oauthError = oauthError;
   }
 }
 
 export type ClassificacaoErroML = 'permanente-auth' | 'transiente' | 'nao-encontrado';
 
-/** 401/403 = token morto (não conserta sozinho); 404 = recurso realmente ausente;
- *  qualquer outra coisa (429/5xx/timeout/status null de erro de rede) = transiente, vale retry. */
-export function classificarErroML(status: number | null): ClassificacaoErroML {
+/** 401/403 = token morto (não conserta sozinho); OAuth2 `error: "invalid_grant"` (refresh_token
+ *  revogado/expirado, RFC 6749 §5.2) também é token morto MESMO com status 400 — o ML usa 400
+ *  aqui (ADR-0012). Outros erros 400 (invalid_client/invalid_scope/etc., inclusive o 400
+ *  auto-induzido por uma corrida de refresh concorrente — ver ADR-0012 "condição de corrida")
+ *  continuam transientes: não indicam necessariamente reconexão necessária. 404 = recurso
+ *  realmente ausente; qualquer outra coisa (429/5xx/timeout/status null de erro de rede) =
+ *  transiente, vale retry. */
+export function classificarErroML(status: number | null, oauthError?: string | null): ClassificacaoErroML {
   if (status === 401 || status === 403) return 'permanente-auth';
+  if (oauthError === 'invalid_grant') return 'permanente-auth';
   if (status === 404) return 'nao-encontrado';
   return 'transiente';
 }

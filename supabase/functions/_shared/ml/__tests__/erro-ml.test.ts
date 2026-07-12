@@ -71,4 +71,8 @@ describe('classificarErroML (liveness da integração, ADR-0069)', () => {
   it('429 → transiente', () => { expect(classificarErroML(429)).toBe('transiente'); });
   it('500 → transiente', () => { expect(classificarErroML(500)).toBe('transiente'); });
   it('null (erro de rede/timeout sem status HTTP) → transiente', () => { expect(classificarErroML(null)).toBe('transiente'); });
+  it('400 sem oauthError → transiente (comportamento preservado)', () => { expect(classificarErroML(400)).toBe('transiente'); });
+  it('400 + invalid_grant (refresh_token revogado, ADR-0012) → permanente-auth', () => { expect(classificarErroML(400, 'invalid_grant')).toBe('permanente-auth'); });
+  it('400 + invalid_client (outro erro OAuth2, não é prova de token morto) → transiente', () => { expect(classificarErroML(400, 'invalid_client')).toBe('transiente'); });
+  it('401 + invalid_grant → permanente-auth (qualquer uma das duas condições já basta)', () => { expect(classificarErroML(401, 'invalid_grant')).toBe('permanente-auth'); });
 });

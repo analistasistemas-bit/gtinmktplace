@@ -34,7 +34,10 @@ async function postToken(params: Record<string, string>): Promise<TokenML> {
     }),
   });
   if (!resp.ok) {
-    throw new MLApiError(resp.status, `ML /oauth/token ${resp.status}: ${await resp.text()}`);
+    const bodyText = await resp.text();
+    let oauthError: string | null = null;
+    try { oauthError = (JSON.parse(bodyText) as { error?: string })?.error ?? null; } catch { /* corpo não-JSON, ok */ }
+    throw new MLApiError(resp.status, `ML /oauth/token ${resp.status}: ${bodyText}`, oauthError);
   }
   return resp.json() as Promise<TokenML>;
 }

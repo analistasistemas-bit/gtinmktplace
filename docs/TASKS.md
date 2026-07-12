@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Liveness ML — gap do refresh de token (ADR-0069, plano 040) — 2026-07-12
+
+- [x] Gap conhecido documentado em `docs/reference/edge-functions.md`: `classificarErroML`
+  (ADR-0069) só olhava status HTTP, então `POST /oauth/token` respondendo **400** com
+  `refresh_token` revogado (ADR-0012) nunca alertava (caía em `transiente`).
+- [x] Fix cirúrgico: `postToken` (`_shared/ml/token.ts`) parseia o corpo de erro e extrai o campo
+  OAuth2 `error` (RFC 6749 §5.2); `MLApiError` ganha `oauthError`; `classificarErroML` trata
+  `oauthError === 'invalid_grant'` como `permanente-auth` mesmo com status 400 — sem generalizar
+  para qualquer 400 (preserva o caso benigno da corrida de refresh do ADR-0012 como `transiente`).
+  4 workers (`sync-venda/pergunta/devolucao`, `reconciliar-faturamento`) passam `oauthError` no
+  catch do token (nunca no catch do fetch de recurso — confirmado que `buscarPedido`/
+  `buscarPergunta`/`buscarClaim` nunca populam esse campo).
+- [x] Testes: 4 casos novos em `erro-ml.test.ts` (400 puro segue `transiente`; 400+`invalid_grant`
+  → `permanente-auth`; 400+`invalid_client` segue `transiente`; 401+`invalid_grant` →
+  `permanente-auth`). `pnpm test` (1420/1420), `deno lint`/`deno check`/`pnpm build` limpos.
+- [ ] **Pendência aceita:** o formato real do corpo de erro do ML para `invalid_grant` nunca foi
+  observado ao vivo (só documentado pela RFC) — pior caso se divergir é `oauthError` ficar `null`
+  e o comportamento continuar idêntico ao pré-fix. Confirma organicamente na 1ª revogação real.
+
 ## Auditoria `improve` rodada 3 — mensagens pós-venda (planos 034-038) — 2026-07-12
 
 - [x] Nova auditoria pós-017-033 na superfície ADR-0067/0068: sem IDOR cross-tenant (classe do

@@ -21,7 +21,8 @@ async function tratarFalha(
   admin: SupabaseClient, conexao: ConexaoCanal, orgId: string | null, e: unknown,
 ): Promise<Response> {
   const status = e instanceof MLApiError ? e.status : null;
-  const classe = classificarErroML(status);
+  const oauthError = e instanceof MLApiError ? e.oauthError : null;
+  const classe = classificarErroML(status, oauthError);
   if (classe === 'permanente-auth') {
     const { jaAlertado } = await registrarFalhaAuth(admin, conexao.id, (e as Error).message);
     if (!jaAlertado && orgId) {

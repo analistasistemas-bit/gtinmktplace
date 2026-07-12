@@ -44,7 +44,8 @@ Deno.serve(async (req) => {
         token = await getValidAccessTokenConexao(cx);
       } catch (e) {
         const status = e instanceof MLApiError ? e.status : null;
-        if (classificarErroML(status) === 'permanente-auth') {
+        const oauthError = e instanceof MLApiError ? e.oauthError : null;
+        if (classificarErroML(status, oauthError) === 'permanente-auth') {
           const { jaAlertado } = await registrarFalhaAuth(admin, cx.id, (e as Error).message);
           if (!jaAlertado) {
             await notificarCategoria(admin, orgId, 'integracao', montarMensagemConexaoBloqueada(orgId, (e as Error).message));

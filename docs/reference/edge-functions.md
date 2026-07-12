@@ -212,10 +212,13 @@
   e alerta `notificarCategoria(..., 'integracao', ...)` só na 1ª falha (200, sem retry); 404
   mantém `naoEncontrado`/`naoEncontrada` (200); qualquer outro erro é `transiente` (502, QStash
   re-tenta). Sucesso grava `ultima_sincronizacao_ok_em` e reseta `auth_alerta_em`
-  (`registrarSyncOk`/`registrarFalhaAuth` em `_shared/ml/liveness.ts`). **Gap conhecido:** a
-  classificação cobre 401/403 no fetch do recurso e no token, mas não o `POST /oauth/token` de
-  refresh — que a ADR-0012 já documentou devolvendo **400** (não 401) para refresh_token inválido;
-  hoje isso cai em `transiente`, sem alerta (ver relatório do plan 039).
+  (`registrarSyncOk`/`registrarFalhaAuth` em `_shared/ml/liveness.ts`). O refresh de token
+  (`POST /oauth/token`, ADR-0012) também é coberto: o ML responde **400** (não 401) quando o
+  `refresh_token` foi revogado/expirado; `postToken` (`_shared/ml/token.ts`) faz parse best-effort
+  do corpo de erro e extrai o campo OAuth2 `error` (RFC 6749 §5.2), e `classificarErroML` trata
+  `oauthError === 'invalid_grant'` como `permanente-auth` mesmo com status 400 — sem generalizar
+  para qualquer 400 (outros erros OAuth2, incl. o 400 auto-induzido pela corrida de refresh
+  concorrente do ADR-0012, continuam `transiente`).
 - **sync-mensagem** *(worker)* — busca o pack de mensagens pós-venda
   (`GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale`), upsert idempotente por
   `message_id` em `ml_mensagens` (contagem de "novas recebidas" via retorno do próprio upsert
