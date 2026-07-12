@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-07-02
+**Ultima atualizacao:** 2026-07-12
 
 ## Snapshot
 
@@ -55,6 +55,8 @@ antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquite
 - Modulo Faturamento (ADR-0037, 2026-06-22) EM PRODUCAO (validado 2026-07-02): menu Faturamento (Vendas + Devolucoes + Perguntas c/ IA), webhooks ML (`ml-webhook` + topicos orders_v2/questions/claims/shipments no DevCenter) e schedule QStash horario para `reconciliar-faturamento` ativos.
 - Lote #49 barbante (ADR-0051, 2026-07-01) resolvido em producao (validado 2026-07-02): 3 familias reprocessadas apos deploy do fix de tipo/categoria.
 - Liquido economico correto em producao (ADR-0042, 2026-06-25): o `net_received_amount` do MP era inconsistente (cross-docking desconta frete cheio e ignora comissao; pack desconta comissao e ignora frete), gerando markup falso. Liquido passa a ser `bruto - comissao - frete real` de fontes autoritativas (`sale_fee` + `senders[].cost`), com rateio de pack net-independente. Faturamento e Financeiro batem (fonte unica `ml_vendas`). DB reconciliado (46 pedidos), 4 edges + front deployados, validado com browser-use. O caminho do MP ao vivo (`lib/financeiro.ts`, `useResumoFinanceiro`, edge `resumo-financeiro`) ficou OBSOLETO, mas os arquivos NAO foram deletados — seguem como codigo morto sem call site no frontend (a tela usa `ml_vendas`), a limpar num passe futuro.
+- Re-ancora de preco no piso dos MercadoLideres (ADR-0065, 2026-07-08) EM PRODUCAO: no CREATE, quando o preco competitivo (`menor_preco × (1 − desconto%)`) da prejuizo (liquido Classico < custo), a base do preco troca para o preco do MercadoLider com mais vendas entre as ofertas (desempate: menor preco entre os empatados) — nunca sobe acima desse concorrente real, nunca faz gross-up, 🔴 continua 🔴 quando mesmo a ancora da prejuizo. Decisao familia-level (pior caso), sinalizada por `familias.preco_reancorado_lider` + selo "COMPETITIVO · ancora lider" na Revisao. Gated por toggle `reancora_lider_ativa` por org (default false, reversivel sem deploy).
+- Fix fiscal no Financeiro > Detalhe do liquido (ADR-0066, 2026-07-09) EM PRODUCAO: "Liquido" nessa tela deixa de descontar imposto (soma o imposto de volta antes de exibir, bate 1:1 com o banner "Liquido total" e com o valor recebido no Mercado Pago); "Markup" continua liquido de imposto, igual as demais telas. Escopo restrito a essa tela (Faturamento → Vendas e Publicados nao mudam). Follow-up no mesmo par de dias: fix do markup do Faturamento que divergia do Dashboard/Publicados/Financeiro (commit `b5ecbc4`, 2026-07-09).
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
@@ -89,7 +91,7 @@ Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem
 
 ## Deploys operacionais mais recentes
 
-- `process-familia` v41 (refactor A1: resolver de categoria sem fallback hard-coded)
+- `process-familia` (re-ancora no piso-lider, ADR-0065, 2026-07-08; inclui `_shared/preco/sugerir.ts` e `_shared/preco/piso-lider.ts`) — versao pos-deploy (confirmar)
 - `publish-familia-ml` v31
 - `remover-publicado` v7
 
