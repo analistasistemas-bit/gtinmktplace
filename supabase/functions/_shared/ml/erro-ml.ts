@@ -66,3 +66,28 @@ export function humanizarErroML(status: number, json: unknown): string {
 
   return j.message ?? j.error ?? `O Mercado Livre recusou (erro ${status}).`;
 }
+
+// ─── Liveness da integração (ADR-0069) ─────────────────────────────────────
+// Classificação por STATUS HTTP (eixo diferente de `ehErroRetentavel`, que olha o
+// corpo/padrão de mensagem de erro de publicação). Usada pelos workers de sync
+// (venda/pergunta/devolução) e pela reconciliação para distinguir token morto de
+// falha transiente, sem depender do corpo da resposta.
+
+export class MLApiError extends Error {
+  readonly status: number | null;
+  constructor(status: number | null, message: string) {
+    super(message);
+    this.name = 'MLApiError';
+    this.status = status;
+  }
+}
+
+export type ClassificacaoErroML = 'permanente-auth' | 'transiente' | 'nao-encontrado';
+
+/** 401/403 = token morto (não conserta sozinho); 404 = recurso realmente ausente;
+ *  qualquer outra coisa (429/5xx/timeout/status null de erro de rede) = transiente, vale retry. */
+export function classificarErroML(status: number | null): ClassificacaoErroML {
+  if (status === 401 || status === 403) return 'permanente-auth';
+  if (status === 404) return 'nao-encontrado';
+  return 'transiente';
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanizarErroML, ehErroRetentavel } from '../erro-ml';
+import { humanizarErroML, ehErroRetentavel, classificarErroML } from '../erro-ml';
 
 describe('humanizarErroML', () => {
   it('título acima de 60 → mensagem clara em PT (ignora os warnings de frete)', () => {
@@ -62,4 +62,13 @@ describe('ehErroRetentavel (erro transiente que o ML pede para reenviar)', () =>
   it('json vazio → não retentável', () => {
     expect(ehErroRetentavel({})).toBe(false);
   });
+});
+
+describe('classificarErroML (liveness da integração, ADR-0069)', () => {
+  it('401 → permanente-auth', () => { expect(classificarErroML(401)).toBe('permanente-auth'); });
+  it('403 → permanente-auth', () => { expect(classificarErroML(403)).toBe('permanente-auth'); });
+  it('404 → nao-encontrado', () => { expect(classificarErroML(404)).toBe('nao-encontrado'); });
+  it('429 → transiente', () => { expect(classificarErroML(429)).toBe('transiente'); });
+  it('500 → transiente', () => { expect(classificarErroML(500)).toBe('transiente'); });
+  it('null (erro de rede/timeout sem status HTTP) → transiente', () => { expect(classificarErroML(null)).toBe('transiente'); });
 });
