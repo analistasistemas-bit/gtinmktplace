@@ -76,7 +76,8 @@ supabase db push --linked
 
 ### Lembretes de schema
 
-- RLS por `user_id` é obrigatória em tabela de domínio (ADR-0027).
+- RLS por `org_id` (`current_org_id()`) é obrigatória em tabela de domínio — ADR-0027 trocou o
+  isolamento antigo por `user_id`/`is_membro_operacao()` por `org_id` (multi-tenancy).
 - Escritas sensíveis via `service_role`/RPC, não para `authenticated`.
 - Prefira mudanças **aditivas** (o schema é aditivo desde o MVP — ADR-0007).
 

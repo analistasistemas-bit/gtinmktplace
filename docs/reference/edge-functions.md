@@ -33,6 +33,7 @@
 | publicar-anuncio | false | QStash (fila serial por canal) | sim (claim atômico por canal) |
 | regenerar-copy-familia | false | HTTP (JWT manual) | não |
 | definir-categoria-familia | true | HTTP (frontend) | não |
+| atributos-familia | true | HTTP (frontend) | não |
 | vincular-catalogo | false | QStash (delay 10min) | sim (upsert) |
 | **Remoção / reprocessamento** ||||
 | remover-publicado | false | HTTP (JWT manual) | sim (guarded) |

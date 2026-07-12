@@ -8,8 +8,9 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-05-29 (M4 bloco OAuth ML entregue)
-**Estado geral:** 🟢 M0+M1+M2+M3+M3.1 + trilho ML concluídos; M4 (Integração Mercado Livre) **em andamento** — bloco OAuth ✅ (conectar/desconectar validado em produção, ADR-0012); faltam concorrência, preço, categorias e publicação
+**Última atualização:** 2026-07-12 (tabela da Evolução v2 sincronizada com E6/E7 em produção)
+**Estado geral:** 🟢 M0-M4 (MVP ML) concluídos; Evolução v2 em execução — E1-E4, E6, E7 em
+produção; E5 (Shopee) é o próximo épico. Snapshot completo sempre em `project-status.md`.
 
 ---
 
@@ -258,19 +259,22 @@ Sistema em uso recorrente; operador é autônomo no fluxo principal.
 
 ## 🚀 Evolução v2 — SaaS multicanal (pós-MVP)
 
-**Status:** 📋 Planejado (documento mestre aprovado 2026-06-13)
+**Status:** 🟢 Em execução — E1-E4, E6 e E7 **já em produção** (2026-07-05/06); E5/E6b/E8/E9 pendentes.
 **Documento:** [superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)
+**Priorização atual:** ver [Roadmap-Estrategico-PubliAI-v2.md](Roadmap-Estrategico-PubliAI-v2.md)
+(revisão de CTO, 2026-07-12, 8 fases de construção da empresa) — supersede a ordem abaixo;
+principal mudança: Shopee (E5) antecipado, roda em paralelo à fundação comercial, não "depois".
 
 Transformar o PubliAI de ferramenta interna (ML-only, single-operador, aviamentos) em **SaaS
 multi-tenant, multi-marketplace, para qualquer produto** — comercializável. Abordagem *strangler fig*
 (evoluir in-place, sem big-bang), em 4 fases / 9 épicos:
 
-| Fase | Épicos | Entrega |
-|---|---|---|
-| **0 — Fundação** | E1 Camada de abstração de canais · E2 Modelo de dados multicanal (`anuncios_externos`) | ML atrás de uma interface; catálogo agnóstico (sem mudança visível) |
-| **1 — Qualquer produto** | E3 Taxonomia canônica + categoria por IA · E4 Atributos por IA (closed-set) | Sai do regex por nicho; aceita qualquer segmento |
-| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · E6b Estoque único cross-canal | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada |
-| **3 — Virar SaaS** | E7 Multi-tenancy · E8 Billing (Asaas) + LGPD · E9 Operação SaaS | Multi-cliente, cobrável, escalável |
+| Fase | Épicos | Entrega | Status |
+|---|---|---|---|
+| **0 — Fundação** | E1 Camada de abstração de canais · E2 Modelo de dados multicanal (`anuncios_externos`) | ML atrás de uma interface; catálogo agnóstico (sem mudança visível) | ✅ Em produção |
+| **1 — Qualquer produto** | E3 Taxonomia canônica + categoria por IA · E4 Atributos por IA (closed-set) | Sai do regex por nicho; aceita qualquer segmento | ✅ Em produção |
+| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · E6b Estoque único cross-canal | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada | ✅ E6 em produção (2026-07-06); 📋 E5/E6b pendentes, E5 antecipado pelo roadmap v2 |
+| **3 — Virar SaaS** | E7 Multi-tenancy · E8 Billing (Asaas) + LGPD · E9 Operação SaaS | Multi-cliente, cobrável, escalável | ✅ E7 em produção (2026-07-05/06); 📋 E8/E9 pendentes (billing mínimo viável, roadmap v2) |
 
 **Decisões-chave:** strangler in-place (D1) · Shopee como 2º canal (D2) · assinatura por planos + metering
 de IA (D3) · IA híbrida + regras por vertical (D4). ADR stubs: 0024 (abstração), 0025 (dados multicanal),
@@ -352,10 +356,12 @@ Repetido do design para enfatizar:
 
 Itens explicitamente para versões futuras (vários agora **planejados** na [Evolução v2 — SaaS multicanal](#-evolução-v2--saas-multicanal-pós-mvp)):
 
-- 📋 Outros marketplaces (Shopee, Magalu, Amazon) — **Evolução v2, Fase 2** (E5/E6)
+- 📋 Outros marketplaces (Shopee, Magalu, Amazon) — **Evolução v2, Fase 2**: ✅ E6 (orquestração
+  multicanal) em produção; 📋 E5 (conector Shopee) pendente, antecipado pelo roadmap v2
 - ❌ Tecidos — v2 ([ADR-0002](decisions/0002-mvp-aviamentos-primeiro.md)); coberto pela generalização por IA (Fase 1)
 - ❌ Sincronização contínua sem re-importar planilha — v3
-- 📋 Multi-usuário com permissões diferentes — **Evolução v2, Fase 3** (E7 multi-tenancy)
+- ✅ Multi-usuário com permissões diferentes — **entregue**: permissão de menu (ADR-0047) +
+  isolamento real por `org_id` no E7 (ADR-0027, em produção)
 - ❌ Análise de performance pós-publicação (vendas, visualizações)
 - ❌ Bot/IA respondendo perguntas no ML
 - ❌ Sincronização de estoque em tempo real

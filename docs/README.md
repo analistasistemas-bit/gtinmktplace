@@ -31,32 +31,30 @@ entender e operar o sistema:
 
 ## Estrutura desta documentação
 
+> Contagens abaixo são um retrato de 2026-07-12 — cada pasta cresce sem que este índice
+> precise ser tocado; use o índice de ADRs (acima) e `ls` para o estado exato.
+
 ```
 docs/
 ├── README.md                      ← você está aqui (índice geral)
 ├── project-status.md              ← estado atual curto e confiável
 ├── project-history.md             ← marcos históricos resumidos
 ├── ROADMAP.md                     ← visão estratégica das fases (vivo)
+├── Roadmap-Estrategico-PubliAI-v2.md ← revisão de CTO do roadmap (8 fases, 2026-07-12)
 ├── TASKS.md                       ← checklist operacional do dia a dia (vivo)
-├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis)
-│   ├── README.md                  ← como ler e escrever ADRs
-│   ├── 0001-stack-tecnologico.md
-│   ├── 0002-mvp-aviamentos-primeiro.md
-│   ├── 0003-variacoes-agrupadas-por-pai.md
-│   ├── 0004-atribuicao-de-cor.md
-│   ├── 0005-lifecycle-publish-and-update.md
-│   ├── 0006-qstash-em-vez-de-postgres-queue.md
-│   ├── 0007-modelo-de-dados-4-tabelas.md
-│   ├── 0008-estrategia-de-preco-condicional.md
-│   ├── 0009-campos-payload-ml-e-categoria-deterministica.md
-│   ├── 0010-openrouter-em-vez-de-openai-direto.md
-│   └── 0011-redirect-uri-via-edge-function.md
+├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 69 arquivos, 0001-0069
+│   └── README.md                  ← como ler e escrever ADRs
+├── reference/                     ← schema, edge functions, glossário, permissões ML
+├── explanation/                   ← arquitetura ponta a ponta
+├── how-to/                        ← deploy, dev local, operações rotineiras
+├── diagrams/                      ← C4, ERD, sequências
+├── spikes/                        ← investigações pontuais antes de virar ADR/plano
+├── runbooks/                      ← procedimento de incidente específico
+├── design-system/                 ← tokens visuais derivados do código
+├── brand/                         ← briefings de identidade visual
 └── superpowers/
-    ├── specs/                     ← spec formal do design (1 por marco de planejamento)
-    │   ├── 2026-05-26-publiai-design.md
-    │   └── 2026-05-28-foto-capa-familia-design.md
-    └── plans/
-        └── 2026-05-28-plan-05-foto-capa.md
+    ├── specs/                     ← spec formal do design (1 por marco de planejamento) — 56 arquivos
+    └── plans/                     ← plano de execução por marco — 52 arquivos
 ```
 
 ## Documentos vivos vs imutáveis
