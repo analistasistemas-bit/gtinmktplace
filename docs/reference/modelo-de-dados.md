@@ -49,7 +49,10 @@ própria org; INSERT/UPDATE/DELETE só via RPC `service_role`. A migração de d
 Espelho 1:1 de `auth.users` (`id` FK). Colunas: `email`, `nome`, `is_admin`, `is_active`,
 `allowed_menus text[]` (chaves de menu que um não-admin acessa), `created_at`, `updated_at`,
 **`org_id`** (FK organizations, `NOT NULL` — a organização do usuário, ADR-0027), **`is_super_admin`**
-(boolean, default `false` — só Diego; único papel que cria organizações via `create_org`).
+(boolean, default `false` — só Diego; único papel que cria organizações via `create_org`),
+`telegram_chat_id`, `telegram_categorias text[]` (destinatário Telegram por perfil, ADR-0068 —
+CHECK `profiles_telegram_categorias_validas` restringe a `vendas`/`perguntas`/`pos_venda`/
+`financeiro`/`moderacao`/`mensagens`; categoria sem nenhum assinante não envia nada).
 Criado no signup pelo trigger `handle_new_user` (semeia `nome`/`allowed_menus`/**`org_id`** do
 `raw_user_meta_data` do convite). RLS: SELECT do próprio ou de admin **da mesma org**;
 INSERT/UPDATE/DELETE só admin, escopado à própria org.
@@ -228,6 +231,17 @@ Perguntas de compradores. *Migration `20260622193354_faturamento_perguntas.sql` 
 Dedup de webhooks. *Mesma migration de vendas (ADR-0037).*
 `topic`, `resource`, `recebido_em`, `processado_em`, `erro`. Único `(topic, resource)`.
 Índice `(user_id, recebido_em)` para o throttle por vendedor do `ml-webhook` (janela de 60s, INT-018/033).
+Para `messages`, o resource é o mesmo para toda a conversa — `sync-mensagem` **apaga** a linha ao
+processar (reabre o dedup para a próxima mensagem) em vez de só marcar `processado_em`, plan 035.
+
+### `ml_mensagens`
+Mensagens pós-venda comprador↔vendedor. *Migration `20260711120000_faturamento_mensagens.sql`
+(ADR-0067).* `pack_id`, `order_id`, `message_id` (**único com `user_id`**, alvo do upsert
+idempotente), `direcao` (`recebida`/`enviada`), `texto`, `item_titulo`, `data_ml`, `lida`,
+`atualizado_em`, `raw jsonb`. Grants: só `select` para `authenticated` (RLS por `user_id`);
+`anon` sem nenhum privilégio (a migration original dava `grant all` por engano — revogado no
+plan 037, mesmo precedente de `ml_perguntas`). Escrita real só pelo worker (`service_role`,
+bypassa RLS).
 
 ---
 
@@ -281,6 +295,8 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
 | `get_mp_token(org)` | Lê o secret do Mercado Pago da org no Vault; `null` se a org não configurou (caller cai no fallback de instância) |
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
+| `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack como lidas (limpa o badge da conversa) |
+| `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida` — badge do menu, sem baixar a tabela inteira (plan 036) |
 | ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
 | ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
 | ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |

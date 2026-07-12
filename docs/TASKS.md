@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Auditoria `improve` rodada 3 — mensagens pós-venda (planos 034-038) — 2026-07-12
+
+- [x] Nova auditoria pós-017-033 na superfície ADR-0067/0068: sem IDOR cross-tenant (classe do
+  plano 017 não regrediu). Planos 034-038 escritos (`plans/README.md`).
+- [x] **034 — testes de caracterização** do fluxo de mensagens antes de mexer nele. +12 testes.
+- [x] **035 — fix real: follow-ups de mensagens nunca sincronizavam em tempo real** (dedup
+  pack-level no `ml-webhook` bloqueava tudo após a 1ª mensagem da conversa). Alerta migrado para
+  `notificarCategoria('mensagens', ...)`. Ver acima e [[Problemas Resolvidos]].
+- [x] **036 — perf: badge do menu via RPC** `contar_conversas_aguardando()` em vez de baixar
+  `ml_mensagens` inteira no browser.
+- [x] **037 — hardening (5 itens):** revoke de `grant all` p/ `anon` em `ml_mensagens`; validação de
+  `pack_id`; nulls não decidem mais o badge; race de contagem dupla em `upsertMensagens` eliminada;
+  guard de super-admin em `usuarios`.
+- [x] Todas as 3 migrations aplicadas em produção; `ml-webhook`, `sync-mensagem`, `usuarios`,
+  `responder-mensagem`, `backfill-faturamento` redeployadas. Testes 177/177, lint/deno check/build
+  limpos em cada merge.
+- [ ] **Pendências (Diego):** plano 038 (design de liveness de integração — spike 032 → ADR) depende
+  de decisão sobre 4 questões abertas; confirmar topic `messages` habilitado no DevCenter ML (ver
+  item acima).
+
 ## Notificações Telegram por destinatário e categoria — ADR-0068 — 2026-07-11
 
 - [x] Antes: 1 chat_id por org (`configuracoes.telegram_chat_id`) recebia tudo — só o super-admin.
@@ -39,13 +59,17 @@
 - [x] Migration validada aplicando-a **limpa** (drop + re-run) e revalidando pelo browser sem
   nenhum grant manual — os `grant` de tabela estão explícitos no arquivo (não dependem de default
   privileges), espelhando o grant explícito da RPC.
-- [ ] **Pendências (Diego):** aplicar migration + deploy das functions em prod; **habilitar o topic
-  `messages` no DevCenter ML** (sem isso não chega webhook — mas o "Sincronizar" já puxa via
-  backfill); conferir o `resource` real da 1ª notificação `messages` (parse defensivo cobre o caso
-  comum `/messages/packs/{pack}/sellers/{seller}`); **dedup**: se o resource for pack-level, a 2ª
-  mensagem do pack dedupa em `ml_webhook_eventos` e não reenfileira — mitigado pelo "Sincronizar"
-  que re-puxa o pack inteiro. `responder-mensagem` (envio real ao ML) e webhook ao vivo só dá pra
-  validar pós-deploy + token ML.
+- [x] **Migration + deploy em prod** — feito (sessão 2026-07-12).
+- [x] **Dedup do pack-level corrigido (plano 035, 2026-07-12)** — confirmado que o resource É
+  pack-level (`/messages/packs/{pack}/sellers/{seller}`, idêntico p/ toda a conversa); a 2ª mensagem
+  em diante realmente dedupava e nunca reenfileirava (bug real, não hipotético — o "Sincronizar"
+  mitigava só a UI, sem alertar). Fix: `sync-mensagem` apaga a linha de dedup ao processar (reabre
+  para a próxima mensagem); webhook reenfileira job perdido (linha órfã >2min). Ver
+  [[Problemas Resolvidos]] no vault.
+- [ ] **Pendências (Diego):** confirmar se o topic `messages` está habilitado no DevCenter ML — até
+  2026-07-12 nenhum evento `messages` real chegou em `ml_webhook_eventos` (0 linhas), então o parse
+  defensivo do resource (`/messages/packs/{pack}/sellers/{seller}`) segue **não confirmado com
+  tráfego real de produção** — só com o backfill/"Sincronizar". Validar no 1º webhook real.
 
 ## Cor "Outra" vazando: gap no UPDATE ao vivo + remediação de 15 anúncios já publicados — ADR-0044 — 2026-07-10
 

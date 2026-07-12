@@ -10,6 +10,22 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Follow-ups de mensagens pós-venda nunca sincronizavam em tempo real (plano 035, 2026-07-12)** —
+  o `ml-webhook` deduplica notificações por `(topic, resource)`, mas o resource de `messages`
+  (`/messages/packs/{pack}/sellers/{seller}`) é **idêntico para toda mensagem da mesma conversa**.
+  A 1ª mensagem do comprador inseria a linha de dedup; da 2ª em diante o insert conflitava e o
+  webhook fazia ACK sem reenfileirar `sync-mensagem` — o operador só via a resposta no badge (e
+  nunca recebia alerta) depois do backfill horário, que explicitamente não alerta (evita spam ao
+  importar histórico). **Fix:** `sync-mensagem` apaga a linha de dedup do pack ao terminar de
+  processar (reabre para a próxima mensagem da conversa); o webhook reenfileira mesmo em conflito
+  quando a linha existente é antiga (>2min) e nunca foi processada (sinal de job perdido —
+  `deveReenfileirarMensagens`). De carona, o alerta saiu do chat único da org (`lerConfigTelegram`)
+  e passou a rotear por `notificarCategoria('mensagens', ...)`, o mesmo modelo por destinatário dos
+  demais tópicos (ADR-0068) — faltava essa categoria existir. Deploy `ml-webhook v20`,
+  `sync-mensagem v2`, `usuarios` (também consome a lista de categorias — faltou no 1º deploy,
+  corrigido no ato). Bug **real e ativo** (não latente) — todo comprador que mandasse uma 2ª
+  mensagem numa conversa parava de gerar alerta/atualização em tempo real desde que o fluxo de
+  mensagens entrou em produção. Ver [[Incidentes]] e ADR-0067/ADR-0068.
 - **Re-ingest UPDATE de planilha republicava a foto ANTIGA ao trocar capa/imagem (plano 031, 2026-07-12)** —
   o ramo de re-ingest UPDATE do `ingest-lote` herdava `capa_ml_picture_id`/`ml_picture_id` do anúncio
   anterior enquanto derivava `capa_storage_path`/`imagem_path` do lote novo. Como os paths embutem o

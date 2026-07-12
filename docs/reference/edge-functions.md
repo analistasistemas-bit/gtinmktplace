@@ -199,13 +199,21 @@
   roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions), `sync-devolucao`
   (claims) ou `sync-mensagem` (messages). Nunca confia no corpo — o worker re-busca autenticado
   (ADR-0037). Para `messages`, extrai o `pack_id` do resource (`/messages/packs/{pack}/...`),
-  não o último segmento (que é o seller) — ADR-0067.
+  não o último segmento (que é o seller) — ADR-0067. O resource de `messages` é o mesmo para toda
+  mensagem da conversa (dedup por conversa, não por mensagem): `sync-mensagem` apaga a linha de
+  dedup ao terminar de processar, reabrindo para o próximo evento; se a conversa travar (linha
+  antiga e nunca processada, >2min — job perdido), o webhook reenfileira mesmo em conflito de
+  dedup (`deveReenfileirarMensagens`, plan 035).
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
   upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. `sync-venda` também
   envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
 - **sync-mensagem** *(worker)* — busca o pack de mensagens pós-venda
   (`GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale`), upsert idempotente por
-  `message_id` em `ml_mensagens`, alerta Telegram em nova mensagem recebida (ADR-0067).
+  `message_id` em `ml_mensagens` (contagem de "novas recebidas" via retorno do próprio upsert
+  `ignoreDuplicates`, sem race entre execuções concorrentes — plan 037), alerta via
+  `notificarCategoria(..., 'mensagens', ...)` — categoria por destinatário (ADR-0068), não mais o
+  chat único da org. Ao terminar, apaga a linha de dedup do pack em `ml_webhook_eventos`
+  (reabre para a próxima mensagem da mesma conversa — plan 035).
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
 - **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
   re-busca o pack e marca as recebidas como lidas. Reusa `sugerir-resposta-pergunta` para a
