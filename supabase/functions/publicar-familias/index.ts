@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
       .eq('operacao', 'CREATE')
       .in('status', ['pronto', 'erro'])
       .is('ml_item_id', null)
+      .eq('org_id', orgId)
       .select('id, lote_id, user_id');
     if (errC) return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
 
@@ -54,6 +55,7 @@ Deno.serve(async (req) => {
       .eq('operacao', 'UPDATE')
       .in('status', ['pronto', 'erro'])
       .not('ml_item_id', 'is', null)
+      .eq('org_id', orgId)
       .select('id, lote_id, user_id');
     if (errU) return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
 
@@ -107,7 +109,7 @@ Deno.serve(async (req) => {
     // Elegibilidade por canal é do claim da linha do canal, não do familias.status: carrega
     // TODAS as famílias pedidas (codigo_pai é a identidade por canal).
     const { data: familiasAlvo } = await admin.from('familias')
-      .select('id, lote_id, codigo_pai').in('id', familia_ids);
+      .select('id, lote_id, codigo_pai').in('id', familia_ids).eq('org_id', orgId);
     for (const canal of canaisExtras) {
       const conexao = await resolverConexao(admin, orgId, canal);
       if (!conexao) { canaisIgnorados.push(canal); continue; } // org não conectou o canal

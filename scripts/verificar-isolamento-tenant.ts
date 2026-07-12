@@ -128,6 +128,59 @@ async function main() {
     } catch (e) {
       assert(false, 'edge status-publicados respondeu', String(e));
     }
+
+    // 5a. remover-publicado: B mira a família de A → com o fix, o lookup escopado por org
+    // devolve null → 404 (nunca 400 "não publicada" da versão vulnerável, que a acharia).
+    try {
+      const { data: sess } = await cliB.auth.getSession();
+      const token = sess.session?.access_token;
+      const resp = await fetch(`${URL}/functions/v1/remover-publicado`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: ANON!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familia_id: A.famId }),
+      });
+      assert(resp.status === 404, 'edge remover-publicado: B não remove família de A (404)', `status=${resp.status}`);
+    } catch (e) {
+      assert(false, 'edge remover-publicado respondeu', String(e));
+    }
+
+    // 5b. reprocessar-familia: seed A em 'erro', B tenta reprocessar → fix não toca a família
+    // de A (fica 'erro'); versão vulnerável a resetaria para 'pendente'.
+    try {
+      await svc.from('familias').update({ status: 'erro' }).eq('id', A.famId);
+      const { data: sess } = await cliB.auth.getSession();
+      const token = sess.session?.access_token;
+      const resp = await fetch(`${URL}/functions/v1/reprocessar-familia`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: ANON!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familia_id: A.famId }),
+      });
+      const body = await resp.json();
+      assert(body.reenviadas === 0, 'edge reprocessar-familia: B não reprocessa família de A (reenviadas=0)', `reenviadas=${body.reenviadas}`);
+      const { data: apos } = await svc.from('familias').select('status').eq('id', A.famId).single();
+      assert(apos?.status === 'erro', 'edge reprocessar-familia: família de A permanece erro (não resetada)', `status=${apos?.status}`);
+    } catch (e) {
+      assert(false, 'edge reprocessar-familia respondeu', String(e));
+    }
+
+    // 5c. publicar-familias: seed A em 'pronto', B tenta publicar → fix não casa a família de A
+    // no claim (fica 'pronto'); versão vulnerável a marcaria 'publicando'.
+    try {
+      await svc.from('familias').update({ status: 'pronto' }).eq('id', A.famId);
+      const { data: sess } = await cliB.auth.getSession();
+      const token = sess.session?.access_token;
+      const resp = await fetch(`${URL}/functions/v1/publicar-familias`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: ANON!, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familia_ids: [A.famId] }),
+      });
+      const body = await resp.json();
+      assert(body.enfileiradas === 0, 'edge publicar-familias: B não publica família de A (enfileiradas=0)', `enfileiradas=${body.enfileiradas}`);
+      const { data: apos } = await svc.from('familias').select('status').eq('id', A.famId).single();
+      assert(apos?.status === 'pronto', 'edge publicar-familias: família de A permanece pronto (não claimed)', `status=${apos?.status}`);
+    } catch (e) {
+      assert(false, 'edge publicar-familias respondeu', String(e));
+    }
   } else {
     console.log('[--skip-edges] asserções de edge function puladas (ensaio local).');
   }

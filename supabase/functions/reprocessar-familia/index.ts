@@ -1,5 +1,5 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 
@@ -11,17 +11,18 @@ interface Body {
 // Reprocessa famílias travadas em 'erro' (ADR-0030). Re-dispara o process-familia pelo
 // mesmo caminho do app (enfileirarFamilia → QStash do projeto, assinatura válida); o claim
 // atômico do worker exige status 'pendente', então resetamos antes de enfileirar. Idempotente:
-// só age sobre famílias do usuário em 'erro' (guard no UPDATE), tolera duplo clique.
+// só age sobre famílias da org do chamador em 'erro' (guard no UPDATE), tolera duplo clique.
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  // Gate de auth: só membro autenticado da operação (ADR-0047/0056). O escopo das
-  // famílias é a operação inteira, não o chamador.
+  // Gate de auth: membro autenticado da operação (ADR-0047/0056) + org (E7). O escopo
+  // das famílias é a org do chamador, não o usuário individual.
+  let orgId: string;
   try {
-    await requireUser(req);
+    ({ orgId } = await requireUserOrg(req));
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
@@ -39,11 +40,12 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
 
-  // Famílias-alvo: do próprio usuário e em 'erro'. familia_id tem precedência sobre lote_id.
+  // Famílias-alvo: da org do chamador e em 'erro'. familia_id tem precedência sobre lote_id.
   let q = admin
     .from('familias')
     .select('id, lote_id')
-    .eq('status', 'erro');
+    .eq('status', 'erro')
+    .eq('org_id', orgId);
   q = body.familia_id ? q.eq('id', body.familia_id) : q.eq('lote_id', body.lote_id!);
 
   const { data: alvos, error: selErr } = await q;
