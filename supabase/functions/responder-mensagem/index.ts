@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
   const packId = String(body.pack_id ?? '').trim();
   const text = (body.text ?? '').trim();
   if (!packId || !text) return erro('pack_id e text obrigatórios', 400);
+  if (!/^\d+$/.test(packId)) return erro('pack_id inválido', 400);
   if (text.length > 350) return erro('Mensagem excede 350 caracteres.', 400); // limite do ML no pós-venda.
 
   const admin = adminClient();

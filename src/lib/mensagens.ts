@@ -29,8 +29,10 @@ export async function buscarConversas(): Promise<Conversa[]> {
     .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, data_ml')
     // 1000 últimas mensagens; paginação real se a aba crescer. Ordena desc (mais recentes
     // primeiro) para o .limit() pegar as certas, depois reverte para a ordem cronológica
-    // ascendente que o resto da função espera.
-    .order('data_ml', { ascending: false })
+    // ascendente que o resto da função espera. nullsFirst: false → nulls ficam no FIM do desc,
+    // e após o .reverse() acabam no INÍCIO da lista cronológica — nunca decidem `aguardando`/
+    // `ultima` de um pack (plan 037).
+    .order('data_ml', { ascending: false, nullsFirst: false })
     .limit(1000);
   if (error) throw new Error(error.message);
   const lista = ((data ?? []) as Mensagem[]).reverse();

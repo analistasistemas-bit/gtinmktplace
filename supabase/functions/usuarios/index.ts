@@ -73,6 +73,11 @@ Deno.serve(async (req) => {
     }
     case 'set_active': {
       if (body.id === caller.id && !body.is_active) return json({ error: 'não pode se desativar' }, 400);
+      const { data: alvo } = await db.from('profiles').select('is_super_admin')
+        .eq('id', body.id).eq('org_id', orgId).maybeSingle();
+      if (alvo?.is_super_admin && !me.is_super_admin) {
+        return json({ error: 'apenas super-admin altera super-admin' }, 403);
+      }
       const { error } = await db.from('profiles')
         .update({ is_active: !!body.is_active, updated_at: new Date().toISOString() })
         .eq('id', body.id).eq('org_id', orgId);
@@ -81,6 +86,11 @@ Deno.serve(async (req) => {
     }
     case 'set_admin': {
       if (body.id === caller.id && !body.is_admin) return json({ error: 'não pode se rebaixar' }, 400);
+      const { data: alvo } = await db.from('profiles').select('is_super_admin')
+        .eq('id', body.id).eq('org_id', orgId).maybeSingle();
+      if (alvo?.is_super_admin && !me.is_super_admin) {
+        return json({ error: 'apenas super-admin altera super-admin' }, 403);
+      }
       const { error } = await db.from('profiles')
         .update({ is_admin: !!body.is_admin, updated_at: new Date().toISOString() })
         .eq('id', body.id).eq('org_id', orgId);

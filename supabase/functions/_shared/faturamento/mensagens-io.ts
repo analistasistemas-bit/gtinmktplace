@@ -42,15 +42,17 @@ export async function upsertMensagens(
   }).filter((r) => r.message_id);
   if (rows.length === 0) return { novasRecebidas: 0 };
 
-  // Quais já conhecíamos, para contar só as novas recebidas.
-  const ids = rows.map((r) => r.message_id);
-  const { data: existentes } = await admin.from('ml_mensagens')
-    .select('message_id').eq('user_id', userId).in('message_id', ids);
-  const conhecidos = new Set((existentes ?? []).map((e: { message_id: string }) => e.message_id));
+  // ignoreDuplicates: só as linhas efetivamente INSERIDAS (novas) voltam no .select() — DO NOTHING
+  // no conflito, então não há race de check-then-act entre execuções concorrentes do mesmo pack.
+  const { data: inseridas } = await admin.from('ml_mensagens')
+    .upsert(rows, { onConflict: 'user_id,message_id', ignoreDuplicates: true })
+    .select('message_id, direcao');
+  const novasRecebidas = (inseridas ?? []).filter((r) => r.direcao === 'recebida').length;
 
+  // 2ª passada: upsert de verdade (sem ignoreDuplicates) para as existentes continuarem
+  // recebendo raw/atualizado_em/item_titulo atualizados — a 1ª não escreve nada nelas.
   await admin.from('ml_mensagens').upsert(rows, { onConflict: 'user_id,message_id' });
 
-  const novasRecebidas = rows.filter((r) => r.direcao === 'recebida' && !conhecidos.has(r.message_id)).length;
   return { novasRecebidas };
 }
 

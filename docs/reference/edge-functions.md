@@ -209,7 +209,8 @@
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
 - **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
   re-busca o pack e marca as recebidas como lidas. Reusa `sugerir-resposta-pergunta` para a
-  sugestão de IA (ADR-0067).
+  sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de entrar na query `.or()`
+  de `resolverMetaPack` (plan 037).
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
@@ -249,7 +250,8 @@
   `/#/definir-senha`), `update_menus`, `set_active`, `set_admin`, `update_notificacoes` (destino
   Telegram do usuário: `telegram_chat_id` + `telegram_categorias`, sanitizado por
   `sanitizarDestinatario`, ADR-0068) — as quatro escopadas `.eq('org_id', orgId)`, só atuam em
-  perfis da própria org. Ações de **super-admin** (D-E7.8,
+  perfis da própria org. `set_active`/`set_admin` bloqueiam (403) um admin comum alterando um
+  perfil com `is_super_admin=true` da mesma org (plan 037). Ações de **super-admin** (D-E7.8,
   `profiles.is_super_admin`): **`list_orgs`** (lista organizações + contagem de membros) e
   **`create_org`** (cria a organização e convida seu primeiro admin; rollback da org se o convite
   falhar). Requer o secret `APP_URL`.

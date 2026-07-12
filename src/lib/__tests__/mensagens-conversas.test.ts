@@ -79,20 +79,21 @@ describe('buscarConversas', () => {
     expect(contarAguardando(conversas)).toBe(0);
   });
 
-  it('data_ml: null no fim do array decide o aguardando (comportamento atual; plan 037 muda)', async () => {
+  it('data_ml: null vai para o início cronológico (nulls last no desc) e nunca decide o aguardando', async () => {
     mockOrder.mockResolvedValueOnce({
       data: [
-        // última mensagem cronológica (data_ml null) — vem primeiro no retorno bruto porque a
-        // query real é desc+limit e o código reverte para cronológica ascendente antes de agrupar.
-        msg({ id: '2', message_id: 'm2', direcao: 'enviada', data_ml: null }),
+        // query real: order('data_ml', { ascending: false, nullsFirst: false }) — desc com nulls
+        // LAST. A mensagem datada vem primeiro no bruto, a null (sem data) vem por último.
         msg({ id: '1', message_id: 'm1', direcao: 'recebida', data_ml: '2026-07-10T10:00:00Z' }),
+        msg({ id: '2', message_id: 'm2', direcao: 'enviada', data_ml: null }),
       ],
       error: null,
     });
     const conversas = await buscarConversas();
-    // comportamento atual: null não impede a última mensagem de decidir aguardando; e o `ultima`
-    // exposto na conversa também vira null (plan 037 muda isso).
-    expect(conversas[0].aguardando).toBe(false);
-    expect(conversas[0].ultima).toBeNull();
+    // depois do .reverse(): [null-enviada, datada-recebida] — o null fica no INÍCIO da lista
+    // cronológica, nunca é a última mensagem do pack. A mensagem datada (recebida) decide
+    // aguardando: true, e `ultima` reflete a data dela em vez de null.
+    expect(conversas[0].aguardando).toBe(true);
+    expect(conversas[0].ultima).toBe('2026-07-10T10:00:00Z');
   });
 });

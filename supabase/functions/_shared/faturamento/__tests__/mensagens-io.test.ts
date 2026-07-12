@@ -5,16 +5,28 @@ import type { MensagemML } from '../mensagem-mapper';
 const SELLER_ID = 999;
 const COMPRADOR_ID = 111;
 
-/** Mock do admin client: from().select().eq().in() → { data: existentes }; from().upsert(). */
-function criarAdminMock(idsExistentes: string[] = []) {
-  const upsert = vi.fn().mockResolvedValue({ data: null, error: null });
-  const inFn = vi.fn().mockResolvedValue({
-    data: idsExistentes.map((message_id) => ({ message_id })),
-    error: null,
+/**
+ * Mock do admin client para as DUAS chamadas de `.upsert()` de upsertMensagens: a 1ª encadeada
+ * com `.select()` (ignoreDuplicates — devolve só as linhas efetivamente inseridas), a 2ª solta
+ * (upsert de verdade, só grava). `idsQueSeraoInseridos`: quais message_ids a 1ª upsert deve
+ * devolver como novos (null = default, devolve todas as rows passadas, simulando "tudo novo").
+ */
+function criarAdminMock(idsQueSeraoInseridos: string[] | null = null) {
+  const upsertComSelect = vi.fn((rows: Array<{ message_id: string; direcao: string }>) => ({
+    select: vi.fn().mockResolvedValue({
+      data: idsQueSeraoInseridos === null
+        ? rows.map((r) => ({ message_id: r.message_id, direcao: r.direcao }))
+        : rows.filter((r) => idsQueSeraoInseridos.includes(r.message_id)).map((r) => ({ message_id: r.message_id, direcao: r.direcao })),
+      error: null,
+    }),
+  }));
+  const upsertSimples = vi.fn().mockResolvedValue({ data: null, error: null });
+  let chamada = 0;
+  const upsert = vi.fn((rows: unknown) => {
+    chamada++;
+    return chamada === 1 ? upsertComSelect(rows as Array<{ message_id: string; direcao: string }>) : upsertSimples(rows);
   });
-  const eq = vi.fn(() => ({ in: inFn }));
-  const select = vi.fn(() => ({ eq }));
-  const from = vi.fn(() => ({ select, upsert }));
+  const from = vi.fn(() => ({ upsert }));
   const admin = { from } as unknown as Parameters<typeof upsertMensagens>[0];
   return { admin, from, upsert };
 }
@@ -30,21 +42,21 @@ const msgDoVendedor = (id: string, dataMl: string): MensagemML => ({
 
 describe('upsertMensagens', () => {
   it('N mensagens novas do comprador → novasRecebidas === N', async () => {
-    const { admin } = criarAdminMock([]);
+    const { admin } = criarAdminMock(['m1', 'm2']); // 1ª upsert (ignoreDuplicates) insere as duas.
     const msgs = [msgDoComprador('m1', '2026-07-10T10:00:00Z'), msgDoComprador('m2', '2026-07-10T10:01:00Z')];
     const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
     expect(r.novasRecebidas).toBe(2);
   });
 
-  it('re-execução com o mesmo payload (ids já conhecidos) → novasRecebidas === 0', async () => {
-    const { admin } = criarAdminMock(['m1', 'm2']);
+  it('re-execução com o mesmo payload (nada novo inserido) → novasRecebidas === 0', async () => {
+    const { admin } = criarAdminMock([]); // ignoreDuplicates: já existiam, nada é inserido de novo.
     const msgs = [msgDoComprador('m1', '2026-07-10T10:00:00Z'), msgDoComprador('m2', '2026-07-10T10:01:00Z')];
     const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
     expect(r.novasRecebidas).toBe(0);
   });
 
-  it('mix: 1 conhecida + 1 nova recebida + 1 nova enviada pelo vendedor → novasRecebidas === 1', async () => {
-    const { admin } = criarAdminMock(['a']);
+  it('mix: 1 conhecida (não inserida) + 1 nova recebida + 1 nova enviada pelo vendedor → novasRecebidas === 1', async () => {
+    const { admin } = criarAdminMock(['b', 'c']); // 'a' já existia, não volta na 1ª upsert.
     const msgs = [
       msgDoComprador('a', '2026-07-10T09:00:00Z'), // já conhecida
       msgDoComprador('b', '2026-07-10T10:00:00Z'), // nova, recebida
@@ -55,7 +67,7 @@ describe('upsertMensagens', () => {
   });
 
   it('mensagem sem id (message_id vazio) é filtrada e não conta', async () => {
-    const { admin } = criarAdminMock([]);
+    const { admin } = criarAdminMock(['d1']); // só d1 chega a entrar no upsert (semId é filtrada antes).
     const semId: MensagemML = { from: { user_id: COMPRADOR_ID }, text: 'sem id', message_date: { created: '2026-07-10T12:00:00Z' } };
     const msgs = [msgDoComprador('d1', '2026-07-10T10:00:00Z'), semId];
     const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
