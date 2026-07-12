@@ -10,6 +10,10 @@ import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, bu
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
+import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
 
 const JANELA_HORAS = 72; // re-checa os últimos 3 dias (cobre atrasos/falhas de entrega).
 
@@ -36,7 +40,18 @@ Deno.serve(async (req) => {
       if (!userId) continue;
       const cx = { ...mapearConexao(c)!, criadoPor: userId };
       let token: string;
-      try { token = await getValidAccessTokenConexao(cx); } catch { continue; }
+      try {
+        token = await getValidAccessTokenConexao(cx);
+      } catch (e) {
+        const status = e instanceof MLApiError ? e.status : null;
+        if (classificarErroML(status) === 'permanente-auth') {
+          const { jaAlertado } = await registrarFalhaAuth(admin, cx.id, (e as Error).message);
+          if (!jaAlertado) {
+            await notificarCategoria(admin, orgId, 'integracao', montarMensagemConexaoBloqueada(orgId, (e as Error).message));
+          }
+        }
+        continue;
+      }
       let pedidos;
       try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
@@ -81,6 +96,10 @@ Deno.serve(async (req) => {
           } catch { /* segue */ }
         }
       } catch { /* segue */ }
+
+      // Token obtido com sucesso: registra liveness (reseta auth_alerta_em). Não depende de
+      // pedidos/perguntas/claims individuais terem sucedido — esses catches continuam "segue".
+      await registrarSyncOk(admin, cx.id);
     } catch (e) {
       console.error(`reconciliar-faturamento: falhou para org ${orgId}:`, e instanceof Error ? e.message : e);
     }
