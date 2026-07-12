@@ -56,12 +56,16 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Re-busca a pergunta (agora respondida) e atualiza a tabela.
-  const atualizada = await buscarPergunta(token, String(body.question_id));
-  if (atualizada && donoPergunta) {
-    const titulo = await buscarTituloItem(token, atualizada.item_id ?? null);
-    await upsertPergunta(admin, donoPergunta, orgId, atualizada, titulo);
-  }
+  // Re-busca a pergunta (agora respondida) e atualiza a tabela. Best-effort: a resposta já foi
+  // enviada ao ML acima (linha ~52); buscarPergunta agora LANÇA em erro HTTP (ADR-0069) — qualquer
+  // falha aqui é só cache local desatualizado, não pode virar erro pro comprador/operador.
+  try {
+    const atualizada = await buscarPergunta(token, String(body.question_id));
+    if (donoPergunta) {
+      const titulo = await buscarTituloItem(token, atualizada.item_id ?? null);
+      await upsertPergunta(admin, donoPergunta, orgId, atualizada, titulo);
+    }
+  } catch { /* re-fetch de cache é best-effort; a resposta ao comprador já foi enviada com sucesso. */ }
 
   return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });
