@@ -9,7 +9,8 @@ import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
 import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
-import * as XLSX from 'npm:xlsx@^0.18';
+// @deno-types="../_shared/vendor/xlsx.d.ts"
+import * as XLSX from '../_shared/vendor/xlsx.mjs';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();

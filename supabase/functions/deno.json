@@ -1,7 +1,7 @@
 {
   "lint": {
     "include": ["."],
-    "exclude": ["**/__tests__/**"],
+    "exclude": ["**/__tests__/**", "_shared/vendor/**"],
     "rules": {
       "exclude": ["no-import-prefix"]
     }

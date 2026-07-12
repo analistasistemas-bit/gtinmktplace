@@ -1,4 +1,5 @@
-import * as XLSX from 'npm:xlsx@^0.18';
+// @deno-types="../_shared/vendor/xlsx.d.ts"
+import * as XLSX from '../_shared/vendor/xlsx.mjs';
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
