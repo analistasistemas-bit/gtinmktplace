@@ -7,6 +7,7 @@ import { qstashClient } from '../_shared/queue.ts';
 import { parseWebhookNotification, extrairPackIdDeMensagem } from '../_shared/faturamento/venda.ts';
 import { resolverIdentidade } from '../_shared/faturamento/io.ts';
 import { deveThrottlar, JANELA_THROTTLE_MS } from '../_shared/ml/throttle-webhook.ts';
+import { deveReenfileirarMensagens } from '../_shared/ml/reenfileirar-mensagens.ts';
 
 // topic → função worker + nome do campo do id no job.
 const ROTA: Record<string, { fn: string; campo: string }> = {
@@ -50,10 +51,19 @@ Deno.serve(async (req) => {
     if (!countErr && deveThrottlar(count ?? 0)) return ok(); // acima do limite: dropa (ACK, sem insert/enqueue); reconciliar-faturamento recupera.
   } catch { /* fail-open: segue o fluxo normal abaixo. */ }
 
-  // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira.
+  // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira — exceto
+  // `messages` (Step 4, plan 035): o resource é o mesmo para toda a conversa, então a linha de
+  // dedup fica "viva" enquanto o worker não processa. Se ela for antiga e nunca processada, é
+  // sinal de job perdido: reenfileira mesmo com o conflito (a linha de dedup permanece intacta).
   const { error: dupErr } = await admin.from('ml_webhook_eventos')
     .insert({ user_id: userId, org_id: orgId, topic: ev.topic, resource: ev.resource });
-  if (dupErr) return ok(); // unique violation (duplicado) ou outro: ack mesmo assim.
+  if (dupErr) {
+    if (ev.topic !== 'messages') return ok();
+    const { data: existente } = await admin.from('ml_webhook_eventos')
+      .select('recebido_em, processado_em').eq('topic', 'messages').eq('resource', ev.resource)
+      .eq('user_id', userId).maybeSingle();
+    if (!deveReenfileirarMensagens(existente, Date.now())) return ok();
+  }
 
   // `messages`: o id do job é o pack, não o último segmento do resource (que é o seller).
   const idJob = ev.topic === 'messages' ? extrairPackIdDeMensagem(ev.resource) : ev.resourceId;

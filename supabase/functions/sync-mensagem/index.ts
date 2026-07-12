@@ -8,8 +8,8 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { buscarMensagensPack, upsertMensagens, resolverMetaPack } from '../_shared/faturamento/mensagens-io.ts';
 import { mapearMensagem } from '../_shared/faturamento/mensagem-mapper.ts';
-import { lerConfigTelegram } from '../_shared/notificacoes/config.ts';
-import { enviarTelegram, montarMensagemNovaMensagem } from '../_shared/notificacoes/telegram.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { montarMensagemNovaMensagem } from '../_shared/notificacoes/telegram.ts';
 
 interface Job { user_id?: string; pack_id?: string }
 
@@ -39,19 +39,20 @@ Deno.serve(async (req) => {
   const { novasRecebidas } = await upsertMensagens(admin, job.user_id, orgId, job.pack_id, orderId, itemTitulo, sellerId, msgs);
 
   if (novasRecebidas > 0 && orgId) {
-    const cfg = await lerConfigTelegram(admin, orgId);
-    if (cfg.ativo) {
-      // Última mensagem recebida (mais recente) para o alerta.
-      const recebidas = msgs.map((m) => mapearMensagem(m, sellerId)).filter((r) => r.direcao === 'recebida');
-      const ultima = recebidas[recebidas.length - 1];
-      if (ultima) {
-        await enviarTelegram(cfg.token, cfg.chatId, montarMensagemNovaMensagem({ texto: ultima.texto, item_titulo: itemTitulo }));
-      }
+    // Última mensagem recebida (mais recente) para o alerta.
+    const recebidas = msgs.map((m) => mapearMensagem(m, sellerId)).filter((r) => r.direcao === 'recebida');
+    const ultima = recebidas[recebidas.length - 1];
+    if (ultima) {
+      await notificarCategoria(admin, orgId, 'mensagens', montarMensagemNovaMensagem({ texto: ultima.texto, item_titulo: itemTitulo }));
     }
   }
 
-  await admin.from('ml_webhook_eventos').update({ processado_em: new Date().toISOString() })
-    .eq('topic', 'messages').like('resource', `%packs/${job.pack_id}%`);
+  // Reabre o dedup da conversa: para `messages` a linha em ml_webhook_eventos BLOQUEIA o próximo
+  // evento do mesmo pack (resource idêntico p/ toda mensagem da conversa) — remover em vez de
+  // marcar processado permite que a próxima mensagem volte a inserir e enfileirar (Step 3, plan 035).
+  await admin.from('ml_webhook_eventos').delete()
+    .eq('topic', 'messages').eq('user_id', job.user_id)
+    .like('resource', `%/packs/${job.pack_id}/%`);
 
   return new Response(JSON.stringify({ ok: true, novasRecebidas }), {
     status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
