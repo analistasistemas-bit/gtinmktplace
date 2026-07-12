@@ -5,7 +5,7 @@ import {
   Truck, Layers, Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
@@ -41,12 +41,6 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
   if (p.tipo === 'range') return { desde: p.desde, ate: p.ate };
   const j = resolverJanela(p);
   return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
-}
-
-/** Formata markup como percentual com sinal. Ex: 0.42 → "+42%" */
-function fmtMarkup(m: number): string {
-  const pct = Math.round(m * 100);
-  return (pct >= 0 ? '+' : '') + pct + '%';
 }
 
 type SortKey = 'data' | 'comprador' | 'unidades' | 'valor' | 'liquido' | 'markup' | 'pagamento' | 'envio' | 'origem';

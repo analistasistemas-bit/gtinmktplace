@@ -1,4 +1,4 @@
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { fmtDataCurta, labelStatusPedido, labelStatusEnvio } from '@/lib/ml-status';
 import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/publicados';
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
@@ -20,12 +20,6 @@ import type { ReportData, ExportConfig, Coluna, Kpi, BlocoResumo } from './tipos
 function fmtData(iso: string | null | undefined): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('pt-BR');
-}
-
-function fmtMarkupNum(m: number | null | undefined): string {
-  if (m == null) return '—';
-  const pct = Math.round(m * 100);
-  return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
 /** Rótulo legível do período para o cabeçalho do relatório. */
@@ -111,7 +105,7 @@ export function buildPublicadosReport(args: PublicadosArgs): ReportData {
     { label: 'Pedidos', valor: String(totais.pedidos) },
     { label: 'Ticket médio', valor: fmtBRL(ticket) },
   );
-  if (temCusto) kpis.push({ label: 'Markup no período', valor: fmtMarkupNum(markupPct) });
+  if (temCusto) kpis.push({ label: 'Markup no período', valor: fmtMarkup(markupPct) });
   if (temCusto && lucro != null) kpis.push({ label: 'Lucro no período', valor: fmtBRL(lucro) });
   // Cards de saúde (espelham "Saúde dos anúncios" + "Encalhados" da tela).
   kpis.push(
@@ -158,7 +152,7 @@ export function buildPublicadosReport(args: PublicadosArgs): ReportData {
                 {
                   precoPub: fmtBRL(via.precoPublicacao),
                   custo: via.custo != null ? fmtBRL(via.custo) : '—',
-                  markup: fmtMarkupNum(via.markup),
+                  markup: fmtMarkup(via.markup),
                   vendedores: via.concorrenciaVendedores,
                   menorConc: via.concorrenciaPrecoMin != null ? fmtBRL(via.concorrenciaPrecoMin) : '—',
                   mercado:
@@ -230,7 +224,7 @@ export function buildVendasReport(args: VendasArgs): ReportData {
           { label: 'Unidades', valor: fmtInt(kpis.unidades) },
           { label: 'Ticket médio', valor: fmtBRL(kpis.ticket) },
           { label: 'Itens / pedido', valor: kpis.itensPorPedido.toFixed(1).replace('.', ',') },
-          { label: 'Markup', valor: fmtMarkupNum(kpis.markup) },
+          { label: 'Markup', valor: fmtMarkup(kpis.markup) },
           { label: 'Compradores', valor: fmtInt(kpis.compradoresUnicos) },
           { label: '% recompra', valor: `${kpis.pctRecompra.toFixed(1).replace('.', ',')}%` },
           // "Pedidos por status de envio" — mesma distribuição mostrada na tela.
@@ -248,7 +242,7 @@ export function buildVendasReport(args: VendasArgs): ReportData {
         unidades: fmtInt(p.unidades),
         valor: fmtBRL(p.bruto),
         liquido: fmtBRL(p.liquido),
-        markup: fmtMarkupNum(p.markup),
+        markup: fmtMarkup(p.markup),
         pagamento: labelStatusPedido(p.status).label,
         envio: labelStatusEnvio(p.shipping_status, p.shipping_substatus).label,
         origem: p.is_publiai ? 'PubliAI' : 'Fora',
@@ -265,7 +259,7 @@ export function buildVendasReport(args: VendasArgs): ReportData {
               preco: fmtBRL(it.unit_price),
               custo: it.custo != null ? fmtBRL(it.custo) : '—',
               liquido: fmtBRL(it.liquido),
-              markup: fmtMarkupNum(it.markup),
+              markup: fmtMarkup(it.markup),
             })),
           }
         : undefined,
@@ -431,7 +425,7 @@ export function buildFinanceiroReport(args: FinanceiroArgs): ReportData {
           { label: 'Já liberado', valor: fmtBRL(r.liberado) },
           { label: 'A liberar', valor: fmtBRL(r.aLiberar) },
           { label: 'Vendas no período', valor: fmtInt(r.pedidos) },
-          { label: 'Markup no período', valor: r.markup != null ? fmtMarkupNum(r.markup) : '—' },
+          { label: 'Markup no período', valor: r.markup != null ? fmtMarkup(r.markup) : '—' },
           { label: 'Lucro líquido no período', valor: r.margem != null ? fmtBRL(r.lucro) : '—' },
         ]
       : undefined,
@@ -482,7 +476,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
           { label: 'Bruto', valor: fmtBRL(totais.bruto) },
           { label: 'Retido (ML)', valor: fmtBRL(totais.retido) },
           { label: 'Líquido', valor: fmtBRL(totais.liquido) },
-          { label: 'Markup', valor: fmtMarkupNum(totais.markup) },
+          { label: 'Markup', valor: fmtMarkup(totais.markup) },
         ]
       : undefined,
     colunas: COLS_FIN_DETALHE,
@@ -507,7 +501,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
         retido: fmtBRL(retidoDoPedido(p)),
         // Bate com o Mercado Pago: não desconta imposto (ver DetalheFinanceiro.tsx).
         liquido: fmtBRL(p.liquido + p.imposto),
-        markup: fmtMarkupNum(p.markup),
+        markup: fmtMarkup(p.markup),
       },
       sublinhas: config.expandido
         ? {
@@ -521,7 +515,7 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
               preco: fmtBRL(it.unit_price),
               custo: it.custo != null ? fmtBRL(it.custo) : '—',
               liquido: fmtBRL(it.liquido + it.imposto),
-              markup: fmtMarkupNum(it.markup),
+              markup: fmtMarkup(it.markup),
             })),
           }
         : undefined,

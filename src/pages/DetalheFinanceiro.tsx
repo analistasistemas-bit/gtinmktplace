@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
-import { fmtBRL, fmtInt, round2 } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup, round2 } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
@@ -66,12 +66,6 @@ function CelulaLiberacao({
       </span>
     </TableCell>
   );
-}
-
-/** Markup em % com sinal, ou null quando não há custo para calcular. */
-function fmtMarkup(markup: number): string {
-  const p = Math.round(markup * 100);
-  return `${p >= 0 ? '+' : ''}${p}%`;
 }
 
 // Deriva o rótulo do período JÁ RESOLVIDO (não do query cru) para o texto sempre

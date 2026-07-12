@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, RefreshCw, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
@@ -27,12 +27,6 @@ import { useAliquotas } from '@/hooks/useConfiguracoes';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
-}
-
-/** Markup como percentual com sinal (ex.: +120%, −5%). */
-function fmtMarkup(m: number): string {
-  const p = Math.round(m * 100);
-  return (p >= 0 ? '+' : '') + p + '%';
 }
 
 /** Cor do markup/lucro: verde no positivo, vermelho no negativo, neutro em "—". */

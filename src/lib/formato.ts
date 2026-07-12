@@ -24,3 +24,10 @@ export function fmtMilhar(n: number): string {
   if (n >= 1_000) return `${Math.round(n / 1000)} mil`;
   return String(n);
 }
+
+/** Markup como percentual com sinal (ex.: 0.42 → "+42%"). `null`/`undefined` → "—". */
+export function fmtMarkup(m: number | null | undefined): string {
+  if (m == null) return '—';
+  const pct = Math.round(m * 100);
+  return `${pct >= 0 ? '+' : ''}${pct}%`;
+}

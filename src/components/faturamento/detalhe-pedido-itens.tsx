@@ -1,15 +1,9 @@
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL } from '@/lib/formato';
+import { fmtBRL, fmtMarkup } from '@/lib/formato';
 import type { Pedido } from '@/lib/pedidos-faturamento';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { ThumbProduto } from './pilha-thumbs';
-
-/** Formata markup como percentual com sinal. Ex: 0.42 → "+42%" */
-function fmtMarkup(m: number): string {
-  const pct = Math.round(m * 100);
-  return (pct >= 0 ? '+' : '') + pct + '%';
-}
 
 /**
  * Conteúdo expansível de um pedido (linha aberta): meta (pedido/pack, comissão, frete, rastreio),
