@@ -227,6 +227,7 @@ Perguntas de compradores. *Migration `20260622193354_faturamento_perguntas.sql` 
 ### `ml_webhook_eventos`
 Dedup de webhooks. *Mesma migration de vendas (ADR-0037).*
 `topic`, `resource`, `recebido_em`, `processado_em`, `erro`. Único `(topic, resource)`.
+Índice `(user_id, recebido_em)` para o throttle por vendedor do `ml-webhook` (janela de 60s, INT-018/033).
 
 ---
 

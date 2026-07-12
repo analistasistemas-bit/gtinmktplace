@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-10
+atualizado: 2026-07-12
 ---
 
 # Problemas Resolvidos
@@ -10,6 +10,16 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Re-ingest UPDATE de planilha republicava a foto ANTIGA ao trocar capa/imagem (plano 031, 2026-07-12)** —
+  o ramo de re-ingest UPDATE do `ingest-lote` herdava `capa_ml_picture_id`/`ml_picture_id` do anúncio
+  anterior enquanto derivava `capa_storage_path`/`imagem_path` do lote novo. Como os paths embutem o
+  `lote_id` (`buildStoragePath`) e o `pre-subir-fotos` pula o upload quando já há `picId`, o ML mantinha
+  a foto cacheada do lote anterior — trocar a capa numa planilha re-ingerida publicava a imagem velha. O
+  upload interativo (`upload-imagens-lote`) já zerava o id certo; só o re-ingest de planilha ficava fora
+  da invariante. **Fix:** helper puro `herdarPictureId(pathNovo, idAnterior)` (`_shared/update/heranca-foto.ts`)
+  — herda o id só sem foto nova (reposição só-planilha preserva a publicada); com foto nova, zera → força
+  re-upload da atual. Aplicado à capa e às variações. Bug **latente/pré-existente** (não tinha mordido
+  ainda). Deploy `ingest-lote v39`, testes verdes. Ver [[Incidentes]] e ADR-0033 (invariante de foto).
 - **Editor manual "Complete para publicar" travava MATERIAL em closed-set, lote #31 (2026-07-10)** —
   `MATERIAL` (Pingentes, PAI 02954524) é `value_type=string` no ML (texto-livre; os values que o
   acompanham são sugestão, não lista fechada), mas o dropdown do editor manual só oferecia as 4

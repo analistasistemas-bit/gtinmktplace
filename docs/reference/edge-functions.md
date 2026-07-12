@@ -105,6 +105,9 @@
   (ausente/vazio/inválido → `nacional`, ADR-0055). Escopo da operação (ADR-0056): casa anteriores
   por `codigo_pai` em toda a operação (evita duplicar anúncio de outro membro) e grava
   `familias/variacoes.user_id` com o dono da conta ML da operação (o operador fica em `lotes.user_id`).
+  No re-ingest UPDATE herda o `*_ml_picture_id`/`ml_picture_id` só quando NÃO veio foto nova no lote
+  (reposição só-planilha preserva a publicada); com foto nova, zera para forçar re-upload da atual —
+  senão republicaria a imagem antiga cacheada no ML (plano 031, `herdarPictureId`).
 - **upload-imagens-lote** — recebe FormData de imagens e casa por nome de arquivo
   (`00CODIGO`, `CAPA_…`, `CAPA2_…`, `CAPA3_…`) com variações/família.
 
@@ -136,7 +139,8 @@
   **Pré-upload de foto (ADR-0033, 2026-07-10):** sobe ao ML as fotos ainda sem `picture_id` e
   persiste o id (`_shared/anuncios/pre-subir-fotos.ts`), tirando a propagação (~2,5 min) do caminho
   crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.
-  Best-effort/idempotente; a troca de foto zera o `*_ml_picture_id` (`upload-imagens-lote`).
+  Best-effort/idempotente; a troca de foto zera o `*_ml_picture_id` (`upload-imagens-lote` e o
+  re-ingest UPDATE de planilha via `herdarPictureId`, plano 031).
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). **E6 (ADR-0061):** aceita
   `canais[]` (default `['mercado_livre']`); fan-out: ML segue no worker `publish-familia-ml`;

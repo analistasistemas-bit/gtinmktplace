@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-09
+atualizado: 2026-07-12
 ---
 
 # Changelog
@@ -8,6 +8,22 @@ atualizado: 2026-07-09
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-07-12
+
+- **Fix: re-ingest UPDATE republicava a foto antiga ao trocar capa/imagem (plano 031).** O re-ingest
+  de planilha herdava o `picture_id` do anúncio anterior enquanto derivava o path do lote novo; como o
+  `pre-subir-fotos` pula o upload quando já há id, o ML mantinha a foto cacheada — trocar a capa numa
+  planilha re-ingerida publicava a imagem velha. Helper `herdarPictureId` (`_shared/update/heranca-foto.ts`):
+  herda o id só sem foto nova (reposição só-planilha preserva a publicada); com foto nova, zera → força
+  re-upload. Deploy `ingest-lote v39`. Ver [[Problemas Resolvidos]].
+- **Perf: índice `(user_id, recebido_em)` no `ml_webhook_eventos` para o throttle do `ml-webhook`**
+  (substitui o single `(user_id)`). Migration aplicada em produção. Deploy do throttle: `ml-webhook v19`
+  (ACKa POSTs reais do ML com 200).
+- **Chore: remove `atualizarTituloML` (dead code, 0 chamadores, plano 030)** e **religa os testes de
+  `src/lib/__tests__`** (6 arquivos antes fora do include do vitest; suíte 1355→1384 verdes).
+- Fecha a auditoria `improve` 017–033 (reconciliação com o `origin/main` do time + os 12 improvements
+  limpos já mergeados nas sessões anteriores).
 
 ## 2026-07-11
 
