@@ -136,6 +136,17 @@ export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
   ].join('\n');
 }
 
+/** Alerta de liveness (ADR-0069): token OAuth do ML revogado/expirado — vendas, perguntas e
+ * devoluções param de sincronizar silenciosamente até a reconexão. `orgId` fica no parâmetro para
+ * uso futuro (ex.: link direto pra org em setups multi-tenant); hoje a mensagem é genérica. */
+export function montarMensagemConexaoBloqueada(orgId: string, motivo: string): string {
+  void orgId;
+  return [
+    `🔌 A conexão com o Mercado Livre parou de sincronizar (${motivo}).`,
+    `Reconecte em Configurações › Mercado Livre para retomar vendas/perguntas/devoluções.`,
+  ].join('\n');
+}
+
 /** Envia via Bot API com as credenciais do usuário (vindas da tabela configuracoes).
  * Sem token/chatId → no-op (retorna false). */
 export async function enviarTelegram(token: string | null, chatId: string | null, texto: string): Promise<boolean> {
