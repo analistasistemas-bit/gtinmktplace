@@ -25,8 +25,9 @@ interface FotoPendente {
  * como rede de segurança. Retorna quantas fotos foram efetivamente subidas (para log).
  *
  * Invariante de correção: quem TROCA uma foto (upload-imagens-lote/processar.ts, remoções em
- * src/lib/upload-imagens.ts) DEVE zerar o picture_id correspondente — senão reusaríamos o id de uma
- * imagem antiga que o ML já cacheou e publicaríamos a foto errada.
+ * src/lib/upload-imagens.ts, re-ingest UPDATE em ingest-lote via herdarPictureId) DEVE zerar o
+ * picture_id correspondente — senão reusaríamos o id de uma imagem antiga que o ML já cacheou e
+ * publicaríamos a foto errada.
  */
 export async function preSubirFotosFamilia(
   admin: SupabaseClient,

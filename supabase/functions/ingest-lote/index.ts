@@ -5,6 +5,7 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matc
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
+import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
 import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -184,6 +185,7 @@ Deno.serve(async (req) => {
       // UPDATE — herda metadados (exibição) + ml_item_id (publicação).
       const cas = casamentoPorPai.get(g.codigo_pai)!;
       const temCorNova = cas.mudancaEstrutural.novas.length > 0;
+      const capaPath = matchCapa(codigosFoto, lote.imagens_paths) ?? null;
       return {
         lote_id: lote.id, user_id: ownerUserId, org_id: lote.org_id, codigo_pai: g.codigo_pai,
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
@@ -193,7 +195,7 @@ Deno.serve(async (req) => {
         // Com cor nova: 'pendente' p/ o process-familia resolver a cor das novas (ADR-0004).
         // Sem cor nova: 'pronto' direto, sem IA.
         status: temCorNova ? 'pendente' : 'pronto',
-        capa_storage_path: matchCapa(codigosFoto, lote.imagens_paths) ?? null,
+        capa_storage_path: capaPath,
         capa2_storage_path: matchCapa2(codigosFoto, lote.imagens_paths) ?? null,
         capa3_storage_path: matchCapa3(codigosFoto, lote.imagens_paths) ?? null,
         ml_item_id: ant.ml_item_id,
@@ -204,7 +206,9 @@ Deno.serve(async (req) => {
         categoria_nome: ant.categoria_nome,
         atributos_ml: ant.atributos_ml,
         tipo_aviamento: ant.tipo_aviamento,
-        capa_ml_picture_id: ant.capa_ml_picture_id,
+        // Só herda o picture_id sem capa nova neste re-ingest (path novo != foto cacheada
+        // no ML sob o id antigo). Com capa nova, zera → força re-upload da atual (plano 031).
+        capa_ml_picture_id: herdarPictureId(capaPath, ant.capa_ml_picture_id),
         mudanca_estrutural: cas.mudancaEstrutural,
         // ADR-0016: UPDATE não re-roda IA/concorrência; herda a análise da publicação
         // anterior p/ o Painel de Análise não aparecer vazio na revisão.
@@ -284,7 +288,8 @@ Deno.serve(async (req) => {
             // (descricao/vision/manual) p/ não disparar o alerta "sem cor". Dado antigo sem
             // origem cai em 'manual'. Cor nova fica null → process-familia resolve (ADR-0004).
             cor_origem: h?.cor_origem ?? (h?.cor ? 'manual' : null),
-            ml_picture_id: h?.ml_picture_id ?? null,
+            // Mesma invariante da capa: imagem nova neste re-ingest zera o id herdado (plano 031).
+            ml_picture_id: herdarPictureId(base.imagem_path, h?.ml_picture_id ?? null),
             estoque_anterior: h?.estoque_anterior ?? null,
             // ADR-0016: UPDATE preserva o preço já publicado. Cor nova (sem preço anterior)
             // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
