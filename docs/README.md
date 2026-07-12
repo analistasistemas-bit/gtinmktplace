@@ -94,9 +94,9 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
-> A tabela acima é uma seleção curada. O **índice completo** (0001–0046) está logo abaixo.
+> A tabela acima é uma seleção curada. O **índice completo** (0001–0069) está logo abaixo.
 
-## Índice completo de ADRs (0001–0046)
+## Índice completo de ADRs (0001–0069)
 
 > A antiga colisão de numeração (dois `0035` e dois `0037`) foi **resolvida em 2026-06-27**:
 > `cor-no-titulo-mono-cor` virou **0044** e `vendas-catalogo-match-ean` virou **0045**. Cada
@@ -150,6 +150,29 @@ docs/
 | 0044 | [Cor no título mono-cor — anti-duplicado ML](decisions/0044-cor-no-titulo-mono-cor.md) *(ex-0035)* |
 | 0045 | [Atribuição de venda por EAN (catálogo ML)](decisions/0045-vendas-catalogo-match-ean.md) *(ex-0037)* |
 | 0046 | [verify_jwt=false p/ webhook e workers de faturamento](decisions/0046-verify-jwt-false-workers-webhook-faturamento.md) |
+| 0047 | [Operação compartilhada — RBAC no menu](decisions/0047-operacao-compartilhada-rbac-menu.md) |
+| 0048 | [Split de produto em N anúncios ML](decisions/0048-split-produto-n-anuncios-ml.md) |
+| 0049 | [Atributos opcionais e numéricos por IA](decisions/0049-atributos-opcionais-e-numericos-por-ia.md) |
+| 0050 | [Frete no gross-up do preço próprio](decisions/0050-frete-no-gross-up-preco-proprio.md) |
+| 0051 | [Tipo de aviamento derivado da categoria do preditor](decisions/0051-tipo-aviamento-derivado-da-categoria-do-preditor.md) |
+| 0052 | [Camada 2 de atributos — IA-first com fallback](decisions/0052-camada2-atributos-ia-first-com-fallback.md) |
+| 0053 | [Marca de saque manual em ML Vendas](decisions/0053-marca-saque-manual-ml-vendas.md) |
+| 0054 | [Categoria/título — tipo de produto genérico via IA](decisions/0054-categoria-titulo-tipo-produto-generico.md) |
+| 0055 | [Imposto por origem — nacional vs. importado](decisions/0055-imposto-por-origem-nacional-importado.md) |
+| 0056 | [Enriquecimento ao vivo — escopo da operação](decisions/0056-enriquecimento-ao-vivo-escopo-da-operacao.md) |
+| 0057 | [Categoria: seleção livre + sugestão por concorrente](decisions/0057-categoria-selecao-livre-e-sugestao-concorrente.md) |
+| 0058 | [Categoria genérica como fallback visível](decisions/0058-categoria-generica-fallback-visivel.md) |
+| 0059 | [Desconto sobre concorrência configurável](decisions/0059-desconto-concorrencia-configuravel.md) |
+| 0060 | [Pausar/reativar anúncio ML](decisions/0060-pausar-reativar-anuncio-ml.md) |
+| 0061 | [Orquestração multicanal](decisions/0061-orquestracao-multicanal.md) |
+| 0062 | [UPDATE de cor existente + fotos comuns](decisions/0062-update-cor-existente-e-fotos-comuns.md) |
+| 0063 | [Publicação de kit — preço/categoria/concorrência](decisions/0063-publicacao-kit-preco-categoria-concorrencia.md) |
+| 0064 | [Concorrência agregada por variação](decisions/0064-concorrencia-agregada-por-variacao.md) |
+| 0065 | [Reâncora de preço — piso do líder](decisions/0065-reancora-preco-piso-lider.md) |
+| 0066 | [Financeiro: líquido nunca desconta imposto](decisions/0066-financeiro-liquido-nunca-desconta-imposto.md) |
+| 0067 | [Mensagens pós-venda ML](decisions/0067-mensagens-pos-venda-ml.md) |
+| 0068 | [Notificações Telegram por destinatário e categoria](decisions/0068-notificacoes-telegram-por-destinatario-e-categoria.md) |
+| 0069 | [Liveness da integração ML](decisions/0069-liveness-integracao-ml.md) |
 
 ## Status do projeto
 
