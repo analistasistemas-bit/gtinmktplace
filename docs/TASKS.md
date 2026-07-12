@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Roadmap estratégico v2 — revisão CTO do relatório de evolução do produto — 2026-07-12
+
+- [x] Revisão crítica de `Sugestões para Evolução do Produto.md` (50 funcionalidades) sob a ótica
+  de founder/head of product/arquiteto/PMF/growth/VC/estratégia competitiva — questionou a
+  priorização por Score Final e reorganizou por DAG de dependências + fases de construção da
+  empresa.
+- [x] Principais correções de sequenciamento: **Shopee** antecipado para trilha paralela (E6 já
+  paga a infra do worker genérico `publicar-anuncio`); **billing** reduzido a escopo mínimo viável
+  (assinar/cobrar/suspender) com venda manual assistida em paralelo aos primeiros design partners;
+  **telemetria de IA** promovida à Fase 0 (packs verticais, benchmark, autopilot e digital twin
+  dependem de coleta iniciada desde já).
+- [x] Nova funcionalidade **51 — Dashboard Executivo "Mission Control"** (ausente do backlog
+  original): primeira tela do sistema, agrega anúncios com erro, produtos sem margem, integrações
+  offline, jobs com falha, vendas, margem, caixa e ações prioritárias.
+- [x] Documento entregue em `docs/Roadmap-Estrategico-PubliAI-v2.md` (11 etapas: revisão crítica,
+  DAG, categorização, tabela mestra com 14 campos por funcionalidade, teste dos 30 dias, matriz de
+  desbloqueio, matriz de ROI, roadmap em 8 fases, 3 roadmaps por lente — técnico/comercial/
+  estratégico —, seção "Se eu fosse o fundador" e respostas objetivas finais).
+- [x] Mergeado via PR #15 (`e5a811c`).
+
 ## Liveness ML — gap do refresh de token (ADR-0069, plano 040) — 2026-07-12
 
 - [x] Gap conhecido documentado em `docs/reference/edge-functions.md`: `classificarErroML`
