@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtMarkup } from '../formato';
+import { fmtMarkup } from '../src/lib/formato';
 
 describe('fmtMarkup', () => {
   it('formata markup positivo com sinal', () => {
