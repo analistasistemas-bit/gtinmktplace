@@ -92,9 +92,9 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
-> A tabela acima é uma seleção curada. O **índice completo** (0001–0070) está logo abaixo.
+> A tabela acima é uma seleção curada. O **índice completo** (0001–0071) está logo abaixo.
 
-## Índice completo de ADRs (0001–0070)
+## Índice completo de ADRs (0001–0071)
 
 > A antiga colisão de numeração (dois `0035` e dois `0037`) foi **resolvida em 2026-06-27**:
 > `cor-no-titulo-mono-cor` virou **0044** e `vendas-catalogo-match-ean` virou **0045**. Cada
@@ -172,6 +172,7 @@ docs/
 | 0068 | [Notificações Telegram por destinatário e categoria](decisions/0068-notificacoes-telegram-por-destinatario-e-categoria.md) |
 | 0069 | [Liveness da integração ML](decisions/0069-liveness-integracao-ml.md) |
 | 0070 | [Título: corrige sinônimo de tipo de fio/linha errado](decisions/0070-titulo-sinonimo-tipo-fio-grounded-errado.md) |
+| 0071 | [UNITS_PER_PACK real força SALE_FORMAT=Kit](decisions/0071-units-per-pack-forca-sale-format-kit.md) |
 
 ## Status do projeto
 

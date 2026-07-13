@@ -183,6 +183,11 @@ export function extrairUnitsPerPack(nome: string, descricao?: string): number | 
  * clara, assume 1 (produto avulso) em vez de deixar faltante. Sem isso, um barbante/linha avulso
  * travava a Revisão pedindo "Unidades por kit" mesmo não sendo kit (lote #27). Não interfere na
  * ficha-kit do catálogo (que lê a ficha do ML, não isto).
+ *
+ * Quando a contagem extraída é > 1 (kit real), também força SALE_FORMAT="Kit" — o ML valida os
+ * dois campos juntos e rejeita UNITS_PER_PACK>1 com SALE_FORMAT="Unidade" (preenchido pela IA
+ * genérica, que não tem como saber da contagem). Sobrescreve o que a IA tiver preenchido (lote
+ * #33: "24UND" no título ficou UNITS_PER_PACK=24 × SALE_FORMAT="Unidade" → erro no CREATE).
  */
 export function preencherUnitsPerPack(
   schema: AtributoSchema[],
@@ -193,8 +198,18 @@ export function preencherUnitsPerPack(
   const exposto = schema.some((a) => a.id === 'UNITS_PER_PACK');
   const jaTem = atributos.some((a) => a.id === 'UNITS_PER_PACK' && (a.value_name || a.value_id));
   if (!exposto || jaTem) return atributos;
-  const n = extrairUnitsPerPack(nome, descricao) ?? 1;
-  return [...atributos, { id: 'UNITS_PER_PACK', value_name: String(n) }];
+  const extraido = extrairUnitsPerPack(nome, descricao);
+  const n = extraido ?? 1;
+  const comUnits = [...atributos, { id: 'UNITS_PER_PACK', value_name: String(n) }];
+  if (extraido == null || extraido <= 1) return comUnits;
+  return forcarSaleFormatKit(schema, comUnits);
+}
+
+/** Sobrescreve SALE_FORMAT para o value_id de "Kit" do schema da categoria, se exposto. */
+function forcarSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
+  const kit = schema.find((a) => a.id === 'SALE_FORMAT')?.valores.find((v) => normalizar(v.nome) === 'kit');
+  if (!kit) return atributos;
+  return [...atributos.filter((a) => a.id !== 'SALE_FORMAT'), { id: 'SALE_FORMAT', value_id: kit.id }];
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */

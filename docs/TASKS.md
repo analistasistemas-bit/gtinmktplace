@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Kit rejeitado no CREATE — SALE_FORMAT×UNITS_PER_PACK — lote #33 (ADR-0071) — 2026-07-13
+
+- [x] Bug reportado: lápis de cor 24un falhou no CREATE — ML: `"Unidades por kit": Insira 1 porque
+  você preencheu "Unidade" no campo "Formato de venda"`. Investigação (Graphify + ADR-0063 +
+  testes existentes): `preencherUnitsPerPack` extraiu `UNITS_PER_PACK=24` de "24UND" no título
+  (comportamento intencional desde o lote #27), mas a IA genérica de closed-set já tinha
+  preenchido `SALE_FORMAT="Unidade"` sem saber da contagem — as duas lógicas rodam em sequência
+  sem se comunicar.
+- [x] Fix: `preencherUnitsPerPack` (`_shared/categoria/atributos.ts`) sobrescreve `SALE_FORMAT`
+  para "Kit" (value_id do schema dinâmico da categoria) quando a contagem extraída é real (>1).
+  Sem contagem clara (assume 1), não mexe em `SALE_FORMAT`.
+- [x] `pnpm test` (5 testes novos + suíte completa, 1431 testes) e `pnpm lint` passando.
+
 ## Título com sinônimo de tipo de fio errado — lote #63 "Linha Cléa" (ADR-0070) — 2026-07-13
 
 - [x] Bug reportado: título gerado "FIO CLÉA 1000..." quando a descrição diz "Linha Cléa" —

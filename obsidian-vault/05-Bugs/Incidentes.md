@@ -210,6 +210,16 @@ escolhida). A categoria do BRILHO foi corrigida para "Lãs".
 
 Validado ao vivo (banco + browser-use no Chrome do Diego) reprocessando as 3 famílias do lote #27.
 
+## Lote #33: kit real rejeitado — SALE_FORMAT="Unidade" × UNITS_PER_PACK>1 (2026-07-13)
+
+Lápis de cor 24 unidades: CREATE falhou com `"Unidades por kit": Insira 1 neste campo porque você
+preencheu "Unidade" no campo "Formato de venda"`. Causa: `preencherUnitsPerPack` (regex, ADR-0063)
+extraiu corretamente `UNITS_PER_PACK=24` de "24UND" no título, mas a IA genérica de closed-set já
+tinha preenchido `SALE_FORMAT="Unidade"` sem saber da contagem — as duas lógicas rodam em sequência
+sem se comunicar. Fix ([ADR-0071](../../docs/decisions/0071-units-per-pack-forca-sale-format-kit.md)):
+`preencherUnitsPerPack` agora sobrescreve `SALE_FORMAT` para "Kit" (value_id do schema dinâmico da
+categoria) sempre que extrai uma contagem real (>1). Sem contagem clara (assume 1), não mexe.
+
 ## Lote #28: concorrência só olhava a 1ª cor (menor preço falso) + copy inventava "NOVO" (2026-07-08)
 
 Linha Anne 500m (46 cores, cada uma um produto de catálogo distinto no ML) expôs dois bugs
