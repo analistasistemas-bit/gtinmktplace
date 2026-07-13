@@ -32,4 +32,14 @@ describe('garantirTipoProdutoTitulo', () => {
     const r = garantirTipoProdutoTitulo('FIO DE COSTURA 100M | RESISTENTE', 'fio de bordar');
     expect(r).toBe('FIO DE COSTURA 100M | RESISTENTE');
   });
+
+  it('não duplica tipo colado quando o título já usa a forma espaçada (lote #33: pompom)', () => {
+    const r = garantirTipoProdutoTitulo('POM POM BÚFALO 14MM C/100UND | 100% POLIÉSTER | MACIO', 'pompom');
+    expect(r).toBe('POM POM BÚFALO 14MM C/100UND | 100% POLIÉSTER | MACIO');
+  });
+
+  it('prefixa normalmente quando o tipo colado realmente não está no título', () => {
+    const r = garantirTipoProdutoTitulo('BÚFALO 14MM C/100UND | 100% POLIÉSTER', 'pompom');
+    expect(r.startsWith('POMPOM ')).toBe(true);
+  });
 });

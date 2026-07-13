@@ -2,6 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Título duplicado — tipo de produto/cor fora de ordem — lote #33 (ADR-0072) — 2026-07-13
+
+- [x] Bug reportado: dois títulos com duplicação visível — `POMPOM POM POM BÚFALO 14MM...` e
+  `LÁPIS DE ESCREVER RESINA 7 VERDE REF.SL101066-8 VERDE 7`. Investigação (dados reais do lote
+  #33 no banco) confirmou: não é qualidade de modelo de IA, é bug nos guards determinísticos de
+  `_shared/ai/titulo.ts` que comparam frase inteira/mesma ordem para decidir "já está no título".
+  1. `garantirTipoProdutoTitulo`: tipo "pompom" (colado) não batia contra título com "POM POM"
+     (espaçado) → reprefixava.
+  2. `garantirCorTitulo`: cor real "Verde 7" não batia contra nome com "...7 VERDE..." (ordem
+     invertida) → reanexava a cor inteira de novo.
+- [x] Fix: `todasPalavrasCobertas` (todas as palavras do termo, em qualquer ordem, já presentes)
+  substitui a checagem de frase exata em `garantirCorTitulo`; `termoColadoNoTitulo` (fallback sem
+  espaços) entra como OR na checagem de `garantirTipoProdutoTitulo`.
+- [x] `pnpm test` (4 testes novos + suíte completa, 1435 testes), `deno lint`/`deno check`/eslint
+  passando.
+
 ## Kit rejeitado no CREATE — SALE_FORMAT×UNITS_PER_PACK — lote #33 (ADR-0071) — 2026-07-13
 
 - [x] Bug reportado: lápis de cor 24un falhou no CREATE — ML: `"Unidades por kit": Insira 1 porque

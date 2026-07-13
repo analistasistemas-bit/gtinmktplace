@@ -5,7 +5,7 @@ atualizado: 2026-07-13
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (71 ADRs, `0001`–`0071`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (72 ADRs, `0001`–`0072`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -83,5 +83,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0069 | [Liveness da integração ML](../../docs/decisions/0069-liveness-integracao-ml.md) |
 | 0070 | [Título: corrige sinônimo de tipo de fio/linha errado](../../docs/decisions/0070-titulo-sinonimo-tipo-fio-grounded-errado.md) |
 | 0071 | [UNITS_PER_PACK real força SALE_FORMAT=Kit](../../docs/decisions/0071-units-per-pack-forca-sale-format-kit.md) |
+| 0072 | [Título: duplicação de tipo de produto/cor por checagem exata demais](../../docs/decisions/0072-titulo-duplicacao-tipo-e-cor-fora-de-ordem.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

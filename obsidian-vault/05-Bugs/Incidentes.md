@@ -220,6 +220,21 @@ sem se comunicar. Fix ([ADR-0071](../../docs/decisions/0071-units-per-pack-forca
 `preencherUnitsPerPack` agora sobrescreve `SALE_FORMAT` para "Kit" (value_id do schema dinâmico da
 categoria) sempre que extrai uma contagem real (>1). Sem contagem clara (assume 1), não mexe.
 
+## Lote #33: título duplicado — tipo de produto/cor fora de ordem (2026-07-13)
+
+Dois títulos com duplicação visível: `POMPOM POM POM BÚFALO 14MM...` e `LÁPIS DE ESCREVER RESINA 7
+VERDE REF.SL101066-8 VERDE 7`. Não é qualidade do modelo de IA — o texto que a IA gerou já estava
+correto; o bug está nos guards determinísticos de `_shared/ai/titulo.ts` que rodam depois, checando
+"já está no título" por frase exata (mesma ordem/espaçamento) em vez de cobertura de informação.
+1. `garantirTipoProdutoTitulo`: tipo `"pompom"` (colado, vindo da IA) não batia contra título com
+   `"POM POM"` (espaçado, do nome_pai) → reprefixava.
+2. `garantirCorTitulo`: cor real `"Verde 7"` não batia contra nome com `"...RESINA DE 7 VERDE..."`
+   (mesmas palavras, ordem invertida) → reanexava a cor inteira de novo.
+Fix ([ADR-0072](../../docs/decisions/0072-titulo-duplicacao-tipo-e-cor-fora-de-ordem.md)):
+`todasPalavrasCobertas` (todas as palavras do termo, em qualquer ordem) substitui a checagem de
+frase exata em `garantirCorTitulo`; `termoColadoNoTitulo` (fallback sem espaços) entra como OR na
+checagem de `garantirTipoProdutoTitulo`.
+
 ## Lote #28: concorrência só olhava a 1ª cor (menor preço falso) + copy inventava "NOVO" (2026-07-08)
 
 Linha Anne 500m (46 cores, cada uma um produto de catálogo distinto no ML) expôs dois bugs
