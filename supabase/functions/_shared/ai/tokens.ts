@@ -8,6 +8,8 @@ interface PrecoModelo {
 const PRECOS: Record<string, PrecoModelo> = {
   'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'openai/gpt-4o': { input: 0.0025, output: 0.01 },
+  // DeepSeek V4 Flash (ADR-0071): $0.09/1M in · $0.18/1M out.
+  'deepseek/deepseek-v4-flash': { input: 0.00009, output: 0.00018 },
 };
 
 export interface UsageTokens {
@@ -22,5 +24,7 @@ export function custoCentavos(modelo: string, usage: UsageTokens): number {
   const dolares =
     (usage.prompt_tokens / 1000) * preco.input +
     (usage.completion_tokens / 1000) * preco.output;
-  return Math.ceil(dolares * 100);
+  // toFixed(6) remove ruído de ponto flutuante (ex.: 0.00009*1000 = 0.09000000000000001)
+  // antes do ceil, sem perder centavos fracionários reais (ordem de grandeza muito maior).
+  return Math.ceil(Number((dolares * 100).toFixed(6)));
 }
