@@ -220,6 +220,18 @@ sem se comunicar. Fix ([ADR-0071](../../docs/decisions/0071-units-per-pack-forca
 `preencherUnitsPerPack` agora sobrescreve `SALE_FORMAT` para "Kit" (value_id do schema dinâmico da
 categoria) sempre que extrai uma contagem real (>1). Sem contagem clara (assume 1), não mexe.
 
+## Lote #33: "N CORES" não sincronizava com UNITS_PER_PACK — produto 02905078 (2026-07-13)
+
+Caso inverso do bug acima, mesmo lote, mesmo dia: `02905078` ("...TRACOS C/12 CORES") falhou no
+CREATE com `"Unidades por kit": Insira um valor diferente de "1" porque você preencheu "Kit" no
+campo "Formato de venda"`. Aqui a IA genérica preencheu `SALE_FORMAT="Kit"` corretamente (é uma
+caixa de 12 lápis, um por cor), mas `extrairUnitsPerPack` não reconhecia "CORES" como token de
+unidade (só `unidades/unid/und/un/pecas/pcs`) — `UNITS_PER_PACK` caiu no default `1`, contradizendo
+o `Kit`. Confirmado lendo os dados reais da família em erro no banco antes de mexer no código. Fix
+([ADR-0073](../../docs/decisions/0073-cores-conta-como-unidade-no-kit.md)): `RE_UNIDADES` passa a
+aceitar `cores` como token de unidade — reusa o `forcarSaleFormatKit` do ADR-0071 sem mudança
+adicional.
+
 ## Lote #33: título duplicado — tipo de produto/cor fora de ordem (2026-07-13)
 
 Dois títulos com duplicação visível: `POMPOM POM POM BÚFALO 14MM...` e `LÁPIS DE ESCREVER RESINA 7

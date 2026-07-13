@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## "N CORES" não sincronizava com UNITS_PER_PACK — lote #33, produto 02905078 (ADR-0073) — 2026-07-13
+
+- [x] Bug reportado: lápis de cor "C/12 CORES" falhou no CREATE — ML: `"Unidades por kit": Insira
+  um valor diferente de "1" porque você preencheu "Kit" no campo "Formato de venda"`. Caso inverso
+  do ADR-0071 (mesmo lote, mesmo dia): a IA genérica preencheu `SALE_FORMAT=Kit` corretamente, mas
+  `extrairUnitsPerPack` não reconhecia "CORES" como token de unidade (só `unidades/unid/und/un/
+  pecas/pcs`) e `UNITS_PER_PACK` caiu no default `1`.
+- [x] Confirmado via `execute_sql` (dados reais da família em erro no banco) antes de mexer no
+  código — evitou repetir o erro de "corrigir sem ler os dados reais".
+- [x] Fix: `RE_UNIDADES` (`_shared/categoria/atributos.ts`) aceita `cores` como token de unidade,
+  reusando o `forcarSaleFormatKit` do ADR-0071 sem mudança adicional.
+- [x] `pnpm test` (2 testes novos + suíte completa, 1437 testes — 1 flaky pré-existente em
+  `App.test.tsx` não relacionado, passa isolado) e `pnpm lint` passando.
+
 ## Título duplicado — tipo de produto/cor fora de ordem — lote #33 (ADR-0072) — 2026-07-13
 
 - [x] Bug reportado: dois títulos com duplicação visível — `POMPOM POM POM BÚFALO 14MM...` e
