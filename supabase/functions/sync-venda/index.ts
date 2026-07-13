@@ -89,16 +89,17 @@ Deno.serve(async (req) => {
     carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 
-  const { novaPaga, itens } = await upsertVenda(admin, userId, orgId, pedido, {
+  const { novaPaga, itens, compradorNome } = await upsertVenda(admin, userId, orgId, pedido, {
     freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
   });
 
   // Alerta de nova venda paga aos destinatários da categoria 'vendas'. Usa os itens já com EAN
-  // resolvido (catálogo/GTIN). notificarCategoria respeita o interruptor-mestre da org.
+  // resolvido (catálogo/GTIN) e o nome real do comprador já resolvido pelo upsert (nunca o
+  // nickname). notificarCategoria respeita o interruptor-mestre da org.
   if (novaPaga && orgId) {
     await notificarCategoria(admin, orgId, 'vendas', montarMensagemNovaVenda({
       order_id: Number(pedido.id),
-      comprador: pedido.buyer?.nickname ?? null,
+      comprador: compradorNome,
       itens: itens.map((i) => ({ titulo: i.titulo, quantity: i.quantity, ean: i.ean })),
       total: Number(pedido.total_amount ?? 0),
       moeda: pedido.currency_id ?? 'BRL',
