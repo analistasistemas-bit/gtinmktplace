@@ -30,9 +30,12 @@
   `configuracoes`.
 - [x] 180 arquivos de teste, 1432+ testes verdes; lint limpo. Revisão de spec compliance + code
   quality por task.
-- [ ] **Pendência (Diego):** migration ainda **não** foi enviada para produção (`supabase db
-  push` pendente de autorização explícita) nem houve deploy das edge functions — feature
-  code-complete na branch `worktree-selecao-modelo-ia-por-org`, mas ainda não live.
+- [x] Migration aplicada em produção (`supabase db push`, autorizado por Diego); `database.types.ts`
+  regenerado; cast temporário em `queries.ts` removido.
+- [ ] **Pendência (Diego):** deploy das edge functions afetadas (`process-familia`,
+  `definir-categoria-familia`, `regenerar-copy-familia`, `sugerir-resposta-pergunta`,
+  `publicar-split-ml`) e do frontend — feature code-complete e a coluna já existe no banco, mas
+  o código ainda não foi implantado.
 
 ## Título com sinônimo de tipo de fio errado — lote #63 "Linha Cléa" (ADR-0070) — 2026-07-13
 
