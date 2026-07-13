@@ -7,30 +7,10 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -49,6 +29,7 @@ export type Database = {
           permalink: string | null
           preco_override: number | null
           publicado_em: string | null
+          qstash_message_id: string | null
           status: string
           titulo: string | null
           user_id: string
@@ -68,6 +49,7 @@ export type Database = {
           permalink?: string | null
           preco_override?: number | null
           publicado_em?: string | null
+          qstash_message_id?: string | null
           status?: string
           titulo?: string | null
           user_id: string
@@ -87,6 +69,7 @@ export type Database = {
           permalink?: string | null
           preco_override?: number | null
           publicado_em?: string | null
+          qstash_message_id?: string | null
           status?: string
           titulo?: string | null
           user_id?: string
@@ -104,45 +87,51 @@ export type Database = {
       }
       configuracoes: {
         Row: {
+          ai_model_imagem: string | null
+          ai_model_texto: string | null
           aliquota_importado_pct: number
           aliquota_nacional_pct: number
           atualizado_em: string
           criado_em: string
           desconto_concorrencia_pct: number
           desconto_pct: number
-          reancora_lider_ativa: boolean
           mp_access_token_secret_id: string | null
           org_id: string
+          reancora_lider_ativa: boolean
           telegram_ativo: boolean
           telegram_bot_token: string | null
           telegram_chat_id: string | null
           user_id: string
         }
         Insert: {
+          ai_model_imagem?: string | null
+          ai_model_texto?: string | null
           aliquota_importado_pct?: number
           aliquota_nacional_pct?: number
           atualizado_em?: string
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
-          reancora_lider_ativa?: boolean
           mp_access_token_secret_id?: string | null
           org_id: string
+          reancora_lider_ativa?: boolean
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
           user_id: string
         }
         Update: {
+          ai_model_imagem?: string | null
+          ai_model_texto?: string | null
           aliquota_importado_pct?: number
           aliquota_nacional_pct?: number
           atualizado_em?: string
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
-          reancora_lider_ativa?: boolean
           mp_access_token_secret_id?: string | null
           org_id?: string
+          reancora_lider_ativa?: boolean
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
@@ -191,7 +180,6 @@ export type Database = {
           editado_em: string | null
           erro_mensagem: string | null
           estrategia_motivo: string | null
-          preco_reancorado_lider: boolean
           estrategia_preco:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
@@ -208,6 +196,7 @@ export type Database = {
           operacao: Database["public"]["Enums"]["operacao_ml"]
           org_id: string
           origem: Database["public"]["Enums"]["origem_produto"]
+          preco_reancorado_lider: boolean
           publicado_em: string | null
           qstash_message_id: string | null
           sale_terms: Json
@@ -255,7 +244,6 @@ export type Database = {
           editado_em?: string | null
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
-          preco_reancorado_lider?: boolean
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
@@ -272,6 +260,7 @@ export type Database = {
           operacao: Database["public"]["Enums"]["operacao_ml"]
           org_id: string
           origem?: Database["public"]["Enums"]["origem_produto"]
+          preco_reancorado_lider?: boolean
           publicado_em?: string | null
           qstash_message_id?: string | null
           sale_terms?: Json
@@ -319,7 +308,6 @@ export type Database = {
           editado_em?: string | null
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
-          preco_reancorado_lider?: boolean
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
@@ -336,6 +324,7 @@ export type Database = {
           operacao?: Database["public"]["Enums"]["operacao_ml"]
           org_id?: string
           origem?: Database["public"]["Enums"]["origem_produto"]
+          preco_reancorado_lider?: boolean
           publicado_em?: string | null
           qstash_message_id?: string | null
           sale_terms?: Json
@@ -437,6 +426,7 @@ export type Database = {
         Row: {
           access_token_secret_id: string | null
           atualizado_em: string
+          auth_alerta_em: string | null
           canal: Database["public"]["Enums"]["canal_externo"]
           conta_externa_id: string | null
           conta_label: string | null
@@ -447,10 +437,12 @@ export type Database = {
           org_id: string
           refresh_token_secret_id: string | null
           scope: string | null
+          ultima_sincronizacao_ok_em: string | null
         }
         Insert: {
           access_token_secret_id?: string | null
           atualizado_em?: string
+          auth_alerta_em?: string | null
           canal: Database["public"]["Enums"]["canal_externo"]
           conta_externa_id?: string | null
           conta_label?: string | null
@@ -461,10 +453,12 @@ export type Database = {
           org_id: string
           refresh_token_secret_id?: string | null
           scope?: string | null
+          ultima_sincronizacao_ok_em?: string | null
         }
         Update: {
           access_token_secret_id?: string | null
           atualizado_em?: string
+          auth_alerta_em?: string | null
           canal?: Database["public"]["Enums"]["canal_externo"]
           conta_externa_id?: string | null
           conta_label?: string | null
@@ -475,6 +469,7 @@ export type Database = {
           org_id?: string
           refresh_token_secret_id?: string | null
           scope?: string | null
+          ultima_sincronizacao_ok_em?: string | null
         }
         Relationships: [
           {
@@ -604,53 +599,6 @@ export type Database = {
           },
         ]
       }
-      ml_moderacao: {
-        Row: {
-          alertado_em: string | null
-          atualizado_em: string
-          detectado_em: string
-          id: string
-          ml_item_id: string
-          motivo: string | null
-          org_id: string
-          resolvido_em: string | null
-          status: string
-          user_id: string
-        }
-        Insert: {
-          alertado_em?: string | null
-          atualizado_em?: string
-          detectado_em?: string
-          id?: string
-          ml_item_id: string
-          motivo?: string | null
-          org_id: string
-          resolvido_em?: string | null
-          status: string
-          user_id: string
-        }
-        Update: {
-          alertado_em?: string | null
-          atualizado_em?: string
-          detectado_em?: string
-          id?: string
-          ml_item_id?: string
-          motivo?: string | null
-          org_id?: string
-          resolvido_em?: string | null
-          status?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ml_moderacao_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       ml_mensagens: {
         Row: {
           atualizado_em: string
@@ -698,6 +646,53 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      ml_moderacao: {
+        Row: {
+          alertado_em: string | null
+          atualizado_em: string
+          detectado_em: string
+          id: string
+          ml_item_id: string
+          motivo: string | null
+          org_id: string
+          resolvido_em: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          alertado_em?: string | null
+          atualizado_em?: string
+          detectado_em?: string
+          id?: string
+          ml_item_id: string
+          motivo?: string | null
+          org_id: string
+          resolvido_em?: string | null
+          status: string
+          user_id: string
+        }
+        Update: {
+          alertado_em?: string | null
+          atualizado_em?: string
+          detectado_em?: string
+          id?: string
+          ml_item_id?: string
+          motivo?: string | null
+          org_id?: string
+          resolvido_em?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_moderacao_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ml_perguntas: {
         Row: {
@@ -769,11 +764,13 @@ export type Database = {
           currency: string
           date_closed: string | null
           date_created: string | null
+          estorno: number | null
           frete_vendedor: number | null
           id: string
           is_publiai: boolean
           liberacao_notificada_em: string | null
           liquido: number | null
+          money_release_date: string | null
           order_id: number
           org_id: string
           pack_id: number | null
@@ -804,11 +801,13 @@ export type Database = {
           currency?: string
           date_closed?: string | null
           date_created?: string | null
+          estorno?: number | null
           frete_vendedor?: number | null
           id?: string
           is_publiai?: boolean
           liberacao_notificada_em?: string | null
           liquido?: number | null
+          money_release_date?: string | null
           order_id: number
           org_id: string
           pack_id?: number | null
@@ -839,11 +838,13 @@ export type Database = {
           currency?: string
           date_closed?: string | null
           date_created?: string | null
+          estorno?: number | null
           frete_vendedor?: number | null
           id?: string
           is_publiai?: boolean
           liberacao_notificada_em?: string | null
           liquido?: number | null
+          money_release_date?: string | null
           order_id?: number
           org_id?: string
           pack_id?: number | null
@@ -1408,9 +1409,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       canal_externo: ["mercado_livre"],
@@ -1441,4 +1439,3 @@ export const Constants = {
     },
   },
 } as const
-

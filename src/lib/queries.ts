@@ -461,30 +461,20 @@ export async function upsertReancoraLiderAtiva(ativa: boolean): Promise<void> {
   if (error) throw error;
 }
 
-// ponytail: ai_model_texto/ai_model_imagem são colunas aditivas (ADR-0071) — a migration
-// 20260713120000_ai_model_por_org.sql ainda não foi pushada (aguardando autorização humana),
-// então database.types.ts não tem essas colunas e o client tipado as rejeita. Casts locais
-// abaixo, escopados só a estas 4 funções. Remover ao rodar `supabase db push` +
-// `supabase gen types typescript --linked --schema public > src/lib/database.types.ts`.
-type ConfiguracoesComModeloIaRow = { ai_model_texto: string | null; ai_model_imagem: string | null };
-type ConfiguracoesComModeloIaUpsert = Database['public']['Tables']['configuracoes']['Insert'] &
-  Partial<ConfiguracoesComModeloIaRow>;
-
 export async function fetchModeloTexto(): Promise<string | null> {
   const orgId = useAuthStore.getState().profile?.org_id;
   if (!orgId) return null;
   const { data } = await supabase.from('configuracoes')
     .select('ai_model_texto').eq('org_id', orgId).maybeSingle();
-  return (data as unknown as ConfiguracoesComModeloIaRow | null)?.ai_model_texto ?? null;
+  return data?.ai_model_texto ?? null;
 }
 
 export async function upsertModeloTexto(slug: string): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   const orgId = useAuthStore.getState().profile?.org_id;
   if (!user || !orgId) throw new Error('sem sessão');
-  const payload: ConfiguracoesComModeloIaUpsert = { org_id: orgId, user_id: user.id, ai_model_texto: slug, atualizado_em: new Date().toISOString() };
   const { error } = await supabase.from('configuracoes')
-    .upsert(payload as Database['public']['Tables']['configuracoes']['Insert'], { onConflict: 'org_id' });
+    .upsert({ org_id: orgId, user_id: user.id, ai_model_texto: slug, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 
@@ -493,16 +483,15 @@ export async function fetchModeloImagem(): Promise<string | null> {
   if (!orgId) return null;
   const { data } = await supabase.from('configuracoes')
     .select('ai_model_imagem').eq('org_id', orgId).maybeSingle();
-  return (data as unknown as ConfiguracoesComModeloIaRow | null)?.ai_model_imagem ?? null;
+  return data?.ai_model_imagem ?? null;
 }
 
 export async function upsertModeloImagem(slug: string): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   const orgId = useAuthStore.getState().profile?.org_id;
   if (!user || !orgId) throw new Error('sem sessão');
-  const payload: ConfiguracoesComModeloIaUpsert = { org_id: orgId, user_id: user.id, ai_model_imagem: slug, atualizado_em: new Date().toISOString() };
   const { error } = await supabase.from('configuracoes')
-    .upsert(payload as Database['public']['Tables']['configuracoes']['Insert'], { onConflict: 'org_id' });
+    .upsert({ org_id: orgId, user_id: user.id, ai_model_imagem: slug, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 
