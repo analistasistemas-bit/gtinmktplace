@@ -169,7 +169,7 @@ export default function Configuracoes() {
               onValueChange={(v) => salvarModeloTexto.mutate(v)}
               disabled={!isAdmin}
             >
-              <SelectTrigger className="h-8 w-[300px] text-sm" title={!isAdmin ? 'Somente administradores podem trocar o modelo' : undefined}>
+              <SelectTrigger aria-label="Modelo de texto" className="h-8 w-[300px] text-sm" title={!isAdmin ? 'Somente administradores podem trocar o modelo' : undefined}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -191,7 +191,7 @@ export default function Configuracoes() {
               onValueChange={(v) => salvarModeloImagem.mutate(v)}
               disabled={!isAdmin}
             >
-              <SelectTrigger className="h-8 w-[300px] text-sm" title={!isAdmin ? 'Somente administradores podem trocar o modelo' : undefined}>
+              <SelectTrigger aria-label="Modelo de imagem" className="h-8 w-[300px] text-sm" title={!isAdmin ? 'Somente administradores podem trocar o modelo' : undefined}>
                 <SelectValue placeholder="Selecione um modelo" />
               </SelectTrigger>
               <SelectContent>
