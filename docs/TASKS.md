@@ -2,6 +2,41 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Seleção de modelo de IA (texto/imagem) por organização — ADR-0074 — 2026-07-13
+
+- [x] Diego pediu para escolher o modelo de IA de texto por organização direto na tela
+  Configurações (incluindo `deepseek/deepseek-v4-flash` como opção nova, além do padrão
+  `openai/gpt-4o-mini`) e reservar, na mesma tela, um seletor de modelo de imagem
+  (`google/gemini-2.5-flash-image`, "Nano Banana") para uma feature de geração de imagem ainda
+  não implementada. ADR-0074 escrito antes da implementação.
+- [x] Migration `20260713120000_ai_model_por_org.sql`: `configuracoes.ai_model_texto`/
+  `ai_model_imagem` (text, nullable, CHECK com lista curada). `NULL` → fallback `MODELO_COPY`/env.
+  Sem RLS nova — `configuracoes` já é admin-only por org (`20260705165828_e7_rls_org.sql`).
+- [x] Backend: novo `resolverModeloTexto(admin, orgId)` (`_shared/ai/modelos.ts`), com fallback
+  seguro (nunca propaga erro). `tokens.ts::PRECOS` ganha `deepseek/deepseek-v4-flash`
+  ($0,09/$0,18 por 1M tokens); `google/gemini-2.5-flash-image` fica fora de `PRECOS` (dormente,
+  sem consumidor). As 4 funções de IA-texto (`gerarCopy`, `desempatarAtributosLLM`,
+  `desempatarCategoriaLLM`, `sugerirResposta`) passam a aceitar `modelo` opcional em vez de ler a
+  constante direto.
+- [x] 5 edge functions passam a resolver o modelo da org antes de chamar IA: `process-familia`,
+  `definir-categoria-familia`, `regenerar-copy-familia` (passou a selecionar `org_id` de
+  `familias`), `sugerir-resposta-pergunta` (trocou `requireUser` por `requireUserOrg` — deixa de
+  ser a única função autenticada sem escopo de org), `publicar-split-ml` (via novo campo
+  `modelo?` em `OpcoesTituloParticao`, `titulo-particao.ts`).
+- [x] Frontend: tela **Configurações** ganha card "Modelo de IA" com dois `Select` (texto/
+  imagem), admin-only na UI (`disabled` + tooltip; enforcement real é a RLS), feedback
+  "Salvando…"/"✓ Salvo". Novo `src/lib/ai-modelos.ts` (lista curada slug/label/preço para a UI);
+  `queries.ts`/`useConfiguracoes.ts` ganham fetch/upsert/hooks seguindo o padrão já existente de
+  `configuracoes`.
+- [x] 180 arquivos de teste, 1432+ testes verdes; lint limpo. Revisão de spec compliance + code
+  quality por task.
+- [x] Migration aplicada em produção (`supabase db push`, autorizado por Diego); `database.types.ts`
+  regenerado; cast temporário em `queries.ts` removido.
+- [ ] **Pendência (Diego):** deploy das edge functions afetadas (`process-familia`,
+  `definir-categoria-familia`, `regenerar-copy-familia`, `sugerir-resposta-pergunta`,
+  `publicar-split-ml`) e do frontend — feature code-complete e a coluna já existe no banco, mas
+  o código ainda não foi implantado.
+
 ## "N CORES" não sincronizava com UNITS_PER_PACK — lote #33, produto 02905078 (ADR-0073) — 2026-07-13
 
 - [x] Bug reportado: lápis de cor "C/12 CORES" falhou no CREATE — ML: `"Unidades por kit": Insira

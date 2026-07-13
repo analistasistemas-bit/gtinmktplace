@@ -1,6 +1,8 @@
 // Sugere uma resposta via IA (ADR-0037). Chamada pelo frontend (JWT). NÃO envia ao ML.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { sugerirResposta } from '../_shared/ai/resposta-pergunta.ts';
 
 interface Body { pergunta?: string; item_titulo?: string | null; contexto?: string | null }
@@ -9,7 +11,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  try { await requireUser(req); }
+  let orgId: string;
+  try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -22,7 +25,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const sugestao = await sugerirResposta({ pergunta, itemTitulo: body.item_titulo ?? null, contexto: body.contexto ?? null });
+    const modeloTexto = await resolverModeloTexto(adminClient(), orgId);
+    const sugestao = await sugerirResposta({ pergunta, itemTitulo: body.item_titulo ?? null, contexto: body.contexto ?? null }, modeloTexto);
     return new Response(JSON.stringify({ ok: true, sugestao }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, erro: (e as Error).message }), {

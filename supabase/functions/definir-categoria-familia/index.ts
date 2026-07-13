@@ -7,6 +7,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 // Seletor de categoria livre (ADR-0057, estende o escape hatch do ADR-0009/0022): o operador
 // escolhe qualquer categoria real do ML (busca em atributos-familia/buscar-categoria). Categoria
@@ -31,6 +32,7 @@ Deno.serve(async (req) => {
   let orgId: string;
   try { ({ orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  const modeloTexto = await resolverModeloTexto(adminClient(), orgId);
 
   let body: { familia_id?: string; categoria_ml_id?: string; categoria_nome?: string };
   try { body = await req.json(); } catch { return new Response('Bad JSON', { status: 400, headers: corsHeaders }); }
@@ -81,7 +83,7 @@ Deno.serve(async (req) => {
           if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));
           return lerSchemaAtributos(token, id);
         },
-        llm: desempatarAtributosLLM,
+        llm: (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto),
       },
       marcaPadrao,
     );

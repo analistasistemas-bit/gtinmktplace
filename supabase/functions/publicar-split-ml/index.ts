@@ -21,6 +21,7 @@ import { montarAncoragem } from '../_shared/split/ancoragem.ts';
 import { particionar } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -82,6 +83,7 @@ Deno.serve(async (req) => {
 
   const conn = getConnector('mercado_livre');
   const conexao = await resolverConexao(admin, familia.org_id, 'mercado_livre');
+  const modeloTexto = await resolverModeloTexto(admin, familia.org_id as string);
   const ctx: ContextoCanal = {
     getToken: () => conexao
       ? getValidAccessTokenConexao(conexao)
@@ -197,6 +199,7 @@ Deno.serve(async (req) => {
             cores: coresP.map((v) => ({ codigo: v.codigo, cor: v.cor, preco: Number(v.preco_publicacao ?? 0) })),
             tituloBase: familia.titulo_ml ?? familia.nome_pai,
             particao: p,
+            modelo: modeloTexto,
           }));
 
       let itemIdP = itemExternoId;

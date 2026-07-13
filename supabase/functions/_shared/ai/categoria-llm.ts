@@ -18,12 +18,13 @@ export { escolherCandidatoValido, montarPromptDesempate, ehAbstencaoDeliberada }
 export async function desempatarCategoriaLLM(
   input: InputCategoria,
   candidatos: CategoriaCandidata[],
+  modelo: string = MODELO_COPY,
 ): Promise<string | null | undefined> {
   if (candidatos.length === 0) return undefined;
   try {
     const client = openrouterClient();
     const resp = await client.chat.completions.create({
-      model: MODELO_COPY,
+      model: modelo,
       messages: [
         { role: 'system', content: 'Você classifica produtos em categorias de marketplace. Responda só com um category_id da lista fornecida.' },
         { role: 'user', content: montarPromptDesempate(input, candidatos) },

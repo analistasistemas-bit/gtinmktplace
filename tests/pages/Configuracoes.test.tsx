@@ -20,6 +20,10 @@ vi.mock('@/hooks/useConfiguracoes', () => ({
   useSalvarAliquotas: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useReancoraLiderAtiva: () => ({ data: true }),
   useSalvarReancoraLiderAtiva: () => ({ mutate: salvarReancoraLiderAtiva, isPending: false, isSuccess: false }),
+  useModeloTexto: () => ({ data: 'openai/gpt-4o-mini' }),
+  useSalvarModeloTexto: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
+  useModeloImagem: () => ({ data: 'google/gemini-2.5-flash-image' }),
+  useSalvarModeloImagem: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
 }));
 
 function renderPage() {
