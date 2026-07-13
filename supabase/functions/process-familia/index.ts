@@ -26,6 +26,7 @@ import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { analisarMercado } from '../_shared/ml/mercado.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 interface Job { familia_id: string; lote_id: string; }
 
@@ -71,6 +72,7 @@ Deno.serve(async (req) => {
   const userId = claimed.user_id as string;
   const orgId = claimed.org_id as string;
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  const modeloTexto = await resolverModeloTexto(admin, orgId);
 
   try {
     // 2. Carregar variações
@@ -172,7 +174,7 @@ Deno.serve(async (req) => {
         cor: v.cor,
         preco: Number(v.preco),
       })),
-    });
+    }, modeloTexto);
 
     // 5b. Busca de concorrência (1x por família) — ADR-0014. Resiliente: erro → "nenhuma".
     // Sem conexão ML: buscarConcorrencia lança internamente e cai no próprio catch → NENHUMA.
@@ -197,7 +199,7 @@ Deno.serve(async (req) => {
       { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, tipoProdutoBusca: copy.tipo_produto_busca },
       {
         preditor: (q) => (token ? buscarCategoriaPreditor(token, q) : Promise.resolve([])),
-        llm: desempatarCategoriaLLM,
+        llm: (input, candidatos) => desempatarCategoriaLLM(input, candidatos, modeloTexto),
       },
     );
     let tipo = cat.tipo;
@@ -245,7 +247,7 @@ Deno.serve(async (req) => {
           atributosMl = await preencherAtributosClosedSet(
             schema, atributosMl,
             { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
-            desempatarAtributosLLM,
+            (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto),
           );
           atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
         } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
@@ -261,7 +263,7 @@ Deno.serve(async (req) => {
             if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));
             return lerSchemaAtributos(token, id);
           },
-          llm: desempatarAtributosLLM,
+          llm: (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto),
         },
         marcaPadrao,
       );

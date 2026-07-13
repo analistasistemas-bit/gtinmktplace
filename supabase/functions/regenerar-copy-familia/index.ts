@@ -2,6 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
   // família; a RLS is_membro_operacao já restringe à operação. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
+    .select('id, org_id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
     .eq('id', body.familia_id)
     .maybeSingle();
 
@@ -37,6 +38,7 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const modeloTexto = await resolverModeloTexto(sb, familia.org_id as string);
     const variacoes = (familia.variacoes ?? []).map((v: Record<string, unknown>) => ({
       codigo: String(v.codigo ?? ''),
       cor: typeof v.cor === 'string' ? v.cor : null,
@@ -48,7 +50,7 @@ Deno.serve(async (req) => {
       descricao_detalhado: familia.descricao_pai ?? '',
       unidade: (familia.unidade as string | null) ?? null,
       variacoes,
-    });
+    }, modeloTexto);
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
     const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];

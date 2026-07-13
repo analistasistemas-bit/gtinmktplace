@@ -22,6 +22,7 @@ export interface OpcoesTituloParticao {
   cores: CorParticaoTitulo[]; // só as cores DESTA partição
   tituloBase: string; // título da partição 0 (familia.titulo_ml) — referência de unicidade
   particao: number; // índice (>0) desta partição
+  modelo?: string; // ADR-0071 — resolvido pelo caller (publicar-split-ml)
 }
 
 /**
@@ -53,7 +54,7 @@ export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<s
       descricao_detalhado: opts.descricao_detalhado,
       unidade: opts.unidade ?? null,
       variacoes: opts.cores.map((c) => ({ codigo: c.codigo, cor: c.cor, preco: c.preco })),
-    });
+    }, opts.modelo);
     const titulo = garantirMetragemTitulo(
       garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(out.titulo, opts.nome, opts.descricao_detalhado ?? ''), out.tipo_produto_busca), opts.nome),
       opts.nome,
