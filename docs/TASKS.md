@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Título com sinônimo de tipo de fio errado — lote #63 "Linha Cléa" (ADR-0070) — 2026-07-13
+
+- [x] Bug reportado: título gerado "FIO CLÉA 1000..." quando a descrição diz "Linha Cléa" —
+  investigação em produção achou 2 famílias reais do lote 63 (`L.CLEA 1000`, `CLEA DUPLO`) com o
+  mesmo bug e confirmou por que os guards existentes (ADR-0054) não pegam: "fio" e "linha" aparecem
+  os dois, literalmente, na `descricao_pai` — ambos "grounded", a IA só escolhe o errado às vezes.
+- [x] `tipo_aviamento` descartado como critério de correção: categoria ML (`Fios e Cadarços`)
+  mistura barbante/fio/linha legítimos; canonicalizar por ali reverteria a cravação de "BARBANTE"
+  no EUROROMA (ADR-0054) e trocaria títulos corretos como "FIO NAUTICO" por "LINHA NAUTICO".
+- [x] Fix: `garantirTipoFioTitulo` (`_shared/ai/titulo.ts`) corrige a 1ª palavra do título quando é
+  um sinônimo (linha/fio/barbante) diferente do que `nome_pai` já declara por extenso ou pela
+  abreviação `"L."` (`L.CLEA` = Linha Cléa). Sem sinal em `nome_pai` → não mexe. Encadeado nos 3
+  pontos que montam título (`process-familia`, `regenerar-copy-familia`, `titulo-particao.ts`),
+  sempre depois de `garantirTipoProdutoTitulo` (ordem importa — ver ADR-0070).
+- [x] `pnpm test` (7 testes novos + suíte completa) e `pnpm lint` passando.
+- [ ] Pendência operacional (não corrigida automaticamente): as 2 famílias reais do lote 63 com
+  título errado seguem com "FIO" no banco/ML — regenerar copy manualmente se quiser corrigi-las.
+
 ## Roadmap estratégico v2 — revisão CTO do relatório de evolução do produto — 2026-07-12
 
 - [x] Revisão crítica de `Sugestões para Evolução do Produto.md` (50 funcionalidades) sob a ótica
