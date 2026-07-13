@@ -168,6 +168,9 @@ describe('extrairUnitsPerPack (quantidade no nome/descrição)', () => {
   it('sem quantidade clara → null', () => {
     expect(extrairUnitsPerPack('AGULHA DE COSTURA')).toBe(null);
   });
+  it('extrai de "C/12 CORES" (kit de lápis/giz por cor — lote #33)', () => {
+    expect(extrairUnitsPerPack('LAPIS DE COR PEQ TRACOS C/12 CORES')).toBe(12);
+  });
 });
 
 describe('preencherUnitsPerPack (gate por schema)', () => {
@@ -189,6 +192,52 @@ describe('preencherUnitsPerPack (gate por schema)', () => {
   it('sem quantidade no texto → assume 1 (produto avulso, não é kit — lote #27)', () => {
     expect(preencherUnitsPerPack(schemaComUnits, [], 'AGULHA DE COSTURA')).toEqual([
       { id: 'UNITS_PER_PACK', value_name: '1' },
+    ]);
+  });
+
+  const schemaComSaleFormat: AtributoSchema[] = [
+    ...schemaComUnits,
+    {
+      id: 'SALE_FORMAT', nome: 'Formato de venda', required: true, conditionalRequired: false,
+      valueType: 'list', valores: [{ id: '2135872', nome: 'Unidade' }, { id: '2135873', nome: 'Kit' }],
+      allowedUnits: [], tags: [],
+    },
+  ];
+
+  it('quantidade real > 1 força SALE_FORMAT=Kit, sobrescrevendo o que a IA preencheu (lote #33)', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135872' }]; // IA preencheu "Unidade"
+    const out = preencherUnitsPerPack(schemaComSaleFormat, base, 'LÁPIS DE COR EM RESINA 24UND GRD 7');
+    expect(out).toEqual([
+      { id: 'UNITS_PER_PACK', value_name: '24' },
+      { id: 'SALE_FORMAT', value_id: '2135873' },
+    ]);
+  });
+
+  it('sem contagem clara (assume 1) não mexe em SALE_FORMAT', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135872' }];
+    const out = preencherUnitsPerPack(schemaComSaleFormat, base, 'AGULHA DE COSTURA');
+    expect(out).toEqual([
+      { id: 'SALE_FORMAT', value_id: '2135872' },
+      { id: 'UNITS_PER_PACK', value_name: '1' },
+    ]);
+  });
+
+  it('quantidade extraída = 1 explícito não força Kit', () => {
+    const out = preencherUnitsPerPack(schemaComSaleFormat, [], 'ALFINETE 1 unidade');
+    expect(out).toEqual([{ id: 'UNITS_PER_PACK', value_name: '1' }]);
+  });
+
+  it('categoria sem SALE_FORMAT no schema: preenche kit sem mexer em nada mais', () => {
+    const out = preencherUnitsPerPack(schemaComUnits, [], 'LINHA 24 UN');
+    expect(out).toEqual([{ id: 'UNITS_PER_PACK', value_name: '24' }]);
+  });
+
+  it('IA já preencheu SALE_FORMAT=Kit por "C/12 CORES": sincroniza UNITS_PER_PACK em vez de deixar 1 (lote #33)', () => {
+    const base = [{ id: 'SALE_FORMAT', value_id: '2135873' }]; // IA já preencheu "Kit"
+    const out = preencherUnitsPerPack(schemaComSaleFormat, base, 'LAPIS DE COR PEQ TRACOS C/12 CORES');
+    expect(out).toEqual([
+      { id: 'UNITS_PER_PACK', value_name: '12' },
+      { id: 'SALE_FORMAT', value_id: '2135873' },
     ]);
   });
 });

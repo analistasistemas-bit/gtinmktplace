@@ -67,6 +67,19 @@ describe('garantirCorTitulo', () => {
     expect(out).toContain('PRATA');
   });
 
+  it('detecta cor multi-palavra já coberta fora de ordem — não duplica (lote #33)', () => {
+    // nome_pai "RESINA DE 7 VERDE": "7" e "VERDE" já estão no título, só que na ordem inversa
+    // da cor real "Verde 7". Antes do fix, isso duplicava " VERDE 7" no fim do título.
+    const titulo = 'LÁPIS DE ESCREVER RESINA 7 VERDE REF.SL101066-8';
+    expect(garantirCorTitulo(titulo, 'Verde 7', 1)).toBe(titulo);
+  });
+
+  it('cor multi-palavra parcialmente ausente ainda é cravada (preserva diferenciação)', () => {
+    const titulo = 'LÁPIS DE ESCREVER RESINA VERDE REF.SL101066-8';
+    const out = garantirCorTitulo(titulo, 'Verde 7', 1);
+    expect(out).toContain('VERDE 7');
+  });
+
   it('encadeia com garantirMetragemTitulo mantendo metragem e cor (≤60)', () => {
     const out = garantirCorTitulo(
       garantirMetragemTitulo('FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL', 'FITA CETIM PROGRESSO N.1 100MT'),

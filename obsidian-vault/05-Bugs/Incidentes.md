@@ -210,6 +210,43 @@ escolhida). A categoria do BRILHO foi corrigida para "Lãs".
 
 Validado ao vivo (banco + browser-use no Chrome do Diego) reprocessando as 3 famílias do lote #27.
 
+## Lote #33: kit real rejeitado — SALE_FORMAT="Unidade" × UNITS_PER_PACK>1 (2026-07-13)
+
+Lápis de cor 24 unidades: CREATE falhou com `"Unidades por kit": Insira 1 neste campo porque você
+preencheu "Unidade" no campo "Formato de venda"`. Causa: `preencherUnitsPerPack` (regex, ADR-0063)
+extraiu corretamente `UNITS_PER_PACK=24` de "24UND" no título, mas a IA genérica de closed-set já
+tinha preenchido `SALE_FORMAT="Unidade"` sem saber da contagem — as duas lógicas rodam em sequência
+sem se comunicar. Fix ([ADR-0071](../../docs/decisions/0071-units-per-pack-forca-sale-format-kit.md)):
+`preencherUnitsPerPack` agora sobrescreve `SALE_FORMAT` para "Kit" (value_id do schema dinâmico da
+categoria) sempre que extrai uma contagem real (>1). Sem contagem clara (assume 1), não mexe.
+
+## Lote #33: "N CORES" não sincronizava com UNITS_PER_PACK — produto 02905078 (2026-07-13)
+
+Caso inverso do bug acima, mesmo lote, mesmo dia: `02905078` ("...TRACOS C/12 CORES") falhou no
+CREATE com `"Unidades por kit": Insira um valor diferente de "1" porque você preencheu "Kit" no
+campo "Formato de venda"`. Aqui a IA genérica preencheu `SALE_FORMAT="Kit"` corretamente (é uma
+caixa de 12 lápis, um por cor), mas `extrairUnitsPerPack` não reconhecia "CORES" como token de
+unidade (só `unidades/unid/und/un/pecas/pcs`) — `UNITS_PER_PACK` caiu no default `1`, contradizendo
+o `Kit`. Confirmado lendo os dados reais da família em erro no banco antes de mexer no código. Fix
+([ADR-0073](../../docs/decisions/0073-cores-conta-como-unidade-no-kit.md)): `RE_UNIDADES` passa a
+aceitar `cores` como token de unidade — reusa o `forcarSaleFormatKit` do ADR-0071 sem mudança
+adicional.
+
+## Lote #33: título duplicado — tipo de produto/cor fora de ordem (2026-07-13)
+
+Dois títulos com duplicação visível: `POMPOM POM POM BÚFALO 14MM...` e `LÁPIS DE ESCREVER RESINA 7
+VERDE REF.SL101066-8 VERDE 7`. Não é qualidade do modelo de IA — o texto que a IA gerou já estava
+correto; o bug está nos guards determinísticos de `_shared/ai/titulo.ts` que rodam depois, checando
+"já está no título" por frase exata (mesma ordem/espaçamento) em vez de cobertura de informação.
+1. `garantirTipoProdutoTitulo`: tipo `"pompom"` (colado, vindo da IA) não batia contra título com
+   `"POM POM"` (espaçado, do nome_pai) → reprefixava.
+2. `garantirCorTitulo`: cor real `"Verde 7"` não batia contra nome com `"...RESINA DE 7 VERDE..."`
+   (mesmas palavras, ordem invertida) → reanexava a cor inteira de novo.
+Fix ([ADR-0072](../../docs/decisions/0072-titulo-duplicacao-tipo-e-cor-fora-de-ordem.md)):
+`todasPalavrasCobertas` (todas as palavras do termo, em qualquer ordem) substitui a checagem de
+frase exata em `garantirCorTitulo`; `termoColadoNoTitulo` (fallback sem espaços) entra como OR na
+checagem de `garantirTipoProdutoTitulo`.
+
 ## Lote #28: concorrência só olhava a 1ª cor (menor preço falso) + copy inventava "NOVO" (2026-07-08)
 
 Linha Anne 500m (46 cores, cada uma um produto de catálogo distinto no ML) expôs dois bugs

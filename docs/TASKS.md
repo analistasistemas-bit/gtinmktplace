@@ -37,8 +37,6 @@
   `publicar-split-ml`) e do frontend — feature code-complete e a coluna já existe no banco, mas
   o código ainda não foi implantado.
 
-
-
 ## "N CORES" não sincronizava com UNITS_PER_PACK — lote #33, produto 02905078 (ADR-0073) — 2026-07-13
 
 - [x] Bug reportado: lápis de cor "C/12 CORES" falhou no CREATE — ML: `"Unidades por kit": Insira

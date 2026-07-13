@@ -141,6 +141,29 @@ function normalizarBusca(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 }
 
+function escaparRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Testa se TODAS as palavras de `termo` (multi-palavra) já aparecem como palavra inteira em
+// qualquer lugar do título — não exige ordem nem adjacência. Ex.: cor "Verde 7" cobre
+// "...RESINA 7 VERDE..." mesmo com "7" antes de "Verde" e por outro motivo no nome (lote #33).
+function todasPalavrasCobertas(titulo: string, termo: string): boolean {
+  const tituloNorm = normalizarBusca(titulo);
+  const palavras = normalizarBusca(termo).split(/\s+/).filter(Boolean);
+  return palavras.length > 0 && palavras.every((w) => new RegExp(`\\b${escaparRegex(w)}\\b`).test(tituloNorm));
+}
+
+// Fallback pra termo composto que a IA devolve colado (ex.: "pompom") enquanto o nome/título já
+// usa a forma espaçada ("POM POM") — a checagem por palavra inteira não bate porque o espaço
+// quebra a contiguidade. Remove espaços dos dois lados e testa contenção simples. Só entra em
+// jogo quando a checagem por palavra falha (lote #33: "POMPOM POM POM..." duplicado).
+function termoColadoNoTitulo(titulo: string, termo: string): boolean {
+  const semEspacoTitulo = normalizarBusca(titulo).replace(/\s+/g, '');
+  const semEspacoTermo = normalizarBusca(termo).replace(/\s+/g, '');
+  return semEspacoTermo.length > 0 && semEspacoTitulo.includes(semEspacoTermo);
+}
+
 const MIN_PALAVRA_SIGNIFICATIVA_TITULO = 3;
 
 // Garante que o TIPO DE PRODUTO apareça no título quando ele não está no nome_pai mas foi
@@ -158,7 +181,8 @@ export function garantirTipoProdutoTitulo(titulo: string, tipoProdutoBusca: stri
   if (palavrasTipo.length === 0) return titulo;
 
   const tituloNorm = normalizarBusca(titulo);
-  const jaPresente = palavrasTipo.some((w) => new RegExp(`\\b${w}\\b`).test(tituloNorm));
+  const jaPresente = palavrasTipo.some((w) => new RegExp(`\\b${w}\\b`).test(tituloNorm))
+    || termoColadoNoTitulo(titulo, tipo);
   if (jaPresente) return titulo;
 
   let candidato = `${tipo.toUpperCase()} ${titulo}`;
@@ -219,9 +243,8 @@ export function garantirCorTitulo(titulo: string, cor: string | null, nCores: nu
   const corLimpa = cor?.trim() ?? '';
   if (ehCorIndefinida(corLimpa)) return titulo;
 
-  // Já contém a cor (palavra inteira, ignorando acento e caixa)? Não duplica.
-  const corNorm = normalizarBusca(corLimpa).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  if (new RegExp(`\\b${corNorm}\\b`).test(normalizarBusca(titulo))) return titulo;
+  // Já contém a cor (todas as palavras, em qualquer ordem/posição)? Não duplica.
+  if (todasPalavrasCobertas(titulo, corLimpa)) return titulo;
 
   const sufixo = ` ${corLimpa.toUpperCase()}`;
   const partes = titulo.split(' | ');
