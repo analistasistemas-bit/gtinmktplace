@@ -41,11 +41,11 @@ function foiTimeout(e: unknown): boolean {
   return msg.includes('aborted') || msg.includes('timed out') || msg.includes('timeout');
 }
 
-async function chamarCopy(input: InputCopy): Promise<OutputCopy> {
+async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy> {
   const client = openrouterClient();
   const resp = await client.chat.completions.create(
     {
-      model: MODELO_COPY,
+      model: modelo,
       messages: [
         { role: 'system', content: SYSTEM },
         { role: 'user', content: montarUserPrompt(input) },
@@ -70,7 +70,7 @@ async function chamarCopy(input: InputCopy): Promise<OutputCopy> {
     tipo_produto_busca: validarTipoProdutoBusca(parsed.tipo_produto_busca, input.nome, input.descricao_detalhado),
     tokens_input: usage.prompt_tokens,
     tokens_output: usage.completion_tokens,
-    custo_centavos: custoCentavos(MODELO_COPY, usage),
+    custo_centavos: custoCentavos(modelo, usage),
   };
 }
 
@@ -80,11 +80,11 @@ async function chamarCopy(input: InputCopy): Promise<OutputCopy> {
  * caso comum) e, ao desistir, lança erro ROTULADO com a etapa — não o "signal aborted"
  * genérico que não dizia onde quebrou (lote #41).
  */
-export async function gerarCopy(input: InputCopy): Promise<OutputCopy> {
+export async function gerarCopy(input: InputCopy, modelo: string = MODELO_COPY): Promise<OutputCopy> {
   let ultimoErro: unknown;
   for (let tentativa = 1; tentativa <= 2; tentativa++) {
     try {
-      return await chamarCopy(input);
+      return await chamarCopy(input, modelo);
     } catch (e) {
       ultimoErro = e;
       console.warn(`Copy tentativa ${tentativa}/2 falhou: ${(e as Error).message}`);

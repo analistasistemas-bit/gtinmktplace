@@ -13,12 +13,13 @@ export type { AtributoAlvo, InputAtributos } from './atributos-llm-core.ts';
 export async function desempatarAtributosLLM(
   input: InputAtributos,
   alvos: AtributoAlvo[],
+  modelo: string = MODELO_COPY,
 ): Promise<Record<string, string>> {
   if (alvos.length === 0) return {};
   try {
     const client = openrouterClient();
     const resp = await client.chat.completions.create({
-      model: MODELO_COPY,
+      model: modelo,
       messages: [
         { role: 'system', content: 'Você preenche atributos de produto em marketplace escolhendo SÓ dentro dos valores permitidos. Na dúvida, omita.' },
         { role: 'user', content: montarPromptAtributos(input, alvos) },

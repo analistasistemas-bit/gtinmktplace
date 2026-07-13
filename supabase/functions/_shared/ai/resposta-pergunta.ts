@@ -18,7 +18,7 @@ const SYSTEM = [
 ].join(' ');
 
 /** Gera uma sugestão de resposta (texto puro). Lança em erro/timeout. */
-export async function sugerirResposta(input: InputSugestao): Promise<string> {
+export async function sugerirResposta(input: InputSugestao, modelo: string = MODELO_COPY): Promise<string> {
   const user = [
     `Anúncio: ${input.itemTitulo ?? '(sem título)'}`,
     input.contexto ? `Contexto: ${input.contexto}` : '',
@@ -29,7 +29,7 @@ export async function sugerirResposta(input: InputSugestao): Promise<string> {
   const client = openrouterClient();
   const resp = await client.chat.completions.create(
     {
-      model: MODELO_COPY,
+      model: modelo,
       messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }],
       temperature: 0.5,
     },
