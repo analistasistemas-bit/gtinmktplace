@@ -8,7 +8,7 @@ interface PrecoModelo {
 const PRECOS: Record<string, PrecoModelo> = {
   'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'openai/gpt-4o': { input: 0.0025, output: 0.01 },
-  // DeepSeek V4 Flash (ADR-0071): $0.09/1M in · $0.18/1M out.
+  // DeepSeek V4 Flash (ADR-0074): $0.09/1M in · $0.18/1M out.
   'deepseek/deepseek-v4-flash': { input: 0.00009, output: 0.00018 },
 };
 

@@ -22,7 +22,7 @@ export interface OpcoesTituloParticao {
   cores: CorParticaoTitulo[]; // só as cores DESTA partição
   tituloBase: string; // título da partição 0 (familia.titulo_ml) — referência de unicidade
   particao: number; // índice (>0) desta partição
-  modelo?: string; // ADR-0071 — resolvido pelo caller (publicar-split-ml)
+  modelo?: string; // ADR-0074 — resolvido pelo caller (publicar-split-ml)
 }
 
 /**

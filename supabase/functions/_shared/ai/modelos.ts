@@ -8,7 +8,7 @@ export const MODELO_COPY = env?.get('AI_MODEL_COPY') ?? 'openai/gpt-4o-mini';
 export const MODELO_VISION = env?.get('AI_MODEL_VISION') ?? 'openai/gpt-4o';
 
 /**
- * Resolve o modelo de texto efetivo da org (ADR-0071): configuracoes.ai_model_texto
+ * Resolve o modelo de texto efetivo da org (ADR-0074): configuracoes.ai_model_texto
  * quando presente, senão o fallback MODELO_COPY (env var, comportamento pré-existente).
  * Requer client com acesso de leitura a `configuracoes` (service role recomendado);
  * se a RLS negar a leitura, cai silenciosamente para MODELO_COPY.

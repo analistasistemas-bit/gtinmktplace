@@ -8,7 +8,7 @@
 
 **Tech Stack:** Supabase (Postgres + Edge Functions Deno), React/TypeScript, TanStack Query, shadcn/ui `Select`, Vitest.
 
-**Referência:** [ADR-0071](../../decisions/0071-selecao-de-modelo-ia-por-organizacao.md)
+**Referência:** [ADR-0074](../../decisions/0074-selecao-de-modelo-ia-por-organizacao.md)
 
 ---
 
@@ -30,7 +30,7 @@ Este plano roda no worktree `.worktrees/worktree-selecao-modelo-ia-por-org` (bra
 ```sql
 -- ============================================================================
 -- Migration: ai_model_por_org
--- Refs: ADR-0071. Seleção de modelo de IA (texto/imagem) por organização.
+-- Refs: ADR-0074. Seleção de modelo de IA (texto/imagem) por organização.
 -- ============================================================================
 
 alter table public.configuracoes
@@ -48,9 +48,9 @@ alter table public.configuracoes
     check (ai_model_imagem is null or ai_model_imagem in ('google/gemini-2.5-flash-image'));
 
 comment on column public.configuracoes.ai_model_texto is
-  'Slug OpenRouter do modelo de texto da org (ADR-0071). NULL = usa fallback do env (MODELO_COPY).';
+  'Slug OpenRouter do modelo de texto da org (ADR-0074). NULL = usa fallback do env (MODELO_COPY).';
 comment on column public.configuracoes.ai_model_imagem is
-  'Slug OpenRouter do modelo de imagem da org (ADR-0071). Dormente: sem consumidor até a geração de imagem ser implementada.';
+  'Slug OpenRouter do modelo de imagem da org (ADR-0074). Dormente: sem consumidor até a geração de imagem ser implementada.';
 ```
 
 - [ ] **Step 2: Validar localmente**
@@ -72,7 +72,7 @@ Expected: diff em `database.types.ts` mostrando `ai_model_texto`/`ai_model_image
 
 ```bash
 git add supabase/migrations/20260713120000_ai_model_por_org.sql src/lib/database.types.ts
-git commit -m "feat(db): adiciona ai_model_texto/ai_model_imagem em configuracoes (ADR-0071)"
+git commit -m "feat(db): adiciona ai_model_texto/ai_model_imagem em configuracoes (ADR-0074)"
 ```
 
 ---
@@ -109,7 +109,7 @@ Em `tokens.ts`, adicionar ao dict `PRECOS`:
 const PRECOS: Record<string, PrecoModelo> = {
   'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'openai/gpt-4o': { input: 0.0025, output: 0.01 },
-  // DeepSeek V4 Flash (ADR-0071): $0.09/1M in · $0.18/1M out.
+  // DeepSeek V4 Flash (ADR-0074): $0.09/1M in · $0.18/1M out.
   'deepseek/deepseek-v4-flash': { input: 0.00009, output: 0.00018 },
 };
 ```
@@ -125,7 +125,7 @@ Expected: PASS (5 testes).
 
 ```bash
 git add supabase/functions/_shared/ai/tokens.ts supabase/functions/_shared/ai/__tests__/tokens.test.ts
-git commit -m "feat(ia): adiciona preco do deepseek/deepseek-v4-flash em PRECOS (ADR-0071)"
+git commit -m "feat(ia): adiciona preco do deepseek/deepseek-v4-flash em PRECOS (ADR-0074)"
 ```
 
 ---
@@ -197,7 +197,7 @@ export const MODELO_COPY = Deno.env.get('AI_MODEL_COPY') ?? 'openai/gpt-4o-mini'
 export const MODELO_VISION = Deno.env.get('AI_MODEL_VISION') ?? 'openai/gpt-4o';
 
 /**
- * Resolve o modelo de texto efetivo da org (ADR-0071): configuracoes.ai_model_texto
+ * Resolve o modelo de texto efetivo da org (ADR-0074): configuracoes.ai_model_texto
  * quando presente, senão o fallback MODELO_COPY (env var, comportamento pré-existente).
  */
 export async function resolverModeloTexto(client: SupabaseClient, orgId: string): Promise<string> {
@@ -219,7 +219,7 @@ Expected: PASS (3 testes).
 
 ```bash
 git add supabase/functions/_shared/ai/modelos.ts supabase/functions/_shared/ai/__tests__/modelos.test.ts
-git commit -m "feat(ia): adiciona resolverModeloTexto (config por org, fallback env) (ADR-0071)"
+git commit -m "feat(ia): adiciona resolverModeloTexto (config por org, fallback env) (ADR-0074)"
 ```
 
 ---
@@ -338,7 +338,7 @@ Expected: PASS (179 arquivos, 1427 testes — mesma baseline; nenhum teste dever
 
 ```bash
 git add supabase/functions/_shared/ai/copywriter.ts supabase/functions/_shared/ai/atributos-llm.ts supabase/functions/_shared/ai/categoria-llm.ts supabase/functions/_shared/ai/resposta-pergunta.ts
-git commit -m "refactor(ia): as 4 funcoes de IA-texto aceitam modelo opcional (default MODELO_COPY) (ADR-0071)"
+git commit -m "refactor(ia): as 4 funcoes de IA-texto aceitam modelo opcional (default MODELO_COPY) (ADR-0074)"
 ```
 
 ---
@@ -476,7 +476,7 @@ export interface OpcoesTituloParticao {
   cores: CorParticaoTitulo[];
   tituloBase: string;
   particao: number;
-  modelo?: string; // ADR-0071 — resolvido pelo caller (publicar-split-ml)
+  modelo?: string; // ADR-0074 — resolvido pelo caller (publicar-split-ml)
 }
 
 export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<string> {
@@ -527,7 +527,7 @@ Expected: sem erros novos (checar principalmente imports não usados, já que `M
 
 ```bash
 git add supabase/functions/process-familia/index.ts supabase/functions/definir-categoria-familia/index.ts supabase/functions/regenerar-copy-familia/index.ts supabase/functions/sugerir-resposta-pergunta/index.ts supabase/functions/_shared/split/titulo-particao.ts supabase/functions/publicar-split-ml/index.ts
-git commit -m "feat(ia): os 5 pontos de chamada resolvem e usam o modelo de texto por org (ADR-0071)"
+git commit -m "feat(ia): os 5 pontos de chamada resolvem e usam o modelo de texto por org (ADR-0074)"
 ```
 
 ---
@@ -586,7 +586,7 @@ Expected: PASS (nenhum teste cobre `queries.ts` diretamente com rede real; TypeS
 
 ```bash
 git add src/lib/queries.ts
-git commit -m "feat(configuracoes): fetch/upsert de ai_model_texto e ai_model_imagem (ADR-0071)"
+git commit -m "feat(configuracoes): fetch/upsert de ai_model_texto e ai_model_imagem (ADR-0074)"
 ```
 
 ---
@@ -599,7 +599,7 @@ git commit -m "feat(configuracoes): fetch/upsert de ai_model_texto e ai_model_im
 - [ ] **Step 1: Implementar**
 
 ```ts
-// Lista curada e fechada de modelos de IA disponíveis via OpenRouter (ADR-0071).
+// Lista curada e fechada de modelos de IA disponíveis via OpenRouter (ADR-0074).
 // Todo slug de texto aqui precisa ter preço cadastrado em
 // supabase/functions/_shared/ai/tokens.ts::PRECOS — senão o custo vira 0 silenciosamente.
 export interface OpcaoModeloIA {
@@ -613,7 +613,7 @@ export const MODELOS_TEXTO: OpcaoModeloIA[] = [
   { slug: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash', precoLabel: '$0,09 / $0,18 por 1M tokens' },
 ];
 
-// Dormente: nenhuma feature consome geração de imagem ainda (ADR-0071).
+// Dormente: nenhuma feature consome geração de imagem ainda (ADR-0074).
 export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
   { slug: 'google/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (Nano Banana)', precoLabel: '$0,30 / $2,50 por 1M tokens' },
 ];
@@ -623,7 +623,7 @@ export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
 
 ```bash
 git add src/lib/ai-modelos.ts
-git commit -m "feat(configuracoes): lista curada de modelos de IA (texto/imagem) pra UI (ADR-0071)"
+git commit -m "feat(configuracoes): lista curada de modelos de IA (texto/imagem) pra UI (ADR-0074)"
 ```
 
 ---
@@ -669,7 +669,7 @@ export function useSalvarModeloImagem() {
 
 ```bash
 git add src/hooks/useConfiguracoes.ts
-git commit -m "feat(configuracoes): hooks useModeloTexto/useModeloImagem (ADR-0071)"
+git commit -m "feat(configuracoes): hooks useModeloTexto/useModeloImagem (ADR-0074)"
 ```
 
 ---
@@ -772,7 +772,7 @@ Expected: sem erros novos; 179 arquivos / 1427+ testes passando.
 
 ```bash
 git add src/pages/Configuracoes.tsx
-git commit -m "feat(configuracoes): seletor de modelo de IA (texto/imagem) por org, admin-only (ADR-0071)"
+git commit -m "feat(configuracoes): seletor de modelo de IA (texto/imagem) por org, admin-only (ADR-0074)"
 ```
 
 ---
@@ -784,17 +784,17 @@ git commit -m "feat(configuracoes): seletor de modelo de IA (texto/imagem) por o
 - Modify: `docs/reference/modelo-de-dados.md`
 - Modify: `docs/TASKS.md`
 
-- [ ] **Step 1: `docs/reference/modelo-de-dados.md`** — documentar as 2 colunas novas em `configuracoes` (ai_model_texto, ai_model_imagem: propósito, nullable, fallback, ADR-0071).
+- [ ] **Step 1: `docs/reference/modelo-de-dados.md`** — documentar as 2 colunas novas em `configuracoes` (ai_model_texto, ai_model_imagem: propósito, nullable, fallback, ADR-0074).
 
 - [ ] **Step 2: `docs/reference/edge-functions.md`** — documentar o novo helper `resolverModeloTexto` e que os 5 edge functions de IA-texto agora resolvem o modelo por org antes de chamar a IA.
 
-- [ ] **Step 3: `docs/TASKS.md`** — registrar a entrega (ADR-0071, migration, 5 edge functions, tela Configurações).
+- [ ] **Step 3: `docs/TASKS.md`** — registrar a entrega (ADR-0074, migration, 5 edge functions, tela Configurações).
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add docs/reference/edge-functions.md docs/reference/modelo-de-dados.md docs/TASKS.md
-git commit -m "docs: registra selecao de modelo de IA por org (ADR-0071)"
+git commit -m "docs: registra selecao de modelo de IA por org (ADR-0074)"
 ```
 
 ---

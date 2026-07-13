@@ -78,7 +78,7 @@
 | `supabase.ts` | `adminClient()` (service_role) e `userClient(jwt)` (respeita RLS) |
 | `queue.ts` | QStash: `enfileirarFamilia/Publicacao/Atualizacao/VinculacaoCatalogo`, `garantirFilaSerial`, `verificarAssinatura`; **E6 (ADR-0061):** `enfileirarPublicacaoCanal`, `garantirFilaSerialCanal`, `filaCanal` — fila serial por `(canal, org)` |
 | `ml/*` | Integração ML: `token.ts` → `getValidAccessTokenConexao(conexao)` (token da **conexão** da org, ADR-0027; substitui o antigo `getValidAccessToken(userId)`), criar/atualizar item, descrição, concorrência, catálogo, tarifa, atacado |
-| `ai/*` | OpenRouter: copywriter, vision (cor), título, resposta a pergunta, categoria/atributos por LLM; `modelos.ts` → `resolverModeloTexto(admin, orgId)` (ADR-0071) lê `configuracoes.ai_model_texto` da org e cai no fallback `MODELO_COPY`/env em `null`/erro (nunca propaga) |
+| `ai/*` | OpenRouter: copywriter, vision (cor), título, resposta a pergunta, categoria/atributos por LLM; `modelos.ts` → `resolverModeloTexto(admin, orgId)` (ADR-0074) lê `configuracoes.ai_model_texto` da org e cai no fallback `MODELO_COPY`/env em `null`/erro (nunca propaga) |
 | `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027); **E6 (ADR-0061):** `estado.ts` → máquina de estado por canal (`garantirAnuncioExterno`, `claimAnuncioExterno`, `decidirOperacaoCanal`); `registry.ts` suporta conectores injetáveis em teste (`registrarConectorParaTeste`); `fake.ts` conector de teste |
 | `redis/*` | Client Redis + caches (cor, concorrência, tarifa) |
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
@@ -299,7 +299,7 @@
   [modelo-de-dados.md](modelo-de-dados.md)). Webhooks e jobs sem chamador HTTP (sync/reconciliar)
   resolvem a org via `resolverIdentidade`/`resolverOrgPorUserId` (`_shared/faturamento/io.ts`),
   que buscam em `marketplace_connections`.
-- **Modelo de IA por organização (ADR-0071):** as 5 funções que chamam IA-texto —
+- **Modelo de IA por organização (ADR-0074):** as 5 funções que chamam IA-texto —
   `process-familia`, `definir-categoria-familia`, `regenerar-copy-familia`,
   `sugerir-resposta-pergunta`, `publicar-split-ml` (via `titulo-particao.ts`) — resolvem
   `resolverModeloTexto(admin, orgId)` uma vez por request e passam o resultado a

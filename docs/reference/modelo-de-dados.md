@@ -275,7 +275,7 @@ do preço no menor preço entre concorrentes MercadoLíder quando o preço compe
 **por org**; lido via RPC `get_mp_token(org)`, com fallback ao `MP_ACCESS_TOKEN` de instância
 quando a org não tem secret configurado (zero regressão — a Avil segue no fallback até o secret
 ser semeado manualmente).
-**`ai_model_texto`/`ai_model_imagem`** (text, nullable, ADR-0071, migration
+**`ai_model_texto`/`ai_model_imagem`** (text, nullable, ADR-0074, migration
 `20260713120000_ai_model_por_org.sql`): slug OpenRouter do modelo de IA da org, lista curada via
 CHECK constraint (texto: `openai/gpt-4o-mini` padrão ou `deepseek/deepseek-v4-flash`; imagem, hoje
 dormente sem consumidor: só `google/gemini-2.5-flash-image`, "Nano Banana") — incluir um novo

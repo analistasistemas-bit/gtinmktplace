@@ -1,4 +1,4 @@
-# ADR-0071: Seleção de modelo de IA (texto e imagem) por organização, via tela Configurações
+# ADR-0074: Seleção de modelo de IA (texto e imagem) por organização, via tela Configurações
 
 **Status:** Aceito
 **Data:** 2026-07-13

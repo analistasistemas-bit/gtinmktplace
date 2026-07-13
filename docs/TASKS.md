@@ -2,13 +2,13 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Seleção de modelo de IA (texto/imagem) por organização — ADR-0071 — 2026-07-13
+## Seleção de modelo de IA (texto/imagem) por organização — ADR-0074 — 2026-07-13
 
 - [x] Diego pediu para escolher o modelo de IA de texto por organização direto na tela
   Configurações (incluindo `deepseek/deepseek-v4-flash` como opção nova, além do padrão
   `openai/gpt-4o-mini`) e reservar, na mesma tela, um seletor de modelo de imagem
   (`google/gemini-2.5-flash-image`, "Nano Banana") para uma feature de geração de imagem ainda
-  não implementada. ADR-0071 escrito antes da implementação.
+  não implementada. ADR-0074 escrito antes da implementação.
 - [x] Migration `20260713120000_ai_model_por_org.sql`: `configuracoes.ai_model_texto`/
   `ai_model_imagem` (text, nullable, CHECK com lista curada). `NULL` → fallback `MODELO_COPY`/env.
   Sem RLS nova — `configuracoes` já é admin-only por org (`20260705165828_e7_rls_org.sql`).
@@ -36,6 +36,51 @@
   `definir-categoria-familia`, `regenerar-copy-familia`, `sugerir-resposta-pergunta`,
   `publicar-split-ml`) e do frontend — feature code-complete e a coluna já existe no banco, mas
   o código ainda não foi implantado.
+
+
+
+## "N CORES" não sincronizava com UNITS_PER_PACK — lote #33, produto 02905078 (ADR-0073) — 2026-07-13
+
+- [x] Bug reportado: lápis de cor "C/12 CORES" falhou no CREATE — ML: `"Unidades por kit": Insira
+  um valor diferente de "1" porque você preencheu "Kit" no campo "Formato de venda"`. Caso inverso
+  do ADR-0071 (mesmo lote, mesmo dia): a IA genérica preencheu `SALE_FORMAT=Kit` corretamente, mas
+  `extrairUnitsPerPack` não reconhecia "CORES" como token de unidade (só `unidades/unid/und/un/
+  pecas/pcs`) e `UNITS_PER_PACK` caiu no default `1`.
+- [x] Confirmado via `execute_sql` (dados reais da família em erro no banco) antes de mexer no
+  código — evitou repetir o erro de "corrigir sem ler os dados reais".
+- [x] Fix: `RE_UNIDADES` (`_shared/categoria/atributos.ts`) aceita `cores` como token de unidade,
+  reusando o `forcarSaleFormatKit` do ADR-0071 sem mudança adicional.
+- [x] `pnpm test` (2 testes novos + suíte completa, 1437 testes — 1 flaky pré-existente em
+  `App.test.tsx` não relacionado, passa isolado) e `pnpm lint` passando.
+
+## Título duplicado — tipo de produto/cor fora de ordem — lote #33 (ADR-0072) — 2026-07-13
+
+- [x] Bug reportado: dois títulos com duplicação visível — `POMPOM POM POM BÚFALO 14MM...` e
+  `LÁPIS DE ESCREVER RESINA 7 VERDE REF.SL101066-8 VERDE 7`. Investigação (dados reais do lote
+  #33 no banco) confirmou: não é qualidade de modelo de IA, é bug nos guards determinísticos de
+  `_shared/ai/titulo.ts` que comparam frase inteira/mesma ordem para decidir "já está no título".
+  1. `garantirTipoProdutoTitulo`: tipo "pompom" (colado) não batia contra título com "POM POM"
+     (espaçado) → reprefixava.
+  2. `garantirCorTitulo`: cor real "Verde 7" não batia contra nome com "...7 VERDE..." (ordem
+     invertida) → reanexava a cor inteira de novo.
+- [x] Fix: `todasPalavrasCobertas` (todas as palavras do termo, em qualquer ordem, já presentes)
+  substitui a checagem de frase exata em `garantirCorTitulo`; `termoColadoNoTitulo` (fallback sem
+  espaços) entra como OR na checagem de `garantirTipoProdutoTitulo`.
+- [x] `pnpm test` (4 testes novos + suíte completa, 1435 testes), `deno lint`/`deno check`/eslint
+  passando.
+
+## Kit rejeitado no CREATE — SALE_FORMAT×UNITS_PER_PACK — lote #33 (ADR-0071) — 2026-07-13
+
+- [x] Bug reportado: lápis de cor 24un falhou no CREATE — ML: `"Unidades por kit": Insira 1 porque
+  você preencheu "Unidade" no campo "Formato de venda"`. Investigação (Graphify + ADR-0063 +
+  testes existentes): `preencherUnitsPerPack` extraiu `UNITS_PER_PACK=24` de "24UND" no título
+  (comportamento intencional desde o lote #27), mas a IA genérica de closed-set já tinha
+  preenchido `SALE_FORMAT="Unidade"` sem saber da contagem — as duas lógicas rodam em sequência
+  sem se comunicar.
+- [x] Fix: `preencherUnitsPerPack` (`_shared/categoria/atributos.ts`) sobrescreve `SALE_FORMAT`
+  para "Kit" (value_id do schema dinâmico da categoria) quando a contagem extraída é real (>1).
+  Sem contagem clara (assume 1), não mexe em `SALE_FORMAT`.
+- [x] `pnpm test` (5 testes novos + suíte completa, 1431 testes) e `pnpm lint` passando.
 
 ## Título com sinônimo de tipo de fio errado — lote #63 "Linha Cléa" (ADR-0070) — 2026-07-13
 
