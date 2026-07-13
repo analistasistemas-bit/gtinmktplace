@@ -175,6 +175,40 @@ export function garantirTipoProdutoTitulo(titulo: string, tipoProdutoBusca: stri
   return removerCaudaConectiva(candidato);
 }
 
+// Sinônimos concorrentes pra "tipo de fio/linha" que a descrição costuma usar pra falar do MESMO
+// produto (ex.: "Linha Cléa 1000... o FIO Cléa é ideal..." — ambos grounded, então
+// validarTipoProdutoBusca/garantirTipoProdutoTitulo aceitam qualquer um dos dois). Não usa
+// tipo_aviamento (categoria ML) como sinal: o bucket "Fios e Cadarços" mistura barbante/fio/linha
+// legítimos (ex.: BARBANTE EUROROMA, ADR-0054) — canonicalizar por ali reverteria essa cravação.
+const SINONIMOS_TIPO_FIO = ['LINHA', 'FIO', 'BARBANTE'];
+
+// A própria planilha (nome_pai, fonte de verdade do produto) às vezes já declara qual dos
+// sinônimos é o certo: por extenso (ex.: "FIO NAUTICO", "BARBANTE ALGODAO") ou pela abreviação
+// "L." (convenção observada no catálogo: L.CLEA/L.LIZA = "Linha Cléa"/"Linha Liza").
+function tipoFioDeclaradoNoNome(nomePai: string): string | null {
+  if (/^L\./i.test(nomePai.trim())) return 'LINHA';
+  const m = nomePai.match(/\b(LINHA|FIO|BARBANTE)\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+// Corrige a 1ª palavra do título quando ela é um sinônimo de tipo de fio DIFERENTE do que
+// nome_pai já declara (bug lote #63: "FIO CLÉA 1000..." quando a planilha diz "L.CLEA" = Linha
+// Cléa). Sem sinal em nome_pai (ex.: EUROROMA, que não diz o que é), não mexe — conservador por
+// construção, nunca inventa a partir de sinônimos só grounded na descrição. Roda DEPOIS de
+// garantirTipoProdutoTitulo (senão a troca faz esse guard achar o tipo "ausente" e reprefixar) e
+// ANTES de garantirMetragemTitulo/garantirCorTitulo (que ainda clampam o tamanho final em 60).
+export function garantirTipoFioTitulo(titulo: string, nomePai: string): string {
+  const declarado = tipoFioDeclaradoNoNome(nomePai);
+  if (!declarado) return titulo;
+
+  const palavras = titulo.split(/\s+/);
+  const primeira = normalizarBusca(palavras[0] ?? '');
+  if (primeira === declarado || !SINONIMOS_TIPO_FIO.includes(primeira)) return titulo;
+
+  palavras[0] = declarado;
+  return palavras.join(' ');
+}
+
 // Garante que a cor apareça no título quando o anúncio é de cor ÚNICA (mono-cor). Sem isso,
 // duas famílias-irmãs que diferem só na cor (PAI separado na planilha) geram títulos idênticos
 // e o ML baixa a segunda como duplicado ("Era igual a outro anúncio"). Rede de segurança

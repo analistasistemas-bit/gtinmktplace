@@ -137,6 +137,10 @@
   na Revisão) sempre que o fluxo abandonaria um específico — sem candidato específico, ou com
   candidato(s) mas a IA de desempate abstém do falso-amigo — em vez de bloquear a família
   (ADR-0058, adendo 2026-07-04); só cai em `manual` quando não sobra genérico nenhum pra resgatar.
+  `garantirTipoFioTitulo` (`_shared/ai/titulo.ts`, ADR-0070) corrige a IA quando ela troca o
+  sinônimo de tipo de fio/linha/barbante que `nome_pai` já declara (ex.: "FIO Cléa" quando a
+  planilha diz "L.CLEA" = Linha Cléa) — os dois sinônimos aparecem "grounded" na descrição, então
+  o guard de tipo de produto (ADR-0054) sozinho não decide qual é o certo.
   **Pré-upload de foto (ADR-0033, 2026-07-10):** sobe ao ML as fotos ainda sem `picture_id` e
   persiste o id (`_shared/anuncios/pre-subir-fotos.ts`), tirando a propagação (~2,5 min) do caminho
   crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.

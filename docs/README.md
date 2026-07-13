@@ -42,7 +42,7 @@ docs/
 ├── ROADMAP.md                     ← visão estratégica das fases (vivo)
 ├── Roadmap-Estrategico-PubliAI-v2.md ← revisão de CTO do roadmap (8 fases, 2026-07-12)
 ├── TASKS.md                       ← checklist operacional do dia a dia (vivo)
-├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 69 arquivos, 0001-0069
+├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 70 arquivos, 0001-0070
 │   └── README.md                  ← como ler e escrever ADRs
 ├── reference/                     ← schema, edge functions, glossário, permissões ML
 ├── explanation/                   ← arquitetura ponta a ponta
@@ -92,9 +92,9 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
-> A tabela acima é uma seleção curada. O **índice completo** (0001–0069) está logo abaixo.
+> A tabela acima é uma seleção curada. O **índice completo** (0001–0070) está logo abaixo.
 
-## Índice completo de ADRs (0001–0069)
+## Índice completo de ADRs (0001–0070)
 
 > A antiga colisão de numeração (dois `0035` e dois `0037`) foi **resolvida em 2026-06-27**:
 > `cor-no-titulo-mono-cor` virou **0044** e `vendas-catalogo-match-ean` virou **0045**. Cada
@@ -171,6 +171,7 @@ docs/
 | 0067 | [Mensagens pós-venda ML](decisions/0067-mensagens-pos-venda-ml.md) |
 | 0068 | [Notificações Telegram por destinatário e categoria](decisions/0068-notificacoes-telegram-por-destinatario-e-categoria.md) |
 | 0069 | [Liveness da integração ML](decisions/0069-liveness-integracao-ml.md) |
+| 0070 | [Título: corrige sinônimo de tipo de fio/linha errado](decisions/0070-titulo-sinonimo-tipo-fio-grounded-errado.md) |
 
 ## Status do projeto
 
