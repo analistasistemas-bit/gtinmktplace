@@ -5,7 +5,7 @@ atualizado: 2026-07-13
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (70 ADRs, `0001`–`0070`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (71 ADRs, `0001`–`0071`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -82,5 +82,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0068 | [Notificações Telegram por destinatário e categoria](../../docs/decisions/0068-notificacoes-telegram-por-destinatario-e-categoria.md) |
 | 0069 | [Liveness da integração ML](../../docs/decisions/0069-liveness-integracao-ml.md) |
 | 0070 | [Título: corrige sinônimo de tipo de fio/linha errado](../../docs/decisions/0070-titulo-sinonimo-tipo-fio-grounded-errado.md) |
+| 0071 | [Seleção de modelo de IA (texto e imagem) por organização](../../docs/decisions/0071-selecao-de-modelo-ia-por-organizacao.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
