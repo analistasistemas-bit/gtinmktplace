@@ -91,7 +91,7 @@ no select o que tem preço cadastrado).
 resposta ao comprador) — um único slug por org, mesma abrangência que `MODELO_COPY` já tem hoje.
 Sem granularidade por função.
 
-**Resolução em runtime:** novo helper (`resolverModeloTexto(orgId, client)`) centraliza o lookup
+**Resolução em runtime:** novo helper (`resolverModeloTexto(admin, orgId)`) centraliza o lookup
 em `configuracoes.ai_model_texto` + fallback pro env — cada call site só precisa entregar
 `orgId` e um client Supabase.
 
