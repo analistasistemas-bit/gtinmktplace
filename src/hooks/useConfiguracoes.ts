@@ -5,6 +5,8 @@ import {
   fetchAliquotas, upsertAliquotas,
   fetchReancoraLiderAtiva, upsertReancoraLiderAtiva,
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
+  fetchModeloTexto, upsertModeloTexto,
+  fetchModeloImagem, upsertModeloImagem,
 } from '@/lib/queries';
 
 export function useDescontoPct() {
@@ -66,4 +68,26 @@ export function useEnviarTesteTelegram() {
 }
 export function useVerificarModeradosAgora() {
   return useMutation({ mutationFn: verificarModeradosAgora });
+}
+
+export function useModeloTexto() {
+  return useQuery({ queryKey: ['configuracoes', 'ai_model_texto'], queryFn: fetchModeloTexto });
+}
+export function useSalvarModeloTexto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => upsertModeloTexto(slug),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'ai_model_texto'] }),
+  });
+}
+
+export function useModeloImagem() {
+  return useQuery({ queryKey: ['configuracoes', 'ai_model_imagem'], queryFn: fetchModeloImagem });
+}
+export function useSalvarModeloImagem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => upsertModeloImagem(slug),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'ai_model_imagem'] }),
+  });
 }
