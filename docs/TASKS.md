@@ -32,10 +32,11 @@
   quality por task.
 - [x] Migration aplicada em produção (`supabase db push`, autorizado por Diego); `database.types.ts`
   regenerado; cast temporário em `queries.ts` removido.
-- [ ] **Pendência (Diego):** deploy das edge functions afetadas (`process-familia`,
-  `definir-categoria-familia`, `regenerar-copy-familia`, `sugerir-resposta-pergunta`,
-  `publicar-split-ml`) e do frontend — feature code-complete e a coluna já existe no banco, mas
-  o código ainda não foi implantado.
+- [x] Deploy das 5 edge functions afetadas via CLI (`process-familia` v95,
+  `definir-categoria-familia` v21, `regenerar-copy-familia` v29, `sugerir-resposta-pergunta` v9,
+  `publicar-split-ml` v23 — versões conferidas pós-deploy). Frontend publicado automaticamente
+  pelo auto-deploy do Render a partir do commit de merge na main (`dep-d9am1l647okc73atad7g`,
+  status `live`). Feature completa e em produção.
 
 ## "N CORES" não sincronizava com UNITS_PER_PACK — lote #33, produto 02905078 (ADR-0073) — 2026-07-13
 
