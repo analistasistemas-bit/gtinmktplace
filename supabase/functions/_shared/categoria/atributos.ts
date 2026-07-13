@@ -160,9 +160,11 @@ export function atributosFaltantesGenerico(temAtributos: AtributoML[], schema: A
 
 // "Unidades por kit" (UNITS_PER_PACK) é atributo NUMÉRICO (sem closed-set), então o
 // preenchimento por IA (que só cobre values[]) nunca o resolve. Extraímos a quantidade do
-// nome/descrição. Exige um token de unidade após o número (und/un/unidades/peças/pçs) para
-// não pegar "100% FERRO" nem medidas ("10 mm", "50 metros"). Texto já normalizado (sem acento/ç).
-const RE_UNIDADES = /(\d{1,4})\s*(unidades?|unid|und|un|pecas?|pcs)\b/;
+// nome/descrição. Exige um token de unidade após o número (und/un/unidades/peças/pçs/cores) para
+// não pegar "100% FERRO" nem medidas ("10 mm", "50 metros"). "cores" cobre kits de lápis/giz/
+// canetinha onde cada cor é uma unidade física da caixa (ex.: "C/12 CORES" — lote #33/ADR-0073).
+// Texto já normalizado (sem acento/ç).
+const RE_UNIDADES = /(\d{1,4})\s*(unidades?|unid|und|un|pecas?|pcs|cores)\b/;
 
 /** Extrai a quantidade por pacote do nome (1ª escolha) ou descrição. null se não houver clara. */
 export function extrairUnitsPerPack(nome: string, descricao?: string): number | null {
