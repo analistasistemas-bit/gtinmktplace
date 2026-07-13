@@ -12,12 +12,18 @@ export const MODELO_VISION = env?.get('AI_MODEL_VISION') ?? 'openai/gpt-4o';
  * quando presente, senão o fallback MODELO_COPY (env var, comportamento pré-existente).
  * Requer client com acesso de leitura a `configuracoes` (service role recomendado);
  * se a RLS negar a leitura, cai silenciosamente para MODELO_COPY.
+ * Nunca propaga erro: qualquer falha (RLS, DB, rede) degrada para MODELO_COPY —
+ * resolução de modelo não pode ser a causa de uma família travada em processando/publicando.
  */
 export async function resolverModeloTexto(admin: SupabaseClient, orgId: string): Promise<string> {
-  const { data } = await admin
-    .from('configuracoes')
-    .select('ai_model_texto')
-    .eq('org_id', orgId)
-    .maybeSingle();
-  return data?.ai_model_texto ?? MODELO_COPY;
+  try {
+    const { data } = await admin
+      .from('configuracoes')
+      .select('ai_model_texto')
+      .eq('org_id', orgId)
+      .maybeSingle();
+    return data?.ai_model_texto ?? MODELO_COPY;
+  } catch {
+    return MODELO_COPY;
+  }
 }
