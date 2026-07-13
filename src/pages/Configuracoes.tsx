@@ -9,13 +9,17 @@ import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useMlConnection } from '@/hooks/useMlConnection';
 import {
   useDescontoPct, useSalvarDescontoPct,
   useDescontoConcorrenciaPct, useSalvarDescontoConcorrenciaPct,
   useAliquotas, useSalvarAliquotas,
   useReancoraLiderAtiva, useSalvarReancoraLiderAtiva,
+  useModeloTexto, useSalvarModeloTexto, useModeloImagem, useSalvarModeloImagem,
 } from '@/hooks/useConfiguracoes';
+import { MODELOS_TEXTO, MODELOS_IMAGEM } from '@/lib/ai-modelos';
+import { useProfile } from '@/hooks/useProfile';
 import { ConfigTelegram } from '@/components/config-telegram';
 import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
@@ -43,6 +47,12 @@ export default function Configuracoes() {
 
   const { data: reancoraLiderAtiva } = useReancoraLiderAtiva();
   const salvarReancoraLiderAtiva = useSalvarReancoraLiderAtiva();
+
+  const { isAdmin } = useProfile();
+  const { data: modeloTexto } = useModeloTexto();
+  const salvarModeloTexto = useSalvarModeloTexto();
+  const { data: modeloImagem } = useModeloImagem();
+  const salvarModeloImagem = useSalvarModeloImagem();
 
   const { data: aliquotas } = useAliquotas();
   const salvarAliquotas = useSalvarAliquotas();
@@ -144,6 +154,60 @@ export default function Configuracoes() {
               </Button>
             </div>
           )}
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-2 text-sm font-semibold">Modelo de IA</h2>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Modelo usado para gerar título, descrição, categoria e atributos dos anúncios (via OpenRouter).
+          </p>
+
+          <div className="mb-3 flex items-center gap-2">
+            <span className="w-16 text-sm">Texto</span>
+            <Select
+              value={modeloTexto ?? MODELOS_TEXTO[0].slug}
+              onValueChange={(v) => salvarModeloTexto.mutate(v)}
+              disabled={!isAdmin}
+            >
+              <SelectTrigger className="h-8 w-[300px] text-sm" title={!isAdmin ? 'Somente administradores podem trocar o modelo' : undefined}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MODELOS_TEXTO.map((m) => (
+                  <SelectItem key={m.slug} value={m.slug}>{m.label} — {m.precoLabel}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {salvarModeloTexto.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+            {salvarModeloTexto.isSuccess && !salvarModeloTexto.isPending && (
+              <span className="text-xs text-success">✓ Salvo</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="w-16 text-sm">Imagem</span>
+            <Select
+              value={modeloImagem ?? undefined}
+              onValueChange={(v) => salvarModeloImagem.mutate(v)}
+              disabled={!isAdmin}
+            >
+              <SelectTrigger className="h-8 w-[300px] text-sm" title={!isAdmin ? 'Somente administradores podem trocar o modelo' : undefined}>
+                <SelectValue placeholder="Selecione um modelo" />
+              </SelectTrigger>
+              <SelectContent>
+                {MODELOS_IMAGEM.map((m) => (
+                  <SelectItem key={m.slug} value={m.slug}>{m.label} — {m.precoLabel}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {salvarModeloImagem.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+            {salvarModeloImagem.isSuccess && !salvarModeloImagem.isPending && (
+              <span className="text-xs text-success">✓ Salvo</span>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Modelo de imagem ainda não é usado por nenhuma feature — fica reservado para quando a geração de imagem for implementada.
+          </p>
         </Card>
 
         <ConfigTelegram />
