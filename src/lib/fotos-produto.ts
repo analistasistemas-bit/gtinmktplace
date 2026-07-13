@@ -3,6 +3,7 @@
 // (variação → anúncio → GTIN) sem tocar em custos.ts, pra não arriscar o markup/rateio de frete.
 import { supabase } from './supabase';
 import { normGtin } from './gtin';
+import { buscarTodasPaginas } from './paginacao-supabase';
 import type { VendaItem } from './faturamento';
 
 /** Resolve o storage path da foto de um item de venda. null = sem foto cadastrada. */
@@ -17,19 +18,20 @@ export interface MapasFoto {
   porGtin: Map<string, string>;
 }
 
-/** Lê o imagem_path das variações do usuário (RLS) e monta os mapas de resolução. */
+/** Lê o imagem_path das variações do usuário (RLS) e monta os mapas de resolução.
+ *  Pagina (`.range`) para não truncar no teto padrão (~1000 linhas) do PostgREST. */
 export async function buscarFotos(): Promise<MapasFoto> {
-  const { data, error } = await supabase
+  const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
     .from('variacoes')
     .select('imagem_path, ml_variation_id, gtin, familias!inner(ml_item_id)')
-    .not('imagem_path', 'is', null);
-  if (error) throw new Error(error.message);
+    .not('imagem_path', 'is', null)
+    .range(de, ate));
 
   const porVariacao = new Map<string, string>();
   const porItem = new Map<string, string>();
   const porGtin = new Map<string, string>();
 
-  for (const v of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const v of data) {
     const path = v.imagem_path as string | null;
     if (!path) continue;
     const varId = v.ml_variation_id as string | null;
