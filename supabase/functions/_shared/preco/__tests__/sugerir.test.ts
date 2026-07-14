@@ -59,10 +59,11 @@ describe('sugerirPrecoVenda', () => {
       reancorado: false,
     });
   });
-  it('concorrente R$ 12 → 11,40 competitivo (ignora comissão no preço)', () => {
+  it('concorrente R$ 12 → 11,40 cairia abaixo do abismo → piso ADR-0075 empurra pra 12,55', () => {
     const r = sugerirPrecoVenda(10, { vendedores: 5, preco_min: 12 }, { percentual: 30, fixa: 6 });
     expect(r.estrategia).toBe('competitivo');
-    expect(r.preco).toBeCloseTo(11.4, 2);
+    expect(r.preco).toBeCloseTo(12.55, 2);
+    expect(r.motivo).toContain('abismo de tarifa fixa');
   });
   it('sem concorrente com comissão → proprio (gross-up)', () => {
     const r = sugerirPrecoVenda(20, { vendedores: 0, preco_min: null }, { percentual: 13, fixa: 0 });
@@ -164,9 +165,10 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     });
     expect(r.estrategia).toBe('competitivo');
     expect(r.reancorado).toBe(true);
-    expect(r.preco).toBeCloseTo(11.4, 2); // arredondar5Proximo(12 * 0.95) — nunca acima do precoAncoraLider
-    expect(r.preco).toBeLessThanOrEqual(12);
-    // 🔴 honesto: líquido no preço re-ancorado ainda fica abaixo do custo
+    // ADR-0075: 12*0.95=11,40 cairia abaixo do abismo → piso de R$12,55 tem precedência,
+    // mesmo excedendo o precoAncoraLider (12) — refina a garantia "nunca excede" do ADR-0065.
+    expect(r.preco).toBeCloseTo(12.55, 2);
+    // 🔴 honesto: líquido no preço floorado ainda fica abaixo do custo
     expect(r.preco - r.preco * 0.115 - 1000).toBeLessThan(0);
   });
 
@@ -192,5 +194,37 @@ describe('sugerirPrecoVenda — re-âncora competitiva no piso-líder (7º parâ
     expect(r.reancorado).toBe(false);
     expect(r.preco).toBeCloseTo(semReancora.preco, 2);
     expect(r.preco).toBeCloseTo(24.45, 2);
+  });
+});
+
+// ADR-0075: lote #34 (Anne 65) — concorrência real abaixo de R$12,55 não pode mais sair assim
+// no ramo competitivo, pela tarifa fixa do ML abaixo do abismo (ADR-0023).
+describe('sugerirPrecoVenda — piso do abismo de tarifa fixa também no competitivo (ADR-0075)', () => {
+  it('concorrência R$ 10 (5%) → 9,50 cairia abaixo do abismo → floora em R$ 12,55', () => {
+    const r = sugerirPrecoVenda(0, { vendedores: 2, preco_min: 10 }, null);
+    expect(r.estrategia).toBe('competitivo');
+    expect(r.preco).toBeCloseTo(12.55, 2);
+    expect(r.motivo).toBe('concorrência abaixo de R$12.55 — abismo de tarifa fixa do ML (ADR-0023); piso aplicado');
+    expect(r.reancorado).toBe(false);
+  });
+
+  it('concorrência já acima do abismo (R$ 30, 5%) → 28,50, sem piso, motivo inalterado', () => {
+    const r = sugerirPrecoVenda(0, { vendedores: 3, preco_min: 30 }, null);
+    expect(r.preco).toBeCloseTo(28.5, 2);
+    expect(r.motivo).toBe('concorrência presente — 5% abaixo do menor preço');
+  });
+
+  it('borda: concorrência que resulta em exatamente R$ 12,55 → não aciona o motivo do piso', () => {
+    // 13,2105... × 0,95 arredonda pra 12,55 sem precisar do Math.max
+    const r = sugerirPrecoVenda(0, { vendedores: 2, preco_min: 13.21 }, null);
+    expect(r.preco).toBeCloseTo(12.55, 2);
+    expect(r.motivo).toBe('concorrência presente — 5% abaixo do menor preço');
+  });
+
+  it('ramo próprio permanece inalterado (piso já existia desde o ADR-0023)', () => {
+    const r = sugerirPrecoVenda(4, { vendedores: 0, preco_min: null }, null);
+    expect(r.estrategia).toBe('proprio');
+    expect(r.preco).toBeCloseTo(12.55, 2);
+    expect(r.motivo).toBe('sem concorrência — comissão indisponível, usando o piso');
   });
 });
