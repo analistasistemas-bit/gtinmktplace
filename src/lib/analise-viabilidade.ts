@@ -1,4 +1,41 @@
-import type { Familia } from '@/lib/tipos-dominio';
+import type { Familia, Variacao } from '@/lib/tipos-dominio';
+
+/** Props de preço/custo/dimensões de uma variação, para alimentar SemaforoPreco/CardVoceRecebe. */
+export interface PropsAnaliseVariacao {
+  preco: number;
+  custo: number | null;
+  piso: number;
+  dimensoes: {
+    alturaCm: number | null;
+    larguraCm: number | null;
+    comprimentoCm: number | null;
+    pesoGramas: number | null;
+  };
+}
+
+export function propsAnaliseDaVariacao(v: Variacao): PropsAnaliseVariacao {
+  return {
+    preco: v.precoPublicacao ?? v.preco,
+    custo: v.custo,
+    piso: v.preco,
+    dimensoes: {
+      alturaCm: v.alturaCm,
+      larguraCm: v.larguraCm,
+      comprimentoCm: v.comprimentoCm,
+      pesoGramas: v.pesoGramas,
+    },
+  };
+}
+
+/** Variação representativa da família: menor preço de publicação entre as incluídas. */
+export function variacaoRepresentativa(familia: Familia): Variacao | null {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const base = incluidas.length > 0 ? incluidas : familia.variacoes;
+  if (base.length === 0) return null;
+  return base.reduce((min, v) =>
+    (v.precoPublicacao ?? v.preco) < (min.precoPublicacao ?? min.preco) ? v : min,
+  base[0]);
+}
 
 export interface ResumoViabilidade {
   /** Menor preço de publicação entre as variações incluídas. */

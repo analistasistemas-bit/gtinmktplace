@@ -1,13 +1,55 @@
+import { useState } from 'react';
 import { Coins, Store, AlertTriangle, TrendingUp, Truck, DollarSign, Trophy, Calendar } from 'lucide-react';
 import { CardVoceRecebe } from '@/components/card-voce-recebe';
 import { StatusPill } from '@/components/ui/status-pill';
 import type { StatusTone } from '@/components/ui/status-pill';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { fmtBRL, fmtMilhar } from '@/lib/formato';
 import { familiaSemDimensoesValidas } from '@/lib/publicavel';
-import { resumoViabilidade } from '@/lib/analise-viabilidade';
-import type { Familia, Concorrencia } from '@/lib/tipos-dominio';
+import { propsAnaliseDaVariacao, variacaoRepresentativa } from '@/lib/analise-viabilidade';
+import type { Familia, Concorrencia, Variacao } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useTarifaML } from '@/hooks/useTarifaML';
+import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
+import { cn } from '@/lib/utils';
+
+const COR_DOT: Record<Semaforo, string> = {
+  verde: 'bg-success',
+  amarelo: 'bg-warning',
+  vermelho: 'bg-destructive',
+  indisponivel: 'bg-muted-foreground',
+};
+const LABEL_DOT: Record<Semaforo, string> = {
+  verde: 'Vale a pena',
+  amarelo: 'Abaixo do mínimo',
+  vermelho: 'Prejuízo',
+  indisponivel: 'Viabilidade indisponível',
+};
+
+/** Bolinha do semáforo (🟢🟡🔴) de uma variação — reusa o mesmo `useTarifaML`/`calcularSemaforo`
+ *  do SemaforoPreco (react-query deduplica a chamada já feita pela lista de variações). */
+function SemaforoDot({
+  variacao,
+  categoriaMlId,
+  aliquotaPct,
+}: {
+  variacao: Variacao;
+  categoriaMlId: string | null;
+  aliquotaPct: number;
+}) {
+  const p = propsAnaliseDaVariacao(variacao);
+  const { data, isLoading } = useTarifaML(p.preco, categoriaMlId, p.dimensoes, aliquotaPct);
+  const liquido = data ? data.classico.recebe : null;
+  const sem: Semaforo = isLoading ? 'indisponivel' : calcularSemaforo(liquido, p.piso, p.custo);
+  return (
+    <span
+      className={cn('h-2.5 w-2.5 shrink-0 rounded-full', COR_DOT[sem])}
+      title={LABEL_DOT[sem]}
+      aria-label={LABEL_DOT[sem]}
+    />
+  );
+}
 
 const TONE_CONCORRENCIA: Record<Concorrencia, StatusTone> = {
   sem: 'neutral',
@@ -26,28 +68,25 @@ export function PainelAnalise({
   /** Modo real publicado, para destacar Clássico/Premium no card "Você recebe". */
   listingTypeReal?: 'classico' | 'premium' | null;
 }) {
-  // Números de viabilidade (preço de publicação, custo representativo) vêm da
-  // fonte única compartilhada com a exportação.
-  const { precoExibido, custo: custoRepresentativo } = resumoViabilidade(familia, precoOverride);
   // Imposto por origem (ADR-0055): alíquota aplicada no líquido do card e do semáforo.
   const { data: aliquotas } = useAliquotas();
   const aliquotaPct = familia.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
+
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
-  const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
-  const variacaoRepresentativa = baseVariacoes.length > 0
-    ? baseVariacoes.reduce((min, v) =>
-        (v.precoPublicacao ?? v.preco) < (min.precoPublicacao ?? min.preco) ? v : min,
-      baseVariacoes[0])
-    : null;
-  // Dimensões/peso da representativa (mesma variação do preço exibido) p/ o frete do vendedor.
-  const dimensoesRepresentativas = variacaoRepresentativa
-    ? {
-        alturaCm: variacaoRepresentativa.alturaCm,
-        larguraCm: variacaoRepresentativa.larguraCm,
-        comprimentoCm: variacaoRepresentativa.comprimentoCm,
-        pesoGramas: variacaoRepresentativa.pesoGramas,
-      }
-    : null;
+  const representativa = variacaoRepresentativa(familia);
+  // Seletor de variação só na Revisão (sem precoOverride) e com >1 cor: em Publicados o
+  // precoOverride é family-level (preço real no ML) e casá-lo com o custo de outra cor daria
+  // markup errado; com 1 cor não há o que escolher. Default = representativa → painel abre igual a hoje.
+  const mostrarSeletor = precoOverride == null && incluidas.length >= 2;
+  const [codigoSel, setCodigoSel] = useState<string | null>(null);
+  const selecionada = incluidas.find((v) => v.codigo === codigoSel) ?? representativa;
+
+  const propsVar = selecionada ? propsAnaliseDaVariacao(selecionada) : null;
+  const precoExibido = precoOverride ?? propsVar?.preco ?? 0;
+  const custoRepresentativo = propsVar?.custo ?? null;
+  const pisoSemaforo = propsVar?.piso ?? precoExibido;
+  // Dimensões/peso da variação selecionada p/ o frete do vendedor.
+  const dimensoesRepresentativas = propsVar?.dimensoes ?? null;
 
   const proprio = familia.estrategiaPreco === 'PROPRIO';
   const labelEstrategia = familia.precoReancoradoLider
@@ -58,13 +97,33 @@ export function PainelAnalise({
 
   return (
     <div className="flex w-full flex-col gap-2 rounded-lg border bg-background p-3 shadow-sm">
-      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Análise para publicação
-      </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Análise para publicação
+        </span>
+        {mostrarSeletor && (
+          <Select value={selecionada?.codigo ?? ''} onValueChange={setCodigoSel}>
+            <SelectTrigger className="h-7 w-auto min-w-[160px] gap-1 text-xs">
+              <span className="text-muted-foreground">Variação:</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {incluidas.map((v) => (
+                <SelectItem key={v.codigo} value={v.codigo} className="text-xs">
+                  <span className="flex items-center gap-2">
+                    <SemaforoDot variacao={v} categoriaMlId={familia.categoriaMlId} aliquotaPct={aliquotaPct} />
+                    {v.cor || v.codigo} · {fmtBRL(v.precoPublicacao ?? v.preco)}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
 
       <SemaforoPreco
         preco={precoExibido}
-        piso={variacaoRepresentativa?.preco ?? precoExibido}
+        piso={pisoSemaforo}
         custo={custoRepresentativo}
         categoriaMlId={familia.categoriaMlId}
         dimensoes={dimensoesRepresentativas}

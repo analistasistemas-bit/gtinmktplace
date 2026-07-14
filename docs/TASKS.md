@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Análise para publicação por variação (seletor + semáforo por cor) — 2026-07-14
+
+- [x] Diego reportou: numa família com variações de custos diferentes (ex.: FITAS DE VELUDO —
+  Branco/Preto R$36,60 🟢, Verde Musgo R$45,95 🟢, Laranja R$105,95 🟡), o painel "Análise para
+  publicação" só mostrava o detalhamento da variação mais barata (representativa). Não dava para
+  avaliar cada cor sem inferir. O dado já era calculado por variação (o `SemaforoPreco` de cada
+  `VariacaoCard` já roda `useTarifaML` por cor) — faltava só exibir.
+- [x] Seletor de variação no `PainelAnalise` (só na Revisão — `precoOverride == null` — e com ≥2
+  variações incluídas): troca `SemaforoPreco` + `CardVoceRecebe` para a cor escolhida. Default = a
+  representativa (menor preço) → painel abre idêntico a hoje. Sem fetch novo (react-query deduplica
+  a tarifa já buscada pela lista). Cada opção do dropdown mostra a bolinha do semáforo 🟢🟡🔴 da
+  cor (pior→melhor: `SemaforoDot` reusa `calcularSemaforo`), com `title`/`aria-label`. Publicados
+  (preço family-level) e família de 1 cor: inalterados.
+- [x] Helpers puras extraídas em `src/lib/analise-viabilidade.ts` (`variacaoRepresentativa`,
+  `propsAnaliseDaVariacao`) com teste novo (`src/lib/__tests__/analise-viabilidade.test.ts`).
+  `pnpm test` (181/181 arquivos, 1456/1456 testes), `pnpm lint` (0 erros) e `tsc` limpos. Frontend
+  only — sem edge functions, migrations, schema ou ADR (exibição de dado já existente). Diferido a
+  pedido do Diego: sinal de pior-caso na linha da família (triagem da lista sem expandir).
+
 ## Piso de R$12,55 também no ramo competitivo (ADR-0075) — 2026-07-14
 
 - [x] Diego reportou lote #34 (LINHA ANNE 65 65MT): estratégia COMPETITIVO publicou preço abaixo
