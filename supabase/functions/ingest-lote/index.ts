@@ -3,6 +3,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matchCapa3, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
+import { mapearLinha } from './mapear-linha.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
@@ -84,22 +85,7 @@ Deno.serve(async (req) => {
 
     validarColunas(Object.keys(rowsRaw[0]));
 
-    const rows: PlanilhaRow[] = rowsRaw.map((r) => ({
-      CODIGO: String(r.CODIGO ?? ''),
-      PAI: String(r.PAI ?? '0'),
-      NOME: String(r.NOME ?? ''),
-      UNIDADE: String(r.UNIDADE ?? ''),
-      GTIN: r.GTIN ? String(r.GTIN) : null,
-      CUSTO: Number(r.CUSTO ?? 0),
-      PRECO: Number(r.PRECO ?? 0),
-      ESTOQUE: Number(r.ESTOQUE ?? 0),
-      DESCRICAO_DETALHADO: String(r.DESCRICAO_DETALHADO ?? ''),
-      PESO_GRAMAS: Number(r.PESO_GRAMAS ?? 0),
-      ALTURA_CM: Number(r.ALTURA_CM ?? 0),
-      LARGURA_CM: Number(r.LARGURA_CM ?? 0),
-      COMPRIMENTO_CM: Number(r.COMPRIMENTO_CM ?? 0),
-      FORNECEDOR: String(r.FORNECEDOR ?? ''),
-    }));
+    const rows: PlanilhaRow[] = rowsRaw.map(mapearLinha);
 
     const { grupos, anomalias } = agruparPorPai(rows);
 
