@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## URGENTE: ingest-lote dropava ORIGEM → imposto sempre 8% (fix + deploy + backfill) — 2026-07-14
+
+- [x] Diego reportou: planilha Velcro.xlsx com ORIGEM=IMPORTADO, mas família (lote 64, hoje)
+  gravada como `nacional` → imposto 8% em vez de 16%. **Root cause:** `ingest-lote/index.ts`
+  remontava cada linha num `PlanilhaRow` com whitelist de 14 campos e **omitia ORIGEM**; o parser
+  lê `pai.ORIGEM` → chegava `undefined` → `normalizarOrigem` → `'nacional'` sempre. Desde o
+  ADR-0055 (2026-07-03) toda ingestão virava nacional (o preview `extrair-itens` lia certo).
+- [x] **Fix:** map extraído para `ingest-lote/mapear-linha.ts` (pura, testada) incluindo ORIGEM +
+  teste de regressão que guarda contra drop silencioso de coluna. `deno check`/`deno lint` limpos.
+  **Deploy isolado de `ingest-lote` em produção.**
+- [x] **Backfill:** re-derivada `familias.origem` das planilhas (storage). Só **lotes 61 (10),
+  63 (9) e 64 (7) = 26 famílias** tinham PAI IMPORTADO gravado como nacional → corrigidas. Demais
+  lotes eram legitimamente nacional (planilha sem coluna ORIGEM ou PAI todo nacional).
+- [ ] **Re-preço (pendente decisão):** origem corrigida não recalcula preço sozinha (ADR-0016).
+  **24 das 26 famílias são publicadas** (lote 61: 10, 63: 9, 64: 5) — reprocessar (process-familia
+  exige status 'pendente') as tiraria de 'publicado', recalcularia o preço local com 16% mas o
+  anúncio no ML seguiria a 8% → dessincroniza local×ML e regenera copy/categoria por IA. Repreço de
+  publicada = decisão de negócio + update do preço no ML (não é reprocesso). Só as 2 não publicadas
+  do lote 64 seriam reprocessáveis com segurança. Aguardando decisão do Diego.
+
 ## Análise para publicação por variação (seletor + semáforo por cor) — 2026-07-14
 
 - [x] Diego reportou: numa família com variações de custos diferentes (ex.: FITAS DE VELUDO —
