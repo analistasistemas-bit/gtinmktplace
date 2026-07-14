@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Piso de R$12,55 também no ramo competitivo (ADR-0075) — 2026-07-14
+
+- [x] Diego reportou lote #34 (LINHA ANNE 65 65MT): estratégia COMPETITIVO publicou preço abaixo
+  de R$12,55, faixa em que o ML cobra tarifa fixa adicional de ~50% (abismo do ADR-0023). O piso
+  já existia, mas só no ramo PRÓPRIO (`grossUp`); o ramo COMPETITIVO (`sugerirPrecoVenda`) seguia
+  mercado puro sem piso (ADR-0020), como já tinha sido tentado uma vez e revertido (ADR-0063).
+- [x] ADR-0075: piso fixo de R$12,55 aplicado também no ramo competitivo, depois do desconto de
+  concorrência e de uma eventual re-âncora de líder (ADR-0065) — nunca antes. Diferente do piso
+  viável revertido no ADR-0063 (margem calculada por produto), é um valor fixo pequeno ancorado
+  no limite mecânico real da tarifa do ML. Quando o piso decide o preço, o `motivo`
+  (`estrategia_motivo`, já exibido na Revisão) sinaliza isso ao operador — sem selo/flag nova.
+- [x] `supabase/functions/_shared/preco/sugerir.ts` + 7 casos novos/ajustados em
+  `__tests__/sugerir.test.ts` (piso puro, borda no arredondamento, interação com re-âncora, ramo
+  próprio inalterado). `pnpm test` (180/180 arquivos, 1450/1450 testes) e `pnpm lint`/`pnpm build`
+  limpos. Sem mudança de schema/UI — `sugerirPrecoVenda` é o único ponto de cálculo
+  (`process-familia`), cobre CREATE e reprocessamento automaticamente.
+
 ## Telegram: nome real na venda + teste por destinatário — 2026-07-14
 
 - [x] Diego reportou que a notificação de "Nova venda" no Telegram mostrava o nickname do ML

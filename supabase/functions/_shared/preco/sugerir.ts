@@ -30,6 +30,9 @@ export interface ReancoraLider {
 const motivoCompetitivo = (pct: number) => `concorrência presente — ${pct}% abaixo do menor preço`;
 const MOTIVO_GROSSUP = 'sem concorrência — preço cobre seu mínimo após comissão e frete';
 const MOTIVO_FALLBACK = 'sem concorrência — comissão indisponível, usando o piso';
+/** ADR-0075: piso do abismo de tarifa fixa (ADR-0023) também no ramo competitivo. */
+const MOTIVO_PISO_ABISMO = (piso: number) =>
+  `concorrência abaixo de R$${piso.toFixed(2)} — abismo de tarifa fixa do ML (ADR-0023); piso aplicado`;
 
 /**
  * Abismo da tarifa fixa do ML (ADR-0023): abaixo de R$ 12,50 o ML cobra, além do
@@ -88,8 +91,15 @@ export function sugerirPrecoVenda(
       reancorado = true;
       motivo = `menor preço dava prejuízo; ancorado no preço do maior vendedor MercadoLíder (R$${reancora.precoAncoraLider.toFixed(2)})`;
     }
+    let precoFinal = arredondar5Proximo(precoBase * (1 - descontoConcorrenciaPct / 100));
+    // ADR-0075: nunca abaixo do abismo de tarifa fixa, mesmo que isso exceda o precoAncoraLider
+    // (ficar abaixo de R$12,55 é sempre pior — refina a garantia "nunca excede" do ADR-0065).
+    if (precoFinal < PRECO_MIN_ACIMA_ABISMO) {
+      precoFinal = PRECO_MIN_ACIMA_ABISMO;
+      motivo = MOTIVO_PISO_ABISMO(PRECO_MIN_ACIMA_ABISMO);
+    }
     return {
-      preco: arredondar5Proximo(precoBase * (1 - descontoConcorrenciaPct / 100)),
+      preco: precoFinal,
       estrategia: 'competitivo',
       motivo,
       reancorado,

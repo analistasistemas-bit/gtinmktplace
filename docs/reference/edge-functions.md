@@ -125,7 +125,9 @@
   prejuízo real (líquido Clássico < custo) a família é reancorada no **preço do MercadoLíder
   com mais vendas** (entre concorrentes `power_seller_status ≠ null`; empate de vendas
   desempata pelo menor preço; vendedor com múltiplas cores usa o menor preço dele) × desconto,
-  gravando `familias.preco_reancorado_lider`; nunca sobe acima desse preço nem faz gross-up.
+  gravando `familias.preco_reancorado_lider`; nunca sobe acima desse preço nem faz gross-up —
+  exceto o piso do abismo de tarifa fixa (ADR-0075): qualquer preço competitivo (mercado puro ou
+  reancorado) abaixo de R$12,55 é elevado a R$12,55, mesmo que exceda o preço do líder.
   Tipo derivado da
   categoria do preditor quando é uma categoria de aviamento conhecida, e caminho genérico trava
   na Revisão (não publica sem validar os obrigatórios) quando schema/IA falha (ADR-0051).
