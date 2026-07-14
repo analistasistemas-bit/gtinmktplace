@@ -20,7 +20,29 @@
   exige status 'pendente') as tiraria de 'publicado', recalcularia o preço local com 16% mas o
   anúncio no ML seguiria a 8% → dessincroniza local×ML e regenera copy/categoria por IA. Repreço de
   publicada = decisão de negócio + update do preço no ML (não é reprocesso). Só as 2 não publicadas
-  do lote 64 seriam reprocessáveis com segurança. Aguardando decisão do Diego.
+  do lote 64 seriam reprocessáveis com segurança. Diego optou por reprocessar só as 2 não
+  publicadas do lote 64.
+
+## Gross-up itera o frete por variação até estabilizar (ADR-0076) — 2026-07-14
+
+- [x] Diego reportou: cor Laranja (família FITAS DE VELUDO) 🟡 "Abaixo do mínimo" **sem
+  concorrência**. Verificado com tarifa real do ML (Redis): as 4 cores têm dimensões idênticas e
+  são todas `proprio`; o preço 105,95 = `(piso 78 + frete 6,75)/(1−12%−8%)`. O frete família (6,75,
+  avaliado no preço ~R$28 da cor mais barata) foi aplicado à Laranja, cujo preço cruza os ~R$79 —
+  onde o frete real é 16,15. Líquido `105,95 − 12,71 − 16,15 = 77,09` < piso 78 (falta R$0,91). O
+  gross-up de passada única (ADR-0050) subestima o frete ao trocar de faixa.
+- [x] ADR-0076: no ramo próprio, o frete do gross-up passa a ser **por variação e iterado** até o
+  preço estabilizar. Nova função pura `freteEstavelGrossUp` (`_shared/preco/sugerir.ts`) devolve o
+  frete no preço convergido; `sugerirPrecoVenda`/`grossUp` inalterados. Wiring em `process-familia`
+  (loop por variação, memoizado por piso+dimensões p/ não estourar chamadas em split ADR-0048;
+  resiliente: falha de ML → frete família; competitivo/`estrategiaFamilia` inalterados). Laranja
+  105,95 → ~117,70; cores abaixo de R$79 (frete flat) não mudam.
+- [x] TDD: 4 casos novos em `sugerir.test.ts` (frete flat, cruza faixa, itera de verdade, respeita
+  maxIter). `pnpm test` 1460/1460 (o único fail no run cheio é flaky pré-existente de
+  `App.test.tsx` — passa isolado), `deno check` + `deno lint` limpos. **Só CREATE/reprocessamento**
+  (ADR-0016): só muda ao reprocessar a família. **Deployado em produção + main (2026-07-14)**
+  (process-familia redeployado), e as 2 famílias não publicadas do lote 64 reprocessadas com o
+  frete iterado + 16% de imposto (Laranja 25mm: R$117,75 → R$134; cores < R$79 inalteradas).
 
 ## Análise para publicação por variação (seletor + semáforo por cor) — 2026-07-14
 

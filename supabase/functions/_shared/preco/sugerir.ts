@@ -61,6 +61,35 @@ export function grossUp(piso: number, percentual: number, fixa: number, frete = 
 }
 
 /**
+ * Itera a busca de frete até o preço do gross-up estabilizar (ADR-0076). O frete grátis que o
+ * vendedor absorve salta ao cruzar faixas de preço do ML (~R$79); avaliá-lo num preço e não
+ * reavaliar subestima o frete quando o preço final cai numa faixa mais cara — foi o que deixou a
+ * cor Laranja (piso R$78) 🟡 sem concorrência. Como somar frete só sobe o preço e um preço maior →
+ * frete ≥ (monótono, faixas discretas), converge em poucas iterações. Devolve o frete no preço
+ * convergido — passe-o a `grossUp`/`sugerirPrecoVenda` para obter o preço final. `fretePorPreco`
+ * pode ser síncrono ou async (na produção é a chamada de frete do ML). `maxIter` é a rede de
+ * segurança contra um frete que nunca estabilize.
+ */
+export async function freteEstavelGrossUp(
+  piso: number,
+  percentual: number,
+  fixa: number,
+  aliquotaPct: number,
+  fretePorPreco: (preco: number) => number | Promise<number>,
+  maxIter = 5,
+): Promise<number> {
+  let preco = grossUp(piso, percentual, fixa, 0, aliquotaPct);
+  let frete = 0;
+  for (let i = 0; i < maxIter; i++) {
+    frete = await fretePorPreco(preco);
+    const novo = grossUp(piso, percentual, fixa, frete, aliquotaPct);
+    if (novo === preco) break;
+    preco = novo;
+  }
+  return frete;
+}
+
+/**
  * Sugere o preço de venda (ADR-0020 + ADR-0023 + ADR-0059). `piso` = PRECO da planilha
  * (líquido mínimo). Com concorrente → mercado (× (1 − descontoConcorrenciaPct/100), configurável
  * em Configurações, default 5%). Sem concorrente → gross-up que cobre o piso e fica acima do

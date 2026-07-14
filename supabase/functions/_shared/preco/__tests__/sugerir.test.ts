@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { sugerirPrecoVenda, grossUp } from '../sugerir';
+import { describe, it, expect, vi } from 'vitest';
+import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp } from '../sugerir';
 
 describe('grossUp (preço cujo líquido ≥ piso)', () => {
   it('piso 20, 13% + R$ 0 fixa → (20/0,87)=22,99 → arredonda cima 23,00', () => {
@@ -226,5 +226,46 @@ describe('sugerirPrecoVenda — piso do abismo de tarifa fixa também no competi
     expect(r.estrategia).toBe('proprio');
     expect(r.preco).toBeCloseTo(12.55, 2);
     expect(r.motivo).toBe('sem concorrência — comissão indisponível, usando o piso');
+  });
+});
+
+// ADR-0076: o frete grátis do vendedor salta ao cruzar faixas do ML (~R$79); o gross-up de
+// passada única subestima o frete quando o preço final cai numa faixa mais cara. Itera até
+// estabilizar e devolve o frete no preço convergido.
+describe('freteEstavelGrossUp (ADR-0076)', () => {
+  // frete grátis do vendedor: R$6,75 abaixo de R$79, salta para R$16,15 ao cruzar (caso real fitas).
+  const freteFaixa = (preco: number) => (preco < 79 ? 6.75 : 16.15);
+
+  it('frete flat → estabiliza no 1º valor (cor barata, piso 22,50) — inalterado', async () => {
+    const fake = vi.fn(async () => 6.75);
+    const frete = await freteEstavelGrossUp(22.5, 12, 0, 8, fake);
+    expect(frete).toBe(6.75);
+    // reproduz o preço de hoje: (22,50+6,75)/0,80 = 36,60
+    expect(grossUp(22.5, 12, 0, frete, 8)).toBeCloseTo(36.6, 2);
+  });
+
+  it('cor cara (piso 78) cruza os R$79 → frete estabiliza em 16,15 → preço 117,70 (não 105,95)', async () => {
+    const frete = await freteEstavelGrossUp(78, 12, 0, 8, freteFaixa);
+    expect(frete).toBe(16.15);
+    const preco = grossUp(78, 12, 0, frete, 8);
+    expect(preco).toBeCloseTo(117.7, 2);
+    // a passada única (frete família 6,75) dava 105,95, cujo líquido < piso
+    expect(grossUp(78, 12, 0, 6.75, 8)).toBeCloseTo(105.95, 2);
+  });
+
+  it('itera de verdade quando a 1ª passada fica abaixo da faixa mas o preço final cruza (piso 60)', async () => {
+    const fake = vi.fn(freteFaixa);
+    const frete = await freteEstavelGrossUp(60, 12, 0, 8, fake);
+    // 1ª passada = 75,00 (<79 → 6,75) → 83,45 (≥79 → 16,15) → 95,20 (estável)
+    expect(frete).toBe(16.15);
+    expect(grossUp(60, 12, 0, frete, 8)).toBeCloseTo(95.2, 2);
+    expect(fake.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('respeita maxIter e não trava se o frete nunca estabiliza', async () => {
+    const fake = vi.fn((preco: number) => preco); // absurdo: frete = preço, sempre sobe
+    const frete = await freteEstavelGrossUp(20, 12, 0, 8, fake, 3);
+    expect(fake).toHaveBeenCalledTimes(3);
+    expect(Number.isFinite(frete)).toBe(true);
   });
 });

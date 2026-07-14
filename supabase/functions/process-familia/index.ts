@@ -8,7 +8,7 @@ import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { sugerirPrecoVenda, grossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
+import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
 import { calcularPrecoLiderMaisVendas } from '../_shared/preco/piso-lider.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -359,15 +359,46 @@ Deno.serve(async (req) => {
     const maiorCustoFamilia = resolvidas.length ? Math.max(...resolvidas.map((v) => Number(v.custo))) : 0;
     const reancora = { ativa: reancoraAtiva, precoAncoraLider, custo: maiorCustoFamilia, comissao };
 
-    const updatesPreco = resolvidas
-      .filter((v) => !v.preco_editado_pelo_operador)
-      .map((v) => {
-        const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct, reancora);
-        return admin.from('variacoes')
-          .update({ preco_publicacao: preco })
-          .eq('id', v.id);
-      });
-    await Promise.all(updatesPreco);
+    // ADR-0076: no ramo próprio, o frete entra no gross-up POR VARIAÇÃO e é iterado até o preço
+    // estabilizar — o frete grátis do vendedor salta ao cruzar faixas do ML (~R$79), e o frete
+    // família (avaliado no preço da cor mais barata) subestimava cores de piso alto (foi o que
+    // deixou a Laranja 🟡 sem concorrência). Memoiza por (piso, dimensões): cores de mesmo
+    // piso/embalagem (ex.: split ADR-0048) iteram uma vez só. Competitivo/fallback: frete família.
+    const freteMemo = new Map<string, Promise<number>>();
+    const freteDaVariacao = (v: typeof resolvidas[number]): Promise<number> => {
+      if (competitivo || !comissao || !token || !conexao?.contaExternaId || !categoriaMlId) {
+        return Promise.resolve(frete);
+      }
+      const dimV = {
+        altura_cm: v.altura_cm != null ? Number(v.altura_cm) : null,
+        largura_cm: v.largura_cm != null ? Number(v.largura_cm) : null,
+        comprimento_cm: v.comprimento_cm != null ? Number(v.comprimento_cm) : null,
+        peso_gramas: v.peso_gramas != null ? Number(v.peso_gramas) : null,
+      };
+      const key = `${Number(v.preco)}:${dimV.altura_cm}x${dimV.largura_cm}x${dimV.comprimento_cm}x${dimV.peso_gramas}`;
+      let p = freteMemo.get(key);
+      if (!p) {
+        const conta = conexao.contaExternaId;
+        const com = comissao;
+        // Resiliente: qualquer falha de ML na iteração → frete família já buscado (ADR-0050).
+        p = freteEstavelGrossUp(
+          Number(v.preco), com.percentual, com.fixa, aliquotaPct,
+          (preco) => buscarFreteVendedor(token, conta, preco, categoriaMlId, dimV),
+        ).catch(() => frete);
+        freteMemo.set(key, p);
+      }
+      return p;
+    };
+
+    await Promise.all(
+      resolvidas
+        .filter((v) => !v.preco_editado_pelo_operador)
+        .map(async (v) => {
+          const freteV = await freteDaVariacao(v);
+          const { preco } = sugerirPrecoVenda(Number(v.preco), conc, comissao, freteV, aliquotaPct, descontoConcorrenciaPct, reancora);
+          await admin.from('variacoes').update({ preco_publicacao: preco }).eq('id', v.id);
+        }),
+    );
 
     const estrategiaFamilia = sugerirPrecoVenda(precoMinFamilia, conc, comissao, frete, aliquotaPct, descontoConcorrenciaPct, reancora);
 

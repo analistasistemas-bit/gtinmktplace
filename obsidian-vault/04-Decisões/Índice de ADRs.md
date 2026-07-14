@@ -5,7 +5,7 @@ atualizado: 2026-07-13
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (75 ADRs, `0001`–`0075`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (76 ADRs, `0001`–`0076`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -87,5 +87,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0073 | ["N CORES" no título conta como quantidade de UNITS_PER_PACK](../../docs/decisions/0073-cores-conta-como-unidade-no-kit.md) |
 | 0074 | [Seleção de modelo de IA (texto e imagem) por organização](../../docs/decisions/0074-selecao-de-modelo-ia-por-organizacao.md) |
 | 0075 | [Piso de tarifa fixa também no ramo competitivo](../../docs/decisions/0075-piso-tarifa-fixa-no-ramo-competitivo.md) |
+| 0076 | [Gross-up itera o frete por variação até estabilizar](../../docs/decisions/0076-gross-up-itera-frete-por-variacao.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
