@@ -16,8 +16,10 @@
 - [x] `supabase/functions/_shared/preco/sugerir.ts` + 7 casos novos/ajustados em
   `__tests__/sugerir.test.ts` (piso puro, borda no arredondamento, interação com re-âncora, ramo
   próprio inalterado). `pnpm test` (180/180 arquivos, 1450/1450 testes) e `pnpm lint`/`pnpm build`
-  limpos. Sem mudança de schema/UI — `sugerirPrecoVenda` é o único ponto de cálculo
-  (`process-familia`), cobre CREATE e reprocessamento automaticamente.
+  limpos. Sem mudança de schema/UI. Cobre CREATE e todo UPDATE que reprocesse a família (cor
+  nova → IA); **não** cobre UPDATE sem cor nova, que herda o preço já publicado sem recalcular
+  (ADR-0016) — anúncio já ao vivo abaixo de R$12,55 fica congelado até reprocessar a família ou
+  o operador ajustar manualmente. Detalhe no ADR-0075.
 
 ## Telegram: nome real na venda + teste por destinatário — 2026-07-14
 

@@ -52,12 +52,27 @@ Não há selo/flag nova na UI — o texto do motivo já cobre a transparência, 
 ## Consequências
 
 **Boas:**
-- Fecha a lacuna do ADR-0023: nenhum preço de publicação (próprio ou competitivo) sai abaixo de
-  R$12,55, eliminando a tarifa fixa de ~50%.
-- `sugerirPrecoVenda` é o único ponto de cálculo (chamado em `process-familia/index.ts`, usado
-  tanto no ingest normal quanto no reprocessamento de famílias em erro) — a mudança cobre
-  automaticamente todo fluxo que gera `preco_publicacao`, sem wiring adicional.
+- Fecha a lacuna do ADR-0023 em todo fluxo que **recalcula** o preço: `sugerirPrecoVenda` é o
+  único ponto de cálculo (`process-familia/index.ts`), e roda tanto no CREATE quanto em qualquer
+  UPDATE que reprocesse a família (cor nova exige IA → `familias.status='pendente'` →
+  `process-familia`) — nesse caso ele recalcula `preco_publicacao` de **todas** as variações não
+  editadas manualmente pelo operador (`resolvidas`, a família inteira, não só a cor nova),
+  aplicando o piso também às cores antigas da mesma família.
 - Mudança pura, sem I/O extra, sem nova coluna, sem nova chamada ao ML.
+
+**Limitação conhecida (não coberta por este ADR):** um UPDATE de planilha **sem cor nova**
+(reposição de estoque, atualização de preço na planilha para uma cor já publicada) não
+enfileira a família em `process-familia` — `ingest-lote/index.ts` grava `preco_publicacao` só
+por **herança** do preço já publicado (`h.preco_publicacao`, ADR-0016), sem nunca chamar
+`sugerirPrecoVenda`. Um anúncio que já estava publicado abaixo de R$12,55 **antes deste ADR**
+continua congelado nesse preço nesse tipo de re-import — não é regressão deste fix, é o
+comportamento deliberado do ADR-0016 (nunca mudar silenciosamente um preço já ao vivo sem um
+gatilho de reprocessamento). Estender o piso a esse caminho de herança mudaria preços **já
+publicados** sem gatilho explícito do operador — uma decisão mais pesada, de risco diferente
+(altera preço ao vivo numa sincronização de rotina), fora do escopo combinado aqui. Se Diego
+quiser corrigir anúncios já publicados abaixo do abismo, a via é reprocessar essas famílias
+pontualmente (aciona `process-familia`, que floora) ou decidir uma extensão dedicada do
+ADR-0016 — não algo para fazer implicitamente dentro deste ADR.
 
 **Trade-offs aceitos:**
 - Em casos raros, o preço fica acima de toda a concorrência (mesmo trade-off qualitativo do

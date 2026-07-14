@@ -42,9 +42,15 @@ const MOTIVO_PISO_ABISMO = `concorrência abaixo de R$${PRECO_MIN_ACIMA_ABISMO.t
 ```
 
 Como `sugerirPrecoVenda` é o único ponto de cálculo de preço (chamado em
-`process-familia/index.ts`, usado tanto no ingest normal quanto no reprocessamento de famílias em
-erro), a mudança cobre automaticamente todo fluxo que gera `preco_publicacao` — não há um cálculo
-de preço separado para "UPDATE de anúncio já publicado" a mexer.
+`process-familia/index.ts`), a mudança cobre automaticamente todo fluxo que **recalcula**
+`preco_publicacao`: CREATE e qualquer UPDATE que reprocesse a família (cor nova → IA →
+`process-familia`, que recalcula a família inteira, não só a cor nova).
+
+**Não coberto:** UPDATE sem cor nova (reposição/atualização de planilha numa cor já publicada)
+não passa por `process-familia` — `ingest-lote` herda `preco_publicacao` do preço já ao vivo
+(ADR-0016), sem chamar `sugerirPrecoVenda`. Um anúncio já publicado abaixo de R$12,55 antes deste
+fix fica congelado nesse preço nesse tipo de re-import. Estender o piso à herança mudaria um
+preço já publicado sem gatilho do operador — decisão maior, fora de escopo aqui (ver ADR-0075).
 
 ## Escopo
 
