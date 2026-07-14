@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix: colisão de cor no Vision por sufixo "UND" no NOME — 2026-07-13
+
+- [x] Diego reportou (print da tela de Revisão do lote #33) duas variações de fio com fotos
+  visivelmente diferentes ("verde água claro" vs. "azul piscina") ambas com `cor = Azul Claro`.
+  Investigação seguiu ADR-0004: a Camada 1 (dicionário) corretamente não lê `descricao_detalhado`
+  (adendo 2026-06-12) — a causa não foi essa exclusão.
+- [x] Causa raiz: `extrairCorECodigo` (`_shared/cor/extrair.ts`) contava o sufixo de unidade do
+  fornecedor ("... COR UND") como palavra extra da cor, estourando `MAX_PALAVRAS_COR` e jogando
+  o caso pro Vision (Camada 2). O `CORES_VALIDAS` do Vision (`_shared/ai/vision.ts`) tinha 23
+  cores fixas desde a criação (28/mai) e nunca foi sincronizado com o crescimento do
+  `DICIONARIO_CORES` (~49 cores) — sem bucket de água/turquesa, o modelo forçou os dois tons
+  pro vizinho mais próximo disponível ("Azul Claro"), causando a colisão.
+- [x] Fix: `extrairCorECodigo` descarta sufixo de unidade ao final (reusa `UNIDADES_METRAGEM`);
+  `CORES_VALIDAS`/prompt do Vision ganharam `Turquesa`, `Petróleo`, `Azul Petróleo`. Teste de
+  regressão em `extrair.test.ts`. Os 2 registros já processados do lote #33 (`03071979` →
+  `Verde Água Claro`, `03075958` → `Azul Piscina`) foram corrigidos direto no banco
+  (`cor_origem = manual`), já que o fix de código só evita recorrência.
+- [x] PR: [#24](https://github.com/analistasistemas-bit/gtinmktplace/pull/24)
+
 ## Seleção de modelo de IA (texto/imagem) por organização — ADR-0074 — 2026-07-13
 
 - [x] Diego pediu para escolher o modelo de IA de texto por organização direto na tela
