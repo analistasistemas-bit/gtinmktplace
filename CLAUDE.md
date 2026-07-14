@@ -19,7 +19,6 @@ Operador principal: Diego. Domínios: lotes, famílias, variações, anúncios e
 
 # Comandos
 
-- Dev: `pnpm dev` | Build: `pnpm build` | Lint: `pnpm lint`
 - Testes: `pnpm test` (vitest; exige `.env.test` — sem ele o supabase.ts lança no boot)
 - Migrations: **só** `supabase migration new` + `supabase db push`; validar com `npm run db:check`. Nunca `apply_migration`/painel para DDL (ADR-0043).
 - Edge functions: deploy sempre via CLI completa; mudança em `_shared/` → redeployar todas as funções afetadas e conferir versão pós-deploy.
@@ -132,8 +131,6 @@ Regra de conclusão de qualquer alteração relevante:
 
 # Stack
 
-- Frontend: React 18, TypeScript, Vite, shadcn/ui, Tailwind, TanStack Query, Zustand
-- Backend: Supabase (PostgreSQL, Edge Functions, Storage, Auth)
 - Infra: QStash, Redis | IA: OpenRouter (modelos OpenAI)
 
 ---
