@@ -2,17 +2,20 @@ import { openrouterClient } from './client.ts';
 import { MODELO_VISION } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
 
+// Mantida em sincronia com DICIONARIO_CORES para as famílias água/petróleo — sem isso o
+// modelo não tem bucket certo pra tons água-esverdeados e força pro vizinho mais próximo
+// (ex.: "verde água" e "azul piscina" colidindo em "Azul Claro") — bug do lote #33.
 const CORES_VALIDAS = new Set([
   'Preto', 'Branco', 'Vermelho', 'Azul Royal', 'Azul Marinho', 'Azul Claro',
-  'Verde Bandeira', 'Verde Musgo', 'Verde Claro', 'Amarelo', 'Laranja',
-  'Rosa', 'Pink', 'Roxo', 'Marrom', 'Bege', 'Cru', 'Cinza', 'Prata',
+  'Verde Bandeira', 'Verde Musgo', 'Verde Claro', 'Turquesa', 'Petróleo', 'Azul Petróleo',
+  'Amarelo', 'Laranja', 'Rosa', 'Pink', 'Roxo', 'Marrom', 'Bege', 'Cru', 'Cinza', 'Prata',
   'Dourado', 'Rosa Neon', 'Verde Neon', 'Outra',
 ]);
 
 const PROMPT = `Você é um identificador de cor de produto. Recebe a foto de um produto têxtil (linha de costura, botão, fita ou similar).
 
 Responda APENAS com o nome da cor predominante, em português, escolhendo entre estas opções canônicas:
-[Preto, Branco, Vermelho, Azul Royal, Azul Marinho, Azul Claro, Verde Bandeira, Verde Musgo, Verde Claro, Amarelo, Laranja, Rosa, Pink, Roxo, Marrom, Bege, Cru, Cinza, Prata, Dourado, Rosa Neon, Verde Neon, Outra]
+[Preto, Branco, Vermelho, Azul Royal, Azul Marinho, Azul Claro, Verde Bandeira, Verde Musgo, Verde Claro, Turquesa, Petróleo, Azul Petróleo, Amarelo, Laranja, Rosa, Pink, Roxo, Marrom, Bege, Cru, Cinza, Prata, Dourado, Rosa Neon, Verde Neon, Outra]
 
 REGRAS:
 1. Avalie a cor do PRODUTO em si (linha, botão, fita), ignorando fundo, papel da etiqueta, embalagem ou reflexos.

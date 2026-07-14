@@ -67,7 +67,9 @@ const SO_DIGITOS = /^\d+$/;
 // Unidades de metragem/medida: "10 mt", "1 m", "50 cm" são MEDIDA, não "{código} {cor}".
 // Quando a metragem vem separada (não colada como "10MT"), o dígito parece código e as
 // palavras seguintes parecem cor — bug do lote #48 ("Mt Para Uniforme E Decoração 10").
-const UNIDADES_METRAGEM = new Set(['m', 'mt', 'mts', 'metro', 'metros', 'cm', 'mm', 'un', 'kg', 'g']);
+// Também usada para descartar sufixo de unidade ao FINAL do nome da cor (ex.: "AZ PISCINA
+// UND"), que senão conta como palavra extra e estoura MAX_PALAVRAS_COR — bug do lote #33.
+const UNIDADES_METRAGEM = new Set(['m', 'mt', 'mts', 'metro', 'metros', 'cm', 'mm', 'un', 'und', 'kg', 'g']);
 // Uma cor real tem 1-2 palavras; corrida maior é frase/descrição, não cor.
 const MAX_PALAVRAS_COR = 2;
 
@@ -97,6 +99,10 @@ export function extrairCorECodigo(nome: string): { cor: string; codigo: string }
   for (let i = idx + 1; i < tokens.length; i++) {
     if (!SO_LETRAS.test(tokens[i])) break; // tamanho (10MT) / token misto encerra a cor
     palavras.push(tokens[i]);
+  }
+  // Sufixo de unidade do fornecedor ao final ("... COR UND") não é parte do nome da cor.
+  if (palavras.length > 0 && UNIDADES_METRAGEM.has(palavras[palavras.length - 1].toLowerCase())) {
+    palavras.pop();
   }
   // Corrida longa (ex.: "para uniforme e decoração") não é cor → cai no dicionário.
   if (palavras.length > MAX_PALAVRAS_COR) return null;
