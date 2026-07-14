@@ -5,7 +5,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
-import { buscarMensagensPack, upsertMensagens, resolverMetaPack, responderMensagemPedido } from '../_shared/faturamento/mensagens-io.ts';
+import { buscarMensagensPack, upsertMensagens, resolverMetaPack, responderMensagemPedido, resolverCompradorId } from '../_shared/faturamento/mensagens-io.ts';
 
 interface Body { pack_id?: string; text?: string }
 
@@ -42,8 +42,11 @@ Deno.serve(async (req) => {
   try { token = await getValidAccessTokenConexao(conexao); }
   catch { return erro('Conta ML não conectada.', 400); }
 
+  const buyerId = await resolverCompradorId(admin, orgId, packId);
+  if (!buyerId) return erro('Não foi possível identificar o comprador desta conversa.', 400);
+
   try {
-    await responderMensagemPedido(token, packId, sellerId, text);
+    await responderMensagemPedido(token, packId, sellerId, buyerId, text);
   } catch (e) {
     return erro((e as Error).message, 502);
   }

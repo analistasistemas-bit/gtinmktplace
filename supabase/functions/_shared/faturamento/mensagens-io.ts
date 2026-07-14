@@ -1,6 +1,7 @@
 // IO de mensagens pós-venda (ADR-0067): chamadas à API do ML e persistência. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { extrairMensagens, mapearMensagem, type MensagemML } from './mensagem-mapper.ts';
+import { enviarMsgML } from '../ml/mensagem.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -59,15 +60,24 @@ export async function upsertMensagens(
 /** Envia mensagem ao comprador e LANÇA em erro (reply interativo precisa avisar o operador —
  *  diferente de `enviarMensagemPedido`, que engole erro no fluxo fire-and-forget de boas-vindas). */
 export async function responderMensagemPedido(
-  token: string, packId: string | number, sellerId: string | number, texto: string,
+  token: string, packId: string | number, sellerId: string | number, buyerId: string | number, texto: string,
 ): Promise<void> {
-  const resp = await fetch(`${API}/messages/packs/${packId}/sellers/${sellerId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: texto, message_attachments: null }),
-    signal: AbortSignal.timeout(15000),
-  });
+  const resp = await enviarMsgML(token, packId, sellerId, buyerId, texto);
   if (!resp.ok) throw new Error(`ML /messages ${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 200)}`);
+}
+
+/** user_id do comprador no pack, lido de uma mensagem `recebida` já sincronizada — o `from` de
+ *  uma recebida é, por definição, o comprador (mesma regra de `mapearMensagem`). Necessário para
+ *  o campo `to` do POST do ML, que não é montado em nenhum outro lugar. */
+export async function resolverCompradorId(
+  admin: SupabaseClient, orgId: string, packId: string | number,
+): Promise<string | null> {
+  const { data } = await admin.from('ml_mensagens')
+    .select('raw')
+    .eq('org_id', orgId).eq('pack_id', String(packId)).eq('direcao', 'recebida')
+    .limit(1).maybeSingle();
+  const id = (data as { raw?: MensagemML } | null)?.raw?.from?.user_id;
+  return id != null ? String(id) : null;
 }
 
 /** order_id + título do pedido dono do pack (pack_id ou, se solo, o próprio order_id). */

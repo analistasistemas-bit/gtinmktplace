@@ -105,13 +105,14 @@ Deno.serve(async (req) => {
       moeda: pedido.currency_id ?? 'BRL',
     }));
 
-    // Mensagem automática ao comprador via ML (best-effort).
-    if (conexao?.contaExternaId) {
+    // Mensagem automática ao comprador via ML (best-effort). O POST do ML exige o `to.user_id`.
+    if (conexao?.contaExternaId && pedido.buyer?.id != null) {
       const packId = pedido.pack_id ?? pedido.id;
       await enviarMensagemPedido(
         token,
         packId,
         conexao.contaExternaId,
+        String(pedido.buyer.id),
         'Olá! Recebemos seu pedido e já estamos separando. Em caso de dúvida, fique à vontade para chamar aqui pelo chat. Obrigado pela compra! 🙏',
       );
     }
