@@ -21,6 +21,12 @@
   ML na base 8%. A origem delas já está `importado`, então o 16% entra sozinho se um dia forem
   reprocessadas/republicadas. Reprecificar publicada = decisão de negócio + update de preço no ML
   (não é reprocesso), fora de escopo por ora.
+- [x] **Trava inviolável (não pode mais acontecer):** `ingest-lote/verificar-origem.ts` — depois de
+  agrupar, compara a `origem` montada com a ORIGEM **crua** da planilha (linha PAI, lida de
+  `rowsRaw` ANTES de qualquer map). Divergiu → lança e **aborta o lote** (o catch marca 'erro'), sem
+  persistir imposto errado. Lê a fonte crua de propósito (comparar com o dado já mapeado deixaria o
+  próprio drop passar). 4 testes (incl. cadeia raw→mapearLinha→agruparPorPai e o caso de drop que
+  aborta). Regra registrada como inviolável (imposto por origem, ADR-0055).
 
 ## Gross-up itera o frete por variação até estabilizar (ADR-0076) — 2026-07-14
 

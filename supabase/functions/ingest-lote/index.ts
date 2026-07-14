@@ -4,6 +4,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matchCapa3, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
+import { verificarOrigemInviolavel } from './verificar-origem.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
@@ -92,6 +93,10 @@ Deno.serve(async (req) => {
     if (grupos.length === 0) {
       throw new Error('Nenhuma família com variação válida após descartar anomalias da planilha');
     }
+
+    // Trava inviolável do imposto por origem (ADR-0055): aborta o lote (nada é persistido) se a
+    // `origem` montada divergir da ORIGEM crua da planilha — nunca gravar imposto errado em silêncio.
+    verificarOrigemInviolavel(rowsRaw, grupos);
 
     const codigosPai = grupos.map((g) => g.codigo_pai);
     // Escopo da operação (ADR-0056): buscar anteriores de TODA a operação por codigo_pai.
