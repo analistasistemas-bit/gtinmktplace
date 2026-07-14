@@ -136,6 +136,30 @@ describe('extrairCorDeVariacao com metragem separada (regressão lote #48)', () 
   });
 });
 
+describe('extrairCorECodigo — regressão lote #33', () => {
+  // "...901 AZ PISCINA UND" virava null (UND contava como 3ª palavra e estourava o
+  // limite de 2), caindo no Vision — que colidiu com outra cor da mesma família
+  // ("VD AGUA CL") no mesmo canônico "Azul Claro" por falta de bucket certo.
+  it('sufixo de unidade do fornecedor (UND) no fim não conta como palavra da cor', () => {
+    expect(extrairCorECodigo('EUROROMA FIORE 8/4 150G 500MT 901 AZ PISCINA UND'))
+      .toEqual({ cor: 'Azul Piscina', codigo: '901' });
+  });
+
+  it('mesmo caso sem o sufixo UND já funcionava (referência)', () => {
+    expect(extrairCorECodigo('EUROROMA FIORE 8/4 150G 500MT 901 AZ PISCINA'))
+      .toEqual({ cor: 'Azul Piscina', codigo: '901' });
+  });
+
+  it('outro caso real do lote #33: ANIL PROFUNDO UND', () => {
+    expect(extrairCorECodigo('CLEA DUPLO COR 2856 ANIL PROFUNDO UND'))
+      .toEqual({ cor: 'Anil Profundo', codigo: '2856' });
+  });
+
+  it('cor de 3 palavras + UND continua null (limite de 2 palavras continua valendo)', () => {
+    expect(extrairCorECodigo('EUROROMA FIORE 8/4 150G 500MT 800 VD AGUA CL UND')).toBeNull();
+  });
+});
+
 describe('extrairCorDoTexto — regressão lote #30', () => {
   it('Champagne é cor própria (não colapsa pra "Bege")', () => {
     expect(extrairCorDoTexto(['Tecido Helanca Light Champagne Lycra Tensionada 3,00 X 1,80 Metros'])).toBe('Champagne');
