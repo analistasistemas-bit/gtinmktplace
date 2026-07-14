@@ -2,6 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Telegram: nome real na venda + teste por destinatário — 2026-07-14
+
+- [x] Diego reportou que a notificação de "Nova venda" no Telegram mostrava o nickname do ML
+  (ex.: `LARROQUEKATIA...`) em vez do nome real. Causa raiz: `sync-venda/index.ts` montava o
+  alerta com `pedido.buyer?.nickname` em vez do `comprador_nome` já resolvido por `upsertVenda`
+  (first_name+last_name, com fallback pro nome salvo e pro destinatário do frete — mesmo campo
+  que a tela de Vendas usa). Fix: `upsertVenda` passa a retornar `compradorNome`; `sync-venda` usa
+  esse valor. Deploy de `sync-venda`, `reconciliar-faturamento`, `backfill-faturamento` (mudança
+  em `_shared/`).
+- [x] Diálogo "Notificações" (tela Usuários, ADR-0068) ganhou botão **Enviar teste** dentro da
+  seção Categorias — testa o Chat ID digitado na hora, sem depender do Chat ID de Configurações
+  (`monitorar-moderados` aceita `chatId` opcional no payload de teste) — e checkbox **Marcar
+  todas** para (des)marcar as categorias de uma vez. Testado ponta a ponta em produção com
+  destinatário real (Samuel Tavares).
+- [x] `docs/how-to/operacoes-rotineiras.md` atualizado com o passo de teste inline.
+
 ## Fix: colisão de cor no Vision por sufixo "UND" no NOME — 2026-07-13
 
 - [x] Diego reportou (print da tela de Revisão do lote #33) duas variações de fio com fotos
