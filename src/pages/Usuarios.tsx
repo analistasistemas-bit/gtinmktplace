@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Send } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { useEnviarTesteTelegram } from '@/hooks/useConfiguracoes';
 import { MENU_KEYS, type MenuKey } from '@/lib/menus';
 import { CATEGORIAS_NOTIFICACAO, CATEGORIA_LABEL, CATEGORIA_DESCRICAO, type CategoriaNotificacao } from '@/lib/notificacoes-categorias';
 import { PageHeader } from '@/components/ui/page-header';
@@ -252,6 +254,7 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
   const [cats, setCats] = useState<string[]>([]);
   const [carregado, setCarregado] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const teste = useEnviarTesteTelegram();
 
   // Sincroniza o estado local quando abre p/ outro usuário.
   if (user && carregado !== user.id) {
@@ -262,6 +265,20 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
 
   function toggle(key: string, on: boolean) {
     setCats((prev) => (on ? [...prev, key] : prev.filter((k) => k !== key)));
+  }
+
+  const todasMarcadas = cats.length === CATEGORIAS_NOTIFICACAO.length;
+  function toggleTodas(on: boolean) {
+    setCats(on ? [...CATEGORIAS_NOTIFICACAO] : []);
+  }
+
+  function handleTeste() {
+    teste.mutate(chatId.trim(), {
+      onSuccess: (r) => r.ok
+        ? toast.success('Mensagem de teste enviada — confira o Telegram da pessoa.')
+        : toast.error('Não enviou', { description: r.erro }),
+      onError: (e) => toast.error('Não enviou', { description: e instanceof Error ? e.message : String(e) }),
+    });
   }
 
   async function salvar() {
@@ -297,7 +314,17 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
             </p>
           </div>
           <div>
-            <div className="mb-2 text-sm font-medium">Categorias</div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium">Categorias</span>
+              <Button variant="outline" size="sm" onClick={handleTeste} disabled={!chatId.trim() || teste.isPending}>
+                <Send className="mr-1.5 h-3.5 w-3.5" />
+                {teste.isPending ? 'Enviando…' : 'Enviar teste'}
+              </Button>
+            </div>
+            <label htmlFor="notif-cat-todas" className="mb-2 flex items-center gap-2 border-b pb-2 text-sm">
+              <Checkbox id="notif-cat-todas" checked={todasMarcadas} onCheckedChange={(c) => toggleTodas(c === true)} />
+              <span className="font-medium">Marcar todas</span>
+            </label>
             <div className="flex flex-col gap-2">
               {CATEGORIAS_NOTIFICACAO.map((key) => (
                 <label key={key} htmlFor={`notif-cat-${key}`} className="flex items-start gap-2 text-sm">

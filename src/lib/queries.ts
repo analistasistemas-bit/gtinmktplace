@@ -555,9 +555,10 @@ async function invocarMonitorarModerados(payload: Record<string, unknown>): Prom
   return json;
 }
 
-/** Dispara uma mensagem de teste pro Telegram do usuário. */
-export function enviarTesteTelegram(): Promise<{ ok: boolean; erro?: string }> {
-  return invocarMonitorarModerados({ teste: true });
+/** Dispara uma mensagem de teste pro Telegram. chatId opcional testa um destinatário
+ * específico; sem ele, usa o chat_id salvo em Configurações. */
+export function enviarTesteTelegram(chatId?: string): Promise<{ ok: boolean; erro?: string }> {
+  return invocarMonitorarModerados({ teste: true, chatId });
 }
 
 /** Roda o monitor de moderados na hora, escopado ao usuário logado. */

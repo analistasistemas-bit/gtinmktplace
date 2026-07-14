@@ -112,16 +112,21 @@ desligado, **ninguém** recebe.
 2. **Ela libera o bot da empresa** (passo que todos esquecem): abrir o **bot da empresa** e mandar
    qualquer mensagem uma vez (ex.: `oi`). Sem isso o Telegram bloqueia o bot de escrever pra ela.
 3. **O admin cadastra o destinatário:** tela **Usuários** → na linha da pessoa, botão
-   **Notificações** → cola o **Chat ID** → marca as **categorias** → **Salvar**. As categorias
-   assinadas aparecem como etiquetas na linha.
+   **Notificações** → cola o **Chat ID** → marca as **categorias** (ou usa **Marcar todas**) →
+   **Salvar**. As categorias assinadas aparecem como etiquetas na linha.
+4. **Confirmar que chegou:** ainda no dialog, o botão **Enviar teste** (ao lado de "Categorias")
+   manda uma mensagem de teste **direto pro Chat ID que está no campo**, sem precisar mexer em
+   Configurações. Fica desabilitado enquanto o campo estiver vazio.
 
 **Regras:**
 
 - **Chat ID vazio = não recebe**, mesmo com categorias marcadas.
 - Cada pessoa recebe **só** as categorias marcadas para ela.
 - Para tirar alguém: abra **Notificações** e desmarque tudo (ou apague o Chat ID).
-- O campo **"Chat ID para teste de conexão"** em Configurações é só do botão **Enviar teste** —
-  não é o destino das notificações reais.
+- O campo **"Chat ID para teste de conexão"** em Configurações é do botão **Enviar teste** de lá
+  (mesma edge function, mas usa o Chat ID salvo em Configurações) — não é o destino das
+  notificações reais; para testar o Chat ID de uma pessoa específica, use o botão dentro do
+  dialog de Notificações dela (item 4 acima).
 - Categorias: **Vendas** (venda paga), **Perguntas** (pergunta de comprador), **Pós-venda**
   (devolução/reclamação), **Financeiro** (liberação de saldo MP), **Moderação** (anúncio moderado
   + catálogo sem match).

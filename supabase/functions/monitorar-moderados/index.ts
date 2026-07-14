@@ -104,18 +104,21 @@ Deno.serve(async (req) => {
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   }
 
-  let payload: { teste?: boolean } = {};
+  let payload: { teste?: boolean; chatId?: string } = {};
   try { payload = body ? JSON.parse(body) : {}; } catch { /* body vazio/QStash */ }
 
   // Ação "Enviar teste" (só usuário logado): manda uma mensagem fixa pro Telegram da org.
+  // chatId opcional testa um destinatário específico (ex.: Usuários) sem depender do
+  // chat_id salvo em Configurações — o bot token continua vindo sempre da config da org.
   if (payload.teste && scopedOrgId) {
     const cfg = await lerConfigTelegram(admin, scopedOrgId);
-    if (!cfg.token || !cfg.chatId) {
+    const chatId = payload.chatId?.trim() || cfg.chatId;
+    if (!cfg.token || !chatId) {
       return new Response(JSON.stringify({ ok: false, erro: 'Configure o bot token e o chat ID antes de testar.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const enviou = await enviarTelegram(cfg.token, cfg.chatId, '✅ Teste do PubliAI: alertas de moderação configurados com sucesso.');
+    const enviou = await enviarTelegram(cfg.token, chatId, '✅ Teste do PubliAI: alertas de moderação configurados com sucesso.');
     return new Response(JSON.stringify({ ok: enviou, erro: enviou ? undefined : 'Falha ao enviar; confira token/chat ID.' }), {
       status: enviou ? 200 : 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
