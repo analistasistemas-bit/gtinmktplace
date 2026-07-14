@@ -15,13 +15,12 @@
 - [x] **Backfill:** re-derivada `familias.origem` das planilhas (storage). Só **lotes 61 (10),
   63 (9) e 64 (7) = 26 famílias** tinham PAI IMPORTADO gravado como nacional → corrigidas. Demais
   lotes eram legitimamente nacional (planilha sem coluna ORIGEM ou PAI todo nacional).
-- [ ] **Re-preço (pendente decisão):** origem corrigida não recalcula preço sozinha (ADR-0016).
-  **24 das 26 famílias são publicadas** (lote 61: 10, 63: 9, 64: 5) — reprocessar (process-familia
-  exige status 'pendente') as tiraria de 'publicado', recalcularia o preço local com 16% mas o
-  anúncio no ML seguiria a 8% → dessincroniza local×ML e regenera copy/categoria por IA. Repreço de
-  publicada = decisão de negócio + update do preço no ML (não é reprocesso). Só as 2 não publicadas
-  do lote 64 seriam reprocessáveis com segurança. Diego optou por reprocessar só as 2 não
-  publicadas do lote 64.
+- [x] **Re-preço:** origem corrigida não recalcula preço sozinha (ADR-0016). Reprocessadas só as
+  **2 não publicadas** do lote 64 (aplicaram 16% + o frete iterado do ADR-0076). As **24
+  publicadas** (lote 61: 10, 63: 9, 64: 5) o Diego **decidiu não reprecificar** — seguem ao vivo no
+  ML na base 8%. A origem delas já está `importado`, então o 16% entra sozinho se um dia forem
+  reprocessadas/republicadas. Reprecificar publicada = decisão de negócio + update de preço no ML
+  (não é reprocesso), fora de escopo por ora.
 
 ## Gross-up itera o frete por variação até estabilizar (ADR-0076) — 2026-07-14
 
