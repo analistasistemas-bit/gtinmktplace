@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## ADR-0078 Fase 1 — controle de preço no UPDATE (badge + filtro "preço alterado", somente estoque) — 2026-07-15
+
+- [x] Badge + filtro "preço alterado" na Revisão, coluna `variacoes.preco_publicado_ml`, escolha
+  global "Atualizar tudo × Somente estoque" + override por produto — implementada na branch
+  `worktree-preco-por-variacao-split`.
+- [ ] Validação/deploy do Diego — pendente.
+- [ ] Fase 2 (preço por variação + split por faixa de preço) — planejada, não iniciada.
+
 ## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — EM PRODUÇÃO (2026-07-15)
 
 - [x] **Registry** `src/lib/canais.ts`: 5 marketplaces (Mercado Livre, Shopee, Magalu, Amazon,

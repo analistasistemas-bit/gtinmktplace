@@ -156,7 +156,9 @@ Grupos:
 - **Identidade:** `familia_id` (FK→familias, cascade), `user_id`, `org_id` (FK organizations,
   ADR-0027), `codigo`, `nome`, `gtin`. Único: `(familia_id, codigo)`.
 - **Estoque/preço:** `estoque`, `estoque_anterior`, `preco`, `preco_publicacao`,
-  `preco_editado_pelo_operador`, `custo`.
+  `preco_editado_pelo_operador`, `custo`, **`preco_publicado_ml`** (numeric, nullable, ADR-0078):
+  preço de venda efetivamente confirmado no ML para o SKU no último publish/update bem-sucedido;
+  base do badge "preço alterado" na Revisão; `NULL` = nunca publicado.
 - **Dimensões:** `peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`.
 - **Cor (ADR-0004/0029):** `cor`, `cor_hex`, `cor_origem`, `cor_editada_pelo_operador`.
 - **Foto:** `imagem_path`, `ml_picture_id`.

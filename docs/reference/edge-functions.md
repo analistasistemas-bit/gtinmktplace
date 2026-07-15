@@ -153,7 +153,11 @@
   `canais[]` (default `['mercado_livre']`); fan-out: ML segue no worker `publish-familia-ml`;
   cada canal ≠ ML enfileira para o worker genérico `publicar-anuncio` via fila serial
   `publish-{canal}-{orgId}`. Escopo da operação (ADR-0056): publica as famílias selecionadas
-  sem filtrar por chamador.
+  sem filtrar por chamador. **Controle de preço no UPDATE (ADR-0078, Fase 1):** body aceita os
+  campos opcionais `somente_estoque_global` (boolean, default false) e
+  `somente_estoque_overrides` (`string[]` de `familia_id`); a escolha é resolvida por-família por
+  `resolverSomenteEstoque(id, global, overrides)` (override inverte o global) e viaja no payload
+  do job (idempotência do retry QStash).
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
@@ -165,11 +169,21 @@
   propagando: retenta via QStash reusando o `picture_id`; limpa o cache só ao esgotar (ADR-0033).
   Lista de cores da descrição exclui cor indefinida (`'Outra'` do Vision, `ehCorIndefinida()`) antes
   de sincronizar — mesmo guard do CREATE (ADR-0044, adendo 2026-07-10).
+  **Controle de preço no UPDATE (ADR-0078, Fase 1):** em "somente estoque", NENHUM push de preço —
+  nem `price`/`original_price` (nem pelo ramo de desconto), nem `precoFamilia`, nem reaplicação de
+  atacado (PxQ). Cor nova (que exige `price` no PUT) adota o **preço vivo do anúncio** (do GET que
+  o conector já faz); sem preço vivo válido → falha LOUD (`status 400`, definitiva, sem retry).
+  `variacoes.preco_publicado_ml` é gravado por SKU no sucesso do update (base do badge "preço
+  alterado"); em "somente estoque" grava o preço vivo (não o recalculado).
 - **publicar-split-ml** *(worker, split — ADR-0048)* — produto com >100 cores publica em N anúncios
   ("partições"). `publicar-familias` roteia >100 cores incluídas pra cá. Particiona alfabético com
   ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.
   Grava o item da partição cedo (anti-duplicação em retry); partição 0 herda `ml_item_id` existente.
   Catálogo por-partição é follow-up (hoje cobre só a partição 0). Retry de foto via QStash (ADR-0033).
+  **Controle de preço no UPDATE (ADR-0078, Fase 1):** mesmo comportamento do `update-familia-ml` no
+  ramo UPDATE — em "somente estoque" nenhum push de preço/atacado; cor nova adota o preço vivo do
+  anúncio (falha LOUD sem preço vivo válido); `preco_publicado_ml` gravado por SKU no sucesso
+  (preço vivo em "somente estoque", recalculado caso contrário).
 - **publicar-anuncio** *(worker genérico, E6 — ADR-0061)* — publica 1 família em 1 canal ≠ ML.
   Claim atômico por `(org, canal, codigo_pai)`: `pendente|erro → publicando`. Resolve a conexão da
   org, monta anúncio canônico, executa CREATE/UPDATE via conector, persiste em `anuncios_externos`.
