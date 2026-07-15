@@ -34,11 +34,15 @@ Na publicação, variações são agrupadas por `preco_publicacao`; cada grupo v
 
 `exibir_com_desconto`/`desconto_pct` e `atacado` passam a ser **por faixa de preço** (não mais só por família). Cada anúncio recebe seu de→para e seu PxQ, com o `amount` do atacado calculado sobre o **preço do grupo** — corrige a limitação assumida no ADR-0041 ("faixa por-variação fora de escopo; usa preço representativo"). Uniforme = um grupo = comportamento de hoje. Na Revisão, com preços divergentes as variações aparecem **agrupadas por preço**, cada grupo com sua config; os botões **"Ativar desconto no lote" / "Atacado no lote" ficam desabilitados** (config deixa de ser uniforme).
 
+A config **viaja na variação** (colunas em `variacoes`), **não** é chaveada pelo valor do preço — repreçar não pode orfanar config financeira em silêncio. Grupo com preço divergente **sem config explícita** → **LOUD**, nunca fallback mudo (regra do projeto: nada financeiro defaulta em silêncio, ADR-0055). Como o split nunca aplicou atacado (só `publish/update-familia-ml` chamam `aplicarAtacado`), a F2 fecha essa lacuna aplicando PxQ **por partição**, e o `atacado_status`/`atacado_erro` migram de família-level (escalar) para `anuncios_externos` (representa falha parcial entre anúncios).
+
 ### 4. Controle de preço no UPDATE (devolve o controle que o adendo do ADR-0016 tirou)
 
 - **Badge "preço alterado"** em cada produto já publicado cujo preço a publicar difere do preço no ar.
 - **Filtro** na Revisão para ver só esses casos.
 - **Escolha ao publicar UPDATEs:** o sistema informa quantos produtos têm alteração de preço e o operador escolhe **global no lote** (Atualizar tudo × Somente estoque) **com override por produto**. **"Somente estoque"** restaura o comportamento **original** do corpo do ADR-0016 (envia só `available_quantity`, preserva o preço no ML) — agora como escolha explícita, não hardcoded. Enquanto "só estoque", o preço não é empurrado → nenhuma variação cruza faixa → **nenhum split reembaralha e nenhum LOUD dispara**.
+  - "Só estoque" suprime o preço **por todos os caminhos**: não envia `precoFamilia` **nem** o `price`/`original_price` do ramo de desconto (que hoje tem precedência — `atualizar.ts:99-106`). E **cor nova** — que obriga `price` no PUT (`atualizar.ts:37`) — entra no **preço vivo do anúncio** (via `GET /items` que o conector já faz), evitando o erro `Found different prices in variations` (regressão do lote #31); sem preço vivo utilizável → **LOUD**, não publica em silêncio.
+  - A escolha (global + overrides) viaja no **payload do job** de publicação, para o retry do QStash ser idempotente.
 
 ### 5. UPDATE seguro: ancoragem manda, migração nunca é silenciosa
 
@@ -60,8 +64,9 @@ A ancoragem sku→partição do ADR-0048 continua absoluta: variação publicada
 
 ## Faseamento (entrega incremental e segura)
 
-1. **Fase 1 — Controle de preço no UPDATE (sem split):** badge + filtro + escolha global/override + "só estoque" restaurado. Entrega valor isolada, zero risco de split.
-2. **Fase 2 — Preço por variação + pinagem:** para de colapsar, prompt "aplicar às demais?", agrupamento por preço na Revisão.
-3. **Fase 3 — Split por faixa de preço + config por grupo:** publicação N-anúncios por preço, atacado/de→para por grupo, LOUD no UPDATE.
+Invariante que ordena as fases: **nunca existe preço divergente publicado sem split**. Até a divergência ser suportada, o app segue forçando uniforme (comportamento de hoje).
+
+1. **Fase 1 — Controle de preço no UPDATE (sem split, sem divergência):** `preco_publicado_ml` + badge + filtro + escolha global/override + "só estoque" completo. Entrega valor isolada, zero risco de split.
+2. **Fase 2 — Preço por variação + agrupamento + split por faixa + config por grupo (juntos):** para de colapsar, prompt "aplicar às demais?", agrupamento na Revisão, publicação N-anúncios por preço, atacado/de→para por grupo (por partição), LOUD no UPDATE. Divergência e split entram **atomicamente** — divergência-sem-split nunca chega a produção. (Pode ser fatiada no plano, respeitando o invariante.)
 
 Detalhe de implementação, modelo de dados e casos de teste no spec.
