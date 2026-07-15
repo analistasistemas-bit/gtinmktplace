@@ -9,6 +9,7 @@ import { MAX_VARIACOES_ML } from '../_shared/split/particionar.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { garantirAnuncioExterno, claimAnuncioExterno } from '../_shared/anuncios/estado.ts';
 import { separarCanais } from '../_shared/canais/selecao.ts';
+import { resolverSomenteEstoque } from './somente-estoque.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -19,12 +20,16 @@ Deno.serve(async (req) => {
   try { ({ userId, orgId } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
-  const { familia_ids, listing_type_id, canais } = await req.json().catch(() => ({}));
+  const { familia_ids, listing_type_id, canais, somente_estoque_global, somente_estoque_overrides } = await req.json().catch(() => ({}));
   if (!Array.isArray(familia_ids) || familia_ids.length === 0) {
     return new Response('familia_ids obrigatório', { status: 400, headers: corsHeaders });
   }
   // Clássico (default) ou Premium; ignora qualquer outro valor.
   const listingType = listing_type_id === 'gold_pro' ? 'gold_pro' : 'gold_special';
+  // ADR-0078 F1: escolha "somente estoque" da operação (global) + overrides por família que
+  // invertem o global. Sem os campos → default false → comportamento 100% atual (preço propaga).
+  const somenteEstoqueGlobal: boolean = somente_estoque_global ?? false;
+  const somenteEstoqueOverrides: string[] = somente_estoque_overrides ?? [];
   // Canais a publicar (E6). Default ['mercado_livre'] → chamadas atuais 100% compatíveis.
   const { incluiML, extras: canaisExtras } = separarCanais(canais);
 
@@ -89,9 +94,11 @@ Deno.serve(async (req) => {
       enfileiradas++;
     }
     for (const f of updates ?? []) {
+      // ADR-0078 F1: propaga a escolha "somente estoque" resolvida por família (global±override).
+      const somenteEstoque = resolverSomenteEstoque(f.id, somenteEstoqueGlobal, somenteEstoqueOverrides);
       const messageId = ehSplit(f.id)
-        ? await enfileirarSplit({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType }, f.user_id as string)
-        : await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id }, f.user_id as string);
+        ? await enfileirarSplit({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType, somenteEstoque }, f.user_id as string)
+        : await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id, somenteEstoque }, f.user_id as string);
       await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
       loteId = f.lote_id;
       enfileiradas++;

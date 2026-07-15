@@ -10,7 +10,7 @@ import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 
-interface Job { familia_id: string; lote_id: string; }
+interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
 
 // Idêntico ao publish-familia-ml: reavalia o status do lote quando o worker some da fila.
 async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId: string): Promise<void> {
@@ -165,6 +165,7 @@ Deno.serve(async (req) => {
       dimensoes: dimensoesUpd,
       desconto: desconto ?? null,
       precoFamilia,
+      somenteEstoque: job.somenteEstoque,
     });
     if (!res.ok) {
       const e = res.erro!;
@@ -214,22 +215,27 @@ Deno.serve(async (req) => {
     // Atacado (PxQ): sincroniza com o preço atual. Com faixas → reaplica; sem faixas mas já
     // aplicado antes → limpa (envia só a base). Best-effort, não derruba o update.
     // Base do PxQ = precoFamilia (cores incluídas compartilham o mesmo preço, ADR-0041).
-    try {
-      const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
-      if (precoFamilia != null && (faixasAtacado.length > 0 || familia.atacado_status === 'aplicado')) {
-        try {
-          await conn.aplicarAtacado(ctx, familia.ml_item_id, precoFamilia, faixasAtacado);
-          await admin.from('familias')
-            .update({ atacado_status: faixasAtacado.length > 0 ? 'aplicado' : null, atacado_erro: null })
-            .eq('id', job.familia_id);
-        } catch (e) {
-          const m = e instanceof Error ? e.message : String(e);
-          console.error(`atacado (update) falhou para ${familia.ml_item_id}:`, m);
-          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+    // ADR-0078 F1: em "somente estoque" NÃO reaplica — aplicarAtacado recalcula amount a partir
+    // de precoFamilia, empurrando B2B a um preço que o operador escolheu NÃO publicar. O PxQ vivo
+    // no ML é preservado (coerente com não mexer em preço).
+    if (!job.somenteEstoque) {
+      try {
+        const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
+        if (precoFamilia != null && (faixasAtacado.length > 0 || familia.atacado_status === 'aplicado')) {
+          try {
+            await conn.aplicarAtacado(ctx, familia.ml_item_id, precoFamilia, faixasAtacado);
+            await admin.from('familias')
+              .update({ atacado_status: faixasAtacado.length > 0 ? 'aplicado' : null, atacado_erro: null })
+              .eq('id', job.familia_id);
+          } catch (e) {
+            const m = e instanceof Error ? e.message : String(e);
+            console.error(`atacado (update) falhou para ${familia.ml_item_id}:`, m);
+            await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+          }
         }
+      } catch (e) {
+        console.error('atacado (bloco update) falhou inesperadamente:', e instanceof Error ? e.message : String(e));
       }
-    } catch (e) {
-      console.error('atacado (bloco update) falhou inesperadamente:', e instanceof Error ? e.message : String(e));
     }
 
     // Catálogo (ADR-0021): reconcilia o vínculo das cores de forma DEFERIDA (mesmo motivo do

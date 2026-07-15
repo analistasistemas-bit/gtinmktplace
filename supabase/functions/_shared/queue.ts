@@ -22,6 +22,9 @@ export interface ProcessFamiliaJob {
   familia_id: string;
   lote_id: string;
   listing_type_id?: string;
+  // ADR-0078 F1: quando true, o worker de update/split repõe só estoque (não empurra preço).
+  // enfileirarAtualizacao/enfileirarSplit serializam o job inteiro → propaga sozinho.
+  somenteEstoque?: boolean;
 }
 
 export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string> {

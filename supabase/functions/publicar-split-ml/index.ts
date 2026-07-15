@@ -23,7 +23,7 @@ import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
-interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
+interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona.
@@ -278,6 +278,9 @@ Deno.serve(async (req) => {
           dimensoes: dimensoesDe(repUpd),
           desconto,
           precoFamilia,
+          // ADR-0078 F1: mesmo conector do update normal — o flag suprime desconto/precoFamilia.
+          // Sem isso, família >100 cores publicaria preço mesmo com "somente estoque" marcado.
+          somenteEstoque: job.somenteEstoque,
         });
         if (!res.ok) {
           const e = res.erro!;
