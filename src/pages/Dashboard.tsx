@@ -15,11 +15,14 @@ import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
 import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
-import { agruparPorPeriodo } from '@/lib/resumo-vendas';
+import { agruparPorPeriodo, ehFaturavel } from '@/lib/resumo-vendas';
+import { liquidoPorCanal } from '@/lib/resumo-por-canal';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { useVendas } from '@/hooks/useVendas';
 import { CanalTabs } from '@/components/canal-tabs';
+import { CanalBadge } from '@/components/canal-badge';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
+import type { CanalAtivo } from '@/lib/canal-ativo';
 import { useCustos } from '@/hooks/useCustos';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
@@ -199,6 +202,35 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
       />
 
       <CanalTabs canal={canalAtivo} onCanal={setCanal} habilitados={habilitados} className="mb-4" />
+
+      {canalAtivo === 'todos' && (() => {
+        // vendasRaw.data (não r.vendas): só o Venda[] cru tem o campo `canal` — o VendaResumo do
+        // resumo financeiro não carrega essa coluna. Filtra faturável para casar com a semântica
+        // de líquido usada no resto do Dashboard (calcularResumo); sem rateio de frete por pack
+        // (ADR-0042) — aproximação aceitável para um chip de resumo, não fonte financeira oficial.
+        const porCanal = liquidoPorCanal(
+          (vendasRaw.data ?? [])
+            .filter((v) => ehFaturavel(v.status))
+            .map((v) => ({ canal: v.canal, liquido: v.liquido ?? 0 })),
+        );
+        if (porCanal.length <= 1) return null; // com 1 canal, nada muda (D6/constraint global)
+        return (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {porCanal.map((c) => (
+              <button
+                key={c.canal}
+                type="button"
+                onClick={() => setCanal(c.canal as CanalAtivo)}
+                className="flex items-center gap-2 rounded-lg border bg-card px-3 py-1.5 text-sm shadow-sm transition-colors hover:bg-accent"
+              >
+                <CanalBadge canal={c.canal} />
+                <span className="font-semibold tabular-nums">{fmtBRL(c.liquido)}</span>
+                <span className="text-xs text-muted-foreground">{c.pedidos} venda(s)</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {error && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
