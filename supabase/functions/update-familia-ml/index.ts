@@ -9,7 +9,7 @@ import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
-import { precoAConfirmar } from './preco-confirmado.ts';
+import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 
 interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
 

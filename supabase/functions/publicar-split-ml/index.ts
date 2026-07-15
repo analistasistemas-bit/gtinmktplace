@@ -22,7 +22,7 @@ import { particionar } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
-import { precoAConfirmar } from '../update-familia-ml/preco-confirmado.ts';
+import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
