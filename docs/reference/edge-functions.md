@@ -284,7 +284,13 @@
   perfil com `is_super_admin=true` da mesma org (plan 037). Ações de **super-admin** (D-E7.8,
   `profiles.is_super_admin`): **`list_orgs`** (lista organizações + contagem de membros) e
   **`create_org`** (cria a organização e convida seu primeiro admin; rollback da org se o convite
-  falhar). Requer o secret `APP_URL`.
+  falhar). **`set_canais_org`** (spec 2026-07-14 "menus multicanal"): grava
+  `organizations.canais_habilitados` da org alvo, filtrando contra a mesma lista de ids do registry
+  `src/lib/canais.ts` (duplicada aqui de propósito, comentário de sincronia no código) e travando
+  `mercado_livre` sempre habilitado; `list_orgs` passou a devolver `canais_habilitados` de cada org.
+  Requer o secret `APP_URL`. **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de
+  Configurações) — mudança em `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa
+  (conferir versão pós-deploy).
 
 ### Utilitário
 - **hello** — smoke test de deploy.

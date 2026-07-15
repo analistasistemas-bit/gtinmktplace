@@ -31,6 +31,12 @@ O tenant. Hoje 1 linha (**Avil** — `slug='avil'`), dona de todos os dados atua
 `atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
 só via `service_role` (edge `usuarios`, action `create_org`, restrita a super-admin).
 
+**`canais_habilitados` text[]** (default `'{mercado_livre}'`, migration `20260715014055_menus_multicanal.sql`,
+spec 2026-07-14 "menus multicanal"): quais marketplaces a org enxerga como conectáveis — D5 do
+registry híbrido (registry do código decide o que **existe**/está implementado, esta coluna decide
+o que a **org** pode operar). Editada só por super-admin via edge `usuarios` (action `set_canais_org`,
+trava `mercado_livre` sempre habilitado). Lida pelo front via RPC `canais_habilitados_da_org()`.
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration
@@ -215,6 +221,12 @@ saque no Financeiro > Detalhe do líquido, escrita só via RPCs `security define
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
 Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)`.
 
+**`canal` text** (default `'mercado_livre'`, migration `20260715014055_menus_multicanal.sql`):
+dimensão canal preparatória — coluna simples (não o enum `canal_externo`), só para permitir o
+filtro por canal em `buscarVendas`/`useVendas`/`useResumoVendas` no dia em que houver um 2º canal
+de vendas real. Hoje **não entra no `select`** (a migration ainda não foi a produção); as camadas
+acima mapeiam `canal: 'mercado_livre'` por fallback fixo — zero número muda.
+
 ### `ml_vendas_itens`
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*
 `venda_id` (FK→ml_vendas, cascade), `ml_item_id`, `variation_id`, `titulo`, `codigo`, `cor`,
@@ -310,6 +322,7 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `get_connection_tokens(connection_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
 | `get_mp_token(org)` | Lê o secret do Mercado Pago da org no Vault; `null` se a org não configurou (caller cai no fallback de instância) |
+| `canais_habilitados_da_org()` | `security definer`, `search_path=''`: retorna `organizations.canais_habilitados` da própria org (evita abrir SELECT direto em `organizations`) |
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
 | `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack como lidas (limpa o badge da conversa) |
 | `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida` — badge do menu, sem baixar a tabela inteira (plan 036) |

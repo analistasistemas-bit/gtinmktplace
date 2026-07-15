@@ -181,6 +181,18 @@ Hoje: Mercado Livre + suporte para canais futuros. A arquitetura separa **o que 
   (`_shared/canais/fake.ts`), prova ponta a ponta sem 2º canal real. **Em produção:** mapa vazio,
   fake some do bundle (não é importado fora de `__tests__`).
 
+### UI multicanal no frontend (spec 2026-07-14 "menus multicanal")
+
+Registry **separado** do conector de backend acima — não confundir os dois "registry": este é
+`src/lib/canais.ts` (frontend, sem I/O), fonte única dos 5 marketplaces conhecidos
+(`status: 'ativo' | 'em_breve'`, cor de marca, `capabilities` como `tituloMax`). Ele desenha
+tabs/badges/seletores em toda a UI (Dashboard, Publicados, Faturamento, Financeiro, Revisão) e
+decide, junto com `organizations.canais_habilitados` (D5, por org), quais canais a org pode operar
+hoje (`canaisOperaveis`) vs. vitrine "em breve" (`canaisEmBreve`). Um canal ativo global
+(`?canal=` + sessão, `useCanalAtivo`/`parseCanalAtivo`) filtra as telas; hoje só Mercado Livre está
+`ativo` — os demais aparecem como vitrine sem funcionalidade real. Marketplace novo = 1 entrada
+nova neste registry (front) **e** no `ShopeeConnector`/enum (back, abaixo) — são independentes.
+
 ### Próximo passo (E5)
 
 Shopee = preencher `ShopeeConnector` implementando a mesma interface + registrar no registry +

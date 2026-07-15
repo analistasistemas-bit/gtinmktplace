@@ -2,6 +2,40 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — aguardando db push + deploy da edge usuarios + validação browser do Diego
+
+- [x] **Registry** `src/lib/canais.ts`: 5 marketplaces (Mercado Livre, Shopee, Magalu, Amazon,
+  Casas Bahia); só ML `status: 'ativo'` — os demais são vitrine "em breve". `canaisOperaveis`/
+  `canaisEmBreve` cruzam o registry com `organizations.canais_habilitados` (D5, híbrido).
+- [x] **Canal ativo global** (`?canal=` + sessão, `parseCanalAtivo`/`useCanalAtivo`) + componentes
+  `CanalBadge`/`CanalTabs` reutilizados em Dashboard, Publicados, Financeiro e Faturamento.
+- [x] **Migration `20260715014055_menus_multicanal.sql`:** `organizations.canais_habilitados
+  text[]` (default `'{mercado_livre}'`), `ml_vendas.canal text` (default `'mercado_livre'`, ainda
+  fora do `select` de `buscarVendas`), RPC `canais_habilitados_da_org()` (`security definer`,
+  `search_path=''`), backfill de `allowed_menus` com a chave `'canais'` para quem já tinha
+  `'configuracoes'`.
+- [x] **Tela `/canais`:** OAuth do Mercado Livre migrado de Configurações (que agora só redireciona
+  os params `ml_conectado`/`ml_erro`); menu `canais` novo.
+- [x] **Revisão:** seletor de canal dirigido pelo registry + `avisosCapabilities` (ex.: `tituloMax`
+  60 do ML) + `canaisEfetivos`. `canais-ui.ts` (hard-code antigo) deletado.
+- [x] **Edge `usuarios`:** action `set_canais_org` (super-admin, trava `mercado_livre` sempre
+  habilitado), `canais_habilitados` no `list_orgs`, `'canais'` em `MENU_KEYS`.
+- [x] **`/admin`:** editor de canais habilitados por organização.
+- [x] **Dashboard:** chips de líquido por canal (mesmo rateio de frete do headline, ADR-0042) —
+  visíveis só com >1 canal com dados.
+- [x] Gate completo (`pnpm lint && pnpm test && pnpm build`) limpo — 186 arquivos/1477 testes.
+  `deno check supabase/functions/usuarios/index.ts` **não roda** neste ambiente (bloqueado em
+  `npm:@supabase/realtime-js`, pré-existente e alheio a este branch — sem sinal sobre o TS da
+  função, não é validação, é ausência de validação).
+- [ ] **Pendências (Diego), nesta ordem:** `supabase db push` da migration; `supabase functions
+  deploy usuarios` (CLI completa); validação browser local (tabs em Dashboard/Publicados/
+  Faturamento/Financeiro com números idênticos; tela `/canais`; menu Canais visível; convite de
+  usuário com menu Canais; `/admin` editor de canais); merge/push da branch só após OK do Diego.
+- [ ] **Follow-ups registrados (não bloqueiam esta entrega):** (a) incluir `canal` no `select` de
+  `buscarVendas` quando a migration estiver em produção; (b) título do dialog de publicação ainda
+  diz "Publicar no Mercado Livre" — atualizar quando houver 2º canal; (c) validação local
+  (`supabase db reset` + `npm run db:check`) pendente — Docker parado neste ambiente.
+
 ## URGENTE: ingest-lote dropava ORIGEM → imposto sempre 8% (fix + deploy + backfill) — 2026-07-14
 
 - [x] Diego reportou: planilha Velcro.xlsx com ORIGEM=IMPORTADO, mas família (lote 64, hoje)
