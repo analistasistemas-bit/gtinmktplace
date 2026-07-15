@@ -756,6 +756,7 @@ export type Database = {
       ml_vendas: {
         Row: {
           atualizado_em: string
+          canal: string
           cidade: string | null
           comprador_id: number | null
           comprador_nick: string | null
@@ -793,6 +794,7 @@ export type Database = {
         }
         Insert: {
           atualizado_em?: string
+          canal?: string
           cidade?: string | null
           comprador_id?: number | null
           comprador_nick?: string | null
@@ -830,6 +832,7 @@ export type Database = {
         }
         Update: {
           atualizado_em?: string
+          canal?: string
           cidade?: string | null
           comprador_id?: number | null
           comprador_nick?: string | null
@@ -992,6 +995,7 @@ export type Database = {
       organizations: {
         Row: {
           atualizado_em: string
+          canais_habilitados: string[]
           criado_em: string
           id: string
           lote_seq: number
@@ -1001,6 +1005,7 @@ export type Database = {
         }
         Insert: {
           atualizado_em?: string
+          canais_habilitados?: string[]
           criado_em?: string
           id?: string
           lote_seq?: number
@@ -1010,6 +1015,7 @@ export type Database = {
         }
         Update: {
           atualizado_em?: string
+          canais_habilitados?: string[]
           criado_em?: string
           id?: string
           lote_seq?: number
