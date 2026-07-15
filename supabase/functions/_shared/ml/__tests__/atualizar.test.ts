@@ -220,4 +220,21 @@ describe('montarVariacaoNova', () => {
     expect(out.price).toBe(12.29);
     expect(out.original_price).toBe(14.46);
   });
+
+  it('cor nova em somenteEstoque adota o preco vivo do anuncio', () => {
+    const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
+    const out = montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, 25 /* precoVivo */);
+    expect(out.price).toBe(25); // preco vivo, nao o 30 recalculado
+  });
+
+  it('cor nova em somenteEstoque sem preco vivo lanca LOUD', () => {
+    const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
+    expect(() => montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, null)).toThrow(/preço vivo/);
+  });
+
+  it('cor nova em somenteEstoque sem preco vivo lanca LOUD com status 400', () => {
+    const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
+    try { montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, null); throw new Error('nao lancou'); }
+    catch (e) { expect((e as { status?: number }).status).toBe(400); expect(String(e)).toMatch(/preço vivo/); }
+  });
 });

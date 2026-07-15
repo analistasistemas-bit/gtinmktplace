@@ -30,11 +30,23 @@ export function montarVariacaoNova(
   capa3PictureId: string | null,
   categoriaMlId: string | null,
   desconto?: { pct: number } | null,
+  precoVivoAnuncio?: number | null, // quando definido (modo somente estoque), a cor nova entra neste preco
 ): VariacaoNovaPut {
+  const emSomenteEstoque = precoVivoAnuncio !== undefined;
+  const price = emSomenteEstoque
+    ? (precoVivoAnuncio != null && precoVivoAnuncio > 0
+        ? precoVivoAnuncio
+        : (() => {
+            // status 400 = erro DEFINITIVO: sem isso o QStash trata como retentável e retenta ~5 min (retry.ts:27)
+            const e = new Error('Cor nova em "somente estoque" sem preço vivo do anúncio — publique com preço ou repreça (LOUD)') as Error & { status?: number };
+            e.status = 400;
+            throw e;
+          })())
+    : (v.preco_publicacao ?? 0);
   const variation: VariacaoNovaPut = {
     attribute_combinations: [{ id: 'COLOR', value_name: v.cor ?? '' }],
     available_quantity: v.estoque,
-    price: v.preco_publicacao ?? 0,
+    price,
     picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),
     seller_custom_field: v.codigo,
   };
