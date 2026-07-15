@@ -9,6 +9,7 @@ import { useImageUrl } from '@/hooks/useImageUrl';
 import { useDescontoPct } from '@/hooks/useConfiguracoes';
 import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia, useReprocessar, useUpdateFamiliaAtacado } from '@/hooks/useFamiliaMutations';
 import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
+import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { cn } from '@/lib/utils';
@@ -141,6 +142,7 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
   const coresSemFoto = familia.operacao === 'CREATE' ? coresSemFotoExcluidas(familia) : [];
   const semFotoFora = coresSemFoto.length;
   const removidas = familia.mudancaEstrutural?.removidas.length ?? 0;
+  const alteracaoPreco = temAlteracaoPreco(familia);
   // Acento lateral por status, para escanear a lista sem ler cada pill.
   // Prioridade: erro > precisa-ação > publicado > editado pelo operador > nenhum.
   // CREATE/UPDATE não pintam o acento (já têm pill própria) p/ evitar "carnaval".
@@ -254,6 +256,11 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               {coresComEstoqueAlterado > 0
                 ? `Estoque atualizado: ${coresComEstoqueAlterado} cor(es)`
                 : 'sem mudança de estoque'}
+            </StatusPill>
+          )}
+          {alteracaoPreco && (
+            <StatusPill tone="warning" title="Preço mudou desde a última publicação no Mercado Livre">
+              preço alterado
             </StatusPill>
           )}
           {exigeCor && familia.variacoesSemCor > 0 && (
