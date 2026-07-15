@@ -43,7 +43,7 @@ Aditivo; caminho uniforme não usa nada novo.
 - **Status de atacado por partição (F2):** `anuncios_externos.atacado_status`/`atacado_erro` — `familias.atacado_status` escalar não representa falha parcial (grupo A aplicado, grupo B erro) com N anúncios. Migra de família-level para por-partição na F2.
 - **Escolha do UPDATE:** transiente — carregada no **payload do job de publicação** (a escolha global + o mapa de overrides por produto). O payload **inclui** essas decisões para o retry do QStash ser idempotente (a decisão não pode se perder no reprocessamento).
 
-> **Migration:** `add column if not exists` para `variacoes.exibir_com_desconto`/`desconto_pct`/`atacado` e `variacoes.preco_publicado_ml`; `anuncios_externos.atacado_status`/`atacado_erro` (F3). Backfill não-destrutivo: config das variações herda o família-level; `preco_publicado_ml` começa null e é preenchido no 1º publish/update de cada variação. RLS por `org_id` mantida (colunas em tabelas já sob RLS).
+> **Migration:** `add column if not exists` para `variacoes.exibir_com_desconto`/`desconto_pct`/`atacado` e `variacoes.preco_publicado_ml`; `anuncios_externos.atacado_status`/`atacado_erro` (F2). Backfill não-destrutivo: config das variações herda o família-level; `preco_publicado_ml` começa null e é preenchido no 1º publish/update de cada variação. RLS por `org_id` mantida (colunas em tabelas já sob RLS).
 
 ## Fases (revisadas — cada uma segura isolada)
 
