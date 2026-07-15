@@ -174,13 +174,7 @@ test('buscarItemML extrai price por variacao', async () => {
 
 - [ ] **Step 3: Implementar**
 
-Em `atualizar-item.ts:30` incluir `price` nos attributes da URL:
-
-```ts
-  const url = `${API}/items/${itemId}?attributes=id,variations,pictures,price`;
-```
-
-No mapping (34-42) adicionar `price`:
+O GET já pede `attributes=id,variations,pictures` e o ML devolve as variações **inteiras** (incluindo `price`) no campo `variations` — **não precisa mudar a URL**. Basta adicionar `price` ao mapping das variações (34-42):
 
 ```ts
     price: v.price ?? null,
@@ -254,11 +248,26 @@ Onde hoje seta `price: v.preco_publicacao ?? 0` (linha 37), trocar por:
   const price = emSomenteEstoque
     ? (precoVivoAnuncio != null && precoVivoAnuncio > 0
         ? precoVivoAnuncio
-        : (() => { throw new Error('Cor nova em "somente estoque" sem preço vivo do anúncio — publique com preço ou repreça (LOUD)'); })())
+        : (() => {
+            // status 400 = erro DEFINITIVO: sem isso o QStash trata como retentável e retenta ~5 min (retry.ts:27)
+            const e = new Error('Cor nova em "somente estoque" sem preço vivo do anúncio — publique com preço ou repreça (LOUD)') as Error & { status?: number };
+            e.status = 400;
+            throw e;
+          })())
     : (v.preco_publicacao ?? 0);
 ```
 
 E usar `price` no objeto retornado. (Sem `precoVivoAnuncio` → comportamento atual intacto.)
+
+O teste do caso LOUD deve assertar o `status`:
+
+```ts
+test('cor nova em somenteEstoque sem preco vivo lanca LOUD com status 400', () => {
+  const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
+  try { montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, null); throw new Error('nao lancou'); }
+  catch (e) { expect((e as { status?: number }).status).toBe(400); expect(String(e)).toMatch(/preço vivo/); }
+});
+```
 
 - [ ] **Step 4: Rodar e ver passar** — Run: `pnpm test -- atualizar.test.ts` — Expected: PASS (inclui os testes existentes de `montarVariacaoNova`).
 
@@ -279,7 +288,9 @@ git commit -m "feat(update): cor nova adota preco vivo em somenteEstoque, senao 
 
 **Interfaces:**
 - Consumes: `MLVariacaoAtual.price` (Task 3); `montarVariacoesUpdate(..., somenteEstoque)` (Task 2); `montarVariacaoNova(..., precoVivoAnuncio)` (Task 4).
-- Produces: `AtualizacaoCanonica.somenteEstoque?: boolean`. No conector: quando `true`, passa `somenteEstoque` a `montarVariacoesUpdate`, e para cada cor nova passa como `precoVivoAnuncio` o preço vivo do anúncio — derivado das variações do GET (preço uniforme na F1: usar o `price` da 1ª variação viva; se nenhuma tiver `price`, `null` → o `montarVariacaoNova` lança LOUD).
+- Produces:
+  - `AtualizacaoCanonica.somenteEstoque?: boolean`. No conector: quando `true`, passa `somenteEstoque` a `montarVariacoesUpdate`, e para cada cor nova passa como `precoVivoAnuncio` o preço vivo do anúncio — derivado das variações do GET (preço uniforme na F1: `price` da 1ª variação viva; se nenhuma tiver `price`, `null` → `montarVariacaoNova` lança LOUD status 400).
+  - `ResultadoAtualizacao.precoVivo: number | null` (novo campo em `contrato.ts:128-130`) — o preço vivo do anúncio (do GET pré-PUT), para o worker gravar `preco_publicado_ml` em "só estoque" sem um 2º GET (consumido pela Task 7).
 
 - [ ] **Step 1: Teste que falha**
 
@@ -293,9 +304,9 @@ test('atualizarAnuncio em somenteEstoque nao empurra preco e da preco vivo a cor
     novas: [{ sku: 'N1', cor: 'Rosa', estoque: 4, preco: 30, gtin: null, fotoId: 'P' }],
     somenteEstoque: true,
   } as AtualizacaoCanonica);
-  // asserção sobre o PUT capturado: existentes sem price; nova com price=25
+  // NB: a existente só carrega `id` (VariacaoUpdate, atualizar.ts:64) — casar por id; a nova carrega seller_custom_field.
   expect(putBody.variations.find(v => v.seller_custom_field==='N1').price).toBe(25);
-  expect(putBody.variations.find(v => v.seller_custom_field==='A1').price).toBeUndefined();
+  expect(putBody.variations.find(v => v.id===1 /* A1 */).price).toBeUndefined();
 });
 ```
 
@@ -325,6 +336,8 @@ Em `mercado-livre.ts:87-131`, após o GET (`buscarItemML`, ~91), derivar o preç
 
 (Nomes `atuais`/`existentes`/`picsPorCodigo`/`corDesejadaPorCodigo` conforme o corpo atual da função — ajustar aos identificadores reais lidos no arquivo.)
 
+Adicionar `precoVivo: number | null` ao tipo `ResultadoAtualizacao` (`contrato.ts:128-130`) e incluí-lo no objeto de sucesso retornado pelo conector: `precoVivo` (a variável derivada acima). É o que a Task 7 usa pra gravar `preco_publicado_ml` sem 2º GET.
+
 - [ ] **Step 4: Rodar e ver passar** — Run: `pnpm test -- mercado-livre.test.ts` — Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -339,8 +352,8 @@ git commit -m "feat(canal): atualizarAnuncio propaga somenteEstoque + preco vivo
 ### Task 6: Payload do job — `somenteEstoque` (global + override) em `publicar-familias` → fila → worker
 
 **Files:**
-- Modify: `supabase/functions/_shared/queue.ts:21-25` (interface `ProcessFamiliaJob`) e `:70` (`enfileirarAtualizacao`); `supabase/functions/publicar-familias/index.ts:51-98`; `supabase/functions/update-familia-ml/index.ts:13` (interface `Job`), `:84-93,135-168`
-- Test: `supabase/functions/publicar-familias/__tests__/*.test.ts` (resolução da escolha por-família) ou um teste puro do resolvedor.
+- Modify: `supabase/functions/_shared/queue.ts:21-25` (interface `ProcessFamiliaJob`), `:70` (`enfileirarAtualizacao`) e `enfileirarSplit`; `supabase/functions/publicar-familias/index.ts:51-98`; `supabase/functions/update-familia-ml/index.ts:13` (interface `Job`), `:84-93,135-168,216-230`; `supabase/functions/publicar-split-ml/index.ts` (`Job` + ramo UPDATE ~257-280 + bloco de atacado por partição)
+- Test: `supabase/functions/publicar-familias/__tests__/*.test.ts` (resolvedor por-família); testes do worker (atacado pulado em somenteEstoque; split recebe o flag).
 
 **Interfaces:**
 - Consumes: `AtualizacaoCanonica.somenteEstoque` (Task 5).
@@ -370,7 +383,11 @@ export function resolverSomenteEstoque(familiaId: string, global: boolean, overr
 }
 ```
 
-Em `queue.ts` estender `ProcessFamiliaJob` (21-25) com `somenteEstoque?: boolean` e propagar em `enfileirarAtualizacao` (70). Em `publicar-familias/index.ts`, ler `somente_estoque_global`/`somente_estoque_overrides` do body e, no loop de enqueue de update (91-98), setar `somenteEstoque: resolverSomenteEstoque(f.id, global, overrides)` no payload. Em `update-familia-ml/index.ts`, estender `Job` (13) com `somenteEstoque?: boolean`; ao montar `desconto` (84-93) e `precoFamilia` (135-136), quando `job.somenteEstoque` passar `somenteEstoque: true` no objeto de `conn.atualizarAnuncio` (153-168) e **não** montar desconto (curto-circuito já coberto no conector, mas evita trabalho).
+Em `queue.ts` estender `ProcessFamiliaJob` (21-25) com `somenteEstoque?: boolean` e propagar em `enfileirarAtualizacao` (70) **e** `enfileirarSplit` (o job do split também carrega o flag). Em `publicar-familias/index.ts`, ler do body `somente_estoque_global` (**default `?? false`** → sem os campos, comportamento 100% atual, preserva as 32/32 uniformes) e `somente_estoque_overrides` (`?? []`); nos **dois** loops de enqueue de update — o normal (91-98) **e a rota split (`enfileirarSplit`, ~92-94)** — setar `somenteEstoque: resolverSomenteEstoque(f.id, global, overrides)` no payload. Em `update-familia-ml/index.ts`, estender `Job` (13) com `somenteEstoque?: boolean`; quando `job.somenteEstoque`, passar `somenteEstoque: true` no objeto de `conn.atualizarAnuncio` (153-168) e **não** montar `desconto` (evita trabalho; o curto-circuito real está no conector).
+
+**Crítico 1 — atacado (PxQ) também respeita "só estoque":** o bloco de reaplicação de PxQ (`update-familia-ml/index.ts:216-230`) recalcula `amount = precoFamilia*(1-pct)` — em "só estoque" isso empurraria B2B a partir de um preço que o operador escolheu NÃO publicar. Guardar o bloco inteiro atrás de `if (!job.somenteEstoque) { ... }` (em "só estoque" o PxQ vivo é preservado, coerente com não mexer em preço). Teste: com `somenteEstoque`, `aplicarAtacado` não é chamado.
+
+**Crítico 2 — rota split (`publicar-split-ml`) também respeita "só estoque":** o ramo UPDATE do split (`publicar-split-ml/index.ts:257-280`) monta `desconto`+`precoFamilia` e chama o **mesmo** `conn.atualizarAnuncio`. Estender o `Job`/payload do split worker com `somenteEstoque` e, quando `true`, passar `somenteEstoque: true` a `conn.atualizarAnuncio` (e pular o bloco de atacado por partição do split, mesmo guard). Sem isso, família >100 cores publica preço mesmo com "só estoque" marcado. Teste: job de split com `somenteEstoque` → `atualizarAnuncio` recebe o flag; nenhum push de preço.
 
 - [ ] **Step 4: Rodar e ver passar** — Run: `pnpm test -- somente-estoque.test.ts` — Expected: PASS.
 
@@ -416,15 +433,21 @@ export function precoAConfirmar(p: { somenteEstoque: boolean; precoVivo: number 
 }
 ```
 
-No worker, após o PUT bem-sucedido (perto de 209-212), para cada SKU casado gravar:
+No worker `update-familia-ml`, após o PUT bem-sucedido (perto de 209-212), lendo `precoVivo` de `res.valor!.precoVivo` (exposto pela Task 5 — **sem 2º GET**), para cada SKU casado gravar:
 
 ```ts
-await admin.from('variacoes')
-  .update({ preco_publicado_ml: precoAConfirmar({ somenteEstoque: !!job.somenteEstoque, precoVivo, precoEnviado: precoFamilia }) })
-  .eq('familia_id', job.familia_id).eq('codigo', codigo);
+const precoVivo = res.valor!.precoVivo ?? null;
+const confirmado = precoAConfirmar({ somenteEstoque: !!job.somenteEstoque, precoVivo, precoEnviado: precoFamilia });
+if (confirmado != null) {
+  await admin.from('variacoes')
+    .update({ preco_publicado_ml: confirmado })
+    .eq('familia_id', job.familia_id).eq('codigo', codigo);
+}
 ```
 
-(`precoVivo` obtido do resultado do conector — expor no `ResultadoAtualizacao` o preço vivo por SKU, ou reusar o GET. Ajustar ao retorno real.) Mesmo padrão no CREATE (`publish-familia-ml`), gravando o preço publicado por variação no sucesso.
+No CREATE (`publish-familia-ml/index.ts`), no loop que casa `variacoesExternas` (sku→id) após o POST — perto da linha 148 — gravar `preco_publicado_ml = <preço enviado da variação>` por SKU no sucesso (no CREATE não há "só estoque"; é o próprio `preco_publicacao` publicado).
+
+**Nota (janela conservadora, achado menor):** se o PUT sucede mas `novasSemVinculo` lança depois (`update-familia-ml:190-194`), o preço já foi ao vivo e `preco_publicado_ml` não é gravado — o badge indicará "alteração" de algo já aplicado. Erra pro lado seguro (nunca esconde alteração real); documentar, não tratar na F1.
 
 - [ ] **Step 4: Rodar e ver passar** — Run: `pnpm test -- preco-confirmado.test.ts` — Expected: PASS.
 
@@ -473,9 +496,12 @@ git commit -m "feat(front): mapeia preco_publicado_ml (ADR-0078 F1)"
 import { temAlteracaoPreco } from '../preco-alterado.ts';
 const fam = (vs) => ({ variacoes: vs });
 test('detecta alteracao pelo preco efetivo colapsado', () => {
-  expect(temAlteracaoPreco(fam([{ precoPublicacao: 22, precoPublicadoMl: 20, incluida: true }]))).toBe(true);
-  expect(temAlteracaoPreco(fam([{ precoPublicacao: 20, precoPublicadoMl: 20, incluida: true }]))).toBe(false);
-  expect(temAlteracaoPreco(fam([{ precoPublicacao: 22, precoPublicadoMl: null, incluida: true }]))).toBe(false); // nunca publicado
+  expect(temAlteracaoPreco(fam([{ precoPublicacao: 22, precoPublicadoMl: 20, excluidaDaPublicacao: false }]))).toBe(true);
+  expect(temAlteracaoPreco(fam([{ precoPublicacao: 20, precoPublicadoMl: 20, excluidaDaPublicacao: false }]))).toBe(false);
+  expect(temAlteracaoPreco(fam([{ precoPublicacao: 22, precoPublicadoMl: null, excluidaDaPublicacao: false }]))).toBe(false); // nunca publicado
+});
+test('cor excluida da publicacao nao gera badge', () => {
+  expect(temAlteracaoPreco(fam([{ precoPublicacao: 22, precoPublicadoMl: 20, excluidaDaPublicacao: true }]))).toBe(false);
 });
 ```
 
@@ -485,13 +511,15 @@ test('detecta alteracao pelo preco efetivo colapsado', () => {
 
 ```ts
 const round2 = (n: number) => Math.round(n * 100) / 100;
-export function temAlteracaoPreco(familia: { variacoes: Array<{ precoPublicacao: number | null; precoPublicadoMl: number | null; incluida?: boolean }> }): boolean {
-  const incluidas = familia.variacoes.filter((v) => v.incluida !== false);
+export function temAlteracaoPreco(familia: { variacoes: Array<{ precoPublicacao: number | null; precoPublicadoMl: number | null; excluidaDaPublicacao?: boolean }> }): boolean {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const efetivo = incluidas.find((v) => v.precoPublicacao != null)?.precoPublicacao ?? null; // colapsado (F1)
   if (efetivo == null) return false;
   return incluidas.some((v) => v.precoPublicadoMl != null && round2(efetivo) !== round2(v.precoPublicadoMl));
 }
 ```
+
+(Confirmar o nome real do campo de exclusão em `Variacao` — `src/lib/tipos-dominio.ts:107` — e usar exatamente esse.)
 
 No `familia-row.tsx`, perto do selo de status (285-303), quando `temAlteracaoPreco(familia)` renderizar um `StatusPill` (ex.: âmbar) "preço alterado".
 
@@ -581,7 +609,7 @@ git commit -m "docs: modelo-de-dados + edge-functions + TASKS (ADR-0078 F1)"
 
 ## Self-Review (preenchido)
 
-**Cobertura do spec (F1):** coluna `preco_publicado_ml` (T1, T7) ✓; badge (T9) ✓; filtro (T10) ✓; diálogo global+override (T11, T6) ✓; "só estoque" suprime precoFamilia + desconto (T2) ✓; cor nova adota preço vivo/LOUD (T3,T4,T5) ✓; escolha no payload/idempotência (T6) ✓; sem split/divergência (nenhuma task introduz) ✓. **Fora da F1 (vai pra F2):** preço por variação, agrupamento, split, config por grupo, LOUD de cruzar faixa — corretamente ausentes.
+**Cobertura do spec (F1):** coluna `preco_publicado_ml` (T1, T7) ✓; badge (T9) ✓; filtro (T10) ✓; diálogo global+override (T11, T6) ✓; "só estoque" suprime **todos** os pushes de preço — precoFamilia + desconto (T2), **atacado PxQ** (T6, crítico 1) e **rota split** (T6, crítico 2) ✓; cor nova adota preço vivo/LOUD com status 400 (T3,T4,T5) ✓; escolha no payload/idempotência + default `?? false` que preserva as 32/32 (T6) ✓; sem split/divergência de preço introduzida (nenhuma task cria) ✓. **Fora da F1 (vai pra F2):** preço por variação, agrupamento, split, config por grupo, LOUD de cruzar faixa — corretamente ausentes.
 
 **Placeholders:** nenhum "TODO/depois". Steps de UI (T9-T11) referenciam linhas exatas e trazem o código do núcleo testável; o markup de Dialog/StatusPill segue padrões existentes citados.
 
