@@ -35,6 +35,12 @@ VITE_SUPABASE_ANON_KEY=<anon-key-publica>
 >
 > **Em git worktree:** `.env.local` é gitignored e não vem junto. Copie-o do checkout principal
 > antes de subir o dev, senão a app quebra no boot.
+>
+> **Idem para o link do Supabase CLI (`supabase/.temp/`):** também é gitignored e por-checkout —
+> um worktree novo não herda o link do projeto. `supabase migration list --linked`, `pnpm db:check`
+> e `supabase db push` falham com "Cannot find project ref. Have you run supabase link?" até
+> rodar `supabase link --project-ref <ref>` (usa o `SUPABASE_ACCESS_TOKEN` do `.env.local`) **dentro
+> do worktree**.
 
 ## 3. Subir o dev server
 

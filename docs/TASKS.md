@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — aguardando db push + deploy da edge usuarios + validação browser do Diego
+## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — EM PRODUÇÃO (2026-07-15)
 
 - [x] **Registry** `src/lib/canais.ts`: 5 marketplaces (Mercado Livre, Shopee, Magalu, Amazon,
   Casas Bahia); só ML `status: 'ativo'` — os demais são vitrine "em breve". `canaisOperaveis`/
@@ -27,14 +27,28 @@
   `deno check supabase/functions/usuarios/index.ts` **não roda** neste ambiente (bloqueado em
   `npm:@supabase/realtime-js`, pré-existente e alheio a este branch — sem sinal sobre o TS da
   função, não é validação, é ausência de validação).
-- [ ] **Pendências (Diego), nesta ordem:** `supabase db push` da migration; `supabase functions
-  deploy usuarios` (CLI completa); validação browser local (tabs em Dashboard/Publicados/
-  Faturamento/Financeiro com números idênticos; tela `/canais`; menu Canais visível; convite de
-  usuário com menu Canais; `/admin` editor de canais); merge/push da branch só após OK do Diego.
-- [ ] **Follow-ups registrados (não bloqueiam esta entrega):** (a) incluir `canal` no `select` de
-  `buscarVendas` quando a migration estiver em produção; (b) título do dialog de publicação ainda
-  diz "Publicar no Mercado Livre" — atualizar quando houver 2º canal; (c) validação local
-  (`supabase db reset` + `npm run db:check`) pendente — Docker parado neste ambiente.
+- [x] **Validação do Diego:** browser local contra Supabase remoto (aviso de colunas pendentes) e,
+  depois, contra banco local `db reset` (org + usuário admin sintéticos criados só para o teste,
+  descartáveis). Aprovado.
+- [x] **`supabase db reset` + `npm run db:check` local:** Docker subido sob demanda; reset aplicou
+  as 52 migrations (incluindo a nova) sem erro; schema conferido direto no Postgres local
+  (`organizations.canais_habilitados`, `ml_vendas.canal`, RPC `canais_habilitados_da_org`,
+  backfill idempotente com 0 profiles locais — esperado, banco vazio).
+- [x] **`supabase db push`:** migration aplicada em produção; `db:check` confirmou local=remoto.
+- [x] **Deploy da edge `usuarios`:** **incidente pego no ato** — o 1º deploy usou por engano
+  `--no-verify-jwt` (copiado de outro deploy da mesma sessão), sobrescrevendo o `verify_jwt=true`
+  do `config.toml` (a `usuarios` autentica o chamador via `requireUser`, admin-only). Redeploy
+  imediato sem a flag; confirmado `401` numa chamada sem `Authorization`. Ver
+  `docs/reference/edge-functions.md`.
+- [x] **Merge/push:** branch já continha os commits paralelos que entraram na main nesse meio-tempo
+  (ADR-0055 ORIGEM, ADR-0075/0076 preço, fix mensagens 404 — zero overlap de arquivo); fast-forward
+  puro `git push origin HEAD:main`. Render auto-deploy confirmado `live`
+  (`ean2marketplace-frontend`, commit `6c15257`).
+- [ ] **Follow-ups registrados (não bloqueiam — ficam para o E5/Shopee):** (a) incluir `canal` no
+  `select` de `buscarVendas` quando fizer sentido explorar por canal nas telas; (b) título do
+  dialog de publicação ainda diz "Publicar no Mercado Livre" — atualizar quando houver 2º canal;
+  (c) sub-abas do Faturamento (Devoluções/Perguntas/Mensagens/Geografia) não recebem o parâmetro
+  canal — hoje sem efeito (só ML tem dado), seam do E5.
 
 ## URGENTE: ingest-lote dropava ORIGEM → imposto sempre 8% (fix + deploy + backfill) — 2026-07-14
 

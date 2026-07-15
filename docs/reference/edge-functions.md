@@ -287,10 +287,12 @@
   falhar). **`set_canais_org`** (spec 2026-07-14 "menus multicanal"): grava
   `organizations.canais_habilitados` da org alvo, filtrando contra a mesma lista de ids do registry
   `src/lib/canais.ts` (duplicada aqui de propósito, comentário de sincronia no código) e travando
-  `mercado_livre` sempre habilitado; `list_orgs` passou a devolver `canais_habilitados` de cada org.
-  Requer o secret `APP_URL`. **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de
-  Configurações) — mudança em `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa
-  (conferir versão pós-deploy).
+  `mercado_livre` sempre habilitado e deduplicando o array (`[...new Set(canais)]` pós-allowlist);
+  `list_orgs` passou a devolver `canais_habilitados` de cada org. Requer o secret `APP_URL`.
+  **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de Configurações) — mudança em
+  `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).
+  **Em produção desde 2026-07-15** (migration `20260715014055_menus_multicanal` + esta edge
+  redeployadas; ver histórico de `verify_jwt` abaixo).
 
 ### Utilitário
 - **hello** — smoke test de deploy.
@@ -337,6 +339,18 @@ derrubando o faturamento em tempo real em cascata. Corrigido pelo
 (`verify_jwt=false` nas quatro, autenticação real continua interna por assinatura/JWT). Confirmado
 em produção que segue `false`. Detalhe do incidente em
 `obsidian-vault/05-Bugs/Incidentes.md`.
+
+## Histórico — `verify_jwt=false` acidental na `usuarios` (corrigido no mesmo deploy)
+
+2026-07-15, deploy da migration/edge de "menus multicanal": o 1º `supabase functions deploy
+usuarios` rodou com `--no-verify-jwt` (flag copiada por hábito de outro deploy da mesma sessão),
+sobrescrevendo o `verify_jwt=true` do `config.toml` — a `usuarios` autentica o chamador via
+`requireUser` e é admin-only, então isso teria destrancado o endpoint no gateway (a checagem
+interna do código continuaria rodando, mas sem a barreira do Supabase antes dela). Pego antes de
+qualquer uso real conferindo `config.toml` logo após o deploy; redeploy imediato sem a flag,
+confirmado com `curl` sem `Authorization` → `401`. Caso inverso do incidente acima: aqui a flag
+foi adicionada onde NÃO deveria. Lição: `verify_jwt` é por função no `config.toml` — nunca reusar
+a flag de linha de comando de um deploy anterior sem reconferir a função específica.
 
 ## Histórico — catálogo truncado em 1000 linhas quebrava casamento por GTIN (corrigida)
 

@@ -15,6 +15,13 @@ atualizado: 2026-07-01
 Próximo épico de produto: **`E5` — conector Shopee** (fonte: `docs/project-status.md`). Seria o
 2º marketplace, novo adapter de [[Integrações|ChannelConnector]].
 
+**O que já está pronto ao redor (2026-07-15), reduzindo o E5 a "só o conector":** orquestração
+multicanal (E6, fan-out por família+canal) e a UI multi-marketplace (registry `src/lib/canais.ts`,
+tabs de canal, tela `/canais`, rollout por org) já estão em produção — Shopee entra em `em_breve`
+no registry até o conector existir. Faltam só: implementar o `ShopeeConnector` (pesquisa abaixo),
+registrar no registry de conectores do backend, adicionar `'shopee'` ao enum `canal_externo` e
+mudar `status: 'em_breve' → 'ativo'` no registry de UI.
+
 ## Escopo previsto (fonte de verdade)
 
 - Auth OAuth + assinatura HMAC

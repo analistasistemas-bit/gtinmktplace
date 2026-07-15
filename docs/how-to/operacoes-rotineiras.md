@@ -37,11 +37,27 @@ A automação do botão "Reenviar" é a forma suportada (ADR-0030); o passo manu
 Se a publicação falhar com "token expirado" e o refresh automático (lock Redis — ADR-0012) não
 resolver:
 
-1. Tela **Configurações** → "Reconectar Mercado Livre" (refaz o fluxo `ml-oauth-start` →
-   `ml-oauth-callback`).
-2. Confirme que `ml_credentials` foi atualizado (novo `expires_at`).
+1. Tela **Canais** (`/canais` — desde a spec 2026-07-14 "menus multicanal"; o card do ML saiu de
+   Configurações) → "Desconectar" + "Conectar" (refaz o fluxo `ml-oauth-start` → `ml-oauth-callback`,
+   que redireciona de volta para `/canais`).
+2. Confirme que `marketplace_connections` foi atualizado (novo `expires_at`).
 
 O refresh de token é automático e protegido por lock; não há ação manual no fluxo normal.
+
+## Habilitar um canal (marketplace) para uma organização
+
+Canal novo no registry de UI (`src/lib/canais.ts`, hoje só Mercado Livre `ativo`) só aparece
+operável para uma org depois de habilitado — rollout piloto sem deploy (D5 da spec 2026-07-14):
+
+1. Tela **`/admin`** (super-admin) → botão "Canais" na linha da organização.
+2. Marcar o(s) canal(is) desejado(s) — Mercado Livre vem travado (sempre habilitado, não dá para
+   desmarcar).
+3. Salvar (edge `usuarios`, action `set_canais_org`) — some do "Em breve" e vira operável na tela
+   `/canais` da org (ainda precisa conectar OAuth/credencial antes de publicar de fato).
+
+Isso só controla **visibilidade/rollout** por org; o canal só publica de verdade quando o conector
+do backend existir (`ShopeeConnector` etc. — ver [[Publicação Shopee]] no vault) e o `status` virar
+`'ativo'` no registry.
 
 ## Monitorar anúncios moderados
 

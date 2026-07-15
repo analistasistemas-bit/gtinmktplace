@@ -221,11 +221,12 @@ saque no Financeiro > Detalhe do líquido, escrita só via RPCs `security define
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
 Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)`.
 
-**`canal` text** (default `'mercado_livre'`, migration `20260715014055_menus_multicanal.sql`):
-dimensão canal preparatória — coluna simples (não o enum `canal_externo`), só para permitir o
-filtro por canal em `buscarVendas`/`useVendas`/`useResumoVendas` no dia em que houver um 2º canal
-de vendas real. Hoje **não entra no `select`** (a migration ainda não foi a produção); as camadas
-acima mapeiam `canal: 'mercado_livre'` por fallback fixo — zero número muda.
+**`canal` text** (default `'mercado_livre'`, migration `20260715014055_menus_multicanal.sql`, **em
+produção desde 2026-07-15**): dimensão canal preparatória — coluna simples (não o enum
+`canal_externo`), só para permitir o filtro por canal em `buscarVendas`/`useVendas`/
+`useResumoVendas` no dia em que houver um 2º canal de vendas real. Hoje **não entra no `select`**
+de `buscarVendas` (follow-up deliberado, não bloqueante — ver TASKS.md); as camadas acima mapeiam
+`canal: 'mercado_livre'` por fallback fixo — zero número muda.
 
 ### `ml_vendas_itens`
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*

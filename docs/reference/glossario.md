@@ -49,7 +49,8 @@
 
 | Termo | Definição |
 |---|---|
-| **Canal** | Um marketplace de destino (hoje só Mercado Livre). Abstraído pela camada de conectores (ADR-0024). |
+| **Canal** | Um marketplace de destino. Abstraído pela camada de conectores no backend (ADR-0024); hoje só Mercado Livre tem conector implementado (`canal_externo` segue com 1 valor). |
+| **Registry de canais (UI)** | `src/lib/canais.ts` (frontend, spec 2026-07-14 "menus multicanal"): os 5 marketplaces do roadmap (Mercado Livre `ativo`; Shopee/Magalu/Amazon/Casas Bahia `em_breve`, vitrine sem conector real). Cruza com `organizations.canais_habilitados` (por org) para decidir o que a org pode operar. **Não confundir** com o registry de conectores do backend (`_shared/canais/registry.ts`) — são independentes; canal novo exige entrada nos dois. |
 | **Conector (ChannelConnector)** | Interface única de operações de anúncio por canal. `getConnector('mercado_livre')` resolve a implementação. `_shared/canais/`. |
 | **Anúncio externo** | Espelho normalizado de um produto-canal, com identidade estável `(user_id, canal, codigo_pai)`. Tabela `anuncios_externos` (ADR-0025). |
 | **Dual-write** | Workers gravam tanto em `familias`/`variacoes` (fonte de verdade hoje) quanto em `anuncios_externos` (espelho, pronto para o 2º canal). |
