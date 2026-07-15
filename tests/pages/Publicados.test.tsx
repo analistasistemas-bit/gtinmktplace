@@ -183,4 +183,41 @@ describe('Publicados', () => {
     fireEvent.click(screen.getByText('COLA LIQUIDA SILICONE 250ML'));
     expect(screen.getByRole('button', { name: 'Recolher análise' })).toHaveAttribute('aria-expanded', 'true');
   });
+
+  it('recorta a lista pelo canal ativo (?canal=): ML aparece, Shopee some; "todos" mostra os dois', () => {
+    // parseCanalAtivo só aceita canal operável (habilitado E ativo no registry) — hoje só
+    // 'mercado_livre' é 'ativo', então o item shopee nunca vira canal ativo válido, apenas
+    // o que deve sumir do recorte quando o filtro é 'mercado_livre'.
+    usePublicadosMock.mockReturnValue({
+      data: [
+        itemBase(),
+        itemBase({
+          familiaId: 'f2',
+          codigoPai: '02000000',
+          titulo: 'TESOURA INOX SHOPEE',
+          mlItemId: 'MLB2',
+          canal: 'shopee',
+        }),
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    const comFiltro = render(
+      <MemoryRouter initialEntries={['/publicados?canal=mercado_livre']}>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
+    expect(screen.queryByText('TESOURA INOX SHOPEE')).not.toBeInTheDocument();
+    comFiltro.unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/publicados']}>
+        <Publicados />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
+    expect(screen.getByText('TESOURA INOX SHOPEE')).toBeInTheDocument();
+  });
 });
