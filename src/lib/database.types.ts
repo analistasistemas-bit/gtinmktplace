@@ -1202,6 +1202,7 @@ export type Database = {
       }
       delete_ml_credentials: { Args: { p_user_id: string }; Returns: undefined }
       desfazer_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      canais_habilitados_da_org: { Args: Record<PropertyKey, never>; Returns: string[] }
       get_connection_tokens: {
         Args: { p_connection_id: string }
         Returns: {

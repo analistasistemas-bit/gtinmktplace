@@ -29,6 +29,7 @@ export const QK = {
   publicados: ['publicados'] as const,
   statusPublicados: ['statusPublicados'] as const,
   conexoes: ['conexoes'] as const,
+  canaisHabilitados: ['canais-habilitados'] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];
