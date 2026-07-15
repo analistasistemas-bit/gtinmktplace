@@ -59,6 +59,8 @@ export interface MLVariacaoAtual {
   picture_ids?: string[];
   /** Nome da cor (atributo COLOR) atualmente no ML — usado p/ só reenviar COLOR quando muda. */
   cor?: string | null;
+  /** Preco de venda vivo da variacao no ML (para cor nova adotar em "somente estoque"). */
+  price?: number | null;
 }
 export interface EstoqueDesejado { codigo: string; estoque: number; }
 export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; original_price?: number; attribute_combinations?: AtributoVar[]; }

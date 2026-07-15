@@ -39,6 +39,8 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     picture_ids: ((v.picture_ids as string[] | undefined) ?? []).filter(Boolean),
     // Cor (COLOR) atual no ML — p/ só reenviar COLOR quando o nome muda (ADR-0062).
     cor: corDaVariacaoML(v.attribute_combinations),
+    // Preço de venda vivo (para cor nova adotar em "somente estoque", ADR-0078 F1).
+    price: (v.price as number | null | undefined) ?? null,
   }));
   const pictures = (json.pictures ?? [])
     .map((p: Record<string, unknown>) => p.id as string)
