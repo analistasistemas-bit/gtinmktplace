@@ -4,6 +4,7 @@ import { labelStatusEnvio } from './ml-status';
 import { ehFaturavel } from './resumo-vendas';
 import { buscarTodasPaginas } from './paginacao-supabase';
 import { round2 } from './formato';
+import type { CanalAtivo } from './canal-ativo';
 
 export type OrigemVenda = 'todos' | 'publiai' | 'fora';
 
@@ -59,12 +60,16 @@ export interface Venda {
   is_publiai: boolean;
   tem_devolucao: boolean;
   itens: VendaItem[];
+  /** Canal de origem da venda (hoje sempre 'mercado_livre'). Coluna ml_vendas.canal ainda não
+   *  entra no select (migration da Task 4 pode não estar em produção) — fallback aplicado após
+   *  a busca; troque para o valor real da coluna quando a migration estiver deployada. */
+  canal?: string;
 }
 
 /** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens.
  *  Pagina (`.range`) para não truncar em ~1000 linhas (teto padrão do PostgREST). */
-export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'): Promise<Venda[]> {
-  return buscarTodasPaginas<Venda>((de, ate) => {
+export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos', canal: CanalAtivo = 'todos'): Promise<Venda[]> {
+  const vendas = await buscarTodasPaginas<Venda>((de, ate) => {
     let q = supabase
       .from('ml_vendas')
       .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
@@ -74,8 +79,12 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
       .range(de, ate);
     if (origem === 'publiai') q = q.eq('is_publiai', true);
     if (origem === 'fora') q = q.eq('is_publiai', false);
+    if (canal !== 'todos') q = q.eq('canal', canal);
     return q as unknown as PromiseLike<{ data: Venda[] | null; error: { message: string } | null }>;
   });
+  // 'canal' ainda não está no select (coluna só existe em produção após a migration da Task 4);
+  // fallback para 'mercado_livre' preserva o comportamento atual até a Task 9 ligar o filtro real.
+  return vendas.map((v) => ({ ...v, canal: v.canal ?? 'mercado_livre' }));
 }
 
 /** Dispara o backfill (botão "Sincronizar") para o próprio usuário. */

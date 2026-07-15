@@ -5,19 +5,20 @@ import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo, type ResumoVendas } from '@/lib/resumo-vendas';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import type { Janela } from '@/lib/metricas';
+import type { CanalAtivo } from '@/lib/canal-ativo';
 
 /**
  * Resumo financeiro do período a partir da tabela ml_vendas (fonte única — ADR-0038). Os menus
  * Faturamento, Financeiro e Publicados consomem isto, então mostram o mesmo número.
  */
-export function useResumoVendas(janela: Janela): {
+export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
   resumo: ResumoVendas;
   isFetching: boolean;
   refetch: () => void;
   error: boolean;
   dataUpdatedAt: number;
 } {
-  const vendasQ = useVendas(janela, 'todos');
+  const vendasQ = useVendas(janela, 'todos', canal);
   const custosQ = useCustos();
   const aliquotasQ = useAliquotas();
   const resumo = useMemo(
