@@ -100,6 +100,7 @@ export interface Variacao {
   corEditadaPeloOperador: boolean;
   preco: number;
   precoPublicacao: number | null;
+  precoPublicadoMl: number | null;
   estoque: number;
   gtin: string | null;
   fotoPath?: string;

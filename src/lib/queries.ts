@@ -152,6 +152,7 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     corEditadaPeloOperador: r.cor_editada_pelo_operador,
     preco: Number(r.preco),
     precoPublicacao: r.preco_publicacao != null ? Number(r.preco_publicacao) : null,
+    precoPublicadoMl: r.preco_publicado_ml != null ? Number(r.preco_publicado_ml) : null,
     estoque: r.estoque,
     gtin: r.gtin,
     fotoPath: r.imagem_path ?? undefined,
