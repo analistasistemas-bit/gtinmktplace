@@ -27,7 +27,10 @@ import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
-import { deveMostrarSeletorCanais } from '@/lib/canais-ui';
+import { canaisOperaveis, canaisEmBreve } from '@/lib/canais';
+import { LogoCanal } from '@/components/canal-badge';
+import { useCanaisHabilitados } from '@/hooks/useCanaisHabilitados';
+import { avisosCapabilities } from '@/lib/capabilities-canal';
 import { useToggleDescontoLote, useReprocessar, useSetAtacadoLote } from '@/hooks/useFamiliaMutations';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
@@ -84,11 +87,14 @@ export default function Revisao() {
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [listingType, setListingType] = useState<ListingType>('gold_special');
-  // Seleção de canais (E6/ADR-0061): ML sempre pré-marcado. O grupo só aparece com >1
-  // conexão na org (deveMostrarSeletorCanais) — hoje é sempre 1 (ML), então fica oculto.
+  // Seleção de canais (D6): grupo SEMPRE visível — operáveis marcáveis (se conectados),
+  // em-breve desabilitados como vitrine. ML pré-marcado.
   const { data: conexoes = [] } = useQuery({ queryKey: QK.conexoes, queryFn: fetchConexoes });
+  const { data: habilitados = ['mercado_livre'] } = useCanaisHabilitados();
   const [canaisSelecionados, setCanaisSelecionados] = useState<Set<string>>(new Set(['mercado_livre']));
-  const mostrarSeletorCanais = deveMostrarSeletorCanais(conexoes.length);
+  const operaveis = canaisOperaveis(habilitados);
+  const emBreve = canaisEmBreve(habilitados);
+  const canaisConectados = useMemo(() => new Set(conexoes.map((c) => c.canal)), [conexoes]);
   // Variação-alvo ao clicar no selo de pendência do pai: expande + rola até ela.
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
@@ -255,9 +261,9 @@ export default function Revisao() {
     if (!loteId) return;
     setPublicando(true);
     const total = selecionadas.size;
-    // Só canais escolhidos vale com o grupo visível (>1 conexão); com 1 conexão o
-    // comportamento é o default de sempre (['mercado_livre']) — zero mudança.
-    const canais = mostrarSeletorCanais ? [...canaisSelecionados] : ['mercado_livre'];
+    // Publica só nos selecionados que têm conexão; fallback = ML (comportamento de sempre).
+    const marcados = [...canaisSelecionados].filter((c) => canaisConectados.has(c));
+    const canais = marcados.length > 0 ? marcados : ['mercado_livre'];
     try {
       await publicarFamilias([...selecionadas], listingType, canais);
       // A edge `publicar-familias` já fez o claim síncrono (status→'publicando') antes de
@@ -571,23 +577,47 @@ export default function Revisao() {
               </div>
             </div>
           )}
-          {mostrarSeletorCanais && (
-            <div className="mt-1">
-              <span className="block text-xs font-semibold text-muted-foreground">Publicar em</span>
-              <div className="mt-1 flex flex-wrap gap-3">
-                {conexoes.map((cx) => (
-                  <label key={cx.canal} className="flex cursor-pointer items-center gap-1.5 text-sm">
+          <div className="mt-1">
+            <span className="block text-xs font-semibold text-muted-foreground">Publicar em</span>
+            <div className="mt-1 flex flex-wrap gap-3">
+              {operaveis.map((c) => {
+                const conectado = canaisConectados.has(c.id);
+                return (
+                  <label
+                    key={c.id}
+                    className={cn('flex items-center gap-1.5 text-sm', conectado ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')}
+                    title={conectado ? undefined : 'Conecte este canal no menu Canais para publicar nele'}
+                  >
                     <Checkbox
-                      checked={canaisSelecionados.has(cx.canal)}
-                      onCheckedChange={(v) => toggleCanal(cx.canal, v === true)}
-                      aria-label={`Publicar em ${cx.contaLabel ?? cx.canal}`}
+                      checked={canaisSelecionados.has(c.id)}
+                      disabled={!conectado}
+                      onCheckedChange={(v) => toggleCanal(c.id, v === true)}
+                      aria-label={`Publicar em ${c.nome}`}
                     />
-                    {cx.contaLabel ?? cx.canal}
+                    <LogoCanal canal={c.id} />
+                    {c.nome}
                   </label>
-                ))}
-              </div>
+                );
+              })}
+              {emBreve.map((c) => (
+                <span key={c.id} className="flex items-center gap-1.5 text-sm text-muted-foreground opacity-50 grayscale" title="Em breve no PubliAI">
+                  <Checkbox disabled aria-label={`${c.nome} (em breve)`} />
+                  <LogoCanal canal={c.id} />
+                  {c.nome} <span className="text-[10px] uppercase">em breve</span>
+                </span>
+              ))}
             </div>
-          )}
+          </div>
+          {(() => {
+            const titulos = familias.filter((f) => selecionadas.has(f.id)).map((f) => f.titulo);
+            const marcados = [...canaisSelecionados].filter((c) => canaisConectados.has(c));
+            const avisos = avisosCapabilities(titulos, marcados.length > 0 ? marcados : ['mercado_livre']);
+            return avisos.length > 0 ? (
+              <div className="mt-1 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                {avisos.map((a) => <p key={a}>{a}</p>)}
+              </div>
+            ) : null;
+          })()}
           {publicando && (
             <div className="mt-1 space-y-2">
               <div className="track-indeterminate" role="progressbar" aria-label="Enfileirando publicação" />
