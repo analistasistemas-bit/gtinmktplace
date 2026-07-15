@@ -39,8 +39,8 @@ Aditivo; caminho uniforme não usa nada novo.
   - **Grupo de preço** (no publish) = variações com o mesmo preço; a config do grupo = a config **compartilhada** das suas variações. A UI edita o grupo escrevendo em **todas** as variações do grupo (mantém consistência). Se um grupo tiver variações com config divergente (não deveria acontecer pela UI) → **LOUD**.
   - `familias.*` permanece como **legado/uniforme**: fonte de verdade quando todas as variações têm config idêntica; a UI uniforme continua editando via `familias.*` e replicando às variações.
 - **Pinagem:** reusa `variacoes.preco_editado_pelo_operador` (já existe; já pulado no recálculo — `process-familia:395`). Setado **sempre que o operador define preço** — tanto "Sim, aplicar às demais" (pina **todas** as afetadas, preservando o comportamento atual de `updateVariacaoPreco`, `queries.ts:182`) quanto "Não" (pina só a editada). Impede que o re-ingest reembaralhe um grupo recém-montado.
-- **Detecção de preço alterado (badge):** `variacoes.preco_publicado_ml` (numeric, nullable) — o preço **efetivamente confirmado no ML** no último PUT/POST bem-sucedido **daquela variação** (gravado **por partição, a cada sucesso** — não ao fim do worker, senão falha parcial do split faz o badge mentir). Sincronizado **oportunisticamente** a partir do `GET /items` que o update já faz (corrige stale se o preço foi mexido no painel do ML). Badge = `round2(preco_publicacao) != round2(preco_publicado_ml)` com `preco_publicado_ml` não-nulo.
-- **Status de atacado por partição (F3):** `anuncios_externos.atacado_status`/`atacado_erro` — `familias.atacado_status` escalar não representa falha parcial (grupo A aplicado, grupo B erro) com N anúncios. Migra de família-level para por-partição na F3.
+- **Detecção de preço alterado (badge):** `variacoes.preco_publicado_ml` (numeric, nullable) — o preço **efetivamente confirmado no ML** no último PUT/POST bem-sucedido **daquela variação** (gravado **por partição, a cada sucesso** — não ao fim do worker, senão falha parcial do split faz o badge mentir). Sincronizado **oportunisticamente** a partir do `GET /items` que o update já faz (corrige stale se o preço foi mexido no painel do ML). Badge = `round2(preco_efetivo_a_publicar) != round2(preco_publicado_ml)` com `preco_publicado_ml` não-nulo. **`preco_efetivo_a_publicar`** = o preço que o publish de fato empurraria: em F1 (uniforme) é o preço colapsado (`precoFamilia`), em F2 é o preço da variação. O badge nunca promete um preço que o publish não vai enviar.
+- **Status de atacado por partição (F2):** `anuncios_externos.atacado_status`/`atacado_erro` — `familias.atacado_status` escalar não representa falha parcial (grupo A aplicado, grupo B erro) com N anúncios. Migra de família-level para por-partição na F2.
 - **Escolha do UPDATE:** transiente — carregada no **payload do job de publicação** (a escolha global + o mapa de overrides por produto). O payload **inclui** essas decisões para o retry do QStash ser idempotente (a decisão não pode se perder no reprocessamento).
 
 > **Migration:** `add column if not exists` para `variacoes.exibir_com_desconto`/`desconto_pct`/`atacado` e `variacoes.preco_publicado_ml`; `anuncios_externos.atacado_status`/`atacado_erro` (F3). Backfill não-destrutivo: config das variações herda o família-level; `preco_publicado_ml` começa null e é preenchido no 1º publish/update de cada variação. RLS por `org_id` mantida (colunas em tabelas já sob RLS).
@@ -66,7 +66,7 @@ Divergência e split entram **atomicamente** (invariante #1).
 - UI: prompt "aplicar às demais?"; agrupamento por preço; config de de→para/atacado **por grupo**; botões de lote desabilitados na divergência.
 - `ehSplit` (roteamento em `publicar-familias`) ganha a condição de **divergência de preço** (hoje decide split só por contagem >100) — em CREATE **e** UPDATE.
 - `particionar` recebe o preço por sku (ver "Particionamento").
-- Split worker (`publicar-split-ml`) passa a **aplicar atacado por partição** — **lacuna pré-existente:** hoje só `publish-familia-ml`/`update-familia-ml` chamam `aplicarAtacado`; o split nunca aplicou. F3/F2 fecha isso.
+- Split worker (`publicar-split-ml`) passa a **aplicar atacado por partição** — **lacuna pré-existente:** hoje só `publish-familia-ml`/`update-familia-ml` chamam `aplicarAtacado`; o split nunca aplicou. A F2 fecha isso.
 
 *(Se o tamanho exigir, F2 pode ser fatiada no plano — mas divergência-sem-split nunca pode chegar a produção.)*
 
@@ -88,7 +88,7 @@ Divergência e split entram **atomicamente** (invariante #1).
 3. **Ancoragem + LOUD:** para cada variação cujo novo preço a tornaria incompatível com a **faixa da partição** dela (cruzar faixa; ou tornar divergente um anúncio hoje uniforme):
    - **não move** a variação;
    - **LOUD** na Revisão: "honrar este preço exige dividir/migrar; X variações perderiam histórico — decida";
-   - operador: repreçar o grupo uniforme, aceitar a divisão (perda explícita), ou adiar (só estoque).
+   - operador: repreçar o grupo uniforme, **aceitar a divisão** — mecânica = o fluxo **existente** `remover-publicado` + republicar como CREATE na nova faixa (sem automação nova de delete+recriar; a perda de histórico é a consequência conhecida de remover+republicar), ou adiar (só estoque).
 4. Variações compatíveis: preço/atacado/de→para reaplicados por anúncio. `preco_publicado_ml` atualizado por sucesso.
 
 ## Particionamento por preço (estende ADR-0048)
