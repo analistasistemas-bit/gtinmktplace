@@ -9,15 +9,15 @@ alter table ml_vendas
   add column canal text not null default 'mercado_livre';
 
 -- Leitura estreita dos canais da própria org (evita abrir SELECT em organizations).
-create or replace function canais_habilitados_da_org()
+create or replace function public.canais_habilitados_da_org()
 returns text[]
 language sql stable security definer
-set search_path = public
+set search_path = ''
 as $$
-  select canais_habilitados from organizations where id = current_org_id()
+  select canais_habilitados from public.organizations where id = public.current_org_id()
 $$;
-revoke all on function canais_habilitados_da_org() from public;
-grant execute on function canais_habilitados_da_org() to authenticated;
+revoke all on function public.canais_habilitados_da_org() from public;
+grant execute on function public.canais_habilitados_da_org() to authenticated;
 
 -- Menu novo 'canais': quem tem 'configuracoes' ganha acesso (backfill idempotente).
 update profiles
