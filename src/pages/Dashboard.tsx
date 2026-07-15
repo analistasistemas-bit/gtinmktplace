@@ -15,7 +15,7 @@ import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
 import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
-import { agruparPorPeriodo, ehFaturavel } from '@/lib/resumo-vendas';
+import { agruparPorPeriodo, ehFaturavel, ratearLiquidoPorFrete } from '@/lib/resumo-vendas';
 import { liquidoPorCanal } from '@/lib/resumo-por-canal';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { useVendas } from '@/hooks/useVendas';
@@ -206,12 +206,14 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
       {canalAtivo === 'todos' && (() => {
         // vendasRaw.data (não r.vendas): só o Venda[] cru tem o campo `canal` — o VendaResumo do
         // resumo financeiro não carrega essa coluna. Filtra faturável para casar com a semântica
-        // de líquido usada no resto do Dashboard (calcularResumo); sem rateio de frete por pack
-        // (ADR-0042) — aproximação aceitável para um chip de resumo, não fonte financeira oficial.
+        // de líquido usada no resto do Dashboard (calcularResumo). Os chips agora usam o MESMO
+        // rateio de frete por pack do headline (ratearLiquidoPorFrete, ADR-0042) — somar o
+        // ml_vendas.liquido cru duplicava/triplicava o frete em pedidos de um mesmo pacote e o
+        // total dos chips divergia do "Líquido das vendas" em dinheiro real.
+        const faturaveis = (vendasRaw.data ?? []).filter((v) => ehFaturavel(v.status));
+        const liqRateado = ratearLiquidoPorFrete(faturaveis, montarPesoResolver(custos));
         const porCanal = liquidoPorCanal(
-          (vendasRaw.data ?? [])
-            .filter((v) => ehFaturavel(v.status))
-            .map((v) => ({ canal: v.canal, liquido: v.liquido ?? 0 })),
+          faturaveis.map((v) => ({ canal: v.canal, liquido: liqRateado.get(v.id)?.liquido ?? v.liquido ?? 0 })),
         );
         if (porCanal.length <= 1) return null; // com 1 canal, nada muda (D6/constraint global)
         return (
