@@ -1110,6 +1110,7 @@ export type Database = {
           preco: number
           preco_editado_pelo_operador: boolean
           preco_publicacao: number | null
+          preco_publicado_ml: number | null
           user_id: string
         }
         Insert: {
@@ -1143,6 +1144,7 @@ export type Database = {
           preco: number
           preco_editado_pelo_operador?: boolean
           preco_publicacao?: number | null
+          preco_publicado_ml?: number | null
           user_id: string
         }
         Update: {
@@ -1176,6 +1178,7 @@ export type Database = {
           preco?: number
           preco_editado_pelo_operador?: boolean
           preco_publicacao?: number | null
+          preco_publicado_ml?: number | null
           user_id?: string
         }
         Relationships: [
