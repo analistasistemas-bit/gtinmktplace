@@ -96,9 +96,9 @@ export default function Revisao() {
   const emBreve = canaisEmBreve(habilitados);
   const canaisConectados = useMemo(() => new Set(conexoes.map((c) => c.canal)), [conexoes]);
   // Canais que realmente vão no payload: selecionados com conexão; vazio → ML (caminho atual).
-  const canaisEfetivos = useMemo(() => {
+  const { canaisEfetivos, semCanalMarcado } = useMemo(() => {
     const marcados = [...canaisSelecionados].filter((c) => canaisConectados.has(c));
-    return marcados.length > 0 ? marcados : ['mercado_livre'];
+    return { canaisEfetivos: marcados.length > 0 ? marcados : ['mercado_livre'], semCanalMarcado: marcados.length === 0 };
   }, [canaisSelecionados, canaisConectados]);
   // Variação-alvo ao clicar no selo de pendência do pai: expande + rola até ela.
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
@@ -627,9 +627,12 @@ export default function Revisao() {
               </p>
             </div>
           )}
+          {semCanalMarcado && (
+            <p className="mt-1 text-xs text-warning">Marque ao menos um canal para publicar.</p>
+          )}
           <DialogFooter>
             <Button variant="outline" disabled={publicando} onClick={() => setConfirmando(false)}>Cancelar</Button>
-            <Button disabled={publicando} onClick={confirmarPublicacao}>
+            <Button disabled={publicando || semCanalMarcado} onClick={confirmarPublicacao}>
               {publicando ? 'Enfileirando…' : 'Confirmar publicação'}
             </Button>
           </DialogFooter>

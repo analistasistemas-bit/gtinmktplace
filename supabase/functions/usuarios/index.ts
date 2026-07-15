@@ -153,11 +153,12 @@ Deno.serve(async (req) => {
       const canais = Array.isArray(body.canais)
         ? (body.canais as string[]).filter((c) => CANAIS_VALIDOS.includes(c))
         : [];
-      if (!canais.includes('mercado_livre')) {
+      const canaisUnicos = [...new Set(canais)];
+      if (!canaisUnicos.includes('mercado_livre')) {
         return json({ error: 'mercado_livre não pode ser desabilitado' }, 400);
       }
       const { error } = await db.from('organizations')
-        .update({ canais_habilitados: canais, atualizado_em: new Date().toISOString() })
+        .update({ canais_habilitados: canaisUnicos, atualizado_em: new Date().toISOString() })
         .eq('id', alvo);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
