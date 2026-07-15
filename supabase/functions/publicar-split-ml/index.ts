@@ -22,6 +22,7 @@ import { particionar } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { precoAConfirmar } from '../update-familia-ml/preco-confirmado.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -240,8 +241,14 @@ Deno.serve(async (req) => {
           ml_item_id: itemIdP, ml_permalink: permalinkP, publicado_em: new Date().toISOString(),
         }, varsRef, { particao: p, titulo: tituloP });
 
+        // ADR-0078 F1: no CREATE não há "só estoque" — grava o preço enviado por SKU
+        // (preco_publicacao, base do badge "preço alterado"), espelhando o publish normal.
+        const precoEnviadoPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v.preco]));
         for (const [codigo, variationId] of Object.entries(ref.variacoesExternas)) {
-          await admin.from('variacoes').update({ ml_variation_id: variationId })
+          const precoSku = precoEnviadoPorSku.get(codigo);
+          const patch: { ml_variation_id: string; preco_publicado_ml?: number } = { ml_variation_id: variationId };
+          if (precoSku != null) patch.preco_publicado_ml = Number(precoSku);
+          await admin.from('variacoes').update(patch)
             .eq('familia_id', job.familia_id).eq('codigo', codigo);
         }
         if (familia.descricao_ml) {
@@ -302,6 +309,20 @@ Deno.serve(async (req) => {
           const err = new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} na partição ${p} — confira no ML antes de republicar para não duplicar (400)`) as Error & { status?: number };
           err.status = 400;
           throw err;
+        }
+        // ADR-0078 F1: grava o preço confirmado por SKU desta partição (base do badge "preço
+        // alterado"). Sem isso, família que migra ≤100→>100 fica com badge permanente. Em "só
+        // estoque" confirma o preço vivo desta partição; chaveia pelos SKUs confirmados no ML.
+        const confirmado = precoAConfirmar({
+          somenteEstoque: !!job.somenteEstoque,
+          precoVivo: res.valor!.precoVivo ?? null,
+          precoEnviado: precoFamilia,
+        });
+        if (confirmado != null) {
+          await admin.from('variacoes')
+            .update({ preco_publicado_ml: confirmado })
+            .eq('familia_id', job.familia_id)
+            .in('codigo', Object.keys(res.valor!.variacoesExternas));
         }
       }
 

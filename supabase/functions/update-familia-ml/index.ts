@@ -9,6 +9,7 @@ import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
+import { precoAConfirmar } from './preco-confirmado.ts';
 
 interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
 
@@ -192,6 +193,21 @@ Deno.serve(async (req) => {
       const err = new Error(`ML não vinculou as cores novas ${novasSemVinculo.map((v) => v.codigo).join(', ')} (sem seller_custom_field). Elas podem ter sido criadas no anúncio — confira no ML antes de republicar para não duplicar (400)`) as Error & { status?: number };
       err.status = 400;
       throw err;
+    }
+
+    // ADR-0078 F1: grava o preço confirmado por SKU (base do badge "preço alterado"). Só no
+    // sucesso do PUT; em "somente estoque" confirma o preço vivo (não o recalculado). Chaveia
+    // pelos SKUs que o ML confirmou no anúncio (variacoesExternas) — existentes + novas.
+    const confirmado = precoAConfirmar({
+      somenteEstoque: !!job.somenteEstoque,
+      precoVivo: res.valor!.precoVivo ?? null,
+      precoEnviado: precoFamilia,
+    });
+    if (confirmado != null) {
+      await admin.from('variacoes')
+        .update({ preco_publicado_ml: confirmado })
+        .eq('familia_id', job.familia_id)
+        .in('codigo', Object.keys(res.valor!.variacoesExternas));
     }
 
     // Sincroniza a descrição do anúncio (ADR-0016 adendo 2026-06-07): cor nova (seção de cores

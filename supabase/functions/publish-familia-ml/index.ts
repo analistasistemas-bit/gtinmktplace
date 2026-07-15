@@ -145,8 +145,15 @@ Deno.serve(async (req) => {
     }
 
     // Casa ml_variation_id por codigo (sku) via variacoesExternas do conector.
+    // ADR-0078 F1: grava também preco_publicado_ml = preço enviado da variação (base do badge
+    // "preço alterado"). No CREATE não há "só estoque": é o próprio preço publicado (preco_publicacao,
+    // mesma base do precoFamilia do update — não o descontado).
+    const precoEnviadoPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v.preco]));
     for (const [codigo, variationId] of Object.entries(ref.variacoesExternas)) {
-      await admin.from('variacoes').update({ ml_variation_id: variationId })
+      const precoSku = precoEnviadoPorSku.get(codigo);
+      const patch: { ml_variation_id: string; preco_publicado_ml?: number } = { ml_variation_id: variationId };
+      if (precoSku != null) patch.preco_publicado_ml = Number(precoSku);
+      await admin.from('variacoes').update(patch)
         .eq('familia_id', job.familia_id).eq('codigo', codigo);
     }
 
