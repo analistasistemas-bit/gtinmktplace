@@ -15,8 +15,12 @@ import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
 /** Vitrine + gestão de canais (D4): card por marketplace do registry. */
 export default function Canais() {
-  const { data: habilitados = ['mercado_livre'] } = useCanaisHabilitados();
-  const { data: conexoes = [] } = useQuery({ queryKey: QK.conexoes, queryFn: fetchConexoes });
+  const { data: habilitados = ['mercado_livre'], isError: erroHabilitados } = useCanaisHabilitados();
+  const {
+    data: conexoes = [],
+    isLoading: carregandoConexoes,
+    isError: erroConexoes,
+  } = useQuery({ queryKey: QK.conexoes, queryFn: fetchConexoes });
   const { data: conexaoML, isLoading: carregandoML } = useMlConnection();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
@@ -71,6 +75,11 @@ export default function Canais() {
       {erroAcao && (
         <p className="mb-4 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{erroAcao}</p>
       )}
+      {(erroHabilitados || erroConexoes) && (
+        <p className="mb-4 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+          Não foi possível carregar o status dos canais — os cards podem estar desatualizados. Recarregue a página.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {LISTA_CANAIS.map((c) => {
@@ -89,6 +98,8 @@ export default function Canais() {
                 </div>
                 {!operavel ? (
                   <StatusPill tone="neutral">Em breve</StatusPill>
+                ) : c.id !== 'mercado_livre' && carregandoConexoes ? (
+                  <StatusPill tone="neutral">Carregando…</StatusPill>
                 ) : conectado ? (
                   <StatusPill tone="success">Conectado</StatusPill>
                 ) : (
