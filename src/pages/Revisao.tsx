@@ -35,9 +35,10 @@ import { useToggleDescontoLote, useReprocessar, useSetAtacadoLote } from '@/hook
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { cn } from '@/lib/utils';
+import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import type { Familia } from '@/lib/tipos-dominio';
 
-type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas';
+type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas' | 'preco_alterado';
 
 export function filtrarFamilias(
   familias: Familia[],
@@ -51,6 +52,7 @@ export function filtrarFamilias(
     if (filtro === 'UPDATE' && f.operacao !== 'UPDATE') return false;
     if (filtro === 'avisos' && !f.precoAbaixo20pc) return false;
     if (filtro === 'incompletas' && !familiaIncompleta(f)) return false;
+    if (filtro === 'preco_alterado' && !(f.operacao === 'UPDATE' && temAlteracaoPreco(f))) return false;
     if (soComCoresNovas && coresNovasComEstoque(f).length === 0) return false;
     if (!buscaLower) return true;
     return (
@@ -248,6 +250,7 @@ export default function Revisao() {
     UPDATE: familias.filter((f) => f.operacao === 'UPDATE').length,
     avisos: familias.filter((f) => f.precoAbaixo20pc).length,
     incompletas: familias.filter((f) => familiaIncompleta(f)).length,
+    preco_alterado: familias.filter((f) => f.operacao === 'UPDATE' && temAlteracaoPreco(f)).length,
   };
 
   const coresSelecionadas = familias
@@ -369,6 +372,11 @@ export default function Revisao() {
               <TabsTrigger value="incompletas">
                 Incompletas <Badge variant="secondary" className="ml-1.5">{counts.incompletas}</Badge>
               </TabsTrigger>
+              {counts.UPDATE > 0 && (
+                <TabsTrigger value="preco_alterado">
+                  Preço alterado <Badge variant="secondary" className="ml-1.5">{counts.preco_alterado}</Badge>
+                </TabsTrigger>
+              )}
             </TabsList>
           </Tabs>
           <Button
