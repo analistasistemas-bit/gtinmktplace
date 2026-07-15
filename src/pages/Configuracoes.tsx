@@ -1,16 +1,12 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams, Navigate, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
-import { StatusPill } from '@/components/ui/status-pill';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useMlConnection } from '@/hooks/useMlConnection';
 import {
   useDescontoPct, useSalvarDescontoPct,
   useDescontoConcorrenciaPct, useSalvarDescontoConcorrenciaPct,
@@ -21,13 +17,9 @@ import {
 import { MODELOS_TEXTO, MODELOS_IMAGEM } from '@/lib/ai-modelos';
 import { useProfile } from '@/hooks/useProfile';
 import { ConfigTelegram } from '@/components/config-telegram';
-import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
 
 export default function Configuracoes() {
-  const { data: conexao, isLoading: carregandoConexao } = useMlConnection();
-  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
-  const [erroAcao, setErroAcao] = useState<string | null>(null);
 
   const { data: descontoPct } = useDescontoPct();
   const salvar = useSalvarDescontoPct();
@@ -66,26 +58,9 @@ export default function Configuracoes() {
     }
   }, [aliquotas]);
 
-  const mlConectado = searchParams.get('ml_conectado') === 'true';
-  const mlErro = searchParams.get('ml_erro');
-
-  async function handleConectar() {
-    setErroAcao(null);
-    try {
-      await iniciarConexaoML();
-    } catch (e) {
-      setErroAcao(e instanceof Error ? e.message : 'Falha ao conectar');
-    }
-  }
-
-  async function handleDesconectar() {
-    setErroAcao(null);
-    try {
-      await desconectarML();
-      await queryClient.invalidateQueries({ queryKey: ['ml-connection'] });
-    } catch (e) {
-      setErroAcao(e instanceof Error ? e.message : 'Falha ao desconectar');
-    }
+  // OAuth do ML retorna para /configuracoes (URL fixa na edge) — o card agora mora em /canais.
+  if (searchParams.get('ml_conectado') || searchParams.get('ml_erro')) {
+    return <Navigate to={{ pathname: '/canais', search: searchParams.toString() }} replace />;
   }
 
   return (
@@ -94,66 +69,15 @@ export default function Configuracoes() {
 
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold">Mercado Livre</h2>
-
-          {!carregandoConexao && mlConectado && conexao?.conectado && (
-            <p className="mb-2 rounded border border-success/30 bg-success/10 px-2 py-1 text-xs text-success">
-              Conta conectada com sucesso.
-            </p>
-          )}
-          {mlErro && (
-            <p className="mb-2 rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
-              {mlErro === 'state'
-                ? 'Sessão de conexão expirou. Tente conectar de novo.'
-                : 'Não foi possível conectar ao Mercado Livre. Tente de novo.'}
-            </p>
-          )}
-          {erroAcao && (
-            <p className="mb-2 rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">{erroAcao}</p>
-          )}
-
-          {carregandoConexao ? (
-            <span className="text-sm text-muted-foreground">Carregando…</span>
-          ) : conexao?.conectado ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <StatusPill tone="success">Conectado</StatusPill>
-                  <span className="text-sm">como {conexao.nickname ?? conexao.mlUserId}</span>
-                  <span className="text-xs text-muted-foreground">· Permissões salvas</span>
-                </div>
-                <Button variant="outline" size="sm" onClick={handleDesconectar}>
-                  Desconectar
-                </Button>
-              </div>
-              <details className="group/details rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">
-                <summary className="-mx-1 flex cursor-pointer list-none items-center gap-1 px-1 text-muted-foreground transition-colors hover:text-foreground">
-                  <ChevronRight className="h-3.5 w-3.5 transition-transform group-open/details:rotate-90" />
-                  Detalhes técnicos
-                </summary>
-                <div className="mt-2 space-y-2">
-                  <p className="text-muted-foreground">
-                    Escopo OAuth salvo:{' '}
-                    <code className="block truncate rounded bg-background/60 px-1.5 py-0.5 font-mono text-[11px]" title={conexao.scope ?? 'não informado'}>
-                      {conexao.scope ?? 'não informado'}
-                    </code>
-                  </p>
-                  <p className="text-muted-foreground">
-                    Para exibir vendas no dashboard, o app do Mercado Livre também precisa ter a
-                    permissão de Pedidos habilitada no Dev Center. Se você acabou de ajustar isso,
-                    desconecte e conecte a conta novamente.
-                  </p>
-                </div>
-              </details>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">Canais conectados</h2>
+              <p className="text-xs text-muted-foreground">Mercado Livre e próximos marketplaces agora ficam no menu Canais.</p>
             </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Nenhuma conta conectada.</span>
-              <Button size="sm" onClick={handleConectar}>
-                Conectar Mercado Livre
-              </Button>
-            </div>
-          )}
+            <Button asChild variant="outline" size="sm">
+              <Link to="/canais">Gerenciar canais</Link>
+            </Button>
+          </div>
         </Card>
 
         <Card className="p-4">
