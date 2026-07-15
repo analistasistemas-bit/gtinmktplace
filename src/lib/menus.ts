@@ -1,4 +1,4 @@
-export const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'configuracoes'] as const;
+export const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'] as const;
 export type MenuKey = (typeof MENU_KEYS)[number] | 'usuarios';
 
 export interface MenuProfile {
@@ -26,6 +26,7 @@ const PREFIX: Record<string, MenuKey> = {
   faturamento: 'faturamento',
   financeiro: 'financeiro',
   viabilidade: 'viabilidade',
+  canais: 'canais',
   configuracoes: 'configuracoes',
   usuarios: 'usuarios',
 };

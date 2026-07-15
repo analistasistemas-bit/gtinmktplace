@@ -3,7 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 
-const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'configuracoes'];
+const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
