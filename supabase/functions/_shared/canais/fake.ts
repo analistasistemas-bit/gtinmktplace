@@ -64,7 +64,7 @@ class FakeConnector implements ChannelConnector {
     if (f) return Promise.resolve({ ok: false, erro: { codigo: f.codigo, mensagemOperador: `fake:${f.codigo}`, retentavel: f.retentavel } });
     return Promise.resolve({
       ok: true,
-      valor: { variacoesExternas: Object.fromEntries(a.novas.map((v) => [v.sku, `FAKE-VAR-${v.sku}`])) },
+      valor: { variacoesExternas: Object.fromEntries(a.novas.map((v) => [v.sku, `FAKE-VAR-${v.sku}`])), precoVivo: null },
     });
   }
 

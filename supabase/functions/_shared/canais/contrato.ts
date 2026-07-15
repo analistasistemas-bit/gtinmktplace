@@ -122,11 +122,16 @@ export interface AtualizacaoCanonica {
   desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null;
   /** Preço de publicação da família, propagado a TODAS as variações (adendo ADR-0016). */
   precoFamilia: number | null;
+  /** Modo reposição pura: não empurra preço por nenhum ramo; cor nova entra no preço vivo. ADR-0078 F1. */
+  somenteEstoque?: boolean;
 }
 
 /** Resultado do UPDATE: sku → id externo da variação (casar/persistir + detectar não-vinculadas). */
 export interface ResultadoAtualizacao {
   variacoesExternas: Record<string, string>;
+  /** Preço vivo do anúncio (do GET pré-PUT), p/ o worker gravar preco_publicado_ml em "só estoque"
+   *  sem um 2º GET (ADR-0078 F1). null quando nenhuma variação viva tinha price. */
+  precoVivo: number | null;
 }
 
 /** Um item que vendeu mas está fora do escopo do app (publicado direto no canal). */

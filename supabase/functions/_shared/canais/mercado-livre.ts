@@ -102,16 +102,20 @@ export const mercadoLivreConnector: ChannelConnector = {
       // duplicaria, porque o id de upload cacheado difere do id re-hospedado pelo ML e o dedupe
       // por id nunca casa (bug lote #24/#25 — fotos CAPA2/CAPA3 acumulando). ADR-0062.
       const criandoNovas = a.novas.length > 0;
+      // Preço vivo do anúncio (ADR-0078 F1): preço uniforme na F1 → price da 1ª variação viva.
+      // Em "somente estoque" NÃO empurra preço por nenhum ramo; a cor nova entra neste preço.
+      const precoVivo = atual.variations.find((v) => v.price != null)?.price ?? null;
       const existentes = montarVariacoesUpdate(
         atual.variations, desejados,
         undefined,
-        a.desconto ?? undefined, a.precoFamilia,
-        corDesejadaPorCodigo,
+        a.somenteEstoque ? null : (a.desconto ?? undefined), a.somenteEstoque ? null : a.precoFamilia,
+        corDesejadaPorCodigo, a.somenteEstoque,
       );
       const novasPut = a.novas.map((v) => montarVariacaoNova(
         { codigo: v.sku, cor: v.cor, estoque: capUpd.get(v.sku) ?? v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId },
         a.capaFotoId, a.capa2FotoId, a.capa3FotoId, a.categoriaId,
-        a.desconto ? { pct: a.desconto.pct } : null,
+        a.somenteEstoque ? null : (a.desconto ? { pct: a.desconto.pct } : null),
+        a.somenteEstoque ? precoVivo : undefined,
       ));
       // BRAND (do fornecedor) + dimensões/peso (SELLER_PACKAGE_*); só os passados — o ML mescla.
       const atributosItem = [
@@ -131,7 +135,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         const refetch = await buscarItemML(token, a.itemExternoId);
         varsParaCasar = refetch.variations;
       }
-      return { ok: true, valor: { variacoesExternas: mapearVariacoesPorSku(varsParaCasar) } };
+      return { ok: true, valor: { variacoesExternas: mapearVariacoesPorSku(varsParaCasar), precoVivo } };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };
     }
