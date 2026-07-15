@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
-import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
@@ -37,7 +36,9 @@ import {
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { filtrarPublicados, ordenarPublicados, rotuloTipo } from '@/lib/publicados';
-import { deveMostrarChipCanal } from '@/lib/canais-ui';
+import { CanalTabs } from '@/components/canal-tabs';
+import { CanalBadge } from '@/components/canal-badge';
+import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
@@ -118,11 +119,7 @@ interface LinhaProps {
   onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => void;
   pausando: boolean;
   isAdmin: boolean;
-  /** Chip do canal (E6/ADR-0061): só quando a org publica em >1 canal. */
-  mostrarChipCanal: boolean;
 }
-
-const NOME_CANAL: Record<string, string> = { mercado_livre: 'Mercado Livre' };
 
 const CONTEUDO_ML = (
   <>
@@ -146,7 +143,7 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
   );
 }
 
-function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, isAdmin, mostrarChipCanal }: LinhaProps) {
+function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, isAdmin }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:publicados:${item.familiaId}`, false);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
@@ -179,11 +176,7 @@ function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, i
           <div className="max-w-[260px]">
             <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{item.codigoPai}</p>
-            {mostrarChipCanal && (
-              <Badge variant="outline" className="mt-1">
-                {NOME_CANAL[item.canal ?? 'mercado_livre'] ?? item.canal}
-              </Badge>
-            )}
+            <CanalBadge canal={item.canal ?? 'mercado_livre'} className="mt-1" />
           </div>
         </div>
       </TableCell>
@@ -376,11 +369,12 @@ export default function Publicados() {
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
   const { isAdmin } = useProfile();
+  const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
-  const { data: vendas, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useVendas(janela, 'todos');
+  const { data: vendas, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useVendas(janela, 'todos', canalAtivo);
   const { data: custos } = useCustos();
   const { data: aliquotas } = useAliquotas();
   const resumo = useMemo(
@@ -476,21 +470,28 @@ export default function Publicados() {
     });
   }, [publicados, statusData, resumo]);
 
-  // Chip do canal (E6/ADR-0061): só aparece quando a org publica em >1 canal — hoje é
-  // sempre 'mercado_livre', então fica sempre oculto (zero mudança visual).
-  const mostrarChipCanal = useMemo(
-    () => deveMostrarChipCanal(new Set(merged.map((i) => i.canal ?? 'mercado_livre')).size),
-    [merged],
+  // Recorte da tela pelo canal global (D2/D3). Contadores por canal para as tabs.
+  const contadoresCanal = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const i of merged) {
+      const c = i.canal ?? 'mercado_livre';
+      m[c] = (m[c] ?? 0) + 1;
+    }
+    return m;
+  }, [merged]);
+  const doCanal = useMemo(
+    () => (canalAtivo === 'todos' ? merged : merged.filter((i) => (i.canal ?? 'mercado_livre') === canalAtivo)),
+    [merged, canalAtivo],
   );
 
   const totalModerados = useMemo(
-    () => merged.filter((i) => i.status === 'moderado').length,
-    [merged],
+    () => doCanal.filter((i) => i.status === 'moderado').length,
+    [doCanal],
   );
 
   const itensExibidos = useMemo(
-    () => ordenarPublicados(filtrarPublicados(merged, filtro), ord),
-    [merged, filtro, ord],
+    () => ordenarPublicados(filtrarPublicados(doCanal, filtro), ord),
+    [doCanal, filtro, ord],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
   const topoRef = useRef<HTMLDivElement>(null);
@@ -539,7 +540,7 @@ export default function Publicados() {
     }
     return buildPublicadosReport({
       itens: itensExibidos,
-      todosItens: merged,
+      todosItens: doCanal,
       totais: { faturamento: resumo.bruto, unidades: resumo.unidades, pedidos: resumo.pedidos },
       liquido: resumo.liquido,
       markupPct,
@@ -585,6 +586,14 @@ export default function Publicados() {
             </Button>
           </div>
         }
+      />
+
+      <CanalTabs
+        canal={canalAtivo}
+        onCanal={setCanal}
+        habilitados={habilitados}
+        contadores={contadoresCanal}
+        className="mb-4"
       />
 
       {/* Banner sem credencial ML */}
@@ -662,7 +671,7 @@ export default function Publicados() {
 
           {/* Dashboard de KPIs de venda */}
           <DashboardPublicados
-            itens={merged}
+            itens={doCanal}
             totais={{ faturamento: resumo.bruto, unidades: resumo.unidades, pedidos: resumo.pedidos }}
             periodo={periodo}
             onPeriodo={setPeriodo}
@@ -771,7 +780,6 @@ export default function Publicados() {
                       onPausarReativar={handlePausarReativar}
                       pausando={pausandoOuReativando && pausandoId === item.mlItemId}
                       isAdmin={isAdmin}
-                      mostrarChipCanal={mostrarChipCanal}
                     />
                   ))
                 )}

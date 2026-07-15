@@ -11,6 +11,7 @@ const usePausarReativarPublicadoMock = vi.fn();
 const useResumoFinanceiroMock = vi.fn();
 const useVendasMock = vi.fn();
 const useCustosMock = vi.fn();
+const useCanaisHabilitadosMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
@@ -22,6 +23,11 @@ vi.mock('@/hooks/useVendas', () => ({
 
 vi.mock('@/hooks/useCustos', () => ({
   useCustos: () => useCustosMock(),
+}));
+
+// CanalTabs (D2/D3): sem QueryClient no teste, mockamos o hook de canais habilitados.
+vi.mock('@/hooks/useCanaisHabilitados', () => ({
+  useCanaisHabilitados: () => useCanaisHabilitadosMock(),
 }));
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 8, importado: 16 } }),
@@ -105,6 +111,7 @@ describe('Publicados', () => {
       refetch: vi.fn(),
     });
     useCustosMock.mockReturnValue({ data: undefined });
+    useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
   });
 
   it('oferece Cola no filtro de tipos', () => {
