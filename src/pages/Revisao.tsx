@@ -89,6 +89,11 @@ export default function Revisao() {
   const [confirmando, setConfirmando] = useState(false);
   const [publicando, setPublicando] = useState(false);
   const [listingType, setListingType] = useState<ListingType>('gold_special');
+  // Escolha global "Atualizar tudo × Somente estoque" para UPDATEs (ADR-0078 F1). Default
+  // `false` = atualizar tudo, espelha o default do backend (`?? false`, 100% comportamento atual).
+  const [somenteEstoqueGlobal, setSomenteEstoqueGlobal] = useState(false);
+  // familiaIds que invertem a escolha global (override por produto).
+  const [somenteEstoqueOverrides, setSomenteEstoqueOverrides] = useState<Set<string>>(new Set());
   // Seleção de canais (D6): grupo SEMPRE visível — operáveis marcáveis (se conectados),
   // em-breve desabilitados como vitrine. ML pré-marcado.
   const { data: conexoes = [] } = useQuery({ queryKey: QK.conexoes, queryFn: fetchConexoes });
@@ -235,6 +240,15 @@ export default function Revisao() {
     });
   }
 
+  function toggleSomenteEstoqueOverride(familiaId: string, marcar: boolean) {
+    setSomenteEstoqueOverrides((prev) => {
+      const novo = new Set(prev);
+      if (marcar) novo.add(familiaId);
+      else novo.delete(familiaId);
+      return novo;
+    });
+  }
+
   function toggleExpansao(id: string) {
     setExpandidas((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -265,12 +279,20 @@ export default function Revisao() {
     (f) => selecionadas.has(f.id) && f.operacao === 'UPDATE',
   );
 
+  // Selecionadas com badge "preço alterado" (D4/ADR-0078): candidatas ao override por produto.
+  const familiasComPrecoAlterado = familias.filter(
+    (f) => selecionadas.has(f.id) && f.operacao === 'UPDATE' && temAlteracaoPreco(f),
+  );
+
   async function confirmarPublicacao() {
     if (!loteId) return;
     setPublicando(true);
     const total = selecionadas.size;
     try {
-      await publicarFamilias([...selecionadas], listingType, canaisEfetivos);
+      await publicarFamilias([...selecionadas], listingType, canaisEfetivos, {
+        somenteEstoqueGlobal,
+        somenteEstoqueOverrides: [...somenteEstoqueOverrides],
+      });
       // A edge `publicar-familias` já fez o claim síncrono (status→'publicando') antes de
       // enfileirar. Invalidar aqui força o Relatório a buscar esse status real já no mount —
       // sem isso, a cache 'pronto' da Revisão (staleTime 30s) mostrava "não publicada (não
@@ -278,6 +300,7 @@ export default function Revisao() {
       qc.invalidateQueries({ queryKey: QK.familias(loteId) });
       qc.invalidateQueries({ queryKey: QK.lote(loteId) });
       setSelecionadas(new Set());
+      setSomenteEstoqueOverrides(new Set());
       setConfirmando(false);
       toast.success(`${total} família(s) enfileirada(s) para publicação`, {
         description: 'Acompanhe o andamento no relatório.',
@@ -585,6 +608,53 @@ export default function Revisao() {
                   </button>
                 ))}
               </div>
+            </div>
+          )}
+          {selecaoTemUpdate && (
+            <div className="mt-1">
+              <span className="block text-xs font-semibold text-muted-foreground">Produtos já publicados</span>
+              <div className="mt-1 flex gap-2">
+                {([
+                  { v: false, rotulo: 'Atualizar tudo', desc: 'preço, estoque e demais campos' },
+                  { v: true, rotulo: 'Somente estoque', desc: 'preserva o preço no ar' },
+                ] as const).map((opt) => (
+                  <button
+                    key={String(opt.v)}
+                    type="button"
+                    onClick={() => setSomenteEstoqueGlobal(opt.v)}
+                    className={
+                      somenteEstoqueGlobal === opt.v
+                        ? 'flex-1 rounded-lg border-2 border-primary bg-accent px-3 py-2 text-left'
+                        : 'flex-1 rounded-lg border px-3 py-2 text-left text-muted-foreground hover:bg-accent/50'
+                    }
+                  >
+                    <span className="block text-sm font-medium text-foreground">{opt.rotulo}</span>
+                    <span className="block text-[11px]">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+              {familiasComPrecoAlterado.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <span className="block text-xs font-semibold text-muted-foreground">
+                    {familiasComPrecoAlterado.length} produto(s) com preço alterado — exceção à escolha acima
+                  </span>
+                  {familiasComPrecoAlterado.map((f) => (
+                    <label key={f.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                      <Checkbox
+                        checked={somenteEstoqueOverrides.has(f.id)}
+                        onCheckedChange={(v) => toggleSomenteEstoqueOverride(f.id, v === true)}
+                        aria-label={`Exceção para ${f.titulo}`}
+                      />
+                      <span className="truncate">{f.titulo}</span>
+                      <span className="text-muted-foreground">
+                        ({somenteEstoqueOverrides.has(f.id)
+                          ? (somenteEstoqueGlobal ? 'atualizar tudo' : 'somente estoque')
+                          : (somenteEstoqueGlobal ? 'somente estoque' : 'atualizar tudo')})
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <div className="mt-1">
