@@ -9,6 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { LISTA_CANAIS } from '@/lib/canais';
+import { CanalBadge } from '@/components/canal-badge';
 
 interface OrgRow {
   id: string;
@@ -16,6 +19,7 @@ interface OrgRow {
   slug: string;
   membros: number;
   criado_em: string;
+  canais_habilitados: string[];
 }
 
 async function callUsuarios(body: Record<string, unknown>) {
@@ -43,6 +47,7 @@ export default function Organizacoes() {
   const { profile } = useProfile();
   const [novaOpen, setNovaOpen] = useState(false);
   const [delOrg, setDelOrg] = useState<OrgRow | null>(null);
+  const [canaisOrg, setCanaisOrg] = useState<OrgRow | null>(null);
 
   const { data: orgs = [], isLoading } = useQuery({
     queryKey: ['organizacoes'],
@@ -67,20 +72,27 @@ export default function Organizacoes() {
               <TableHead>Empresa</TableHead>
               <TableHead>Slug</TableHead>
               <TableHead>Membros</TableHead>
+              <TableHead>Canais</TableHead>
               <TableHead>Criada em</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
             ) : orgs.map((o) => (
               <TableRow key={o.id}>
                 <TableCell className="font-medium">{o.nome}</TableCell>
                 <TableCell className="text-muted-foreground">{o.slug}</TableCell>
                 <TableCell>{o.membros}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {(o.canais_habilitados ?? ['mercado_livre']).map((c) => <CanalBadge key={c} canal={c} />)}
+                  </div>
+                </TableCell>
                 <TableCell>{new Date(o.criado_em).toLocaleDateString('pt-BR')}</TableCell>
                 <TableCell className="text-right">
+                  <Button variant="ghost" size="sm" onClick={() => setCanaisOrg(o)}>Canais</Button>
                   {profile?.org_id === o.id ? (
                     <span className="text-xs text-muted-foreground">sua empresa</span>
                   ) : (
@@ -104,6 +116,11 @@ export default function Organizacoes() {
         org={delOrg}
         onClose={() => setDelOrg(null)}
         onDeleted={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
+      />
+      <CanaisOrgDialog
+        org={canaisOrg}
+        onClose={() => setCanaisOrg(null)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
       />
     </div>
   );
@@ -208,6 +225,66 @@ function NovaOrgDialog({ open, onOpenChange, onCreated }: {
           <Button onClick={criar} disabled={!nome || !slug || !adminEmail || enviando}>
             {enviando ? 'Criando…' : 'Criar empresa'}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CanaisOrgDialog({ org, onClose, onSaved }: {
+  org: OrgRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [canais, setCanais] = useState<Set<string>>(new Set(['mercado_livre']));
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => {
+    if (org) setCanais(new Set(org.canais_habilitados ?? ['mercado_livre']));
+  }, [org]);
+
+  async function salvar() {
+    if (!org) return;
+    setSalvando(true);
+    try {
+      await callUsuarios({ action: 'set_canais_org', org_id: org.id, canais: [...canais] });
+      toast.success('✓ Canais atualizados');
+      onClose();
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao salvar canais');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!org} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Canais de {org?.nome}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Canais que esta empresa enxerga como conectáveis. Canal "em breve" no produto continua
+          em breve mesmo habilitado aqui — isto controla o rollout quando o canal for lançado.
+        </p>
+        <div className="flex flex-col gap-2">
+          {LISTA_CANAIS.map((c) => (
+            <label key={c.id} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={canais.has(c.id)}
+                disabled={c.id === 'mercado_livre'}
+                onCheckedChange={(v) => setCanais((prev) => {
+                  const novo = new Set(prev);
+                  if (v === true) novo.add(c.id); else novo.delete(c.id);
+                  return novo;
+                })}
+              />
+              {c.nome}
+              {c.id === 'mercado_livre' && <span className="text-xs text-muted-foreground">(sempre ativo)</span>}
+            </label>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={salvando}>Cancelar</Button>
+          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

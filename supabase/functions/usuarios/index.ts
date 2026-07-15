@@ -101,12 +101,15 @@ Deno.serve(async (req) => {
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const { data: orgs } = await db.from('organizations')
-        .select('id, nome, slug, criado_em').order('criado_em');
+        .select('id, nome, slug, criado_em, canais_habilitados').order('criado_em');
       const result = [];
       for (const o of orgs ?? []) {
         const { count } = await db.from('profiles')
           .select('id', { count: 'exact', head: true }).eq('org_id', o.id);
-        result.push({ id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em, membros: count ?? 0 });
+        result.push({
+          id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em,
+          canais_habilitados: o.canais_habilitados, membros: count ?? 0,
+        });
       }
       return json({ orgs: result });
     }
@@ -140,6 +143,24 @@ Deno.serve(async (req) => {
         await db.from('profiles').update({ is_admin: true, org_id: org.id, updated_at: new Date().toISOString() }).eq('id', inv.user.id);
       }
       return json({ ok: true, org_id: org.id });
+    }
+    case 'set_canais_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const alvo = String(body.org_id ?? '');
+      if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
+      // Mesmos ids do registry do frontend (src/lib/canais.ts) — manter em sincronia.
+      const CANAIS_VALIDOS = ['mercado_livre', 'shopee', 'magalu', 'amazon', 'casas_bahia'];
+      const canais = Array.isArray(body.canais)
+        ? (body.canais as string[]).filter((c) => CANAIS_VALIDOS.includes(c))
+        : [];
+      if (!canais.includes('mercado_livre')) {
+        return json({ error: 'mercado_livre não pode ser desabilitado' }, 400);
+      }
+      const { error } = await db.from('organizations')
+        .update({ canais_habilitados: canais, atualizado_em: new Date().toISOString() })
+        .eq('id', alvo);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
     }
     case 'delete_org': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
