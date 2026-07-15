@@ -11,7 +11,12 @@ export function avisosCapabilities(titulos: string[], canais: string[]): string[
     if (!cap) continue;
     const excedem = titulos.filter((t) => t.length > cap.tituloMax).length;
     if (excedem > 0) {
-      avisos.push(`${excedem} título(s) excedem o limite de ${cap.tituloMax} caracteres do ${infoCanal(id)!.nome}.`);
+      const nome = infoCanal(id)!.nome;
+      avisos.push(
+        excedem === 1
+          ? `1 título excede o limite de ${cap.tituloMax} caracteres do ${nome}.`
+          : `${excedem} títulos excedem o limite de ${cap.tituloMax} caracteres do ${nome}.`,
+      );
     }
   }
   return avisos;

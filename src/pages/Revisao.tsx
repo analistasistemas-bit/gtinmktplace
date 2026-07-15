@@ -95,6 +95,11 @@ export default function Revisao() {
   const operaveis = canaisOperaveis(habilitados);
   const emBreve = canaisEmBreve(habilitados);
   const canaisConectados = useMemo(() => new Set(conexoes.map((c) => c.canal)), [conexoes]);
+  // Canais que realmente vão no payload: selecionados com conexão; vazio → ML (caminho atual).
+  const canaisEfetivos = useMemo(() => {
+    const marcados = [...canaisSelecionados].filter((c) => canaisConectados.has(c));
+    return marcados.length > 0 ? marcados : ['mercado_livre'];
+  }, [canaisSelecionados, canaisConectados]);
   // Variação-alvo ao clicar no selo de pendência do pai: expande + rola até ela.
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
@@ -261,11 +266,8 @@ export default function Revisao() {
     if (!loteId) return;
     setPublicando(true);
     const total = selecionadas.size;
-    // Publica só nos selecionados que têm conexão; fallback = ML (comportamento de sempre).
-    const marcados = [...canaisSelecionados].filter((c) => canaisConectados.has(c));
-    const canais = marcados.length > 0 ? marcados : ['mercado_livre'];
     try {
-      await publicarFamilias([...selecionadas], listingType, canais);
+      await publicarFamilias([...selecionadas], listingType, canaisEfetivos);
       // A edge `publicar-familias` já fez o claim síncrono (status→'publicando') antes de
       // enfileirar. Invalidar aqui força o Relatório a buscar esse status real já no mount —
       // sem isso, a cache 'pronto' da Revisão (staleTime 30s) mostrava "não publicada (não
@@ -610,8 +612,7 @@ export default function Revisao() {
           </div>
           {(() => {
             const titulos = familias.filter((f) => selecionadas.has(f.id)).map((f) => f.titulo);
-            const marcados = [...canaisSelecionados].filter((c) => canaisConectados.has(c));
-            const avisos = avisosCapabilities(titulos, marcados.length > 0 ? marcados : ['mercado_livre']);
+            const avisos = avisosCapabilities(titulos, canaisEfetivos);
             return avisos.length > 0 ? (
               <div className="mt-1 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
                 {avisos.map((a) => <p key={a}>{a}</p>)}
