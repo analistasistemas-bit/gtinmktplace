@@ -387,7 +387,7 @@ Em `queue.ts` estender `ProcessFamiliaJob` (21-25) com `somenteEstoque?: boolean
 
 **Crítico 1 — atacado (PxQ) também respeita "só estoque":** o bloco de reaplicação de PxQ (`update-familia-ml/index.ts:216-230`) recalcula `amount = precoFamilia*(1-pct)` — em "só estoque" isso empurraria B2B a partir de um preço que o operador escolheu NÃO publicar. Guardar o bloco inteiro atrás de `if (!job.somenteEstoque) { ... }` (em "só estoque" o PxQ vivo é preservado, coerente com não mexer em preço). Teste: com `somenteEstoque`, `aplicarAtacado` não é chamado.
 
-**Crítico 2 — rota split (`publicar-split-ml`) também respeita "só estoque":** o ramo UPDATE do split (`publicar-split-ml/index.ts:257-280`) monta `desconto`+`precoFamilia` e chama o **mesmo** `conn.atualizarAnuncio`. Estender o `Job`/payload do split worker com `somenteEstoque` e, quando `true`, passar `somenteEstoque: true` a `conn.atualizarAnuncio` (e pular o bloco de atacado por partição do split, mesmo guard). Sem isso, família >100 cores publica preço mesmo com "só estoque" marcado. Teste: job de split com `somenteEstoque` → `atualizarAnuncio` recebe o flag; nenhum push de preço.
+**Crítico 2 — rota split (`publicar-split-ml`) também respeita "só estoque":** o ramo UPDATE do split (`publicar-split-ml/index.ts:257-280`) monta `desconto`+`precoFamilia` e chama o **mesmo** `conn.atualizarAnuncio`. Estender o `Job`/payload do split worker com `somenteEstoque` e, quando `true`, passar `somenteEstoque: true` a `conn.atualizarAnuncio` no ramo UPDATE. Sem isso, família >100 cores publica preço mesmo com "só estoque" marcado. (**Nota:** `publicar-split-ml` **não** tem bloco de atacado — atacado só existe em publish/update-familia-ml —, então não há nada a guardar aqui.) Teste: job de split com `somenteEstoque` → `atualizarAnuncio` recebe o flag; nenhum push de preço.
 
 - [ ] **Step 4: Rodar e ver passar** — Run: `pnpm test -- somente-estoque.test.ts` — Expected: PASS.
 
@@ -403,7 +403,7 @@ git commit -m "feat(publicar): escolha somenteEstoque (global+override) no paylo
 ### Task 7: Gravar `preco_publicado_ml` no sucesso do update/publish
 
 **Files:**
-- Modify: `supabase/functions/update-familia-ml/index.ts:180-212` (após casar variações e antes/junto do update de status); `supabase/functions/publish-familia-ml/index.ts` (bloco de sucesso do CREATE)
+- Modify: `supabase/functions/update-familia-ml/index.ts:180-212` (após casar variações e antes/junto do update de status); `supabase/functions/publish-familia-ml/index.ts:147-151` (bloco de sucesso do CREATE); `supabase/functions/publicar-split-ml/index.ts:257-281` (sucesso do ramo UPDATE por partição)
 - Test: helper puro `precoAConfirmar(...)` + teste; verificação manual do worker no fluxo controlado.
 
 **Interfaces:**
@@ -446,6 +446,8 @@ if (confirmado != null) {
 ```
 
 No CREATE (`publish-familia-ml/index.ts`), no loop que casa `variacoesExternas` (sku→id) após o POST — perto da linha 148 — gravar `preco_publicado_ml = <preço enviado da variação>` por SKU no sucesso (no CREATE não há "só estoque"; é o próprio `preco_publicacao` publicado).
+
+**Rota split (`publicar-split-ml`, ramo UPDATE ~257-281):** gravar `preco_publicado_ml` por SKU no sucesso de cada partição, usando o mesmo `precoAConfirmar({ somenteEstoque, precoVivo: res.valor!.precoVivo, precoEnviado: precoFamilia })`. Sem isso, família que migra de ≤100 → >100 cores fica com `preco_publicado_ml` stale e badge "preço alterado" **permanente**. (`res.valor!.precoVivo` já disponível pela Task 5.)
 
 **Nota (janela conservadora, achado menor):** se o PUT sucede mas `novasSemVinculo` lança depois (`update-familia-ml:190-194`), o preço já foi ao vivo e `preco_publicado_ml` não é gravado — o badge indicará "alteração" de algo já aplicado. Erra pro lado seguro (nunca esconde alteração real); documentar, não tratar na F1.
 
