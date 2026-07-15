@@ -145,7 +145,7 @@ Referências: CLAUDE.md, docs/README.md, docs/decisions/, docs/agents/
 
 # ADRs recorrentes
 
-Consulte `docs/decisions/`. Mais relevantes: 0003 (variações por pai), 0004 (cor), 0005 (lifecycle publish/update), 0006 (QStash), 0007 (modelo de dados), 0016 (UPDATE com reposição), 0018 (dimensões/peso), 0021 (catálogo), 0024 (abstração de canais), 0025 (multicanal), 0026 (IA p/ atributos), 0027 (multi-tenancy), 0028 (billing), 0043 (migrations canal único).
+Consulte `docs/decisions/`. Mais relevantes: 0003 (variações por pai), 0004 (cor), 0005 (lifecycle publish/update), 0006 (QStash), 0007 (modelo de dados), 0016 (UPDATE com reposição), 0018 (dimensões/peso), 0021 (catálogo), 0024 (abstração de canais), 0025 (multicanal), 0026 (IA p/ atributos), 0027 (multi-tenancy), 0028 (billing), 0043 (migrations canal único), 0061 (orquestração multicanal), 0077 (registry híbrido UI multicanal).
 
 ---
 
