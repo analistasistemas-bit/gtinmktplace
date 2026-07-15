@@ -84,6 +84,7 @@ export function montarVariacoesUpdate(
   desconto?: { pct: number; precoPorCodigo: Record<string, number | null> } | null,
   precoFamilia?: number | null,
   corDesejadaPorCodigo?: Record<string, string | null>,
+  somenteEstoque?: boolean,
 ): VariacaoUpdate[] {
   const estoquePorCodigo = new Map(desejados.map((d) => [d.codigo, d.estoque]));
   return atuais.map((a) => {
@@ -96,14 +97,14 @@ export function montarVariacoesUpdate(
     }
     const pics = picsPorCodigo?.[codigo];
     if (pics && pics.length > 0) base.picture_ids = [...new Set(pics)];
-    if (desconto) {
+    if (!somenteEstoque && desconto) {
       const preco = desconto.precoPorCodigo[codigo];
       if (preco != null) {
         const de = calcularPrecoDe(preco, desconto.pct);
         if (de !== null) { base.price = preco; base.original_price = de; }
       }
     }
-    if (precoFamilia != null && base.price == null) base.price = precoFamilia;
+    if (!somenteEstoque && precoFamilia != null && base.price == null) base.price = precoFamilia;
     return base;
   });
 }

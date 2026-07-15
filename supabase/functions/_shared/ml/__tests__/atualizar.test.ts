@@ -135,6 +135,22 @@ describe('montarVariacoesUpdate', () => {
     });
     expect(r.find((v) => v.id === 'V1')).not.toHaveProperty('attribute_combinations');
   });
+
+  it('somenteEstoque suprime price e original_price mesmo com desconto e precoFamilia', () => {
+    const atuais = [{ id: 1, seller_custom_field: 'A1', available_quantity: 5, cor: 'Azul' }];
+    const desejados = [{ codigo: 'A1', estoque: 9 }];
+    const desconto = { pct: 15, precoPorCodigo: { A1: 20 } };
+    const out = montarVariacoesUpdate(atuais, desejados, undefined, desconto, 20, undefined, true /* somenteEstoque */);
+    expect(out[0].available_quantity).toBe(9);
+    expect(out[0].price).toBeUndefined();
+    expect(out[0].original_price).toBeUndefined();
+  });
+
+  it('sem somenteEstoque mantem o comportamento atual (empurra precoFamilia)', () => {
+    const atuais = [{ id: 1, seller_custom_field: 'A1', available_quantity: 5, cor: 'Azul' }];
+    const out = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 9 }], undefined, null, 20);
+    expect(out[0].price).toBe(20);
+  });
 });
 
 const corNova = {
