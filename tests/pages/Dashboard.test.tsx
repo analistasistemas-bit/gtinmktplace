@@ -80,6 +80,10 @@ vi.mock('@/hooks/usePublicados', () => ({ usePublicados: () => ({ data: [] }) })
 vi.mock('@/hooks/useStatusPublicados', () => ({ useStatusPublicados: () => ({ data: { itens: [], semCredencialML: false } }) }));
 vi.mock('@/hooks/usePerguntas', () => ({ usePerguntasNaoRespondidas: () => ({ data: 0 }) }));
 vi.mock('@/hooks/useDevolucoes', () => ({ useDevolucoes: () => ({ data: [] }) }));
+// CanalTabs (D2/D3): sem QueryClient no teste, mockamos o hook de canais habilitados.
+vi.mock('@/hooks/useCanaisHabilitados', () => ({
+  useCanaisHabilitados: () => ({ data: ['mercado_livre'] }),
+}));
 
 describe('Dashboard', () => {
   it('prioriza líquido no card antes usado para lucro líquido', () => {

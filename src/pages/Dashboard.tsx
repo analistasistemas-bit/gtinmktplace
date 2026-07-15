@@ -18,6 +18,8 @@ import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
 import { agruparPorPeriodo } from '@/lib/resumo-vendas';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { useVendas } from '@/hooks/useVendas';
+import { CanalTabs } from '@/components/canal-tabs';
+import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { useCustos } from '@/hooks/useCustos';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
@@ -84,15 +86,16 @@ function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta
 }
 
 export default function Dashboard() {
+  const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
 const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturamento');
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
 
-  const { resumo: r, isFetching, error } = useResumoVendas(janela);
-  const { resumo: rAnt } = useResumoVendas(janelaAnt);
-  const vendasRaw = useVendas(janela, 'todos'); // mesma chave de cache do useResumoVendas → sem request extra
-  const vendasRawAnt = useVendas(janelaAnt, 'todos'); // idem (já buscado pelo rAnt) → delta por pacote
+  const { resumo: r, isFetching, error } = useResumoVendas(janela, canalAtivo);
+  const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
+  const vendasRaw = useVendas(janela, 'todos', canalAtivo); // mesma chave de cache do useResumoVendas → sem request extra
+  const vendasRawAnt = useVendas(janelaAnt, 'todos', canalAtivo); // idem (já buscado pelo rAnt) → delta por pacote
   const { data: custos } = useCustos();
   const { data: aliquotas } = useAliquotas();
   const carregando = vendasRaw.isPending;
@@ -194,6 +197,8 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
           </div>
         }
       />
+
+      <CanalTabs canal={canalAtivo} onCanal={setCanal} habilitados={habilitados} className="mb-4" />
 
       {error && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">

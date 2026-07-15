@@ -13,6 +13,8 @@ import { agruparPorPeriodo } from '@/lib/resumo-vendas';
 import { GraficoEvolucao } from '@/components/financeiro/grafico-evolucao';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroReport } from '@/lib/export/adapters';
+import { CanalTabs } from '@/components/canal-tabs';
+import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 
 function Kpi({ icon: Icon, label, valor, sub, tom, valorCor, delta }: {
   icon: typeof Wallet; label: string; valor: string; sub?: string;
@@ -44,10 +46,11 @@ function Kpi({ icon: Icon, label, valor, sub, tom, valorCor, delta }: {
 
 export default function Financeiro() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
-  const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela);
+  const { resumo: r, isFetching, refetch, error, dataUpdatedAt } = useResumoVendas(janela, canalAtivo);
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
-  const { resumo: rAnt } = useResumoVendas(janelaAnt);
+  const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
 
   const delta = (atual: number, anterior: number): { texto: string; trend: 'up' | 'down' | 'neutral' } => {
     if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
@@ -107,6 +110,8 @@ export default function Financeiro() {
           </div>
         }
       />
+
+      <CanalTabs canal={canalAtivo} onCanal={setCanal} habilitados={habilitados} className="mb-3" />
 
       {error && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
