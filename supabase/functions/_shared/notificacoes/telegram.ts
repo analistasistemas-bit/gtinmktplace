@@ -36,6 +36,7 @@ export interface CatalogoNoMatchAlerta {
   ml_item_id: string;
   titulo: string | null;
   cores: string[];
+  motivo?: 'elegibilidade_esgotada';
 }
 
 // Alerta PROATIVO (ADR-0036): no opt-in de catálogo, alguma variação não tem ficha equivalente
@@ -47,8 +48,11 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
   const cores = item.cores.join(', ');
   const plural = item.cores.length === 1 ? 'a variação' : 'as variações';
   const url = `https://www.mercadolivre.com.br/produzir/catalogo/${item.ml_item_id}`;
+  const causa = item.motivo === 'elegibilidade_esgotada'
+    ? `${item.cores.length === 1 ? 'teve' : 'tiveram'} elegibilidade esgotada após múltiplas tentativas`
+    : 'não tem ficha equivalente';
   return [
-    `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" não tem ficha equivalente e não vai competir.`,
+    `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" ${causa} e não vai competir.`,
     `Se ficar assim, o Mercado Livre pode pausar/inativar o anúncio.`,
     `Para evitar: abra o link → Publicar no catálogo → na cor sem ficha clique "Não encontro minha variação" → Confirmar.`,
     url,

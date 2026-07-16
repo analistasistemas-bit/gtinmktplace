@@ -235,8 +235,8 @@ export interface ResumoCatalogo {
 /**
  * Decide se deve alertar o operador sobre variações sem ficha de catálogo equivalente (ADR-0036).
  * Só quando a elegibilidade já foi computada (`pendente === 0`, estado final) e sobrou variação
- * sem ficha (`ficha_divergente`/`sem_produto`) — essas não competem e fazem o ML pausar o anúncio
- * depois. Esperar `pendente === 0` evita alerta prematuro/repetido durante os retries do worker.
+ * sem ficha ou elegibilidade esgotada — essas não competem e fazem o ML pausar o anúncio depois.
+ * Esperar `pendente === 0` evita alerta prematuro/repetido durante os retries do worker.
  */
 export function deveAlertarCatalogoNoMatch(resumo: ResumoCatalogo): boolean {
   return resumo.pendente === 0 && (
