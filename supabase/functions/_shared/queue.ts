@@ -115,7 +115,7 @@ export async function enfileirarPublicacaoCanal(job: PublicarAnuncioJob, orgId: 
   return messageId;
 }
 
-export interface VincularCatalogoJob { familia_id: string; }
+export interface VincularCatalogoJob { familia_id: string; tentativa?: number; }
 
 /**
  * Enfileira o opt-in de catálogo (ADR-0021) com delay. A elegibilidade de catálogo do ML só
@@ -126,14 +126,19 @@ export interface VincularCatalogoJob { familia_id: string; }
  * só itens genuinamente elegíveis (mesma família) seguem READY e vinculam; `retries` cobre o
  * caso de ainda não ter computado (o worker devolve 500 enquanto houver variação `pendente`).
  */
-export async function enfileirarVinculacaoCatalogo(familiaId: string, delaySeconds = 600): Promise<string> {
+export async function enfileirarVinculacaoCatalogo(
+  familiaId: string,
+  delaySeconds = 600,
+  tentativa = 1,
+  retries = 5,
+): Promise<string> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/vincular-catalogo`;
   const { messageId } = await qstashClient().publishJSON({
     url: target,
-    body: { familia_id: familiaId } satisfies VincularCatalogoJob,
+    body: { familia_id: familiaId, tentativa } satisfies VincularCatalogoJob,
     delay: delaySeconds,
-    retries: 5,
+    retries,
   });
   return messageId;
 }
