@@ -120,3 +120,28 @@ exigiria a tabela "nº da fita Progresso → largura em mm" (N.3=15mm, N.12=50mm
 na planilha** (o nome traz o nº e a metragem, não a largura). Sem essa fonte de domínio, enviar
 `WIDTH` seria inventar dado de produto. A trava anti-kit + metragem já cobre os casos do incidente,
 então a trava de largura não é necessária; fica reaberta apenas se o fornecedor disponibilizar a tabela.
+
+## Revisão pós-incidente (2026-07-15) — retry limitado para nao_elegivel transitório
+
+**Incidente:** uma checagem ao vivo do `MLB4862137331` confirmou que a elegibilidade pode continuar
+`nao_elegivel` muito além dos 10 minutos do primeiro job e depois assentar. A análise do histórico
+identificou o mesmo padrão em ~1035 variações desde 2026-06-17.
+
+**Causa raiz:** o worker fazia uma única checagem e tratava todo resultado que não fosse
+`READY_FOR_OPTIN` nem `FAMILY_DIFF` como definitivo. Assim, um `nao_elegivel` transitório encerrava
+o fluxo antes de o ML concluir o cálculo.
+
+**Decisão adicional:** `decidirResultadoRodadaCatalogo` passa a escolher uma única ação por rodada.
+Depois do delay inicial de 10 minutos, `nao_elegivel` é reagendado conforme
+`CATALOGO_BACKOFF_SEGUNDOS` (1h, 6h, 24h e 48h), totalizando cinco rodadas ao longo de aproximadamente
+3,3 dias. `pendente` continua usando o retry técnico do QStash e tem precedência sobre o backoff de
+negócio. `sem_variation_id` permanece separado: é uma ausência estrutural, registrada no resumo, e
+esperar não cria o identificador.
+
+**Riscos aceitos:** o opt-in mantém a idempotência pré-existente, que pula variações já vinculadas.
+Uma republicação pode iniciar chains paralelos; ambos relêem o estado e convergem pela mesma trava,
+mas podem gerar chamadas e reagendamentos redundantes.
+
+**Consequências:** estados transitórios ganham uma janela limitada para assentar, sem transformar o
+worker em retry indefinido. Ao esgotar as rodadas, o resultado é finalizado e segue para o alerta
+operacional; casos estruturais ou de conteúdo não são prolongados por backoff.

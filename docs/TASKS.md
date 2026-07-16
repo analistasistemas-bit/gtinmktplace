@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Catálogo ML — retry limitado para elegibilidade transitória — 2026-07-15
+
+- [x] Corrigido o encerramento prematuro de `nao_elegivel`: decisão unificada por rodada e backoff
+  limitado até ~3,3 dias, com alerta somente após o esgotamento.
+- [x] A checagem ao vivo do `MLB4862137331` revelou um incidente sistêmico: ~1035
+  variações afetadas desde 2026-06-17.
+- [x] A revisão adversarial do plano pelo Codex encontrou e corrigiu um bug real de ordenação
+  (`pendente` precisa preceder o reagendamento) antes de qualquer código ser escrito.
+
 ## ADR-0078 Fase 1 — controle de preço no UPDATE (badge + filtro "preço alterado", somente estoque) — 2026-07-15
 
 - [x] Badge + filtro "preço alterado" na Revisão, coluna `variacoes.preco_publicado_ml`, escolha

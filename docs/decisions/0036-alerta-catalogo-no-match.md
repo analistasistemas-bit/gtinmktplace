@@ -29,3 +29,9 @@ No worker `vincular-catalogo` (que roda minutos após o CREATE, quando a elegibi
 - Reusa a infra de Telegram existente; sem alerta se o usuário não configurou (no-op).
 - **Follow-up:** investigar se a API pública de **User Products** (OAuth) expõe um equivalente ao no-match; se sim, trocar o alerta por automação real.
 - Deploy: `vincular-catalogo`.
+
+## Nota de revisão (2026-07-15)
+
+O alerta também cobre `nao_elegivel` e `sem_variation_id` esgotados. Ele só dispara após a última
+rodada do retry limitado, e a mensagem diferencia a elegibilidade esgotada dos demais casos pelo
+campo `motivo`.

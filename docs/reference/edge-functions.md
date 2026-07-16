@@ -203,8 +203,10 @@
   busca categorias reais do ML por texto livre (`buscarCategoriaPreditor`) e devolve também a
   sugestão não-vinculante da categoria do concorrente (`concorrencia_categoria_id` →
   `buscarNomeCategoria`), sem exigir categoria já definida.
-- **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; alerta Telegram
-  em no-match/ficha divergente (ADR-0021/0036).
+- **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; uma decisão unificada
+  por rodada aguarda elegibilidade pendente, reagenda `nao_elegivel` com backoff limitado
+  (1h/6h/24h/48h; janela total de ~3,3 dias) ou finaliza e alerta via Telegram em
+  no-match/ficha divergente/elegibilidade esgotada (ADR-0021/0036).
 
 ### Remoção / reprocessamento
 - **remover-publicado** — remove todas as linhas publicadas de um mesmo `codigo_pai` (global
