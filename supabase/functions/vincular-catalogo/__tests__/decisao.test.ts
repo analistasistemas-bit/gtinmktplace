@@ -18,4 +18,21 @@ describe('fluxo de decisão do worker (regressão do incidente 2026-07-15 + bug 
     const r = decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 8 }, 5);
     expect(r).toEqual({ acao: 'finalizar', deveAlertar: true });
   });
+
+  it.each([
+    { sem_variation_id: 2 },
+    { ficha_divergente: 2 },
+  ])('nao_elegivel misturado com $sem_variation_id$ficha_divergente reagenda enquanto há tentativa', (extra) => {
+    expect(decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1, ...extra }, 1).acao).toBe('reagendar');
+  });
+
+  it.each([
+    { sem_variation_id: 2 },
+    { ficha_divergente: 2 },
+  ])('nao_elegivel misturado finaliza e alerta ao esgotar', (extra) => {
+    expect(decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1, ...extra }, 5)).toEqual({
+      acao: 'finalizar',
+      deveAlertar: true,
+    });
+  });
 });

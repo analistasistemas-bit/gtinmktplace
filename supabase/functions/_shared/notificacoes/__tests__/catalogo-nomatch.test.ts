@@ -43,4 +43,15 @@ describe('montarMensagemCatalogoNoMatch', () => {
     expect(msg.toLowerCase()).toMatch(/catálogo|catalogo/);
     expect(msg.toLowerCase()).toMatch(/pausa|inativ/);
   });
+
+  it('descreve sem variation id como falha estrutural, sem alegar múltiplas tentativas', () => {
+    const msg = montarMensagemCatalogoNoMatch({
+      ml_item_id: 'MLB1',
+      titulo: 'Linha X',
+      cores: ['Preto'],
+      motivo: 'sem_variation_id',
+    });
+    expect(msg).toContain('não tem identificador de variação');
+    expect(msg).not.toContain('múltiplas tentativas');
+  });
 });

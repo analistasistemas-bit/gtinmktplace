@@ -36,7 +36,7 @@ export interface CatalogoNoMatchAlerta {
   ml_item_id: string;
   titulo: string | null;
   cores: string[];
-  motivo?: 'elegibilidade_esgotada';
+  motivo?: 'elegibilidade_esgotada' | 'sem_variation_id';
 }
 
 // Alerta PROATIVO (ADR-0036): no opt-in de catálogo, alguma variação não tem ficha equivalente
@@ -50,6 +50,8 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
   const url = `https://www.mercadolivre.com.br/produzir/catalogo/${item.ml_item_id}`;
   const causa = item.motivo === 'elegibilidade_esgotada'
     ? `${item.cores.length === 1 ? 'teve' : 'tiveram'} elegibilidade esgotada após múltiplas tentativas`
+    : item.motivo === 'sem_variation_id'
+    ? 'não tem identificador de variação no Mercado Livre'
     : 'não tem ficha equivalente';
   return [
     `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" ${causa} e não vai competir.`,

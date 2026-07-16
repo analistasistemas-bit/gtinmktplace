@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   decidirAcaoCatalogo,
   decidirResultadoRodadaCatalogo,
+  decidirMotivoAlertaCatalogo,
   CATALOGO_MAX_TENTATIVAS,
   CATALOGO_BACKOFF_SEGUNDOS,
+  normalizarTentativaCatalogo,
   montarBodyOptin,
   indexarEligibility,
   normalizarComprimentoMetros,
@@ -82,6 +84,18 @@ describe('decidirResultadoRodadaCatalogo', () => {
     expect(r).toEqual({ acao: 'reagendar', delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[0], proximaTentativa: 2 });
   });
 
+  it.each([0, -1, 1.5, CATALOGO_MAX_TENTATIVAS + 1])(
+    'normaliza tentativa inválida %s para a primeira rodada',
+    (tentativa) => {
+      expect(normalizarTentativaCatalogo(tentativa)).toBe(1);
+      expect(decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, tentativa)).toEqual({
+        acao: 'reagendar',
+        delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[0],
+        proximaTentativa: 2,
+      });
+    },
+  );
+
   it('avança pelo backoff correto rodada a rodada', () => {
     expect(decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, 2).acao === 'reagendar' &&
       (decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, 2) as any).delaySegundos).toBe(CATALOGO_BACKOFF_SEGUNDOS[1]);
@@ -97,6 +111,10 @@ describe('decidirResultadoRodadaCatalogo', () => {
   it('sem_variation_id é ESTRUTURAL — finaliza direto na 1ª rodada, não reagenda', () => {
     const r = decidirResultadoRodadaCatalogo({ ...base, sem_variation_id: 2 }, 1);
     expect(r).toEqual({ acao: 'finalizar', deveAlertar: true });
+  });
+
+  it('seleciona motivo estrutural para resumo somente com sem_variation_id', () => {
+    expect(decidirMotivoAlertaCatalogo({ ...base, sem_variation_id: 2 })).toBe('sem_variation_id');
   });
 
   it('sem nada pendente/problemático, finaliza sem alertar', () => {

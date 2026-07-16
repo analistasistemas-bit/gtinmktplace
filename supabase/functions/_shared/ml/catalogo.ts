@@ -245,10 +245,25 @@ export function deveAlertarCatalogoNoMatch(resumo: ResumoCatalogo): boolean {
   );
 }
 
+export function decidirMotivoAlertaCatalogo(
+  resumo: ResumoCatalogo,
+): 'elegibilidade_esgotada' | 'sem_variation_id' | undefined {
+  if (resumo.ficha_divergente > 0 || resumo.sem_produto > 0) return undefined;
+  if (resumo.sem_variation_id > 0 && resumo.nao_elegivel === 0) return 'sem_variation_id';
+  if (resumo.nao_elegivel + resumo.sem_variation_id > 0) return 'elegibilidade_esgotada';
+  return undefined;
+}
+
 // Retry limitado quando a elegibilidade volta nao_elegivel (ADR-0021 addendum, incidente
 // 2026-07-15). Casos de conteúdo/estruturais não reagendam: esperar não muda o dado.
 export const CATALOGO_BACKOFF_SEGUNDOS = [3600, 21600, 86400, 172800]; // 1h, 6h, 24h, 48h
 export const CATALOGO_MAX_TENTATIVAS = CATALOGO_BACKOFF_SEGUNDOS.length + 1;
+
+export function normalizarTentativaCatalogo(tentativa: number): number {
+  return Number.isInteger(tentativa) && tentativa >= 1 && tentativa <= CATALOGO_MAX_TENTATIVAS
+    ? tentativa
+    : 1;
+}
 
 export type ResultadoRodadaCatalogo =
   | { acao: 'aguardar_elegibilidade' }
@@ -260,6 +275,7 @@ export function decidirResultadoRodadaCatalogo(
   resumo: ResumoCatalogo,
   tentativaAtual: number,
 ): ResultadoRodadaCatalogo {
+  tentativaAtual = normalizarTentativaCatalogo(tentativaAtual);
   if (resumo.pendente > 0) return { acao: 'aguardar_elegibilidade' };
   if (resumo.nao_elegivel > 0 && tentativaAtual < CATALOGO_MAX_TENTATIVAS) {
     const idx = tentativaAtual - 1;

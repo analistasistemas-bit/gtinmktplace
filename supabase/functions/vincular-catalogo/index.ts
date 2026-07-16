@@ -3,7 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarVinculacaoCatalogo, type VincularCatalogoJob } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
-import { vincularVariacoesCatalogo, decidirResultadoRodadaCatalogo } from '../_shared/ml/catalogo.ts';
+import { vincularVariacoesCatalogo, decidirResultadoRodadaCatalogo, decidirMotivoAlertaCatalogo, normalizarTentativaCatalogo } from '../_shared/ml/catalogo.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     const resumo = await vincularVariacoesCatalogo(token, admin, familia.ml_item_id, variacoes);
     console.log(`catálogo (job) ${familia.ml_item_id}: ${JSON.stringify(resumo)}`);
 
-    const tentativaAtual = Number.isInteger(job.tentativa) && (job.tentativa as number) >= 1 ? (job.tentativa as number) : 1;
+    const tentativaAtual = normalizarTentativaCatalogo(job.tentativa as number);
     const resultado = decidirResultadoRodadaCatalogo(resumo, tentativaAtual);
 
     if (resultado.acao === 'aguardar_elegibilidade') {
@@ -88,9 +88,7 @@ Deno.serve(async (req) => {
             ml_item_id: familia.ml_item_id,
             titulo: familia.nome_pai ?? null,
             cores,
-            motivo: resumo.nao_elegivel + resumo.sem_variation_id > 0 && resumo.ficha_divergente === 0 && resumo.sem_produto === 0
-              ? 'elegibilidade_esgotada'
-              : undefined,
+            motivo: decidirMotivoAlertaCatalogo(resumo),
           }));
       } catch (e) {
         console.error(`alerta catálogo no-match falhou para ${familia.ml_item_id}:`, (e as Error).message);
