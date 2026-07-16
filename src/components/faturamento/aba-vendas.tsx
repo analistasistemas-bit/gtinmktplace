@@ -167,7 +167,7 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
 }
 
 export function AbaVendas() {
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'mes_atual' });
   const [origem, setOrigem] = useState<OrigemVenda>('todos');
   const [sincronizando, setSincronizando] = useState(false);
   const [modoCustom, setModoCustom] = useState(false);
@@ -175,9 +175,11 @@ export function AbaVendas() {
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
   const ehHoje = !modoCustom && periodo.tipo === 'hoje';
+  const ehMesAtual = !modoCustom && periodo.tipo === 'mes_atual';
   const rascunhoValido = !!rascunho.desde && !!rascunho.ate && rascunho.desde <= rascunho.ate;
   const escolherPreset = (dias: PeriodoDias) => { setModoCustom(false); setPeriodo({ tipo: 'preset', dias }); };
   const escolherHoje = () => { setModoCustom(false); setPeriodo({ tipo: 'hoje' }); };
+  const escolherMesAtual = () => { setModoCustom(false); setPeriodo({ tipo: 'mes_atual' }); };
   const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
   const aplicarCustom = () => { if (rascunhoValido) setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); };
 
@@ -293,6 +295,12 @@ export function AbaVendas() {
                 {p.label}
               </Button>
             ))}
+            <Button size="sm"
+              variant={ehMesAtual ? 'default' : 'outline'}
+              className="h-7 px-2.5 text-xs"
+              onClick={escolherMesAtual}>
+              Mês atual
+            </Button>
             <Button size="sm"
               variant={modoCustom ? 'default' : 'outline'}
               className="h-7 px-2.5 text-xs"

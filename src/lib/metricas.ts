@@ -1,8 +1,9 @@
 export type PeriodoDias = 7 | 30 | 90;
 
-/** Período selecionado: hoje (00:00→agora), preset (7/30/90) ou intervalo de datas livre. */
+/** Período selecionado: hoje, mês atual, preset (7/30/90) ou intervalo de datas livre. */
 export type Periodo =
   | { tipo: 'hoje' }
+  | { tipo: 'mes_atual' }
   | { tipo: 'preset'; dias: PeriodoDias }
   | { tipo: 'range'; desde: string; ate: string };
 
@@ -16,6 +17,11 @@ export function resolverJanela(p: Periodo): Janela {
     const ate = new Date();
     const desde = new Date(ate);
     desde.setHours(0, 0, 0, 0);
+    return { desde: desde.toISOString(), ate: ate.toISOString() };
+  }
+  if (p.tipo === 'mes_atual') {
+    const ate = new Date();
+    const desde = new Date(ate.getFullYear(), ate.getMonth(), 1);
     return { desde: desde.toISOString(), ate: ate.toISOString() };
   }
   if (p.tipo === 'preset') {
@@ -54,6 +60,7 @@ export function janelaAnterior(j: Janela, p?: Periodo): Janela {
 /** Serializa o período para query string (?periodo=hoje, ?dias=30 ou ?de=…&ate=…). */
 export function periodoToParams(p: Periodo): Record<string, string> {
   if (p.tipo === 'hoje') return { periodo: 'hoje' };
+  if (p.tipo === 'mes_atual') return { periodo: 'mes_atual' };
   return p.tipo === 'preset' ? { dias: String(p.dias) } : { de: p.desde, ate: p.ate };
 }
 
@@ -62,6 +69,7 @@ const DATA_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Lê o período de uma fonte de params (ex.: URLSearchParams.get). Default 30 dias. */
 export function periodoFromParams(get: (k: string) => string | null): Periodo {
   if (get('periodo') === 'hoje') return { tipo: 'hoje' };
+  if (get('periodo') === 'mes_atual') return { tipo: 'mes_atual' };
   const de = get('de');
   const ate = get('ate');
   if (de && ate && DATA_RE.test(de) && DATA_RE.test(ate) && de <= ate) {

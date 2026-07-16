@@ -6,6 +6,7 @@ import { resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
 interface Props {
   periodo: Periodo;
   onPeriodo: (p: Periodo) => void;
+  mostrarMesAtual?: boolean;
   /** Mostra "atualizando…" ao lado do seletor enquanto a query refaz. */
   carregando?: boolean;
 }
@@ -29,12 +30,13 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
  * rascunho do modo custom é local — digitar datas NÃO refaz a busca; só ao clicar OK aplicamos
  * via `onPeriodo`. Usado na lista Publicados e no Detalhe de vendas (o Faturamento tem o seu).
  */
-export function SeletorPeriodo({ periodo, onPeriodo, carregando }: Props) {
+export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, carregando }: Props) {
   const [modoCustom, setModoCustom] = useState(periodo.tipo === 'range');
   const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
 
   const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
   const ehHoje = !modoCustom && periodo.tipo === 'hoje';
+  const ehMesAtual = !modoCustom && periodo.tipo === 'mes_atual';
 
   const escolherPreset = (dias: PeriodoDias) => {
     setModoCustom(false);
@@ -44,6 +46,11 @@ export function SeletorPeriodo({ periodo, onPeriodo, carregando }: Props) {
   const escolherHoje = () => {
     setModoCustom(false);
     onPeriodo({ tipo: 'hoje' });
+  };
+
+  const escolherMesAtual = () => {
+    setModoCustom(false);
+    onPeriodo({ tipo: 'mes_atual' });
   };
 
   const abrirCustom = () => {
@@ -80,6 +87,16 @@ export function SeletorPeriodo({ periodo, onPeriodo, carregando }: Props) {
             {p.label}
           </Button>
         ))}
+        {mostrarMesAtual && (
+          <Button
+            size="sm"
+            variant={ehMesAtual ? 'default' : 'outline'}
+            className="h-7 px-2.5 text-xs"
+            onClick={escolherMesAtual}
+          >
+            Mês atual
+          </Button>
+        )}
         <Button
           size="sm"
           variant={modoCustom ? 'default' : 'outline'}

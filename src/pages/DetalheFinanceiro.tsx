@@ -72,6 +72,7 @@ function CelulaLiberacao({
 // refletir a janela efetivamente consultada, mesmo com URL malformada.
 function rotuloPeriodo(periodo: Periodo): string {
   if (periodo.tipo === 'hoje') return 'hoje';
+  if (periodo.tipo === 'mes_atual') return 'mês atual';
   return periodo.tipo === 'preset'
     ? `últimos ${periodo.dias} dias`
     : `${periodo.desde} a ${periodo.ate}`;

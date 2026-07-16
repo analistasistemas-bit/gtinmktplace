@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { resolverJanela, periodoFromParams, periodoToParams, janelaAnterior } from '@/lib/metricas';
 
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: vi.fn() } } }));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('resolverJanela', () => {
   it('preset: janela de ~N dias terminando agora', () => {
@@ -14,6 +18,14 @@ describe('resolverJanela', () => {
     const { desde, ate } = resolverJanela({ tipo: 'range', desde: '2026-05-01', ate: '2026-05-03' });
     expect(new Date(desde).getTime()).toBe(new Date('2026-05-01T00:00:00').getTime());
     expect(new Date(ate).getTime()).toBe(new Date('2026-05-03T23:59:59.999').getTime());
+  });
+
+  it('mes_atual: cobre do primeiro dia do mês até agora', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-16T15:30:00'));
+    const { desde, ate } = resolverJanela({ tipo: 'mes_atual' });
+    expect(new Date(desde).getTime()).toBe(new Date('2026-07-01T00:00:00').getTime());
+    expect(new Date(ate).getTime()).toBe(new Date('2026-07-16T15:30:00').getTime());
   });
 });
 
@@ -55,6 +67,11 @@ describe('periodo <-> params', () => {
   it('preset ida e volta', () => {
     expect(periodoToParams({ tipo: 'preset', dias: 7 })).toEqual({ dias: '7' });
     expect(periodoFromParams(mk({ dias: '7' }))).toEqual({ tipo: 'preset', dias: 7 });
+  });
+
+  it('mes_atual ida e volta', () => {
+    expect(periodoToParams({ tipo: 'mes_atual' })).toEqual({ periodo: 'mes_atual' });
+    expect(periodoFromParams(mk({ periodo: 'mes_atual' }))).toEqual({ tipo: 'mes_atual' });
   });
 
   it('range ida e volta', () => {

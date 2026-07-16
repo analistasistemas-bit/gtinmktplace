@@ -25,6 +25,7 @@ function fmtData(iso: string | null | undefined): string {
 /** Rótulo legível do período para o cabeçalho do relatório. */
 export function rotuloPeriodo(p: Periodo): string {
   if (p.tipo === 'hoje') return 'Hoje';
+  if (p.tipo === 'mes_atual') return 'Mês atual';
   return p.tipo === 'preset' ? `Últimos ${p.dias} dias` : `${fmtData(p.desde)} – ${fmtData(p.ate)}`;
 }
 

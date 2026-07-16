@@ -90,7 +90,7 @@ function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta
 
 export default function Dashboard() {
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'mes_atual' });
 const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturamento');
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
@@ -125,7 +125,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   });
 
   // Gráfico: granularidade segue o período (dia até ~31d; senão semana). Espelha o Financeiro.
-  const passo = periodo.tipo === 'hoje' || (periodo.tipo === 'preset' && periodo.dias <= 31) ? 'dia'
+  const passo = periodo.tipo === 'hoje' || periodo.tipo === 'mes_atual' || (periodo.tipo === 'preset' && periodo.dias <= 31) ? 'dia'
     : periodo.tipo === 'range'
       ? (!janela.desde || !janela.ate ? 'dia'
         : (Date.parse(janela.ate) - Date.parse(janela.desde)) / 86_400_000 <= 31 ? 'dia' : 'semana')
@@ -241,7 +241,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
       )}
 
       <div className="mb-4">
-        <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} carregando={isFetching} />
+        <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} mostrarMesAtual carregando={isFetching} />
       </div>
 
       {/* ── Destaque (Faturamento + Líquido) + 6 KPIs, todos da mesma altura ── */}

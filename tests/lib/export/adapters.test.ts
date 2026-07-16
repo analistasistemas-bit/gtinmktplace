@@ -41,6 +41,9 @@ describe('rotuloPeriodo', () => {
   it('preset → "Últimos N dias"', () => {
     expect(rotuloPeriodo({ tipo: 'preset', dias: 30 })).toBe('Últimos 30 dias');
   });
+  it('mes_atual → "Mês atual"', () => {
+    expect(rotuloPeriodo({ tipo: 'mes_atual' })).toBe('Mês atual');
+  });
   it('range → intervalo de datas', () => {
     const s = rotuloPeriodo({ tipo: 'range', desde: '2026-06-01', ate: '2026-06-30' });
     expect(s).toContain('–');
