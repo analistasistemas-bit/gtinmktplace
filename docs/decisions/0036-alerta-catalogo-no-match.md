@@ -32,6 +32,7 @@ No worker `vincular-catalogo` (que roda minutos após o CREATE, quando a elegibi
 
 ## Nota de revisão (2026-07-15)
 
-O alerta também cobre `nao_elegivel` e `sem_variation_id` esgotados. Ele só dispara após a última
-rodada do retry limitado, e a mensagem diferencia a elegibilidade esgotada dos demais casos pelo
-campo `motivo`.
+O alerta também cobre `nao_elegivel` esgotado e `sem_variation_id`. Para `nao_elegivel`, ele só
+dispara após a última tentativa do retry limitado. `sem_variation_id` é estrutural e não entra em
+retry: na ausência de `pendente`, alerta na finalização imediata da primeira rodada. A mensagem
+diferencia a elegibilidade esgotada dos demais casos pelo campo `motivo`.

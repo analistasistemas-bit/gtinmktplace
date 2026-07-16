@@ -135,12 +135,14 @@ o fluxo antes de o ML concluir o cálculo.
 Depois do delay inicial de 10 minutos, `nao_elegivel` é reagendado conforme
 `CATALOGO_BACKOFF_SEGUNDOS` (1h, 6h, 24h e 48h), totalizando cinco rodadas ao longo de aproximadamente
 3,3 dias. `pendente` continua usando o retry técnico do QStash e tem precedência sobre o backoff de
-negócio. `sem_variation_id` permanece separado: é uma ausência estrutural, registrada no resumo, e
-esperar não cria o identificador.
+negócio. `sem_variation_id` permanece separado: é uma ausência estrutural, existe apenas no
+`ResumoCatalogo` em memória e não cria um novo `catalog_status`; o status persistido da variação
+continua `nao_elegivel`, e esperar não cria o identificador.
 
 **Riscos aceitos:** o opt-in mantém a idempotência pré-existente, que pula variações já vinculadas.
-Uma republicação pode iniciar chains paralelos; ambos relêem o estado e convergem pela mesma trava,
-mas podem gerar chamadas e reagendamentos redundantes.
+Uma republicação pode iniciar chains paralelos. Como a checagem anterior ao opt-in não é atômica,
+execuções concorrentes podem fazer opt-ins, chamadas e reagendamentos duplicados; a convergência é
+apenas eventual e best-effort, apoiada na releitura do estado persistido.
 
 **Consequências:** estados transitórios ganham uma janela limitada para assentar, sem transformar o
 worker em retry indefinido. Ao esgotar as rodadas, o resultado é finalizado e segue para o alerta
