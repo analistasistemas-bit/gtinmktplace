@@ -229,6 +229,7 @@ export interface VarCatalogoRow {
 
 export interface ResumoCatalogo {
   vinculado: number; sem_produto: number; family_diff: number; nao_elegivel: number; pendente: number; erro: number; pulou: number; ficha_divergente: number;
+  sem_variation_id: number; // estrutural: não é um novo catalog_status; a linha segue como nao_elegivel
 }
 
 /**
@@ -238,7 +239,33 @@ export interface ResumoCatalogo {
  * depois. Esperar `pendente === 0` evita alerta prematuro/repetido durante os retries do worker.
  */
 export function deveAlertarCatalogoNoMatch(resumo: ResumoCatalogo): boolean {
-  return resumo.pendente === 0 && (resumo.ficha_divergente > 0 || resumo.sem_produto > 0);
+  return resumo.pendente === 0 && (
+    resumo.ficha_divergente > 0 || resumo.sem_produto > 0 ||
+    resumo.nao_elegivel > 0 || resumo.sem_variation_id > 0
+  );
+}
+
+// Retry limitado quando a elegibilidade volta nao_elegivel (ADR-0021 addendum, incidente
+// 2026-07-15). Casos de conteúdo/estruturais não reagendam: esperar não muda o dado.
+export const CATALOGO_BACKOFF_SEGUNDOS = [3600, 21600, 86400, 172800]; // 1h, 6h, 24h, 48h
+export const CATALOGO_MAX_TENTATIVAS = CATALOGO_BACKOFF_SEGUNDOS.length + 1;
+
+export type ResultadoRodadaCatalogo =
+  | { acao: 'aguardar_elegibilidade' }
+  | { acao: 'reagendar'; delaySegundos: number; proximaTentativa: number }
+  | { acao: 'finalizar'; deveAlertar: boolean };
+
+/** Decide uma única ação por rodada; pendências sempre precedem o backoff de negócio. */
+export function decidirResultadoRodadaCatalogo(
+  resumo: ResumoCatalogo,
+  tentativaAtual: number,
+): ResultadoRodadaCatalogo {
+  if (resumo.pendente > 0) return { acao: 'aguardar_elegibilidade' };
+  if (resumo.nao_elegivel > 0 && tentativaAtual < CATALOGO_MAX_TENTATIVAS) {
+    const idx = tentativaAtual - 1;
+    return { acao: 'reagendar', delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[idx], proximaTentativa: tentativaAtual + 1 };
+  }
+  return { acao: 'finalizar', deveAlertar: deveAlertarCatalogoNoMatch(resumo) };
 }
 
 type DbLike = {
@@ -258,7 +285,7 @@ export async function vincularVariacoesCatalogo(
   itemId: string,
   variacoes: VarCatalogoRow[],
 ): Promise<ResumoCatalogo> {
-  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0, ficha_divergente: 0 };
+  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0, ficha_divergente: 0, sem_variation_id: 0 };
   const setVar = (id: string, values: Record<string, unknown>) =>
     admin.from('variacoes').update(values).eq('id', id);
 
@@ -279,7 +306,7 @@ export async function vincularVariacoesCatalogo(
   for (const v of variacoes) {
     try {
       if (v.catalog_listing_id) { resumo.pulou++; continue; }
-      if (!v.ml_variation_id) { resumo.nao_elegivel++; await setVar(v.id, { catalog_status: 'nao_elegivel' }); continue; }
+      if (!v.ml_variation_id) { resumo.sem_variation_id++; await setVar(v.id, { catalog_status: 'nao_elegivel' }); continue; }
 
       const e = elig.get(String(v.ml_variation_id));
       const ready = e?.status === 'READY_FOR_OPTIN' && e?.buy_box_eligible === true;

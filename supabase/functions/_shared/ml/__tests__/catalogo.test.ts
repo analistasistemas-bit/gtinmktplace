@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   decidirAcaoCatalogo,
+  decidirResultadoRodadaCatalogo,
+  CATALOGO_MAX_TENTATIVAS,
+  CATALOGO_BACKOFF_SEGUNDOS,
   montarBodyOptin,
   indexarEligibility,
   normalizarComprimentoMetros,
   parseProdutoCatalogoBusca,
   fichaEquivalente,
   type EligVar,
+  type ResumoCatalogo,
 } from '../catalogo';
 
 const READY: EligVar = { id: 1, status: 'READY_FOR_OPTIN', buy_box_eligible: true };
@@ -62,6 +66,41 @@ describe('decidirAcaoCatalogo — trava de equivalência (ADR-0021 pós-incident
 
   it('já vinculada tem precedência sobre equivalência', () => {
     expect(decidirAcaoCatalogo({ catalogListingId: 'MLB9', catalogProductId: 'MLB1' }, READY, { ok: false, motivo: 'x' })).toBe('pula');
+  });
+});
+
+describe('decidirResultadoRodadaCatalogo', () => {
+  const base: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0, ficha_divergente: 0, sem_variation_id: 0 };
+
+  it('pendente>0 SEMPRE vence, mesmo com nao_elegivel misturado (bug real encontrado na revisão)', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, pendente: 2, nao_elegivel: 3 }, 1);
+    expect(r.acao).toBe('aguardar_elegibilidade');
+  });
+
+  it('reagenda quando sobrou nao_elegivel, pendente=0, e ainda há tentativa', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 3 }, 1);
+    expect(r).toEqual({ acao: 'reagendar', delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[0], proximaTentativa: 2 });
+  });
+
+  it('avança pelo backoff correto rodada a rodada', () => {
+    expect(decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, 2).acao === 'reagendar' &&
+      (decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, 2) as any).delaySegundos).toBe(CATALOGO_BACKOFF_SEGUNDOS[1]);
+    expect((decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, 3) as any).delaySegundos).toBe(CATALOGO_BACKOFF_SEGUNDOS[2]);
+    expect((decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 1 }, 4) as any).delaySegundos).toBe(CATALOGO_BACKOFF_SEGUNDOS[3]);
+  });
+
+  it('finaliza (com alerta) ao esgotar CATALOGO_MAX_TENTATIVAS', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, nao_elegivel: 3 }, CATALOGO_MAX_TENTATIVAS);
+    expect(r).toEqual({ acao: 'finalizar', deveAlertar: true });
+  });
+
+  it('sem_variation_id é ESTRUTURAL — finaliza direto na 1ª rodada, não reagenda', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, sem_variation_id: 2 }, 1);
+    expect(r).toEqual({ acao: 'finalizar', deveAlertar: true });
+  });
+
+  it('sem nada pendente/problemático, finaliza sem alertar', () => {
+    expect(decidirResultadoRodadaCatalogo({ ...base, vinculado: 5 }, 1)).toEqual({ acao: 'finalizar', deveAlertar: false });
   });
 });
 
