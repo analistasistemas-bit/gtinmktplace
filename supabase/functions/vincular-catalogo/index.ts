@@ -1,14 +1,14 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarVinculacaoCatalogo, type VincularCatalogoJob } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
-import { vincularVariacoesCatalogo, deveAlertarCatalogoNoMatch } from '../_shared/ml/catalogo.ts';
+import { vincularVariacoesCatalogo, decidirResultadoRodadaCatalogo } from '../_shared/ml/catalogo.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
-interface Job { familia_id: string; }
+type Job = VincularCatalogoJob;
 
 // Worker do opt-in de catálogo (ADR-0021), deferido via QStash. A elegibilidade de catálogo do
 // ML só fica pronta minutos após o CREATE; este job roda com delay e, enquanto a elegibilidade
@@ -48,9 +48,16 @@ Deno.serve(async (req) => {
     const resumo = await vincularVariacoesCatalogo(token, admin, familia.ml_item_id, variacoes);
     console.log(`catálogo (job) ${familia.ml_item_id}: ${JSON.stringify(resumo)}`);
 
-    // Elegibilidade ainda não computada pelo ML → relança para o QStash retentar com backoff.
-    if (resumo.pendente > 0) {
+    const tentativaAtual = Number.isInteger(job.tentativa) && (job.tentativa as number) >= 1 ? (job.tentativa as number) : 1;
+    const resultado = decidirResultadoRodadaCatalogo(resumo, tentativaAtual);
+
+    if (resultado.acao === 'aguardar_elegibilidade') {
       return new Response(`elegibilidade ainda não computada (${resumo.pendente} pendentes)`, { status: 500, headers: corsHeaders });
+    }
+    if (resultado.acao === 'reagendar') {
+      await enfileirarVinculacaoCatalogo(job.familia_id, resultado.delaySegundos, resultado.proximaTentativa, 2);
+      console.log(`catálogo (job) ${familia.ml_item_id}: nao_elegivel na tentativa ${tentativaAtual}, reagendado p/ tentativa ${resultado.proximaTentativa} em +${resultado.delaySegundos}s`);
+      return new Response(JSON.stringify({ reagendado: true, proximaTentativa: resultado.proximaTentativa }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     // E2 (ADR-0025): opt-in assentou — reflete o estado de catálogo no mapa variacoes_externas
     // (best-effort). Recarrega as variações já com os catalog_* persistidos pelo passo acima.
@@ -70,14 +77,21 @@ Deno.serve(async (req) => {
     // etc.). Ela não compete e o ML pausa o anúncio depois. Como a ação "Não encontro minha
     // variação" só existe na UI do ML (sem endpoint OAuth), avisa o operador p/ resolver à mão
     // ANTES da pausa. Best-effort: falha de Telegram não derruba o opt-in (que já assentou).
-    if (deveAlertarCatalogoNoMatch(resumo)) {
+    if (resultado.deveAlertar) {
       try {
         const cores = [...new Set((varsEspelho ?? [])
-          .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto')
+          .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto' || v.catalog_status === 'nao_elegivel')
           .map((v) => (v as { cor?: string | null }).cor)
           .filter((c): c is string => !!c))];
         await notificarCategoria(admin, familia.org_id, 'moderacao',
-          montarMensagemCatalogoNoMatch({ ml_item_id: familia.ml_item_id, titulo: familia.nome_pai ?? null, cores }));
+          montarMensagemCatalogoNoMatch({
+            ml_item_id: familia.ml_item_id,
+            titulo: familia.nome_pai ?? null,
+            cores,
+            motivo: resumo.nao_elegivel + resumo.sem_variation_id > 0 && resumo.ficha_divergente === 0 && resumo.sem_produto === 0
+              ? 'elegibilidade_esgotada'
+              : undefined,
+          }));
       } catch (e) {
         console.error(`alerta catálogo no-match falhou para ${familia.ml_item_id}:`, (e as Error).message);
       }
