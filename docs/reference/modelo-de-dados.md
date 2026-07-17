@@ -159,6 +159,11 @@ Grupos:
   `preco_editado_pelo_operador`, `custo`, **`preco_publicado_ml`** (numeric, nullable, ADR-0078):
   preço de venda efetivamente confirmado no ML para o SKU no último publish/update bem-sucedido;
   base do badge "preço alterado" na Revisão; `NULL` = nunca publicado.
+- **Config por faixa (ADR-0078 F2):** `exibir_com_desconto` (bool, null), `desconto_pct` (numeric, null),
+  `atacado` (jsonb `FaixaAtacado[]`, null). NULL = herda o família-level (uniforme, comportamento clássico);
+  explícito = config da faixa de preço da variação ([] = explicitamente sem atacado). Grupo de preço
+  divergente herdando config família-level ATIVA sem confirmação → publish falha LOUD (ADR-0055).
+  *Migration `20260717131407_preco_por_variacao_config_grupo.sql`.*
 - **Dimensões:** `peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`.
 - **Cor (ADR-0004/0029):** `cor`, `cor_hex`, `cor_origem`, `cor_editada_pelo_operador`.
 - **Foto:** `imagem_path`, `ml_picture_id`.
@@ -186,6 +191,10 @@ processar (idempotência em re-entrega de QStash).
 *Split (ADR-0048, migration `20260629180206_anuncios_externos_particao.sql`):* um produto com
 >100 cores tem N linhas (uma por anúncio/partição); cada `variacoes_externas` é a **ancoragem**
 (sku → anúncio). Produto ≤100 cores tem só `particao=0` (idêntico ao modelo original ADR-0025).
+
+**Atacado por partição (ADR-0078 F2):** `atacado_status` (`aplicado`/`erro`/null), `atacado_erro`.
+`familias.atacado_status` passa a ser o agregado (algum erro → erro; algum aplicado → aplicado).
+*Migration `20260717131407_preco_por_variacao_config_grupo.sql`.*
 
 ---
 

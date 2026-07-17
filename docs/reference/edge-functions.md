@@ -158,9 +158,16 @@
   `somente_estoque_overrides` (`string[]` de `familia_id`); a escolha é resolvida por-família por
   `resolverSomenteEstoque(id, global, overrides)` (override inverte o global) e viaja no payload
   do job (idempotência do retry QStash).
+  **Roteamento split (ADR-0078 F2):** decide entre worker de anúncio único e split (`publicar-split-ml`)
+  via `decidirSplit` (`decidir-split.ts`): >100 cores incluídas, OU preços de publicação divergentes
+  entre as variações, OU produto já particionado (mais de 1 linha em `anuncios_externos`) — qualquer
+  um dos três roteia pro split.
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
+  **Preço uniforme (ADR-0078 F2):** `garantirPrecoUniforme` recusa (400 LOUD, nada enviado) quando
+  as variações têm preços de publicação divergentes — sinal de roteamento errado; a família deveria
+  ter ido para o split por faixa de preço (`publicar-split-ml`).
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
   Renomeia a cor de variação já publicada (envia COLOR só quando muda vs. o ML — ADR-0062; o ML
@@ -175,11 +182,29 @@
   o conector já faz); sem preço vivo válido → falha LOUD (`status 400`, definitiva, sem retry).
   `variacoes.preco_publicado_ml` é gravado por SKU no sucesso do update (base do badge "preço
   alterado"); em "somente estoque" grava o preço vivo (não o recalculado).
-- **publicar-split-ml** *(worker, split — ADR-0048)* — produto com >100 cores publica em N anúncios
-  ("partições"). `publicar-familias` roteia >100 cores incluídas pra cá. Particiona alfabético com
-  ancoragem (cor publicada não migra), título distinto por IA, cap de estoque (99.999) via conector.
-  Grava o item da partição cedo (anti-duplicação em retry); partição 0 herda `ml_item_id` existente.
-  Catálogo por-partição é follow-up (hoje cobre só a partição 0). Retry de foto via QStash (ADR-0033).
+  **Preço uniforme (ADR-0078 F2):** fora de "somente estoque", `garantirPrecoUniforme` aplica o
+  mesmo guard do CREATE antes de qualquer envio (400 LOUD em preços divergentes); em "somente
+  estoque" o guard é pulado (nenhum preço seria enviado de qualquer forma).
+- **publicar-split-ml** *(worker, split — ADR-0048 + ADR-0078 F2)* — produto que excede 100 cores,
+  OU tem preços de publicação divergentes, OU já está particionado publica em N anúncios
+  ("partições"); `publicar-familias` roteia esses três casos pra cá (`decidirSplit`, ver acima).
+  **Particionamento por preço (ADR-0078 F2):** `particionarPorPreco` particiona primeiro pela faixa
+  de preço (centavos inteiros); dentro do mesmo grupo de preço vale a regra alfabética/100 do
+  ADR-0048 de sempre. Ancoragem é absoluta (cor já publicada nunca migra de partição); cor ancorada
+  cujo preço diverge do resto da sua partição é conflito → 400 LOUD, nada é enviado (operador decide
+  na Revisão: repreçar uniforme, marcar "somente estoque" ou remover+republicar). A faixa "viva" de
+  cada partição vem de `preco_publicado_ml` das cores ancoradas, com fallback a um GET ao vivo
+  (`lerStatus`) quando "somente estoque" não tem esse dado local. Título distinto por IA por
+  partição, cap de estoque (99.999) via conector. Grava o item da partição cedo (anti-duplicação em
+  retry); partição 0 herda `ml_item_id` existente. Catálogo por-partição é follow-up (hoje cobre só
+  a partição 0). Retry de foto via QStash (ADR-0033).
+  **Desconto/atacado por grupo de preço (ADR-0078 F2):** `resolverConfigGrupo` resolve a config
+  efetiva de cada partição a partir das colunas por-variação (herança NULL do família-level; LOUD em
+  config divergente dentro do mesmo grupo; LOUD se um produto com preços divergentes herdaria config
+  família-level ATIVA sem confirmação explícita por faixa). Atacado (PxQ) é aplicado por partição na
+  base do preço do grupo; `anuncios_externos.atacado_status`/`atacado_erro` guardam o resultado por
+  partição, agregados em `familias.atacado_status` no fim (`agregarAtacadoStatus`: algum erro → erro,
+  senão algum aplicado → aplicado).
   **Controle de preço no UPDATE (ADR-0078, Fase 1):** mesmo comportamento do `update-familia-ml` no
   ramo UPDATE — em "somente estoque" nenhum push de preço/atacado; cor nova adota o preço vivo do
   anúncio (falha LOUD sem preço vivo válido); `preco_publicado_ml` gravado por SKU no sucesso
