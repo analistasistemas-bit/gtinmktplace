@@ -697,8 +697,13 @@ export default function Revisao() {
             </div>
           )}
           {(() => {
+            // "Somente estoque" nunca empurra preço (invariante #3) — família nessa condição
+            // efetiva nunca exige divisão de fato. Mesma fórmula do backend (resolverSomenteEstoque).
             const exigemDivisao = familias.filter(
-              (f) => selecionadas.has(f.id) && exigeDivisaoUpdate(f),
+              (f) =>
+                selecionadas.has(f.id) &&
+                !(somenteEstoqueOverrides.has(f.id) ? !somenteEstoqueGlobal : somenteEstoqueGlobal) &&
+                exigeDivisaoUpdate(f),
             );
             if (exigemDivisao.length === 0) return null;
             return (
