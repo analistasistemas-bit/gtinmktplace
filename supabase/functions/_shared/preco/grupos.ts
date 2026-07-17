@@ -1,7 +1,9 @@
 // ADR-0078 F2: faixa de preço = variações com o mesmo preço, comparado por CENTAVOS INTEIROS
 // (arredondamento a 2 casas antes de agrupar — glossário do spec).
 
-export const round2 = (n: number): number => Math.round(n * 100) / 100;
+import { round2 } from '../dinheiro.ts';
+
+export { round2 };
 
 /** Preço em centavos inteiros (chave de faixa). null/NaN → null. Aceita string (numeric do PG). */
 export function precoCentavos(preco: number | string | null | undefined): number | null {
