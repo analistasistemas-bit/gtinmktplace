@@ -10,6 +10,8 @@ import {
   toggleDescontoLote,
   updateFamiliaAtacado,
   setAtacadoLote,
+  setDescontoGrupo,
+  setAtacadoGrupo,
   salvarAtributoFamilia,
   QK,
 } from '@/lib/queries';
@@ -143,6 +145,24 @@ export function useSetAtacadoLote(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (faixas: FaixaAtacado[]) => setAtacadoLote(loteId, faixas),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useSetDescontoGrupo(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ variacaoIds, exibir, pct }: { variacaoIds: string[]; exibir: boolean; pct: number | null }) =>
+      setDescontoGrupo(variacaoIds, exibir, pct),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+export function useSetAtacadoGrupo(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ variacaoIds, faixas }: { variacaoIds: string[]; faixas: FaixaAtacado[] }) =>
+      setAtacadoGrupo(variacaoIds, faixas),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

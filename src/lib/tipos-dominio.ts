@@ -89,6 +89,8 @@ export interface Lote {
   anomalias: AnomaliasPlanilha;
 }
 
+import type { FaixaAtacado } from './atacado';
+
 export type CorOrigem = 'descricao' | 'vision' | 'manual';
 
 export interface Variacao {
@@ -113,9 +115,12 @@ export interface Variacao {
   alturaCm: number | null;
   larguraCm: number | null;
   comprimentoCm: number | null;
+  /** Config por faixa (ADR-0078 F2). null = herda o família-level. */
+  exibirComDesconto: boolean | null;
+  descontoPct: number | null;
+  /** null = herda; [] = explicitamente sem atacado (≠ null!). */
+  atacado: FaixaAtacado[] | null;
 }
-
-import type { FaixaAtacado } from './atacado';
 
 export interface AtributoMl {
   id: string;

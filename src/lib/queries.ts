@@ -165,6 +165,9 @@ export function variacaoFromRow(r: VariacaoRow): Variacao {
     alturaCm: r.altura_cm != null ? Number(r.altura_cm) : null,
     larguraCm: r.largura_cm != null ? Number(r.largura_cm) : null,
     comprimentoCm: r.comprimento_cm != null ? Number(r.comprimento_cm) : null,
+    exibirComDesconto: r.exibir_com_desconto,
+    descontoPct: r.desconto_pct != null ? Number(r.desconto_pct) : null,
+    atacado: Array.isArray(r.atacado) ? (r.atacado as unknown as FaixaAtacado[]) : null,
   };
 }
 
@@ -610,6 +613,25 @@ export async function setAtacadoLote(loteId: string, faixas: FaixaAtacado[]): Pr
   const { error } = await supabase.from('familias')
     .update({ atacado, atacado_status: null, atacado_erro: null })
     .eq('lote_id', loteId);
+  if (error) throw error;
+}
+
+// ADR-0078 F2: config POR FAIXA de preço — grava em TODAS as variações do grupo (a config
+// viaja na variação; repreçar nunca a órfã). Desativar desconto = false explícito; desativar
+// atacado = [] explícito (null significaria "herda a família" e pode virar LOUD no publish).
+export async function setDescontoGrupo(
+  variacaoIds: string[], exibir: boolean, pct: number | null,
+): Promise<void> {
+  const { error } = await supabase.from('variacoes')
+    .update({ exibir_com_desconto: exibir, desconto_pct: pct })
+    .in('id', variacaoIds);
+  if (error) throw error;
+}
+
+export async function setAtacadoGrupo(variacaoIds: string[], faixas: FaixaAtacado[]): Promise<void> {
+  const { error } = await supabase.from('variacoes')
+    .update({ atacado: faixas as unknown as Database['public']['Tables']['variacoes']['Update']['atacado'] })
+    .in('id', variacaoIds);
   if (error) throw error;
 }
 

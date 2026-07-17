@@ -22,6 +22,9 @@ function criarVariacao(overrides: Partial<Variacao> = {}): Variacao {
     alturaCm: null,
     larguraCm: null,
     comprimentoCm: null,
+    exibirComDesconto: null,
+    descontoPct: null,
+    atacado: null,
     ...overrides,
   };
 }

@@ -6,7 +6,8 @@ const variacao = (over: Partial<Variacao>): Variacao => ({
   codigo: 'C', cor: 'Cor', corHex: '#000', corOrigem: null, corEditadaPeloOperador: false,
   preco: 10, precoPublicacao: 20, precoPublicadoMl: null, estoque: 5, gtin: null, excluidaDaPublicacao: false,
   mlVariationId: null, estoqueAnterior: null, custo: 5, pesoGramas: 100,
-  alturaCm: 1, larguraCm: 2, comprimentoCm: 3, ...over,
+  alturaCm: 1, larguraCm: 2, comprimentoCm: 3,
+  exibirComDesconto: null, descontoPct: null, atacado: null, ...over,
 });
 
 const familia = (variacoes: Variacao[]): Familia => ({ variacoes } as Familia);
