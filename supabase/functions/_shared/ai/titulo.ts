@@ -8,6 +8,10 @@ const TITULO_MAX = 60;
 // uma metragem que não existe no produto (bug lote #65: "13,7MT 71MT" no título, sem "71MT"
 // em lugar nenhum da descrição).
 const RE_METRAGEM = /(\d+(?:,\d+)?)\s*(MTS|MT|METROS|METRO|M)\b/i;
+// Mesmo padrão, mas global — usada por garantirMetragemTitulo pra achar TODAS as menções de
+// metragem já no título (certa, arredondada pela IA, ou duplicada pela própria IA entre
+// segmentos), não só a 1ª.
+const RE_METRAGEM_TOKEN = /\b\d+(?:,\d+)?\s*(?:MTS|MT|METROS|METRO|M)\b/gi;
 
 function normalizarUnidade(raw: string): string {
   return /^MT/i.test(raw) ? 'MT' : 'M';
@@ -72,26 +76,36 @@ export function clampTitulo(titulo: string): string {
   return removerCaudaConectiva(t);
 }
 
+// Junta os segmentos (" | ") de volta, descartando os que a remoção de token deixou vazios
+// (ex.: um segmento que só continha a metragem removida) — sem isso sobra "| |" ou "X | ".
+function normalizarSegmentos(titulo: string): string {
+  return titulo.split(' | ').map((s) => s.trim()).filter(Boolean).join(' | ');
+}
+
 // Garante que a metragem do nome apareça no título (dado crucial que diferencia
-// produtos — ex.: fita 10MT vs 100MT). Rede de segurança determinística porque a
-// IA, sob o teto de 60 chars, descarta a metragem mesmo presente no nome.
+// produtos — ex.: fita 10MT vs 100MT), com exatamente UM valor: o real. Rede de segurança
+// determinística porque a IA, sob o teto de 60 chars, descarta a metragem mesmo presente no
+// nome — e o oposto também acontece: a IA inventa/arredonda uma metragem PRÓPRIA (ex. "13,7MT"
+// pra "13,71MT" real) ou até duplica a mesma metragem em dois segmentos do título. Por isso
+// SEMPRE remove toda menção de metragem já existente (RE_METRAGEM_TOKEN) antes de reanexar a
+// certa — checar só "já contém a metragem certa?" e pular quando sim (versão anterior) não
+// pega o caso em que a IA também deixou uma metragem ERRADA junto da certa (bug lote #65:
+// "13,71MT BRANCO | 13,7MT" — a certa já estava lá, mas duplicada com uma arredondada).
 export function garantirMetragemTitulo(titulo: string, nomePai: string): string {
   // Primeiro limpa a cauda incompleta deixada pelo corte de 60 chars da IA, para
-  // o resultado (inclusive no atalho "metragem já presente") nunca ter conectivo solto.
+  // o resultado (inclusive quando não há metragem no nome) nunca ter conectivo solto.
   titulo = removerCaudaConectiva(titulo);
   const metragem = extrairMetragem(nomePai);
   // Sem metragem: ainda assim clampa para 60 sem cortar palavra (cola, lote #26).
   if (!metragem) return clampTitulo(titulo);
 
-  const numero = metragem.match(/\d+(?:,\d+)?/)?.[0] ?? '';
-  // Já contém a metragem (qualquer unidade de metro adjacente)? Não duplica — mas
-  // ainda clampa para 60 (a metragem está no 1º segmento, que clampTitulo preserva).
-  // Sem o clamp aqui, um título já com metragem e >60 escapava (bug lote #27 → ML 400).
-  if (new RegExp(`\\b${numero}\\s*(MTS?|METROS?|M)\\b`, 'i').test(titulo)) return clampTitulo(titulo);
+  const semMetragem = removerCaudaConectiva(
+    normalizarSegmentos(titulo.replace(RE_METRAGEM_TOKEN, ' ').replace(/\s{2,}/g, ' ')),
+  );
 
   const sufixo = ` ${metragem}`;
-  const partes = titulo.split(' | ');
-  partes[0] = `${partes[0]}${sufixo}`;
+  const partes = semMetragem.length > 0 ? semMetragem.split(' | ') : [''];
+  partes[0] = `${partes[0]}${sufixo}`.trim();
   let candidato = partes.join(' | ');
   // Para caber em 60, derruba o "diferencial" genérico antes de aparar.
   while (candidato.length > TITULO_MAX && partes.length > 1) {
