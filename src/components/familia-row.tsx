@@ -12,6 +12,7 @@ import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
 import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { AtacadoEditor } from '@/components/atacado-editor';
+import { ConfigGruposPreco } from '@/components/config-grupos-preco';
 import { cn } from '@/lib/utils';
 import { fmtBRLSemSimbolo } from '@/lib/formato';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -34,18 +35,6 @@ interface FamiliaRowProps {
   onIrParaCritica?: (familiaId: string, codigo: string) => void;
 }
 
-// Mensagem do bloqueio quando as cores da família têm preços diferentes: desconto e
-// atacado calculam um único preço-base (o menor entre as cores incluídas), então o
-// desconto em R$ fica desproporcional nas cores mais caras. Ver familiaPrecosDivergentes.
-function avisoPrecosDivergentes(acao: 'desconto' | 'atacado', precoMin: number, precoMax: number): void {
-  toast.error(`Não é possível ativar ${acao === 'desconto' ? 'o desconto' : 'o preço de atacado'}`, {
-    description:
-      `As cores desta família têm preços diferentes (R$ ${fmtBRLSemSimbolo(precoMin)}–R$ ${fmtBRLSemSimbolo(precoMax)}). ` +
-      `${acao === 'desconto' ? 'O desconto usa' : 'O atacado usa'} um único preço-base para todas as cores, ` +
-      'o que geraria valores incorretos nas cores mais caras. Iguale os preços entre as cores para habilitar.',
-  });
-}
-
 function DescontoControle({ familia }: { familia: Familia }) {
   const { data: globalPct } = useDescontoPct();
   const updExibir = useUpdateExibirDesconto(familia.loteId);
@@ -57,21 +46,13 @@ function DescontoControle({ familia }: { familia: Familia }) {
   const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
   const precosVenda = baseVariacoes.map((v) => v.precoPublicacao ?? v.preco);
   const precoVenda = precosVenda.length > 0 ? Math.min(...precosVenda) : 0;
-  const precoVendaMax = precosVenda.length > 0 ? Math.max(...precosVenda) : 0;
-  const divergente = familiaPrecosDivergentes(familia);
   const de = calcularPrecoDe(precoVenda, pct);
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <Checkbox
         aria-label="Exibir com desconto"
         checked={familia.exibirComDesconto}
-        className={divergente ? 'opacity-50' : undefined}
-        title={divergente ? 'Cores com preços diferentes: clique para saber por que o desconto está bloqueado' : undefined}
         onCheckedChange={(v) => {
-          if (divergente && v) {
-            avisoPrecosDivergentes('desconto', precoVenda, precoVendaMax);
-            return;
-          }
           updExibir.mutate({ familiaId: familia.id, exibir: !!v });
         }}
       />
@@ -113,8 +94,6 @@ function AtacadoControle({ familia }: { familia: Familia }) {
   const base = incluidas.length > 0 ? incluidas : familia.variacoes;
   const precosBase = base.map((v) => v.precoPublicacao ?? v.preco);
   const precoBase = precosBase.length > 0 ? Math.min(...precosBase) : 0;
-  const precoBaseMax = precosBase.length > 0 ? Math.max(...precosBase) : 0;
-  const divergente = familiaPrecosDivergentes(familia);
   const ativo = faixas.length > 0;
   const erro = validarFaixas(faixas);
   const dirty = JSON.stringify(faixas) !== JSON.stringify(familia.atacado ?? []);
@@ -125,13 +104,7 @@ function AtacadoControle({ familia }: { familia: Familia }) {
         <Checkbox
           aria-label="Preço de atacado"
           checked={ativo}
-          className={divergente ? 'opacity-50' : undefined}
-          title={divergente ? 'Cores com preços diferentes: clique para saber por que o atacado está bloqueado' : undefined}
           onCheckedChange={(v) => {
-            if (divergente && v) {
-              avisoPrecosDivergentes('atacado', precoBase, precoBaseMax);
-              return;
-            }
             if (v) setFaixas(faixas.length ? faixas : [{ min_unidades: 5, desconto_pct: 5 }]);
             else { setFaixas([]); upd.mutate({ familiaId: familia.id, faixas: [] }); }
           }}
@@ -405,8 +378,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       </span>
     </div>
       <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-4">
-        <DescontoControle familia={familia} />
-        <AtacadoControle familia={familia} />
+        {familiaPrecosDivergentes(familia) ? (
+          <ConfigGruposPreco familia={familia} />
+        ) : (
+          <>
+            <DescontoControle familia={familia} />
+            <AtacadoControle familia={familia} />
+          </>
+        )}
       </div>
     </div>
   );

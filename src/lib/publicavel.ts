@@ -25,12 +25,10 @@ export function familiaExigeCor(familia: Familia): boolean {
   return !(familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && incluidas.length === 1);
 }
 
-// Desconto e atacado usam um único preço-base para a família inteira (o menor entre
-// as variações incluídas — ver AtacadoControle/DescontoControle). Se as cores têm
-// preços diferentes, esse preço-base fica errado para as cores mais caras: o desconto
-// em R$ calculado sobre o menor preço vira um % desproporcional nas demais. Bloqueia
-// ativar desconto/atacado (individual e em lote) nesse caso (ADR-0041, limitação
-// assumida: "faixa por-variação fica fora do escopo").
+// ADR-0078 F2: preços divergentes entre as cores incluídas. Não bloqueia mais — chaveia a UI
+// para o modo "config por faixa" (ConfigGruposPreco) e o roteamento de publicação para o split
+// (1 anúncio por faixa). Os botões de LOTE continuam bloqueados na divergência (a ação em lote
+// é cega ao preço por cor — configure por faixa dentro da família).
 export function familiaPrecosDivergentes(familia: {
   variacoes: Array<Pick<Variacao, 'preco' | 'precoPublicacao' | 'excluidaDaPublicacao'>>;
 }): boolean {
