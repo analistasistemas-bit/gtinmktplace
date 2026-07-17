@@ -9,6 +9,7 @@ import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
+import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
@@ -93,6 +94,10 @@ Deno.serve(async (req) => {
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Sem cores incluídas para publicar');
+
+    // ADR-0078 F2 (invariante #1): este worker publica preço único. Divergência aqui = bug de
+    // roteamento (deveria ter ido ao split) → LOUD, nada é enviado ao ML.
+    garantirPrecoUniforme(variacoes, 'CREATE');
 
     // Gate de atributos obrigatórios. Aviamento conhecido (override) → validador por-tipo (atual);
     // categoria prevista/manual → lista genérica persistida (E3/E4, schema da API); sem categoria → bloqueia.

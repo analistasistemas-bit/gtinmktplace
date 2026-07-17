@@ -10,6 +10,7 @@ import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
+import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 
 interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
 
@@ -81,6 +82,11 @@ Deno.serve(async (req) => {
       err.status = 400;
       throw err;
     }
+
+    // ADR-0078 F2 (invariante #1): em "atualizar tudo" o precoFamilia propagaria o 1º preço a
+    // TODAS as cores em silêncio se houvesse divergência — LOUD em vez disso. Em "somente
+    // estoque" nenhum preço é empurrado (invariante #3), então divergência recalculada é inócua.
+    if (!job.somenteEstoque) garantirPrecoUniforme(variacoes, 'UPDATE');
 
     let desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null = null;
     if (familia.exibir_com_desconto) {
