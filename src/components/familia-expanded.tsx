@@ -35,6 +35,7 @@ import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Fa
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
+import { alvosAplicarPreco } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
@@ -70,6 +71,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [corStatuses, setCorStatuses] = useState<Record<string, SaveStatus>>({});
   // Abre/fecha cada seção da Revisão (Cores novas / Reposição). Ausente = aberta.
   const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>({});
+  // ADR-0078 F2: edição de preço pergunta "aplicar às demais?" em vez de replicar no automático.
+  const [promptPreco, setPromptPreco] = useState<{ codigo: string; preco: number } | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [trocando, setTrocando] = useState(false);
@@ -176,14 +179,20 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     if (!editada?.id || !original) return;
     const novoPreco = editada.precoPublicacao;
     if (novoPreco == null || novoPreco === original.precoPublicacao) return;
+    if (variacoes.length === 1) {
+      await aplicarPreco(codigo, novoPreco, false);
+      return;
+    }
+    setPromptPreco({ codigo, preco: novoPreco }); // "aplicar às demais variações?"
+  }
 
-    // Preço é por produto: replica o novo preço de publicação para todas as cores.
-    setVariacoes((vs) => vs.map((x) => ({ ...x, precoPublicacao: novoPreco })));
-
-    // Salva a cor editada + as demais cujo preço ainda diverge do novo.
-    const alvos = variacoes.filter(
-      (x) => x.id && (x.codigo === codigo || x.precoPublicacao !== novoPreco),
-    );
+  async function aplicarPreco(codigo: string, novoPreco: number, aplicarATodas: boolean) {
+    // "Sim" = replica + pina todas (comportamento clássico); "Não" = preço próprio + pina só a
+    // editada (a divergência resultante roteia para o split — ADR-0078 F2).
+    const alvos = alvosAplicarPreco(variacoes, codigo, aplicarATodas, novoPreco).filter((x) => x.id);
+    if (aplicarATodas) {
+      setVariacoes((vs) => vs.map((x) => ({ ...x, precoPublicacao: novoPreco })));
+    }
     alvos.forEach((x) => flashPreco(x.codigo, 'salvando'));
     await Promise.all(
       alvos.map(async (x) => {
@@ -662,6 +671,39 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           )}
         </div>
       </div>
+
+      <AlertDialog open={promptPreco != null} onOpenChange={(aberto) => { if (!aberto) setPromptPreco(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aplicar o novo preço às demais variações?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {promptPreco && (
+                <>Novo preço: <strong>R$ {promptPreco.preco.toFixed(2)}</strong>. "Sim" iguala todas as
+                cores (um anúncio, preço único). "Não" mantém preços diferentes — as faixas serão
+                publicadas como anúncios separados no Mercado Livre.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                if (promptPreco) void aplicarPreco(promptPreco.codigo, promptPreco.preco, false);
+                setPromptPreco(null);
+              }}
+            >
+              Não, só esta cor
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (promptPreco) void aplicarPreco(promptPreco.codigo, promptPreco.preco, true);
+                setPromptPreco(null);
+              }}
+            >
+              Sim, aplicar a todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
