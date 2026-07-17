@@ -463,6 +463,23 @@ export async function upsertReancoraLiderAtiva(ativa: boolean): Promise<void> {
   if (error) throw error;
 }
 
+export async function fetchMostrarLucroDashboard(): Promise<boolean> {
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!orgId) return false;
+  const { data } = await supabase.from('configuracoes')
+    .select('mostrar_lucro_dashboard').eq('org_id', orgId).maybeSingle();
+  return data?.mostrar_lucro_dashboard ?? false;
+}
+
+export async function upsertMostrarLucroDashboard(ativo: boolean): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const orgId = useAuthStore.getState().profile?.org_id;
+  if (!user || !orgId) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ org_id: orgId, user_id: user.id, mostrar_lucro_dashboard: ativo, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
+  if (error) throw error;
+}
+
 export async function fetchModeloTexto(): Promise<string | null> {
   const orgId = useAuthStore.getState().profile?.org_id;
   if (!orgId) return null;
