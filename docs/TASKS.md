@@ -16,8 +16,23 @@
 - [x] Badge + filtro "preço alterado" na Revisão, coluna `variacoes.preco_publicado_ml`, escolha
   global "Atualizar tudo × Somente estoque" + override por produto — implementada na branch
   `worktree-preco-por-variacao-split`.
-- [ ] Validação/deploy do Diego — pendente.
-- [ ] Fase 2 (preço por variação + split por faixa de preço) — planejada, não iniciada.
+- [x] Validação/deploy — merged e em produção.
+
+## ADR-0078 Fase 2a — split por faixa de preço (motor backend) — 2026-07-17
+
+- [x] Motivador: ML passou a rejeitar publicação de famílias com preço divergente entre variações
+  (`Found different prices in variations`) — incidente real em produção (PAI 02841240, 02841290).
+- [x] `particionarPorPreco`, `decidirSplit`, `resolverConfigGrupo`/`agregarAtacadoStatus`, guards
+  LOUD de uniformidade em `publish-familia-ml`/`update-familia-ml`, `publicar-split-ml` reescrito
+  para particionar por preço (ancoragem preservada) — subagent-driven-development, 8 tasks, merge
+  `0364878`, deploy em produção.
+- [x] Validação real em produção (2026-07-17): reincluídas as cores excluídas em ambas as famílias
+  do incidente e republicadas de fato. PAI 02841240 → 3 anúncios (Preto+Branco ancorados no
+  original, Laranja e Verde Musgo novos, cada um no seu preço). PAI 02841290 → 2 anúncios (base
+  ancorada + Verde Musgo novo). Todos `publicado`, sem erro.
+- [ ] Fase 2b (UI: config por grupo de preço, badge por variação, LOUD no diálogo de publicação) —
+  planejada em `docs/superpowers/plans/2026-07-17-preco-por-variacao-split-fase2b-ui-config-grupo.md`,
+  não iniciada.
 
 ## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — EM PRODUÇÃO (2026-07-15)
 
