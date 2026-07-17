@@ -4,6 +4,7 @@ import {
   fetchDescontoConcorrenciaPct, upsertDescontoConcorrenciaPct,
   fetchAliquotas, upsertAliquotas,
   fetchReancoraLiderAtiva, upsertReancoraLiderAtiva,
+  fetchMostrarLucroDashboard, upsertMostrarLucroDashboard,
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
   fetchModeloTexto, upsertModeloTexto,
   fetchModeloImagem, upsertModeloImagem,
@@ -50,6 +51,17 @@ export function useSalvarReancoraLiderAtiva() {
   return useMutation({
     mutationFn: (ativa: boolean) => upsertReancoraLiderAtiva(ativa),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'reancora_lider_ativa'] }),
+  });
+}
+
+export function useMostrarLucroDashboard() {
+  return useQuery({ queryKey: ['configuracoes', 'mostrar_lucro_dashboard'], queryFn: fetchMostrarLucroDashboard });
+}
+export function useSalvarMostrarLucroDashboard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ativo: boolean) => upsertMostrarLucroDashboard(ativo),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'mostrar_lucro_dashboard'] }),
   });
 }
 
