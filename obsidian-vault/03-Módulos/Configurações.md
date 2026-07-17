@@ -34,11 +34,14 @@ Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (t
   org, `useReancoraLiderAtiva`, `useSalvarReancoraLiderAtiva`). Quando ligado, se o preço
   competitivo der prejuízo real, `sugerirPrecoVenda` re-ancora no preço do concorrente
   MercadoLíder com mais vendas em vez do menor preço global (ADR-0065).
+- **Mostrar lucro no Dashboard** — `mostrar_lucro_dashboard` (default false, por org,
+  `useMostrarLucroDashboard`, `useSalvarMostrarLucroDashboard`). Liga a linha "lucro R$ X" no
+  card "Líquido no faturamento" do Dashboard (oculta por padrão).
 
 ## Tabela `configuracoes`
 
 `org_id` (FK `organizations`, `NOT NULL`, **único** — 1 linha por org), `user_id` (legado,
 auditoria de quem editou), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`,
 `telegram_bot_token` (sensível), `aliquota_nacional_pct`, `aliquota_importado_pct`,
-`desconto_concorrencia_pct`, `reancora_lider_ativa`, `mp_access_token_secret_id`
-(FK→`vault.secrets`, token Mercado Pago por org, ADR-0027 D-E7.7).
+`desconto_concorrencia_pct`, `reancora_lider_ativa`, `mostrar_lucro_dashboard`,
+`mp_access_token_secret_id` (FK→`vault.secrets`, token Mercado Pago por org, ADR-0027 D-E7.7).

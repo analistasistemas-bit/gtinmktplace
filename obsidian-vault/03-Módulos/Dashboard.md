@@ -10,7 +10,9 @@ Rota `/` (`src/pages/Dashboard.tsx`). Ver [[Frontend]], [[Fluxo Completo]].
 ## O que mostra
 
 - **KPIs** (`src/lib/dashboard-kpis.ts` → `calcularKpisDashboard`): publicados, ativos, com
-  problema (`moderado`/`inativo`/`pausado`), erros, a revisar.
+  problema (`moderado`/`inativo`/`pausado`), erros, a revisar. O card "Líquido no faturamento"
+  só mostra o hint de lucro (`lucro R$ X`) quando `configuracoes.mostrar_lucro_dashboard`
+  estiver ligado (padrão: oculto) — toggle em [[Configurações]].
 - **Lotes em andamento** (`dashboard-lotes-andamento.tsx`) — jornada do lote visível e
   retomável ("continuar de onde parei").
 - **Painel "Precisa da sua atenção"** (`dashboard-pendencias.tsx` +
