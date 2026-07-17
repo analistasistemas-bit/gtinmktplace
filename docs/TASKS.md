@@ -43,8 +43,13 @@
   bloqueados; botões de lote seguem bloqueados para famílias divergentes (só o aviso mudou);
   diálogo de publicação ganhou aviso LOUD para UPDATEs que exigiriam dividir um anúncio já
   publicado (aviso, não bloqueio — quem bloqueia é o backend da F2a). ADR-0078 status atualizado
-  para "Aceito — implementado (F1+F2)". Validação manual (browser-use com Diego) e merge ficam
-  pendentes, fora do escopo desta task de documentação.
+  para "Aceito — implementado (F1+F2)". Review final de branch encontrou e corrigiu 2 achados
+  reais (copy do prompt enganosa em UPDATE já publicado; LOUD do diálogo ignorava somente-estoque)
+  antes do merge. Validado manualmente pelo Diego (dev server, passo a passo guiado) e mergeado em
+  main (`39eefa0`) — **Fase 2 completa (backend + UI)**.
+- [x] Follow-up flagado na revisão da Fase 2a: `update-familia-ml` tinha o mesmo bug de "limpar
+  atacado bloqueado sem preço-base conhecido" já corrigido no `publicar-split-ml` (Task 7) —
+  corrigido espelhando o mesmo padrão, revisado, mergeado (`da6b56d`) e deployado (2026-07-17).
 
 ## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — EM PRODUÇÃO (2026-07-15)
 
