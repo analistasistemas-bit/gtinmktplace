@@ -95,6 +95,7 @@ export type Database = {
           criado_em: string
           desconto_concorrencia_pct: number
           desconto_pct: number
+          mostrar_lucro_dashboard: boolean
           mp_access_token_secret_id: string | null
           org_id: string
           reancora_lider_ativa: boolean
@@ -112,6 +113,7 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          mostrar_lucro_dashboard?: boolean
           mp_access_token_secret_id?: string | null
           org_id: string
           reancora_lider_ativa?: boolean
@@ -129,6 +131,7 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          mostrar_lucro_dashboard?: boolean
           mp_access_token_secret_id?: string | null
           org_id?: string
           reancora_lider_ativa?: boolean
