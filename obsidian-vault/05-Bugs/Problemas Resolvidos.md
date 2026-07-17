@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-12
+atualizado: 2026-07-17
 ---
 
 # Problemas Resolvidos
@@ -10,6 +10,21 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Metragem decimal fabricando número no título (lote #65, bordados Búfalo, 2026-07-17)** —
+  Diego reportou título confuso `...13,7MT 71MT | 5CM LARGURA`, com "71MT" sem lastro na
+  descrição. Causa raiz: `RE_METRAGEM` (`_shared/ai/titulo.ts`) parava na vírgula de metragens
+  decimais (`nome_pai` com "13,71MT"), extraindo só a cauda ("71MT") como se fosse a metragem
+  real; `garantirMetragemTitulo` injetava esse fragmento fabricado. **Fix em 2 rodadas**: 1ª
+  corrigiu a extração (`\d+(?:,\d+)?`) mas o reprocessamento real revelou resíduo — a IA ainda
+  duplicava a metragem de 3 formas (arredondada no mesmo segmento, arredondada com unidade
+  errada, duplicada entre segmentos sem acionar o guard antigo); 2ª rodada trocou "checa se já
+  contém" por "remove toda menção existente, reanexa a correta" (`RE_METRAGEM_TOKEN` global) —
+  um único caminho cobre os 3 padrões. Achado colateral: "lote #35" citado pelo Diego não existe
+  mais na base (lotes 32-38 excluídos); os registros reais eram do **lote #65**. Atributo
+  obrigatório "Tipo de embalagem" faltando em 1 das 4 famílias (mesmas irmãs, categoria idêntica)
+  confirmado como inconsistência real de chamada de IA por família (não falta de lastro no
+  texto) — resolvido via editor manual (`atributos-familia`), sem IA. Detalhe completo:
+  [[../../docs/TASKS.md|TASKS.md]] (topo do arquivo).
 - **Follow-ups de mensagens pós-venda nunca sincronizavam em tempo real (plano 035, 2026-07-12)** —
   o `ml-webhook` deduplica notificações por `(topic, resource)`, mas o resource de `messages`
   (`/messages/packs/{pack}/sellers/{seller}`) é **idêntico para toda mensagem da mesma conversa**.
