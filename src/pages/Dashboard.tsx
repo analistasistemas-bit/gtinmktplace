@@ -29,7 +29,7 @@ import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
-import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useAliquotas, useMostrarLucroDashboard } from '@/hooks/useConfiguracoes';
 import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
 import { montarPendencias } from '@/lib/pendencias';
 import { topProdutos, calendarioCaixa, montarAtencao } from '@/lib/cockpit';
@@ -101,6 +101,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const vendasRawAnt = useVendas(janelaAnt, 'todos', canalAtivo); // idem (já buscado pelo rAnt) → delta por pacote
   const { data: custos } = useCustos();
   const { data: aliquotas } = useAliquotas();
+  const { data: mostrarLucro } = useMostrarLucroDashboard();
   const carregando = vendasRaw.isPending;
 
   // Catálogo + pendências cross-módulo
@@ -284,7 +285,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
           value={fmtBRL(kpisPedidos.liquido)}
           delta={delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).texto}
           deltaTrend={delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).trend}
-          hint={r.margem != null ? `lucro ${fmtBRL(r.lucro)}` : undefined}
+          hint={mostrarLucro && r.margem != null ? `lucro ${fmtBRL(r.lucro)}` : undefined}
         />
         <KpiCard
           label="Markup no período" icon={TrendingUp} loading={carregando}

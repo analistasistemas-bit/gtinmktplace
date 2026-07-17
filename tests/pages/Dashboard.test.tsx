@@ -72,8 +72,11 @@ vi.mock('@/hooks/useCustos', () => ({
     },
   }),
 }));
+const useMostrarLucroDashboardMock = vi.fn();
+
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 10, importado: 20 } }),
+  useMostrarLucroDashboard: () => useMostrarLucroDashboardMock(),
 }));
 vi.mock('@/hooks/useLotes', () => ({ useLotes: () => ({ data: [] }) }));
 vi.mock('@/hooks/usePublicados', () => ({ usePublicados: () => ({ data: [] }) }));
@@ -87,11 +90,25 @@ vi.mock('@/hooks/useCanaisHabilitados', () => ({
 
 describe('Dashboard', () => {
   it('prioriza líquido no card antes usado para lucro líquido', () => {
+    useMostrarLucroDashboardMock.mockReturnValue({ data: false });
     render(<Dashboard />, { wrapper: MemoryRouter });
 
     expect(screen.getByText('Líquido no faturamento')).toBeInTheDocument();
     expect(screen.getByText('R$ 52,50')).toBeInTheDocument();
-    expect(screen.getByText('lucro R$ 111,00')).toBeInTheDocument();
     expect(screen.queryByText('Lucro líquido')).not.toBeInTheDocument();
+  });
+
+  it('oculta a linha de lucro por padrão (toggle desligado)', () => {
+    useMostrarLucroDashboardMock.mockReturnValue({ data: false });
+    render(<Dashboard />, { wrapper: MemoryRouter });
+
+    expect(screen.queryByText('lucro R$ 111,00')).not.toBeInTheDocument();
+  });
+
+  it('mostra a linha de lucro quando o toggle está ligado', () => {
+    useMostrarLucroDashboardMock.mockReturnValue({ data: true });
+    render(<Dashboard />, { wrapper: MemoryRouter });
+
+    expect(screen.getByText('lucro R$ 111,00')).toBeInTheDocument();
   });
 });
