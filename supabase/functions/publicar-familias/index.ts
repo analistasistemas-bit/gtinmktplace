@@ -5,11 +5,12 @@ import {
   enfileirarPublicacao, enfileirarAtualizacao, enfileirarSplit, garantirFilaSerial,
   enfileirarPublicacaoCanal,
 } from '../_shared/queue.ts';
-import { MAX_VARIACOES_ML } from '../_shared/split/particionar.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { garantirAnuncioExterno, claimAnuncioExterno } from '../_shared/anuncios/estado.ts';
 import { separarCanais } from '../_shared/canais/selecao.ts';
 import { resolverSomenteEstoque } from './somente-estoque.ts';
+import { decidirSplit } from './decidir-split.ts';
+import { precoCentavos } from '../_shared/preco/grupos.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -49,7 +50,7 @@ Deno.serve(async (req) => {
       .in('status', ['pronto', 'erro'])
       .is('ml_item_id', null)
       .eq('org_id', orgId)
-      .select('id, lote_id, user_id');
+      .select('id, lote_id, user_id, codigo_pai');
     if (errC) return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
 
     // Claim UPDATE: 'pronto'/'erro', já publicado (tem ml_item_id herdado).
@@ -61,7 +62,7 @@ Deno.serve(async (req) => {
       .in('status', ['pronto', 'erro'])
       .not('ml_item_id', 'is', null)
       .eq('org_id', orgId)
-      .select('id, lote_id, user_id');
+      .select('id, lote_id, user_id, codigo_pai');
     if (errU) return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
 
     // Serializa as escritas no ML por CONTA de vendedor (ADR-0034): parallelism=1 evita
@@ -73,16 +74,40 @@ Deno.serve(async (req) => {
       await garantirFilaSerial(dono);
     }
 
-    // Split (ADR-0048): família com >100 cores incluídas vai para o worker de split (N anúncios),
-    // tanto no CREATE quanto no UPDATE. ≤100 segue o caminho normal (publish/update), intocado.
-    const idsParaEnfileirar = [...(novos ?? []), ...(updates ?? [])].map((f) => f.id);
-    const coresPorFamilia = new Map<string, number>();
+    // Split (ADR-0048 + ADR-0078 F2): >100 cores, OU preços divergentes entre as cores
+    // incluídas, OU produto que já tem N partições no ar → worker de split. O resto segue o
+    // caminho normal (publish/update), intocado.
+    const todas = [...(novos ?? []), ...(updates ?? [])];
+    const idsParaEnfileirar = todas.map((f) => f.id);
+    const precosPorFamilia = new Map<string, Array<number | null>>();
     if (idsParaEnfileirar.length > 0) {
       const { data: vrs } = await admin.from('variacoes')
-        .select('familia_id').in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
-      for (const v of vrs ?? []) coresPorFamilia.set(v.familia_id, (coresPorFamilia.get(v.familia_id) ?? 0) + 1);
+        .select('familia_id, preco_publicacao')
+        .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
+      for (const v of vrs ?? []) {
+        (precosPorFamilia.get(v.familia_id) ?? precosPorFamilia.set(v.familia_id, []).get(v.familia_id)!)
+          .push(precoCentavos(v.preco_publicacao));
+      }
     }
-    const ehSplit = (familiaId: string) => (coresPorFamilia.get(familiaId) ?? 0) > MAX_VARIACOES_ML;
+    const paiPorFamilia = new Map(todas.map((f) => [f.id as string, f.codigo_pai as string]));
+    const particoesPorPai = new Map<string, number>();
+    if (todas.length > 0) {
+      const { data: parts } = await admin.from('anuncios_externos')
+        .select('codigo_pai, particao')
+        .eq('org_id', orgId).eq('canal', 'mercado_livre')
+        .in('codigo_pai', [...new Set(paiPorFamilia.values())]);
+      for (const p of parts ?? []) {
+        particoesPorPai.set(p.codigo_pai, (particoesPorPai.get(p.codigo_pai) ?? 0) + 1);
+      }
+    }
+    const ehSplit = (familiaId: string) => {
+      const precos = precosPorFamilia.get(familiaId) ?? [];
+      return decidirSplit({
+        qtdCores: precos.length,
+        precosCentavos: precos,
+        qtdParticoes: particoesPorPai.get(paiPorFamilia.get(familiaId) ?? '') ?? 0,
+      });
+    };
 
     for (const f of novos ?? []) {
       const job = { familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType };
