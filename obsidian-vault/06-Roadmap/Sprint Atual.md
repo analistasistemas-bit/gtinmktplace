@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-15
+atualizado: 2026-07-17
 ---
 
 # Sprint Atual
@@ -22,6 +22,14 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
+- **Preço por variação + split por faixa** (ADR-0078) — em produção 2026-07-17: o ML passou a
+  rejeitar publicação de famílias com preço divergente entre variações (`Found different prices in
+  variations`, incidente real — PAI 02841240/02841290). Fase 2 entrega o motor de split por faixa
+  de preço (`particionarPorPreco`/`decidirSplit` roteiam pro worker `publicar-split-ml`, ancoragem
+  preservada) + guards LOUD de uniformidade + UI de configuração por faixa (`ConfigGruposPreco`,
+  prompt "aplicar às demais?", badge por variação, aviso LOUD no diálogo de publicação). Validado
+  com dados reais: as 2 famílias do incidente republicadas de verdade (split funcionando, 3 e 2
+  anúncios) e UI validada pelo Diego. Ver [[Índice de ADRs]].
 - **UI multi-marketplace (menus/tabs/registry)** — spec 2026-07-14, em produção 2026-07-15:
   registry único no frontend (`src/lib/canais.ts`, 5 marketplaces) + `organizations.canais_habilitados`
   por org (rollout piloto sem deploy); canal ativo global (`?canal=` + sessão) com tabs em
