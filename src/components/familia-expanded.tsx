@@ -35,13 +35,30 @@ import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Fa
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
-import { alvosAplicarPreco } from '@/lib/grupos-preco';
+import { alvosAplicarPreco, exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 
 const FLASH_MS = 2000;
+
+/** Decide se escolher "Não, só esta cor" no prompt de preço exigiria dividir um anúncio já
+ *  publicado (ADR-0078 invariante #4) — simula o efeito de "Não" (só a `codigo` editada muda,
+ *  as demais ficam como publicadas hoje) e delega a `exigeDivisaoUpdate`. Troca a copy do
+ *  diálogo (F2b, achado do review). Exportada para teste sem precisar renderizar o componente. */
+export function exigeDivisaoSeNaoAplicar(
+  familia: Pick<Familia, 'operacao' | 'variacoes'>,
+  codigo: string,
+  novoPreco: number,
+): boolean {
+  return exigeDivisaoUpdate({
+    operacao: familia.operacao,
+    variacoes: familia.variacoes.map((x) =>
+      x.codigo === codigo ? { ...x, precoPublicacao: novoPreco } : x,
+    ),
+  });
+}
 
 interface FamiliaExpandedProps {
   familia: Familia;
@@ -72,7 +89,9 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   // Abre/fecha cada seção da Revisão (Cores novas / Reposição). Ausente = aberta.
   const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>({});
   // ADR-0078 F2: edição de preço pergunta "aplicar às demais?" em vez de replicar no automático.
-  const [promptPreco, setPromptPreco] = useState<{ codigo: string; preco: number } | null>(null);
+  // exigeDivisaoSeNao: escolher "Não" faria essa família (UPDATE já publicado) exigir dividir
+  // o anúncio no ar (ADR-0078 invariante #4) — troca a copy do diálogo (F2b, achado do review).
+  const [promptPreco, setPromptPreco] = useState<{ codigo: string; preco: number; exigeDivisaoSeNao: boolean } | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [trocando, setTrocando] = useState(false);
@@ -183,7 +202,11 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
       await aplicarPreco(codigo, novoPreco, false);
       return;
     }
-    setPromptPreco({ codigo, preco: novoPreco }); // "aplicar às demais variações?"
+    setPromptPreco({
+      codigo,
+      preco: novoPreco,
+      exigeDivisaoSeNao: exigeDivisaoSeNaoAplicar(familia, codigo, novoPreco),
+    }); // "aplicar às demais variações?"
   }
 
   async function aplicarPreco(codigo: string, novoPreco: number, aplicarATodas: boolean) {
@@ -678,9 +701,16 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             <AlertDialogTitle>Aplicar o novo preço às demais variações?</AlertDialogTitle>
             <AlertDialogDescription>
               {promptPreco && (
-                <>Novo preço: <strong>R$ {promptPreco.preco.toFixed(2)}</strong>. "Sim" iguala todas as
-                cores (um anúncio, preço único). "Não" mantém preços diferentes — as faixas serão
-                publicadas como anúncios separados no Mercado Livre.</>
+                promptPreco.exigeDivisaoSeNao ? (
+                  <>Novo preço: <strong>R$ {promptPreco.preco.toFixed(2)}</strong>. "Sim" iguala todas as
+                  cores (um anúncio, preço único). "Não" vai EXIGIR dividir um anúncio já publicado —
+                  a publicação desse produto vai <strong>falhar de propósito</strong> até resolver
+                  (remover e republicar perde histórico, ou marque "somente estoque" pra adiar).</>
+                ) : (
+                  <>Novo preço: <strong>R$ {promptPreco.preco.toFixed(2)}</strong>. "Sim" iguala todas as
+                  cores (um anúncio, preço único). "Não" mantém preços diferentes — as faixas serão
+                  publicadas como anúncios separados no Mercado Livre.</>
+                )
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -691,7 +721,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                 setPromptPreco(null);
               }}
             >
-              Não, só esta cor
+              {promptPreco?.exigeDivisaoSeNao ? 'Não, dividir anúncio' : 'Não, só esta cor'}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {

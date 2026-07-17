@@ -59,6 +59,48 @@ describe('FamiliaExpanded — foto da variação reflete o refetch', () => {
   });
 });
 
+describe('FamiliaExpanded — prompt "aplicar às demais?" (ADR-0078 F2b, achado do review)', () => {
+  it('UPDATE já publicado, "Não" cruzaria uma faixa no ar → avisa que vai exigir dividir o anúncio', async () => {
+    const familia = fam({
+      operacao: 'UPDATE',
+      mlItemId: 'MLB6900892156',
+      variacoes: [
+        cor({ id: 'v-a', codigo: 'A', cor: 'Azul', mlVariationId: 'm1', precoPublicadoMl: 10, preco: 10, precoPublicacao: 10 }),
+        cor({ id: 'v-b', codigo: 'B', cor: 'Verde', mlVariationId: 'm2', precoPublicadoMl: 10, preco: 20, precoPublicacao: 20 }),
+      ],
+    });
+    renderWithClient(<FamiliaExpanded familia={familia} />);
+
+    const input = screen.getByDisplayValue('10');
+    fireEvent.change(input, { target: { value: '15' } });
+    fireEvent.blur(input);
+
+    await screen.findByText(/Aplicar o novo preço às demais variações\?/i);
+    expect(screen.getByText(/EXIGIR dividir um anúncio já publicado/i)).toBeInTheDocument();
+    expect(screen.getByText(/falhar de propósito/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Não, dividir anúncio/i })).toBeInTheDocument();
+  });
+
+  it('família nova (CREATE) mantém a copy neutra de "anúncios separados"', async () => {
+    const familia = fam({
+      operacao: 'CREATE',
+      variacoes: [
+        cor({ id: 'v-a', codigo: 'A', cor: 'Azul', preco: 10, precoPublicacao: 10 }),
+        cor({ id: 'v-b', codigo: 'B', cor: 'Verde', preco: 20, precoPublicacao: 20 }),
+      ],
+    });
+    renderWithClient(<FamiliaExpanded familia={familia} />);
+
+    const input = screen.getByDisplayValue('10');
+    fireEvent.change(input, { target: { value: '15' } });
+    fireEvent.blur(input);
+
+    await screen.findByText(/Aplicar o novo preço às demais variações\?/i);
+    expect(screen.getByText(/anúncios separados no Mercado Livre/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Não, só esta cor/i })).toBeInTheDocument();
+  });
+});
+
 describe('FamiliaExpanded — incluir cor nova (UPDATE) reflete o clique', () => {
   it('marcar uma cor nova excluída persiste E deixa o checkbox marcado na hora', async () => {
     setVariacaoExcluidaMock.mockClear();
