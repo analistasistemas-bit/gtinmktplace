@@ -6,10 +6,14 @@ interface VariacaoPreco {
   excluidaDaPublicacao: boolean;
 }
 
-/** true se o preço efetivo colapsado da família (F1) diverge do último preço publicado no ML. */
+/** F2 (ADR-0078): badge POR VARIAÇÃO — o preço que o publish empurraria (o da própria
+ *  variação) difere do último confirmado no ML. precoPublicadoMl null = nunca publicada. */
 export function temAlteracaoPreco(familia: { variacoes: VariacaoPreco[] }): boolean {
-  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
-  const efetivo = incluidas.find((v) => v.precoPublicacao != null)?.precoPublicacao ?? null;
-  if (efetivo == null) return false;
-  return incluidas.some((v) => v.precoPublicadoMl != null && round2(efetivo) !== round2(v.precoPublicadoMl));
+  return familia.variacoes.some(
+    (v) =>
+      !v.excluidaDaPublicacao &&
+      v.precoPublicacao != null &&
+      v.precoPublicadoMl != null &&
+      round2(v.precoPublicacao) !== round2(v.precoPublicadoMl),
+  );
 }
