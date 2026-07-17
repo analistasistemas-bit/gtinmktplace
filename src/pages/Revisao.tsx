@@ -36,6 +36,7 @@ import { AtacadoEditor } from '@/components/atacado-editor';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { cn } from '@/lib/utils';
 import { temAlteracaoPreco } from '@/lib/preco-alterado';
+import { exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import type { Familia } from '@/lib/tipos-dominio';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas' | 'preco_alterado';
@@ -375,7 +376,7 @@ export default function Revisao() {
                   onClick={() => {
                     if (!todasComDesconto && familiasDivergentes.length > 0) {
                       toast.error('Não é possível ativar desconto no lote', {
-                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O desconto usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Ative família a família ou iguale os preços entre as cores primeiro.`,
+                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O desconto usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Configure desconto/atacado POR FAIXA dentro de cada família divergente (a ação em lote é cega ao preço por cor).`,
                       });
                       return;
                     }
@@ -396,7 +397,7 @@ export default function Revisao() {
                   onClick={() => {
                     if (familiasDivergentes.length > 0) {
                       toast.error('Não é possível ativar atacado no lote', {
-                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O atacado usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Ative família a família ou iguale os preços entre as cores primeiro.`,
+                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O atacado usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Configure desconto/atacado POR FAIXA dentro de cada família divergente (a ação em lote é cega ao preço por cor).`,
                       });
                       return;
                     }
@@ -695,6 +696,28 @@ export default function Revisao() {
               )}
             </div>
           )}
+          {(() => {
+            const exigemDivisao = familias.filter(
+              (f) => selecionadas.has(f.id) && exigeDivisaoUpdate(f),
+            );
+            if (exigemDivisao.length === 0) return null;
+            return (
+              <div className="mt-2 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <p className="font-semibold">
+                  ⚠ {exigemDivisao.length} produto(s) publicado(s) cujos novos preços exigem DIVIDIR o anúncio
+                </p>
+                {exigemDivisao.map((f) => (
+                  <p key={f.id} className="truncate">· {f.titulo}</p>
+                ))}
+                <p className="mt-1">
+                  Mover cores entre anúncios perde histórico, vendas e perguntas. Com "Atualizar tudo",
+                  a publicação desses produtos vai <strong>falhar de propósito</strong> (nada é enviado
+                  ao ML). Opções: marcar "Somente estoque" para eles (adia a decisão), igualar os preços
+                  das cores do mesmo anúncio, ou remover o anúncio e republicar aceitando a perda.
+                </p>
+              </div>
+            );
+          })()}
           <div className="mt-1">
             <span className="block text-xs font-semibold text-muted-foreground">Publicar em</span>
             <div className="mt-1 flex flex-wrap gap-3">
