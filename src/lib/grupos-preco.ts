@@ -29,7 +29,10 @@ export function alvosAplicarPreco(
   novoPreco: number,
 ): Variacao[] {
   if (!aplicarATodas) return variacoes.filter((x) => x.codigo === codigoEditado);
-  return variacoes.filter((x) => x.codigo === codigoEditado || x.precoPublicacao !== novoPreco);
+  const alvo = round2(novoPreco);
+  return variacoes.filter(
+    (x) => x.codigo === codigoEditado || round2(x.precoPublicacao ?? x.preco) !== alvo,
+  );
 }
 
 /** LOUD do UPDATE (invariante #4): variações publicadas do MESMO anúncio (proxy: mesmo

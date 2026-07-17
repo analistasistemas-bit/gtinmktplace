@@ -56,6 +56,10 @@ describe('alvosAplicarPreco', () => {
   it('"Não, só esta": só a editada', () => {
     expect(alvosAplicarPreco(vars, 'A', false, 12).map((x) => x.codigo)).toEqual(['A']);
   });
+  it('sujeira de ponto flutuante não entra nos alvos (round2, não !==)', () => {
+    const varsComSujeira = [v('A'), v('B', { precoPublicacao: 12.000000000000002 })];
+    expect(alvosAplicarPreco(varsComSujeira, 'A', true, 12).map((x) => x.codigo)).toEqual(['A']);
+  });
 });
 
 describe('exigeDivisaoUpdate', () => {
