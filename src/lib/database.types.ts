@@ -16,6 +16,8 @@ export type Database = {
     Tables: {
       anuncios_externos: {
         Row: {
+          atacado_erro: string | null
+          atacado_status: string | null
           atualizado_em: string
           canal: Database["public"]["Enums"]["canal_externo"]
           codigo_pai: string
@@ -36,6 +38,8 @@ export type Database = {
           variacoes_externas: Json
         }
         Insert: {
+          atacado_erro?: string | null
+          atacado_status?: string | null
           atualizado_em?: string
           canal: Database["public"]["Enums"]["canal_externo"]
           codigo_pai: string
@@ -56,6 +60,8 @@ export type Database = {
           variacoes_externas?: Json
         }
         Update: {
+          atacado_erro?: string | null
+          atacado_status?: string | null
           atualizado_em?: string
           canal?: Database["public"]["Enums"]["canal_externo"]
           codigo_pai?: string
@@ -1084,6 +1090,7 @@ export type Database = {
       variacoes: {
         Row: {
           altura_cm: number | null
+          atacado: Json | null
           atualizado_em: string
           catalog_erro: string | null
           catalog_listing_id: string | null
@@ -1097,9 +1104,11 @@ export type Database = {
           cor_origem: Database["public"]["Enums"]["cor_origem"] | null
           criado_em: string
           custo: number | null
+          desconto_pct: number | null
           estoque: number
           estoque_anterior: number | null
           excluida_da_publicacao: boolean
+          exibir_com_desconto: boolean | null
           familia_id: string
           gtin: string | null
           id: string
@@ -1118,6 +1127,7 @@ export type Database = {
         }
         Insert: {
           altura_cm?: number | null
+          atacado?: Json | null
           atualizado_em?: string
           catalog_erro?: string | null
           catalog_listing_id?: string | null
@@ -1131,9 +1141,11 @@ export type Database = {
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
           custo?: number | null
+          desconto_pct?: number | null
           estoque?: number
           estoque_anterior?: number | null
           excluida_da_publicacao?: boolean
+          exibir_com_desconto?: boolean | null
           familia_id: string
           gtin?: string | null
           id?: string
@@ -1152,6 +1164,7 @@ export type Database = {
         }
         Update: {
           altura_cm?: number | null
+          atacado?: Json | null
           atualizado_em?: string
           catalog_erro?: string | null
           catalog_listing_id?: string | null
@@ -1165,9 +1178,11 @@ export type Database = {
           cor_origem?: Database["public"]["Enums"]["cor_origem"] | null
           criado_em?: string
           custo?: number | null
+          desconto_pct?: number | null
           estoque?: number
           estoque_anterior?: number | null
           excluida_da_publicacao?: boolean
+          exibir_com_desconto?: boolean | null
           familia_id?: string
           gtin?: string | null
           id?: string
