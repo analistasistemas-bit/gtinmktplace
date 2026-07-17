@@ -397,8 +397,9 @@ Deno.serve(async (req) => {
         // faixas mas já 'aplicado' nesta partição → limpa. Em "somente estoque" NÃO mexe (F1).
         if (!job.somenteEstoque) {
           const jaAplicado = linhaP?.atacado_status === 'aplicado';
-          if (cfgGrupo.faixasAtacado.length > 0 || jaAplicado) {
-            if (precoGrupo == null) {
+          const aplicandoFaixas = cfgGrupo.faixasAtacado.length > 0;
+          if (aplicandoFaixas || jaAplicado) {
+            if (aplicandoFaixas && precoGrupo == null) {
               const m = 'Atacado sem preço-base: partição sem preço novo nem preço vivo conhecido';
               atacadoPorParticao.push({ status: 'erro', erro: m });
               await admin.from('anuncios_externos')
@@ -406,9 +407,11 @@ Deno.serve(async (req) => {
                 .eq('org_id', familia.org_id).eq('canal', 'mercado_livre')
                 .eq('codigo_pai', familia.codigo_pai).eq('particao', p);
             } else {
+              // Limpar (faixas vazias) não precisa de preço-base real: montarFaixasPxQ ignora
+              // precoBase quando faixas=[] (o POST vira {prices:[]} de qualquer forma).
               try {
-                await conn.aplicarAtacado(ctx, itemExternoId, precoGrupo, cfgGrupo.faixasAtacado);
-                const st = cfgGrupo.faixasAtacado.length > 0 ? 'aplicado' as const : null;
+                await conn.aplicarAtacado(ctx, itemExternoId, precoGrupo ?? 0, cfgGrupo.faixasAtacado);
+                const st = aplicandoFaixas ? 'aplicado' as const : null;
                 atacadoPorParticao.push({ status: st, erro: null });
                 await admin.from('anuncios_externos')
                   .update({ atacado_status: st, atacado_erro: null })
