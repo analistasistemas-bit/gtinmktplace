@@ -81,9 +81,10 @@ Deno.serve(async (req) => {
     const idsParaEnfileirar = todas.map((f) => f.id);
     const precosPorFamilia = new Map<string, Array<number | null>>();
     if (idsParaEnfileirar.length > 0) {
-      const { data: vrs } = await admin.from('variacoes')
+      const { data: vrs, error: errVrs } = await admin.from('variacoes')
         .select('familia_id, preco_publicacao')
         .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
+      if (errVrs) return new Response(`Erro ao carregar preços das variações: ${errVrs.message}`, { status: 500, headers: corsHeaders });
       for (const v of vrs ?? []) {
         (precosPorFamilia.get(v.familia_id) ?? precosPorFamilia.set(v.familia_id, []).get(v.familia_id)!)
           .push(precoCentavos(v.preco_publicacao));
@@ -92,10 +93,11 @@ Deno.serve(async (req) => {
     const paiPorFamilia = new Map(todas.map((f) => [f.id as string, f.codigo_pai as string]));
     const particoesPorPai = new Map<string, number>();
     if (todas.length > 0) {
-      const { data: parts } = await admin.from('anuncios_externos')
+      const { data: parts, error: errParts } = await admin.from('anuncios_externos')
         .select('codigo_pai, particao')
         .eq('org_id', orgId).eq('canal', 'mercado_livre')
         .in('codigo_pai', [...new Set(paiPorFamilia.values())]);
+      if (errParts) return new Response(`Erro ao carregar partições existentes: ${errParts.message}`, { status: 500, headers: corsHeaders });
       for (const p of parts ?? []) {
         particoesPorPai.set(p.codigo_pai, (particoesPorPai.get(p.codigo_pai) ?? 0) + 1);
       }
