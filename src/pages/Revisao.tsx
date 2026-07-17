@@ -22,7 +22,7 @@ import { useFamilias } from '@/hooks/useFamilias';
 import { useLote } from '@/hooks/useLotes';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK, fetchConexoes } from '@/lib/queries';
-import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao } from '@/lib/publicavel';
+import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao, familiaPrecosDivergentes } from '@/lib/publicavel';
 import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
@@ -117,6 +117,11 @@ export default function Revisao() {
   const erroFaixasLote = validarFaixas(faixasLote);
   const reprocessarLote = useReprocessar(loteId ?? '');
   const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
+  // Ações em lote aplicam desconto/atacado às famílias do lote sem olhar preço por
+  // cor (UPDATE ... WHERE lote_id, cego). Se alguma família tem cores com preços
+  // diferentes, ela herdaria o mesmo bug do controle individual (ver familiaPrecosDivergentes)
+  // — bloqueia a ativação em lote nesse caso.
+  const familiasDivergentes = useMemo(() => familias.filter(familiaPrecosDivergentes), [familias]);
   const qtdErros = useMemo(() => familias.filter((f) => f.status === 'erro').length, [familias]);
 
   // O lote volta para 'revisao' quando ainda restam famílias publicáveis, escondendo
@@ -361,11 +366,44 @@ export default function Revisao() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => toggleLote.mutate(!todasComDesconto)}
+                  className={!todasComDesconto && familiasDivergentes.length > 0 ? 'opacity-50' : undefined}
+                  title={
+                    !todasComDesconto && familiasDivergentes.length > 0
+                      ? `${familiasDivergentes.length} família(s) do lote têm cores com preços diferentes: clique para saber por quê`
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (!todasComDesconto && familiasDivergentes.length > 0) {
+                      toast.error('Não é possível ativar desconto no lote', {
+                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O desconto usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Ative família a família ou iguale os preços entre as cores primeiro.`,
+                      });
+                      return;
+                    }
+                    toggleLote.mutate(!todasComDesconto);
+                  }}
                 >
                   {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => { setFaixasLote([{ min_unidades: 5, desconto_pct: 5 }]); setAtacadoAberto(true); }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={familiasDivergentes.length > 0 ? 'opacity-50' : undefined}
+                  title={
+                    familiasDivergentes.length > 0
+                      ? `${familiasDivergentes.length} família(s) do lote têm cores com preços diferentes: clique para saber por quê`
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (familiasDivergentes.length > 0) {
+                      toast.error('Não é possível ativar atacado no lote', {
+                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O atacado usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Ative família a família ou iguale os preços entre as cores primeiro.`,
+                      });
+                      return;
+                    }
+                    setFaixasLote([{ min_unidades: 5, desconto_pct: 5 }]);
+                    setAtacadoAberto(true);
+                  }}
+                >
                   Atacado no lote
                 </Button>
               </div>

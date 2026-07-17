@@ -15,7 +15,14 @@ import { AtacadoEditor } from '@/components/atacado-editor';
 import { cn } from '@/lib/utils';
 import { fmtBRLSemSimbolo } from '@/lib/formato';
 import type { Familia } from '@/lib/tipos-dominio';
-import { familiaPublicavel, criticasVariacao, familiaIncompleta, variacoesEstoqueAlterado, familiaExigeCor } from '@/lib/publicavel';
+import {
+  familiaPublicavel,
+  criticasVariacao,
+  familiaIncompleta,
+  variacoesEstoqueAlterado,
+  familiaExigeCor,
+  familiaPrecosDivergentes,
+} from '@/lib/publicavel';
 import { coresNovasComEstoque, coresSemFotoExcluidas } from '@/lib/revisao-variacoes';
 
 interface FamiliaRowProps {
@@ -27,6 +34,18 @@ interface FamiliaRowProps {
   onIrParaCritica?: (familiaId: string, codigo: string) => void;
 }
 
+// Mensagem do bloqueio quando as cores da família têm preços diferentes: desconto e
+// atacado calculam um único preço-base (o menor entre as cores incluídas), então o
+// desconto em R$ fica desproporcional nas cores mais caras. Ver familiaPrecosDivergentes.
+function avisoPrecosDivergentes(acao: 'desconto' | 'atacado', precoMin: number, precoMax: number): void {
+  toast.error(`Não é possível ativar ${acao === 'desconto' ? 'o desconto' : 'o preço de atacado'}`, {
+    description:
+      `As cores desta família têm preços diferentes (R$ ${fmtBRLSemSimbolo(precoMin)}–R$ ${fmtBRLSemSimbolo(precoMax)}). ` +
+      `${acao === 'desconto' ? 'O desconto usa' : 'O atacado usa'} um único preço-base para todas as cores, ` +
+      'o que geraria valores incorretos nas cores mais caras. Iguale os preços entre as cores para habilitar.',
+  });
+}
+
 function DescontoControle({ familia }: { familia: Familia }) {
   const { data: globalPct } = useDescontoPct();
   const updExibir = useUpdateExibirDesconto(familia.loteId);
@@ -36,16 +55,25 @@ function DescontoControle({ familia }: { familia: Familia }) {
   // preço de PUBLICAÇÃO das cores incluídas — não o preço da planilha. Reage à edição.
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
-  const precoVenda = baseVariacoes.length > 0
-    ? Math.min(...baseVariacoes.map((v) => v.precoPublicacao ?? v.preco))
-    : 0;
+  const precosVenda = baseVariacoes.map((v) => v.precoPublicacao ?? v.preco);
+  const precoVenda = precosVenda.length > 0 ? Math.min(...precosVenda) : 0;
+  const precoVendaMax = precosVenda.length > 0 ? Math.max(...precosVenda) : 0;
+  const divergente = familiaPrecosDivergentes(familia);
   const de = calcularPrecoDe(precoVenda, pct);
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <Checkbox
         aria-label="Exibir com desconto"
         checked={familia.exibirComDesconto}
-        onCheckedChange={(v) => updExibir.mutate({ familiaId: familia.id, exibir: !!v })}
+        className={divergente ? 'opacity-50' : undefined}
+        title={divergente ? 'Cores com preços diferentes: clique para saber por que o desconto está bloqueado' : undefined}
+        onCheckedChange={(v) => {
+          if (divergente && v) {
+            avisoPrecosDivergentes('desconto', precoVenda, precoVendaMax);
+            return;
+          }
+          updExibir.mutate({ familiaId: familia.id, exibir: !!v });
+        }}
       />
       <span>Exibir com desconto</span>
       {familia.exibirComDesconto && (
@@ -83,7 +111,10 @@ function AtacadoControle({ familia }: { familia: Familia }) {
   useEffect(() => { setFaixas(familia.atacado ?? []); }, [JSON.stringify(familia.atacado ?? [])]);
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const base = incluidas.length > 0 ? incluidas : familia.variacoes;
-  const precoBase = base.length > 0 ? Math.min(...base.map((v) => v.precoPublicacao ?? v.preco)) : 0;
+  const precosBase = base.map((v) => v.precoPublicacao ?? v.preco);
+  const precoBase = precosBase.length > 0 ? Math.min(...precosBase) : 0;
+  const precoBaseMax = precosBase.length > 0 ? Math.max(...precosBase) : 0;
+  const divergente = familiaPrecosDivergentes(familia);
   const ativo = faixas.length > 0;
   const erro = validarFaixas(faixas);
   const dirty = JSON.stringify(faixas) !== JSON.stringify(familia.atacado ?? []);
@@ -94,7 +125,13 @@ function AtacadoControle({ familia }: { familia: Familia }) {
         <Checkbox
           aria-label="Preço de atacado"
           checked={ativo}
+          className={divergente ? 'opacity-50' : undefined}
+          title={divergente ? 'Cores com preços diferentes: clique para saber por que o atacado está bloqueado' : undefined}
           onCheckedChange={(v) => {
+            if (divergente && v) {
+              avisoPrecosDivergentes('atacado', precoBase, precoBaseMax);
+              return;
+            }
             if (v) setFaixas(faixas.length ? faixas : [{ min_unidades: 5, desconto_pct: 5 }]);
             else { setFaixas([]); upd.mutate({ familiaId: familia.id, faixas: [] }); }
           }}

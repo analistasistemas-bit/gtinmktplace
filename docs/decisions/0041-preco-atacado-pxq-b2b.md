@@ -100,3 +100,20 @@ falha do recurso acessório não invalida o anúncio criado.
    (`useFamiliaMutations.ts`).
 
 Detalhe completo no spec: `docs/superpowers/specs/2026-06-24-preco-atacado-pxq-design.md`.
+
+## Adendo 2026-07-17 — bloqueio quando a família tem cores com preços diferentes
+
+O caso "não há hoje" da linha 86-87 surgiu: famílias com cores em preços diferentes (ex.:
+FITAS DE VELUDO 25MM, PAI 02841240 — Branco/Preto R$ 40,65, Verde R$ 52,75, Laranja R$ 134,00).
+Usar o preço mínimo como base (comportamento assumido) aplicaria o desconto em R$ calculado
+sobre a cor mais barata a **todas** as cores — na cor mais cara isso vira um desconto muito
+maior que o configurado (ex.: 5% configurado → ~71% efetivo na Laranja), sem aviso ao operador.
+
+Em vez de aplicar silenciosamente sobre o mínimo, a UI passa a **bloquear** ativação de
+"Exibir com desconto" e "Preço de atacado" (por família, `familia-row.tsx`) e das ações em
+lote "Ativar desconto no lote" / "Atacado no lote" (`Revisao.tsx`) quando
+`familiaPrecosDivergentes` (`src/lib/publicavel.ts`) detecta preço diferente entre as cores
+incluídas na publicação. O clique nesses controles bloqueados mostra um toast explicando o
+motivo. Desativar (desmarcar) continua permitido mesmo com preços divergentes — só a ativação
+é bloqueada. A limitação de escopo (faixa por-variação) permanece a mesma da decisão original;
+o que muda é que o app agora recusa o caso em vez de aplicar um valor incorreto sem avisar.

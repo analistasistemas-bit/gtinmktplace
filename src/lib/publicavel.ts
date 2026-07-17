@@ -25,6 +25,22 @@ export function familiaExigeCor(familia: Familia): boolean {
   return !(familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && incluidas.length === 1);
 }
 
+// Desconto e atacado usam um único preço-base para a família inteira (o menor entre
+// as variações incluídas — ver AtacadoControle/DescontoControle). Se as cores têm
+// preços diferentes, esse preço-base fica errado para as cores mais caras: o desconto
+// em R$ calculado sobre o menor preço vira um % desproporcional nas demais. Bloqueia
+// ativar desconto/atacado (individual e em lote) nesse caso (ADR-0041, limitação
+// assumida: "faixa por-variação fica fora do escopo").
+export function familiaPrecosDivergentes(familia: {
+  variacoes: Array<Pick<Variacao, 'preco' | 'precoPublicacao' | 'excluidaDaPublicacao'>>;
+}): boolean {
+  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
+  const base = incluidas.length > 0 ? incluidas : familia.variacoes;
+  if (base.length === 0) return false;
+  const precos = base.map((v) => v.precoPublicacao ?? v.preco);
+  return Math.min(...precos) !== Math.max(...precos);
+}
+
 // Críticas curtas de uma variação que será publicada como variação plena no ML,
 // para destacar a linha da cor na Revisão. Reposição de cor já casada no ML (UPDATE)
 // não acusa nada. Uma cor desmarcada por falta de foto (CREATE/cor nova) continua
