@@ -243,16 +243,25 @@ Deno.serve(async (req) => {
     if (!job.somenteEstoque) {
       try {
         const faixasAtacado = Array.isArray(familia.atacado) ? (familia.atacado as FaixaAtacado[]) : [];
-        if (precoFamilia != null && (faixasAtacado.length > 0 || familia.atacado_status === 'aplicado')) {
-          try {
-            await conn.aplicarAtacado(ctx, familia.ml_item_id, precoFamilia, faixasAtacado);
-            await admin.from('familias')
-              .update({ atacado_status: faixasAtacado.length > 0 ? 'aplicado' : null, atacado_erro: null })
-              .eq('id', job.familia_id);
-          } catch (e) {
-            const m = e instanceof Error ? e.message : String(e);
-            console.error(`atacado (update) falhou para ${familia.ml_item_id}:`, m);
+        const jaAplicado = familia.atacado_status === 'aplicado';
+        const aplicandoFaixas = faixasAtacado.length > 0;
+        if (aplicandoFaixas || jaAplicado) {
+          if (aplicandoFaixas && precoFamilia == null) {
+            const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
             await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+          } else {
+            // Limpar (faixas vazias) não precisa de preço-base real: montarFaixasPxQ ignora
+            // precoBase quando faixas=[] (o POST vira {prices:[]} de qualquer forma).
+            try {
+              await conn.aplicarAtacado(ctx, familia.ml_item_id, precoFamilia ?? 0, faixasAtacado);
+              await admin.from('familias')
+                .update({ atacado_status: aplicandoFaixas ? 'aplicado' : null, atacado_erro: null })
+                .eq('id', job.familia_id);
+            } catch (e) {
+              const m = e instanceof Error ? e.message : String(e);
+              console.error(`atacado (update) falhou para ${familia.ml_item_id}:`, m);
+              await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', job.familia_id);
+            }
           }
         }
       } catch (e) {
