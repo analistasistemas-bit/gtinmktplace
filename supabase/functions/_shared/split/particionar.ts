@@ -106,7 +106,8 @@ export function particionarPorPreco(input: ParticionarPorPrecoInput): Particiona
       conflitos.push(
         `Partição ${p}: preços divergentes entre cores já publicadas ` +
         `(${[...naoNulos].map((x) => (x / 100).toFixed(2)).join(' × ')}) — honrar exige dividir/migrar ` +
-        `variação publicada (perde histórico); decida na Revisão`,
+        `variação publicada (perde histórico); decida na Revisão` +
+        ` — cores: ${ancoradas.map((c) => c.sku).join(', ')}`,
       );
       precoPorParticao.set(p, null);
       continue;
@@ -136,6 +137,9 @@ export function particionarPorPreco(input: ParticionarPorPrecoInput): Particiona
     if (alvo === -1) {
       alvo = maxParticao + 1;
       maxParticao = alvo;
+      // Cor nova que não casou com nenhuma partição existente (mesmo as "somente estoque",
+      // que preservam a faixa VIVA) nunca teve preço publicado — não há preço vivo a preservar,
+      // então o PUT de criação exige preço próprio aqui. somenteEstoque não suprime este caso.
       precoPorParticao.set(alvo, cor.precoCentavos);
     }
     mapa.set(cor.sku, alvo);

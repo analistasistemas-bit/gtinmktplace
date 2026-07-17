@@ -106,4 +106,28 @@ describe('particionarPorPreco', () => {
     expect(r.conflitos).toEqual([]);
     expect(r.precoPorParticao.get(0)).toBe(1000);
   });
+
+  it('duas partições ancoradas convergindo para o mesmo preço não se fundem', () => {
+    const r = particionarPorPreco({
+      ...base,
+      cores: [c('A', 'Azul', 1200), c('B', 'Rosa', 1200)],
+      ancoragem: new Map([['A', 0], ['B', 1]]),
+    });
+    expect(r.conflitos).toEqual([]);
+    expect(r.mapa.get('A')).toBe(0);
+    expect(r.mapa.get('B')).toBe(1);
+    expect(r.precoPorParticao.get(0)).toBe(r.precoPorParticao.get(1));
+  });
+
+  it('cor nova cujo preço casa partição cheia (max) abre partição nova em vez de estourar capacidade', () => {
+    const r = particionarPorPreco({
+      ...base,
+      cores: [c('A', 'Azul', 1000), c('N', 'Verde', 1000)],
+      ancoragem: new Map([['A', 0]]),
+      max: 1,
+    });
+    expect(r.conflitos).toEqual([]);
+    expect(r.mapa.get('N')).not.toBe(r.mapa.get('A'));
+    expect(r.mapa.get('A')).toBe(0);
+  });
 });
