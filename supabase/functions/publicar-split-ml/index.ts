@@ -18,11 +18,13 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import type { AnuncioCanonico, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAncoragem } from '../_shared/split/ancoragem.ts';
-import { particionar } from '../_shared/split/particionar.ts';
+import { particionarPorPreco } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
+import { precosDivergentes, precoCentavos } from '../_shared/preco/grupos.ts';
+import { resolverConfigGrupo, agregarAtacadoStatus } from '../_shared/preco/config-grupo.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -111,14 +113,11 @@ Deno.serve(async (req) => {
       throw err;
     }
 
-    let descontoPct: number | null = null;
-    if (familia.exibir_com_desconto) {
-      const { data: cfg } = await admin.from('configuracoes')
-        .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
-      const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
-      const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
-      descontoPct = pctEfetivo(fam, global);
-    }
+    // ADR-0078 F2: o % global vale para QUALQUER grupo com desconto (a família pode estar
+    // desligada e um grupo ligado). Busca única, barata.
+    const { data: cfgGlobal } = await admin.from('configuracoes')
+      .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
+    const descontoPctGlobal = cfgGlobal?.desconto_pct != null ? Number(cfgGlobal.desconto_pct) : 15;
 
     const signed = async (path: string): Promise<string> => {
       const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
@@ -154,15 +153,53 @@ Deno.serve(async (req) => {
       variacoesComFoto.push({ ...v, ml_picture_id: picId });
     }
 
-    // Ancoragem (partições já no ar) + particionamento das cores incluídas.
+    // Ancoragem (partições já no ar) + particionamento por PREÇO (ADR-0078 F2).
     const { data: linhas } = await admin.from('anuncios_externos')
-      .select('particao, item_externo_id, permalink, titulo, variacoes_externas')
+      .select('particao, item_externo_id, permalink, titulo, variacoes_externas, atacado_status')
       .eq('org_id', familia.org_id).eq('canal', 'mercado_livre').eq('codigo_pai', familia.codigo_pai);
     const ancoragem = montarAncoragem(linhas ?? []);
-    const mapaParticao = particionar(
-      variacoesComFoto.map((v) => ({ sku: v.codigo, cor: v.cor })),
+    const divergente = precosDivergentes(variacoesComFoto);
+
+    // Faixa VIVA por partição: preco_publicado_ml das ancoradas; faltando, GET ao vivo
+    // (lerStatus) — nunca inferência local ambígua (spec ADR-0078, "Particionamento").
+    const faixaVivaPorParticao = new Map<number, number>();
+    for (const l of linhas ?? []) {
+      const skus = new Set(Object.keys((l.variacoes_externas as Record<string, unknown>) ?? {}));
+      const viva = variacoesComFoto.find((v) => skus.has(v.codigo) && v.preco_publicado_ml != null);
+      const cent = viva ? precoCentavos(viva.preco_publicado_ml) : null;
+      if (cent != null) faixaVivaPorParticao.set(l.particao, cent);
+    }
+    if (job.somenteEstoque) {
+      const semFaixa = (linhas ?? []).filter((l) => l.item_externo_id && !faixaVivaPorParticao.has(l.particao));
+      if (semFaixa.length > 0) {
+        const status = await conn.lerStatus(ctx, semFaixa.map((l) => l.item_externo_id as string));
+        for (const l of semFaixa) {
+          const preco = status[l.item_externo_id as string]?.preco;
+          const cent = precoCentavos(preco ?? null);
+          if (cent != null) faixaVivaPorParticao.set(l.particao, cent);
+        }
+      }
+    }
+
+    const particionamento = particionarPorPreco({
+      cores: variacoesComFoto.map((v) => ({
+        sku: v.codigo, cor: v.cor, precoCentavos: precoCentavos(v.preco_publicacao),
+      })),
       ancoragem,
-    );
+      faixaVivaPorParticao,
+      somenteEstoque: !!job.somenteEstoque,
+    });
+    // Invariante #4: cruzar faixa / anúncio ficaria divergente → LOUD, nada é enviado. O
+    // operador decide na Revisão (repreçar uniforme, "somente estoque", ou remover+republicar).
+    if (particionamento.conflitos.length > 0) {
+      const err = new Error(
+        `Preços exigem dividir/migrar anúncio publicado — decida na Revisão (nada foi enviado): ` +
+        `${particionamento.conflitos.join('; ')} (400)`,
+      ) as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    const mapaParticao = particionamento.mapa;
 
     const grupos = new Map<number, typeof variacoesComFoto>();
     for (const v of variacoesComFoto) {
@@ -173,8 +210,10 @@ Deno.serve(async (req) => {
     for (const l of linhas ?? []) linhaPorParticao.set(l.particao, l);
 
     const marca = (familia.fornecedor as string | null)?.trim() || null;
-    const precoFamiliaRaw = variacoesComFoto.find((v) => v.preco_publicacao != null)?.preco_publicacao;
-    const precoFamilia = precoFamiliaRaw != null ? Number(precoFamiliaRaw) : null;
+
+    // Status de atacado por partição (agregado vai a familias no fim). Em "somente estoque"
+    // o PxQ vivo é preservado (F1) — nada é registrado nem sobrescrito.
+    const atacadoPorParticao: Array<{ status: 'aplicado' | 'erro' | null; erro: string | null }> = [];
 
     const dimensoesDe = (rep: typeof variacoesComFoto[number] | undefined) => rep ? {
       altura_cm: rep.altura_cm != null ? Number(rep.altura_cm) : null,
@@ -186,6 +225,14 @@ Deno.serve(async (req) => {
     for (const p of [...grupos.keys()].sort((a, b) => a - b)) {
       const coresP = grupos.get(p)!;
       const linhaP = linhaPorParticao.get(p);
+      const precoGrupoCent = particionamento.precoPorParticao.get(p) ?? null;
+      // Preço único do anúncio desta partição. null (só em UPDATE sem preço novo) = preserva o vivo.
+      const precoGrupo = precoGrupoCent != null ? precoGrupoCent / 100 : null;
+      // Config financeira POR GRUPO (invariante #2: LOUD se herdaria config ativa em divergência).
+      const cfgGrupo = resolverConfigGrupo(familia, coresP, divergente);
+      const pctGrupo = cfgGrupo.exibirComDesconto
+        ? pctEfetivo(cfgGrupo.descontoPct, descontoPctGlobal)
+        : null;
       // Partição 0 herda o ml_item_id já publicado da família quando um produto que era de 1
       // anúncio passa a split (anuncios_externos pode não ter a linha ainda) — evita recriar e
       // abandonar o anúncio existente.
@@ -218,11 +265,11 @@ Deno.serve(async (req) => {
           capa2FotoId: capa2PictureId,
           capa3FotoId: capa3PictureId,
           listingTypeId: job.listing_type_id,
-          desconto: descontoPct != null ? { pct: descontoPct } : null,
+          desconto: pctGrupo != null ? { pct: pctGrupo } : null,
           dimensoes: dimensoesDe(ordenadas[0]),
           variacoes: ordenadas.map((v) => ({
             sku: v.codigo, cor: v.cor, estoque: v.estoque,
-            preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,
+            preco: v.preco_publicacao ?? precoGrupo, gtin: v.gtin, fotoId: v.ml_picture_id,
           })),
         };
         const ref = await criarAnuncioParticao(conn, ctx, anuncio);
@@ -255,6 +302,28 @@ Deno.serve(async (req) => {
           try { await conn.garantirDescricao(ctx, ref.itemExternoId, familia.descricao_ml); }
           catch (e) { console.error(`descrição falhou para ${ref.itemExternoId}:`, e); }
         }
+        // Atacado (PxQ) POR PARTIÇÃO (ADR-0078 F2 — o split nunca aplicava). Base = preço do
+        // grupo. Best-effort: falha não derruba o anúncio já criado; vira atacado_status='erro'.
+        if (cfgGrupo.faixasAtacado.length > 0 && precoGrupo != null) {
+          try {
+            await conn.aplicarAtacado(ctx, itemIdP!, precoGrupo, cfgGrupo.faixasAtacado);
+            atacadoPorParticao.push({ status: 'aplicado', erro: null });
+            await admin.from('anuncios_externos')
+              .update({ atacado_status: 'aplicado', atacado_erro: null })
+              .eq('org_id', familia.org_id).eq('canal', 'mercado_livre')
+              .eq('codigo_pai', familia.codigo_pai).eq('particao', p);
+          } catch (e) {
+            const m = e instanceof Error ? e.message : String(e);
+            console.error(`atacado (split CREATE) falhou na partição ${p}:`, m);
+            atacadoPorParticao.push({ status: 'erro', erro: m });
+            await admin.from('anuncios_externos')
+              .update({ atacado_status: 'erro', atacado_erro: m })
+              .eq('org_id', familia.org_id).eq('canal', 'mercado_livre')
+              .eq('codigo_pai', familia.codigo_pai).eq('particao', p);
+          }
+        } else {
+          atacadoPorParticao.push({ status: null, erro: null });
+        }
         if (p === 0) {
           await admin.from('familias').update({
             ml_item_id: ref.itemExternoId, ml_permalink: ref.permalink ?? null,
@@ -265,8 +334,8 @@ Deno.serve(async (req) => {
         const casadas = coresP.filter((v) => v.ml_variation_id);
         const novas = coresP.filter((v) => !v.ml_variation_id);
         const repUpd = coresP.find((v) => v.codigo === familia.variacao_principal_codigo) ?? coresP[0];
-        const desconto = descontoPct != null ? {
-          pct: descontoPct,
+        const desconto = pctGrupo != null ? {
+          pct: pctGrupo,
           precoPorCodigo: Object.fromEntries(coresP.map((v) =>
             [v.codigo, v.preco_publicacao != null ? Number(v.preco_publicacao) : null])),
         } : null;
@@ -275,7 +344,7 @@ Deno.serve(async (req) => {
           existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque, cor: v.cor })),
           novas: novas.map((v) => ({
             sku: v.codigo, cor: v.cor, estoque: v.estoque,
-            preco: v.preco_publicacao, gtin: v.gtin, fotoId: v.ml_picture_id,
+            preco: v.preco_publicacao ?? precoGrupo, gtin: v.gtin, fotoId: v.ml_picture_id,
           })),
           capaFotoId: capaPictureId,
           capa2FotoId: capa2PictureId,
@@ -284,7 +353,7 @@ Deno.serve(async (req) => {
           marca,
           dimensoes: dimensoesDe(repUpd),
           desconto,
-          precoFamilia,
+          precoFamilia: precoGrupo,
           // ADR-0078 F1: mesmo conector do update normal — o flag suprime desconto/precoFamilia.
           // Sem isso, família >100 cores publicaria preço mesmo com "somente estoque" marcado.
           somenteEstoque: job.somenteEstoque,
@@ -316,13 +385,48 @@ Deno.serve(async (req) => {
         const confirmado = precoAConfirmar({
           somenteEstoque: !!job.somenteEstoque,
           precoVivo: res.valor!.precoVivo ?? null,
-          precoEnviado: precoFamilia,
+          precoEnviado: precoGrupo,
         });
         if (confirmado != null) {
           await admin.from('variacoes')
             .update({ preco_publicado_ml: confirmado })
             .eq('familia_id', job.familia_id)
             .in('codigo', Object.keys(res.valor!.variacoesExternas));
+        }
+        // Atacado (PxQ) por partição no UPDATE: com faixas → reaplica na base do grupo; sem
+        // faixas mas já 'aplicado' nesta partição → limpa. Em "somente estoque" NÃO mexe (F1).
+        if (!job.somenteEstoque) {
+          const jaAplicado = linhaP?.atacado_status === 'aplicado';
+          if (cfgGrupo.faixasAtacado.length > 0 || jaAplicado) {
+            if (precoGrupo == null) {
+              const m = 'Atacado sem preço-base: partição sem preço novo nem preço vivo conhecido';
+              atacadoPorParticao.push({ status: 'erro', erro: m });
+              await admin.from('anuncios_externos')
+                .update({ atacado_status: 'erro', atacado_erro: m })
+                .eq('org_id', familia.org_id).eq('canal', 'mercado_livre')
+                .eq('codigo_pai', familia.codigo_pai).eq('particao', p);
+            } else {
+              try {
+                await conn.aplicarAtacado(ctx, itemExternoId, precoGrupo, cfgGrupo.faixasAtacado);
+                const st = cfgGrupo.faixasAtacado.length > 0 ? 'aplicado' as const : null;
+                atacadoPorParticao.push({ status: st, erro: null });
+                await admin.from('anuncios_externos')
+                  .update({ atacado_status: st, atacado_erro: null })
+                  .eq('org_id', familia.org_id).eq('canal', 'mercado_livre')
+                  .eq('codigo_pai', familia.codigo_pai).eq('particao', p);
+              } catch (e) {
+                const m = e instanceof Error ? e.message : String(e);
+                console.error(`atacado (split UPDATE) falhou na partição ${p}:`, m);
+                atacadoPorParticao.push({ status: 'erro', erro: m });
+                await admin.from('anuncios_externos')
+                  .update({ atacado_status: 'erro', atacado_erro: m })
+                  .eq('org_id', familia.org_id).eq('canal', 'mercado_livre')
+                  .eq('codigo_pai', familia.codigo_pai).eq('particao', p);
+              }
+            }
+          } else {
+            atacadoPorParticao.push({ status: null, erro: null });
+          }
         }
       }
 
@@ -347,6 +451,12 @@ Deno.serve(async (req) => {
       await enfileirarVinculacaoCatalogo(job.familia_id);
     } catch (e) {
       console.error(`enfileirar catálogo (split) falhou para familia ${job.familia_id}:`, e);
+    }
+
+    // Agregado do atacado (familias.atacado_status representa o pior caso entre as partições).
+    if (!job.somenteEstoque && atacadoPorParticao.length > 0) {
+      const agregado = agregarAtacadoStatus(atacadoPorParticao);
+      await admin.from('familias').update(agregado).eq('id', job.familia_id);
     }
 
     await admin.from('familias').update({
