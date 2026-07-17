@@ -1,11 +1,11 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-07-15
+atualizado: 2026-07-17
 ---
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (77 ADRs, `0001`–`0077`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (78 ADRs, `0001`–`0078`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -89,5 +89,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0075 | [Piso de tarifa fixa também no ramo competitivo](../../docs/decisions/0075-piso-tarifa-fixa-no-ramo-competitivo.md) |
 | 0076 | [Gross-up itera o frete por variação até estabilizar](../../docs/decisions/0076-gross-up-itera-frete-por-variacao.md) |
 | 0077 | [Registry híbrido para UI multi-marketplace (frontend + canais_habilitados por org)](../../docs/decisions/0077-registry-hibrido-menus-multicanal.md) |
+| 0078 | [Preço por variação, split por faixa de preço e controle de preço no UPDATE](../../docs/decisions/0078-preco-por-variacao-split-por-faixa-e-controle-de-preco-no-update.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

@@ -30,9 +30,21 @@
   do incidente e republicadas de fato. PAI 02841240 → 3 anúncios (Preto+Branco ancorados no
   original, Laranja e Verde Musgo novos, cada um no seu preço). PAI 02841290 → 2 anúncios (base
   ancorada + Verde Musgo novo). Todos `publicado`, sem erro.
-- [ ] Fase 2b (UI: config por grupo de preço, badge por variação, LOUD no diálogo de publicação) —
-  planejada em `docs/superpowers/plans/2026-07-17-preco-por-variacao-split-fase2b-ui-config-grupo.md`,
-  não iniciada.
+- [x] **Fase 2b (UI: config por grupo de preço, badge por variação, LOUD no diálogo de publicação)** —
+  2026-07-17, branch `preco-por-variacao-split-fase2b`, planejada em
+  `docs/superpowers/plans/2026-07-17-preco-por-variacao-split-fase2b-ui-config-grupo.md`. Tipos
+  `Variacao.exibirComDesconto/descontoPct/atacado` + `setDescontoGrupo`/`setAtacadoGrupo`; helpers
+  puros `src/lib/grupos-preco.ts` (`gruposDePreco`, `alvosAplicarPreco`, `exigeDivisaoUpdate`,
+  `configGrupoPendente`); badge "preço alterado" (`temAlteracaoPreco`) passou a comparar por
+  variação em vez de colapsado por família; editar preço de 1 cor numa família com mais de 1 cor
+  abre prompt "aplicar às demais?" ("Sim" replica/pina todas, "Não" salva só a cor e cria
+  divergência de propósito); família divergente ganhou `ConfigGruposPreco` (desconto/atacado por
+  faixa, grava `false`/`[]` explícito — nunca `null`) no lugar dos controles família-level
+  bloqueados; botões de lote seguem bloqueados para famílias divergentes (só o aviso mudou);
+  diálogo de publicação ganhou aviso LOUD para UPDATEs que exigiriam dividir um anúncio já
+  publicado (aviso, não bloqueio — quem bloqueia é o backend da F2a). ADR-0078 status atualizado
+  para "Aceito — implementado (F1+F2)". Validação manual (browser-use com Diego) e merge ficam
+  pendentes, fora do escopo desta task de documentação.
 
 ## Menus multi-marketplace (spec 2026-07-14): registry de canais, tela /canais, CanalTabs global, canais por org — EM PRODUÇÃO (2026-07-15)
 

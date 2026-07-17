@@ -209,6 +209,8 @@
   ramo UPDATE — em "somente estoque" nenhum push de preço/atacado; cor nova adota o preço vivo do
   anúncio (falha LOUD sem preço vivo válido); `preco_publicado_ml` gravado por SKU no sucesso
   (preço vivo em "somente estoque", recalculado caso contrário).
+  **A partir da F2b**, a Revisão permite criar a divergência (prompt "aplicar às demais?" + config
+  por faixa); o roteamento e o LOUD descritos acima passam a ser exercitados pela UI.
 - **publicar-anuncio** *(worker genérico, E6 — ADR-0061)* — publica 1 família em 1 canal ≠ ML.
   Claim atômico por `(org, canal, codigo_pai)`: `pendente|erro → publicando`. Resolve a conexão da
   org, monta anúncio canônico, executa CREATE/UPDATE via conector, persiste em `anuncios_externos`.

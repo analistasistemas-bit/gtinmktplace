@@ -1,6 +1,6 @@
 # ADR-0078 — Preço por variação, split por faixa de preço e controle de preço no UPDATE
 
-**Status:** Proposto — 2026-07-15
+**Status:** Aceito — implementado (F1+F2) — 2026-07-17
 **Decisores:** Diego
 **Relacionado:** ADR-0016 (UPDATE reposição de estoque + adendo preço propaga), ADR-0017 (selo de desconto % OFF estacionado), ADR-0041 (preço de atacado PxQ B2B), ADR-0048 (split de produto em N anúncios), ADR-0064 (concorrência agregada por variação), ADR-0076 (gross-up itera frete por variação)
 **Spec:** `docs/superpowers/specs/2026-07-15-preco-por-variacao-split-design.md`
