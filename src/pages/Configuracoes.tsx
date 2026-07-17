@@ -12,6 +12,7 @@ import {
   useDescontoConcorrenciaPct, useSalvarDescontoConcorrenciaPct,
   useAliquotas, useSalvarAliquotas,
   useReancoraLiderAtiva, useSalvarReancoraLiderAtiva,
+  useMostrarLucroDashboard, useSalvarMostrarLucroDashboard,
   useModeloTexto, useSalvarModeloTexto, useModeloImagem, useSalvarModeloImagem,
 } from '@/hooks/useConfiguracoes';
 import { MODELOS_TEXTO, MODELOS_IMAGEM } from '@/lib/ai-modelos';
@@ -39,6 +40,9 @@ export default function Configuracoes() {
 
   const { data: reancoraLiderAtiva } = useReancoraLiderAtiva();
   const salvarReancoraLiderAtiva = useSalvarReancoraLiderAtiva();
+
+  const { data: mostrarLucroDashboard } = useMostrarLucroDashboard();
+  const salvarMostrarLucroDashboard = useSalvarMostrarLucroDashboard();
 
   const { isAdmin } = useProfile();
   const { data: modeloTexto } = useModeloTexto();
@@ -178,6 +182,25 @@ export default function Configuracoes() {
           </p>
           {salvarReancoraLiderAtiva.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
           {salvarReancoraLiderAtiva.isSuccess && !salvarReancoraLiderAtiva.isPending && (
+            <span className="text-xs text-success">✓ Salvo</span>
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Mostrar lucro no card do Dashboard</h2>
+            <Switch
+              checked={mostrarLucroDashboard ?? false}
+              onCheckedChange={(v) => salvarMostrarLucroDashboard.mutate(v)}
+              aria-label="Mostrar lucro no card do Dashboard"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Quando desligado (padrão), o card "Líquido no faturamento" do Dashboard não mostra o
+            valor de lucro do período.
+          </p>
+          {salvarMostrarLucroDashboard.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+          {salvarMostrarLucroDashboard.isSuccess && !salvarMostrarLucroDashboard.isPending && (
             <span className="text-xs text-success">✓ Salvo</span>
           )}
         </Card>

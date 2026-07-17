@@ -10,6 +10,7 @@ vi.mock('@/hooks/useMlConnection', () => ({
 vi.mock('@/components/config-telegram', () => ({ ConfigTelegram: () => <div /> }));
 
 const salvarReancoraLiderAtiva = vi.fn();
+const salvarMostrarLucroDashboard = vi.fn();
 
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useDescontoPct: () => ({ data: 15 }),
@@ -20,6 +21,8 @@ vi.mock('@/hooks/useConfiguracoes', () => ({
   useSalvarAliquotas: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useReancoraLiderAtiva: () => ({ data: true }),
   useSalvarReancoraLiderAtiva: () => ({ mutate: salvarReancoraLiderAtiva, isPending: false, isSuccess: false }),
+  useMostrarLucroDashboard: () => ({ data: false }),
+  useSalvarMostrarLucroDashboard: () => ({ mutate: salvarMostrarLucroDashboard, isPending: false, isSuccess: false }),
   useModeloTexto: () => ({ data: 'openai/gpt-4o-mini' }),
   useSalvarModeloTexto: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useModeloImagem: () => ({ data: 'google/gemini-2.5-flash-image' }),
@@ -46,5 +49,17 @@ describe('Configurações — re-âncora no piso dos MercadoLíderes', () => {
 
     fireEvent.click(toggle);
     expect(salvarReancoraLiderAtiva).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('Configurações — mostrar lucro no Dashboard', () => {
+  it('reflete o valor atual (desligado) e dispara a mutation ao alternar', () => {
+    renderPage();
+
+    const toggle = screen.getByRole('switch', { name: /mostrar lucro no card do dashboard/i });
+    expect(toggle).toHaveAttribute('data-state', 'unchecked');
+
+    fireEvent.click(toggle);
+    expect(salvarMostrarLucroDashboard).toHaveBeenCalledWith(true);
   });
 });
