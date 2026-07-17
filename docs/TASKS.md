@@ -2,6 +2,37 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Título com metragem decimal fabricada ("71MT") — lote #65, bordados Búfalo — 2026-07-17
+
+- [x] Diego reportou (screenshot) título confuso `BORDADO INGLES BUFALO T-007 13,7MT 71MT | 5CM
+  LARGURA` — "71MT" não aparece em lugar nenhum da descrição. **Root cause confirmado com dados
+  reais**: é o **lote #65** (o "#35" citado pelo Diego não existe mais na base — lotes 32-38 foram
+  excluídos). `RE_METRAGEM` (`_shared/ai/titulo.ts`) parava na vírgula de metragens decimais
+  (`nome_pai` com "C/13,71MT"), extraindo só a cauda ("71MT") como se fosse a metragem real;
+  `garantirMetragemTitulo` injetava esse fragmento fabricado quando a IA já tinha escrito uma
+  versão arredondada ("13,7MT") no título.
+- [x] Fix: `RE_METRAGEM` e a extração do `numero` em `garantirMetragemTitulo` aceitam decimal com
+  vírgula (`\d+(?:,\d+)?`). 2 testes de regressão em `titulo-clamp-metragem.test.ts`, grounded nos
+  dados reais do lote #65. 1586/1586 testes verdes, lint limpo. Merge direto em main (fast-forward,
+  sem PR — commit `ee97780`).
+- [x] Confirmado no banco: 3 das 4 famílias de bordado do lote #65 têm o bug (`02851865`/TC-002,
+  `02851903`/T-007, `02851890`/T-035); a 4ª (`02905310`/T-003) escapou por coincidência (a IA já
+  tinha escrito a metragem decimal completa). **Nenhuma das 4 foi publicada no ML**
+  (`publicado_em` null) — nada ao vivo com o título quebrado.
+- [x] **2ª pergunta do Diego respondida** (atributo obrigatório faltando em 1 produto, não nos
+  demais): confirmado — `02851903`/T-007 (a mesma família do título quebrado) está com
+  `atributos_faltantes = ["Tipo de embalagem"]` (PACKAGING_TYPE), enquanto as 3 irmãs têm o campo
+  preenchido. Não é "sem lastro no texto" (ADR-0052): a palavra "PECA" está no `nome_pai` dessa
+  família tanto quanto na da irmã `02851865`, que preencheu certo — é inconsistência real da
+  chamada de IA por família (`resolverAtributosGenericos`/`atributos-llm-core.ts`), cada uma
+  independente, sem retry. Comportamento seguro (o gate bloqueia a publicação em vez de publicar
+  faltando), mas não é 100% consistente. Fix não implementado — avaliar se vale um extrator
+  determinístico (mesmo padrão de `THICKNESS`/`UNITS_PER_PACK`) ou retry na falha vazia.
+- [ ] **Pendência (Diego decide):** o fix da metragem só vale daqui pra frente — os 3 registros já
+  quebrados (`02851865`, `02851903`, `02851890`) continuam com título ruim no banco até serem
+  reprocessados (regenerar copy ou reabrir o lote #65 na Revisão). `02851903` também precisa do
+  atributo "Tipo de embalagem" preenchido manualmente ou reprocessado antes de publicar.
+
 ## Catálogo ML — retry limitado para elegibilidade transitória — 2026-07-15
 
 - [x] Corrigido o encerramento prematuro de `nao_elegivel`: decisão unificada por rodada e backoff

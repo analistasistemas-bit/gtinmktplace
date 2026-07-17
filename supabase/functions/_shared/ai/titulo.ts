@@ -5,7 +5,7 @@ const TITULO_MAX = 60;
 // Captura metragem real do nome (ex.: "100MT", "10MT", "50 METROS", "30 M", "13,71MT").
 // Jardas (J) e códigos sem unidade de metro NÃO contam. Decimal com vírgula (formato BR) é
 // opcional no grupo — sem ele, "13,71MT" batia só a partir da vírgula ("71MT"), fabricando
-// uma metragem que não existe no produto (bug lote #35: "13,7MT 71MT" no título, sem "71MT"
+// uma metragem que não existe no produto (bug lote #65: "13,7MT 71MT" no título, sem "71MT"
 // em lugar nenhum da descrição).
 const RE_METRAGEM = /(\d+(?:,\d+)?)\s*(MTS|MT|METROS|METRO|M)\b/i;
 

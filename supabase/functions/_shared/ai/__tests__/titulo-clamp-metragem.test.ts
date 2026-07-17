@@ -12,12 +12,12 @@ describe('garantirMetragemTitulo — clampa mesmo quando a metragem já está no
   });
 });
 
-describe('metragem decimal com vírgula (bug lote #35)', () => {
+describe('metragem decimal com vírgula (bug lote #65 — família 02851903, "T-007")', () => {
   it('extrairMetragem lê o número decimal inteiro, não só a cauda após a vírgula', () => {
     expect(extrairMetragem('BORDADO INGLES BUFALO T-007 13,71MT 5CM LARGURA')).toBe('13,71MT');
   });
 
-  it('não injeta fragmento fabricado ("71MT") quando a IA arredondou a metragem decimal no título (bug real do lote #35)', () => {
+  it('não injeta fragmento fabricado ("71MT") quando a IA arredondou a metragem decimal no título (bug real do lote #65)', () => {
     const t = garantirMetragemTitulo(
       'BORDADO INGLES BUFALO T-007 13,7MT | 5CM LARGURA',
       'BORDADO INGLES BUFALO T-007 13,71MT 5CM LARGURA',
