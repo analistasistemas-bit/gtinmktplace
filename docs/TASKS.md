@@ -28,10 +28,26 @@
   independente, sem retry. Comportamento seguro (o gate bloqueia a publicação em vez de publicar
   faltando), mas não é 100% consistente. Fix não implementado — avaliar se vale um extrator
   determinístico (mesmo padrão de `THICKNESS`/`UNITS_PER_PACK`) ou retry na falha vazia.
-- [ ] **Pendência (Diego decide):** o fix da metragem só vale daqui pra frente — os 3 registros já
-  quebrados (`02851865`, `02851903`, `02851890`) continuam com título ruim no banco até serem
-  reprocessados (regenerar copy ou reabrir o lote #65 na Revisão). `02851903` também precisa do
-  atributo "Tipo de embalagem" preenchido manualmente ou reprocessado antes de publicar.
+- [x] **Deploy + reprocessamento real (mesma sessão):** deploy CLI das 3 functions afetadas
+  (`process-familia` v99, `regenerar-copy-familia` v30, `publicar-split-ml` v26 — versões
+  conferidas pós-deploy) e chamada de `regenerar-copy-familia` (mesma ação do botão "Regenerar
+  copy" da Revisão, autenticado com a conta de validação) para as 3 famílias quebradas. **1ª
+  rodada não saiu limpa**: sem o fragmento fabricado "71MT", mas com metragem duplicada de 3
+  formas diferentes — `13,7MT 13,71MT` (TC-002), `13,7M 13,71MT` (T-007), e `13,71MT ... |
+  13,7MT` (T-035, um caso à parte: a IA já duplicava sozinha, o guard antigo nem chegava a agir
+  porque achava a metragem certa e parava sem notar a errada ao lado). Fix estendido:
+  `garantirMetragemTitulo` agora remove TODA menção de metragem já no título antes de reanexar a
+  correta (`RE_METRAGEM_TOKEN`, global), em vez de só checar presença. 3 testes novos com os
+  títulos reais devolvidos pelo reprocessamento; 1589/1589 verdes, lint limpo. Redeploy das
+  mesmas 3 functions + 2ª rodada de reprocessamento: os 3 saíram limpos (uma menção de "13,71MT"
+  cada, confirmado no banco). Merge direto em main (commit `21a4da4`).
+- [ ] **Pendência (Diego valida na tela):** títulos finais —
+  `BORDADO INGLÊS BÚFALO TC-002 13,71MT BRANCO | 2,5CM LARGURA`,
+  `BORDADO INGLÊS BÚFALO 13,71MT | 90% POLIÉSTER | VERSÁTIL 5CM` (T-007, perdeu o modelo no
+  reprocessamento — variância normal da IA, não é bug de metragem),
+  `BORDADO INGLES BUFALO T-035 13,71MT BRANCO | 10CM LARGURA`. `02851903`/T-007 ainda precisa do
+  atributo "Tipo de embalagem" preenchido manualmente ou reprocessado (fora do escopo de
+  `regenerar-copy-familia`, que só mexe em título/descrição) antes de publicar.
 
 ## Catálogo ML — retry limitado para elegibilidade transitória — 2026-07-15
 
