@@ -41,13 +41,20 @@
   títulos reais devolvidos pelo reprocessamento; 1589/1589 verdes, lint limpo. Redeploy das
   mesmas 3 functions + 2ª rodada de reprocessamento: os 3 saíram limpos (uma menção de "13,71MT"
   cada, confirmado no banco). Merge direto em main (commit `21a4da4`).
-- [ ] **Pendência (Diego valida na tela):** títulos finais —
+- [x] **Títulos validados por Diego na tela** (screenshot) — os 3 saíram corretos:
   `BORDADO INGLÊS BÚFALO TC-002 13,71MT BRANCO | 2,5CM LARGURA`,
   `BORDADO INGLÊS BÚFALO 13,71MT | 90% POLIÉSTER | VERSÁTIL 5CM` (T-007, perdeu o modelo no
   reprocessamento — variância normal da IA, não é bug de metragem),
-  `BORDADO INGLES BUFALO T-035 13,71MT BRANCO | 10CM LARGURA`. `02851903`/T-007 ainda precisa do
-  atributo "Tipo de embalagem" preenchido manualmente ou reprocessado (fora do escopo de
-  `regenerar-copy-familia`, que só mexe em título/descrição) antes de publicar.
+  `BORDADO INGLES BUFALO T-035 13,71MT BRANCO | 10CM LARGURA`.
+- [x] **Atributo "Tipo de embalagem" de `02851903`/T-007 resolvido** — Diego perguntou por que não
+  tinha sido corrigido junto: `regenerar-copy-familia` só mexe em título/descrição, nunca em
+  atributos (chamada de IA separada, só roda dentro do processamento completo). Preenchido via o
+  editor manual de atributos (`atributos-familia` action `salvar` — mesmo caminho do "Complete
+  para publicar" da Revisão, sem IA, sem exigir lastro no texto por ser o operador informando o
+  dado real). `PACKAGING_TYPE = "Peça"` (mesmo valor da irmã `02851865`, mesma categoria/produto).
+  `atributos_faltantes` zerado; `atributos_editados_pelo_operador = true` protege contra
+  sobrescrita se a família for reprocessada de novo; `titulo_ml` intocado. **Lote #65: caso
+  encerrado.**
 
 ## Catálogo ML — retry limitado para elegibilidade transitória — 2026-07-15
 
