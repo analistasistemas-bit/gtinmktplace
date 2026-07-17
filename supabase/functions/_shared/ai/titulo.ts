@@ -2,9 +2,12 @@ import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 const TITULO_MAX = 60;
 
-// Captura metragem real do nome (ex.: "100MT", "10MT", "50 METROS", "30 M").
-// Jardas (J) e códigos sem unidade de metro NÃO contam.
-const RE_METRAGEM = /(\d+)\s*(MTS|MT|METROS|METRO|M)\b/i;
+// Captura metragem real do nome (ex.: "100MT", "10MT", "50 METROS", "30 M", "13,71MT").
+// Jardas (J) e códigos sem unidade de metro NÃO contam. Decimal com vírgula (formato BR) é
+// opcional no grupo — sem ele, "13,71MT" batia só a partir da vírgula ("71MT"), fabricando
+// uma metragem que não existe no produto (bug lote #35: "13,7MT 71MT" no título, sem "71MT"
+// em lugar nenhum da descrição).
+const RE_METRAGEM = /(\d+(?:,\d+)?)\s*(MTS|MT|METROS|METRO|M)\b/i;
 
 function normalizarUnidade(raw: string): string {
   return /^MT/i.test(raw) ? 'MT' : 'M';
@@ -80,7 +83,7 @@ export function garantirMetragemTitulo(titulo: string, nomePai: string): string 
   // Sem metragem: ainda assim clampa para 60 sem cortar palavra (cola, lote #26).
   if (!metragem) return clampTitulo(titulo);
 
-  const numero = metragem.match(/\d+/)?.[0] ?? '';
+  const numero = metragem.match(/\d+(?:,\d+)?/)?.[0] ?? '';
   // Já contém a metragem (qualquer unidade de metro adjacente)? Não duplica — mas
   // ainda clampa para 60 (a metragem está no 1º segmento, que clampTitulo preserva).
   // Sem o clamp aqui, um título já com metragem e >60 escapava (bug lote #27 → ML 400).
