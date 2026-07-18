@@ -15,34 +15,7 @@ import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroReport } from '@/lib/export/adapters';
 import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
-
-function Kpi({ icon: Icon, label, valor, sub, tom, valorCor, delta }: {
-  icon: typeof Wallet; label: string; valor: string; sub?: string;
-  tom?: 'info' | 'success' | 'warning' | 'danger';
-  /** Cor opcional aplicada ao valor (ex.: markup verde/vermelho). */
-  valorCor?: string;
-  delta?: { texto: string; trend: 'up' | 'down' | 'neutral' };
-}) {
-  const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
-    : tom === 'danger' ? 'text-destructive' : 'text-info';
-  return (
-    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
-      <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        {label}
-      </div>
-      <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
-      {delta && (
-        <div className={cn('mt-0.5 flex items-center gap-0.5 text-xs',
-          delta.trend === 'up' ? 'text-success' : delta.trend === 'down' ? 'text-destructive' : 'text-muted-foreground')}>
-          {delta.trend === 'up' ? <ArrowUp className="h-3 w-3" /> : delta.trend === 'down' ? <ArrowDown className="h-3 w-3" /> : null}
-          {delta.texto}
-        </div>
-      )}
-      {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
-    </div>
-  );
-}
+import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 
 export default function Financeiro() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
@@ -188,6 +161,7 @@ export default function Financeiro() {
             <div className="mb-1 flex items-center justify-between gap-1.5 text-xs text-success">
               <span className="flex items-center gap-1.5">
                 <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
+                <KpiInfoButton infoKey="Líquido das vendas (você recebe)" />
               </span>
               <span className="flex items-center gap-0.5 text-muted-foreground">
                 Ver detalhe <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -203,6 +177,7 @@ export default function Financeiro() {
           <div className="rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm">
             <div className="mb-1 flex items-center gap-1.5 text-xs text-success">
               <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas (você recebe)
+              <KpiInfoButton infoKey="Líquido das vendas (você recebe)" />
             </div>
             <div className="text-3xl font-bold tabular-nums text-success">{fmtBRL(r?.liquido ?? 0)}</div>
             <HeroDeltaBar />
@@ -213,28 +188,30 @@ export default function Financeiro() {
         )}
 
         <div className="grid grid-cols-2 gap-3 lg:col-span-2">
-          <Kpi icon={Receipt} label="Faturamento bruto" valor={fmtBRL(r?.bruto ?? 0)} delta={delta(r.bruto, rAnt.bruto)} />
-          <Kpi icon={Percent} label="Taxas e frete (ML)" valor={fmtBRL(r?.descontos ?? 0)} tom="warning" sub={`comissão ${fmtBRL(r?.comissao ?? 0)} · frete ${fmtBRL(r?.frete ?? 0)}`} />
-          <Kpi icon={RotateCcw} label="Estornos" valor={fmtBRL(r?.estornos ?? 0)} tom="danger" />
-          <Kpi icon={Target} label="Ticket médio líquido" valor={fmtBRL(ticketLiquido)} />
+          <KpiCard size="compact" icon={Receipt} label="Faturamento bruto" value={fmtBRL(r?.bruto ?? 0)} delta={delta(r.bruto, rAnt.bruto).texto} deltaTrend={delta(r.bruto, rAnt.bruto).trend} />
+          <KpiCard size="compact" icon={Percent} label="Taxas e frete (ML)" value={fmtBRL(r?.descontos ?? 0)} tom="warning" hint={`comissão ${fmtBRL(r?.comissao ?? 0)} · frete ${fmtBRL(r?.frete ?? 0)}`} />
+          <KpiCard size="compact" icon={RotateCcw} label="Estornos" value={fmtBRL(r?.estornos ?? 0)} tom="danger" />
+          <KpiCard size="compact" icon={Target} label="Ticket médio líquido" value={fmtBRL(ticketLiquido)} />
         </div>
       </div>
 
       {/* Caixa: liberação dos recebimentos destas vendas (NÃO é o "A receber" do MP) */}
       <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={Wallet}
           label="Já liberado"
-          valor={fmtBRL(r?.liberado ?? 0)}
+          value={fmtBRL(r?.liberado ?? 0)}
           tom="success"
-          sub="recebimentos destas vendas já no saldo"
+          hint="recebimentos destas vendas já no saldo"
         />
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={CalendarClock}
           label="A liberar"
-          valor={fmtBRL(r?.aLiberar ?? 0)}
+          value={fmtBRL(r?.aLiberar ?? 0)}
           tom="warning"
-          sub={r?.proximaLiberacao
+          hint={r?.proximaLiberacao
             ? `próxima em ${new Date(r.proximaLiberacao).toLocaleDateString('pt-BR')}`
             : 'nada pendente de liberação'}
         />
@@ -242,31 +219,36 @@ export default function Financeiro() {
 
       {/* Quantidade de vendas + markup do período */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={ShoppingBag}
           label="Vendas no período"
-          valor={fmtInt(r.pedidos)}
+          value={fmtInt(r.pedidos)}
           tom="info"
-          delta={delta(r.pedidos, rAnt.pedidos)}
+          delta={delta(r.pedidos, rAnt.pedidos).texto}
+          deltaTrend={delta(r.pedidos, rAnt.pedidos).trend}
         />
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={TrendingUp}
           label="Markup no período"
-          valor={markup ? `${markup.pct >= 0 ? '+' : ''}${Math.round(markup.pct * 100)}%` : '—'}
-          valorCor={markup ? (markup.pct >= 0 ? 'text-success' : 'text-destructive') : undefined}
+          value={markup ? `${markup.pct >= 0 ? '+' : ''}${Math.round(markup.pct * 100)}%` : '—'}
+          valueClassName={markup ? (markup.pct >= 0 ? 'text-success' : 'text-destructive') : undefined}
           tom={markup && markup.pct < 0 ? 'danger' : 'success'}
-          sub={markup
+          hint={markup
             ? `lucro ${fmtBRL(markup.lucro)} · ${markup.n} venda(s) c/ custo`
             : 'sem custo cadastrado nas vendas'}
         />
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={Coins}
           label="Lucro líquido no período"
-          valor={r.margem != null ? fmtBRL(r.lucro) : '—'}
-          valorCor={r.margem != null ? (r.lucro >= 0 ? 'text-success' : 'text-destructive') : undefined}
+          value={r.margem != null ? fmtBRL(r.lucro) : '—'}
+          valueClassName={r.margem != null ? (r.lucro >= 0 ? 'text-success' : 'text-destructive') : undefined}
           tom={r.margem != null && r.lucro < 0 ? 'danger' : 'success'}
-          delta={delta(r.lucro, rAnt.lucro)}
-          sub={r.margem != null
+          delta={delta(r.lucro, rAnt.lucro).texto}
+          deltaTrend={delta(r.lucro, rAnt.lucro).trend}
+          hint={r.margem != null
             ? `margem ${Math.round(r.margem * 100)}%${r.imposto > 0 ? ` · imposto ${fmtBRL(r.imposto)}` : ''} · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
             : 'sem custo cadastrado nas vendas'}
         />
