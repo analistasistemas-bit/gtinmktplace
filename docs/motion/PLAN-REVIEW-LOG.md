@@ -382,3 +382,23 @@ pro 5C.
 
 **Próxima fase autorizada:** Fase 5C — Revisão e validação, Sonnet 5 (mesma sessão se disponível,
 senão nova com dossiê completo).
+
+## Fase 5C (Revisão e validação) — resultado, GATE aguardando decisão
+
+**Data:** 2026-07-18. Sessão do Sonnet ainda estava disponível (retomada com sucesso). Commit
+`3c29fab`: `painel-analise.tsx` (alertas de preço abaixo do mínimo e sem dimensões ganharam
+entrada tokenizada), `viabilidade-linha.tsx` (detalhe expansível), e **`card-categoria.tsx`**
+— adicionado pelo próprio Sonnet além do escopo nomeado (categoria indefinida, categoria
+genérica, atributos faltantes — bloqueios reais de publicação, renderizado ao lado do painel de
+análise na mesma família expandida). Nenhuma função de cálculo tocada, só `className`. 1596
+testes ok, lint/build limpos. Bundle: +0,04/+0,05/+0,01 kB gzip nos 3 chunks afetados.
+
+**Nota do próprio Sonnet:** primeira leitura foi conservadora demais (deixar `card-categoria.tsx`
+só documentado por sensibilidade financeira) — usou `advisor`, recalibrou: a cautela pedida era
+sobre lógica de cálculo, não sobre motion visual; deixar de fora criaria inconsistência entre
+dois alertas irmãos no mesmo painel.
+
+**2 perguntas do relatório:**
+1. `config-grupos-preco.tsx`/`editor-atributos-faltantes.tsx` (ramo secundário, não animados) —
+   incluir num 5C-2, ou deixar de fora da iniciativa?
+2. Segue para 5D (Publicação e sincronização) ou pausa?
