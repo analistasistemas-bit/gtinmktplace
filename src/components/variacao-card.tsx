@@ -21,6 +21,9 @@ interface VariacaoCardProps {
   onSalvarPreco?: (codigo: string) => void;
   onSalvarCor?: (codigo: string) => void;
   categoriaMlId: string | null;
+  /** Críticas da variação (ex.: "sem cor", "sem foto", "sem preço") — liga cada campo
+   *  ao bloco de crítica correspondente (`#criticas-${codigo}`) via aria-describedby. */
+  criticas?: string[];
 }
 
 export function VariacaoCard({
@@ -33,10 +36,12 @@ export function VariacaoCard({
   onSalvarPreco,
   onSalvarCor,
   categoriaMlId,
+  criticas = [],
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
   const [trocaStatus, setTrocaStatus] = useState<SaveStatus>(undefined);
+  const criticaId = criticas.length > 0 ? `criticas-${variacao.codigo}` : undefined;
 
   const precoExterno = variacao.precoPublicacao ?? variacao.preco;
   const [valorStr, setValorStr] = useState(() => precoExterno.toString().replace('.', ','));
@@ -83,7 +88,11 @@ export function VariacaoCard({
             aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
           />
         )}
-        <BotaoTrocarFoto onArquivo={lidarTrocaFoto} desabilitado={trocaStatus === 'salvando'} />
+        <BotaoTrocarFoto
+          onArquivo={lidarTrocaFoto}
+          desabilitado={trocaStatus === 'salvando'}
+          describedBy={criticas.includes('sem foto') ? criticaId : undefined}
+        />
         {/* cor + GTIN num grid 1fr/auto: as duas linhas compartilham as colunas, então
             os dois inputs ficam exatamente com a mesma largura (o badge da cor ocupa a
             coluna `auto`, presente também na linha do GTIN). */}
@@ -92,6 +101,7 @@ export function VariacaoCard({
             value={variacao.cor}
             onChange={(e) => onMudarCor(variacao.codigo, e.target.value)}
             onBlur={() => onSalvarCor?.(variacao.codigo)}
+            aria-describedby={criticas.includes('sem cor') ? criticaId : undefined}
             className="h-7"
           />
           <div className="flex items-center gap-1 whitespace-nowrap">
@@ -135,6 +145,7 @@ export function VariacaoCard({
                 }
                 onSalvarPreco?.(variacao.codigo);
               }}
+              aria-describedby={criticas.includes('sem preço') ? criticaId : undefined}
               className="h-7 w-24"
             />
             <div className="min-w-0 shrink-0 whitespace-nowrap">

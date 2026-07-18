@@ -430,11 +430,15 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               onSalvarPreco={salvarPreco}
               onSalvarCor={salvarCor}
               categoriaMlId={familia.categoriaMlId}
+              criticas={criticas}
             />
           </div>
         </div>
         {criticas.length > 0 && (
-          <div className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
+          <div
+            id={`criticas-${v.codigo}`}
+            className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter"
+          >
             <AlertTriangle className="h-3 w-3 shrink-0" />
             {criticas.join(' · ')}
           </div>
