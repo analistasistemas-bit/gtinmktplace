@@ -237,7 +237,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
       })()}
 
       {error && (
-        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Falha ao ler as vendas. As métricas podem estar incompletas.
         </div>
       )}
@@ -321,7 +321,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
 
       {/* ── Precisa de atenção ─────────────────────────────────── */}
       {atencao.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           <span className="flex items-center gap-1.5 text-sm font-medium text-warning">
             <AlertTriangle className="h-4 w-4" /> Precisa de atenção
           </span>

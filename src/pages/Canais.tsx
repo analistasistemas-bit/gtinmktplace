@@ -61,22 +61,22 @@ export default function Canais() {
       />
 
       {!carregandoML && mlConectado && conexaoML?.conectado && (
-        <p className="mb-4 rounded border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
+        <p className="mb-4 rounded border border-success/30 bg-success/10 px-3 py-2 text-sm text-success motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Conta do Mercado Livre conectada com sucesso.
         </p>
       )}
       {mlErro && (
-        <p className="mb-4 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <p className="mb-4 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           {mlErro === 'state'
             ? 'Sessão de conexão expirou. Tente conectar de novo.'
             : 'Não foi possível conectar ao Mercado Livre. Tente de novo.'}
         </p>
       )}
       {erroAcao && (
-        <p className="mb-4 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{erroAcao}</p>
+        <p className="mb-4 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">{erroAcao}</p>
       )}
       {(erroHabilitados || erroConexoes) && (
-        <p className="mb-4 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+        <p className="mb-4 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Não foi possível carregar o status dos canais — os cards podem estar desatualizados. Recarregue a página.
         </p>
       )}
