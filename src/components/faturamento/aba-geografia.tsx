@@ -10,6 +10,7 @@ import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildGeografiaReport } from '@/lib/export/adapters';
 import { Button } from '@/components/ui/button';
+import { KpiCard } from '@/components/ui/kpi-card';
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from '@/components/ui/table';
@@ -25,28 +26,6 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
   if (p.tipo === 'range') return { desde: p.desde, ate: p.ate };
   const j = resolverJanela(p);
   return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
-}
-
-function Kpi({ icon: Icon, label, valor, tom, sub }: {
-  icon: typeof MapPin;
-  label: string;
-  valor: string;
-  tom?: 'info' | 'success' | 'warning' | 'danger';
-  sub?: string;
-}) {
-  const cor = tom === 'success' ? 'text-success'
-    : tom === 'warning' ? 'text-warning'
-    : tom === 'danger' ? 'text-destructive'
-    : 'text-info';
-  return (
-    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
-      <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
-        <Icon className="h-3.5 w-3.5 shrink-0" />{label}
-      </div>
-      <div className="text-lg font-semibold tabular-nums">{valor}</div>
-      {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
-    </div>
-  );
 }
 
 export function AbaGeografia() {
@@ -133,32 +112,36 @@ export function AbaGeografia() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={MapPin}
           label="Estados atingidos"
-          valor={fmtInt(geo.estadosAtingidos)}
+          value={fmtInt(geo.estadosAtingidos)}
           tom="info"
         />
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={Building2}
           label="Top estado"
-          valor={topUf?.uf ?? '—'}
+          value={topUf?.uf ?? '—'}
           tom="success"
-          sub={topUfSub}
+          hint={topUfSub}
         />
-        <Kpi
+        <KpiCard
+          size="compact"
           icon={Building2}
           label="Cidades"
-          valor={fmtInt(geo.porCidade.length)}
+          value={fmtInt(geo.porCidade.length)}
           tom="info"
         />
         {geo.semGeo > 0 && (
-          <Kpi
+          <KpiCard
+            size="compact"
             icon={AlertCircle}
             label="Sem localização"
-            valor={fmtInt(geo.semGeo)}
+            value={fmtInt(geo.semGeo)}
             tom="warning"
-            sub="pedidos sem UF"
+            hint="pedidos sem UF"
           />
         )}
       </div>
