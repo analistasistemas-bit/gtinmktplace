@@ -54,9 +54,12 @@ function CelulaTaxas({ taxas, className }: { taxas: Taxas; className?: string })
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className={cn('cursor-help underline decoration-dotted underline-offset-2', className)}>
+        <button
+          type="button"
+          className={cn('cursor-help underline decoration-dotted underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}
+        >
           {fmtBRL(taxas.total)}
-        </span>
+        </button>
       </TooltipTrigger>
       <TooltipContent side="left">
         <div className="min-w-[9.5rem] space-y-0.5">
