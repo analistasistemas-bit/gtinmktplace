@@ -52,7 +52,7 @@ export function KpiInfoButton({ infoKey, tom }: { infoKey: string; tom?: KpiTom 
           aria-label={`O que é ${titulo}`}
           onClick={(e) => e.stopPropagation()}
           className={cn(
-            'inline-flex shrink-0 items-center justify-center rounded-full p-1.5 -m-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
+            'inline-flex shrink-0 items-center justify-center rounded-full p-3 -m-3 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
             tomCls,
           )}
         >
