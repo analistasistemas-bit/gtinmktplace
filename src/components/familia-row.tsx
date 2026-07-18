@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronUp, AlertTriangle, RotateCw } from 'lucide-react';
+import { ChevronDown, AlertTriangle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -195,7 +195,11 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
           onExpandir(familia.id);
         }
       }}
-      className="grid cursor-pointer select-none grid-cols-[24px_40px_1fr_32px] sm:grid-cols-[24px_40px_1fr_80px_140px_40px] items-start sm:items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted/50"
+      className={cn(
+        'grid cursor-pointer select-none grid-cols-[24px_40px_1fr_32px] sm:grid-cols-[24px_40px_1fr_80px_140px_40px] items-start sm:items-center gap-3 px-4 py-2 text-sm transition-colors duration-(--motion-duration-micro) ease-reversible hover:bg-muted/50',
+        // Feedback de seleção (contrato §7, tabelas: só fundo/borda — nunca scale em linha).
+        selecionada && 'bg-primary/5',
+      )}
     >
       <Checkbox
         aria-label="Selecionar família"
@@ -374,7 +378,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
         )}
       </div>
       <span className="justify-self-center text-muted-foreground" aria-hidden="true">
-        {expandida ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        {/* Rotação (transform) em vez de trocar o ícone: estado expandido/recolhido legível
+            e reversível; motion-safe = sem transição quando reduced-motion. */}
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 motion-safe:transition-transform duration-(--motion-duration-state) ease-reversible',
+            expandida && 'rotate-180',
+          )}
+        />
       </span>
     </div>
       <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-4">

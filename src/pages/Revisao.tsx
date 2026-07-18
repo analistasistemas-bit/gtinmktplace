@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Collapsible } from 'radix-ui';
 import { FileText, RotateCw } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -483,27 +484,29 @@ export default function Revisao() {
           {progresso && (
             <div className="mt-2 space-y-1">
               <Progress value={(progresso.feito / Math.max(progresso.total, 1)) * 100} />
-              <div className="text-xs text-muted-foreground">
+              <div role="status" className="text-xs text-muted-foreground">
                 Processando {progresso.feito} de {progresso.total} imagem(ns)…
               </div>
             </div>
           )}
           {uploadStatus && !progresso && (
-            <div className="mt-2 text-xs text-muted-foreground">{uploadStatus}</div>
+            <div role="status" className="mt-2 text-xs text-muted-foreground motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">{uploadStatus}</div>
           )}
         </div>
       )}
       <div ref={listaRef} className="flex-1 overflow-auto">
         {isLoading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">
+          <div role="status" className="p-8 text-center text-sm text-muted-foreground">
             Carregando famílias...
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-sm text-destructive">
+          <div role="alert" className="p-8 text-center text-sm text-destructive">
             Erro ao carregar famílias: {(error as Error).message}
           </div>
         ) : (
-          <>
+          /* Entrada única no mount real dos resultados (contrato §8.1): o wrapper só é
+             montado na transição loading→dados; filtro/paginação/refetch não re-animam. */
+          <div className="motion-safe:animate-in fade-in-0 slide-in-from-bottom-2 duration-(--motion-duration-enter) ease-enter">
             {(visiveis.length > 0 || soComCoresNovas) && (
               <div className="flex items-center gap-3 border-b bg-muted/30 px-4 py-2">
                 <Checkbox
@@ -541,14 +544,22 @@ export default function Revisao() {
                   onExpandir={toggleExpansao}
                   onIrParaCritica={irParaCritica}
                 />
-                {expandidas.includes(familia.id) && (
-                  <FamiliaExpanded
-                    familia={familia}
-                    focoCodigo={focoCritica?.familiaId === familia.id ? focoCritica.codigo : null}
-                    onFocoConcluido={() => setFocoCritica(null)}
-                    ocultarSemEstoque={ocultarSemEstoque}
-                  />
-                )}
+                {/* Radix Collapsible: mede a altura real e mantém o conteúdo montado só
+                    durante a animação de saída — mesmo custo de mount de antes quando
+                    fechada. Reversível (contrato §6.4); motion-safe = fallback explícito
+                    (reduced-motion abre/fecha instantâneo, sem depender do bloco global). */}
+                <Collapsible.Root open={expandidas.includes(familia.id)}>
+                  <Collapsible.Content
+                    className="overflow-hidden ease-reversible duration-(--motion-duration-state) motion-safe:data-[state=open]:animate-collapsible-down motion-safe:data-[state=closed]:animate-collapsible-up"
+                  >
+                    <FamiliaExpanded
+                      familia={familia}
+                      focoCodigo={focoCritica?.familiaId === familia.id ? focoCritica.codigo : null}
+                      onFocoConcluido={() => setFocoCritica(null)}
+                      ocultarSemEstoque={ocultarSemEstoque}
+                    />
+                  </Collapsible.Content>
+                </Collapsible.Root>
               </div>
             ))}
             {visiveis.length > 0 && (
@@ -567,16 +578,18 @@ export default function Revisao() {
               </div>
             )}
             {visiveis.length === 0 && (
-              <div className="p-8 text-center text-sm text-muted-foreground">
+              <div role="status" className="p-8 text-center text-sm text-muted-foreground">
                 Nenhuma família encontrada com esses filtros.
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
       {selecionadas.size > 0 && (
-        <div className="sticky bottom-0 flex items-center justify-between border-t bg-background/95 px-4 py-3 shadow-md backdrop-blur">
-          <div className="text-sm text-muted-foreground">
+        /* Entrada da barra de ação (feedback de seleção); sem exit — sumir na hora ao
+           desmarcar não pode atrasar a próxima ação (contrato §8.2 e regra 5). */
+        <div className="sticky bottom-0 flex items-center justify-between border-t bg-background/95 px-4 py-3 shadow-md backdrop-blur motion-safe:animate-in fade-in-0 slide-in-from-bottom-2 duration-(--motion-duration-state) ease-enter">
+          <div role="status" className="text-sm text-muted-foreground">
             {selecionadas.size} família(s) · {coresSelecionadas} cor(es) selecionada(s)
           </div>
           <Button onClick={() => setConfirmando(true)}>
@@ -764,7 +777,7 @@ export default function Revisao() {
             ) : null;
           })()}
           {publicando && (
-            <div className="mt-1 space-y-2">
+            <div role="status" className="mt-1 space-y-2 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
               <div className="track-indeterminate" role="progressbar" aria-label="Enfileirando publicação" />
               <p className="text-xs text-muted-foreground">
                 Enfileirando famílias e enviando fotos ao Mercado Livre…

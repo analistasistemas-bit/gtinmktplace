@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
@@ -367,7 +367,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
         className={cn(
           // Borda esquerda reservada (transparente) em TODAS as linhas → as
           // com crítica só trocam a cor, sem empurrar nem desalinhar as outras.
-          'scroll-mt-4 rounded-md border-l-4 border-transparent pl-2 transition-shadow',
+          'scroll-mt-4 rounded-md border-l-4 border-transparent pl-2 transition-shadow duration-(--motion-duration-state) ease-reversible',
           // Esmaece só a exclusão deliberada (cor com foto fora da publicação). A cor
           // desmarcada por FALTA de foto fica visível — é pendência, não algo escondido.
           v.excluidaDaPublicacao && !corNova && !!v.fotoPath && 'opacity-50',
@@ -434,7 +434,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           </div>
         </div>
         {criticas.length > 0 && (
-          <div className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning">
+          <div className="mt-1 flex items-center gap-1 pl-7 text-xs font-medium text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
             <AlertTriangle className="h-3 w-3 shrink-0" />
             {criticas.join(' · ')}
           </div>
@@ -451,20 +451,25 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           type="button"
           aria-expanded={aberta}
           onClick={() => setSecoesAbertas((s) => ({ ...s, [titulo]: !aberta }))}
-          className="mb-1.5 flex w-full items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          className="mb-1.5 flex w-full items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors duration-(--motion-duration-micro) ease-reversible hover:text-foreground"
         >
           <span className="h-px flex-1 bg-border" />
           <span className="flex items-center gap-1">
-            {aberta ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            <ChevronDown
+              className={cn(
+                'h-3 w-3 motion-safe:transition-transform duration-(--motion-duration-state) ease-reversible',
+                aberta && 'rotate-180',
+              )}
+            />
             {titulo} ({itens.length})
           </span>
           <span className="h-px flex-1 bg-border" />
         </button>
         {aberta && (
           itens.length > 0 ? (
-            <div className="flex flex-col gap-2">{itens.map(renderVariacao)}</div>
+            <div className="flex flex-col gap-2 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">{itens.map(renderVariacao)}</div>
           ) : (
-            <div className="px-2 py-1 text-xs text-muted-foreground">{vazio}</div>
+            <div className="px-2 py-1 text-xs text-muted-foreground motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">{vazio}</div>
           )
         )}
       </div>
@@ -632,7 +637,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
         <div>
           <div className="mb-1 flex items-center justify-between">
             <label htmlFor={`titulo-${familia.id}`} className="block text-xs font-semibold text-muted-foreground">TÍTULO</label>
-            <StatusInline status={tituloStatus} />
+            {/* role="status": anuncia salvando/salvo/erro a leitores de tela (contrato §12). */}
+            <span role="status"><StatusInline status={tituloStatus} /></span>
           </div>
           <Input
             id={`titulo-${familia.id}`}
@@ -643,7 +649,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
 
           <div className="mb-1 mt-3 flex items-center justify-between">
             <label htmlFor={`descricao-${familia.id}`} className="block text-xs font-semibold text-muted-foreground">DESCRIÇÃO</label>
-            <StatusInline status={descricaoStatus} />
+            <span role="status"><StatusInline status={descricaoStatus} /></span>
           </div>
           <Textarea
             id={`descricao-${familia.id}`}
