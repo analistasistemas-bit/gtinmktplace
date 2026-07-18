@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { toast } from 'sonner';
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
@@ -81,25 +82,6 @@ function valorOrdenacao(p: Pedido, k: SortKey): string | number | null {
     case 'envio': return labelStatusEnvio(p.shipping_status, p.shipping_substatus).label;
     case 'origem': return p.is_publiai ? 1 : 0;
   }
-}
-
-function Kpi({ icon: Icon, label, valor, tom: tomProp, valorCor, sub }: {
-  icon: typeof DollarSign; label: string; valor: string;
-  tom?: 'info' | 'success' | 'warning' | 'danger';
-  valorCor?: string;
-  sub?: string;
-}) {
-  const cor = tomProp === 'success' ? 'text-success' : tomProp === 'warning' ? 'text-warning'
-    : tomProp === 'danger' ? 'text-destructive' : 'text-info';
-  return (
-    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
-      <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
-        <Icon className="h-3.5 w-3.5 shrink-0" />{label}
-      </div>
-      <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
-      {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
-    </div>
-  );
 }
 
 function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVisto?: () => void }) {
@@ -369,17 +351,17 @@ export function AbaVendas() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(kpis.bruto)} tom="success" />
-        <Kpi icon={DollarSign} label="Líquido" valor={fmtBRL(kpis.liquido)} tom="success" valorCor="text-success" />
-        <Kpi icon={ShoppingBag} label="Pedidos" valor={fmtInt(kpis.pedidos)} tom="info" />
-        <Kpi icon={Package} label="Unidades" valor={fmtInt(kpis.unidades)} tom="info" />
-        <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(kpis.ticket)} tom="info" />
-        <Kpi icon={Layers} label="Itens / pedido" valor={kpis.itensPorPedido.toFixed(1).replace('.', ',')} tom="info" />
-        <Kpi icon={TrendingUp} label="Markup" valor={kpis.markup != null ? fmtMarkup(kpis.markup) : '—'}
+        <KpiCard size="compact" icon={DollarSign} label="Faturamento" infoKey="Faturamento::Faturamento/Vendas" value={fmtBRL(kpis.bruto)} tom="success" />
+        <KpiCard size="compact" icon={DollarSign} label="Líquido" value={fmtBRL(kpis.liquido)} tom="success" valueClassName="text-success" />
+        <KpiCard size="compact" icon={ShoppingBag} label="Pedidos" infoKey="Pedidos::Faturamento/Vendas" value={fmtInt(kpis.pedidos)} tom="info" />
+        <KpiCard size="compact" icon={Package} label="Unidades" value={fmtInt(kpis.unidades)} tom="info" />
+        <KpiCard size="compact" icon={Target} label="Ticket médio" infoKey="Ticket médio::Faturamento/Vendas" value={fmtBRL(kpis.ticket)} tom="info" />
+        <KpiCard size="compact" icon={Layers} label="Itens / pedido" value={kpis.itensPorPedido.toFixed(1).replace('.', ',')} tom="info" />
+        <KpiCard size="compact" icon={TrendingUp} label="Markup" value={kpis.markup != null ? fmtMarkup(kpis.markup) : '—'}
           tom={kpis.markup == null ? 'info' : kpis.markup >= 0 ? 'success' : 'danger'}
-          valorCor={markupCor} />
-        <Kpi icon={Users} label="Compradores" valor={fmtInt(kpis.compradoresUnicos)} tom="info"
-          sub={`${kpis.pctRecompra.toFixed(1).replace('.', ',')}% recompra`} />
+          valueClassName={markupCor} />
+        <KpiCard size="compact" icon={Users} label="Compradores" value={fmtInt(kpis.compradoresUnicos)} tom="info"
+          hint={`${kpis.pctRecompra.toFixed(1).replace('.', ',')}% recompra`} />
       </div>
 
       {/* ── Card de status de envio (clicável para filtrar) ── */}
