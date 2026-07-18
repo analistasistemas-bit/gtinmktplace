@@ -2,6 +2,10 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Divergência de pipeline entre "Pedidos"/"Ticket médio"/"Faturamento" em Publicados vs. Dashboard/Faturamento — 2026-07-18
+
+- [ ] **Achado durante o design do ícone de informação nos KPIs** (`docs/superpowers/specs/2026-07-17-kpi-info-tooltip-design.md`), não corrigido nesta entrega: `calcularResumo()` (`src/lib/resumo-vendas.ts`) filtra "faturável" por linha antes de agrupar em pack; `agruparPorPedido()` + `calcularKpisPedidos()` (`src/lib/pedidos-faturamento.ts`) filtra pelo status de uma linha representante do pack inteiro. Em packs com status misto (1 item cancelado + 1 pago no mesmo carrinho), os dois pipelines podem contar o pack de forma diferente — contradiz o que o ADR-0038 promete ("mesmo número em todas as telas"). Precisa de ADR próprio antes de unificar os pipelines.
+
 ## Título com metragem decimal fabricada ("71MT") — lote #65, bordados Búfalo — 2026-07-17
 
 - [x] Diego reportou (screenshot) título confuso `BORDADO INGLES BUFALO T-007 13,7MT 71MT | 5CM
