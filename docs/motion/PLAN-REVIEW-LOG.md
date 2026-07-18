@@ -402,3 +402,11 @@ dois alertas irmãos no mesmo painel.
 1. `config-grupos-preco.tsx`/`editor-atributos-faltantes.tsx` (ramo secundário, não animados) —
    incluir num 5C-2, ou deixar de fora da iniciativa?
 2. Segue para 5D (Publicação e sincronização) ou pausa?
+
+**Decisão do Diego:** deixa `config-grupos-preco.tsx`/`editor-atributos-faltantes.tsx` de fora
+da iniciativa (sem 5C-2); segue pro 5D.
+
+**Próxima fase autorizada:** Fase 5D — Publicação e sincronização. Escopo proposto por Claude:
+`src/pages/Publicados.tsx`, `src/components/dashboard-publicados.tsx`,
+`src/components/status-badge.tsx`, `src/components/status-inline.tsx`,
+`src/components/canal-badge.tsx`. Sonnet 5, mesma sessão se disponível.
