@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix: semáforo da variação ignorava imposto por origem (lote 35) — 2026-07-18
+
+- [x] Diego reportou: no card "Análise para publicação", o badge do topo mostrava "Abaixo do
+  mínimo" mas o badge da linha da variação mostrava "Vale a pena" para o mesmo item. Investigado
+  antes de mexer (ADRs + código) — não era comportamento intencional.
+- [x] Causa raiz: rollout do ADR-0055 (imposto por origem) atualizou `painel-analise.tsx` e
+  `viabilidade-linha.tsx` para passar `aliquotaPct` ao `SemaforoPreco`, mas esqueceu
+  `variacao-card.tsx` — o parâmetro caía no default `0`, então o imposto sumia só nesse badge.
+  Em item importado (16%), o líquido real (após imposto) cruza o piso e o topo mostra "Abaixo do
+  mínimo" corretamente; a variação, sem imposto, calcula líquido maior e mostra o falso "Vale a
+  pena". Some em item nacional (8%) porque o imposto geralmente não é grande o bastante pra cruzar
+  o piso.
+- [x] Fix: `familia-expanded.tsx` calcula `aliquotaPct` (mesmo padrão de `painel-analise.tsx`,
+  via `useAliquotas()` + `familia.origem`) e repassa como prop a `VariacaoCard`, que agora exige
+  `aliquotaPct` e a encaminha ao `SemaforoPreco`. Diff de 11 linhas, 2 arquivos.
+- [x] Typecheck, lint e suíte completa (1596 testes) verdes.
+- [x] Registrado em [[../obsidian-vault/05-Bugs/Problemas Resolvidos|Problemas Resolvidos]] e
+  na memória de sessão (padrão recorrente de imposto por origem defaultando em silêncio).
+- [ ] QA visual ao vivo (branch não mergeada — decisão de merge/PR fica com o Diego).
+
 ## Motion Design System — branch `feat/motion-design-system` — 2026-07-18
 
 - [x] Contrato técnico e operacional (`docs/motion/contrato-motion-v5.md`) travado via

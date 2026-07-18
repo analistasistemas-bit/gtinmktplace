@@ -38,6 +38,7 @@ import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variac
 import { alvosAplicarPreco, exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
 import { useImageUrl } from '@/hooks/useImageUrl';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
 
@@ -105,6 +106,10 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [trocandoCapa3, setTrocandoCapa3] = useState(false);
   const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
   const exigeCor = familiaExigeCor(familia);
+  // Imposto por origem (ADR-0055): mesma alíquota do card "Análise para publicação"
+  // (painel-analise.tsx), para o semáforo por variação não divergir do badge do topo.
+  const { data: aliquotas } = useAliquotas();
+  const aliquotaPct = familia.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
   const corSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
@@ -430,6 +435,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               onSalvarPreco={salvarPreco}
               onSalvarCor={salvarCor}
               categoriaMlId={familia.categoriaMlId}
+              aliquotaPct={aliquotaPct}
               criticas={criticas}
             />
           </div>

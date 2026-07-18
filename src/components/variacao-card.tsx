@@ -21,6 +21,9 @@ interface VariacaoCardProps {
   onSalvarPreco?: (codigo: string) => void;
   onSalvarCor?: (codigo: string) => void;
   categoriaMlId: string | null;
+  /** Alíquota de imposto por origem (ADR-0055) — mesma usada no card "Análise para publicação",
+   *  para o semáforo desta linha não divergir do badge do topo. */
+  aliquotaPct: number;
   /** Críticas da variação (ex.: "sem cor", "sem foto", "sem preço") — liga cada campo
    *  ao bloco de crítica correspondente (`#criticas-${codigo}`) via aria-describedby. */
   criticas?: string[];
@@ -36,6 +39,7 @@ export function VariacaoCard({
   onSalvarPreco,
   onSalvarCor,
   categoriaMlId,
+  aliquotaPct,
   criticas = [],
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
@@ -188,6 +192,7 @@ export function VariacaoCard({
             comprimentoCm: variacao.comprimentoCm,
             pesoGramas: variacao.pesoGramas,
           }}
+          aliquotaPct={aliquotaPct}
         />
       </div>
     </div>

@@ -10,6 +10,19 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Semáforo da variação ignorava imposto por origem (lote 35, 2026-07-18)** — Diego reportou
+  divergência: o card "Análise para publicação" mostrava "Abaixo do mínimo" no topo mas "Vale a
+  pena" na linha da variação, para o mesmo item. Causa raiz: o rollout do ADR-0055 (imposto por
+  origem, nacional 8%/importado 16%) atualizou `painel-analise.tsx` e `viabilidade-linha.tsx`
+  para passar `aliquotaPct` ao `SemaforoPreco`, mas esqueceu `variacao-card.tsx` — o parâmetro
+  caía no default `0` e o imposto sumia só nesse badge. Em item importado, o líquido real cruza o
+  piso (badge do topo correto, "Abaixo do mínimo"); sem imposto, a linha da variação calculava
+  líquido maior e mostrava falso "Vale a pena". Invisível em item nacional (imposto geralmente
+  não é grande o bastante pra cruzar o piso). **Fix:** `familia-expanded.tsx` calcula
+  `aliquotaPct` (mesmo padrão de `painel-analise.tsx`) e repassa a `VariacaoCard`, que agora
+  exige a prop e a encaminha ao `SemaforoPreco`. Diff de 11 linhas. Segunda ocorrência do padrão
+  "imposto por origem defaultando em silêncio" (1ª: `ingest-lote` dropando ORIGEM, 2026-07-14).
+  Ver ADR-0055, ADR-0020.
 - **Metragem decimal fabricando número no título (lote #65, bordados Búfalo, 2026-07-17)** —
   Diego reportou título confuso `...13,7MT 71MT | 5CM LARGURA`, com "71MT" sem lastro na
   descrição. Causa raiz: `RE_METRAGEM` (`_shared/ai/titulo.ts`) parava na vírgula de metragens
