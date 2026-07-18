@@ -46,8 +46,20 @@ src/
 ├── pages/        rotas
 ├── components/   componentes React (dashboard/, export/, faturamento/, financeiro/, ui/)
 ├── hooks/        hooks de dados (TanStack Query)
+├── motion/       fonte única de tokens/easings/reduced-motion (motion design system)
 └── stores/       estado global (Zustand — hoje só auth-store.ts)
 ```
+
+## Motion design system (`src/motion/`)
+
+Camada de tokens/easings/reduced-motion, fonte única para toda animação do frontend
+(`durationMs`, `distance`, `easing`, `useReducedMotion`) — TypeScript é a fonte primária,
+`motion.css` é gerado (`scripts/gen-motion-css.ts`) e um drift test garante que os dois nunca
+divergem (ADR-0079, ver [[Índice de ADRs]] em 04-Decisões). Aplicado por fases com GATE de
+aprovação humana em cada uma — contrato
+completo e histórico de decisões em `docs/motion/` (fora do vault). Sem biblioteca de animação
+instalada (`tw-animate-css` + Radix + CSS puro cobrem as necessidades identificadas até agora).
+Doc prática para consulta: `src/motion/README.md`.
 
 - `src/hooks/` — 24 hooks de dados (ex.: `useFamilia`, `useFamiliaMutations`, `useLotes`,
   `useLoteRealtime`, `useVendas`, `useResumoVendas`, `useTarifaML`, `useConfiguracoes`).

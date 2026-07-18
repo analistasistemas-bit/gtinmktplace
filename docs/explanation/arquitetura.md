@@ -214,6 +214,7 @@ src/
 ├── pages/        rotas (Dashboard, NovoLote, Revisao, Publicados, Faturamento, Financeiro…)
 ├── components/   componentes React
 ├── hooks/        hooks de dados (TanStack Query)
+├── motion/       fonte única de tokens/easings/reduced-motion (ADR-0079) — ver src/motion/README.md
 └── stores/       estado global (Zustand)
 
 supabase/

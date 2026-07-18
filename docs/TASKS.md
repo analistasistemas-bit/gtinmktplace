@@ -2,6 +2,39 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Motion Design System — branch `feat/motion-design-system` — 2026-07-18
+
+- [x] Contrato técnico e operacional (`docs/motion/contrato-motion-v5.md`) travado via
+  grill-with-docs + 3 rounds de revisão adversarial do Codex (`docs/motion/PLAN.md`,
+  `PLAN-REVIEW-LOG.md`). Divisão construtor (Fable 5, Fases 1-3) × executor (Sonnet 5, Fases 4-5).
+- [x] **Fase 1 (Auditoria):** sem lib de animação nova — `tw-animate-css` + Radix + CSS puro
+  cobrem tudo; fonte única TS→CSS proposta e aprovada no GATE 1.
+- [x] **Fase 2 (Fundação):** `src/motion/` (tokens, easings, reduced-motion) + gerador +
+  drift test. Commit `c1ee040`. ADR-0079.
+- [x] **Fase 3 (Piloto):** fluxo de Revisão (`Revisao.tsx`, `familia-row.tsx`,
+  `familia-expanded.tsx`) — entrada, expansão (Radix Collapsible), seleção, erro, sucesso,
+  reduced-motion. Commits `fb266d7`/`9a97e3b`. **Aprovado integralmente pelo Diego** após QA
+  ao vivo (lote real, via browser automation) — GATE 3.
+- [x] **Fase 4 (Validação):** zero regressão, zero arquivo alterado.
+- [x] **Fase 5 (Expansão), todos os lotes nomeados do contrato fechados:**
+  - 5A (globais): overlays/feedback (`3734bae`) + navegação/formulário (auditado, sem alteração
+    necessária).
+  - 5B (importação/catálogo): `b3b26d7`.
+  - 5C (revisão/validação): alertas de margem/categoria, `3c29fab`.
+  - 5D (publicação/sincronização): `8c252b9`.
+  - 5E (demais áreas — financeiro, dashboard, canais; configurações/usuários auditados sem
+    necessidade de mudança): `9384674` + `2adb865`.
+  - Fixes de acessibilidade achados durante a QA (fora do escopo de motion, autorizados à
+    parte): `9dc31f7`, `80152d3`, `2a3825c`.
+- [x] Guardrail financeiro respeitado em toda a iniciativa: `familias.custo_centavos` nunca
+  confundido com `variacoes.custo`; nenhuma função de cálculo/markup/margem tocada — só
+  `className`/estrutura visual.
+- [x] Documentação: `src/motion/README.md` (princípios, tokens, checklist de revisão),
+  `docs/explanation/arquitetura.md` + `obsidian-vault/01-Arquitetura/Frontend.md` atualizados.
+- [ ] QA visual final ao vivo (financeiro, importação, publicação) — em andamento.
+- [ ] **Branch não mergeada.** 1596+ testes passando, lint/build limpos em cada commit. Decisão
+  de merge/PR fica com o Diego — nada foi pushado.
+
 ## Ícone de informação nos KPIs — 2026-07-18
 
 - [x] Ícone "i" clicável em todo KPI do app (Dashboard, Publicados, Financeiro,
