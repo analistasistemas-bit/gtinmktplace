@@ -87,7 +87,7 @@ export default function Financeiro() {
       <CanalTabs canal={canalAtivo} onCanal={setCanal} habilitados={habilitados} className="mb-3" />
 
       {error && (
-        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Falha ao ler as vendas. Clique em Atualizar para tentar de novo.
         </div>
       )}

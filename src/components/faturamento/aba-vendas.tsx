@@ -365,7 +365,7 @@ export function AbaVendas() {
       </div>
 
       {/* ── Card de status de envio (clicável para filtrar) ── */}
-      <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
+      <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-(--motion-duration-state) hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
         <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <Truck className="h-3.5 w-3.5 shrink-0" />Pedidos por status de envio
           {filtroEnvio && (

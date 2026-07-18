@@ -177,7 +177,7 @@ function LinhaDetalhe({
       </TableRow>
       {aberto && (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
-          <TableCell colSpan={10} className="p-0">
+          <TableCell colSpan={10} className="p-0 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">
             <DetalhePedidoItens pedido={p} liquidoBruto />
           </TableCell>
         </TableRow>
@@ -445,7 +445,7 @@ export default function DetalheFinanceiro() {
       />
 
       {error && (
-        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Falha ao ler as vendas. Clique em Atualizar para tentar de novo.
         </div>
       )}

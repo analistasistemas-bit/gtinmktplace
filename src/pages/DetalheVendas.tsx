@@ -358,7 +358,7 @@ export default function DetalheVendas() {
       </div>
 
       {isError && (
-        <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <div className="mb-4 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Não foi possível ler as vendas. Tente Atualizar.
         </div>
       )}

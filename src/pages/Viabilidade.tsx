@@ -116,7 +116,7 @@ export default function Viabilidade() {
           </p>
         </div>
       )}
-      {analise.isError && <p className="text-sm text-destructive">{analise.error.message}</p>}
+      {analise.isError && <p className="text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">{analise.error.message}</p>}
       {analise.isSuccess && itens.length === 0 && (
         <EmptyState title="Nada para mostrar" description="Nenhum produto válido foi encontrado na entrada." />
       )}
