@@ -247,3 +247,23 @@ o recomendado" foi dada explicitamente condicionada à ausência do Diego ("esta
 ele já voltou e está respondendo a cada turno, então essa autorização não se estende
 automaticamente a decidir começar o rollout de app inteiro. Registrando os FATOS da validação
 aqui; a DECISÃO de liberar a Fase 5 (e como subdividir o lote 5A) fica para o Diego.
+
+## GATE 4 — aprovado (decisão do Diego, presente)
+
+**Data:** 2026-07-18. Diego respondeu diretamente (não via "siga o recomendado" — ele está
+presente e decidindo turno a turno):
+1. Aceita não remedir performance formalmente na Fase 4 (zero código mudou desde o GATE 3).
+2. **Libera a Fase 5**, começando pelo **lote 5A subdividido** — primeiro sub-lote:
+   **feedback/overlays**. Segundo sub-lote (navegação/formulário: tabs, botões, inputs,
+   navegação) fica para depois, com GATE próprio.
+
+**Escopo do sub-lote 5A-1 (Feedback/Overlays), definido por Claude a partir da lista da seção 17
+do contrato ("modal, drawer, toast, tooltip, accordion"):** `src/components/ui/dialog.tsx`,
+`src/components/ui/alert-dialog.tsx` (modal), `src/components/ui/sheet.tsx` (drawer),
+`src/components/ui/sonner.tsx` (toast), `src/components/ui/tooltip.tsx`. **Accordion: não existe
+componente próprio no codebase hoje** (grep por "Accordion" em `src/` = 0 resultados) — fora de
+escopo, nada a fazer. `popover.tsx`, `dropdown-menu.tsx`, `select.tsx` **não estão na lista 5A do
+contrato** — propositalmente fora deste sub-lote, não tocar.
+
+**Próxima fase autorizada:** Fase 5A-1 (Feedback/Overlays), Sonnet 5, mesma sessão retomada
+(bloco Fases 4-5).
