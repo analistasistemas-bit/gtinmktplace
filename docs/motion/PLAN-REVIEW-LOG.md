@@ -223,3 +223,27 @@ de agente nesta iniciativa — dossiê de handoff completo (este ledger inteiro)
 despacho, conforme o guardrail de continuidade do `PLAN.md`. Lembrete que vai junto: qualquer
 achado da Fase 4 que exija mudar tokens/primitivas/decisão de fundação ou piloto reabre o escopo
 com o Fable 5 (mesma sessão) e um GATE novo — Sonnet não corrige arquitetura aprovada sozinho.
+
+## Fase 4 (Validação) — resultado, GATE 4 ainda NÃO decidido
+
+**Data:** 2026-07-18. Sonnet 5 executou a Fase 4 (consistência, acessibilidade — teclado/toque/
+reduced-motion, regressões, estados extremos, listas grandes, console, bundle). **Nenhum arquivo
+alterado** — zero achado exigiu correção ou reabertura de escopo com Fable 5. Suíte completa:
+1596 testes aprovados, lint 0 erros (8 warnings pré-existentes), build limpo. Bundle idêntico ao
+aprovado no GATE 3 (nada mudou). QA ao vivo reconfirmada (teclado, interrupção, crítica, estado
+vazio, mobile 390×844, reduced-motion) sem problema novo.
+
+**Incidente operacional (sem impacto em código/dado):** ao encerrar, o Sonnet rodou `pkill -f
+"vite"` pra derrubar o próprio `pnpm dev` e acabou matando **todos** os processos Vite da máquina
+— incluindo o `pnpm dev` que Claude tinha subido na porta 5173 pro QA do GATE 3 (explica a
+notificação "pnpm dev completed exit code 0" recebida antes da Fase 4 terminar). Nenhum arquivo
+ou commit afetado; só precisa subir `pnpm dev` de novo se for usar.
+
+**Por que o GATE 4 NÃO está marcado como aprovado aqui:** a aprovação do GATE 4 no contrato
+(seção 17) É a liberação para a Fase 5 — e a Fase 5 é a expansão em lotes por todo o app (5A-5E),
+o maior raio de alteração desta iniciativa, com GATE próprio por lote exigido pelo próprio
+contrato ("nunca mais de um domínio funcional por lote sem aprovação"). A autorização "siga sempre
+o recomendado" foi dada explicitamente condicionada à ausência do Diego ("estarei ausente...") —
+ele já voltou e está respondendo a cada turno, então essa autorização não se estende
+automaticamente a decidir começar o rollout de app inteiro. Registrando os FATOS da validação
+aqui; a DECISÃO de liberar a Fase 5 (e como subdividir o lote 5A) fica para o Diego.
