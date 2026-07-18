@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "./motion/motion.css"; /* gerado — fonte única em src/motion/tokens.ts */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -62,11 +63,12 @@
     --shadow-md: 0 2px 4px oklch(0.28 0.04 277 / 0.08), 0 14px 30px -6px oklch(0.28 0.05 277 / 0.22);
     --shadow-lg: 0 4px 8px oklch(0.28 0.05 277 / 0.10), 0 24px 48px -8px oklch(0.28 0.06 277 / 0.28);
     --shadow-brand: var(--brand-glow);
-    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-    --ease-emph: cubic-bezier(0.65, 0, 0.35, 1);
-    --duration-fast: 120ms;
-    --duration-base: 180ms;
-    --duration-slow: 240ms;
+    /* Motion: tokens legados absorvidos pela camada motion/ (fonte única TS → motion.css).
+       Gera utilitários ease-enter/exit/reversible/success; durações via duration-(--motion-duration-*). */
+    --ease-enter: var(--motion-ease-enter);
+    --ease-exit: var(--motion-ease-exit);
+    --ease-reversible: var(--motion-ease-reversible);
+    --ease-success: var(--motion-ease-success);
 }
 
 :root {

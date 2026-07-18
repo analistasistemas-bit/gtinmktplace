@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Boxes, Inbox, Package, TrendingUp } from 'lucide-react';
 import { useTheme } from '@/components/theme-provider';
+import { durationMs, easingCss, useReducedMotion } from '@/motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -162,6 +164,50 @@ export default function StyleGuide() {
           <Skeleton className="h-4 w-40" />
         </div>
       </Section>
+
+      <Section title="Motion">
+        <MotionDemo />
+      </Section>
+    </div>
+  );
+}
+
+/** Demonstração da camada motion/ — fonte única em src/motion/tokens.ts (Fase 2, sem uso em telas reais). */
+function MotionDemo() {
+  const [replay, setReplay] = useState(0);
+  const reduced = useReducedMotion();
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="text-caption mb-1">Durações — src/motion/tokens.ts → --motion-duration-*</p>
+          {Object.entries(durationMs).map(([nome, ms]) => (
+            <p key={nome} className="font-mono text-sm">{nome}: {ms}ms</p>
+          ))}
+        </div>
+        <div>
+          <p className="text-caption mb-1">Easings — src/motion/easings.ts → --motion-ease-*</p>
+          {Object.entries(easingCss).map(([nome, curva]) => (
+            <p key={nome} className="font-mono text-sm">{nome}: {curva}</p>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="outline" onClick={() => setReplay((n) => n + 1)}>Reproduzir entrada</Button>
+        {/* slide-in-from-bottom-2 = 8px = distance.enterY; duração/curva vêm das CSS vars geradas */}
+        <div
+          key={replay}
+          className="animate-in fade-in-0 slide-in-from-bottom-2 duration-(--motion-duration-enter) ease-enter rounded-md border bg-card px-4 py-2 text-sm shadow-sm"
+        >
+          entrada: enter · {durationMs.enter}ms · ease-enter
+        </div>
+        <Button className="duration-(--motion-duration-micro) active:scale-(--motion-press-scale)">
+          press: micro · {durationMs.micro}ms
+        </Button>
+      </div>
+      <p className="text-caption">
+        prefers-reduced-motion: {reduced ? 'reduce — durações zeradas pela rede de segurança global' : 'no-preference'}
+      </p>
     </div>
   );
 }
