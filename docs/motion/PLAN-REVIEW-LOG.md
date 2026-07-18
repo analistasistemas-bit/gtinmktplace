@@ -446,3 +446,34 @@ lote):**
 `familia-expanded.tsx` (commit `fix(a11y)` separado); (b) **Fase 5E — Demais áreas** (financeiro,
 pós-venda, configurações, administrativas, secundárias) — lote potencialmente grande, Sonnet
 deve avaliar subdividir. Sonnet 5, mesma sessão se disponível.
+
+## Fix a11y aria-describedby — commitado
+
+Commit `2a3825c` (`fix(a11y): liga críticas de variação aos campos via aria-describedby`) —
+`id="criticas-${codigo}"` em `familia-expanded.tsx` ligado seletivamente (por tipo de crítica:
+sem cor→input de cor, sem foto→botão de trocar foto, sem preço→input de preço) aos campos em
+`variacao-card.tsx`/`botao-trocar-foto.tsx`. Testes/lint/build ok. Pendência da Fase 3 fechada.
+
+## Fase 5E (Demais áreas) — resultado, GATE aguardando decisão final
+
+**Data:** 2026-07-18. **Último lote nomeado do contrato.** Subdividido pelo próprio Sonnet:
+- **5E-1 (Financeiro e pós-venda)** — commit `9384674`: banners de erro reais em `Financeiro.tsx`,
+  `DetalheFinanceiro.tsx` (+ accordion de detalhe de pedido, `ease-reversible`), `DetalheVendas.tsx`,
+  `Viabilidade.tsx`; `duration-200` mágico corrigido em `aba-vendas.tsx` (mesmo fix do 5D).
+- **5E-2 (Dashboard e Canais)** — commit `2adb865`: banner de erro + bloco "Precisa de atenção"
+  em `Dashboard.tsx`; 4 banners reais (conexão ML, erros) em `Canais.tsx`.
+- **`Configurações`, `Usuários`, `Organizações`: auditados, zero alteração** — nada a tokenizar,
+  não forçado (nenhum valor mágico, nenhum banner condicional).
+- Nenhuma função de cálculo tocada em todo o lote (confirmado arquivo por arquivo:
+  `calcularResumo`, `custoDaVenda`, `custoDoItem`, resolvers de alíquota intactos). Nenhum texto
+  de erro tocado menciona `custo_centavos`/`custo` — guardrail financeiro sem violação.
+- 1596 testes ok em 3 rodadas (a11y, 5E-1, 5E-2).
+
+**Pergunta única do relatório:** confirma que a Fase 5 (Expansão) está completa — este era o
+último lote nomeado da seção 17 do contrato? Resta só a documentação da camada `motion/`
+(explicitamente adiada, não é tarefa do Sonnet).
+
+**Todos os lotes nomeados do contrato (5A–5E) estão agora fechados e commitados.** Falta:
+documentação da camada `motion/` + atualização de `docs/explanation/arquitetura.md`/
+`obsidian-vault` (regra do `CLAUDE.md`) + `docs/TASKS.md` — nenhum é tarefa do Sonnet, ficam para
+Claude (orquestrador) ou Fable 5, a decidir com o Diego.
