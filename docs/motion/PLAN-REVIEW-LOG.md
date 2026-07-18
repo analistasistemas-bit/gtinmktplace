@@ -432,3 +432,17 @@ não tem transição de cor própria — nenhum lote até agora cobriu isso por 
 1. `status-pill.tsx` — vale um lote/GATE dedicado só pra essa transição (fan-in muito alto), ou
    fica fora da iniciativa como está?
 2. Segue para 5E ou pausa?
+
+**Decisão do Diego (combinando com as perguntas gerais de status feitas fora do fluxo por
+lote):**
+1. `status-pill.tsx` **fica fora** da iniciativa — sem lote dedicado.
+2. **Resolve agora** a pendência do `aria-describedby` (críticas de variação → campos do
+   `VariacaoCard`, adiada desde a Fase 3, esquecida no escopo do 5C).
+3. **Segue pro 5E.**
+4. **Documentação da camada `motion/` + `docs/explanation/arquitetura.md`/`obsidian-vault`:
+   depois do 5E**, não bloqueante agora.
+
+**Próxima fase autorizada:** (a) fix `aria-describedby` em `VariacaoCard.tsx`/
+`familia-expanded.tsx` (commit `fix(a11y)` separado); (b) **Fase 5E — Demais áreas** (financeiro,
+pós-venda, configurações, administrativas, secundárias) — lote potencialmente grande, Sonnet
+deve avaliar subdividir. Sonnet 5, mesma sessão se disponível.
