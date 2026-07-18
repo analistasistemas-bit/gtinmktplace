@@ -410,3 +410,25 @@ da iniciativa (sem 5C-2); segue pro 5D.
 `src/pages/Publicados.tsx`, `src/components/dashboard-publicados.tsx`,
 `src/components/status-badge.tsx`, `src/components/status-inline.tsx`,
 `src/components/canal-badge.tsx`. Sonnet 5, mesma sessão se disponível.
+
+## Fase 5D (Publicação e sincronização) — resultado, GATE aguardando decisão
+
+**Data:** 2026-07-18. Commit `8c252b9`: `Publicados.tsx` (chevron de linha + 4 alertas reais —
+sem credencial ML, moderados, erro ao remover/pausar — ganharam entrada tokenizada),
+`dashboard-publicados.tsx` (banner de erro + 3 cards com `duration-200` mágico corrigido para
+`duration-(--motion-duration-state)`, não `micro` — o Sonnet errou pra `micro` na 1ª tentativa,
+`advisor` corrigiu: 200ms cai na faixa `state` do contrato, não `micro`). `status-badge.tsx`/
+`canal-badge.tsx` (escopo nomeado): **zero alteração** — wrappers finos sem CSS próprio.
+`status-inline.tsx` excluído do escopo pelo próprio Sonnet (pertence a 5A/5C, não a 5D — já
+existe sem motion dentro do piloto aprovado, decisão implícita já tomada no GATE 3). Confirmado:
+nenhum estado sintético de fila/sincronização existe nos arquivos do escopo (a Fase 1 tinha
+citado subetapas "na fila→enviando→confirmando" que na prática só existem como texto estático em
+`Revisao.tsx`, já coberto pelo piloto). 1596 testes ok.
+
+**Achado novo:** `status-pill.tsx` (átomo compartilhado por trás de `StatusBadge`, fan-in altíssimo)
+não tem transição de cor própria — nenhum lote até agora cobriu isso por causa do fan-in.
+
+**2 perguntas do relatório:**
+1. `status-pill.tsx` — vale um lote/GATE dedicado só pra essa transição (fan-in muito alto), ou
+   fica fora da iniciativa como está?
+2. Segue para 5E ou pausa?
