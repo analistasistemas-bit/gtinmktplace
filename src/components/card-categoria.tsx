@@ -123,7 +123,7 @@ export function CardCategoria({ familia }: { familia: Familia }) {
       </div>
       {categoriaIndefinida ? (
         <>
-          <p className="mb-1.5 text-xs font-medium text-destructive">Categoria indefinida — busque antes de publicar</p>
+          <p className="mb-1.5 text-xs font-medium text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">Categoria indefinida — busque antes de publicar</p>
           <BuscaCategoria familia={familia} />
         </>
       ) : (
@@ -138,13 +138,13 @@ export function CardCategoria({ familia }: { familia: Familia }) {
             </StatusPill>
           )}
           {categoriaGenerica && (
-            <StatusPill tone="warning" className="mt-1.5">
+            <StatusPill tone="warning" className="mt-1.5 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
               <AlertTriangle className="h-3 w-3" /> Categoria genérica — busque uma melhor se quiser
             </StatusPill>
           )}
           {familia.atributosFaltantes && familia.atributosFaltantes.length > 0 && (
             <>
-              <p className="mt-1.5 flex items-start gap-1 text-xs text-warning">
+              <p className="mt-1.5 flex items-start gap-1 text-xs text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
                 <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                 <span>Faltam: {familia.atributosFaltantes.join(', ')}</span>
               </p>

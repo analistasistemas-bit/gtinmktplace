@@ -107,7 +107,7 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
       </tr>
       {aberto && (
         <tr className="border-t border-border bg-muted/30">
-          <td colSpan={6} className="px-3 py-3">
+          <td colSpan={6} className="px-3 py-3 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">
             <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
               <label htmlFor={`minimo-${item.gtin}`} className="flex items-center gap-2">Seu mínimo
                 <Input id={`minimo-${item.gtin}`} type="number" step="0.01" disabled={!editavel} className="w-28"

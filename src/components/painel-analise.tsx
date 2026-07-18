@@ -131,7 +131,7 @@ export function PainelAnalise({
       />
 
       {familia.precoAbaixo20pc && (
-        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
           <span className="text-destructive">
             Preço de publicação abaixo do mínimo aceitável (mais de 20% abaixo da planilha). Reveja antes de aprovar.
@@ -140,7 +140,7 @@ export function PainelAnalise({
       )}
 
       {semDimensoes && (
-        <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2 text-xs">
+        <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2 text-xs motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           <Truck className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span className="text-warning">
             Sem dimensões/peso reais — o Mercado Livre vai <strong>estimar o frete</strong> (pode ficar alto e gerar moderação). Atualize a planilha com altura, largura, comprimento e peso reais.
