@@ -286,3 +286,25 @@ para `duration-(--motion-duration-instant)`, valor idêntico, zero mudança de c
 não é `feat(motion)`); (b) sub-lote 5A-2 (Navegação/Formulário) — escopo proposto por Claude:
 `src/components/ui/tabs.tsx`, `src/components/ui/button.tsx`, `src/components/ui/input.tsx`,
 `src/components/sidebar.tsx` (navegação lateral). Sonnet 5, mesma sessão.
+
+## Fix a11y DetalheVendas — commitado
+
+Commit `9dc31f7` (`fix(a11y): tooltip de taxas navegável por teclado em DetalheVendas`) —
+`<span>` → `<button type="button">` no trigger do tooltip. Testes/lint/build ok, layout visual
+idêntico.
+
+## Sub-lote 5A-2 (Navegação e Formulário) — resultado, GATE aguardando decisão
+
+**Data:** 2026-07-18. Sonnet 5 auditou `tabs.tsx`, `button.tsx`, `input.tsx`, `sidebar.tsx` —
+**nenhum valor mágico de duration/easing encontrado** (diferente do 5A-1: aqui os `transition-*`
+não têm número explícito, dependem do default do Tailwind). **Nenhum arquivo alterado.**
+
+**2 achados de acessibilidade fora do escopo de motion, não corrigidos:**
+1. `sidebar.tsx`: `NavLink` sem `focus-visible:ring-*` — foco por teclado invisível no menu
+   lateral. Fix trivial, mesmo padrão do fix de `DetalheVendas.tsx`.
+2. `button.tsx`: usa `translateY(1px)` no active em vez do `scale ≈ distance.pressScale` que o
+   contrato recomenda (§7) — divergência de padrão pré-existente (repaginação premium, Tarefa 1),
+   não um "valor mágico perdido". E o `disabled` só usa `opacity-50` (contrato pede reforço além
+   de opacity) — redesenho visual, não tokenização.
+
+Testes/lint/build inalterados (baseline).
