@@ -173,3 +173,34 @@ crítica, seleção, publicação, reduced-motion, screenshots). Perguntas objet
 
 **Nenhuma fase seguinte (4/5) foi despachada.** Parado aqui, conforme combinado com o Diego antes
 de ele ficar ausente.
+
+## Evidência temporal/visual coletada (2026-07-18, Diego de volta)
+
+Diego voltou e autorizou testar com o próprio Chrome (`agent-browser --profile Default`, sessão
+já autenticada). QA ao vivo no lote real #35 (7 famílias), `pnpm dev` no worktree, commit `fb266d7`.
+
+- **Entrada única:** confirmada visualmente (screenshot dark+light).
+- **Expansão + interrupção (5 cliques rápidos):** estado final limpo, sem duplicação de conteúdo
+  (`get count` do texto interno = 0 no estado fechado), sem erro no console.
+- **Foco em crítica:** clicar no selo "📷 1 sem foto" rolou até a família certa e expandiu, com
+  destaque na borda esquerda.
+- **Seleção:** barra de ação entrou só na 1ª seleção; ao desmarcar, sumiu imediatamente
+  (`get count` = 0 logo após o clique).
+- **Diálogo de publicação:** abriu corretamente; **cancelado sem confirmar** — Claude decidiu não
+  publicar de verdade um anúncio real do Mercado Livre como parte do teste (fora do escopo de uma
+  verificação de UI).
+- **Reduced-motion (`set media reduced-motion`):** confirmado via `eval` que os elementos com
+  classes `motion-safe:*` ficam com `animationName: none` e opacidade 1 imediata; expansão abre
+  instantânea (screenshot). O bloco global de segurança (`transition-duration` ~0) segue ativo.
+- **Tema claro:** verificado, sem quebra visual.
+- **Achado novo (pré-existente, fora do escopo do piloto):** warning de console "Function
+  components cannot be given refs" + "Missing Description/aria-describedby" no `DialogOverlay`
+  (`src/components/ui/dialog.tsx`), disparado ao abrir o diálogo de publicação. Não introduzido
+  por este piloto (arquivo não tocado pelo commit `fb266d7`) — registrado como erro preexistente,
+  não corrigido (fora de escopo).
+
+Screenshots salvos em `/Users/diego/.claude/jobs/ba6d74c9/tmp/gate3-*.png` (fora do repo, não
+commitados).
+
+**GATE 3 aguarda a resposta subjetiva do Diego às 5 perguntas do relatório da Fase 3** — evidência
+objetiva/estrutural pronta, mas a aprovação de qualidade continua sendo dele.
