@@ -171,7 +171,7 @@ function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, i
             aria-label={aberto ? 'Recolher análise' : 'Expandir análise'}
             className="mt-0.5 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <ChevronRight className={cn('h-4 w-4 transition-transform', aberto && 'rotate-90')} />
+            <ChevronRight className={cn('h-4 w-4 motion-safe:transition-transform duration-(--motion-duration-state) ease-reversible', aberto && 'rotate-90')} />
           </button>
           <div className="max-w-[260px]">
             <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
@@ -598,7 +598,7 @@ export default function Publicados() {
 
       {/* Banner sem credencial ML */}
       {statusData?.semCredencialML && (
-        <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+        <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Conecte sua conta ML nas Configurações para ver o status ao vivo.
         </div>
       )}
@@ -610,7 +610,7 @@ export default function Publicados() {
           onClick={() => setFiltro((f) => ({ ...f, status: f.status === 'moderado' ? null : 'moderado' }))}
           aria-pressed={filtro.status === 'moderado'}
           className={cn(
-            'mb-4 flex w-full items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition-colors hover:bg-warning/20',
+            'mb-4 flex w-full items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-left text-sm text-warning transition-colors hover:bg-warning/20 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter',
             filtro.status === 'moderado' && 'ring-2 ring-warning/50',
           )}
         >
@@ -626,14 +626,14 @@ export default function Publicados() {
 
       {/* Erro de remoção */}
       {erroRemover && (
-        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           {(erroRemover as Error).message}
         </div>
       )}
 
       {/* Erro de pausar/reativar */}
       {erroPausar && (
-        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           {(erroPausar as Error).message}
         </div>
       )}

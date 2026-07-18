@@ -44,7 +44,7 @@ export function DashboardPublicados({
       <SeletorPeriodo periodo={periodo} onPeriodo={onPeriodo} carregando={carregando} />
 
       {aviso && (
-        <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           {aviso}
         </div>
       )}
@@ -83,7 +83,7 @@ export function DashboardPublicados({
 
       {/* Saúde + Encalhados + Rankings */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-(--motion-duration-state) hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Saúde dos anúncios
             <KpiInfoButton infoKey="Saúde dos anúncios" />
@@ -119,7 +119,7 @@ export function DashboardPublicados({
           }}
           aria-pressed={!!somenteEncalhados}
           className={cn(
-            'rounded-lg border bg-card px-3 py-2.5 text-left text-sm shadow-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring',
+            'rounded-lg border bg-card px-3 py-2.5 text-left text-sm shadow-sm outline-none transition-all duration-(--motion-duration-state) focus-visible:ring-2 focus-visible:ring-ring',
             onToggleEncalhados && 'cursor-pointer hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
             somenteEncalhados
               ? 'border-warning ring-2 ring-warning/40'
@@ -141,7 +141,7 @@ export function DashboardPublicados({
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-(--motion-duration-state) hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Trophy className="h-3.5 w-3.5 text-info" /> Top produtos (faturamento)
             <KpiInfoButton infoKey="Top produtos (faturamento)" />
