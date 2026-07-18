@@ -115,3 +115,28 @@ no relatório da Fase 2 e perguntar de novo no GATE 2, já que não foi uma das 
 respondidas diretamente).
 
 **Próxima fase autorizada:** Fase 2 — Fundação, mesma sessão Fable 5 (retomada via SendMessage).
+
+## Mudança de modo de aprovação (2026-07-18)
+
+Diego avisou que ficará ausente do computador e instruiu: seguir sempre a opção recomendada em
+cada GATE daqui em diante até finalizar o que foi pedido, testando e validando tudo antes de
+devolver a ele. **Isso não suspende o GATE 3.** O próprio contrato define GATE 3 como aprovação
+humana de qualidade visual subjetiva ("testes automatizados não aprovam qualidade subjetiva de
+motion") — a opção "recomendada" nesse GATE específico é justamente reservá-lo para o Diego, não
+autoaprová-lo. Confirmado com o advisor antes de prosseguir. Consequência prática: Claude segue
+autoaprovando GATEs objetivos/mecânicos (como o 2) com a opção recomendada, documentando aqui, mas
+**para no fim da Fase 3 (piloto)** com um pacote de evidência (testes + QA visual/temporal via
+automação de navegador) para o sign-off humano do GATE 3 — não avança para Fase 4/5 sozinho.
+
+## GATE 2 — Fase 2 (Fundação) — aprovado (opção recomendada, autoaprovado)
+
+**Data:** 2026-07-18. Respostas (opção recomendada em todas, conforme instrução acima):
+1. Fundação aprovada sem checagem visual síncrona agora — testes (1595 aprovados, incluindo drift
+   test novo), lint e build ok; `/style-guide` fica disponível pra conferência posterior.
+2. ADR: **sim** — `docs/decisions/0079-fonte-unica-tokens-motion-ts-css.md` criado e commitado
+   (`956a217`), com entrada em `obsidian-vault/04-Decisões/Índice de ADRs.md`.
+3. Allowlist da Fase 3 confirmado: `src/pages/Revisao.tsx`, `src/components/familia-row.tsx`,
+   `src/components/familia-expanded.tsx` (+ `painel-analise.tsx` só se necessário, a reportar).
+
+**Próxima fase autorizada:** Fase 3 — Piloto (Revisão), mesma sessão Fable 5. **GATE 3 permanece
+reservado para aprovação humana do Diego** — Claude prepara o pacote de evidência e para ali.
