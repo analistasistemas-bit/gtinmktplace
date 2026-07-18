@@ -204,3 +204,22 @@ commitados).
 
 **GATE 3 aguarda a resposta subjetiva do Diego às 5 perguntas do relatório da Fase 3** — evidência
 objetiva/estrutural pronta, mas a aprovação de qualidade continua sendo dele.
+
+## GATE 3 — Fase 3 (Piloto) — aprovado
+
+**Data:** 2026-07-18. **Decisão do Diego:** "aprovo tudo como está, segue pra fase 4" — aprovação
+integral, sem ressalva, às 5 perguntas do relatório da Fase 3 (acabamento de
+expansão/entrada/seleção, chevron/fundo de linha selecionada, `role="status"` na contagem de
+seleção mantido como está, smoke test do Collapsible aprovado como arquivo permanente, sem
+regressão de performance reportada).
+
+**Pendência fechada por essa aprovação:** adicionar `tests/` do Collapsible como cobertura
+permanente — Claude vai pedir ao Fable 5 (mesma sessão, ainda dentro do bloco 1–3) pra recriar o
+arquivo antes de fechar a Fase 3 de vez, já que ele escreveu a versão temporária e sabe exatamente
+o que cobrir.
+
+**Próxima fase autorizada:** Fase 4 — Validação, **Sonnet 5 ("executor")**, primeira vez trocando
+de agente nesta iniciativa — dossiê de handoff completo (este ledger inteiro) será passado no
+despacho, conforme o guardrail de continuidade do `PLAN.md`. Lembrete que vai junto: qualquer
+achado da Fase 4 que exija mudar tokens/primitivas/decisão de fundação ou piloto reabre o escopo
+com o Fable 5 (mesma sessão) e um GATE novo — Sonnet não corrige arquitetura aprovada sozinho.
