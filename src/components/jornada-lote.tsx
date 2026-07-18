@@ -26,7 +26,7 @@ export function JornadaLote({ status, compact = false, className }: Props) {
               <span
                 aria-current={atual ? 'step' : undefined}
                 className={cn(
-                  'flex shrink-0 items-center justify-center rounded-full border font-medium transition-colors',
+                  'flex shrink-0 items-center justify-center rounded-full border font-medium transition-colors duration-(--motion-duration-state) ease-reversible',
                   compact ? 'h-5 w-5 text-[10px]' : 'h-7 w-7 text-xs',
                   concluida && 'border-transparent bg-success text-success-foreground',
                   atual && !erro && 'border-transparent bg-primary text-primary-foreground',
@@ -45,7 +45,7 @@ export function JornadaLote({ status, compact = false, className }: Props) {
               {!compact && (
                 <span
                   className={cn(
-                    'whitespace-nowrap text-sm',
+                    'whitespace-nowrap text-sm transition-colors duration-(--motion-duration-state) ease-reversible',
                     comErro
                       ? 'font-medium text-destructive'
                       : atual
@@ -63,7 +63,7 @@ export function JornadaLote({ status, compact = false, className }: Props) {
               <span
                 aria-hidden="true"
                 className={cn(
-                  'h-px shrink-0',
+                  'h-px shrink-0 transition-colors duration-(--motion-duration-state) ease-reversible',
                   compact ? 'w-4' : 'mx-2 w-6 sm:mx-3 sm:w-8',
                   concluida ? 'bg-success' : 'bg-border',
                 )}

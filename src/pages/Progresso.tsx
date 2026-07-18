@@ -57,7 +57,7 @@ export default function Progresso() {
         <JornadaLote status={lote.status} />
       </div>
       {temAnomalias && (
-        <div className="mb-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             Linhas descartadas da planilha:

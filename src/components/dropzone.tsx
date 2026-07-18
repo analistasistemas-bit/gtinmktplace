@@ -21,7 +21,7 @@ export function Dropzone({ label, accept, multiple, onFiles, files, hint }: Drop
     <div
       {...getRootProps()}
       className={cn(
-        'cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors',
+        'cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors duration-(--motion-duration-micro) ease-reversible',
         isDragActive ? 'border-primary bg-accent' : 'border-muted-foreground/25 hover:bg-accent/50'
       )}
     >

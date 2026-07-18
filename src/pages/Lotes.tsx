@@ -96,23 +96,23 @@ export default function Lotes() {
             files={planilha}
           />
           {validacao?.tipo === 'validando' && (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Verificando colunas…
             </p>
           )}
           {validacao?.tipo === 'ok' && (
-            <p className="flex items-center gap-1.5 text-xs text-success">
+            <p className="flex items-center gap-1.5 text-xs text-success motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
               <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> Planilha válida — {COLUNAS_OBRIGATORIAS_PLANILHA.length} colunas obrigatórias presentes.
             </p>
           )}
           {validacao?.tipo === 'faltando' && (
-            <p className="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
+            <p className="flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>Faltam colunas obrigatórias: <strong>{validacao.colunas.join(', ')}</strong>. Corrija a planilha antes de enviar.</span>
             </p>
           )}
           {validacao?.tipo === 'ilegivel' && (
-            <p className="flex items-start gap-1.5 text-xs text-warning">
+            <p className="flex items-start gap-1.5 text-xs text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>Não consegui ler o cabeçalho — confira se é um .xlsx válido. O envio segue e o servidor faz a validação completa.</span>
             </p>
@@ -160,7 +160,7 @@ export default function Lotes() {
         </div>
 
         {(enviando || status === 'concluido') && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
             <Progress value={progresso} className="h-2" />
             <p className="text-xs text-muted-foreground">
               {status === 'criando' && 'Criando lote...'}
@@ -172,7 +172,7 @@ export default function Lotes() {
         )}
 
         {erro && (
-          <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{erro}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">{erro}</p>
         )}
 
         <Button onClick={handleProcessar} disabled={!podeProcessar || enviando} size="lg">
