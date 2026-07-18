@@ -323,3 +323,41 @@ separado); (b) **Fase 5B — Importação e catálogo** (upload, parsing, valida
 produtos, variações). Escopo proposto por Claude: `src/pages/Lotes.tsx`, `src/pages/Progresso.tsx`,
 `src/components/dropzone.tsx`, `src/components/jornada-lote.tsx`, `src/components/stepper.tsx`.
 Sonnet 5, mesma sessão (bloco Fase 5).
+
+## Sessão do Sonnet expirou — retomada com dossiê completo
+
+A sessão anterior (Fase 4, 5A-1, 5A-2) não pôde ser retomada via `SendMessage` (transcript não
+encontrado) — fallback do guardrail de continuidade aplicado: novo agente Sonnet 5, dossiê
+completo (contrato + PLAN.md + este ledger inteiro) passado via prompt, conforme previsto no
+`PLAN.md` para o caso de a sessão original não estar disponível.
+
+## Fix a11y sidebar — commitado
+
+Commit `80152d3` (`fix(a11y): indicador de foco no NavLink da navegação lateral`).
+Testes/lint/build ok.
+
+## Fase 5B (Importação e catálogo) — resultado, GATE aguardando decisão
+
+**Data:** 2026-07-18. Commit `b3b26d7` (`feat(motion): fase 5b - importacao e catalogo`):
+`jornada-lote.tsx` (círculo/rótulo/conector ganharam transição tokenizada), `dropzone.tsx`
+(hover tokenizado), `Lotes.tsx` (4 estados de validação de planilha + progresso de upload +
+bloco de erro ganharam entrada tokenizada), `Progresso.tsx` (bloco de anomalias ganhou entrada
+tokenizada). Todos os padrões replicados do piloto já aprovado (mesmas classes de
+`familia-expanded.tsx`/`familia-row.tsx`), nenhum valor novo. 1596 testes ok, lint/build limpos.
+Bundle: +0,07 kB gzip no chunk `Lotes`.
+
+**Nota do próprio Sonnet:** a auditoria inicial concluiu "zero valor mágico = zero mudança" (como
+em 5A-2), mas o Sonnet usou o `advisor` e se autocorrigiu — o fluxo de importação nunca tinha
+passado por tratamento de motion nenhum (diferente de 5A-2, onde os primitivos já vinham
+tratados pela repaginação premium), então a tarefa certa era aplicar os padrões do piloto aos
+pontos de mudança de estado real, não só caçar número solto.
+
+**Risco documentado (não é achado novo, é atenção):** `jornada-lote.tsx` é usado também pelo
+`Revisao.tsx` (piloto já aprovado no GATE 3) — mudança é só tokenização de transição já
+existente/adicionada onde faltava, mesmo risco/escopo do que 5A-1 fez em `dialog.tsx`.
+
+**3 perguntas do relatório:**
+1. `stepper.tsx` (zero uso confirmado no codebase) — deletar numa limpeza futura, ou deixar?
+2. QA visual ao vivo do 5B (upload real, Diego presente) agora, ou aceitar testes+lint+build como
+   suficiente, igual 5A-1/5A-2?
+3. Segue para 5C (Revisão e validação) ou pausa?
