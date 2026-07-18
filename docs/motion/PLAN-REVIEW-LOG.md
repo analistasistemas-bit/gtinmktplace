@@ -140,3 +140,36 @@ automação de navegador) para o sign-off humano do GATE 3 — não avança para
 
 **Próxima fase autorizada:** Fase 3 — Piloto (Revisão), mesma sessão Fable 5. **GATE 3 permanece
 reservado para aprovação humana do Diego** — Claude prepara o pacote de evidência e para ali.
+
+## Fase 3 concluída — GATE 3 aberto, aguardando Diego
+
+**Data:** 2026-07-18. Commit `fb266d7` (`feat(motion): fase 3 - piloto no fluxo de revisão`),
+exatamente o allowlist do GATE 2. Relatório completo do Fable 5 recebido; Claude revisou o diff
+independentemente (spot-check dos 3 arquivos) e confirma que bate com o relatório — sem valor
+mágico, sem mudança de regra de negócio/dado/navegação.
+
+**Pacote de evidência objetiva reunido por Claude:**
+- Suíte completa: 1595 testes aprovados (inclui drift test + smoke estrutural do Collapsible,
+  removido antes do commit por estar fora do allowlist).
+- Lint/build limpos; bundle: Revisão +0,99 kB gzip, CSS +0,2 kB gzip — sem lib nova.
+- Diff revisado linha a linha por Claude — consistente com o relatório da Fase 3.
+
+**O que NÃO foi possível capturar:** evidência temporal/visual ao vivo (roteiro de 7 interações
+da seção 9 do relatório da Fase 3). Motivo: sem sessão autenticada disponível — Docker não está
+rodando (sem Supabase local), sem credencial de teste para o Supabase de produção, e a sessão já
+logada do Diego no Chrome é do site de **produção** (origem diferente de `localhost`, não
+transferível). Claude decidiu **não** iniciar o Docker Desktop nem tentar contornar login sem
+autorização — fora do escopo de uma captura de evidência. Isso não bloqueia o GATE 3 em si: a
+aprovação de qualidade visual subjetiva sempre exigiria o olhar do Diego ao vivo, mesmo com
+evidência pré-capturada; só significa que o pacote entregue é testes objetivos + revisão de
+código, sem vídeo/screenshot.
+
+**Como o Diego roda o QA temporal quando voltar (~10-15min):** no worktree
+`.claude/worktrees/feat+motion-design-system` (branch `feat/motion-design-system`, `.env.local`
+já copiado), `pnpm dev`, login normal, abrir lote real em `#/revisao/:loteId`, seguir o roteiro de
+7 interações da seção 9 do relatório da Fase 3 (entrada única, expansão + interrupção, foco em
+crítica, seleção, publicação, reduced-motion, screenshots). Perguntas objetivas do GATE 3 (seção
+12 do relatório) também aguardam resposta dele.
+
+**Nenhuma fase seguinte (4/5) foi despachada.** Parado aqui, conforme combinado com o Diego antes
+de ele ficar ausente.
