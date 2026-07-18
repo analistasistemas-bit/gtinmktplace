@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
-import { KpiCard } from '@/components/ui/kpi-card';
+import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AoVivo } from '@/components/ui/ao-vivo';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
@@ -72,6 +72,7 @@ function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta
       <div className="mb-1 flex items-center justify-between gap-1.5 text-xs">
         <span className={cn('flex items-center gap-1.5', cor)}>
           <Icon className="h-4 w-4 shrink-0" /> {label}
+          <KpiInfoButton infoKey={label} />
         </span>
         <span className="flex items-center gap-0.5 text-muted-foreground">
           {destino} <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -299,11 +300,13 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
         />
         <KpiCard
           label="Pedidos" icon={ShoppingBag} loading={carregando} to="/faturamento"
+          infoKey="Pedidos::Dashboard"
           value={fmtInt(kpisPedidos.pedidos)}
           delta={delta(kpisPedidos.pedidos, kpisPedidosAnt.pedidos).texto} deltaTrend={delta(kpisPedidos.pedidos, kpisPedidosAnt.pedidos).trend}
         />
         <KpiCard
           label="Ticket médio" icon={Target} loading={carregando} to="/faturamento"
+          infoKey="Ticket médio::Dashboard"
           value={fmtBRL(kpisPedidos.ticket)}
           delta={delta(kpisPedidos.ticket, kpisPedidosAnt.ticket).texto} deltaTrend={delta(kpisPedidos.ticket, kpisPedidosAnt.ticket).trend}
         />
