@@ -90,5 +90,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0076 | [Gross-up itera o frete por variação até estabilizar](../../docs/decisions/0076-gross-up-itera-frete-por-variacao.md) |
 | 0077 | [Registry híbrido para UI multi-marketplace (frontend + canais_habilitados por org)](../../docs/decisions/0077-registry-hibrido-menus-multicanal.md) |
 | 0078 | [Preço por variação, split por faixa de preço e controle de preço no UPDATE](../../docs/decisions/0078-preco-por-variacao-split-por-faixa-e-controle-de-preco-no-update.md) |
+| 0079 | [Fonte única TS→CSS para tokens de motion, sem biblioteca de animação](../../docs/decisions/0079-fonte-unica-tokens-motion-ts-css.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
