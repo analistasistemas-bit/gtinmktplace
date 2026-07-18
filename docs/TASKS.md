@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Ícone de informação nos KPIs — 2026-07-18
+
+- [x] Ícone "i" clicável em todo KPI do app (Dashboard, Publicados, Financeiro,
+  Faturamento/Vendas, Faturamento/Geografia, DetalheFinanceiro, DetalheVendas), abrindo um
+  popover com a explicação — dicionário central em `src/lib/kpi-descriptions.ts` (36 entradas,
+  escritas a partir da fórmula real de cada KPI, com teste de guarda de cobertura). Design em
+  `docs/superpowers/specs/2026-07-17-kpi-info-tooltip-design.md`, plano em
+  `docs/superpowers/plans/2026-07-17-kpi-info-tooltip.md`. Consolidou 4 componentes `Kpi`
+  duplicados no `KpiCard` compartilhado (`size="compact"`). Sem ADR (feature de UI/copy, não
+  mexe em regra de negócio nem cálculo financeiro).
+- [x] **Bug crítico achado só em teste real no browser** (nenhuma das ~20 revisões de código
+  estáticas pegou): clicar no ícone dentro de um card-link disparava a navegação mesmo assim —
+  `stopPropagation()` sozinho não impede a navegação nativa do `<a>`. Fix: `preventDefault()` +
+  `open` do popover controlado manualmente via `useState` (o Radix pula o próprio toggle ao ver
+  `defaultPrevented`). Commit `2baada2`.
+- [x] Fix de acessibilidade: painel "Encalhados" tinha `<button>` (ícone de info) dentro de
+  outro `<button>` (toggle do filtro) — HTML inválido. Trocado por `<div role="button"
+  tabIndex>` com `onKeyDown` para Enter/Espaço, preservando o toggle e a navegação por teclado.
+  Commit `b9a922f`.
+- [x] Validado ao vivo (Chrome real, logado) em todas as telas, desktop e mobile (390×844),
+  dark e light. Suíte 201/201 arquivos, 1593/1593 testes, lint e tsc limpos. Merge direto em
+  `main` (fast-forward, sem PR).
+
 ## Divergência de pipeline entre "Pedidos"/"Ticket médio"/"Faturamento" em Publicados vs. Dashboard/Faturamento — 2026-07-18
 
 - [ ] **Achado durante o design do ícone de informação nos KPIs** (`docs/superpowers/specs/2026-07-17-kpi-info-tooltip-design.md`), não corrigido nesta entrega: `calcularResumo()` (`src/lib/resumo-vendas.ts`) filtra "faturável" por linha antes de agrupar em pack; `agruparPorPedido()` + `calcularKpisPedidos()` (`src/lib/pedidos-faturamento.ts`) filtra pelo status de uma linha representante do pack inteiro. Em packs com status misto (1 item cancelado + 1 pago no mesmo carrinho), os dois pipelines podem contar o pack de forma diferente — contradiz o que o ADR-0038 promete ("mesmo número em todas as telas"). Precisa de ADR próprio antes de unificar os pipelines.

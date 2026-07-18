@@ -102,14 +102,24 @@ export function DashboardPublicados({
           </div>
         </div>
 
-        {/* Encalhados: card clicável que filtra a lista (toggle). */}
-        <button
-          type="button"
+        {/* Encalhados: card clicável que filtra a lista (toggle). div+role="button" em vez de
+            <button> nativo porque o card contém o KpiInfoButton (outro <button>) — <button>
+            dentro de <button> é HTML inválido. */}
+        <div
+          role="button"
+          tabIndex={onToggleEncalhados ? 0 : -1}
+          aria-disabled={!onToggleEncalhados}
           onClick={onToggleEncalhados}
+          onKeyDown={(e) => {
+            if (!onToggleEncalhados) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onToggleEncalhados();
+            }
+          }}
           aria-pressed={!!somenteEncalhados}
-          disabled={!onToggleEncalhados}
           className={cn(
-            'rounded-lg border bg-card px-3 py-2.5 text-left text-sm shadow-sm transition-all duration-200',
+            'rounded-lg border bg-card px-3 py-2.5 text-left text-sm shadow-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring',
             onToggleEncalhados && 'cursor-pointer hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
             somenteEncalhados
               ? 'border-warning ring-2 ring-warning/40'
@@ -129,7 +139,7 @@ export function DashboardPublicados({
               ? 'clique para mostrar todos de novo'
               : `de ${resumo.ativos} ativo(s) — clique para ver só os encalhados`}
           </div>
-        </button>
+        </div>
 
         <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
