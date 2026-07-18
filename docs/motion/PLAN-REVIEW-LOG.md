@@ -477,3 +477,30 @@ sem cor→input de cor, sem foto→botão de trocar foto, sem preço→input de 
 documentação da camada `motion/` + atualização de `docs/explanation/arquitetura.md`/
 `obsidian-vault` (regra do `CLAUDE.md`) + `docs/TASKS.md` — nenhum é tarefa do Sonnet, ficam para
 Claude (orquestrador) ou Fable 5, a decidir com o Diego.
+
+## Documentação — commitada
+
+Commit `5063209`: `src/motion/README.md` (princípios, tokens, easings, reduced-motion,
+integração Tailwind, regras por área, processo pra animação nova, checklist de revisão —
+critério de aceite da seção 20 do contrato); `docs/explanation/arquitetura.md` e
+`obsidian-vault/01-Arquitetura/Frontend.md` atualizados com referência à camada `motion/`;
+`docs/TASKS.md` registra o progresso completo da iniciativa. 1596 testes ok, lint/build limpos.
+
+## QA visual final ao vivo (Claude, via agent-browser, Chrome autenticado)
+
+**Data:** 2026-07-18. Varredura pelas áreas não testadas ao vivo desde o piloto: Dashboard
+(bloco "Precisa de atenção" do 5E-2 renderiza correto), Financeiro (KPIs corretos, sem
+regressão), Canais (cards sem regressão), Publicados (banner "1 anúncio moderado" do 5D
+renderiza correto; chevron de expansão funciona). Console limpo em toda a navegação (só o
+warning pré-existente do `recharts`, já documentado, não relacionado a motion).
+
+**Regressão do piloto:** `Revisao.tsx` re-verificado — pixel-idêntico à captura da aprovação do
+GATE 3, sem nenhuma quebra visual após 5 lotes de mudança em componentes compartilhados
+(dialog, sheet, jornada-lote, status).
+
+**Fix `aria-describedby` confirmado ao vivo:** família com crítica "sem foto" — o botão "Trocar
+foto" tem `aria-describedby="criticas-02905329"` corretamente apontando para o bloco de crítica
+correspondente. Verificado via inspeção real do DOM, não só leitura de código.
+
+**Com isso, a iniciativa Motion Design System está com todos os GATEs do contrato aprovados,
+documentação escrita, e QA final sem achado novo.** Decisão de merge/PR fica com o Diego.
