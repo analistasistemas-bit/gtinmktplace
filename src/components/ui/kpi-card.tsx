@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUp, ArrowDown, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -40,17 +40,25 @@ interface KpiCardProps {
  */
 export function KpiInfoButton({ infoKey, tom }: { infoKey: string; tom?: KpiTom }) {
   const texto = getKpiDescription(infoKey);
+  const [open, setOpen] = useState(false);
   if (!texto) return null;
   const titulo = infoKey.split('::')[0];
   const tomCls = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning'
     : tom === 'danger' ? 'text-destructive' : undefined;
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
           aria-label={`O que é ${titulo}`}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            // Card pode estar dentro de um <Link>/<button>: preventDefault bloqueia a navegação
+            // nativa do <a>, mas o Radix pula o próprio toggle quando vê defaultPrevented — por
+            // isso controlamos `open` manualmente aqui em vez de depender do toggle interno dele.
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen((o) => !o);
+          }}
           className={cn(
             'inline-flex shrink-0 items-center justify-center rounded-full p-3 -m-3 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
             tomCls,
