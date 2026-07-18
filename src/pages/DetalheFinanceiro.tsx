@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
+import { KpiInfoButton } from '@/components/ui/kpi-card';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -452,7 +453,10 @@ export default function DetalheFinanceiro() {
       {/* Resumo */}
       <div className="mb-5 rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm">
         <div className="flex items-baseline justify-between">
-          <span className="text-xs text-muted-foreground">Líquido total (você recebe)</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            Líquido total (você recebe)
+            <KpiInfoButton infoKey="Líquido total (você recebe)" />
+          </span>
           <span className="text-2xl font-bold tabular-nums text-success">{fmtBRL(liquido)}</span>
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
