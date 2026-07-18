@@ -361,3 +361,24 @@ existente/adicionada onde faltava, mesmo risco/escopo do que 5A-1 fez em `dialog
 2. QA visual ao vivo do 5B (upload real, Diego presente) agora, ou aceitar testes+lint+build como
    suficiente, igual 5A-1/5A-2?
 3. Segue para 5C (Revisão e validação) ou pausa?
+
+**Decisão do Diego:** deixa `stepper.tsx` como está (não deletar); roda QA visual agora; segue
+pro 5C.
+
+**QA visual ao vivo (Claude, via agent-browser, Chrome autenticado):**
+- `Lotes.tsx`: jornada do lote (`JornadaLote`) renderiza igual a antes, sem regressão visual.
+- Dropzone: `getComputedStyle` confirma `transition-colors duration-(--motion-duration-micro)
+  ease-reversible` computado como `0.15s` / `cubic-bezier(0.45, 0, 0.55, 1)` — exatamente o
+  token, sem valor perdido na tradução Tailwind→CSS.
+- Círculos da `JornadaLote`: confirmado `0.19s` / `cubic-bezier(0.45, 0, 0.55, 1)` — token
+  `state`/`reversible` exato.
+- Reduced-motion: reconfirmado — duração cai para ~0 nos círculos da jornada também.
+- Console limpo em toda a navegação (Lotes → Revisão).
+- **Não testado ao vivo:** os 4 estados de validação de planilha e o bloco de anomalias de
+  `Progresso.tsx`/`Lotes.tsx` — exigiriam upload real de uma planilha (criaria lote real,
+  consumiria enriquecimento por IA) ou um lote em processamento agora; mesma cautela de não
+  publicar de verdade aplicada aqui — não fiz upload de teste. Classes replicam exatamente o
+  padrão já validado no piloto (`familia-expanded.tsx`), risco residual baixo.
+
+**Próxima fase autorizada:** Fase 5C — Revisão e validação, Sonnet 5 (mesma sessão se disponível,
+senão nova com dossiê completo).
