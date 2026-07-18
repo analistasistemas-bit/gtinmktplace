@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Todo KPI (Dashboard, Publicados, Financeiro, Faturamento/Vendas) ganha um ícone "i" clicável
+Todo KPI (Dashboard, Publicados, Financeiro, Faturamento — abas Vendas e Geografia) ganha um ícone "i" clicável
 que abre um popover explicando o que aquele número significa. Painéis multi-métrica (Saúde dos
 anúncios, Encalhados, ranking de produtos, em Publicados) ganham 1 ícone por painel, explicando
 o painel como um todo — não 1 ícone por linha interna.
@@ -10,8 +10,9 @@ o painel como um todo — não 1 ícone por linha interna.
 ## Escopo
 
 **Dentro:**
-- Cards de valor único: `KpiCard` (Dashboard) + os 3 `Kpi` locais duplicados (Publicados,
-  Financeiro, Faturamento/aba-vendas) + `HeroVenda` (Dashboard, 2 cards de destaque) + o card
+- Cards de valor único: `KpiCard` (Dashboard) + os 4 `Kpi` locais duplicados (Publicados,
+  Financeiro, Faturamento/aba-vendas, Faturamento/aba-geografia — confirmado que Devoluções,
+  Perguntas e Mensagens não têm KPIs) + `HeroVenda` (Dashboard, 2 cards de destaque) + o card
   "Líquido das vendas (você recebe)" em `Financeiro.tsx:180-213` (mesmo papel de hero
   destaque, hoje implementado em JSX próprio, não reusa `HeroVenda`/`KpiCard`).
 - Painéis multi-métrica em Publicados: "Saúde dos anúncios", "Encalhados" e o painel de
@@ -29,9 +30,10 @@ o painel como um todo — não 1 ícone por linha interna.
 ### 1. `src/components/ui/popover.tsx` (novo)
 
 Wrapper Radix Popover, mesmo molde de `src/components/ui/tooltip.tsx` (componente já existente
-no projeto, embora hoje sem nenhum importador real — é um template pronto pra copiar, não um
-padrão em uso). `radix-ui` (pacote guarda-chuva, já em `package.json`) inclui o primitivo
-`Popover`. Fecha ao clicar fora ou Esc (comportamento nativo do Radix).
+no projeto, usado hoje em `canal-tabs.tsx` e `DetalheVendas.tsx` — mas sempre como
+tooltip de hover em gráfico, nunca como ajuda contextual clicável; é um template válido pra
+copiar, não um padrão a estender). `radix-ui` (pacote guarda-chuva, já em `package.json`) inclui
+o primitivo `Popover`. Fecha ao clicar fora ou Esc (comportamento nativo do Radix).
 
 ### 2. `src/lib/kpi-descriptions.ts` (novo) — dicionário central
 
@@ -41,8 +43,9 @@ padrão em uso). `radix-ui` (pacote guarda-chuva, já em `package.json`) inclui 
   cujo cálculo é comprovadamente idêntico em todas as telas onde aparecem.
 - **Chave composta `"<label>::<tela>"`** — só para os 2 labels confirmados divergentes entre
   pipelines de cálculo (ver "Achado colateral"): `"Pedidos"` e `"Ticket médio"`. Cada tela
-  recebe texto específico mencionando a fonte real (ex.: "pedidos do checkout" vs. "linhas
-  faturáveis agrupadas em pack").
+  recebe texto específico mencionando a fonte real (ex., em Publicados: "conta como faturável
+  se qualquer item do pedido foi faturado"; em Dashboard/Faturamento: "conta como faturável
+  pelo status do pedido no checkout").
 - `"Markup no período"` **não diverge** — confirmado por leitura direta: Dashboard
   (`Dashboard.tsx:291`), Publicados (`dashboard-publicados.tsx:81`) e Financeiro
   (`Financeiro.tsx:254`) leem todos `r.markup`/`resumo.markup`, mesma `calcularResumo()`. Fica
@@ -81,11 +84,13 @@ popover. Regra geral: qualquer `KpiInfoButton` renderizado dentro de um elemento
 (`<Link>`/`<button>` ancestral) precisa desse guard — não só quando o `to` é prop direta do
 `KpiCard`.
 
-### 4. Migração dos 3 `Kpi` duplicados
+### 4. Migração dos 4 `Kpi` duplicados
 
-`dashboard-publicados.tsx`, `aba-vendas.tsx`, `Financeiro.tsx`: a função local `Kpi(...)` é
-removida; os call sites passam a usar `<KpiCard size="compact" tom=... ... />`. Elimina a
-duplicação hoje existente (3 cópias quase idênticas) em vez de colar o ícone 3x.
+`dashboard-publicados.tsx`, `aba-vendas.tsx`, `Financeiro.tsx`, `aba-geografia.tsx`: a função
+local `Kpi(...)` é removida em cada um; os call sites passam a usar
+`<KpiCard size="compact" tom=... ... />`. Elimina a duplicação hoje existente (4 cópias quase
+idênticas) em vez de colar o ícone 4x. KPIs novos cobertos por essa migração:
+`aba-geografia.tsx:136-163` → "Estados atingidos", "Top estado", "Cidades", "Sem localização".
 
 ### 5. `HeroVenda` (Dashboard) e hero card do Financeiro
 
@@ -119,9 +124,11 @@ interna), buscando a descrição do painel inteiro no dicionário pela chave do 
 
 Como o requisito é literalmente "todos", um `label`/`infoKey` sem entrada no dicionário faz o
 ícone simplesmente não aparecer — silencioso. Para não regredir isso no futuro sem perceber:
-teste (`vitest`) que varre os componentes que usam `KpiCard`/`KpiInfoButton` em Dashboard,
-Publicados, Financeiro e Faturamento e falha se algum `label`/`infoKey` renderizado não resolver
-para uma entrada do dicionário.
+teste (`vitest`) que varre os componentes que usam `KpiCard`/`KpiInfoButton` nas telas em
+escopo (Dashboard, Publicados, Financeiro, Faturamento/Vendas, Faturamento/Geografia) e falha
+se algum `label`/`infoKey` renderizado não resolver para uma entrada do dicionário. O uso de
+`KpiCard` em `StyleGuide.tsx` (vitrine de componentes, labels de exemplo) fica fora desse teste
+— não é tela de produto.
 
 ## Achado colateral: divergência de pipeline (fora de escopo, registrar)
 
@@ -131,16 +138,18 @@ pipelines diferentes**:
 
 - **Dashboard** (`Dashboard.tsx:146-153,301-308`) e **Faturamento/aba-vendas**
   (`aba-vendas.tsx:374,376`) usam `agruparPorPedido()` + `calcularKpisPedidos()`
-  (`lib/pedidos-faturamento.ts`) — conta pedido real (pack), não linha.
+  (`lib/pedidos-faturamento.ts:104-125,240-243`) — agrupa por pack e decide "faturável" pelo
+  status de **uma única linha representante** do pack (a primeira, ordenada por `order_id`).
 - **Publicados** (`dashboard-publicados.tsx:76-77`, via `totais.pedidos`/`totais.faturamento`
-  vindos de `Publicados.tsx:675`) usa `calcularResumo()` (`lib/resumo-vendas.ts`) — conta por
-  linha de `ml_vendas` agrupada em pack, filtro de "faturável" aplicado por linha, não por
-  pedido.
+  vindos de `Publicados.tsx:675`) usa `calcularResumo()` (`lib/resumo-vendas.ts:144-162`) —
+  também agrupa por pack, mas decide "faturável" **por linha** antes de agrupar (o pack conta
+  como faturável se qualquer linha dele for).
 
-Em packs com pedidos de status misto (um cancelado + um pago no mesmo carrinho), isso pode
-produzir números diferentes pro mesmo período entre Publicados e as outras duas telas —
-contradiz o que o ADR-0038 promete ("mesmo número em todas as telas"; ADR-0039 introduziu essa
-divergência deliberadamente só pra Faturamento, e o Dashboard aderiu depois por conta própria).
+Num pack com uma linha cancelada + uma paga, a linha-representante escolhida por
+`agruparPorPedido` pode não ser a mesma condição usada por `calcularResumo` — então o pack pode
+ser contado num pipeline e descartado no outro pro mesmo período. Contradiz o que o ADR-0038
+promete ("mesmo número em todas as telas"; ADR-0039 introduziu essa divergência deliberadamente
+só pra Faturamento, e o Dashboard aderiu depois por conta própria).
 
 **"Markup no período" não faz parte desse achado** — as 3 telas que usam esse label exato
 (Dashboard, Publicados, Financeiro) leem todas de `calcularResumo()`; não há divergência ali.
