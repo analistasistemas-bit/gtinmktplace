@@ -267,3 +267,22 @@ contrato** — propositalmente fora deste sub-lote, não tocar.
 
 **Próxima fase autorizada:** Fase 5A-1 (Feedback/Overlays), Sonnet 5, mesma sessão retomada
 (bloco Fases 4-5).
+
+## Sub-lote 5A-1 (Feedback/Overlays) — aprovado
+
+**Data:** 2026-07-18. Commit `3734bae` (`feat(motion): fase 5a-1 - feedback e overlays globais`,
+3 arquivos: `dialog.tsx`, `alert-dialog.tsx`, `sheet.tsx` — só `duration-100` mágico tokenizado
+para `duration-(--motion-duration-instant)`, valor idêntico, zero mudança de comportamento).
+`tooltip.tsx`/`sonner.tsx` sem valor mágico, não tocados. 1596 testes ok.
+
+**Decisão do Diego** (presente, respondendo direto) às 3 perguntas do relatório:
+1. `SheetContent` (200ms/`ease-in-out`, sem token exato): **mantém como está** — não migrar para
+   `overlay`/`enter`+`exit`. Risco zero preferido a mudança perceptível no drawer mobile.
+2. **Autoriza o fix pontual de acessibilidade** em `DetalheVendas.tsx` (tooltip de "Taxas" sem
+   `tabIndex`, não navegável por teclado) — fora do escopo de motion, mas autorizado agora.
+3. **Segue pro próximo sub-lote de 5A**: navegação/tabs/botões/inputs.
+
+**Próxima fase autorizada:** (a) fix de acessibilidade em `DetalheVendas.tsx` (commit separado,
+não é `feat(motion)`); (b) sub-lote 5A-2 (Navegação/Formulário) — escopo proposto por Claude:
+`src/components/ui/tabs.tsx`, `src/components/ui/button.tsx`, `src/components/ui/input.tsx`,
+`src/components/sidebar.tsx` (navegação lateral). Sonnet 5, mesma sessão.
