@@ -308,3 +308,18 @@ não têm número explícito, dependem do default do Tailwind). **Nenhum arquivo
    de opacity) — redesenho visual, não tokenização.
 
 Testes/lint/build inalterados (baseline).
+
+**Decisão do Diego** às 3 perguntas:
+1. **Autoriza o fix de `focus-visible`** em `sidebar.tsx` (mesmo padrão do fix de
+   `DetalheVendas.tsx`).
+2. Os 2 achados de `button.tsx` (translateY vs `pressScale`, disabled só com opacity) **ficam só
+   documentados** — sem lote dedicado por ora.
+3. **Pula o resto de 5A e segue pro 5B.** (Nota: 5A na prática já está coberto — modal/drawer/
+   toast/tooltip no 5A-1, tabs/botões/inputs/navegação no 5A-2, accordion não existe no
+   codebase — não há "resto" de 5A pendente, a decisão de pular equivale a considerá-lo completo.)
+
+**Próxima fase autorizada:** (a) fix de `focus-visible` em `sidebar.tsx` (commit `fix(a11y)`
+separado); (b) **Fase 5B — Importação e catálogo** (upload, parsing, validação, lotes, famílias,
+produtos, variações). Escopo proposto por Claude: `src/pages/Lotes.tsx`, `src/pages/Progresso.tsx`,
+`src/components/dropzone.tsx`, `src/components/jornada-lote.tsx`, `src/components/stepper.tsx`.
+Sonnet 5, mesma sessão (bloco Fase 5).
