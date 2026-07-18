@@ -80,3 +80,38 @@ decisão do Diego sobre construtor×executor):
   blast radius e subdividir se necessário.
 - Papel do orquestrador reescrito: mantém ledger, confere allowlist do commit, valida dossiê de
   handoff — nunca edita arquivo de produto.
+
+## GATE 1 — Fase 1 (Auditoria) — aprovado
+
+**Data:** 2026-07-18. **Decisão do Diego:** aprovado o pacote completo como recomendado pelo
+Fable 5 (relatório completo na sessão de auditoria), sem ajuste técnico. Respostas às 8 perguntas
+da seção 12 do relatório:
+
+1. Nenhuma dependência nova nas Fases 2–3 (tw-animate-css + CSS + Radix); `Motion` adiado como
+   decisão condicional da Fase 5 — **aprovado**.
+2. Mecanismo de fonte única TS→CSS (TS primário, gerador sem dependência nova, `motion.css`
+   versionado, drift test em vitest) — **aprovado**.
+3. Piloto da Fase 3: **fluxo de Revisão** (`Revisao.tsx` + `familia-row` + `familia-expanded`) —
+   **aprovado**, não a alternativa de importação.
+4. Tabela estado-visual→evento-real da seção 11 do relatório como limite do que pode ser animado
+   como progresso real (subetapas de ingest e de publicação sem sinal ficam indeterminadas) —
+   **aprovado**.
+5. Método de baseline de performance (rotas `#/revisao/:loteId` etc., dataset ≥20 famílias/≥60
+   variações, CPU 4×, métricas long tasks/INP/CLS/FPS, 3 amostras/mediana) — **aprovado** como
+   método oficial das Fases 3–5.
+6. Manter o bloco global `prefers-reduced-motion` como rede de segurança (hipótese verificada:
+   não quebra feedback funcional hoje), com fallback explícito por token nas animações novas —
+   **aprovado**.
+7. Sincronizar a branch com a `main` (2 commits, `docs/TASKS.md` +
+   `src/components/dashboard-publicados.tsx`) antes da Fase 2 — **aprovado e executado**
+   (merge sem conflito, commit de merge na branch).
+8. Allowlist da Fase 2 (`src/motion/*` novos, `src/index.css`, `src/pages/StyleGuide.tsx`) —
+   **aprovado**.
+
+**SHA no fim do GATE:** commit de merge (sync com main) na branch `feat/motion-design-system`,
+antes de despachar a Fase 2. **Pendências carregadas para a Fase 2/3:** ADR sobre o mecanismo de
+geração TS→CSS (o Diego ainda não respondeu se quer o ADR mesmo sem lib nova — Claude vai propor
+no relatório da Fase 2 e perguntar de novo no GATE 2, já que não foi uma das 8 perguntas
+respondidas diretamente).
+
+**Próxima fase autorizada:** Fase 2 — Fundação, mesma sessão Fable 5 (retomada via SendMessage).
