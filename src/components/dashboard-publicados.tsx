@@ -4,6 +4,7 @@ import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, Pack
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
+import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 import type { PublicadoItem } from '@/lib/publicados';
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
 import { periodoToParams, type Periodo } from '@/lib/metricas';
@@ -24,21 +25,6 @@ interface Props {
   somenteEncalhados?: boolean;
   /** Alterna o filtro de encalhados (card vira toggle). */
   onToggleEncalhados?: () => void;
-}
-
-function Kpi({ icon: Icon, label, valor, tom, valorCor }: {
-  icon: typeof DollarSign; label: string; valor: string; tom?: 'info' | 'success' | 'warning'; valorCor?: string;
-}) {
-  const cor = tom === 'success' ? 'text-success' : tom === 'warning' ? 'text-warning' : 'text-info';
-  return (
-    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
-      <div className={cn('mb-1 flex items-center gap-1.5 text-xs text-muted-foreground', cor)}>
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        {label}
-      </div>
-      <div className={cn('text-lg font-semibold tabular-nums', valorCor)}>{valor}</div>
-    </div>
-  );
 }
 
 export function DashboardPublicados({
@@ -70,25 +56,27 @@ export function DashboardPublicados({
           className="group cursor-pointer rounded-lg outline-none ring-offset-background transition-all hover:-translate-y-0.5 hover:ring-2 hover:ring-primary/50 focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Faturamento — ver composição"
         >
-          <Kpi icon={DollarSign} label="Faturamento" valor={fmtBRL(totais.faturamento)} tom="success" />
+          <KpiCard size="compact" icon={DollarSign} label="Faturamento" infoKey="Faturamento::Publicados" value={fmtBRL(totais.faturamento)} tom="success" />
         </Link>
-        <Kpi icon={Package} label="Unidades vendidas" valor={String(totais.unidades)} />
-        <Kpi icon={Receipt} label="Pedidos" valor={String(totais.pedidos)} />
-        <Kpi icon={Target} label="Ticket médio" valor={fmtBRL(ticket)} />
+        <KpiCard size="compact" icon={Package} label="Unidades vendidas" value={String(totais.unidades)} />
+        <KpiCard size="compact" icon={Receipt} label="Pedidos" infoKey="Pedidos::Publicados" value={String(totais.pedidos)} />
+        <KpiCard size="compact" icon={Target} label="Ticket médio" infoKey="Ticket médio::Publicados" value={fmtBRL(ticket)} />
         {temCusto && (
-          <Kpi
+          <KpiCard
+            size="compact"
             icon={TrendingUp}
             label="Markup no período"
-            valor={(markupPct >= 0 ? '+' : '') + Math.round(markupPct * 100) + '%'}
-            valorCor={markupPct >= 0 ? 'text-success' : 'text-destructive'}
+            value={(markupPct >= 0 ? '+' : '') + Math.round(markupPct * 100) + '%'}
+            valueClassName={markupPct >= 0 ? 'text-success' : 'text-destructive'}
           />
         )}
         {temCusto && lucro != null && (
-          <Kpi
+          <KpiCard
+            size="compact"
             icon={Coins}
             label="Lucro no período"
-            valor={fmtBRL(lucro)}
-            valorCor={lucro >= 0 ? 'text-success' : 'text-destructive'}
+            value={fmtBRL(lucro)}
+            valueClassName={lucro >= 0 ? 'text-success' : 'text-destructive'}
           />
         )}
       </div>
@@ -98,6 +86,7 @@ export function DashboardPublicados({
         <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <CheckCircle2 className="h-3.5 w-3.5 text-success" /> Saúde dos anúncios
+            <KpiInfoButton infoKey="Saúde dos anúncios" />
           </div>
           <div className="flex items-center justify-between">
             <span>Ativos</span>
@@ -130,6 +119,7 @@ export function DashboardPublicados({
           <div className="mb-2 flex items-center justify-between gap-1.5 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <PackageX className="h-3.5 w-3.5 text-warning" /> Encalhados (sem venda no período)
+              <KpiInfoButton infoKey="Encalhados (sem venda no período)" />
             </span>
             {somenteEncalhados && <span className="font-medium text-warning">• filtrando</span>}
           </div>
@@ -144,6 +134,7 @@ export function DashboardPublicados({
         <div className="rounded-lg border bg-card px-3 py-2.5 text-sm shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110">
           <div className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Trophy className="h-3.5 w-3.5 text-info" /> Top produtos (faturamento)
+            <KpiInfoButton infoKey="Top produtos (faturamento)" />
           </div>
           {resumo.topFat.length === 0 ? (
             <div className="text-xs text-muted-foreground">Sem vendas no período.</div>
