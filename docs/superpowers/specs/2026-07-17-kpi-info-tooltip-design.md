@@ -18,10 +18,17 @@ o painel como um todo — não 1 ícone por linha interna.
 - Painéis multi-métrica em Publicados: "Saúde dos anúncios", "Encalhados" e o painel de
   ranking "Top produtos (faturamento)" (`dashboard-publicados.tsx:144-160` — é só 1 painel de
   ranking hoje, não vários) — 1 ícone por título de painel.
+- Cards "Resumo" nas páginas de detalhe (drill-down): `DetalheFinanceiro.tsx:452-460`
+  ("Líquido total (você recebe)") e `DetalheVendas.tsx:362-378` ("Faturamento total") — mesma
+  família visual dos heros já em escopo, e são o destino do clique dos cards de origem
+  (Financeiro "Líquido das vendas" e Publicados "Faturamento") que já ganham o ícone.
 
 **Fora (decisão explícita, não esquecimento):**
 - Divergência de pipeline de cálculo entre telas (ver seção "Achado colateral" abaixo) — vira
   nota em `TASKS.md`, não é corrigida nesta entrega.
+- As 3 "pills" de status em `Relatorio.tsx:75-86` (publicada(s)/publicando/com erro) — padrão
+  visual e propósito diferentes (badge inline pequeno de contagem de status, não card de
+  label+valor); não tratadas como KPI nesta entrega.
 - Qualquer outra tela (Lotes, Progresso, Revisão, Viabilidade, Canais, Organizações, Usuários,
   Configurações) não tem cards de KPI numérico hoje — nada a fazer ali.
 
@@ -64,7 +71,7 @@ suposição sobre o nome do label.
 ### 3. `KpiCard` (`src/components/ui/kpi-card.tsx`) — estendido
 
 Novas props:
-- `size?: 'default' | 'compact'` — `'compact'` reproduz o visual dos 3 `Kpi` locais
+- `size?: 'default' | 'compact'` — `'compact'` reproduz o visual dos 4 `Kpi` locais
   (`px-3 py-2.5`, `text-lg`) hoje duplicados.
 - `tom?: 'info' | 'success' | 'warning' | 'danger'` — cor do ícone do card, hoje só existente
   nos `Kpi` locais.
@@ -105,7 +112,13 @@ Ambos reaproveitam o mesmo subcomponente de ícone+popover (extraído de dentro 
 peça pequena reusável, `KpiInfoButton`), com o cuidado de `stopPropagation` descrito acima —
 aqui é ainda mais necessário, pois o card inteiro (quando linkado) é um `<Link>`.
 
-### 6. Painéis multi-métrica (Publicados)
+### 6. Cards "Resumo" nas páginas de detalhe
+
+`DetalheFinanceiro.tsx:452-460` e `DetalheVendas.tsx:362-378`: mesmo molde de card-hero
+(gradiente + valor `2xl`), sem `Link` (já são a página de destino, não navegam). Reaproveitam o
+mesmo `KpiInfoButton`, sem necessidade de `stopPropagation` (não há ancestral clicável).
+
+### 7. Painéis multi-métrica (Publicados)
 
 "Saúde dos anúncios", "Encalhados", cada card de ranking: hoje são `div`s soltas, não
 `KpiCard`. Cada uma ganha o mesmo `KpiInfoButton` ao lado do título do painel (não por linha
@@ -125,7 +138,8 @@ interna), buscando a descrição do painel inteiro no dicionário pela chave do 
 Como o requisito é literalmente "todos", um `label`/`infoKey` sem entrada no dicionário faz o
 ícone simplesmente não aparecer — silencioso. Para não regredir isso no futuro sem perceber:
 teste (`vitest`) que varre os componentes que usam `KpiCard`/`KpiInfoButton` nas telas em
-escopo (Dashboard, Publicados, Financeiro, Faturamento/Vendas, Faturamento/Geografia) e falha
+escopo (Dashboard, Publicados, Financeiro, Faturamento/Vendas, Faturamento/Geografia,
+DetalheFinanceiro, DetalheVendas) e falha
 se algum `label`/`infoKey` renderizado não resolver para uma entrada do dicionário. O uso de
 `KpiCard` em `StyleGuide.tsx` (vitrine de componentes, labels de exemplo) fica fora desse teste
 — não é tela de produto.
@@ -163,7 +177,8 @@ nesta entrega (fora do pedido original, mexeria em lógica financeira sem ADR pr
 
 - `pnpm lint` + `pnpm test` (incluindo o teste de cobertura do dicionário).
 - Verificação manual (dark/light) via browser-use: abrir Dashboard, Publicados, Financeiro,
-  Faturamento; clicar em cada ícone "i"; conferir que o popover abre, fecha ao clicar fora, e
+  Faturamento (Vendas + Geografia), DetalheFinanceiro, DetalheVendas; clicar em cada ícone "i";
+  conferir que o popover abre, fecha ao clicar fora, e
   que clicar no ícone **não dispara navegação** nos casos dentro de elemento clicável: Dashboard
   ("Compradores"/"Pedidos"/"Ticket médio"/"Líquido no faturamento", todos com `to`, e os 2
   `HeroVenda`), Publicados ("Faturamento", com `<Link>` externo), Financeiro (hero "Líquido das
