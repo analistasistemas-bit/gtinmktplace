@@ -119,19 +119,6 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
   const errosDestino = montarPendencias(kpis.comProblema, lotes).find((p) => p.chave === 'erro')?.destino ?? '/publicados';
   const devolucoesAbertas = (devolucoesQ.data ?? []).filter((d) => (d.acoes_pendentes?.length ?? 0) > 0).length;
-  // Devoluções de produto (não cancelamentos de compra/venda) dentro da janela do período, para
-  // o discreto do card de Faturamento Bruto. Inclui 'returns' E 'mediations' — uma mediação
-  // (disputa) pode terminar em devolução com reembolso igual a uma claim do tipo 'returns' (ex.:
-  // claim 5531142374, R$ 12,50 estornados), então restringir a 'returns' subcontava devolução
-  // real com dinheiro de volta. Valor = já reembolsado via Mercado Pago (valor_estornado,
-  // ADR-0038); pode ficar em R$ 0,00 enquanto o reembolso ainda não foi processado — não é bug,
-  // reflete o estado real da devolução.
-  const devolucoesPeriodo = useMemo(() => {
-    const lista = (devolucoesQ.data ?? []).filter((d) =>
-      (d.type === 'returns' || d.type === 'mediations')
-      && d.aberto_em && d.aberto_em >= janela.desde && d.aberto_em <= janela.ate);
-    return { qtd: lista.length, valor: lista.reduce((s, d) => s + (d.valor_estornado ?? 0), 0) };
-  }, [devolucoesQ.data, janela]);
   const atencao = montarAtencao({
     aRevisar: kpis.aRevisar,
     comProblema: semStatus ? 0 : kpis.comProblema,
@@ -168,6 +155,15 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
     [vendasRaw.data, custos, aliquotas],
   );
   const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
+  // Devoluções concluídas com reembolso no período, para o discreto do card de Faturamento
+  // Bruto. Critério: pedido com estorno > 0 (dinheiro já confirmado pelo Mercado Pago) — mesma
+  // fonte e mesma janela (date_closed) do card "Estornos" do Financeiro (ADR-0038), não a tabela
+  // ml_devolucoes (claims/mediações do ML), que tem lacunas de sincronização e não distingue
+  // devolução em andamento de concluída sem reembolso.
+  const devolucoesPeriodo = useMemo(() => {
+    const comEstorno = pedidos.filter((p) => p.estorno > 0);
+    return { qtd: comEstorno.length, valor: comEstorno.reduce((s, p) => s + p.estorno, 0) };
+  }, [pedidos]);
   const kpisPedidosAnt = useMemo(
     () => calcularKpisPedidos(agruparPorPedido(
       vendasRawAnt.data ?? [],

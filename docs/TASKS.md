@@ -4,18 +4,28 @@
 
 ## Devoluções no Dashboard + fix do valor sempre "—" (2026-07-19)
 
-- [x] Card "Faturamento bruto" do Dashboard ganhou uma linha discreta com qtd. de devoluções
-  (`type='returns'`) e valor estornado no período, só aparece quando há devolução (sem "0
+- [x] Card "Faturamento bruto" do Dashboard ganha uma linha discreta com qtd. de devoluções
+  concluídas com reembolso e valor estornado no período — só aparece quando há alguma (sem "0
   devoluções" poluindo quando não há).
 - [x] Bug real encontrado durante a implementação: `ml_devolucoes.valor_em_jogo` sempre `null`
   (a API de claims do ML não traz campo monetário) — a coluna "Valor" da aba Faturamento ›
-  Devoluções mostrava "—" para 100% das linhas, sempre, em produção.
-- [x] Fix (confirmado com o Diego, sem tocar banco/ingestão): `buscarDevolucoes`
-  (`src/lib/devolucoes.ts`) passou a juntar com `ml_vendas.estorno` (valor já reembolsado via
-  Mercado Pago, ADR-0038 — mesmo dado do card "Estornos" do Financeiro). Coluna renomeada para
-  "Estornado" na aba Devoluções e no export. Ver nota em `docs/reference/modelo-de-dados.md`.
+  Devoluções mostrava "—" para 100% das linhas, sempre, em produção. Fix: `buscarDevolucoes`
+  (`src/lib/devolucoes.ts`) passou a juntar com `ml_vendas.estorno` (Mercado Pago, ADR-0038).
+  Coluna renomeada para "Estornado" na aba Devoluções e no export.
+- [x] 2ª volta, reportada pelo Diego com print real do ML: contar por `type` da claim (returns/
+  mediations) não bate com a tela do ML — achamos devolução concluída com reembolso classificada
+  como `mediations` (subcontava) e uma devolução real que **nunca sincronizou** em
+  `ml_devolucoes` (lacuna de sincronização, fora de escopo aqui). Decisão final do Diego: contar
+  só devolução **concluída com reembolso confirmado**. Reimplementado no Dashboard usando
+  `pedidos` (já agrupado por pack, mesmo array de "293 pedidos") filtrando `estorno > 0` — mesma
+  fonte/janela (`date_closed`) do card "Estornos" do Financeiro, sem depender de `ml_devolucoes`
+  (evita a lacuna de sync e a ambiguidade de `type`).
+  **Nota de escopo**: janela usa a data de FECHAMENTO DA VENDA, não a data do reembolso (não
+  existe coluna de data do estorno) — uma devolução pode aparecer num mês diferente de quando o
+  dinheiro efetivamente voltou, mesmo critério que "Estornos" do Financeiro já usa.
 - [x] `pnpm lint`/`tsc -b`/`pnpm test` (205 arquivos, 1599 testes) verdes; validado ao vivo via
-  Playwright (login real, Dashboard + aba Devoluções, troca de período).
+  Playwright (login real, Dashboard + aba Devoluções, várias janelas de período) contra print
+  real do Mercado Livre.
 
 ## Redesign dark premium das telas de auth (plano 017, ADR-0080) — 2026-07-19
 
