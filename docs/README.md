@@ -17,7 +17,8 @@ entender e operar o sistema:
 | Quero... | Vá para |
 |---|---|
 | Entender como o sistema funciona ponta a ponta | [explanation/arquitetura.md](explanation/arquitetura.md) |
-| Ver os diagramas (C4, ERD, sequências) | [diagrams/](diagrams/) |
+| Ver os diagramas (C4, ERD, sequências — histórico, pré-E6/E7) | [diagrams/](diagrams/) |
+| Ver os diagramas de arquitetura atuais (8 diagramas Archify: visão geral, multi-tenant, fluxos, TO-BE) | [architecture/](architecture/) |
 | Saber o significado exato de um termo do domínio | [reference/glossario.md](reference/glossario.md) |
 | Consultar o schema do banco (tabelas, RLS, enums) | [reference/modelo-de-dados.md](reference/modelo-de-dados.md) |
 | Consultar as Edge Functions (trigger, verify_jwt, idempotência) | [reference/edge-functions.md](reference/edge-functions.md) |
@@ -47,7 +48,8 @@ docs/
 ├── reference/                     ← schema, edge functions, glossário, permissões ML
 ├── explanation/                   ← arquitetura ponta a ponta
 ├── how-to/                        ← deploy, dev local, operações rotineiras
-├── diagrams/                      ← C4, ERD, sequências
+├── diagrams/                      ← C4, ERD, sequências (histórico, pré-E6/E7)
+├── architecture/                  ← 8 diagramas Archify atuais (visão geral, multi-tenant, fluxos, TO-BE)
 ├── spikes/                        ← investigações pontuais antes de virar ADR/plano
 ├── runbooks/                      ← procedimento de incidente específico
 ├── design-system/                 ← tokens visuais derivados do código

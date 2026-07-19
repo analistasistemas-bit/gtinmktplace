@@ -1,6 +1,6 @@
 ---
 tags: [home, visao-geral]
-atualizado: 2026-07-01
+atualizado: 2026-07-19
 ---
 
 # Visão Geral
@@ -36,7 +36,7 @@ flowchart LR
 - Épicos validados em produção: `E1`, `E1b`, `E2`, `E3`, `E4`
 - Próximo épico de produto: `E5` — conector Shopee (**ainda não implementado**; ver [[Publicação Shopee]])
 - Split de produto em N anúncios (produtos com >100 cores) em produção
-- Multiusuário com permissão de menu em produção (operação compartilhada, sem `org_id` ainda)
+- Multi-tenancy por `org_id` em produção desde o E7 (2026-07-05, [ADR-0027](../04-Decisões/) · [docs/architecture/06-multi-tenant](../../docs/architecture/diagrams/06-multi-tenant/)) — cada organização isola os próprios dados; operação compartilhada (ADR-0047) continua valendo *dentro* de cada organização
 - Módulo Financeiro (caixa, margem, evolução temporal) em produção
 - Fonte sempre atualizada: `docs/project-status.md`
 

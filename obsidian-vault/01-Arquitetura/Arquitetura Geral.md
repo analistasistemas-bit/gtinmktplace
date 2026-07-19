@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura]
-atualizado: 2026-07-01
+atualizado: 2026-07-19
 ---
 
 # Arquitetura Geral
@@ -8,6 +8,11 @@ atualizado: 2026-07-01
 Fonte primária: **[[Graphify]]** (grafo `src/`+`supabase/`, 1747 nós, 4650 arestas, 82
 comunidades) + `docs/explanation/arquitetura.md`. Ver também [[Frontend]], [[Backend]],
 [[Supabase]], [[Banco de Dados]].
+
+> Diagramas visuais atualizados (pós-E6/E7, Archify): `docs/architecture/` — ver especialmente
+> [02-general-architecture](../../docs/architecture/diagrams/02-general-architecture/) e
+> [06-multi-tenant](../../docs/architecture/diagrams/06-multi-tenant/). Os diagramas mermaid
+> abaixo são anteriores ao E6/E7 e não mostram `org_id`/multicanal.
 
 ## Em uma frase
 
@@ -23,7 +28,7 @@ de cada publicação.
    efeito colateral duplicado (claims atômicos, upserts). Ver [[Edge Functions]].
 3. **Assíncrono por fila** — trabalho pesado (IA, publicação no ML) sai do request HTTP e vai
    para o QStash.
-4. **Multi-tenant por `user_id` + RLS** — cada usuário só enxerga os próprios dados. Ver [[Segurança]].
+4. **Multi-tenant por `org_id` + RLS** (E7, 2026-07-05) — cada organização só enxerga os próprios dados; `current_org_id()` é o pivô da RLS. Ver [[Segurança]] e `docs/architecture/diagrams/06-multi-tenant/`.
 5. **Segredos fora do código** — tokens OAuth no Vault; chaves de API em Supabase Secrets.
 6. **Multicanal por abstração** — a lógica de publicação fala com um *conector* de canal, não
    com o ML diretamente. Ver [[Integrações]].

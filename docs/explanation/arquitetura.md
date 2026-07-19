@@ -3,7 +3,8 @@
 > **Tipo:** Explanation (Diátaxis). Visão de alto nível de como o sistema funciona ponta a
 > ponta e por quê. Para fatos pontuais use a [Reference](../reference/); para executar
 > tarefas use os [How-to](../how-to/). Termos em [glossario.md](../reference/glossario.md).
-> Versão visual (C4, ERD, sequências): [diagrams/](../diagrams/).
+> Versão visual: [diagrams/](../diagrams/) (C4, ERD, sequências — histórico, pré-E6/E7) e
+> [architecture/](../architecture/) (8 diagramas Archify atuais, incluindo multi-tenant e TO-BE).
 
 ## Em uma frase
 
