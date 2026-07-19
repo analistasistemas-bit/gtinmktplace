@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PubliAI — Infraestrutura Simplificada",
+    "subtitle": "AS-IS · onde o sistema executa e como é implantado",
+    "output": "diagram.html",
+    "viewBox": [1100, 900]
+  },
+  "components": [
+    { "id": "frontend", "type": "frontend", "label": "Frontend", "sublabel": "Render Static Site", "tag": "deploy: push → build", "pos": [40, 340], "size": [150, 64] },
+    { "id": "edge", "type": "backend", "label": "Edge Functions", "sublabel": "Deno, ~35 funções", "tag": "deploy: CLI", "pos": [300, 332], "size": [160, 80] },
+    { "id": "auth", "type": "security", "label": "Auth", "sublabel": "Supabase (gerenciado)", "pos": [305, 80], "size": [150, 60] },
+    { "id": "postgres", "type": "database", "label": "Postgres", "sublabel": "Supabase (gerenciado)", "tag": "migrations: CLI", "pos": [520, 60], "size": [150, 60] },
+    { "id": "storage", "type": "cloud", "label": "Storage", "sublabel": "Supabase (gerenciado)", "pos": [520, 170], "size": [150, 60] },
+    { "id": "vault", "type": "security", "label": "Vault", "sublabel": "Supabase (gerenciado)", "pos": [130, 170], "size": [150, 60] },
+    { "id": "qstash", "type": "messagebus", "label": "QStash", "sublabel": "Upstash (gerenciado)", "pos": [80, 600], "size": [150, 60] },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "Upstash (gerenciado)", "pos": [280, 600], "size": [150, 60] },
+    { "id": "ml", "type": "external", "label": "Mercado Livre", "sublabel": "serviço externo", "pos": [900, 260], "size": [160, 64] },
+    { "id": "mp", "type": "external", "label": "Mercado Pago", "sublabel": "serviço externo", "pos": [900, 420], "size": [160, 60] },
+    { "id": "openrouter", "type": "external", "label": "OpenRouter", "sublabel": "serviço externo", "pos": [900, 80], "size": [160, 60] },
+    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "serviço externo", "pos": [900, 760], "size": [160, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Supabase (ambiente único)", "wraps": ["auth", "postgres", "storage", "vault"] },
+    { "kind": "region", "label": "Upstash (ambiente único)", "wraps": ["qstash", "redis"] }
+  ],
+  "connections": [
+    { "from": "frontend", "to": "edge", "variant": "emphasis" },
+    { "from": "frontend", "to": "auth" },
+    { "from": "edge", "to": "postgres" },
+    { "from": "edge", "to": "storage" },
+    { "from": "edge", "to": "vault", "variant": "security" },
+    { "from": "edge", "to": "qstash", "variant": "dashed" },
+    { "from": "qstash", "to": "edge", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom" },
+    { "from": "edge", "to": "redis" },
+    { "from": "edge", "to": "ml", "variant": "emphasis" },
+    { "from": "ml", "to": "edge", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "from": "edge", "to": "openrouter" },
+    { "from": "edge", "to": "mp", "variant": "dashed" },
+    { "from": "edge", "to": "telegram", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Deploy", "items": ["Frontend: Render Static Site, deploy automático no push (branch main)", "Edge Functions: supabase functions deploy (CLI) — nunca painel", "Migrations: supabase migration new + db push (ADR-0043)"] },
+    { "dot": "amber", "title": "Observabilidade", "items": ["Sem stack dedicada — logs via dashboards Supabase/Render", "Alertas operacionais via Telegram (não é observabilidade de infra)"] },
+    { "dot": "rose", "title": "Ambientes", "items": ["1 ambiente de produção — sem staging automatizado", "Dev local: Supabase local (db reset) + .env.local"] }
+  ]
+}

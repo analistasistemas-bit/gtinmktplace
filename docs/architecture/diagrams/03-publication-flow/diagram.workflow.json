@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "PubliAI — Fluxo de Publicação de Anúncio",
+    "subtitle": "AS-IS · planilha → revisão humana → publicação (ML + canais extras)",
+    "output": "diagram.html"
+  },
+  "lanes": [
+    { "id": "op", "label": "Operador" },
+    { "id": "ingest_lane", "label": "Ingestão" },
+    { "id": "ia_lane", "label": "Enriquecimento IA" },
+    { "id": "pub", "label": "Publicação" },
+    { "id": "canais", "label": "Canais extras (E6)" }
+  ],
+  "phases": [
+    { "id": "ingestao", "label": "Ingestão & Enriquecimento", "fromCol": 1, "toCol": 2 },
+    { "id": "publicacao", "label": "Revisão & Publicação", "fromCol": 3, "toCol": 5 }
+  ],
+  "mainPath": ["upload", "ingest", "ia", "revisao", "fanout", "ml_publish"],
+  "nodes": [
+    { "id": "upload", "lane": "op", "col": 0, "type": "frontend", "label": "Upload", "sublabel": "planilha + fotos" },
+    { "id": "ingest", "lane": "ingest_lane", "col": 1, "type": "backend", "label": "Ingestão", "sublabel": "ingest-lote" },
+    { "id": "ia", "lane": "ia_lane", "col": 2, "type": "backend", "label": "Enriquecimento", "sublabel": "process-familia", "tag": "QStash worker" },
+    { "id": "revisao", "lane": "op", "col": 3, "type": "frontend", "label": "Revisão humana", "sublabel": "operador aprova", "tag": "obrigatória" },
+    { "id": "fanout", "lane": "pub", "col": 4, "type": "backend", "label": "Publicar", "sublabel": "publicar-familias", "tag": "fan-out por canal" },
+    { "id": "ml_publish", "lane": "pub", "col": 5, "type": "backend", "label": "Mercado Livre", "sublabel": "publish/update + catálogo" },
+    { "id": "canal_extra", "lane": "canais", "col": 4, "type": "backend", "label": "Canal extra", "sublabel": "publicar-anuncio (worker genérico)", "tag": "opcional" }
+  ],
+  "edges": [
+    { "from": "upload", "to": "ingest" },
+    { "from": "ingest", "to": "ia", "label": "QStash", "variant": "dashed" },
+    { "from": "ia", "to": "revisao" },
+    { "from": "revisao", "to": "fanout", "label": "aprovar", "variant": "emphasis" },
+    { "from": "fanout", "to": "ml_publish", "label": "canal = ML", "labelAt": [563, 545] },
+    { "from": "fanout", "to": "canal_extra", "label": "canal ≠ ML", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [500, 539] }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "Regras", "items": ["Revisão humana obrigatória — nada é publicado sem aprovação do operador", "Workers idempotentes — claim atômico, seguro para retry do QStash"] },
+    { "dot": "cyan", "title": "Canais extras (E6)", "items": ["Falha em 1 canal nunca afeta o Mercado Livre (isolamento D-E6.2, ADR-0061)", "Hoje só Mercado Livre está ativo; Shopee é o próximo (E5)"] }
+  ]
+}

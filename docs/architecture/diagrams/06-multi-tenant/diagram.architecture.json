@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PubliAI — Arquitetura Multi-Tenant",
+    "subtitle": "AS-IS · shared DB + shared schema, isolamento por org_id (ADR-0027, E7)",
+    "output": "diagram.html",
+    "viewBox": [880, 480]
+  },
+  "components": [
+    { "id": "org_a", "type": "external", "label": "Organização A", "sublabel": "usuários autenticados", "pos": [40, 60], "size": [170, 64] },
+    { "id": "org_b", "type": "external", "label": "Organização B", "sublabel": "usuários autenticados", "pos": [40, 300], "size": [170, 64] },
+    { "id": "workers", "type": "backend", "label": "Edge Functions", "sublabel": "workers, service_role", "tag": "contorna RLS", "pos": [330, 180], "size": [180, 76] },
+    { "id": "postgres", "type": "database", "label": "Postgres compartilhado", "sublabel": "shared DB + shared schema", "tag": "RLS: org_id = current_org_id()", "pos": [630, 40], "size": [200, 76] },
+    { "id": "mkt_conn", "type": "security", "label": "marketplace_connections", "sublabel": "credencial por (org, canal)", "pos": [630, 200], "size": [200, 64] },
+    { "id": "storage", "type": "cloud", "label": "Storage", "sublabel": "bucket único, path por org", "pos": [630, 340], "size": [200, 64] }
+  ],
+  "boundaries": [
+    { "kind": "security-group", "label": "Tenant A", "wraps": ["org_a"] },
+    { "kind": "security-group", "label": "Tenant B", "wraps": ["org_b"] }
+  ],
+  "connections": [
+    { "from": "org_a", "to": "postgres", "label": "leitura direta (RLS)", "variant": "security", "labelAt": [420, 176] },
+    { "from": "org_b", "to": "postgres", "label": "leitura direta (RLS)", "variant": "security", "labelAt": [420, 270] },
+    { "from": "org_a", "to": "workers", "label": "ações (upload, publicar…)" },
+    { "from": "org_b", "to": "workers", "label": "ações (upload, publicar…)" },
+    { "from": "workers", "to": "postgres", "label": "escreve org_id explícito", "variant": "emphasis" },
+    { "from": "workers", "to": "mkt_conn", "label": "resolve credencial da org", "labelAt": [570, 278] },
+    { "from": "workers", "to": "storage", "label": "path por org", "labelAt": [570, 320] }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "Isolamento", "items": ["1 organização por usuário (profiles.org_id NOT NULL)", "RLS não protege service_role — defesa real é org_id NOT NULL (falha alto) + suíte de isolamento cross-tenant (scripts/verificar-isolamento-tenant.ts)"] },
+    { "dot": "amber", "title": "Limitação conhecida", "items": ["Sem organization_members (m2m) — YAGNI enquanto for 1 admin por empresa (ADR-0027 D-E7.1)", "current_org_id() faz 1 lookup por statement (cacheado no initplan) — sem JWT claim ainda"] }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PubliAI — Arquitetura Futura Simplificada",
+    "subtitle": "TO-BE · 5 melhorias propostas, proporcionais e condicionais",
+    "output": "diagram.html",
+    "viewBox": [820, 460]
+  },
+  "components": [
+    { "id": "auth", "type": "security", "label": "Auth", "sublabel": "Supabase Auth (JWT)", "pos": [40, 60], "size": [150, 60] },
+    { "id": "workers", "type": "backend", "label": "Edge Functions", "sublabel": "workers, service_role", "pos": [300, 180], "size": [180, 76] },
+    { "id": "postgres", "type": "database", "label": "Postgres", "sublabel": "RLS por org_id", "pos": [580, 60], "size": [160, 70] },
+    { "id": "mkt_conn", "type": "security", "label": "marketplace_connections", "sublabel": "credencial por (org, canal)", "pos": [580, 220], "size": [200, 60] },
+    { "id": "audit_log", "type": "database", "label": "audit_log", "sublabel": "trilha de auditoria por org", "tag": "PROPOSTO · 1", "pos": [580, 340], "size": [200, 60] },
+    { "id": "jwt_hook", "type": "security", "label": "custom_access_token_hook", "sublabel": "org_id embutido no JWT", "tag": "PROPOSTO · 2 · condicional", "pos": [20, 220], "size": [190, 60] },
+    { "id": "worker_unificado", "type": "backend", "label": "Worker único de publicação", "sublabel": "unifica ML + genérico", "tag": "PROPOSTO · 3 · pós-E5", "pos": [280, 340], "size": [200, 60] }
+  ],
+  "connections": [
+    { "from": "auth", "to": "workers" },
+    { "from": "workers", "to": "postgres" },
+    { "from": "workers", "to": "mkt_conn" },
+    { "from": "postgres", "to": "audit_log", "label": "1. trilha de auditoria (LGPD)", "variant": "dashed", "labelAt": [660, 294] },
+    { "from": "auth", "to": "jwt_hook", "label": "2. org_id no JWT", "variant": "dashed", "labelAt": [115, 134] },
+    { "from": "workers", "to": "worker_unificado", "label": "3. unifica publicação", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "5 melhorias propostas (máx. 20% do esforço)", "items": ["1. audit_log por org — LGPD, antes de comercializar (E8.6)", "2. custom_access_token_hook — só se medição mostrar gargalo em current_org_id()", "3. Worker único de publicação — unifica ML ao genérico, pós-E5", "4. Drop ml_credentials + RPCs legadas — Task 17, condição de 1 semana estável já cumprida", "5. Incluir canal no select de buscarVendas — quando houver 2º canal com vendas reais"] }
+  ]
+}

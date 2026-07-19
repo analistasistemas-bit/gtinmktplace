@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "PubliAI — Fluxo de Sincronização com Marketplaces",
+    "subtitle": "AS-IS · webhooks, dedup, reconciliação e alertas (Mercado Livre)",
+    "output": "diagram.html"
+  },
+  "lanes": [
+    { "id": "mkt", "label": "Mercado Livre" },
+    { "id": "webhook_lane", "label": "Recepção" },
+    { "id": "dedup_lane", "label": "Dedup" },
+    { "id": "worker_lane", "label": "Worker" },
+    { "id": "estado_lane", "label": "Estado & Alertas" },
+    { "id": "sched", "label": "Reconciliação & Monitoramento" }
+  ],
+  "mainPath": ["evento", "recv", "dedup", "worker", "banco", "alerta"],
+  "nodes": [
+    { "id": "evento", "lane": "mkt", "col": 0, "type": "external", "label": "Evento ML", "sublabel": "webhook do evento" },
+    { "id": "recv", "lane": "webhook_lane", "col": 1, "type": "backend", "label": "ml-webhook", "sublabel": "ACK + valida assinatura", "tag": "verify_jwt=false" },
+    { "id": "dedup", "lane": "dedup_lane", "col": 2, "type": "database", "label": "Dedup", "sublabel": "ml_webhook_eventos" },
+    { "id": "worker", "lane": "worker_lane", "col": 3, "type": "backend", "label": "Worker", "sublabel": "rebusca autenticado" },
+    { "id": "banco", "lane": "estado_lane", "col": 4, "type": "database", "label": "Atualiza banco", "sublabel": "vendas/perguntas/devoluções" },
+    { "id": "alerta", "lane": "estado_lane", "col": 5, "type": "external", "label": "Telegram", "sublabel": "alerta por categoria" },
+    { "id": "reconciliacao", "lane": "sched", "col": 2, "type": "backend", "label": "Reconciliação", "sublabel": "reconciliar-faturamento", "tag": "schedule horário" },
+    { "id": "monitor", "lane": "sched", "col": 4, "type": "backend", "label": "Monitoramento", "sublabel": "monitorar-moderados", "tag": "varredura periódica" }
+  ],
+  "edges": [
+    { "from": "evento", "to": "recv" },
+    { "from": "recv", "to": "dedup", "label": "valida assinatura", "labelAt": [260, 291] },
+    { "from": "dedup", "to": "worker", "label": "novo? processa" },
+    { "from": "worker", "to": "banco", "label": "upsert" },
+    { "from": "banco", "to": "alerta", "label": "dispara categoria", "variant": "dashed", "labelAt": [563, 655] },
+    { "from": "reconciliacao", "to": "banco", "label": "corrige divergência", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "from": "monitor", "to": "alerta", "label": "moderado", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelAt": [660, 690] }
+  ],
+  "cards": [
+    { "dot": "amber", "title": "Idempotência", "items": ["Dedup por (topic, resource) evita reprocessar o mesmo evento", "Retry do QStash é seguro — claim atômico"] },
+    { "dot": "cyan", "title": "3 fontes de sincronização", "items": ["Webhook (tempo real) + reconciliação horária (corrige divergência) + monitoramento periódico de moderação"] },
+    { "dot": "violet", "title": "Eventos cobertos", "items": ["pedido, pergunta, devolução e moderação — todos chegam por webhook do Mercado Livre"] }
+  ]
+}

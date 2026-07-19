@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PubliAI — Modelo de Dados Simplificado",
+    "subtitle": "AS-IS · entidades centrais (todas com org_id)",
+    "output": "diagram.html",
+    "viewBox": [760, 620]
+  },
+  "components": [
+    { "id": "mkt_conn", "type": "security", "label": "marketplace_connections", "sublabel": "credencial por canal", "pos": [240, 60], "size": [160, 60] },
+    { "id": "organizations", "type": "database", "label": "organizations", "sublabel": "tenant", "pos": [240, 180], "size": [160, 60] },
+    { "id": "profiles", "type": "database", "label": "profiles", "sublabel": "usuário (1 org)", "pos": [480, 180], "size": [160, 60] },
+    { "id": "lotes", "type": "database", "label": "lotes", "sublabel": "upload", "pos": [40, 340], "size": [150, 60] },
+    { "id": "familias", "type": "database", "label": "familias", "sublabel": "1 PAI = 1 anúncio (ML)", "pos": [240, 340], "size": [160, 60] },
+    { "id": "variacoes", "type": "database", "label": "variacoes", "sublabel": "1 SKU/cor", "pos": [480, 340], "size": [160, 60] },
+    { "id": "anuncios_externos", "type": "database", "label": "anuncios_externos", "sublabel": "espelho multicanal", "pos": [235, 460], "size": [170, 60] },
+    { "id": "ml_vendas", "type": "database", "label": "ml_vendas", "sublabel": "1 pedido", "pos": [480, 460], "size": [160, 60] }
+  ],
+  "connections": [
+    { "from": "organizations", "to": "mkt_conn", "label": "1:N (por canal)" },
+    { "from": "organizations", "to": "profiles", "label": "1:N" },
+    { "from": "lotes", "to": "familias", "label": "1:N" },
+    { "from": "familias", "to": "variacoes", "label": "1:N" },
+    { "from": "familias", "to": "anuncios_externos", "label": "espelha (por canal)", "variant": "dashed", "labelAt": [320, 414] },
+    { "from": "variacoes", "to": "ml_vendas", "label": "match GTIN", "variant": "dashed", "labelAt": [560, 414] }
+  ],
+  "cards": [
+    { "dot": "rose", "title": "org_id em tudo", "items": ["As 8 tabelas têm org_id NOT NULL (exceto ml_webhook_eventos)", "RLS: org_id = current_org_id() — ver diagrama 06"] },
+    { "dot": "amber", "title": "Simplificado", "items": ["Não é um ERD completo — omite colunas e tabelas técnicas (ml_credentials deprecada, configuracoes, etc.)"] }
+  ]
+}

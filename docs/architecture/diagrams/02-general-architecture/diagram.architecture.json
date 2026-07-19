@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PubliAI — Arquitetura Geral",
+    "subtitle": "AS-IS · contêineres e responsabilidades (E6/E7 em produção)",
+    "output": "diagram.html",
+    "viewBox": [1100, 900]
+  },
+  "components": [
+    { "id": "frontend", "type": "frontend", "label": "Frontend SPA", "sublabel": "React+Vite, Render Static Site", "pos": [40, 340], "size": [150, 64] },
+    { "id": "edge", "type": "backend", "label": "Edge Functions", "sublabel": "Deno, ~35 funções", "pos": [300, 332], "size": [160, 80] },
+    { "id": "auth", "type": "security", "label": "Auth", "sublabel": "Supabase Auth (JWT)", "pos": [305, 80], "size": [150, 60] },
+    { "id": "postgres", "type": "database", "label": "Postgres", "sublabel": "RLS por org_id", "pos": [520, 60], "size": [150, 60] },
+    { "id": "storage", "type": "cloud", "label": "Storage", "sublabel": "bucket imagens", "pos": [520, 170], "size": [150, 60] },
+    { "id": "vault", "type": "security", "label": "Vault", "sublabel": "tokens/segredos", "pos": [130, 170], "size": [150, 60] },
+    { "id": "qstash", "type": "messagebus", "label": "QStash", "sublabel": "fila assíncrona", "pos": [80, 600], "size": [150, 60] },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "cache + locks", "pos": [280, 600], "size": [150, 60] },
+    { "id": "ml", "type": "external", "label": "Mercado Livre", "sublabel": "API", "pos": [900, 260], "size": [160, 64] },
+    { "id": "mp", "type": "external", "label": "Mercado Pago", "sublabel": "API", "pos": [900, 420], "size": [160, 60] },
+    { "id": "openrouter", "type": "external", "label": "OpenRouter", "sublabel": "IA", "pos": [900, 80], "size": [160, 60] },
+    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "alertas", "pos": [900, 760], "size": [160, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Supabase", "wraps": ["auth", "postgres", "storage", "vault"] },
+    { "kind": "region", "label": "Upstash", "wraps": ["qstash", "redis"] }
+  ],
+  "connections": [
+    { "from": "frontend", "to": "edge", "label": "JWT + chamadas API", "variant": "emphasis" },
+    { "from": "frontend", "to": "auth", "label": "login", "labelAt": [248, 244] },
+    { "from": "edge", "to": "postgres", "label": "SQL — RLS org_id", "labelAt": [490, 244] },
+    { "from": "edge", "to": "storage", "label": "upload/download imagens" },
+    { "from": "edge", "to": "vault", "label": "tokens OAuth", "variant": "security" },
+    { "from": "edge", "to": "qstash", "label": "enfileira jobs", "variant": "dashed" },
+    { "from": "qstash", "to": "edge", "label": "dispara workers", "variant": "dashed", "fromSide": "bottom", "toSide": "bottom" },
+    { "from": "edge", "to": "redis", "label": "cache + locks" },
+    { "from": "edge", "to": "ml", "label": "OAuth, itens, webhooks", "variant": "emphasis", "labelAt": [680, 300] },
+    { "from": "ml", "to": "edge", "label": "webhooks", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [680, 344] },
+    { "from": "edge", "to": "openrouter", "label": "copy + vision", "labelAt": [680, 244] },
+    { "from": "edge", "to": "mp", "label": "liberações", "variant": "dashed" },
+    { "from": "edge", "to": "telegram", "label": "alertas", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Princípios", "items": ["Workers idempotentes — claim atômico, seguro para retry do QStash", "Revisão humana obrigatória antes de publicar", "Segredos fora do código — tokens no Vault"] }
+  ]
+}

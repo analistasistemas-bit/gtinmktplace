@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PubliAI — Visão Geral da Plataforma",
+    "subtitle": "AS-IS · SaaS multi-tenant de publicação em marketplaces",
+    "output": "diagram.html",
+    "viewBox": [1000, 568]
+  },
+  "components": [
+    { "id": "operadores", "type": "external", "label": "Operadores", "sublabel": "usuários da empresa cliente", "pos": [60, 260], "size": [150, 64] },
+    { "id": "publiai", "type": "backend", "label": "PubliAI", "sublabel": "SaaS multi-tenant", "pos": [380, 252], "size": [160, 80] },
+    { "id": "ml", "type": "external", "label": "Mercado Livre", "sublabel": "marketplace ativo", "pos": [720, 120], "size": [160, 64] },
+    { "id": "outros_mkt", "type": "external", "label": "Outros marketplaces", "sublabel": "vitrine \"em breve\"", "pos": [720, 260], "size": [180, 64] },
+    { "id": "openrouter", "type": "external", "label": "OpenRouter", "sublabel": "IA — copy e visão", "pos": [380, 60], "size": [160, 60] },
+    { "id": "mp", "type": "external", "label": "Mercado Pago", "sublabel": "liberações financeiras", "pos": [720, 400], "size": [160, 60] },
+    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "alertas operacionais", "pos": [380, 440], "size": [160, 60] }
+  ],
+  "boundaries": [
+    { "kind": "security-group", "label": "Organização (tenant) — 1 de N empresas clientes", "wraps": ["operadores"] }
+  ],
+  "connections": [
+    { "from": "operadores", "to": "publiai", "label": "upload planilha/fotos, revisão, aprovação", "variant": "emphasis", "labelAt": [295, 220] },
+    { "from": "publiai", "to": "ml", "label": "OAuth, publicar, ler status/vendas", "variant": "emphasis" },
+    { "from": "ml", "to": "publiai", "label": "webhooks: pedido, pergunta, devolução, moderação", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [860, 198] },
+    { "from": "publiai", "to": "outros_mkt", "label": "vitrine — ainda não conectado", "variant": "dashed" },
+    { "from": "publiai", "to": "openrouter", "label": "copy + resolução de cor/atributos" },
+    { "from": "publiai", "to": "mp", "label": "leitura de vendas liberadas", "variant": "dashed" },
+    { "from": "publiai", "to": "telegram", "label": "alertas", "variant": "dashed", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "O que é", "items": ["Transforma planilhas de produtos em anúncios publicados em marketplaces", "IA como copywriter + resolução de cor/atributos", "Revisão humana obrigatória antes de publicar"] },
+    { "dot": "amber", "title": "Multi-tenant", "items": ["Cada empresa (organização) só enxerga os próprios dados", "Hoje: 1 organização em produção (Avil) — arquitetura já suporta N"] },
+    { "dot": "violet", "title": "Vitrine \"em breve\"", "items": ["Shopee, Amazon, Magalu e Casas Bahia aparecem no menu, mas sem conector implementado", "Próximo a conectar: Shopee (épico E5)"] }
+  ]
+}
