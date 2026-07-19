@@ -98,6 +98,16 @@
 - `obsidian-vault/` (04-Decisões, 06-Roadmap) e `docs/README.md` sincronizados de volta com
   os 69 ADRs e o estado real de E6/E7 em produção, após ficarem desatualizados por semanas
 
+## 2026-07-13 a 2026-07-19
+
+- Documentação visual de arquitetura via Archify entrou em `docs/architecture/`: 8 diagramas
+  fixos (visão geral, arquitetura geral, fluxo de publicação, sync de marketplace, modelo de
+  dados simplificado, multi-tenant, infraestrutura, TO-BE), gerados a partir das fontes de
+  conhecimento existentes (vault/docs/Graphify), com revisão de overflow de texto e uma revisão
+  final independente via Opus antes da entrega
+- `obsidian-vault/` (Visão Geral, Arquitetura Geral) corrigido de uma nota desatualizada que
+  ainda dizia "sem `org_id`" — multi-tenancy está em produção desde o E7 (2026-07-05)
+
 ## Onde aprofundar
 
 - Estado atual: [project-status.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-status.md)

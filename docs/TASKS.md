@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Documentação de arquitetura visual (Archify) — 2026-07-19
+
+- [x] 8 diagramas Archify criados em `docs/architecture/diagrams/` a partir das fontes de
+  conhecimento existentes (obsidian-vault → docs/ → Graphify → config/infra), sem
+  engenharia reversa de código: Platform Overview, General Architecture, Publication Flow,
+  Marketplace Sync, Simplified Data Model, Multi-Tenant, Infrastructure e um TO-BE simplificado
+  (≤5 melhorias). Cada diagrama tem `diagram.html` (fonte canônica) + SVG/PNG exportados +
+  README próprio.
+- [x] Revisão de overflow de texto (relatada pelo Diego em screenshot) corrigida em todos os
+  diagramas afetados — validado por script próprio de detecção de overflow, inspeção visual
+  e revisão independente via modelo Opus antes da entrega.
+- [x] Merge → main → deploy (commits `6d953c6`/`bf76396`). `docs/README.md` e
+  `docs/explanation/arquitetura.md` cruzam para os novos diagramas; `obsidian-vault/00-Home/Visão
+  Geral.md` e `obsidian-vault/01-Arquitetura/Arquitetura Geral.md` corrigidos (nota desatualizada
+  de multi-tenancy pré-E7) e cruzados também.
+- [ ] Graphify (`graphify-out/graph.json`) ainda não reindexa esse conteúdo novo — `--update`
+  bateu no shrink-guard (net negativo por reextração mais conservadora de poucos arquivos já
+  indexados); rebuild completo (`--force`) pendente, a ser rodado quando o custo fizer sentido.
+
 ## Fix: semáforo da variação ignorava imposto por origem (lote 35) — 2026-07-18
 
 - [x] Diego reportou: no card "Análise para publicação", o badge do topo mostrava "Abaixo do

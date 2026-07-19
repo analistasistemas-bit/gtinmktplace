@@ -12,7 +12,8 @@ comunidades) + `docs/explanation/arquitetura.md`. Ver também [[Frontend]], [[Ba
 > Diagramas visuais atualizados (pós-E6/E7, Archify): `docs/architecture/` — ver especialmente
 > [02-general-architecture](../../docs/architecture/diagrams/02-general-architecture/) e
 > [06-multi-tenant](../../docs/architecture/diagrams/06-multi-tenant/). Os diagramas mermaid
-> abaixo são anteriores ao E6/E7 e não mostram `org_id`/multicanal.
+> abaixo já citam `org_id`/multicanal, mas sem o detalhe visual (boundary por tenant, fan-out
+> completo) que só os diagramas Archify mostram.
 
 ## Em uma frase
 
@@ -43,7 +44,7 @@ flowchart TB
     subgraph Supabase
         AUTH[Auth]
         EF[Edge Functions<br/>Deno, ~35 funções]
-        PG[(Postgres<br/>RLS)]
+        PG[(Postgres<br/>RLS por org_id)]
         ST[Storage<br/>bucket imagens]
         VLT[Vault<br/>tokens OAuth]
     end
@@ -81,7 +82,7 @@ flowchart LR
     I --> Q["3. Fila<br/>QStash"]
     Q --> E["4. Enriquecimento<br/>process-familia<br/>cor · copy · categoria · preço"]
     E --> R["5. Revisão humana<br/>tela Revisão"]
-    R --> P["6. Publicação<br/>publish/update-familia-ml"]
+    R --> P["6. Publicação<br/>fan-out multicanal (anuncios_externos)<br/>publish/update-familia-ml"]
     P --> C["7. Catálogo<br/>vincular-catalogo (+10min)"]
 ```
 
