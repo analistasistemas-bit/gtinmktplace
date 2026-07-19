@@ -1,5 +1,6 @@
 import type { Lote } from '@/lib/tipos-dominio';
-import type { PublicadoItem, StatusPublicado } from '@/lib/publicados';
+import type { PublicadoItem } from '@/lib/publicados';
+import { STATUS_PROBLEMA } from '@/lib/publicados';
 import type { StatusPublicadoItem } from '@/lib/queries';
 
 export interface KpisDashboard {
@@ -10,12 +11,6 @@ export interface KpisDashboard {
   aRevisar: number;
   variacoesPublicadas: number;
 }
-
-const STATUS_PROBLEMA: ReadonlySet<StatusPublicado> = new Set<StatusPublicado>([
-  'moderado',
-  'inativo',
-  'pausado',
-]);
 
 export function calcularKpisDashboard(
   lotes: Lote[],

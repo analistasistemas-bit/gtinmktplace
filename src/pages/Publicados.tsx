@@ -710,7 +710,7 @@ export default function Publicados() {
             <Select
               value={filtro.status ?? '__todos'}
               onValueChange={(v) =>
-                setFiltro((f) => ({ ...f, status: v === '__todos' ? null : (v as StatusPublicado) }))
+                setFiltro((f) => ({ ...f, status: v === '__todos' ? null : (v as StatusPublicado | 'problema') }))
               }
             >
               <SelectTrigger className="h-8 w-[150px] text-sm">
@@ -724,6 +724,7 @@ export default function Publicados() {
                 <SelectItem value="moderado">Moderado</SelectItem>
                 <SelectItem value="inativo">Inativo</SelectItem>
                 <SelectItem value="indisponivel">Indisponível</SelectItem>
+                <SelectItem value="problema">Com problema</SelectItem>
               </SelectContent>
             </Select>
 

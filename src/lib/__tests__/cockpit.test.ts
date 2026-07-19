@@ -63,11 +63,13 @@ describe('calendarioCaixa', () => {
 
 describe('montarAtencao', () => {
   it('inclui só o que é > 0, com singular/plural e destinos', () => {
-    const a = montarAtencao({ aRevisar: 1, comProblema: 0, erros: 2, errosDestino: '/relatorio/9', perguntas: 0, devolucoes: 3 });
+    const a = montarAtencao({ aRevisar: 1, comProblema: 1, erros: 2, errosDestino: '/relatorio/9', perguntas: 1, devolucoes: 3 });
     expect(a).toEqual([
       { chave: 'revisar', label: '1 lote a revisar', destino: '/revisao' },
+      { chave: 'problema', label: '1 anúncio com problema', destino: '/publicados?status=problema' },
       { chave: 'erros', label: '2 erros de publicação', destino: '/relatorio/9' },
-      { chave: 'devolucoes', label: '3 devoluções abertas', destino: '/faturamento' },
+      { chave: 'perguntas', label: '1 pergunta sem resposta', destino: '/faturamento?aba=perguntas' },
+      { chave: 'devolucoes', label: '3 devoluções abertas', destino: '/faturamento?aba=devolucoes' },
     ]);
   });
   it('vazio quando tudo zerado', () => {

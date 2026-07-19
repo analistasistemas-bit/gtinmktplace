@@ -50,7 +50,7 @@ export function UserMenu() {
         {pendentes > 0 && (
           <>
             <DropdownMenuItem asChild>
-              <Link to="/faturamento">
+              <Link to={(perguntas ?? 0) > 0 ? '/faturamento?aba=perguntas' : '/faturamento?aba=mensagens'}>
                 <Bell className="mr-2 h-4 w-4 text-warning" />
                 {pendentes} aguardando resposta
               </Link>

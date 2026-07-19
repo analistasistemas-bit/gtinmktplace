@@ -80,12 +80,12 @@ export function montarAtencao(input: {
   if (input.aRevisar > 0)
     out.push({ chave: 'revisar', label: plural(input.aRevisar, 'lote a revisar', 'lotes a revisar'), destino: '/revisao' });
   if (input.comProblema > 0)
-    out.push({ chave: 'problema', label: plural(input.comProblema, 'anúncio com problema', 'anúncios com problema'), destino: '/publicados' });
+    out.push({ chave: 'problema', label: plural(input.comProblema, 'anúncio com problema', 'anúncios com problema'), destino: '/publicados?status=problema' });
   if (input.erros > 0)
     out.push({ chave: 'erros', label: plural(input.erros, 'erro de publicação', 'erros de publicação'), destino: input.errosDestino });
   if (input.perguntas > 0)
-    out.push({ chave: 'perguntas', label: plural(input.perguntas, 'pergunta sem resposta', 'perguntas sem resposta'), destino: '/faturamento' });
+    out.push({ chave: 'perguntas', label: plural(input.perguntas, 'pergunta sem resposta', 'perguntas sem resposta'), destino: '/faturamento?aba=perguntas' });
   if (input.devolucoes > 0)
-    out.push({ chave: 'devolucoes', label: plural(input.devolucoes, 'devolução aberta', 'devoluções abertas'), destino: '/faturamento' });
+    out.push({ chave: 'devolucoes', label: plural(input.devolucoes, 'devolução aberta', 'devoluções abertas'), destino: '/faturamento?aba=devolucoes' });
   return out;
 }

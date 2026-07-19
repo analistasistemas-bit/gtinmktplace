@@ -4,6 +4,7 @@ import type { FiltroPublicados } from '@/lib/publicados';
 const STATUS_LABEL: Record<string, string> = {
   ativo: 'Ativo', pausado: 'Pausado', encerrado: 'Encerrado',
   moderado: 'Moderado', inativo: 'Inativo', indisponivel: 'Indisponível',
+  problema: 'Com problema',
 };
 
 export type ChaveFiltro = 'busca' | 'fornecedor' | 'status' | 'tipo';

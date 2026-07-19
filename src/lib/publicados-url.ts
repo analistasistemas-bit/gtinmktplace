@@ -11,6 +11,7 @@ export interface EstadoPublicados {
 }
 
 const STATUSES: StatusPublicado[] = ['ativo', 'pausado', 'encerrado', 'moderado', 'inativo', 'indisponivel'];
+const STATUS_PARAM_VALIDOS: string[] = [...STATUSES, 'problema'];
 const COLUNAS: ColunaOrdenavel[] = [
   'titulo', 'fornecedor', 'tipo', 'precoPublicacao', 'estoque', 'precoAtual',
   'unidadesVendidas', 'valorVendido', 'status', 'publicadoEm',
@@ -41,7 +42,7 @@ export function paramsParaEstado(p: URLSearchParams): EstadoPublicados {
   const filtro: FiltroPublicados = {
     busca: p.get('q') ?? undefined,
     fornecedor: p.get('fornecedor') ?? null,
-    status: status && (STATUSES as string[]).includes(status) ? (status as StatusPublicado) : null,
+    status: status && STATUS_PARAM_VALIDOS.includes(status) ? (status as StatusPublicado | 'problema') : null,
     // Tipo agora é o rótulo exibido (categoria real do ML) — texto livre, como fornecedor.
     tipo: p.get('tipo') || null,
   };

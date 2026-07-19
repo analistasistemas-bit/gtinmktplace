@@ -101,9 +101,17 @@ export function rotuloTipo(item: Pick<PublicadoItem, 'categoria' | 'tipo'>): str
   return item.categoria ?? nomeTipo(item.tipo);
 }
 
+/** Status que compõem o "comProblema" do Dashboard/cockpit — pendências acionáveis do anúncio. */
+export const STATUS_PROBLEMA: ReadonlySet<StatusPublicado> = new Set<StatusPublicado>([
+  'moderado',
+  'inativo',
+  'pausado',
+]);
+
 export interface FiltroPublicados {
   fornecedor?: string | null;
-  status?: StatusPublicado | null;
+  /** 'problema' é um filtro virtual: qualquer status em STATUS_PROBLEMA (não é um StatusPublicado real). */
+  status?: StatusPublicado | 'problema' | null;
   /** Rótulo exibido de tipo (categoria real do ML, ou o rótulo grosso como "Outro"). */
   tipo?: string | null;
   busca?: string;
@@ -125,7 +133,8 @@ export function filtrarPublicados(
 
   return itens.filter((i) => {
     if (f.fornecedor && i.fornecedor !== f.fornecedor) return false;
-    if (f.status && i.status !== f.status) return false;
+    if (f.status === 'problema') { if (!i.status || !STATUS_PROBLEMA.has(i.status)) return false; }
+    else if (f.status && i.status !== f.status) return false;
     if (f.tipo && rotuloTipo(i) !== f.tipo) return false;
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
 
