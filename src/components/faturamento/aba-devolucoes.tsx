@@ -162,7 +162,9 @@ export function AbaDevolucoes() {
         <TableBody>
           {lista.map((d) => {
             const aberto = d.status === 'opened';
-            const urlClaim = `https://www.mercadolivre.com.br/vendas/reclamacoes/vendedor/${d.claim_id}`;
+            const urlClaim = d.type === 'returns'
+              ? 'https://www.mercadolivre.com.br/post-purchase/post-sales?main.filter=returns&temporal.filter=in-process'
+              : `https://www.mercadolivre.com.br/vendas/reclamacoes/vendedor/${d.claim_id}`;
             return (
               <TableRow key={d.id}>
                 <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(d.aberto_em)}</TableCell>
