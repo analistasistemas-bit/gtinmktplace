@@ -154,7 +154,7 @@ export function AbaDevolucoes() {
             <TableHead>Motivo</TableHead>
             <TableHead>Tipo</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
+            <TableHead className="text-right">Estornado</TableHead>
             <TableHead>Ações pendentes</TableHead>
             <TableHead className="w-8" />
           </TableRow>
@@ -179,7 +179,7 @@ export function AbaDevolucoes() {
                 <TableCell className="max-w-[220px] truncate" title={d.reason_texto ?? ''}>{d.reason_texto ?? '—'}</TableCell>
                 <TableCell>{labelTipoDevolucao(d.type)}</TableCell>
                 <TableCell><StatusPill tone={aberto ? 'warning' : 'neutral'}>{aberto ? 'Aberta' : 'Fechada'}</StatusPill></TableCell>
-                <TableCell className="text-right tabular-nums">{d.valor_em_jogo != null ? fmtBRL(d.valor_em_jogo) : '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">{d.valor_estornado != null ? fmtBRL(d.valor_estornado) : '—'}</TableCell>
                 <TableCell><Acoes d={d} /></TableCell>
                 <TableCell>
                   <a href={urlClaim} target="_blank" rel="noreferrer" className="text-info hover:underline"><ExternalLink className="h-3.5 w-3.5" /></a>

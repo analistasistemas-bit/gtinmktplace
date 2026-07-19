@@ -278,7 +278,7 @@ const COLS_DEVOLUCOES: Coluna[] = [
   { chave: 'motivo', titulo: 'Motivo' },
   { chave: 'tipo', titulo: 'Tipo' },
   { chave: 'status', titulo: 'Status' },
-  { chave: 'valor', titulo: 'Valor', alinhamento: DIR },
+  { chave: 'valor', titulo: 'Estornado', alinhamento: DIR },
   { chave: 'acoes', titulo: 'Ações pendentes' },
 ];
 
@@ -302,7 +302,7 @@ export function buildDevolucoesReport(lista: Devolucao[]): ReportData {
         motivo: d.reason_texto ?? '—',
         tipo: labelTipoDevolucao(d.type),
         status: d.status === 'opened' ? 'Aberta' : 'Fechada',
-        valor: d.valor_em_jogo != null ? fmtBRL(d.valor_em_jogo) : '—',
+        valor: d.valor_estornado != null ? fmtBRL(d.valor_estornado) : '—',
         acoes: d.acoes_pendentes?.length
           ? d.acoes_pendentes.map((a) => ACAO_DEVOLUCAO_LABEL[a.action] ?? a.action.replace(/_/g, ' ')).join(', ')
           : '—',

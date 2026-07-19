@@ -251,6 +251,10 @@ Claims/devoluções. *Migration `20260622193401_faturamento_devolucoes.sql` (ADR
 `claim_id` (único com user), `order_id`, `stage`, `status`, `type`, `reason_id/texto`,
 `valor_em_jogo`, `return_status`, `return_status_money`, `acoes_pendentes jsonb`,
 `aberto_em`, `raw jsonb`.
+`valor_em_jogo` sempre vem `null` — a API de claims do ML (`/post-purchase/v1/claims`) não traz
+nenhum campo monetário. O valor exibido na UI (aba Devoluções, Dashboard) é `ml_vendas.estorno`
+(reembolso já confirmado via Mercado Pago, ADR-0038), lido no client por `buscarDevolucoes`
+(`src/lib/devolucoes.ts`), não a coluna `valor_em_jogo`.
 
 ### `ml_perguntas`
 Perguntas de compradores. *Migration `20260622193354_faturamento_perguntas.sql` (ADR-0037).*

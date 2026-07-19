@@ -51,7 +51,7 @@ function fmtDia(iso: string): string {
 
 /** Card de destaque do topo (Faturamento / Líquido). Gradiente de marca, valor grande, delta e
  *  drill-down para a tela de origem. */
-function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta, sub, className }: {
+function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta, sub, subExtra, className }: {
   to: string;
   destino: string;
   icon: ComponentType<{ className?: string }>;
@@ -61,6 +61,7 @@ function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta
   valorCor?: string;
   delta: { texto: string; trend: Trend };
   sub: string;
+  subExtra?: string;
   className?: string;
 }) {
   return (
@@ -85,6 +86,7 @@ function HeroVenda({ to, destino, icon: Icon, label, cor, valor, valorCor, delta
         {delta.texto}
       </div>
       <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+      {subExtra && <div className="mt-0.5 text-[11px] text-muted-foreground/60">{subExtra}</div>}
     </Link>
   );
 }
@@ -117,6 +119,15 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
   const errosDestino = montarPendencias(kpis.comProblema, lotes).find((p) => p.chave === 'erro')?.destino ?? '/publicados';
   const devolucoesAbertas = (devolucoesQ.data ?? []).filter((d) => (d.acoes_pendentes?.length ?? 0) > 0).length;
+  // Devoluções (não cancelamentos/mediações) dentro da janela do período, para o discreto do card
+  // de Faturamento Bruto — mesmo filtro de tipo usado na aba Faturamento › Devoluções. Valor =
+  // já reembolsado via Mercado Pago (valor_estornado, ADR-0038); pode ficar em R$ 0,00 enquanto o
+  // reembolso ainda não foi processado — não é bug, reflete o estado real da devolução.
+  const devolucoesPeriodo = useMemo(() => {
+    const lista = (devolucoesQ.data ?? []).filter((d) =>
+      d.type === 'returns' && d.aberto_em && d.aberto_em >= janela.desde && d.aberto_em <= janela.ate);
+    return { qtd: lista.length, valor: lista.reduce((s, d) => s + (d.valor_estornado ?? 0), 0) };
+  }, [devolucoesQ.data, janela]);
   const atencao = montarAtencao({
     aRevisar: kpis.aRevisar,
     comProblema: semStatus ? 0 : kpis.comProblema,
@@ -264,6 +275,9 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
               valor={fmtBRL(r.bruto)}
               delta={delta(r.bruto, rAnt.bruto)}
               sub={`${fmtInt(kpisPedidos.pedidos)} pedidos · ${fmtInt(kpisPedidos.unidades)} unidades`}
+              subExtra={devolucoesPeriodo.qtd > 0
+                ? `${fmtInt(devolucoesPeriodo.qtd)} ${devolucoesPeriodo.qtd === 1 ? 'devolução' : 'devoluções'} · ${fmtBRL(devolucoesPeriodo.valor)}`
+                : undefined}
               className="col-span-2 lg:col-span-2 lg:col-start-1 lg:row-start-1"
             />
             <HeroVenda

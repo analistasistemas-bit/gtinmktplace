@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Devoluções no Dashboard + fix do valor sempre "—" (2026-07-19)
+
+- [x] Card "Faturamento bruto" do Dashboard ganhou uma linha discreta com qtd. de devoluções
+  (`type='returns'`) e valor estornado no período, só aparece quando há devolução (sem "0
+  devoluções" poluindo quando não há).
+- [x] Bug real encontrado durante a implementação: `ml_devolucoes.valor_em_jogo` sempre `null`
+  (a API de claims do ML não traz campo monetário) — a coluna "Valor" da aba Faturamento ›
+  Devoluções mostrava "—" para 100% das linhas, sempre, em produção.
+- [x] Fix (confirmado com o Diego, sem tocar banco/ingestão): `buscarDevolucoes`
+  (`src/lib/devolucoes.ts`) passou a juntar com `ml_vendas.estorno` (valor já reembolsado via
+  Mercado Pago, ADR-0038 — mesmo dado do card "Estornos" do Financeiro). Coluna renomeada para
+  "Estornado" na aba Devoluções e no export. Ver nota em `docs/reference/modelo-de-dados.md`.
+- [x] `pnpm lint`/`tsc -b`/`pnpm test` (205 arquivos, 1599 testes) verdes; validado ao vivo via
+  Playwright (login real, Dashboard + aba Devoluções, troca de período).
+
 ## Redesign dark premium das telas de auth (plano 017, ADR-0080) — 2026-07-19
 
 - [x] Sessão de grelha com o Diego (skill `grilling`) definiu o escopo: elevar `/login`,
