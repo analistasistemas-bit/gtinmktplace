@@ -56,3 +56,8 @@ export function fmtDataCurta(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
+
+/** URL do anúncio no ML a partir do item_id (ex.: MLB123 → produto.mercadolivre.com.br/MLB-123). */
+export function urlAnuncioML(mlItemId: string): string {
+  return `https://produto.mercadolivre.com.br/${mlItemId.replace(/^MLB/, 'MLB-')}`;
+}

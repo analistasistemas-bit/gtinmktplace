@@ -18,11 +18,7 @@ import { montarDetalheVendas, type LinhaVenda, type SecaoVendas, type Taxas } fr
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useSessionState } from '@/hooks/useSessionState';
-
-/** URL do anúncio no ML a partir do ml_item_id (ex.: MLB123 → produto.mercadolivre.com.br/MLB-123). */
-function urlAnuncioML(mlItemId: string): string {
-  return `https://produto.mercadolivre.com.br/${mlItemId.replace(/^MLB/, 'MLB-')}`;
-}
+import { urlAnuncioML } from '@/lib/ml-status';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 

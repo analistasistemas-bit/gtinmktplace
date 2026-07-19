@@ -4,7 +4,7 @@ import { Sparkles, Send, MessageCircleQuestion, ExternalLink } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { useListaPerguntas } from '@/hooks/usePerguntas';
 import { responderPergunta, sugerirResposta, type Pergunta } from '@/lib/perguntas';
-import { fmtDataCurta } from '@/lib/ml-status';
+import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -43,7 +43,7 @@ function CardPergunta({ p }: { p: Pergunta }) {
     } finally { setEnviando(false); }
   }
 
-  const urlItem = p.item_id ? `https://www.mercadolivre.com.br/anuncios/${p.item_id}` : null;
+  const urlItem = p.item_id ? urlAnuncioML(p.item_id) : null;
 
   return (
     <div className={cn('rounded-lg border bg-card p-4', !respondida && 'border-warning/40')}>
