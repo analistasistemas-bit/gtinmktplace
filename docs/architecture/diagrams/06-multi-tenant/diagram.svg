@@ -1,4 +1,4 @@
-<svg viewBox="0 0 880 480" role="img" aria-label="PubliAI — Arquitetura Multi-Tenant — AS-IS · shared DB + shared schema, isolamento por org_id (ADR-0027, E7) (architecture diagram)" width="880" height="480" xmlns="http://www.w3.org/2000/svg"><style>@font-face { font-family: 'JetBrains Mono'; font-weight: 400; src: local('JetBrains Mono'), local('JetBrainsMono-Regular'); }
+<svg viewBox="0 0 960 480" role="img" aria-label="PubliAI — Arquitetura Multi-Tenant — AS-IS · shared DB + shared schema, isolamento por org_id (ADR-0027, E7) (architecture diagram)" width="960" height="480" xmlns="http://www.w3.org/2000/svg"><style>@font-face { font-family: 'JetBrains Mono'; font-weight: 400; src: local('JetBrains Mono'), local('JetBrainsMono-Regular'); }
 @font-face { font-family: 'JetBrains Mono'; font-weight: 500; src: local('JetBrains Mono'), local('JetBrainsMono-Regular'); }
 @font-face { font-family: 'JetBrains Mono'; font-weight: 600; src: local('JetBrains Mono'), local('JetBrainsMono-Regular'); }
 @font-face { font-family: 'JetBrains Mono'; font-weight: 700; src: local('JetBrains Mono'), local('JetBrainsMono-Regular'); }

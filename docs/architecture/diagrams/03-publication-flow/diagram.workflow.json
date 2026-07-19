@@ -24,8 +24,8 @@
     { "id": "ia", "lane": "ia_lane", "col": 2, "type": "backend", "label": "Enriquecimento", "sublabel": "process-familia", "tag": "QStash worker" },
     { "id": "revisao", "lane": "op", "col": 3, "type": "frontend", "label": "Revisão humana", "sublabel": "operador aprova", "tag": "obrigatória" },
     { "id": "fanout", "lane": "pub", "col": 4, "type": "backend", "label": "Publicar", "sublabel": "publicar-familias", "tag": "fan-out por canal" },
-    { "id": "ml_publish", "lane": "pub", "col": 5, "type": "backend", "label": "Mercado Livre", "sublabel": "publish/update + catálogo" },
-    { "id": "canal_extra", "lane": "canais", "col": 4, "type": "backend", "label": "Canal extra", "sublabel": "publicar-anuncio (worker genérico)", "tag": "opcional" }
+    { "id": "ml_publish", "lane": "pub", "col": 5, "type": "backend", "label": "Mercado Livre", "sublabel": "publish/update", "tag": "+ catálogo" },
+    { "id": "canal_extra", "lane": "canais", "col": 4, "type": "backend", "label": "Canal extra", "sublabel": "publicar-anuncio", "tag": "worker genérico · opcional" }
   ],
   "edges": [
     { "from": "upload", "to": "ingest" },

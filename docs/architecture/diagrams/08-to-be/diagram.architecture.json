@@ -5,7 +5,7 @@
     "title": "PubliAI — Arquitetura Futura Simplificada",
     "subtitle": "TO-BE · 5 melhorias propostas, proporcionais e condicionais",
     "output": "diagram.html",
-    "viewBox": [820, 460]
+    "viewBox": [920, 460]
   },
   "components": [
     { "id": "auth", "type": "security", "label": "Auth", "sublabel": "Supabase Auth (JWT)", "pos": [40, 60], "size": [150, 60] },

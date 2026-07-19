@@ -5,7 +5,7 @@
     "title": "PubliAI — Arquitetura Multi-Tenant",
     "subtitle": "AS-IS · shared DB + shared schema, isolamento por org_id (ADR-0027, E7)",
     "output": "diagram.html",
-    "viewBox": [880, 480]
+    "viewBox": [960, 480]
   },
   "components": [
     { "id": "org_a", "type": "external", "label": "Organização A", "sublabel": "usuários autenticados", "pos": [40, 60], "size": [170, 64] },

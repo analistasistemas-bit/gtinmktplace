@@ -22,7 +22,7 @@
   "connections": [
     { "from": "operadores", "to": "publiai", "label": "upload planilha/fotos, revisão, aprovação", "variant": "emphasis", "labelAt": [295, 220] },
     { "from": "publiai", "to": "ml", "label": "OAuth, publicar, ler status/vendas", "variant": "emphasis" },
-    { "from": "ml", "to": "publiai", "label": "webhooks: pedido, pergunta, devolução, moderação", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [860, 198] },
+    { "from": "ml", "to": "publiai", "label": "webhooks", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [860, 198] },
     { "from": "publiai", "to": "outros_mkt", "label": "vitrine — ainda não conectado", "variant": "dashed" },
     { "from": "publiai", "to": "openrouter", "label": "copy + resolução de cor/atributos" },
     { "from": "publiai", "to": "mp", "label": "leitura de vendas liberadas", "variant": "dashed" },
