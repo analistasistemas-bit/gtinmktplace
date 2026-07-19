@@ -257,6 +257,22 @@ export function calcularResumo(
   };
 }
 
+/**
+ * Formata `proximaLiberacao` para o hint do card "A receber". Quando a liberação cai no mesmo dia
+ * de hoje, mostra a hora (ex: "próxima hoje às 14:00") em vez de só a data — senão fica ambíguo com
+ * uma liberação já vencida, já que `money_release_date` tem hora e pode ser mais tarde hoje.
+ */
+export function formatProximaLiberacao(iso: string, agora: Date = new Date()): string {
+  const d = new Date(iso);
+  const mesmoDia =
+    d.getFullYear() === agora.getFullYear() &&
+    d.getMonth() === agora.getMonth() &&
+    d.getDate() === agora.getDate();
+  return mesmoDia
+    ? `próxima hoje às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    : `próxima em ${d.toLocaleDateString('pt-BR')}`;
+}
+
 /** Peso total (g) de um pedido: soma de pesoUnit × qtd dos itens com peso. 0 se nenhum tem. */
 function pesoDaVenda(v: Venda, resolver?: PesoResolver): number {
   if (!resolver) return 0;

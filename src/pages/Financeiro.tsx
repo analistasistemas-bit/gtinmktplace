@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { AoVivo } from '@/components/ui/ao-vivo';
 import { periodoToParams, resolverJanela, janelaAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
-import { agruparPorPeriodo } from '@/lib/resumo-vendas';
+import { agruparPorPeriodo, formatProximaLiberacao } from '@/lib/resumo-vendas';
 import { GraficoEvolucao } from '@/components/financeiro/grafico-evolucao';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroReport } from '@/lib/export/adapters';
@@ -212,7 +212,7 @@ export default function Financeiro() {
           value={fmtBRL(r?.aLiberar ?? 0)}
           tom="warning"
           hint={r?.proximaLiberacao
-            ? `próxima em ${new Date(r.proximaLiberacao).toLocaleDateString('pt-BR')}`
+            ? formatProximaLiberacao(r.proximaLiberacao)
             : 'nada pendente de liberação'}
         />
       </div>

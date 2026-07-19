@@ -15,7 +15,7 @@ import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
 import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
-import { agruparPorPeriodo, ehFaturavel, ratearLiquidoPorFrete } from '@/lib/resumo-vendas';
+import { agruparPorPeriodo, ehFaturavel, formatProximaLiberacao, ratearLiquidoPorFrete } from '@/lib/resumo-vendas';
 import { liquidoPorCanal } from '@/lib/resumo-por-canal';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { useVendas } from '@/hooks/useVendas';
@@ -314,7 +314,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
           label="A receber" icon={PiggyBank} loading={carregando} to="/financeiro"
           value={fmtBRL(r.aLiberar)}
           hint={r.proximaLiberacao
-            ? `próxima em ${new Date(r.proximaLiberacao).toLocaleDateString('pt-BR')}`
+            ? formatProximaLiberacao(r.proximaLiberacao)
             : 'nada a liberar'}
         />
       </div>
