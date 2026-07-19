@@ -27,6 +27,7 @@ sua linha de status ao terminar.
 | 014  | Lazy-load jspdf/xlsx (dynamic import) | P2 | M | — | DONE (worktree; `exportar` async + `await import`; chunks pdf/xlsx/excel separados sob demanda; validado via browser-use) |
 | 015  | Fonte única de `round2` + BRL sem símbolo | P2 | S | — | DONE (worktree; `round2`/`fmtBRLSemSimbolo` em formato.ts + `_shared/dinheiro.ts`; 14 cópias trocadas; behavior-preserving, suíte verde) |
 | 016  | Teste de paridade preço/desconto FE↔BE | P3 | S | — | DONE (worktree; `paridade-preco-fe-be.test.ts` compara calcularPrecoDe/pctEfetivo/amountComDesconto FE↔BE) |
+| 017  | Redesign dark premium das telas de auth (login/reset/definir) | P2 | M | — | IN PROGRESS (worktree `redesign-auth-dark-premium`; escrito pelo Fable 5 após sessão de grelha; ADR-0080 + `AuthShell` implementados; lint/tsc/test/build verdes; QA visual headless ok; falta validação do Diego em runtime real antes de merge) |
 
 Status: TODO | IN PROGRESS | DONE | BLOCKED (motivo) | REJECTED (motivo)
 

@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Redesign dark premium das telas de auth (plano 017, ADR-0080) — 2026-07-19
+
+- [x] Sessão de grelha com o Diego (skill `grilling`) definiu o escopo: elevar `/login`,
+  `/reset-senha` e `/definir-senha` (hoje card genérico em `bg-muted/30`) para visual "dark
+  premium/glass" (mood Linear/Raycast), com logo-hero em destaque e motion CSS-only — sem
+  copy nova, sem painel de features, sem dependência nova.
+- [x] Plano `plans/017-redesign-telas-auth-dark-premium.md` escrito com o modelo Fable 5.
+- [x] ADR-0080 (telas de auth sempre dark, sobrepondo o tema salvo) criado antes do código.
+- [x] `AuthShell` (`src/components/auth-shell.tsx`) compartilhado pelas 3 páginas: dark
+  forçado local (sem tocar `ThemeProvider`), logo-hero com glow de marca, grid sutil
+  (`.auth-grid`), card com glassmorphism. Motion em cascata na entrada (logo → card,
+  stagger de 1 token) e sucesso no submit (check + fade-out) via `tw-animate-css` + tokens
+  de `src/motion/`, sem nenhuma lib nova.
+- [x] `pnpm lint`/`tsc -b`/`pnpm test` (203 arquivos, 1596 testes)/`pnpm build` verdes.
+- [x] QA visual headless (Playwright): 3 rotas, mobile 375px, `prefers-reduced-motion`
+  (card visível sem delay), estado de erro de login intacto, zero erro de console além do
+  400 esperado de credencial inválida.
+- [ ] Validação final do Diego em runtime real (login com credenciais válidas — animação de
+  sucesso completa — e confirmação de que o tema light salvo não vaza pro app interno após
+  logar) antes de merge.
+
 ## Documentação de arquitetura visual (Archify) — 2026-07-19
 
 - [x] 8 diagramas Archify criados em `docs/architecture/diagrams/` a partir das fontes de

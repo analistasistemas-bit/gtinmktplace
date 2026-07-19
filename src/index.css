@@ -187,6 +187,15 @@
   .text-h3 { font-size: 1.0625rem; line-height: 1.4; font-weight: 600; }
   .text-caption { font-size: 0.75rem; line-height: 1.4; color: var(--muted-foreground); }
 
+  /* Grid fino das telas de auth (plano 017) — esvanece radialmente p/ não virar wallpaper */
+  .auth-grid {
+    background-image:
+      linear-gradient(oklch(1 0 0 / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(1 0 0 / 0.03) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 70% 55% at 50% 38%, black, transparent);
+  }
+
   /* Trilho de progresso indeterminado: usado quando a duração é desconhecida
      (ex.: exclusão de lote, uma chamada atômica sem progresso granular). */
   .track-indeterminate {
@@ -214,7 +223,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0.01ms !important; transition-duration: 0.01ms !important; }
   /* Sem animação, mostra um trilho preenchido estático para indicar atividade. */
   .track-indeterminate::after { animation: none; inline-size: 100%; opacity: 0.6; }
 }

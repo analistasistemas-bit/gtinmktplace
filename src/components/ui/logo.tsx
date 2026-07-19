@@ -36,14 +36,16 @@ interface LogoProps {
   symbolClassName?: string;
   /** Exibe o wordmark "PubliAI" ao lado do símbolo (default true). */
   showWordmark?: boolean;
+  /** Classes extras pro wordmark (ex.: tamanho maior num hero). */
+  wordmarkClassName?: string;
 }
 
-export function Logo({ className, symbolClassName, showWordmark = true }: LogoProps) {
+export function Logo({ className, symbolClassName, showWordmark = true, wordmarkClassName }: LogoProps) {
   return (
     <div className={cn('flex items-center gap-2', className)} aria-label="PubliAI">
       <LogoSymbol className={cn('h-7 w-7', symbolClassName)} />
       {showWordmark && (
-        <span className="text-base font-semibold leading-none tracking-tight">
+        <span className={cn('text-base font-semibold leading-none tracking-tight', wordmarkClassName)}>
           Publi
           <span className="bg-[image:var(--brand-gradient)] bg-clip-text text-transparent">AI</span>
         </span>
