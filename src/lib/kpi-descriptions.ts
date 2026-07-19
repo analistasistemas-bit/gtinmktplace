@@ -13,7 +13,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Líquido das vendas':
     'O que sobra das vendas aprovadas no período depois de descontar a comissão do Mercado Livre e o frete pago pelo vendedor — antes do imposto.',
   'Líquido no faturamento':
-    'Valor líquido recebido pelos pedidos aprovados no período, já descontados comissão do Mercado Livre, frete pago pelo vendedor e imposto estimado por origem, contado por pedido (carrinho), não por linha de venda — mesma base do menu Faturamento.',
+    'Valor líquido recebido pelos pedidos aprovados no período, já descontados comissão do Mercado Livre, frete pago pelo vendedor e imposto estimado por origem, contado por pedido (carrinho), não por linha de venda.',
   'Markup no período':
     '(Líquido recebido − imposto − custo) ÷ custo, somado sobre as vendas do período que têm custo cadastrado. Vendas sem custo não entram na conta.',
   Compradores:
@@ -21,9 +21,9 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'A receber':
     'Valor de vendas já aprovadas que ainda não caiu no seu saldo — aguardando a data de liberação do Mercado Pago.',
   'Pedidos::Dashboard':
-    'Número de pedidos aprovados no período, contando cada carrinho (pack) como 1 pedido — mesma base do menu Faturamento.',
+    'Número de pedidos aprovados no período, contando cada carrinho (pack) como 1 pedido.',
   'Ticket médio::Dashboard':
-    'Valor bruto do pedido no checkout (não da linha de venda), somado e dividido pelo número de pedidos — mesma base do menu Faturamento.',
+    'Valor bruto do pedido no checkout (não da linha de venda), somado e dividido pelo número de pedidos.',
 
   // ── Publicados ─────────────────────────────────────────────────────────
   'Faturamento::Publicados':
