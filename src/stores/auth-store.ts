@@ -27,6 +27,8 @@ interface AuthState {
   loadProfile: (userId: string, options?: LoadProfileOptions) => Promise<void>;
 }
 
+let profileRequestGeneration = 0;
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
@@ -61,6 +63,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   setSession: (session) => set({ session, user: session?.user ?? null }),
   loadProfile: async (userId, options = {}) => {
+    const requestGeneration = ++profileRequestGeneration;
     const blocking = options.blocking ?? true;
     if (blocking) set({ profileLoading: true });
     const { data } = await supabase
@@ -68,7 +71,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       .select('id,is_admin,is_active,allowed_menus,nome,org_id,is_super_admin')
       .eq('id', userId)
       .maybeSingle();
-    if (get().user?.id !== userId) return;
+    if (
+      requestGeneration !== profileRequestGeneration
+      || get().user?.id !== userId
+    ) return;
     set({ profile: (data as Profile) ?? null, profileLoading: false });
   },
 }));

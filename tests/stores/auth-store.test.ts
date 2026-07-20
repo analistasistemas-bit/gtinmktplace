@@ -166,4 +166,63 @@ describe('auth-store background profile refresh', () => {
     expect(useAuthStore.getState().profile).toBeNull();
     expect(useAuthStore.getState().profileLoading).toBe(false);
   });
+
+  it('an obsolete response cannot overwrite a new login for the same user', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: profile('user-1', 'Antes'),
+      profileLoading: false,
+    });
+    const stale = deferred<{ data: Profile | null }>();
+    const current = deferred<{ data: Profile | null }>();
+    mocks.maybeSingle
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(current.promise);
+
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+    mocks.listener!('SIGNED_OUT', null);
+    mocks.listener!('SIGNED_IN', currentSession);
+
+    current.resolve({ data: profile('user-1', 'Nova sessão') });
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profile?.nome).toBe('Nova sessão');
+    });
+
+    stale.resolve({ data: profile('user-1', 'Obsoleto') });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useAuthStore.getState().profile?.nome).toBe('Nova sessão');
+  });
+
+  it('only the latest concurrent refresh for the same user may update the profile', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: profile('user-1', 'Antes'),
+      profileLoading: false,
+    });
+    const older = deferred<{ data: Profile | null }>();
+    const newer = deferred<{ data: Profile | null }>();
+    mocks.maybeSingle
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+
+    newer.resolve({ data: profile('user-1', 'Mais recente') });
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profile?.nome).toBe('Mais recente');
+    });
+
+    older.resolve({ data: profile('user-1', 'Antigo') });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useAuthStore.getState().profile?.nome).toBe('Mais recente');
+  });
 });
