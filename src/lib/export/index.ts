@@ -39,6 +39,12 @@ export async function exportar(data: ReportData, config: ExportConfig | ExportFo
     return;
   }
 
+  if (formato === 'pdf' && data.dashboardPdf?.tipo === 'dashboard') {
+    const { gerarPdfDashboard } = await import('./pdf-dashboard');
+    gerarPdfDashboard(data.dashboardPdf).save(nomeArquivo(data.titulo, 'pdf'));
+    return;
+  }
+
   const { gerarPdf } = await import('./pdf');
   const doc = gerarPdf(data);
   if (formato === 'pdf') {

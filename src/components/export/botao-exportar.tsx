@@ -26,6 +26,8 @@ interface BotaoExportarProps {
   temExpansao?: boolean;
   /** A tela tem KPIs (pergunta KPIs+dados / Somente dados). */
   temKpis?: boolean;
+  /** PDF visual sempre inclui todos os indicadores. */
+  pdfSempreCompleto?: boolean;
   /** Tamanho do botão (default 'sm'). */
   size?: 'sm' | 'default';
   className?: string;
@@ -42,6 +44,7 @@ export function BotaoExportar({
   montarReport,
   temExpansao = false,
   temKpis = false,
+  pdfSempreCompleto = false,
   size = 'sm',
   className,
 }: BotaoExportarProps) {
@@ -51,6 +54,7 @@ export function BotaoExportar({
   const [gerando, setGerando] = useState(false);
 
   const precisaPerguntar = temExpansao || temKpis;
+  const mostrarOpcaoKpis = temKpis && !(pdfSempreCompleto && formato === 'pdf');
 
   async function disparar(config: ExportConfig) {
     setGerando(true);
@@ -72,7 +76,8 @@ export function BotaoExportar({
 
   async function confirmar() {
     if (!formato) return;
-    await disparar({ formato, expandido, incluirKpis });
+    const incluirKpisEfetivo = pdfSempreCompleto && formato === 'pdf' ? true : incluirKpis;
+    await disparar({ formato, expandido, incluirKpis: incluirKpisEfetivo });
     setFormato(null);
   }
 
@@ -127,7 +132,7 @@ export function BotaoExportar({
               </div>
             )}
 
-            {temKpis && (
+            {mostrarOpcaoKpis && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">Conteúdo</p>
                 <RadioGroup
