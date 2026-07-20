@@ -14,7 +14,17 @@ import type { ResumoVendas, PontoSerie } from '@/lib/resumo-vendas';
 import type { ProdutoTop } from '@/lib/cockpit';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 import { infoCanal } from '@/lib/canais';
-import type { ReportData, ExportConfig, Coluna, Kpi, BlocoResumo } from './tipos';
+import type {
+  ReportData,
+  ExportConfig,
+  Coluna,
+  Kpi,
+  BlocoResumo,
+  DashboardMetrica,
+  DashboardPontoVisual,
+  DashboardPdfVisual,
+  DashboardLiberacaoVisual,
+} from './tipos';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,7 +55,7 @@ const COLS_DASHBOARD: Coluna[] = [
   { chave: 'pedidos', titulo: 'Pedidos', alinhamento: DIR },
 ];
 
-interface DashboardReportArgs {
+export interface DashboardReportArgs {
   resumo: ResumoVendas;
   kpisPedidos: KpisPedidos;
   serie: PontoSerie[];
@@ -54,10 +64,18 @@ interface DashboardReportArgs {
   periodo: Periodo;
   canal: CanalAtivo;
   config: ExportConfig;
+  visual?: {
+    metrica: DashboardMetrica;
+    pontos: DashboardPontoVisual[];
+    principais: DashboardPdfVisual['principais'];
+    secundarios: DashboardPdfVisual['secundarios'];
+    alertas: string[];
+    liberacoes: DashboardLiberacaoVisual[];
+  };
 }
 
 export function buildDashboardReport(args: DashboardReportArgs): ReportData {
-  const { resumo, kpisPedidos, serie, top, geografia, periodo, canal, config } = args;
+  const { resumo, kpisPedidos, serie, top, geografia, periodo, canal, config, visual } = args;
   const blocos: BlocoResumo[] = [];
   if (top.length > 0) {
     blocos.push({
@@ -95,6 +113,31 @@ export function buildDashboardReport(args: DashboardReportArgs): ReportData {
         ]
       : undefined,
     blocos: config.incluirKpis && blocos.length > 0 ? blocos : undefined,
+    dashboardPdf: config.formato === 'pdf' && visual
+      ? {
+          tipo: 'dashboard',
+          periodo: rotuloPeriodo(periodo),
+          canal: canal === 'todos' ? 'Todos' : infoCanal(canal)?.nome ?? canal,
+          metrica: visual.metrica,
+          serie: visual.pontos,
+          principais: visual.principais,
+          secundarios: visual.secundarios,
+          alertas: visual.alertas,
+          produtos: top.slice(0, 5).map((produto, index) => ({
+            posicao: index + 1,
+            titulo: produto.titulo,
+            unidades: produto.unidades,
+            faturamento: produto.valor,
+          })),
+          liberacoes: visual.liberacoes.slice(0, 6),
+          geografia: geografia.porUf.slice(0, 5).map((item) => ({
+            uf: item.uf,
+            pedidos: item.pedidos,
+            participacao: item.pctPedidos,
+          })),
+          semLocalizacao: geografia.semGeo,
+        }
+      : undefined,
     colunas: COLS_DASHBOARD,
     linhas: serie.map((ponto) => ({
       celulas: {
