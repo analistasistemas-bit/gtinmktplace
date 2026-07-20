@@ -30,6 +30,32 @@ it('desenha mapa, ranking limitado e liberações sem imagem', () => {
   expect(addImage).not.toHaveBeenCalled();
 });
 
+it('preserva datas curtas e percentuais já normalizados', () => {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const text = vi.spyOn(doc, 'text');
+  desenharPaginaGeografia(doc, dashboardPdfFixture({
+    liberacoes: [{ data: '18/08', valor: 319.55 }],
+    geografia: [{ uf: 'MG', pedidos: 4, participacao: 44.4 }],
+  }), new Date('2026-07-20T10:31:00-03:00'));
+  expect(text).toHaveBeenCalledWith('18/08', expect.any(Number), expect.any(Number));
+  expect(text).toHaveBeenCalledWith(
+    '44,4%',
+    expect.any(Number),
+    expect.any(Number),
+    expect.objectContaining({ align: 'right' }),
+  );
+});
+
+it('informa pedidos sem localização', () => {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  desenharPaginaGeografia(
+    doc,
+    dashboardPdfFixture({ semLocalizacao: 1 }),
+    new Date('2026-07-20T10:31:00-03:00'),
+  );
+  expect(doc.output()).toContain('1 pedido sem localização');
+});
+
 it.each([
   { patch: { liberacoes: [] }, texto: 'Nada a liberar no horizonte' },
   { patch: { geografia: [] }, texto: 'Sem vendas com destino no período' },

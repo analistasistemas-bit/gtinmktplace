@@ -157,7 +157,8 @@ function desenharProdutos(
     doc.text(fmtBRL(produto.faturamento), x + w - 5, ry + 4, { align: 'right' });
   });
   if (produtos.length === 0) {
-    doc.setFont('helvetica', 'normal').setTextColor(...SUAVE).text('Sem produtos no período', x + 5, y + 18);
+    doc.setFont('helvetica', 'normal').setTextColor(...SUAVE);
+    doc.text('Sem produtos no período', x + w / 2, y + h / 2, { align: 'center' });
   }
 }
 

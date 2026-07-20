@@ -73,7 +73,7 @@ function liberacoes(doc: jsPDF, data: DashboardPdfVisual): void {
   doc.text('Liberações próximas', 17, 36);
   if (data.liberacoes.length === 0) {
     doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...SUAVE);
-    doc.text('Nada a liberar no horizonte', 17, 46);
+    doc.text('Nada a liberar no horizonte', 148.5, 44, { align: 'center' });
     return;
   }
   const itens = data.liberacoes.slice(0, 6);
@@ -81,7 +81,10 @@ function liberacoes(doc: jsPDF, data: DashboardPdfVisual): void {
   itens.forEach((item, i) => {
     const x = 17 + i * largura;
     doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(...SUAVE);
-    doc.text(new Date(`${item.data}T12:00:00`).toLocaleDateString('pt-BR'), x, 42);
+    const data = /^\d{2}\/\d{2}$/.test(item.data)
+      ? item.data
+      : new Date(`${item.data}T12:00:00`).toLocaleDateString('pt-BR');
+    doc.text(data, x, 42);
     doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...TEXTO);
     doc.text(fmtBRL(item.valor), x, 47);
   });
@@ -134,7 +137,7 @@ function ranking(doc: jsPDF, data: DashboardPdfVisual): void {
   doc.text('Ranking por UF', 158, 72);
   if (data.geografia.length === 0) {
     doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...SUAVE);
-    doc.text('Sem vendas com destino no período', 158, 84);
+    doc.text('Sem vendas com destino no período', 221.5, 125, { align: 'center' });
     return;
   }
   const ordenados = [...data.geografia].sort((a, b) => b.pedidos - a.pedidos).slice(0, 5);
@@ -146,10 +149,15 @@ function ranking(doc: jsPDF, data: DashboardPdfVisual): void {
     doc.text(`${fmtInt(item.pedidos)} pedidos`, 274, y, { align: 'right' });
     doc.setFillColor(235, 231, 251).roundedRect(158, y + 4, 96, 3.5, 1, 1, 'F');
     doc.setFillColor(...VIOLETA).roundedRect(158, y + 4, 96 * item.pedidos / max, 3.5, 1, 1, 'F');
-    doc.setTextColor(...SUAVE).text(`${(item.participacao * 100).toLocaleString('pt-BR', {
+    doc.setTextColor(...SUAVE).text(`${item.participacao.toLocaleString('pt-BR', {
       maximumFractionDigits: 1,
     })}%`, 274, y + 7, { align: 'right' });
   });
+  if (data.semLocalizacao > 0) {
+    const sufixo = data.semLocalizacao === 1 ? 'pedido sem localização' : 'pedidos sem localização';
+    doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...SUAVE);
+    doc.text(`${fmtInt(data.semLocalizacao)} ${sufixo}`, 274, 177, { align: 'right' });
+  }
 }
 
 export function desenharPaginaGeografia(
