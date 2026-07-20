@@ -39,6 +39,7 @@ export function dashboardPdfFixture(
       { posicao: 2, titulo: 'Produto secundário', unidades: 3, faturamento: 150 },
     ],
     liberacoes: [{ data: '2026-08-18', valor: 319.55 }],
+    totalAReceber: 319.55,
     geografia: [{ uf: 'PE', pedidos: 9, participacao: 1 }],
     semLocalizacao: 0,
     ...overrides,

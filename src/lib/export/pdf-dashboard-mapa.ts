@@ -82,32 +82,36 @@ function cabecalho(doc: jsPDF, data: DashboardPdfVisual, emitidoEm: Date): void 
 }
 
 function liberacoes(doc: jsPDF, data: DashboardPdfVisual): void {
-  doc.setDrawColor(225, 230, 238).roundedRect(12, 29, 273, 23, 2, 2, 'S');
+  doc.setDrawColor(225, 230, 238).roundedRect(12, 167, 273, 23, 2, 2, 'S');
   doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...TEXTO);
-  doc.text('Liberações próximas', 17, 36);
+  doc.text('Financeiro · Liberações próximas', 17, 174);
+  doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...SUAVE);
+  doc.text('Total a receber', 280, 174, { align: 'right' });
+  doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...TEXTO);
+  doc.text(fmtBRL(data.totalAReceber), 280, 181, { align: 'right' });
   if (data.liberacoes.length === 0) {
     doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...SUAVE);
-    doc.text('Nada a liberar no horizonte', 148.5, 44, { align: 'center' });
+    doc.text('Nada a liberar no horizonte', 17, 184);
     return;
   }
   const itens = data.liberacoes.slice(0, 6);
-  const largura = 263 / itens.length;
+  const largura = 205 / itens.length;
   itens.forEach((item, i) => {
     const x = 17 + i * largura;
     doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(...SUAVE);
     const data = /^\d{2}\/\d{2}$/.test(item.data)
       ? item.data
       : new Date(`${item.data}T12:00:00`).toLocaleDateString('pt-BR');
-    doc.text(data, x, 42);
+    doc.text(data, x, 181);
     doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...TEXTO);
-    doc.text(fmtBRL(item.valor), x, 47);
+    doc.text(fmtBRL(item.valor), x, 187);
   });
 }
 
 function mapa(doc: jsPDF, data: DashboardPdfVisual): void {
   const valores = new Map(data.geografia.map((item) => [item.uf, item.pedidos]));
   const maxPedidos = Math.max(1, ...data.geografia.map((item) => item.pedidos));
-  const projetado = projetarMapaBrasil({ x: 20, y: 65, largura: 122, altura: 110 });
+  const projetado = projetarMapaBrasil({ x: 20, y: 43, largura: 122, altura: 110 });
   doc.setLineWidth(0.18).setDrawColor(203, 210, 220);
   for (const [uf, polygons] of projetado) {
     const pedidos = valores.get(uf) ?? 0;
@@ -125,30 +129,30 @@ function mapa(doc: jsPDF, data: DashboardPdfVisual): void {
     }
   }
   doc.setFont('helvetica', 'normal').setFontSize(6).setTextColor(...SUAVE);
-  doc.text('menos', 20, 182);
+  doc.text('menos', 20, 160);
   for (let i = 0; i < 20; i++) {
     const t = i / 19;
     doc.setFillColor(
       Math.round(235 + (VIOLETA[0] - 235) * t),
       Math.round(228 + (VIOLETA[1] - 228) * t),
       Math.round(253 + (VIOLETA[2] - 253) * t),
-    ).rect(32 + i * 4.2, 178.6, 4.3, 3.5, 'F');
+    ).rect(32 + i * 4.2, 156.6, 4.3, 3.5, 'F');
   }
-  doc.text('mais', 120, 182);
+  doc.text('mais', 120, 160);
 }
 
 function ranking(doc: jsPDF, data: DashboardPdfVisual): void {
   doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...TEXTO);
-  doc.text('Ranking por UF', 158, 72);
+  doc.text('Ranking por UF', 158, 43);
   if (data.geografia.length === 0) {
     doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...SUAVE);
-    doc.text('Sem vendas com destino no período', 221.5, 125, { align: 'center' });
+    doc.text('Sem vendas com destino no período', 221.5, 96, { align: 'center' });
     return;
   }
   const ordenados = [...data.geografia].sort((a, b) => b.pedidos - a.pedidos).slice(0, 5);
   const max = Math.max(1, ...ordenados.map((item) => item.pedidos));
   ordenados.forEach((item, i) => {
-    const y = 83 + i * 18;
+    const y = 54 + i * 18;
     doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...TEXTO).text(item.uf, 158, y);
     doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...SUAVE);
     doc.text(`${fmtInt(item.pedidos)} pedidos`, 274, y, { align: 'right' });
@@ -162,7 +166,7 @@ function ranking(doc: jsPDF, data: DashboardPdfVisual): void {
   if (data.semLocalizacao > 0) {
     const sufixo = data.semLocalizacao === 1 ? 'pedido sem localização' : 'pedidos sem localização';
     doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...SUAVE);
-    doc.text(`${fmtInt(data.semLocalizacao)} ${sufixo}`, 274, 177, { align: 'right' });
+    doc.text(`${fmtInt(data.semLocalizacao)} ${sufixo}`, 274, 158, { align: 'right' });
   }
 }
 
@@ -172,12 +176,12 @@ export function desenharPaginaGeografia(
   emitidoEm: Date,
 ): void {
   cabecalho(doc, data, emitidoEm);
-  liberacoes(doc, data);
-  doc.setDrawColor(225, 230, 238).roundedRect(12, 56, 273, 134, 2, 2, 'S');
+  doc.setDrawColor(225, 230, 238).roundedRect(12, 29, 273, 134, 2, 2, 'S');
   doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...TEXTO);
-  doc.text('Vendas por estado', 17, 63);
+  doc.text('Vendas por estado', 17, 36);
   mapa(doc, data);
   ranking(doc, data);
+  liberacoes(doc, data);
   doc.setDrawColor(220, 226, 235).line(12, 197, 285, 197);
   doc.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(...SUAVE);
   doc.text('Página 2 de 2', 12, 201);

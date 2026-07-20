@@ -66,6 +66,7 @@ const representativo: DashboardPdfVisual = {
     },
   ],
   liberacoes: [{ data: '18/08', valor: 319.55 }],
+  totalAReceber: 319.55,
   geografia: [
     { uf: 'MG', pedidos: 4, participacao: 44.4 },
     { uf: 'TO', pedidos: 1, participacao: 11.1 },
@@ -83,6 +84,7 @@ const vazio: DashboardPdfVisual = {
   alertas: [],
   produtos: [],
   liberacoes: [],
+  totalAReceber: 0,
   geografia: [],
   semLocalizacao: 0,
 };

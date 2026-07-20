@@ -95,6 +95,7 @@ export interface DashboardPdfVisual {
   alertas: string[];
   produtos: DashboardProdutoVisual[];
   liberacoes: DashboardLiberacaoVisual[];
+  totalAReceber: number;
   geografia: DashboardUfVisual[];
   semLocalizacao: number;
 }

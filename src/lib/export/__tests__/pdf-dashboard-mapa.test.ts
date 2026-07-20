@@ -44,7 +44,7 @@ it('aplica no mapa e no ranking o mesmo RGB para a mesma intensidade, incluindo 
     ],
   }), new Date('2026-07-20T10:31:00-03:00'));
 
-  const projetado = projetarMapaBrasil({ x: 20, y: 65, largura: 122, altura: 110 });
+  const projetado = projetarMapaBrasil({ x: 20, y: 43, largura: 122, altura: 110 });
   for (const [uf, pedidos] of [['MG', 4], ['PE', 0]] as const) {
     const rgb = corPorIntensidade(pedidos, 4);
     const inicioUf = projetado.get(uf)?.[0][0][0];
@@ -58,7 +58,7 @@ it('aplica no mapa e no ranking o mesmo RGB para a mesma intensidade, incluindo 
     expect(corDoMapa).toEqual(rgb);
 
     const barra = [...roundedRect.mock.calls].reverse().find(([, y, largura]) =>
-      y === (pedidos === 4 ? 87 : 105) && largura === 96 * pedidos / 4,
+      y === (pedidos === 4 ? 58 : 76) && largura === 96 * pedidos / 4,
     );
     expect(barra).toBeDefined();
     const ordemBarra = roundedRect.mock.invocationCallOrder[
@@ -75,11 +75,15 @@ it('aplica no mapa e no ranking o mesmo RGB para a mesma intensidade, incluindo 
 it('desenha mapa, ranking limitado e liberações sem imagem', () => {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const addImage = vi.spyOn(doc, 'addImage');
+  doc.addPage();
   desenharPaginaGeografia(doc, dashboardPdfFixture(), new Date('2026-07-20T10:31:00-03:00'));
-  const output = doc.output();
-  expect(output).toContain('Liberações próximas');
+  const output = doc.output().replace(/\u00a0/g, ' ');
+  expect(output).toContain('Financeiro · Liberações próximas');
+  expect(output).toContain('Total a receber');
+  expect(output).toContain('R$ 319,55');
   expect(output).toContain('Vendas por estado');
   expect(output).toContain('Página 2 de 2');
+  expect(doc.getNumberOfPages()).toBe(2);
   expect(addImage).not.toHaveBeenCalled();
 });
 

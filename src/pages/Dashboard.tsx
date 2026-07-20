@@ -288,6 +288,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
                       ],
                       alertas: atencao.map((item) => item.label),
                       liberacoes: caixa.map((item) => ({ data: fmtDia(item.data), valor: item.total })),
+                      totalAReceber: r.aLiberar,
                     }
                   : undefined,
               })}

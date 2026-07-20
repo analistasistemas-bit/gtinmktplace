@@ -23,6 +23,7 @@ const visual: NonNullable<Parameters<typeof buildDashboardReport>[0]['visual']> 
     data: `2026-08-${String(i + 1).padStart(2, '0')}`,
     valor: i + 1,
   })),
+  totalAReceber: 0,
 };
 
 function fixtureArgs({
@@ -39,7 +40,7 @@ function fixtureArgs({
   return {
     resumo: {
       bruto: 0, liquido: 0, descontos: 0, estornos: 0, pedidos: 0, unidades: 0,
-      ticket: 0, markup: null, lucro: 0, liberado: 0, aLiberar: 0,
+      ticket: 0, markup: null, lucro: 0, liberado: 0, aLiberar: 319.55,
       proximaLiberacao: null, comissao: 0, frete: 0, imposto: 0,
       vendasComCusto: 0, totalVendas: 0, margem: null, porItem: {}, vendas: [],
     },
@@ -86,6 +87,7 @@ describe('buildDashboardReport', () => {
     expect(report.dashboardPdf?.produtos).toHaveLength(5);
     expect(report.dashboardPdf?.liberacoes).toHaveLength(6);
     expect(report.dashboardPdf?.geografia).toHaveLength(5);
+    expect(report.dashboardPdf?.totalAReceber).toBe(319.55);
   });
 
   it.each(['excel', 'csv', 'imprimir'] as const)('não anexa payload visual em %s', (formato) => {

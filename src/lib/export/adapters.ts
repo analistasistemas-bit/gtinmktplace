@@ -71,6 +71,7 @@ export interface DashboardReportArgs {
     secundarios: DashboardPdfVisual['secundarios'];
     alertas: string[];
     liberacoes: DashboardLiberacaoVisual[];
+    totalAReceber: number;
   };
 }
 
@@ -130,6 +131,7 @@ export function buildDashboardReport(args: DashboardReportArgs): ReportData {
             faturamento: produto.valor,
           })),
           liberacoes: visual.liberacoes.slice(0, 6),
+          totalAReceber: resumo.aLiberar,
           geografia: geografia.porUf.slice(0, 5).map((item) => ({
             uf: item.uf,
             pedidos: item.pedidos,
