@@ -1,6 +1,6 @@
 ---
 tags: [home, glossario]
-atualizado: 2026-07-01
+atualizado: 2026-07-20
 ---
 
 # Glossário
@@ -18,7 +18,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 | **PAI** | Coluna da planilha que agrupa variações. `PAI = 0` marca o agrupador, nunca um item vendável. |
 | **CODIGO** | Identificador do item na planilha. Da família = `codigo_pai`; da variação = `codigo`. |
 | **GTIN / EAN** | Código de barras. Usado para vínculo de catálogo no ML e atribuição de vendas. |
-| **Aviamento** | Categoria de produto do MVP: linha, botão, fita, cola, outro (`tipo_aviamento`). |
+| **Aviamento** | Categoria de produto do MVP: linha, botão, fita, cola, cursor, outro (`tipo_aviamento`). |
 
 ## Lifecycle e operações
 

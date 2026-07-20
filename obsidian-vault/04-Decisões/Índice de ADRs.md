@@ -1,11 +1,11 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-07-17
+atualizado: 2026-07-20
 ---
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (78 ADRs, `0001`–`0078`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (83 ADRs, `0001`–`0083`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -94,5 +94,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0080 | [Telas de autenticação sempre renderizam em dark, sobrepondo o tema salvo](../../docs/decisions/0080-telas-auth-sempre-dark.md) |
 | 0081 | [Corte de egress: URL assinada persistida e poll de vendas em 3 minutos](../../docs/decisions/0081-corte-de-egress-url-assinada-persistida.md) |
 | 0082 | [Poll incremental de vendas por marca d'água (atualizado_em)](../../docs/decisions/0082-poll-incremental-de-vendas-por-marca-dagua.md) |
+| 0083 | [Cursor (deslizador de zíper) como tipo de aviamento determinístico](../../docs/decisions/0083-cursor-de-zíper-tipo-aviamento-determinístico.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
