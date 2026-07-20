@@ -6,7 +6,7 @@ import { lerVendasML } from '../ml/vendas.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
-import { buscarItemML, atualizarItemML, atualizarStatusML } from '../ml/atualizar-item.ts';
+import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
@@ -92,18 +92,40 @@ export const mercadoLivreConnector: ChannelConnector = {
       // GET estado real → reenviar TODAS as variações (o ML deleta as omitidas).
       const atual = await buscarItemML(token, a.itemExternoId);
       // ADR-0084: item plano (categoria que exige family_name, ex. Zíperes) não tem sub-recurso
-      // `variations` — o GET devolve []. Sem esta trava, montarVariacoesUpdate mapeia sobre uma
-      // lista vazia e produz um PUT `{variations: []}` que a ML aceita como no-op silencioso:
-      // sem erro, familia.status volta a 'publicado', mas preço/estoque nunca mudam no anúncio
-      // real (confirmado empiricamente 2026-07-20). Falha alto em vez de mentir sucesso — suporte
-      // a UPDATE de item plano não implementado.
+      // `variations` — o GET devolve []. montarVariacoesUpdate mapeando sobre lista vazia produz
+      // um PUT `{variations: []}` que a ML aceita como no-op silencioso (confirmado empiricamente
+      // 2026-07-20): sem erro, familia.status volta a 'publicado', mas nada muda no anúncio real.
+      // Repõe direto no corpo raiz do item em vez de variations. Mesmo escopo do CREATE: só 1
+      // variação por família nessa categoria — cor nova/múltiplas variações falha alto (o modelo
+      // N-itens-por-família compartilhando family_name é redesenho maior, fora de escopo).
       if (atual.variations.length === 0 && a.existentes.length > 0) {
-        const err = new Error(
-          'Item sem sub-recurso variations (anúncio plano, ADR-0084) — UPDATE de preço/estoque '
-          + 'não implementado para essa categoria. Reponha manualmente no painel do Mercado Livre.',
-        ) as Error & { status?: number };
-        err.status = 400;
-        throw err;
+        if (a.existentes.length !== 1 || a.novas.length > 0) {
+          const err = new Error(
+            'Item plano (ADR-0084) com múltiplas cores ou cor nova — UPDATE não implementado para '
+            + 'esse caso. Reponha manualmente no painel do Mercado Livre.',
+          ) as Error & { status?: number };
+          err.status = 400;
+          throw err;
+        }
+        const [existente] = a.existentes;
+        const estoqueDesejado = caparEstoque([{ sku: existente.sku, estoque: existente.estoque }]).get(existente.sku)
+          ?? existente.estoque;
+        const precoDesejado = a.somenteEstoque
+          ? undefined
+          : (a.desconto?.precoPorCodigo[existente.sku] ?? a.precoFamilia ?? undefined);
+        // original_price nunca é enviado: a ML rejeita esse campo em item plano (mesma
+        // validação real que bloqueou no CREATE, ADR-0084) — desconto não é suportado aqui.
+        await atualizarItemPlanoML(token, a.itemExternoId, {
+          available_quantity: estoqueDesejado,
+          ...(precoDesejado != null ? { price: precoDesejado } : {}),
+        });
+        return {
+          ok: true,
+          valor: {
+            variacoesExternas: { [existente.sku]: a.itemExternoId },
+            precoVivo: atual.price,
+          },
+        };
       }
       // Cap de estoque (ADR-0048): teto sobre o conjunto enviado (existentes + novas) p/ a soma
       // do anúncio não passar de 99.999. No-op quando cabe. Estoque real intacto no banco.

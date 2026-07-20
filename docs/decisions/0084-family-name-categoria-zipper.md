@@ -68,18 +68,24 @@ variação, não só `ml_variation_id` como sub-recurso). Redesenho maior, fora 
 suportado no item plano). Removidos os dois do payload plano (`title` vira opcional em `PayloadItem`).
 **Resultado: as 2 famílias publicaram** — `MLB7209437722` (Prata) e `MLB7209468002` (Cinza/Branco).
 
-**Lacuna conhecida — testada e confirmada (achado do dia seguinte, mesma sessão):** o item plano não
-tem sub-recurso `variations`, então o SKU não ganha um `ml_variation_id` "de verdade" — usamos o próprio
-`ml_item_id` como substituto (`mercado-livre.ts`, ver Implementação). Simulação real de UPDATE (bump de
-estoque +1 e preço +R$1, revertido em seguida) confirmou **bug de no-op silencioso**: `atualizarAnuncio`
-faz `GET /items/{id}` e `montarVariacoesUpdate` mapeia sobre `atual.variations` (vazio pro item plano) —
-o PUT sai com `variations: []`, a ML aceita sem erro, `familia.status` volta a `'publicado'`, e
-**nada muda no anúncio real**. Sem erro nenhum — pior que falhar, porque parece sucesso. Corrigido com
-uma trava: se `atual.variations` vier vazio e há variações existentes a atualizar, `atualizarAnuncio`
-falha alto (`throw`, mensagem operacional "reponha manualmente no painel do ML") em vez de mentir
-sucesso. UPDATE de item plano continua **não implementado** — a trava só impede o dado errado, não
-substitui a implementação futura (PUT direto em `price`/`available_quantity` no corpo raiz do item,
-sem `variations`, espelhando o que já existe no CREATE).
+**Lacuna do UPDATE — encontrada, corrigida e testada de ponta a ponta na mesma sessão:** o item plano
+não tem sub-recurso `variations`, então o SKU não ganha um `ml_variation_id` "de verdade" — usamos o
+próprio `ml_item_id` como substituto (`mercado-livre.ts`, ver Implementação). Uma simulação real de
+UPDATE (bump de estoque +1 e preço +R$1) revelou um **bug de no-op silencioso**: `atualizarAnuncio` fazia
+`GET /items/{id}` e `montarVariacoesUpdate` mapeava sobre `atual.variations` (vazio pro item plano) — o
+PUT saía com `variations: []`, a ML aceitava sem erro, `familia.status` voltava a `'publicado'`, e
+**nada mudava no anúncio real** (`preco_publicado_ml` ficou travado no valor antigo). Sem erro nenhum —
+pior que falhar, porque parecia sucesso.
+
+**Fix implementado:** quando `atual.variations` vem vazio e há exatamente 1 variação existente a
+atualizar (mesmo escopo do CREATE), `atualizarAnuncio` faz um PUT plano — `price`/`available_quantity`
+direto no corpo raiz do item, sem `variations`, sem `original_price` (a ML rejeita esse campo em item
+plano, mesma validação real do CREATE). Com >1 variação ou cor nova, continua falhando alto — esse caso
+seguiria exigindo o redesenho de N-itens-por-família, fora de escopo.
+
+**Validação end-to-end real:** bump de estoque+preço → `update-familia-ml` → confirmado no banco
+(`preco_publicado_ml` mudou de `129.9` para `130.9`, log sem erro) → revert → `update-familia-ml` de
+novo → confirmado de volta a `129.9`. UPDATE de item plano funciona.
 
 ### Implementação
 
@@ -88,10 +94,14 @@ sem `variations`, espelhando o que já existe no CREATE).
 - `ml/publicar.ts`: `montarPayloadItem` ganha um branch cedo — quando `categoriaExigeFamilyName` é
   verdadeiro, monta item plano (1 variação) ou lança erro (>1 variação) em vez de montar `variations`.
   `PayloadItem.variations` passa a ser opcional; ganha `price`/`available_quantity`/`seller_custom_field`.
+- `ml/atualizar-item.ts`: `buscarItemML` passa a ler também `price`/`available_quantity` do item (não só
+  `variations`/`pictures`); nova `atualizarItemPlanoML` faz o PUT plano (`{price?, available_quantity}`,
+  nunca `original_price`).
 - `canais/mercado-livre.ts`: `criarAnuncio` sintetiza `variacoesExternas = {sku: itemId}` quando a ML
   não devolve `variations` (item plano com exatamente 1 SKU enviado) — sem isso `ml_variation_id` nunca
-  seria gravado pro SKU. `atualizarAnuncio` falha alto quando `atual.variations` vem vazio e há
-  variações existentes a atualizar (evita PUT `{variations: []}` — no-op silencioso confirmado por teste).
+  seria gravado pro SKU. `atualizarAnuncio` detecta item plano (`atual.variations` vazio + existentes a
+  atualizar) e, se for exatamente 1 variação sem cor nova, faz o PUT plano; caso contrário falha alto
+  (evita PUT `{variations: []}` — no-op silencioso confirmado empiricamente).
 
 ## Como reverter
 
@@ -112,10 +122,11 @@ Ambas com `status='publicado'`, `ml_variation_id` gravado (fallback do item plan
 `anuncios_externos`. `lotes` (nº 36): `total_erros=0`, `total_publicadas=2` (as outras 2 famílias do
 lote, "CURSOR N.5", são um problema à parte — categoria mal resolvida, ADR-0083 — fora de escopo aqui).
 
-**UPDATE testado e confirmado quebrado** (simulação real: bump de estoque/preço via `update-familia-ml`,
-revertido depois — nunca chegou a mudar nada na ML, banco restaurado ao valor original em ambas as
-tentativas). Corrigido para falhar alto em vez de mentir sucesso (ver Implementação); a trava foi
-reexercitada depois do deploy e confirmada — `familia.status` vai a `erro` com mensagem clara. Editar
-preço/estoque desses 2 anúncios pelo app **não funciona ainda**; reponha manualmente no painel do ML até
-alguém implementar o PUT plano. Sincronização de vendas (`vendas.ts`) continua não testada — só uma
-venda real confirmaria.
+**UPDATE testado, corrigido e confirmado funcionando** (2 rodadas de simulação real via
+`update-familia-ml`: 1ª rodada achou o no-op silencioso, revertida sem risco pois nada tinha mudado na
+ML; implementado o PUT plano; 2ª rodada — bump de estoque+preço → confirmado no banco
+(`preco_publicado_ml` 129.9→130.9) → revert → confirmado de volta a 129.9). Editar preço/estoque desses
+2 anúncios pelo app **funciona** agora, para o caso de 1 variação (escopo do CREATE). Multi-cor/cor nova
+nessa categoria segue não suportado — falha alto em vez de tentar; exigiria o redesenho de
+N-itens-por-família (fora de escopo, ver Decisão). Sincronização de vendas (`vendas.ts`) continua não
+testada — só uma venda real confirmaria.

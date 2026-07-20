@@ -50,7 +50,47 @@ describe('atualizarAnuncio somenteEstoque', () => {
 });
 
 describe('atualizarAnuncio em item plano (ADR-0084)', () => {
-  it('GET sem variations + existentes a atualizar → falha alto, nunca manda PUT vazio (no-op silencioso)', async () => {
+  it('GET sem variations + 1 existente → PUT plano direto no corpo raiz (price/available_quantity), sem variations', async () => {
+    let putBody: any = null;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        putBody = JSON.parse(init.body as string);
+        return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ id: 'MLB1', variations: [], pictures: [], price: 100, available_quantity: 10 }), { status: 200 }));
+    }) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      itemExternoId: 'MLB1',
+      existentes: [{ sku: 'A1', estoque: 15, cor: 'Prata' }],
+      novas: [],
+      capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+      marca: null, dimensoes: null, desconto: null, precoFamilia: 130,
+      somenteEstoque: false,
+    };
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(res.ok).toBe(true);
+    expect(putBody).toEqual({ available_quantity: 15, price: 130 });
+    expect(res.valor?.variacoesExternas).toEqual({ A1: 'MLB1' });
+    expect(res.valor?.precoVivo).toBe(100);
+  });
+  it('somenteEstoque=true não envia price no PUT plano', async () => {
+    let putBody: any = null;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') { putBody = JSON.parse(init.body as string); return Promise.resolve(new Response('{}', { status: 200 })); }
+      return Promise.resolve(new Response(JSON.stringify({ id: 'MLB1', variations: [], pictures: [], price: 100, available_quantity: 10 }), { status: 200 }));
+    }) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      itemExternoId: 'MLB1',
+      existentes: [{ sku: 'A1', estoque: 20, cor: 'Prata' }],
+      novas: [],
+      capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+      marca: null, dimensoes: null, desconto: null, precoFamilia: 130,
+      somenteEstoque: true,
+    };
+    await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(putBody).toEqual({ available_quantity: 20 });
+  });
+  it('GET sem variations + >1 existente ou cor nova → falha alto, nunca manda PUT vazio (no-op silencioso)', async () => {
     let putChamado = false;
     globalThis.fetch = ((_url: string, init?: RequestInit) => {
       if (init?.method === 'PUT') putChamado = true;
@@ -59,7 +99,7 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
     const atualiz: AtualizacaoCanonica = {
       itemExternoId: 'MLB1',
       existentes: [{ sku: 'A1', estoque: 10, cor: 'Prata' }],
-      novas: [],
+      novas: [{ sku: 'N1', cor: 'Rosa', estoque: 4, preco: 30, gtin: null, fotoId: 'P' }],
       capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
       marca: null, dimensoes: null, desconto: null, precoFamilia: null,
       somenteEstoque: false,

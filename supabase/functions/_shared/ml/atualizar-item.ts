@@ -5,6 +5,10 @@ export interface ItemMLAtual {
   id: string;
   variations: MLVariacaoAtual[];
   pictures: string[];
+  // ADR-0084: só preenchidos em item plano (sem variations) — usados pra repor
+  // estoque/preço direto no corpo raiz em vez de um PUT de variations.
+  price: number | null;
+  availableQuantity: number | null;
 }
 
 function erroML(status: number, json: unknown): Error {
@@ -27,7 +31,7 @@ export function corDaVariacaoML(attributeCombinations: unknown): string | null {
 
 // Estado real do anúncio: ids + seller_custom_field + estoque de cada variação.
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
-  const url = `https://api.mercadolibre.com/items/${itemId}?attributes=id,variations,pictures`;
+  const url = `https://api.mercadolibre.com/items/${itemId}?attributes=id,variations,pictures,price,available_quantity`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
   if (!resp.ok) throw erroML(resp.status, json);
@@ -45,7 +49,31 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
   const pictures = (json.pictures ?? [])
     .map((p: Record<string, unknown>) => p.id as string)
     .filter(Boolean);
-  return { id: String(json.id), variations, pictures };
+  return {
+    id: String(json.id),
+    variations,
+    pictures,
+    price: (json.price as number | null | undefined) ?? null,
+    availableQuantity: (json.available_quantity as number | null | undefined) ?? null,
+  };
+}
+
+// ADR-0084: repõe estoque/preço de um item PLANO (categoria que exige family_name, sem
+// sub-recurso variations) — PUT direto no corpo raiz do item, nunca em `variations`.
+// `original_price` nunca é enviado: a ML rejeita esse campo pra categorias de item plano
+// (mesma validação real que bloqueou no CREATE, ver ADR-0084).
+export async function atualizarItemPlanoML(
+  accessToken: string,
+  itemId: string,
+  patch: { price?: number; available_quantity: number },
+): Promise<void> {
+  const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw erroML(resp.status, json);
 }
 
 export interface ResultadoUpdate {
