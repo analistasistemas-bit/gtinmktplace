@@ -6,6 +6,9 @@ import type { Venda, VendaItem } from '@/lib/faturamento';
 
 vi.mock('@/components/faturamento/mapa-brasil', () => ({ MapaBrasil: () => <div /> }));
 vi.mock('@/components/dashboard/grafico-cockpit', () => ({ GraficoCockpit: () => <div /> }));
+vi.mock('@/components/export/botao-exportar', () => ({
+  BotaoExportar: () => <button type="button">Exportar</button>,
+}));
 
 const resumo = {
   bruto: 100,
@@ -89,6 +92,13 @@ vi.mock('@/hooks/useCanaisHabilitados', () => ({
 }));
 
 describe('Dashboard', () => {
+  it('oferece a ação de exportar no cabeçalho', () => {
+    useMostrarLucroDashboardMock.mockReturnValue({ data: false });
+    render(<Dashboard />, { wrapper: MemoryRouter });
+
+    expect(screen.getByRole('button', { name: 'Exportar' })).toBeInTheDocument();
+  });
+
   it('prioriza líquido no card antes usado para lucro líquido', () => {
     useMostrarLucroDashboardMock.mockReturnValue({ data: false });
     render(<Dashboard />, { wrapper: MemoryRouter });

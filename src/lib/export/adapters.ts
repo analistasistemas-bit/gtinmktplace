@@ -11,6 +11,9 @@ import { labelStatusLiberacao, statusLiberacao } from '@/lib/status-liberacao';
 import type { Pergunta } from '@/lib/perguntas';
 import type { GeografiaVendas } from '@/lib/geografia-vendas';
 import type { ResumoVendas, PontoSerie } from '@/lib/resumo-vendas';
+import type { ProdutoTop } from '@/lib/cockpit';
+import type { CanalAtivo } from '@/lib/canal-ativo';
+import { infoCanal } from '@/lib/canais';
 import type { ReportData, ExportConfig, Coluna, Kpi, BlocoResumo } from './tipos';
 
 // ---------------------------------------------------------------------------
@@ -30,6 +33,79 @@ export function rotuloPeriodo(p: Periodo): string {
 }
 
 const DIR = 'right' as const;
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+const COLS_DASHBOARD: Coluna[] = [
+  { chave: 'periodo', titulo: 'Período' },
+  { chave: 'faturamento', titulo: 'Faturamento', alinhamento: DIR },
+  { chave: 'liquido', titulo: 'Líquido', alinhamento: DIR },
+  { chave: 'pedidos', titulo: 'Pedidos', alinhamento: DIR },
+];
+
+interface DashboardReportArgs {
+  resumo: ResumoVendas;
+  kpisPedidos: KpisPedidos;
+  serie: PontoSerie[];
+  top: ProdutoTop[];
+  geografia: GeografiaVendas;
+  periodo: Periodo;
+  canal: CanalAtivo;
+  config: ExportConfig;
+}
+
+export function buildDashboardReport(args: DashboardReportArgs): ReportData {
+  const { resumo, kpisPedidos, serie, top, geografia, periodo, canal, config } = args;
+  const blocos: BlocoResumo[] = [];
+  if (top.length > 0) {
+    blocos.push({
+      titulo: 'Top produtos do período',
+      itens: top.map((produto) => ({
+        label: produto.titulo,
+        valor: `${fmtBRL(produto.valor)} · ${fmtInt(produto.unidades)} un.`,
+      })),
+    });
+  }
+  if (geografia.porUf.length > 0) {
+    blocos.push({
+      titulo: 'Distribuição geográfica',
+      itens: geografia.porUf.map((uf) => ({
+        label: uf.uf,
+        valor: `${fmtInt(uf.pedidos)} pedidos · ${String(uf.pctPedidos).replace('.', ',')}%`,
+      })),
+    });
+  }
+
+  return {
+    titulo: 'Dashboard',
+    periodo: rotuloPeriodo(periodo),
+    filtros: [`Canal: ${canal === 'todos' ? 'Todos' : infoCanal(canal)?.nome ?? canal}`],
+    kpis: config.incluirKpis
+      ? [
+          { label: 'Faturamento bruto', valor: fmtBRL(resumo.bruto) },
+          { label: 'Líquido das vendas', valor: fmtBRL(resumo.liquido) },
+          { label: 'Líquido no faturamento', valor: fmtBRL(kpisPedidos.liquido) },
+          { label: 'Markup no período', valor: fmtMarkup(resumo.markup) },
+          { label: 'Compradores', valor: fmtInt(kpisPedidos.compradoresUnicos) },
+          { label: 'Pedidos', valor: fmtInt(kpisPedidos.pedidos) },
+          { label: 'Ticket médio', valor: fmtBRL(kpisPedidos.ticket) },
+          { label: 'A receber', valor: fmtBRL(resumo.aLiberar) },
+        ]
+      : undefined,
+    blocos: blocos.length > 0 ? blocos : undefined,
+    colunas: COLS_DASHBOARD,
+    linhas: serie.map((ponto) => ({
+      celulas: {
+        periodo: ponto.rotulo,
+        faturamento: fmtBRL(ponto.bruto),
+        liquido: fmtBRL(ponto.liquido),
+        pedidos: fmtInt(ponto.pedidos),
+      },
+    })),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Publicados
