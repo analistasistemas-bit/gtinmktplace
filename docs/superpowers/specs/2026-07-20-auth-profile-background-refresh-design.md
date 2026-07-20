@@ -12,8 +12,9 @@ a página atual. Com isso, filtros e rascunhos mantidos no estado local são per
 
 Manter o carregamento bloqueante apenas na hidratação inicial e nos eventos em que
 uma nova sessão ou um novo usuário precisa ser estabelecido. Em
-`TOKEN_REFRESHED`, recarregar o perfil silenciosamente, sem alterar
-`profileLoading` para `true`.
+`TOKEN_REFRESHED` — e em qualquer evento repetido para o mesmo usuário já
+carregado, inclusive `SIGNED_IN` emitido novamente ao recuperar o foco —
+recarregar o perfil silenciosamente, sem alterar `profileLoading` para `true`.
 
 O perfil retornado continua substituindo o perfil anterior. Portanto, mudanças de
 permissão e desativação de conta continuam sendo aplicadas assim que a consulta
@@ -35,7 +36,7 @@ global. Também não será alterado o polling de vendas.
 1. Na hidratação inicial, a sessão é obtida e o perfil é carregado de forma
    bloqueante.
 2. Em login ou troca real de usuário, o perfil é carregado de forma bloqueante.
-3. Em `TOKEN_REFRESHED` para o mesmo usuário, o perfil é carregado silenciosamente.
+3. Em eventos repetidos para o mesmo usuário, o perfil é carregado silenciosamente.
 4. Ao concluir a consulta silenciosa, o perfil atualizado é publicado no store.
 5. Se o perfil vier desativado, a proteção de rota existente encerra a sessão.
 6. Em logout, sessão, usuário e perfil são limpos como hoje.
