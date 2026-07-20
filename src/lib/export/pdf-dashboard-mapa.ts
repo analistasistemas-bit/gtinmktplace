@@ -20,6 +20,19 @@ const TEXTO: [number, number, number] = [30, 41, 59];
 const SUAVE: [number, number, number] = [100, 116, 139];
 const VIOLETA: [number, number, number] = [124, 58, 237];
 
+export function corPorIntensidade(
+  pedidos: number,
+  maxPedidos: number,
+): [number, number, number] {
+  const intensidade = Math.max(0, Math.min(1, pedidos / Math.max(1, maxPedidos)));
+  const mistura = 0.18 + intensidade * 0.82;
+  return [
+    Math.round(255 + (VIOLETA[0] - 255) * mistura),
+    Math.round(255 + (VIOLETA[1] - 255) * mistura),
+    Math.round(255 + (VIOLETA[2] - 255) * mistura),
+  ];
+}
+
 export function projetarMapaBrasil(area: AreaMapa): Map<string, PoligonosProjetados> {
   let minLng = Infinity;
   let maxLng = -Infinity;
@@ -98,15 +111,7 @@ function mapa(doc: jsPDF, data: DashboardPdfVisual): void {
   for (const [uf, polygons] of projetado) {
     const pedidos = valores.get(uf) ?? 0;
     if (pedidos === 0) doc.setFillColor(238, 241, 245);
-    else {
-      const intensidade = pedidos / maxPedidos;
-      const mistura = 0.18 + intensidade * 0.82;
-      doc.setFillColor(
-        Math.round(255 + (VIOLETA[0] - 255) * mistura),
-        Math.round(255 + (VIOLETA[1] - 255) * mistura),
-        Math.round(255 + (VIOLETA[2] - 255) * mistura),
-      );
-    }
+    else doc.setFillColor(...corPorIntensidade(pedidos, maxPedidos));
     for (const rings of polygons) for (const ring of rings) {
       if (ring.length < 2) continue;
       doc.lines(
@@ -148,7 +153,8 @@ function ranking(doc: jsPDF, data: DashboardPdfVisual): void {
     doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...SUAVE);
     doc.text(`${fmtInt(item.pedidos)} pedidos`, 274, y, { align: 'right' });
     doc.setFillColor(235, 231, 251).roundedRect(158, y + 4, 96, 3.5, 1, 1, 'F');
-    doc.setFillColor(...VIOLETA).roundedRect(158, y + 4, 96 * item.pedidos / max, 3.5, 1, 1, 'F');
+    doc.setFillColor(...corPorIntensidade(item.pedidos, max))
+      .roundedRect(158, y + 4, 96 * item.pedidos / max, 3.5, 1, 1, 'F');
     doc.setTextColor(...SUAVE).text(`${item.participacao.toLocaleString('pt-BR', {
       maximumFractionDigits: 1,
     })}%`, 274, y + 7, { align: 'right' });

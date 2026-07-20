@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { jsPDF } from 'jspdf';
-import { desenharPaginaGeografia, projetarMapaBrasil } from '../pdf-dashboard-mapa';
+import {
+  corPorIntensidade,
+  desenharPaginaGeografia,
+  projetarMapaBrasil,
+} from '../pdf-dashboard-mapa';
 import { dashboardPdfFixture } from './pdf-dashboard-fixture';
 
 describe('projetarMapaBrasil', () => {
@@ -17,6 +21,14 @@ describe('projetarMapaBrasil', () => {
       }
     }
   });
+});
+
+it('usa violeta pleno no máximo e tons progressivamente mais claros', () => {
+  expect(corPorIntensidade(100, 100)).toEqual([124, 58, 237]);
+  expect(corPorIntensidade(25, 100)).not.toEqual(corPorIntensidade(100, 100));
+  expect(corPorIntensidade(25, 100).every((canal, i) =>
+    canal >= corPorIntensidade(100, 100)[i],
+  )).toBe(true);
 });
 
 it('desenha mapa, ranking limitado e liberações sem imagem', () => {

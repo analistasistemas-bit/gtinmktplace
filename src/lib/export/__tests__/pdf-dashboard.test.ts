@@ -3,6 +3,21 @@ import { jsPDF } from 'jspdf';
 import { escalaDashboard, gerarPdfDashboard } from '../pdf-dashboard';
 import { dashboardPdfFixture } from './pdf-dashboard-fixture';
 
+const jspdfState = vi.hoisted(() => ({
+  textSpies: [] as unknown[],
+}));
+
+vi.mock('jspdf', async (importOriginal) => {
+  const original = await importOriginal<typeof import('jspdf')>();
+  function JsPdfComSpy(...args: ConstructorParameters<typeof original.jsPDF>) {
+    const doc = new original.jsPDF(...args);
+    jspdfState.textSpies.push(vi.spyOn(doc, 'text'));
+    return doc;
+  }
+  JsPdfComSpy.API = original.jsPDF.API;
+  return { ...original, jsPDF: JsPdfComSpy };
+});
+
 describe('escalaDashboard', () => {
   it('cria escala segura para vazio, nulos e um ponto', () => {
     expect(escalaDashboard([], 'faturamento')).toEqual({ min: 0, max: 1, ticks: [0, 0.5, 1] });
@@ -62,6 +77,39 @@ it('renderiza delta e auxiliar dos KPIs secundários', () => {
   const pdf = gerarPdfDashboard(data).output();
   expect(pdf).toContain('+139% vs. anterior');
   expect(pdf).toContain('valor após descontos');
+});
+
+it('alinha os cinco faturamentos à direita sem sobrepor os títulos', () => {
+  const produtos = Array.from({ length: 5 }, (_, i) => ({
+    posicao: i + 1,
+    titulo: `Produto ${i + 1} com título deliberadamente longo para testar a coluna`,
+    unidades: i + 1,
+    faturamento: (i + 1) * 100,
+  }));
+
+  const doc = gerarPdfDashboard(dashboardPdfFixture({ produtos }));
+  const text = jspdfState.textSpies.at(-1) as ReturnType<typeof vi.spyOn> | undefined;
+  expect(text).toBeDefined();
+  const chamadas = text?.mock.calls ?? [];
+  const chamadasValores = chamadas.filter(([valor]) =>
+    typeof valor === 'string' && /^R\$\s[1-5]00,00$/.test(valor),
+  );
+  expect(chamadasValores).toHaveLength(5);
+  expect(new Set(chamadasValores.map(([, x]) => x))).toHaveLength(1);
+  for (const [, , , options] of chamadasValores) {
+    expect(options).toEqual(expect.objectContaining({ align: 'right' }));
+  }
+
+  const valorX = chamadasValores[0][1] as number;
+  const chamadasTitulos = chamadas.filter(([valor]) =>
+    typeof valor === 'string' && /^\d\. Produto/.test(valor),
+  );
+  expect(chamadasTitulos).toHaveLength(5);
+  for (const [i, [titulo, x, y]] of chamadasTitulos.entries()) {
+    expect((x as number) + doc.getTextWidth(titulo as string)).toBeLessThan(valorX);
+    expect(chamadasValores[i][2]).toBe(y);
+  }
+  text?.mockRestore();
 });
 
 it('preenche suavemente a área sob a série sem rasterizar', () => {
