@@ -12,7 +12,7 @@ function slug(titulo: string): string {
 }
 
 /** Nome de arquivo: <slug-do-titulo>-<AAAA-MM-DD>.<ext> */
-export function nomeArquivo(titulo: string, ext: 'pdf' | 'xlsx', data: Date = new Date()): string {
+export function nomeArquivo(titulo: string, ext: 'pdf' | 'xlsx' | 'csv', data: Date = new Date()): string {
   const ano = data.getFullYear();
   const mes = String(data.getMonth() + 1).padStart(2, '0');
   const dia = String(data.getDate()).padStart(2, '0');
@@ -30,6 +30,12 @@ export async function exportar(data: ReportData, config: ExportConfig | ExportFo
   if (formato === 'excel') {
     const { gerarExcel } = await import('./excel');
     gerarExcel(data, nomeArquivo(data.titulo, 'xlsx'));
+    return;
+  }
+
+  if (formato === 'csv') {
+    const { gerarCsv } = await import('./csv');
+    gerarCsv(data, nomeArquivo(data.titulo, 'csv'));
     return;
   }
 

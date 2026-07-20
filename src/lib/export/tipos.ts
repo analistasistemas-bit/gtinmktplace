@@ -1,6 +1,6 @@
 /** Tipos do módulo de exportação (agnóstico de tela). */
 
-export type ExportFormato = 'pdf' | 'excel' | 'imprimir';
+export type ExportFormato = 'pdf' | 'excel' | 'csv' | 'imprimir';
 
 export interface ExportConfig {
   formato: ExportFormato;

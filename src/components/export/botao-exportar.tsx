@@ -34,6 +34,7 @@ interface BotaoExportarProps {
 const ROTULO_FORMATO: Record<ExportFormato, string> = {
   pdf: 'PDF',
   excel: 'Excel',
+  csv: 'CSV',
   imprimir: 'impressão',
 };
 
@@ -90,6 +91,9 @@ export function BotaoExportar({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => escolher('excel')}>
             <FileSpreadsheet className="h-4 w-4" /> Excel
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => escolher('csv')}>
+            <FileSpreadsheet className="h-4 w-4" /> CSV
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => escolher('imprimir')}>
             <Printer className="h-4 w-4" /> Imprimir

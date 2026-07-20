@@ -14,6 +14,8 @@ import { AoVivo } from '@/components/ui/ao-vivo';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
+import { BotaoExportar } from '@/components/export/botao-exportar';
+import { buildDashboardReport } from '@/lib/export/adapters';
 import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
 import { agruparPorPeriodo, ehFaturavel, formatProximaLiberacao, ratearLiquidoPorFrete } from '@/lib/resumo-vendas';
 import { liquidoPorCanal } from '@/lib/resumo-por-canal';
@@ -209,6 +211,19 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
         actions={
           <div className="flex items-center gap-3">
             <AoVivo isFetching={isFetching} />
+            <BotaoExportar
+              temKpis
+              montarReport={(config) => buildDashboardReport({
+                resumo: r,
+                kpisPedidos,
+                serie,
+                top,
+                geografia: geoUf,
+                periodo,
+                canal: canalAtivo,
+                config,
+              })}
+            />
             {novoLoteBtn}
           </div>
         }

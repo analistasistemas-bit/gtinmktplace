@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 import { nomeArquivo } from '@/lib/export/index';
 import { montarWorkbook } from '@/lib/export/excel';
 import { gerarPdf } from '@/lib/export/pdf';
+import { gerarCsv, serializarCsv } from '@/lib/export/csv';
 import type { ReportData } from '@/lib/export/tipos';
 
 const baseData: ReportData = {
@@ -43,6 +44,45 @@ describe('nomeArquivo', () => {
     expect(nomeArquivo('Relatório Geográfico!', 'pdf', new Date('2026-01-05T00:00:00'))).toBe(
       'relatorio-geografico-2026-01-05.pdf',
     );
+  });
+
+  it('aceita a extensão CSV', () => {
+    expect(nomeArquivo('Dashboard', 'csv', new Date('2026-07-20T00:00:00'))).toBe(
+      'dashboard-2026-07-20.csv',
+    );
+  });
+});
+
+describe('CSV', () => {
+  it('serializa colunas e linhas com BOM, CRLF e escape RFC 4180', () => {
+    const csv = serializarCsv({
+      titulo: 'Teste',
+      colunas: [
+        { chave: 'nome', titulo: 'Nome' },
+        { chave: 'nota', titulo: 'Nota' },
+      ],
+      linhas: [{ celulas: { nome: 'Produto, "A"\nlinha', nota: 'ok' } }],
+    });
+
+    expect(csv).toBe('\uFEFFNome,Nota\r\n"Produto, ""A""\nlinha",ok');
+  });
+
+  it('baixa um Blob UTF-8 com o nome .csv informado', () => {
+    const url = vi.fn(() => 'blob:csv');
+    const revoke = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: url });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revoke });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    gerarCsv(baseData, 'relatorio.csv');
+
+    expect(url).toHaveBeenCalledWith(expect.any(Blob));
+    expect(click).toHaveBeenCalledOnce();
+    expect(click.mock.instances[0].download).toBe('relatorio.csv');
+    expect(revoke).toHaveBeenCalledWith('blob:csv');
+    click.mockRestore();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
   });
 });
 

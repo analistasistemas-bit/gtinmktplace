@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildDashboardReport,
   buildVendasReport,
   buildFinanceiroDetalheReport,
   buildFinanceiroReport,
@@ -35,6 +36,70 @@ const pedido = (chave: string, over: Partial<Pedido> = {}): Pedido => ({
       quantity: 2, unit_price: 75, imagem_path: null, custo: 80, liquido: 120, imposto: 12, markup: 0.5 },
   ],
   ...over,
+});
+
+describe('buildDashboardReport', () => {
+  it('exporta o conteúdo do Dashboard com período e canal ativos', () => {
+    const r = buildDashboardReport({
+      resumo: { bruto: 1234.56, liquido: 987.65, markup: 0.42, aLiberar: 321.09 } as never,
+      kpisPedidos: {
+        liquido: 876.54, compradoresUnicos: 7, pedidos: 9, ticket: 137.17,
+      } as never,
+      serie: [{ chave: '2026-07-01', rotulo: '01/07', bruto: 400, liquido: 350, pedidos: 3 }],
+      top: [{ mlItemId: 'MLB1', titulo: 'Produto campeão', valor: 250.5, unidades: 4 }],
+      geografia: {
+        porUf: [{ uf: 'SP', pedidos: 5, unidades: 8, valor: 600, pctPedidos: 62.5 }],
+        porCidade: [], estadosAtingidos: 1, totalPedidos: 5, semGeo: 0,
+      },
+      periodo: { tipo: 'preset', dias: 30 },
+      canal: 'mercado_livre',
+      config: cfg(),
+    });
+
+    expect(r.titulo).toBe('Dashboard');
+    expect(r.periodo).toBe('Últimos 30 dias');
+    expect(r.filtros).toEqual(['Canal: Mercado Livre']);
+    expect(r.kpis).toEqual([
+      { label: 'Faturamento bruto', valor: fmtBRL(1234.56) },
+      { label: 'Líquido das vendas', valor: fmtBRL(987.65) },
+      { label: 'Líquido no faturamento', valor: fmtBRL(876.54) },
+      { label: 'Markup no período', valor: '+42%' },
+      { label: 'Compradores', valor: '7' },
+      { label: 'Pedidos', valor: '9' },
+      { label: 'Ticket médio', valor: fmtBRL(137.17) },
+      { label: 'A receber', valor: fmtBRL(321.09) },
+    ]);
+    expect(r.linhas[0].celulas).toEqual({
+      periodo: '01/07', faturamento: fmtBRL(400), liquido: fmtBRL(350), pedidos: '3',
+    });
+    expect(r.blocos?.[0].itens[0]).toEqual({
+      label: 'Produto campeão', valor: `${fmtBRL(250.5)} · 4 un.`,
+    });
+    expect(r.blocos?.[1].itens[0]).toEqual({
+      label: 'SP', valor: '5 pedidos · 62,5%',
+    });
+  });
+
+  it('omite KPIs e blocos quando incluirKpis está desligado', () => {
+    const r = buildDashboardReport({
+      resumo: { bruto: 0, liquido: 0, markup: null, aLiberar: 0 } as never,
+      kpisPedidos: { liquido: 0, compradoresUnicos: 0, pedidos: 0, ticket: 0 } as never,
+      serie: [],
+      top: [{ mlItemId: 'MLB1', titulo: 'Produto', valor: 10, unidades: 1 }],
+      geografia: {
+        porUf: [{ uf: 'SP', pedidos: 1, unidades: 1, valor: 10, pctPedidos: 100 }],
+        porCidade: [], estadosAtingidos: 1, totalPedidos: 1, semGeo: 0,
+      },
+      periodo: { tipo: 'hoje' },
+      canal: 'todos',
+      config: cfg({ incluirKpis: false }),
+    });
+
+    expect(r.filtros).toEqual(['Canal: Todos']);
+    expect(r.kpis).toBeUndefined();
+    expect(r.linhas).toHaveLength(0);
+    expect(r.blocos).toBeUndefined();
+  });
 });
 
 describe('rotuloPeriodo', () => {
