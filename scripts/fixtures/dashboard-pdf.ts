@@ -65,7 +65,14 @@ const representativo: DashboardPdfVisual = {
       faturamento: 24.99,
     },
   ],
-  liberacoes: [{ data: '18/08', valor: 319.55 }],
+  liberacoes: [
+    { data: '18/08', valor: 84.9 },
+    { data: '25/08', valor: 72.35 },
+    { data: '01/09', valor: 63.4 },
+    { data: '08/09', valor: 91.2 },
+    { data: '15/09', valor: 58.8 },
+    { data: '22/09', valor: 49.35 },
+  ],
   totalAReceber: 319.55,
   geografia: [
     { uf: 'MG', pedidos: 4, participacao: 44.4 },
@@ -91,7 +98,12 @@ const vazio: DashboardPdfVisual = {
 
 mkdirSync('tmp/pdfs', { recursive: true });
 
-for (const [nome, data] of Object.entries({ representativo, vazio })) {
-  const doc = gerarPdfDashboard(data, new Date('2026-07-20T10:31:00-03:00'));
+const emitidoEm = new Date('2026-07-20T10:31:00-03:00');
+export const documentos = {
+  representativo: gerarPdfDashboard(representativo, emitidoEm),
+  vazio: gerarPdfDashboard(vazio, emitidoEm),
+};
+
+for (const [nome, doc] of Object.entries(documentos)) {
   writeFileSync(`tmp/pdfs/dashboard-${nome}.pdf`, Buffer.from(doc.output('arraybuffer')));
 }
