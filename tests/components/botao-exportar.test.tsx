@@ -25,6 +25,37 @@ beforeAll(() => {
 beforeEach(() => exportarMock.mockClear());
 
 describe('BotaoExportar', () => {
+  it.each([
+    ['pdf', false],
+    ['excel', true],
+    ['csv', true],
+    ['imprimir', true],
+  ] as const)('mostra a opção de conteúdo correta em %s', async (formato, mostraSomenteDados) => {
+    const user = userEvent.setup();
+    render(<BotaoExportar temKpis pdfSempreCompleto montarReport={() => REPORT} />);
+
+    await user.click(screen.getByRole('button', { name: /exportar/i }));
+    await user.click(await screen.findByRole('menuitem', { name: new RegExp(formato, 'i') }));
+
+    if (mostraSomenteDados) {
+      expect(screen.getByText('Somente os dados')).toBeInTheDocument();
+    } else {
+      expect(screen.queryByText('Somente os dados')).not.toBeInTheDocument();
+    }
+  });
+
+  it('força o Dashboard PDF completo ao confirmar', async () => {
+    const user = userEvent.setup();
+    const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);
+    render(<BotaoExportar temKpis pdfSempreCompleto montarReport={montar} />);
+
+    await user.click(screen.getByRole('button', { name: /exportar/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /pdf/i }));
+    await user.click(screen.getByRole('button', { name: /^exportar$/i }));
+
+    expect(montar).toHaveBeenCalledWith({ formato: 'pdf', expandido: false, incluirKpis: true });
+  });
+
   it('oferece CSV e encaminha o formato ao exportador', async () => {
     const user = userEvent.setup();
     const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);

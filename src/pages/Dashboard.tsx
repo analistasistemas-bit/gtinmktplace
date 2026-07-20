@@ -213,6 +213,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
             <AoVivo isFetching={isFetching} />
             <BotaoExportar
               temKpis
+              pdfSempreCompleto
               montarReport={(config) => buildDashboardReport({
                 resumo: r,
                 kpisPedidos,
@@ -222,6 +223,74 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
                 periodo,
                 canal: canalAtivo,
                 config,
+                visual: config.formato === 'pdf'
+                  ? {
+                      metrica,
+                      pontos: serieGrafico.map((p) => ({
+                        rotulo: p.rotulo,
+                        valor: metrica === 'pedidos' ? p.pedidos : p.liquido,
+                      })),
+                      principais: [
+                        {
+                          label: 'Faturamento bruto',
+                          valor: fmtBRL(r.bruto),
+                          delta: delta(r.bruto, rAnt.bruto).texto,
+                          tendencia: delta(r.bruto, rAnt.bruto).trend,
+                          auxiliar: `${fmtInt(kpisPedidos.pedidos)} pedidos · ${fmtInt(kpisPedidos.unidades)} unidades`
+                            + (devolucoesPeriodo.qtd > 0
+                              ? ` · ${fmtInt(devolucoesPeriodo.qtd)} ${devolucoesPeriodo.qtd === 1 ? 'devolução' : 'devoluções'} · ${fmtBRL(devolucoesPeriodo.valor)}`
+                              : ''),
+                        },
+                        {
+                          label: 'Líquido das vendas',
+                          valor: fmtBRL(r.liquido),
+                          delta: dLiquido.texto,
+                          tendencia: dLiquido.trend,
+                          auxiliar: `comissão ${fmtBRL(r.comissao)} · frete ${fmtBRL(r.frete)}`,
+                        },
+                      ],
+                      secundarios: [
+                        {
+                          label: 'Líquido no faturamento',
+                          valor: fmtBRL(kpisPedidos.liquido),
+                          delta: delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).texto,
+                          tendencia: delta(kpisPedidos.liquido, kpisPedidosAnt.liquido).trend,
+                          auxiliar: mostrarLucro && r.margem != null ? `lucro ${fmtBRL(r.lucro)}` : undefined,
+                        },
+                        {
+                          label: 'Markup no período',
+                          valor: r.markup != null ? `${r.markup >= 0 ? '+' : ''}${Math.round(r.markup * 100)}%` : '—',
+                        },
+                        {
+                          label: 'Compradores',
+                          valor: fmtInt(kpisPedidos.compradoresUnicos),
+                          auxiliar: `${kpisPedidos.pctRecompra.toFixed(1).replace('.', ',')}% recompra`,
+                        },
+                        {
+                          label: 'Pedidos',
+                          valor: fmtInt(kpisPedidos.pedidos),
+                          delta: delta(kpisPedidos.pedidos, kpisPedidosAnt.pedidos).texto,
+                          tendencia: delta(kpisPedidos.pedidos, kpisPedidosAnt.pedidos).trend,
+                        },
+                        {
+                          label: 'Ticket médio',
+                          valor: fmtBRL(kpisPedidos.ticket),
+                          delta: delta(kpisPedidos.ticket, kpisPedidosAnt.ticket).texto,
+                          tendencia: delta(kpisPedidos.ticket, kpisPedidosAnt.ticket).trend,
+                        },
+                        {
+                          label: 'A receber',
+                          valor: fmtBRL(r.aLiberar),
+                          auxiliar: r.proximaLiberacao
+                            ? formatProximaLiberacao(r.proximaLiberacao)
+                            : 'nada a liberar',
+                        },
+                      ],
+                      alertas: atencao.map((item) => item.label),
+                      liberacoes: caixa.map((item) => ({ data: fmtDia(item.data), valor: item.total })),
+                      totalAReceber: r.aLiberar,
+                    }
+                  : undefined,
               })}
             />
             {novoLoteBtn}

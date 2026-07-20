@@ -43,6 +43,63 @@ export interface BlocoResumo {
   itens: Kpi[];
 }
 
+export type DashboardMetrica = 'faturamento' | 'liquido' | 'pedidos';
+export type DashboardTendencia = 'up' | 'down' | 'neutral';
+
+export interface DashboardKpiVisual {
+  label: string;
+  valor: string;
+  delta?: string;
+  tendencia?: DashboardTendencia;
+  auxiliar?: string;
+}
+
+export interface DashboardPontoVisual {
+  rotulo: string;
+  valor: number | null;
+}
+
+export interface DashboardProdutoVisual {
+  posicao: number;
+  titulo: string;
+  unidades: number;
+  faturamento: number;
+}
+
+export interface DashboardLiberacaoVisual {
+  data: string;
+  valor: number;
+}
+
+export interface DashboardUfVisual {
+  uf: string;
+  pedidos: number;
+  participacao: number;
+}
+
+export interface DashboardPdfVisual {
+  tipo: 'dashboard';
+  periodo: string;
+  canal: string;
+  metrica: DashboardMetrica;
+  serie: DashboardPontoVisual[];
+  principais: [DashboardKpiVisual, DashboardKpiVisual];
+  secundarios: [
+    DashboardKpiVisual,
+    DashboardKpiVisual,
+    DashboardKpiVisual,
+    DashboardKpiVisual,
+    DashboardKpiVisual,
+    DashboardKpiVisual,
+  ];
+  alertas: string[];
+  produtos: DashboardProdutoVisual[];
+  liberacoes: DashboardLiberacaoVisual[];
+  totalAReceber: number;
+  geografia: DashboardUfVisual[];
+  semLocalizacao: number;
+}
+
 export interface ReportData {
   /** Título do relatório, ex.: "Faturamento · Vendas". */
   titulo: string;
@@ -54,6 +111,7 @@ export interface ReportData {
   kpis?: Kpi[];
   /** Blocos-resumo extras (listas tituladas), renderizados após os KPIs. Só quando config.incluirKpis. */
   blocos?: BlocoResumo[];
+  dashboardPdf?: DashboardPdfVisual;
   colunas: Coluna[];
   linhas: Linha[];
 }
