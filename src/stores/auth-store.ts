@@ -12,6 +12,10 @@ export interface Profile {
   is_super_admin: boolean;
 }
 
+interface LoadProfileOptions {
+  blocking?: boolean;
+}
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -20,10 +24,10 @@ interface AuthState {
   profileLoading: boolean;
   hydrate: () => Promise<void>;
   setSession: (s: Session | null) => void;
-  loadProfile: (userId: string) => Promise<void>;
+  loadProfile: (userId: string, options?: LoadProfileOptions) => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
   loading: true,
@@ -34,29 +38,37 @@ export const useAuthStore = create<AuthState>((set) => ({
     const user = data.session?.user ?? null;
     set({ session: data.session, user, loading: false });
     if (user) {
-      set({ profileLoading: true });
-      void useAuthStore.getState().loadProfile(user.id);
+      void get().loadProfile(user.id);
     } else {
       set({ profile: null, profileLoading: false });
     }
     supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user ?? null;
-      set({ session, user: u });
-      if (u) {
-        set({ profileLoading: true });
-        void useAuthStore.getState().loadProfile(u.id);
-      } else {
-        set({ profile: null, profileLoading: false });
+      const previousUserId = get().user?.id ?? null;
+      const user = session?.user ?? null;
+      if (!user) {
+        set({ session, user: null, profile: null, profileLoading: false });
+        return;
       }
+
+      const sameLoadedUser = previousUserId === user.id && get().profile !== null;
+      if (sameLoadedUser) {
+        set({ session, user });
+      } else {
+        set({ session, user, profile: null });
+      }
+      void get().loadProfile(user.id, { blocking: !sameLoadedUser });
     });
   },
   setSession: (session) => set({ session, user: session?.user ?? null }),
-  loadProfile: async (userId) => {
+  loadProfile: async (userId, options = {}) => {
+    const blocking = options.blocking ?? true;
+    if (blocking) set({ profileLoading: true });
     const { data } = await supabase
       .from('profiles')
       .select('id,is_admin,is_active,allowed_menus,nome,org_id,is_super_admin')
       .eq('id', userId)
       .maybeSingle();
+    if (get().user?.id !== userId) return;
     set({ profile: (data as Profile) ?? null, profileLoading: false });
   },
 }));
