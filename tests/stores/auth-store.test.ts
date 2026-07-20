@@ -119,6 +119,30 @@ describe('auth-store background profile refresh', () => {
     },
   );
 
+  it('refreshes a loaded missing profile without blocking the route', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: null,
+      profileLoading: false,
+    });
+    const request = deferred<{ data: Profile | null }>();
+    mocks.maybeSingle.mockReturnValueOnce(request.promise);
+
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+
+    expect(useAuthStore.getState().profileLoading).toBe(false);
+    expect(useAuthStore.getState().profile).toBeNull();
+
+    request.resolve({ data: profile('user-1', 'Criado depois') });
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profile?.nome).toBe('Criado depois');
+    });
+    expect(useAuthStore.getState().profileLoading).toBe(false);
+  });
+
   it('a real user change clears the old profile and blocks until the new profile arrives', async () => {
     await registerAuthListener();
     const oldSession = session('user-1');

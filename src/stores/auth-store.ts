@@ -52,7 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      const sameLoadedUser = previousUserId === user.id && get().profile !== null;
+      const sameLoadedUser = previousUserId === user.id && !get().profileLoading;
       if (sameLoadedUser) {
         set({ session, user });
       } else {
