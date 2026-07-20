@@ -22,7 +22,33 @@ it('gera duas páginas A4 paisagem com os oito KPIs e a métrica selecionada', (
   expect(doc.getNumberOfPages()).toBe(2);
   expect(doc.internal.pageSize.getWidth()).toBeGreaterThan(doc.internal.pageSize.getHeight());
   const pdf = doc.output();
-  for (const texto of ['Dashboard', 'Faturamento bruto', 'Líquido das vendas', 'Evolução de vendas', 'Top produtos do período']) {
+  for (const texto of [
+    'Dashboard',
+    'Faturamento bruto',
+    'Líquido das vendas',
+    'Evolução de vendas',
+    'Top produtos do período',
+    'Liberações próximas',
+    'Vendas por estado',
+    'Página 2 de 2',
+  ]) {
+    expect(pdf).toContain(texto);
+  }
+});
+
+it('expõe os estados vazios do relatório completo', () => {
+  const pdf = gerarPdfDashboard(dashboardPdfFixture({
+    serie: [],
+    produtos: [],
+    liberacoes: [],
+    geografia: [],
+  })).output();
+  for (const texto of [
+    'Sem vendas no período',
+    'Sem produtos no período',
+    'Nada a liberar no horizonte',
+    'Sem vendas com destino no período',
+  ]) {
     expect(pdf).toContain(texto);
   }
 });

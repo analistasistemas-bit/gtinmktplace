@@ -6,6 +6,7 @@ import type {
   DashboardPdfVisual,
   DashboardProdutoVisual,
 } from './tipos';
+import { desenharPaginaGeografia } from './pdf-dashboard-mapa';
 
 const TEXTO: [number, number, number] = [30, 41, 59];
 const SUAVE: [number, number, number] = [100, 116, 139];
@@ -174,5 +175,6 @@ export function gerarPdfDashboard(data: DashboardPdfVisual, emitidoEm = new Date
   desenharGrafico(doc, data, 12, 116, 174, 78);
   desenharProdutos(doc, data.produtos, 190, 116, 95, 78);
   doc.addPage('a4', 'landscape');
+  desenharPaginaGeografia(doc, data, emitidoEm);
   return doc;
 }
