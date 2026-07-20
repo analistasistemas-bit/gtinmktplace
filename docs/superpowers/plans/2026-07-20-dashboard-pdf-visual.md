@@ -247,7 +247,9 @@ const visual: NonNullable<Parameters<typeof buildDashboardReport>[0]['visual']> 
 
 it('anexa payload visual completo somente ao PDF e aplica limites 5/6/5', () => {
   const report = buildDashboardReport(fixtureArgs({ config: pdf, visual, topCount: 7, ufCount: 7 }));
-  expect(report.kpis).toHaveLength(8);
+  // O relatório visual é completo por seu próprio contrato; o bloco genérico
+  // continua obedecendo config.incluirKpis para não duplicar regras.
+  expect(report.kpis).toBeUndefined();
   expect(report.dashboardPdf).toMatchObject<Partial<DashboardPdfVisual>>({
     tipo: 'dashboard',
     metrica: 'pedidos',
@@ -255,6 +257,10 @@ it('anexa payload visual completo somente ao PDF e aplica limites 5/6/5', () => 
   });
   expect(report.dashboardPdf?.principais).toEqual(visual.principais);
   expect(report.dashboardPdf?.secundarios).toEqual(visual.secundarios);
+  expect([
+    ...(report.dashboardPdf?.principais ?? []),
+    ...(report.dashboardPdf?.secundarios ?? []),
+  ]).toHaveLength(8);
   expect(report.dashboardPdf?.produtos).toHaveLength(5);
   expect(report.dashboardPdf?.liberacoes).toHaveLength(6);
   expect(report.dashboardPdf?.geografia).toHaveLength(5);
@@ -304,6 +310,11 @@ export interface DashboardReportArgs {
 ```
 
 Import the new types, destructure `visual`, and add the exact conditional `dashboardPdf` expression from “Exact Interfaces”. Keep generic `kpis`, `blocos`, `colunas`, and `linhas` unchanged so Excel/CSV/print remain stable.
+
+The completeness invariant belongs to `dashboardPdf.principais` (tuple of 2)
+plus `dashboardPdf.secundarios` (tuple of 6), not to generic `ReportData.kpis`.
+Do not force or duplicate generic KPIs in the adapter when
+`config.incluirKpis === false`.
 
 - [ ] **Step 5: Run focused tests and typecheck**
 
@@ -708,6 +719,13 @@ const incluirKpisEfetivo = pdfSempreCompleto && formato === 'pdf' ? true : inclu
 
 Render the content radio only when `mostrarOpcaoKpis`, and pass `incluirKpisEfetivo` from `confirmar`. Do not bypass the confirmation dialog, because it retains consistent generation feedback.
 
+This UI normalization is the single place that forces the generic
+`incluirKpis` option to `true` for the normal Dashboard PDF flow. The adapter
+does not repeat that rule: it always builds the complete typed visual payload
+when `formato === 'pdf' && visual`, while generic `ReportData.kpis` continues to
+follow `config.incluirKpis`. That separation also keeps direct adapter tests
+robust without changing Excel, CSV, or print semantics.
+
 - [ ] **Step 6: Pass existing Dashboard values without new state/query**
 
 Add `pdfSempreCompleto` to the Dashboard button and construct `visual` only when `config.formato === 'pdf'`.
@@ -937,5 +955,9 @@ The plan was checked for prohibited placeholder markers, deferred implementation
 
 - The first decomposition risked overlapping ownership of `pdf-dashboard.ts`; Task 3 is now explicitly sequential and limited to importing/calling page two.
 - The generic content radio originally conflicted with fixed complete PDF output; Task 4 now hides it only for Dashboard PDF and forces `incluirKpis: true`.
+- A Task 1 test originally expected generic `ReportData.kpis` despite passing
+  `incluirKpis: false`. It now proves completeness through the typed 2+6 visual
+  tuples; only Task 4 normalizes the UI option, so the adapter does not duplicate
+  that rule.
 - Visual PNG inspection alone did not prove vector output; Tasks 2–3 now spy on `addImage` across the complete renderer.
 - Unbounded arrays could break fixed pagination; Task 1 enforces 5/6/5 before rendering.
