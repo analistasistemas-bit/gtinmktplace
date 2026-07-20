@@ -94,7 +94,7 @@ export function buildDashboardReport(args: DashboardReportArgs): ReportData {
           { label: 'A receber', valor: fmtBRL(resumo.aLiberar) },
         ]
       : undefined,
-    blocos: blocos.length > 0 ? blocos : undefined,
+    blocos: config.incluirKpis && blocos.length > 0 ? blocos : undefined,
     colunas: COLS_DASHBOARD,
     linhas: serie.map((ponto) => ({
       celulas: {

@@ -80,14 +80,15 @@ describe('buildDashboardReport', () => {
     });
   });
 
-  it('aceita coleções vazias sem emitir KPIs ou blocos vazios', () => {
+  it('omite KPIs e blocos quando incluirKpis está desligado', () => {
     const r = buildDashboardReport({
       resumo: { bruto: 0, liquido: 0, markup: null, aLiberar: 0 } as never,
       kpisPedidos: { liquido: 0, compradoresUnicos: 0, pedidos: 0, ticket: 0 } as never,
       serie: [],
-      top: [],
+      top: [{ mlItemId: 'MLB1', titulo: 'Produto', valor: 10, unidades: 1 }],
       geografia: {
-        porUf: [], porCidade: [], estadosAtingidos: 0, totalPedidos: 0, semGeo: 0,
+        porUf: [{ uf: 'SP', pedidos: 1, unidades: 1, valor: 10, pctPedidos: 100 }],
+        porCidade: [], estadosAtingidos: 1, totalPedidos: 1, semGeo: 0,
       },
       periodo: { tipo: 'hoje' },
       canal: 'todos',

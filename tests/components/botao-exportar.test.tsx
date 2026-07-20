@@ -25,6 +25,18 @@ beforeAll(() => {
 beforeEach(() => exportarMock.mockClear());
 
 describe('BotaoExportar', () => {
+  it('oferece CSV e encaminha o formato ao exportador', async () => {
+    const user = userEvent.setup();
+    const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);
+    render(<BotaoExportar montarReport={montar} />);
+
+    await user.click(screen.getByRole('button', { name: /exportar/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /csv/i }));
+
+    expect(montar).toHaveBeenCalledWith({ formato: 'csv', expandido: false, incluirKpis: false });
+    expect(exportarMock).toHaveBeenCalledWith(REPORT, 'csv');
+  });
+
   it('tela sem KPIs/expansão: escolher Excel dispara export direto (sem diálogo)', async () => {
     const user = userEvent.setup();
     const montar = vi.fn((_c: ExportConfig): ReportData => REPORT);
