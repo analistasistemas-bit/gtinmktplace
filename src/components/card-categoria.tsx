@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Tag, Sparkles, AlertTriangle, Search } from 'lucide-react';
+import { Tag, Sparkles, AlertTriangle, Search, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -51,6 +51,12 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
       { onError: (e) => toast.error('Erro ao definir categoria', { description: (e as Error).message }) },
     );
 
+  // Categoria específica sendo aplicada agora (p/ mostrar spinner só no botão clicado, não em
+  // todos) — `mutation.variables` já guarda o payload da última chamada, sem precisar de state à
+  // parte. A resolução no backend (definir-categoria-familia → schema+IA, ADR-0052) pode levar
+  // vários segundos; sem indicador, o clique parece não ter feito nada (achado do Diego, lote #36).
+  const aplicando = (categoriaId: string) => definir.isPending && definir.variables?.categoriaMlId === categoriaId;
+
   return (
     <div className="flex flex-col gap-1.5">
       {sugestao && (
@@ -58,9 +64,13 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
           type="button"
           onClick={() => escolher(sugestao)}
           disabled={definir.isPending}
-          className="rounded-md border border-info/40 bg-info/5 p-1.5 text-left text-xs hover:bg-info/10"
+          className="rounded-md border border-info/40 bg-info/5 p-1.5 text-left text-xs hover:bg-info/10 disabled:cursor-wait disabled:opacity-60"
         >
-          <span className="font-medium">Sugestão (concorrente):</span> {sugestao.categoriaNome}
+          {aplicando(sugestao.categoriaId) ? (
+            <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Aplicando…</span>
+          ) : (
+            <><span className="font-medium">Sugestão (concorrente):</span> {sugestao.categoriaNome}</>
+          )}
         </button>
       )}
       <div className="flex gap-1">
@@ -71,9 +81,10 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
           onFocus={carregarSugestao}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && buscar()}
+          disabled={definir.isPending}
         />
         <Button size="sm" className="h-8 px-2" onClick={buscar} disabled={buscando || definir.isPending}>
-          <Search className="h-3.5 w-3.5" />
+          {buscando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
         </Button>
       </div>
       {candidatos.length > 0 && (
@@ -84,9 +95,13 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
               type="button"
               onClick={() => escolher(c)}
               disabled={definir.isPending}
-              className="rounded-md border p-1.5 text-left text-xs hover:bg-accent"
+              className="rounded-md border p-1.5 text-left text-xs hover:bg-accent disabled:cursor-wait disabled:opacity-60"
             >
-              {c.categoriaNome} <span className="text-muted-foreground">({c.categoriaId})</span>
+              {aplicando(c.categoriaId) ? (
+                <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Aplicando…</span>
+              ) : (
+                <>{c.categoriaNome} <span className="text-muted-foreground">({c.categoriaId})</span></>
+              )}
             </button>
           ))}
         </div>

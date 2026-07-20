@@ -150,4 +150,26 @@ describe('CardCategoria', () => {
     // Só o clique explícito no card da sugestão dispara a mutação, com os dados certos.
     await waitFor(() => expect(definirCategoriaLivreMock).toHaveBeenCalledWith('f1', 'MLB999', 'Categoria X'));
   });
+
+  it('mostra "Aplicando…" no candidato clicado e desabilita a busca enquanto a mutação está pendente (evita parecer travado, achado do Diego no lote #36)', async () => {
+    buscarCategoriaMLMock.mockResolvedValue({
+      candidatos: [{ categoriaId: 'MLB271227', categoriaNome: 'Zíperes', domainName: '' }],
+      sugestaoConcorrente: null,
+    });
+    let resolverMutacao: (v: unknown) => void = () => {};
+    definirCategoriaLivreMock.mockReturnValue(new Promise((resolve) => { resolverMutacao = resolve; }));
+
+    renderCard(familiaBase({ categoriaMlId: null }));
+    const input = screen.getByPlaceholderText(/buscar categoria/i);
+    fireEvent.change(input, { target: { value: 'ziper' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await screen.findByText(/Zíperes/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /Zíperes/i }));
+
+    expect(await screen.findByText(/Aplicando…/i)).toBeInTheDocument();
+    expect(input).toBeDisabled();
+
+    resolverMutacao(undefined);
+  });
 });
