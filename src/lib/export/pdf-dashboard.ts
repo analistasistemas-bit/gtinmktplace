@@ -75,9 +75,14 @@ function desenharKpi(
     doc.setFontSize(7.5).setTextColor(...corDelta);
     doc.text(truncar(doc, kpi.delta, w - 8), x + 4, y + 21);
   }
-  if (kpi.auxiliar) {
+  const rodape = destaque ? kpi.auxiliar : [kpi.delta, kpi.auxiliar].filter(Boolean).join(' · ');
+  if (rodape) {
+    const corRodape: [number, number, number] = !destaque && kpi.delta
+      ? kpi.tendencia === 'down' ? [190, 55, 55] : AZUL
+      : SUAVE;
     doc.setFont('helvetica', 'normal').setFontSize(6.7).setTextColor(...SUAVE);
-    doc.text(truncar(doc, kpi.auxiliar, w - 8), x + 4, y + h - 3);
+    doc.setTextColor(...corRodape);
+    doc.text(truncar(doc, rodape, w - 8), x + 4, y + h - 3);
   }
 }
 
@@ -128,6 +133,19 @@ function desenharGrafico(
     x: px + (pontos.length === 1 ? pw / 2 : (i / (pontos.length - 1)) * pw),
     y: py + ph - (((ponto.valor ?? 0) - escala.min) / faixa) * ph,
   }));
+  if (coords.length > 1) {
+    const inicio = { x: coords[0].x, y: py + ph };
+    const contorno = [
+      [0, coords[0].y - inicio.y] as [number, number],
+      ...coords.slice(1).map((ponto, i) => [
+        ponto.x - coords[i].x,
+        ponto.y - coords[i].y,
+      ] as [number, number]),
+      [0, py + ph - coords.at(-1)!.y] as [number, number],
+    ];
+    doc.setFillColor(219, 232, 255);
+    doc.lines(contorno, inicio.x, inicio.y, [1, 1], 'F', true);
+  }
   doc.setDrawColor(...AZUL).setLineWidth(0.7);
   if (coords.length === 1) {
     doc.setFillColor(...AZUL).circle(coords[0].x, coords[0].y, 1.4, 'F');

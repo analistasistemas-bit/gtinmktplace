@@ -30,6 +30,27 @@ it('desenha mapa, ranking limitado e liberações sem imagem', () => {
   expect(addImage).not.toHaveBeenCalled();
 });
 
+it('limita liberações a seis e o ranking a cinco UFs', () => {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const text = vi.spyOn(doc, 'text');
+  desenharPaginaGeografia(doc, dashboardPdfFixture({
+    liberacoes: Array.from({ length: 7 }, (_, i) => ({
+      data: `0${i + 1}/09`,
+      valor: 100 + i,
+    })),
+    geografia: ['MG', 'SP', 'PE', 'BA', 'PR', 'SC'].map((uf, i) => ({
+      uf,
+      pedidos: 10 - i,
+      participacao: 30 - i,
+    })),
+  }), new Date('2026-07-20T10:31:00-03:00'));
+  const textos = text.mock.calls.map(([valor]) => valor);
+  expect(textos).toContain('06/09');
+  expect(textos).not.toContain('07/09');
+  expect(textos).toContain('PR');
+  expect(textos).not.toContain('SC');
+});
+
 it('preserva datas curtas e percentuais já normalizados', () => {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const text = vi.spyOn(doc, 'text');

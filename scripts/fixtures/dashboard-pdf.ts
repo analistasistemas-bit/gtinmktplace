@@ -8,7 +8,11 @@ const representativo: DashboardPdfVisual = {
   periodo: 'Hoje',
   canal: 'Todos',
   metrica: 'faturamento',
-  serie: [{ rotulo: '20/07', valor: 456.56 }],
+  serie: [
+    { rotulo: '18/07', valor: 218.4 },
+    { rotulo: '19/07', valor: 342.9 },
+    { rotulo: '20/07', valor: 456.56 },
+  ],
   principais: [
     {
       label: 'Faturamento bruto',

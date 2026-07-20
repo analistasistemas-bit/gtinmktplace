@@ -33,7 +33,7 @@ O runner Vitest versionado importa `scripts/fixtures/dashboard-pdf.ts` e regener
 | Liberações, mapa, cinco barras, percentuais e nota de sem localização | PASS | Página 2 mostra liberação `18/08`, mapa vetorial, MG/TO/BA/MT/SC, percentuais corretos e `1 pedido sem localização`. |
 | Mensagens vazias visíveis e centradas | PASS | Gráfico, produtos, liberações e ranking exibem mensagens centralizadas; mapa vazio permanece legível. |
 | Fundo claro, hierarquia violeta/azul, âmbar para atenção e verde restrito a valores positivos | PASS | Fundo claro e cartões suaves; violeta no mapa/ranking, azul no gráfico/deltas e faixa âmbar. Verde não é usado fora de valores positivos. |
-| Bordas do mapa e linha/gráfico nítidos a 150 DPI | PASS | Divisas estaduais, gradiente, barras, eixos e marcador permanecem nítidos. |
+| Bordas do mapa e linha/gráfico nítidos a 150 DPI | PASS | Divisas estaduais, gradiente, barras e eixos permanecem nítidos; a série de três pontos confirma linha azul e preenchimento vetorial suave sem ocultar a escala. |
 
 ## Defeitos encontrados e corrigidos
 

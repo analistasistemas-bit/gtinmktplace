@@ -25,8 +25,23 @@ it('gera duas páginas A4 paisagem com os oito KPIs e a métrica selecionada', (
   for (const texto of [
     'Dashboard',
     'Faturamento bruto',
+    'R$ 456,56',
     'Líquido das vendas',
+    'R$ 319,55',
+    'Líquido no faturamento',
+    'R$ 276,98',
+    'Markup no período',
+    '+35%',
+    'Compradores',
+    '7',
+    'Pedidos',
+    '9',
+    'Ticket médio',
+    'R$ 50,73',
+    'A receber',
     'Evolução de vendas',
+    'Métrica: Pedidos',
+    '20/07',
     'Top produtos do período',
     'Liberações próximas',
     'Vendas por estado',
@@ -34,6 +49,29 @@ it('gera duas páginas A4 paisagem com os oito KPIs e a métrica selecionada', (
   ]) {
     expect(pdf).toContain(texto);
   }
+});
+
+it('renderiza delta e auxiliar dos KPIs secundários', () => {
+  const data = dashboardPdfFixture();
+  data.secundarios[0] = {
+    ...data.secundarios[0],
+    delta: '+139% vs. anterior',
+    tendencia: 'up',
+    auxiliar: 'valor após descontos',
+  };
+  const pdf = gerarPdfDashboard(data).output();
+  expect(pdf).toContain('+139% vs. anterior');
+  expect(pdf).toContain('valor após descontos');
+});
+
+it('preenche suavemente a área sob a série sem rasterizar', () => {
+  const pdf = gerarPdfDashboard(dashboardPdfFixture({
+    serie: [
+      { rotulo: '19/07', valor: 5 },
+      { rotulo: '20/07', valor: 9 },
+    ],
+  })).output();
+  expect(pdf).toContain('0.86 0.91 1. rg');
 });
 
 it.each([
