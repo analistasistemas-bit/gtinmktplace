@@ -168,8 +168,14 @@
   **Preço uniforme (ADR-0078 F2):** `garantirPrecoUniforme` recusa (400 LOUD, nada enviado) quando
   as variações têm preços de publicação divergentes — sinal de roteamento errado; a família deveria
   ter ido para o split por faixa de preço (`publicar-split-ml`).
+  **Item plano (ADR-0084):** categorias que exigem `family_name` (hoje só Zíperes, `MLB271227`) não
+  aceitam o array `variations` — `montarPayloadItem` monta um item plano (`price`/`available_quantity`
+  no corpo raiz, sem `title`/`original_price`) quando há exatamente 1 variação; falha alto com >1.
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
+  **Item plano (ADR-0084):** mesma categoria, mesma restrição — `atualizarAnuncio` detecta `GET`
+  sem `variations` e faz PUT plano (`atualizarItemPlanoML`) quando há exatamente 1 existente e
+  nenhuma cor nova; sem isso o PUT `{variations: []}` era aceito pela ML como no-op silencioso.
   Renomeia a cor de variação já publicada (envia COLOR só quando muda vs. o ML — ADR-0062; o ML
   pode recusar em variação com vendas). Fotos comuns (capa2/capa3) só são reenviadas ao criar cor
   nova — reposição/rename não toca fotos (evita duplicação na galeria, ADR-0062). Erro de foto ainda
