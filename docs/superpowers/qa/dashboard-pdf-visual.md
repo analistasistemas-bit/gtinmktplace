@@ -20,14 +20,14 @@ rtk proxy pdftoppm -png -r 150 tmp/pdfs/dashboard-representativo.pdf tmp/pdfs/re
 rtk proxy pdftoppm -png -r 150 tmp/pdfs/dashboard-vazio.pdf tmp/pdfs/rendered/dashboard-vazio
 ```
 
-O teste de fixture acima foi usado apenas como runner Vitest temporário e removido após a geração, pois `vite-node` não é um executável direto deste projeto.
+O runner Vitest versionado importa `scripts/fixtures/dashboard-pdf.ts` e regenera os dois cenários com a toolchain existente do projeto.
 
 ## Checklist visual
 
 | Critério | Resultado | Evidência |
 |---|---|---|
 | Exatamente duas páginas, sem clipping, sobreposição ou texto cruzando cards/rodapés | PASS | `pdfinfo` confirmou 2 páginas nos dois PDFs; as quatro renderizações não apresentam cortes ou colisões. |
-| Oito KPIs e métrica selecionada na página 1 | PASS | 2 KPIs principais + 6 secundários; gráfico em BRL no representativo e escala segura com marcador único. |
+| Oito KPIs e métrica selecionada na página 1 | PASS | 2 KPIs principais + 6 secundários; o gráfico identifica visualmente `Faturamento`, `Líquido` ou `Pedidos`, conforme a seleção. |
 | Título longo termina em reticências e preserva unidades/valor | PASS | Os quatro títulos representativos são truncados; unidades e valores permanecem legíveis e alinhados. |
 | Marcador de um ponto e eixo seguro | PASS | Marcador azul único visível em `20/07`, com ticks `R$ 0,00`, `R$ 228,28` e `R$ 456,56`. |
 | Liberações, mapa, cinco barras, percentuais e nota de sem localização | PASS | Página 2 mostra liberação `18/08`, mapa vetorial, MG/TO/BA/MT/SC, percentuais corretos e `1 pedido sem localização`. |

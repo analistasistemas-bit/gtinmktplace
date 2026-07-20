@@ -12,6 +12,11 @@ const TEXTO: [number, number, number] = [30, 41, 59];
 const SUAVE: [number, number, number] = [100, 116, 139];
 const AZUL: [number, number, number] = [37, 99, 235];
 const FUNDO: [number, number, number] = [246, 248, 251];
+const ROTULO_METRICA: Record<DashboardMetrica, string> = {
+  faturamento: 'Faturamento',
+  liquido: 'Líquido',
+  pedidos: 'Pedidos',
+};
 
 export function escalaDashboard(
   valores: Array<number | null>,
@@ -95,6 +100,8 @@ function desenharGrafico(
   doc.setDrawColor(225, 230, 238).roundedRect(x, y, w, h, 2, 2, 'S');
   doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...TEXTO);
   doc.text('Evolução de vendas', x + 5, y + 8);
+  doc.setFont('helvetica', 'normal').setFontSize(7).setTextColor(...SUAVE);
+  doc.text(`Métrica: ${ROTULO_METRICA[data.metrica]}`, x + w - 5, y + 8, { align: 'right' });
   const pontos = data.serie.filter((ponto) => Number.isFinite(ponto.valor));
   if (pontos.length === 0) {
     doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...SUAVE);

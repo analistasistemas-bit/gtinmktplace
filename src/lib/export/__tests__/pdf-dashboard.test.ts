@@ -36,6 +36,15 @@ it('gera duas páginas A4 paisagem com os oito KPIs e a métrica selecionada', (
   }
 });
 
+it.each([
+  ['faturamento', 'Faturamento'],
+  ['liquido', 'Líquido'],
+  ['pedidos', 'Pedidos'],
+] as const)('identifica visualmente a métrica %s no gráfico', (metrica, rotulo) => {
+  const pdf = gerarPdfDashboard(dashboardPdfFixture({ metrica })).output();
+  expect(pdf).toContain(`Métrica: ${rotulo}`);
+});
+
 it('expõe os estados vazios do relatório completo', () => {
   const pdf = gerarPdfDashboard(dashboardPdfFixture({
     serie: [],
