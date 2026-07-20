@@ -25,10 +25,51 @@ describe('projetarMapaBrasil', () => {
 
 it('usa violeta pleno no máximo e tons progressivamente mais claros', () => {
   expect(corPorIntensidade(100, 100)).toEqual([124, 58, 237]);
+  expect(corPorIntensidade(0, 100)).toEqual([238, 241, 245]);
   expect(corPorIntensidade(25, 100)).not.toEqual(corPorIntensidade(100, 100));
   expect(corPorIntensidade(25, 100).every((canal, i) =>
     canal >= corPorIntensidade(100, 100)[i],
   )).toBe(true);
+});
+
+it('aplica no mapa e no ranking o mesmo RGB para a mesma intensidade, incluindo zero', () => {
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const fillColor = vi.spyOn(doc, 'setFillColor');
+  const roundedRect = vi.spyOn(doc, 'roundedRect');
+  const lines = vi.spyOn(doc, 'lines');
+  desenharPaginaGeografia(doc, dashboardPdfFixture({
+    geografia: [
+      { uf: 'MG', pedidos: 4, participacao: 100 },
+      { uf: 'PE', pedidos: 0, participacao: 0 },
+    ],
+  }), new Date('2026-07-20T10:31:00-03:00'));
+
+  const projetado = projetarMapaBrasil({ x: 20, y: 65, largura: 122, altura: 110 });
+  for (const [uf, pedidos] of [['MG', 4], ['PE', 0]] as const) {
+    const rgb = corPorIntensidade(pedidos, 4);
+    const inicioUf = projetado.get(uf)?.[0][0][0];
+    const linhaUf = lines.mock.calls.find(([, x, y]) => x === inicioUf?.x && y === inicioUf?.y);
+    expect(linhaUf).toBeDefined();
+    const ordemUf = lines.mock.invocationCallOrder[lines.mock.calls.indexOf(linhaUf!)];
+    const corDoMapa = fillColor.mock.calls
+      .map((call, i) => ({ call, ordem: fillColor.mock.invocationCallOrder[i] }))
+      .filter(({ ordem }) => ordem < ordemUf)
+      .at(-1)?.call;
+    expect(corDoMapa).toEqual(rgb);
+
+    const barra = [...roundedRect.mock.calls].reverse().find(([, y, largura]) =>
+      y === (pedidos === 4 ? 87 : 105) && largura === 96 * pedidos / 4,
+    );
+    expect(barra).toBeDefined();
+    const ordemBarra = roundedRect.mock.invocationCallOrder[
+      roundedRect.mock.calls.indexOf(barra!)
+    ];
+    const corDaBarra = fillColor.mock.calls
+      .map((call, i) => ({ call, ordem: fillColor.mock.invocationCallOrder[i] }))
+      .filter(({ ordem }) => ordem < ordemBarra)
+      .at(-1)?.call;
+    expect(corDaBarra).toEqual(rgb);
+  }
 });
 
 it('desenha mapa, ranking limitado e liberações sem imagem', () => {

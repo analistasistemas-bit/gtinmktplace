@@ -24,6 +24,7 @@ export function corPorIntensidade(
   pedidos: number,
   maxPedidos: number,
 ): [number, number, number] {
+  if (pedidos <= 0) return [238, 241, 245];
   const intensidade = Math.max(0, Math.min(1, pedidos / Math.max(1, maxPedidos)));
   const mistura = 0.18 + intensidade * 0.82;
   return [
@@ -110,8 +111,7 @@ function mapa(doc: jsPDF, data: DashboardPdfVisual): void {
   doc.setLineWidth(0.18).setDrawColor(203, 210, 220);
   for (const [uf, polygons] of projetado) {
     const pedidos = valores.get(uf) ?? 0;
-    if (pedidos === 0) doc.setFillColor(238, 241, 245);
-    else doc.setFillColor(...corPorIntensidade(pedidos, maxPedidos));
+    doc.setFillColor(...corPorIntensidade(pedidos, maxPedidos));
     for (const rings of polygons) for (const ring of rings) {
       if (ring.length < 2) continue;
       doc.lines(

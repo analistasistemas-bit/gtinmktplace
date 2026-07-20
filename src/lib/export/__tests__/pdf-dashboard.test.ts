@@ -100,13 +100,14 @@ it('alinha os cinco faturamentos à direita sem sobrepor os títulos', () => {
     expect(options).toEqual(expect.objectContaining({ align: 'right' }));
   }
 
-  const valorX = chamadasValores[0][1] as number;
   const chamadasTitulos = chamadas.filter(([valor]) =>
     typeof valor === 'string' && /^\d\. Produto/.test(valor),
   );
   expect(chamadasTitulos).toHaveLength(5);
   for (const [i, [titulo, x, y]] of chamadasTitulos.entries()) {
-    expect((x as number) + doc.getTextWidth(titulo as string)).toBeLessThan(valorX);
+    const [valor, valorX] = chamadasValores[i];
+    const inicioValor = (valorX as number) - doc.getTextWidth(valor as string);
+    expect((x as number) + doc.getTextWidth(titulo as string)).toBeLessThan(inicioValor);
     expect(chamadasValores[i][2]).toBe(y);
   }
   text?.mockRestore();
