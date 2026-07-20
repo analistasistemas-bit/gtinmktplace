@@ -68,13 +68,18 @@ variação, não só `ml_variation_id` como sub-recurso). Redesenho maior, fora 
 suportado no item plano). Removidos os dois do payload plano (`title` vira opcional em `PayloadItem`).
 **Resultado: as 2 famílias publicaram** — `MLB7209437722` (Prata) e `MLB7209468002` (Cinza/Branco).
 
-**Lacuna conhecida (não resolvida aqui):** o item plano não tem sub-recurso `variations`, então o SKU
-não ganha um `ml_variation_id` "de verdade" — usamos o próprio `ml_item_id` como substituto
-(`mercado-livre.ts`, ver Implementação). Não confirmado se o fluxo de UPDATE (`atualizar.ts`) e a
-sincronização de vendas (`vendas.ts`) tratam esse caso corretamente pra reposição de estoque/preço
-futura — **não testado**, porque exigiria uma venda real ou uma tentativa de UPDATE pra validar. Se o
-operador editar preço/estoque desses 2 anúncios depois, conferir manualmente se o UPDATE funciona;
-senão vira bug a investigar separadamente.
+**Lacuna conhecida — testada e confirmada (achado do dia seguinte, mesma sessão):** o item plano não
+tem sub-recurso `variations`, então o SKU não ganha um `ml_variation_id` "de verdade" — usamos o próprio
+`ml_item_id` como substituto (`mercado-livre.ts`, ver Implementação). Simulação real de UPDATE (bump de
+estoque +1 e preço +R$1, revertido em seguida) confirmou **bug de no-op silencioso**: `atualizarAnuncio`
+faz `GET /items/{id}` e `montarVariacoesUpdate` mapeia sobre `atual.variations` (vazio pro item plano) —
+o PUT sai com `variations: []`, a ML aceita sem erro, `familia.status` volta a `'publicado'`, e
+**nada muda no anúncio real**. Sem erro nenhum — pior que falhar, porque parece sucesso. Corrigido com
+uma trava: se `atual.variations` vier vazio e há variações existentes a atualizar, `atualizarAnuncio`
+falha alto (`throw`, mensagem operacional "reponha manualmente no painel do ML") em vez de mentir
+sucesso. UPDATE de item plano continua **não implementado** — a trava só impede o dado errado, não
+substitui a implementação futura (PUT direto em `price`/`available_quantity` no corpo raiz do item,
+sem `variations`, espelhando o que já existe no CREATE).
 
 ### Implementação
 
@@ -85,7 +90,8 @@ senão vira bug a investigar separadamente.
   `PayloadItem.variations` passa a ser opcional; ganha `price`/`available_quantity`/`seller_custom_field`.
 - `canais/mercado-livre.ts`: `criarAnuncio` sintetiza `variacoesExternas = {sku: itemId}` quando a ML
   não devolve `variations` (item plano com exatamente 1 SKU enviado) — sem isso `ml_variation_id` nunca
-  seria gravado pro SKU.
+  seria gravado pro SKU. `atualizarAnuncio` falha alto quando `atual.variations` vem vazio e há
+  variações existentes a atualizar (evita PUT `{variations: []}` — no-op silencioso confirmado por teste).
 
 ## Como reverter
 
@@ -106,6 +112,10 @@ Ambas com `status='publicado'`, `ml_variation_id` gravado (fallback do item plan
 `anuncios_externos`. `lotes` (nº 36): `total_erros=0`, `total_publicadas=2` (as outras 2 famílias do
 lote, "CURSOR N.5", são um problema à parte — categoria mal resolvida, ADR-0083 — fora de escopo aqui).
 
-**Pendência aberta:** UPDATE (`atualizar.ts`) e sincronização de vendas (`vendas.ts`) para item plano
-não foram testados nesta rodada. Se o operador editar preço/estoque desses 2 anúncios, conferir se o
-fluxo funciona; se não, é bug separado a investigar.
+**UPDATE testado e confirmado quebrado** (simulação real: bump de estoque/preço via `update-familia-ml`,
+revertido depois — nunca chegou a mudar nada na ML, banco restaurado ao valor original em ambas as
+tentativas). Corrigido para falhar alto em vez de mentir sucesso (ver Implementação); a trava foi
+reexercitada depois do deploy e confirmada — `familia.status` vai a `erro` com mensagem clara. Editar
+preço/estoque desses 2 anúncios pelo app **não funciona ainda**; reponha manualmente no painel do ML até
+alguém implementar o PUT plano. Sincronização de vendas (`vendas.ts`) continua não testada — só uma
+venda real confirmaria.

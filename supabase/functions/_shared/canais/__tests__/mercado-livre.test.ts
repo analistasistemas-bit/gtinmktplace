@@ -48,3 +48,24 @@ describe('atualizarAnuncio somenteEstoque', () => {
     expect(res.valor?.precoVivo).toBe(25);
   });
 });
+
+describe('atualizarAnuncio em item plano (ADR-0084)', () => {
+  it('GET sem variations + existentes a atualizar → falha alto, nunca manda PUT vazio (no-op silencioso)', async () => {
+    let putChamado = false;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') putChamado = true;
+      return Promise.resolve(new Response(JSON.stringify({ id: 'MLB1', variations: [], pictures: [] }), { status: 200 }));
+    }) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      itemExternoId: 'MLB1',
+      existentes: [{ sku: 'A1', estoque: 10, cor: 'Prata' }],
+      novas: [],
+      capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+      marca: null, dimensoes: null, desconto: null, precoFamilia: null,
+      somenteEstoque: false,
+    };
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(res.ok).toBe(false);
+    expect(putChamado).toBe(false);
+  });
+});

@@ -91,6 +91,20 @@ export const mercadoLivreConnector: ChannelConnector = {
     try {
       // GET estado real → reenviar TODAS as variações (o ML deleta as omitidas).
       const atual = await buscarItemML(token, a.itemExternoId);
+      // ADR-0084: item plano (categoria que exige family_name, ex. Zíperes) não tem sub-recurso
+      // `variations` — o GET devolve []. Sem esta trava, montarVariacoesUpdate mapeia sobre uma
+      // lista vazia e produz um PUT `{variations: []}` que a ML aceita como no-op silencioso:
+      // sem erro, familia.status volta a 'publicado', mas preço/estoque nunca mudam no anúncio
+      // real (confirmado empiricamente 2026-07-20). Falha alto em vez de mentir sucesso — suporte
+      // a UPDATE de item plano não implementado.
+      if (atual.variations.length === 0 && a.existentes.length > 0) {
+        const err = new Error(
+          'Item sem sub-recurso variations (anúncio plano, ADR-0084) — UPDATE de preço/estoque '
+          + 'não implementado para essa categoria. Reponha manualmente no painel do Mercado Livre.',
+        ) as Error & { status?: number };
+        err.status = 400;
+        throw err;
+      }
       // Cap de estoque (ADR-0048): teto sobre o conjunto enviado (existentes + novas) p/ a soma
       // do anúncio não passar de 99.999. No-op quando cabe. Estoque real intacto no banco.
       const capUpd = caparEstoque([...a.existentes, ...a.novas].map((v) => ({ sku: v.sku, estoque: v.estoque })));
