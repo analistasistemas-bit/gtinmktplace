@@ -79,12 +79,12 @@ it('renderiza delta e auxiliar dos KPIs secundários', () => {
   expect(pdf).toContain('valor após descontos');
 });
 
-it('alinha os cinco faturamentos à direita sem sobrepor os títulos', () => {
+it('trunca o texto completo antes da coluna fixa de faturamentos largos', () => {
   const produtos = Array.from({ length: 5 }, (_, i) => ({
     posicao: i + 1,
-    titulo: `Produto ${i + 1} com título deliberadamente longo para testar a coluna`,
+    titulo: `${'i'.repeat(120)} ${i + 1}`,
     unidades: i + 1,
-    faturamento: (i + 1) * 100,
+    faturamento: 9_999_999 + i / 100,
   }));
 
   const doc = gerarPdfDashboard(dashboardPdfFixture({ produtos }));
@@ -92,7 +92,7 @@ it('alinha os cinco faturamentos à direita sem sobrepor os títulos', () => {
   expect(text).toBeDefined();
   const chamadas = text?.mock.calls ?? [];
   const chamadasValores = chamadas.filter(([valor]) =>
-    typeof valor === 'string' && /^R\$\s[1-5]00,00$/.test(valor),
+    typeof valor === 'string' && /^R\$\s9\.999\.999,0[0-4]$/.test(valor),
   );
   expect(chamadasValores).toHaveLength(5);
   expect(new Set(chamadasValores.map(([, x]) => x))).toHaveLength(1);
@@ -100,14 +100,20 @@ it('alinha os cinco faturamentos à direita sem sobrepor os títulos', () => {
     expect(options).toEqual(expect.objectContaining({ align: 'right' }));
   }
 
+  const fronteiraTituloX = 237;
+  const gapMinimo = 2;
   const chamadasTitulos = chamadas.filter(([valor]) =>
-    typeof valor === 'string' && /^\d\. Produto/.test(valor),
+    typeof valor === 'string' && /^\d\. i/.test(valor),
   );
   expect(chamadasTitulos).toHaveLength(5);
+  doc.setFont('helvetica', 'bold').setFontSize(7.5);
   for (const [i, [titulo, x, y]] of chamadasTitulos.entries()) {
     const [valor, valorX] = chamadasValores[i];
     const inicioValor = (valorX as number) - doc.getTextWidth(valor as string);
-    expect((x as number) + doc.getTextWidth(titulo as string)).toBeLessThan(inicioValor);
+    expect((x as number) + doc.getTextWidth(titulo as string)).toBeLessThanOrEqual(
+      fronteiraTituloX,
+    );
+    expect(inicioValor - fronteiraTituloX).toBeGreaterThanOrEqual(gapMinimo);
     expect(chamadasValores[i][2]).toBe(y);
   }
   text?.mockRestore();

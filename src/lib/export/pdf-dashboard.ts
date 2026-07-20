@@ -173,14 +173,20 @@ function desenharProdutos(
   doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...TEXTO);
   doc.text('Top produtos do período', x + 5, y + 8);
   doc.setFontSize(7.5);
+  const tituloX = x + 5;
+  const fronteiraTituloX = x + w - 48;
   const valorX = x + w - 5;
-  const tituloW = w - 48;
   produtos.slice(0, 5).forEach((produto, i) => {
     const ry = y + 17 + i * 11;
-    doc.setTextColor(...TEXTO).text(`${produto.posicao}. ${truncar(doc, produto.titulo, tituloW)}`, x + 5, ry);
+    const titulo = `${produto.posicao}. ${produto.titulo}`;
+    doc.setTextColor(...TEXTO).text(
+      truncar(doc, titulo, fronteiraTituloX - tituloX),
+      tituloX,
+      ry,
+    );
     doc.text(fmtBRL(produto.faturamento), valorX, ry, { align: 'right' });
     doc.setFont('helvetica', 'normal').setTextColor(...SUAVE);
-    doc.text(`${fmtInt(produto.unidades)} un.`, x + 5, ry + 4);
+    doc.text(`${fmtInt(produto.unidades)} un.`, tituloX, ry + 4);
     doc.setFont('helvetica', 'bold');
   });
   if (produtos.length === 0) {
