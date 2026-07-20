@@ -220,7 +220,7 @@
 - **regenerar-copy-familia** — regera título/descrição via IA sem republicar.
 - **definir-categoria-familia** — grava a categoria escolhida pelo operador (busca livre,
   ADR-0057): `{familia_id, categoria_ml_id, categoria_nome}` (substitui o contrato antigo de 4
-  tipos fixos, ADR-0009/0022). Categoria conhecida (linha/fita/botao/cola) → caminho curado
+  tipos fixos, ADR-0009/0022). Categoria conhecida (linha/fita/botao/cola/cursor, ADR-0083) → caminho curado
   (`montarAtributosML`); categoria livre/genérica → `resolverAtributosGenericos` (mesmo fluxo
   schema+IA do process-familia, reusado).
 - **atributos-familia** *(JWT)* — fallback da Camada 2B (ADR-0052): `action:'faltantes'` lista os

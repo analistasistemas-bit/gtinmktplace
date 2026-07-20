@@ -23,7 +23,7 @@ export interface AnaliseMercado {
   produto_desde: string | null;
 }
 
-export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'cola' | 'outro';
+export type TipoAviamento = 'linha' | 'botao' | 'fita' | 'cola' | 'cursor' | 'outro';
 
 // Origem da resolução de categoria (ADR-0026 / E3). regex/manual = alta confiança;
 // preditor = média (domain_discovery do ML); ia = baixa (desempate LLM);

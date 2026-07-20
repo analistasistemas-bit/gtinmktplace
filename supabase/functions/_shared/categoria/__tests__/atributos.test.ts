@@ -8,6 +8,7 @@ describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
     expect(categoriaParaTipo('fita')).toBe('MLB255054');
     expect(categoriaParaTipo('botao')).toBe('MLB270272');
     expect(categoriaParaTipo('cola')).toBe('MLB277319'); // Bastões de Cola
+    expect(categoriaParaTipo('cursor')).toBe('MLB271227'); // Zíperes (ADR-0083)
   });
   it('tipo "outro" não tem categoria (operador resolve)', () => {
     expect(categoriaParaTipo('outro')).toBe(null);
@@ -20,6 +21,7 @@ describe('tipoParaCategoria (lookup reverso p/ categoria vinda do preditor)', ()
     expect(tipoParaCategoria('MLB255054')).toBe('fita');
     expect(tipoParaCategoria('MLB270272')).toBe('botao');
     expect(tipoParaCategoria('MLB277319')).toBe('cola');
+    expect(tipoParaCategoria('MLB271227')).toBe('cursor'); // Zíperes (ADR-0083)
   });
   it('categoria desconhecida ou nula → "outro"', () => {
     expect(tipoParaCategoria('MLB105305')).toBe('outro');
@@ -33,6 +35,14 @@ describe('montarAtributosML', () => {
     expect(a).toEqual([
       { id: 'BRAND', value_name: 'Avil' },
       { id: 'MODEL', value_name: 'LINHA P/COST.XIK 120 2000J CORES' },
+    ]);
+  });
+
+  it('cursor: BRAND fixo + MODEL do nome (ADR-0083)', () => {
+    const a = montarAtributosML('cursor', 'CURSOR N.5 NIQ S/TRAVA DE DESL P/ZIPER DE NYLON 1000UND');
+    expect(a).toEqual([
+      { id: 'BRAND', value_name: 'Avil' },
+      { id: 'MODEL', value_name: 'CURSOR N.5 NIQ S/TRAVA DE DESL P/ZIPER DE NYLON 1000UND' },
     ]);
   });
 
@@ -69,6 +79,10 @@ describe('montarAtributosML', () => {
 
   it('cola: categoria aceita EMPTY_GTIN_REASON (validado na API ML)', () => {
     expect(categoriaAceitaEmptyGtinReason('MLB277319')).toBe(true);
+  });
+
+  it('cursor: categoria aceita EMPTY_GTIN_REASON (validado na API ML, ADR-0083)', () => {
+    expect(categoriaAceitaEmptyGtinReason('MLB271227')).toBe(true);
   });
 
   it('outro: sem atributos (sem categoria)', () => {

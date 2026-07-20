@@ -16,6 +16,7 @@ const ROTULO_POR_TIPO: Record<TipoAviamento, string | null> = {
   fita: 'Fita de Cetim',
   botao: 'Botões',
   cola: 'Bastões de Cola',
+  cursor: 'Zíperes',
   outro: null,
 };
 
@@ -25,6 +26,7 @@ const CATEGORIA_POR_TIPO: Record<TipoAviamento, string | null> = {
   fita: 'MLB255054',  // Fitas de Cetim
   botao: 'MLB270272', // Botões
   cola: 'MLB277319',  // Bastões de Cola (p/ pistolas elétricas) — validado API ML 2026-06-11
+  cursor: 'MLB271227', // Zíperes (cursor/deslizador) — validado API ML 2026-07-20 (ADR-0083)
   outro: null,        // operador escolhe na revisão
 };
 
@@ -65,6 +67,7 @@ const OBRIGATORIOS: Record<TipoAviamento, string[]> = {
   fita: ['BRAND', 'RIBBON_TYPE'],
   botao: ['BRAND', 'MATERIAL'],
   cola: ['BRAND', 'MODEL'],
+  cursor: ['BRAND', 'MODEL'],
   outro: [],
 };
 
@@ -74,7 +77,7 @@ export const EMPTY_GTIN_REASON_SEM_CODIGO = '17055160';
 
 // Categorias que expõem o atributo EMPTY_GTIN_REASON (validado via API ML 2026-06-04).
 // Botão (MLB270272) NÃO o expõe → sem GTIN o atributo é omitido (GTIN é só conditional_required).
-const CATEGORIAS_COM_EMPTY_GTIN_REASON = new Set(['MLB270273', 'MLB255054', 'MLB277319']);
+const CATEGORIAS_COM_EMPTY_GTIN_REASON = new Set(['MLB270273', 'MLB255054', 'MLB277319', 'MLB271227']);
 
 export function categoriaAceitaEmptyGtinReason(categoriaId: string | null): boolean {
   return !!categoriaId && CATEGORIAS_COM_EMPTY_GTIN_REASON.has(categoriaId);
@@ -223,6 +226,7 @@ export function montarAtributosML(
   switch (tipo) {
     case 'linha':
     case 'cola':
+    case 'cursor':
       return [
         { id: 'BRAND', value_name: brand },
         { id: 'MODEL', value_name: nome },

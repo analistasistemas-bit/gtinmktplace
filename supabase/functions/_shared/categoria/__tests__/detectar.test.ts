@@ -31,6 +31,12 @@ describe('detectarTipoAviamento (ADR-0009)', () => {
     expect(detectarTipoAviamento('REFIL BASTÃO DE COLA 11MM').tipo).toBe('cola');
   });
 
+  it('detecta cursor (deslizador de zíper) — ADR-0083, lote #36', () => {
+    expect(detectarTipoAviamento('CURSOR N.3 NIQ S/TRAVA DE DESL P/ZIPER DE NYLON 1000UND').tipo).toBe('cursor');
+    expect(detectarTipoAviamento('CURSOR N.5 BCO S/TRAVA DE DESL P/ZIPER DE NYLON 1000UND').tipo).toBe('cursor');
+    expect(detectarTipoAviamento('Cursores para Zíper').tipo).toBe('cursor');
+  });
+
   it('cai em "outro" quando nada bate', () => {
     expect(detectarTipoAviamento('PRODUTO XYZ 123').tipo).toBe('outro');
     expect(detectarTipoAviamento('').tipo).toBe('outro');

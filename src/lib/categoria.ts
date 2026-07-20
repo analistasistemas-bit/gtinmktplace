@@ -8,6 +8,7 @@ export const CATEGORIAS_MANUAIS: { tipo: Exclude<TipoAviamento, 'outro'>; rotulo
   { tipo: 'fita', rotulo: 'Fita de Cetim' },
   { tipo: 'botao', rotulo: 'Botões' },
   { tipo: 'cola', rotulo: 'Bastões de Cola' },
+  { tipo: 'cursor', rotulo: 'Zíperes' },
 ];
 
 export async function definirCategoriaLivre(

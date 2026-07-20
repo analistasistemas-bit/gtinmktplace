@@ -84,7 +84,7 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
 
 // Rótulo grosso do tipo interno (fallback quando não há categoria real do ML).
 const NOME_TIPO: Record<TipoAviamento, string> = {
-  linha: 'Linha', fita: 'Fita', botao: 'Botão', cola: 'Cola', outro: 'Outro',
+  linha: 'Linha', fita: 'Fita', botao: 'Botão', cola: 'Cola', cursor: 'Cursor', outro: 'Outro',
 };
 
 /** Rótulo grosso do tipo de aviamento. null → "—". */
