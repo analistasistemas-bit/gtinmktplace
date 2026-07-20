@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useLote } from '@/hooks/useLotes';
-import { useFamilias } from '@/hooks/useFamilias';
+import { useFamiliasResumo } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -20,7 +20,7 @@ export default function Relatorio() {
   // "concluido" ~0,8s antes do realtime entregar o status final das famílias,
   // e se esse evento se perde o polling já teria parado. Aqui o próprio polling
   // captura a transição final e só então para.
-  const { data: familias = [] } = useFamilias(loteId, {
+  const { data: familias = [] } = useFamiliasResumo(loteId, {
     refetchInterval: (query) => {
       const fams = query.state.data ?? [];
       const algumAtivo = fams.some(

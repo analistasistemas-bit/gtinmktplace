@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { calcularKpis, type Venda } from '../faturamento';
+import { calcularKpis, marcaDagua, mesclarVendas, type Venda } from '../faturamento';
 
 const venda = (over: Partial<Venda>): Venda => ({
   id: 'x', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
   date_closed: '2026-06-20T00:00:00Z', date_created: '2026-06-20T00:00:00Z',
   comprador_id: null, comprador_nick: null, comprador_nome: null, total_amount: 0, paid_amount: null, sale_fee_total: 0,
   frete_vendedor: null, liquido: null, estorno: null, money_release_date: null, sacado_em: null, sacado_por: null,
+  atualizado_em: '2026-07-01T00:00:00Z',
   currency: 'BRL', shipping_id: null, shipping_status: null,
   shipping_substatus: null, shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
   uf: null, cidade: null, itens: [], ...over,
@@ -52,5 +53,63 @@ describe('calcularKpis', () => {
       venda({ status: 'cancelled', shipping_status: 'shipped' }),
     ]);
     expect(k.porStatusEnvio).toEqual({ 'Pronto p/ envio': 2, 'Entregue': 1, 'Enviado': 1 });
+  });
+});
+
+describe('marcaDagua', () => {
+  it('vazio → null', () => {
+    expect(marcaDagua([])).toBeNull();
+  });
+  it('parte do maior atualizado_em, recuado pela folga de 60s', () => {
+    const max = marcaDagua([
+      venda({ id: 'a', atualizado_em: '2026-07-01T10:00:00Z' }),
+      venda({ id: 'b', atualizado_em: '2026-07-03T08:00:00Z' }),
+      venda({ id: 'c', atualizado_em: '2026-07-02T12:00:00Z' }),
+    ]);
+    expect(max).toBe('2026-07-03T07:59:00.000Z');
+  });
+  // A folga existe porque `atualizado_em = now()` é o timestamp do INÍCIO da transação: uma
+  // escrita que começou antes e commitou depois tem timestamp menor que outra já visível, e
+  // sem a folga o delta a pularia para sempre — venda sumindo do Faturamento em silêncio.
+  it('a folga cobre linha commitada fora de ordem dentro da mesma janela', () => {
+    const marca = marcaDagua([venda({ id: 'b', atualizado_em: '2026-07-03T08:00:00Z' })])!;
+    const atrasada = '2026-07-03T07:59:30Z'; // começou 30s antes, commitou depois
+    expect(Date.parse(atrasada) >= Date.parse(marca)).toBe(true);
+  });
+  it('timestamp inválido não quebra o poll — devolve o valor cru', () => {
+    expect(marcaDagua([venda({ id: 'a', atualizado_em: 'lixo' })])).toBe('lixo');
+  });
+});
+
+describe('mesclarVendas', () => {
+  it('delta vazio devolve a MESMA referência', () => {
+    const atuais = [venda({ id: 'a' })];
+    expect(mesclarVendas(atuais, [])).toBe(atuais);
+  });
+  it('substitui por id (ex.: status paid → cancelled)', () => {
+    const atuais = [venda({ id: 'a', status: 'paid' })];
+    const delta = [venda({ id: 'a', status: 'cancelled' })];
+    const out = mesclarVendas(atuais, delta);
+    expect(out).toHaveLength(1);
+    expect(out[0].status).toBe('cancelled');
+  });
+  it('insere venda nova e reordena por date_closed desc', () => {
+    const atuais = [venda({ id: 'a', date_closed: '2026-07-01T00:00:00Z' })];
+    const delta = [venda({ id: 'b', date_closed: '2026-07-05T00:00:00Z' })];
+    const out = mesclarVendas(atuais, delta);
+    expect(out.map((v) => v.id)).toEqual(['b', 'a']);
+  });
+  it('é idempotente: aplicar o mesmo delta duas vezes dá o mesmo resultado', () => {
+    const atuais = [venda({ id: 'a', date_closed: '2026-07-01T00:00:00Z' })];
+    const delta = [venda({ id: 'a', status: 'cancelled', date_closed: '2026-07-01T00:00:00Z' })];
+    const uma = mesclarVendas(atuais, delta);
+    const duas = mesclarVendas(uma, delta);
+    expect(duas).toEqual(uma);
+  });
+  it('não perde vendas não tocadas pelo delta', () => {
+    const atuais = [venda({ id: 'a' }), venda({ id: 'b' })];
+    const delta = [venda({ id: 'a', status: 'cancelled' })];
+    const out = mesclarVendas(atuais, delta);
+    expect(out.map((v) => v.id).sort()).toEqual(['a', 'b']);
   });
 });

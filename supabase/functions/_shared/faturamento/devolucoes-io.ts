@@ -71,9 +71,10 @@ export async function upsertDevolucao(
     user_id: userId, org_id: orgId, ...row, raw: claim as unknown as Record<string, unknown>, atualizado_em: new Date().toISOString(),
   }, { onConflict: 'user_id,claim_id' });
 
-  // Marca a venda relacionada (atalho p/ badge na aba Vendas).
+  // Marca a venda relacionada (atalho p/ badge na aba Vendas). atualizado_em bumped p/ o poll
+  // incremental (ADR-0082) pegar o badge no delta — sem isso ele só aparece num fetch completo.
   if (row.order_id != null) {
-    await admin.from('ml_vendas').update({ tem_devolucao: true })
+    await admin.from('ml_vendas').update({ tem_devolucao: true, atualizado_em: new Date().toISOString() })
       .eq('user_id', userId).eq('order_id', row.order_id);
   }
   return { nova, row };

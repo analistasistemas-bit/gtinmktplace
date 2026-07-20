@@ -37,7 +37,7 @@ import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
 import { alvosAplicarPreco, exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
-import { useImageUrl } from '@/hooks/useImageUrl';
+import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -275,6 +275,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     setTrocando(true);
     try {
       await subirCapaFamilia(familia.loteId, familia.codigoPai, file);
+      invalidarImagem(qc, familia.capaStoragePath ?? familia.fotoCapaPath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
       toast.success('Foto-capa atualizada');
     } catch (err) {
@@ -289,6 +290,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     if (!familia.capaStoragePath) return;
     try {
       await removerCapaFamilia(familia.id, familia.capaStoragePath);
+      invalidarImagem(qc, familia.capaStoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
       toast.success('Foto-capa removida');
     } catch (err) {
@@ -302,6 +304,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     setTrocandoCapa2(true);
     try {
       await subirCapa2Familia(familia.loteId, familia.codigoPai, file);
+      invalidarImagem(qc, familia.capa2StoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
       toast.success('2ª foto atualizada');
     } catch (err) {
@@ -316,6 +319,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     if (!familia.capa2StoragePath) return;
     try {
       await removerCapa2Familia(familia.id, familia.capa2StoragePath);
+      invalidarImagem(qc, familia.capa2StoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
       toast.success('2ª foto removida');
     } catch (err) {
@@ -329,6 +333,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     setTrocandoCapa3(true);
     try {
       await subirCapa3Familia(familia.loteId, familia.codigoPai, file);
+      invalidarImagem(qc, familia.capa3StoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
       toast.success('3ª foto atualizada');
     } catch (err) {
@@ -343,6 +348,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     if (!familia.capa3StoragePath) return;
     try {
       await removerCapa3Familia(familia.id, familia.capa3StoragePath);
+      invalidarImagem(qc, familia.capa3StoragePath);
       qc.invalidateQueries({ queryKey: QK.familias(familia.loteId) });
       toast.success('3ª foto removida');
     } catch (err) {

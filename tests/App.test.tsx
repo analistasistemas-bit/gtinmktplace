@@ -56,6 +56,7 @@ vi.mock('@/hooks/useLotes', () => ({
 }));
 vi.mock('@/hooks/useFamilias', () => ({
   useFamilias: () => ({ data: [], isLoading: false, error: null, isSuccess: true }),
+  useFamiliasResumo: () => ({ data: [], isLoading: false, error: null, isSuccess: true }),
 }));
 
 function renderRoute(initialPath: string) {

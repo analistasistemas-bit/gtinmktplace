@@ -25,6 +25,7 @@ export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
   lote: (loteId: string) => ['lote', loteId] as const,
   familias: (loteId: string) => ['familias', loteId] as const,
+  familiasResumo: (loteId: string) => ['familias-resumo', loteId] as const,
   familia: (familiaId: string) => ['familia', familiaId] as const,
   publicados: ['publicados'] as const,
   statusPublicados: ['statusPublicados'] as const,
@@ -63,6 +64,25 @@ export type AnuncioExternoLite = {
   titulo: string | null;
 };
 
+// Split (ADR-0048): um produto pode ter N anúncios (partições) em anuncios_externos;
+// familias.ml_permalink só carrega a partição 0. Busca os demais por codigo_pai (RLS filtra
+// pelo usuário) para a UI mostrar todos os anúncios do produto.
+async function fetchAnunciosPorCodigoPai(codigosPai: string[]): Promise<Map<string, AnuncioExternoLite[]>> {
+  const porCodigo = new Map<string, AnuncioExternoLite[]>();
+  if (codigosPai.length === 0) return porCodigo;
+  const { data: anuncios } = await supabase
+    .from('anuncios_externos')
+    .select('codigo_pai, particao, permalink, titulo')
+    .eq('canal', 'mercado_livre')
+    .in('codigo_pai', codigosPai);
+  for (const a of (anuncios ?? []) as AnuncioExternoLite[]) {
+    const lista = porCodigo.get(a.codigo_pai) ?? [];
+    lista.push(a);
+    porCodigo.set(a.codigo_pai, lista);
+  }
+  return porCodigo;
+}
+
 export async function fetchFamilias(
   loteId: string
 ): Promise<(FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos: AnuncioExternoLite[] })[]> {
@@ -74,27 +94,47 @@ export async function fetchFamilias(
   if (error) throw error;
   const familias = (data ?? []) as (FamiliaRow & { variacoes: VariacaoRow[] })[];
 
-  // Split (ADR-0048): um produto pode ter N anúncios (partições) em anuncios_externos;
-  // familias.ml_permalink só carrega a partição 0. Busca os demais por codigo_pai (RLS filtra
-  // pelo usuário) para a UI mostrar todos os anúncios do produto.
   const codigosPai = [...new Set(familias.map((f) => f.codigo_pai))];
-  const porCodigo = new Map<string, AnuncioExternoLite[]>();
-  if (codigosPai.length > 0) {
-    const { data: anuncios } = await supabase
-      .from('anuncios_externos')
-      .select('codigo_pai, particao, permalink, titulo')
-      .eq('canal', 'mercado_livre')
-      .in('codigo_pai', codigosPai);
-    for (const a of (anuncios ?? []) as AnuncioExternoLite[]) {
-      const lista = porCodigo.get(a.codigo_pai) ?? [];
-      lista.push(a);
-      porCodigo.set(a.codigo_pai, lista);
-    }
-  }
+  const porCodigo = await fetchAnunciosPorCodigoPai(codigosPai);
   return familias.map((f) => ({
     ...f,
     anuncios_externos: (porCodigo.get(f.codigo_pai) ?? []).sort((a, b) => a.particao - b.particao),
   }));
+}
+
+/** Campos mínimos p/ as telas de acompanhamento (Progresso/Relatorio) — poll de 2,5s durante
+ *  processamento/publicação; o select enxuto corta ~98% do payload do tick. */
+export type FamiliaResumo = {
+  id: string; codigoPai: string; titulo: string; status: FamiliaStatus;
+  erroMensagem: string | null; mlPermalink: string | null;
+  anuncios: { particao: number; permalink: string | null; titulo: string | null }[];
+};
+
+type FamiliaResumoRow = Pick<FamiliaRow, 'id' | 'codigo_pai' | 'titulo_ml' | 'nome_pai' | 'status' | 'erro_mensagem' | 'ml_permalink'>;
+
+export function familiaResumoFromRow(r: FamiliaResumoRow, anuncios: AnuncioExternoLite[]): FamiliaResumo {
+  return {
+    id: r.id,
+    codigoPai: r.codigo_pai,
+    titulo: r.titulo_ml ?? r.nome_pai,
+    status: r.status as FamiliaStatus,
+    erroMensagem: r.erro_mensagem,
+    mlPermalink: r.ml_permalink,
+    anuncios: [...anuncios].sort((a, b) => a.particao - b.particao)
+      .map((a) => ({ particao: a.particao, permalink: a.permalink, titulo: a.titulo })),
+  };
+}
+
+export async function fetchFamiliasResumo(loteId: string): Promise<FamiliaResumo[]> {
+  const { data, error } = await supabase
+    .from('familias')
+    .select('id, codigo_pai, titulo_ml, nome_pai, status, erro_mensagem, ml_permalink')
+    .eq('lote_id', loteId)
+    .order('codigo_pai');
+  if (error) throw error;
+  const rows = (data ?? []) as FamiliaResumoRow[];
+  const porCodigo = await fetchAnunciosPorCodigoPai([...new Set(rows.map((r) => r.codigo_pai))]);
+  return rows.map((r) => familiaResumoFromRow(r, porCodigo.get(r.codigo_pai) ?? []));
 }
 
 // Carrega UMA família (com variações) por id e mapeia para o tipo de domínio. Usado pelo

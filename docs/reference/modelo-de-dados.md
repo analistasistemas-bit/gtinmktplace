@@ -229,6 +229,10 @@ Financeiro: `money_release_date`, `liberacao_notificada_em` (ADR-0040),
 saque no Financeiro > Detalhe do líquido, escrita só via RPCs `security definer`
 `registrar_saque_ml_vendas(uuid[])` / `desfazer_saque_ml_vendas(uuid[])`
 (exigem `is_membro_operacao()`; `registrar` só marca linhas com `money_release_date` já liberado).
+Desde *migration `20260720013021_ml_vendas_saque_touch_atualizado_em.sql`* (ADR-0082) as duas RPCs
+também bumpam `atualizado_em`, contrato exigido pelo poll incremental de `useVendas`: todo writer
+que altera coluna exibida na UI de vendas precisa bumpar `atualizado_em`, senão a mudança fica
+cega ao delta até o próximo fetch completo.
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
 Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)`.
 

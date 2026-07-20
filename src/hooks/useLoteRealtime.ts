@@ -20,6 +20,7 @@ export function useLoteRealtime(loteId: string | undefined) {
         },
         () => {
           qc.invalidateQueries({ queryKey: QK.familias(loteId) });
+          qc.invalidateQueries({ queryKey: QK.familiasResumo(loteId) });
           qc.invalidateQueries({ queryKey: QK.lote(loteId) });
         }
       )

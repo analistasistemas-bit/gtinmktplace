@@ -92,5 +92,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0078 | [Preço por variação, split por faixa de preço e controle de preço no UPDATE](../../docs/decisions/0078-preco-por-variacao-split-por-faixa-e-controle-de-preco-no-update.md) |
 | 0079 | [Fonte única TS→CSS para tokens de motion, sem biblioteca de animação](../../docs/decisions/0079-fonte-unica-tokens-motion-ts-css.md) |
 | 0080 | [Telas de autenticação sempre renderizam em dark, sobrepondo o tema salvo](../../docs/decisions/0080-telas-auth-sempre-dark.md) |
+| 0081 | [Corte de egress: URL assinada persistida e poll de vendas em 3 minutos](../../docs/decisions/0081-corte-de-egress-url-assinada-persistida.md) |
+| 0082 | [Poll incremental de vendas por marca d'água (atualizado_em)](../../docs/decisions/0082-poll-incremental-de-vendas-por-marca-dagua.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

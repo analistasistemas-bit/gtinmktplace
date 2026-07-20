@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { useLote } from '@/hooks/useLotes';
-import { useFamilias } from '@/hooks/useFamilias';
+import { useFamiliasResumo } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
@@ -18,7 +18,7 @@ export default function Progresso() {
   // Realtime tem race condition se process-familia terminar antes da subscription
   // estabilizar (~1-2s). Polling de fallback enquanto o lote está em transito.
   const polling = lote?.status === 'processando' || lote?.status === 'importando';
-  const { data: familias = [] } = useFamilias(loteId, {
+  const { data: familias = [] } = useFamiliasResumo(loteId, {
     refetchInterval: polling ? 2500 : undefined,
   });
 

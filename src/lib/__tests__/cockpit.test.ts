@@ -14,7 +14,7 @@ const venda = (over: Partial<Venda>): Venda => ({
   sale_fee_total: 0, frete_vendedor: null, liquido: null, estorno: null, money_release_date: null, sacado_em: null, sacado_por: null,
   currency: 'BRL', shipping_id: null, shipping_status: null, shipping_substatus: null,
   shipping_logistic: null, tracking_number: null, is_publiai: false, tem_devolucao: false,
-  uf: null, cidade: null, itens: [], ...over,
+  uf: null, cidade: null, itens: [], atualizado_em: '2026-06-20T00:00:00Z', ...over,
 });
 
 describe('topProdutos', () => {

@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { BotaoTrocarFoto } from '@/components/botao-trocar-foto';
 import { BadgeCorOrigem } from '@/components/badge-cor-origem';
-import { useImageUrl } from '@/hooks/useImageUrl';
+import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
@@ -60,6 +60,9 @@ export function VariacaoCard({
     setTrocaStatus('salvando');
     try {
       await uploadImagensLote(loteId, [renomeado]);
+      // Mesmo path do arquivo antigo: sem invalidar, a URL guardada continua servindo a foto
+      // velha do cache do navegador, mesmo após F5 (ADR-0081).
+      invalidarImagem(qc, variacao.fotoPath);
       qc.invalidateQueries({ queryKey: QK.familias(loteId) });
       setTrocaStatus('salvo');
       setTimeout(() => setTrocaStatus(undefined), 2000);
