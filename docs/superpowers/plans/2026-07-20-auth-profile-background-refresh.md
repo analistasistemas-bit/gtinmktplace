@@ -4,7 +4,7 @@
 
 **Goal:** Atualizar o perfil silenciosamente em eventos repetidos de autenticação para preservar filtros e rascunhos locais ao voltar para a aba do PubliAI.
 
-**Architecture:** O `auth-store` continuará sendo a única fonte de sessão e perfil. Eventos para um usuário novo ou ainda sem perfil usam carregamento bloqueante; eventos repetidos para o mesmo usuário mantêm o perfil e o `Outlet` montados enquanto uma consulta silenciosa atualiza permissões em segundo plano. Uma guarda de identidade impede que uma resposta antiga sobrescreva o perfil de outro usuário ou de uma sessão encerrada.
+**Architecture:** O `auth-store` continuará sendo a única fonte de sessão e perfil. Eventos para um usuário novo ou cujo perfil ainda está carregando usam carregamento bloqueante; eventos repetidos para o mesmo usuário com `profileLoading === false` mantêm o estado atual e o `Outlet` montado enquanto uma consulta silenciosa atualiza permissões em segundo plano. Isso inclui `profile === null` após uma consulta concluída: é um estado carregado e permanece silencioso. Uma guarda de identidade impede que uma resposta antiga sobrescreva o perfil de outro usuário ou de uma sessão encerrada.
 
 **Tech Stack:** React 18, TypeScript 5.7, Zustand 4, Supabase JS 2, Vitest 3.
 
@@ -37,7 +37,7 @@
 **Interfaces:**
 - Consumes: `supabase.auth.getSession()`, `supabase.auth.onAuthStateChange()`, `supabase.from('profiles')`.
 - Produces: `loadProfile(userId: string, options?: { blocking?: boolean }): Promise<void>`.
-- Invariant: an auth event is silent only when `nextUser.id === currentUser.id` and a profile is already loaded.
+- Invariant: an auth event is silent only when `nextUser.id === currentUser.id` and `profileLoading === false`; a completed lookup with `profile === null` is already loaded.
 - Invariant: a profile response is committed only while `get().user?.id === userId`.
 
 - [ ] **Step 1: Create the failing regression tests**
@@ -166,6 +166,30 @@ describe('auth-store background profile refresh', () => {
     },
   );
 
+  it('refreshes a loaded missing profile without blocking the route', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: null,
+      profileLoading: false,
+    });
+    const request = deferred<{ data: Profile | null }>();
+    mocks.maybeSingle.mockReturnValueOnce(request.promise);
+
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+
+    expect(useAuthStore.getState().profileLoading).toBe(false);
+    expect(useAuthStore.getState().profile).toBeNull();
+
+    request.resolve({ data: profile('user-1', 'Criado depois') });
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profile?.nome).toBe('Criado depois');
+    });
+    expect(useAuthStore.getState().profileLoading).toBe(false);
+  });
+
   it('a real user change clears the old profile and blocks until the new profile arrives', async () => {
     await registerAuthListener();
     const oldSession = session('user-1');
@@ -269,7 +293,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      const sameLoadedUser = previousUserId === user.id && get().profile !== null;
+      const sameLoadedUser = previousUserId === user.id && !get().profileLoading;
       if (sameLoadedUser) {
         set({ session, user });
       } else {
