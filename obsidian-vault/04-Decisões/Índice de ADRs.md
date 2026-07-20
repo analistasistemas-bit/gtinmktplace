@@ -95,5 +95,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0081 | [Corte de egress: URL assinada persistida e poll de vendas em 3 minutos](../../docs/decisions/0081-corte-de-egress-url-assinada-persistida.md) |
 | 0082 | [Poll incremental de vendas por marca d'água (atualizado_em)](../../docs/decisions/0082-poll-incremental-de-vendas-por-marca-dagua.md) |
 | 0083 | [Cursor (deslizador de zíper) como tipo de aviamento determinístico](../../docs/decisions/0083-cursor-de-zíper-tipo-aviamento-determinístico.md) |
+| 0084 | [family_name e item plano para publicação na categoria Zíperes](../../docs/decisions/0084-family-name-categoria-zipper.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

@@ -83,6 +83,15 @@ export function categoriaAceitaEmptyGtinReason(categoriaId: string | null): bool
   return !!categoriaId && CATEGORIAS_COM_EMPTY_GTIN_REASON.has(categoriaId);
 }
 
+// Categorias em que a ML rejeita o POST /items sem o campo `family_name` no corpo, mesmo com
+// `variations` presente (validado via API real 2026-07-20, ADR-0084). Zíperes (MLB271227) é a
+// primeira categoria conhecida com essa exigência.
+const CATEGORIAS_QUE_EXIGEM_FAMILY_NAME = new Set(['MLB271227']);
+
+export function categoriaExigeFamilyName(categoriaId: string | null): boolean {
+  return !!categoriaId && CATEGORIAS_QUE_EXIGEM_FAMILY_NAME.has(categoriaId);
+}
+
 function normalizar(s: string): string {
   return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 }

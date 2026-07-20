@@ -1,4 +1,6 @@
-import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
+import {
+  EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason, categoriaExigeFamilyName,
+} from '../categoria/atributos.ts';
 import { calcularPrecoDe } from '../preco/desconto.ts';
 import { montarAtributosPacote, type DimensoesPacote } from './pacote.ts';
 
@@ -16,16 +18,21 @@ export interface VariacaoItem {
   seller_custom_field?: string;
 }
 export interface PayloadItem {
-  title: string;
+  // ADR-0084: item plano (family_name) omite title — a ML gera a partir de atributos/family_name.
+  title?: string;
   category_id: string;
   price?: number;
+  available_quantity?: number;
+  original_price?: number;
+  seller_custom_field?: string;
   currency_id: string;
   buying_mode: string;
   listing_type_id: string;
   condition: string;
   pictures: PictureRef[];
   attributes: AtributoItem[];
-  variations: VariacaoItem[];
+  variations?: VariacaoItem[];
+  family_name?: string;
 }
 
 interface FamiliaInput {
@@ -109,6 +116,50 @@ export function montarPayloadItem(
   // E4: categoria prevista passa o flag lido do schema; aviamento (override) usa o helper hard-coded.
   const aceitaEmptyGtin = aceitaEmptyGtinOverride ?? categoriaAceitaEmptyGtinReason(familia.categoria_ml_id);
   const variacaoUnica = variacoes.length === 1;
+
+  // ADR-0084: categorias que exigem family_name (Zíperes/MLB271227) também rejeitam o array
+  // `variations` em si (validado via API real) — o item tem que ser plano (price/available_quantity
+  // no corpo raiz, sem variations). Só sabemos publicar essa combinação com 1 variação: com >1 cor
+  // caberia 1 anúncio por cor compartilhando family_name, redesenho maior fora de escopo aqui —
+  // falha LOUD em vez de mandar um payload que a ML vai rejeitar (ou pior, publicar errado).
+  if (categoriaExigeFamilyName(familia.categoria_ml_id)) {
+    if (!variacaoUnica) {
+      throw new Error(
+        `Categoria ${familia.categoria_ml_id} não suporta múltiplas cores agrupadas em variations `
+        + '(exige item plano por cor com family_name — não implementado para >1 variação, ADR-0084).',
+      );
+    }
+    const v = variacoes[0];
+    const cor = v.cor?.trim() || COR_UNITARIA;
+    const atributosFlat: AtributoItem[] = [
+      ...(familia.atributos_ml ?? []),
+      { id: 'COLOR', value_name: cor },
+    ];
+    if (gtinAusente(v.gtin)) {
+      if (aceitaEmptyGtin) atributosFlat.push({ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO });
+    } else {
+      atributosFlat.push({ id: 'GTIN', value_name: v.gtin! });
+    }
+    const atributosPacoteFlat = dimensoes ? montarAtributosPacote(dimensoes) : [];
+    const precoFlat = v.preco_publicacao ?? 0;
+    // Validado via API real: com family_name, a ML rejeita `title` (auto-gerado a partir de
+    // atributos/family_name, doc oficial) e `original_price` ("The fields [original_price, title]
+    // are invalid for requested call") — nenhum dos dois entra no payload plano.
+    return {
+      category_id: familia.categoria_ml_id ?? '',
+      currency_id: CURRENCY,
+      buying_mode: BUYING_MODE,
+      listing_type_id: listingTypeId,
+      condition: CONDITION,
+      pictures,
+      attributes: [...atributosFlat, ...atributosPacoteFlat],
+      price: precoFlat,
+      available_quantity: v.estoque,
+      seller_custom_field: v.codigo,
+      family_name: familia.titulo_ml ?? '',
+    };
+  }
+
   const variations: VariacaoItem[] = variacoes.map((v) => {
     const cor = v.cor?.trim() || (variacaoUnica ? COR_UNITARIA : '');
     // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria

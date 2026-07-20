@@ -92,6 +92,27 @@ describe('montarPayloadItem', () => {
     );
     expect(p.variations[0].attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Único' }]);
   });
+  it('categoria Zíperes (MLB271227) com 1 variação publica item plano: family_name, price/available_quantity no corpo, sem variations (ADR-0084)', () => {
+    const cursor = { ...familia, categoria_ml_id: 'MLB271227' };
+    const p = montarPayloadItem(cursor, [variacoes[0]], capaPictureId);
+    expect(p.family_name).toBe('Linha XIK 120 Várias Cores');
+    expect(p.price).toBe(9.9);
+    expect(p.available_quantity).toBe(5);
+    expect(p.seller_custom_field).toBe('00000101');
+    expect(p.variations).toBeUndefined();
+    expect(p.attributes).toEqual(expect.arrayContaining([{ id: 'COLOR', value_name: 'Azul' }]));
+    // Validado via API real: a ML rejeita title/original_price no item plano com family_name.
+    expect(p.title).toBeUndefined();
+    expect(p.original_price).toBeUndefined();
+  });
+  it('categoria Zíperes (MLB271227) com >1 variação ainda não tem suporte — falha LOUD em vez de publicar errado', () => {
+    const cursor = { ...familia, categoria_ml_id: 'MLB271227' };
+    expect(() => montarPayloadItem(cursor, variacoes, capaPictureId)).toThrow(/múltiplas cores/);
+  });
+  it('categoria sem essa exigência (linha, MLB270273) não envia family_name', () => {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId);
+    expect(p.family_name).toBeUndefined();
+  });
 });
 
 describe('montarPayloadItem com 2a foto', () => {

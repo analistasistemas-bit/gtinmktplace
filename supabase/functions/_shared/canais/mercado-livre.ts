@@ -61,13 +61,15 @@ export const mercadoLivreConnector: ChannelConnector = {
     );
     try {
       const r = await criarItemML(token, payload);
+      // ADR-0084: item plano (categoria que exige family_name) não tem sub-recurso `variations`
+      // — o próprio item É a variação única. Sem isso, variacoesExternas ficaria vazio e
+      // variacoes.ml_variation_id nunca seria gravado pro SKU.
+      const variacoesExternas = (r.variations.length === 0 && a.variacoes.length === 1)
+        ? { [a.variacoes[0].sku]: r.id }
+        : mapearVariacoesExternas(r.variations, a.variacoes);
       return {
         ok: true,
-        valor: {
-          itemExternoId: r.id,
-          permalink: r.permalink,
-          variacoesExternas: mapearVariacoesExternas(r.variations, a.variacoes),
-        },
+        valor: { itemExternoId: r.id, permalink: r.permalink, variacoesExternas },
       };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };
