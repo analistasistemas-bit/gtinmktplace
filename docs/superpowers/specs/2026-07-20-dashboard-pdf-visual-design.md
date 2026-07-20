@@ -37,12 +37,14 @@ nova dependência.
 O adaptador do Dashboard continuará preenchendo os campos genéricos usados por
 Excel, CSV e impressão e adicionará uma carga visual exclusiva do PDF contendo:
 
-- período, canal e data de referência;
-- dois KPIs principais e seis KPIs secundários;
+- período e canal; a data de emissão será gerada pelo renderer;
+- métrica atualmente selecionada no gráfico (`faturamento`, `liquido` ou
+  `pedidos`) e sua série já preparada pelo Dashboard;
+- dois KPIs principais e seis KPIs secundários, cada um com valor, delta,
+  tendência e texto auxiliar quando esses elementos existirem na tela;
 - alertas ativos com rótulo;
-- série temporal de faturamento, líquido e pedidos;
-- top produtos com posição, unidades e faturamento;
-- próximas liberações com data e valor;
+- top cinco produtos com posição, unidades e faturamento;
+- próximas seis liberações com data e valor;
 - agregação geográfica por UF, incluindo pedidos e participação;
 - quantidade de pedidos sem localização.
 
@@ -58,7 +60,9 @@ criará consulta, polling ou estado de negócio adicional.
 - Grade com seis cards: Líquido no faturamento, Markup no período,
   Compradores, Pedidos, Ticket médio e A receber.
 - Faixa "Precisa de atenção" somente quando houver ocorrências.
-- Card de evolução das vendas com linha/área, eixos e legenda.
+- Card de evolução das vendas com linha/área, eixos e legenda da métrica
+  selecionada na tela. Faturamento e líquido usam escala monetária; pedidos usa
+  escala inteira própria. Métricas diferentes nunca compartilham o mesmo eixo.
 - Card de Top produtos com ranking, título truncado de forma legível, unidades e
   faturamento.
 
@@ -68,7 +72,8 @@ criará consulta, polling ou estado de negócio adicional.
 - Card de Liberações próximas; quando vazio, mensagem explícita.
 - Card de Vendas por estado ocupando a maior área.
 - Mapa do Brasil em tema claro, reaproveitando a geometria de UFs existente.
-- Escala de intensidade e ranking lateral com barras, pedidos e percentuais.
+- Escala de intensidade e ranking lateral limitado às cinco primeiras UFs, com
+  barras, pedidos e percentuais.
 - Rodapé com "Página 2 de 2", período e data de emissão.
 
 ## Sistema visual
@@ -84,6 +89,9 @@ criará consulta, polling ou estado de negócio adicional.
 ## Paginação e estados limites
 
 - Formato fixo: A4 paisagem, exatamente duas páginas.
+- O PDF visual é sempre o relatório completo e inclui os oito KPIs. A opção
+  genérica "Somente os dados" não se aplica ao PDF do Dashboard e não será
+  oferecida nesse caminho; continuará disponível para formatos que já a usam.
 - Rótulos longos de produtos serão truncados com reticências, sem sobreposição.
 - Séries vazias exibem "Sem vendas no período".
 - Liberações vazias exibem "Nada a liberar no horizonte".
@@ -98,7 +106,8 @@ criará consulta, polling ou estado de negócio adicional.
 
 - PDF visual exclusivo do Dashboard.
 - Dados necessários para alertas e liberações já presentes na página.
-- Reuso da geometria do mapa por código compartilhado quando necessário.
+- Importação direta de `BRASIL_UF_GEOJSON` e uma função pura local para projetar
+  e desenhar os polígonos; não será criada uma biblioteca cartográfica genérica.
 - Testes de seleção do renderer, layout lógico e estados vazios.
 - Geração e inspeção visual das duas páginas renderizadas em PNG.
 
@@ -106,13 +115,15 @@ criará consulta, polling ou estado de negócio adicional.
 
 - Mudanças visuais no Dashboard web.
 - Mudanças no PDF de Faturamento, Financeiro ou outras telas.
-- Mudanças em Excel, CSV ou impressão.
+- Mudanças em Excel, CSV ou impressão. O payload visual será anexado somente
+  quando `config.formato === "pdf"`; a impressão do Dashboard continuará usando
+  o renderer genérico atual.
 - Novos filtros, métricas ou consultas.
 - Reprodução pixel a pixel do tema escuro.
 
 ## Tratamento de erros
 
-- Se os dados visuais do Dashboard estiverem ausentes, o fluxo mantém o renderer
+- Se os dados visuais do Dashboard estiverem ausentes, o PDF mantém o renderer
   genérico em vez de falhar.
 - Valores e coleções opcionais produzem estados vazios explícitos.
 - A exportação continua usando o tratamento de erro e feedback do
@@ -125,9 +136,18 @@ criará consulta, polling ou estado de negócio adicional.
   produtos.
 - Página 2 contém liberações, mapa e ranking geográfico.
 - O período e o canal ativos aparecem no documento.
-- O mapa e o gráfico são vetoriais e permanecem nítidos.
+- O gráfico reflete a métrica selecionada na tela e usa uma única escala
+  compatível com essa métrica.
+- Deltas, tendências e textos auxiliares visíveis nos cards da tela aparecem no
+  PDF quando existirem.
+- Top produtos limita-se a cinco itens, liberações a seis datas e ranking
+  geográfico a cinco UFs.
+- O mapa e o gráfico são vetoriais e permanecem nítidos. Um teste estrutural
+  comprova que o renderer não chama `addImage` para esses elementos; a inspeção
+  das páginas renderizadas confirma a nitidez.
 - PDF das demais telas continua usando o renderer genérico sem alteração visual.
-- Excel, CSV e impressão do Dashboard mantêm o comportamento atual.
+- Excel, CSV e impressão do Dashboard mantêm o comportamento atual; o renderer
+  visual é selecionado somente para `formato === "pdf"`.
 - Testes direcionados, TypeScript e lint passam.
 - O PDF de referência é renderizado em PNG com Poppler e a inspeção visual não
   encontra cortes, sobreposições, texto ilegível ou páginas extras.
