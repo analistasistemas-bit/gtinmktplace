@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { custoCentavos } from '../tokens';
 
 describe('custoCentavos', () => {
@@ -37,5 +37,19 @@ describe('custoCentavos', () => {
     expect(custoCentavos('deepseek/deepseek-v4-flash', { prompt_tokens: 1_000_000, completion_tokens: 0 })).toBe(9);
     // 1M output = $0.18 = 18 centavos
     expect(custoCentavos('deepseek/deepseek-v4-flash', { prompt_tokens: 0, completion_tokens: 1_000_000 })).toBe(18);
+  });
+
+  it('avisa (console.warn) quando o modelo está fora de PRECOS; não avisa para modelo conhecido', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      custoCentavos('modelo/inexistente', { prompt_tokens: 1000, completion_tokens: 500 });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]?.[0]).toContain('modelo/inexistente');
+      spy.mockClear();
+      custoCentavos('openai/gpt-4o-mini', { prompt_tokens: 1000, completion_tokens: 500 });
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

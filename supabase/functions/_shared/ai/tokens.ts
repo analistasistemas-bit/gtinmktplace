@@ -19,7 +19,10 @@ export interface UsageTokens {
 
 export function custoCentavos(modelo: string, usage: UsageTokens): number {
   const preco = PRECOS[modelo];
-  if (!preco) return 0;
+  if (!preco) {
+    console.warn(`custoCentavos: modelo "${modelo}" fora da tabela PRECOS — custo de IA contabilizado como 0`);
+    return 0;
+  }
   if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) return 0;
   const dolares =
     (usage.prompt_tokens / 1000) * preco.input +

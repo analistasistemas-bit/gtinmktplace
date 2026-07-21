@@ -33,10 +33,11 @@ export async function buscarDevolucoes(): Promise<Devolucao[]> {
   const orderIds = devolucoes.map(d => d.order_id).filter((id): id is number => id != null);
 
   if (orderIds.length > 0) {
-    const { data: vendasData } = await supabase
+    const { data: vendasData, error: vendasError } = await supabase
       .from('ml_vendas')
       .select('order_id, pack_id, estorno')
       .in('order_id', orderIds);
+    if (vendasError) throw new Error(vendasError.message);
 
     if (vendasData) {
       const packMap = new Map(vendasData.map(v => [v.order_id, v.pack_id]));

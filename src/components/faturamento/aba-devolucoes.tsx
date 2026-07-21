@@ -68,7 +68,7 @@ export function AbaDevolucoes() {
   const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
   const aplicarCustom = () => { if (rascunhoValido) setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); };
 
-  const { data: devolucoes, isFetching } = useDevolucoes();
+  const { data: devolucoes, isFetching, isError } = useDevolucoes();
   
   const lista = useMemo(() => {
     if (!devolucoes) return [];
@@ -189,10 +189,13 @@ export function AbaDevolucoes() {
           })}
         </TableBody>
       </Table>
-      {!isFetching && lista.length === 0 && devolucoes?.length !== 0 && (
+      {isError && (
+        <div className="px-4 py-10 text-center text-sm text-muted-foreground">Não foi possível carregar as devoluções. Tente novamente.</div>
+      )}
+      {!isError && !isFetching && lista.length === 0 && devolucoes?.length !== 0 && (
         <div className="px-4 py-10 text-center text-sm text-muted-foreground">Nenhum registro encontrado para os filtros selecionados.</div>
       )}
-      {isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
+      {!isError && isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
       </div>
     </div>
   );

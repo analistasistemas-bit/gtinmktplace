@@ -37,6 +37,7 @@ import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
 import { alvosAplicarPreco, exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
+import { fmtBRL } from '@/lib/formato';
 import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { QK } from '@/lib/queries';
@@ -724,12 +725,12 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             <AlertDialogDescription>
               {promptPreco && (
                 promptPreco.exigeDivisaoSeNao ? (
-                  <>Novo preço: <strong>R$ {promptPreco.preco.toFixed(2)}</strong>. "Sim" iguala todas as
+                  <>Novo preço: <strong>{fmtBRL(promptPreco.preco)}</strong>. "Sim" iguala todas as
                   cores (um anúncio, preço único). "Não" vai EXIGIR dividir um anúncio já publicado —
                   a publicação desse produto vai <strong>falhar de propósito</strong> até resolver
                   (remover e republicar perde histórico, ou marque "somente estoque" pra adiar).</>
                 ) : (
-                  <>Novo preço: <strong>R$ {promptPreco.preco.toFixed(2)}</strong>. "Sim" iguala todas as
+                  <>Novo preço: <strong>{fmtBRL(promptPreco.preco)}</strong>. "Sim" iguala todas as
                   cores (um anúncio, preço único). "Não" mantém preços diferentes — as faixas serão
                   publicadas como anúncios separados no Mercado Livre.</>
                 )

@@ -10,7 +10,7 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
-import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
+import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -212,20 +212,16 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ ml_item_id: ref.itemExternoId }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const status = (err as { status?: number }).status;
-    // Erro de foto que o ML pede para reenviar é transiente (a foto ainda processa). Retenta
-    // via QStash reusando o MESMO picture_id (sem re-subir) enquanto restar tentativa; ao
-    // esgotar, marca erro visível com mensagem recuperável.
     const retentavelFoto = (err as { retentavel?: boolean }).retentavel === true;
     const tentativas = Number(req.headers.get('Upstash-Retried') ?? '0');
-    if (retentavelFoto && tentativas < 3) {
+    // Transitório (foto retentável — item.pictures.unavailable ainda propagando —, 5xx, 429 ou
+    // status desconhecido) ENQUANTO houver tentativa do QStash: relança 500 reusando o MESMO
+    // picture_id (mantém 'publicando'). Ao ESGOTAR as tentativas vira definitivo (senão a mensagem
+    // ia pra DLQ e a família ficava presa em 'publicando'). Mesma decisão dos workers irmãos.
+    if (decidirRetryTransitorio(err, tentativas) === 'retentar') {
       return new Response(msg, { status: 500, headers: corsHeaders });
     }
-    // 5xx/429: transitório — mantém 'publicando' e relança para o QStash retentar.
-    if (status && status >= 500) {
-      return new Response(msg, { status: 500, headers: corsHeaders });
-    }
-    // 4xx ou erro local: definitivo — persiste erro e reavalia o lote.
+    // Definitivo (4xx, erro local, ou transitório após esgotar os retries): persiste erro e reavalia o lote.
     await admin.from('familias').update({
       status: 'erro',
       erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
