@@ -97,11 +97,14 @@ export function montarPesoResolver(m: MapasCusto | undefined): PesoResolver {
 }
 
 /** Resolver de alíquota de imposto (%) p/ o markup: origem da família → alíquota global do usuário.
- *  null = origem não mapeada (item sem custo/família casada) → sem imposto. */
+ *  null = origem não mapeada (item sem custo/família casada), OU alíquota ainda não resolvida
+ *  (config não carregou) → sem imposto em vez de um número possivelmente errado (ADR-0055: imposto
+ *  por origem nunca defaulta em silêncio). */
 export function montarAliquotaResolver(
-  m: MapasCusto | undefined, aliquotas: { nacional: number; importado: number },
+  m: MapasCusto | undefined, aliquotas: { nacional: number; importado: number } | null,
 ): AliquotaResolver {
   return (item) => {
+    if (!aliquotas) return null;
     const origem = resolverProduto(m, item)?.origem;
     if (origem === 'importado') return aliquotas.importado;
     if (origem === 'nacional') return aliquotas.nacional;
