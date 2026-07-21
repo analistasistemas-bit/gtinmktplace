@@ -1,5 +1,6 @@
 import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
+import { custoCentavos } from './tokens.ts';
 import {
   montarPromptAtributos,
   type AtributoAlvo,
@@ -14,6 +15,7 @@ export async function desempatarAtributosLLM(
   input: InputAtributos,
   alvos: AtributoAlvo[],
   modelo: string = MODELO_COPY,
+  onCusto?: (centavos: number) => void,
 ): Promise<Record<string, string>> {
   if (alvos.length === 0) return {};
   try {
@@ -27,6 +29,7 @@ export async function desempatarAtributosLLM(
       response_format: { type: 'json_object' },
       temperature: 0,
     });
+    if (onCusto && resp.usage) onCusto(custoCentavos(modelo, resp.usage));
     const raw = resp.choices[0]?.message?.content ?? '{}';
     const parsed = JSON.parse(raw);
     return (parsed && typeof parsed === 'object') ? parsed as Record<string, string> : {};

@@ -195,11 +195,15 @@ Deno.serve(async (req) => {
     // traz marca própria. Default 'Avil' preservado dentro de montarAtributosML/Base.
     const { data: orgRow } = await admin.from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
     const marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
+    // Acumula o custo de IA dos desempates (categoria + atributos) p/ somar ao custo_centavos da
+    // família — antes eram descartados (só o custo do gerarCopy entrava em custo_centavos).
+    let custoDesempateLLM = 0;
+    const acumularDesempate = (centavos: number) => { custoDesempateLLM += centavos; };
     const cat = await resolverCategoria(
       { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined, tipoProdutoBusca: copy.tipo_produto_busca },
       {
         preditor: (q) => (token ? buscarCategoriaPreditor(token, q) : Promise.resolve([])),
-        llm: (input, candidatos) => desempatarCategoriaLLM(input, candidatos, modeloTexto),
+        llm: (input, candidatos) => desempatarCategoriaLLM(input, candidatos, modeloTexto, acumularDesempate),
       },
     );
     let tipo = cat.tipo;
@@ -247,7 +251,7 @@ Deno.serve(async (req) => {
           atributosMl = await preencherAtributosClosedSet(
             schema, atributosMl,
             { nome: claimed.nome_pai, descricao: claimed.descricao_pai ?? undefined },
-            (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto),
+            (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto, acumularDesempate),
           );
           atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
         } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
@@ -263,7 +267,7 @@ Deno.serve(async (req) => {
             if (!token) return Promise.reject(new Error('sem token p/ ler schema da categoria'));
             return lerSchemaAtributos(token, id);
           },
-          llm: (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto),
+          llm: (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto, acumularDesempate),
         },
         marcaPadrao,
       );
@@ -426,7 +430,7 @@ Deno.serve(async (req) => {
       descricao_ml: copy.descricao,
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
-      custo_centavos: copy.custo_centavos,
+      custo_centavos: copy.custo_centavos + custoDesempateLLM,
       concorrencia_vendedores: concorrencia.vendedores,
       concorrencia_preco_min: concorrencia.preco_min,
       concorrencia_origem: concorrencia.origem,

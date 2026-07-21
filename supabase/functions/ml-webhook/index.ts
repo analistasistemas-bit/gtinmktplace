@@ -7,7 +7,7 @@ import { qstashClient } from '../_shared/queue.ts';
 import { parseWebhookNotification, extrairPackIdDeMensagem } from '../_shared/faturamento/venda.ts';
 import { resolverIdentidade } from '../_shared/faturamento/io.ts';
 import { deveThrottlar, JANELA_THROTTLE_MS } from '../_shared/ml/throttle-webhook.ts';
-import { deveReenfileirarMensagens } from '../_shared/ml/reenfileirar-mensagens.ts';
+import { deveReenfileirarMensagens, classificarDedupWebhook } from '../_shared/ml/reenfileirar-mensagens.ts';
 
 // topic → função worker + nome do campo do id no job.
 const ROTA: Record<string, { fn: string; campo: string }> = {
@@ -57,12 +57,17 @@ Deno.serve(async (req) => {
   // sinal de job perdido: reenfileira mesmo com o conflito (a linha de dedup permanece intacta).
   const { error: dupErr } = await admin.from('ml_webhook_eventos')
     .insert({ user_id: userId, org_id: orgId, topic: ev.topic, resource: ev.resource });
-  if (dupErr) {
-    if (ev.topic !== 'messages') return ok();
+  const acaoDedup = classificarDedupWebhook(dupErr, ev.topic);
+  if (acaoDedup === 'ignorar') return ok(); // duplicado real (23505) de topic ≠ messages.
+  if (acaoDedup === 'checar-messages') {
     const { data: existente } = await admin.from('ml_webhook_eventos')
       .select('recebido_em, processado_em').eq('topic', 'messages').eq('resource', ev.resource)
       .eq('user_id', userId).maybeSingle();
     if (!deveReenfileirarMensagens(existente, Date.now())) return ok();
+  } else if (dupErr) {
+    // 'enfileirar' com erro presente = erro não-23505 (RLS/timeout/pool): NÃO engole o evento
+    // (perguntas/devoluções não têm backstop). Loga e segue p/ enfileirar — o worker é idempotente.
+    console.error('ml-webhook: erro não-duplicado ao inserir dedup, prossegue p/ enfileirar:', (dupErr as { message?: string }).message ?? (dupErr as { code?: string }).code);
   }
 
   // `messages`: o id do job é o pack, não o último segmento do resource (que é o seller).
