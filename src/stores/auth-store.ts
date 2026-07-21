@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query-client';
 
 export interface Profile {
   id: string;
@@ -48,6 +49,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const previousUserId = get().user?.id ?? null;
       const user = session?.user ?? null;
       if (!user) {
+        // Logout: limpa o cache do react-query — sem isso, dados por-org (financeiro, publicação,
+        // mensagens) ficam retidos em memória além do logout e podem vazar pra próxima conta que
+        // logar na mesma aba (staleness client-side; a RLS do servidor continua protegendo).
+        if (previousUserId) queryClient.clear();
         set({ session, user: null, profile: null, profileLoading: false });
         return;
       }
@@ -56,6 +61,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (sameLoadedUser) {
         set({ session, user });
       } else {
+        // Troca de conta na mesma aba (não só 1ª carga): mesmo motivo do logout acima.
+        if (previousUserId && previousUserId !== user.id) queryClient.clear();
         set({ session, user, profile: null });
       }
       void get().loadProfile(user.id, { blocking: !sameLoadedUser });
