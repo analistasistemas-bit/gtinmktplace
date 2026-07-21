@@ -291,6 +291,16 @@ Anúncios moderados/pausados + coordenação de alertas. *Migration `20260622115
 `ml_item_id`, `status`, `motivo`, `detectado_em`, `alertado_em`, `resolvido_em`.
 Índice único parcial `(user_id, ml_item_id) WHERE resolvido_em IS NULL` (evita alerta duplicado).
 
+### `notificacoes`
+Notificação in-app, espelho do alerta Telegram. *Migration `20260721094323_notificacoes_in_app.sql`
+(ADR-0085).* `user_id`, `org_id` (NOT NULL), `categoria` (mesmo enum textual de
+`profiles.telegram_categorias`), `texto` (mesma string formatada enviada ao Telegram, já com o
+link quando houver), `lida`, `criada_em`. Gravada pelo mesmo ponto único que dispara o Telegram
+(`notificarCategoria`, `_shared/notificacoes/config.ts`) — todo assinante de uma categoria recebe,
+com ou sem Telegram configurado. RLS `select own`; escrita só do worker (`service_role`, bypassa
+RLS), mesmo padrão de `ml_mensagens`. RPC `marcar_notificacoes_lidas(p_ids uuid[] default null)`
+marca todas (default) ou um subconjunto, só do próprio usuário.
+
 ### `configuracoes`
 Settings por **organização** desde o E7 (era por usuário). *Migrations `20260606120614` +
 `20260622121259` (ADR-0017/0035/0040) + `20260703113001` (ADR-0055) + `20260704120000`

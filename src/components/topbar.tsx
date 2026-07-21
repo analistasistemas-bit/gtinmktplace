@@ -3,6 +3,7 @@ import { Menu, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UserMenu } from '@/components/user-menu';
+import { NotificacoesBell } from '@/components/notificacoes-bell';
 import { BrandMark } from '@/components/sidebar';
 import { useProfile } from '@/hooks/useProfile';
 
@@ -33,6 +34,7 @@ export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
             </Link>
           </Button>
         )}
+        <NotificacoesBell />
         <ThemeToggle />
         <UserMenu />
       </div>

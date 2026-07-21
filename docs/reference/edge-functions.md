@@ -84,7 +84,7 @@
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
 | `mercadopago/*` | API MP (pagamentos) + rateio financeiro |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
-| `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os destinatários por categoria e envia (`config.ts`); `categorias.ts` (5 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Destino por profile, bot por org (ADR-0068) |
+| `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os assinantes por categoria, grava notificação in-app (tabela `notificacoes`, ADR-0085) e envia Telegram a quem tem chat_id (`config.ts`); `categorias.ts` (7 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Assinatura por profile (`telegram_categorias`) vale para os dois canais; bot Telegram é por org (ADR-0068) |
 | `parser.ts` | Validação de colunas da planilha, agrupamento por PAI, matching de fotos |
 
 ---

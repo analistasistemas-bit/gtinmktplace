@@ -1001,6 +1001,36 @@ export type Database = {
           },
         ]
       }
+      notificacoes: {
+        Row: {
+          categoria: string
+          criada_em: string
+          id: string
+          lida: boolean
+          org_id: string
+          texto: string
+          user_id: string
+        }
+        Insert: {
+          categoria: string
+          criada_em?: string
+          id?: string
+          lida?: boolean
+          org_id: string
+          texto: string
+          user_id: string
+        }
+        Update: {
+          categoria?: string
+          criada_em?: string
+          id?: string
+          lida?: boolean
+          org_id?: string
+          texto?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       organizations: {
         Row: {
           atualizado_em: string
@@ -1251,6 +1281,7 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
+      marcar_notificacoes_lidas: { Args: { p_ids?: string[] }; Returns: number }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
       telegram_config_status: {

@@ -5,9 +5,12 @@ import { sanitizarDestinatario } from '../destinatario.ts';
 type Cfg = { telegram_bot_token: string | null; telegram_chat_id: string | null; telegram_ativo: boolean } | null;
 
 // Mock do admin: roteia por tabela. `configuracoes` resolve via maybeSingle; `profiles` é thenable
-// (select().eq().eq().contains().not() → { data }).
-function fakeAdmin(cfg: Cfg, profiles: Array<{ telegram_chat_id: string | null }>) {
-  return {
+// (select().eq().eq().contains() → { data }); `notificacoes` só expõe insert() e acumula as
+// linhas gravadas em `admin.inseridos` para os testes inspecionarem.
+function fakeAdmin(cfg: Cfg, profiles: Array<{ id?: string; telegram_chat_id: string | null }>) {
+  const inseridos: any[] = [];
+  const admin: any = {
+    inseridos,
     from: (tabela: string) => {
       if (tabela === 'configuracoes') {
         const chain: any = {
@@ -16,6 +19,11 @@ function fakeAdmin(cfg: Cfg, profiles: Array<{ telegram_chat_id: string | null }
           maybeSingle: async () => ({ data: cfg, error: null }),
         };
         return chain;
+      }
+      if (tabela === 'notificacoes') {
+        return {
+          insert: async (rows: any[]) => { inseridos.push(...rows); return { error: null }; },
+        };
       }
       const chain: any = {
         select: () => chain,
@@ -26,7 +34,8 @@ function fakeAdmin(cfg: Cfg, profiles: Array<{ telegram_chat_id: string | null }
       };
       return chain;
     },
-  } as any;
+  };
+  return admin;
 }
 
 const ATIVO: Cfg = { telegram_bot_token: 'tok', telegram_chat_id: '999', telegram_ativo: true };
@@ -100,5 +109,25 @@ describe('notificarCategoria', () => {
       .mockResolvedValueOnce({ ok: true } as any);
     const admin = fakeAdmin(ATIVO, [{ telegram_chat_id: '111' }, { telegram_chat_id: '222' }]);
     expect(await notificarCategoria(admin, 'org', 'moderacao', 'oi')).toBe(1);
+  });
+
+  it('grava notificação in-app (ADR-0085) mesmo com Telegram da org inativo', async () => {
+    const admin = fakeAdmin({ ...ATIVO, telegram_ativo: false }, [{ id: 'u1', telegram_chat_id: null }]);
+    await notificarCategoria(admin, 'org1', 'vendas', 'oi');
+    expect(admin.inseridos).toEqual([{ user_id: 'u1', org_id: 'org1', categoria: 'vendas', texto: 'oi' }]);
+  });
+
+  it('grava in-app para todo assinante, com ou sem chat_id', async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: true } as any);
+    const admin = fakeAdmin(ATIVO, [{ id: 'u1', telegram_chat_id: '111' }, { id: 'u2', telegram_chat_id: null }]);
+    await notificarCategoria(admin, 'org1', 'moderacao', 'alerta catálogo');
+    expect(admin.inseridos).toHaveLength(2);
+    expect(admin.inseridos.map((r: any) => r.user_id)).toEqual(['u1', 'u2']);
+  });
+
+  it('sem assinantes → não tenta inserir', async () => {
+    const admin = fakeAdmin(ATIVO, []);
+    await notificarCategoria(admin, 'org1', 'vendas', 'oi');
+    expect(admin.inseridos).toEqual([]);
   });
 });
