@@ -76,11 +76,16 @@ export default function Progresso() {
       <Progress value={pct} className="h-2" />
       <ul className="mt-6 space-y-1 text-sm">
         {familias.map((f) => (
-          <li key={f.id} className="flex justify-between border-b py-1">
-            <span>
-              {f.codigoPai} — {f.titulo}
-            </span>
-            <span className="text-xs text-muted-foreground">{f.status}</span>
+          <li key={f.id} className="border-b py-1">
+            <div className="flex justify-between">
+              <span>
+                {f.codigoPai} — {f.titulo}
+              </span>
+              <span className="text-xs text-muted-foreground">{f.status}</span>
+            </div>
+            {f.status === 'erro' && f.erroMensagem && (
+              <p className="mt-0.5 text-xs text-destructive">{f.erroMensagem}</p>
+            )}
           </li>
         ))}
       </ul>
