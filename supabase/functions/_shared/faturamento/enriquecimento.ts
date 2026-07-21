@@ -1,7 +1,7 @@
 // Enriquecimento das vendas (ADR-0037): líquido real (Mercado Pago) e GTIN p/ vendas de
 // catálogo. Reusa os helpers do financeiro (ADR-0031) e do _shared/ml. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { buscarPagamentosMP, getContaId } from '../mercadopago/financeiro.ts';
+import { buscarPagamentosMP, getContaId, resolverTokenMP } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
 import type { PedidoML, DadosPagamentoMP } from './venda.ts';
 
@@ -16,12 +16,7 @@ export async function carregarLiquidoMP(
   admin: SupabaseClient, orgId: string | null, lookbackDias = 120,
 ): Promise<Map<string, DadosPagamentoMP>> {
   const out = new Map<string, DadosPagamentoMP>();
-  let token: string | null = null;
-  if (orgId) {
-    const { data: tok } = await admin.rpc('get_mp_token', { p_org_id: orgId });
-    token = (tok as string | null) ?? null;
-  }
-  token ??= Deno.env.get('MP_ACCESS_TOKEN') ?? null;
+  const token = await resolverTokenMP(admin, orgId);
   if (!token) return out;
   try {
     const contaId = await getContaId(token);

@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import {
-  agregarFinanceiro, buscarPagamentosMP, getContaId, montarInfoPorPagamento,
+  agregarFinanceiro, buscarPagamentosMP, getContaId, montarInfoPorPagamento, resolverTokenMP,
   type InfoCusto, type ResumoFinanceiro,
 } from '../_shared/mercadopago/financeiro.ts';
 import { buscarGtinsDosItens, buscarPedidosML, mapearPagamentoParaItem } from '../_shared/ml/pedidos.ts';
@@ -108,7 +108,9 @@ Deno.serve(async (req) => {
     bruto: 0, liquido: 0, descontos: 0, estornos: 0, pagamentos: 0, vendas: [],
   };
 
-  const token = Deno.env.get('MP_ACCESS_TOKEN');
+  // Token MP por org (Vault) com fallback ao global — mesma fonte de carregarLiquidoMP.
+  // Ler MP_ACCESS_TOKEN direto aqui vazava a conta global (Avil) para qualquer outra org.
+  const token = await resolverTokenMP(adminClient(), orgId);
   if (!token) {
     return json({ semCredencialMP: true, ...vazio });
   }

@@ -13,8 +13,24 @@
 // reproduzível pela API (ver ADR-0031); aqui entregamos o realizado, que é confiável.
 //
 // Fonte: /v1/payments/search com o Access Token de produção da conta (secret MP_ACCESS_TOKEN).
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ratearFreteCompartilhado } from './rateio.ts';
 import { round2 } from '../dinheiro.ts';
+
+/**
+ * Access token do Mercado Pago para a org: RPC get_mp_token (Vault) com fallback ao
+ * MP_ACCESS_TOKEN de instância quando a org não tem secret (D-E7.7 — zero regressão p/ a Avil,
+ * único tenant com MP hoje). Null quando não há nenhum dos dois. Fonte única para toda leitura
+ * financeira do MP — nunca ler MP_ACCESS_TOKEN direto (isso vaza a conta global entre tenants).
+ */
+export async function resolverTokenMP(admin: SupabaseClient, orgId: string | null): Promise<string | null> {
+  let token: string | null = null;
+  if (orgId) {
+    const { data: tok } = await admin.rpc('get_mp_token', { p_org_id: orgId });
+    token = (tok as string | null) ?? null;
+  }
+  return token ?? Deno.env.get('MP_ACCESS_TOKEN') ?? null;
+}
 
 /** Recorte de um pagamento do MP usado para o resumo (demais campos são ignorados). */
 export interface PagamentoMP {
