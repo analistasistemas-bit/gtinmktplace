@@ -7,6 +7,11 @@ import { MLApiError } from './erro-ml.ts';
 const TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
 const BUFFER_MS = 5 * 60 * 1000;
 const LOCK_TTL_S = 30;
+// Timeout do fetch de /oauth/token: TEM que ser < LOCK_TTL_S. Sem ele, um stall de rede >30s
+// deixa o lock de refresh expirar enquanto ainda esperamos a resposta — outro processo pega o
+// lock livre e dispara um 2º refresh com o mesmo refresh_token rotativo, invalidando a credencial
+// (a corrida que o ADR-0012 evita). Abortar em 15s garante o redisDel do finally antes dos 30s.
+const TOKEN_FETCH_TIMEOUT_MS = 15_000;
 const REFRESH_WAIT_TRIES = 10;
 const REFRESH_WAIT_MS = 300;
 
@@ -23,6 +28,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function postToken(params: Record<string, string>): Promise<TokenML> {
   const resp = await fetch(TOKEN_URL, {
     method: 'POST',
+    signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Accept': 'application/json',
