@@ -62,6 +62,15 @@ export default function Configuracoes() {
     }
   }, [aliquotas]);
 
+  // Campo vazio/inválido nunca vira 0 (imposto por origem não pode defaultar em silêncio,
+  // ADR-0055) — null aqui significa "não salvar isto", não "salvar zero".
+  const pctValido = (raw: string): number | null => {
+    const t = raw.trim();
+    if (t === '') return null;
+    const n = Number(t);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+  };
+
   // OAuth do ML retorna para /configuracoes (URL fixa na edge) — o card agora mora em /canais.
   if (searchParams.get('ml_conectado') || searchParams.get('ml_erro')) {
     return <Navigate to={{ pathname: '/canais', search: searchParams.toString() }} replace />;
@@ -278,8 +287,10 @@ export default function Configuracoes() {
                 value={nacionalInput}
                 onChange={(e) => setNacionalInput(e.target.value)}
                 onBlur={() => {
-                  const n = Number(nacionalInput);
-                  if (n >= 0 && n <= 100) salvarAliquotas.mutate({ nacional: n, importado: Number(importadoInput) });
+                  const n = pctValido(nacionalInput);
+                  if (n === null) { setNacionalInput(String(aliquotas?.nacional ?? 8)); return; }
+                  const importado = pctValido(importadoInput) ?? aliquotas?.importado ?? 16;
+                  salvarAliquotas.mutate({ nacional: n, importado });
                 }}
               />
               <span className="text-sm">%</span>
@@ -295,8 +306,10 @@ export default function Configuracoes() {
                 value={importadoInput}
                 onChange={(e) => setImportadoInput(e.target.value)}
                 onBlur={() => {
-                  const n = Number(importadoInput);
-                  if (n >= 0 && n <= 100) salvarAliquotas.mutate({ nacional: Number(nacionalInput), importado: n });
+                  const n = pctValido(importadoInput);
+                  if (n === null) { setImportadoInput(String(aliquotas?.importado ?? 16)); return; }
+                  const nacional = pctValido(nacionalInput) ?? aliquotas?.nacional ?? 8;
+                  salvarAliquotas.mutate({ nacional, importado: n });
                 }}
               />
               <span className="text-sm">%</span>
