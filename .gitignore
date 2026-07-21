@@ -63,3 +63,5 @@ ponytail/
 .codex/
 check_tokens.js
 trigger_sync.js
+.code-review-fable5/
+.env.local.oficial
