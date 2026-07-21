@@ -1,4 +1,4 @@
-import { Bell } from 'lucide-react';
+import { Bell, ExternalLink } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,8 +14,10 @@ import { CATEGORIA_LABEL } from '@/lib/notificacoes-categorias';
 const URL_PATTERN = /(https?:\/\/[^\s]+)/g;
 const IS_URL = /^https?:\/\//;
 
-/** Quebra o texto da notificação em partes, tornando URLs clicáveis (o texto já vem pronto do
- * Telegram — ver montarMensagem* em _shared/notificacoes/telegram.ts). */
+/** Quebra o texto da notificação em partes, trocando URLs cruas (o texto já vem pronto do
+ * Telegram — ver montarMensagem* em _shared/notificacoes/telegram.ts) por um link compacto —
+ * mesmo padrão "Ver no Mercado Livre ↗" já usado em detalhe-pedido-itens.tsx/aba-devolucoes.tsx.
+ * Evita que a URL, sem espaços para quebrar linha, estoure a largura do card. */
 function linkify(texto: string) {
   return texto.split(URL_PATTERN).map((parte, i) =>
     IS_URL.test(parte) ? (
@@ -24,10 +26,10 @@ function linkify(texto: string) {
         href={parte}
         target="_blank"
         rel="noreferrer"
-        className="text-primary underline"
+        className="inline-flex items-center gap-1 text-info hover:underline"
         onClick={(e) => e.stopPropagation()}
       >
-        {parte}
+        Ver no Mercado Livre <ExternalLink className="h-3 w-3" />
       </a>
     ) : (
       <span key={i}>{parte}</span>
@@ -73,13 +75,13 @@ export function NotificacoesBell() {
             {notificacoes.map((n) => (
               <DropdownMenuItem
                 key={n.id}
-                className="flex-col items-start gap-0.5 whitespace-normal py-2"
+                className="w-full flex-col items-start gap-0.5 whitespace-normal py-2"
                 onSelect={(e) => e.preventDefault()}
               >
                 <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {CATEGORIA_LABEL[n.categoria] ?? n.categoria}
                 </span>
-                <span className="text-sm leading-snug">{linkify(n.texto)}</span>
+                <span className="w-full min-w-0 break-words text-sm leading-snug">{linkify(n.texto)}</span>
                 <span className="text-[10px] text-muted-foreground">{formatarQuando(n.criada_em)}</span>
               </DropdownMenuItem>
             ))}
