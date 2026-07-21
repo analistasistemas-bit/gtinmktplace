@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Notificação in-app, espelho do Telegram (ADR-0085) — 2026-07-21
+
+- [x] Todo alerta operacional (catálogo sem match, moderação, venda, pergunta, mensagem,
+  devolução, liberação de saldo) saía só por Telegram — sem fallback dentro do próprio app para
+  quem não usa Telegram ou não estava de olho no celular. Nova tabela `notificacoes` (in-app),
+  escrita pelo mesmo ponto único que já dispara o Telegram (`notificarCategoria`,
+  `_shared/notificacoes/config.ts`) — zero mudança nos 8 call-sites existentes.
+- [x] Mesmos assinantes de categoria do Telegram (`profiles.telegram_categorias`, ADR-0068), sem
+  exigir Telegram configurado. Sino no topbar (`useNotificacoes`, `staleTime` 60s, mesmo padrão
+  sem realtime de `usePerguntasNaoRespondidas`); badge de não lidas; RPC
+  `marcar_notificacoes_lidas` marca todas ao abrir o dropdown.
+- [x] Fix de grants: migration nasce só com `select` para `authenticated`, sem repetir o bug do
+  `grant all` para `anon` que a `ml_mensagens` teve (precisou de migration de revogação depois).
+- [x] Migration `20260721094323_notificacoes_in_app` aplicada em produção; as 8 edge functions
+  (`vincular-catalogo`, `monitorar-moderados`, `notificar-liberacao`, `reconciliar-faturamento`,
+  `sync-devolucao`, `sync-mensagem`, `sync-pergunta`, `sync-venda`) redeployadas; frontend
+  confirmado `live` no Render. `pnpm test` verde (215 arquivos, 1697 testes).
+
 ## Devoluções no Dashboard + fix do valor sempre "—" (2026-07-19)
 
 - [x] Card "Faturamento bruto" do Dashboard ganha uma linha discreta com qtd. de devoluções
