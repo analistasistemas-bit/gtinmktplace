@@ -17,10 +17,11 @@ create index notificacoes_user_criada_idx on public.notificacoes (user_id, criad
 
 alter table public.notificacoes enable row level security;
 
--- Grants explícitos (não dependemos das default privileges ambientes do db push): o app lê como
--- `authenticated`, filtrado por RLS. Escrita real é só do worker (service role bypassa RLS).
+-- Grants explícitos, já no formato least-privilege corrigido em ml_mensagens (migration
+-- 20260712142159, plan 037) — não repete o `grant all a anon` que foi revogado lá. `anon` sem
+-- nenhum privilégio; `authenticated` só `select`, filtrado por RLS. Escrita real é só do worker
+-- (service role bypassa RLS).
 grant select on public.notificacoes to authenticated;
-grant all on public.notificacoes to anon, authenticated;
 
 create policy "notificacoes: select own" on public.notificacoes
   for select using ((select auth.uid()) = user_id);
