@@ -5,7 +5,10 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarClaim, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
-import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
+import {
+  buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
+} from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaDevolucao, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
@@ -72,6 +75,36 @@ Deno.serve(async (req) => {
       motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL',
     }));
   }
+
+  // Recalcula liquido/estorno da venda ligada ao claim (mesmo pipeline de sync-venda) — sem isso
+  // ml_vendas.liquido/estorno só se atualizam se orders_v2/shipments disparar de novo, e devolução
+  // costuma chegar dias/semanas depois da venda (fora da janela de reconciliar-faturamento).
+  // upsertVenda é idempotente: pedido já pago não gera novaPaga=true de novo, então não reenvia
+  // alerta/mensagem de nova venda. Falha aqui usa o mesmo retry via QStash de buscarClaim acima —
+  // o claim já está gravado (upsertDevolucao), então um retry não duplica nada.
+  if (row.order_id != null) {
+    try {
+      const pedido = await buscarPedido(token, String(row.order_id));
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, job.user_id);
+      const shippingId = pedido.shipping?.id ?? null;
+      const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
+        buscarFreteVendedor(token, shippingId),
+        buscarShipment(token, shippingId),
+        carregarLiquidoMP(admin, orgId),
+        carregarGtinsFallback(token, [pedido], idsPubliai),
+      ]);
+      await upsertVenda(admin, job.user_id, orgId, pedido, {
+        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+      });
+    } catch (e) {
+      if (e instanceof MLApiError && classificarErroML(e.status) === 'nao-encontrado') {
+        // Pedido sumiu do ML: nada a recalcular, o claim já está gravado.
+      } else {
+        return await tratarFalha(admin, conexao, orgId, e);
+      }
+    }
+  }
+
   await admin.from('ml_webhook_eventos').update({ processado_em: new Date().toISOString() })
     .eq('topic', 'claims').eq('resource', `/claims/${job.claim_id}`);
 
