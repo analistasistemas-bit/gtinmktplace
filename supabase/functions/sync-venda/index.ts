@@ -9,6 +9,7 @@ import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
+import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
@@ -96,7 +97,9 @@ Deno.serve(async (req) => {
   // Alerta de nova venda paga aos destinatários da categoria 'vendas'. Usa os itens já com EAN
   // resolvido (catálogo/GTIN) e o nome real do comprador já resolvido pelo upsert (nunca o
   // nickname). notificarCategoria respeita o interruptor-mestre da org.
-  if (novaPaga && orgId) {
+  // reservarNotificacao garante 1 notificação por venda paga mesmo se novaPaga vier true em
+  // execuções concorrentes do mesmo pedido (retry QStash) — só quem ganha o INSERT notifica.
+  if (novaPaga && orgId && await reservarNotificacao(admin, orgId, userId, 'venda_paga', String(pedido.id))) {
     await notificarCategoria(admin, orgId, 'vendas', montarMensagemNovaVenda({
       order_id: Number(pedido.id),
       comprador: compradorNome,

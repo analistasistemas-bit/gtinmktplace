@@ -5,6 +5,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPergunta, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
+import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { resolverOrgPorUserId } from '../_shared/faturamento/io.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaPergunta, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
@@ -66,7 +67,7 @@ Deno.serve(async (req) => {
   const titulo = await buscarTituloItem(token, pergunta.item_id ?? null);
   const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo);
 
-  if (novaNaoRespondida && orgId) {
+  if (novaNaoRespondida && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'pergunta_nova', String(row.question_id))) {
     await notificarCategoria(admin, orgId, 'perguntas', montarMensagemNovaPergunta({
       question_id: row.question_id, texto: row.texto, item_titulo: titulo,
     }));
