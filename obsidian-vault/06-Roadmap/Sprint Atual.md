@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-17
+atualizado: 2026-07-22
 ---
 
 # Sprint Atual
@@ -22,6 +22,12 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
+- **Config org-scoped + imposto LOUD + token MP por org** (ADR-0086) — em produção 2026-07-22:
+  `configuracoes` virou 1 linha por org (`org_id` PK, `user_id` = auditoria); o imposto por origem
+  **falha LOUD** se a org não confirmou as alíquotas (`aliquotas_confirmadas_em`) em vez de aplicar
+  8/16 em silêncio (Configurações tem banner + botão "Confirmar alíquotas"); e o token do Mercado
+  Pago é por org — fechando um vazamento cross-tenant que ficou **vivo** ao surgir a 2ª org
+  (DSA/diego-souza), que lia a conta MP da Avil. Ver `docs/decisions/0086-configuracao-org-scoped.md`.
 - **Preço por variação + split por faixa** (ADR-0078) — em produção 2026-07-17: o ML passou a
   rejeitar publicação de famílias com preço divergente entre variações (`Found different prices in
   variations`, incidente real — PAI 02841240/02841290). Fase 2 entrega o motor de split por faixa

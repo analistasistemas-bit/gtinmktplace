@@ -117,7 +117,10 @@
   (dicionário → Vision → cache Redis), gera copy (OpenRouter), detecta categoria/tipo, monta
   atributos, calcula estratégia de preço (gross-up do PRÓPRIO cobre comissão, **frete**
   grátis do vendedor e **imposto por origem**, ADR-0050/ADR-0055) e análise de mercado;
-  marca `pronto`/`erro`. Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
+  marca `pronto`/`erro`. **LOUD do imposto (ADR-0086):** cedo, se a org não confirmou as alíquotas
+  (`configuracoes.aliquotas_confirmadas_em` null) a família vira `erro` "confirme as alíquotas" — nunca
+  precifica com 8/16 em silêncio (vale p/ CREATE e UPDATE); erro transitório de config volta a
+  `pendente` (retry). Busca de concorrência (ADR-0064) agora agrega **TODAS as variações
   válidas** em paralelo (pool 6 workers, cap 60 GTINs) → menor preço global, faixa min–max,
   vendedores distinto, produto representativo = mais barato. Negative caching por GTIN
   (tombstone 6h) elimina buscas inúteis a cada reprocess. Com o toggle
@@ -298,7 +301,10 @@
 
 ### Financeiro (Mercado Pago)
 - **resumo-financeiro** — agrega pagamentos do MP (bruto/líquido/descontos) e cruza com custo
-  por código. Secret: `MP_ACCESS_TOKEN` (single-tenant hoje — ADR-0031).
+  por código. **Token MP por org** via `resolverTokenMP` (RPC `get_mp_token`/Vault); o `MP_ACCESS_TOKEN`
+global (conta da Avil) só é liberado à org nomeada em `MP_FALLBACK_ORG_ID` — qualquer outra org sem
+secret recebe `null` (evita ler a conta MP de outro tenant). Multi-tenant é **LIVE** (2 orgs: Avil +
+DSA). ADR-0086 (item MP) / ADR-0031.
 
 ### Monitoramento / alertas
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram

@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Config org-scoped + imposto LOUD + token MP por org (ADR-0086) — 2026-07-22
+
+- [x] **Increment A** — leitura de `configuracoes` no backend por `org_id` (era `user_id`): membros
+  sem linha própria caíam no default 8/16 / desconto 15. 4 read-sites (`process-familia`, `publicar-split-ml`,
+  `update-familia-ml`, `montar-canonico`). Em prod.
+- [x] **CRÍTICA MP (cross-tenant, era VIVO)** — `resolverTokenMP` caía no `MP_ACCESS_TOKEN` global (conta
+  da Avil) p/ qualquer org sem secret; a 2ª org (DSA) leria a conta MP da Avil. Gate por `MP_FALLBACK_ORG_ID`
+  (só a Avil usa o global). Em prod (secret setado antes do deploy).
+- [x] **Increment B** — LOUD do imposto: flag `configuracoes.aliquotas_confirmadas_em`; `process-familia`
+  bloqueia a publicação (CREATE e UPDATE) se a org não confirmou, em vez de aplicar 8/16 em silêncio;
+  `telegram_config_status` passou a filtrar por org. Banner + botão "Confirmar alíquotas" em Configurações
+  (gate admin). Em prod (migration+backfill → Avil confirmada verificada → deploy).
+- [x] **Increment C** — `configuracoes` org-scoped: `org_id` vira PK (via `USING INDEX`, sem rewrite);
+  `user_id` = auditoria nullable + FK `ON DELETE SET NULL`; FK `org_id` `ON DELETE CASCADE`; trigger
+  `seed_configuracoes_org` (config default por org nova) + backfill (DSA). Em prod.
+- [x] Todos os incrementos revisados por Codex (`gpt-5.6-sol`) antes do merge; docs atualizados
+  (`modelo-de-dados.md`, `edge-functions.md`, ADR-0086 + índice, este TASKS, Sprint Atual).
+
 ## Notificação in-app, espelho do Telegram (ADR-0085) — 2026-07-21
 
 - [x] Todo alerta operacional (catálogo sem match, moderação, venda, pergunta, mensagem,

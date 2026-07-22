@@ -55,6 +55,17 @@ e `auth_alerta_em timestamptz` (marcado na 1ª falha 401/403 detectada, resetado
 sucesso — anti-spam do alerta Telegram categoria `integracao`). Escritas via `registrarSyncOk`/
 `registrarFalhaAuth` (`_shared/ml/liveness.ts`), só `service_role` (sem policy de UPDATE extra).
 
+### `configuracoes` — 1 por organização (ADR-0086)
+
+`org_id` é a **PRIMARY KEY** (1 linha por org); trigger `seed_configuracoes_org` cria a linha default
+ao inserir a org (+ backfill das existentes). `user_id` é só **auditoria da última edição** (nullable,
+FK `ON DELETE SET NULL`); FK `org_id` é `ON DELETE CASCADE`. Guarda: alíquotas de imposto
+(`aliquota_nacional_pct`/`aliquota_importado_pct`, default 8/16), `aliquotas_confirmadas_em` (flag do
+LOUD — sem ela o `process-familia` bloqueia a publicação em vez de aplicar 8/16 em silêncio, ADR-0055
+refinado; "salvar as alíquotas em Configurações = confirmar"), `desconto_pct`/`desconto_concorrencia_pct`,
+`ai_model_texto`/`ai_model_imagem` (ADR-0074), `telegram_*` e `mp_access_token_secret_id` (Vault).
+RLS: leitura por membro da org, escrita só admin. Leituras no backend sempre por `org_id`.
+
 ## Acesso e usuários (ADR-0047 + ADR-0027)
 
 ### `profiles`
