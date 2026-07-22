@@ -176,6 +176,17 @@ uma falha real: `TERMOS_369` usava alternação (`family_name|price|available_qu
 (`TERMOS_369.every(...)`), com 8 testes novos cobrindo cada termo isolado e cada combinação incompleta (achado completo do Codex). 1743 testes
 verdes (suíte inteira), lint e `deno check` limpos.
 
+**Deploy (2026-07-22):** 26 functions que dependem (mesmo transitivamente) de `canais/mercado-livre.ts`,
+`ml/erro-ml.ts`, `ml/criar-item.ts` ou `ml/publicar.ts` (mapeadas via `deno info` por function, não por
+grep manual — mesmo padrão de blast radius do ADR-0060/ADR-0084) deployadas via CLI
+(`supabase functions deploy`, `verify_jwt` preservado por function). Todas as 26 versões confirmadas +1
+pós-deploy (`supabase functions list`, comparação programática antes/depois).
+
+**Pendente — requer ação humana, não automatizável:** reprocessar o lote #37 (KIT AGULHA CROCHÊ, PAI
+`02638290`) via o botão "Reenviar" no app. `reprocessar-familia` (a function por trás do botão) exige
+`requireUserOrg(req)` — sessão autenticada real, não dá pra disparar por CLI/agente. Critério de aceite
+final continua o mesmo: publicar sem editar `CATEGORIAS_QUE_EXIGEM_FAMILY_NAME`.
+
 **Pendente:** deploy CLI das functions afetadas e reprocessamento real do lote #37 (KIT AGULHA CROCHÊ,
 PAI `02638290`) para confirmar publicação via retry reativo em produção, **sem** editar
 `CATEGORIAS_QUE_EXIGEM_FAMILY_NAME`. Testes cobertos antes da implementação:
