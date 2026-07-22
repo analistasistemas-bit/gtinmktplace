@@ -23,13 +23,31 @@ import { round2 } from '../dinheiro.ts';
  * único tenant com MP hoje). Null quando não há nenhum dos dois. Fonte única para toda leitura
  * financeira do MP — nunca ler MP_ACCESS_TOKEN direto (isso vaza a conta global entre tenants).
  */
+/**
+ * Escolhe o token final. O `tokenVault` (secret da org) sempre vence. O fallback ao token global
+ * de instância (`tokenGlobal`) é liberado SÓ para a org nomeada em `fallbackOrgId` (Avil,
+ * transição D-E7.7 — ainda sem secret no Vault). Qualquer OUTRA org sem secret recebe null, nunca
+ * o token global — senão um novo tenant leria a conta MP da Avil (cross-tenant).
+ * ponytail: o ramo do fallback some quando a Avil migrar o token do MP para o Vault.
+ */
+export function escolherTokenMP(
+  tokenVault: string | null,
+  orgId: string | null,
+  fallbackOrgId: string | undefined,
+  tokenGlobal: string | undefined,
+): string | null {
+  if (tokenVault) return tokenVault;
+  if (orgId && fallbackOrgId && orgId === fallbackOrgId) return tokenGlobal ?? null;
+  return null;
+}
+
 export async function resolverTokenMP(admin: SupabaseClient, orgId: string | null): Promise<string | null> {
-  let token: string | null = null;
+  let tokenVault: string | null = null;
   if (orgId) {
     const { data: tok } = await admin.rpc('get_mp_token', { p_org_id: orgId });
-    token = (tok as string | null) ?? null;
+    tokenVault = (tok as string | null) ?? null;
   }
-  return token ?? Deno.env.get('MP_ACCESS_TOKEN') ?? null;
+  return escolherTokenMP(tokenVault, orgId, Deno.env.get('MP_FALLBACK_ORG_ID'), Deno.env.get('MP_ACCESS_TOKEN'));
 }
 
 /** Recorte de um pagamento do MP usado para o resumo (demais campos são ignorados). */

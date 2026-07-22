@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { agregarFinanceiro, montarInfoPorPagamento, type PagamentoMP } from '../financeiro';
+import { agregarFinanceiro, montarInfoPorPagamento, escolherTokenMP, type PagamentoMP } from '../financeiro';
+
+describe('escolherTokenMP (fallback global restrito à org da Avil)', () => {
+  const AVIL = 'a72ea303-5559-4a35-9aff-daa12cd1de12';
+  const OUTRA = '00000000-0000-0000-0000-000000000999';
+
+  it('secret da org (Vault) sempre vence', () => {
+    expect(escolherTokenMP('tok-vault', OUTRA, AVIL, 'tok-global')).toBe('tok-vault');
+  });
+  it('org de fallback sem secret → usa o token global', () => {
+    expect(escolherTokenMP(null, AVIL, AVIL, 'tok-global')).toBe('tok-global');
+  });
+  it('OUTRA org sem secret → null (NUNCA o token global — evita cross-tenant)', () => {
+    expect(escolherTokenMP(null, OUTRA, AVIL, 'tok-global')).toBeNull();
+  });
+  it('sem MP_FALLBACK_ORG_ID configurado → ninguém usa o global', () => {
+    expect(escolherTokenMP(null, AVIL, undefined, 'tok-global')).toBeNull();
+  });
+  it('org de fallback mas sem token global → null', () => {
+    expect(escolherTokenMP(null, AVIL, AVIL, undefined)).toBeNull();
+  });
+});
 
 function pag(p: Partial<PagamentoMP> & { id: number }): PagamentoMP {
   return p as PagamentoMP;
