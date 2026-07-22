@@ -1,6 +1,6 @@
 # ADR-0086 — Configuração org-scoped (fechar leitura por organização + imposto LOUD)
 
-**Status:** Proposto (rascunho para revisão)
+**Status:** Aceito (implementação em incrementos — ver Plano faseado)
 **Data:** 2026-07-21
 **Refina:** ADR-0055 (imposto por origem) — no ponto do default silencioso das alíquotas.
 **Relacionado:** ADR-0027 (multi-tenancy / E7), ADR-0074 (ai_model por org), ADR-0028 (billing), backlog "telegram_bot_token → Vault", `configuracoes`, `process-familia`, `_shared/ai/modelos.ts`, `_shared/mercadopago/financeiro.ts`, `_shared/notificacoes/config.ts`.
