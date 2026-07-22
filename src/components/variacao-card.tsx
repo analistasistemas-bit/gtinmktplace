@@ -88,11 +88,12 @@ export function VariacaoCard({
             type="button"
             onClick={() => setFotoAberta(true)}
             aria-label="Ampliar foto da variação"
+            className="mt-0.5 shrink-0"
           >
             <img
               src={imgUrl}
               alt={variacao.cor || variacao.codigo}
-              className="mt-0.5 h-8 w-8 shrink-0 rounded object-cover"
+              className="h-8 w-8 rounded object-cover"
               loading="lazy"
             />
           </button>
@@ -207,7 +208,9 @@ export function VariacaoCard({
         />
       </div>
       <Dialog open={fotoAberta} onOpenChange={setFotoAberta}>
-        <DialogContent>
+        {/* max-w-sm padrão do Dialog (384px) é pequeno demais pro objetivo desta tela: o
+            operador precisa ver a foto GRANDE pra desempatar cor ambígua do Vision. */}
+        <DialogContent className="sm:max-w-2xl">
           <DialogTitle className="sr-only">
             Foto ampliada — {variacao.cor || variacao.codigo}
           </DialogTitle>
