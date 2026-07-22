@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { BotaoTrocarFoto } from '@/components/botao-trocar-foto';
 import { BadgeCorOrigem } from '@/components/badge-cor-origem';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
@@ -45,6 +46,7 @@ export function VariacaoCard({
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
   const [trocaStatus, setTrocaStatus] = useState<SaveStatus>(undefined);
+  const [fotoAberta, setFotoAberta] = useState(false);
   const criticaId = criticas.length > 0 ? `criticas-${variacao.codigo}` : undefined;
 
   const precoExterno = variacao.precoPublicacao ?? variacao.preco;
@@ -82,12 +84,18 @@ export function VariacaoCard({
           arrastar a página no iOS). No desktop cabe tudo numa linha só (não quebra). */}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
         {imgUrl ? (
-          <img
-            src={imgUrl}
-            alt={variacao.cor || variacao.codigo}
-            className="mt-0.5 h-8 w-8 shrink-0 rounded object-cover"
-            loading="lazy"
-          />
+          <button
+            type="button"
+            onClick={() => setFotoAberta(true)}
+            aria-label="Ampliar foto da variação"
+          >
+            <img
+              src={imgUrl}
+              alt={variacao.cor || variacao.codigo}
+              className="mt-0.5 h-8 w-8 shrink-0 rounded object-cover"
+              loading="lazy"
+            />
+          </button>
         ) : (
           <div
             className="mt-0.5 h-8 w-8 shrink-0 rounded border"
@@ -198,6 +206,20 @@ export function VariacaoCard({
           aliquotaPct={aliquotaPct}
         />
       </div>
+      <Dialog open={fotoAberta} onOpenChange={setFotoAberta}>
+        <DialogContent>
+          <DialogTitle className="sr-only">
+            Foto ampliada — {variacao.cor || variacao.codigo}
+          </DialogTitle>
+          {imgUrl && (
+            <img
+              src={imgUrl}
+              alt={variacao.cor || variacao.codigo}
+              className="max-h-[80vh] w-auto object-contain rounded"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
