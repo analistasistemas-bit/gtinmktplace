@@ -4,7 +4,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
-import { diffModerados, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
+import { diffModerados, resolvidosConfirmadosDe, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
 import { lerConfigTelegram, notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -23,22 +23,30 @@ function mapCx(row: ConexaoRow): ConexaoComDono {
 // alerta no Telegram (se ativo). Retorna a contagem de novos.
 async function processarConexao(admin: ReturnType<typeof adminClient>, conn: ReturnType<typeof getConnector>, cx: ConexaoComDono): Promise<number> {
   const orgId = cx.orgId;
-  const { data: familias } = await admin.from('familias')
+  const { data: familias, error: familiasErr } = await admin.from('familias')
     .select('ml_item_id, nome_pai, ml_permalink')
     .eq('org_id', orgId).not('ml_item_id', 'is', null);
+  if (familiasErr) {
+    // Sem a lista de familias não dá pra distinguir "item removido" de "falha de leitura":
+    // aborta para não resolver moderações por engano (tratar ausência como órfão seria perigoso).
+    console.warn(`monitorar-moderados: falha ao ler familias da org ${orgId}, pulando:`, familiasErr.message);
+    return 0;
+  }
   const porItem = new Map<string, { nome: string | null; permalink: string | null }>();
   for (const f of familias ?? []) {
     porItem.set(f.ml_item_id as string, { nome: f.nome_pai as string | null, permalink: f.ml_permalink as string | null });
   }
   const ids = [...porItem.keys()];
-  if (ids.length === 0) return 0;
 
-  let statusPorId;
-  try {
-    statusPorId = await conn.lerStatus({ getToken: () => getValidAccessTokenConexao(cx) }, ids);
-  } catch {
-    console.warn(`monitorar-moderados: sem credencial ML p/ org ${orgId}, pulando`);
-    return 0;
+  // Status atual dos itens publicados (se houver). Sem itens, pula a leitura mas ainda fecha órfãos.
+  let statusPorId: Record<string, { status: string; motivo: string | null }> = {};
+  if (ids.length > 0) {
+    try {
+      statusPorId = await conn.lerStatus({ getToken: () => getValidAccessTokenConexao(cx) }, ids);
+    } catch {
+      console.warn(`monitorar-moderados: sem credencial ML p/ org ${orgId}, pulando`);
+      return 0;
+    }
   }
 
   const correntes: ModeradoCorrente[] = ids
@@ -47,8 +55,10 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, conn: Ret
 
   const { data: abertos } = await admin.from('ml_moderacao')
     .select('ml_item_id').eq('org_id', orgId).is('resolvido_em', null);
+  const abertosLista = (abertos ?? []) as { ml_item_id: string }[];
 
-  const { novos, resolvidos } = diffModerados(correntes, (abertos ?? []) as { ml_item_id: string }[]);
+  const resolvidosConfirmados = resolvidosConfirmadosDe(ids, statusPorId, abertosLista);
+  const { novos, resolvidos } = diffModerados(correntes, abertosLista, resolvidosConfirmados);
 
   if (resolvidos.length > 0) {
     await admin.from('ml_moderacao')
