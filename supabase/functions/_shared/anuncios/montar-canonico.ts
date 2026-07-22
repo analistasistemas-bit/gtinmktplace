@@ -13,6 +13,7 @@ const TTL_SIGNED = 60 * 60 * 2; // 2h — o canal baixa a foto de forma assíncr
 export interface FamiliaParaMontar {
   id: string;
   user_id: string;
+  org_id: string;
   titulo_ml: string | null;
   descricao_ml: string | null;
   categoria_ml_id: string | null;
@@ -62,7 +63,7 @@ export async function montarAnuncioCanonico(
   let desconto: { pct: number } | null = null;
   if (familia.exibir_com_desconto) {
     const { data: cfg } = await admin.from('configuracoes')
-      .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
+      .select('desconto_pct').eq('org_id', familia.org_id).maybeSingle();
     const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
     const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
     desconto = { pct: pctEfetivo(fam, global) };

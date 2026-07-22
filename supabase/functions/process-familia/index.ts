@@ -289,7 +289,7 @@ Deno.serve(async (req) => {
     const { data: cfgAliq } = await admin
       .from('configuracoes')
       .select('aliquota_nacional_pct, aliquota_importado_pct, desconto_concorrencia_pct, reancora_lider_ativa')
-      .eq('user_id', userId)
+      .eq('org_id', orgId)
       .maybeSingle();
     const aliquotaPct = claimed.origem === 'importado'
       ? Number(cfgAliq?.aliquota_importado_pct ?? 16)

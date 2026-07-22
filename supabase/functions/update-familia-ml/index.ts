@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
     let desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null = null;
     if (familia.exibir_com_desconto) {
       const { data: cfg } = await admin.from('configuracoes')
-        .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
+        .select('desconto_pct').eq('org_id', familia.org_id).maybeSingle();
       const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
       const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
       const precoPorCodigo: Record<string, number | null> = {};

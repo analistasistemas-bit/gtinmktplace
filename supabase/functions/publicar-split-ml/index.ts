@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     // ADR-0078 F2: o % global vale para QUALQUER grupo com desconto (a família pode estar
     // desligada e um grupo ligado). Busca única, barata.
     const { data: cfgGlobal } = await admin.from('configuracoes')
-      .select('desconto_pct').eq('user_id', familia.user_id).maybeSingle();
+      .select('desconto_pct').eq('org_id', familia.org_id).maybeSingle();
     const descontoPctGlobal = cfgGlobal?.desconto_pct != null ? Number(cfgGlobal.desconto_pct) : 15;
 
     const signed = async (path: string): Promise<string> => {
