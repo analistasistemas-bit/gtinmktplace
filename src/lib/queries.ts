@@ -452,14 +452,17 @@ export async function upsertDescontoPct(pct: number): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchAliquotas(): Promise<{ nacional: number; importado: number }> {
+export async function fetchAliquotas(): Promise<{ nacional: number; importado: number; confirmada: boolean }> {
   const orgId = useAuthStore.getState().profile?.org_id;
-  if (!orgId) return { nacional: 8, importado: 16 };
+  if (!orgId) return { nacional: 8, importado: 16, confirmada: false };
   const { data } = await supabase.from('configuracoes')
-    .select('aliquota_nacional_pct, aliquota_importado_pct').eq('org_id', orgId).maybeSingle();
+    .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em').eq('org_id', orgId).maybeSingle();
   return {
     nacional: data?.aliquota_nacional_pct != null ? Number(data.aliquota_nacional_pct) : 8,
     importado: data?.aliquota_importado_pct != null ? Number(data.aliquota_importado_pct) : 16,
+    // ADR-0086: só é "confirmada" com a flag setada (salvar em Configurações). Sem ela, o
+    // process-familia bloqueia a publicação (LOUD) em vez de usar 8/16 em silêncio.
+    confirmada: data?.aliquotas_confirmadas_em != null,
   };
 }
 

@@ -275,6 +275,30 @@ export default function Configuracoes() {
           <p className="mb-2 text-xs text-muted-foreground">
             Alíquota aplicada conforme a origem do produto (nacional ou importado).
           </p>
+          {aliquotas && !aliquotas.confirmada && (
+            <div className="mb-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+              <p className="text-xs font-medium text-warning">Alíquotas não confirmadas</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Confirme as alíquotas antes de publicar — enquanto não confirmar, a publicação falha
+                (o sistema não aplica 8%/16% em silêncio, ADR-0055).
+              </p>
+              {isAdmin ? (
+                <Button
+                  size="sm"
+                  className="mt-2"
+                  disabled={salvarAliquotas.isPending}
+                  onClick={() => salvarAliquotas.mutate({
+                    nacional: pctValido(nacionalInput) ?? aliquotas.nacional,
+                    importado: pctValido(importadoInput) ?? aliquotas.importado,
+                  })}
+                >
+                  Confirmar alíquotas
+                </Button>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">Somente um administrador pode confirmar as alíquotas.</p>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-sm">Nacional</span>
@@ -285,6 +309,7 @@ export default function Configuracoes() {
                 step={0.5}
                 className="h-8 w-20 text-sm"
                 value={nacionalInput}
+                disabled={!isAdmin}
                 onChange={(e) => setNacionalInput(e.target.value)}
                 onBlur={() => {
                   const n = pctValido(nacionalInput);
@@ -304,6 +329,7 @@ export default function Configuracoes() {
                 step={0.5}
                 className="h-8 w-20 text-sm"
                 value={importadoInput}
+                disabled={!isAdmin}
                 onChange={(e) => setImportadoInput(e.target.value)}
                 onBlur={() => {
                   const n = pctValido(importadoInput);
