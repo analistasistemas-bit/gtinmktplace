@@ -61,10 +61,13 @@ alter table public.ml_notificacoes_enviadas enable row level security;
 -- só do worker via service role (bypassa RLS) — sem policy de insert/update/delete.
 create policy "ml_notificacoes_enviadas: select org" on public.ml_notificacoes_enviadas
   for select to authenticated using (org_id = (select public.current_org_id()));
-
-grant select on public.ml_notificacoes_enviadas to authenticated;
-grant all on public.ml_notificacoes_enviadas to anon, authenticated;
 ```
+
+**Correção pós-revisão:** o plano original incluía `grant select ... to authenticated; grant all
+... to anon, authenticated;` copiado de `20260711120000_faturamento_mensagens.sql` — esse grant
+foi revertido nesse mesmo repo em `20260712142159_revoke_anon_ml_mensagens.sql` (RLS não cobre
+`TRUNCATE`; `anon` com `all` podia truncar a tabela). O padrão real do Grupo B
+(`20260705165828_e7_rls_org.sql`) não emite nenhum grant explícito — removido acima.
 
 - [ ] **Step 3: Verificar sintaxe/consistência com o padrão do projeto**
 
