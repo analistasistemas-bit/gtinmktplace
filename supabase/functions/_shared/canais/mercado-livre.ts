@@ -7,6 +7,7 @@ import { montarPayloadItem } from '../ml/publicar.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
 import { precisaItemPlano } from '../ml/erro-ml.ts';
+import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
@@ -20,6 +21,19 @@ function chunk<T>(arr: T[], n: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
   return out;
+}
+
+// ADR-0088: sinal (não erro do ML) de que a categoria é User Products (item plano/family_name)
+// e a família tem >1 cor — a orquestração roteia para a saga que cria N itens separados.
+function formatoIncompativel(categoriaId: string | null): ResultadoCanal<RefAnuncio> {
+  return {
+    ok: false,
+    erro: {
+      codigo: 'FORMATO_INCOMPATIVEL',
+      mensagemOperador: `Categoria ${categoriaId ?? ''} exige item plano (User Products) e a família tem mais de uma cor — a publicação multi-item é feita pela saga (ADR-0088).`,
+      retentavel: false,
+    },
+  };
 }
 
 export const mercadoLivreConnector: ChannelConnector = {
@@ -39,6 +53,13 @@ export const mercadoLivreConnector: ChannelConnector = {
   },
 
   async criarAnuncio(ctx: ContextoCanal, a: AnuncioCanonico): Promise<ResultadoCanal<RefAnuncio>> {
+    // ADR-0088 branch (a): categoria já conhecida estaticamente como UP (item plano) + >1 cor.
+    // Recusa ANTES de qualquer rede — precisa vir antes de getToken/lerSchemaAtributos: nessa
+    // categoria montar() lançaria síncrono (ml/publicar.ts) e um POST seria desperdiçado. O caso
+    // de 1 cor NÃO entra aqui — segue pelo caminho normal (item plano direto, ADR-0084/0087).
+    if (a.variacoes.length > 1 && categoriaExigeFamilyName(a.categoriaId)) {
+      return formatoIncompativel(a.categoriaId);
+    }
     const token = await ctx.getToken();
     // E4: descobre pelo schema se a categoria expõe EMPTY_GTIN_REASON (generaliza p/ vertical nova).
     // Falha de leitura → undefined → montarPayloadItem cai no helper hard-coded dos aviamentos.
@@ -70,6 +91,10 @@ export const mercadoLivreConnector: ChannelConnector = {
         r = await criarItemML(token, montar());
       } catch (e) {
         if (!precisaItemPlano((e as { status?: number }).status, (e as { mlCauses?: unknown }).mlCauses)) throw e;
+        // ADR-0088 branch (b): assinatura UP exata (369+374) numa categoria nova + >1 cor →
+        // recusa como retorno normal (nunca reconstrói N variações num item plano — cada SKU
+        // vira seu próprio item pela saga). Retry de 1 cor do ADR-0087 abaixo fica INTOCADO.
+        if (a.variacoes.length > 1) return formatoIncompativel(a.categoriaId);
         r = await criarItemML(token, montar('plano'));
       }
       // ADR-0084: item plano (categoria que exige family_name) não tem sub-recurso `variations`

@@ -177,6 +177,15 @@
   segue como seed direto no `Set` (`categoriaExigeFamilyName`), mas categorias novas não precisam mais
   entrar nesse `Set` manualmente: `criarAnuncio` detecta a assinatura exata do 400
   (`precisaItemPlano`, `cause_id` 369+374) reativamente e refaz o `POST` uma vez em formato plano.
+  **User Products / multi-cor (ADR-0088):** categoria UP com >1 variação (`criarAnuncio` devolve
+  `FORMATO_INCOMPATIVEL`) roteia pra saga `_shared/user-products/publicar-grupo.ts`
+  (`publicar-familia-up.ts` orquestra): cria N itens técnicos separados (1 por SKU/cor) linkados pelo
+  mesmo `family_id`, cada um pausado→confirmado→ativado; só libera `familias.status='publicado'`
+  quando todos os SKUs esperados (`anuncios_externos.skus_esperados`) estão ativos. Cache de formato
+  por conexão+categoria em `ml_formato_publicacao` (seed só na assinatura reativa confirmada). Itens
+  técnicos ficam em `anuncios_externos_itens`; vendas/moderação/status (`metricas-vendas`,
+  `monitorar-moderados`, `status-publicados`) já unem esses IDs ao escopo da família. Vinculação de
+  catálogo (ADR-0021) e UPDATE por item filho (add/retirar cor) ainda não cobrem o caminho UP — Fase 2.
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
   **Item plano (ADR-0084):** mesma categoria, mesma restrição — `atualizarAnuncio` detecta `GET`

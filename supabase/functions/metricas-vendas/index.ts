@@ -5,6 +5,7 @@ import { humanizarErroVendasML } from '../_shared/ml/erro-vendas.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
+import { unirIdsUP } from '../_shared/canais/escopo-up.ts';
 import type { MetricasVendasCanal } from '../_shared/canais/contrato.ts';
 
 interface Body { desde?: string; ate?: string }
@@ -32,7 +33,14 @@ Deno.serve(async (req) => {
   // Escopo da organização (E7): mesma fronteira da lista compartilhada (RLS org_id, D-E7.3).
   const { data: familias } = await admin.from('familias')
     .select('id, ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null);
-  const ids = [...new Set((familias ?? []).map((f) => f.ml_item_id as string))];
+  // ADR-0088 §2: itens filhos User Products (cores 2..N, 1 item ML por SKU) da org — sem essa
+  // união, vendas dessas cores viram "externas" (ml_item_id só cobre a 1ª cor/partição 0).
+  const { data: itensUP } = await admin.from('anuncios_externos_itens')
+    .select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null);
+  const ids = unirIdsUP(
+    (familias ?? []).map((f) => f.ml_item_id as string),
+    (itensUP ?? []).map((i) => i.item_externo_id as string),
+  );
 
   // Mapa GTIN → ml_item_id da família dona dele: permite atribuir vendas de catálogo do ML ao
   // produto do usuário por EAN, mesmo quando o pedido entra com o MLB do anúncio âncora (ADR-0045).

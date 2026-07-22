@@ -617,10 +617,31 @@ correções acima aplicadas:
 - **Deploy (§1)**: blast radius recalculado por `deno info`, união de todos os importadores dos módulos
   `_shared/` tocados, `verify_jwt` preservado, versão +1 conferida pós-deploy. **Sem lista fixa.**
 
-## Validação (critérios de aceite — nada implementado ainda)
+## Validação
 
-A ADR está **aceita como decisão de design**, mas **nada foi implementado ainda** — a validação abaixo é
-**critério de aceite futuro** (derivado do Final Review Checklist do plano), não resultado real:
+**Fase 1 implementada e validada em produção (2026-07-22).** Migration, cache de formato, conector,
+saga de criação, integração no `publish-familia-ml`, 3 consumidores de escopo §2, e guarda mínima em
+`remover-publicado` — via TDD, 1847/1848 testes verdes (1 flake pré-existente de UI, confirmado
+passando isolado), lint e `deno check` limpos. Deploy: migration + 19 functions do blast radius
+recalculado via `deno info`, todas +1 versão confirmada.
+
+**Caso disparador validado de ponta a ponta contra o Mercado Livre real**: PAI `03103331`,
+`MLB419782`, 9 cores ("AGULHA CROCHÊ CABO PLÁSTICO MATTE") — 9 itens ML criados
+(`MLB4931162851/130399/162903/162923/130471/162979/130513/120073/120097`), **um único `family_id`**
+(`5179533274814609`), todos `ativo`, confirmado visualmente na página real do produto (9 cores
+selecionáveis na mesma UPP). 3 bugs reais achados só na validação real (não pegos pelos testes, que
+usam fakes em memória sem constraints de banco/limites reais da API do ML) e corrigidos via TDD:
+upsert da raiz sem `user_id` (NOT NULL em produção, coluna pré-E7); `family_name` sem truncar podia
+passar de 60 chars (limite real do ML); sufixo de partição `[p0]` vazando pro título visível ao
+cliente final (removido — este worker só publica partição 0, nunca precisa desambiguar).
+
+**Fase 2 (registrada, não bloqueia a decisão nem o que já está em produção):** UPDATE por item filho +
+mini-saga de composição; reconciliador de convergência automatizado (hoje só o "Reenviar" manual
+resolve ativação parcial); reconciliador de backfill; vinculação de catálogo (ADR-0021) por item UP
+(hoje só funciona no caminho Legacy); mini-saga completa de remoção (hoje só a guarda mínima que
+recusa remover família UP).
+
+Critérios de aceite originais (derivados do Final Review Checklist do plano), mantidos como referência:
 
 - **1 cor**: publica em Legacy e em UP, **sem** regressão do retry do ADR-0087 (mesmo POST/retry de hoje).
 - **PAI `03103331`, `MLB419782`, 9 cores** (caso disparador): 1 linha lógica (partição 0), **9 linhas

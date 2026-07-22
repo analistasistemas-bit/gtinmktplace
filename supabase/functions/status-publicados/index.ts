@@ -23,6 +23,11 @@ Deno.serve(async (req) => {
   // para o status ao vivo cobrir TODOS os anúncios do produto, não só a partição 0.
   const { data: extras } = await admin.from('anuncios_externos')
     .select('item_externo_id, canal').eq('org_id', orgId).not('item_externo_id', 'is', null);
+  // ADR-0088 §2: itens filhos User Products (cores 2..N, 1 item ML por SKU) da org — sem essa
+  // união, status ao vivo mostra só a 1ª cor/partição 0. Sempre canal mercado_livre (único valor
+  // do enum canal_externo hoje, mesma leitura do bloco de agrupamento abaixo).
+  const { data: itensUP } = await admin.from('anuncios_externos_itens')
+    .select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null);
 
   // E6 (ADR-0061): agrupa os ids por canal — familias.ml_item_id é sempre ML (dual-write);
   // anuncios_externos carrega o canal de cada linha. Hoje só existe 'mercado_livre', então o
@@ -34,6 +39,7 @@ Deno.serve(async (req) => {
   };
   for (const f of familias ?? []) addId('mercado_livre', f.ml_item_id as string);
   for (const e of extras ?? []) addId(e.canal, e.item_externo_id as string);
+  for (const i of itensUP ?? []) addId('mercado_livre', i.item_externo_id as string);
 
   const totalIds = [...idsPorCanal.values()].reduce((n, s) => n + s.size, 0);
   if (totalIds === 0) {

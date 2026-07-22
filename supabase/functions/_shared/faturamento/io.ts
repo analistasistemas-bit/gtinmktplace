@@ -4,6 +4,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
+import { fundirItensUP } from './catalogo-up.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -70,6 +71,7 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
   const codPorVar = new Map<string, string>(), codPorItem = new Map<string, string>();
   const eanPorVar = new Map<string, string>(), eanPorItem = new Map<string, string>();
   const infoPorGtin = new Map<string, { codigo: string | null; ean: string | null }>();
+  const eanPorCodigo = new Map<string, string>(); // codigo (=sku do filho UP) → gtin, p/ fundirItensUP
   for (const v of variacoes) {
     const fam = famPorId.get(v.familia_id as string);
     if (!fam) continue;
@@ -79,10 +81,27 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     if (ean && v.ml_variation_id != null) eanPorVar.set(`${fam.mlItemId}:${v.ml_variation_id}`, ean);
     if (ean && !eanPorItem.has(fam.mlItemId)) eanPorItem.set(fam.mlItemId, ean);
     if (ean && !infoPorGtin.has(normGtin(ean))) infoPorGtin.set(normGtin(ean), { codigo: cod, ean });
+    if (cod && ean) eanPorCodigo.set(cod, ean);
   }
   for (const [, fam] of famPorId) {
     if (fam.codigoPai && !codPorItem.has(fam.mlItemId)) codPorItem.set(fam.mlItemId, fam.codigoPai);
   }
+
+  // ADR-0088 §2: itens filhos User Products (cores 2..N, 1 item ML por SKU) — sem essa fusão, a
+  // venda de uma cor 2..N não é reconhecida como PubliAI (fica de fora de idsPubliai/codPorItem).
+  // Escopo por org_id direto (não pelo user_id da raiz anuncios_externos, que a saga UP não seta).
+  const orgId = await resolverOrgPorUserId(admin, userId);
+  if (orgId) {
+    const itensUP = await paginarTudo<{ item_externo_id: string | null; sku: string }>(
+      (de, ate) => admin.from('anuncios_externos_itens')
+        .select('item_externo_id, sku').eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate),
+    );
+    fundirItensUP(
+      { idsPubliai, codPorItem, eanPorItem, infoPorGtin },
+      itensUP.map((i) => ({ itemExternoId: i.item_externo_id as string, sku: i.sku, gtin: eanPorCodigo.get(i.sku) ?? null })),
+    );
+  }
+
   const mk = (porVar: Map<string, string>, porItem: Map<string, string>) =>
     (itemId: string | null, varId: number | null): string | null => {
       if (!itemId) return null;

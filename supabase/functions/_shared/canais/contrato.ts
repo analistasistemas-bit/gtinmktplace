@@ -37,7 +37,10 @@ export interface Capabilities {
 export type ErroCanalCodigo =
   | 'TITULO' | 'FOTO' | 'PRECO' | 'GTIN' | 'ATRIBUTO' | 'VARIACAO'
   | 'CATEGORIA' | 'DESCRICAO' | 'ESTOQUE' | 'AUTENTICACAO'
-  | 'RATE_LIMIT' | 'INDISPONIVEL' | 'NAO_SUPORTADO' | 'DESCONHECIDO';
+  | 'RATE_LIMIT' | 'INDISPONIVEL' | 'NAO_SUPORTADO' | 'DESCONHECIDO'
+  // ADR-0088: categoria UP (item plano/family_name) com >1 cor — o conector recusa e a
+  // orquestração roteia para a saga que cria N itens separados (um por SKU). Não é erro do ML.
+  | 'FORMATO_INCOMPATIVEL';
 
 export interface ErroCanal {
   codigo: ErroCanalCodigo;

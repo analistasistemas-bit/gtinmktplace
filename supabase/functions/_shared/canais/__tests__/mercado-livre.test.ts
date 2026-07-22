@@ -203,3 +203,72 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas).toHaveLength(1); // só o 1º POST — a reconstrução lança antes de um 2º fetch
   });
 });
+
+describe('criarAnuncio: FORMATO_INCOMPATIVEL para família multi-cor em categoria UP (ADR-0088)', () => {
+  const tresVariacoes = [
+    { sku: 'A1', cor: 'Azul', estoque: 5, preco: 33.5, gtin: null, fotoId: null },
+    { sku: 'A2', cor: 'Verde', estoque: 3, preco: 33.5, gtin: null, fotoId: null },
+    { sku: 'A3', cor: 'Rosa', estoque: 2, preco: 33.5, gtin: null, fotoId: null },
+  ];
+  const anuncioMulti: AnuncioCanonico = {
+    titulo: 'Agulha Crochê Cabo Matte 15cm',
+    descricao: 'Desc',
+    categoriaId: 'MLB999999',
+    atributos: [],
+    capaFotoId: null, capa2FotoId: null, capa3FotoId: null,
+    desconto: null, dimensoes: null,
+    variacoes: tresVariacoes,
+  };
+  const causaExata = [
+    { code: 'body.required_fields', cause_id: 369, type: 'error', message: 'The body does not contains some or none of the following properties [family_name, price, available_quantity]' },
+    { code: 'body.invalid_fields', cause_id: 374, type: 'error', message: 'The field variations is invalid with family name' },
+  ];
+
+  // Spy que conta TODA chamada de fetch (não só POST /items) — pin para a checagem estática
+  // de branch (a) rodar ANTES de qualquer rede (getToken/lerSchemaAtributos incluídos).
+  function stubFetchTotal(respostas: Array<{ status: number; body: unknown }>) {
+    const chamadas: any[] = [];
+    let i = 0;
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      chamadas.push({ url: String(url), method: init?.method });
+      if (init?.method === 'POST' && String(url).includes('/items')) {
+        const r = respostas[Math.min(i, respostas.length - 1)];
+        i++;
+        return Promise.resolve(new Response(JSON.stringify(r.body), { status: r.status }));
+      }
+      return Promise.resolve(new Response('{}', { status: 404 }));
+    }) as typeof fetch;
+    return chamadas;
+  }
+  const posts = (chamadas: any[]) => chamadas.filter((c) => c.method === 'POST' && c.url.includes('/items'));
+
+  it('categoria já conhecida estaticamente (MLB271227) + 3 variações → FORMATO_INCOMPATIVEL SEM nenhuma chamada de rede', async () => {
+    const chamadas = stubFetchTotal([]);
+    const anuncio = { ...anuncioMulti, categoriaId: 'MLB271227' };
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncio);
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).toBe('FORMATO_INCOMPATIVEL');
+    expect(chamadas).toHaveLength(0); // zero fetch: nem schema GET, nem POST desperdiçado
+  });
+
+  it('categoria nova + 3 variações → 1º POST variations rejeitado com assinatura 369+374 → FORMATO_INCOMPATIVEL, exatamente 1 POST', async () => {
+    const chamadas = stubFetchTotal([
+      { status: 400, body: { message: 'Validation error', cause: causaExata } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncioMulti);
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).toBe('FORMATO_INCOMPATIVEL');
+    expect(posts(chamadas)).toHaveLength(1); // nunca reconstrói como plano com N variações
+    expect(posts(chamadas)[0].method).toBe('POST');
+  });
+
+  it('categoria nova + 3 variações → 1º POST rejeitado SEM a assinatura exata → erro normal (não FORMATO_INCOMPATIVEL)', async () => {
+    const chamadas = stubFetchTotal([
+      { status: 400, body: { message: 'Validation error', cause: [{ code: 'item.title.length.invalid', type: 'error', message: 'título grande' }] } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncioMulti);
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).not.toBe('FORMATO_INCOMPATIVEL');
+    expect(posts(chamadas)).toHaveLength(1);
+  });
+});

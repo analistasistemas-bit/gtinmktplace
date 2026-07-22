@@ -207,6 +207,39 @@ processar (idempotência em re-entrega de QStash).
 `familias.atacado_status` passa a ser o agregado (algum erro → erro; algum aplicado → aplicado).
 *Migration `20260717131407_preco_por_variacao_config_grupo.sql`.*
 
+**User Products / multi-cor (ADR-0088):** três colunas novas, todas nuláveis/default seguro —
+**`estado_desejado`** (`ativando`|`pausando`, alvo persistido de uma operação em lote de
+ativação/pausa, limpo ao confirmar o estado terminal), **`skus_esperados`** (`jsonb`, snapshot
+exato do conjunto de SKUs esperados da partição — não um inteiro; agregação exige igualdade de
+conjunto, não contagem), **`mudando_composicao`** (`boolean not null default false`, marcador
+transitório de mudança de composição em andamento). Nova constraint **`unique (id, org_id)`**, base
+da FK composta da tabela filha abaixo. *Migration
+`20260722145236_adr88_user_products_itens_e_formato.sql`.*
+
+### `anuncios_externos_itens`
+Item **técnico** UP: um por SKU/cor, filho da partição comercial (`anuncios_externos`) — categorias
+do ML que exigem "item plano" (`family_name`, sem `variations[]`) publicam N cores como N itens
+separados linkados pelo mesmo `family_id`, nunca 1 item com N variações (ADR-0088).
+*Migration `20260722145236_adr88_user_products_itens_e_formato.sql`.*
+
+`id`, `anuncio_externo_id` + `org_id` (FK **composta** `(anuncio_externo_id, org_id) →
+anuncios_externos(id, org_id) on delete cascade` — a filha herda a org do pai, nunca declara a
+própria), `variacao_id` (FK `variacoes(id) on delete set null`, **nulável** — ponteiro de
+rastreabilidade best-effort, não a ancoragem; muda a cada re-ingest), `sku` (identidade estável —
+ancoragem real é **`unique (anuncio_externo_id, sku)`**), `retirado` (boolean, cor removida num
+UPDATE — item pausado no ML, linha preservada como histórico, fora da agregação), `status`
+(`pendente|criacao_incerta|criado|pausado|ativo|compensacao_pendente|remocao_pendente|erro`),
+`item_externo_id`/`user_product_id`/`family_id`/`permalink` (nuláveis até existir no ML). Índices
+únicos parciais: `(org_id, item_externo_id)` e `(user_product_id)` onde não-nulos. RLS: só-leitura
+org-scoped no app (`select org`); escrita é `service_role`-only.
+
+### `ml_formato_publicacao`
+Cache do formato de publicação (`legacy`|`user_products`) por conexão+categoria — só orienta o
+CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca** usado no UPDATE
+(que segue 100% `GET`-ao-vivo). PK `(connection_id, categoria_id)`. RLS: leitura via `exists` contra
+`marketplace_connections` (não tem `org_id` direto); escrita `service_role`-only.
+*Migration `20260722145236_adr88_user_products_itens_e_formato.sql`.*
+
 ---
 
 ## Credenciais

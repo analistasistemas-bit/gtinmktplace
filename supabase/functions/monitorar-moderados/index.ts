@@ -5,6 +5,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { diffModerados, resolvidosConfirmadosDe, type ModeradoCorrente } from '../_shared/moderacao/diff.ts';
+import { estenderEscopoModeracao } from '../_shared/canais/escopo-up.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
 import { lerConfigTelegram, notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -32,10 +33,18 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, conn: Ret
     console.warn(`monitorar-moderados: falha ao ler familias da org ${orgId}, pulando:`, familiasErr.message);
     return 0;
   }
-  const porItem = new Map<string, { nome: string | null; permalink: string | null }>();
+  const porItemFamilias = new Map<string, { nome: string | null; permalink: string | null }>();
   for (const f of familias ?? []) {
-    porItem.set(f.ml_item_id as string, { nome: f.nome_pai as string | null, permalink: f.ml_permalink as string | null });
+    porItemFamilias.set(f.ml_item_id as string, { nome: f.nome_pai as string | null, permalink: f.ml_permalink as string | null });
   }
+  // ADR-0088 §2: itens filhos User Products (cores 2..N) da org — sem essa união, moderação
+  // dessas cores fica invisível (só a 1ª cor/partição 0 está em `familias.ml_item_id`).
+  const { data: itensUP } = await admin.from('anuncios_externos_itens')
+    .select('item_externo_id, permalink').eq('org_id', orgId).not('item_externo_id', 'is', null);
+  const porItem = estenderEscopoModeracao(
+    porItemFamilias,
+    (itensUP ?? []).map((i) => ({ item_externo_id: i.item_externo_id as string | null, permalink: i.permalink as string | null })),
+  );
   const ids = [...porItem.keys()];
 
   // Status atual dos itens publicados (se houver). Sem itens, pula a leitura mas ainda fecha órfãos.
