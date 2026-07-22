@@ -182,14 +182,21 @@ grep manual — mesmo padrão de blast radius do ADR-0060/ADR-0084) deployadas v
 (`supabase functions deploy`, `verify_jwt` preservado por function). Todas as 26 versões confirmadas +1
 pós-deploy (`supabase functions list`, comparação programática antes/depois).
 
+**Merge com `main` + achado operacional (2026-07-22):** a branch foi integrada à `main` (que tinha
+avançado 11 commits nesse meio-tempo, incluindo dedupe de notificações em
+`sync-venda`/`sync-devolucao`/`sync-pergunta`, feature não relacionada). O 1º deploy (rodado antes do
+merge) sobrescreveu essas 3 functions sem essa feature — confirmado baixando o código realmente
+deployado (`supabase functions download`) antes de redeployar. Corrigido: as 3 redeployadas com o estado
+pós-merge; download de verificação confirmou as duas features coexistindo (`reservarNotificacao` +
+`precisaItemPlano`/`TERMOS_369` no mesmo bundle). Versões finais: `sync-venda` 38→40, `sync-pergunta`
+16→18, `sync-devolucao` 19→21 (2 bumps cada, um por rodada de deploy).
+
 **Pendente — requer ação humana, não automatizável:** reprocessar o lote #37 (KIT AGULHA CROCHÊ, PAI
 `02638290`) via o botão "Reenviar" no app. `reprocessar-familia` (a function por trás do botão) exige
 `requireUserOrg(req)` — sessão autenticada real, não dá pra disparar por CLI/agente. Critério de aceite
 final continua o mesmo: publicar sem editar `CATEGORIAS_QUE_EXIGEM_FAMILY_NAME`.
 
-**Pendente:** deploy CLI das functions afetadas e reprocessamento real do lote #37 (KIT AGULHA CROCHÊ,
-PAI `02638290`) para confirmar publicação via retry reativo em produção, **sem** editar
-`CATEGORIAS_QUE_EXIGEM_FAMILY_NAME`. Testes cobertos antes da implementação:
+Testes cobertos antes da implementação:
 
 - Testes do detector: assinatura exata (369+374, só essas duas, `status=400`, mensagens com os termos
   esperados) → aciona; `369` sozinho (outro erro de catálogo) → não aciona; 369+374 + causa bloqueante
