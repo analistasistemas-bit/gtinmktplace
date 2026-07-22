@@ -20,6 +20,6 @@ export async function reservarNotificacao(
   const { error } = await admin.from('ml_notificacoes_enviadas').insert({ org_id: orgId, user_id: userId, entidade, chave });
   if (!error) return true;
   if (error.code === '23505') return false;
-  console.error(`reservarNotificacao(${entidade}:${chave}): ${error.message}`);
+  console.error(`reservarNotificacao(org=${orgId}, ${entidade}:${chave}): ${error.message}`);
   return false;
 }
