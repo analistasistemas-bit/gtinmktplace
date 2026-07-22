@@ -1,5 +1,27 @@
-import { describe, it, expect } from 'vitest';
-import { agregarFinanceiro, montarInfoPorPagamento, escolherTokenMP, type PagamentoMP } from '../financeiro';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { agregarFinanceiro, montarInfoPorPagamento, escolherTokenMP, resolverTokenMP, type PagamentoMP } from '../financeiro';
+
+describe('resolverTokenMP (integração: RPC do Vault + gate por env)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const AVIL = 'a72ea303-5559-4a35-9aff-daa12cd1de12';
+  const DSA = 'a1fcd536-bb43-4fae-9f44-1e09d19e6c8e';
+  const stubEnv = (env: Record<string, string>) =>
+    vi.stubGlobal('Deno', { env: { get: (k: string) => env[k] } });
+  const admin = (vaultToken: string | null) => ({ rpc: async () => ({ data: vaultToken }) }) as any;
+
+  it('org com secret no Vault → usa o secret (ignora o global)', async () => {
+    stubEnv({ MP_FALLBACK_ORG_ID: AVIL, MP_ACCESS_TOKEN: 'global' });
+    expect(await resolverTokenMP(admin('vault-dsa'), DSA)).toBe('vault-dsa');
+  });
+  it('org de fallback (Avil) sem secret → usa o global', async () => {
+    stubEnv({ MP_FALLBACK_ORG_ID: AVIL, MP_ACCESS_TOKEN: 'global' });
+    expect(await resolverTokenMP(admin(null), AVIL)).toBe('global');
+  });
+  it('OUTRA org (DSA) sem secret → null, NUNCA o global (regressão cross-tenant)', async () => {
+    stubEnv({ MP_FALLBACK_ORG_ID: AVIL, MP_ACCESS_TOKEN: 'global' });
+    expect(await resolverTokenMP(admin(null), DSA)).toBeNull();
+  });
+});
 
 describe('escolherTokenMP (fallback global restrito à org da Avil)', () => {
   const AVIL = 'a72ea303-5559-4a35-9aff-daa12cd1de12';
