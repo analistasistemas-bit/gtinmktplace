@@ -5,6 +5,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarClaim, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
@@ -69,7 +70,7 @@ Deno.serve(async (req) => {
 
   const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret);
 
-  if (nova && orgId) {
+  if (nova && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
     await notificarCategoria(admin, orgId, 'pos_venda', montarMensagemNovaDevolucao({
       claim_id: row.claim_id, order_id: row.order_id, tipo: row.type ?? 'claim',
       motivo: row.reason_texto, valor: row.valor_em_jogo, moeda: 'BRL',
