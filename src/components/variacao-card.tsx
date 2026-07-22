@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { BotaoTrocarFoto } from '@/components/botao-trocar-foto';
 import { BadgeCorOrigem } from '@/components/badge-cor-origem';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
@@ -214,6 +214,9 @@ export function VariacaoCard({
           <DialogTitle className="sr-only">
             Foto ampliada — {variacao.cor || variacao.codigo}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Foto da variação em tamanho grande, para conferir a cor.
+          </DialogDescription>
           {imgUrl && (
             <img
               src={imgUrl}
