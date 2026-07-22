@@ -109,7 +109,7 @@ export type Database = {
           telegram_ativo: boolean
           telegram_bot_token: string | null
           telegram_chat_id: string | null
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           ai_model_imagem?: string | null
@@ -128,7 +128,7 @@ export type Database = {
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           ai_model_imagem?: string | null
@@ -147,7 +147,7 @@ export type Database = {
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
