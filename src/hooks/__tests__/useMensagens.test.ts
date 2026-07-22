@@ -17,13 +17,13 @@ describe('contarConversasAguardando', () => {
     expect(await contarConversasAguardando()).toBe(3);
   });
 
-  it('error não-nulo → 0', async () => {
+  it('error não-nulo → lança (o hook expõe isError; badge distingue de "0")', async () => {
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
-    expect(await contarConversasAguardando()).toBe(0);
+    await expect(contarConversasAguardando()).rejects.toThrow('boom');
   });
 
-  it('exceção lançada → 0', async () => {
+  it('exceção lançada → propaga', async () => {
     mockRpc.mockRejectedValueOnce(new Error('network'));
-    expect(await contarConversasAguardando()).toBe(0);
+    await expect(contarConversasAguardando()).rejects.toThrow('network');
   });
 });

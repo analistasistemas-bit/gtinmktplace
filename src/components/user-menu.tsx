@@ -24,9 +24,10 @@ export function UserMenu() {
   const { user } = useAuth();
   // Aguardando resposta = perguntas sem resposta + conversas cuja última mensagem é do comprador
   // (ADR-0067). Fica aceso no avatar em qualquer tela até você responder (no PubliAI ou no ML).
-  const { data: perguntas } = usePerguntasNaoRespondidas();
-  const mensagens = useMensagensAguardando();
-  const pendentes = (perguntas ?? 0) + mensagens;
+  const perguntasQ = usePerguntasNaoRespondidas();
+  const mensagensQ = useMensagensAguardando();
+  const pendentes = perguntasQ.count + mensagensQ.count;
+  const badgeErro = perguntasQ.isError || mensagensQ.isError;
 
   return (
     <DropdownMenu>
@@ -35,7 +36,9 @@ export function UserMenu() {
           <Avatar className="h-7 w-7">
             <AvatarFallback className="text-xs">{iniciais(user?.email)}</AvatarFallback>
           </Avatar>
-          {pendentes > 0 && (
+          {badgeErro ? (
+            <span title="Falha ao verificar pendências" className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold text-muted-foreground">!</span>
+          ) : pendentes > 0 && (
             <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
               {pendentes > 9 ? '9+' : pendentes}
             </span>
@@ -50,7 +53,7 @@ export function UserMenu() {
         {pendentes > 0 && (
           <>
             <DropdownMenuItem asChild>
-              <Link to={(perguntas ?? 0) > 0 ? '/faturamento?aba=perguntas' : '/faturamento?aba=mensagens'}>
+              <Link to={perguntasQ.count > 0 ? '/faturamento?aba=perguntas' : '/faturamento?aba=mensagens'}>
                 <Bell className="mr-2 h-4 w-4 text-warning" />
                 {pendentes} aguardando resposta
               </Link>

@@ -9,9 +9,11 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let orgId: string, isAdmin: boolean;
+  try { ({ orgId, isAdmin } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  // Desconectar a integração ML afeta vendas/perguntas/devoluções de toda a org — restrito a admin (ADR-0060).
+  if (!isAdmin) return new Response('Somente administradores podem desconectar a conta do Mercado Livre', { status: 403, headers: corsHeaders });
 
   const admin = adminClient();
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');

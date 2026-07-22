@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
+import { useProfile } from '@/hooks/useProfile';
 import { LISTA_CANAIS, canaisOperaveis, type CanalInfo } from '@/lib/canais';
 import { LogoCanal } from '@/components/canal-badge';
 import { useCanaisHabilitados } from '@/hooks/useCanaisHabilitados';
@@ -22,6 +23,7 @@ export default function Canais() {
     isError: erroConexoes,
   } = useQuery({ queryKey: QK.conexoes, queryFn: fetchConexoes });
   const { data: conexaoML, isLoading: carregandoML } = useMlConnection();
+  const { isAdmin } = useProfile();
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const [erroAcao, setErroAcao] = useState<string | null>(null);
@@ -120,14 +122,22 @@ export default function Canais() {
                     <span className="truncate text-xs text-muted-foreground" title={conexaoML.scope ?? 'não informado'}>
                       Escopo OAuth: {conexaoML.scope ?? 'não informado'}
                     </span>
-                    <Button variant="outline" size="sm" className="self-start" onClick={handleDesconectarML}>
-                      Desconectar
-                    </Button>
+                    {isAdmin ? (
+                      <Button variant="outline" size="sm" className="self-start" onClick={handleDesconectarML}>
+                        Desconectar
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Somente administradores podem desconectar a conta (ADR-0060).</span>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-muted-foreground">Nenhuma conta conectada.</span>
-                    <Button size="sm" onClick={() => handleConectar(c)}>Conectar</Button>
+                    {isAdmin ? (
+                      <Button size="sm" onClick={() => handleConectar(c)}>Conectar</Button>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Somente administradores podem conectar.</span>
+                    )}
                   </div>
                 )
               ) : (

@@ -126,7 +126,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
     comProblema: semStatus ? 0 : kpis.comProblema,
     erros: kpis.erros,
     errosDestino,
-    perguntas: perguntasQ.data ?? 0,
+    perguntas: perguntasQ.count,
     devolucoes: devolucoesAbertas,
   });
 

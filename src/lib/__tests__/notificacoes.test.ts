@@ -41,14 +41,14 @@ describe('contarNotificacoesNaoLidas', () => {
     expect(await contarNotificacoesNaoLidas()).toBe(5);
   });
 
-  it('error não-nulo → 0', async () => {
+  it('error não-nulo → lança (o hook expõe isError; badge distingue de "0")', async () => {
     mockFrom.mockReturnValue(fakeChain({ count: null, error: { message: 'boom' } }));
-    expect(await contarNotificacoesNaoLidas()).toBe(0);
+    await expect(contarNotificacoesNaoLidas()).rejects.toThrow('boom');
   });
 
-  it('exceção lançada → 0', async () => {
+  it('exceção lançada → propaga', async () => {
     mockFrom.mockImplementation(() => { throw new Error('network'); });
-    expect(await contarNotificacoesNaoLidas()).toBe(0);
+    await expect(contarNotificacoesNaoLidas()).rejects.toThrow('network');
   });
 });
 

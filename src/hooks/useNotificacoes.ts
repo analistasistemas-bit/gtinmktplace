@@ -6,14 +6,15 @@ import {
   type Notificacao,
 } from '@/lib/notificacoes';
 
-/** Nº de notificações não lidas (badge do sino, ADR-0085). */
-export function useNotificacoesNaoLidas(): number {
-  const { data } = useQuery<number>({
+/** Nº de notificações não lidas (badge do sino, ADR-0085). `isError` p/ distinguir "0" de "falha". */
+export function useNotificacoesNaoLidas(): { count: number; isError: boolean } {
+  const q = useQuery<number>({
     queryKey: ['notificacoesNaoLidas'],
     queryFn: contarNotificacoesNaoLidas,
     staleTime: 60_000,
+    retry: 1,
   });
-  return data ?? 0;
+  return { count: q.data ?? 0, isError: q.isError };
 }
 
 /** Lista das últimas notificações, para o dropdown do sino. */

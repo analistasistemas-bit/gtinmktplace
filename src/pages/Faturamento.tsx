@@ -19,8 +19,8 @@ const ABAS = ['vendas', 'devolucoes', 'perguntas', 'mensagens', 'geografia'] as 
 type Aba = (typeof ABAS)[number];
 
 export default function Faturamento() {
-  const { data: naoRespondidas } = usePerguntasNaoRespondidas();
-  const mensagensAguardando = useMensagensAguardando();
+  const { count: naoRespondidas } = usePerguntasNaoRespondidas();
+  const { count: mensagensAguardando } = useMensagensAguardando();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   // Devoluções/Perguntas/Mensagens/Geografia são dados do ML; outro canal → vazio acionável.
   const canalSemDados = canalAtivo !== 'todos' && canalAtivo !== 'mercado_livre';
@@ -57,7 +57,7 @@ export default function Faturamento() {
             <TabsTrigger value="devolucoes"><RotateCcw className="h-4 w-4" />Devoluções</TabsTrigger>
             <TabsTrigger value="perguntas">
               <MessageCircleQuestion className="h-4 w-4" />Perguntas
-              {naoRespondidas != null && naoRespondidas > 0 && (
+              {naoRespondidas > 0 && (
                 <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                   {naoRespondidas}
                 </span>

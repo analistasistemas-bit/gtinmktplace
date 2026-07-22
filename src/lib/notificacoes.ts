@@ -22,16 +22,12 @@ export async function buscarNotificacoes(limite = 20): Promise<Notificacao[]> {
 
 /** Conta não lidas (badge do sino). Resiliente: erro/exceção → 0. */
 export async function contarNotificacoesNaoLidas(): Promise<number> {
-  try {
-    const { count, error } = await supabase
-      .from('notificacoes')
-      .select('id', { count: 'exact', head: true })
-      .eq('lida', false);
-    if (error) return 0;
-    return count ?? 0;
-  } catch {
-    return 0;
-  }
+  const { count, error } = await supabase
+    .from('notificacoes')
+    .select('id', { count: 'exact', head: true })
+    .eq('lida', false);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }
 
 /** Marca como lidas (todas, ou só os ids passados). Resiliente: erro/exceção → 0. */

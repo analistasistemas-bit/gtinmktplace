@@ -11,9 +11,11 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  let userId: string, orgId: string;
-  try { ({ userId, orgId } = await requireUserOrg(req)); }
+  let userId: string, orgId: string, isAdmin: boolean;
+  try { ({ userId, orgId, isAdmin } = await requireUserOrg(req)); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  // Conectar a conta ML afeta vendas/perguntas/devoluções de toda a org — ação restrita a admin (ADR-0060).
+  if (!isAdmin) return new Response('Somente administradores podem conectar a conta do Mercado Livre', { status: 403, headers: corsHeaders });
 
   const state = crypto.randomUUID();
   await redisSet(`oauth:ml:state:${state}`, JSON.stringify({ user_id: userId, org_id: orgId }), STATE_TTL_S);

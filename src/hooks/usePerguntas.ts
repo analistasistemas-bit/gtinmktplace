@@ -11,22 +11,24 @@ export function useListaPerguntas() {
   });
 }
 
-/** Conta perguntas não respondidas (para o badge do menu). Resiliente: erro → 0. */
-export function usePerguntasNaoRespondidas() {
-  return useQuery<number>({
+/** Conta perguntas não respondidas. Lança em erro (o hook expõe `isError`). */
+export async function contarPerguntasNaoRespondidas(): Promise<number> {
+  const { count, error } = await supabase
+    .from('ml_perguntas')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'UNANSWERED');
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/** Conta perguntas não respondidas (badge do menu). Devolve `isError` para o badge distinguir
+ * "0 pendentes" de "falha ao verificar" (ML penaliza resposta lenta — não esconder a fila). */
+export function usePerguntasNaoRespondidas(): { count: number; isError: boolean } {
+  const q = useQuery<number>({
     queryKey: ['perguntasNaoRespondidas'],
-    queryFn: async () => {
-      try {
-        const { count, error } = await supabase
-          .from('ml_perguntas')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'UNANSWERED');
-        if (error) return 0;
-        return count ?? 0;
-      } catch {
-        return 0;
-      }
-    },
+    queryFn: contarPerguntasNaoRespondidas,
     staleTime: 60_000,
+    retry: 1,
   });
+  return { count: q.data ?? 0, isError: q.isError };
 }

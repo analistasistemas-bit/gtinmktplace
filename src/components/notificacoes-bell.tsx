@@ -44,7 +44,7 @@ function formatarQuando(iso: string): string {
 /** Sino de notificações in-app (ADR-0085) — espelha os mesmos alertas do Telegram. Abrir o
  * dropdown marca todas como lidas (mesma simplicidade do resto do menu: sem estado por item). */
 export function NotificacoesBell() {
-  const naoLidas = useNotificacoesNaoLidas();
+  const { count: naoLidas, isError: naoLidasErro } = useNotificacoesNaoLidas();
   const { data: notificacoes } = useListaNotificacoes();
   const marcarLidas = useMarcarNotificacoesLidas();
 
@@ -58,7 +58,9 @@ export function NotificacoesBell() {
           aria-label={naoLidas > 0 ? `Notificações (${naoLidas} não lidas)` : 'Notificações'}
         >
           <Bell className="h-5 w-5" />
-          {naoLidas > 0 && (
+          {naoLidasErro ? (
+            <span title="Falha ao verificar notificações" className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-semibold text-muted-foreground">!</span>
+          ) : naoLidas > 0 && (
             <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
               {naoLidas > 9 ? '9+' : naoLidas}
             </span>
