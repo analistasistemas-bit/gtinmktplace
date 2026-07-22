@@ -467,8 +467,11 @@ export async function upsertAliquotas(a: { nacional: number; importado: number }
   const { data: { user } } = await supabase.auth.getUser();
   const orgId = useAuthStore.getState().profile?.org_id;
   if (!user || !orgId) throw new Error('sem sessão');
+  const agora = new Date().toISOString();
+  // Salvar as alíquotas = confirmá-las (ADR-0086): destrava o LOUD do process-familia, que exige
+  // confirmação explícita antes de publicar (não precificar com o default 8/16 em silêncio).
   const { error } = await supabase.from('configuracoes')
-    .upsert({ org_id: orgId, user_id: user.id, aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
+    .upsert({ org_id: orgId, user_id: user.id, aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado, aliquotas_confirmadas_em: agora, atualizado_em: agora }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 

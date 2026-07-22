@@ -97,6 +97,7 @@ export type Database = {
           ai_model_texto: string | null
           aliquota_importado_pct: number
           aliquota_nacional_pct: number
+          aliquotas_confirmadas_em: string | null
           atualizado_em: string
           criado_em: string
           desconto_concorrencia_pct: number
@@ -115,6 +116,7 @@ export type Database = {
           ai_model_texto?: string | null
           aliquota_importado_pct?: number
           aliquota_nacional_pct?: number
+          aliquotas_confirmadas_em?: string | null
           atualizado_em?: string
           criado_em?: string
           desconto_concorrencia_pct?: number
@@ -133,6 +135,7 @@ export type Database = {
           ai_model_texto?: string | null
           aliquota_importado_pct?: number
           aliquota_nacional_pct?: number
+          aliquotas_confirmadas_em?: string | null
           atualizado_em?: string
           criado_em?: string
           desconto_concorrencia_pct?: number

@@ -75,6 +75,37 @@ Deno.serve(async (req) => {
   const modeloTexto = await resolverModeloTexto(admin, orgId);
 
   try {
+    // LOUD do imposto (ADR-0086 refina ADR-0055) — CEDO, antes de foto/LLM e ANTES do return do
+    // UPDATE parcial (senão UPDATE republicaria com 8/16 sem confirmação): sem as alíquotas
+    // CONFIRMADAS pela org, não publica precificando com o default em silêncio. cfgAliq é reusado
+    // no cálculo de preço abaixo. Erro de QUERY aqui é transitório → relança (retry via QStash),
+    // NÃO é tratado como "não confirmado" (senão um blip de banco marcaria a família erro terminal).
+    const { data: cfgAliq, error: cfgAliqErr } = await admin
+      .from('configuracoes')
+      .select('aliquota_nacional_pct, aliquota_importado_pct, desconto_concorrencia_pct, reancora_lider_ativa, aliquotas_confirmadas_em')
+      .eq('org_id', orgId)
+      .maybeSingle();
+    if (cfgAliqErr) {
+      // Erro TRANSITÓRIO de leitura da config: devolve a família à fila (pendente) e pede retry ao
+      // QStash (500). NÃO marca erro terminal — o catch marcaria 'erro' e o claim só reprocessa
+      // 'pendente', então um blip de banco encerraria o processamento para sempre.
+      await admin.from('familias').update({ status: 'pendente' }).eq('id', job.familia_id);
+      return new Response(`Configuração da org (transitório): ${cfgAliqErr.message}`, { status: 500, headers: corsHeaders });
+    }
+    if (!cfgAliq?.aliquotas_confirmadas_em) {
+      const { error: upErr } = await admin.from('familias').update({
+        status: 'erro',
+        erro_mensagem: 'Confirme as alíquotas de imposto em Configurações antes de publicar (evita precificar com o padrão 8%/16% sem sua confirmação).',
+      }).eq('id', job.familia_id);
+      if (upErr) {
+        // Não conseguiu marcar 'erro' (transitório) → volta à fila e retenta, em vez de encerrar 200.
+        await admin.from('familias').update({ status: 'pendente' }).eq('id', job.familia_id);
+        return new Response(`Persist erro-alíquota (transitório): ${upErr.message}`, { status: 500, headers: corsHeaders });
+      }
+      // Definitivo: falta CONFIRMAR o imposto (exige ação humana). Erro terminal, sem retry.
+      return new Response('Alíquotas de imposto não confirmadas', { status: 200, headers: corsHeaders });
+    }
+
     // 2. Carregar variações
     const { data: variacoes, error: varErr } = await admin
       .from('variacoes')
@@ -285,15 +316,11 @@ Deno.serve(async (req) => {
       : 0;
     const competitivo = conc.vendedores > 0 && conc.preco_min != null;
 
-    // Imposto por origem (ADR-0055): entra no gross-up para o preço cobrir o imposto.
-    const { data: cfgAliq } = await admin
-      .from('configuracoes')
-      .select('aliquota_nacional_pct, aliquota_importado_pct, desconto_concorrencia_pct, reancora_lider_ativa')
-      .eq('org_id', orgId)
-      .maybeSingle();
+    // Imposto por origem (ADR-0055): entra no gross-up. cfgAliq foi lido e CONFIRMADO no início do
+    // processamento (guard LOUD do ADR-0086, antes de foto/LLM e do return do UPDATE).
     const aliquotaPct = claimed.origem === 'importado'
-      ? Number(cfgAliq?.aliquota_importado_pct ?? 16)
-      : Number(cfgAliq?.aliquota_nacional_pct ?? 8);
+      ? Number(cfgAliq.aliquota_importado_pct ?? 16)
+      : Number(cfgAliq.aliquota_nacional_pct ?? 8);
     // ADR-0059: desconto sobre o menor preço concorrente, configurável (default 5%).
     const descontoConcorrenciaPct = Number(cfgAliq?.desconto_concorrencia_pct ?? 5);
     // ADR-0065: toggle da re-âncora no preço do MercadoLíder com mais vendas.
