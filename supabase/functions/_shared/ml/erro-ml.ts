@@ -6,6 +6,7 @@
 
 interface Causa {
   code?: string;
+  cause_id?: number;
   message?: string;
   type?: string;
 }
@@ -48,6 +49,30 @@ export function ehErroRetentavel(json: unknown): boolean {
   return causes
     .filter((c) => (c?.type ?? 'error') !== 'warning')
     .some((c) => PADRAO_RETENTAVEL.test(c?.message ?? ''));
+}
+
+// ─── Detecção reativa de item plano (ADR-0087, estende ADR-0084) ──────────
+
+// Termos que cada causa precisa mencionar — defesa extra contra os `cause_id` sendo
+// reaproveitados pelo ML em erros não relacionados (369/374 não são reservados a este caso).
+// Os 3 termos da 369 são exigidos JUNTOS (não é o suficiente mencionar só 1 ou 2 — achado da
+// revisão adversarial do Codex: alternação `a|b|c` deixava passar causa com só 1 dos termos).
+const TERMOS_369 = [/family_name/i, /price/i, /available_quantity/i];
+const TERMOS_374 = /variations/i;
+
+/** Assinatura exata do 400 que só o item plano (family_name) resolve — ver ADR-0084/ADR-0087.
+ *  Casa `status===400` + as 2 causas bloqueantes exatas (nenhuma causa bloqueante a mais) +
+ *  as mensagens mencionando os termos esperados. Um match parcial devolve `false`: melhor
+ *  propagar o erro original do que arriscar esconder um problema real de dado. */
+export function precisaItemPlano(status: number | null | undefined, mlCauses: unknown): boolean {
+  if (status !== 400) return false;
+  const causas: Causa[] = Array.isArray(mlCauses) ? (mlCauses as Causa[]) : [];
+  const bloqueantes = causas.filter((c) => (c?.type ?? 'error') !== 'warning');
+  if (bloqueantes.length !== 2) return false;
+  const tem369 = bloqueantes.some((c) => c.code === 'body.required_fields' && c.cause_id === 369
+    && TERMOS_369.every((termo) => termo.test(c.message ?? '')));
+  const tem374 = bloqueantes.some((c) => c.code === 'body.invalid_fields' && c.cause_id === 374 && TERMOS_374.test(c.message ?? ''));
+  return tem369 && tem374;
 }
 
 export function humanizarErroML(status: number, json: unknown): string {

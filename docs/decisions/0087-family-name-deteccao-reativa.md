@@ -1,6 +1,6 @@
 # ADR-0087 — Detecção reativa de categorias que exigem item plano (family_name), sem lista mantida à mão
 
-**Status:** Em proposta
+**Status:** Aceito
 **Data:** 2026-07-22
 **Decisores:** Diego
 **Relaciona:** estende [ADR-0084](0084-family-name-categoria-zipper.md) (item plano/family_name p/
@@ -166,9 +166,19 @@ payload é decidido no CREATE, não redesenha idempotência/concorrência do pip
   classificarErroCanal(e)}` — nunca deixa uma exceção escapar do conector. **`atualizarAnuncio` não é
   tocado.**
 
-## Validação (pendente)
+## Validação
 
-Ainda não implementado. Antes de qualquer reprocessamento real:
+**Implementado e testado (TDD, 2026-07-22):** `precisaItemPlano` (`erro-ml.ts`), `mlCauses` anexado ao
+erro (`criar-item.ts`), parâmetro `formato` em `montarPayloadItem` (`publicar.ts`) e o retry reativo em
+`criarAnuncio` (`mercado-livre.ts`). Revisão adversarial do Codex (`/codex:adversarial-review`) achou
+uma falha real: `TERMOS_369` usava alternação (`family_name|price|available_quantity`), então uma causa
+369 mencionando só 1 dos 3 termos já casava — corrigido para exigir os 3 termos juntos
+(`TERMOS_369.every(...)`), com 8 testes novos cobrindo cada termo isolado e cada combinação incompleta (achado completo do Codex). 1743 testes
+verdes (suíte inteira), lint e `deno check` limpos.
+
+**Pendente:** deploy CLI das functions afetadas e reprocessamento real do lote #37 (KIT AGULHA CROCHÊ,
+PAI `02638290`) para confirmar publicação via retry reativo em produção, **sem** editar
+`CATEGORIAS_QUE_EXIGEM_FAMILY_NAME`. Testes cobertos antes da implementação:
 
 - Testes do detector: assinatura exata (369+374, só essas duas, `status=400`, mensagens com os termos
   esperados) → aciona; `369` sozinho (outro erro de catálogo) → não aciona; 369+374 + causa bloqueante

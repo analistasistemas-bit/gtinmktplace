@@ -171,9 +171,12 @@
   **Preço uniforme (ADR-0078 F2):** `garantirPrecoUniforme` recusa (400 LOUD, nada enviado) quando
   as variações têm preços de publicação divergentes — sinal de roteamento errado; a família deveria
   ter ido para o split por faixa de preço (`publicar-split-ml`).
-  **Item plano (ADR-0084):** categorias que exigem `family_name` (hoje só Zíperes, `MLB271227`) não
-  aceitam o array `variations` — `montarPayloadItem` monta um item plano (`price`/`available_quantity`
-  no corpo raiz, sem `title`/`original_price`) quando há exatamente 1 variação; falha alto com >1.
+  **Item plano (ADR-0084/ADR-0087):** categorias que exigem `family_name` não aceitam o array
+  `variations` — `montarPayloadItem` monta um item plano (`price`/`available_quantity` no corpo raiz,
+  sem `title`/`original_price`) quando há exatamente 1 variação; falha alto com >1. `MLB271227` (Zíperes)
+  segue como seed direto no `Set` (`categoriaExigeFamilyName`), mas categorias novas não precisam mais
+  entrar nesse `Set` manualmente: `criarAnuncio` detecta a assinatura exata do 400
+  (`precisaItemPlano`, `cause_id` 369+374) reativamente e refaz o `POST` uma vez em formato plano.
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
   **Item plano (ADR-0084):** mesma categoria, mesma restrição — `atualizarAnuncio` detecta `GET`

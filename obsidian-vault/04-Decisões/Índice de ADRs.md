@@ -98,6 +98,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0084 | [family_name e item plano para publicação na categoria Zíperes](../../docs/decisions/0084-family-name-categoria-zipper.md) |
 | 0085 | [Notificação in-app (espelho do Telegram)](../../docs/decisions/0085-notificacao-in-app.md) |
 | 0086 | [Configuração org-scoped (fechar leitura por organização + imposto LOUD)](../../docs/decisions/0086-configuracao-org-scoped.md) |
-| 0087 | [Detecção reativa de categorias que exigem item plano (family_name), sem lista mantida à mão](../../docs/decisions/0087-family-name-deteccao-reativa.md) — em proposta |
+| 0087 | [Detecção reativa de categorias que exigem item plano (family_name), sem lista mantida à mão](../../docs/decisions/0087-family-name-deteccao-reativa.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

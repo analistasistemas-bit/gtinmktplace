@@ -20,6 +20,9 @@ export async function criarItemML(accessToken: string, payload: PayloadItem): Pr
     const e = new Error(humanizarErroML(resp.status, json));
     (e as { status?: number }).status = resp.status;
     (e as { retentavel?: boolean }).retentavel = ehErroRetentavel(json);
+    // ADR-0087: causas brutas anexadas (não `cause` — colide com `Error.cause` nativo,
+    // ES2022, semântica diferente) para a detecção reativa de item plano.
+    (e as { mlCauses?: unknown }).mlCauses = (json as { cause?: unknown })?.cause;
     throw e;
   }
   return { id: json.id, permalink: json.permalink, variations: json.variations ?? [] };

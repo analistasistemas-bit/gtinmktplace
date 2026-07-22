@@ -105,6 +105,7 @@ export function montarPayloadItem(
   desconto?: { pct: number } | null,
   dimensoes?: DimensoesPacote | null,
   aceitaEmptyGtinOverride?: boolean,
+  formato?: 'plano',
 ): PayloadItem {
   // item.pictures lidera com uma foto principal (capa da família, ou a 1ª foto de cor
   // quando não há capa); capa2 e capa3 nunca assumem a 1ª posição.
@@ -122,7 +123,10 @@ export function montarPayloadItem(
   // no corpo raiz, sem variations). Só sabemos publicar essa combinação com 1 variação: com >1 cor
   // caberia 1 anúncio por cor compartilhando family_name, redesenho maior fora de escopo aqui —
   // falha LOUD em vez de mandar um payload que a ML vai rejeitar (ou pior, publicar errado).
-  if (categoriaExigeFamilyName(familia.categoria_ml_id)) {
+  // ADR-0087: `formato` força o ramo quando informado (retry reativo); sem ele, a categoria
+  // no Set continua sendo só o seed inicial — categorias novas descobrem o formato certo
+  // reagindo à resposta do ML em vez de precisar entrar nesse Set primeiro.
+  if (formato === 'plano' || (formato === undefined && categoriaExigeFamilyName(familia.categoria_ml_id))) {
     if (!variacaoUnica) {
       throw new Error(
         `Categoria ${familia.categoria_ml_id} não suporta múltiplas cores agrupadas em variations `

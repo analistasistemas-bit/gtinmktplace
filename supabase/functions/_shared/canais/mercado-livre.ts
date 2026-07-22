@@ -6,6 +6,7 @@ import { lerVendasML } from '../ml/vendas.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
+import { precisaItemPlano } from '../ml/erro-ml.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
@@ -50,17 +51,27 @@ export const mercadoLivreConnector: ChannelConnector = {
     // 99.999. No-op quando a soma cabe; senão capa as cores de maior estoque (estoque real intacto
     // no banco). Aplicado sobre o conjunto que vai ao ML — aqui, todas as variações do anúncio.
     const capCriar = caparEstoque(a.variacoes.map((v) => ({ sku: v.sku, estoque: v.estoque })));
-    const payload = montarPayloadItem(
-      { titulo_ml: a.titulo, descricao_ml: a.descricao, categoria_ml_id: a.categoriaId, atributos_ml: a.atributos },
-      a.variacoes.map((v) => ({
-        codigo: v.sku, cor: v.cor, estoque: capCriar.get(v.sku) ?? v.estoque,
-        preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
-      })),
-      a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
-      a.listingTypeId, a.desconto, a.dimensoes, aceitaEmptyGtin,
+    const familiaInput = { titulo_ml: a.titulo, descricao_ml: a.descricao, categoria_ml_id: a.categoriaId, atributos_ml: a.atributos };
+    const variacoesInput = a.variacoes.map((v) => ({
+      codigo: v.sku, cor: v.cor, estoque: capCriar.get(v.sku) ?? v.estoque,
+      preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
+    }));
+    const montar = (formato?: 'plano') => montarPayloadItem(
+      familiaInput, variacoesInput, a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
+      a.listingTypeId, a.desconto, a.dimensoes, aceitaEmptyGtin, formato,
     );
+    // ADR-0087: as duas tentativas (seed da categoria + retry reativo) ficam dentro de UM
+    // único try/catch — se a 2ª falhar (novo erro do ML, ou `montarPayloadItem` lançando na
+    // reconstrução por >1 variação, ADR-0084) o catch final sempre devolve ResultadoCanal,
+    // nunca deixa uma exceção escapar do conector.
     try {
-      const r = await criarItemML(token, payload);
+      let r;
+      try {
+        r = await criarItemML(token, montar());
+      } catch (e) {
+        if (!precisaItemPlano((e as { status?: number }).status, (e as { mlCauses?: unknown }).mlCauses)) throw e;
+        r = await criarItemML(token, montar('plano'));
+      }
       // ADR-0084: item plano (categoria que exige family_name) não tem sub-recurso `variations`
       // — o próprio item É a variação única. Sem isso, variacoesExternas ficaria vazio e
       // variacoes.ml_variation_id nunca seria gravado pro SKU.

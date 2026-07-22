@@ -113,6 +113,12 @@ describe('montarPayloadItem', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
     expect(p.family_name).toBeUndefined();
   });
+  it('ADR-0087: formato="plano" força item plano numa categoria FORA do Set (retry reativo)', () => {
+    const p = montarPayloadItem(familia, [variacoes[0]], capaPictureId, null, null, undefined, null, null, undefined, 'plano');
+    expect(p.family_name).toBe('Linha XIK 120 Várias Cores');
+    expect(p.price).toBe(9.9);
+    expect(p.variations).toBeUndefined();
+  });
 });
 
 describe('montarPayloadItem com 2a foto', () => {

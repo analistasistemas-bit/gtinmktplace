@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanizarErroML, ehErroRetentavel, classificarErroML } from '../erro-ml';
+import { humanizarErroML, ehErroRetentavel, classificarErroML, precisaItemPlano } from '../erro-ml';
 
 describe('humanizarErroML', () => {
   it('título acima de 60 → mensagem clara em PT (ignora os warnings de frete)', () => {
@@ -61,6 +61,60 @@ describe('ehErroRetentavel (erro transiente que o ML pede para reenviar)', () =>
   });
   it('json vazio → não retentável', () => {
     expect(ehErroRetentavel({})).toBe(false);
+  });
+});
+
+describe('precisaItemPlano (ADR-0087: detecção reativa da assinatura do ADR-0084)', () => {
+  const causaReq = { code: 'body.required_fields', cause_id: 369, type: 'error', message: 'The body does not contains some or none of the following properties [family_name, price, available_quantity]' };
+  const causaInv = { code: 'body.invalid_fields', cause_id: 374, type: 'error', message: 'The field variations is invalid with family name' };
+
+  it('assinatura exata (369+374, status 400, mensagens batem) → true', () => {
+    expect(precisaItemPlano(400, [causaReq, causaInv])).toBe(true);
+  });
+  it('status diferente de 400 (ex.: timeout/5xx) → false, mesmo com a assinatura', () => {
+    expect(precisaItemPlano(500, [causaReq, causaInv])).toBe(false);
+    expect(precisaItemPlano(null, [causaReq, causaInv])).toBe(false);
+  });
+  it('só 369 (outro erro de catálogo reaproveitando o código) → false', () => {
+    expect(precisaItemPlano(400, [causaReq])).toBe(false);
+  });
+  it('só 374 → false', () => {
+    expect(precisaItemPlano(400, [causaInv])).toBe(false);
+  });
+  it('369+374 + uma 3ª causa bloqueante (ex.: GTIN inválido) → false (não esconde erro de dado real)', () => {
+    const causaGtin = { code: 'item.attributes.gtin.invalid', cause_id: 999, type: 'error', message: 'GTIN inválido' };
+    expect(precisaItemPlano(400, [causaReq, causaInv, causaGtin])).toBe(false);
+  });
+  it('369+374 + uma 3ª causa em warning (não bloqueante) → continua true', () => {
+    const aviso = { code: 'shipping.free_shipping.cost_exceeded', cause_id: 1, type: 'warning', message: 'Free shipping costs exceeds sale' };
+    expect(precisaItemPlano(400, [causaReq, causaInv, aviso])).toBe(true);
+  });
+  it('369+374 com mensagens que não mencionam os termos esperados (código reaproveitado por coincidência) → false', () => {
+    const reqSemTermos = { ...causaReq, message: 'Algo genérico sem relação' };
+    const invSemTermos = { ...causaInv, message: 'Outra coisa qualquer' };
+    expect(precisaItemPlano(400, [reqSemTermos, invSemTermos])).toBe(false);
+  });
+  // Achado da revisão adversarial do Codex: a alternação `family_name|price|available_quantity`
+  // deixava passar uma causa 369 com só 1 dos 3 termos — a matriz abaixo cobre cada termo isolado
+  // e cada combinação incompleta (2 de 3), pra travar a regressão nos dois eixos que o Codex pediu.
+  it.each([
+    ['só family_name', '[family_name]'],
+    ['só price', '[price]'],
+    ['só available_quantity', '[available_quantity]'],
+    ['family_name + price (falta available_quantity)', '[family_name, price]'],
+    ['family_name + available_quantity (falta price)', '[family_name, available_quantity]'],
+    ['price + available_quantity (falta family_name)', '[price, available_quantity]'],
+  ])('369 com termo(s) incompleto(s) — %s → false', (_desc, campos) => {
+    const reqParcial = { ...causaReq, message: `The body does not contains some or none of the following properties ${campos}` };
+    expect(precisaItemPlano(400, [reqParcial, causaInv])).toBe(false);
+  });
+  it('369 com os 3 termos juntos (qualquer ordem) → true', () => {
+    const reqCompleto = { ...causaReq, message: 'The body does not contains some or none of the following properties [available_quantity, family_name, price]' };
+    expect(precisaItemPlano(400, [reqCompleto, causaInv])).toBe(true);
+  });
+  it('sem mlCauses (undefined/null) → false', () => {
+    expect(precisaItemPlano(400, undefined)).toBe(false);
+    expect(precisaItemPlano(400, null)).toBe(false);
   });
 });
 
