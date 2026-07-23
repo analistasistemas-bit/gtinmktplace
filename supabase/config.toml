@@ -74,6 +74,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.reconciliar-faturamento]
 verify_jwt = false
+[functions.reconciliar-user-products]
+verify_jwt = false
+[functions.reconciliar-convergencia-up]
+verify_jwt = false
 [functions.responder-pergunta]
 verify_jwt = true
 [functions.responder-mensagem]
