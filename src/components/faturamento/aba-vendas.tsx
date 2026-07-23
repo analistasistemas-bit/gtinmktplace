@@ -85,7 +85,7 @@ function valorOrdenacao(p: Pedido, k: SortKey): string | number | null {
 }
 
 function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVisto?: () => void }) {
-  // Expansão persistida (sobrevive a remount por troca de aba e ao refetch de 45s), como o sort.
+  // Expansão persistida (sobrevive a remount por troca de aba e ao refetch de 3min), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:faturamento-vendas:${p.chave}`, false);
   const pgto = labelStatusPedido(p.status);
   const envio = labelStatusEnvio(p.shipping_status, p.shipping_substatus);
@@ -323,7 +323,7 @@ export function AbaVendas() {
         <div className="flex items-center gap-2">
           <span
             className="flex items-center gap-1.5 text-xs text-muted-foreground"
-            title="Atualiza sozinho a cada 45s — novas vendas entram automaticamente"
+            title="Atualiza sozinho a cada 3 min (ou ao voltar pra aba) — novas vendas entram automaticamente"
           >
             <span className="relative flex h-2 w-2">
               {/* Pulso contínuo = sinal "ao vivo"; acelera no instante do refetch. */}
