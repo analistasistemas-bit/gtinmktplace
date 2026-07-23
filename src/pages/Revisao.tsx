@@ -21,6 +21,7 @@ import { JornadaLote } from '@/components/jornada-lote';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLote } from '@/hooks/useLotes';
+import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK, fetchConexoes } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao, familiaPrecosDivergentes } from '@/lib/publicavel';
@@ -72,6 +73,7 @@ export function filtrarFamilias(
 export default function Revisao() {
   const { loteId } = useParams();
   const nav = useNavigate();
+  useLoteRealtime(loteId);
   const { data: familias = [], isLoading, error } = useFamilias(loteId);
   const { data: lote } = useLote(loteId);
   const [filtro, setFiltro] = useState<FiltroOp>('todos');
