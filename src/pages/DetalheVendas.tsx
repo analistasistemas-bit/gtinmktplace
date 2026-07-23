@@ -326,7 +326,7 @@ export default function DetalheVendas() {
           <div className="flex items-center gap-2">
             <span
               className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              title="Atualiza sozinho a cada 45s — novas vendas entram automaticamente"
+              title="Atualiza sozinho a cada 3 min (ou ao voltar pra aba) — novas vendas entram automaticamente"
             >
               <span className="relative flex h-2 w-2">
                 {/* Pulso contínuo = sinal "ao vivo"; acelera no instante do refetch. */}
