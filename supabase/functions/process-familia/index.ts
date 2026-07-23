@@ -69,7 +69,6 @@ Deno.serve(async (req) => {
     return new Response('Already processed', { status: 200, headers: corsHeaders });
   }
 
-  const userId = claimed.user_id as string;
   const orgId = claimed.org_id as string;
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   const modeloTexto = await resolverModeloTexto(admin, orgId);
