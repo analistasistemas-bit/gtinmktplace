@@ -480,6 +480,8 @@ export function familiaFromRow(
     atacado: Array.isArray(r.atacado) ? (r.atacado as unknown as FaixaAtacado[]) : null,
     atacadoStatus: r.atacado_status ?? null,
     atacadoErro: r.atacado_erro ?? null,
+    descricaoStatus: (r as { descricao_status?: string | null }).descricao_status ?? null,
+    descricaoErro: (r as { descricao_erro?: string | null }).descricao_erro ?? null,
   };
 }
 

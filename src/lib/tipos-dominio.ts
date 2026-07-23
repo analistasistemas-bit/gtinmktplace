@@ -201,4 +201,8 @@ export interface Familia {
   atacado: FaixaAtacado[] | null;
   atacadoStatus: string | null;
   atacadoErro: string | null;
+  /** ADR-0088 F2: falha ao sincronizar a lista de cores na descrição de família User Products
+   *  (mesmo padrão do atacado — agregado, não por-item). null/undefined = sem falha conhecida. */
+  descricaoStatus?: string | null;
+  descricaoErro?: string | null;
 }

@@ -10,11 +10,13 @@ import type { ChannelConnector, ContextoCanal, FaixaAtacado } from '../canais/co
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../ml/buscar-item.ts';
-import { criarItemML } from '../ml/criar-item.ts';
+import { criarItemML, atualizarSecaoCores } from '../ml/criar-item.ts';
 import { atualizarStatusML, atualizarItemPlanoML } from '../ml/atualizar-item.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 import { decidirRetryTransitorio } from '../publicacao/retry.ts';
+import { ehCorIndefinida } from '../cor/indefinida.ts';
+import { notificarCategoria } from '../notificacoes/config.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
 } from './atualizar-composicao.ts';
@@ -48,6 +50,10 @@ export interface AtualizarFamiliaUPArgs {
   somenteEstoque: boolean;
   /** Nº de tentativas do QStash (orçamento de retry do desfecho `incompleto`, Fix 4b). */
   tentativas: number;
+  /** Reconciliador de convergência: converge pro `skus_esperados` JÁ GRAVADO na raiz (o snapshot
+   *  da mudança de composição interrompida) em vez de `variacoes.map(codigo)` — o UPDATE comum
+   *  nunca precisa disso (variacoes já É o desejado atual). Sem override, comportamento intacto. */
+  skusDesejadosOverride?: string[];
   /** Injetável em teste; produção usa a saga real. */
   executarSaga?: (portas: PortasComposicao, entrada: Parameters<typeof atualizarComposicao>[1]) => Promise<ResultadoComposicao>;
   now?: () => string;
@@ -72,7 +78,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // esconde o erro pra sempre (família presa em `publicando`).
   let composicaoIniciada = false;
 
-  const skusDesejados = variacoes.map((v) => v.codigo);
+  const skusDesejados = args.skusDesejadosOverride ?? variacoes.map((v) => v.codigo);
   const estoquePorSku: Record<string, number> = {};
   for (const v of variacoes) estoquePorSku[v.codigo] = v.estoque;
   const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
@@ -153,12 +159,22 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     },
     async iniciarComposicao(skusEsperados) {
       composicaoIniciada = true;
+      // mudando_composicao_familia_id (revisão Codex): referência durável à família QUE INICIOU
+      // este episódio — a raiz não tem FK direta pra uma família específica (múltiplas linhas de
+      // `familias` compartilham o mesmo codigo_pai, 1 por lote). Sem isto, o reconciliador de
+      // convergência teria que ADIVINHAR a família por recência, podendo escolher a errada.
       const { error } = await admin.from(RAIZ)
-        .update({ skus_esperados: skusEsperados, mudando_composicao: true }).eq('id', rootId);
+        .update({ skus_esperados: skusEsperados, mudando_composicao: true, mudando_composicao_familia_id: familia.id })
+        .eq('id', rootId);
       if (error) throw new Error(`${RAIZ} iniciarComposicao: ${error.message}`);
     },
     async limparComposicao() {
-      const { error } = await admin.from(RAIZ).update({ mudando_composicao: false }).eq('id', rootId);
+      // reconciliacao_tentativas é por-EPISÓDIO de mudando_composicao=true (achado durante o
+      // design do reconciliador de convergência): sem zerar aqui, uma família que já gastou
+      // rodadas numa composição anterior (sucesso ou esgotamento) começaria a PRÓXIMA mudança de
+      // composição já com o contador antigo, esgotando o orçamento mais rápido que deveria.
+      const { error } = await admin.from(RAIZ)
+        .update({ mudando_composicao: false, reconciliacao_tentativas: 0, mudando_composicao_familia_id: null }).eq('id', rootId);
       if (error) throw new Error(`${RAIZ} limparComposicao: ${error.message}`);
     },
     async reservar(sku) {
@@ -211,21 +227,102 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     }
     if (!houveMudanca) return; // sem_mudanca (reposição pura) → nada de descrição/atacado.
 
-    // Itens finais ativos (cada cor UP é um anúncio ML separado → efeitos POR item). Erro aqui é
-    // best-effort (mesmo espírito dos demais passos desta função): loga e segue com lista vazia em
-    // vez de derrubar a publicação já concluída da composição.
+    const alertarFalhaLoud = async (msg: string): Promise<void> => {
+      try { await notificarCategoria(admin, familia.org_id, 'integracao', msg); }
+      catch (e) { console.error(`notificar falha (família ${familia.codigo_pai}) falhou:`, e); }
+    };
+
+    // Itens finais ativos (cada cor UP é um anúncio ML separado → efeitos POR item). Erro de
+    // consulta NÃO pode virar "sucesso silencioso" — sem saber quais itens estão realmente ativos
+    // não há como aplicar descrição/atacado com segurança; alerta LOUD e pula esta rodada por
+    // completo (nada é persistido como se tivesse sincronizado).
     const { data: finaisRaw, error: finaisErr } = await admin.from(ITENS)
       .select('sku, item_externo_id, retirado, status').eq('anuncio_externo_id', rootId);
-    if (finaisErr) console.error(`efeitosPosComposicao: itens finais falhou (${rootId}):`, finaisErr.message);
+    if (finaisErr) {
+      console.error(`efeitosPosComposicao: itens finais falhou (${rootId}):`, finaisErr.message);
+      await alertarFalhaLoud(`Família ${familia.codigo_pai}: consulta dos itens ativos falhou após mudança de composição — descrição/atacado NÃO sincronizados nesta rodada (${finaisErr.message}).`);
+      return;
+    }
     const finais = ((finaisRaw ?? []) as Array<Record<string, unknown>>)
       .filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id)
       .map((f) => f.item_externo_id as string);
+    // `concluido` só é retornado quando TODA cor desejada está confirmada `ativo` (senão a saga
+    // devolve `incompleto`/`erro`) — logo finais=[] aqui só é alcançável com skusDesejados=[], ou
+    // seja, a família ficaria sem nenhuma cor. Suportado pela SAGA (não é um estado que ela proíbe),
+    // mas o chamador real (update-familia-ml/processar.ts) hoje rejeita `variacoes.length === 0`
+    // ANTES de chegar aqui (400 "Nenhuma cor incluída") — então esse ramo é inalcançável no caminho
+    // atual, e é mantido como defesa caso essa validação do chamador mude no futuro. Caso legítimo
+    // (família esvaziada), não anomalia: sem item ativo não há descrição/atacado pra sincronizar.
+    if (finais.length === 0) {
+      console.info(`efeitosPosComposicao: família ${familia.codigo_pai} sem itens ativos (todas as cores removidas) — descrição/atacado pulados.`);
+      return;
+    }
 
-    // Descrição (recurso separado): a lista de cores mudou → re-sincroniza em cada item. Idempotente.
+    // Descrição (recurso separado): a lista de cores mudou → recalcula a seção "CORES DISPONÍVEIS"
+    // UMA VEZ (função pura, sem I/O) — é o mesmo texto lógico pros N itens, não há N listas
+    // possíveis. Push é INCONDICIONAL pra todo item ativo (revisão Codex: um guard "só empurra se
+    // o texto local mudou" impediria reparar um push anterior que falhou — na 2ª tentativa o texto
+    // local já bateria com o novo e NENHUM item receberia o reenvio, nem o que ficou desatualizado).
+    // A comparação só decide se vale a pena REESCREVER `familias.descricao_ml` (evita write redundante).
+    // `descricao_ml` é o estado DESEJADO (não "confirmado-sincronizado"): persiste mesmo se 1 push
+    // remoto falhar — manter a string antiga faria a próxima rodada reverter cores que já deram
+    // certo nos outros itens.
+    //
+    // Estado durável (revisão Opus+Codex, 2 rodadas): notificação sozinha (texto livre, não
+    // consultável) não satisfaz "nunca mascarar falha em silêncio" — espelha EXATAMENTE
+    // `atacado_status`/`atacado_erro` (mesmo bloco, abaixo): agregado por-família (não por-item,
+    // como o atacado), limpo no sucesso, gravado na falha. `notificarCategoria` continua rodando
+    // TAMBÉM (alerta ativo — Telegram/in-app); a coluna é o estado reconciliável/consultável que
+    // sobrevive a uma notificação nunca lida. Best-effort quanto a DERRUBAR a publicação já
+    // concluída (mesmo espírito do bloco de catálogo/atacado) — nunca best-effort quanto a marcar.
+    // ponytail: sem lock contra 2 composições concorrentes na mesma família — a saga inteira já
+    // aceita last-writer-wins nesse cenário raro (operador-driven); o Reconciliador de convergência
+    // (mudando_composicao/estado_desejado) NÃO cobre conteúdo de descrição — só esta coluna cobre.
     if (conn.capabilities.descricaoSeparada && familia.descricao_ml) {
+      const cores = [...new Set(
+        variacoes.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c)),
+      )];
+      const novaDescricao = atualizarSecaoCores(familia.descricao_ml, cores);
+
+      let todosOk = true;
+      const falhas: string[] = [];
       for (const id of finais) {
-        try { await conn.garantirDescricao(ctx, id, familia.descricao_ml); }
-        catch (e) { console.error(`descrição UP (update) falhou (${id}):`, e); }
+        try { await conn.garantirDescricao(ctx, id, novaDescricao); }
+        catch (e) {
+          todosOk = false;
+          falhas.push(id);
+          console.error(`descrição UP (update) falhou (${id}):`, e);
+        }
+      }
+      // Erro ao persistir o texto DESEJADO também conta pro estado agregado — se o push deu certo
+      // em todos os N itens mas o texto-fonte não gravou, a próxima composição recalcularia a
+      // seção de cores em cima do texto ANTIGO (a família ficaria "ok" mas com base errada).
+      let persistErro: string | null = null;
+      if (novaDescricao !== familia.descricao_ml) {
+        const { error } = await admin.from('familias').update({ descricao_ml: novaDescricao }).eq('id', familia.id);
+        if (error) {
+          persistErro = error.message;
+          console.error(`descrição UP (update): persistir familias.descricao_ml falhou (${familia.id}):`, error.message);
+        }
+      }
+      const ok = todosOk && !persistErro;
+      const partes = [
+        !todosOk ? `não sincronizou em: ${falhas.join(', ')}` : null,
+        persistErro ? `falha ao persistir o texto (${persistErro})` : null,
+      ].filter((p): p is string => !!p);
+      const { error: statusErr } = await admin.from('familias')
+        .update({ descricao_status: ok ? null : 'erro', descricao_erro: ok ? null : partes.join('; ') })
+        .eq('id', familia.id);
+      if (!ok) {
+        await alertarFalhaLoud(`Descrição da família ${familia.codigo_pai}: ${partes.join('; ')}. A lista de cores publicada pode estar desatualizada.`);
+      }
+      // Revisão (Codex, 3ª rodada): a própria gravação do estado durável falhando em silêncio
+      // reintroduziria o problema um nível abaixo. Diferente do resto de efeitosPosComposicao
+      // (best-effort, "não derruba o desfecho ok"), ESTA gravação é o estado LOUD que a revisão
+      // toda existe pra garantir — se ela falhar, propaga (o worker aplica o orçamento de retry
+      // já existente via QStash; o push em si é idempotente, retry é seguro).
+      if (statusErr) {
+        throw new Error(`descrição UP (update): persistir descricao_status falhou (${familia.id}): ${statusErr.message}`);
       }
     }
 
@@ -269,7 +366,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       // Best-effort real: Supabase resolve com {error} em vez de rejeitar a Promise em muitas
       // falhas — checar e logar o error é o que torna essa tentativa de limpeza observável (revisão
       // v3). Não há como GARANTIR a limpeza sem um outbox/transação; isso pelo menos não a esconde.
-      const { error: errLimpar } = await admin.from(RAIZ).update({ mudando_composicao: false }).eq('id', rootId)
+      const { error: errLimpar } = await admin.from(RAIZ)
+        .update({ mudando_composicao: false, reconciliacao_tentativas: 0, mudando_composicao_familia_id: null }).eq('id', rootId)
         .then((r: { error: { message: string } | null }) => r, (err: unknown) => ({ error: { message: String(err) } }));
       if (errLimpar) console.error(`limpar mudando_composicao (catch) falhou (${rootId}):`, errLimpar.message);
     }
@@ -291,7 +389,8 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     if (decidirRetryTransitorio({ retentavel: true }, args.tentativas) === 'retentar') {
       return { estado: 'retry', mensagem: 'Mudança de composição em andamento — retomando.' };
     }
-    const { error: errLimpar } = await admin.from(RAIZ).update({ mudando_composicao: false }).eq('id', rootId)
+    const { error: errLimpar } = await admin.from(RAIZ)
+      .update({ mudando_composicao: false, reconciliacao_tentativas: 0, mudando_composicao_familia_id: null }).eq('id', rootId)
       .then((r: { error: { message: string } | null }) => r, (err: unknown) => ({ error: { message: String(err) } }));
     if (errLimpar) console.error(`limpar mudando_composicao (incompleto esgotado) falhou (${rootId}):`, errLimpar.message);
     const m = 'UPDATE não convergiu: a confirmação por GET não fechou após várias tentativas (item deletado, outro vendedor ou 404 persistente). Intervenção manual necessária.';
