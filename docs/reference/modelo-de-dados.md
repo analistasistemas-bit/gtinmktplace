@@ -149,6 +149,12 @@ Grupos de colunas:
   migration `20260708144126`, ADR-0065 — flag família-level: o preço foi reancorado no piso
   dos MercadoLíderes por estar dando prejuízo).
 - **Atacado (ADR-0041):** `atacado jsonb`, `atacado_status`, `atacado_erro`.
+- **Descrição UP (ADR-0088, 2026-07-23):** `descricao_status`/`descricao_erro` (mesmo padrão de
+  `atacado_status`/`atacado_erro`) — resultado durável do push da seção "🎨 CORES DISPONÍVEIS" pra
+  todos os N itens ativos após mudança de composição; `null`/limpo em sucesso, `'erro'`+mensagem em
+  qualquer falha (push ou persistência). Badge `descrição ⚠` na Revisão só quando há erro (sinal
+  raro, ao contrário do par sempre-visível do atacado). *Migration
+  `20260723211633_adr88_descricao_status.sql`.*
 - **Fotos do PAI:** `capa_storage_path`/`capa_ml_picture_id` e `capa2_*`, `capa3_*`.
 - **Envio (ADR-0009/0018):** `shipping_mode`, `frete_gratis`, `sale_terms jsonb`.
 - **Resultado:** `ml_item_id`, `ml_permalink`, `publicado_em`.
@@ -215,6 +221,17 @@ conjunto, não contagem), **`mudando_composicao`** (`boolean not null default fa
 transitório de mudança de composição em andamento). Nova constraint **`unique (id, org_id)`**, base
 da FK composta da tabela filha abaixo. *Migration
 `20260722145236_adr88_user_products_itens_e_formato.sql`.*
+
+**Reconciliador de convergência (ADR-0088, 2026-07-23):** **`reconciliacao_tentativas`**
+(`int not null default 0`, incrementada 1x por passada do reconciliador sobre a raiz via claim
+atômico, zerada ao convergir), **`mudando_composicao_familia_id`** (`uuid references familias(id)
+on delete set null` — referência DURÁVEL à família que iniciou o episódio, gravada por
+`iniciarComposicao` no mesmo UPDATE que liga `mudando_composicao=true`; nunca inferida por
+recência — múltiplas linhas de `familias` compartilham o mesmo `codigo_pai`, 1 por lote de UPDATE).
+RPC `reconciliar_convergencia_claim(p_root_id, p_atualizado_antes)` (`security definer`): um único
+UPDATE que re-checa `mudando_composicao=true` e `atualizado_em` velho e incrementa
+`reconciliacao_tentativas` atomicamente — zero linhas retornadas = "outra execução/worker já tocou
+esta raiz, pule". *Migration `20260723215424_adr88_reconciliacao_tentativas.sql`.*
 
 ### `anuncios_externos_itens`
 Item **técnico** UP: um por SKU/cor, filho da partição comercial (`anuncios_externos`) — categorias
@@ -410,6 +427,9 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
 | `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack como lidas (limpa o badge da conversa) |
 | `contar_conversas_aguardando()` | Conta packs de `ml_mensagens` do chamador cuja última mensagem (`data_ml desc nulls last, message_id desc`) é `recebida` — badge do menu, sem baixar a tabela inteira (plan 036) |
+| `reconciliar_convergencia_claim(p_root_id, p_atualizado_antes)` | ADR-0088: claim atômico de uma raiz travada em `mudando_composicao=true` — reserva service_role-only |
+| `reconciliar_backfill_up_candidatas(p_org_id)` | ADR-0088: lista candidatas ao backfill UP server-side (sem truncar por paginação) — service_role-only |
+| `reconciliar_backfill_up_upsert(...)` | ADR-0088: upsert atômico raiz+filho do backfill UP numa única transação — service_role-only |
 | ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
 | ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
 | ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |

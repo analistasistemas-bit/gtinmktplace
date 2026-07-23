@@ -40,6 +40,8 @@
 | excluir-lote | true | HTTP (frontend) | não |
 | reprocessar-familia | false | HTTP (JWT manual) | sim (guard de status) |
 | invalidar-cache-cor | true | HTTP (frontend) | não |
+| reconciliar-user-products | false | HTTP (JWT manual, admin) | sim (upsert atômico) |
+| reconciliar-convergencia-up | false | QStash schedule | sim (claim atômico) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -186,9 +188,9 @@
   técnicos ficam em `anuncios_externos_itens`; vendas/moderação/status (`metricas-vendas`,
   `monitorar-moderados`, `status-publicados`) já unem esses IDs ao escopo da família. Vinculação de
   catálogo (ADR-0021) já cobre o caminho UP (`vincular-catalogo`, ver abaixo). UPDATE por item filho
-  (reposição + add/retirar cor) já cobre o caminho UP (`update-familia-ml`, ver abaixo); o
-  reconciliador de convergência automatizado ainda não — hoje só o "Reenviar" manual retoma uma
-  mudança de composição interrompida (Fase 2).
+  (reposição + add/retirar cor) já cobre o caminho UP (`update-familia-ml`, ver abaixo); reconciliador
+  de convergência automatizado (`reconciliar-convergencia-up`, schedule QStash) também já cobre —
+  "Reenviar" manual continua funcionando como caminho alternativo.
 - **update-familia-ml** *(worker, UPDATE)* — extraído em `index.ts` (thin) + `processar.ts`
   (`processarAtualizacaoFamilia`, testável). **User Products (ADR-0088 Fase 2):** ANTES da lógica
   Legacy, detecta família UP pela presença de linhas em `anuncios_externos_itens` (raiz partição 0) e
@@ -203,6 +205,13 @@
   (idempotente para reexecução SEQUENCIAL, não concorrente). `family_id` divergente → cor nova em
   `erro` (cores vivas intocadas — família publicada não é derrubada). Legacy abaixo (inclui o
   item-plano-1-variação do ADR-0084, que NÃO tem linhas filhas) fica intocado.
+  **Sincronização de descrição (2026-07-23):** `efeitosPosComposicao` recalcula a seção "🎨 CORES
+  DISPONÍVEIS" (`atualizarSecaoCores`, agora também **recria** a seção quando ausente — antes só
+  sabia removê-la) e empurra pra TODOS os N itens ativos incondicionalmente (não só quando o texto
+  muda — um push anterior falho nunca seria reparado se o gate fosse por diff de texto). Resultado
+  durável em `familias.descricao_status`/`descricao_erro` (mesmo padrão de `atacado_status`/
+  `atacado_erro`), badge `descrição ⚠` na Revisão só quando há erro; falha ao gravar o próprio
+  status também propaga (nunca mascara silenciosamente, aproveita o retry QStash existente).
 
   **Legacy** (abaixo) — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
@@ -224,6 +233,29 @@
   **Preço uniforme (ADR-0078 F2):** fora de "somente estoque", `garantirPrecoUniforme` aplica o
   mesmo guard do CREATE antes de qualquer envio (400 LOUD em preços divergentes); em "somente
   estoque" o guard é pulado (nenhum preço seria enviado de qualquer forma).
+- **reconciliar-convergencia-up** *(schedule QStash — ADR-0088, 2026-07-23)* — retoma em background
+  raízes User Products travadas em `mudando_composicao=true` (mudança de composição interrompida
+  por crash), reusando a mesma mini-saga do `update-familia-ml` (`atualizarFamiliaUP`) por completo.
+  Extraído em `index.ts` (thin) + `processar.ts` testável, mesmo padrão dos outros workers.
+  Janela anti-corrida de 15min antes de listar (dá tempo do worker normal do UPDATE, se estiver em
+  andamento, terminar sozinho) + **claim atômico** (`reconciliar_convergencia_claim`, RPC):
+  re-checa `mudando_composicao=true` e `atualizado_em` velho no MESMO `UPDATE` que incrementa
+  `reconciliacao_tentativas` — zero linhas afetadas = perdeu o claim (outra execução, ou o worker
+  normal, já tocou a raiz), pula sem processar. Resolve a família EXATA do episódio por
+  `mudando_composicao_familia_id` (nunca por recência — múltiplas linhas de `familias` compartilham
+  `codigo_pai`); sem essa referência (só possível em episódios anteriores à migration), fica
+  `sem_familia_referenciada`, visível pro "Reenviar" manual resolver. Guard de segurança: todo SKU
+  do snapshot `skus_esperados` precisa ter dado fonte em `variacoes` atuais — sem essa checagem,
+  `reposicao()` zeraria estoque de um SKU sem entrada, ativo ou não. Rede de segurança adicional:
+  quando a saga retorna `estado:'ok'` via `sem_mudanca` (early-return que nunca limpa
+  `mudando_composicao` no caminho normal, pois já roda com a flag false), este adapter força
+  explicitamente `mudando_composicao=false`/`reconciliacao_tentativas=0`/
+  `mudando_composicao_familia_id=null` na raiz — falha nesse UPDATE de limpeza propaga (nunca
+  reporta convergência falsa com a raiz ainda travada). **Risco residual aceito** (mesma classe de
+  "sem lock" já aceita no resto do ADR-0088): o claim fecha a corrida entre 2 execuções do
+  reconciliador e contra um worker que já tocou a raiz ANTES do claim, mas não cria um lease que
+  sobreviva um worker que comece um instante DEPOIS do claim — mitigado pela janela anti-corrida de
+  15min. Requer schedule QStash criado fora do repo (CLI/dashboard), igual `reconciliar-faturamento`.
 - **publicar-split-ml** *(worker, split — ADR-0048 + ADR-0078 F2)* — produto que excede 100 cores,
   OU tem preços de publicação divergentes, OU já está particionado publica em N anúncios
   ("partições"); `publicar-familias` roteia esses três casos pra cá (`decidirSplit`, ver acima).
@@ -285,8 +317,30 @@
   por org+codigo_pai), limpa storage e `anuncios_externos`; bloqueia se há UPDATE em voo.
   **E6 (ADR-0061):** aceita `canal` (default `'mercado_livre'`) — remove só da linha
   `(org_id, canal, codigo_pai)` especificada, sem afetar o produto em outros canais.
+  **Guarda completa de remoção UP (ADR-0088, 2026-07-23):** mini-saga própria
+  (`_shared/user-products/remover-composicao.ts`) pausa TODOS os filhos com `item_externo_id`
+  (mesmo os já `retirado=true` — nunca confia nesse campo como "seguro pular", crash real na janela
+  entre ativar remoto e persistir local pode deixar um item genuinamente ativo) e só deleta local
+  depois de confirmar por `GET`; TRY-ALL sobrevive a exceção por filho (`404`/`410` = item já sumiu
+  no ML, seguro seguir). Qualquer `anuncios_externos` da família com `mudando_composicao=true`
+  bloqueia a remoção inteira (`remocao_pendente`, HTTP 409 com a lista de SKUs pendentes) — a mesma
+  flag cobre as janelas de crash da composição e da criação. Re-checagem do bloqueio roda de novo
+  imediatamente antes de qualquer ação destrutiva (fecha, sem eliminar, a corrida entre o check
+  inicial e o delete). Todas as queries agora falham alto em erro (antes, várias liam `{error}` e
+  seguiam como se tivesse dado certo).
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
 - **reprocessar-familia** — reseta `erro→pendente` e re-enfileira (guard idempotente, ADR-0030).
+- **reconciliar-user-products** *(HTTP, admin — ADR-0088, 2026-07-23)* — backfill: importa pro
+  modelo User Products itens planos já existentes no ML publicados antes do ADR-0088
+  (ADR-0084/0087), que hoje não têm linha em `anuncios_externos_itens`. 2 RPCs
+  (`reconciliar_backfill_up_candidatas`/`..._upsert`, `security definer`, sem acesso a
+  `anon`/`authenticated`): a 1ª lista candidatas server-side (última família por `codigo_pai`,
+  `not exists` join contra `anuncios_externos`/`_itens` — sem paginação, sem risco de truncar);
+  a 2ª faz o upsert de raiz+filho num único statement (evita corrida entre 2 execuções). Driver
+  puro (`reconciliar-backfill.ts`) pula (nunca adivinha) candidata com GET falho, `variations`
+  reais (é Legacy, não item plano), campos essenciais ausentes (`family_name`/sku/`user_product_id`)
+  ou `seller_id` divergente do dono da conexão (posse); normaliza `status` estritamente pra
+  `ativo`/`pausado`/`null` — nunca defaulta status desconhecido pra ativo.
 - **invalidar-cache-cor** — limpa o cache Redis de cor de um código (após refazer a foto).
 
 ### Faturamento
