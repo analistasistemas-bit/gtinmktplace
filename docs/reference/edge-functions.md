@@ -186,8 +186,25 @@
   técnicos ficam em `anuncios_externos_itens`; vendas/moderação/status (`metricas-vendas`,
   `monitorar-moderados`, `status-publicados`) já unem esses IDs ao escopo da família. Vinculação de
   catálogo (ADR-0021) já cobre o caminho UP (`vincular-catalogo`, ver abaixo). UPDATE por item filho
-  (add/retirar cor) e o reconciliador de convergência ainda não cobrem o caminho UP — Fase 2.
-- **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
+  (reposição + add/retirar cor) já cobre o caminho UP (`update-familia-ml`, ver abaixo); o
+  reconciliador de convergência automatizado ainda não — hoje só o "Reenviar" manual retoma uma
+  mudança de composição interrompida (Fase 2).
+- **update-familia-ml** *(worker, UPDATE)* — extraído em `index.ts` (thin) + `processar.ts`
+  (`processarAtualizacaoFamilia`, testável). **User Products (ADR-0088 Fase 2):** ANTES da lógica
+  Legacy, detecta família UP pela presença de linhas em `anuncios_externos_itens` (raiz partição 0) e
+  roteia para a mini-saga de composição (`_shared/user-products/atualizar-familia-up.ts` →
+  `atualizar-composicao.ts`). 100% `GET`-ao-vivo, não usa o cache de formato. Reposição pura
+  (`atualizarItemPlanoML` por item filho); mudança de composição (add/retirar cor) reescreve
+  `skus_esperados` + liga `mudando_composicao=true` ANTES de qualquer chamada remota, muta (cor nova
+  genuína → CREATE plano; cor readicionada `retirado=true` → REATIVA, nunca recria; cor retirada →
+  pausa), confirma por `GET` (cor nova `active` + `family_id` da partição; retirada `paused`), só
+  então liga `retirado=true` e limpa `mudando_composicao`. Crash no meio deixa `mudando_composicao`
+  persistido → a próxima execução (retry QStash/"Reenviar") retoma do estado real das linhas
+  (idempotente para reexecução SEQUENCIAL, não concorrente). `family_id` divergente → cor nova em
+  `erro` (cores vivas intocadas — família publicada não é derrubada). Legacy abaixo (inclui o
+  item-plano-1-variação do ADR-0084, que NÃO tem linhas filhas) fica intocado.
+
+  **Legacy** (abaixo) — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
   **Item plano (ADR-0084):** mesma categoria, mesma restrição — `atualizarAnuncio` detecta `GET`
   sem `variations` e faz PUT plano (`atualizarItemPlanoML`) quando há exatamente 1 existente e
