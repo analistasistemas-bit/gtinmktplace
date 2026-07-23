@@ -144,6 +144,18 @@ export function montarBodyOptin(
   return { item_id: itemId, variation_id: Number(variationId), catalog_product_id: catalogProductId };
 }
 
+/**
+ * Body do opt-in para um item User Products (SEM `variations[]`): o POST /items/catalog_listings
+ * de um item sem variações NÃO leva `variation_id` — só `{item_id, catalog_product_id}` (validado
+ * contra a doc oficial do ML). Distinto de `montarBodyOptin` (Legacy), que sempre leva variation_id.
+ */
+export function montarBodyOptinItem(
+  itemId: string,
+  catalogProductId: string,
+): { item_id: string; catalog_product_id: string } {
+  return { item_id: itemId, catalog_product_id: catalogProductId };
+}
+
 /** Indexa a resposta de `/catalog_listing_eligibility` por variation_id (string). */
 export function indexarEligibility(body: unknown): Map<string, EligVar> {
   const vars = (body as { variations?: EligVar[] } | null)?.variations;
@@ -152,6 +164,18 @@ export function indexarEligibility(body: unknown): Map<string, EligVar> {
     for (const v of vars) if (v?.id != null) m.set(String(v.id), v);
   }
   return m;
+}
+
+/**
+ * Elegibilidade de um item SEM variações (User Products): `status`/`buy_box_eligible`/`reason`
+ * vêm na RAIZ do JSON (o array `variations[]` vem vazio e NÃO deve ser indexado). Devolve o mesmo
+ * shape `EligVar` do Legacy, com `id` = o próprio `itemId`. Sem `status` (ainda computando) →
+ * undefined, tratado como `pendente` por `decidirAcaoCatalogo` (mesma semântica do Legacy).
+ */
+export function parseElegibilidadeItem(body: unknown, itemId: string): EligVar | undefined {
+  const b = body as { status?: string | null; buy_box_eligible?: boolean | null; reason?: string | null } | null;
+  if (!b || !b.status) return undefined;
+  return { id: itemId, status: b.status, buy_box_eligible: b.buy_box_eligible ?? null, reason: b.reason ?? null };
 }
 
 // ---- camada de rede (impura) — token/admin injetados; sem import acoplado ao Deno ----
@@ -194,12 +218,22 @@ export async function buscarElegibilidadeCatalogo(token: string, itemId: string)
   return indexarEligibility(json);
 }
 
+/** Elegibilidade de UM item UP (sem variações): mesmo GET, lido da raiz (ver parseElegibilidadeItem). */
+export async function buscarElegibilidadeItem(token: string, itemId: string): Promise<EligVar | undefined> {
+  const json = await mlGet(`${API}/items/${itemId}/catalog_listing_eligibility`, token);
+  return parseElegibilidadeItem(json, itemId);
+}
+
 export interface OptinResultado { status: number; catalogListingId?: string; erro?: string; }
 
-/** Opt-in de uma variação. 4xx → retorna erro (não lança); o chamador persiste sem derrubar o anúncio. */
+/**
+ * Opt-in no catálogo. 4xx → retorna erro (não lança); o chamador persiste sem derrubar o anúncio.
+ * `variation_id` é opcional: item Legacy (com variações) sempre o envia via `montarBodyOptin`; item
+ * User Products (sem variações) omite via `montarBodyOptinItem` — mesmo endpoint, mesmo tratamento.
+ */
 export async function optinCatalogo(
   token: string,
-  body: { item_id: string; variation_id: number; catalog_product_id: string },
+  body: { item_id: string; variation_id?: number; catalog_product_id: string },
 ): Promise<OptinResultado> {
   const resp = await fetch(`${API}/items/catalog_listings`, {
     method: 'POST',
@@ -285,7 +319,9 @@ export function decidirResultadoRodadaCatalogo(
 }
 
 type DbLike = {
-  from(table: string): { update(v: Record<string, unknown>): { eq(col: string, val: unknown): PromiseLike<unknown> } };
+  from(table: string): {
+    update(v: Record<string, unknown>): { eq(col: string, val: unknown): PromiseLike<{ error: { message: string } | null }> };
+  };
 };
 
 /**
@@ -360,6 +396,97 @@ export async function vincularVariacoesCatalogo(
     } catch (err) {
       resumo.erro++;
       try { await setVar(v.id, { catalog_status: 'erro', catalog_erro: String((err as Error).message).slice(0, 300) }); } catch { /* ignora */ }
+    }
+  }
+  return resumo;
+}
+
+// ---- orquestrador User Products (ADR-0088 Fase 2) ----
+
+/**
+ * Item técnico UP a vincular ao catálogo. Cada cor é seu PRÓPRIO item ML (não uma variação),
+ * então a ancoragem é `item_externo_id` (não `ml_variation_id`). `gtin` já vem resolvido pelo
+ * chamador (join com `variacoes` por variacao_id/sku); null → não há como achar a ficha.
+ */
+export interface ItemCatalogoRow {
+  id: string;                       // anuncios_externos_itens.id (linha filha a persistir)
+  item_externo_id: string | null;   // ml item id da cor; null se ainda não existe no ML
+  gtin: string | null;
+  catalog_product_id: string | null;
+  catalog_listing_id: string | null;
+}
+
+/**
+ * Vincula os ITENS filhos UP de uma família ao catálogo (best-effort, ADR-0021/0088). Mesma lógica
+ * de `vincularVariacoesCatalogo`, mas iterando ITENS (não variações) e persistindo em
+ * `anuncios_externos_itens`. Diferença estrutural: cada cor é um item ML separado, então há 1 GET
+ * de elegibilidade POR item (não 1 GET indexado que cobre todas as variações). Reusa a decisão pura
+ * (`decidirAcaoCatalogo`), a trava de equivalência (`fichaEquivalente`) e o opt-in (`optinCatalogo`).
+ */
+export async function vincularItensCatalogoUP(
+  token: string,
+  admin: DbLike,
+  filhos: ItemCatalogoRow[],
+): Promise<ResumoCatalogo> {
+  const resumo: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0, ficha_divergente: 0, sem_variation_id: 0 };
+  // Lança se o UPDATE falhar (revisão v2, achado ALTA #2): sem isso, uma falha de persistência
+  // depois de um opt-in remoto bem-sucedido contava como sucesso, e a próxima rodada repetia um
+  // POST não-idempotente porque catalog_listing_id nunca foi salvo. O throw cai no catch abaixo,
+  // que já soma resumo.erro e tenta registrar o erro (best-effort, ignora falha dupla).
+  const setItem = async (id: string, values: Record<string, unknown>) => {
+    const { error } = await admin.from('anuncios_externos_itens').update(values).eq('id', id);
+    if (error) throw new Error(`persistir catálogo (item ${id}): ${error.message}`);
+  };
+
+  for (const f of filhos) {
+    try {
+      if (f.catalog_listing_id) { resumo.pulou++; continue; }
+      // Item ainda não existe no ML: transitório (a saga ainda está criando), não é "sem
+      // variação" — não há variação no modelo UP. Conta como pendente (retentável); a fila
+      // reagenda. Nada a persistir ainda (revisão v2, achado MÉDIA — a mensagem antiga de alerta
+      // falava em "identificador de variação", que não existe nesse modelo).
+      if (!f.item_externo_id) { resumo.pendente++; continue; }
+
+      const elig = await buscarElegibilidadeItem(token, f.item_externo_id);
+      const ready = elig?.status === 'READY_FOR_OPTIN' && elig?.buy_box_eligible === true;
+
+      let cpid = f.catalog_product_id;
+      let equivalencia: Equivalencia | undefined;
+      if (ready) {
+        const ficha = await buscarProdutoCatalogoPorGtin(token, f.gtin);
+        if (ficha) {
+          if (ficha.id !== cpid) { cpid = ficha.id; await setItem(f.id, { catalog_product_id: cpid }); }
+          // Trava de metragem (ADR-0021 pós-incidente): lê o LENGTH do próprio item UP. Best-effort;
+          // se falhar, degrada para só a trava anti-kit (esperado.lengthM = null).
+          let esperado: EsperadoProduto = { lengthM: null };
+          try { esperado = await buscarEsperadoDoItem(token, f.item_externo_id); }
+          catch (e) { console.warn(`atributos do item ${f.item_externo_id} indisponíveis p/ trava de metragem: ${(e as Error).message}`); }
+          equivalencia = fichaEquivalente(ficha, esperado);
+        }
+      }
+
+      // Persiste ANTES de contar no resumo: se o UPDATE falhar, o throw cai no catch (resumo.erro),
+      // em vez de o item já ter sido contado como sucesso com o banco desatualizado.
+      const acao = decidirAcaoCatalogo({ catalogListingId: f.catalog_listing_id, catalogProductId: cpid }, elig, equivalencia);
+      if (acao === 'optin') {
+        const r = await optinCatalogo(token, montarBodyOptinItem(f.item_externo_id, cpid!));
+        if (r.erro) {
+          await setItem(f.id, { catalog_status: 'erro', catalog_erro: r.erro });
+          resumo.erro++;
+        } else {
+          await setItem(f.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
+          resumo.vinculado++;
+        }
+      } else if (acao === 'ficha_divergente') {
+        await setItem(f.id, { catalog_status: 'ficha_divergente', catalog_erro: (equivalencia?.motivo ?? 'ficha nao equivalente').slice(0, 300) });
+        resumo.ficha_divergente++;
+      } else {
+        await setItem(f.id, { catalog_status: acao });
+        resumo[acao as 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente']++;
+      }
+    } catch (err) {
+      resumo.erro++;
+      try { await setItem(f.id, { catalog_status: 'erro', catalog_erro: String((err as Error).message).slice(0, 300) }); } catch { /* ignora */ }
     }
   }
   return resumo;

@@ -10,6 +10,7 @@ import type { ConexaoCanal } from '../canais/conexao.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { publicarGrupo, type ResultadoSaga, type CodigoErroSaga } from './publicar-grupo.ts';
 import { criarPortasSupabase } from './portas-supabase.ts';
+import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -157,6 +158,15 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
           ? { atacado_status: 'aplicado', atacado_erro: null }
           : { atacado_status: 'erro', atacado_erro: 'Falha ao aplicar atacado em uma ou mais cores' }).eq('id', familia.id);
       }
+    }
+
+    // Vinculação ao catálogo (ADR-0021/0088 F2): deferida via QStash, espelhando o Legacy
+    // (publish-familia-ml/processar.ts). Best-effort — a família já está publicada; falha aqui
+    // não derruba o desfecho ativo. O worker vincular-catalogo detecta o caminho UP pelos filhos.
+    try {
+      await enfileirarVinculacaoCatalogo(familia.id);
+    } catch (e) {
+      console.error(`enfileirar catálogo UP falhou (${familia.id}):`, e);
     }
 
     return { estado: 'ativo', itemExternoId: primeiroItemId, permalink: primeiroPermalink };

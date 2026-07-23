@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// publicar-familia-up importa queue.ts (enfileirarVinculacaoCatalogo), que puxa npm:@upstash/qstash
+// — irresolúvel no vitest. Mock com spy hoisted para asserir o disparo do catálogo (ADR-0088 F2).
+const { enfileirarCatalogoSpy } = vi.hoisted(() => ({ enfileirarCatalogoSpy: vi.fn() }));
+vi.mock('../../queue.ts', () => ({ enfileirarVinculacaoCatalogo: enfileirarCatalogoSpy }));
+
 import { publicarFamiliaUP } from '../publicar-familia-up';
 import type { ResultadoSaga } from '../publicar-grupo';
 import { fakeConnector } from '../../canais/fake';
@@ -54,7 +60,7 @@ function deps(saga: ResultadoSaga, childRows: Record<string, unknown>[] = []) {
 }
 
 describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
-  beforeEach(() => fakeConnector.reset());
+  beforeEach(() => { fakeConnector.reset(); enfileirarCatalogoSpy.mockReset().mockResolvedValue('msg-1'); });
 
   it('grava a raiz ANTES da saga: status=publicando, titulo=family_name, skus_esperados = todos', async () => {
     const { args, writes } = deps({ estado: 'compensacao_pendente' });
@@ -129,6 +135,33 @@ describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
     const varUpd = writes.filter((w) => w.table === 'variacoes' && w.op === 'update');
     expect(varUpd.length).toBeGreaterThan(0);
     expect(varUpd.every((w) => w.payload.ml_variation_id === null)).toBe(true);
+  });
+
+  it('saga ativo → enfileira vinculação de catálogo (ADR-0088 F2) com o id da família', async () => {
+    const childRows = [
+      { sku: 's-verde', status: 'ativo', retirado: false, item_externo_id: 'MLB-VERDE', permalink: 'p' },
+      { sku: 's-azul', status: 'ativo', retirado: false, item_externo_id: 'MLB-AZUL', permalink: 'p' },
+    ];
+    const { args } = deps({ estado: 'ativo' }, childRows);
+    await publicarFamiliaUP(args);
+    expect(enfileirarCatalogoSpy).toHaveBeenCalledWith('fam-1');
+  });
+
+  it('falha ao enfileirar catálogo NÃO derruba o estado ativo (best-effort, igual ao Legacy)', async () => {
+    enfileirarCatalogoSpy.mockRejectedValue(new Error('QStash fora do ar'));
+    const childRows = [
+      { sku: 's-verde', status: 'ativo', retirado: false, item_externo_id: 'MLB-VERDE', permalink: 'p' },
+      { sku: 's-azul', status: 'ativo', retirado: false, item_externo_id: 'MLB-AZUL', permalink: 'p' },
+    ];
+    const { args } = deps({ estado: 'ativo' }, childRows);
+    const r = await publicarFamiliaUP(args);
+    expect(r.estado).toBe('ativo');
+  });
+
+  it('desfecho não-ativo NÃO enfileira catálogo (nada publicado ainda)', async () => {
+    const { args } = deps({ estado: 'compensacao_pendente' });
+    await publicarFamiliaUP(args);
+    expect(enfileirarCatalogoSpy).not.toHaveBeenCalled();
   });
 
   it('saga compensacao_pendente → familias erro (retomada), NUNCA publicado', async () => {

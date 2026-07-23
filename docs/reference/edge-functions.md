@@ -185,7 +185,8 @@
   por conexão+categoria em `ml_formato_publicacao` (seed só na assinatura reativa confirmada). Itens
   técnicos ficam em `anuncios_externos_itens`; vendas/moderação/status (`metricas-vendas`,
   `monitorar-moderados`, `status-publicados`) já unem esses IDs ao escopo da família. Vinculação de
-  catálogo (ADR-0021) e UPDATE por item filho (add/retirar cor) ainda não cobrem o caminho UP — Fase 2.
+  catálogo (ADR-0021) já cobre o caminho UP (`vincular-catalogo`, ver abaixo). UPDATE por item filho
+  (add/retirar cor) e o reconciliador de convergência ainda não cobrem o caminho UP — Fase 2.
 - **update-familia-ml** *(worker, UPDATE)* — repõe estoque em cores casadas, cria variação
   para cor nova, sincroniza marca/dimensões, atualiza descrição só se mudou; atacado e catálogo.
   **Item plano (ADR-0084):** mesma categoria, mesma restrição — `atualizarAnuncio` detecta `GET`
@@ -254,7 +255,13 @@
 - **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; uma decisão unificada
   por rodada aguarda elegibilidade pendente, reagenda `nao_elegivel` com backoff limitado
   (1h/6h/24h/48h; janela total de ~3,3 dias) ou finaliza e alerta via Telegram em
-  no-match/ficha divergente/elegibilidade esgotada (ADR-0021/0036).
+  no-match/ficha divergente/elegibilidade esgotada (ADR-0021/0036). **ADR-0088 Fase 2:** roteia por
+  família Legacy (1 item, N variações — `vincularVariacoesCatalogo`) ou User Products (N itens
+  filhos, cada cor seu próprio item ML sem `variations[]` — `vincularItensCatalogoUP`), detectado
+  pela presença de linhas em `anuncios_externos_itens` (trava em `particao=0`, a única que a saga UP
+  escreve hoje). No caso UP, elegibilidade/opt-in rodam por item (não por variação indexada) e o
+  espelho `variacoes_externas` é pulado (o estado já vive granular em `anuncios_externos_itens.
+  catalog_*`); o alerta de no-match é mantido, com as cores derivadas via join item→sku→`variacoes`.
 
 ### Remoção / reprocessamento
 - **remover-publicado** — remove todas as linhas publicadas de um mesmo `codigo_pai` (global
