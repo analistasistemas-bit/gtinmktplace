@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-22
+atualizado: 2026-07-23
 ---
 
 # Sprint Atual
@@ -22,6 +22,19 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
+- **Publicação em User Products com N itens por família (multi-cor)** (ADR-0088) — em produção
+  2026-07-22/23: categorias do ML que exigem "item plano" (ADR-0084/0087) e têm >1 cor não aceitam
+  o array `variations` — cada cor vira um item técnico separado, linkado por `family_id`, agregado
+  pelo ML numa única página com seletor de cor. Fase 1 (saga `publicar-grupo.ts`, criar-pausado→
+  confirmar→ativar, `agregarEstado` total dos 10 casos da ADR) validada com família real de 9 cores
+  (PAI `03103331`). Fase 2: vinculação de catálogo por item + UPDATE por item filho com mini-saga de
+  mudança de composição (add/retirar cor) — grava `skus_esperados`/`mudando_composicao` ANTES de
+  mutar remoto, confirma sempre por `GET`; fix do gate de publicabilidade do frontend que travava
+  qualquer UPDATE de família UP na Revisão. Validado end-to-end em produção real (Playwright):
+  adicionar cor → caso real de `family_id` divergente isolado corretamente pela mini-saga (9 cores
+  reais intocadas) → remover cor com sucesso. Pendente (não-bloqueante): reconciliador de
+  convergência, reconciliador de backfill, sincronizar descrição no UPDATE UP, guarda completa de
+  remoção. Ver [[Índice de ADRs]].
 - **Config org-scoped + imposto LOUD + token MP por org** (ADR-0086) — em produção 2026-07-22:
   `configuracoes` virou 1 linha por org (`org_id` PK, `user_id` = auditoria); o imposto por origem
   **falha LOUD** se a org não confirmou as alíquotas (`aliquotas_confirmadas_em`) em vez de aplicar
