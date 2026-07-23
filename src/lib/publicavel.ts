@@ -5,6 +5,15 @@ export interface ResultadoPublicavel {
   motivos: string[];
 }
 
+// "Casada com o ML" = a cor já existe no anúncio publicado, então um UPDATE só a atualiza (não exige
+// foto/cor/preço de novo). Legacy: 1 anúncio com N variações → o sinal é `ml_variation_id`. User
+// Products (ADR-0088): cada cor é um item ML próprio e o backend grava `ml_variation_id=null` em todas
+// → o sinal é `jaCasadaUP` (SKU ativo em `anuncios_externos_itens`, resolvido no fetch). O OR mantém o
+// caminho Legacy byte-a-byte (jaCasadaUP undefined → cai em `mlVariationId` truthy, como antes).
+function casadaNoMl(v: Variacao): boolean {
+  return !!(v.mlVariationId || v.jaCasadaUP);
+}
+
 // Checagens por variação compartilhadas entre familiaPublicavel (motivos longos
 // no selo do pai) e criticasVariacao (destaque na linha da cor). Fonte única da
 // regra para os dois não divergirem.
@@ -52,7 +61,7 @@ export function criticasVariacao(
   // A cor nova zerada nasce desmarcada (ingest) e só precisa estar completa quando
   // ganhar estoque numa próxima planilha. Pendência é só para o que tem estoque.
   if (v.estoque <= 0) return [];
-  if (operacao === 'UPDATE' && v.mlVariationId) return [];
+  if (operacao === 'UPDATE' && casadaNoMl(v)) return [];
   const f = flagsCritica(v, opts);
   // Cor desmarcada (excluída): só a falta de FOTO segue como pendência visível; cor/
   // preço só importam para a cor que de fato vai publicar (incluída). Excluída com
@@ -82,8 +91,8 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   if (familia.operacao === 'UPDATE') {
     if (!familia.mlItemId) motivos.push('Sem anúncio publicado para atualizar');
     const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
-    const casadas = incluidas.filter((v) => v.mlVariationId);
-    const novas = incluidas.filter((v) => !v.mlVariationId);
+    const casadas = incluidas.filter(casadaNoMl);
+    const novas = incluidas.filter((v) => !casadaNoMl(v));
     if (casadas.length === 0 && novas.length === 0) {
       motivos.push('Nenhuma cor selecionada para atualizar');
     }
@@ -159,11 +168,14 @@ export function familiaSemDimensoesValidas(familia: Familia): boolean {
 // null — após publicada ela ganha `mlVariationId`, mas continua não sendo reposição;
 // sem o guard `!= null` ela voltaria no diff como "null → X" (a "lista gigante" pós-
 // publicação). Fonte única do DiffEstoque e do resumo na linha.
+// ADR-0088: `casadaNoMl` (não só `mlVariationId`) para o diff enxergar as cores de família UP
+// (mlVariationId sempre null). Display-only, não regride Legacy (jaCasadaUP undefined lá). O diff
+// segue dependendo de `estoqueAnterior` estar populado no reingest — cor sem anterior não entra.
 export function variacoesEstoqueAlterado(familia: Familia): Variacao[] {
   if (familia.operacao !== 'UPDATE') return [];
   return familia.variacoes.filter(
     (v) =>
-      v.mlVariationId &&
+      casadaNoMl(v) &&
       !v.excluidaDaPublicacao &&
       v.estoqueAnterior != null &&
       v.estoqueAnterior !== v.estoque,

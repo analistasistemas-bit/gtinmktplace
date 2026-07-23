@@ -109,6 +109,10 @@ export interface Variacao {
   editadoPeloOperador?: boolean;
   excluidaDaPublicacao: boolean;
   mlVariationId: string | null;
+  /** ADR-0088 Fase 2: SKU ativo em `anuncios_externos_itens` (família User Products, cada cor = item
+   *  ML próprio → mlVariationId é sempre null). "Casada com o ML" no caso UP vem daqui, não do
+   *  mlVariationId. undefined em família Legacy (sinal não se aplica). Resolvido em variacaoFromRow. */
+  jaCasadaUP?: boolean;
   estoqueAnterior: number | null;
   custo: number | null;
   pesoGramas: number | null;

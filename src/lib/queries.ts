@@ -83,9 +83,44 @@ async function fetchAnunciosPorCodigoPai(codigosPai: string[]): Promise<Map<stri
   return porCodigo;
 }
 
+// ADR-0088 Fase 2: SKUs "casados no ML" de famílias User Products (cada cor = item ML próprio, com
+// ml_variation_id=null). Espelha a detecção do backend (update-familia-ml/processar.ts, vinculacao.ts):
+// raiz partição 0 em anuncios_externos → filhos NÃO-retirados COM item_externo_id em
+// anuncios_externos_itens (só esses já existem no ML). Família Legacy: sem linhas filhas → Set vazio →
+// nenhum efeito (a checagem cai em ml_variation_id, como antes). RLS org-scoped filtra por org.
+// A tabela ainda não está em database.types.ts (db push sem regen) → cast pontual.
+async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<string>>> {
+  const porCodigo = new Map<string, Set<string>>();
+  if (codigosPai.length === 0) return porCodigo;
+  const { data: raizes } = await supabase
+    .from('anuncios_externos')
+    .select('id, codigo_pai')
+    .eq('canal', 'mercado_livre')
+    .eq('particao', 0)
+    .in('codigo_pai', codigosPai);
+  const codigoPorRaiz = new Map<string, string>();
+  for (const r of (raizes ?? []) as { id: string; codigo_pai: string }[]) codigoPorRaiz.set(r.id, r.codigo_pai);
+  const rootIds = [...codigoPorRaiz.keys()];
+  if (rootIds.length === 0) return porCodigo;
+
+  const { data: itens } = await (supabase.from('anuncios_externos_itens' as never) as ReturnType<typeof supabase.from>)
+    .select('anuncio_externo_id, sku')
+    .in('anuncio_externo_id', rootIds)
+    .eq('retirado', false)
+    .not('item_externo_id', 'is', null);
+  for (const it of (itens ?? []) as { anuncio_externo_id: string; sku: string }[]) {
+    const codigoPai = codigoPorRaiz.get(it.anuncio_externo_id);
+    if (!codigoPai) continue;
+    const set = porCodigo.get(codigoPai) ?? new Set<string>();
+    set.add(it.sku);
+    porCodigo.set(codigoPai, set);
+  }
+  return porCodigo;
+}
+
 export async function fetchFamilias(
   loteId: string
-): Promise<(FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos: AnuncioExternoLite[] })[]> {
+): Promise<(FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos: AnuncioExternoLite[]; skus_ativos_up: Set<string> })[]> {
   const { data, error } = await supabase
     .from('familias')
     .select('*, variacoes(*)')
@@ -95,10 +130,14 @@ export async function fetchFamilias(
   const familias = (data ?? []) as (FamiliaRow & { variacoes: VariacaoRow[] })[];
 
   const codigosPai = [...new Set(familias.map((f) => f.codigo_pai))];
-  const porCodigo = await fetchAnunciosPorCodigoPai(codigosPai);
+  const [porCodigo, skusAtivos] = await Promise.all([
+    fetchAnunciosPorCodigoPai(codigosPai),
+    fetchSkusAtivosUP(codigosPai),
+  ]);
   return familias.map((f) => ({
     ...f,
     anuncios_externos: (porCodigo.get(f.codigo_pai) ?? []).sort((a, b) => a.particao - b.particao),
+    skus_ativos_up: skusAtivos.get(f.codigo_pai) ?? new Set<string>(),
   }));
 }
 
@@ -146,7 +185,11 @@ export async function fetchFamiliaPublicada(familiaId: string): Promise<Familia>
     .eq('id', familiaId)
     .single();
   if (error) throw error;
-  return familiaFromRow(data as FamiliaRow & { variacoes: VariacaoRow[] });
+  const row = data as FamiliaRow & { variacoes: VariacaoRow[] };
+  // ADR-0088: mesma resolução do sinal UP que fetchFamilias — o expand de Publicados renderiza
+  // criticasVariacao; sem o set, cores UP (mlVariationId=null) apareceriam como "sem foto" à toa.
+  const skusAtivos = await fetchSkusAtivosUP([row.codigo_pai]);
+  return familiaFromRow({ ...row, skus_ativos_up: skusAtivos.get(row.codigo_pai) ?? new Set<string>() });
 }
 
 // ============================================================================
@@ -182,10 +225,13 @@ export function loteFromRow(r: LoteRow): Lote {
   };
 }
 
-export function variacaoFromRow(r: VariacaoRow): Variacao {
+export function variacaoFromRow(r: VariacaoRow, skusAtivosUP?: Set<string>): Variacao {
   return {
     id: r.id,
     codigo: r.codigo,
+    // ADR-0088: sinal "casada no ML" para família User Products. undefined quando o set não é passado
+    // (fetchFamiliaPublicada sem itens, caminho Legacy) → checagem cai em mlVariationId, como antes.
+    jaCasadaUP: skusAtivosUP?.has(r.codigo),
     cor: r.cor ?? '',
     corHex: r.cor_hex ?? '#cccccc',
     corOrigem: r.cor_origem,
@@ -362,11 +408,13 @@ export function familiaFromRow(
   r: FamiliaRow & {
     variacoes: VariacaoRow[];
     anuncios_externos?: AnuncioExternoLite[];
+    // ADR-0088: SKUs ativos em anuncios_externos_itens (família User Products). Ausente → Legacy.
+    skus_ativos_up?: Set<string>;
     // ponytail: coluna aditiva (ADR-0065) — database.types.ts ainda não regenerado (db push pendente).
     preco_reancorado_lider?: boolean;
   }
 ): Familia {
-  const variacoes = r.variacoes.map(variacaoFromRow);
+  const variacoes = r.variacoes.map((v) => variacaoFromRow(v, r.skus_ativos_up));
   const precos = variacoes.map((v) => v.preco);
   const precoMin = precos.length > 0 ? Math.min(...precos) : 0;
   const precoMax = precos.length > 0 ? Math.max(...precos) : 0;
