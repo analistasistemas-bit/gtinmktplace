@@ -83,7 +83,13 @@ export type ResultadoComposicao =
   | { tipo: 'concluido'; criadas: string[] } // composição aplicada; `criadas` = cores GENUINAMENTE
                                         // novas (POST/adoção, não readd) — base do reenfileirar catálogo
   | { tipo: 'incompleto' }              // transiente (confirmação não obtida) — flag persiste, retoma depois
-  | { tipo: 'erro'; codigo: 'familia_up_desagrupada' | 'busca_ambigua' | 'estado_remoto_inesperado' }
+  // 3 membros separados (não `codigo: 'a' | 'b' | 'c'` num só) — com um `codigo` de tipo união dentro
+  // de UM membro, o TS não discrimina esse membro contra `filho_em_estado_terminal` (a checagem
+  // `resultado.codigo === 'x'` não elimina o membro inteiro), e o acesso a `.sku`/`.status` no branch
+  // final do consumidor (atualizar-familia-up.ts) falhava o type-check mesmo com `tipo` já = 'erro'.
+  | { tipo: 'erro'; codigo: 'familia_up_desagrupada' }
+  | { tipo: 'erro'; codigo: 'busca_ambigua' }
+  | { tipo: 'erro'; codigo: 'estado_remoto_inesperado' }
   | { tipo: 'erro'; codigo: 'filho_em_estado_terminal'; sku: string; status: StatusFilho };
 
 async function reposicao(portas: PortasComposicao, entrada: EntradaComposicao, desejados: Set<string>): Promise<void> {
