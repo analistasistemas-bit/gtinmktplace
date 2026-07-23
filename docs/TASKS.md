@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sino sem refresh + 2 bugs de CI silenciosos na main + branch protection — 2026-07-23
+
+- [x] **Sino de notificações não atualizava sozinho** — `useNotificacoesNaoLidas`/`useListaNotificacoes`
+  nunca tiveram `refetchInterval`, e o app desliga `refetchOnWindowFocus` globalmente
+  (`query-client.ts`). Como o sino mora só no Topbar (nunca remonta ao navegar) e nenhuma outra tela
+  empresta refetch pra essa queryKey, a contagem ficava congelada no valor do carregamento inicial da
+  aba pelo resto da sessão. Fix: `refetchInterval: 60_000` + `refetchOnWindowFocus: true` nos dois
+  hooks. Tooltip "Atualiza sozinho a cada 45s" (desatualizado desde o ADR-0081, que cortou pra 3min)
+  corrigido em `ao-vivo.tsx`/`aba-vendas.tsx`/`DetalheVendas.tsx`.
+- [x] **`deno lint` quebrado na main havia ~26 dias sem ninguém notar** — `userId` morto em
+  `process-familia/index.ts` (introduzido em 2026-05-28, antes do gate de lint existir no CI).
+  Removido.
+- [x] **`deno check` quebrado desde o commit `7107933` (ADR-0088 F2, 2026-07-22)** —
+  `ResultadoComposicao` (`atualizar-composicao.ts`) tinha um membro `{codigo: 'a'|'b'|'c'}` com 3
+  literais em vez de um discriminante único, então o TS não eliminava esse membro no ternário de
+  `atualizar-familia-up.ts:308` e barrava o acesso a `.sku`/`.status` do membro
+  `filho_em_estado_terminal`. Fix: separa em 3 membros (1 literal cada) — nenhum construtor mudou.
+- [x] **Causa raiz dos 2 bugs de CI**: `main` não tinha branch protection (`gh api
+  .../branches/main/protection` → 404) — os comentários do `ci.yml` diziam "Bloqueante... mantenha
+  em 0", mas nada tecnicamente impedia merge/push com `frontend`/`backend-lint` vermelhos. Configurado
+  branch protection no `main` exigindo os dois como required status checks (`enforce_admins: false`,
+  `strict: false`) — ver [[desenvolvimento-local.md]].
+
 ## Config org-scoped + imposto LOUD + token MP por org (ADR-0086) — 2026-07-22
 
 - [x] **Increment A** — leitura de `configuracoes` no backend por `org_id` (era `user_id`): membros

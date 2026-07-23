@@ -66,12 +66,14 @@ pnpm dev          # Vite em http://localhost:5173
 
 ## Portão de qualidade antes de commitar
 
-O CI roda `pnpm lint` → `pnpm test` → `pnpm build` (frontend) e `deno lint` (backend), e
-**bloqueia o merge** se algo falhar. Rode localmente antes de commitar:
+O CI roda `pnpm lint` → `pnpm test` → `pnpm build` (job `frontend`) e `deno lint` → `deno check`
+(job `backend-lint`). Desde 2026-07-23 os dois jobs são **required status checks** no `main`
+(branch protection) — PR com qualquer um vermelho não mergeia (só admin em bypass manual). Rode
+localmente antes de commitar:
 
 ```bash
 pnpm lint && pnpm test && pnpm build
-pnpm lint:functions
+pnpm lint:functions && pnpm check:functions
 ```
 
 > `pnpm test` pode sair com código 1 se faltar `.env.test` (dummy). Confira o exit code, não só
