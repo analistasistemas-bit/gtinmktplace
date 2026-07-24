@@ -48,13 +48,23 @@ export function sanitizarDescricaoML(texto: string): string {
  * Reescreve só a lista da seção "🎨 CORES DISPONÍVEIS" da descrição, preservando
  * todo o resto do texto. Usado no UPDATE: quando entra uma cor nova, a descrição
  * herdada do anúncio (sem IA, ADR-0016) precisa refletir a cor adicionada.
- * Determinística (sem IA). Se a seção não existir, retorna o texto original intacto.
+ * Determinística (sem IA). Se a seção não existir e não há cor real, retorna o texto intacto;
+ * se não existir mas há cor real, recria a seção ao final (simétrico à remoção abaixo).
  * A lista é sempre escrita em ordem alfabética (pedido do operador 2026-06-09).
  */
 export function atualizarSecaoCores(descricao: string, cores: string[]): string {
   const linhas = descricao.split('\n');
   const headerIdx = linhas.findIndex((l) => /CORES DISPON[IÍ]VEIS/i.test(l));
-  if (headerIdx === -1) return descricao;
+  if (headerIdx === -1) {
+    if (cores.length === 0) return descricao;
+    // Cabeçalho ausente (removido antes por lista vazia — ver ramo abaixo — ou nunca existiu)
+    // mas agora há cor real: recria a seção ao final. Sem isto a função é assimétrica (sabe
+    // remover, não sabia recriar) e uma cor nova nunca mais aparecia na descrição depois de
+    // uma família passar por "sem cor real" (ex.: só cor indefinida/"Outra").
+    const novaLista = ordenarCoresAlfabetica(cores).map((c) => `- ${c}`);
+    const sep = descricao.trim().length > 0 ? '\n\n' : '';
+    return `${descricao}${sep}🎨 CORES DISPONÍVEIS\n\n${novaLista.join('\n')}`;
+  }
 
   let inicio = headerIdx + 1;
   while (inicio < linhas.length && linhas[inicio].trim() === '') inicio++;

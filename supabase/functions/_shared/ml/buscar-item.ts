@@ -130,3 +130,47 @@ export async function buscarItemUP(
     sellerId: j.seller_id != null ? String(j.seller_id) : undefined,
   };
 }
+
+/** Campos que o reconciliador de BACKFILL precisa pra decidir se um item ML já existente
+ *  (`familias.ml_item_id`, sem filho técnico local ainda) é candidato a importar pro modelo UP. */
+export interface ItemBackfill {
+  status: string | null;
+  familyId: string | null;
+  familyName: string | null;
+  userProductId: string | null;
+  permalink: string | null;
+  /** seller_custom_field NA RAIZ do item (item plano/UP não tem variations povoadas). */
+  sku: string | null;
+  /** true = tem variations reais → Legacy, ignorar (ADR-0088 só importa item PLANO). */
+  temVariacoes: boolean;
+  /** Revisão Codex: o GET de item é público — sem checar seller_id contra a conexão, um
+   *  ml_item_id local corrompido/antigo importaria item de OUTRO vendedor pra esta org. */
+  sellerId: string | null;
+}
+
+/** GET /items/{id} completo pro reconciliador de backfill (só leitura, nenhum POST/PUT).
+ *  `null` se o GET falhar (404/erro) — a porta trata como "ignora esta família nesta rodada". */
+export async function buscarItemBackfill(
+  fetchLike: FetchLike,
+  crit: { accessToken: string },
+  itemId: string,
+): Promise<ItemBackfill | null> {
+  const url = `${API}/items/${encodeURIComponent(itemId)}`
+    + `?attributes=id,status,family_id,family_name,user_product_id,permalink,seller_custom_field,variations,seller_id`;
+  const resp = await fetchLike(url, { headers: { Authorization: `Bearer ${crit.accessToken}` } });
+  if (!resp.ok) return null;
+  const j = (await resp.json()) as {
+    status?: string; family_id?: string; family_name?: string; user_product_id?: string;
+    permalink?: string; seller_custom_field?: string; variations?: unknown[]; seller_id?: string | number;
+  };
+  return {
+    status: j.status ?? null,
+    familyId: j.family_id != null ? String(j.family_id) : null,
+    familyName: j.family_name ?? null,
+    userProductId: j.user_product_id != null ? String(j.user_product_id) : null,
+    permalink: j.permalink ?? null,
+    sku: j.seller_custom_field ?? null,
+    temVariacoes: Array.isArray(j.variations) && j.variations.length > 0,
+    sellerId: j.seller_id != null ? String(j.seller_id) : null,
+  };
+}

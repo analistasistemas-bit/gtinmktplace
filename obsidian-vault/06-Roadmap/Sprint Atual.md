@@ -32,9 +32,15 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
   mutar remoto, confirma sempre por `GET`; fix do gate de publicabilidade do frontend que travava
   qualquer UPDATE de família UP na Revisão. Validado end-to-end em produção real (Playwright):
   adicionar cor → caso real de `family_id` divergente isolado corretamente pela mini-saga (9 cores
-  reais intocadas) → remover cor com sucesso. Pendente (não-bloqueante): reconciliador de
-  convergência, reconciliador de backfill, sincronizar descrição no UPDATE UP, guarda completa de
-  remoção. Ver [[Índice de ADRs]].
+  reais intocadas) → remover cor com sucesso. As 4 pendências (reconciliador de convergência,
+  reconciliador de backfill, sincronizar descrição no UPDATE UP, guarda completa de remoção)
+  **implementadas, revisadas e deployadas em produção (2026-07-24)** — cada uma aprovada pelo
+  Codex após 3-4 rodadas de revisão adversarial (achados reais corrigidos por rodada, ver
+  `docs/TASKS.md`); suíte inteira verde, `deno check`/lint limpos; migrations aplicadas + 12
+  functions redeployadas (blast radius recalculado via `deno info`); schedule QStash do
+  reconciliador de convergência criado (`*/15 * * * *`). **Achado à parte, também corrigido:**
+  `reconciliar-faturamento` (ADR-0037) nunca teve schedule QStash desde a criação — rodou zero
+  vezes em ~1 mês; corrigido junto. Ver [[Índice de ADRs]].
 - **Config org-scoped + imposto LOUD + token MP por org** (ADR-0086) — em produção 2026-07-22:
   `configuracoes` virou 1 linha por org (`org_id` PK, `user_id` = auditoria); o imposto por origem
   **falha LOUD** se a org não confirmou as alíquotas (`aliquotas_confirmadas_em`) em vez de aplicar

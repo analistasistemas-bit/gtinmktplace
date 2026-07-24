@@ -330,6 +330,11 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
               {familia.atacadoStatus === 'erro' ? 'atacado ⚠' : 'atacado ✓'}
             </StatusPill>
           )}
+          {publicado && familia.descricaoStatus === 'erro' && (
+            <StatusPill tone="danger" title={familia.descricaoErro ?? 'Falha ao sincronizar a lista de cores na descrição'}>
+              descrição ⚠
+            </StatusPill>
+          )}
           {novasComFoto > 0 && (
             <StatusPill tone="warning" title="Cores novas que precisam de foto antes de publicar">
               📷 {novasComFoto} cor(es) nova(s)

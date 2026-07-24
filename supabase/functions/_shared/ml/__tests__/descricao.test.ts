@@ -43,9 +43,29 @@ describe('atualizarSecaoCores', () => {
     expect(out).toContain('- Salmão');
   });
 
-  it('sem o cabeçalho de cores, retorna o texto original intacto', () => {
+  it('sem cabeçalho e sem cor real, retorna o texto original intacto', () => {
     const semCabecalho = 'Produto sem seção de cores.\n\nFita 10m.';
-    expect(atualizarSecaoCores(semCabecalho, ['Azul'])).toBe(semCabecalho);
+    expect(atualizarSecaoCores(semCabecalho, [])).toBe(semCabecalho);
+  });
+
+  it('sem cabeçalho mas com cor real, recria a seção ao final (simétrico à remoção)', () => {
+    // Bug real achado na revisão (Codex): a seção some quando cores=[] (ex.: família só
+    // com cor indefinida/"Outra") e persiste sem cabeçalho; se depois entra cor real, a
+    // função antiga não sabia recriar — a cor nunca mais aparecia na descrição.
+    const semCabecalho = 'Produto sem seção de cores.\n\nFita 10m.';
+    const out = atualizarSecaoCores(semCabecalho, ['Azul']);
+    expect(out).toContain('Produto sem seção de cores.');
+    expect(out).toContain('Fita 10m.');
+    expect(out).toContain('🎨 CORES DISPONÍVEIS');
+    expect(out).toContain('- Azul');
+  });
+
+  it('round-trip: remover a seção (cores=[]) e recriar (cores=[Azul]) preserva o texto e mostra a cor nova', () => {
+    const semCores = atualizarSecaoCores(DESCRICAO, []);
+    const restaurado = atualizarSecaoCores(semCores, ['Azul']);
+    expect(restaurado).toContain('- Azul');
+    expect(restaurado).toContain('🧵 LINHA PROFISSIONAL');
+    expect(restaurado).toContain('📦 CONTEÚDO DA EMBALAGEM');
   });
 
   it('sem nenhuma cor real (lista vazia) — remove a seção inteira, não deixa cabeçalho pendurado (ADR-0044)', () => {
