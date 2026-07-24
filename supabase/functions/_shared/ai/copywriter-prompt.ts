@@ -1,7 +1,7 @@
 import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { rotuloQuantidade } from './unidade.ts';
-import { contemMetragem, extrairLarguraMm, extrairMetragem } from './titulo.ts';
+import { contemMetragem, extrairLargura, extrairMetragem } from './titulo.ts';
 
 export interface InputCopy {
   nome: string;
@@ -68,19 +68,21 @@ function injetarBulletEspecificacoes(descricao: string, bullet: string): string 
   return inserirAntesDoProximoCabecalho(descricao, bullet);
 }
 
-// Garante que a largura em mm apareça na descrição quando grounded em nome/descrição da
-// planilha — dado que diferencia o produto fisicamente (ex.: lantejoula 6mm vs 4mm), igual
-// espírito de garantirMetragemTitulo/garantirCorTitulo no título, mas aqui não há rede de
-// segurança nenhuma: a IA (gpt-4o-mini) só é INSTRUÍDA a listar "Largura" em ESPECIFICAÇÕES,
-// nunca garantida — e pode inclusive pular a seção inteira. Puro/determinístico.
+// Garante que a largura (mm ou cm) apareça na descrição quando grounded em nome/descrição da
+// planilha — dado que diferencia o produto fisicamente (ex.: lantejoula 6mm vs 4mm; franja 5cm
+// vs 10cm), igual espírito de garantirMetragemTitulo/garantirCorTitulo no título, mas aqui não
+// há rede de segurança nenhuma: a IA (gpt-4o-mini) só é INSTRUÍDA a listar "Largura" em
+// ESPECIFICAÇÕES, nunca garantida — e pode inclusive pular a seção inteira. Puro/determinístico.
 export function garantirLarguraDescricao(descricao: string, nomePai: string, descricaoPai: string): string {
-  const largura = extrairLarguraMm(`${nomePai}\n${descricaoPai}`);
+  const largura = extrairLargura(`${nomePai}\n${descricaoPai}`);
   if (!largura) return descricao;
-  // Tolerante a espaço entre número e "mm" (ex.: IA já escreveu "6 mm" em vez de "6mm") —
-  // largura sempre vem formatada sem espaço (extrairLarguraMm), então o "já contém" precisa
-  // ser mais frouxo que uma igualdade literal pra não duplicar.
-  const numero = largura.replace(/mm$/i, '');
-  if (new RegExp(`\\b${numero}\\s*mm\\b`, 'i').test(descricao)) return descricao;
+  // Tolerante a espaço entre número e unidade (ex.: IA já escreveu "6 mm" em vez de "6mm") —
+  // largura sempre vem formatada sem espaço (extrairLargura), então o "já contém" precisa ser
+  // mais frouxo que uma igualdade literal pra não duplicar. Extrai a unidade exata (mm ou cm) do
+  // valor achado — não aceita qualquer uma das duas, senão "6mm" já extraído consideraria "6cm"
+  // solto na descrição como a mesma informação e pularia a injeção por engano.
+  const [, numero, unidade] = largura.match(/^(\d+(?:,\d+)?)(mm|cm)$/i) ?? [];
+  if (numero && new RegExp(`\\b${numero}\\s*${unidade}\\b`, 'i').test(descricao)) return descricao;
 
   return injetarBulletEspecificacoes(descricao, `• Largura: ${largura}`);
 }
