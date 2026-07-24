@@ -120,6 +120,36 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(r.tipo).toBe('ok');
   });
 
+  it('multi-cor, cache user_products e desconto ativo → erro definitivo sem POST nem saga', async () => {
+    const { admin, writes } = fakeAdmin({
+      variacoes: multiCor(),
+      familia: { ...FAMILIA_BASE, exibir_com_desconto: true },
+    });
+    const { repo } = fakeFormatoRepo('user_products');
+    let upChamado = false;
+    let loteFinalizado = 0;
+    const r = await processarFamiliaML(baseDeps(admin, {
+      formatoRepo: repo,
+      publicarUP: async () => { upChamado = true; return { estado: 'ativo', itemExternoId: 'MLB-AZUL', permalink: null }; },
+      finalizarLote: async () => { loteFinalizado++; },
+    }), JOB, { tentativas: 0 });
+
+    expect(r).toEqual({
+      tipo: 'erro',
+      mensagem: 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.',
+    });
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
+    expect(upChamado).toBe(false);
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'familias',
+      payload: {
+        status: 'erro',
+        erro_mensagem: 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.',
+      },
+    }));
+    expect(loteFinalizado).toBe(1);
+  });
+
   it('saga compensacao_pendente → NÃO publicado (erro de retomada, familia já marcada dentro do publicarUP)', async () => {
     const { admin, writes } = fakeAdmin({ variacoes: multiCor() });
     const { repo } = fakeFormatoRepo('user_products');

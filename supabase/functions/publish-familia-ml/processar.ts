@@ -147,7 +147,16 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     };
 
     // Cache hit `user_products`: pula a tentativa `variations` de vez (zero POST desperdiçado, §3).
-    if (podeUP && (await lerFormatoPublicacao(formatoRepo, conexao!.id, categoria!)) === 'user_products') {
+    const formatoConhecido = podeUP
+      ? await lerFormatoPublicacao(formatoRepo, conexao!.id, categoria!)
+      : null;
+    if (formatoConhecido === 'user_products') {
+      if (anuncio.desconto) {
+        const msg = 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.';
+        await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+        await finalizarLote(job.lote_id);
+        return { tipo: 'erro', mensagem: msg };
+      }
       return await rotaSagaUP();
     }
 
