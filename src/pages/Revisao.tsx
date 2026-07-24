@@ -126,10 +126,6 @@ export default function Revisao() {
   // diferentes, ela herdaria o mesmo bug do controle individual (ver familiaPrecosDivergentes)
   // — bloqueia a ativação em lote nesse caso.
   const familiasDivergentes = useMemo(() => familias.filter(familiaPrecosDivergentes), [familias]);
-  const familiasUserProducts = useMemo(
-    () => familias.filter((f) => f.formatoPublicacaoMl === 'user_products'),
-    [familias],
-  );
   const qtdErros = useMemo(() => familias.filter((f) => f.status === 'erro').length, [familias]);
 
   // O lote volta para 'revisao' quando ainda restam famílias publicáveis, escondendo
@@ -381,6 +377,7 @@ export default function Revisao() {
                       : undefined
                   }
                   onClick={() => {
+                    const familiasUserProducts = familias.filter((f) => f.formatoPublicacaoMl === 'user_products');
                     if (!todasComDesconto && familiasUserProducts.length > 0) {
                       toast.error('Não é possível ativar desconto no lote', {
                         description: `${familiasUserProducts.length} família(s) são User Products (ex.: ${familiasUserProducts[0].titulo}). O Mercado Livre não permite desconto apenas visual nesse formato.`,
