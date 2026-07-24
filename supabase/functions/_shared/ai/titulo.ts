@@ -23,6 +23,23 @@ export function extrairMetragem(nome: string): string | null {
   return `${m[1]}${normalizarUnidade(m[2])}`;
 }
 
+// Menciona metragem em QUALQUER forma (token exato como "50MT" ou por extenso como "50 metros")
+// — usada pra decidir se a descrição já cobriu o dado antes de cravar um bullet redundante.
+export function contemMetragem(texto: string): boolean {
+  return RE_METRAGEM.test(texto);
+}
+
+// Captura largura em mm do texto-fonte (ex.: "6MM DE LARGURA", "LARGURA DE 6MM", "LARGURA:
+// 6MM"). Exige a palavra LARGURA perto do número — nunca colide com RE_METRAGEM porque a
+// unidade exigida aqui é MM, não M/MT/METROS.
+const RE_LARGURA_MM = /(\d+(?:,\d+)?)\s*MM\s+DE\s+LARGURA\b|LARGURA\s*:?\s*(?:DE\s*)?(\d+(?:,\d+)?)\s*MM\b/i;
+
+export function extrairLarguraMm(texto: string): string | null {
+  const m = texto.match(RE_LARGURA_MM);
+  if (!m) return null;
+  return `${m[1] ?? m[2]}mm`;
+}
+
 // Conectivos/preposições que, sozinhos no fim do título, denunciam frase cortada
 // (a IA estoura o teto de 60 chars do schema no meio do "diferencial" → "VERSÁTIL E").
 const CAUDA_CONECTIVA = new Set([
@@ -273,6 +290,32 @@ export function garantirCorTitulo(titulo: string, cor: string | null, nCores: nu
     candidato = partes.join(' | ');
   }
   // Sobrou só um segmento ainda longo: apara o texto-base preservando a cor (dado diferenciador).
+  if (candidato.length > TITULO_MAX) {
+    const overflow = candidato.length - TITULO_MAX;
+    const base = partes[0].slice(0, partes[0].length - sufixo.length);
+    partes[0] = base.slice(0, Math.max(0, base.length - overflow)).trimEnd() + sufixo;
+    candidato = partes.join(' | ');
+  }
+  return candidato;
+}
+
+// Garante que a largura em mm apareça no título quando grounded (ex.: "6MM DE LARGURA" na
+// descrição) — mesma rede de segurança de garantirMetragemTitulo/garantirCorTitulo, mas pra
+// largura, que costuma ficar só na descrição da planilha (não no nome_pai) e por isso a IA a
+// descarta com mais frequência ainda. Roda depois de garantirMetragemTitulo (largura acompanha
+// a metragem no mesmo segmento) e antes de garantirCorTitulo (que ainda clampa o tamanho final).
+export function garantirLarguraTitulo(titulo: string, larguraMm: string | null): string {
+  if (!larguraMm) return titulo;
+  if (new RegExp(`\\b${escaparRegex(larguraMm)}\\b`, 'i').test(titulo)) return titulo;
+
+  const sufixo = ` ${larguraMm.toUpperCase()}`;
+  const partes = titulo.split(' | ');
+  partes[0] = `${partes[0]}${sufixo}`.trim();
+  let candidato = partes.join(' | ');
+  while (candidato.length > TITULO_MAX && partes.length > 1) {
+    partes.pop();
+    candidato = partes.join(' | ');
+  }
   if (candidato.length > TITULO_MAX) {
     const overflow = candidato.length - TITULO_MAX;
     const base = partes[0].slice(0, partes[0].length - sufixo.length);

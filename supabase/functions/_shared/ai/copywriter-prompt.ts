@@ -1,6 +1,7 @@
 import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { rotuloQuantidade } from './unidade.ts';
+import { contemMetragem, extrairLarguraMm, extrairMetragem } from './titulo.ts';
 
 export interface InputCopy {
   nome: string;
@@ -38,17 +39,6 @@ export function validarTipoProdutoBusca(tipoProdutoBusca: string, nome: string, 
   return grounded ? valor : '';
 }
 
-// Captura largura em mm do texto-fonte (ex.: "6MM DE LARGURA", "LARGURA DE 6MM", "LARGURA: 6MM").
-// Exige a palavra LARGURA perto do número — "M"/"MT"/"METROS" (metragem, tratada em titulo.ts)
-// nunca colide aqui porque a unidade exigida é MM, não M.
-const RE_LARGURA_MM = /(\d+(?:,\d+)?)\s*MM\s+DE\s+LARGURA\b|LARGURA\s*:?\s*(?:DE\s*)?(\d+(?:,\d+)?)\s*MM\b/i;
-
-export function extrairLarguraMm(texto: string): string | null {
-  const m = texto.match(RE_LARGURA_MM);
-  if (!m) return null;
-  return `${m[1] ?? m[2]}mm`;
-}
-
 const SECAO_ESPECIFICACOES = '📌 ESPECIFICAÇÕES';
 // Ordem do template (SYSTEM acima) a partir de ESPECIFICAÇÕES — usada só para achar onde a
 // seção termina, caso ela exista, ou onde inserir uma nova, caso a IA tenha pulado a seção
@@ -68,6 +58,16 @@ function inserirAntesDoProximoCabecalho(descricao: string, bloco: string): strin
   return `${descricao.slice(0, idx).trimEnd()}\n\n${bloco}\n\n${descricao.slice(idx)}`.trim();
 }
 
+// Injeta um bullet em ESPECIFICAÇÕES, criando a seção (no lugar certo do template) se a IA a
+// tiver pulado inteira — bug real: produto 02994771 saiu sem "📌 ESPECIFICAÇÕES" nenhuma.
+// Chamadas em sequência (largura, depois metragem) compõem sem duplicar cabeçalho: a 2ª chamada
+// já enxerga a seção criada pela 1ª.
+function injetarBulletEspecificacoes(descricao: string, bullet: string): string {
+  const idxSecao = descricao.indexOf(SECAO_ESPECIFICACOES);
+  if (idxSecao === -1) return inserirAntesDoProximoCabecalho(descricao, `${SECAO_ESPECIFICACOES}\n\n${bullet}`);
+  return inserirAntesDoProximoCabecalho(descricao, bullet);
+}
+
 // Garante que a largura em mm apareça na descrição quando grounded em nome/descrição da
 // planilha — dado que diferencia o produto fisicamente (ex.: lantejoula 6mm vs 4mm), igual
 // espírito de garantirMetragemTitulo/garantirCorTitulo no título, mas aqui não há rede de
@@ -76,12 +76,27 @@ function inserirAntesDoProximoCabecalho(descricao: string, bloco: string): strin
 export function garantirLarguraDescricao(descricao: string, nomePai: string, descricaoPai: string): string {
   const largura = extrairLarguraMm(`${nomePai}\n${descricaoPai}`);
   if (!largura) return descricao;
-  if (new RegExp(`\\b${largura}\\b`, 'i').test(descricao)) return descricao;
+  // Tolerante a espaço entre número e "mm" (ex.: IA já escreveu "6 mm" em vez de "6mm") —
+  // largura sempre vem formatada sem espaço (extrairLarguraMm), então o "já contém" precisa
+  // ser mais frouxo que uma igualdade literal pra não duplicar.
+  const numero = largura.replace(/mm$/i, '');
+  if (new RegExp(`\\b${numero}\\s*mm\\b`, 'i').test(descricao)) return descricao;
 
-  const bullet = `• Largura: ${largura}`;
-  const idxSecao = descricao.indexOf(SECAO_ESPECIFICACOES);
-  if (idxSecao === -1) return inserirAntesDoProximoCabecalho(descricao, `${SECAO_ESPECIFICACOES}\n\n${bullet}`);
-  return inserirAntesDoProximoCabecalho(descricao, bullet);
+  return injetarBulletEspecificacoes(descricao, `• Largura: ${largura}`);
+}
+
+// Mesma rede de segurança, agora para metragem (comprimento) na descrição — o mesmo dado que
+// garantirMetragemTitulo já garante no título nunca teve equivalente na descrição; a IA pode
+// tanto pular o bullet quanto a menção em prosa ("rolo contendo 50 metros") na mesma geração
+// (caso real: produto 02994771 regenerado sem nenhuma das duas). contemMetragem aceita
+// qualquer forma (token "50MT" ou por extenso "50 metros") pra não duplicar quando a IA já
+// comunicou o dado em prosa, mesmo sem bullet formal.
+export function garantirMetragemDescricao(descricao: string, nomePai: string): string {
+  const metragem = extrairMetragem(nomePai);
+  if (!metragem) return descricao;
+  if (contemMetragem(descricao)) return descricao;
+
+  return injetarBulletEspecificacoes(descricao, `• Metragem: ${metragem}`);
 }
 
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.

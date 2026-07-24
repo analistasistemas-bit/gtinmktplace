@@ -22,8 +22,23 @@
   mesma duplicação de guards já existente entre os dois arquivos. TDD: 11 testes novos
   (`copywriter-largura.test.ts`), incluindo o cenário real do produto 02994771; suíte completa
   (2028 testes) + `tsc` + `deno check` (`pnpm check:functions`) + `pnpm lint` verdes.
-- [ ] **Reprocessar produto 02994771** (e outros já em revisão com o mesmo gap) para a
-  descrição existente ganhar a largura — hoje só novas gerações/regenerações de copy usam o fix.
+- [x] **Reprocessar produto 02994771** — deploy feito (`process-familia` v115,
+  `regenerar-copy-familia` v34, `publicar-split-ml` v39 por higiene); Diego clicou em
+  "Regenerar descrição" e confirmou "Largura: 6mm" na descrição.
+- [x] **2 gaps descobertos no teste real do Diego, mesmo dia**: (1) a mesma geração que trouxe a
+  largura saiu sem QUALQUER menção a metragem (nem bullet, nem prosa "rolo contendo 50 metros")
+  — a IA pode descartar os dois dados juntos ou separado, e metragem nunca teve guard na
+  descrição (só no título, via `garantirMetragemTitulo`); (2) Diego pediu explicitamente a
+  largura também no título (decisão de produto, não só na descrição) — título só trazia "50MT".
+  Fix: `garantirLarguraTitulo` (`_shared/ai/titulo.ts`, mesmo padrão clamp-a-60 de
+  `garantirCorTitulo`) crava a largura no título logo após a metragem; `garantirMetragemDescricao`
+  (`_shared/ai/copywriter-prompt.ts`) crava `• Metragem: Xmt` em ESPECIFICAÇÕES quando ausente
+  (usa `contemMetragem`, tolerante a menção em prosa, pra não duplicar). `extrairLarguraMm`
+  migrou de `copywriter-prompt.ts` para `titulo.ts` (mesma casa de `extrairMetragem`), reusado
+  pelos dois lados (título e descrição) sem duplicar a extração. 14 testes novos
+  (`titulo-largura.test.ts` + ampliação de `copywriter-largura.test.ts`, incluindo composição
+  título+cor+metragem+largura e descrição largura+metragem sem duplicar cabeçalho); suíte
+  completa (2052 testes) + `tsc` + `deno check` + `pnpm lint` verdes.
 
 ## Flake do smoke test de rota do Dashboard — 2026-07-24
 

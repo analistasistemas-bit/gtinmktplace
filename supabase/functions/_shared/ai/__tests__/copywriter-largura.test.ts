@@ -1,32 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extrairLarguraMm, garantirLarguraDescricao } from '../copywriter-prompt';
-
-describe('extrairLarguraMm', () => {
-  it('captura "6MM DE LARGURA"', () => {
-    expect(extrairLarguraMm('A LANTEJOULA DE 6MM DE LARGURA É IDEAL')).toBe('6mm');
-  });
-
-  it('captura ordem invertida "LARGURA DE 6MM"', () => {
-    expect(extrairLarguraMm('FITA COM LARGURA DE 10MM')).toBe('10mm');
-  });
-
-  it('captura "LARGURA: 6MM" (rótulo com dois-pontos)', () => {
-    expect(extrairLarguraMm('LARGURA: 6MM')).toBe('6mm');
-  });
-
-  it('aceita decimal com vírgula (formato BR)', () => {
-    expect(extrairLarguraMm('FITA DE 2,5MM DE LARGURA')).toBe('2,5mm');
-  });
-
-  it('não confunde metragem em metros ("M"/"MT"/"METROS") com largura em mm', () => {
-    expect(extrairLarguraMm('ROLO CONTENDO 50 METROS')).toBeNull();
-    expect(extrairLarguraMm('FITA 10MT BRANCA')).toBeNull();
-  });
-
-  it('sem menção a largura em mm → null', () => {
-    expect(extrairLarguraMm('BARBANTE DE ALGODÃO 4/6 FIOS')).toBeNull();
-  });
-});
+import { garantirLarguraDescricao, garantirMetragemDescricao } from '../copywriter-prompt';
 
 describe('garantirLarguraDescricao', () => {
   const nomePai = 'LANTEJOULAS TAM 6 CORES C/50MTS';
@@ -90,6 +63,18 @@ describe('garantirLarguraDescricao', () => {
     expect(garantirLarguraDescricao(descricao, nomePai, descricaoPai)).toBe(descricao);
   });
 
+  it('idempotente mesmo quando a IA escreveu com espaço ("6 mm" em vez de "6mm")', () => {
+    const descricao = [
+      '📌 ESPECIFICAÇÕES',
+      '',
+      '• Largura: 6 mm',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+    ].join('\n');
+
+    expect(garantirLarguraDescricao(descricao, nomePai, descricaoPai)).toBe(descricao);
+  });
+
   it('não mexe na descrição quando não há largura em mm grounded no nome/descrição', () => {
     const descricao = '🧵 INTRO\n\nTexto qualquer.\n\n🎯 INDICAÇÕES DE USO\n\n✔ Uso geral';
     expect(garantirLarguraDescricao(descricao, 'BARBANTE EUROROMA 600G', 'BARBANTE 100% ALGODÃO')).toBe(descricao);
@@ -100,5 +85,76 @@ describe('garantirLarguraDescricao', () => {
     const out = garantirLarguraDescricao(descricao, nomePai, descricaoPai);
     expect(out).toContain('📌 ESPECIFICAÇÕES');
     expect(out).toContain('• Largura: 6mm');
+  });
+});
+
+describe('garantirMetragemDescricao', () => {
+  const nomePai = 'LANTEJOULAS TAM 6 CORES C/50MTS';
+
+  it('bug real (produto 02994771, regenerado): cria a seção quando a IA pula metragem inteira, sem mencionar em prosa', () => {
+    const descricao = [
+      '🧵 INTRO',
+      '',
+      'Produzida em PVC de alta qualidade. Ideal para produções em larga escala.',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+      '',
+      '✔ Uso geral',
+    ].join('\n');
+
+    const out = garantirMetragemDescricao(descricao, nomePai);
+
+    expect(out).toContain('📌 ESPECIFICAÇÕES');
+    expect(out).toContain('• Metragem: 50MT');
+    expect(out.indexOf('📌 ESPECIFICAÇÕES')).toBeLessThan(out.indexOf('🎯 INDICAÇÕES DE USO'));
+  });
+
+  it('não duplica quando a IA já mencionou a metragem em prosa (sem bullet formal)', () => {
+    const descricao = [
+      '🧵 INTRO',
+      '',
+      'O produto vem em um rolo contendo 50 metros de rendimento.',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+    ].join('\n');
+
+    expect(garantirMetragemDescricao(descricao, nomePai)).toBe(descricao);
+  });
+
+  it('idempotente quando já existe o bullet formal', () => {
+    const descricao = [
+      '📌 ESPECIFICAÇÕES',
+      '',
+      '• Metragem: 50MT',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+    ].join('\n');
+
+    expect(garantirMetragemDescricao(descricao, nomePai)).toBe(descricao);
+  });
+
+  it('não mexe quando não há metragem grounded no nome', () => {
+    const descricao = '🧵 INTRO\n\nTexto qualquer.\n\n🎯 INDICAÇÕES DE USO';
+    expect(garantirMetragemDescricao(descricao, 'BARBANTE EUROROMA 600G')).toBe(descricao);
+  });
+
+  it('compõe com garantirLarguraDescricao sem duplicar o cabeçalho ESPECIFICAÇÕES', () => {
+    const descricao = [
+      '🧵 INTRO',
+      '',
+      'Texto qualquer.',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+    ].join('\n');
+    const descricaoPai = 'PRODUTO DE 6MM DE LARGURA.';
+
+    const out = garantirMetragemDescricao(
+      garantirLarguraDescricao(descricao, nomePai, descricaoPai),
+      nomePai,
+    );
+
+    expect((out.match(/📌 ESPECIFICAÇÕES/g) ?? []).length).toBe(1);
+    expect(out).toContain('• Largura: 6mm');
+    expect(out).toContain('• Metragem: 50MT');
   });
 });

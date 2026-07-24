@@ -148,10 +148,13 @@
   sinônimo de tipo de fio/linha/barbante que `nome_pai` já declara (ex.: "FIO Cléa" quando a
   planilha diz "L.CLEA" = Linha Cléa) — os dois sinônimos aparecem "grounded" na descrição, então
   o guard de tipo de produto (ADR-0054) sozinho não decide qual é o certo.
-  `garantirLarguraDescricao` (`_shared/ai/copywriter-prompt.ts`) crava a largura em mm
-  (grounded em nome/descrição da planilha, ex.: "6MM DE LARGURA") na seção "📌 ESPECIFICAÇÕES"
-  da descrição, criando a seção se a IA a tiver pulado inteira — mesma classe de rede de
-  segurança dos guards de título, mas na descrição, onde não havia nenhuma (bug lote 02994771).
+  `garantirLarguraDescricao`/`garantirMetragemDescricao` (`_shared/ai/copywriter-prompt.ts`)
+  cravam largura em mm e metragem (grounded em nome/descrição da planilha) na seção "📌
+  ESPECIFICAÇÕES" da descrição, criando a seção se a IA a tiver pulado inteira — mesma classe de
+  rede de segurança dos guards de título, mas na descrição, onde não havia nenhuma (bug lote
+  02994771). `garantirLarguraTitulo` (`_shared/ai/titulo.ts`) crava a largura também no título
+  (decisão de produto, 2026-07-24), logo após `garantirMetragemTitulo`; `extrairLarguraMm`
+  mora em `titulo.ts` ao lado de `extrairMetragem` e é reusado pelos guards de descrição.
   **Pré-upload de foto (ADR-0033, 2026-07-10):** sobe ao ML as fotos ainda sem `picture_id` e
   persiste o id (`_shared/anuncios/pre-subir-fotos.ts`), tirando a propagação (~2,5 min) do caminho
   crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.
