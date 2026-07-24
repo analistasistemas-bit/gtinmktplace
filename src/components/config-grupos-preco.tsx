@@ -11,7 +11,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { useDescontoPct } from '@/hooks/useConfiguracoes';
 import { useSetDescontoGrupo, useSetAtacadoGrupo } from '@/hooks/useFamiliaMutations';
-import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
+import { calcularPrecoDe, pctEfetivo, podeAlterarDescontoVisual } from '@/lib/desconto';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { gruposDePreco, configGrupoPendente, type GrupoPreco } from '@/lib/grupos-preco';
 import { fmtBRLSemSimbolo } from '@/lib/formato';
@@ -39,6 +39,7 @@ function GrupoConfig({ familia, grupo }: { familia: Familia; grupo: GrupoPreco }
   const ids = grupo.variacoes.map((x) => x.id).filter((x): x is string => !!x);
   const rep = grupo.variacoes[0];
   const exibir = rep.exibirComDesconto ?? false;
+  const podeAlterar = podeAlterarDescontoVisual(familia.formatoPublicacaoMl, exibir);
   const pct = pctEfetivo(rep.descontoPct, globalPct ?? 15);
   const de = calcularPrecoDe(grupo.preco, pct);
   const [faixas, setFaixas] = useState<FaixaAtacado[]>(rep.atacado ?? []);
@@ -71,11 +72,17 @@ function GrupoConfig({ familia, grupo }: { familia: Familia; grupo: GrupoPreco }
         <Checkbox
           aria-label={`Exibir com desconto (faixa R$ ${fmtBRLSemSimbolo(grupo.preco)})`}
           checked={exibir}
+          disabled={!podeAlterar}
           onCheckedChange={(marcado) =>
             setDesconto.mutate({ variacaoIds: ids, exibir: marcado === true, pct: rep.descontoPct })
           }
         />
         <span>Exibir com desconto</span>
+        {familia.formatoPublicacaoMl === 'user_products' && (
+          <span className="text-muted-foreground">
+            O ML não permite desconto apenas visual em User Products.
+          </span>
+        )}
         {exibir && (
           <>
             <Input

@@ -8,7 +8,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useDescontoPct } from '@/hooks/useConfiguracoes';
 import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia, useReprocessar, useUpdateFamiliaAtacado } from '@/hooks/useFamiliaMutations';
-import { calcularPrecoDe, pctEfetivo } from '@/lib/desconto';
+import { calcularPrecoDe, pctEfetivo, podeAlterarDescontoVisual } from '@/lib/desconto';
 import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { AtacadoEditor } from '@/components/atacado-editor';
@@ -40,6 +40,7 @@ function DescontoControle({ familia }: { familia: Familia }) {
   const updExibir = useUpdateExibirDesconto(familia.loteId);
   const updPct = useUpdateDescontoPctFamilia(familia.loteId);
   const pct = pctEfetivo(familia.descontoPct, globalPct ?? 15);
+  const podeAlterar = podeAlterarDescontoVisual(familia.formatoPublicacaoMl, familia.exibirComDesconto);
   // Preço de venda real (mesma fonte do card "Você recebe", painel-analise): menor
   // preço de PUBLICAÇÃO das cores incluídas — não o preço da planilha. Reage à edição.
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
@@ -52,11 +53,17 @@ function DescontoControle({ familia }: { familia: Familia }) {
       <Checkbox
         aria-label="Exibir com desconto"
         checked={familia.exibirComDesconto}
+        disabled={!podeAlterar}
         onCheckedChange={(v) => {
           updExibir.mutate({ familiaId: familia.id, exibir: !!v });
         }}
       />
       <span>Exibir com desconto</span>
+      {familia.formatoPublicacaoMl === 'user_products' && (
+        <span className="text-muted-foreground">
+          O ML não permite desconto apenas visual em User Products.
+        </span>
+      )}
       {familia.exibirComDesconto && (
         <>
           <Input

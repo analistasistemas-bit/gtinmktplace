@@ -37,6 +37,20 @@ export type LoteRow = Database['public']['Tables']['lotes']['Row'];
 export type FamiliaRow = Database['public']['Tables']['familias']['Row'];
 export type VariacaoRow = Database['public']['Tables']['variacoes']['Row'];
 
+type FormatoPublicacaoMlRow = { categoria_id: string };
+
+async function fetchCategoriasUserProducts(categoriaIds: Array<string | null>): Promise<Set<string>> {
+  const categorias = [...new Set(categoriaIds.filter((id): id is string => !!id))];
+  if (categorias.length === 0) return new Set<string>();
+  // A migration é recente e database.types.ts ainda não foi regenerado; leitura continua
+  // protegida por RLS da organização, como as demais auxiliares desta tela.
+  const { data } = await (supabase.from('ml_formato_publicacao' as never) as ReturnType<typeof supabase.from>)
+    .select('categoria_id')
+    .eq('formato', 'user_products')
+    .in('categoria_id', categorias);
+  return new Set((data ?? []).map((r) => (r as FormatoPublicacaoMlRow).categoria_id));
+}
+
 export async function fetchLotes(): Promise<LoteRow[]> {
   const { data, error } = await supabase
     .from('lotes')
@@ -120,7 +134,12 @@ async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<
 
 export async function fetchFamilias(
   loteId: string
-): Promise<(FamiliaRow & { variacoes: VariacaoRow[]; anuncios_externos: AnuncioExternoLite[]; skus_ativos_up: Set<string> })[]> {
+): Promise<(FamiliaRow & {
+  variacoes: VariacaoRow[];
+  anuncios_externos: AnuncioExternoLite[];
+  skus_ativos_up: Set<string>;
+  formato_publicacao_ml: 'user_products' | null;
+})[]> {
   const { data, error } = await supabase
     .from('familias')
     .select('*, variacoes(*)')
@@ -130,14 +149,16 @@ export async function fetchFamilias(
   const familias = (data ?? []) as (FamiliaRow & { variacoes: VariacaoRow[] })[];
 
   const codigosPai = [...new Set(familias.map((f) => f.codigo_pai))];
-  const [porCodigo, skusAtivos] = await Promise.all([
+  const [porCodigo, skusAtivos, categoriasUserProducts] = await Promise.all([
     fetchAnunciosPorCodigoPai(codigosPai),
     fetchSkusAtivosUP(codigosPai),
+    fetchCategoriasUserProducts(familias.map((f) => f.categoria_ml_id)),
   ]);
   return familias.map((f) => ({
     ...f,
     anuncios_externos: (porCodigo.get(f.codigo_pai) ?? []).sort((a, b) => a.particao - b.particao),
     skus_ativos_up: skusAtivos.get(f.codigo_pai) ?? new Set<string>(),
+    formato_publicacao_ml: categoriasUserProducts.has(f.categoria_ml_id ?? '') ? 'user_products' : null,
   }));
 }
 
@@ -188,8 +209,15 @@ export async function fetchFamiliaPublicada(familiaId: string): Promise<Familia>
   const row = data as FamiliaRow & { variacoes: VariacaoRow[] };
   // ADR-0088: mesma resolução do sinal UP que fetchFamilias — o expand de Publicados renderiza
   // criticasVariacao; sem o set, cores UP (mlVariationId=null) apareceriam como "sem foto" à toa.
-  const skusAtivos = await fetchSkusAtivosUP([row.codigo_pai]);
-  return familiaFromRow({ ...row, skus_ativos_up: skusAtivos.get(row.codigo_pai) ?? new Set<string>() });
+  const [skusAtivos, categoriasUserProducts] = await Promise.all([
+    fetchSkusAtivosUP([row.codigo_pai]),
+    fetchCategoriasUserProducts([row.categoria_ml_id]),
+  ]);
+  return familiaFromRow({
+    ...row,
+    skus_ativos_up: skusAtivos.get(row.codigo_pai) ?? new Set<string>(),
+    formato_publicacao_ml: categoriasUserProducts.has(row.categoria_ml_id ?? '') ? 'user_products' : null,
+  });
 }
 
 // ============================================================================
@@ -412,6 +440,8 @@ export function familiaFromRow(
     skus_ativos_up?: Set<string>;
     // ponytail: coluna aditiva (ADR-0065) — database.types.ts ainda não regenerado (db push pendente).
     preco_reancorado_lider?: boolean;
+    // Cache RLS-readable de ml_formato_publicacao, sintetizado nas queries acima.
+    formato_publicacao_ml?: 'user_products' | null;
   }
 ): Familia {
   const variacoes = r.variacoes.map((v) => variacaoFromRow(v, r.skus_ativos_up));
@@ -442,6 +472,7 @@ export function familiaFromRow(
     analiseMercado: (r.analise_mercado as AnaliseMercado | null) ?? null,
     tipoAviamento: r.tipo_aviamento,
     categoriaMlId: r.categoria_ml_id,
+    formatoPublicacaoMl: formatoPublicacaoMlFromRow(r),
     categoriaNome: r.categoria_nome,
     tipoOrigem: r.tipo_origem,
     concorrenciaCategoriaId: r.concorrencia_categoria_id,
@@ -483,6 +514,12 @@ export function familiaFromRow(
     descricaoStatus: (r as { descricao_status?: string | null }).descricao_status ?? null,
     descricaoErro: (r as { descricao_erro?: string | null }).descricao_erro ?? null,
   };
+}
+
+export function formatoPublicacaoMlFromRow(
+  r: { formato_publicacao_ml?: 'user_products' | null },
+): Familia['formatoPublicacaoMl'] {
+  return r.formato_publicacao_ml ?? null;
 }
 
 export async function fetchDescontoPct(): Promise<number> {

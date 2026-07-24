@@ -164,6 +164,8 @@ export interface Familia {
   analiseMercado: AnaliseMercado | null;
   tipoAviamento: TipoAviamento | null;
   categoriaMlId: string | null;
+  /** Formato confirmado pelo ML; null enquanto a categoria ainda não foi observada. */
+  formatoPublicacaoMl: 'legacy' | 'user_products' | null;
   categoriaNome: string | null;
   tipoOrigem: TipoOrigem | null;
   /** category_id do concorrente (ADR-0057) — sugestão não-vinculante no seletor de categoria. */
