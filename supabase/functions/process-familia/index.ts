@@ -7,6 +7,7 @@ import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { garantirLarguraDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -453,7 +454,7 @@ Deno.serve(async (req) => {
         coresUnicas.length === 1 ? coresUnicas[0] : null,
         coresUnicas.length,
       ),
-      descricao_ml: copy.descricao,
+      descricao_ml: garantirLarguraDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? ''),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
       custo_centavos: copy.custo_centavos + custoDesempateLLM,
