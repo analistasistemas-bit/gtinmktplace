@@ -255,7 +255,8 @@
   "sem lock" já aceita no resto do ADR-0088): o claim fecha a corrida entre 2 execuções do
   reconciliador e contra um worker que já tocou a raiz ANTES do claim, mas não cria um lease que
   sobreviva um worker que comece um instante DEPOIS do claim — mitigado pela janela anti-corrida de
-  15min. Requer schedule QStash criado fora do repo (CLI/dashboard), igual `reconciliar-faturamento`.
+  15min. Schedule QStash criado em produção (2026-07-24): `*/15 * * * *`, 3 retries
+  (`scd_5P1xe886r5SXj6ywwfUdEvY1stKn`).
 - **publicar-split-ml** *(worker, split — ADR-0048 + ADR-0078 F2)* — produto que excede 100 cores,
   OU tem preços de publicação divergentes, OU já está particionado publica em N anúncios
   ("partições"); `publicar-familias` roteia esses três casos pra cá (`decidirSplit`, ver acima).
@@ -473,6 +474,19 @@ DSA). ADR-0086 (item MP) / ADR-0031.
   `UPSTASH_REDIS_REST_URL`/`_TOKEN`, `MP_ACCESS_TOKEN`, `PUBLIAI_PUBLIC_URL`. Lista em `.env.example`.
 
 ---
+
+## Histórico — `reconciliar-faturamento` sem schedule QStash desde a criação (corrigida)
+
+Achado 2026-07-24 (investigando o schedule do reconciliador de convergência do ADR-0088): a
+`reconciliar-faturamento` foi criada em 2026-06-22 (ADR-0037) com a intenção explícita de rodar
+"QStash schedule 1h" — mas **nenhum schedule apontando pra ela existia de fato** na conta QStash
+(confirmado via `GET /v2/schedules`: só `backfill-faturamento`, `monitorar-moderados` e
+`notificar-liberacao`). A função exige `verificarAssinatura` (HMAC do QStash) e não tem nenhuma
+outra via de disparo (não é JWT/admin, não está no `render.yaml`) — ou seja, a rede de segurança
+contra webhooks perdidos de vendas/perguntas/devoluções **nunca rodou automaticamente** desde que
+foi construída (~1 mês). `verify_jwt=false` estava correto (ver histórico abaixo) — não era esse o
+problema, era a ausência literal do schedule. Corrigido: schedule `0 * * * *` (1h, conforme
+ADR-0037) criado em produção (`scd_7HR22qXe5kx4LogfYb2GStCDGcTD`).
 
 ## Histórico — divergência de `verify_jwt` no faturamento (corrigida)
 

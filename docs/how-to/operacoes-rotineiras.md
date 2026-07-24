@@ -74,8 +74,10 @@ Resumo: configurar Telegram em Configurações, deployar `monitorar-moderados`, 
 
 - **Backfill retroativo** (um período): tela de Faturamento dispara `backfill-faturamento` com
   o JWT do usuário. Não traz frete (shipment).
-- **Reconciliação periódica**: `reconciliar-faturamento` roda por schedule do QStash e cobre
-  webhooks perdidos (~72h). Ver [edge-functions.md](../reference/edge-functions.md).
+- **Reconciliação periódica**: `reconciliar-faturamento` roda por schedule do QStash (1h) e cobre
+  webhooks perdidos (~72h). **Achado 2026-07-24:** esse schedule não existia de fato desde a
+  criação da função (2026-06-22) — corrigido, ver
+  [edge-functions.md](../reference/edge-functions.md#histórico--reconciliar-faturamento-sem-schedule-qstash-desde-a-criação-corrigida).
 
 > Antes de confiar nesses fluxos, confira a nota de inconsistências de `verify_jwt` em
 > [edge-functions.md](../reference/edge-functions.md#inconsistências-conhecidas-de-verify_jwt) —
