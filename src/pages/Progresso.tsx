@@ -64,11 +64,17 @@ export default function Progresso() {
   const erradas = familias.filter((f) => f.status === 'erro').length;
   const pct = total > 0 ? Math.round((prontas / total) * 100) : 0;
 
-  const prontasCount = familias.filter((f) => f.status === 'pronto').length;
+  // "Terminou de processar" espelha a condição do trigger que move o lote pra
+  // 'revisao' (nenhuma família pendente/processando) — não exige ZERO erros: uma
+  // família com 'erro' não deve segurar o gate das demais que já estão elegíveis
+  // (achado da revisão: exigir prontasCount === familias.length escondia o atalho
+  // sempre que qualquer família do lote falhava, mesmo com dezenas de UPDATE prontas).
+  const aindaProcessando = familias.some(
+    (f) => f.status === 'pendente' || f.status === 'processando',
+  );
   const mostrarGateEstoqueRapido =
     (lote.status === 'revisao' || lote.status === 'processando') &&
-    prontasCount > 0 &&
-    prontasCount === familias.length &&
+    !aindaProcessando &&
     elegiveis.length > 0;
 
   async function confirmarEstoqueRapido() {

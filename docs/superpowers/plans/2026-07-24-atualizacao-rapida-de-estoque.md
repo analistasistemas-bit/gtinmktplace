@@ -684,3 +684,18 @@ foram tratados:
 - **N2 (corrigido):** contagem de testes no plano ajustada de 16 para 19 (10 + 9).
 - **N3 (corrigido):** `calcularZerados` agora filtra `operacao === 'UPDATE'` — família
   `CREATE` nunca entra no relatório de "estoque zerado nesta atualização".
+
+### Revisão final pós-build (achado real, corrigido)
+
+Depois das 3 tasks implementadas e testadas (19 novos testes + suíte completa
+2077/2077 verde), uma segunda revisão (read-only, olhando o diff completo + o trigger
+`update_lote_counters`, `supabase/migrations/20260609132501_lote_transicao_revisao.sql`)
+achou: o gate exigia `prontasCount === familias.length` (zero famílias em `'erro'`),
+mas o trigger que move o lote pra `'revisao'` só olha `status in ('pendente',
+'processando')` — uma família `'erro'` não bloqueia a transição. Resultado: em
+qualquer lote com pelo menos 1 família com erro, o gate de 1-clique nunca aparecia,
+mesmo com dezenas de outras famílias `UPDATE` já elegíveis — subentregando o valor
+principal da ADR-0089. Corrigido em `Progresso.tsx`: `mostrarGateEstoqueRapido` agora
+usa `aindaProcessando` (espelha exatamente a condição do trigger) em vez de exigir
+100% das famílias `'pronto'`. Rebuild + relint + suíte completa confirmados verdes
+após o fix.
