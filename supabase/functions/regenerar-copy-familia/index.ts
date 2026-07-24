@@ -1,8 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
-import { garantirLarguraDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLarguraMm, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { garantirLarguraDescricao, garantirMetragemDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 Deno.serve(async (req) => {
@@ -55,15 +55,22 @@ Deno.serve(async (req) => {
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
     const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
+    const larguraMm = extrairLarguraMm(`${familia.nome_pai}\n${familia.descricao_pai ?? ''}`);
     const tituloFinal = garantirCorTitulo(
-      garantirMetragemTitulo(
-        garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(result.titulo, familia.nome_pai, familia.descricao_pai ?? ''), result.tipo_produto_busca), familia.nome_pai),
-        familia.nome_pai,
+      garantirLarguraTitulo(
+        garantirMetragemTitulo(
+          garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(result.titulo, familia.nome_pai, familia.descricao_pai ?? ''), result.tipo_produto_busca), familia.nome_pai),
+          familia.nome_pai,
+        ),
+        larguraMm,
       ),
       coresUnicas.length === 1 ? coresUnicas[0] : null,
       coresUnicas.length,
     );
-    const descricaoFinal = garantirLarguraDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '');
+    const descricaoFinal = garantirMetragemDescricao(
+      garantirLarguraDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? ''),
+      familia.nome_pai,
+    );
 
     const { error: upErr } = await sb
       .from('familias')
