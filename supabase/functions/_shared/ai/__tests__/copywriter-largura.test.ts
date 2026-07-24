@@ -86,6 +86,40 @@ describe('garantirLarguraDescricao', () => {
     expect(out).toContain('📌 ESPECIFICAÇÕES');
     expect(out).toContain('• Largura: 6mm');
   });
+
+  it('bug real (franjas 03106110/03070220/03106098): largura em CM na descrição, ausente do bullet', () => {
+    const nomeFranja = 'FRANJA 5MM 100%FIBRA DE POLI 5MT';
+    const descricaoFranja =
+      'A FRANJA DA BÚFALO NA COR OURO, COM 5 CM DE LARGURA, É CONFECCIONADA EM MATERIAL 100% POLIÉSTER.';
+    const descricao = [
+      '📌 ESPECIFICAÇÕES',
+      '',
+      '• Composição: 100% poliéster',
+      '• Metragem: 5 metros',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+    ].join('\n');
+
+    const out = garantirLarguraDescricao(descricao, nomeFranja, descricaoFranja);
+
+    expect(out).toContain('• Largura: 5cm');
+    expect(out).toContain('• Metragem: 5 metros');
+  });
+
+  it('não confunde CM com MM: largura em cm não é considerada "já presente" por um valor em mm igual', () => {
+    // nome_pai grounded em CM ("5 CM DE LARGURA"); descrição já tem "5mm" (unidade DIFERENTE,
+    // dado diferente) — não pode contar como "já cravado" e pular a injeção do valor certo (cm).
+    const descricao = [
+      '📌 ESPECIFICAÇÕES',
+      '',
+      '• Diâmetro do fio: 5mm',
+      '',
+      '🎯 INDICAÇÕES DE USO',
+    ].join('\n');
+
+    const out = garantirLarguraDescricao(descricao, nomePai, 'PRODUTO COM 5 CM DE LARGURA.');
+    expect(out).toContain('• Largura: 5cm');
+  });
 });
 
 describe('garantirMetragemDescricao', () => {

@@ -6,7 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLarguraMm, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
 import { garantirLarguraDescricao, garantirMetragemDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
@@ -445,7 +445,7 @@ Deno.serve(async (req) => {
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044): famílias-irmãs que
     // diferem só na cor (PAI separado) não podem ter título idêntico.
     const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
-    const larguraMm = extrairLarguraMm(`${claimed.nome_pai}\n${claimed.descricao_pai ?? ''}`);
+    const largura = extrairLargura(`${claimed.nome_pai}\n${claimed.descricao_pai ?? ''}`);
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: garantirCorTitulo(
         garantirLarguraTitulo(
@@ -453,7 +453,7 @@ Deno.serve(async (req) => {
             garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(copy.titulo, claimed.nome_pai, claimed.descricao_pai ?? ''), copy.tipo_produto_busca), claimed.nome_pai),
             claimed.nome_pai,
           ),
-          larguraMm,
+          largura,
         ),
         coresUnicas.length === 1 ? coresUnicas[0] : null,
         coresUnicas.length,

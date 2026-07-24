@@ -29,15 +29,20 @@ export function contemMetragem(texto: string): boolean {
   return RE_METRAGEM.test(texto);
 }
 
-// Captura largura em mm do texto-fonte (ex.: "6MM DE LARGURA", "LARGURA DE 6MM", "LARGURA:
-// 6MM"). Exige a palavra LARGURA perto do número — nunca colide com RE_METRAGEM porque a
-// unidade exigida aqui é MM, não M/MT/METROS.
-const RE_LARGURA_MM = /(\d+(?:,\d+)?)\s*MM\s+DE\s+LARGURA\b|LARGURA\s*:?\s*(?:DE\s*)?(\d+(?:,\d+)?)\s*MM\b/i;
+// Captura largura em mm OU cm do texto-fonte (ex.: "6MM DE LARGURA", "LARGURA DE 6MM",
+// "LARGURA: 6MM", "COM 5 CM DE LARGURA"). Exige a palavra LARGURA perto do número — nunca colide
+// com RE_METRAGEM porque a unidade exigida aqui é MM/CM, não M/MT/METROS. Duas unidades porque a
+// planilha mistura as duas por produto (achado real: franjas 5/8/10MM no nome_pai, mas a
+// descrição do mesmo produto descreve a largura em CM — inconsistência da própria planilha,
+// não corrigida aqui, só capturada nas duas formas).
+const RE_LARGURA = /(\d+(?:,\d+)?)\s*(MM|CM)\s+DE\s+LARGURA\b|LARGURA\s*:?\s*(?:DE\s*)?(\d+(?:,\d+)?)\s*(MM|CM)\b/i;
 
-export function extrairLarguraMm(texto: string): string | null {
-  const m = texto.match(RE_LARGURA_MM);
+export function extrairLargura(texto: string): string | null {
+  const m = texto.match(RE_LARGURA);
   if (!m) return null;
-  return `${m[1] ?? m[2]}mm`;
+  const numero = m[1] ?? m[3];
+  const unidade = (m[2] ?? m[4]).toLowerCase();
+  return `${numero}${unidade}`;
 }
 
 // Conectivos/preposições que, sozinhos no fim do título, denunciam frase cortada
@@ -299,16 +304,17 @@ export function garantirCorTitulo(titulo: string, cor: string | null, nCores: nu
   return candidato;
 }
 
-// Garante que a largura em mm apareça no título quando grounded (ex.: "6MM DE LARGURA" na
-// descrição) — mesma rede de segurança de garantirMetragemTitulo/garantirCorTitulo, mas pra
-// largura, que costuma ficar só na descrição da planilha (não no nome_pai) e por isso a IA a
-// descarta com mais frequência ainda. Roda depois de garantirMetragemTitulo (largura acompanha
-// a metragem no mesmo segmento) e antes de garantirCorTitulo (que ainda clampa o tamanho final).
-export function garantirLarguraTitulo(titulo: string, larguraMm: string | null): string {
-  if (!larguraMm) return titulo;
-  if (new RegExp(`\\b${escaparRegex(larguraMm)}\\b`, 'i').test(titulo)) return titulo;
+// Garante que a largura (mm ou cm) apareça no título quando grounded (ex.: "6MM DE LARGURA" ou
+// "5 CM DE LARGURA" na descrição) — mesma rede de segurança de
+// garantirMetragemTitulo/garantirCorTitulo, mas pra largura, que costuma ficar só na descrição
+// da planilha (não no nome_pai) e por isso a IA a descarta com mais frequência ainda. Roda
+// depois de garantirMetragemTitulo (largura acompanha a metragem no mesmo segmento) e antes de
+// garantirCorTitulo (que ainda clampa o tamanho final).
+export function garantirLarguraTitulo(titulo: string, largura: string | null): string {
+  if (!largura) return titulo;
+  if (new RegExp(`\\b${escaparRegex(largura)}\\b`, 'i').test(titulo)) return titulo;
 
-  const sufixo = ` ${larguraMm.toUpperCase()}`;
+  const sufixo = ` ${largura.toUpperCase()}`;
   const partes = titulo.split(' | ');
   partes[0] = `${partes[0]}${sufixo}`.trim();
   let candidato = partes.join(' | ');

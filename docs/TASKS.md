@@ -39,6 +39,17 @@
   (`titulo-largura.test.ts` + ampliação de `copywriter-largura.test.ts`, incluindo composição
   título+cor+metragem+largura e descrição largura+metragem sem duplicar cabeçalho); suíte
   completa (2052 testes) + `tsc` + `deno check` + `pnpm lint` verdes.
+- [x] **Achado ao checar pendências**: `extrairLarguraMm` só reconhecia unidade MM; outras 3
+  famílias em revisão (franjas `03106110`/`03070220`/`03106098`) têm largura em **CM** na
+  descrição (`"5/8/10 CM DE LARGURA"`) — mesmo gap, unidade diferente, sem cobertura. Nota: o
+  `nome_pai` dessas franjas diz "5MM"/"8MM"/"10MM" mas a `descricao_pai` do mesmo produto diz
+  "CM" — inconsistência pré-existente da planilha, não alterada aqui, só capturada nas duas
+  formas. Fix: `extrairLarguraMm` renomeado para `extrairLargura` (`_shared/ai/titulo.ts`),
+  regex aceita `MM|CM`; `garantirLarguraDescricao` (`copywriter-prompt.ts`) generalizou a
+  checagem "já contém" pra extrair a unidade certa do valor achado, evitando que um "5mm" solto
+  na descrição seja confundido com uma largura de "5cm" grounded (dado diferente). 6 testes
+  novos cobrindo CM (extração, título, descrição, e não-confusão com mm); suíte completa
+  (2058 testes) + `tsc` + `deno check` + `pnpm lint` verdes.
 
 ## Flake do smoke test de rota do Dashboard — 2026-07-24
 
