@@ -48,7 +48,7 @@ async function fetchCategoriasUserProducts(categoriaIds: Array<string | null>): 
     .select('categoria_id')
     .eq('formato', 'user_products')
     .in('categoria_id', categorias);
-  return new Set((data ?? []).map((r) => (r as FormatoPublicacaoMlRow).categoria_id));
+  return new Set((data ?? []).map((r: unknown) => (r as FormatoPublicacaoMlRow).categoria_id));
 }
 
 export async function fetchLotes(): Promise<LoteRow[]> {
