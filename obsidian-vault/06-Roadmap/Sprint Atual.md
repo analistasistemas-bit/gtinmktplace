@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-23
+atualizado: 2026-07-24
 ---
 
 # Sprint Atual
@@ -22,6 +22,15 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
+- **Atualização rápida de estoque** (ADR-0089) — em produção 2026-07-24: atalho de 1-clique em
+  `Progresso.tsx` que publica automaticamente o estoque de famílias `UPDATE` sem nenhuma
+  pendência (nunca `CREATE`, nunca cor nova mesmo completa, preço sempre ignorado) — elimina a
+  seleção manual família a família na Revisão pra reposições puras de estoque. `/relatorio/{loteId}`
+  ganhou seção de variações/famílias que zeraram estoque na rodada. 100% frontend (zero
+  migration/edge nova), 24 testes novos. Plano revisado adversarialmente pelo Fable 5 antes de
+  codar (achou e evitou 1 furo real: cor nova completa não podia entrar no atalho) e revisado
+  com `/code-review-fable5` depois de pronto (88/100, 2 achados médios corrigidos no mesmo dia).
+  Merge direto pra `main`, sem PR. Ver [[Índice de ADRs]].
 - **Publicação em User Products com N itens por família (multi-cor)** (ADR-0088) — em produção
   2026-07-22/23: categorias do ML que exigem "item plano" (ADR-0084/0087) e têm >1 cor não aceitam
   o array `variations` — cada cor vira um item técnico separado, linkado por `family_id`, agregado

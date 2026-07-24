@@ -1,11 +1,11 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-07-22
+atualizado: 2026-07-24
 ---
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (83 ADRs, `0001`–`0083`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (89 ADRs, `0001`–`0089`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -100,5 +100,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0086 | [Configuração org-scoped (fechar leitura por organização + imposto LOUD)](../../docs/decisions/0086-configuracao-org-scoped.md) |
 | 0087 | [Detecção reativa de categorias que exigem item plano (family_name), sem lista mantida à mão](../../docs/decisions/0087-family-name-deteccao-reativa.md) |
 | 0088 | [Publicação em User Products com N itens técnicos por família (multi-cor)](../../docs/decisions/0088-publicacao-user-products-multi-item.md) |
+| 0089 | [Atualização rápida de estoque — publicação 1-clique para UPDATE sem pendência](../../docs/decisions/0089-atualizacao-rapida-de-estoque.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
