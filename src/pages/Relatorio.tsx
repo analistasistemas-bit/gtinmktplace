@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useLote } from '@/hooks/useLotes';
-import { useFamiliasResumo } from '@/hooks/useFamilias';
+import { useFamilias, useFamiliasResumo } from '@/hooks/useFamilias';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
+import { calcularZerados } from '@/lib/estoque-rapido';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -33,6 +35,11 @@ export default function Relatorio() {
     },
   });
 
+  // Famílias completas (com variações + estoqueAnterior), só pra calcular o relatório
+  // de zerados (ADR-0089) — o useFamiliasResumo acima não carrega variacoes.
+  const { data: familiasCompletas = [] } = useFamilias(loteId);
+  const zerados = useMemo(() => calcularZerados(familiasCompletas), [familiasCompletas]);
+
   const publicadas = familias.filter((f) => f.status === 'publicado').length;
   const emPublicacao = familias.filter((f) => f.status === 'publicando').length;
   const comErro = familias.filter((f) => f.status === 'erro').length;
@@ -55,6 +62,40 @@ export default function Relatorio() {
       <div className="mb-6">
         <JornadaLote status={lote.status} />
       </div>
+      {(zerados.variacoes.length > 0 || zerados.familias.length > 0) && (
+        <div className="mb-6 space-y-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
+          <p className="flex items-center gap-2 font-medium text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Estoque zerado nesta atualização
+          </p>
+          {zerados.variacoes.length > 0 && (
+            <div>
+              <p className="text-muted-foreground">
+                {zerados.variacoes.length} variação(ões) zeraram:
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {zerados.variacoes.map((v) => (
+                  <li key={`${v.familiaId}-${v.codigo}`}>
+                    {v.codigoPai} — {v.titulo} · {v.cor} ({v.codigo})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {zerados.familias.length > 0 && (
+            <div>
+              <p className="text-muted-foreground">
+                {zerados.familias.length} anúncio(s) sem nada vendável (todas as variações zeradas):
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {zerados.familias.map((f) => (
+                  <li key={f.familiaId}>{f.codigoPai} — {f.titulo}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       {publicando && (
         <div className="mb-6 space-y-2 rounded-lg border border-info/30 bg-info/5 px-4 py-3">
           <div className="flex items-center justify-between text-sm">
