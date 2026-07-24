@@ -2,6 +2,37 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Atualização rápida de estoque (1-clique) — ADR-0089 — 2026-07-24
+
+- [x] **Grill-with-docs + domain-modeling** (investigação antes de desenhar): a feature pedida
+  ("importar planilha e só atualizar estoque") já existia em parte — `ingest-lote` UPDATE só
+  toca estoque (ADR-0016) e a publicação já tinha o toggle `somenteEstoqueGlobal` que suprime
+  preço (ADR-0078). O gap real era a fricção: reposição pura de estoque ainda exigia entrar na
+  Revisão e selecionar família a família manualmente.
+- [x] **ADR-0089 escrita e revisada adversarialmente pelo Fable 5** (`Agent model: fable`) *antes*
+  de codar — achou e evitou um furo real: o critério inicial (só `familiaPublicavel`) deixaria
+  passar cor nova *completa* (foto+preço+estoque, mas nunca publicada no ML) no atalho de
+  1-clique, o que criaria uma variação nova no anúncio disfarçada de "atualização de estoque".
+- [x] **Implementado via subagent-driven-development** (3 tasks, TDD, 1 subagent por task): `src/lib/estoque-rapido.ts`
+  (`familiasElegiveisEstoqueRapido` + `calcularZerados`, 19 testes) → gate de 1-clique em
+  `Progresso.tsx` (restrito a `UPDATE` sem nenhuma pendência e sem nenhuma cor nova mesmo
+  completa; preço sempre suprimido) → seção "estoque zerado nesta atualização" (variações +
+  famílias 100% zeradas) em `Relatorio.tsx`. 100% frontend — zero migration, zero edge function
+  nova/alterada.
+- [x] **Revisão pós-build achou e corrigiu 1 bug real**: o gate exigia zero famílias em `erro` no
+  lote pra aparecer, escondendo o atalho sempre que qualquer família falhasse — mesmo com
+  dezenas de `UPDATE` já elegíveis. Corrigido pra espelhar a condição real do trigger de banco
+  `update_lote_counters` (só bloqueia com família `pendente`/`processando`, não `erro`).
+- [x] **`/code-review-fable5` rodado na branch inteira**: 88/100, APROVAR, 2 achados MÉDIOS — custo
+  de polling contínuo do fetch pesado (`useFamilias`) durante toda a fase de processamento, e a
+  lógica do gate sem teste dedicado (justo a que já tinha causado o bug acima). Ambos corrigidos
+  no mesmo dia: `deveExibirGateEstoqueRapido` extraída como função pura testada (5 casos novos,
+  incluindo a regressão real como caso de teste) e o polling do fetch pesado agora só liga perto
+  do fim do processamento (≤10% das famílias ainda pendentes).
+- [x] **Merge direto pra `main`** (fast-forward `c8ac841..3906a2a`, sem PR), suíte completa (2082
+  testes) + `pnpm build` + `pnpm lint` verdes antes do push. `docs/decisions/0089-atualizacao-rapida-de-estoque.md`,
+  `docs/superpowers/plans/2026-07-24-atualizacao-rapida-de-estoque.md`.
+
 ## Largura em mm omitida no título/descrição do copywriter — 2026-07-24
 
 - [x] **Produto 02994771 (lantejoula Búfalo) saiu de revisão sem "6mm de largura" no
