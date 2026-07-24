@@ -4,6 +4,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AppRoutes } from '@/App';
+import '@/pages/Dashboard';
+
+// AppRoutes carrega as páginas com React.lazy. Pré-transformar o Dashboard durante a coleta
+// impede que este smoke test de roteamento inclua no timeout do findByRole o custo variável do
+// primeiro transform do Vite quando outros arquivos da suíte estão sendo coletados em paralelo.
 
 // As rotas protegidas dependem de useAuth; mockamos com um usuário válido
 // para que ProtectedRoute libere a renderização. As rotas públicas

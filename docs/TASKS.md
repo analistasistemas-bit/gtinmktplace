@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Flake do smoke test de rota do Dashboard — 2026-07-24
+
+- [x] Investigado o flake histórico de `tests/App.test.tsx` ("renderiza Dashboard na rota /").
+  A falha deixava o DOM no fallback de `Suspense`: não era fetch do Dashboard, TanStack Query,
+  autenticação nem pool do Vitest. Causa raiz: o teste misturava o timeout padrão de 1s do
+  `findByRole` com o primeiro transform/import dinâmico de `Dashboard.tsx`; sob coleta concorrente
+  de outros arquivos, esse custo variava acima de 1s. Evidências RED: suíte completa falhou em
+  1,694ms; par mínimo `Dashboard.test.tsx` + `App.test.tsx` falhou em 1,189ms; isolado passou em
+  663ms. Um segundo teste da rota `/` passava em 87ms após o módulo entrar no cache.
+- [x] Fix sem timeout maior nem mudança de produção: `tests/App.test.tsx` pré-carrega o módulo real
+  `@/pages/Dashboard` durante a coleta, deixando o smoke test medir somente roteamento/renderização
+  via `React.lazy`. Par mínimo verde (15/15) e duas execuções completas consecutivas de
+  `pnpm test -- --run` verdes.
+
 ## Sino sem refresh + 2 bugs de CI silenciosos na main + branch protection — 2026-07-23
 
 - [x] **Sino de notificações não atualizava sozinho** — `useNotificacoesNaoLidas`/`useListaNotificacoes`
