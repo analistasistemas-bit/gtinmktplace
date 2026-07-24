@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Largura em mm omitida no título/descrição do copywriter — 2026-07-24
+
+- [x] **Produto 02994771 (lantejoula Búfalo) saiu de revisão sem "6mm de largura" no
+  título/descrição** — investigado com `systematic-debugging`. Confirmado via `supabase db
+  query --linked`: `descricao_pai` (planilha) tem "6MM DE LARGURA" íntegro (sem truncamento em
+  nenhum ponto do pipeline); `atributos_ml.DIAMETER` já capturava "6 mm" corretamente (caminho
+  determinístico da ficha técnica, ADR-0049); só `titulo_ml`/`descricao_ml` (texto livre do
+  copywriter, gpt-4o-mini) omitiam o dado. Causa raiz: ao contrário de metragem/cor/tipo de
+  produto, que têm rede de segurança determinística em `titulo.ts`
+  (`garantirMetragemTitulo`/`garantirCorTitulo`/`garantirTipoProdutoTitulo`), não havia guard
+  nenhum para largura — o prompt só *pede* pra IA citar "Largura" em ESPECIFICAÇÕES, sem
+  garantir, e a IA às vezes pula a seção inteira (era o caso real deste produto).
+- [x] **Fix determinístico**: `extrairLarguraMm`/`garantirLarguraDescricao`
+  (`_shared/ai/copywriter-prompt.ts`) — extrai "Xmm" grounded em nome_pai/descricao_pai e injeta
+  `• Largura: Xmm` na seção "📌 ESPECIFICAÇÕES" da descrição, criando a seção quando a IA a
+  omitiu. Aplicado nos dois pontos que persistem `descricao_ml`: `process-familia/index.ts`
+  (fluxo normal) e `regenerar-copy-familia/index.ts` (botão de regenerar copy do operador) —
+  mesma duplicação de guards já existente entre os dois arquivos. TDD: 11 testes novos
+  (`copywriter-largura.test.ts`), incluindo o cenário real do produto 02994771; suíte completa
+  (2028 testes) + `tsc` + `deno check` (`pnpm check:functions`) + `pnpm lint` verdes.
+- [ ] **Reprocessar produto 02994771** (e outros já em revisão com o mesmo gap) para a
+  descrição existente ganhar a largura — hoje só novas gerações/regenerações de copy usam o fix.
+
 ## Flake do smoke test de rota do Dashboard — 2026-07-24
 
 - [x] Investigado o flake histórico de `tests/App.test.tsx` ("renderiza Dashboard na rota /").

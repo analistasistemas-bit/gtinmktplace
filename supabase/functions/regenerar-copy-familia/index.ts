@@ -2,6 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { garantirLarguraDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 Deno.serve(async (req) => {
@@ -62,12 +63,13 @@ Deno.serve(async (req) => {
       coresUnicas.length === 1 ? coresUnicas[0] : null,
       coresUnicas.length,
     );
+    const descricaoFinal = garantirLarguraDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '');
 
     const { error: upErr } = await sb
       .from('familias')
       .update({
         titulo_ml: tituloFinal,
-        descricao_ml: result.descricao,
+        descricao_ml: descricaoFinal,
         tokens_input: result.tokens_input,
         tokens_output: result.tokens_output,
         custo_centavos: result.custo_centavos,
@@ -83,7 +85,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         titulo: tituloFinal,
-        descricao: result.descricao,
+        descricao: descricaoFinal,
         custo_centavos: result.custo_centavos,
       }),
       { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } },
