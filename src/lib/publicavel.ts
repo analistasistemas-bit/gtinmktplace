@@ -10,7 +10,7 @@ export interface ResultadoPublicavel {
 // Products (ADR-0088): cada cor é um item ML próprio e o backend grava `ml_variation_id=null` em todas
 // → o sinal é `jaCasadaUP` (SKU ativo em `anuncios_externos_itens`, resolvido no fetch). O OR mantém o
 // caminho Legacy byte-a-byte (jaCasadaUP undefined → cai em `mlVariationId` truthy, como antes).
-function casadaNoMl(v: Variacao): boolean {
+export function casadaNoMl(v: Variacao): boolean {
   return !!(v.mlVariationId || v.jaCasadaUP);
 }
 
