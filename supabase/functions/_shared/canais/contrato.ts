@@ -40,7 +40,8 @@ export type ErroCanalCodigo =
   | 'RATE_LIMIT' | 'INDISPONIVEL' | 'NAO_SUPORTADO' | 'DESCONHECIDO'
   // ADR-0088: categoria UP (item plano/family_name) com >1 cor — o conector recusa e a
   // orquestração roteia para a saga que cria N itens separados (um por SKU). Não é erro do ML.
-  | 'FORMATO_INCOMPATIVEL';
+  | 'FORMATO_INCOMPATIVEL'
+  | 'DESCONTO_INCOMPATIVEL';
 
 export interface ErroCanal {
   codigo: ErroCanalCodigo;

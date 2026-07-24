@@ -152,6 +152,16 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas[0].variations).toBeUndefined();
   });
 
+  it('categoria já no Set + desconto → DESCONTO_INCOMPATIVEL sem POST', async () => {
+    const chamadas = stubItems([]);
+    const anuncio = { ...anuncioBase, categoriaId: 'MLB271227', desconto: { pct: 15 } };
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncio);
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).toBe('DESCONTO_INCOMPATIVEL');
+    expect(res.erro?.mensagemOperador).toContain('desmarque');
+    expect(chamadas).toHaveLength(0);
+  });
+
   it('categoria fora do Set: 1º POST rejeitado com assinatura exata → 2º POST em formato plano → sucesso', async () => {
     const chamadas = stubItems([
       { status: 400, body: { message: 'Validation error', cause: causaExata } },
@@ -165,6 +175,16 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas[0].family_name).toBeUndefined();
     expect(chamadas[1].family_name).toBe('Kit Agulha Crochê');
     expect(chamadas[1].variations).toBeUndefined();
+  });
+
+  it('categoria nova + desconto: assinatura 369+374 → DESCONTO_INCOMPATIVEL sem 2º POST plano', async () => {
+    const chamadas = stubItems([
+      { status: 400, body: { message: 'Validation error', cause: causaExata } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, { ...anuncioBase, desconto: { pct: 15 } });
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).toBe('DESCONTO_INCOMPATIVEL');
+    expect(chamadas).toHaveLength(1);
   });
 
   it('1º POST rejeitado SEM a assinatura exata → nenhum retry, erro original propagado', async () => {

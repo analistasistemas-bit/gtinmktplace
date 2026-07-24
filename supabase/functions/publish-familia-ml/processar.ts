@@ -163,6 +163,15 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
         await confirmarFormatoPublicacao(formatoRepo, conexao!.id, categoria!, 'user_products');
         return await rotaSagaUP();
       }
+      if (e.codigo === 'DESCONTO_INCOMPATIVEL') {
+        if (conexao && categoria) {
+          await confirmarFormatoPublicacao(formatoRepo, conexao.id, categoria, 'user_products');
+        }
+        const msg = e.mensagemOperador;
+        await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+        await finalizarLote(job.lote_id);
+        return { tipo: 'erro', mensagem: msg };
+      }
       // item.pictures.unavailable: a foto recém-subida ainda propaga no ML (~2,5 min, medido no
       // lote #31). NÃO re-subimos nem limpamos o picture_id; reusamos o mesmo id e retentamos via
       // QStash. Só marca 'erro' visível quando esgotam os retries.

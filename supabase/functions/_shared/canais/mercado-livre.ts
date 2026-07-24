@@ -36,6 +36,17 @@ function formatoIncompativel(categoriaId: string | null): ResultadoCanal<RefAnun
   };
 }
 
+function descontoIncompativel(): ResultadoCanal<RefAnuncio> {
+  return {
+    ok: false,
+    erro: {
+      codigo: 'DESCONTO_INCOMPATIVEL',
+      mensagemOperador: 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.',
+      retentavel: false,
+    },
+  };
+}
+
 export const mercadoLivreConnector: ChannelConnector = {
   id: 'mercado_livre',
   capabilities: {
@@ -57,6 +68,9 @@ export const mercadoLivreConnector: ChannelConnector = {
     // Recusa ANTES de qualquer rede — precisa vir antes de getToken/lerSchemaAtributos: nessa
     // categoria montar() lançaria síncrono (ml/publicar.ts) e um POST seria desperdiçado. O caso
     // de 1 cor NÃO entra aqui — segue pelo caminho normal (item plano direto, ADR-0084/0087).
+    if (a.desconto && categoriaExigeFamilyName(a.categoriaId)) {
+      return descontoIncompativel();
+    }
     if (a.variacoes.length > 1 && categoriaExigeFamilyName(a.categoriaId)) {
       return formatoIncompativel(a.categoriaId);
     }
@@ -91,6 +105,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         r = await criarItemML(token, montar());
       } catch (e) {
         if (!precisaItemPlano((e as { status?: number }).status, (e as { mlCauses?: unknown }).mlCauses)) throw e;
+        if (a.desconto) return descontoIncompativel();
         // ADR-0088 branch (b): assinatura UP exata (369+374) numa categoria nova + >1 cor →
         // recusa como retorno normal (nunca reconstrói N variações num item plano — cada SKU
         // vira seu próprio item pela saga). Retry de 1 cor do ADR-0087 abaixo fica INTOCADO.

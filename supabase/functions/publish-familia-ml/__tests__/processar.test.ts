@@ -148,4 +148,26 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(upChamado).toBe(false);
     expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'publicado')).toBe(true);
   });
+
+  it('DESCONTO_INCOMPATIVEL → confirma cache UP, marca erro e não retenta', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, categoria_ml_id: 'MLB271227', exibir_com_desconto: true },
+    });
+    fakeConnector.falharProximo('DESCONTO_INCOMPATIVEL', false);
+    const { repo, salvos } = fakeFormatoRepo();
+    let loteFinalizado = 0;
+    const r = await processarFamiliaML(baseDeps(admin, {
+      formatoRepo: repo,
+      finalizarLote: async () => { loteFinalizado++; },
+    }), JOB, { tentativas: 3 });
+
+    expect(r).toEqual({ tipo: 'erro', mensagem: 'fake:DESCONTO_INCOMPATIVEL' });
+    expect(salvos.map((s) => s.formato)).toEqual(['user_products']);
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'familias',
+      payload: { status: 'erro', erro_mensagem: 'fake:DESCONTO_INCOMPATIVEL' },
+    }));
+    expect(loteFinalizado).toBe(1);
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(1);
+  });
 });
