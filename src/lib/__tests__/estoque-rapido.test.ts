@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { familiasElegiveisEstoqueRapido, calcularZerados } from '../estoque-rapido';
+import { familiasElegiveisEstoqueRapido, calcularZerados, deveExibirGateEstoqueRapido } from '../estoque-rapido';
 import type { Familia, Variacao } from '../tipos-dominio';
 
 function mkVar(over: Partial<Variacao> = {}): Variacao {
@@ -171,5 +171,64 @@ describe('calcularZerados', () => {
   test('sem nenhuma variação/família zerada: listas vazias', () => {
     const f = mkFam({ variacoes: [mkVar({ estoqueAnterior: 5, estoque: 5 })] });
     expect(calcularZerados([f])).toEqual({ variacoes: [], familias: [] });
+  });
+});
+
+// M2 (achado da revisão code-review-fable5 v1): esta condição já causou 1 bug real
+// (exigir 100% das famílias 'pronto' escondia o gate sempre que qualquer família do
+// lote falhava, mesmo com dezenas de UPDATE já elegíveis) — extraída como função pura
+// pra nunca mais regredir silenciosamente.
+describe('deveExibirGateEstoqueRapido', () => {
+  const elegivel = [mkFam()];
+
+  test('true quando não há família pendente/processando e há elegíveis', () => {
+    expect(
+      deveExibirGateEstoqueRapido({
+        loteStatus: 'revisao',
+        familias: [{ status: 'pronto' }, { status: 'pronto' }],
+        elegiveis: elegivel,
+      }),
+    ).toBe(true);
+  });
+
+  test('false quando há família ainda pendente ou processando, mesmo com elegíveis', () => {
+    expect(
+      deveExibirGateEstoqueRapido({
+        loteStatus: 'processando',
+        familias: [{ status: 'pronto' }, { status: 'processando' }],
+        elegiveis: elegivel,
+      }),
+    ).toBe(false);
+  });
+
+  // Regressão a evitar: o bug real que motivou este teste.
+  test('true mesmo com 1 família em erro, desde que haja elegíveis', () => {
+    expect(
+      deveExibirGateEstoqueRapido({
+        loteStatus: 'revisao',
+        familias: [{ status: 'pronto' }, { status: 'erro' }],
+        elegiveis: elegivel,
+      }),
+    ).toBe(true);
+  });
+
+  test('false quando não há nenhuma família elegível', () => {
+    expect(
+      deveExibirGateEstoqueRapido({
+        loteStatus: 'revisao',
+        familias: [{ status: 'pronto' }],
+        elegiveis: [],
+      }),
+    ).toBe(false);
+  });
+
+  test('false quando lote.status não é revisao nem processando', () => {
+    expect(
+      deveExibirGateEstoqueRapido({
+        loteStatus: 'concluido',
+        familias: [{ status: 'pronto' }],
+        elegiveis: elegivel,
+      }),
+    ).toBe(false);
   });
 });

@@ -11,7 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { JornadaLote } from '@/components/jornada-lote';
 import { totalAnomalias } from '@/lib/tipos-dominio';
-import { familiasElegiveisEstoqueRapido } from '@/lib/estoque-rapido';
+import { familiasElegiveisEstoqueRapido, deveExibirGateEstoqueRapido } from '@/lib/estoque-rapido';
 import { publicarFamilias } from '@/lib/publicar';
 import { QK } from '@/lib/queries';
 
@@ -28,12 +28,18 @@ export default function Progresso() {
     refetchInterval: polling ? 2500 : undefined,
   });
   // Famílias completas (com variações), só pra calcular elegibilidade do atalho de
-  // 1-clique (ADR-0089) — o useFamiliasResumo acima não carrega variacoes. Mesmo
-  // polling de fallback do resumo (linha acima): o realtime tem a mesma race condition
-  // documentada ali (~1-2s pra subscription estabilizar), e um resumo mais rápido que
-  // esta query completa faria o efeito abaixo decidir com `elegiveis` desatualizado.
+  // 1-clique (ADR-0089) — o useFamiliasResumo acima não carrega variacoes. `useFamilias`
+  // é bem mais pesada (select * + variacoes(*) + 3 sub-queries, ver fetchFamilias em
+  // queries.ts) — só vale pollar perto do fim do processamento (achado da revisão
+  // code-review-fable5 v1: pollar do início ao fim de lotes grandes desperdiça rede/DB
+  // sem nenhum ganho, já que `elegiveis` só importa no momento da decisão final).
+  const restamProcessando = familias.filter(
+    (f) => f.status === 'pendente' || f.status === 'processando',
+  ).length;
+  const quaseTerminado =
+    polling && familias.length > 0 && restamProcessando <= Math.max(1, Math.ceil(familias.length * 0.1));
   const { data: familiasCompletas = [], isSuccess: familiasCompletasCarregadas } = useFamilias(loteId, {
-    refetchInterval: polling ? 2500 : undefined,
+    refetchInterval: quaseTerminado ? 2500 : undefined,
   });
   const elegiveis = useMemo(
     () => familiasElegiveisEstoqueRapido(familiasCompletas),
@@ -64,18 +70,11 @@ export default function Progresso() {
   const erradas = familias.filter((f) => f.status === 'erro').length;
   const pct = total > 0 ? Math.round((prontas / total) * 100) : 0;
 
-  // "Terminou de processar" espelha a condição do trigger que move o lote pra
-  // 'revisao' (nenhuma família pendente/processando) — não exige ZERO erros: uma
-  // família com 'erro' não deve segurar o gate das demais que já estão elegíveis
-  // (achado da revisão: exigir prontasCount === familias.length escondia o atalho
-  // sempre que qualquer família do lote falhava, mesmo com dezenas de UPDATE prontas).
-  const aindaProcessando = familias.some(
-    (f) => f.status === 'pendente' || f.status === 'processando',
-  );
-  const mostrarGateEstoqueRapido =
-    (lote.status === 'revisao' || lote.status === 'processando') &&
-    !aindaProcessando &&
-    elegiveis.length > 0;
+  const mostrarGateEstoqueRapido = deveExibirGateEstoqueRapido({
+    loteStatus: lote.status,
+    familias,
+    elegiveis,
+  });
 
   async function confirmarEstoqueRapido() {
     if (!loteId) return;

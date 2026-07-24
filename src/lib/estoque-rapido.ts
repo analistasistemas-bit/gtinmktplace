@@ -1,5 +1,5 @@
 import { familiaPublicavel, casadaNoMl } from './publicavel';
-import type { Familia, Variacao } from './tipos-dominio';
+import type { Familia, FamiliaStatus, LoteStatus, Variacao } from './tipos-dominio';
 
 // familiaPublicavel só reprova cor nova INCOMPLETA (sem foto/cor/preço) — uma cor nova
 // COMPLETA passa em familiaPublicavel().ok mesmo nunca tendo ido ao ML. Publicá-la
@@ -19,6 +19,28 @@ function temCorNovaIncluida(f: Familia): boolean {
 export function familiasElegiveisEstoqueRapido(familias: Familia[]): Familia[] {
   return familias.filter(
     (f) => f.operacao === 'UPDATE' && familiaPublicavel(f).ok && !temCorNovaIncluida(f),
+  );
+}
+
+// ADR-0089 (achado da revisão code-review-fable5 v1): decide se o gate de 1-clique
+// aparece em Progresso.tsx. Extraída como função pura porque a primeira versão dessa
+// condição (exigir 100% das famílias 'pronto') tinha um bug real — escondia o gate
+// sempre que qualquer família do lote estivesse em 'erro', mesmo com dezenas de
+// famílias UPDATE já elegíveis. "Terminou de processar" espelha a mesma condição do
+// trigger de banco que move o lote pra 'revisao' (nenhuma família pendente/
+// processando) — não exige zero erros.
+export function deveExibirGateEstoqueRapido(params: {
+  loteStatus: LoteStatus;
+  familias: { status: FamiliaStatus }[];
+  elegiveis: Familia[];
+}): boolean {
+  const aindaProcessando = params.familias.some(
+    (f) => f.status === 'pendente' || f.status === 'processando',
+  );
+  return (
+    (params.loteStatus === 'revisao' || params.loteStatus === 'processando') &&
+    !aindaProcessando &&
+    params.elegiveis.length > 0
   );
 }
 
