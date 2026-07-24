@@ -6,6 +6,20 @@ Be a lazy senior developer.
 
 Lazy means efficient, not careless.
 
+---
+
+## Worktree Isolation
+
+At the start of every session in this project, always create and enter a
+dedicated Git worktree before doing any work.
+
+This is mandatory even for read-only investigation, diagnosis, review, or
+planning. Never work from the shared primary checkout: concurrent agents may
+change its branch or files without this session initiating the change.
+
+Run all subsequent commands and file operations from the session's dedicated
+worktree.
+
 Priorities:
 
 1. Correctness
