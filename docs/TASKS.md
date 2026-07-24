@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Link direto pro ML nas notificações (venda/pergunta/devolução) — 2026-07-24
+
+- [x] `montarMensagemNovaVenda`/`NovaPergunta`/`NovaDevolucao` (`_shared/notificacoes/telegram.ts`)
+  passaram a embutir, como última linha do texto, a URL específica no Mercado Livre (pedido/pacote,
+  anúncio do item, ou reclamação — mesmos formatos já usados em `detalhe-pedido-itens.tsx` e
+  `aba-devolucoes.tsx`). O sino in-app (`notificacoes-bell.tsx`) já fazia `linkify()` de qualquer
+  URL crua no texto, então zero mudança de frontend ou migration — só os 3 workers (`sync-venda`,
+  `sync-pergunta`) passando o dado extra (`pack_id`, `item_id`) que já tinham em mãos.
+
 ## Atualização rápida de estoque (1-clique) — ADR-0089 — 2026-07-24
 
 - [x] **Grill-with-docs + domain-modeling** (investigação antes de desenhar): a feature pedida

@@ -102,6 +102,7 @@ Deno.serve(async (req) => {
   if (novaPaga && orgId && await reservarNotificacao(admin, orgId, userId, 'venda_paga', String(pedido.id))) {
     await notificarCategoria(admin, orgId, 'vendas', montarMensagemNovaVenda({
       order_id: Number(pedido.id),
+      pack_id: pedido.pack_id != null ? Number(pedido.pack_id) : null,
       comprador: compradorNome,
       itens: itens.map((i) => ({ titulo: i.titulo, quantity: i.quantity, ean: i.ean })),
       total: Number(pedido.total_amount ?? 0),

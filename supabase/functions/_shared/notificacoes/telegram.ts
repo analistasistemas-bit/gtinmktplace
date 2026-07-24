@@ -65,6 +65,7 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
 
 export interface NovaVendaAlerta {
   order_id: number;
+  pack_id?: number | null;
   comprador: string | null;
   itens: Array<{ titulo: string | null; quantity: number; ean: string | null }>;
   total: number;
@@ -73,6 +74,13 @@ export interface NovaVendaAlerta {
 
 const fmtBRL = (n: number, moeda: string) =>
   moeda === 'BRL' ? `R$ ${n.toFixed(2).replace('.', ',')}` : `${moeda} ${n.toFixed(2)}`;
+
+/** Mesmo padrão de link usado em detalhe-pedido-itens.tsx: pedido com pack usa a URL de pacote. */
+function urlVendaML(orderId: number, packId?: number | null): string {
+  return packId
+    ? `https://www.mercadolivre.com.br/vendas/pacote/${packId}/detalhe`
+    : `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`;
+}
 
 export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
   const itens = v.itens
@@ -83,6 +91,7 @@ export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
     `💰 Nova venda${comprador} — ${fmtBRL(v.total, v.moeda)}`,
     itens,
     `Pedido ${v.order_id}`,
+    urlVendaML(v.order_id, v.pack_id),
   ].filter(Boolean).join('\n');
 }
 
@@ -90,6 +99,7 @@ export interface NovaPerguntaAlerta {
   question_id: number;
   texto: string;
   item_titulo: string | null;
+  item_id: string | null;
 }
 
 export function montarMensagemNovaPergunta(p: NovaPerguntaAlerta): string {
@@ -98,7 +108,8 @@ export function montarMensagemNovaPergunta(p: NovaPerguntaAlerta): string {
     `❓ Nova pergunta${sobre}:`,
     `"${p.texto}"`,
     `Responda pelo PubliAI (menu Faturamento › Perguntas).`,
-  ].join('\n');
+    p.item_id ? `https://produto.mercadolivre.com.br/${p.item_id.replace(/^MLB/, 'MLB-')}` : null,
+  ].filter(Boolean).join('\n');
 }
 
 export interface NovaMensagemAlerta {
@@ -132,6 +143,14 @@ export function montarMensagemLiberacao(total: number, n: number, moeda: string)
   ].join('\n');
 }
 
+/** Mesma condição de detalhe-pedido-itens.tsx/aba-devolucoes.tsx: 'returns' não tem claim
+ * específico no ML, só a lista filtrada; os demais tipos abrem direto na reclamação. */
+function urlDevolucaoML(tipo: string, claimId: number): string {
+  return tipo === 'returns'
+    ? 'https://www.mercadolivre.com.br/post-purchase/post-sales?main.filter=returns&temporal.filter=in-process'
+    : `https://www.mercadolivre.com.br/vendas/reclamacoes/vendedor/${claimId}`;
+}
+
 export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
   const valor = d.valor != null ? ` (${fmtBRL(d.valor, d.moeda)})` : '';
   const pedido = d.order_id ? ` do pedido ${d.order_id}` : '';
@@ -139,6 +158,7 @@ export function montarMensagemNovaDevolucao(d: NovaDevolucaoAlerta): string {
   return [
     `↩️ Nova ${d.tipo === 'return' ? 'devolução' : 'reclamação'}${pedido}${valor}${motivo}`,
     `Acompanhe em Faturamento › Devoluções e aja dentro do prazo do ML.`,
+    urlDevolucaoML(d.tipo, d.claim_id),
   ].join('\n');
 }
 
