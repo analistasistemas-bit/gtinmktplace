@@ -40,9 +40,9 @@
 Run:
 
 ```bash
-mkdir -p /tmp/publiai-vault-audit
-find obsidian-vault -type f -name '*.md' -print | sort > /tmp/publiai-vault-audit/notes.txt
-rg -n '\[\[[^]]+\]\]' obsidian-vault > /tmp/publiai-vault-audit/wikilinks.txt
+rtk mkdir -p /tmp/publiai-vault-audit
+rtk find obsidian-vault -type f -name '*.md' -print | rtk sort > /tmp/publiai-vault-audit/notes.txt
+rtk rg -n '\[\[[^]]+\]\]' obsidian-vault > /tmp/publiai-vault-audit/wikilinks.txt
 ```
 
 Expected: `notes.txt` contém todas as notas; `wikilinks.txt` contém todas as ocorrências de wikilinks.
@@ -52,11 +52,17 @@ Expected: `notes.txt` contém todas as notas; `wikilinks.txt` contém todas as o
 Run:
 
 ```bash
-find docs/decisions -type f -name '*.md' -print | sort > /tmp/publiai-vault-audit/adrs.txt
-graphify query "Map current PubliAI architecture, modules, integrations and active roadmap work" \
-  --graph "/Users/diego/Desktop/IA/Anuncios MktPlace/graphify-out/graph.json" \
+rtk mkdir -p graphify-out
+rtk cp -p "$PUBLIAI_GRAPHIFY_SNAPSHOT/graph.json" graphify-out/graph.json
+rtk find docs/decisions -type f -name '*.md' -print | rtk sort > /tmp/publiai-vault-audit/adrs.txt
+rtk graphify query "Map current PubliAI architecture, modules, integrations and active roadmap work" \
+  --graph "graphify-out/graph.json" \
   --budget 4000 > /tmp/publiai-vault-audit/graphify.txt
 ```
+
+`PUBLIAI_GRAPHIFY_SNAPSHOT` deve apontar para um snapshot Graphify imutável fornecido pela
+orquestração, nunca para outro checkout. A cópia é materializada neste worktree antes da consulta;
+durante a auditoria, Graphify lê exclusivamente `graphify-out/graph.json` local.
 
 Expected: inventário de ADRs e contexto Graphify disponíveis para comparação.
 
@@ -79,8 +85,8 @@ Para cada divergência, adicione uma linha a `findings.tsv` com uma destas categ
 Run:
 
 ```bash
-sort -u /tmp/publiai-vault-audit/findings.tsv -o /tmp/publiai-vault-audit/findings.tsv
-cut -f1 /tmp/publiai-vault-audit/findings.tsv | sort | uniq -c
+rtk sort -u /tmp/publiai-vault-audit/findings.tsv -o /tmp/publiai-vault-audit/findings.tsv
+rtk cut -f1 /tmp/publiai-vault-audit/findings.tsv | rtk sort | rtk uniq -c
 ```
 
 Expected: nenhuma categoria fora de `factual`, `link`, `metadata`, `missing`; nenhuma recomendação puramente editorial.
@@ -112,9 +118,9 @@ Em cada nota afetada:
 Run:
 
 ```bash
-git diff -- obsidian-vault/00-Home obsidian-vault/01-Arquitetura \
+rtk git diff -- obsidian-vault/00-Home obsidian-vault/01-Arquitetura \
   obsidian-vault/02-Fluxos obsidian-vault/03-Módulos
-git diff --check
+rtk git diff --check
 ```
 
 Expected: somente correções respaldadas por linhas de `findings.tsv`; zero erro de whitespace.
@@ -122,9 +128,9 @@ Expected: somente correções respaldadas por linhas de `findings.tsv`; zero err
 - [ ] **Step 3: Commit**
 
 ```bash
-git add obsidian-vault/00-Home obsidian-vault/01-Arquitetura \
+rtk git add obsidian-vault/00-Home obsidian-vault/01-Arquitetura \
   obsidian-vault/02-Fluxos obsidian-vault/03-Módulos
-git commit -m "docs(vault): sincroniza arquitetura fluxos e módulos"
+rtk git commit -m "docs(vault): sincroniza arquitetura fluxos e módulos"
 ```
 
 ### Task 3: Corrigir decisões, bugs, roadmap e índices
@@ -156,8 +162,8 @@ Corrija somente entradas presentes em `findings.tsv`. `Sprint Atual.md` deve ref
 Run:
 
 ```bash
-git diff -- obsidian-vault/04-Decisões obsidian-vault/05-Bugs obsidian-vault/06-Roadmap
-git diff --check
+rtk git diff -- obsidian-vault/04-Decisões obsidian-vault/05-Bugs obsidian-vault/06-Roadmap
+rtk git diff --check
 ```
 
 Expected: índice e roadmap coerentes com as fontes; nenhuma reorganização estrutural.
@@ -165,8 +171,8 @@ Expected: índice e roadmap coerentes com as fontes; nenhuma reorganização est
 - [ ] **Step 4: Commit**
 
 ```bash
-git add obsidian-vault/04-Decisões obsidian-vault/05-Bugs obsidian-vault/06-Roadmap
-git commit -m "docs(vault): atualiza decisões bugs e roadmap"
+rtk git add obsidian-vault/04-Decisões obsidian-vault/05-Bugs obsidian-vault/06-Roadmap
+rtk git commit -m "docs(vault): atualiza decisões bugs e roadmap"
 ```
 
 ### Task 4: Validação integral e relatório
@@ -187,8 +193,8 @@ Verifique que toda nota que já possuía frontmatter continua começando e termi
 Run:
 
 ```bash
-rg -l '^---$' obsidian-vault | sort > /tmp/publiai-vault-audit/frontmatter.txt
-rg -n '^atualizado:' obsidian-vault
+rtk rg -l '^---$' obsidian-vault | rtk sort > /tmp/publiai-vault-audit/frontmatter.txt
+rtk rg -n '^atualizado:' obsidian-vault
 ```
 
 Expected: nenhum bloco truncado e nenhuma data futura ou inválida.
@@ -206,9 +212,9 @@ Expected: zero wikilink interno quebrado não documentado.
 Run:
 
 ```bash
-rg -n 'próximo foco|em produção|pendente|concluído|E5|E6b|ADR-00' obsidian-vault
-git diff --check
-git status --short
+rtk rg -n 'próximo foco|em produção|pendente|concluído|E5|E6b|ADR-00' obsidian-vault
+rtk git diff --check
+rtk git status --short
 ```
 
 Compare os resultados com `docs/project-status.md`, `docs/TASKS.md` e o índice de ADRs.
@@ -220,8 +226,8 @@ Expected: nenhuma contradição remanescente e somente arquivos de documentaçã
 Run:
 
 ```bash
-git diff main...HEAD -- obsidian-vault
-git diff --stat main...HEAD
+rtk git diff main...HEAD -- obsidian-vault
+rtk git diff --stat main...HEAD
 ```
 
 Expected: menor diff suficiente para eliminar todos os itens de `findings.tsv`.
@@ -229,9 +235,8 @@ Expected: menor diff suficiente para eliminar todos os itens de `findings.tsv`.
 - [ ] **Step 5: Commit de correções de validação, se necessário**
 
 ```bash
-git add obsidian-vault
-git commit -m "docs(vault): corrige links e metadados da auditoria"
+rtk git add obsidian-vault
+rtk git commit -m "docs(vault): corrige links e metadados da auditoria"
 ```
 
 Se nenhuma correção adicional for necessária, não crie commit vazio.
-
