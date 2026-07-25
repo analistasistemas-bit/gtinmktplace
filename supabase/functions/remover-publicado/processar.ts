@@ -130,7 +130,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   // busca → a próxima planilha ainda viraria UPDATE no anúncio morto. Removemos TODAS as linhas
   // publicadas do mesmo codigo_pai para realmente cortar o vínculo.
   const { data: familias, error: familiasErr } = await admin.from('familias')
-    .select('id, lote_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
+    .select('id, lote_id, user_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
     .eq('codigo_pai', alvo.codigo_pai).eq('org_id', orgId).not('ml_item_id', 'is', null);
   // Fail-closed (revisão Codex): erro aqui virando `alvos=[]` reportaria `ok` sem remover nada.
   if (familiasErr) throw new Error(`remover-publicado: listar famílias pra excluir falhou: ${familiasErr.message}`);
@@ -156,24 +156,20 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     }
   }
 
-  const pathsCandidatos = [...new Set(alvos.flatMap((f) => pathsDaFamilia({
-    capa_storage_path: f.capa_storage_path,
-    capa2_storage_path: f.capa2_storage_path,
-    capa3_storage_path: f.capa3_storage_path,
-    variacoes: f.variacoes ?? [],
-  })))];
-  // Guard de posse: `capa*_storage_path` é editável por qualquer membro da org (RLS
-  // "familias: update org"), e este remove roda com service_role. Sem o filtro, um membro
-  // apontaria a capa para o prefixo de OUTRO tenant e apagaria o arquivo dele daqui.
-  // O prefixo válido é o id de um profile da própria org — mesma regra da RLS de leitura
-  // do bucket (migration 20260705165828, "imagens: select org").
-  const { data: donosOrg, error: donosErr } = await admin.from('profiles')
-    .select('id').eq('org_id', orgId);
-  if (donosErr) throw new Error(`remover-publicado: listar donos da org falhou: ${donosErr.message}`);
-  const paths = filtrarPathsDeDonos(
-    pathsCandidatos,
-    new Set((donosOrg ?? []).map((p: { id: string }) => p.id)),
-  );
+  // Guard de posse: `capa*_storage_path` é editável por QUALQUER membro da org (RLS
+  // "familias: update org"), e este remove roda com service_role — a RLS de storage, que só
+  // deixa apagar sob o próprio prefixo ("imagens: delete own"), não se aplica aqui. Cada
+  // família só pode apagar arquivo sob o prefixo do SEU dono: travar na org seria mais frouxo
+  // que a RLS que esta função substitui, e deixaria um membro apagar arquivo de um colega.
+  const paths = [...new Set(alvos.flatMap((f) => filtrarPathsDeDonos(
+    pathsDaFamilia({
+      capa_storage_path: f.capa_storage_path,
+      capa2_storage_path: f.capa2_storage_path,
+      capa3_storage_path: f.capa3_storage_path,
+      variacoes: f.variacoes ?? [],
+    }),
+    new Set([f.user_id as string]),
+  )))];
   if (paths.length > 0) {
     const { error } = await admin.storage.from('imagens').remove(paths);
     if (error) console.warn('remover-publicado storage falhou (segue):', error.message);

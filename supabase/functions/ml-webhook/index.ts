@@ -51,9 +51,24 @@ Deno.serve(async (req) => {
   // Janela fixa de 60s (o TTL nasce no 1º evento), no lugar da janela deslizante da query.
   try {
     const janelaSeg = Math.floor(JANELA_THROTTLE_MS / 1000);
-    const recentes = await redisIncrComTTL(`throttle:ml-webhook:${userId}`, janelaSeg);
-    if (deveThrottlar(recentes)) return ok(); // acima do limite: dropa (ACK, sem insert/enqueue); reconciliar-faturamento recupera.
-  } catch { /* fail-open: segue o fluxo normal abaixo. */ }
+    // A janela entra NA CHAVE, não só no TTL. Se o EXPIRE falhar depois do INCR, a chave fica
+    // sem TTL — com chave fixa ela seria imortal e, passando de 200, calaria os webhooks desse
+    // vendedor para sempre (ACK 200, sem log, e perguntas/devoluções não têm backstop). Com a
+    // janela na chave, o pior caso é vazar uma chave: a janela seguinte usa outra de qualquer jeito.
+    const janela = Math.floor(Date.now() / JANELA_THROTTLE_MS);
+    const recentes = await redisIncrComTTL(`throttle:ml-webhook:${userId}:${janela}`, janelaSeg);
+    // Acima do limite: dropa (ACK, sem insert/enqueue). `orders_v2`/`shipments` voltam pelo
+    // job horário reconciliar-faturamento; `questions`, `claims` e `messages` NÃO têm backstop
+    // (ver comentário abaixo e reenfileirar-mensagens.ts) — para esses, o evento se perde.
+    if (deveThrottlar(recentes)) {
+      console.warn(`ml-webhook: throttle ativo p/ user ${userId} (${recentes} eventos na janela), evento ${ev.topic} descartado`);
+      return ok();
+    }
+  } catch (e) {
+    // fail-open: segue o fluxo normal abaixo. Loga porque um Redis fora do ar (ou UPSTASH_*
+    // ausente) transforma o throttle num no-op permanente e silencioso.
+    console.warn('ml-webhook: throttle indisponível, seguindo sem limite:', e instanceof Error ? e.message : String(e));
+  }
 
   // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira — exceto
   // `messages` (Step 4, plan 035): o resource é o mesmo para toda a conversa, então a linha de

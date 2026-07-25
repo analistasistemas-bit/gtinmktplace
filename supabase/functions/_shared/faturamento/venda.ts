@@ -38,7 +38,7 @@ export const MAX_RESOURCE_LEN = 256;
 /** Formato de caminho de recurso do ML: só segmentos alfanuméricos, '-', '_' e '.'. Rejeita
  *  espaço, byte de controle e qualquer coisa que não seja path — o valor vai para uma coluna
  *  indexada de um endpoint público, e falha de INSERT por valor malformado abria o fail-open. */
-const RESOURCE_VALIDO = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/;
+const RESOURCE_VALIDO = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*\/?$/;
 
 /** Normaliza a notificação do ML. null quando faltam campos obrigatórios. */
 export function parseWebhookNotification(raw: unknown): WebhookEvento | null {

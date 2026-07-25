@@ -82,7 +82,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, // alvo
         [], // emVoo
-        [{ id: 'fam-1', lote_id: 'lote-1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
       anuncios_externos: [[{ id: 'ext-1' }]],
@@ -156,7 +156,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
-        [{ id: 'fam-1', lote_id: 'lote-1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
       anuncios_externos: [[{ id: 'ext-1' }]],
@@ -173,7 +173,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
-        [{ id: 'fam-1', lote_id: 'lote-1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
       anuncios_externos: [[]],
@@ -207,7 +207,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     const { admin, deletes } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [],
-        [{ id: 'fam-1', lote_id: 'l1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       // 1ª leitura (gate inicial): mudando_composicao=false. 2ª leitura (re-check pré-delete): true.
       anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: true }]],
@@ -225,11 +225,10 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     const { admin, deletes, removidos } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [],
-        [{ id: 'fam-1', lote_id: 'l1', capa_storage_path: `${DONO}/capas/x.jpg`, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: `${DONO}/capas/x.jpg`, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: true }]],
       anuncios_externos_itens: [[]],
-      profiles: [[{ id: DONO }]], // path é legítimo: quem aborta é a re-checagem, não o guard
     });
     const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
     expect(r.tipo).toBe('em_voo');
@@ -275,7 +274,7 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
     const { admin } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [],
-        [{ id: 'fam-1', lote_id: 'l1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       anuncios_externos: [[]],
       'familias:delete': [ERRO('constraint')],
@@ -288,7 +287,7 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
     const { admin } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [],
-        [{ id: 'fam-1', lote_id: 'l1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       anuncios_externos: [[]],
       'anuncios_externos:delete': [ERRO('timeout')],
@@ -305,7 +304,7 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, // alvo
         [], // emVoo
         [{ // paraExcluir
-          id: 'fam-1', lote_id: 'lote-1',
+          id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
           capa_storage_path: `${DONO}/capas/x.jpg`, capa2_storage_path: null, capa3_storage_path: null,
           variacoes: [{ imagem_path: `${DONO}/imgs/y.jpg` }],
         }],
@@ -313,7 +312,6 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
       ],
       anuncios_externos: [[{ id: 'ext-1' }]], // raiz existe (legacy também grava aqui)
       anuncios_externos_itens: [[]], // mas SEM filho técnico UP
-      profiles: [[{ id: DONO }]], // donos válidos de path nesta org
       lotes: [],
     });
 
@@ -328,26 +326,27 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
     expect(removidos).toEqual([[`${DONO}/capas/x.jpg`, `${DONO}/imgs/y.jpg`]]);
   });
 
-  // Guard de posse (F1): `capa*_storage_path` é editável por qualquer membro da org via RLS,
-  // e este remove roda com service_role. Um path apontado para o prefixo de outro tenant não
-  // pode ser apagado daqui — a família é deletada do banco, o arquivo alheio fica de pé.
-  it('não apaga arquivo cujo prefixo não é de um usuário da própria org', async () => {
+  // Guard de posse (F1): `capa*_storage_path` é editável por QUALQUER membro da org via RLS
+  // ("familias: update org"), e este remove roda com service_role — a RLS de storage, que só
+  // permite apagar sob o próprio prefixo, não se aplica. O dono aceito é o da PRÓPRIA família:
+  // travar na org seria mais frouxo que a RLS substituída e deixaria um membro apagar arquivo
+  // de um colega. Aqui o path do colega (mesma org) e o de outro tenant são ambos recusados.
+  it('só apaga arquivo sob o prefixo do dono da própria família', async () => {
     const { admin, removidos } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
         [{
-          id: 'fam-1', lote_id: 'lote-1',
+          id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
           capa_storage_path: `${DONO}/capas/legitima.jpg`,
-          capa2_storage_path: 'usuario-de-outra-org/capas/vitima.jpg',
-          capa3_storage_path: null,
+          capa2_storage_path: 'colega-da-mesma-org/capas/vitima.jpg',
+          capa3_storage_path: 'usuario-de-outra-org/capas/vitima.jpg',
           variacoes: [],
         }],
         [],
       ],
       anuncios_externos: [[]],
       anuncios_externos_itens: [[]],
-      profiles: [[{ id: DONO }]],
       lotes: [],
     });
 
@@ -404,7 +403,7 @@ describe('removerPublicado — integração das portas reais (sem removerComposi
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
-        [{ id: 'fam-1', lote_id: 'lote-1', capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
       anuncios_externos: [[{ id: 'ext-1' }]],
