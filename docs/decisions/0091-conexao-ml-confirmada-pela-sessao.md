@@ -161,7 +161,12 @@ o tripwire já produz.
   agência/marca. Decisão tomada de propósito.
 - `p_criado_por` muda de significado: passa a ser "quem confirmou", não "quem iniciou". Alimenta
   `resolverOrgPorUserId` (`io.ts:22`), seguro apenas porque `profiles.org_id` é de valor único
-  (`auth-org.ts:6-8`). **Não quebrar esse invariante.**
+  (`auth-org.ts:6-8`). **Não quebrar esse invariante.** Como efeito colateral, o `user_id` gravado
+  no `state` (`start:21`) fica morto para autorização — sobrevive só como campo de log.
+- **Muda o onboarding, e isso é intenção, não bug:** um vendedor que **não** seja admin de uma
+  org do PubliAI deixa de conseguir concluir a conexão sozinho. O fluxo correto passa a ser: um
+  admin da org completa a conexão **na própria sessão**. Com duas orgs hoje isso é inerte, mas é
+  o outro lado da garantia — está escrito aqui para ninguém redescobrir como regressão.
 
 ## O que precisa estar no mesmo commit
 
@@ -194,13 +199,16 @@ o tripwire já produz.
   mensagem genérica. A tradução do 23505, o 403 de não-admin concluindo o fluxo e o
   `invalid_grant` não têm onde aparecer a menos que o erro do claim passe por `erroAcao` (`:29`).
 - **Invalidar `QK.conexoes` também**, não só `useMlConnection()`: o `handleDesconectarML`
-  invalida as duas (`:50-51`) porque `conectados` (`:36`) alimenta os cards dos outros canais.
+  invalida as duas (`:51-52`) porque `conectados` (`:36`) alimenta os cards dos outros canais.
   Espelhar o handler de desconexão.
 - `chamarEdge` (`src/lib/ml-oauth.ts:3`) não manda corpo; o claim precisa de um, com
   `Content-Type: application/json` (já permitido em `cors.ts:4`).
-- Tradução do **23505**: conta ML já pertencente a outra org cai no INSERT
-  (`migration:68-69,74`) e estoura erro cru do Postgres. Mapear para "esta conta ML já está
-  conectada em outra organização".
+- Tradução do **23505**: conta ML já pertencente a outra org estoura erro cru do Postgres.
+  Acontece nos **dois** caminhos do `upsert_marketplace_connection` — INSERT
+  (`migration:68-69,74`, org sem conexão) e UPDATE (`migration:84-89`, que também grava
+  `conta_externa_id`, quando uma org que já tem conexão conecta uma conta de outra org. Capturar
+  o SQLSTATE da RPC, **não** por caminho, e mapear para "esta conta ML já está conectada em outra
+  organização".
 - `ml_erro=token` deixa de ser caminho do callback (`callback:66`) e vira resposta do claim — o
   front precisa renderizar.
 - Docs (regra do CLAUDE.md): `docs/reference/edge-functions.md` (function nova + config),
