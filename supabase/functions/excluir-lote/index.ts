@@ -32,6 +32,9 @@ Deno.serve(async (req) => {
   const part = particionarExclusao({
     familias: (familias ?? []) as FamiliaExclusao[],
     planilhaPath: lote.planilha_path, imagensPaths: lote.imagens_paths,
+    // lote.user_id === user.id (checado acima). Trava os paths no prefixo do próprio dono:
+    // as colunas de path são escritas pelo cliente, e este delete roda com service_role.
+    donoUserId: lote.user_id,
   });
 
   if (part.pathsRemover.length > 0) {

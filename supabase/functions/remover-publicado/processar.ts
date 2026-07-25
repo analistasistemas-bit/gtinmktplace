@@ -1,5 +1,5 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { pathsDaFamilia } from '../_shared/lote/exclusao.ts';
+import { pathsDaFamilia, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
 import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 import type { ContextoCanal } from '../_shared/canais/contrato.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
@@ -156,12 +156,24 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     }
   }
 
-  const paths = [...new Set(alvos.flatMap((f) => pathsDaFamilia({
+  const pathsCandidatos = [...new Set(alvos.flatMap((f) => pathsDaFamilia({
     capa_storage_path: f.capa_storage_path,
     capa2_storage_path: f.capa2_storage_path,
     capa3_storage_path: f.capa3_storage_path,
     variacoes: f.variacoes ?? [],
   })))];
+  // Guard de posse: `capa*_storage_path` é editável por qualquer membro da org (RLS
+  // "familias: update org"), e este remove roda com service_role. Sem o filtro, um membro
+  // apontaria a capa para o prefixo de OUTRO tenant e apagaria o arquivo dele daqui.
+  // O prefixo válido é o id de um profile da própria org — mesma regra da RLS de leitura
+  // do bucket (migration 20260705165828, "imagens: select org").
+  const { data: donosOrg, error: donosErr } = await admin.from('profiles')
+    .select('id').eq('org_id', orgId);
+  if (donosErr) throw new Error(`remover-publicado: listar donos da org falhou: ${donosErr.message}`);
+  const paths = filtrarPathsDeDonos(
+    pathsCandidatos,
+    new Set((donosOrg ?? []).map((p: { id: string }) => p.id)),
+  );
   if (paths.length > 0) {
     const { error } = await admin.storage.from('imagens').remove(paths);
     if (error) console.warn('remover-publicado storage falhou (segue):', error.message);

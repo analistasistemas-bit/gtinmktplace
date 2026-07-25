@@ -12,6 +12,11 @@ export interface EntradaExclusao {
   familias: FamiliaExclusao[];
   planilhaPath: string | null;
   imagensPaths: string[] | null;
+  /**
+   * Dono esperado dos arquivos: primeiro segmento de pasta de todo path que pode ser apagado.
+   * Em excluir-lote é `lote.user_id` (que a própria edge já confirmou ser o chamador).
+   */
+  donoUserId: string;
 }
 export interface ResultadoExclusao {
   paraExcluir: FamiliaExclusao[];
@@ -35,6 +40,23 @@ export function pathsDaFamilia(f: {
   ].filter((p): p is string => !!p);
 }
 
+/**
+ * Guard de posse dos arquivos de Storage. Uploads sempre gravam sob `${userId}/…`
+ * (src/lib/storage.ts, upload-imagens-lote/processar.ts), mas as colunas que guardam esses
+ * caminhos — `lotes.imagens_paths`, `lotes.planilha_path`, `familias.capa*_storage_path` — são
+ * escritas/editáveis pelo cliente. Como o delete roda com service_role (RLS de storage não se
+ * aplica), um path injetado apagaria arquivo de terceiro. Só sobrevive o path cujo PRIMEIRO
+ * segmento de pasta está em `donos`. Fail-closed: conjunto vazio remove tudo.
+ */
+export function filtrarPathsDeDonos(paths: string[], donos: ReadonlySet<string>): string[] {
+  return paths.filter((p) => {
+    const segmentos = p.split('/');
+    // Precisa de dono + nome de arquivo, e nenhum '..' (travessia sairia do prefixo do dono).
+    if (segmentos.length < 2 || !segmentos[0] || segmentos.includes('..')) return false;
+    return donos.has(segmentos[0]);
+  });
+}
+
 export function particionarExclusao(e: EntradaExclusao): ResultadoExclusao {
   // Preserva só famílias REALMENTE publicadas (publicado_em != null). Reposição UPDATE
   // herda ml_item_id do anúncio existente sem publicar nada — usar ml_item_id como
@@ -49,6 +71,9 @@ export function particionarExclusao(e: EntradaExclusao): ResultadoExclusao {
     ...(e.planilhaPath ? [e.planilhaPath] : []),
     ...(e.imagensPaths ?? []),
   ];
-  const pathsRemover = [...new Set(candidatos)].filter((p) => !preservarSet.has(p));
+  const pathsRemover = filtrarPathsDeDonos(
+    [...new Set(candidatos)].filter((p) => !preservarSet.has(p)),
+    new Set([e.donoUserId]),
+  );
   return { paraExcluir, preservadas, pathsRemover, pathsPreservar, loteVazio: preservadas.length === 0 };
 }
