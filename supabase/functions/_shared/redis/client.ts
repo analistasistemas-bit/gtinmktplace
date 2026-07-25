@@ -30,6 +30,16 @@ export async function redisDel(chave: string): Promise<void> {
   await call(['DEL', chave]);
 }
 
+/** Incrementa um contador de janela fixa e devolve o valor novo. O TTL é aplicado só na
+ *  primeira ocorrência (quando INCR devolve 1), então a janela começa no primeiro evento e
+ *  expira sozinha — não precisa de limpeza. Usado pelo throttle do ml-webhook, que não pode
+ *  depender de um INSERT ter dado certo para contabilizar tráfego. */
+export async function redisIncrComTTL(chave: string, ttlSegundos: number): Promise<number> {
+  const n = await call<number>(['INCR', chave]) ?? 0;
+  if (n === 1) await call(['EXPIRE', chave, ttlSegundos]);
+  return n;
+}
+
 export async function redisSetNX(
   chave: string,
   valor: string,

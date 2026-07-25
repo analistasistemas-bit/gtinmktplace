@@ -7,6 +7,7 @@ import { qstashClient } from '../_shared/queue.ts';
 import { parseWebhookNotification, extrairPackIdDeMensagem } from '../_shared/faturamento/venda.ts';
 import { resolverIdentidade } from '../_shared/faturamento/io.ts';
 import { deveThrottlar, JANELA_THROTTLE_MS } from '../_shared/ml/throttle-webhook.ts';
+import { redisIncrComTTL } from '../_shared/redis/client.ts';
 import { deveReenfileirarMensagens, classificarDedupWebhook } from '../_shared/ml/reenfileirar-mensagens.ts';
 
 // topic → função worker + nome do campo do id no job.
@@ -41,14 +42,17 @@ Deno.serve(async (req) => {
 
   // Throttle (INT-018/033): protege contra atacante que conhece o mlUserId público de um
   // vendedor e forja notificações para inflar a tabela + gasto de QStash. Falha na contagem
-  // (query dá erro etc.) NUNCA bloqueia o vendedor legítimo: cai no comportamento de hoje.
+  // (Redis fora do ar etc.) NUNCA bloqueia o vendedor legítimo: cai no comportamento de hoje.
+  //
+  // O contador vive no Redis, não em `ml_webhook_eventos` (F10): contando linhas, um resource
+  // que fizesse o INSERT falhar com erro != 23505 caía no fail-open logo abaixo e enfileirava
+  // SEM gravar linha — ou seja, tráfego forjado que o contador nunca enxergava. Contando aqui,
+  // toda requisição que chega a um vendedor conhecido conta, tenha o INSERT dado certo ou não.
+  // Janela fixa de 60s (o TTL nasce no 1º evento), no lugar da janela deslizante da query.
   try {
-    const desde = new Date(Date.now() - JANELA_THROTTLE_MS).toISOString();
-    const { count, error: countErr } = await admin.from('ml_webhook_eventos')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('recebido_em', desde);
-    if (!countErr && deveThrottlar(count ?? 0)) return ok(); // acima do limite: dropa (ACK, sem insert/enqueue); reconciliar-faturamento recupera.
+    const janelaSeg = Math.floor(JANELA_THROTTLE_MS / 1000);
+    const recentes = await redisIncrComTTL(`throttle:ml-webhook:${userId}`, janelaSeg);
+    if (deveThrottlar(recentes)) return ok(); // acima do limite: dropa (ACK, sem insert/enqueue); reconciliar-faturamento recupera.
   } catch { /* fail-open: segue o fluxo normal abaixo. */ }
 
   // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira — exceto

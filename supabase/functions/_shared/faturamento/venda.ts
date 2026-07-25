@@ -32,6 +32,14 @@ export function extrairPackIdDeMensagem(resource: string | null | undefined): st
   return m ? m[1] : null;
 }
 
+/** Teto de tamanho do `resource`. Os maiores caminhos reais do ML (packs de mensagem) não
+ *  passam de ~60 chars; 256 é folga generosa e ainda cabe no índice único (topic, resource). */
+export const MAX_RESOURCE_LEN = 256;
+/** Formato de caminho de recurso do ML: só segmentos alfanuméricos, '-', '_' e '.'. Rejeita
+ *  espaço, byte de controle e qualquer coisa que não seja path — o valor vai para uma coluna
+ *  indexada de um endpoint público, e falha de INSERT por valor malformado abria o fail-open. */
+const RESOURCE_VALIDO = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/;
+
 /** Normaliza a notificação do ML. null quando faltam campos obrigatórios. */
 export function parseWebhookNotification(raw: unknown): WebhookEvento | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -40,6 +48,7 @@ export function parseWebhookNotification(raw: unknown): WebhookEvento | null {
   const resource = typeof p.resource === 'string' ? p.resource : null;
   const mlUserId = typeof p.user_id === 'number' ? p.user_id : Number(p.user_id);
   if (!topic || !resource || !Number.isFinite(mlUserId)) return null;
+  if (resource.length > MAX_RESOURCE_LEN || !RESOURCE_VALIDO.test(resource)) return null;
   const resourceId = extrairIdDoResource(resource);
   if (!resourceId) return null;
   return { topic, resource, resourceId, mlUserId };
