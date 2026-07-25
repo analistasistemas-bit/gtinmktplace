@@ -23,7 +23,9 @@ sugere arquivo escrito à mão e fora do fluxo de push.
 - [x] **Cópia solta `"... 2.sql"` removida** (untracked, sufixo de duplicação do macOS). Fazia
   o `supabase migration list` enxergar a versão `20260724150000` duplicada — um `db push`
   tentaria aplicar duas migrations com a mesma versão.
-- [ ] **`db push` pendente** das duas migrations restantes (este seed + o lockdown do F3).
+- [x] **`db push` aplicado** (2026-07-25) das duas migrations. Verificado no banco: o seed
+  gravou só `MLB271227` (2 conexões), e `ml_formato_publicacao` segue com MLB271701/MLB419782
+  aprendidas reativamente — MLB270273 não entrou.
 
 ## Correções da varredura de segurança (relatório CLAUDE-SECURITY-20260724-125213) — 2026-07-25
 
@@ -54,7 +56,15 @@ aplicado no banco nem deployado.
 - [x] **F3** — RLS é row-level, não column-level: qualquer admin de org fazia `PATCH` no
   PostgREST com `is_super_admin: true` e virava super-admin da plataforma. Migration
   `20260725140339_lockdown_escrita_profiles.sql` revoga update/insert/delete de `authenticated`
-  e `anon`. **ADR-0090.** Não aplicada — `db push` é decisão do Diego.
+  e `anon`. **ADR-0090. Aplicada em produção 2026-07-25** — verificado via
+  `information_schema.role_table_grants`: `authenticated`/`anon` ficaram só com SELECT,
+  `service_role` mantém escrita. Confirmado antes que ninguém havia se promovido (único
+  `is_super_admin` é a conta do Diego).
+
+> ⚠️ **`npm run db:check` acusa divergência até o merge.** A migration do F3 foi aplicada no
+> remoto a partir deste branch, e o arquivo ainda não existe na `main` — daí a linha
+> `| 20260725140339` só do lado remoto. **Mergear `fix-security-e7` resolve.** Nada a corrigir
+> no banco.
 - [x] **F5** — override de `chatId` no teste do Telegram agora exige admin (a tela que o usa,
   `/usuarios`, já é admin-only); o teste sem override segue liberado para membro comum.
 - [x] **F9** — SSRF: `categoria_ml_id` ia cru para o caminho de
