@@ -102,5 +102,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0088 | [Publicação em User Products com N itens técnicos por família (multi-cor)](../../docs/decisions/0088-publicacao-user-products-multi-item.md) |
 | 0089 | [Atualização rápida de estoque — publicação 1-clique para UPDATE sem pendência](../../docs/decisions/0089-atualizacao-rapida-de-estoque.md) |
 | 0090 | [Lockdown da escrita em `profiles` — privilégio não se auto-concede](../../docs/decisions/0090-lockdown-da-escrita-em-profiles.md) |
+| 0091 | [A conexão do Mercado Livre é gravada na org da SESSÃO, não na do `state`](../../docs/decisions/0091-conexao-ml-confirmada-pela-sessao.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
