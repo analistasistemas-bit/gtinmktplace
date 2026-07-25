@@ -1,13 +1,13 @@
 ---
 tags: [ia, graphify]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # Graphify
 
-Ferramenta usada para gerar o grafo de conhecimento do código-fonte — fonte primária de
-arquitetura deste vault (todas as notas de `01-Arquitetura` foram construídas a partir dele).
-Ver [[Arquitetura Geral]], [[Agentes]].
+Ferramenta usada para gerar o grafo de conhecimento do código-fonte. As fontes de verdade de
+arquitetura são `docs/` e `docs/decisions/`; o Graphify confirma relações no código. Ver
+[[Arquitetura Geral]], [[Agentes]].
 
 ## Como foi usado neste projeto
 
@@ -17,8 +17,8 @@ Ver [[Arquitetura Geral]], [[Agentes]].
   precisa escolher um só.
 - **Escopo de docs/ADRs:** rodado separadamente (`docs/` sozinho já passa de 500 arquivos e
   precisa de subagents de extração semântica para markdown/imagens).
-- **Resultado típico:** ~1747 nós, ~4650 arestas, ~82 comunidades no grafo combinado
-  `src`+`supabase`.
+- **Resultado auditado (2026-07-24):** 8.313 nós e 16.074 links no grafo combinado
+  `src`+`supabase`, gerado no commit `c14f759d0ae6fb35c5a0405b4a680433e4049cd8`.
 
 ## God nodes identificados (mais conectados)
 
