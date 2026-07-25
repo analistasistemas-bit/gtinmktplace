@@ -12,90 +12,90 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 
 | ADR | Decisão |
 |---|---|
-| 0001 | [Stack tecnológico](../../docs/decisions/0001-stack-tecnologico.md) |
-| 0002 | [MVP: aviamentos primeiro](../../docs/decisions/0002-mvp-aviamentos-primeiro.md) |
-| 0003 | [Variações agrupadas por PAI](../../docs/decisions/0003-variacoes-agrupadas-por-pai.md) |
-| 0004 | [Atribuição de cor](../../docs/decisions/0004-atribuicao-de-cor.md) |
-| 0005 | [Lifecycle publish/update](../../docs/decisions/0005-lifecycle-publish-and-update.md) |
-| 0006 | [QStash em vez de fila no Postgres](../../docs/decisions/0006-qstash-em-vez-de-postgres-queue.md) |
-| 0007 | [Modelo de dados (4 tabelas)](../../docs/decisions/0007-modelo-de-dados-4-tabelas.md) |
-| 0008 | [Estratégia de preço condicional](../../docs/decisions/0008-estrategia-de-preco-condicional.md) |
-| 0009 | [Campos do payload ML + categoria determinística](../../docs/decisions/0009-campos-payload-ml-e-categoria-deterministica.md) |
-| 0010 | [OpenRouter em vez de OpenAI direto](../../docs/decisions/0010-openrouter-em-vez-de-openai-direto.md) |
-| 0011 | [Redirect URI via Edge Function](../../docs/decisions/0011-redirect-uri-via-edge-function.md) |
-| 0012 | [Refresh token OAuth ML com lock Redis](../../docs/decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) |
-| 0013 | [Edge cases da planilha no ingest](../../docs/decisions/0013-edge-cases-da-planilha-no-ingest.md) |
-| 0014 | [Busca de concorrência](../../docs/decisions/0014-busca-de-concorrencia.md) |
-| 0015 | [Potencial de venda via proxies](../../docs/decisions/0015-potencial-de-venda-via-proxies.md) |
-| 0016 | [Publicação UPDATE / reposição de estoque](../../docs/decisions/0016-publicacao-update-reposicao-estoque.md) |
-| 0017 | [Selo de desconto via API de promoções](../../docs/decisions/0017-selo-de-desconto-via-api-de-promocoes.md) |
-| 0018 | [Dimensões e peso no payload ML](../../docs/decisions/0018-dimensoes-e-peso-no-payload-ml.md) |
-| 0019 | [Exclusão de lote preserva publicados](../../docs/decisions/0019-exclusao-lote-preserva-publicados.md) |
-| 0020 | [Estratégia de preço líquido mínimo](../../docs/decisions/0020-estrategia-de-preco-liquido-minimo.md) |
-| 0021 | [Vinculação automática ao catálogo ML](../../docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md) |
-| 0022 | [Categoria "cola" e seletor manual](../../docs/decisions/0022-categoria-cola-e-seletor-manual.md) |
-| 0023 | [Preço acima do abismo de tarifa fixa](../../docs/decisions/0023-preco-acima-do-abismo-de-tarifa-fixa.md) |
-| 0024 | [Camada de abstração de canais](../../docs/decisions/0024-camada-de-abstracao-de-canais.md) |
-| 0025 | [Modelo de dados multicanal](../../docs/decisions/0025-modelo-de-dados-multicanal.md) |
-| 0026 | [Generalização da categorização/atributos por IA](../../docs/decisions/0026-generalizacao-categorizacao-atributos-por-ia.md) |
-| 0027 | [Multi-tenancy (organizations)](../../docs/decisions/0027-multi-tenancy-organizations.md) |
-| 0028 | [Monetização e billing](../../docs/decisions/0028-monetizacao-e-billing.md) |
-| 0029 | [Cor sem foto entra desmarcada no CREATE](../../docs/decisions/0029-cor-sem-foto-entra-desmarcada-no-create.md) |
-| 0030 | [Reprocessamento de família em erro](../../docs/decisions/0030-reprocessamento-de-familia-em-erro.md) |
-| 0031 | [Integração financeira Mercado Pago](../../docs/decisions/0031-integracao-financeira-mercado-pago.md) |
-| 0032 | [KPIs de Publicados contam a conta inteira](../../docs/decisions/0032-kpis-publicados-contam-conta-inteira.md) |
-| 0033 | [Retry interno de foto em processamento](../../docs/decisions/0033-retry-interno-foto-em-processamento.md) |
-| 0034 | [Serialização da publicação ML](../../docs/decisions/0034-serializacao-publicacao-ml.md) |
-| 0035 | [Monitoramento de anúncios moderados](../../docs/decisions/0035-monitoramento-anuncios-moderados.md) |
-| 0036 | [Alerta de catálogo sem match](../../docs/decisions/0036-alerta-catalogo-no-match.md) |
-| 0037 | [Módulo Faturamento (webhooks ML)](../../docs/decisions/0037-modulo-faturamento-webhooks-ml.md) |
-| 0038 | [Fonte única `ml_vendas` para KPIs](../../docs/decisions/0038-fonte-unica-ml-vendas-kpis.md) |
-| 0039 | [Faturamento por pedido + geografia + KPIs](../../docs/decisions/0039-faturamento-por-pedido-geografia-kpis.md) |
-| 0040 | [Financeiro: caixa, evolução, notificação](../../docs/decisions/0040-financeiro-caixa-evolucao-notificacao.md) |
-| 0041 | [Preço de atacado PxQ B2B](../../docs/decisions/0041-preco-atacado-pxq-b2b.md) |
-| 0042 | [Líquido econômico (cross-docking)](../../docs/decisions/0042-liquido-economico-cross-docking.md) |
-| 0043 | [Fluxo canônico de migrations](../../docs/decisions/0043-fluxo-canonico-de-migrations.md) |
-| 0044 | [Cor no título mono-cor — anti-duplicado ML](../../docs/decisions/0044-cor-no-titulo-mono-cor.md) *(ex-0035)* |
-| 0045 | [Atribuição de venda por EAN (catálogo ML)](../../docs/decisions/0045-vendas-catalogo-match-ean.md) *(ex-0037)* |
-| 0046 | [verify_jwt=false p/ webhook e workers de faturamento](../../docs/decisions/0046-verify-jwt-false-workers-webhook-faturamento.md) |
-| 0047 | [Operação compartilhada — RBAC no menu](../../docs/decisions/0047-operacao-compartilhada-rbac-menu.md) |
-| 0048 | [Split de produto em N anúncios ML](../../docs/decisions/0048-split-produto-n-anuncios-ml.md) |
-| 0049 | [Atributos opcionais e numéricos por IA](../../docs/decisions/0049-atributos-opcionais-e-numericos-por-ia.md) |
-| 0050 | [Frete no gross-up do preço próprio](../../docs/decisions/0050-frete-no-gross-up-preco-proprio.md) |
-| 0051 | [Tipo de aviamento derivado da categoria do preditor](../../docs/decisions/0051-tipo-aviamento-derivado-da-categoria-do-preditor.md) |
-| 0052 | [Camada 2 de atributos — IA-first com fallback](../../docs/decisions/0052-camada2-atributos-ia-first-com-fallback.md) |
-| 0053 | [Marca de saque manual em ML Vendas](../../docs/decisions/0053-marca-saque-manual-ml-vendas.md) |
-| 0054 | [Categoria/título — tipo de produto genérico via IA](../../docs/decisions/0054-categoria-titulo-tipo-produto-generico.md) |
-| 0055 | [Imposto por origem — nacional vs. importado](../../docs/decisions/0055-imposto-por-origem-nacional-importado.md) |
-| 0056 | [Enriquecimento ao vivo — escopo da operação](../../docs/decisions/0056-enriquecimento-ao-vivo-escopo-da-operacao.md) |
-| 0057 | [Categoria: seleção livre + sugestão por concorrente](../../docs/decisions/0057-categoria-selecao-livre-e-sugestao-concorrente.md) |
-| 0058 | [Categoria genérica como fallback visível](../../docs/decisions/0058-categoria-generica-fallback-visivel.md) |
+| 0001 | [Stack Tecnológico](../../docs/decisions/0001-stack-tecnologico.md) |
+| 0002 | [MVP começa por aviamentos, não tecidos](../../docs/decisions/0002-mvp-aviamentos-primeiro.md) |
+| 0003 | [Variações agrupadas por código PAI no anúncio do Mercado Livre](../../docs/decisions/0003-variacoes-agrupadas-por-pai.md) |
+| 0004 | [Atribuição de cor — descrição primeiro, IA Vision como fallback](../../docs/decisions/0004-atribuicao-de-cor.md) |
+| 0005 | [Lifecycle — publica novo + atualiza existente (não "fire and forget")](../../docs/decisions/0005-lifecycle-publish-and-update.md) |
+| 0006 | [Fila assíncrona via Upstash QStash (não Postgres queue caseira)](../../docs/decisions/0006-qstash-em-vez-de-postgres-queue.md) |
+| 0007 | [Modelo de dados — 4 tabelas principais, sem catalogo_interno separado](../../docs/decisions/0007-modelo-de-dados-4-tabelas.md) |
+| 0008 | [Estratégia de preço condicional baseada em concorrência](../../docs/decisions/0008-estrategia-de-preco-condicional.md) |
+| 0009 | [Campos obrigatórios do payload Mercado Livre + categoria via lookup determinístico](../../docs/decisions/0009-campos-payload-ml-e-categoria-deterministica.md) |
+| 0010 | [OpenRouter em vez de OpenAI direto como provedor da camada de IA](../../docs/decisions/0010-openrouter-em-vez-de-openai-direto.md) |
+| 0011 | [Redirect URI do OAuth Mercado Livre via Supabase Edge Function](../../docs/decisions/0011-redirect-uri-via-edge-function.md) |
+| 0012 | [Refresh de token OAuth ML com lock distribuído no Redis](../../docs/decisions/0012-refresh-token-oauth-ml-com-lock-redis.md) |
+| 0013 | [Tratamento de edge cases da planilha no ingest](../../docs/decisions/0013-edge-cases-da-planilha-no-ingest.md) |
+| 0014 | [Busca de concorrência no Mercado Livre](../../docs/decisions/0014-busca-de-concorrencia.md) |
+| 0015 | [Potencial de venda via proxies (a API do ML não expõe venda por produto)](../../docs/decisions/0015-potencial-de-venda-via-proxies.md) |
+| 0016 | [Publicação UPDATE — reposição de estoque herdando o anúncio anterior](../../docs/decisions/0016-publicacao-update-reposicao-estoque.md) |
+| 0017 | [Selo de desconto ("% OFF") via API de Promoções do ML (estacionado)](../../docs/decisions/0017-selo-de-desconto-via-api-de-promocoes.md) |
+| 0018 | [Dimensões e peso reais no payload do ML (frete correto)](../../docs/decisions/0018-dimensoes-e-peso-no-payload-ml.md) |
+| 0019 | [Exclusão de lote preserva famílias publicadas; tela "Publicados" com status ao vivo](../../docs/decisions/0019-exclusao-lote-preserva-publicados.md) |
+| 0020 | [PRECO da planilha como líquido mínimo + semáforo de viabilidade](../../docs/decisions/0020-estrategia-de-preco-liquido-minimo.md) |
+| 0021 | [Vinculação automática ao Catálogo do ML (opt-in por variação)](../../docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md) |
+| 0022 | [Tipo de aviamento "cola" + seletor manual de categoria](../../docs/decisions/0022-categoria-cola-e-seletor-manual.md) |
+| 0023 | [Gross-up precifica acima do abismo de tarifa fixa do ML (R$ 12,50)](../../docs/decisions/0023-preco-acima-do-abismo-de-tarifa-fixa.md) |
+| 0024 | [Camada de abstração de canais (Ports & Adapters + strangler fig)](../../docs/decisions/0024-camada-de-abstracao-de-canais.md) |
+| 0025 | [Modelo de dados multicanal (`anuncios_externos` — listing por canal)](../../docs/decisions/0025-modelo-de-dados-multicanal.md) |
+| 0026 | [Generalização da categorização e atributos por IA (resolução híbrida + schema dinâmico)](../../docs/decisions/0026-generalizacao-categorizacao-atributos-por-ia.md) |
+| 0027 | [Multi-tenancy (organizations + org_id + marketplace_connections)](../../docs/decisions/0027-multi-tenancy-organizations.md) |
+| 0028 | [Monetização e billing (Asaas + planos por faixa + metering)](../../docs/decisions/0028-monetizacao-e-billing.md) |
+| 0029 | [Cor sem foto entra desmarcada da publicação (CREATE)](../../docs/decisions/0029-cor-sem-foto-entra-desmarcada-no-create.md) |
+| 0030 | [Reprocessamento de família em erro + erro com detalhe por etapa](../../docs/decisions/0030-reprocessamento-de-familia-em-erro.md) |
+| 0031 | [Integração financeira via Mercado Pago (recebíveis)](../../docs/decisions/0031-integracao-financeira-mercado-pago.md) |
+| 0032 | [KPIs do topo de Publicados contam a conta inteira do ML](../../docs/decisions/0032-kpis-publicados-contam-conta-inteira.md) |
+| 0033 | [Foto em processamento no ML: parar de re-subir no retry + retry interno](../../docs/decisions/0033-retry-interno-foto-em-processamento.md) |
+| 0034 | [Serialização das publicações no Mercado Livre (QStash Queue por usuário)](../../docs/decisions/0034-serializacao-publicacao-ml.md) |
+| 0035 | [Monitoramento de anúncios moderados (polling + Telegram)](../../docs/decisions/0035-monitoramento-anuncios-moderados.md) |
+| 0036 | [Alerta proativo de variação sem ficha de catálogo (no-match)](../../docs/decisions/0036-alerta-catalogo-no-match.md) |
+| 0037 | [Módulo Faturamento: vendas persistidas via webhooks ML + reconciliação](../../docs/decisions/0037-modulo-faturamento-webhooks-ml.md) |
+| 0038 | [Fonte única `ml_vendas` para os KPIs dos 3 menus + bruto igual ao ML](../../docs/decisions/0038-fonte-unica-ml-vendas-kpis.md) |
+| 0039 | [Menu Faturamento por pedido (pack) + geografia (UF) + KPIs operacionais](../../docs/decisions/0039-faturamento-por-pedido-geografia-kpis.md) |
+| 0040 | [Menu Financeiro impecável: caixa, lucro/margem, evolução, comparativo e notificação de liberação](../../docs/decisions/0040-financeiro-caixa-evolucao-notificacao.md) |
+| 0041 | [Preço de atacado via PxQ B2B do Mercado Livre](../../docs/decisions/0041-preco-atacado-pxq-b2b.md) |
+| 0042 | [Líquido da venda é a estimativa econômica (não o net do Mercado Pago): artefato cross-docking](../../docs/decisions/0042-liquido-economico-cross-docking.md) |
+| 0043 | [Canal único para mudanças de schema (migrations)](../../docs/decisions/0043-fluxo-canonico-de-migrations.md) |
+| 0044 | [Cor no título de anúncios mono-cor (anti-duplicado do ML)](../../docs/decisions/0044-cor-no-titulo-mono-cor.md) *(ex-0035)* |
+| 0045 | [Atribuição de venda por EAN (catálogo do ML)](../../docs/decisions/0045-vendas-catalogo-match-ean.md) *(ex-0037)* |
+| 0046 | [verify_jwt=false para webhook e workers de faturamento](../../docs/decisions/0046-verify-jwt-false-workers-webhook-faturamento.md) |
+| 0047 | [Operação compartilhada + controle de acesso por menu (fase pré-E7)](../../docs/decisions/0047-operacao-compartilhada-rbac-menu.md) |
+| 0048 | [Split de produto em N anúncios ML (limite 100 variações + 99999 estoque)](../../docs/decisions/0048-split-produto-n-anuncios-ml.md) |
+| 0049 | [Enriquecimento de atributos opcionais e numéricos por IA (nota de qualidade do anúncio)](../../docs/decisions/0049-atributos-opcionais-e-numericos-por-ia.md) |
+| 0050 | [Frete grátis do vendedor entra no gross-up do preço próprio](../../docs/decisions/0050-frete-no-gross-up-preco-proprio.md) |
+| 0051 | [Tipo de aviamento derivado da categoria do preditor (obrigatórios curados sempre montados)](../../docs/decisions/0051-tipo-aviamento-derivado-da-categoria-do-preditor.md) |
+| 0052 | [Camada 2: atributos IA-first (inferência de texto-livre do próprio produto) + fallback manual](../../docs/decisions/0052-camada2-atributos-ia-first-com-fallback.md) |
+| 0053 | [Marca manual de saque em `ml_vendas`](../../docs/decisions/0053-marca-saque-manual-ml-vendas.md) |
+| 0054 | [Substantivo do tipo de produto via IA (categoria + título)](../../docs/decisions/0054-categoria-titulo-tipo-produto-generico.md) |
+| 0055 | [Imposto por origem (nacional/importado) no preço e no markup](../../docs/decisions/0055-imposto-por-origem-nacional-importado.md) |
+| 0056 | [Operações do ML usam o escopo e a credencial da operação, não do chamador](../../docs/decisions/0056-enriquecimento-ao-vivo-escopo-da-operacao.md) |
+| 0057 | [Categoria de seleção livre (busca no preditor) + sugestão não-vinculante do concorrente](../../docs/decisions/0057-categoria-selecao-livre-e-sugestao-concorrente.md) |
+| 0058 | [Categoria genérica ("Outros") como fallback visível, não bloqueio](../../docs/decisions/0058-categoria-generica-fallback-visivel.md) |
 | 0059 | [Desconto sobre concorrência configurável](../../docs/decisions/0059-desconto-concorrencia-configuravel.md) |
-| 0060 | [Pausar/reativar anúncio ML](../../docs/decisions/0060-pausar-reativar-anuncio-ml.md) |
-| 0061 | [Orquestração multicanal](../../docs/decisions/0061-orquestracao-multicanal.md) |
-| 0062 | [UPDATE de cor existente + fotos comuns](../../docs/decisions/0062-update-cor-existente-e-fotos-comuns.md) |
-| 0063 | [Publicação de kit — preço/categoria/concorrência](../../docs/decisions/0063-publicacao-kit-preco-categoria-concorrencia.md) |
-| 0064 | [Concorrência agregada por variação](../../docs/decisions/0064-concorrencia-agregada-por-variacao.md) |
-| 0065 | [Reâncora de preço — piso do líder](../../docs/decisions/0065-reancora-preco-piso-lider.md) |
-| 0066 | [Financeiro: líquido nunca desconta imposto](../../docs/decisions/0066-financeiro-liquido-nunca-desconta-imposto.md) |
-| 0067 | [Mensagens pós-venda ML](../../docs/decisions/0067-mensagens-pos-venda-ml.md) |
+| 0060 | [Pausar/reativar anúncio publicado (contrato multicanal + permissão admin)](../../docs/decisions/0060-pausar-reativar-anuncio-ml.md) |
+| 0061 | [Orquestração multicanal — fan-out por (família, canal)](../../docs/decisions/0061-orquestracao-multicanal.md) |
+| 0062 | [UPDATE — renomear cor de variação existente + não duplicar fotos comuns](../../docs/decisions/0062-update-cor-existente-e-fotos-comuns.md) |
+| 0063 | [Publicação — kit condicional, piso de preço, categoria via catálogo, concorrência por product_identifier](../../docs/decisions/0063-publicacao-kit-preco-categoria-concorrencia.md) |
+| 0064 | [Busca de concorrência agregada por todas as variações da família](../../docs/decisions/0064-concorrencia-agregada-por-variacao.md) |
+| 0065 | [Re-âncora do preço no piso dos MercadoLíderes quando há prejuízo](../../docs/decisions/0065-reancora-preco-piso-lider.md) |
+| 0066 | [Financeiro > Detalhe do líquido nunca desconta imposto](../../docs/decisions/0066-financeiro-liquido-nunca-desconta-imposto.md) |
+| 0067 | [Mensagens pós-venda do Mercado Livre (inbox do pedido)](../../docs/decisions/0067-mensagens-pos-venda-ml.md) |
 | 0068 | [Notificações Telegram por destinatário e categoria](../../docs/decisions/0068-notificacoes-telegram-por-destinatario-e-categoria.md) |
-| 0069 | [Liveness da integração ML](../../docs/decisions/0069-liveness-integracao-ml.md) |
-| 0070 | [Título: corrige sinônimo de tipo de fio/linha errado](../../docs/decisions/0070-titulo-sinonimo-tipo-fio-grounded-errado.md) |
+| 0069 | [Liveness da integração ML (distinguir "zero genuíno" de "conector morto")](../../docs/decisions/0069-liveness-integracao-ml.md) |
+| 0070 | [Corrige sinônimo de tipo de fio/linha errado no título (grounded, mas trocado)](../../docs/decisions/0070-titulo-sinonimo-tipo-fio-grounded-errado.md) |
 | 0071 | [UNITS_PER_PACK real força SALE_FORMAT=Kit](../../docs/decisions/0071-units-per-pack-forca-sale-format-kit.md) |
-| 0072 | [Título: duplicação de tipo de produto/cor por checagem exata demais](../../docs/decisions/0072-titulo-duplicacao-tipo-e-cor-fora-de-ordem.md) |
+| 0072 | [Título — duplicação de tipo de produto/cor por checagem exata demais](../../docs/decisions/0072-titulo-duplicacao-tipo-e-cor-fora-de-ordem.md) |
 | 0073 | ["N CORES" no título conta como quantidade de UNITS_PER_PACK](../../docs/decisions/0073-cores-conta-como-unidade-no-kit.md) |
-| 0074 | [Seleção de modelo de IA (texto e imagem) por organização](../../docs/decisions/0074-selecao-de-modelo-ia-por-organizacao.md) |
-| 0075 | [Piso de tarifa fixa também no ramo competitivo](../../docs/decisions/0075-piso-tarifa-fixa-no-ramo-competitivo.md) |
-| 0076 | [Gross-up itera o frete por variação até estabilizar](../../docs/decisions/0076-gross-up-itera-frete-por-variacao.md) |
-| 0077 | [Registry híbrido para UI multi-marketplace (frontend + canais_habilitados por org)](../../docs/decisions/0077-registry-hibrido-menus-multicanal.md) |
+| 0074 | [Seleção de modelo de IA (texto e imagem) por organização, via tela Configurações](../../docs/decisions/0074-selecao-de-modelo-ia-por-organizacao.md) |
+| 0075 | [Piso de R$12,55 (abismo de tarifa fixa) também no ramo competitivo](../../docs/decisions/0075-piso-tarifa-fixa-no-ramo-competitivo.md) |
+| 0076 | [Gross-up itera o frete por variação até o preço estabilizar](../../docs/decisions/0076-gross-up-itera-frete-por-variacao.md) |
+| 0077 | [Registry híbrido para UI multi-marketplace (frontend + `canais_habilitados` por org)](../../docs/decisions/0077-registry-hibrido-menus-multicanal.md) |
 | 0078 | [Preço por variação, split por faixa de preço e controle de preço no UPDATE](../../docs/decisions/0078-preco-por-variacao-split-por-faixa-e-controle-de-preco-no-update.md) |
 | 0079 | [Fonte única TS→CSS para tokens de motion, sem biblioteca de animação](../../docs/decisions/0079-fonte-unica-tokens-motion-ts-css.md) |
 | 0080 | [Telas de autenticação sempre renderizam em dark, sobrepondo o tema salvo](../../docs/decisions/0080-telas-auth-sempre-dark.md) |
-| 0081 | [Corte de egress: URL assinada persistida e poll de vendas em 3 minutos](../../docs/decisions/0081-corte-de-egress-url-assinada-persistida.md) |
-| 0082 | [Poll incremental de vendas por marca d'água (atualizado_em)](../../docs/decisions/0082-poll-incremental-de-vendas-por-marca-dagua.md) |
-| 0083 | [Cursor (deslizador de zíper) como tipo de aviamento determinístico](../../docs/decisions/0083-cursor-de-zíper-tipo-aviamento-determinístico.md) |
-| 0084 | [family_name e item plano para publicação na categoria Zíperes](../../docs/decisions/0084-family-name-categoria-zipper.md) |
+| 0081 | [Corte de egress — URL assinada persistida e poll de vendas em 3 minutos](../../docs/decisions/0081-corte-de-egress-url-assinada-persistida.md) |
+| 0082 | [Poll incremental de vendas por marca d'água (`atualizado_em`)](../../docs/decisions/0082-poll-incremental-de-vendas-por-marca-dagua.md) |
+| 0083 | ["Cursor" (deslizador de zíper) como 5º tipo de aviamento determinístico](../../docs/decisions/0083-cursor-de-zíper-tipo-aviamento-determinístico.md) |
+| 0084 | [`family_name` no payload de publicação para a categoria Zíperes (MLB271227)](../../docs/decisions/0084-family-name-categoria-zipper.md) |
 | 0085 | [Notificação in-app (espelho do Telegram)](../../docs/decisions/0085-notificacao-in-app.md) |
 | 0086 | [Configuração org-scoped (fechar leitura por organização + imposto LOUD)](../../docs/decisions/0086-configuracao-org-scoped.md) |
 | 0087 | [Detecção reativa de categorias que exigem item plano (family_name), sem lista mantida à mão](../../docs/decisions/0087-family-name-deteccao-reativa.md) |

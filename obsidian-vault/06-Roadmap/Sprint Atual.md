@@ -8,7 +8,7 @@ atualizado: 2026-07-24
 Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 `docs/project-status.md`. Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-07-15)
+## 📍 Passo atual (2026-07-24)
 
 > **E7 (Multi-tenancy) e E6 (Orquestração multicanal) concluídos e em produção; UI multi-marketplace
 > (menus/tabs/registry) também concluída e em produção (2026-07-15) — o app já mostra os 5
@@ -41,8 +41,9 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
   mutar remoto, confirma sempre por `GET`; fix do gate de publicabilidade do frontend que travava
   qualquer UPDATE de família UP na Revisão. Validado end-to-end em produção real (Playwright):
   adicionar cor → caso real de `family_id` divergente isolado corretamente pela mini-saga (9 cores
-  reais intocadas) → remover cor com sucesso. As 4 pendências (reconciliador de convergência,
-  reconciliador de backfill, sincronizar descrição no UPDATE UP, guarda completa de remoção)
+  reais intocadas) → remover cor com sucesso. As 5 pendências (reconciliador de convergência,
+  reconciliador de backfill, sincronizar descrição no UPDATE UP, guarda completa de remoção,
+  fix de realtime na tela de Revisão)
   **implementadas, revisadas e deployadas em produção (2026-07-24)** — cada uma aprovada pelo
   Codex após 3-4 rodadas de revisão adversarial (achados reais corrigidos por rodada, ver
   `docs/TASKS.md`); suíte inteira verde, `deno check`/lint limpos; migrations aplicadas + 12
@@ -64,6 +65,10 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
   prompt "aplicar às demais?", badge por variação, aviso LOUD no diálogo de publicação). Validado
   com dados reais: as 2 famílias do incidente republicadas de verdade (split funcionando, 3 e 2
   anúncios) e UI validada pelo Diego. Ver [[Índice de ADRs]].
+- **Notificação in-app** (ADR-0085) — em produção 2026-07-21: espelho no app de todo alerta já
+  enviado por Telegram, com tabela `notificacoes`, sino no topbar e badge de não lidas; a RPC
+  `marcar_notificacoes_lidas` marca as notificações do usuário. Migration aplicada, 8 edge
+  functions redeployadas e frontend confirmado `live` no Render.
 - **UI multi-marketplace (menus/tabs/registry)** — spec 2026-07-14, em produção 2026-07-15:
   registry único no frontend (`src/lib/canais.ts`, 5 marketplaces) + `organizations.canais_habilitados`
   por org (rollout piloto sem deploy); canal ativo global (`?canal=` + sessão) com tabs em

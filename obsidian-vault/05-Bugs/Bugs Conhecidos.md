@@ -1,6 +1,6 @@
 ---
 tags: [bugs, conhecidos]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # Bugs Conhecidos
@@ -21,15 +21,3 @@ Validado até Revisão/banco (categoria `MLB189007` + `VOLTAGE` closed-set + pub
 uma furadeira, mas o único CREATE real de prova da reauditoria foi com família de fita —
 **não** com uma furadeira de verdade. Decisão registrada: não forçar um publish sintético;
 fechar quando uma furadeira real entrar num lote de produção normal.
-
-## Conexão ML da operação (pré-`E7`)
-
-Hoje a publicação usa a credencial OAuth de quem conectou (normalmente o admin-dono). Falta
-resolver "conexão da operação" (não do usuário que clicou) para que qualquer membro da operação
-compartilhada consiga publicar. Até lá, publicação fica restrita ao admin-dono.
-
-## Módulo Financeiro impecável — pendente validação/deploy
-
-Branch `worktree-financeiro-impecavel` (ADR-0040) implementado (caixa, margem, evolução,
-comparativo, export, notificação Telegram) mas pendente de validação local + deploy (migration +
-edge `notificar-liberacao` + schedule QStash).

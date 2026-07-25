@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-07-17
+atualizado: 2026-07-24
 ---
 
 # Problemas Resolvidos
@@ -37,7 +37,7 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   obrigatório "Tipo de embalagem" faltando em 1 das 4 famílias (mesmas irmãs, categoria idêntica)
   confirmado como inconsistência real de chamada de IA por família (não falta de lastro no
   texto) — resolvido via editor manual (`atributos-familia`), sem IA. Detalhe completo:
-  [[../../docs/TASKS.md|TASKS.md]] (topo do arquivo).
+  [TASKS.md](../../docs/TASKS.md) (topo do arquivo).
 - **Follow-ups de mensagens pós-venda nunca sincronizavam em tempo real (plano 035, 2026-07-12)** —
   o `ml-webhook` deduplica notificações por `(topic, resource)`, mas o resource de `messages`
   (`/messages/packs/{pack}/sellers/{seller}`) é **idêntico para toda mensagem da mesma conversa**.
