@@ -85,9 +85,25 @@ function que os grava no Vault.
 O ganho colateral é o que conserta o pior modo de falha (sessão expirada, abaixo): com apenas um
 `code` em repouso, esticar o TTL do claim para 600s — igual ao `STATE_TTL_S` — custa quase nada.
 
-> **Ação obrigatória antes de implementar:** confirmar que o tempo de vida do `code` de
-> autorização do ML supera 600s. Não é verificável pelo repositório. Se for menor, o TTL do claim
-> desce para o valor real do ML.
+O invariante — não a constante — é o que fica registrado: **`TTL do claim ≤ TTL do code do ML`**.
+600s é o valor atual, e a fonte que o estabelecer deve ser citada aqui.
+
+> **Ação obrigatória e bloqueante:** confirmar o tempo de vida do `code` de autorização do ML.
+> Não é verificável pelo repositório. Isso deixou de ser diligência e virou dependência dura:
+> no desenho antigo a troca acontecia milissegundos depois de o ML emitir o code
+> (`callback:46`), então a vida dele nunca importou; mover a troca para depois de uma ação
+> humana torna esse prazo carregado. Ordem de custo para descobrir sem produção: (a) a
+> documentação oficial de autenticação server-side do ML; (b) uma segunda aplicação ML com
+> **test users** (`/users/test_user`), rodando o fluxo sem vendedor real; (c) uma sonda que não
+> exige espera — trocar o mesmo `code` duas vezes: a segunda tentativa devolve `invalid_grant`,
+> confirmando de uma vez a semântica de uso único e o formato exato do erro que o front terá de
+> renderizar.
+
+**Comportamento com `code` expirado, escrito de propósito:** o claim faz `GETDEL` **antes** da
+troca, então o id já foi destruído quando o ML recusa. `postToken` (`token.ts:42-46`) lança
+`MLApiError` com `oauthError` (`invalid_grant` para expirado/usado). A falha é **irrecuperável no
+lugar**: o usuário precisa refazer o consentimento inteiro. O front tem de renderizar "reinicie a
+conexão" com o botão Conectar ativo — nunca um erro genérico sem saída.
 
 ### `verify_jwt` acompanha os irmãos
 
@@ -98,13 +114,26 @@ o mesmo padrão: `verify_jwt = false` + `requireUserOrg` + exigência de admin (
 onde o portão real vive. Evita ser o único caminho com preflight de JWT da plataforma num fluxo
 que manda header `Authorization` (não-safelisted, logo com preflight CORS).
 
-### Tripwire de observabilidade
+### Tripwire de observabilidade — por junção de log, sem campo novo
 
-O `org_id` continua no `state` e é copiado para o registro do claim — **sem nenhum poder de
-autorização**. Na redenção, compara-se com o `org_id` do chamador: fluxo legítimo sempre bate;
-divergência é o ataque aterrissando inofensivamente ou um id repassado. `console.warn` com
-`{state_org_id, caller_org_id, ml_user_id}` e **nunca** o token ou o `code`. Contar também claims
-que expiram sem redenção.
+A versão anterior copiava o `org_id` do `state` para o registro do claim, "sem poder de
+autorização". Isso é frágil pelo motivo errado: deixa o valor controlado pelo atacante a **um
+`if` de distância** do caminho de escrita — exatamente o bug que este ADR fecha. Um campo que não
+existe não pode virar condição.
+
+Então o `org_id` **não** entra no registro do claim. A correlação é por log:
+o callback registra `{claim_id, state_org_id}`, o claim registra
+`{claim_id, caller_org_id, ml_user_id}`, e uma investigação junta pelo `claim_id`. Divergência é
+o ataque aterrissando inofensivamente ou um id repassado. **Nunca** logar o token nem o `code`.
+
+O invariante que um revisor futuro consegue checar em uma linha:
+**`ml-oauth-claim` não lê org de lugar nenhum além de `requireUserOrg`.**
+
+Claims emitidos e não redimidos saem da mesma junção — `GETDEL` mais TTL **não gera evento de
+expiração** (expiração no Redis é silenciosa sem keyspace notifications, e
+`_shared/redis/client.ts` não tem nada disso), então "contar expirados" como métrica direta não é
+construível. Emitidos menos redimidos numa janela dá o mesmo número, a partir de linhas de log que
+o tripwire já produz.
 
 ## Consequências
 
@@ -144,9 +173,29 @@ que expiram sem redenção.
   sem erro visível.
 - `src/pages/Login.tsx:18` — lê `from.pathname` e **descarta o `search`**. Com sessão expirada
   durante a autorização, o `ProtectedRoute` (`protected-route.tsx:26`) manda para o login e o id
-  do claim evapora. Precisa preservar `pathname + search`.
-- Guarda contra `StrictMode` (`main.tsx:13`): `useEffect` ingênuo dispara o claim duas vezes e a
-  segunda falha após o `GETDEL`. Tratar "claim não encontrado mas conexão presente" como sucesso.
+  do claim evapora. Precisa preservar `pathname + search`. **Cobertura honesta:** mesmo com o
+  fix, `loc.state` vive em memória — recarregar a página de login ou abri-la em outra aba perde o
+  `from` inteiro, com ou sem `search`. É recuperação best-effort, não garantia.
+- **Limpar o param depois de redimir** — `setSearchParams({}, { replace: true })` em
+  `Canais.tsx` (hoje só o getter é desestruturado, `:28`). Isto substitui a heurística que a
+  versão anterior propunha ("claim não encontrado mas conexão presente = sucesso"), que era
+  **racy e erraria em produção**: entre o `GETDEL` da primeira chamada e a linha existir, o claim
+  ainda faz a ida ao ML (`token.ts:29-41`, até 15s de `AbortSignal.timeout`), o `buscarNickname`
+  e a escrita no Vault — a segunda chamada olharia no meio disso, não veria conexão e mostraria
+  erro sobre uma conexão que está dando certo. Além disso, o duplo-disparo do `StrictMode` é
+  **só de desenvolvimento**; a versão em produção do problema é o param sobreviver na URL (F5,
+  botão voltar, URL de retorno compartilhada ou favoritada), que re-dispara o claim e encontra
+  nada. Limpar o param cobre os três casos com uma linha, e permite **apagar** a heurística em
+  vez de implementá-la.
+- `src/pages/Canais.tsx:65` — o banner de sucesso é condicionado a `mlConectado`
+  (`ml_conectado === 'true'`, `:32`). Com o retorno novo ele nunca renderiza: o card vira
+  "Conectado" pela invalidação, mas a confirmação explícita some no caminho feliz.
+- `src/pages/Canais.tsx:70-75` — o mapa de erro só trata `ml_erro === 'state'`; todo o resto vira
+  mensagem genérica. A tradução do 23505, o 403 de não-admin concluindo o fluxo e o
+  `invalid_grant` não têm onde aparecer a menos que o erro do claim passe por `erroAcao` (`:29`).
+- **Invalidar `QK.conexoes` também**, não só `useMlConnection()`: o `handleDesconectarML`
+  invalida as duas (`:50-51`) porque `conectados` (`:36`) alimenta os cards dos outros canais.
+  Espelhar o handler de desconexão.
 - `chamarEdge` (`src/lib/ml-oauth.ts:3`) não manda corpo; o claim precisa de um, com
   `Content-Type: application/json` (já permitido em `cors.ts:4`).
 - Tradução do **23505**: conta ML já pertencente a outra org cai no INSERT
@@ -161,13 +210,24 @@ que expiram sem redenção.
 
 Merge **não** deploya Edge Function. Ordem obrigatória:
 
+0. a **migration do índice único** — aditiva e independente das outras etapas; pode ir primeiro.
+   Pior caso de chegar cedo: o callback antigo transformaria uma colisão em `ml_erro=token` cru,
+   numa colisão que a produção hoje não tem (verificado);
 1. `ml-oauth-claim` (a function nova, que ainda ninguém chama);
-2. o frontend, tolerando **os dois** retornos (`ml_conectado` antigo e o param novo);
-3. `ml-oauth-callback` por último.
+2. o frontend, tolerando **os dois** retornos (`ml_conectado` antigo e o param novo) — o callback
+   antigo ainda grava e devolve `ml_conectado=true`, que o front tolerante trata;
+3. `ml-oauth-callback` por último, virando o formato de retorno para um front já preparado.
 
-Invertido, o callback grava claims que nada consome e conectar loja morre. **Rollback** é o
-espelho: reverter só o callback para a versão anterior e as conexões voltam a funcionar. Como
-`_shared/redis/client.ts` muda, todas as functions que o importam precisam de redeploy.
+**O F4 continua totalmente explorável até a etapa 3 entrar.** Não existe estado parcialmente
+mitigado — dizer isso aqui evita que alguém pare no meio achando que já protegeu algo.
+
+Usuário em voo que começou sob o callback antigo volta no novo com `state` válido e recebe um id
+de claim: funciona. **Rollback** é o espelho, e o "**só** o callback" é carregado: reverter também
+o front deixaria ids de claim em voo órfãos.
+
+Como `_shared/redis/client.ts` muda, todas as functions que o importam entram no redeploy. Isso é
+mais conservador do que o estritamente necessário (a export é aditiva e cada function empacota a
+própria cópia), mas é a regra do projeto e o custo é baixo.
 
 ## Verificação
 
@@ -181,6 +241,10 @@ executado com duas orgs:
 3. Sessão expirada no retorno: login e conclusão do claim sem perder o id.
 4. Reconectar conta já conectada na mesma org (deve funcionar — `delete_marketplace_connection`,
    `migration:130-132`, faz hard delete) e de outra org (deve dar a mensagem do 23505).
+5. Voltar do ML e dar F5 / usar o botão voltar: **não** pode exibir erro sobre uma conexão que
+   deu certo (é o que o passo de limpar o param garante).
+6. Sonda de `code`: trocar o mesmo `code` duas vezes e confirmar `invalid_grant` na segunda —
+   valida a semântica de uso único e o formato do erro que o front renderiza.
 
 ## Fora de escopo (registrado, não corrigido)
 
