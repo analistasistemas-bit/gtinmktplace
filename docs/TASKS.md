@@ -4,8 +4,9 @@
 
 ## Correções da varredura de segurança (relatório CLAUDE-SECURITY-20260724-125213) — 2026-07-25
 
-Branch `fix-security-e7`. 10 achados verificados por painel adversarial (4 HIGH, 6 MEDIUM);
-9 corrigidos aqui, 1 pendente. Nada foi aplicado no banco nem deployado.
+Branch `fix-security-e7`. 10 achados verificados por painel adversarial (4 HIGH, 6 MEDIUM):
+**8 corrigidos aqui (F1, F2, F3, F5, F7, F8, F9, F10), 2 pendentes (F4, F6).** Nada foi
+aplicado no banco nem deployado.
 
 > **Ressalva sobre o relatório.** A seção "Working-tree note" do
 > `CLAUDE-SECURITY-RESULTS.md` atribui a árvore suja a trabalho concorrente "no mesmo
@@ -33,6 +34,11 @@ Branch `fix-security-e7`. 10 achados verificados por painel adversarial (4 HIGH,
   e `anon`. **ADR-0090.** Não aplicada — `db push` é decisão do Diego.
 - [x] **F5** — override de `chatId` no teste do Telegram agora exige admin (a tela que o usa,
   `/usuarios`, já é admin-only); o teste sem override segue liberado para membro comum.
+- [x] **F9** — SSRF: `categoria_ml_id` ia cru para o caminho de
+  `https://api.mercadolibre.com/categories/${id}/attributes`, numa chamada que leva o token de
+  vendedor da org; como o parser de URL resolve `..` antes de enviar, `../` colapsava o caminho
+  e virava um GET autenticado em qualquer outro endpoint do ML. Agora exige `/^MLB\d+$/`, no
+  call site (`definir-categoria-familia`, com 400 explícito) e dentro de `lerSchemaAtributos`.
 - [x] **F10** — `resource` do webhook ganhou teto de tamanho e formato, e o throttle saiu da
   contagem de linhas (que o próprio INSERT falhando zerava) para um contador no Redis.
 - [ ] **F4** — `state` do OAuth do ML não é amarrado ao browser: um admin gera o link e a vítima
@@ -44,10 +50,16 @@ Branch `fix-security-e7`. 10 achados verificados por painel adversarial (4 HIGH,
 - [ ] **F6** — supressão de notificação no `ml-webhook`: quem sabe o `mlUserId` público enche a
   janela do vendedor e faz o evento legítimo ser descartado. Só autenticação de origem resolve
   (allowlist de IP do ML ou segredo na URL de notificação). Não coberto pelo F10.
+- [ ] **Checagem antes do push (F2)** — se uma colisão de `codigo_pai` entre orgs já tiver
+  copiado um `ml_item_id` de um tenant para outro, o filtro novo faz aquele pai voltar a ser
+  tratado como CREATE no próximo ingest e **duplicar um anúncio real no ML**. Conferir antes:
+  `select codigo_pai, count(distinct org_id) from public.familias where ml_item_id is not null group by 1 having count(distinct org_id) > 1;`
+  Se voltar linha, resolver o vínculo à mão antes de subir o fix.
 - [ ] **Deploy** — tudo exceto o F3 mexe em `supabase/functions/**`; merge não deploya. Rodar
   `supabase functions deploy` das funções afetadas: `ingest-lote`, `excluir-lote`,
-  `remover-publicado`, `monitorar-moderados`, `ml-webhook` (mudou `_shared/`: redeployar todas
-  as que importam `lote/exclusao.ts`, `faturamento/venda.ts` e `redis/client.ts`).
+  `remover-publicado`, `monitorar-moderados`, `ml-webhook`, `definir-categoria-familia` (mudou
+  `_shared/`: redeployar todas as que importam `lote/exclusao.ts`, `faturamento/venda.ts`,
+  `redis/client.ts` e `categoria/schema.ts`).
 
 ## Link direto pro ML nas notificações (venda/pergunta/devolução) — 2026-07-24
 
