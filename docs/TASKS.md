@@ -2,6 +2,53 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Correções da varredura de segurança (relatório CLAUDE-SECURITY-20260724-125213) — 2026-07-25
+
+Branch `fix-security-e7`. 10 achados verificados por painel adversarial (4 HIGH, 6 MEDIUM);
+9 corrigidos aqui, 1 pendente. Nada foi aplicado no banco nem deployado.
+
+> **Ressalva sobre o relatório.** A seção "Working-tree note" do
+> `CLAUDE-SECURITY-RESULTS.md` atribui a árvore suja a trabalho concorrente "no mesmo
+> worktree". O que houve foi outro: o worktree usado como raiz do scan foi **removido do git
+> por outra sessão durante a execução**, e o `git` daquele caminho passou a resolver para o
+> checkout principal. Daí o carimbo citar `17ca699` (commit que entrou no meio da rodada) em
+> vez de `b15ecb8` (o que foi realmente lido) e marcar `-dirty` por alterações do checkout
+> principal. `supabase/functions` é idêntico entre os dois commits (`git diff` vazio no
+> escopo). Por causa dessa incerteza, **todo achado foi reconferido linha a linha contra o
+> checkout principal em `17ca699` antes de virar correção** — todos bateram.
+
+- [x] **F2/F7/F8** — `ingest-lote` lia o lote por id cru e buscava famílias anteriores só por
+  `codigo_pai`, ambos no client service_role (RLS desligada): dava leitura/escrita cross-tenant
+  e vazava `ml_item_id`/preço/análise de concorrência de outra org. Os dois filtros agora são
+  por `org_id` (ADR-0056 §4: "quando existir org_id, os filtros viram `.eq('org_id', …)`"),
+  preservando o compartilhamento intra-org que evita duplicar anúncio no ML.
+- [x] **F1** — `excluir-lote` e `remover-publicado` apagavam do Storage caminhos vindos de
+  colunas escritas pelo cliente, via service_role (RLS de storage não se aplica). Guard novo
+  `filtrarPathsDeDonos`: `excluir-lote` trava no `lote.user_id`, `remover-publicado` nos
+  profiles da própria org. Limite conhecido: path fora da convenção `${userId}/…` vira arquivo
+  órfão — nunca delete indevido.
+- [x] **F3** — RLS é row-level, não column-level: qualquer admin de org fazia `PATCH` no
+  PostgREST com `is_super_admin: true` e virava super-admin da plataforma. Migration
+  `20260725140339_lockdown_escrita_profiles.sql` revoga update/insert/delete de `authenticated`
+  e `anon`. **ADR-0090.** Não aplicada — `db push` é decisão do Diego.
+- [x] **F5** — override de `chatId` no teste do Telegram agora exige admin (a tela que o usa,
+  `/usuarios`, já é admin-only); o teste sem override segue liberado para membro comum.
+- [x] **F10** — `resource` do webhook ganhou teto de tamanho e formato, e o throttle saiu da
+  contagem de linhas (que o próprio INSERT falhando zerava) para um contador no Redis.
+- [ ] **F4** — `state` do OAuth do ML não é amarrado ao browser: um admin gera o link e a vítima
+  que autorizar entrega os tokens dela para a org do atacante. **Não corrigido**: exige hop GET
+  no domínio das functions para setar cookie first-party (o front hoje chama por XHR, e o CORS é
+  `Allow-Origin: *`, o que impede credencial), `GETDEL` atômico no Redis e índice único parcial
+  em `marketplace_connections(canal, conta_externa_id)` — hoje a mesma conta ML em duas orgs faz
+  `resolverIdentidade` (`maybeSingle`) derrubar os webhooks das duas.
+- [ ] **F6** — supressão de notificação no `ml-webhook`: quem sabe o `mlUserId` público enche a
+  janela do vendedor e faz o evento legítimo ser descartado. Só autenticação de origem resolve
+  (allowlist de IP do ML ou segredo na URL de notificação). Não coberto pelo F10.
+- [ ] **Deploy** — tudo exceto o F3 mexe em `supabase/functions/**`; merge não deploya. Rodar
+  `supabase functions deploy` das funções afetadas: `ingest-lote`, `excluir-lote`,
+  `remover-publicado`, `monitorar-moderados`, `ml-webhook` (mudou `_shared/`: redeployar todas
+  as que importam `lote/exclusao.ts`, `faturamento/venda.ts` e `redis/client.ts`).
+
 ## Link direto pro ML nas notificações (venda/pergunta/devolução) — 2026-07-24
 
 - [x] `montarMensagemNovaVenda`/`NovaPergunta`/`NovaDevolucao` (`_shared/notificacoes/telegram.ts`)
