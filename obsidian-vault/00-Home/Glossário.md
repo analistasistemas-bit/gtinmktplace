@@ -1,6 +1,6 @@
 ---
 tags: [home, glossario]
-atualizado: 2026-07-20
+atualizado: 2026-07-24
 ---
 
 # Glossário
@@ -36,7 +36,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 |---|---|
 | **Canal** | Um marketplace de destino (hoje só Mercado Livre). Abstraído pelo conector de canal — ver [[Integrações]]. |
 | **Conector (ChannelConnector)** | Interface única de operações de anúncio por canal (`_shared/canais/`). |
-| **Anúncio externo** | Espelho normalizado de produto-canal, identidade `(user_id, canal, codigo_pai)`. Tabela `anuncios_externos`. |
+| **Anúncio externo** | Espelho normalizado de produto-canal, identidade `(org_id, canal, codigo_pai, particao)`. Tabela `anuncios_externos`. |
 | **Dual-write** | Workers gravam em `familias`/`variacoes` (fonte de verdade hoje) e em `anuncios_externos` (espelho). |
 | **Catálogo (ML)** | Ficha oficial de produto do ML. Vínculo opt-in via GTIN. |
 
@@ -65,6 +65,6 @@ primeiro). Aqui os termos ganham links internos do vault.
 
 | Termo | Definição |
 |---|---|
-| **Operação compartilhada** | Tenant único atual: todos os usuários autenticados veem/operam os mesmos dados. Isolamento por `org_id` chega no `E7`. |
+| **Operação compartilhada** | Dentro de uma organização, todos os membros veem/operam os mesmos dados. Organizações são isoladas por `org_id`. |
 | **Admin** | Usuário com `profiles.is_admin = true`. Gerencia usuários e enxerga todos os menus. |
 | **Permissão de menu** | Menus que um usuário não-admin pode ver/acessar (`profiles.allowed_menus`). Ver [[Usuários]]. |

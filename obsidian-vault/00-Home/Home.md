@@ -1,14 +1,13 @@
 ---
 tags: [home, indice]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # PubliAI — Vault
 
-Base de conhecimento viva do projeto. Fonte de verdade primária para arquitetura: **[[Graphify]]**
-(grafo de código `src/` + `supabase/`, regenerável a qualquer momento) e o código-fonte do
-repositório. Documentação técnica formal complementar vive em `docs/` (Diátaxis) e
-`docs/decisions/` (ADRs) — este vault referencia esses documentos, não os substitui.
+Base de conhecimento viva do projeto. As fontes de verdade são `docs/` (Diátaxis) e
+`docs/decisions/` (ADRs); **[[Graphify]]** confirma relações do código `src/` + `supabase/`.
+Este vault referencia esses documentos, não os substitui.
 
 ## Começar por aqui
 
@@ -46,6 +45,9 @@ repositório. Documentação técnica formal complementar vive em `docs/` (Diát
 - [[IA]]
 - [[Configurações]]
 - [[Usuários]]
+- [[Faturamento]]
+- [[Financeiro]]
+- [[Notificações]]
 - [[Billing]]
 - [[Assinaturas]]
 
@@ -60,6 +62,6 @@ repositório. Documentação técnica formal complementar vive em `docs/` (Diát
 ## Estado atual (resumo)
 
 - Marketplace ativo em produção: **Mercado Livre**
-- Épicos validados em produção: `E1`, `E1b`, `E2`, `E3`, `E4`
+- Épicos validados em produção: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`
 - Próximo épico de produto: `E5` — conector Shopee (ainda não implementado)
 - Fonte detalhada e sempre atualizada: `docs/project-status.md`

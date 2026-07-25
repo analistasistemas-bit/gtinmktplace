@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, apis]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # APIs externas
@@ -26,8 +26,9 @@ camada de abstração multicanal, [[Backend]] para onde cada módulo vive.
 
 ## Mercado Pago (`_shared/mercadopago/*`)
 
-- Pagamentos/liberação — usado por `resumo-financeiro`. Secret único `MP_ACCESS_TOKEN`
-  (single-tenant hoje).
+- Pagamentos/liberação — usado por `resumo-financeiro`. O segredo é configurado por organização
+  em `configuracoes.mp_access_token_secret_id`; o fallback global legado é um risco crítico
+  registrado no ADR-0086.
 - `/mercadopago_account/balance` — **bloqueado (403)**; caixa é calculado por venda liberada
   (`ml_vendas.money_release_date`), não por saldo direto.
 

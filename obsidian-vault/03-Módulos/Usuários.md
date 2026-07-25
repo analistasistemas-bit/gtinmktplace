@@ -1,6 +1,6 @@
 ---
 tags: [modulo, usuarios]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # Usuários
@@ -10,8 +10,8 @@ Rota `/usuarios`, exclusiva de **admin** (`src/pages/Usuarios.tsx`). Ver [[Segur
 
 ## Contexto
 
-Operação compartilhada (fase intermediária pré-`E7`): todos os usuários autenticados veem/operam
-os mesmos dados; o que muda por usuário é **permissão de menu**, não isolamento de dados.
+Dentro de uma organização, os membros veem/operam os mesmos dados; organizações são isoladas por
+`org_id`. Permissões de menu continuam definidas por usuário.
 
 ## Ações (edge function `usuarios`, `verify_jwt=true`, admin-only)
 

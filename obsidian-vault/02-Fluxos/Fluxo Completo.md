@@ -1,6 +1,6 @@
 ---
 tags: [fluxos]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # Fluxo Completo
@@ -13,7 +13,7 @@ flowchart TD
     B --> C["QStash enfileira famílias pendentes"]
     C --> D["process-familia worker<br/>familia: processando→pronto/erro"]
     D --> E["REVISÃO HUMANA<br/>lote: revisao"]
-    E -->|Publicar| F["publicar-familias<br/>fila serial (parallelism=1)"]
+    E -->|Publicar| F["publicar-familias<br/>fila serial por (canal, org)"]
     F --> G["publish-familia-ml (CREATE)<br/>ou update-familia-ml (UPDATE)<br/>familia: publicando→publicado"]
     G --> H["vincular-catalogo (+10min)<br/>lote: concluido"]
 ```
@@ -33,6 +33,10 @@ flowchart TD
    espelha em `anuncios_externos`.
 6. **Vínculo de catálogo** — `vincular-catalogo` (delay 10min): opt-in por GTIN; alerta Telegram
    se no-match.
+
+Em categorias User Products que exigem item plano, uma família multicor publica N itens técnicos
+agregados por `family_id`/`family_name`; o UPDATE é feito por item filho. Ver
+[[Publicação Mercado Livre]].
 
 ## Referências de código
 

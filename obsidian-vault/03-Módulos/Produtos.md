@@ -1,6 +1,6 @@
 ---
 tags: [modulo, produtos]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # Produtos
@@ -12,10 +12,11 @@ O domínio central: **Lote → Família (= 1 anúncio) → Variação (= 1 SKU/c
 
 - **`/lotes`, `/novo-lote`** (`Lotes.tsx`) — lista e upload de novos lotes
 - **`/progresso/:loteId`** (`Progresso.tsx`) — acompanha ingestão/processamento em tempo real
-  (Realtime do Supabase)
+  (Realtime do Supabase) e permite atualização rápida de estoque para famílias `UPDATE` elegíveis
 - **`/revisao`, `/revisao/:loteId`** (`RevisaoIndex.tsx`, `Revisao.tsx`) — revisão humana
   obrigatória antes de publicar
-- **`/relatorio/:loteId`** (`Relatorio.tsx`) — relatório pós-processamento de um lote
+- **`/relatorio/:loteId`** (`Relatorio.tsx`) — relatório pós-processamento, incluindo variações e
+  famílias que zeraram estoque na rodada
 
 ## Componentes principais (`src/components/`)
 

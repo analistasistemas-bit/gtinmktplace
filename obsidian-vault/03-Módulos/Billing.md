@@ -1,6 +1,6 @@
 ---
 tags: [modulo, billing, planejado]
-atualizado: 2026-07-01
+atualizado: 2026-07-24
 ---
 
 # Billing
@@ -25,5 +25,5 @@ atualizado: 2026-07-01
 
 ## Dependência
 
-Faz sentido só depois do `E7` (multi-tenancy real com `org_id`) — hoje o projeto está em
-operação compartilhada, sem isolamento por empresa. Ver [[Segurança]].
+O `E7` (multi-tenancy real com `org_id`) está em produção; Billing continua planejado para o
+`E8`. Ver [[Segurança]].

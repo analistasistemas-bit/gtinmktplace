@@ -1,13 +1,13 @@
 ---
 tags: [arquitetura]
-atualizado: 2026-07-19
+atualizado: 2026-07-24
 ---
 
 # Arquitetura Geral
 
-Fonte primária: **[[Graphify]]** (grafo `src/`+`supabase/`, 1747 nós, 4650 arestas, 82
-comunidades) + `docs/explanation/arquitetura.md`. Ver também [[Frontend]], [[Backend]],
-[[Supabase]], [[Banco de Dados]].
+Fonte primária: `docs/explanation/arquitetura.md`; **[[Graphify]]** confirma o grafo
+`src/`+`supabase/` (8313 nós, 16074 links no commit `c14f759d0ae6`). Ver também [[Frontend]],
+[[Backend]], [[Supabase]], [[Banco de Dados]].
 
 > Diagramas visuais atualizados (pós-E6/E7, Archify): `docs/architecture/` — ver especialmente
 > [02-general-architecture](../../docs/architecture/diagrams/02-general-architecture/) e
@@ -89,6 +89,11 @@ flowchart LR
 Referência de código: `src/lib/{ingest,publicar,publicavel,jornada,queries}.ts`;
 `supabase/functions/{ingest-lote,process-familia,publish-familia-ml,update-familia-ml,vincular-catalogo}`.
 
+Em categorias ML de User Products que exigem item plano, uma família multicor publica N itens
+técnicos, agregados por `family_id`/`family_name`. A saga confirma o resultado e o UPDATE atua
+por item filho, inclusive ao mudar a composição. Ver
+`docs/decisions/0088-publicacao-user-products-multi-item.md`.
+
 ## Multicanal (preparação para o 2º marketplace)
 
 Hoje só existe o Mercado Livre, mas a arquitetura já separa **o que publicar** de **onde
@@ -97,8 +102,9 @@ publicar** via [[Integrações|conector de canal]] (`_shared/canais/`) e o espel
 
 ## Módulos além da publicação
 
-- **Faturamento** — vendas, perguntas e devoluções do ML via webhooks + backfill + reconciliação
-- **Financeiro** — "a receber" e liberações via Mercado Pago
+- **[[Faturamento]]** — vendas, perguntas e devoluções do ML via webhooks + backfill + reconciliação
+- **[[Financeiro]]** — "a receber" e liberações via Mercado Pago
+- **[[Notificações]]** — espelho in-app dos alertas operacionais
 - **Monitoramento** — varredura de anúncios moderados + alertas Telegram
 - **Viabilidade** — análise de concorrência e margem antes de cadastrar
 

@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, backend, edge-functions]
-atualizado: 2026-07-06
+atualizado: 2026-07-24
 ---
 
 # Edge Functions
@@ -35,8 +35,8 @@ Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (mó
 
 - **Idempotência** — claims atômicos (`UPDATE … WHERE status=…`), upserts, reuso de
   `picture_id`/IDs já gravados.
-- **Fila serial de publicação** — `garantirFilaSerial(userId)` → `parallelism=1` por usuário,
-  evita duas publicações concorrentes da mesma conta colidirem no ML.
+- **Fila serial de publicação** — `parallelism=1` por `(canal, org)`, evitando publicações
+  concorrentes da mesma conexão de canal.
 - **Dedup de webhook** — `(topic, resource)` único em `ml_webhook_eventos`.
 - **Fan-out multicanal (E6, ADR-0061)** — `publicar-familias` publica ML dentro de `if(incluiML)`
   (intocado) e, para cada canal extra conectado pela org, faz claim próprio na linha de
@@ -44,7 +44,7 @@ Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (mó
   re-claima), preservando a idempotência do retry do QStash. Auth do gateway agora por
   `requireUserOrg` (org do E7).
 
-## ⚠️ Incidente conhecido — divergência de `verify_jwt`
+## Incidente resolvido — divergência de `verify_jwt`
 
 Confirmado em produção via logs (2026-06-28): funções acionadas por QStash/webhook mas com
 `verify_jwt=true` são **rejeitadas pelo gateway (401) antes de executar** sua própria checagem —
@@ -57,6 +57,6 @@ porque o enfileirador não envia `Authorization` e o ML não manda JWT Supabase 
 | `monitorar-moderados` | false | 200 ✓ |
 | `notificar-liberacao` | false | 200 ✓ |
 
-Correção pendente de aprovação: `verify_jwt=false` para `ml-webhook`, `sync-venda`,
-`reconciliar-faturamento`, `backfill-faturamento` (todas já autenticam internamente). Detalhe
-completo em `docs/reference/edge-functions.md`.
+O ADR-0046 foi aceito: `ml-webhook`, `sync-venda`, `reconciliar-faturamento` e
+`backfill-faturamento` estão deployadas com `verify_jwt=false`; todas mantêm autenticação interna.
+Detalhe completo em `docs/reference/edge-functions.md`.

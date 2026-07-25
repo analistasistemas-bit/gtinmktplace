@@ -1,6 +1,6 @@
 ---
 tags: [fluxos, publicacao, mercado-livre]
-atualizado: 2026-07-10
+atualizado: 2026-07-24
 ---
 
 # Publicação Mercado Livre
@@ -13,7 +13,7 @@ atualizado: 2026-07-10
 ```mermaid
 flowchart TD
     R[Revisão aprovada] --> PF["publicar-familias<br/>marca publicando + garante fila serial"]
-    PF --> Q["QStash, parallelism=1 por usuário"]
+    PF --> Q["QStash, parallelism=1 por (canal, org)"]
     Q --> Create{"CREATE ou UPDATE?"}
     Create -->|CREATE| PC["publish-familia-ml<br/>sobe fotos, cria item"]
     Create -->|UPDATE| PU["update-familia-ml<br/>repõe estoque, cor nova"]
@@ -35,6 +35,13 @@ Repõe estoque em cores já casadas, cria variação para cor nova (opt-out — 
 padrão), sincroniza marca/dimensões, atualiza descrição só se mudou. Preço/título/foto
 preservados quando o escopo é só estoque.
 
+## User Products — item plano multicor (ADR-0088)
+
+Em categorias que exigem item plano, uma família com mais de uma cor publica N itens técnicos,
+um por cor, agregados pelo ML por `family_id`/`family_name`. A publicação usa saga e confirma o
+conjunto; no UPDATE, cada item filho é atualizado e mudanças de composição também são confirmadas
+por `GET`.
+
 ## Split — produto com >100 cores (`publicar-split-ml`, ADR-0048)
 
 O ML limita **100 variações** e **99.999 de estoque somado** por anúncio. Produtos acima disso
@@ -50,10 +57,10 @@ publicam em **N anúncios** ("partições"):
 Validado em produção: `02835002` (120 cores) em 2 anúncios (`MLB6914358210` 100 cores +
 `MLB4828349403` 18 cores).
 
-## Fila serial (ADR-0034)
+## Fila serial
 
-Publicações concorrentes da mesma conta colidiam no ML (foto assíncrona ainda indisponível →
-item travado em "publicando"). `garantirFilaSerial(userId)` força `parallelism=1` por usuário.
+Publicações concorrentes da mesma conexão de canal podem colidir no ML (foto assíncrona ainda
+indisponível → item travado em "publicando"). A fila força `parallelism=1` por `(canal, org)`.
 
 ## Foto assíncrona — retry de propagação (ADR-0033)
 
