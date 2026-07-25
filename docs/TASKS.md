@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Seed de user_products corrigido (ponta solta do bloqueio de desconto) — 2026-07-25
+
+Descoberto ao preparar o `db push` da varredura de segurança: a migration
+`20260724150000_seed_user_products_desconto_incompativel.sql` (commit `9a0a067`, leva de
+24/07 09:38–09:47 que entregou "bloquear desconto visual em user products") **nunca foi
+aplicada** — o código foi para produção, a migration ficou para trás. O nome do arquivo tem
+timestamp redondo (`150000`), incompatível com o que o `supabase migration new` gera, o que
+sugere arquivo escrito à mão e fora do fluxo de push.
+
+- [x] **MLB270273 (Fios e Cadarços) removida do seed.** Não se sustenta: 32 famílias
+  publicadas com sucesso pelo caminho legacy `variations[]`, nunca observada com a assinatura
+  reativa de UP (o cache aprendido em produção tem só MLB271701 e MLB419782), e fora do Set
+  `CATEGORIAS_QUE_EXIGEM_FAMILY_NAME` do ADR-0084. Não seria cosmético: cache `user_products`
+  faz `publish-familia-ml` pular a tentativa `variations` e rejeitar de imediato família com
+  desconto (`processar.ts:150-160`). O ADR-0088 §3 já dizia em código que seed não prova UP.
+- [x] **MLB271227 (Zíperes) mantida.** É a categoria do ADR-0084, exige item plano de verdade
+  e já está no Set — o seed não muda a rota, só antecipa o bloqueio de desconto, que é o
+  propósito declarado da entrega original.
+- [x] **Cópia solta `"... 2.sql"` removida** (untracked, sufixo de duplicação do macOS). Fazia
+  o `supabase migration list` enxergar a versão `20260724150000` duplicada — um `db push`
+  tentaria aplicar duas migrations com a mesma versão.
+- [ ] **`db push` pendente** das duas migrations restantes (este seed + o lockdown do F3).
+
 ## Correções da varredura de segurança (relatório CLAUDE-SECURITY-20260724-125213) — 2026-07-25
 
 Branch `fix-security-e7`. 10 achados verificados por painel adversarial (4 HIGH, 6 MEDIUM):
