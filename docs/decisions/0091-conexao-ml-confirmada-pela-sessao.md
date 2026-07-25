@@ -88,8 +88,22 @@ O ganho colateral é o que conserta o pior modo de falha (sessão expirada, abai
 O invariante — não a constante — é o que fica registrado: **`TTL do claim ≤ TTL do code do ML`**.
 600s é o valor atual, e a fonte que o estabelecer deve ser citada aqui.
 
+> **Resultado da pesquisa (2026-07-25):** a documentação pública do ML **não informa** o tempo de
+> vida do `code`. Confirmado o que ela informa: `access_token` vale 6h, `refresh_token` 6 meses, e
+> o `code` é de **uso único**, com `invalid_grant` ("Error validating grant. Your refresh token or
+> authorization code may be expired or has already been used"). Os domínios de documentação
+> (`developers.mercadolivre.com.br`, `developers.mercadolibre.com.ar`, `global-selling`) bloqueiam
+> fetch automatizado (403), então a leitura veio de busca — se alguém tiver acesso ao portal
+> logado, vale reconferir.
+>
+> **Consequência sobre o trade-off:** guardar o `code` troca um custo conhecido (segredo vivo em
+> repouso) por uma dependência **desconhecida**. No caminho feliz isso é irrelevante — o claim
+> dispara segundos após o redirect. O caminho onde pesa é exatamente o que motivou o TTL de 600s:
+> sessão expirada → login → redenção. Ver "Decisão pendente" no fim deste ADR.
+
 > **Ação obrigatória e bloqueante:** confirmar o tempo de vida do `code` de autorização do ML.
-> Não é verificável pelo repositório. Isso deixou de ser diligência e virou dependência dura:
+> Não é verificável pelo repositório nem pela documentação pública. Isso deixou de ser diligência
+> e virou dependência dura:
 > no desenho antigo a troca acontecia milissegundos depois de o ML emitir o code
 > (`callback:46`), então a vida dele nunca importou; mover a troca para depois de uma ação
 > humana torna esse prazo carregado. Ordem de custo para descobrir sem produção: (a) a
@@ -253,6 +267,25 @@ executado com duas orgs:
    deu certo (é o que o passo de limpar o param garante).
 6. Sonda de `code`: trocar o mesmo `code` duas vezes e confirmar `invalid_grant` na segunda —
    valida a semântica de uso único e o formato do erro que o front renderiza.
+
+## Decisão pendente: `code` ou token no Redis
+
+A pesquisa de 2026-07-25 não achou o prazo do `code` na documentação pública, e isso reabre —
+sem invalidar — a escolha entre guardar o `code` ou o token. As duas alternativas têm a **mesma
+propriedade de segurança** (a org vem da sessão autenticada); mudam só o custo e o modo de falha.
+
+| | Guardar o `code` (plano atual) | Trocar no callback e guardar o token |
+|---|---|---|
+| Segredo em repouso | nenhum vivo (o `code` é inerte sem o `ML_CLIENT_SECRET`) | `access_token` + `refresh_token` por ~TTL |
+| Dependência do prazo do `code` | **sim** — desconhecida | não (a troca ocorre em milissegundos) |
+| Caminho feliz | idêntico | idêntico |
+| Sessão expirada → login → redenção | falha se o `code` vencer; exige refazer o consentimento | funciona |
+
+Encaminhamento recomendado, em ordem de custo: (1) sonda com **test users** do ML
+(`/users/test_user`) medindo o prazo real, sem vendedor de verdade — resolve a incógnita e mantém
+o plano atual; (2) se a sonda não for viável, guardar o token com TTL curto (120s), aceitando o
+custo conhecido em vez da dependência desconhecida. **Não** implementar antes de escolher: os dois
+caminhos mudam o que o callback e o claim fazem.
 
 ## Fora de escopo (registrado, não corrigido)
 
