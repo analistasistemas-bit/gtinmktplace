@@ -40,11 +40,15 @@ Deno.serve(async (req) => {
   // (callerId), em vez de herdar o dono de uma credencial legada.
   const ownerUserId = callerId;
 
-  // Escopo da operação (ADR-0047/0056): o lote pode ter sido criado por qualquer membro.
+  // Escopo da operação (ADR-0047/0056): o lote pode ter sido criado por qualquer membro
+  // DA MESMA ORG — daí o filtro por org_id e não por user_id. Sem ele, um lote_id de outro
+  // tenant faria este handler (service_role, RLS desligada) baixar a planilha alheia e gravar
+  // familias/variacoes sob a org da vítima com o user_id do chamador.
   const { data: lote, error: loteErr } = await admin
     .from('lotes')
     .select('*')
     .eq('id', lote_id)
+    .eq('org_id', orgId)
     .single();
   if (loteErr || !lote) {
     return new Response(`Lote ${lote_id} não encontrado`, { status: 404, headers: corsHeaders });
@@ -102,10 +106,14 @@ Deno.serve(async (req) => {
     // Escopo da operação (ADR-0056): buscar anteriores de TODA a operação por codigo_pai.
     // Com filtro por user.id, um membro não-dono não veria o anúncio já publicado por outro →
     // trataria como CREATE e DUPLICARIA o anúncio no ML. A operação compartilha os anúncios.
+    // O limite da operação é a ORG (ADR-0056: "quando existir org_id, os filtros viram org_id"):
+    // codigo_pai não é único entre tenants, então sem este filtro uma colisão traria ml_item_id,
+    // preço e análise de concorrência de OUTRA org para dentro desta família.
     const { data: anteriores } = await admin
       .from('familias')
       .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
       .in('codigo_pai', codigosPai)
+      .eq('org_id', lote.org_id)
       .not('ml_item_id', 'is', null)
       .order('publicado_em', { ascending: false, nullsFirst: false });
 
