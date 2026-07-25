@@ -112,13 +112,14 @@ Deno.serve(async (req) => {
   //  - Usuário logado (botões da tela): JWT válido → escopo só à própria org (E7).
   const temAssinatura = !!req.headers.get('upstash-signature');
   let scopedOrgId: string | null = null;
+  let scopedIsAdmin = false;
   if (temAssinatura) {
     if (!(await verificarAssinatura(req, body))) {
       return new Response('Invalid signature', { status: 401, headers: corsHeaders });
     }
   } else {
     try {
-      ({ orgId: scopedOrgId } = await requireUserOrg(req));
+      ({ orgId: scopedOrgId, isAdmin: scopedIsAdmin } = await requireUserOrg(req));
     }
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   }
@@ -130,8 +131,19 @@ Deno.serve(async (req) => {
   // chatId opcional testa um destinatário específico (ex.: Usuários) sem depender do
   // chat_id salvo em Configurações — o bot token continua vindo sempre da config da org.
   if (payload.teste && scopedOrgId) {
+    const chatIdInformado = payload.chatId?.trim();
+    // Escolher o destinatário é ação de admin. Sem esta trava, qualquer membro da org fazia o
+    // bot da org (token real) mandar mensagem para um chat_id arbitrário do mundo — todo o
+    // resto do sistema só envia para destinatários registrados da própria org
+    // (lerDestinatarios em _shared/notificacoes/config.ts). O teste SEM override continua
+    // liberado para membro comum: usa o chat salvo em Configurações.
+    if (chatIdInformado && !scopedIsAdmin) {
+      return new Response(JSON.stringify({ ok: false, erro: 'Apenas administradores podem testar um chat ID específico.' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const cfg = await lerConfigTelegram(admin, scopedOrgId);
-    const chatId = payload.chatId?.trim() || cfg.chatId;
+    const chatId = chatIdInformado || cfg.chatId;
     if (!cfg.token || !chatId) {
       return new Response(JSON.stringify({ ok: false, erro: 'Configure o bot token e o chat ID antes de testar.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
