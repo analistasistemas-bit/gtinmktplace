@@ -57,9 +57,18 @@ const TTL_S = 30 * 24 * 60 * 60;
 // órfãs e expiram sozinhas, em vez de serem lidas e estourarem TypeError em atributosAlvo.
 const CACHE_VER = 'v2';
 
+/** Id de categoria do ML: 'MLB' + dígitos, nada mais. Vale como guard de SSRF — o valor é
+ *  interpolado num caminho de URL de uma requisição que leva o token do vendedor, e o parser
+ *  de URL resolve '..' antes de enviar, então qualquer coisa fora deste formato poderia
+ *  redirecionar a chamada autenticada para outro endpoint da api.mercadolibre.com. */
+export function ehCategoriaMlValida(categoriaId: string | null | undefined): boolean {
+  return !!categoriaId && /^MLB\d+$/.test(categoriaId);
+}
+
 /** Lê o schema de atributos da categoria. Resiliente: rede/4xx → []. Cacheado no Redis. */
 export async function lerSchemaAtributos(token: string, categoriaId: string): Promise<AtributoSchema[]> {
-  if (!categoriaId) return [];
+  // Guard em profundidade: o chamador já valida, mas esta é a função que monta a URL.
+  if (!ehCategoriaMlValida(categoriaId)) return [];
   const key = `attrs:${CACHE_VER}:${categoriaId}`;
   const cached = await redisGet(key).catch(() => null);
   if (cached) return JSON.parse(cached) as AtributoSchema[];

@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { parseAtributosSchema, idsObrigatorios, nomesObrigatorios } from '../schema';
+import { parseAtributosSchema, idsObrigatorios, nomesObrigatorios, ehCategoriaMlValida } from '../schema';
+
+// F9 (SSRF): categoriaId ia cru para `.../categories/${id}/attributes` numa requisição que
+// carrega o token de vendedor da org. O parser de URL normaliza '..' ANTES de enviar, então
+// um id com '../' colapsava o caminho e transformava a chamada em um GET autenticado a
+// qualquer outro endpoint da api.mercadolibre.com.
+describe('ehCategoriaMlValida', () => {
+  it('aceita o formato real de categoria do ML', () => {
+    for (const id of ['MLB271227', 'MLB1234', 'MLB189007']) {
+      expect(ehCategoriaMlValida(id)).toBe(true);
+    }
+  });
+
+  it('rejeita travessia de caminho', () => {
+    for (const id of ['../../orders/search', 'MLB1/../../users/me', '../users/me']) {
+      expect(ehCategoriaMlValida(id)).toBe(false);
+    }
+  });
+
+  it('rejeita barra, query string e vazio', () => {
+    for (const id of ['MLB1/attributes', 'MLB1?x=1', '', 'MLB', '123', 'mlb123']) {
+      expect(ehCategoriaMlValida(id)).toBe(false);
+    }
+  });
+});
 
 // Shape real do probe 2026-06-14 (MLB189007 furadeira) + numéricos (fita: LENGTH/WIDTH).
 const REAL = [

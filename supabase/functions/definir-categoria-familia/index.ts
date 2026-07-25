@@ -5,7 +5,7 @@ import { montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atrib
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
-import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { lerSchemaAtributos, ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
@@ -41,6 +41,12 @@ Deno.serve(async (req) => {
   const categoriaNome = body.categoria_nome?.trim();
   if (!body.familia_id || !categoriaMlId || !categoriaNome) {
     return new Response('familia_id, categoria_ml_id e categoria_nome obrigatórios', { status: 400, headers: corsHeaders });
+  }
+  // O id vai para o caminho de uma chamada autenticada à API do ML (lerSchemaAtributos).
+  // Sem esta checagem, '../' colapsava a URL e virava um GET com o token do vendedor em
+  // qualquer outro endpoint da api.mercadolibre.com.
+  if (!ehCategoriaMlValida(categoriaMlId)) {
+    return new Response('categoria_ml_id inválido (formato esperado: MLB seguido de dígitos)', { status: 400, headers: corsHeaders });
   }
 
   // Operação compartilhada (ADR-0047/0056): a RLS is_membro_operacao já restringe à
