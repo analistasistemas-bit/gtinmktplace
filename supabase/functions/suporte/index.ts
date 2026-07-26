@@ -97,16 +97,26 @@ Deno.serve(async (req) => {
       });
     }
     if (action.action === 'list') {
-      let query = db.from('support_requests').select('*').order('created_at', { ascending: false }).limit(100);
+      let query = db.from('support_requests')
+        .select('*, requester:profiles!support_requests_requester_id_fkey(nome,email)', { count: 'exact' })
+        .order('created_at', { ascending: false });
       if (profile.is_super_admin) query = query.eq('requester_id', user.id);
       else if (profile.is_admin && profile.org_id) {
         if (action.orgId && action.orgId !== profile.org_id) return json({ error: 'forbidden' }, 403);
         query = query.eq('org_id', profile.org_id);
       }
       else return json({ error: 'forbidden' }, 403);
-      const { data, error } = await query;
+      if (action.status === 'pending' || action.status === 'active') query = query.eq('status', action.status);
+      if (action.status === 'actionable') query = query.in('status', ['pending', 'approved', 'active']);
+      if (action.status === 'history') query = query.not('status', 'in', '("pending","active")');
+      const from = (action.page - 1) * action.pageSize;
+      const { data, error, count } = await query.range(from, from + action.pageSize - 1);
       if (error) throw new Error('falha ao listar solicitações');
-      return json({ requests: data ?? [] });
+      const requests = (data ?? []).map((request) => {
+        const requester = Array.isArray(request.requester) ? request.requester[0] : request.requester;
+        return { ...request, requester_name: requester?.nome ?? null, requester_email: requester?.email ?? null, requester: undefined };
+      });
+      return json({ requests, total: count ?? 0, page: action.page, pageSize: action.pageSize });
     }
     if (action.action === 'request') {
       if (!profile.is_super_admin) return json({ error: 'somente super-admin pode solicitar suporte' }, 403);

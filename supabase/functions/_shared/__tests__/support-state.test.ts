@@ -18,6 +18,15 @@ describe('validarAcaoSuporte', () => {
       .toEqual({ action: 'decide', requestId: 'request-1', decision: 'approved' });
     expect(() => validarAcaoSuporte({ action: 'decide', request_id: 'request-1', decision: 'active' })).toThrow('decisão');
   });
+
+  it('normaliza paginação limitada de solicitações', () => {
+    expect(validarAcaoSuporte({ action: 'list', page: 2, page_size: 50, status: 'pending' }))
+      .toEqual({ action: 'list', page: 2, pageSize: 50, status: 'pending' });
+    expect(validarAcaoSuporte({ action: 'list', status: 'actionable' }))
+      .toEqual({ action: 'list', page: 1, pageSize: 50, status: 'actionable' });
+    expect(() => validarAcaoSuporte({ action: 'list', page: 0 })).toThrow('página');
+    expect(() => validarAcaoSuporte({ action: 'list', page_size: 51 })).toThrow('page_size');
+  });
 });
 
 describe('fluxos de suporte extraídos do handler', () => {

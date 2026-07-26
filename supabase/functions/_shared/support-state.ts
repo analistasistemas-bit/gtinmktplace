@@ -1,7 +1,7 @@
 export type SupportScope = 'read' | 'full';
 
 export type SupportAction =
-  | { action: 'list'; orgId?: string }
+  | { action: 'list'; orgId?: string; page: number; pageSize: number; status?: 'pending' | 'active' | 'actionable' | 'history' }
   | { action: 'request'; orgId: string; scope: SupportScope; reason: string }
   | { action: 'cancel' | 'start' | 'end' | 'revoke'; requestId: string }
   | { action: 'decide'; requestId: string; decision: 'approved' | 'rejected' }
@@ -36,11 +36,27 @@ function id(value: unknown, field: string): string {
   return result;
 }
 
+function positiveInteger(value: unknown, fallback: number, field: string, max: number): number {
+  if (value == null) return fallback;
+  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > max) throw new Error(`${field} inválido`);
+  return value as number;
+}
+
 export function validarAcaoSuporte(body: unknown): SupportAction {
   const value = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   switch (value.action) {
     case 'list':
-      return value.org_id == null ? { action: 'list' } : { action: 'list', orgId: id(value.org_id, 'org_id') };
+      {
+        const page = positiveInteger(value.page, 1, 'página', Number.MAX_SAFE_INTEGER);
+        const pageSize = positiveInteger(value.page_size, 50, 'page_size', 50);
+        const status = value.status;
+        if (status != null && status !== 'pending' && status !== 'active' && status !== 'actionable' && status !== 'history') throw new Error('status inválido');
+        return {
+          action: 'list', page, pageSize,
+          ...(value.org_id == null ? {} : { orgId: id(value.org_id, 'org_id') }),
+          ...(status == null ? {} : { status }),
+        };
+      }
     case 'request': {
       const scope = value.scope;
       if (scope !== 'read' && scope !== 'full') throw new Error('escopo inválido');
