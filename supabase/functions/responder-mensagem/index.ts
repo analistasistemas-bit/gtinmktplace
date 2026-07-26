@@ -3,6 +3,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { buscarMensagensPack, upsertMensagens, resolverMetaPack, responderMensagemPedido, resolverCompradorId } from '../_shared/faturamento/mensagens-io.ts';
@@ -18,7 +19,8 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -48,6 +50,7 @@ Deno.serve(async (req) => {
   try {
     await responderMensagemPedido(token, packId, sellerId, buyerId, text);
   } catch (e) {
+    await auditarOperacaoSuporte(admin, context, { type: 'pack', id: packId }, 'failed');
     return erro((e as Error).message, 502);
   }
 
@@ -62,5 +65,6 @@ Deno.serve(async (req) => {
       .eq('user_id', dono).eq('pack_id', packId).eq('direcao', 'recebida').eq('lida', false);
   }
 
+  await auditarOperacaoSuporte(admin, context, { type: 'pack', id: packId }, 'succeeded');
   return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });

@@ -90,3 +90,5 @@ verify_jwt = true
 verify_jwt = true
 [functions.usuarios]
 verify_jwt = true
+[functions.suporte]
+verify_jwt = true

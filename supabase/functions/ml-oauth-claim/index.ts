@@ -14,6 +14,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { redisGetDel } from '../_shared/redis/client.ts';
 import { trocarCodePorToken } from '../_shared/ml/token.ts';
 
@@ -41,10 +42,14 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   let userId: string, orgId: string, isAdmin: boolean;
-  try { ({ userId, orgId, isAdmin } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ userId, orgId, isAdmin } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   // Conectar a conta ML afeta vendas/perguntas/devoluções de toda a org (ADR-0060).
-  if (!isAdmin) return json({ erro: 'Somente administradores podem conectar a conta do Mercado Livre' }, 403);
+if (!isAdmin && context.support?.scope !== 'full') {
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'denied');
+    return json({ erro: 'Somente administradores podem conectar a conta do Mercado Livre' }, 403);
+  }
 
   const { claim_id } = await req.json().catch(() => ({}));
   if (!claim_id || typeof claim_id !== 'string') return json({ erro: 'claim_id obrigatório' }, 400);
@@ -85,6 +90,7 @@ Deno.serve(async (req) => {
       // tanto no INSERT quanto no UPDATE da RPC, por isso a checagem é pelo SQLSTATE e não por
       // caminho.
       if ((error as { code?: string }).code === '23505') {
+        await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'failed');
         return json({
           erro: 'conta_em_outra_org',
           mensagem: 'Esta conta do Mercado Livre já está conectada em outra organização.',
@@ -96,11 +102,13 @@ Deno.serve(async (req) => {
     // Metade do tripwire (ADR-0091): junta-se à linha do callback pelo claim_id. Nunca logar
     // o `code` nem os tokens.
     console.log(`ml-oauth-claim: claim ${claim_id} redimido (caller_org_id=${orgId}, ml_user_id=${tok.user_id})`);
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'connection', id: String(tok.user_id) }, 'succeeded');
 
     return json({ ok: true, conta: nickname }, 200);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('ml-oauth-claim erro:', msg);
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'failed');
     return json({
       erro: 'token',
       mensagem: 'Não foi possível concluir a conexão. Clique em Conectar para recomeçar.',

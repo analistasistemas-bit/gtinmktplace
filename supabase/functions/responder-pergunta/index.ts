@@ -3,6 +3,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { buscarPergunta, responderAnswer, upsertPergunta, buscarTituloItem } from '../_shared/faturamento/perguntas-io.ts';
@@ -15,7 +16,8 @@ Deno.serve(async (req) => {
 
   // Gate de auth: só membro autenticado da operação (a conta ML usada é a da própria org).
   let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: Body;
@@ -51,6 +53,7 @@ Deno.serve(async (req) => {
   try {
     await responderAnswer(token, body.question_id, text);
   } catch (e) {
+    await auditarOperacaoSuporte(admin, context, { type: 'item', id: String(body.question_id) }, 'failed');
     return new Response(JSON.stringify({ ok: false, erro: (e as Error).message }), {
       status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -67,5 +70,6 @@ Deno.serve(async (req) => {
     }
   } catch { /* re-fetch de cache é best-effort; a resposta ao comprador já foi enviada com sucesso. */ }
 
+  await auditarOperacaoSuporte(admin, context, { type: 'item', id: String(body.question_id) }, 'succeeded');
   return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });

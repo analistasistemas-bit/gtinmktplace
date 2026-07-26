@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
@@ -113,13 +114,14 @@ Deno.serve(async (req) => {
   const temAssinatura = !!req.headers.get('upstash-signature');
   let scopedOrgId: string | null = null;
   let scopedIsAdmin = false;
+  let context: Awaited<ReturnType<typeof requireUserOrg>> | null = null;
   if (temAssinatura) {
     if (!(await verificarAssinatura(req, body))) {
       return new Response('Invalid signature', { status: 401, headers: corsHeaders });
     }
   } else {
     try {
-      ({ orgId: scopedOrgId, isAdmin: scopedIsAdmin } = await requireUserOrg(req));
+({ orgId: scopedOrgId, isAdmin: scopedIsAdmin } = context = await requireUserOrg(req, { access: 'write' }));
     }
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   }
@@ -138,6 +140,7 @@ Deno.serve(async (req) => {
     // (lerDestinatarios em _shared/notificacoes/config.ts). O teste SEM override continua
     // liberado para membro comum: usa o chat salvo em Configurações.
     if (chatIdInformado && !scopedIsAdmin) {
+      await auditarOperacaoSuporte(admin, context!, { type: 'org', id: scopedOrgId }, 'denied');
       return new Response(JSON.stringify({ ok: false, erro: 'Apenas administradores podem testar um chat ID específico.' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -150,6 +153,7 @@ Deno.serve(async (req) => {
       });
     }
     const enviou = await enviarTelegram(cfg.token, chatId, '✅ Teste do PubliAI: alertas de moderação configurados com sucesso.');
+    await auditarOperacaoSuporte(admin, context!, { type: 'org', id: scopedOrgId }, enviou ? 'succeeded' : 'failed');
     return new Response(JSON.stringify({ ok: enviou, erro: enviou ? undefined : 'Falha ao enviar; confira token/chat ID.' }), {
       status: enviou ? 200 : 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -162,12 +166,18 @@ Deno.serve(async (req) => {
   const { data: conexoesRaw } = await query;
 
   let totalNovos = 0;
+  let falhou = false;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
     try {
       totalNovos += await processarConexao(admin, conn, mapCx(row));
     } catch (e) {
+      falhou = true;
       console.error(`monitorar-moderados: falhou para org ${row.org_id}:`, e instanceof Error ? e.message : e);
     }
+  }
+
+  if (context && scopedOrgId) {
+    await auditarOperacaoSuporte(admin, context, { type: 'org', id: scopedOrgId }, falhou ? 'failed' : 'succeeded');
   }
 
   return new Response(JSON.stringify({ ok: true, novos: totalNovos }), {

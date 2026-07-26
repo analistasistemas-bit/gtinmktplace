@@ -1,5 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import {
   enfileirarPublicacao, enfileirarAtualizacao, enfileirarSplit, garantirFilaSerial,
@@ -18,13 +19,15 @@ Deno.serve(async (req) => {
 
   // Gate de auth: membro autenticado da operação (ADR-0047/0056) + org (E7).
   let userId: string, orgId: string;
-  try { ({ userId, orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const { familia_ids, listing_type_id, canais, somente_estoque_global, somente_estoque_overrides } = await req.json().catch(() => ({}));
   if (!Array.isArray(familia_ids) || familia_ids.length === 0) {
     return new Response('familia_ids obrigatório', { status: 400, headers: corsHeaders });
   }
+  const target = { type: 'familia', id: familia_ids[0] as string };
   // Clássico (default) ou Premium; ignora qualquer outro valor.
   const listingType = listing_type_id === 'gold_pro' ? 'gold_pro' : 'gold_special';
   // ADR-0078 F1: escolha "somente estoque" da operação (global) + overrides por família que
@@ -51,7 +54,10 @@ Deno.serve(async (req) => {
       .is('ml_item_id', null)
       .eq('org_id', orgId)
       .select('id, lote_id, user_id, codigo_pai');
-    if (errC) return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
+    if (errC) {
+      await auditarOperacaoSuporte(admin, context, target, 'failed');
+      return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
+    }
 
     // Claim UPDATE: 'pronto'/'erro', já publicado (tem ml_item_id herdado).
     const { data: updates, error: errU } = await admin
@@ -63,7 +69,10 @@ Deno.serve(async (req) => {
       .not('ml_item_id', 'is', null)
       .eq('org_id', orgId)
       .select('id, lote_id, user_id, codigo_pai');
-    if (errU) return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
+    if (errU) {
+      await auditarOperacaoSuporte(admin, context, target, 'failed');
+      return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
+    }
 
     // Serializa as escritas no ML por CONTA de vendedor (ADR-0034): parallelism=1 evita
     // publicações concorrentes que tornam o processamento de foto do ML lento. A fila é keyed
@@ -84,7 +93,10 @@ Deno.serve(async (req) => {
       const { data: vrs, error: errVrs } = await admin.from('variacoes')
         .select('familia_id, preco_publicacao')
         .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
-      if (errVrs) return new Response(`Erro ao carregar preços das variações: ${errVrs.message}`, { status: 500, headers: corsHeaders });
+      if (errVrs) {
+        await auditarOperacaoSuporte(admin, context, target, 'failed');
+        return new Response(`Erro ao carregar preços das variações: ${errVrs.message}`, { status: 500, headers: corsHeaders });
+      }
       for (const v of vrs ?? []) {
         (precosPorFamilia.get(v.familia_id) ?? precosPorFamilia.set(v.familia_id, []).get(v.familia_id)!)
           .push(precoCentavos(v.preco_publicacao));
@@ -97,7 +109,10 @@ Deno.serve(async (req) => {
         .select('codigo_pai, particao')
         .eq('org_id', orgId).eq('canal', 'mercado_livre')
         .in('codigo_pai', [...new Set(paiPorFamilia.values())]);
-      if (errParts) return new Response(`Erro ao carregar partições existentes: ${errParts.message}`, { status: 500, headers: corsHeaders });
+      if (errParts) {
+        await auditarOperacaoSuporte(admin, context, target, 'failed');
+        return new Response(`Erro ao carregar partições existentes: ${errParts.message}`, { status: 500, headers: corsHeaders });
+      }
       for (const p of parts ?? []) {
         particoesPorPai.set(p.codigo_pai, (particoesPorPai.get(p.codigo_pai) ?? 0) + 1);
       }
@@ -162,6 +177,7 @@ Deno.serve(async (req) => {
     }
   }
 
+  await auditarOperacaoSuporte(admin, context, target, 'succeeded');
   return new Response(JSON.stringify({ enfileiradas, porCanal, canaisIgnorados }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });

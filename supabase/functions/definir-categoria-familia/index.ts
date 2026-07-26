@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient, adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { montarAtributosML, tipoParaCategoria } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
@@ -30,7 +31,8 @@ Deno.serve(async (req) => {
   if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
 
   let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   const modeloTexto = await resolverModeloTexto(adminClient(), orgId);
 
@@ -110,9 +112,11 @@ Deno.serve(async (req) => {
     .eq('id', body.familia_id);
 
   if (upErr) {
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'familia', id: familia.id }, 'failed');
     return new Response(`Erro ao atualizar: ${upErr.message}`, { status: 500, headers: corsHeaders });
   }
 
+  await auditarOperacaoSuporte(adminClient(), context, { type: 'familia', id: familia.id }, 'succeeded');
   return new Response(
     JSON.stringify({ categoria_ml_id: categoriaMlId, categoria_nome: categoriaNome, tipo_aviamento: tipo, atributos_faltantes: atributosFaltantes }),
     { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } },

@@ -1,5 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matchCapa3, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
@@ -22,8 +23,9 @@ Deno.serve(async (req) => {
   }
 
   let callerId: string, orgId: string;
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
   try {
-    ({ userId: callerId, orgId } = await requireUserOrg(req));
+    ({ userId: callerId, orgId } = context = await requireUserOrg(req, { access: 'write' }));
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
@@ -67,6 +69,7 @@ Deno.serve(async (req) => {
   }
 
   if (lote.status !== 'importando') {
+    await auditarOperacaoSuporte(admin, context, { type: 'lote', id: lote.id }, 'succeeded');
     return new Response(
       JSON.stringify({ loteId: lote.id, totalFamilias: lote.total_familias, jaProcessado: true }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -335,6 +338,7 @@ Deno.serve(async (req) => {
       .from('lotes')
       .update({ status: 'erro', erro_mensagem: msg })
       .eq('id', lote.id);
+    await auditarOperacaoSuporte(admin, context, { type: 'lote', id: lote.id }, 'failed');
     return new Response(`Falha no ingest: ${msg}`, { status: 500, headers: corsHeaders });
   }
 });

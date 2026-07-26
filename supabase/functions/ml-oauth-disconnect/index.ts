@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 
 Deno.serve(async (req) => {
@@ -10,19 +11,28 @@ Deno.serve(async (req) => {
   }
 
   let orgId: string, isAdmin: boolean;
-  try { ({ orgId, isAdmin } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ orgId, isAdmin } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   // Desconectar a integração ML afeta vendas/perguntas/devoluções de toda a org — restrito a admin (ADR-0060).
-  if (!isAdmin) return new Response('Somente administradores podem desconectar a conta do Mercado Livre', { status: 403, headers: corsHeaders });
+if (!isAdmin && context.support?.scope !== 'full') {
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'denied');
+    return new Response('Somente administradores podem desconectar a conta do Mercado Livre', { status: 403, headers: corsHeaders });
+  }
 
   const admin = adminClient();
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
-  if (!conexao) return new Response('OK', { status: 200, headers: corsHeaders }); // idempotente: já desconectado
+  if (!conexao) {
+    await auditarOperacaoSuporte(admin, context, { type: 'org', id: orgId }, 'succeeded');
+    return new Response('OK', { status: 200, headers: corsHeaders });
+  }
 
   const { error } = await admin.rpc('delete_marketplace_connection', { p_connection_id: conexao.id });
   if (error) {
     console.error('delete_marketplace_connection:', error.message);
+    await auditarOperacaoSuporte(admin, context, { type: 'connection', id: conexao.id }, 'failed');
     return new Response('Erro ao desconectar conta ML', { status: 500, headers: corsHeaders });
   }
+  await auditarOperacaoSuporte(admin, context, { type: 'connection', id: conexao.id }, 'succeeded');
   return new Response('OK', { status: 200, headers: corsHeaders });
 });

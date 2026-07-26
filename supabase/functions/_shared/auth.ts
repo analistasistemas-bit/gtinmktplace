@@ -1,5 +1,5 @@
 import { adminClient } from './supabase.ts';
-import { resolverOrgDoPerfil, type PerfilOrgRow } from './auth-org.ts';
+import { resolverAcessoOrg, resolverOrgDoPerfil, type PerfilOrgRow, type SupportAccess, type SupportSessionRow } from './auth-org.ts';
 
 export { resolverOrgDoPerfil, type PerfilOrgRow };
 
@@ -33,15 +33,28 @@ export async function requireAdmin(req: Request): Promise<AuthedUser> {
 }
 
 /** Identidade completa do chamador autenticado: user + org (403 se inativo/sem org). */
-export async function requireUserOrg(req: Request): Promise<{ userId: string; orgId: string; isAdmin: boolean }> {
+export async function requireUserOrg(
+  req: Request,
+  options: { access?: SupportAccess } = {},
+): Promise<{ userId: string; orgId: string; isAdmin: boolean; support: null | { requestId: string; scope: 'read' | 'full' } }> {
   const user = await requireUser(req);
-  const { data, error } = await adminClient()
-    .from('profiles').select('org_id, is_active, is_admin').eq('id', user.id).single();
+  const access = options.access ?? 'read';
+  const db = adminClient();
+  const { data, error } = await db
+    .from('profiles').select('org_id, is_active, is_admin, is_super_admin').eq('id', user.id).single();
   if (error || !data) throw new Response(JSON.stringify({ error: 'perfil não encontrado' }), { status: 403 });
-  try {
-    const { orgId, isAdmin } = resolverOrgDoPerfil(data as PerfilOrgRow);
-    return { userId: user.id, orgId, isAdmin };
-  } catch {
+  let session: SupportSessionRow | null = null;
+  if (data.is_super_admin) {
+    const { data: active } = await db.from('support_requests')
+      .select('id, org_id, scope, status, expires_at')
+      .eq('requester_id', user.id).eq('status', 'active')
+      .gt('expires_at', new Date().toISOString()).maybeSingle();
+    session = active as SupportSessionRow | null;
+  }
+  let resolved: ReturnType<typeof resolverAcessoOrg>;
+  try { resolved = resolverAcessoOrg(data as PerfilOrgRow, session, access); }
+  catch {
     throw new Response(JSON.stringify({ error: 'perfil inativo ou sem organização' }), { status: 403 });
   }
+  return { userId: user.id, ...resolved };
 }

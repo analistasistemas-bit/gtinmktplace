@@ -18,16 +18,18 @@ Deno.serve(async (req) => {
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const db = adminClient();
+  const body = await req.json().catch(() => ({}));
+  const action = body.action as string;
 
   // E7: identidade org do chamador. Só admin ativo com org opera aqui.
   const { data: me } = await db.from('profiles')
     .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
-  if (!me || !me.is_active || !me.org_id) return json({ error: 'forbidden' }, 403);
-  if (!me.is_admin) return json({ error: 'forbidden' }, 403);
+  if (!me || !me.is_active) return json({ error: 'forbidden' }, 403);
+  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'delete_org'].includes(action);
+  if (!(me.is_super_admin && !me.org_id && platformAction)) {
+    if (!me.org_id || !me.is_admin) return json({ error: 'forbidden' }, 403);
+  }
   const orgId = me.org_id as string;
-
-  const body = await req.json().catch(() => ({}));
-  const action = body.action as string;
   const sanitizeMenus = (m: unknown) => (Array.isArray(m) ? m.filter((x) => MENU_KEYS.includes(x)) : []);
   const appUrl = Deno.env.get('APP_URL') ?? '';
 
@@ -100,17 +102,16 @@ Deno.serve(async (req) => {
     // ---- Ações de super-admin (D-E7.8): gestão de organizações ---------------
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
-      const { data: orgs } = await db.from('organizations')
-        .select('id, nome, slug, criado_em, canais_habilitados').order('criado_em');
-      const result = [];
-      for (const o of orgs ?? []) {
-        const { count } = await db.from('profiles')
-          .select('id', { count: 'exact', head: true }).eq('org_id', o.id);
-        result.push({
+      const [{ data: orgs }, { data: profiles }] = await Promise.all([
+        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, is_test').order('criado_em'),
+        db.from('profiles').select('org_id'),
+      ]);
+      const counts = new Map<string, number>();
+      for (const member of profiles ?? []) counts.set(member.org_id, (counts.get(member.org_id) ?? 0) + 1);
+      const result = (orgs ?? []).map((o) => ({
           id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em,
-          canais_habilitados: o.canais_habilitados, membros: count ?? 0,
-        });
-      }
+          canais_habilitados: o.canais_habilitados, is_test: o.is_test, membros: counts.get(o.id) ?? 0,
+      }));
       return json({ orgs: result });
     }
     case 'create_org': {

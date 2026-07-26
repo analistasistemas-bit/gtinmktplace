@@ -1,5 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
+import { adminClient } from '../_shared/supabase.ts';
 import { redisSet } from '../_shared/redis/client.ts';
 import { montarAuthUrl } from '../_shared/ml/auth-url.ts';
 
@@ -12,13 +14,18 @@ Deno.serve(async (req) => {
   }
 
   let userId: string, orgId: string, isAdmin: boolean;
-  try { ({ userId, orgId, isAdmin } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ userId, orgId, isAdmin } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   // Conectar a conta ML afeta vendas/perguntas/devoluções de toda a org — ação restrita a admin (ADR-0060).
-  if (!isAdmin) return new Response('Somente administradores podem conectar a conta do Mercado Livre', { status: 403, headers: corsHeaders });
+if (!isAdmin && context.support?.scope !== 'full') {
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'denied');
+    return new Response('Somente administradores podem conectar a conta do Mercado Livre', { status: 403, headers: corsHeaders });
+  }
 
   const state = crypto.randomUUID();
   await redisSet(`oauth:ml:state:${state}`, JSON.stringify({ user_id: userId, org_id: orgId }), STATE_TTL_S);
+  await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'succeeded');
 
   const authUrl = montarAuthUrl(
     state,

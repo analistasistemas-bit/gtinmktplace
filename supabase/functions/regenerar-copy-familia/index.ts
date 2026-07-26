@@ -1,5 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient } from '../_shared/supabase.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
 import { garantirLarguraDescricao, garantirMetragemDescricao } from '../_shared/ai/copywriter-prompt.ts';
@@ -19,6 +22,9 @@ Deno.serve(async (req) => {
   const sb = userClient(auth.slice(7));
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let context;
+  try { context = await requireUserOrg(req, { access: 'write' }); }
+  catch (response) { if (response instanceof Response) return response; throw response; }
 
   let body: { familia_id?: string };
   try { body = await req.json(); } catch { return new Response('Bad JSON', { status: 400, headers: corsHeaders }); }
@@ -32,6 +38,7 @@ Deno.serve(async (req) => {
     .from('familias')
     .select('id, org_id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
     .eq('id', body.familia_id)
+    .eq('org_id', context.orgId)
     .maybeSingle();
 
   if (error || !familia) {
@@ -86,8 +93,10 @@ Deno.serve(async (req) => {
       .eq('id', body.familia_id);
 
     if (upErr) {
+      await auditarOperacaoSuporte(adminClient(), context, { type: 'familia', id: body.familia_id }, 'failed');
       return new Response(`Erro ao atualizar: ${upErr.message}`, { status: 500, headers: corsHeaders });
     }
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'familia', id: body.familia_id }, 'succeeded');
 
     return new Response(
       JSON.stringify({

@@ -18,6 +18,8 @@ export async function processarArquivo(
   userId: string,
   loteId: string,
   admin: SupabaseClient,
+  orgId: string,
+  support: boolean,
 ): Promise<ResultadoProcessamento> {
   const classificacao = classificarArquivo(file.name);
   if (classificacao.tipo === 'invalido') {
@@ -31,7 +33,7 @@ export async function processarArquivo(
       .from('familias')
       .select('id, codigo_pai, capa_storage_path')
       .eq('lote_id', loteId)
-      .eq('user_id', userId);
+      .eq('org_id', orgId);
 
     if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
     const familia = (familias as Array<Record<string, unknown>>)?.find(
@@ -40,7 +42,7 @@ export async function processarArquivo(
     if (!familia) return { tipo: 'capa_sem_match' };
 
     const ext = file.name.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg');
-    const path = `${userId}/capas/${classificacao.codigo}.${ext}`;
+    const path = `${support ? orgId : userId}/capas/${classificacao.codigo}.${ext}`;
 
     const { error: upErr } = await admin.storage
       .from('imagens')
@@ -59,7 +61,7 @@ export async function processarArquivo(
       .from('familias')
       .select('id, codigo_pai, capa2_storage_path')
       .eq('lote_id', loteId)
-      .eq('user_id', userId);
+      .eq('org_id', orgId);
 
     if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
     const familia = (familias as Array<Record<string, unknown>>)?.find(
@@ -68,7 +70,7 @@ export async function processarArquivo(
     if (!familia) return { tipo: 'capa2_sem_match' };
 
     const ext = file.name.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg');
-    const path = `${userId}/capas2/${classificacao.codigo}.${ext}`;
+    const path = `${support ? orgId : userId}/capas2/${classificacao.codigo}.${ext}`;
 
     const { error: upErr } = await admin.storage
       .from('imagens')
@@ -85,7 +87,7 @@ export async function processarArquivo(
       .from('familias')
       .select('id, codigo_pai, capa3_storage_path')
       .eq('lote_id', loteId)
-      .eq('user_id', userId);
+      .eq('org_id', orgId);
 
     if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
     const familia = (familias as Array<Record<string, unknown>>)?.find(
@@ -94,7 +96,7 @@ export async function processarArquivo(
     if (!familia) return { tipo: 'capa3_sem_match' };
 
     const ext = file.name.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg');
-    const path = `${userId}/capas3/${classificacao.codigo}.${ext}`;
+    const path = `${support ? orgId : userId}/capas3/${classificacao.codigo}.${ext}`;
 
     const { error: upErr } = await admin.storage
       .from('imagens')
@@ -109,10 +111,10 @@ export async function processarArquivo(
   // classificacao.tipo === 'variacao'
   const { data: variacoes, error } = await admin
     .from('variacoes')
-    .select('id, codigo, imagem_path, familias!inner(lote_id, user_id)')
+    .select('id, codigo, imagem_path, familias!inner(lote_id, org_id)')
     .eq('codigo', classificacao.codigo)
     .eq('familias.lote_id', loteId)
-    .eq('familias.user_id', userId);
+    .eq('familias.org_id', orgId);
 
   if (error) return { tipo: 'invalido', erro: `DB: ${error.message}` };
   const variacao = (variacoes as Array<Record<string, unknown>>)?.[0];
@@ -120,7 +122,7 @@ export async function processarArquivo(
 
   const tinhaImagem = !!variacao.imagem_path;
   const ext = file.name.split('.').pop()!.toLowerCase().replace('jpg', 'jpeg');
-  const path = `${userId}/${classificacao.codigo}.${ext}`;
+  const path = `${support ? orgId : userId}/${classificacao.codigo}.${ext}`;
 
   const { error: upErr } = await admin.storage
     .from('imagens')

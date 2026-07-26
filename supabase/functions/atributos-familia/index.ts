@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { userClient, adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
@@ -21,7 +22,8 @@ Deno.serve(async (req) => {
   if (!user) return new Response('Invalid token', { status: 401, headers: corsHeaders });
 
   let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+  try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
 
@@ -94,7 +96,11 @@ Deno.serve(async (req) => {
     const { error: upErr } = await sb.from('familias')
       .update({ atributos_ml: merged, atributos_faltantes: faltantes, atributos_editados_pelo_operador: true })
       .eq('id', familia.id);
-    if (upErr) return new Response(`Erro ao salvar: ${upErr.message}`, { status: 500, headers: corsHeaders });
+    if (upErr) {
+      await auditarOperacaoSuporte(adminClient(), context, { type: 'familia', id: familia.id }, 'failed');
+      return new Response(`Erro ao salvar: ${upErr.message}`, { status: 500, headers: corsHeaders });
+    }
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'familia', id: familia.id }, 'succeeded');
     return new Response(JSON.stringify({ ok: true, atributos_faltantes: faltantes }),
       { headers: { ...corsHeaders, 'content-type': 'application/json' } });
   }

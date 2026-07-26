@@ -1,5 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 
@@ -21,8 +22,9 @@ Deno.serve(async (req) => {
   // Gate de auth: membro autenticado da operação (ADR-0047/0056) + org (E7). O escopo
   // das famílias é a org do chamador, não o usuário individual.
   let orgId: string;
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
   try {
-    ({ orgId } = await requireUserOrg(req));
+    ({ orgId } = context = await requireUserOrg(req, { access: 'write' }));
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
@@ -50,9 +52,11 @@ Deno.serve(async (req) => {
 
   const { data: alvos, error: selErr } = await q;
   if (selErr) {
+    await auditarOperacaoSuporte(admin, context, { type: body.familia_id ? 'familia' : 'lote', id: body.familia_id ?? body.lote_id! }, 'failed');
     return new Response(`Erro ao buscar famílias: ${selErr.message}`, { status: 500, headers: corsHeaders });
   }
   if (!alvos || alvos.length === 0) {
+    await auditarOperacaoSuporte(admin, context, { type: body.familia_id ? 'familia' : 'lote', id: body.familia_id ?? body.lote_id! }, 'succeeded');
     return new Response(
       JSON.stringify({ reenviadas: 0 }),
       { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } },
@@ -96,6 +100,8 @@ Deno.serve(async (req) => {
       .update({ status: 'processando' })
       .in('id', [...lotesAfetados]);
   }
+
+  await auditarOperacaoSuporte(admin, context, { type: body.familia_id ? 'familia' : 'lote', id: body.familia_id ?? body.lote_id! }, 'succeeded');
 
   return new Response(
     JSON.stringify({ reenviadas }),

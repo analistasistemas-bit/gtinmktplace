@@ -1,6 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { requireUser } from '../_shared/auth.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
+import { podeExcluirLote } from '../_shared/support-state.ts';
 import { particionarExclusao, type FamiliaExclusao } from '../_shared/lote/exclusao.ts';
 import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 
@@ -10,7 +12,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   let user;
-  try { user = await requireUser(req); }
+  try { user = await requireUserOrg(req, { access: 'write' }); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   const { lote_id } = await req.json().catch(() => ({}));
@@ -18,8 +20,9 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: lote } = await admin.from('lotes')
-    .select('id, user_id, status, planilha_path, imagens_paths').eq('id', lote_id).maybeSingle();
-  if (!lote || lote.user_id !== user.id) return new Response('Lote não encontrado', { status: 404, headers: corsHeaders });
+    .select('id, user_id, status, planilha_path, imagens_paths').eq('id', lote_id).eq('org_id', user.orgId).maybeSingle();
+  if (!lote) return new Response('Lote não encontrado', { status: 404, headers: corsHeaders });
+  if (!podeExcluirLote(lote.user_id, user.userId, user.support?.scope === 'full')) return new Response('Lote não encontrado', { status: 404, headers: corsHeaders });
   if (BLOQUEADOS.includes(lote.status)) {
     return new Response(JSON.stringify({ erro: 'Aguarde o processamento/publicação terminar antes de excluir.' }),
       { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -48,6 +51,7 @@ Deno.serve(async (req) => {
   // Reconta (ou remove se vazio) a partir do estado real do DB. Sobrou só publicada → concluido.
   const loteRemovido = await recontarOuRemoverLote(admin, lote_id, true);
 
+  await auditarOperacaoSuporte(admin, user, { type: 'lote', id: lote_id }, 'succeeded');
   return new Response(JSON.stringify({
     familias_removidas: ids.length, imagens_removidas: part.pathsRemover.length,
     familias_preservadas: part.preservadas.length, lote_removido: loteRemovido,

@@ -7,6 +7,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
@@ -131,10 +132,11 @@ Deno.serve(async (req) => {
   const admin = adminClient();
   const temAssinatura = !!req.headers.get('upstash-signature');
   let scopedOrgId: string | null = null;
+  let context: Awaited<ReturnType<typeof requireUserOrg>> | null = null;
   if (temAssinatura) {
     if (!(await verificarAssinatura(req, body))) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
   } else {
-    try { ({ orgId: scopedOrgId } = await requireUserOrg(req)); }
+try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'write' })); }
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
   }
 
@@ -147,12 +149,18 @@ Deno.serve(async (req) => {
   const { data: conexoesRaw } = await query;
 
   let total = 0;
+  let falhou = false;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
     try {
       total += await processarConexao(admin, mapCx(row), intervalo);
     } catch (e) {
+      falhou = true;
       console.error(`backfill-faturamento: falhou para org ${row.org_id}:`, e instanceof Error ? e.message : e);
     }
+  }
+
+  if (context && scopedOrgId) {
+    await auditarOperacaoSuporte(admin, context, { type: 'org', id: scopedOrgId }, falhou ? 'failed' : 'succeeded');
   }
 
   return new Response(JSON.stringify({ ok: true, sincronizados: total }), {

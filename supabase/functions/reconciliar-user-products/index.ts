@@ -15,6 +15,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { buscarItemBackfill } from '../_shared/ml/buscar-item.ts';
@@ -27,9 +28,13 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
   let orgId: string; let isAdmin: boolean;
-  try { ({ orgId, isAdmin } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ orgId, isAdmin } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
-  if (!isAdmin) return new Response('Somente administradores podem executar esta ação', { status: 403, headers: corsHeaders });
+if (!isAdmin && context.support?.scope !== 'full') {
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: orgId }, 'denied');
+    return new Response('Somente administradores podem executar esta ação', { status: 403, headers: corsHeaders });
+  }
 
   const admin = adminClient();
   const json = (obj: unknown, status = 200) =>
@@ -41,7 +46,10 @@ Deno.serve(async (req) => {
 
   const { data: candidatasRaw, error: candErr } = await admin
     .rpc('reconciliar_backfill_up_candidatas', { p_org_id: orgId });
-  if (candErr) return json({ erro: `consultar candidatas ao backfill falhou: ${candErr.message}` }, 500);
+  if (candErr) {
+    await auditarOperacaoSuporte(admin, context, { type: 'org', id: orgId }, 'failed');
+    return json({ erro: `consultar candidatas ao backfill falhou: ${candErr.message}` }, 500);
+  }
   const semFilho: FamiliaSemFilho[] = ((candidatasRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
     id: f.familia_id as string, userId: f.user_id as string, codigoPai: f.codigo_pai as string,
     orgId, mlItemId: f.ml_item_id as string,
@@ -63,5 +71,6 @@ Deno.serve(async (req) => {
   };
 
   const resultado = await reconciliarBackfill(portas, sellerEsperado);
+  await auditarOperacaoSuporte(admin, context, { type: 'org', id: orgId }, 'succeeded');
   return json({ ok: true, ...resultado });
 });

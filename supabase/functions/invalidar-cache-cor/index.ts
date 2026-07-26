@@ -1,5 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
+import { adminClient } from '../_shared/supabase.ts';
 import { cacheCorInvalidar } from '../_shared/redis/cache-cor.ts';
 
 Deno.serve(async (req) => {
@@ -9,7 +11,8 @@ Deno.serve(async (req) => {
   }
 
   let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req)); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let body: { codigo?: string };
@@ -24,8 +27,10 @@ Deno.serve(async (req) => {
 
   try {
     await cacheCorInvalidar(orgId, body.codigo);
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'item', id: body.codigo }, 'succeeded');
     return new Response('OK', { status: 200, headers: corsHeaders });
   } catch (e) {
+    await auditarOperacaoSuporte(adminClient(), context, { type: 'item', id: body.codigo }, 'failed');
     const msg = e instanceof Error ? e.message : String(e);
     return new Response(`Redis: ${msg}`, { status: 500, headers: corsHeaders });
   }

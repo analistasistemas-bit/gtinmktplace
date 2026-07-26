@@ -1,5 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { adminClient, userClient } from '../_shared/supabase.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { processarArquivo } from './processar.ts';
 
 Deno.serve(async (req) => {
@@ -8,14 +10,9 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders });
   }
 
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) {
-    return new Response('Missing auth', { status: 401, headers: corsHeaders });
-  }
-  const jwt = auth.slice(7);
-  const user = userClient(jwt);
-  const { data: { user: u } } = await user.auth.getUser();
-  if (!u) return new Response('Invalid token', { status: 401, headers: corsHeaders });
+  let caller: Awaited<ReturnType<typeof requireUserOrg>>;
+  try { caller = await requireUserOrg(req, { access: 'write' }); }
+  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   let formData: FormData;
   try {
@@ -35,6 +32,8 @@ Deno.serve(async (req) => {
   }
 
   const admin = adminClient();
+  const { data: lote } = await admin.from('lotes').select('id').eq('id', loteId).eq('org_id', caller.orgId).maybeSingle();
+  if (!lote) return new Response('Lote não encontrado', { status: 404, headers: corsHeaders });
   const contadores = {
     ok: 0,
     ja_tinha: 0,
@@ -49,7 +48,7 @@ Deno.serve(async (req) => {
   };
 
   for (const file of arquivos) {
-    const r = await processarArquivo(file, u.id, loteId, admin);
+    const r = await processarArquivo(file, caller.userId, loteId, admin, caller.orgId, caller.support != null);
     switch (r.tipo) {
       case 'ok':            contadores.ok++;              break;
       case 'ja_tinha':      contadores.ja_tinha++;        break;
@@ -64,6 +63,7 @@ Deno.serve(async (req) => {
     }
   }
 
+  await auditarOperacaoSuporte(admin, caller, { type: 'lote', id: lote.id }, contadores.erros.length ? 'failed' : 'succeeded');
   return new Response(JSON.stringify(contadores), {
     status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },

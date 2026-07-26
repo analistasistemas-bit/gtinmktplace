@@ -1,6 +1,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
+import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
@@ -11,9 +12,13 @@ Deno.serve(async (req) => {
   // Gate de auth: só admin (ADR-0060) — diferente das demais ações de escrita (só requireUser),
   // pausar/reativar tem efeito imediato na visibilidade do anúncio pros compradores.
   let orgId: string;
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
   try {
-    const r = await requireUserOrg(req);
-    if (!r.isAdmin) throw new Response('Somente administradores podem executar esta ação', { status: 403 });
+      const r = context = await requireUserOrg(req, { access: 'write' });
+    if (!r.isAdmin && r.support?.scope !== 'full') {
+      await auditarOperacaoSuporte(adminClient(), context, { type: 'org', id: r.orgId }, 'denied');
+      throw new Response('Somente administradores podem executar esta ação', { status: 403 });
+    }
     orgId = r.orgId;
   }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
@@ -35,11 +40,13 @@ Deno.serve(async (req) => {
   const ctx = { getToken: () => getValidAccessTokenConexao(conexao) };
   const resultado = await conn.atualizarStatus(ctx, ml_item_id, status);
   if (!resultado.ok) {
+    await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'failed');
     return new Response(
       JSON.stringify({ erro: resultado.erro?.mensagemOperador ?? 'Falha ao atualizar status no Mercado Livre.' }),
       { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 
+  await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'succeeded');
   return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });
