@@ -8,6 +8,7 @@ import {
   extrairGeo,
   extrairReceiverNome,
   escolherCompradorNome,
+  preservarDadosMP,
 } from '../venda';
 
 describe('extrairGeo', () => {
@@ -53,6 +54,37 @@ describe('escolherCompradorNome', () => {
   });
   it('sem nenhuma fonte disponível → null (cai pro nick na UI)', () => {
     expect(escolherCompradorNome(null, null, null)).toBeNull();
+  });
+});
+
+describe('preservarDadosMP', () => {
+  it('sem dado do MP agora (null) mantém o que já estava gravado', () => {
+    expect(preservarDadosMP(
+      { estorno: null, money_release_date: null },
+      { estorno: 12.5, money_release_date: '2026-07-30T00:00:00.000-04:00' },
+    )).toEqual({ estorno: 12.5, money_release_date: '2026-07-30T00:00:00.000-04:00' });
+  });
+  it('dado novo do MP sobrescreve o anterior', () => {
+    expect(preservarDadosMP(
+      { estorno: 30, money_release_date: '2026-08-05' },
+      { estorno: 12.5, money_release_date: '2026-07-30' },
+    )).toEqual({ estorno: 30, money_release_date: '2026-08-05' });
+  });
+  it('estorno 0 sobrescreve valor antigo (estorno cancelado no MP não fica travado)', () => {
+    expect(preservarDadosMP(
+      { estorno: 0, money_release_date: '2026-08-05' },
+      { estorno: 12.5, money_release_date: '2026-07-30' },
+    )).toEqual({ estorno: 0, money_release_date: '2026-08-05' });
+  });
+  it('campos independentes: estorno novo entra, data null preserva a antiga', () => {
+    expect(preservarDadosMP(
+      { estorno: 30, money_release_date: null },
+      { estorno: 12.5, money_release_date: '2026-07-30' },
+    )).toEqual({ estorno: 30, money_release_date: '2026-07-30' });
+  });
+  it('venda nova (sem linha anterior) grava o que veio', () => {
+    expect(preservarDadosMP({ estorno: 0, money_release_date: '2026-08-01' }, null))
+      .toEqual({ estorno: 0, money_release_date: '2026-08-01' });
   });
 });
 

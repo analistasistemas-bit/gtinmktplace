@@ -200,6 +200,23 @@ export function escolherCompradorNome(
   return buyerNomeAtual ?? compradorNomeExistente ?? receiverNome ?? null;
 }
 
+/**
+ * Dados do MP a gravar neste sync. O upsert regrava a linha inteira, então uma leitura do MP que
+ * falhou ou não achou o pagamento traria null e apagaria estorno/liberação já corretos — o selo de
+ * liberação sumiria e a notificação nunca dispararia. Campo a campo, e independentes: a mesma
+ * passada pode trazer estorno numérico com data null. Só null preserva; 0 é informação (estorno
+ * cancelado no MP) e sobrescreve normalmente. Pura.
+ */
+export function preservarDadosMP(
+  novo: { estorno: number | null; money_release_date: string | null },
+  anterior: { estorno: number | null; money_release_date: string | null } | null,
+): { estorno: number | null; money_release_date: string | null } {
+  return {
+    estorno: novo.estorno ?? anterior?.estorno ?? null,
+    money_release_date: novo.money_release_date ?? anterior?.money_release_date ?? null,
+  };
+}
+
 const num = (v: unknown): number | null => {
   if (v == null) return null;
   const n = Number(v);
