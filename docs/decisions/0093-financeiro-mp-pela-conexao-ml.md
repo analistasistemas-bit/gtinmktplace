@@ -123,8 +123,15 @@ Vault e refresh automático — e já dá acesso à conta MP do vendedor.
   permanentemente errado. O retorno passa a ser `Map | null`, e cada worker decide: os de
   evento (`sync-venda`, `sync-devolucao`) gravam e respondem 502 para re-tentar; os de
   varredura (`backfill`, `reconciliar`) logam e seguem, porque voltam sozinhos.
-- **Dívida remanescente:** o erro de rede do MP continua sem cobertura de teste — só a
-  parte pura da montagem do mapa fica testada.
+- **Leitura por pedido nos workers de evento.** `sync-venda` e `sync-devolucao` não varrem 120
+  dias do MP para atender um pedido: buscam os pagamentos por id (`pedido.payments`), 1-2
+  requisições em vez de até 40. Validado na conta real antes de implementar (13/13 pagamentos
+  acessíveis por `GET /v1/payments/{id}` com o token do ML). Os workers de lote seguem varrendo,
+  onde a varredura é o certo. Efeito colateral bem-vindo: some o teto de 120 dias, então
+  devolução de pedido antigo passa a capturar o estorno que a varredura perdia.
+- **Dívida remanescente:** os dois `return 502` dentro dos workers não têm teste — o repo não
+  tem harness para edge functions. A lógica que os alimenta (`carregarLiquidoMP` devolvendo
+  `null`, o guard sem fetch, os loaders e a preservação no `upsertVenda`) está coberta.
 - **Dependência não contratual:** o acesso à API do MP vem do escopo concedido ao app do
   ML. Se o Mercado Livre separar os escopos no futuro, a leitura financeira quebra — e
   quebrará de forma visível (HTTP 401/403 no worker), não em silêncio.

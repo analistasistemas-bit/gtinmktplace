@@ -239,8 +239,17 @@ validação do caminho de código (passo 3).
   (retry QStash × reconciliar) podem fazer A gravar por cima preservando o `null` que
   leu, depois de B ter gravado o estorno. Janela estreita, mesmo padrão já aceito para
   `comprador_nome`.
-- `carregarLiquidoMP` segue sem cobrir erro de rede com teste — só a parte pura
-  (`montarMapaLiquido`) fica testada.
+- **O retry ainda amplifica as chamadas à API do ML.** O `912ac0f` derrubou o custo do lado do
+  MP (de até 40 requisições por pedido para 1-2), mas o 502 continua sendo devolvido depois das
+  4 chamadas bem-sucedidas ao ML (`buscarPedido`, `buscarFreteVendedor`, `buscarShipment`,
+  `carregarGtinsFallback`). Numa queda do MP, cada pedido repete essas 4 até 4 vezes. É por
+  design — a alternativa (ler o MP antes) troca um risco por outro. Observar o rate limit do ML
+  junto com a DLQ nos primeiros dias após o deploy.
+- **404 persistente num payment id vira DLQ.** Com a busca por id, um `404` num pagamento que o
+  próprio pedido referencia (anomalia) produz 3×502 e cai na DLQ, onde antes era ausência
+  silenciosa. Dado preservado e falha visível — é a troca desejada; só saiba que essa é a
+  assinatura se aparecer na DLQ. Refino futuro: tratar 404 como "não achei" e reservar o retry
+  para 5xx/429.
 - **Estorno TOTAL não chega em `ml_vendas` (latente, 0 ocorrências hoje).** Estorno total muda o
   status do pagamento no MP para `refunded`, e tanto a varredura (`status=approved` na query)
   quanto `carregarLiquidoMPDoPedido` (filtro equivalente) o descartam. Medido na conta da Avil:
