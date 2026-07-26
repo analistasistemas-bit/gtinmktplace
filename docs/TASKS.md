@@ -27,13 +27,23 @@ do Mercado Pago" separada. [ADR-0093](decisions/0093-financeiro-mp-pela-conexao-
   `drop column configuracoes.mp_access_token_secret_id`) escrita.
 - [x] Documentação atualizada (`edge-functions.md`, `modelo-de-dados.md`, `arquitetura.md`,
   `obsidian-vault/01-Arquitetura/Integrações.md`, `project-status.md`, este arquivo).
-- [ ] `supabase db push` da migration — **pendente**, só depois da validação em produção
-  descrita no plano (Task 5/deploy).
-- [ ] Deploy das 7 edge functions afetadas (`sync-venda`, `sync-devolucao`,
-  `backfill-faturamento`, `reconciliar-faturamento`, `ml-webhook`, `sync-mensagem`,
-  `sync-pergunta`) + remoção da edge `resumo-financeiro` no Supabase — **pendente**.
-- [ ] Remoção dos secrets `MP_ACCESS_TOKEN`/`MP_FALLBACK_ORG_ID` — **pendente**, só depois do
-  deploy e da migration (passo 6 do plano).
+- [x] Leitura por pedido nos workers de evento: `carregarLiquidoMPDoPedido` busca os pagamentos
+  por id (`GET /v1/payments/{id}`) em vez de varrer 120 dias — de até 40 requisições ao MP por
+  pedido para 1-2. Workers de lote seguem varrendo.
+- [x] **EM PRODUÇÃO (2026-07-26):** 7 edge functions deployadas (`verify_jwt=false` conferido nas
+  7), edge `resumo-financeiro` removida do Supabase (era v14 ACTIVE), migration aplicada
+  (`get_mp_token` → 404, coluna → 42703), secrets `MP_ACCESS_TOKEN`/`MP_FALLBACK_ORG_ID`
+  removidos.
+- [x] Validado em produção 3× (antes da migration, depois dela e depois da remoção dos secrets)
+  com `sync-venda` real no pedido 2000016957965428 (`partially_refunded`, estorno R$ 12,50):
+  QStash **DELIVERED HTTP 200** nas três — logo a leitura do MP funcionou, não foi o guard
+  preservando valor antigo — e `estorno`/`money_release_date`/`liquido` intactos. Cruzado com
+  `GET /v1/payments/163485429941`: `approved`, refunded 12.5, data batendo com o banco.
+- [x] Validado na tela com browser-use (Chrome do Diego, somente leitura): Financeiro antes vs
+  depois **idêntico em todos os números** (líquido R$ 19.823,52 · bruto R$ 29.541,04 · taxas
+  R$ 9.717,52 · estornos R$ 0,00 · já liberado R$ 6.008,66 · a liberar R$ 13.750,15 · 504
+  vendas); o único diff foi o relógio "Atualizado às". Detalhe do líquido íntegro, com a coluna
+  Liberação renderizando datas e selo "a liberar".
 
 ## Acesso temporário de suporte — finalização operacional (2026-07-26)
 
