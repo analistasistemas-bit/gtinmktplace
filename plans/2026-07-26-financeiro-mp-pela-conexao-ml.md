@@ -32,10 +32,13 @@ Assinatura passa de `(admin, orgId, lookbackDias)` para
   deletam toda a cobertura restante do MP. Sem isso o PR fica com zero teste num caminho
   de dinheiro.
 
-**Guard dentro de `montarMapaLiquido`:** retornar mapa vazio quando
-`!contaId || !Number.isFinite(contaId)`. Atenção: `Number(null)` é **`0`**, não `NaN` —
-e `Number(p.collector_id) !== 0` descartaria todos os pagamentos pelo mesmo caminho
-silencioso.
+**Guard do `contaId`:** `!contaId || !Number.isFinite(contaId)` → **mapa vazio, não
+`null`** (é condição permanente; retry não ajuda). Checar no **início de
+`carregarLiquidoMP`, antes do `buscarPagamentosMP`** — senão uma org com
+`contaExternaId` nulo varre 120 dias do MP para descartar tudo depois. `montarMapaLiquido`
+repete o guard por ser pura e testável isolada. Atenção: `Number(null)` é **`0`**, não
+`NaN` — e `Number(p.collector_id) !== 0` descartaria todos os pagamentos pelo mesmo
+caminho silencioso.
 
 **Verificar:** teste de `montarMapaLiquido` cobrindo: filtra `collector_id` de terceiro,
 exclui `marketplace_shipment`, mapa vazio para `contaId = 0`, `null` e `NaN`.
@@ -94,6 +97,23 @@ Com o retorno `Map | null` da Task 1, cada chamador decide explicitamente:
 | `sync-devolucao` | idem — upsert primeiro (o claim já está gravado), depois 502. |
 | `backfill-faturamento` | `console.warn` e segue com mapa vazio. É varredura em lote; derrubar o lote inteiro por um erro do MP é pior. |
 | `reconciliar-faturamento` | idem — ele roda periodicamente e volta ao pedido. |
+
+**Ponto exato do `return 502`** — `deno check` não pega se for no lugar errado, e retornar
+cedo demais destrói a propriedade "grava primeiro":
+
+- `sync-venda/index.ts`: **depois** do bloco de notificação de venda nova (~linhas
+  102-123) e **antes** de `processado_em`/`registrarSyncOk` (~126-130). O alerta sai
+  normalmente; o retry não duplica porque `novaPaga` é recomputado de
+  `anterior.status === 'paid'` (`io.ts:257-258`) e `reservarNotificacao` é a segunda trava.
+- `sync-devolucao/index.ts`: dentro do bloco de recalc, mesma posição em que o `catch`
+  atual já chama `tratarFalha` (~linhas 100-106) — a Task 1c só estende ao caso MP-`null`.
+  Deixar `ml_webhook_eventos.processado_em` sem marcar é correto: o único consumidor desse
+  campo é o re-enfileiramento de `messages`; para `claims` o dedup do `ml-webhook` não o
+  usa.
+
+**Tipo no call site:** `liquidoPorPayment` passa a ser `Map | null`, mas `upsertVenda.opts`
+espera `Map | undefined` → passar `?? undefined`. **Não** alargar o tipo de `opts` para
+aceitar `null`.
 
 **Verificar:** os dois workers de retry respondem status não-2xx quando o MP falha, e
 `upsertVenda` já rodou antes disso.
@@ -208,3 +228,9 @@ validação do caminho de código (passo 3).
   `comprador_nome`.
 - `carregarLiquidoMP` segue sem cobrir erro de rede com teste — só a parte pura
   (`montarMapaLiquido`) fica testada.
+- **O retry do 502 é limitado.** O job nasce com `retries: 3` (`ml-webhook/index.ts:101`,
+  `queue.ts:36`); esgotadas as tentativas, a mensagem vai para a DLQ do QStash. Para
+  `claims` não há segunda chance automática — o dedup por `(topic, resource)` do
+  `ml-webhook` descarta notificações futuras do mesmo claim. Se o MP ficar fora durante
+  toda a janela de backoff, o estorno volta a ficar defasado, mas agora **visível na DLQ**
+  em vez de silencioso; recuperação manual pelo runbook de re-enfileiramento do QStash.
