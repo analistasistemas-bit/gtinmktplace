@@ -35,10 +35,10 @@ npm run db:check
 ```
 
 Não prossiga se houver erro novo. Os avisos já conhecidos devem ser registrados, sem serem
-tratados como falha desta implantação. `npm run db:check` deve passar; **antes do primeiro
-`db push`**, admite-se somente a divergência que liste exclusivamente a migration local pendente
+tratados como falha desta implantação. **Antes do primeiro `db push`**, a única saída não-verde
+aceitável de `npm run db:check` é listar exclusivamente a migration local pendente
 `20260726153552_finalize_support_access.sql`, ausente no remoto. Registre essa exceção e pare para
-qualquer outra migration divergente; ela não autoriza ignorar diferenças adicionais.
+qualquer outra divergência; ela não autoriza ignorar diferenças adicionais.
 
 ## 2. Configurar os secrets
 
