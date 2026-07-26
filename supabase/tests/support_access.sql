@@ -175,6 +175,125 @@ end;
 $$;
 reset role;
 
+-- Starting an approved renewal must atomically end the predecessor.
+insert into public.support_requests (
+  id, requester_id, org_id, scope, reason, status, decided_by,
+  approved_at, approval_expires_at, started_at, expires_at
+) values (
+  '90000000-0000-0000-0000-000000000204',
+  '90000000-0000-0000-0000-000000000102',
+  '90000000-0000-0000-0000-000000000001', 'full', 'original renewal session', 'active',
+  '90000000-0000-0000-0000-000000000103',
+  '2026-07-25 11:30:00+00', '2026-07-25 12:30:00+00',
+  '2026-07-25 11:30:00+00', '2026-07-25 13:30:00+00'
+), (
+  '90000000-0000-0000-0000-000000000202',
+  '90000000-0000-0000-0000-000000000102',
+  '90000000-0000-0000-0000-000000000001', 'full', 'approved renewal', 'approved',
+  '90000000-0000-0000-0000-000000000103',
+  '2026-07-25 11:30:00+00', '2026-07-25 12:30:00+00', null, null
+);
+update public.support_requests
+set renewal_of = '90000000-0000-0000-0000-000000000204'
+where id = '90000000-0000-0000-0000-000000000202';
+
+select public.start_support_session(
+  '90000000-0000-0000-0000-000000000202',
+  '90000000-0000-0000-0000-000000000102',
+  '2026-07-25 12:00:00+00'
+);
+
+do $$
+begin
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000204') <> 'ended' then
+    raise exception 'renewal did not end the original session';
+  end if;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000202') <> 'active' then
+    raise exception 'approved renewal did not become active';
+  end if;
+  if (select count(*) from public.support_requests
+      where requester_id = '90000000-0000-0000-0000-000000000102' and status = 'active') <> 1 then
+    raise exception 'renewal left an invalid number of active sessions';
+  end if;
+  if not exists (select 1 from public.support_audit_events
+                 where support_request_id = '90000000-0000-0000-0000-000000000204'
+                   and event = 'session_ended') then
+    raise exception 'renewal did not audit session_ended';
+  end if;
+  if not exists (select 1 from public.support_audit_events
+                 where support_request_id = '90000000-0000-0000-0000-000000000202'
+                   and event = 'session_started') then
+    raise exception 'renewal did not audit session_started';
+  end if;
+end;
+$$;
+
+-- A cross-tenant renewal fails without changing either request.
+insert into public.support_requests (
+  id, requester_id, org_id, scope, reason, status, renewal_of, decided_by,
+  approved_at, approval_expires_at
+) values (
+  '90000000-0000-0000-0000-000000000203',
+  '90000000-0000-0000-0000-000000000102',
+  '90000000-0000-0000-0000-000000000002', 'full', 'cross-tenant renewal', 'approved',
+  '90000000-0000-0000-0000-000000000202',
+  '90000000-0000-0000-0000-000000000103',
+  '2026-07-25 12:00:00+00', '2026-07-25 13:00:00+00'
+);
+do $$
+declare v_failed boolean := false;
+begin
+  begin
+    perform public.start_support_session(
+      '90000000-0000-0000-0000-000000000203',
+      '90000000-0000-0000-0000-000000000102',
+      '2026-07-25 12:01:00+00'
+    );
+  exception when others then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'cross-tenant renewal started';
+  end if;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000202') <> 'active' then
+    raise exception 'failed renewal changed the original session';
+  end if;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000203') <> 'approved' then
+    raise exception 'failed renewal changed the approved request';
+  end if;
+end;
+$$;
+
+-- Retention removes only old events without a legal hold.
+insert into public.support_audit_events (
+  org_id, support_request_id, actor_id, event, target_type, target_id, result, legal_hold, created_at
+) values
+  ('90000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000202',
+   '90000000-0000-0000-0000-000000000103', 'operation', 'retention', 'expired', 'succeeded', false,
+   now() - interval '1 year 1 second'),
+  ('90000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000202',
+   '90000000-0000-0000-0000-000000000103', 'operation', 'retention', 'recent', 'succeeded', false, now()),
+  ('90000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000202',
+   '90000000-0000-0000-0000-000000000103', 'operation', 'retention', 'held', 'succeeded', true,
+   now() - interval '1 year 1 second');
+select public.cleanup_support_audit_events();
+do $$
+begin
+  if exists (select 1 from public.support_audit_events where target_id = 'expired') then
+    raise exception 'retention did not remove the old event';
+  end if;
+  if (select count(*) from public.support_audit_events where target_id in ('recent', 'held')) <> 2 then
+    raise exception 'retention removed a recent or legally held event';
+  end if;
+  if not coalesce((select convalidated from pg_constraint where conname = 'profiles_identity_xor'), false) then
+    raise exception 'profiles_identity_xor is not validated';
+  end if;
+  if (select count(*) from cron.job where jobname = 'cleanup-support-audit-events' and active) <> 1 then
+    raise exception 'cleanup-support-audit-events job is not active exactly once';
+  end if;
+end;
+$$;
+
 -- Requester visibility also requires an active profile.
 update public.profiles set is_active = false
 where id = '90000000-0000-0000-0000-000000000102';
