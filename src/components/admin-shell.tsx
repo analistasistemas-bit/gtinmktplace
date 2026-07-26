@@ -1,5 +1,5 @@
-import { Outlet, Link } from 'react-router-dom';
-import { Building2, ArrowLeft } from 'lucide-react';
+import { Outlet } from 'react-router-dom';
+import { Building2 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UserMenu } from '@/components/user-menu';
 import { Toaster } from '@/components/ui/sonner';
@@ -13,16 +13,9 @@ export function AdminShell() {
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-amber-500/30 bg-zinc-900 px-4 text-zinc-100">
         <div className="flex items-center gap-2">
           <Building2 className="h-5 w-5 text-amber-400" />
-          <span className="text-sm font-semibold">Admin da plataforma</span>
-          <span className="hidden text-xs text-zinc-400 sm:inline">· PubliAI SaaS</span>
+          <span className="text-sm font-semibold">Daludi · Administração da plataforma</span>
         </div>
         <div className="flex items-center gap-1">
-          <Link
-            to="/"
-            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-zinc-200 hover:bg-zinc-800"
-          >
-            <ArrowLeft className="h-4 w-4" /> Voltar à operação
-          </Link>
           <ThemeToggle />
           <UserMenu />
         </div>

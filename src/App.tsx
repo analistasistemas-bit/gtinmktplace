@@ -5,6 +5,7 @@ import { AdminShell } from '@/components/admin-shell';
 import { ProtectedRoute } from '@/components/protected-route';
 import { SuperAdminRoute } from '@/components/super-admin-route';
 import { MenuGuard } from '@/components/menu-guard';
+import { SupportRoute } from '@/components/support-route';
 
 // Páginas carregadas sob demanda (code-splitting): tira recharts/jspdf/xlsx do bundle inicial.
 const Login = lazy(() => import('@/pages/Login'));
@@ -40,8 +41,9 @@ export function AppRoutes() {
 
       <Route element={<ProtectedRoute />}>
         <Route path="/sem-acesso" element={<SemAcesso />} />
-        <Route element={<AppShell />}>
-          <Route element={<MenuGuard />}>
+        <Route element={<SupportRoute />}>
+          <Route element={<AppShell />}>
+            <Route element={<MenuGuard />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/lotes" element={<Lotes />} />
             <Route path="/novo-lote" element={<Lotes />} />
@@ -59,6 +61,7 @@ export function AppRoutes() {
             <Route path="/viabilidade" element={<Viabilidade />} />
             <Route path="/usuarios" element={<Usuarios />} />
             <Route path="/style-guide" element={<StyleGuide />} />
+            </Route>
           </Route>
         </Route>
 

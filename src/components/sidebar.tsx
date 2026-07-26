@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/logo';
 import { useProfile } from '@/hooks/useProfile';
 import { visibleMenus, type MenuKey } from '@/lib/menus';
+import { useSupportStore } from '@/stores/support-store';
 
 export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboard; end: boolean; key: MenuKey }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, key: 'dashboard' },
@@ -24,7 +25,8 @@ export function BrandMark() {
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { profile } = useProfile();
-  const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }));
+  const context = useSupportStore((state) => state.context);
+  const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context));
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
       {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end }) => (

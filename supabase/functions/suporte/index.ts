@@ -78,7 +78,23 @@ Deno.serve(async (req) => {
     await expirarVencidos(db, null, now);
     if (action.action === 'context') {
       const context = await requireUserOrg(req);
-      return json({ org_id: context.orgId, support: context.support });
+      if (!context.support) return json({ context: null });
+      const { data: active } = await db.from('support_requests')
+        .select('id, org_id, scope, expires_at, organizations(nome)')
+        .eq('id', context.support.requestId).eq('status', 'active').maybeSingle();
+      if (!active?.expires_at) return json({ context: null });
+      const organization = Array.isArray(active.organizations)
+        ? active.organizations[0]
+        : active.organizations;
+      return json({
+        context: {
+          requestId: active.id,
+          orgId: active.org_id,
+          orgName: organization?.nome ?? 'Organização',
+          scope: active.scope,
+          expiresAt: active.expires_at,
+        },
+      });
     }
     if (action.action === 'list') {
       let query = db.from('support_requests').select('*').order('created_at', { ascending: false }).limit(100);

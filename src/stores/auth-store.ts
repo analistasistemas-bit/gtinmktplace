@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query-client';
+import { useSupportStore } from '@/stores/support-store';
 
 export interface Profile {
   id: string;
@@ -9,7 +10,7 @@ export interface Profile {
   is_active: boolean;
   allowed_menus: string[];
   nome: string;
-  org_id: string;
+  org_id: string | null;
   is_super_admin: boolean;
 }
 
@@ -53,6 +54,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // mensagens) ficam retidos em memória além do logout e podem vazar pra próxima conta que
         // logar na mesma aba (staleness client-side; a RLS do servidor continua protegendo).
         if (previousUserId) queryClient.clear();
+        useSupportStore.getState().clear();
         set({ session, user: null, profile: null, profileLoading: false });
         return;
       }
@@ -62,7 +64,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ session, user });
       } else {
         // Troca de conta na mesma aba (não só 1ª carga): mesmo motivo do logout acima.
-        if (previousUserId && previousUserId !== user.id) queryClient.clear();
+        if (previousUserId && previousUserId !== user.id) {
+          queryClient.clear();
+          useSupportStore.getState().clear();
+        }
         set({ session, user, profile: null });
       }
       void get().loadProfile(user.id, { blocking: !sameLoadedUser });

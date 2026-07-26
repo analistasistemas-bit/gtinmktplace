@@ -1,10 +1,12 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useProfile } from '@/hooks/useProfile';
 import { visibleMenus, menuKeyForPath, pathForMenu } from '@/lib/menus';
+import { useSupportStore } from '@/stores/support-store';
 
 export function MenuGuard() {
   const { profile, profileLoading } = useProfile();
   const location = useLocation();
+  const context = useSupportStore((state) => state.context);
 
   if (profileLoading) {
     return (
@@ -14,7 +16,7 @@ export function MenuGuard() {
     );
   }
 
-  const menus = visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] });
+  const menus = visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context);
   const key = menuKeyForPath(location.pathname);
 
   // Rota sem menu mapeado (ex.: /style-guide) → libera.

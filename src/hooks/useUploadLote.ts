@@ -2,9 +2,14 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { chamarIngest } from '@/lib/ingest';
-import { useAuthStore } from '@/stores/auth-store';
+import { type SupportScope } from '@/lib/suporte';
+import { canWrite, effectiveOrgId, useSupportStore } from '@/stores/support-store';
 
 export type UploadStatus = 'idle' | 'criando' | 'enviando' | 'processando' | 'concluido' | 'erro';
+
+export function storageOwnerForUpload(userId: string, orgId: string, supportScope: SupportScope | null): string {
+  return supportScope === 'full' ? orgId : userId;
+}
 
 export function useUploadLote() {
   const [status, setStatus] = useState<UploadStatus>('idle');
@@ -21,8 +26,10 @@ export function useUploadLote() {
       const { data: ud } = await supabase.auth.getUser();
       const userId = ud.user?.id;
       if (!userId) throw new Error('Sem sessão');
-      const orgId = useAuthStore.getState().profile?.org_id;
+      const orgId = effectiveOrgId();
       if (!orgId) throw new Error('Sem organização');
+      if (!canWrite()) throw new Error('Suporte somente leitura');
+      const storageOwner = storageOwnerForUpload(userId, orgId, useSupportStore.getState().context?.scope ?? null);
 
       const { data: lote, error } = await supabase
         .from('lotes')
@@ -34,7 +41,7 @@ export function useUploadLote() {
       setLoteId(lote.id);
       setStatus('enviando');
 
-      const planilhaPath = buildStoragePath(userId, lote.id, planilha.name);
+      const planilhaPath = buildStoragePath(storageOwner, lote.id, planilha.name);
       await uploadFile('imagens', planilhaPath, planilha);
       setProgresso(5);
 
@@ -47,7 +54,7 @@ export function useUploadLote() {
         const batch = imagens.slice(i, i + concorrencia);
         const paths = await Promise.all(
           batch.map(async (img) => {
-            const p = buildStoragePath(userId, lote.id, img.name);
+            const p = buildStoragePath(storageOwner, lote.id, img.name);
             await uploadFile('imagens', p, img);
             enviadas += 1;
             setProgresso(5 + Math.floor((enviadas / total) * 80));

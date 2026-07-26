@@ -10,7 +10,8 @@ export interface MenuProfile {
 // Menus visíveis para o perfil. Admin vê tudo + o menu exclusivo 'usuarios'.
 // O painel de plataforma do super-admin (D-E7.8) fica em /admin, fora da sidebar
 // de operação — não é menu de empresa. Ver components/super-admin-route.tsx.
-export function visibleMenus(p: MenuProfile): MenuKey[] {
+export function visibleMenus(p: MenuProfile, hasSupportSession = false): MenuKey[] {
+  if (hasSupportSession) return [...MENU_KEYS];
   return p.is_admin ? [...MENU_KEYS, 'usuarios'] : MENU_KEYS.filter((k) => p.allowed_menus.includes(k));
 }
 
