@@ -12,6 +12,8 @@ export function montarMapaLiquido(
   const mapa = new Map<string, DadosPagamentoMP>();
   // Sem conta resolvida não dá para separar venda própria de compra: `Number(null)` é 0 (não NaN),
   // então com contaId 0/null/undefined um pagamento sem collector_id passaria como venda da conta.
+  // Duplicado de propósito com os carregadores: lá o guard evita o fetch, aqui mantém esta função
+  // pura correta (e testável) sozinha. Não remova nenhum dos dois achando que é redundância.
   if (!contaId || !Number.isFinite(contaId)) return mapa;
   for (const p of pagamentos) {
     if (Number(p.collector_id) !== contaId) continue;       // exclui compras/terceiros
