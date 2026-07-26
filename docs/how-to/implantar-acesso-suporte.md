@@ -35,7 +35,10 @@ npm run db:check
 ```
 
 Não prossiga se houver erro novo. Os avisos já conhecidos devem ser registrados, sem serem
-tratados como falha desta implantação.
+tratados como falha desta implantação. `npm run db:check` deve passar; **antes do primeiro
+`db push`**, admite-se somente a divergência que liste exclusivamente a migration local pendente
+`20260726153552_finalize_support_access.sql`, ausente no remoto. Registre essa exceção e pare para
+qualquer outra migration divergente; ela não autoriza ignorar diferenças adicionais.
 
 ## 2. Configurar os secrets
 
@@ -54,11 +57,16 @@ supabase secrets list
 
 ## 3. Conferir as identidades antes do `db push`
 
-Confirme no banco, pelos IDs e e-mails, que nenhuma identidade viola o estado final:
+Execute as alterações em uma transação, usando os IDs previamente conferidos (nunca nomes), e
+confirme no banco que nenhuma identidade viola o estado final:
 
-- `diego@daludi.com.br`: `org_id is null`, `is_admin = false` e `is_super_admin = true`;
-- `analistasistemas@gmail.com`: pertence à Avil, é admin e não é super-admin;
-- `analistasistemas@icloud.com`: pertence à DSA de testes, é admin e não é super-admin.
+1. Vincule `analistasistemas@gmail.com` à Avil com `is_admin = true` e
+   `is_super_admin = false`.
+2. Vincule `analistasistemas@icloud.com` à DSA de testes (`slug = 'diego-souza'`, ID previamente
+   conferido) com `is_admin = true` e `is_super_admin = false`.
+3. Marque a DSA (`diego-souza`, ID previamente conferido) como `is_test = true`.
+4. Configure `diego@daludi.com.br` com `org_id = null`, `is_admin = false` e
+   `is_super_admin = true`.
 
 Corrija a migração de identidades antes de continuar. A migration final valida
 `profiles_identity_xor`; um perfil híbrido faz o `db push` inteiro falhar e reverter.
@@ -88,21 +96,13 @@ supabase functions list
 Confirme que a versão da função mudou e que `verify_jwt` continua conforme
 `supabase/config.toml`.
 
-## 6. Reconferir as identidades após a publicação
+## 6. Verificar as identidades após a publicação
 
-As alterações de identidade já devem ter sido executadas com transação e IDs previamente
-conferidos antes do `db push`; não use nomes como identificador.
-
-1. Vincule `analistasistemas@gmail.com` à Avil com `is_admin = true` e
-   `is_super_admin = false`.
-2. Vincule `analistasistemas@icloud.com` à organização de testes com `is_admin = true` e
-   `is_super_admin = false`.
-3. Marque a organização permanente como `is_test = true`.
-4. Configure `diego@daludi.com.br` com `org_id = null`, `is_admin = false` e
-   `is_super_admin = true`.
-
-Após a publicação, confira novamente e-mail, `org_id`, `is_admin` e `is_super_admin`. A restrição
-`profiles_identity_xor` impede que um super-admin também pertença a uma organização.
+Sem fazer novas mutações, confira novamente por ID e e-mail que `diego@daludi.com.br` não tem
+`org_id` e é o super-admin, que `analistasistemas@gmail.com` é admin da Avil sem super-admin e
+que `analistasistemas@icloud.com` é admin da DSA de testes (`diego-souza`, ID previamente
+conferido) sem super-admin. A restrição `profiles_identity_xor` impede que um super-admin também
+pertença a uma organização.
 
 ## 7. Teste de fumaça
 
