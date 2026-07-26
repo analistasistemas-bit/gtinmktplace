@@ -103,7 +103,6 @@ export type Database = {
           desconto_concorrencia_pct: number
           desconto_pct: number
           mostrar_lucro_dashboard: boolean
-          mp_access_token_secret_id: string | null
           org_id: string
           reancora_lider_ativa: boolean
           telegram_ativo: boolean
@@ -122,7 +121,6 @@ export type Database = {
           desconto_concorrencia_pct?: number
           desconto_pct?: number
           mostrar_lucro_dashboard?: boolean
-          mp_access_token_secret_id?: string | null
           org_id: string
           reancora_lider_ativa?: boolean
           telegram_ativo?: boolean
@@ -141,7 +139,6 @@ export type Database = {
           desconto_concorrencia_pct?: number
           desconto_pct?: number
           mostrar_lucro_dashboard?: boolean
-          mp_access_token_secret_id?: string | null
           org_id?: string
           reancora_lider_ativa?: boolean
           telegram_ativo?: boolean
@@ -1280,7 +1277,6 @@ export type Database = {
           refresh_token: string
         }[]
       }
-      get_mp_token: { Args: { p_org_id: string }; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
