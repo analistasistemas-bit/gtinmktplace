@@ -9,6 +9,13 @@ insert into public.organizations (id, nome, slug) values
   ('90000000-0000-0000-0000-000000000001', 'Support test tenant', 'support-test-tenant'),
   ('90000000-0000-0000-0000-000000000002', 'Other support tenant', 'support-test-other');
 
+-- Preserve the migration's validation state before the legacy-row fixture.
+create temporary table support_access_xor_validation as
+select convalidated
+from pg_constraint
+where conname = 'profiles_identity_xor'
+  and conrelid = 'public.profiles'::regclass;
+
 -- This is the one pre-existing hybrid row allowed while the XOR remains NOT VALID.
 alter table public.profiles drop constraint profiles_identity_xor;
 insert into auth.users (id, email, raw_user_meta_data) values
@@ -24,7 +31,9 @@ insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values
   ('90000000-0000-0000-0000-000000000102', 'support@test.local',
    '{"is_super_admin":true}'::jsonb, '{}'::jsonb),
   ('90000000-0000-0000-0000-000000000103', 'tenant-admin@test.local',
-   '{}'::jsonb, '{"org_id":"90000000-0000-0000-0000-000000000001"}'::jsonb);
+   '{}'::jsonb, '{"org_id":"90000000-0000-0000-0000-000000000001"}'::jsonb),
+  ('90000000-0000-0000-0000-000000000105', 'other-support@test.local',
+   '{"is_super_admin":true}'::jsonb, '{}'::jsonb);
 update public.profiles set is_admin = true
 where id = '90000000-0000-0000-0000-000000000103';
 
@@ -185,7 +194,7 @@ insert into public.support_requests (
   '90000000-0000-0000-0000-000000000001', 'full', 'original renewal session', 'active',
   '90000000-0000-0000-0000-000000000103',
   '2026-07-25 11:30:00+00', '2026-07-25 12:30:00+00',
-  '2026-07-25 11:30:00+00', '2026-07-25 13:30:00+00'
+  '2026-07-25 11:30:00+00', '2026-07-25 12:15:00+00'
 ), (
   '90000000-0000-0000-0000-000000000202',
   '90000000-0000-0000-0000-000000000102',
@@ -196,6 +205,33 @@ insert into public.support_requests (
 update public.support_requests
 set renewal_of = '90000000-0000-0000-0000-000000000204'
 where id = '90000000-0000-0000-0000-000000000202';
+
+-- The session state and both audit rows roll back together.
+do $$
+begin
+  begin
+    perform public.start_support_session(
+      '90000000-0000-0000-0000-000000000202',
+      '90000000-0000-0000-0000-000000000102',
+      '2026-07-25 12:00:00+00'
+    );
+    raise exception 'force renewal rollback';
+  exception when others then
+    null;
+  end;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000204') <> 'active'
+     or (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000202') <> 'approved' then
+    raise exception 'renewal rollback changed session state';
+  end if;
+  if exists (select 1 from public.support_audit_events
+             where support_request_id in (
+               '90000000-0000-0000-0000-000000000204',
+               '90000000-0000-0000-0000-000000000202'
+             ) and event in ('session_ended', 'session_started')) then
+    raise exception 'renewal rollback left audit events';
+  end if;
+end;
+$$;
 
 select public.start_support_session(
   '90000000-0000-0000-0000-000000000202',
@@ -214,6 +250,10 @@ begin
   if (select count(*) from public.support_requests
       where requester_id = '90000000-0000-0000-0000-000000000102' and status = 'active') <> 1 then
     raise exception 'renewal left an invalid number of active sessions';
+  end if;
+  if (select expires_at <> started_at + interval '2 hours'
+      from public.support_requests where id = '90000000-0000-0000-0000-000000000202') then
+    raise exception 'renewal did not receive the two-hour session duration';
   end if;
   if not exists (select 1 from public.support_audit_events
                  where support_request_id = '90000000-0000-0000-0000-000000000204'
@@ -241,8 +281,13 @@ insert into public.support_requests (
   '2026-07-25 12:00:00+00', '2026-07-25 13:00:00+00'
 );
 do $$
-declare v_failed boolean := false;
+declare v_failed boolean := false; v_audit_count bigint;
 begin
+  select count(*) into v_audit_count from public.support_audit_events
+  where support_request_id in (
+    '90000000-0000-0000-0000-000000000202',
+    '90000000-0000-0000-0000-000000000203'
+  );
   begin
     perform public.start_support_session(
       '90000000-0000-0000-0000-000000000203',
@@ -260,6 +305,61 @@ begin
   end if;
   if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000203') <> 'approved' then
     raise exception 'failed renewal changed the approved request';
+  end if;
+  if (select count(*) from public.support_audit_events
+      where support_request_id in (
+        '90000000-0000-0000-0000-000000000202',
+        '90000000-0000-0000-0000-000000000203'
+      )) <> v_audit_count then
+    raise exception 'failed renewal changed audit history';
+  end if;
+end;
+$$;
+
+-- A renewal cannot take over another support user's session in the same tenant.
+insert into public.support_requests (
+  id, requester_id, org_id, scope, reason, status, renewal_of, decided_by,
+  approved_at, approval_expires_at
+) values (
+  '90000000-0000-0000-0000-000000000205',
+  '90000000-0000-0000-0000-000000000105',
+  '90000000-0000-0000-0000-000000000001', 'full', 'other requester renewal', 'approved',
+  '90000000-0000-0000-0000-000000000202',
+  '90000000-0000-0000-0000-000000000103',
+  '2026-07-25 12:00:00+00', '2026-07-25 13:00:00+00'
+);
+do $$
+declare v_failed boolean := false; v_audit_count bigint;
+begin
+  select count(*) into v_audit_count from public.support_audit_events
+  where support_request_id in (
+    '90000000-0000-0000-0000-000000000202',
+    '90000000-0000-0000-0000-000000000205'
+  );
+  begin
+    perform public.start_support_session(
+      '90000000-0000-0000-0000-000000000205',
+      '90000000-0000-0000-0000-000000000105',
+      '2026-07-25 12:02:00+00'
+    );
+  exception when others then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'cross-requester renewal started';
+  end if;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000202') <> 'active' then
+    raise exception 'cross-requester renewal changed the original session';
+  end if;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000205') <> 'approved' then
+    raise exception 'cross-requester renewal changed the approved request';
+  end if;
+  if (select count(*) from public.support_audit_events
+      where support_request_id in (
+        '90000000-0000-0000-0000-000000000202',
+        '90000000-0000-0000-0000-000000000205'
+      )) <> v_audit_count then
+    raise exception 'cross-requester renewal changed audit history';
   end if;
 end;
 $$;
@@ -285,7 +385,30 @@ begin
   if (select count(*) from public.support_audit_events where target_id in ('recent', 'held')) <> 2 then
     raise exception 'retention removed a recent or legally held event';
   end if;
-  if not coalesce((select convalidated from pg_constraint where conname = 'profiles_identity_xor'), false) then
+  if not exists (select 1 from public.profiles
+                 where id = '90000000-0000-0000-0000-000000000102'
+                   and is_active and is_super_admin and org_id is null) then
+    raise exception 'super-admin identity violates XOR semantics';
+  end if;
+  if not exists (select 1 from public.profiles
+                 where id = '90000000-0000-0000-0000-000000000103'
+                   and is_active and not is_super_admin
+                   and org_id = '90000000-0000-0000-0000-000000000001') then
+    raise exception 'tenant member identity violates XOR semantics';
+  end if;
+  begin
+    update public.profiles set org_id = '90000000-0000-0000-0000-000000000001'
+    where id = '90000000-0000-0000-0000-000000000102';
+    raise exception using errcode = 'P0001', message = 'XOR accepted super-admin tenant identity';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.profiles set org_id = null
+    where id = '90000000-0000-0000-0000-000000000103';
+    raise exception using errcode = 'P0001', message = 'XOR accepted tenant member without organization';
+  exception when check_violation then null;
+  end;
+  if not coalesce((select convalidated from support_access_xor_validation), false) then
     raise exception 'profiles_identity_xor is not validated';
   end if;
   if (select count(*) from cron.job where jobname = 'cleanup-support-audit-events' and active) <> 1 then
