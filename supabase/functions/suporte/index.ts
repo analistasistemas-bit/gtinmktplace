@@ -1,8 +1,8 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
-import { requireUser, requireUserOrg } from '../_shared/auth.ts';
+import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { enviarEmailSuporte } from '../_shared/suporte-email.ts';
-import { autorizarRequestSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../_shared/support-state.ts';
+import { autorizarRequestSuporte, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../_shared/support-state.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -77,11 +77,12 @@ Deno.serve(async (req) => {
   try {
     await expirarVencidos(db, null, now);
     if (action.action === 'context') {
-      const context = await requireUserOrg(req);
-      if (!context.support) return json({ context: null });
-      const { data: active } = await db.from('support_requests')
+      const { data, error } = await db.from('support_requests')
         .select('id, org_id, scope, expires_at, organizations(nome)')
-        .eq('id', context.support.requestId).eq('status', 'active').maybeSingle();
+        .eq('requester_id', user.id).eq('status', 'active')
+        .gt('expires_at', now.toISOString()).maybeSingle();
+      if (error) throw new Error('falha ao carregar contexto de suporte');
+      const active = resolverContextoSuporte(profile.is_super_admin, data);
       if (!active?.expires_at) return json({ context: null });
       const organization = Array.isArray(active.organizations)
         ? active.organizations[0]

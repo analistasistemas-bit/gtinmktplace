@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autorizarRequestSuporte, podeExcluirLote, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../support-state.ts';
+import { autorizarRequestSuporte, podeExcluirLote, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../support-state.ts';
 
 describe('validarAcaoSuporte', () => {
   it('normaliza um pedido válido', () => {
@@ -31,6 +31,10 @@ describe('validarAcaoSuporte', () => {
 
 describe('fluxos de suporte extraídos do handler', () => {
   const now = new Date('2026-07-25T12:00:00.000Z');
+  it('trata super-admin sem sessão ativa como contexto vazio', () => {
+    expect(resolverContextoSuporte(true, null)).toBeNull();
+    expect(resolverContextoSuporte(false, null)).toBeNull();
+  });
   it('bloqueia IDOR de decisão e renovação em outra organização', () => {
     expect(() => autorizarRequestSuporte('decide', { requester_id: 's', org_id: 'org-a' }, 'a', { isAdmin: true, orgId: 'org-b', isSuperAdmin: false })).toThrow('forbidden');
     expect(() => resolverRenovacao({ id: 'old', org_id: 'org-a', expires_at: '2026-07-25T12:10:00Z' }, 'org-b', now)).toThrow('mesma organização');

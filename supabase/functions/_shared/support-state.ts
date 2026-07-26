@@ -7,6 +7,10 @@ export type SupportAction =
   | { action: 'decide'; requestId: string; decision: 'approved' | 'rejected' }
   | { action: 'context' };
 
+export function resolverContextoSuporte<T>(isSuperAdmin: boolean, active: T | null): T | null {
+  return isSuperAdmin ? active : null;
+}
+
 export function resolverRenovacao(active: { id: string; org_id: string; expires_at: string | null } | null, orgId: string, now = new Date()): string | null {
   if (!active) return null;
   if (active.org_id !== orgId) throw new Error('renovação exige a mesma organização');
