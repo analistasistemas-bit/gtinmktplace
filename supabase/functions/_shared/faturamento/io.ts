@@ -1,7 +1,7 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
 // Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
@@ -219,15 +219,17 @@ export async function upsertVenda(
     infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,
     freteVendedor: opts.freteVendedor,
   });
-  // Estado anterior (para detectar "nova venda paga" e não realertar, e não perder um
-  // comprador_nome real já capturado — o ML é inconsistente e às vezes some com o buyer).
+  // Estado anterior (para detectar "nova venda paga" e não realertar, não perder um comprador_nome
+  // real já capturado — o ML é inconsistente e às vezes some com o buyer — e não apagar
+  // estorno/liberação já gravados quando a leitura do MP falha ou não acha o pagamento).
   const { data: anterior } = await admin.from('ml_vendas')
-    .select('id, status, comprador_nome').eq('user_id', userId).eq('order_id', venda.order_id).maybeSingle();
+    .select('id, status, comprador_nome, estorno, money_release_date').eq('user_id', userId).eq('order_id', venda.order_id).maybeSingle();
 
   const row = {
     user_id: userId,
     org_id: orgId,
     ...venda,
+    ...preservarDadosMP(venda, anterior ?? null),
     comprador_nome: escolherCompradorNome(venda.comprador_nome, anterior?.comprador_nome ?? null, opts.shipment?.receiverNome ?? null),
     raw: pedido as unknown as Record<string, unknown>,
     shipping_status: opts.shipment?.status ?? null,
