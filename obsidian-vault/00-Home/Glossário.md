@@ -57,7 +57,7 @@ primeiro). Aqui os termos ganham links internos do vault.
 | Termo | Definição |
 |---|---|
 | **ML** | Mercado Livre. Marketplace primário. OAuth 2.0, API de items, webhooks. Ver [[Integrações]]. |
-| **MP** | Mercado Pago. Origem dos dados financeiros (líquido, liberação). |
+| **MP** | Mercado Pago. Origem de **estorno** e **data de liberação** por pagamento. O **líquido não vem do MP** — é `bruto − comissão − frete real` (ADR-0042). Não existe "conexão do Mercado Pago": a conta MP é lida com o token da conexão `mercado_livre` da própria org (ADR-0093). |
 | **OpenRouter** | Gateway de IA compatível com OpenAI SDK. Copy + Vision. Ver [[IA]]. |
 | **Telegram** | Canal de alertas operacionais (moderação, vendas, perguntas, liberações). |
 

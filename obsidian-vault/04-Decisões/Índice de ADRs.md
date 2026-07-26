@@ -104,5 +104,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0090 | [Lockdown da escrita em `profiles` — privilégio não se auto-concede](../../docs/decisions/0090-lockdown-da-escrita-em-profiles.md) |
 | 0091 | [A conexão do Mercado Livre é gravada na org da SESSÃO, não na do `state`](../../docs/decisions/0091-conexao-ml-confirmada-pela-sessao.md) |
 | 0092 | [Identidade da plataforma e acesso temporário de suporte](../../docs/decisions/0092-identidade-da-plataforma-e-acesso-super-admin.md) |
+| 0093 | [Financeiro do Mercado Pago pela conexão OAuth do Mercado Livre](../../docs/decisions/0093-financeiro-mp-pela-conexao-ml.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
