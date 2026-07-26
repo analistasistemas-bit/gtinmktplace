@@ -17,7 +17,6 @@ export function montarMapaLiquido(
     if (Number(p.collector_id) !== contaId) continue;       // exclui compras/terceiros
     if (p.description === 'marketplace_shipment') continue;  // exclui pagamento de frete
     mapa.set(String(p.id), {
-      net: Number(p.transaction_details?.net_received_amount ?? 0),
       estorno: Number(p.transaction_amount_refunded ?? 0),
       releaseDate: p.money_release_date ?? null,
     });

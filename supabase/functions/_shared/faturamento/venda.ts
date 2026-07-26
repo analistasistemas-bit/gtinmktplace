@@ -85,8 +85,6 @@ export interface VendaRow {
 
 /** Dados do pagamento vindos do Mercado Pago (ADR-0038), por payment id. */
 export interface DadosPagamentoMP {
-  /** net_received_amount — líquido recebido. */
-  net: number;
   /** transaction_amount_refunded — estornado. */
   estorno: number;
   /** money_release_date — quando o saldo é liberado (ISO). */

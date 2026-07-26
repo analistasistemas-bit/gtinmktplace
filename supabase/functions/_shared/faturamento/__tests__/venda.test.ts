@@ -342,9 +342,9 @@ describe('mapearPedidoParaVenda', () => {
     // bruto − comissão − frete real do vendedor. Estorno/liberação seguem vindo do MP.
     const { venda } = mapearPedidoParaVenda(pedidoBase, {
       idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 50,
-      liquidoPorPayment: new Map([['1', { net: 6.3, estorno: 2.5, releaseDate: '2026-06-24T11:00:00Z' }]]),
+      liquidoPorPayment: new Map([['1', { estorno: 2.5, releaseDate: '2026-06-24T11:00:00Z' }]]),
     });
-    expect(venda.liquido).toBe(25.8); // 90.20 − (7.20 × 2 un) − 50, ignora o net (6.3) do MP
+    expect(venda.liquido).toBe(25.8); // 90.20 − (7.20 × 2 un) − 50, sem nada vindo do net do MP
     expect(venda.estorno).toBe(2.5);
     expect(venda.money_release_date).toBe('2026-06-24T11:00:00Z');
   });

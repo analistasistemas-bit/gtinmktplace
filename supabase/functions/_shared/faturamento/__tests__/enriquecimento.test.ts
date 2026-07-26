@@ -7,18 +7,16 @@ function pag(p: Partial<PagamentoMP> & { id: number }): PagamentoMP {
 }
 
 describe('montarMapaLiquido', () => {
-  it('inclui a venda da conta com líquido, estorno e data de liberação', () => {
+  it('inclui a venda da conta com estorno e data de liberação', () => {
     const mapa = montarMapaLiquido([
       pag({
         id: 1,
         collector_id: 123,
-        transaction_details: { net_received_amount: 90.5 },
         transaction_amount_refunded: 10,
         money_release_date: '2026-07-30T00:00:00.000-04:00',
       }),
     ], 123);
     expect(mapa.get('1')).toEqual({
-      net: 90.5,
       estorno: 10,
       releaseDate: '2026-07-30T00:00:00.000-04:00',
     });
