@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Send } from 'lucide-react';
+import { History, Send } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 import { useEnviarTesteTelegram } from '@/hooks/useConfiguracoes';
@@ -106,7 +107,14 @@ export default function Usuarios() {
       <PageHeader
         title="Usuários"
         subtitle="Convide membros e defina quais menus cada um acessa."
-        actions={<Button onClick={() => setInviteOpen(true)}>Convidar usuário</Button>}
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link to="/suporte"><History aria-hidden="true" />Histórico de suporte</Link>
+            </Button>
+            <Button onClick={() => setInviteOpen(true)}>Convidar usuário</Button>
+          </>
+        }
       />
 
       <Card className="mt-4 overflow-hidden">
