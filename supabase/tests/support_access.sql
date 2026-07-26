@@ -251,7 +251,7 @@ begin
       where requester_id = '90000000-0000-0000-0000-000000000102' and status = 'active') <> 1 then
     raise exception 'renewal left an invalid number of active sessions';
   end if;
-  if (select expires_at <> started_at + interval '2 hours'
+  if (select expires_at is distinct from started_at + interval '2 hours'
       from public.support_requests where id = '90000000-0000-0000-0000-000000000202') then
     raise exception 'renewal did not receive the two-hour session duration';
   end if;
@@ -278,7 +278,7 @@ insert into public.support_requests (
   '90000000-0000-0000-0000-000000000002', 'full', 'cross-tenant renewal', 'approved',
   '90000000-0000-0000-0000-000000000202',
   '90000000-0000-0000-0000-000000000103',
-  '2026-07-25 12:00:00+00', '2026-07-25 13:00:00+00'
+  '2026-07-25 13:00:00+00', '2026-07-25 14:00:00+00'
 );
 do $$
 declare v_failed boolean := false; v_audit_count bigint;
@@ -292,7 +292,7 @@ begin
     perform public.start_support_session(
       '90000000-0000-0000-0000-000000000203',
       '90000000-0000-0000-0000-000000000102',
-      '2026-07-25 12:01:00+00'
+      '2026-07-25 13:45:00+00'
     );
   exception when others then
     v_failed := true;
@@ -326,7 +326,7 @@ insert into public.support_requests (
   '90000000-0000-0000-0000-000000000001', 'full', 'other requester renewal', 'approved',
   '90000000-0000-0000-0000-000000000202',
   '90000000-0000-0000-0000-000000000103',
-  '2026-07-25 12:00:00+00', '2026-07-25 13:00:00+00'
+  '2026-07-25 13:00:00+00', '2026-07-25 14:00:00+00'
 );
 do $$
 declare v_failed boolean := false; v_audit_count bigint;
@@ -340,7 +340,7 @@ begin
     perform public.start_support_session(
       '90000000-0000-0000-0000-000000000205',
       '90000000-0000-0000-0000-000000000105',
-      '2026-07-25 12:02:00+00'
+      '2026-07-25 13:46:00+00'
     );
   exception when others then
     v_failed := true;
