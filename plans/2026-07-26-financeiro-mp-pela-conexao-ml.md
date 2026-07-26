@@ -20,10 +20,43 @@ Assinatura passa de `(admin, orgId, lookbackDias)` para
   execução deixa de existir — o id vem de `conexao.contaExternaId`).
 - O corpo (filtro `collector_id`, exclusão de `marketplace_shipment`, montagem do mapa)
   não muda.
-- O `try/catch` com `console.warn` + mapa vazio **fica como está** — comportamento
-  pré-existente, fora do escopo deste PR (registrado como dívida no ADR-0093).
+- O `try/catch` com `console.warn` + mapa vazio fica como está; o dano que ele causava é
+  fechado na Task 1b.
+
+Extrair a montagem do mapa numa função **pura** `montarMapaLiquido(pagamentos, contaId)`
+— hoje `carregarLiquidoMP` é documentadamente "não testado por vitest", e as Tasks 3/4
+deletam toda a cobertura restante do MP. Sem isso o PR fica com zero teste num caminho de
+dinheiro.
 
 **Verificar:** `pnpm lint` e `deno check` limpos no arquivo.
+
+## Task 1b — falha do MP não pode apagar dado bom (BLOQUEADOR)
+
+`supabase/functions/_shared/faturamento/io.ts` (`upsertVenda`)
+
+`upsert(row, { onConflict: 'user_id,order_id' })` grava a **linha inteira**. Quando
+`carregarLiquidoMP` devolve mapa vazio (erro de rede, 401, rate limit, ou pedido fora da
+janela de lookback), `mapearPedidoParaVenda` produz `estorno: null` e
+`money_release_date: null` — e o upsert **sobrescreve** valores corretos já gravados.
+Consequência: o selo liberado/a-liberar some e `notificar-liberacao` nunca dispara para
+aquele pedido, em silêncio.
+
+Hoje isso é quase impossível (o `MP_ACCESS_TOKEN` é estático e não falha). Depois desta
+mudança passa a ser possível: o MP pode falhar com o token do ML perfeitamente válido, e
+nessa janela o worker passa reto pelo `getValidAccessTokenConexao` e grava nulls. É o
+formato do incidente ORIGEM — a probabilidade muda por causa deste PR, então o guard vem
+junto.
+
+Fix, no mesmo padrão que a função já usa para `comprador_nome`:
+
+- incluir `estorno, money_release_date` no `select` do `anterior`;
+- ao montar `row`, preservar o valor anterior quando o novo vier `null`.
+
+Seguro: MP não "des-estorna" nem apaga data de liberação — esses campos nunca voltam
+legitimamente para `null`.
+
+**Verificar:** teste que grava uma venda com `money_release_date`, reprocessa com
+`liquidoPorPayment` vazio e afirma que a data **continua lá**.
 
 ## Task 2 — os 4 workers passam o que já têm em escopo
 
@@ -54,7 +87,10 @@ eliminar.
   eles usavam (`VendaFinanceira`, `ResumoFinanceiro`, `InfoCusto`).
 - `financeiro.ts` deve terminar com apenas: `PagamentoMP`, `buscarPagamentosMP` e o
   `MP_API`. Some `getContaId` (Task 1), `escolherTokenMP` e `resolverTokenMP` (Task 4).
-- Ajustar `__tests__/financeiro.test.ts`: ficam só os testes do que sobreviveu.
+- Ajustar `__tests__/financeiro.test.ts`: ficam os testes do que sobreviveu **mais** o de
+  `montarMapaLiquido` (Task 1): filtra `collector_id` de terceiro, exclui
+  `marketplace_shipment`, e devolve mapa vazio quando a conta é `null`/`NaN` (o guard da
+  Task 2).
 
 **Verificar:** `rg "resumo-financeiro|useResumoFinanceiro|lib/financeiro" src supabase`
 sem resultado (exceto docs/ADRs). `pnpm test` e `pnpm build` passando.
@@ -92,16 +128,21 @@ do `drop column`, senão fica órfão.
    Conferir a versão e o `verify_jwt` de cada uma depois (todas `false`).
 2. Deletar a function `resumo-financeiro` no Supabase (não basta o `git rm` — está
    `ACTIVE` v14).
-3. `supabase db push` da migration.
-4. **Validação em produção:** disparar um `sync-venda` de um pedido com estorno conhecido
-   e conferir que `ml_vendas.estorno` e `ml_vendas.money_release_date` continuam
-   preenchidos. Comparar 1:1 com a tela Financeiro antes/depois.
-5. **Só depois da validação**, remover os secrets `MP_ACCESS_TOKEN` e `MP_FALLBACK_ORG_ID`
+3. **Validação em produção, antes da migration:** disparar um `sync-venda` de um pedido
+   com estorno conhecido e conferir que `ml_vendas.estorno` e
+   `ml_vendas.money_release_date` continuam preenchidos. Comparar 1:1 com a tela
+   Financeiro antes/depois. Nesta janela o rollback é só reverter o commit + redeploy — o
+   schema ainda está intacto.
+4. `supabase db push` da migration (drop da RPC e da coluna) — **só depois** do passo 3.
+5. Quando a DSA conectar o Mercado Livre, conferir que `/v1/payments/search` responde 200
+   com o token dela **antes** de considerar o benefício multi-tenant entregue: o teste de
+   2026-07-26 cobriu uma conexão pré-existente, não uma recém-criada.
+6. **Só depois de tudo isso**, remover os secrets `MP_ACCESS_TOKEN` e `MP_FALLBACK_ORG_ID`
    do Supabase. Enquanto não removidos, ficam órfãos e inofensivos (nenhum código os lê) —
    e são o rollback: restaurar o `resolverTokenMP` antigo volta a funcionar na hora.
 
 ## Rollback
 
-Reverter o commit + redeploy das 4 functions. Os secrets ainda existem (passo 5 é o
-último). A migration é o único passo não trivial de reverter — por isso ela vai por
-último e depois da validação do caminho de código.
+Reverter o commit + redeploy das 4 functions. Os secrets ainda existem (passo 6 é o
+último). A migration é o único passo não trivial de reverter — por isso ela vem **depois**
+da validação do caminho de código (passo 3), e não antes.

@@ -89,9 +89,12 @@ Vault e refresh automático — e já dá acesso à conta MP do vendedor.
 
 ## Consequências
 
-- **Multi-tenant de verdade, sem tela nova.** Toda org que conectar o Mercado Livre passa
-  a ter financeiro próprio automaticamente. A DSA, que hoje não tem, passa a ter assim
-  que conectar.
+- **Multi-tenant sem tela nova.** O financeiro deixa de depender de um token de instância
+  e passa a seguir a conexão de cada org. Ressalva do que foi de fato testado: a
+  verificação usou uma conexão **pré-existente** (Avil, com escopo amplo). `montarAuthUrl`
+  não pede escopo — o ML concede o padrão do app, provavelmente idêntico — mas uma conexão
+  recém-criada não foi exercitada. Quando a DSA conectar, confirmar
+  `/v1/payments/search` 200 com o token dela antes de dar o benefício como entregue.
 - **Acaba o risco cross-tenant.** Não existe mais token global capaz de servir a conta da
   Avil para outra org.
 - **Token deixa de ser estático.** Passa a ter refresh proativo com lock distribuído
@@ -102,9 +105,18 @@ Vault e refresh automático — e já dá acesso à conta MP do vendedor.
   degradar `estorno`/`money_release_date` em silêncio.
 - **Acoplamento aceito:** desconectar o Mercado Livre derruba o financeiro junto. É
   coerente — sem conexão ML não há vendas para faturar.
-- **Dívida remanescente:** `carregarLiquidoMP` continua engolindo erro de rede da API do
-  MP com `console.warn` e mapa vazio (`estorno`/`money_release_date` ficam `null`).
-  Comportamento pré-existente, não introduzido aqui.
+- **Um guard entra junto, e não é opcional.** `upsertVenda` grava a linha inteira
+  (`onConflict: user_id,order_id`). Quando a leitura do MP falha, `estorno` e
+  `money_release_date` saem `null` e **sobrescrevem** valores corretos já gravados — o
+  selo liberado/a-liberar some e `notificar-liberacao` deixa de disparar, em silêncio.
+  Com o token estático isso era quase impossível; com o token do ML o MP pode falhar
+  sozinho (401, rate limit, indisponibilidade) com a conexão ML válida. Por isso o PR
+  passa a preservar o valor anterior quando o novo vier `null`, no mesmo padrão que a
+  função já aplica a `comprador_nome`. Esses campos nunca voltam legitimamente para
+  `null` — o MP não "des-estorna".
+- **Dívida remanescente:** `carregarLiquidoMP` continua engolindo erro de rede do MP com
+  `console.warn` e mapa vazio. Com o guard acima isso passa a significar "não atualiza"
+  em vez de "apaga", que é degradação aceitável.
 - **Dependência não contratual:** o acesso à API do MP vem do escopo concedido ao app do
   ML. Se o Mercado Livre separar os escopos no futuro, a leitura financeira quebra — e
   quebrará de forma visível (HTTP 401/403 no worker), não em silêncio.
