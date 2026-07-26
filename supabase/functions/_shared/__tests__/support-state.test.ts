@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autorizarRequestSuporte, mapearInicioSuporte, podeExcluirLote, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../support-state.ts';
+import { autorizarRequestSuporte, iniciarSessaoSuporte, mapearInicioSuporte, podeExcluirLote, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../support-state.ts';
 
 describe('validarAcaoSuporte', () => {
   it('normaliza um pedido válido', () => {
@@ -74,17 +74,58 @@ describe('validarTransicaoSuporte', () => {
 });
 
 describe('mapearInicioSuporte', () => {
-  it('converte falha da RPC em conflito de transição', () => {
-    expect(mapearInicioSuporte({ code: 'P0001' })).toEqual({
+  it.each(['P0001', '23505'])('converte erro RPC %s em conflito de transição', (code) => {
+    expect(mapearInicioSuporte({ code })).toEqual({
       status: 409,
       error: 'transição não disponível',
     });
+  });
+
+  it('converte erro operacional da RPC em 500 sem vazar detalhes', () => {
+    const failure = mapearInicioSuporte({ code: 'XX000', message: 'segredo interno' });
+    expect(failure).toEqual({
+      status: 500,
+      error: 'falha ao iniciar suporte',
+    });
+    expect(JSON.stringify(failure)).not.toContain('segredo interno');
   });
 
   it('converte resultado vazio da RPC em conflito de transição', () => {
     expect(mapearInicioSuporte(null, null)).toEqual({
       status: 409,
       error: 'transição não disponível',
+    });
+  });
+});
+
+describe('iniciarSessaoSuporte', () => {
+  it('envia request, usuário e timestamp à RPC e preserva a resposta com aviso', async () => {
+    const started = { id: 'request-1', org_id: 'org-1', status: 'active' };
+    const result = await iniciarSessaoSuporte(
+      async (name, args) => {
+        expect(name).toBe('start_support_session');
+        expect(args).toEqual({
+          p_request_id: 'request-1',
+          p_requester_id: 'user-1',
+          p_now: '2026-07-25T12:00:00.000Z',
+        });
+        return { data: started, error: null };
+      },
+      'request-1',
+      'user-1',
+      new Date('2026-07-25T12:00:00.000Z'),
+      async (request) => {
+        expect(request).toBe(started);
+        return 'falha parcial de notificação';
+      },
+    );
+
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        request: started,
+        notification_warning: 'falha parcial de notificação',
+      },
     });
   });
 });

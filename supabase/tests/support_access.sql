@@ -1,5 +1,5 @@
 -- Run locally after `supabase db reset`:
--- docker exec -i supabase_db_<project-ref> psql -U postgres -d postgres -v ON_ERROR_STOP=1 < supabase/tests/support_access.sql
+-- docker exec -i supabase_db_<project-ref> psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/tests/support_access.sql
 -- Everything, including the legacy migration fixture, is rolled back.
 \set ON_ERROR_STOP on
 
@@ -26,6 +26,20 @@ where id = '90000000-0000-0000-0000-000000000101';
 alter table public.profiles add constraint profiles_identity_xor check (
   (is_super_admin and org_id is null) or (not is_super_admin and org_id is not null)
 ) not valid;
+do $$
+begin
+  begin
+    execute 'alter table public.profiles validate constraint profiles_identity_xor';
+    raise exception 'XOR validation accepted a hybrid identity';
+  exception when check_violation then null;
+  end;
+  if (select convalidated from pg_constraint
+      where conname = 'profiles_identity_xor'
+        and conrelid = 'public.profiles'::regclass) then
+    raise exception 'failed XOR validation marked the constraint valid';
+  end if;
+end;
+$$;
 
 insert into auth.users (id, email, raw_app_meta_data, raw_user_meta_data) values
   ('90000000-0000-0000-0000-000000000102', 'support@test.local',
@@ -184,6 +198,80 @@ end;
 $$;
 reset role;
 
+-- An initial approved request starts without a renewal predecessor.
+insert into public.support_requests (
+  id, requester_id, org_id, scope, reason, status, decided_by,
+  approved_at, approval_expires_at
+) values (
+  '90000000-0000-0000-0000-000000000206',
+  '90000000-0000-0000-0000-000000000105',
+  '90000000-0000-0000-0000-000000000002', 'read', 'initial approved session', 'approved',
+  '90000000-0000-0000-0000-000000000103',
+  '2026-07-25 11:30:00+00', '2026-07-25 12:30:00+00'
+);
+select public.start_support_session(
+  '90000000-0000-0000-0000-000000000206',
+  '90000000-0000-0000-0000-000000000105',
+  '2026-07-25 12:00:00+00'
+);
+do $$
+begin
+  if not exists (
+    select 1 from public.support_requests
+    where id = '90000000-0000-0000-0000-000000000206'
+      and renewal_of is null
+      and status = 'active'
+      and started_at = '2026-07-25 12:00:00+00'
+      and expires_at = '2026-07-25 14:00:00+00'
+  ) then
+    raise exception 'initial approved request did not become active';
+  end if;
+  if not exists (
+    select 1 from public.support_audit_events
+    where support_request_id = '90000000-0000-0000-0000-000000000206'
+      and event = 'session_started'
+  ) then
+    raise exception 'initial support start was not audited';
+  end if;
+end;
+$$;
+
+-- Another initial request cannot replace an active session.
+insert into public.support_requests (
+  id, requester_id, org_id, scope, reason, status, decided_by,
+  approved_at, approval_expires_at
+) values (
+  '90000000-0000-0000-0000-000000000207',
+  '90000000-0000-0000-0000-000000000105',
+  '90000000-0000-0000-0000-000000000001', 'full', 'conflicting initial session', 'approved',
+  '90000000-0000-0000-0000-000000000103',
+  '2026-07-25 11:30:00+00', '2026-07-25 12:30:00+00'
+);
+do $$
+begin
+  begin
+    perform public.start_support_session(
+      '90000000-0000-0000-0000-000000000207',
+      '90000000-0000-0000-0000-000000000105',
+      '2026-07-25 12:01:00+00'
+    );
+    raise exception 'second initial session started';
+  exception when unique_violation then null;
+  end;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000206') <> 'active'
+     or (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000207') <> 'approved' then
+    raise exception 'initial-session conflict changed request state';
+  end if;
+  if exists (
+    select 1 from public.support_audit_events
+    where support_request_id = '90000000-0000-0000-0000-000000000207'
+      and event = 'session_started'
+  ) then
+    raise exception 'initial-session conflict left an audit event';
+  end if;
+end;
+$$;
+
 -- Starting an approved renewal must atomically end the predecessor.
 insert into public.support_requests (
   id, requester_id, org_id, scope, reason, status, decided_by,
@@ -241,32 +329,56 @@ begin
 end;
 $$;
 
--- The session state and both audit rows roll back together.
-do $$
+-- The session state and both audit rows roll back when the audit insert fails.
+create function pg_temp.fail_support_started_audit()
+returns trigger
+language plpgsql
+as $$
 begin
+  raise exception using errcode = '23514', message = 'forced support audit insert failure';
+end;
+$$;
+create trigger fail_support_started_audit
+before insert on public.support_audit_events
+for each row
+when (
+  new.support_request_id = '90000000-0000-0000-0000-000000000202'
+  and new.event = 'session_started'
+)
+execute function pg_temp.fail_support_started_audit();
+
+do $$
+declare v_audit_count bigint;
+begin
+  select count(*) into v_audit_count from public.support_audit_events
+  where support_request_id in (
+    '90000000-0000-0000-0000-000000000204',
+    '90000000-0000-0000-0000-000000000202'
+  );
   begin
     perform public.start_support_session(
       '90000000-0000-0000-0000-000000000202',
       '90000000-0000-0000-0000-000000000102',
       '2026-07-25 12:00:00+00'
     );
-    raise exception 'force renewal rollback';
-  exception when others then
-    null;
+    raise exception 'renewal ignored audit insert failure';
+  exception when check_violation then
+    if sqlerrm <> 'forced support audit insert failure' then raise; end if;
   end;
   if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000204') <> 'active'
      or (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000202') <> 'approved' then
-    raise exception 'renewal rollback changed session state';
+    raise exception 'audit failure did not roll back session state';
   end if;
-  if exists (select 1 from public.support_audit_events
-             where support_request_id in (
-               '90000000-0000-0000-0000-000000000204',
-               '90000000-0000-0000-0000-000000000202'
-             ) and event in ('session_ended', 'session_started')) then
-    raise exception 'renewal rollback left audit events';
+  if (select count(*) from public.support_audit_events
+      where support_request_id in (
+        '90000000-0000-0000-0000-000000000204',
+        '90000000-0000-0000-0000-000000000202'
+      )) <> v_audit_count then
+    raise exception 'audit failure left partial audit history';
   end if;
 end;
 $$;
+drop trigger fail_support_started_audit on public.support_audit_events;
 
 select public.start_support_session(
   '90000000-0000-0000-0000-000000000202',
@@ -412,6 +524,36 @@ insert into public.support_audit_events (
    '90000000-0000-0000-0000-000000000103', 'operation', 'retention', 'held', 'succeeded', true,
    now() - interval '1 year 1 second');
 select public.cleanup_support_audit_events();
+select cron.schedule(
+  'cleanup-support-audit-events',
+  '15 3 * * *',
+  'select public.cleanup_support_audit_events();'
+);
+do $$
+begin
+  if (select count(*) from cron.job where jobname = 'cleanup-support-audit-events' and active) < 2 then
+    raise exception 'cron duplicate fixture was not created';
+  end if;
+end;
+$$;
+do $$
+declare
+  v_job_id bigint;
+begin
+  for v_job_id in
+    select jobid
+    from cron.job
+    where jobname = 'cleanup-support-audit-events'
+  loop
+    perform cron.unschedule(v_job_id);
+  end loop;
+end;
+$$;
+select cron.schedule(
+  'cleanup-support-audit-events',
+  '15 3 * * *',
+  'select public.cleanup_support_audit_events();'
+);
 do $$
 begin
   if exists (select 1 from public.support_audit_events where target_id = 'expired') then

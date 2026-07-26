@@ -7,8 +7,53 @@ export type SupportAction =
   | { action: 'decide'; requestId: string; decision: 'approved' | 'rejected' }
   | { action: 'context' };
 
-export function mapearInicioSuporte(error: unknown, started: unknown = true): { status: 409; error: string } | null {
+type SupportStartFailure =
+  | { status: 409; error: 'transição não disponível' }
+  | { status: 500; error: 'falha ao iniciar suporte' };
+
+export function mapearInicioSuporte(error: unknown, started: unknown = true): SupportStartFailure | null {
+  const code = error && typeof error === 'object' && 'code' in error
+    ? (error as { code?: unknown }).code
+    : null;
+  if (error && code !== 'P0001' && code !== '23505') {
+    return { status: 500, error: 'falha ao iniciar suporte' };
+  }
   return error || !started ? { status: 409, error: 'transição não disponível' } : null;
+}
+
+type StartSupportArgs = {
+  p_request_id: string;
+  p_requester_id: string;
+  p_now: string;
+};
+
+export async function iniciarSessaoSuporte<T extends { id: string; org_id: string }>(
+  rpc: (
+    name: 'start_support_session',
+    args: StartSupportArgs,
+  ) => PromiseLike<{ data: T | null; error: unknown }>,
+  requestId: string,
+  requesterId: string,
+  now: Date,
+  notify: (request: T) => Promise<string | null>,
+): Promise<
+  | { status: 200; body: { request: T; notification_warning: string | null } }
+  | { status: 409 | 500; body: { error: string } }
+> {
+  const { data: started, error } = await rpc('start_support_session', {
+    p_request_id: requestId,
+    p_requester_id: requesterId,
+    p_now: now.toISOString(),
+  });
+  const failure = mapearInicioSuporte(error, started);
+  if (failure) return { status: failure.status, body: { error: failure.error } };
+  return {
+    status: 200,
+    body: {
+      request: started!,
+      notification_warning: await notify(started!),
+    },
+  };
 }
 
 export function resolverContextoSuporte<T>(isSuperAdmin: boolean, active: T | null): T | null {

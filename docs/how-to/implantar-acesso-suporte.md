@@ -83,7 +83,7 @@ supabase migration list --linked
 A entrega inclui `20260725224000_support_access.sql` e a finalização transacional
 `20260726153552_finalize_support_access.sql`. Esta última instala a RPC
 `start_support_session(uuid, uuid, timestamptz)`, valida o XOR e agenda o cron diário
-`cleanup-support-audit-events` às 03:15 para executar
+`cleanup-support-audit-events` às 03:15 UTC para executar
 `cleanup_support_audit_events()`.
 
 ## 5. Publicar a Edge Function

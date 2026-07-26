@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { enviarEmailSuporte } from '../_shared/suporte-email.ts';
-import { autorizarRequestSuporte, mapearInicioSuporte, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../_shared/support-state.ts';
+import { autorizarRequestSuporte, iniciarSessaoSuporte, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../_shared/support-state.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -145,15 +145,14 @@ Deno.serve(async (req) => {
     validarTransicaoSuporte(action.action, request, user.id, tenantAdmin, now);
 
     if (action.action === 'start') {
-      const { data: started, error: startError } = await db.rpc('start_support_session', {
-        p_request_id: request.id,
-        p_requester_id: user.id,
-        p_now: now.toISOString(),
-      });
-      const failure = mapearInicioSuporte(startError, started);
-      if (failure) return json({ error: failure.error }, failure.status);
-      const warning = await notificarAdmins(db, started, user.id, 'O estado de uma solicitação de suporte foi atualizado.');
-      return json({ request: started, notification_warning: warning });
+      const result = await iniciarSessaoSuporte(
+        (name, args) => db.rpc(name, args),
+        request.id,
+        user.id,
+        now,
+        (started) => notificarAdmins(db, started, user.id, 'O estado de uma solicitação de suporte foi atualizado.'),
+      );
+      return json(result.body, result.status);
     }
 
     let patch: Record<string, string>;
