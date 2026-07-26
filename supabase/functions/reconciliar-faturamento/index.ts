@@ -57,9 +57,14 @@ Deno.serve(async (req) => {
       try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-        carregarLiquidoMP(admin, orgId),
+        carregarLiquidoMP(token, Number(cx.contaExternaId)),
         carregarGtinsFallback(token, pedidos, idsPubliai),
       ]);
+      // Varredura periódica: loga e segue. preservarDadosMP impede que o mapa vazio apague
+      // estorno/liberação já gravados, e a próxima rodada volta a estes pedidos.
+      if (liquidoPorPayment === null) {
+        console.warn(`reconciliar: leitura do MP falhou para a org ${orgId}; estorno/liberação preservados`);
+      }
       for (const pedido of pedidos) {
         try {
           const shippingId = pedido.shipping?.id ?? null;
@@ -68,7 +73,8 @@ Deno.serve(async (req) => {
             buscarShipment(token, shippingId),
           ]);
           await upsertVenda(admin, userId, orgId, pedido, {
-            freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+            freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+            liquidoPorPayment: liquidoPorPayment ?? undefined,
           });
           total++;
         } catch { /* segue */ }

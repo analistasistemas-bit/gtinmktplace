@@ -91,12 +91,21 @@ Deno.serve(async (req) => {
       const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
         buscarFreteVendedor(token, shippingId),
         buscarShipment(token, shippingId),
-        carregarLiquidoMP(admin, orgId),
+        carregarLiquidoMP(token, Number(conexao.contaExternaId)),
         carregarGtinsFallback(token, [pedido], idsPubliai),
       ]);
       await upsertVenda(admin, job.user_id, orgId, pedido, {
-        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+        liquidoPorPayment: liquidoPorPayment ?? undefined,
       });
+      // Leitura do MP falhou justamente no worker que existe para capturar o estorno. O claim e a
+      // venda já estão gravados (upsertVenda é idempotente; preservarDadosMP manteve o estorno
+      // anterior), mas o número está defasado e nada mais volta a este pedido — devolução chega
+      // fora da janela do reconciliar-faturamento. 502 para o QStash re-tentar. Não é tratarFalha:
+      // não é falha de auth do ML, a conexão não deve ser marcada como caída.
+      if (liquidoPorPayment === null) {
+        return new Response(JSON.stringify({ ok: false, mpIndisponivel: true }), { status: 502, headers: corsHeaders });
+      }
     } catch (e) {
       if (e instanceof MLApiError && classificarErroML(e.status) === 'nao-encontrado') {
         // Pedido sumiu do ML: nada a recalcular, o claim já está gravado.

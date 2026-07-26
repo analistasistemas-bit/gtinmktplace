@@ -86,12 +86,13 @@ Deno.serve(async (req) => {
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
     buscarShipment(token, shippingId),
-    carregarLiquidoMP(admin, orgId),
+    carregarLiquidoMP(token, Number(conexao.contaExternaId)),
     carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 
   const { novaPaga, itens, compradorNome } = await upsertVenda(admin, userId, orgId, pedido, {
-    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+    liquidoPorPayment: liquidoPorPayment ?? undefined,
   });
 
   // Alerta de nova venda paga aos destinatários da categoria 'vendas'. Usa os itens já com EAN
@@ -120,6 +121,14 @@ Deno.serve(async (req) => {
         'Olá! Recebemos seu pedido e já estamos separando. Em caso de dúvida, fique à vontade para chamar aqui pelo chat. Obrigado pela compra! 🙏',
       );
     }
+  }
+
+  // Leitura do MP falhou: a venda e o alerta já saíram (upsertVenda é idempotente e
+  // preservarDadosMP manteve estorno/liberação anteriores), mas estorno/liberação podem estar
+  // defasados. 502 para o QStash re-tentar; o retry não duplica alerta porque novaPaga é
+  // recomputado do status já gravado. Não marca processado_em nem registrarSyncOk.
+  if (liquidoPorPayment === null) {
+    return new Response(JSON.stringify({ ok: false, mpIndisponivel: true }), { status: 502, headers: corsHeaders });
   }
 
   // Marca o evento processado (best-effort).

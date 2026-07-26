@@ -1,7 +1,6 @@
-// Enriquecimento das vendas (ADR-0037): líquido real (Mercado Pago) e GTIN p/ vendas de
-// catálogo. Reusa os helpers do financeiro (ADR-0031) e do _shared/ml. Não testado por vitest.
-import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { buscarPagamentosMP, getContaId, resolverTokenMP, type PagamentoMP } from '../mercadopago/financeiro.ts';
+// Enriquecimento das vendas (ADR-0037): estorno/liberação (Mercado Pago) e GTIN p/ vendas de
+// catálogo. Só `montarMapaLiquido` é testado por vitest; o resto faz IO.
+import { buscarPagamentosMP, type PagamentoMP } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
 import type { PedidoML, DadosPagamentoMP } from './venda.ts';
 
@@ -28,23 +27,25 @@ export function montarMapaLiquido(
 
 /**
  * paymentId → dados do MP (líquido, estorno, data de liberação) das vendas da própria conta.
- * Mesma fonte do menu Financeiro (ADR-0038). Token por org (Vault, RPC get_mp_token) com
- * fallback ao MP_ACCESS_TOKEN de instância quando a org não tem secret configurado (D-E7.7 —
- * zero regressão para a Avil, único tenant com MP hoje). Sem token ou em erro → mapa vazio
- * (cai na estimativa; estorno/liberação ficam null).
+ * Mesma fonte do menu Financeiro (ADR-0038). O token e a conta são os da conexão `mercado_livre`
+ * da org, que o worker chamador já tem em escopo (ADR-0093) — não há token de MP próprio.
+ *
+ * Retorno: `null` = a leitura do MP falhou (o chamador decide re-tentar); mapa vazio = leu e não
+ * havia pagamento correspondente, ou a conta não está resolvida (condição permanente, retry não
+ * ajuda). Os dois casos precisam ser distinguíveis: com mapa vazio o upsert grava
+ * estorno/liberação null, e é `preservarDadosMP` que impede isso de apagar dado bom.
  */
 export async function carregarLiquidoMP(
-  admin: SupabaseClient, orgId: string | null, lookbackDias = 120,
-): Promise<Map<string, DadosPagamentoMP>> {
-  const token = await resolverTokenMP(admin, orgId);
-  if (!token) return new Map();
+  token: string, contaId: number, lookbackDias = 120,
+): Promise<Map<string, DadosPagamentoMP> | null> {
+  // Antes do fetch: sem conta resolvida varrer 120 dias do MP só para descartar tudo é desperdício.
+  if (!contaId || !Number.isFinite(contaId)) return new Map();
   try {
-    const contaId = await getContaId(token);
     const pagamentos = await buscarPagamentosMP(token, lookbackDias);
     return montarMapaLiquido(pagamentos, contaId);
   } catch (e) {
     console.warn('carregarLiquidoMP falhou:', (e as Error).message);
-    return new Map();
+    return null;
   }
 }
 

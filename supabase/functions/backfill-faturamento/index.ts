@@ -81,9 +81,14 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   }
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
   const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-    carregarLiquidoMP(admin, orgId),
+    carregarLiquidoMP(token, Number(cx.contaExternaId)),
     carregarGtinsFallback(token, pedidos, idsPubliai),
   ]);
+  // Varredura: derrubar o lote inteiro por um erro do MP é pior que seguir. preservarDadosMP
+  // impede que o mapa vazio apague estorno/liberação já gravados, e o worker volta a estes pedidos.
+  if (liquidoPorPayment === null) {
+    console.warn(`backfill: leitura do MP falhou para a org ${orgId}; estorno/liberação preservados`);
+  }
 
   let n = 0;
   const lotes = chunk(pedidos, 5);
@@ -96,7 +101,8 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           buscarShipment(token, shippingId),
         ]);
         await upsertVenda(admin, userId, orgId, pedido, {
-          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, liquidoPorPayment,
+          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+          liquidoPorPayment: liquidoPorPayment ?? undefined,
         });
         n++;
       } catch (e) {
