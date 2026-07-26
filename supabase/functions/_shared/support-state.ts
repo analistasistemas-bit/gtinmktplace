@@ -7,6 +7,10 @@ export type SupportAction =
   | { action: 'decide'; requestId: string; decision: 'approved' | 'rejected' }
   | { action: 'context' };
 
+export function mapearInicioSuporte(error: unknown, started: unknown = true): { status: 409; error: string } | null {
+  return error || !started ? { status: 409, error: 'transição não disponível' } : null;
+}
+
 export function resolverContextoSuporte<T>(isSuperAdmin: boolean, active: T | null): T | null {
   return isSuperAdmin ? active : null;
 }

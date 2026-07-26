@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autorizarRequestSuporte, podeExcluirLote, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../support-state.ts';
+import { autorizarRequestSuporte, mapearInicioSuporte, podeExcluirLote, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../support-state.ts';
 
 describe('validarAcaoSuporte', () => {
   it('normaliza um pedido válido', () => {
@@ -70,5 +70,21 @@ describe('validarTransicaoSuporte', () => {
   it('rejeita transição repetida e revogação por não-admin', () => {
     expect(() => validarTransicaoSuporte('end', { requester_id: 'support-1', status: 'ended' }, 'support-1', false, agora)).toThrow('transição');
     expect(() => validarTransicaoSuporte('revoke', { requester_id: 'support-1', status: 'active', expires_at: '2026-07-25T13:00:00.000Z' }, 'admin-1', false, agora)).toThrow('administrador');
+  });
+});
+
+describe('mapearInicioSuporte', () => {
+  it('converte falha da RPC em conflito de transição', () => {
+    expect(mapearInicioSuporte({ code: 'P0001' })).toEqual({
+      status: 409,
+      error: 'transição não disponível',
+    });
+  });
+
+  it('converte resultado vazio da RPC em conflito de transição', () => {
+    expect(mapearInicioSuporte(null, null)).toEqual({
+      status: 409,
+      error: 'transição não disponível',
+    });
   });
 });

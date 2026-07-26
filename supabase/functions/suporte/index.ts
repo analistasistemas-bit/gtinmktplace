@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { enviarEmailSuporte } from '../_shared/suporte-email.ts';
-import { autorizarRequestSuporte, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../_shared/support-state.ts';
+import { autorizarRequestSuporte, mapearInicioSuporte, resolverContextoSuporte, resolverRenovacao, validarAcaoSuporte, validarTransicaoSuporte } from '../_shared/support-state.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -144,6 +144,18 @@ Deno.serve(async (req) => {
     catch { return json({ error: 'forbidden' }, 403); }
     validarTransicaoSuporte(action.action, request, user.id, tenantAdmin, now);
 
+    if (action.action === 'start') {
+      const { data: started, error: startError } = await db.rpc('start_support_session', {
+        p_request_id: request.id,
+        p_requester_id: user.id,
+        p_now: now.toISOString(),
+      });
+      const failure = mapearInicioSuporte(startError, started);
+      if (failure) return json({ error: failure.error }, failure.status);
+      const warning = await notificarAdmins(db, started, user.id, 'O estado de uma solicitação de suporte foi atualizado.');
+      return json({ request: started, notification_warning: warning });
+    }
+
     let patch: Record<string, string>;
     let event: string;
     if (action.action === 'cancel') { patch = { status: 'cancelled', cancelled_at: now.toISOString() }; event = 'request_cancelled'; }
@@ -152,8 +164,7 @@ Deno.serve(async (req) => {
         ? { status: 'approved', decided_by: user.id, approved_at: now.toISOString(), approval_expires_at: new Date(now.getTime() + 60 * 60_000).toISOString() }
         : { status: 'rejected', decided_by: user.id, rejected_at: now.toISOString() };
       event = action.decision === 'approved' ? 'request_approved' : 'request_rejected';
-    } else if (action.action === 'start') { patch = { status: 'active', started_at: now.toISOString(), expires_at: new Date(now.getTime() + 2 * 60 * 60_000).toISOString() }; event = 'session_started'; }
-    else if (action.action === 'end') { patch = { status: 'ended', ended_at: now.toISOString() }; event = 'session_ended'; }
+    } else if (action.action === 'end') { patch = { status: 'ended', ended_at: now.toISOString() }; event = 'session_ended'; }
     else { patch = { status: 'revoked', revoked_by: user.id, revoked_at: now.toISOString() }; event = 'session_revoked'; }
     const { data: updated, error: updateError } = await db.from('support_requests').update(patch)
       .eq('id', request.id).eq('status', request.status).select('*').maybeSingle();
