@@ -24,7 +24,7 @@ vi.mock('@/hooks/useAuth', () => ({
 // Perfil admin: ProtectedRoute libera (is_active) e MenuGuard libera todas as rotas.
 vi.mock('@/hooks/useProfile', () => ({
   useProfile: () => ({
-    profile: { id: 'u1', is_admin: true, is_active: true, allowed_menus: [], nome: 'Diego' },
+    profile: { id: 'u1', org_id: 'org-1', is_admin: true, is_super_admin: false, is_active: true, allowed_menus: [], nome: 'Diego' },
     isAdmin: true,
     profileLoading: false,
   }),
