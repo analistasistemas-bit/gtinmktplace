@@ -33,6 +33,7 @@ describe('Organizacoes', () => {
     renderPage();
 
     expect(await screen.findByText('Teste')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Slug' })).toHaveClass('hidden', 'md:table-cell');
     await user.click(screen.getByRole('button', { name: 'Solicitar acesso' }));
     await user.type(screen.getByLabelText('Motivo do acesso'), 'Verificar falha de integração');
     await user.click(screen.getByRole('button', { name: 'Enviar solicitação' }));

@@ -115,14 +115,14 @@ export default function Organizacoes() {
       />
 
       <Card className="mt-4 overflow-hidden">
-        <Table className="min-w-[72rem]">
+        <Table className="md:min-w-[72rem]">
           <TableHeader>
             <TableRow>
               <TableHead>Empresa</TableHead>
-              <TableHead>Slug</TableHead>
-              <TableHead>Membros</TableHead>
-              <TableHead>Canais</TableHead>
-              <TableHead>Criada em</TableHead>
+              <TableHead className="hidden md:table-cell">Slug</TableHead>
+              <TableHead className="hidden md:table-cell">Membros</TableHead>
+              <TableHead className="hidden md:table-cell">Canais</TableHead>
+              <TableHead className="hidden md:table-cell">Criada em</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -143,15 +143,15 @@ export default function Organizacoes() {
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-2">{o.nome}{o.is_test && <Badge variant="outline">Teste</Badge>}</div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{o.slug}</TableCell>
-                <TableCell>{o.membros}</TableCell>
-                <TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">{o.slug}</TableCell>
+                <TableCell className="hidden md:table-cell">{o.membros}</TableCell>
+                <TableCell className="hidden md:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {(o.canais_habilitados ?? ['mercado_livre']).map((c) => <CanalBadge key={c} canal={c} />)}
                   </div>
                 </TableCell>
-                <TableCell>{new Date(o.criado_em).toLocaleDateString('pt-BR')}</TableCell>
-                <TableCell className="min-w-[32rem]">
+                <TableCell className="hidden md:table-cell">{new Date(o.criado_em).toLocaleDateString('pt-BR')}</TableCell>
+                <TableCell className="w-full whitespace-normal md:min-w-[32rem]">
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setCanaisOrg(o)}>Canais</Button>
                     {request && <span className="text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
