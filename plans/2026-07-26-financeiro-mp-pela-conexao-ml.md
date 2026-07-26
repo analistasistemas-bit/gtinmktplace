@@ -200,10 +200,20 @@ regra do projeto e planta drift.
    com estorno conhecido e conferir que `ml_vendas.estorno` e `money_release_date`
    continuam preenchidos. Comparar 1:1 com a tela Financeiro antes/depois. Nesta janela o
    rollback é só reverter o commit + redeploy — o schema ainda está intacto.
-4. `supabase db push` da migration — **só depois** do passo 3. Logo em seguida, rodar
-   `supabase gen types` e confirmar **diff vazio** contra o `src/lib/database.types.ts`
-   commitado: ele foi editado à mão (4 entradas removidas), e essa checagem de um minuto
-   elimina qualquer drift que a edição manual não tenha enxergado.
+4. `supabase db push` da migration — **só depois** do passo 3.
+
+   ⚠️ **Correção (2026-07-26):** a versão anterior deste passo mandava rodar
+   `supabase gen types` e exigir **diff vazio** contra o `src/lib/database.types.ts`.
+   Essa checagem é **impossível de passar** e não deve ser tentada: o arquivo commitado
+   tem 1499 linhas contra 1984 do `gen types` do banco vivo — ele nunca foi output fiel do
+   gerador (falta o schema `graphql_public`, faltam colunas como `estado_desejado` e
+   `mudando_composicao`), e não há script de geração no `package.json`. É um arquivo
+   curado à mão no projeto.
+
+   A verificação correta, **já executada**: `git diff main...HEAD -- src/lib/database.types.ts`
+   mostra exatamente **4 remoções** — `mp_access_token_secret_id` em Row/Insert/Update de
+   `configuracoes` e a RPC `get_mp_token` — e nada mais. É exatamente o que a migration
+   derruba.
 5. Quando a DSA conectar o Mercado Livre, conferir que `/v1/payments/search` responde 200
    com o token dela **antes** de considerar o benefício multi-tenant entregue: o teste de
    2026-07-26 cobriu uma conexão pré-existente, não uma recém-criada.
@@ -231,6 +241,15 @@ validação do caminho de código (passo 3).
   `comprador_nome`.
 - `carregarLiquidoMP` segue sem cobrir erro de rede com teste — só a parte pura
   (`montarMapaLiquido`) fica testada.
+- **Estorno TOTAL não chega em `ml_vendas` (latente, 0 ocorrências hoje).** Estorno total muda o
+  status do pagamento no MP para `refunded`, e tanto a varredura (`status=approved` na query)
+  quanto `carregarLiquidoMPDoPedido` (filtro equivalente) o descartam. Medido na conta da Avil:
+  6 pagamentos `refunded` na 1ª página de 100. Hoje é **inócuo** porque todos pertencem a pedidos
+  com status ML `cancelled`, que `STATUS_FATURAVEL` já exclui de bruto/líquido/estornos — e há
+  **0** pedidos com status ML `refunded` na base. O caso que importa (`partially_refunded`, que é
+  faturável) é capturado, porque estorno parcial mantém o pagamento `approved`. Vira problema
+  real só no dia em que existir pedido ML `refunded`; aí o filtro de status precisa ser revisto
+  com validação na conta real.
 - **Falha de paginação no meio da varredura vira "sucesso parcial", sem retry.**
   `buscarPagamentosMP` propaga erro na 1ª página mas devolve o parcial nas seguintes. Cenário:
   devolução de um pedido de ~100 dias cujo pagamento está numa página funda; o MP falha na

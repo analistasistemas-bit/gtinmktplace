@@ -84,7 +84,7 @@
 | `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027); **E6 (ADR-0061):** `estado.ts` → máquina de estado por canal (`garantirAnuncioExterno`, `claimAnuncioExterno`, `decidirOperacaoCanal`); `registry.ts` suporta conectores injetáveis em teste (`registrarConectorParaTeste`); `fake.ts` conector de teste |
 | `redis/*` | Client Redis + caches (cor, concorrência, tarifa) |
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
-| `mercadopago/*` | Leitura de pagamentos MP (`buscarPagamentosMP`) com o token da conexão `mercado_livre` da org (ADR-0093) |
+| `mercadopago/*` | Leitura de pagamentos MP com o token da conexão `mercado_livre` da org (ADR-0093). `buscarPagamentoMP` (1 id) nos workers de evento; `buscarPagamentosMP` (varredura por período) nos de lote |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
 | `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os assinantes por categoria, grava notificação in-app (tabela `notificacoes`, ADR-0085) e envia Telegram a quem tem chat_id (`config.ts`); `categorias.ts` (7 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Assinatura por profile (`telegram_categorias`) vale para os dois canais; bot Telegram é por org (ADR-0068) |
 | `parser.ts` | Validação de colunas da planilha, agrupamento por PAI, matching de fotos |
