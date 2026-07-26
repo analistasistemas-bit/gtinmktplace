@@ -200,7 +200,10 @@ regra do projeto e planta drift.
    com estorno conhecido e conferir que `ml_vendas.estorno` e `money_release_date`
    continuam preenchidos. Comparar 1:1 com a tela Financeiro antes/depois. Nesta janela o
    rollback é só reverter o commit + redeploy — o schema ainda está intacto.
-4. `supabase db push` da migration — **só depois** do passo 3.
+4. `supabase db push` da migration — **só depois** do passo 3. Logo em seguida, rodar
+   `supabase gen types` e confirmar **diff vazio** contra o `src/lib/database.types.ts`
+   commitado: ele foi editado à mão (4 entradas removidas), e essa checagem de um minuto
+   elimina qualquer drift que a edição manual não tenha enxergado.
 5. Quando a DSA conectar o Mercado Livre, conferir que `/v1/payments/search` responde 200
    com o token dela **antes** de considerar o benefício multi-tenant entregue: o teste de
    2026-07-26 cobriu uma conexão pré-existente, não uma recém-criada.
@@ -228,6 +231,14 @@ validação do caminho de código (passo 3).
   `comprador_nome`.
 - `carregarLiquidoMP` segue sem cobrir erro de rede com teste — só a parte pura
   (`montarMapaLiquido`) fica testada.
+- **Falha de paginação no meio da varredura vira "sucesso parcial", sem retry.**
+  `buscarPagamentosMP` propaga erro na 1ª página mas devolve o parcial nas seguintes. Cenário:
+  devolução de um pedido de ~100 dias cujo pagamento está numa página funda; o MP falha na
+  página 5 → lista parcial → mapa parcial → o worker trata como sucesso (não é `null`) →
+  `preservarDadosMP` mantém o estorno antigo e **não há 502**. Não é regressão (antes gravava
+  `null` por cima, pior), e a ordenação `desc` protege pedidos recentes — mas é um buraco na
+  semântica "null = falha". Correção futura barata: `buscarPagamentosMP` sinalizar
+  parcialidade.
 - **O retry do 502 é limitado.** O job nasce com `retries: 3` (`ml-webhook/index.ts:101`,
   `queue.ts:36`); esgotadas as tentativas, a mensagem vai para a DLQ do QStash. Para
   `claims` não há segunda chance automática — o dedup por `(topic, resource)` do

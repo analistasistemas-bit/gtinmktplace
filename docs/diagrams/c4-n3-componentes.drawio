@@ -34,11 +34,8 @@
         <mxCell id="g_mon" value="&lt;b&gt;Monitoramento &amp;amp; alertas&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#6B7280&quot;&gt;&lt;b&gt;[H]&lt;/b&gt;&lt;/font&gt;&lt;font color=&quot;#7C3AED&quot;&gt;&lt;b&gt;[S]&lt;/b&gt;&lt;/font&gt; monitorar-moderados&lt;br&gt;&lt;font color=&quot;#7C3AED&quot;&gt;&lt;b&gt;[S]&lt;/b&gt;&lt;/font&gt; notificar-liberacao" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontColor=#374151;fontSize=12;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;arcSize=6;" vertex="1" parent="1">
           <mxGeometry x="1060" y="245" width="440" height="105" as="geometry" />
         </mxCell>
-        <mxCell id="g_fin" value="&lt;b&gt;Financeiro (Mercado Pago)&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#6B7280&quot;&gt;&lt;b&gt;[H]&lt;/b&gt;&lt;/font&gt; resumo-financeiro" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontColor=#374151;fontSize=12;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="1060" y="380" width="440" height="80" as="geometry" />
-        </mxCell>
         <mxCell id="g_util" value="&lt;b&gt;Utilitário&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#6B7280&quot;&gt;&lt;b&gt;[H]&lt;/b&gt;&lt;/font&gt; hello&amp;nbsp;&lt;font color=&quot;#9CA3AF&quot;&gt;(smoke test de deploy)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE9FE;strokeColor=#7C3AED;fontColor=#374151;fontSize=12;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;arcSize=6;" vertex="1" parent="1">
-          <mxGeometry x="1060" y="490" width="440" height="80" as="geometry" />
+          <mxGeometry x="1060" y="380" width="440" height="80" as="geometry" />
         </mxCell>
         <mxCell id="note" value="Detalhe por função (propósito, idempotência, verify_jwt, secrets): docs/reference/edge-functions.md" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#9CA3AF;fontStyle=2;" vertex="1" parent="1">
           <mxGeometry x="40" y="660" width="900" height="20" as="geometry" />
