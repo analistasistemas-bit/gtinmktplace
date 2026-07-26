@@ -40,6 +40,9 @@ Detalhes e justificativas em ADR-0001 (stack), ADR-0006 (QStash), ADR-0010 (Open
 5. **Segredos fora do código.** Tokens OAuth no Vault; chaves de API em Supabase Secrets.
 6. **Multicanal por abstração.** A lógica de publicação fala com um *conector* de canal, não
    com o ML diretamente (ADR-0024/0025) — preparado para o 2º marketplace.
+7. **Suporte é autorização temporária, não troca de tenant.** A identidade da plataforma não tem
+   `org_id` permanente; entra em um cliente somente por solicitação aprovada, limitada e auditada
+   (ADR-0092).
 
 ## Pipeline ponta a ponta
 
@@ -117,8 +120,9 @@ autenticado via `is_membro_operacao()` enxergava e operava os mesmos dados — u
 O E7 introduz o **discriminador `org_id`** para virar SaaS multi-empresa, sem trocar de padrão
 (shared DB + shared schema, não schema/DB por tenant — não escala no orçamento do projeto):
 
-- **`organizations`** é o tenant. Cada `profiles` pertence a exatamente 1 org (`org_id NOT NULL`);
-  sem `organization_members`/papéis finos por ora — YAGNI enquanto for 1 admin por empresa
+- **`organizations`** é o tenant. Membros de cliente têm exatamente 1 `org_id`; a identidade de
+  plataforma é a exceção explícita, com `org_id null` e suporte temporário (ADR-0092). Não há
+  `organization_members`/papéis finos por ora — YAGNI enquanto for 1 admin por empresa
   (D-E7.1/D-E7.2 do ADR-0027).
 - **`current_org_id()`** é o pivô: função `SECURITY DEFINER STABLE` que devolve a org do chamador
   ativo. Toda policy de RLS nas 12 tabelas de domínio + storage virou `org_id = (select
@@ -133,6 +137,19 @@ O E7 introduz o **discriminador `org_id`** para virar SaaS multi-empresa, sem tr
   (webhook, sync, reconciliação) resolvem a org via `marketplace_connections`
   (`resolverIdentidade`/`resolverOrgPorUserId`); e a coluna `org_id NOT NULL` falha alto (erro de
   INSERT) se algum caminho esquecer de propagá-la — defesa estrutural, não só convenção de código.
+
+## Suporte temporário sem romper o isolamento (ADR-0092)
+
+O administrador da plataforma é uma identidade distinta: `profiles_identity_xor` impede que ela
+pertença a um tenant permanentemente. Para atuar em um cliente, cria um pedido com escopo e motivo;
+um admin ativo daquele tenant decide. A sessão aprovada dura no máximo duas horas, leitura ainda é
+autorização explícita, e uma renovação exige nova aprovação apenas nos 15 minutos finais.
+
+O início e a renovação passam pela RPC transacional `start_support_session`: ela bloqueia a
+solicitação e a predecessora, encerra a sessão anterior quando aplicável, inicia a nova e registra
+a auditoria sem janela de estado parcial. O histórico retém eventos por um ano; um cron diário
+remove apenas os que não estão em `legal_hold`. Assim, a auditoria e a retenção são garantias do
+banco, enquanto a Edge Function mantém autenticação, autorização e notificações na borda.
 
 ## Multicanal com fan-out por (família, canal) — E6 (ADR-0061)
 

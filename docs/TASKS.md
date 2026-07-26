@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Acesso temporário de suporte — finalização operacional (2026-07-26)
+
+- [x] Migration `20260726153552_finalize_support_access.sql`: RPC transacional para iniciar e
+  renovar sessão, janela de 15 minutos, auditoria atômica, permissões `service_role`, cron diário
+  de retenção e validação final de `profiles_identity_xor`.
+- [x] Edge `suporte`: o início delega à RPC e converte falha/resultado vazio em conflito `409`.
+- [x] Contrato SQL cobre renovação, rollback, isolamento entre tenant/solicitante, retenção com
+  `legal_hold`, XOR e job cron.
+- [x] Roteiro de implantação exige conferir as identidades antes de `supabase db push` e exercita
+  renovação na DSA; não usar Avil para mutações de teste.
+
 ## Seed de user_products corrigido (ponta solta do bloqueio de desconto) — 2026-07-25
 
 Descoberto ao preparar o `db push` da varredura de segurança: a migration

@@ -26,10 +26,12 @@
 ```bash
 pnpm tsc
 pnpm lint
+pnpm test
 pnpm build
 pnpm lint:functions
 pnpm check:functions
 supabase db reset
+npm run db:check
 ```
 
 Não prossiga se houver erro novo. Os avisos já conhecidos devem ser registrados, sem serem
@@ -50,7 +52,18 @@ supabase secrets list
 
 `APP_URL` não deve terminar com `/`; o e-mail acrescenta `/#/admin/suporte`.
 
-## 3. Aplicar o schema
+## 3. Conferir as identidades antes do `db push`
+
+Confirme no banco, pelos IDs e e-mails, que nenhuma identidade viola o estado final:
+
+- `diego@daludi.com.br`: `org_id is null`, `is_admin = false` e `is_super_admin = true`;
+- `analistasistemas@gmail.com`: pertence à Avil, é admin e não é super-admin;
+- `analistasistemas@icloud.com`: pertence à DSA de testes, é admin e não é super-admin.
+
+Corrija a migração de identidades antes de continuar. A migration final valida
+`profiles_identity_xor`; um perfil híbrido faz o `db push` inteiro falhar e reverter.
+
+## 4. Aplicar o schema
 
 Use somente o canal canônico de migrations:
 
@@ -59,10 +72,13 @@ supabase db push --linked
 supabase migration list --linked
 ```
 
-A migration desta entrega é
-`supabase/migrations/20260725224000_support_access.sql`.
+A entrega inclui `20260725224000_support_access.sql` e a finalização transacional
+`20260726153552_finalize_support_access.sql`. Esta última instala a RPC
+`start_support_session(uuid, uuid, timestamptz)`, valida o XOR e agenda o cron diário
+`cleanup-support-audit-events` às 03:15 para executar
+`cleanup_support_audit_events()`.
 
-## 4. Publicar a Edge Function
+## 5. Publicar a Edge Function
 
 ```bash
 supabase functions deploy suporte
@@ -72,10 +88,10 @@ supabase functions list
 Confirme que a versão da função mudou e que `verify_jwt` continua conforme
 `supabase/config.toml`.
 
-## 5. Ajustar as identidades
+## 6. Reconferir as identidades após a publicação
 
-Execute as alterações com transação e IDs previamente conferidos. Não use nomes como
-identificador.
+As alterações de identidade já devem ter sido executadas com transação e IDs previamente
+conferidos antes do `db push`; não use nomes como identificador.
 
 1. Vincule `analistasistemas@gmail.com` à Avil com `is_admin = true` e
    `is_super_admin = false`.
@@ -85,10 +101,10 @@ identificador.
 4. Configure `diego@daludi.com.br` com `org_id = null`, `is_admin = false` e
    `is_super_admin = true`.
 
-Após cada alteração, confira e-mail, `org_id`, `is_admin` e `is_super_admin`. A restrição
+Após a publicação, confira novamente e-mail, `org_id`, `is_admin` e `is_super_admin`. A restrição
 `profiles_identity_xor` impede que um super-admin também pertença a uma organização.
 
-## 6. Teste de fumaça
+## 7. Teste de fumaça
 
 1. Entrar como `diego@daludi.com.br`.
 2. Na tela **Organizações**, solicitar acesso somente leitura à organização de testes.
@@ -98,12 +114,14 @@ Após cada alteração, confira e-mail, `org_id`, `is_admin` e `is_super_admin`.
 6. Encerrar a sessão e repetir com acesso completo.
 7. Revogar a segunda sessão pelo administrador da organização.
 8. Confirmar que o super-admin perde o acesso imediatamente.
-9. Conferir os registros de solicitação e auditoria.
-10. Enviar uma solicitação para um endereço controlado e validar o link autenticado do e-mail.
+9. Nos 15 minutos finais, solicitar renovação, aprovar e iniciar a nova sessão; confirmar que a
+   anterior foi encerrada e que há auditoria `session_ended` e `session_started`.
+10. Conferir os registros de solicitação e auditoria.
+11. Enviar uma solicitação para um endereço controlado e validar o link autenticado do e-mail.
 
 Não use a Avil no primeiro teste de produção.
 
-## 7. Critérios de aceite
+## 8. Critérios de aceite
 
 - Nenhuma organização pode ser aberta sem pedido aprovado.
 - Aprovação vencida não inicia sessão.
@@ -112,6 +130,8 @@ Não use a Avil no primeiro teste de produção.
 - Somente administradores ativos da organização podem aprovar, rejeitar ou revogar.
 - Acesso completo não permite administrar usuários, organização, cobrança ou propriedade.
 - Auditoria registra ator, organização, solicitação, ação, resultado e horário.
+- O cron `cleanup-support-audit-events` permanece único e remove apenas registros com mais de
+  um ano sem `legal_hold`.
 
 ## Interrupção e reversão
 

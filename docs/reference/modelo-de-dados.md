@@ -76,14 +76,16 @@ RLS: leitura por membro da org, escrita só admin. Leituras no backend sempre po
 ### `profiles`
 Espelho 1:1 de `auth.users` (`id` FK). Colunas: `email`, `nome`, `is_admin`, `is_active`,
 `allowed_menus text[]` (chaves de menu que um não-admin acessa), `created_at`, `updated_at`,
-**`org_id`** (FK organizations, `NOT NULL` — a organização do usuário, ADR-0027), **`is_super_admin`**
+**`org_id`** (FK organizations, nullable apenas para super-admin da plataforma), **`is_super_admin`**
 (boolean, default `false` — só Diego; único papel que cria organizações via `create_org`),
 `telegram_chat_id`, `telegram_categorias text[]` (destinatário Telegram por perfil, ADR-0068 —
 CHECK `profiles_telegram_categorias_validas` restringe a `vendas`/`perguntas`/`pos_venda`/
 `financeiro`/`moderacao`/`mensagens`/`integracao` (ADR-0069, migration
 `20260712171337_integracao_categoria_notificacao.sql`); categoria sem nenhum assinante não envia nada).
 Criado no signup pelo trigger `handle_new_user` (semeia `nome`/`allowed_menus`/**`org_id`** do
-`raw_user_meta_data` do convite). RLS: SELECT do próprio ou de admin **da mesma org**;
+`raw_user_meta_data` do convite). A constraint validada `profiles_identity_xor` exige exatamente
+um dos estados: super-admin com `org_id is null`, ou membro de cliente sem super-admin e com
+`org_id` preenchido (ADR-0092). RLS: SELECT do próprio ou de admin **da mesma org**;
 INSERT/UPDATE/DELETE só admin, escopado à própria org.
 
 **Helpers** (SECURITY DEFINER, `search_path=''`, execute só p/ `authenticated`):
@@ -93,6 +95,23 @@ INSERT/UPDATE/DELETE só admin, escopado à própria org.
 - `public.is_super_admin()` — o chamador tem `profiles.is_super_admin`.
 - `public.is_membro_operacao()` — **dropada** (E7, migration `20260705165828_e7_rls_org.sql`);
   era o gancho intermediário da operação compartilhada (ADR-0047), substituído por `current_org_id()`.
+
+### Acesso autorizado de suporte (ADR-0092)
+
+`support_requests` registra o ciclo de pedido, aprovação, sessão e renovação. Cada linha guarda
+solicitante, organização, escopo (`read` ou `full`), motivo, estado, janelas de expiração e a
+referência `renewal_of`; há no máximo uma sessão ativa por solicitante e uma pendência por
+solicitante+organização. `support_audit_events` registra ator, alvo, resultado e horário, sem
+payload livre; o FK composto impede associar auditoria à organização errada. Ambos usam RLS e os
+admins do tenant só leem o histórico da própria organização.
+
+`start_support_session(request_id, requester_id, now)` é uma RPC `SECURITY DEFINER`, executável
+somente por `service_role`. Ela bloqueia a solicitação aprovada e, em renovação, a sessão anterior;
+aceita apenas os 15 minutos finais, encerra a anterior, inicia a nova por exatamente duas horas e
+grava ambas as auditorias na mesma transação. A migration
+`20260726153552_finalize_support_access.sql` também agenda um único job `pg_cron`,
+`cleanup-support-audit-events` (`15 3 * * *`), que chama `cleanup_support_audit_events()` e apaga
+somente eventos com mais de um ano que não estejam em `legal_hold`.
 
 ## Relações de domínio
 
@@ -422,6 +441,8 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `update_lote_counters()` | Trigger: recalcula contadores de `lotes` + transição de status |
 | `current_org_id()` | **Pivô da RLS por org** (ADR-0027): `org_id` do chamador ativo (`is_active`) |
 | `is_super_admin()` | O chamador tem `profiles.is_super_admin` |
+| `start_support_session(request_id, requester_id, now)` | Inicia uma sessão aprovada ou renova atomicamente nos 15 minutos finais; somente `service_role` |
+| `cleanup_support_audit_events()` | Remove auditoria com mais de um ano sem `legal_hold`; chamada pelo cron diário |
 | `org_id_default()` | Trigger `BEFORE INSERT`: preenche `org_id` do INSERT a partir de `current_org_id()` quando ausente |
 | `proximo_numero_lote(org)` | Incrementa `organizations.lote_seq` e retorna o próximo `numero_org` (row-lock na org) |
 | `upsert_marketplace_connection(...)` | Grava conexão de canal por org, criando/atualizando secrets no Vault |

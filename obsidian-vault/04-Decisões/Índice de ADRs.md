@@ -1,11 +1,11 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-07-24
+atualizado: 2026-07-26
 ---
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (89 ADRs, `0001`–`0089`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (92 ADRs, `0001`–`0092`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -103,5 +103,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0089 | [Atualização rápida de estoque — publicação 1-clique para UPDATE sem pendência](../../docs/decisions/0089-atualizacao-rapida-de-estoque.md) |
 | 0090 | [Lockdown da escrita em `profiles` — privilégio não se auto-concede](../../docs/decisions/0090-lockdown-da-escrita-em-profiles.md) |
 | 0091 | [A conexão do Mercado Livre é gravada na org da SESSÃO, não na do `state`](../../docs/decisions/0091-conexao-ml-confirmada-pela-sessao.md) |
+| 0092 | [Identidade da plataforma e acesso temporário de suporte](../../docs/decisions/0092-identidade-da-plataforma-e-acesso-super-admin.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

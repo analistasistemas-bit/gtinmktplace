@@ -67,6 +67,7 @@
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
 | **Acesso / usuários** ||||
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
+| suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | **Utilitário** ||||
 | hello | false | HTTP (smoke test) | sim |
 
@@ -460,6 +461,12 @@ DSA). ADR-0086 (item MP) / ADR-0031.
   `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).
   **Em produção desde 2026-07-15** (migration `20260715014055_menus_multicanal` + esta edge
   redeployadas; ver histórico de `verify_jwt` abaixo).
+- **suporte** — fluxo de autorização temporária do ADR-0092. Super-admin solicita acesso com
+  motivo e escopo; admin ativo do tenant aprova, rejeita ou revoga. No `start`, a função chama
+  `start_support_session(request.id, user.id, now)` em vez de atualizar a solicitação diretamente:
+  a RPC faz a validação e, para renovação, encerra a sessão anterior, abre a nova por duas horas e
+  grava as auditorias como uma transação. Erro ou retorno vazio da RPC é `409`; notificações aos
+  admins só ocorrem após o início confirmado. A própria function não duplica `session_started`.
 
 ### Utilitário
 - **hello** — smoke test de deploy.
