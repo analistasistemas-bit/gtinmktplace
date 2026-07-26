@@ -54,6 +54,7 @@ export default function Organizacoes() {
   const [delOrg, setDelOrg] = useState<OrgRow | null>(null);
   const [canaisOrg, setCanaisOrg] = useState<OrgRow | null>(null);
   const [supportOrg, setSupportOrg] = useState<OrgRow | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
 
   const { data: orgs = [], isLoading } = useQuery({
     queryKey: ['organizacoes'],
@@ -93,17 +94,20 @@ export default function Organizacoes() {
   }
 
   async function cancelRequest(request: SupportRequest) {
+    setCancellingRequestId(request.id);
     try {
       await cancelSupport(request.id);
       toast.success('Solicitação cancelada.');
       await qc.invalidateQueries({ queryKey: ['support-requests'] });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Não foi possível cancelar a solicitação.');
+    } finally {
+      setCancellingRequestId(null);
     }
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-4 lg:p-6">
+    <div className="mx-auto max-w-7xl p-4 lg:p-6">
       <PageHeader
         title="Organizações"
         subtitle="Empresas que usam o PubliAI (visão exclusiva de super-admin)."
@@ -111,7 +115,7 @@ export default function Organizacoes() {
       />
 
       <Card className="mt-4 overflow-hidden">
-        <Table>
+        <Table className="min-w-[72rem]">
           <TableHeader>
             <TableRow>
               <TableHead>Empresa</TableHead>
@@ -147,12 +151,23 @@ export default function Organizacoes() {
                   </div>
                 </TableCell>
                 <TableCell>{new Date(o.criado_em).toLocaleDateString('pt-BR')}</TableCell>
-                <TableCell className="text-right">
-                  <Button variant="ghost" size="sm" onClick={() => setCanaisOrg(o)}>Canais</Button>
-                  {request && <span className="mx-2 text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
-                  {request?.status === 'pending' && <Button variant="ghost" size="sm" onClick={() => cancelRequest(request)}>Cancelar solicitação</Button>}
-                  {canStart ? <Button size="sm" onClick={() => enterOperation(request)}>Entrar na operação</Button> : canRenew ? <Button variant="outline" size="sm" onClick={() => setSupportOrg(o)}>Solicitar renovação</Button> : !request || !['pending', 'active'].includes(request.status) ? <Button variant="outline" size="sm" onClick={() => setSupportOrg(o)}>Solicitar acesso</Button> : null}
-                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDelOrg(o)}>Excluir</Button>
+                <TableCell className="min-w-[32rem]">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setCanaisOrg(o)}>Canais</Button>
+                    {request && <span className="text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
+                    {request?.status === 'pending' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={cancellingRequestId === request.id}
+                        onClick={() => cancelRequest(request)}
+                      >
+                        {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
+                      </Button>
+                    )}
+                    {canStart ? <Button size="sm" onClick={() => enterOperation(request)}>Entrar na operação</Button> : canRenew ? <Button variant="outline" size="sm" onClick={() => setSupportOrg(o)}>Solicitar renovação</Button> : !request || !['pending', 'active'].includes(request.status) ? <Button variant="outline" size="sm" onClick={() => setSupportOrg(o)}>Solicitar acesso</Button> : null}
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDelOrg(o)}>Excluir</Button>
+                  </div>
                 </TableCell>
               </TableRow>
               );

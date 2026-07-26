@@ -4,12 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
-const { invoke, requestSupport, listSupportRequests, start } = vi.hoisted(() => ({
-  invoke: vi.fn(), requestSupport: vi.fn(), listSupportRequests: vi.fn(), start: vi.fn(),
+const { invoke, requestSupport, cancelSupport, listSupportRequests, start } = vi.hoisted(() => ({
+  invoke: vi.fn(), requestSupport: vi.fn(), cancelSupport: vi.fn(), listSupportRequests: vi.fn(), start: vi.fn(),
 }));
 
 vi.mock('@/lib/supabase', () => ({ supabase: { functions: { invoke } } }));
-vi.mock('@/lib/suporte', () => ({ requestSupport, listSupportRequests }));
+vi.mock('@/lib/suporte', () => ({ requestSupport, cancelSupport, listSupportRequests }));
 vi.mock('@/stores/support-store', () => ({ useSupportStore: (selector: (state: { start: typeof start }) => unknown) => selector({ start }) }));
 
 import Organizacoes from '../Organizacoes';
@@ -62,5 +62,19 @@ describe('Organizacoes', () => {
     await screen.findByText('Cliente');
     await waitFor(() => expect(listSupportRequests).toHaveBeenCalledWith({ page: 1, pageSize: 50, status: 'actionable' }));
     expect(screen.getByRole('button', { name: 'Solicitar renovação' })).toBeInTheDocument();
+  });
+
+  it('mantém o cancelamento visível e bloqueia cliques repetidos enquanto processa', async () => {
+    invoke.mockResolvedValue({ data: { orgs: [{ id: 'org-3', nome: 'Cliente', slug: 'cliente', membros: 2, criado_em: '2026-07-25T10:00:00Z', canais_habilitados: [] }] }, error: null });
+    listSupportRequests.mockResolvedValue({ requests: [{ id: 'request-3', org_id: 'org-3', status: 'pending', scope: 'read' }], total: 1, page: 1, pageSize: 50 });
+    cancelSupport.mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    renderPage();
+
+    const button = await screen.findByRole('button', { name: 'Cancelar solicitação' });
+    await user.click(button);
+
+    expect(cancelSupport).toHaveBeenCalledWith('request-3');
+    expect(screen.getByRole('button', { name: 'Cancelando…' })).toBeDisabled();
   });
 });
