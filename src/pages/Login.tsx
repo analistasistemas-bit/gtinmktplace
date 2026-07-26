@@ -15,7 +15,12 @@ export default function Login() {
   const [sucesso, setSucesso] = useState(false);
   const nav = useNavigate();
   const loc = useLocation();
-  const dest = (loc.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/';
+  // Preserva `search` além do `pathname` (ADR-0091): o retorno do OAuth do ML carrega o id de
+  // confirmação na query, e descartá-lo aqui fazia a conexão sumir em silêncio quando a sessão
+  // expirava durante a autorização. Segue best-effort — `loc.state` vive em memória, então
+  // recarregar o login ou abri-lo em outra aba perde o `from` inteiro, com ou sem search.
+  const from = (loc.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const dest = from?.pathname ? `${from.pathname}${from.search ?? ''}` : '/';
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();

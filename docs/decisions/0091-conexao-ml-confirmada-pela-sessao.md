@@ -57,7 +57,7 @@ defesa diferente**, é a mesma defesa com o vínculo movido para o instante da e
 
 1. **O `ml-oauth-callback` deixa de gravar a conexão** e **deixa de trocar o `code` por token**.
    Ele valida/consome o `state`, guarda o **`code`** (não o token) no Redis em
-   `oauth:ml:claim:<id>` — id aleatório, uso único, TTL 600s — e redireciona para o front com
+   `oauth:ml:claim:<id>` — id aleatório, uso único, TTL 300s — e redireciona para o front com
    esse id.
 2. **Uma function nova, `ml-oauth-claim`, faz a troca e o `upsert`.** O `p_org_id` vem do
    **chamador autenticado**, nunca do `state`. `trocarCodePorToken` (`token.ts:52`) e
@@ -82,11 +82,12 @@ aceito. Guardar o `code` **elimina** esse custo em vez de mitigá-lo: um `code` 
 `access_token`/`refresh_token` são credencial viva. Com isso os tokens só existem na memória da
 function que os grava no Vault.
 
-O ganho colateral é o que conserta o pior modo de falha (sessão expirada, abaixo): com apenas um
-`code` em repouso, esticar o TTL do claim para 600s — igual ao `STATE_TTL_S` — custa quase nada.
+O ganho colateral é poder esticar o TTL do claim sem custo de segredo em repouso — o que dá folga
+para o caminho da sessão expirada.
 
 O invariante — não a constante — é o que fica registrado: **`TTL do claim ≤ TTL do code do ML`**.
-600s é o valor atual, e a fonte que o estabelecer deve ser citada aqui.
+**300s** é o valor escolhido (ver "Decisão tomada"), e a fonte que estabelecer o prazo do ML deve
+ser citada aqui quando existir.
 
 > **Resultado da pesquisa (2026-07-25):** a documentação pública do ML **não informa** o tempo de
 > vida do `code`. Confirmado o que ela informa: `access_token` vale 6h, `refresh_token` 6 meses, e
@@ -98,12 +99,13 @@ O invariante — não a constante — é o que fica registrado: **`TTL do claim 
 >
 > **Consequência sobre o trade-off:** guardar o `code` troca um custo conhecido (segredo vivo em
 > repouso) por uma dependência **desconhecida**. No caminho feliz isso é irrelevante — o claim
-> dispara segundos após o redirect. O caminho onde pesa é exatamente o que motivou o TTL de 600s:
-> sessão expirada → login → redenção. Ver "Decisão pendente" no fim deste ADR.
+> dispara segundos após o redirect. O caminho onde pesa é o da sessão expirada → login →
+> redenção. Ver "Decisão tomada" para como isso foi resolvido.
 
-> **Ação obrigatória e bloqueante:** confirmar o tempo de vida do `code` de autorização do ML.
-> Não é verificável pelo repositório nem pela documentação pública. Isso deixou de ser diligência
-> e virou dependência dura:
+> **Confirmação posterior (não bloqueante):** medir o tempo de vida do `code` de autorização do
+> ML. Não é verificável pelo repositório nem pela documentação pública. Deixou de bloquear porque
+> o TTL de 300s é conservador e a falha é visível e recuperável (ver "Decisão tomada"), mas segue
+> valendo medir:
 > no desenho antigo a troca acontecia milissegundos depois de o ML emitir o code
 > (`callback:46`), então a vida dele nunca importou; mover a troca para depois de uma ação
 > humana torna esse prazo carregado. Ordem de custo para descobrir sem produção: (a) a
@@ -268,7 +270,31 @@ executado com duas orgs:
 6. Sonda de `code`: trocar o mesmo `code` duas vezes e confirmar `invalid_grant` na segunda —
    valida a semântica de uso único e o formato do erro que o front renderiza.
 
-## Decisão pendente: `code` ou token no Redis
+## Decisão tomada (2026-07-25): guardar o `code`, TTL 300s
+
+**Resolvido a favor do `code`.** O que desempatou foi a frequência de cada caminho, não a
+gravidade isolada:
+
+- O custo do token seria **contínuo**: toda conexão passaria a colocar credencial viva no Redis,
+  que hoje não guarda credencial nenhuma (só `state`, cache e locks). Quem tivesse o
+  `UPSTASH_REDIS_REST_TOKEN` poderia colher tokens de vendedor por polling.
+- O custo do `code` é **raro e benigno**: só morde quando a sessão expira durante a autorização
+  no ML. A sessão do Supabase dura ~1h com refresh e o intervalo entre clicar em Conectar e
+  voltar é de segundos; quando morde, a falha é visível, sem impacto de segurança, e refazer
+  custa ~20 segundos.
+- No caminho feliz o prazo do `code` é **irrelevante**: o claim dispara no carregamento da
+  página, segundos após o redirect. Funciona mesmo se o ML usar prazo curto.
+
+**TTL do claim = 300s** (não 600s): conservador o bastante para caber em qualquer prazo plausível
+do ML e ainda cobrir um login rápido no meio do caminho. A sonda com *test user* fica como
+**confirmação posterior**, não pré-requisito — quando rodar, ajusta-se a constante, e o invariante
+`TTL do claim ≤ TTL do code do ML` continua sendo o que vale.
+
+Refinamento opcional, não implementado agora: no `invalid_grant`, reiniciar o fluxo OAuth
+automaticamente — o usuário já está logado nesse ponto, então a segunda volta é transparente e o
+ML pula o consentimento.
+
+## Análise que levou à decisão: `code` ou token no Redis
 
 A pesquisa de 2026-07-25 não achou o prazo do `code` na documentação pública, e isso reabre —
 sem invalidar — a escolha entre guardar o `code` ou o token. As duas alternativas têm a **mesma
@@ -281,7 +307,7 @@ propriedade de segurança** (a org vem da sessão autenticada); mudam só o cust
 | Caminho feliz | idêntico | idêntico |
 | Sessão expirada → login → redenção | falha se o `code` vencer; exige refazer o consentimento | funciona |
 
-Encaminhamento recomendado, em ordem de custo: (1) sonda com **test users** do ML
+Encaminhamento definido na seção acima.
 (`/users/test_user`) medindo o prazo real, sem vendedor de verdade — resolve a incógnita e mantém
 o plano atual; (2) se a sonda não for viável, guardar o token com TTL curto (120s), aceitando o
 custo conhecido em vez da dependência desconhecida. **Não** implementar antes de escolher: os dois

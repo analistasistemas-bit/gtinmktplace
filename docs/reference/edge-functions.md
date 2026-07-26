@@ -20,6 +20,7 @@
 | **OAuth / conexão ML** ||||
 | ml-oauth-start | false | HTTP (JWT manual) | não |
 | ml-oauth-callback | false | Redirect OAuth do ML | não |
+| ml-oauth-claim | false | HTTP (JWT manual) | não |
 | ml-oauth-disconnect | false | HTTP (JWT manual) | sim |
 | **Ingest de planilha** ||||
 | ingest-lote | true | HTTP (frontend) | não |
@@ -96,9 +97,17 @@
 ### OAuth / conexão ML
 - **ml-oauth-start** — gera `state` (UUID, TTL 10min no Redis, guarda `{user_id, org_id}` —
   ADR-0027) e monta a URL de autorização. Secrets: `ML_CLIENT_ID`, `ML_REDIRECT_URI`.
-- **ml-oauth-callback** — troca `code` por access/refresh token e grava via
-  `upsert_marketplace_connection` (Vault, conexão da **org** do `state`, ADR-0027). Endpoint
-  público (redirect do ML).
+- **ml-oauth-callback** — **não grava mais a conexão nem troca o `code`** (ADR-0091). Consome o
+  `state` (`GETDEL`, uso único), guarda o `code` no Redis em `oauth:ml:claim:<id>` com TTL de
+  300s e redireciona para o front com `ml_claim=<id>`. Endpoint público (redirect do ML), por
+  isso não pode ser fonte de autorização.
+- **ml-oauth-claim** — troca o `code` por token e grava via `upsert_marketplace_connection`,
+  usando a org do **chamador autenticado** (`requireUserOrg` + admin, ADR-0060). É a correção do
+  achado F4: antes o `p_org_id` vinha do `state`, então um admin de qualquer org mandava a
+  authUrl para um vendedor e recebia os tokens dele. Invariante: **não lê org de lugar nenhum
+  além do `requireUserOrg`**. Traduz o 23505 do índice `(canal, conta_externa_id)` para "conta já
+  conectada em outra organização". `verify_jwt=false` acompanhando as irmãs de OAuth, com a
+  checagem dentro da function.
 - **ml-oauth-disconnect** — remove a conexão (`delete_marketplace_connection`).
 
 ### Ingest de planilha

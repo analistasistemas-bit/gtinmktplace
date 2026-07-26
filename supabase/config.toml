@@ -16,6 +16,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.ml-oauth-callback]
 verify_jwt = false
+# ADR-0091: acompanha as irmãs de OAuth — a checagem real (requireUserOrg + admin) é dentro da
+# function, e é ela que define em qual org a conexão é gravada.
+[functions.ml-oauth-claim]
+verify_jwt = false
 [functions.publish-familia-ml]
 verify_jwt = false
 [functions.calcular-tarifa-ml]

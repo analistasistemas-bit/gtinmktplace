@@ -30,6 +30,14 @@ export async function redisDel(chave: string): Promise<void> {
   await call(['DEL', chave]);
 }
 
+/** Lê e apaga numa única operação atômica (ADR-0091). Usado onde "uso único" é requisito de
+ *  segurança e não só higiene: um GET seguido de DEL deixa janela para duas requisições
+ *  concorrentes lerem o mesmo valor antes de qualquer uma apagar. Devolve null se a chave já
+ *  não existia — que é justamente como o chamador detecta a segunda tentativa. */
+export function redisGetDel(chave: string): Promise<string | null> {
+  return call<string>(['GETDEL', chave]);
+}
+
 /** Incrementa um contador de janela fixa e devolve o valor novo. O TTL é aplicado só na
  *  primeira ocorrência (quando INCR devolve 1), então a janela começa no primeiro evento e
  *  expira sozinha — não precisa de limpeza. Usado pelo throttle do ml-webhook, que não pode

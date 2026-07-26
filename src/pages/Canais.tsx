@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
@@ -12,7 +12,7 @@ import { LogoCanal } from '@/components/canal-badge';
 import { useCanaisHabilitados } from '@/hooks/useCanaisHabilitados';
 import { useMlConnection } from '@/hooks/useMlConnection';
 import { QK, fetchConexoes } from '@/lib/queries';
-import { iniciarConexaoML, desconectarML } from '@/lib/ml-oauth';
+import { iniciarConexaoML, desconectarML, confirmarConexaoML } from '@/lib/ml-oauth';
 
 /** Vitrine + gestão de canais (D4): card por marketplace do registry. */
 export default function Canais() {
@@ -25,12 +25,39 @@ export default function Canais() {
   const { data: conexaoML, isLoading: carregandoML } = useMlConnection();
   const { isAdmin } = useProfile();
   const qc = useQueryClient();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [erroAcao, setErroAcao] = useState<string | null>(null);
+  const [conectadoAgora, setConectadoAgora] = useState(false);
 
   // Retorno do OAuth do ML (o callback redireciona com estes params — ver Configurações).
+  // `ml_conectado` é o retorno ANTIGO: mantido enquanto o callback novo não estiver deployado
+  // (ADR-0091 fixa a ordem claim → frontend → callback, e nesta janela os dois coexistem).
   const mlConectado = searchParams.get('ml_conectado') === 'true';
   const mlErro = searchParams.get('ml_erro');
+  const mlClaim = searchParams.get('ml_claim');
+
+  // Confirmação da conexão (ADR-0091): é ESTA chamada, autenticada, que grava a conexão na org
+  // da sessão — o callback só entrega um id. O ref evita disparo duplo; o param é limpo logo em
+  // seguida, que é o que cobre F5, botão voltar e URL de retorno compartilhada (o `claim_id` é
+  // de uso único, então uma segunda tentativa acharia nada e mostraria erro numa conexão boa).
+  const claimEmVoo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!mlClaim || claimEmVoo.current === mlClaim) return;
+    claimEmVoo.current = mlClaim;
+    setErroAcao(null);
+    (async () => {
+      try {
+        await confirmarConexaoML(mlClaim);
+        setConectadoAgora(true);
+        await qc.invalidateQueries({ queryKey: ['ml-connection'] });
+        await qc.invalidateQueries({ queryKey: QK.conexoes });
+      } catch (e) {
+        setErroAcao(e instanceof Error ? e.message : 'Falha ao confirmar a conexão');
+      } finally {
+        setSearchParams({}, { replace: true });
+      }
+    })();
+  }, [mlClaim, qc, setSearchParams]);
 
   const operaveis = new Set(canaisOperaveis(habilitados).map((c) => c.id));
   const conectados = new Set(conexoes.map((c) => c.canal));
@@ -62,7 +89,7 @@ export default function Canais() {
         subtitle="Marketplaces integrados ao PubliAI — conecte sua conta e publique da mesma planilha."
       />
 
-      {!carregandoML && mlConectado && conexaoML?.conectado && (
+      {!carregandoML && (mlConectado || conectadoAgora) && conexaoML?.conectado && (
         <p className="mb-4 rounded border border-success/30 bg-success/10 px-3 py-2 text-sm text-success motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Conta do Mercado Livre conectada com sucesso.
         </p>

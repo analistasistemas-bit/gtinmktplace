@@ -45,8 +45,13 @@ não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migr
 `id`, `org_id` (FK organizations), `canal` (`canal_externo`), `conta_externa_id` (ml_user_id do
 vendedor — não é segredo), `conta_label` (nickname), `scope`, `expires_at`,
 `access_token_secret_id`/`refresh_token_secret_id` (FK→`vault.secrets`), `criado_por` (FK
-auth.users), `criado_em`, `atualizado_em`. Único `(org_id, canal)`. RLS: SELECT do membro da
-própria org; INSERT/UPDATE/DELETE só via RPC `service_role`. A migração de dados reusa os
+auth.users), `criado_em`, `atualizado_em`. Único `(org_id, canal)` **e**
+`(canal, conta_externa_id)` parcial onde `conta_externa_id is not null`
+(`20260726000240_indice_unico_conta_externa_ml.sql`, ADR-0091): a mesma conta de marketplace não
+pode pertencer a duas orgs. Sem esse índice, `resolverIdentidade` (`.maybeSingle()`) erra com 2
+linhas e devolve null, e o `ml-webhook` descarta o evento como "vendedor desconhecido" — os
+webhooks das **duas** orgs param em silêncio. RLS: SELECT do membro da própria org;
+INSERT/UPDATE/DELETE só via RPC `service_role`. A migração de dados reusa os
 **mesmos** `secret_id` da `ml_credentials` existente — zero re-criptografia.
 
 Liveness da integração (ADR-0069, migration `20260712171338_liveness_marketplace_connections.sql`):

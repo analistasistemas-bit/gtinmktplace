@@ -72,7 +72,9 @@ export default function Configuracoes() {
   };
 
   // OAuth do ML retorna para /configuracoes (URL fixa na edge) — o card agora mora em /canais.
-  if (searchParams.get('ml_conectado') || searchParams.get('ml_erro')) {
+  // `ml_claim` entrou com o ADR-0091. Sem ele nesta lista, o retorno do OAuth renderiza
+  // Configurações e nunca chega ao /canais, que é quem confirma a conexão: fluxo morto sem erro.
+  if (searchParams.get('ml_conectado') || searchParams.get('ml_erro') || searchParams.get('ml_claim')) {
     return <Navigate to={{ pathname: '/canais', search: searchParams.toString() }} replace />;
   }
 

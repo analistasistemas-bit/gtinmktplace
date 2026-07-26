@@ -1,24 +1,22 @@
-import { adminClient } from '../_shared/supabase.ts';
-import { redisGet, redisDel } from '../_shared/redis/client.ts';
-import { trocarCodePorToken } from '../_shared/ml/token.ts';
+// Redirect do OAuth do ML. Público (config.toml, verify_jwt=false) — é o redirect_uri
+// registrado no ML, então não há como exigir JWT aqui.
+//
+// ADR-0091: esta function NÃO grava mais a conexão e NÃO troca mais o `code` por token. O
+// `state` sozinho nunca provou quem está completando o fluxo — um admin de qualquer org podia
+// gerar a authUrl, mandar para um vendedor e receber os tokens DELE na org do atacante. Agora o
+// callback só guarda o `code` (inerte sem o ML_CLIENT_SECRET) sob um id de uso único e devolve
+// esse id para o front; quem grava é o `ml-oauth-claim`, autenticado, usando a org da SESSÃO.
+import { redisGetDel, redisSet } from '../_shared/redis/client.ts';
 
 const FRONTEND = 'https://ean2marketplace-frontend.onrender.com/#/configuracoes';
 
+// 300s: folga para um login rápido no meio do caminho, e conservador o bastante para caber em
+// qualquer prazo plausível do `code` do ML (não documentado publicamente — ver ADR-0091).
+// Invariante: TTL do claim <= TTL do code do ML.
+const CLAIM_TTL_S = 300;
+
 function redirect(query: string): Response {
   return new Response(null, { status: 302, headers: { Location: `${FRONTEND}?${query}` } });
-}
-
-async function buscarNickname(mlUserId: number, accessToken: string): Promise<string | null> {
-  try {
-    const r = await fetch(`https://api.mercadolibre.com/users/${mlUserId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!r.ok) return null;
-    const j = await r.json() as { nickname?: string };
-    return j.nickname ?? null;
-  } catch {
-    return null; // nickname é best-effort
-  }
 }
 
 Deno.serve(async (req) => {
@@ -28,39 +26,29 @@ Deno.serve(async (req) => {
 
   if (!code || !state) return redirect('ml_erro=state');
 
-  const raw = await redisGet(`oauth:ml:state:${state}`);
+  // Consumo atômico: GET-depois-DEL deixaria duas requisições concorrentes lerem o mesmo state.
+  const raw = await redisGetDel(`oauth:ml:state:${state}`);
   if (!raw) return redirect('ml_erro=state');
-  await redisDel(`oauth:ml:state:${state}`); // uso único
 
-  let userId: string, orgId: string;
+  let stateOrgId: string;
   try {
     const parsed = JSON.parse(raw) as { user_id: string; org_id: string };
     if (!parsed.user_id || !parsed.org_id) throw new Error('state incompleto');
-    userId = parsed.user_id;
-    orgId = parsed.org_id;
+    stateOrgId = parsed.org_id;
   } catch {
     return redirect('ml_erro=state');
   }
 
   try {
-    const tok = await trocarCodePorToken(code);
-    const nickname = await buscarNickname(tok.user_id, tok.access_token);
-    const expiresAt = new Date(Date.now() + tok.expires_in * 1000).toISOString();
+    const claimId = crypto.randomUUID();
+    await redisSet(`oauth:ml:claim:${claimId}`, JSON.stringify({ code }), CLAIM_TTL_S);
 
-    const { error } = await adminClient().rpc('upsert_marketplace_connection', {
-      p_org_id: orgId,
-      p_canal: 'mercado_livre',
-      p_conta_externa_id: String(tok.user_id),
-      p_conta_label: nickname,
-      p_access_token: tok.access_token,
-      p_refresh_token: tok.refresh_token,
-      p_scope: tok.scope ?? null,
-      p_expires_at: expiresAt,
-      p_criado_por: userId,
-    });
-    if (error) throw new Error(error.message);
+    // Tripwire (ADR-0091): o org do state é só log — NÃO vai para o registro do claim, para que
+    // um valor escolhido pelo atacante nunca fique a um `if` do caminho de escrita. Uma
+    // investigação junta esta linha com a do claim pelo claim_id. Nunca logar o `code`.
+    console.log(`ml-oauth-callback: claim emitido ${claimId} (state_org_id=${stateOrgId})`);
 
-    return redirect('ml_conectado=true');
+    return redirect(`ml_claim=${claimId}`);
   } catch (e) {
     console.error('ml-oauth-callback erro:', e instanceof Error ? e.message : String(e));
     return redirect('ml_erro=token');
