@@ -1,10 +1,14 @@
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { signOut } from '@/lib/auth';
+import { useProfile } from '@/hooks/useProfile';
 
 export default function SemAcesso() {
   const nav = useNavigate();
+  const { profile } = useProfile();
+  if (profile?.is_super_admin) return <Navigate to="/admin" replace />;
+
   async function sair() {
     await signOut();
     nav('/login', { replace: true });
