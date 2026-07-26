@@ -1,4 +1,5 @@
 import { Bell, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,6 +45,7 @@ function formatarQuando(iso: string): string {
 /** Sino de notificações in-app (ADR-0085) — espelha os mesmos alertas do Telegram. Abrir o
  * dropdown marca todas como lidas (mesma simplicidade do resto do menu: sem estado por item). */
 export function NotificacoesBell() {
+  const navigate = useNavigate();
   const { count: naoLidas, isError: naoLidasErro } = useNotificacoesNaoLidas();
   const { data: notificacoes } = useListaNotificacoes();
   const marcarLidas = useMarcarNotificacoesLidas();
@@ -77,8 +79,11 @@ export function NotificacoesBell() {
             {notificacoes.map((n) => (
               <DropdownMenuItem
                 key={n.id}
-                className="w-full flex-col items-start gap-0.5 whitespace-normal py-2"
-                onSelect={(e) => e.preventDefault()}
+                className={`w-full flex-col items-start gap-0.5 whitespace-normal py-2 ${n.categoria === 'integracao' ? 'cursor-pointer' : ''}`}
+                onSelect={(e) => {
+                  if (n.categoria === 'integracao') navigate('/suporte');
+                  else e.preventDefault();
+                }}
               >
                 <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   {CATEGORIA_LABEL[n.categoria] ?? n.categoria}
