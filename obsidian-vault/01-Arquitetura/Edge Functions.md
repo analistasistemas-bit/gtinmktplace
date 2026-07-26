@@ -23,7 +23,6 @@ primeiro). ~35 funções Deno em `supabase/functions/`. Ver [[Backend]], [[Segur
 | **Processamento / publicação** | process-familia, publicar-familias, publish-familia-ml, update-familia-ml, publicar-split-ml, **publicar-anuncio** (worker genérico p/ canais ≠ ML), regenerar-copy-familia, definir-categoria-familia, vincular-catalogo |
 | **Remoção / reprocessamento** | remover-publicado, excluir-lote, reprocessar-familia, invalidar-cache-cor |
 | **Faturamento** | ml-webhook, sync-venda, sync-pergunta, sync-devolucao, responder-pergunta, sugerir-resposta-pergunta, backfill-faturamento, reconciliar-faturamento |
-| **Financeiro (MP)** | resumo-financeiro |
 | **Monitoramento / alertas** | monitorar-moderados, notificar-liberacao |
 | **Status / métricas / viabilidade** | status-publicados, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml |
 | **Acesso / usuários** | usuarios |

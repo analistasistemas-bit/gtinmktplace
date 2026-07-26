@@ -68,7 +68,7 @@ FK `ON DELETE SET NULL`); FK `org_id` é `ON DELETE CASCADE`. Guarda: alíquotas
 (`aliquota_nacional_pct`/`aliquota_importado_pct`, default 8/16), `aliquotas_confirmadas_em` (flag do
 LOUD — sem ela o `process-familia` bloqueia a publicação em vez de aplicar 8/16 em silêncio, ADR-0055
 refinado; "salvar as alíquotas em Configurações = confirmar"), `desconto_pct`/`desconto_concorrencia_pct`,
-`ai_model_texto`/`ai_model_imagem` (ADR-0074), `telegram_*` e `mp_access_token_secret_id` (Vault).
+`ai_model_texto`/`ai_model_imagem` (ADR-0074) e `telegram_*`.
 RLS: leitura por membro da org, escrita só admin. Leituras no backend sempre por `org_id`.
 
 ## Acesso e usuários (ADR-0047 + ADR-0027)
@@ -315,7 +315,7 @@ Uma linha por pedido do ML (webhook + backfill + reconciliação).
 Pedido: `order_id` (único com `user_id`), `pack_id`, `status`, `status_detail`,
 `date_created`, `date_closed`. Comprador: `comprador_id/nick/nome`, `cidade`, `uf` (ADR-0039).
 Valores: `total_amount`, `paid_amount`, `sale_fee_total`, `frete_vendedor`, `liquido`
-(do MP quando há `MP_ACCESS_TOKEN`, senão estimado), `estorno`, `currency`.
+(`bruto − comissão − frete real`, não vem do MP desde o ADR-0042), `estorno`, `currency`.
 Envio: `shipping_id/status/substatus/logistic`, `tracking_number`.
 Financeiro: `money_release_date`, `liberacao_notificada_em` (ADR-0040),
 `sacado_em`/`sacado_por` (*migration `20260702162832_ml_vendas_saque.sql`*) — marca manual de
@@ -408,10 +408,6 @@ abaixo do menor concorrente aplicado por `sugerirPrecoVenda` (ADR-0059, antes fi
 do preço no menor preço entre concorrentes MercadoLíder quando o preço competitivo dá prejuízo —,
 `mostrar_lucro_dashboard` (default false, migration `20260717112328_mostrar_lucro_dashboard.sql`)
 — liga a exibição do lucro (`lucro R$ X`) no card "Líquido no faturamento" do Dashboard —,
-**`mp_access_token_secret_id`** (FK→`vault.secrets`, ADR-0027 D-E7.7): token Mercado Pago
-**por org**; lido via RPC `get_mp_token(org)`, com fallback ao `MP_ACCESS_TOKEN` de instância
-quando a org não tem secret configurado (zero regressão — a Avil segue no fallback até o secret
-ser semeado manualmente).
 **`ai_model_texto`/`ai_model_imagem`** (text, nullable, ADR-0074, migration
 `20260713120000_ai_model_por_org.sql`): slug OpenRouter do modelo de IA da org, lista curada via
 CHECK constraint (texto: `openai/gpt-4o-mini` padrão ou `deepseek/deepseek-v4-flash`; imagem, hoje
@@ -448,7 +444,6 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `upsert_marketplace_connection(...)` | Grava conexão de canal por org, criando/atualizando secrets no Vault |
 | `get_connection_tokens(connection_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
-| `get_mp_token(org)` | Lê o secret do Mercado Pago da org no Vault; `null` se a org não configurou (caller cai no fallback de instância) |
 | `canais_habilitados_da_org()` | `security definer`, `search_path=''`: retorna `organizations.canais_habilitados` da própria org (evita abrir SELECT direto em `organizations`) |
 | `telegram_config_status()` | Retorna `(chat_id, ativo, tem_token)` sem expor o token |
 | `marcar_mensagens_lidas(pack_id)` | Marca as mensagens recebidas de um pack como lidas (limpa o badge da conversa) |

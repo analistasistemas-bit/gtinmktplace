@@ -26,9 +26,10 @@ camada de abstração multicanal, [[Backend]] para onde cada módulo vive.
 
 ## Mercado Pago (`_shared/mercadopago/*`)
 
-- Pagamentos/liberação — usado por `resumo-financeiro`. O segredo é configurado por organização
-  em `configuracoes.mp_access_token_secret_id`; o fallback global legado é um risco crítico
-  registrado no ADR-0086.
+- Pagamentos/liberação — lido pelos workers de faturamento (`sync-venda`, `sync-devolucao`,
+  `backfill-faturamento`, `reconciliar-faturamento`) via `carregarLiquidoMP`. Não existe "conexão
+  do Mercado Pago": usa o token OAuth da conexão `mercado_livre` da própria org — mesma conta,
+  confirmado por `/users/me` (ADR-0093, substitui o `MP_ACCESS_TOKEN` global do ADR-0031).
 - `/mercadopago_account/balance` — **bloqueado (403)**; caixa é calculado por venda liberada
   (`ml_vendas.money_release_date`), não por saldo direto.
 

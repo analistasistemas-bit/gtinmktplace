@@ -1,19 +1,15 @@
-// Leitura financeira da conta Mercado Pago — REALIZADO de vendas do período.
+// Leitura financeira da conta Mercado Pago — REALIZADO de pagamentos do período.
 //
-// IMPORTANTE (causa raiz, validada na conta real 2026-06-19): /v1/payments/search devolve TODOS
-// os pagamentos ligados à conta. Dois ruídos a excluir para bater com a tela de Vendas do ML
-// (fonte /orders):
-//   1. compras/terceiros: pagamentos em que `collector_id` != a conta (ex.: Notebook/Sauna que a
-//      empresa comprou) — inflavam o faturamento para ~R$ 29k irreal.
-//   2. frete: cada venda gera um pagamento de envio à parte (`description == marketplace_shipment`)
-//      que dobrava a contagem e somava frete ao bruto.
-// Com os dois filtros, bruto/contagem batem exatamente com /orders (24 pedidos, R$ 606,80).
+// Não existe "conexão do Mercado Pago": o worker chamador resolve o token e o `contaExternaId`
+// da conexão `mercado_livre` da org e os repassa aqui — este módulo não resolve token próprio
+// nem sabe de organização (ADR-0093). O consumidor é `carregarLiquidoMP`
+// (`_shared/faturamento/enriquecimento.ts`), que usa `buscarPagamentosMP` para alimentar
+// `estorno`/`money_release_date` em `ml_vendas`; os dois filtros de ruído (pagamento de
+// terceiro via `collector_id`, pagamento de frete via `description === 'marketplace_shipment'`)
+// vivem em `montarMapaLiquido`, não neste arquivo.
 //
 // Decisão anterior mantida: a projeção "A receber / Lançamentos futuros" do app do MP NÃO é
 // reproduzível pela API (ver ADR-0031); aqui entregamos o realizado, que é confiável.
-//
-// Fonte: /v1/payments/search com o token da conexão `mercado_livre` da org (ADR-0093) — o
-// worker chamador resolve o token e o contaExternaId e os repassa; aqui não há resolução própria.
 
 /** Recorte de um pagamento do MP usado para o resumo (demais campos são ignorados). */
 export interface PagamentoMP {

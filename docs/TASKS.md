@@ -2,6 +2,39 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Financeiro do Mercado Pago pela conexão OAuth do ML (ADR-0093) — 2026-07-26
+
+Substitui o token estático `MP_ACCESS_TOKEN`/fallback cross-tenant: o financeiro passa a ler a
+conta MP do vendedor com o token da conexão `mercado_livre` da própria org — não existe "conexão
+do Mercado Pago" separada. [ADR-0093](decisions/0093-financeiro-mp-pela-conexao-ml.md) · plano em
+`plans/2026-07-26-financeiro-mp-pela-conexao-ml.md`.
+
+- [x] `carregarLiquidoMP` recebe `token`/`contaId` do worker chamador (some `resolverTokenMP`/
+  `getContaId`) e devolve `Map | null` (`null` = leitura do MP falhou); `montarMapaLiquido`
+  extraída pura e testada.
+- [x] `preservarDadosMP` (`_shared/faturamento/venda.ts`) preserva `estorno`/`money_release_date`
+  já gravados quando o MP falha, ligada no `upsertVenda`.
+- [x] Os 4 workers (`sync-venda`, `sync-devolucao`, `backfill-faturamento`,
+  `reconciliar-faturamento`) religados: os dois de evento gravam e respondem 502 em falha do MP
+  (retry via QStash); os dois de varredura logam e seguem.
+- [x] Caminho morto do MP ao vivo removido de fato: edge `resumo-financeiro` (código),
+  `src/lib/financeiro.ts`, `src/hooks/useResumoFinanceiro.ts`, `_shared/mercadopago/rateio.ts` e
+  os órfãos (`resolverTokenMP`, `escolherTokenMP`, `getContaId`, `agregarFinanceiro`,
+  `montarInfoPorPagamento`, `buscarPedidosML`, `mapearPagamentoParaItem`). Ver correção do
+  registro histórico deste mesmo arquivo (seção do ADR-0042, 2026-06-25) — o caminho morto **não**
+  havia sido removido naquela data.
+- [x] Migration `20260726215859_mp_token_pela_conexao_ml.sql` (`drop function get_mp_token` +
+  `drop column configuracoes.mp_access_token_secret_id`) escrita.
+- [x] Documentação atualizada (`edge-functions.md`, `modelo-de-dados.md`, `arquitetura.md`,
+  `obsidian-vault/01-Arquitetura/Integrações.md`, `project-status.md`, este arquivo).
+- [ ] `supabase db push` da migration — **pendente**, só depois da validação em produção
+  descrita no plano (Task 5/deploy).
+- [ ] Deploy das 7 edge functions afetadas (`sync-venda`, `sync-devolucao`,
+  `backfill-faturamento`, `reconciliar-faturamento`, `ml-webhook`, `sync-mensagem`,
+  `sync-pergunta`) + remoção da edge `resumo-financeiro` no Supabase — **pendente**.
+- [ ] Remoção dos secrets `MP_ACCESS_TOKEN`/`MP_FALLBACK_ORG_ID` — **pendente**, só depois do
+  deploy e da migration (passo 6 do plano).
+
 ## Acesso temporário de suporte — finalização operacional (2026-07-26)
 
 - [x] Migration `20260726153552_finalize_support_access.sql`: RPC transacional para iniciar e
@@ -1356,7 +1389,11 @@ aplicado no banco nem deployado.
 ## Líquido econômico — fim do artefato cross-docking (ADR-0042) — 2026-06-25
 
 - [x] **Líquido da venda = `bruto − comissão − frete real` (não o `net_received_amount` do MP)** — o net do Mercado Pago é **inconsistente**: em envio cross-docking (`shp_cross_docking`) ele desconta o frete CHEIO da etiqueta e ignora a comissão; em pack desconta a comissão e ignora o frete. Isso gerava **markup falso** (item vendido a ~3× o custo aparecia com −56%). Passa a computar de fontes autoritativas: `sale_fee` do pedido + `senders[].cost` do envio (`_shared/faturamento/venda.ts`). **Rateio de pack net-independente** (`ratearLiquidoPorFrete`, compartilhado por Faturamento e Financeiro): frete do envio uma vez, por peso. Faturamento e Financeiro batem por construção (fonte única `ml_vendas`). DB **reconciliado** (46 pedidos; líquido total do período R$ 602,93). [ADR-0042](decisions/0042-liquido-economico-cross-docking.md). **Deployado:** edges `ml-webhook` (v5), `sync-venda` (v10), `backfill-faturamento` (v12), `reconciliar-faturamento` (v9) — `verify_jwt=false` preservado — + front (Render, commit `6d3758d`). Validado com browser-use (item Rosa Amaranto: 2,36 / −56% → **7,63 / +43%**). 935 testes verdes.
-- [x] **Removido o caminho morto do MP ao vivo** — `src/lib/financeiro.ts`, `src/hooks/useResumoFinanceiro.ts` e a fonte da edge `resumo-financeiro` (substituídos por `ml_vendas`/`resumo-vendas.ts` no ADR-0038; pendência herdada do ADR-0040). A edge nunca esteve deployada.
+- [x] ~~Removido o caminho morto do MP ao vivo~~ — **item incorreto, corrigido em 2026-07-26.**
+  `src/lib/financeiro.ts`, `src/hooks/useResumoFinanceiro.ts` e a edge `resumo-financeiro`
+  continuaram no repositório — e a edge seguiu **deployada e `ACTIVE` (v14)** — até a remoção
+  real pelo [ADR-0093](decisions/0093-financeiro-mp-pela-conexao-ml.md). Substituídos por
+  `ml_vendas`/`resumo-vendas.ts` no ADR-0038; pendência herdada do ADR-0040.
 
 ## Publicados — expandir item: análise + modo Clássico/Premium — 2026-06-24
 
@@ -1367,7 +1404,10 @@ aplicado no banco nem deployado.
 - [x] **Menu Financeiro completo — caixa, lucro/margem, evolução, comparativo, período personalizado, CSV** — tela `/financeiro` e detalhe do líquido derivam tudo de `ml_vendas` (fonte única, ADR-0038). Novidades: **período personalizado** (intervalo de datas), **faixa de caixa** (já liberado vs a liberar, por `money_release_date` — NÃO é o "A receber" do MP, ver ADR-0031), **lucro líquido + margem%** com nota de cobertura, **breakdown de taxas** (comissão vs frete), **comparativo com período anterior** (seta ↑/↓), **gráfico de evolução** do líquido (recharts), e no detalhe: **export CSV**, **filtro liberado/a liberar** (rodapé filtro-aware) e **retido negativo como crédito**. Lógica pura em `lib/resumo-vendas.ts` (+ `lib/csv.ts`, `lib/metricas.ts`), TDD vitest. [ADR-0040](decisions/0040-financeiro-caixa-evolucao-notificacao.md) · spec [2026-06-23-financeiro-impecavel-design.md](superpowers/specs/2026-06-23-financeiro-impecavel-design.md). **✅ Validado e mergeado→deployado em produção (2026-07-02).**
 - [x] **Notificação Telegram de liberação** — edge `notificar-liberacao` (pública/QStash, idempotente via coluna `ml_vendas.liberacao_notificada_em`): avisa quando o dinheiro das vendas é liberado HOJE em BRT no saldo Mercado Pago. Reusa a infra de Telegram. Migration `20260623160000_ml_vendas_liberacao_notificada.sql`.
   - **✅ CONCLUÍDO (2026-07-02):** migration aplicada, `notificar-liberacao` deployada (`--no-verify-jwt`), smoke test OK e **QStash schedule diário** ativo → `.../functions/v1/notificar-liberacao`.
-  - [x] **Caminho morto do MP ao vivo removido** (2026-06-25, junto do ADR-0042): `lib/financeiro.ts`, `useResumoFinanceiro` e a fonte da edge `resumo-financeiro` — substituídos por `ml_vendas`/`useResumoVendas` no ADR-0038.
+  - [x] ~~Caminho morto do MP ao vivo removido~~ (2026-06-25, junto do ADR-0042) — **item incorreto,
+    corrigido em 2026-07-26**: `lib/financeiro.ts`, `useResumoFinanceiro` e a edge `resumo-financeiro`
+    não foram removidos nessa data, e a edge seguiu deployada `ACTIVE` (v14) até então. Remoção real
+    pelo [ADR-0093](decisions/0093-financeiro-mp-pela-conexao-ml.md), ver seção dedicada abaixo.
 
 ## Módulo Faturamento (ADR-0037) — 2026-06-22
 

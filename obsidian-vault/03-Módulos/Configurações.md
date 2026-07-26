@@ -43,5 +43,6 @@ Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (t
 `org_id` (FK `organizations`, `NOT NULL`, **único** — 1 linha por org), `user_id` (legado,
 auditoria de quem editou), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`,
 `telegram_bot_token` (sensível), `aliquota_nacional_pct`, `aliquota_importado_pct`,
-`desconto_concorrencia_pct`, `reancora_lider_ativa`, `mostrar_lucro_dashboard`,
-`mp_access_token_secret_id` (FK→`vault.secrets`, token Mercado Pago por org, ADR-0027 D-E7.7).
+`desconto_concorrencia_pct`, `reancora_lider_ativa`, `mostrar_lucro_dashboard`. Não há mais
+coluna de token do Mercado Pago — a conta MP é lida com o token da conexão `mercado_livre`
+(ADR-0093).

@@ -11,7 +11,7 @@
   função. Usado por chamadas do frontend (token do usuário logado).
 - **`false`** → função pública; ela mesma autentica: assinatura QStash
   (`verificarAssinatura`), JWT lido na mão (`requireUser`), ou endpoint público (OAuth/webhook).
-- Funções **não listadas** no `config.toml` assumem o **default `true`** (caso de `resumo-financeiro`).
+- Funções **não listadas** no `config.toml` assumem o **default `true`**.
 
 ## Tabela-resumo
 
@@ -54,8 +54,6 @@
 | sugerir-resposta-pergunta | true | HTTP (frontend) | não (stateless) |
 | backfill-faturamento | false | HTTP (JWT) **ou** QStash | sim (upsert) |
 | reconciliar-faturamento | false | QStash schedule | sim (upsert) |
-| **Financeiro (Mercado Pago)** ||||
-| resumo-financeiro | true (default) | HTTP (frontend) | não |
 | **Monitoramento / alertas** ||||
 | monitorar-moderados | false | HTTP (JWT manual) ou QStash | sim |
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
@@ -86,7 +84,7 @@
 | `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027); **E6 (ADR-0061):** `estado.ts` → máquina de estado por canal (`garantirAnuncioExterno`, `claimAnuncioExterno`, `decidirOperacaoCanal`); `registry.ts` suporta conectores injetáveis em teste (`registrarConectorParaTeste`); `fake.ts` conector de teste |
 | `redis/*` | Client Redis + caches (cor, concorrência, tarifa) |
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
-| `mercadopago/*` | API MP (pagamentos) + rateio financeiro |
+| `mercadopago/*` | Leitura de pagamentos MP (`buscarPagamentosMP`) com o token da conexão `mercado_livre` da org (ADR-0093) |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
 | `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os assinantes por categoria, grava notificação in-app (tabela `notificacoes`, ADR-0085) e envia Telegram a quem tem chat_id (`config.ts`); `categorias.ts` (7 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Assinatura por profile (`telegram_categorias`) vale para os dois canais; bot Telegram é por org (ADR-0068) |
 | `parser.ts` | Validação de colunas da planilha, agrupamento por PAI, matching de fotos |
@@ -412,13 +410,6 @@
   de pedidos/perguntas/claims (`buscarPedidosPeriodo` etc.) continuam "segue" sem classificar —
   não é backstop de auth-liveness para esses casos, só para falha no token em si.
 
-### Financeiro (Mercado Pago)
-- **resumo-financeiro** — agrega pagamentos do MP (bruto/líquido/descontos) e cruza com custo
-  por código. **Token MP por org** via `resolverTokenMP` (RPC `get_mp_token`/Vault); o `MP_ACCESS_TOKEN`
-global (conta da Avil) só é liberado à org nomeada em `MP_FALLBACK_ORG_ID` — qualquer outra org sem
-secret recebe `null` (evita ler a conta MP de outro tenant). Multi-tenant é **LIVE** (2 orgs: Avil +
-DSA). ADR-0086 (item MP) / ADR-0031.
-
 ### Monitoramento / alertas
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram
   (ADR-0035). Runbook: [../runbooks/monitorar-moderados.md](../runbooks/monitorar-moderados.md).
@@ -499,7 +490,7 @@ DSA). ADR-0086 (item MP) / ADR-0031.
 - **Dedup de webhook:** `(topic, resource)` único em `ml_webhook_eventos`.
 - **Secrets principais:** `SUPABASE_*`, `QSTASH_TOKEN`/`QSTASH_*_SIGNING_KEY`, `ML_CLIENT_ID`/
   `ML_CLIENT_SECRET`/`ML_REDIRECT_URI`, `OPENROUTER_API_KEY` (+`AI_MODEL_*`),
-  `UPSTASH_REDIS_REST_URL`/`_TOKEN`, `MP_ACCESS_TOKEN`, `PUBLIAI_PUBLIC_URL`. Lista em `.env.example`.
+  `UPSTASH_REDIS_REST_URL`/`_TOKEN`, `PUBLIAI_PUBLIC_URL`. Lista em `.env.example`.
 
 ---
 

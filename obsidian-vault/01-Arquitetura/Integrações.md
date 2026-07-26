@@ -37,7 +37,7 @@ Workers fazem **dual-write**: gravam em `familias`/`variacoes` (fonte de verdade
 | Integração | Direção | Ver |
 |---|---|---|
 | Mercado Livre | bidirecional (API + webhooks) | [[APIs]] |
-| Mercado Pago | leitura (liberações) | [[APIs]] |
+| Mercado Pago | leitura (liberações), sem conexão própria — usa o token OAuth da conexão `mercado_livre` da org (ADR-0093) | [[APIs]] |
 | OpenRouter | saída (copy, vision) | [[IA]] |
 | Telegram | saída (alertas) | [[APIs]] |
 

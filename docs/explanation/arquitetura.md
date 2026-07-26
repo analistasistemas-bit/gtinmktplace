@@ -220,7 +220,10 @@ adicionar `'shopee'` ao enum `canal_externo`. A orquestração já cobre tudo.
 
 - **Faturamento** (ADR-0037/0038/0039): vendas, perguntas e devoluções do ML via webhooks +
   backfill + reconciliação periódica. Tabelas `ml_vendas`, `ml_perguntas`, `ml_devolucoes`.
-- **Financeiro** (ADR-0031/0040): "a receber" e liberações via Mercado Pago.
+- **Financeiro** (ADR-0031/0040/0093): "a receber" e liberações via Mercado Pago. Não existe
+  conexão própria do Mercado Pago — os workers de faturamento leem a API do MP com o token da
+  conexão `mercado_livre` da org (mesma conta, ADR-0093), alimentando só `estorno` e
+  `money_release_date` em `ml_vendas`.
 - **Monitoramento** (ADR-0035): varredura de anúncios moderados + alertas Telegram.
 - **Viabilidade** (ADR-0014/0015): análise de concorrência e margem antes de cadastrar.
 
