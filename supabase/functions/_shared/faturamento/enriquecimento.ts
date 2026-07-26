@@ -1,6 +1,6 @@
 // Enriquecimento das vendas (ADR-0037): estorno/liberação (Mercado Pago) e GTIN p/ vendas de
-// catálogo. Só `montarMapaLiquido` é testado por vitest; o resto faz IO.
-import { buscarPagamentosMP, type PagamentoMP } from '../mercadopago/financeiro.ts';
+// catálogo. Os carregadores do MP são testados por vitest com o fetch mockado; `carregarGtinsFallback` não.
+import { buscarPagamentoMP, buscarPagamentosMP, type PagamentoMP } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
 import type { PedidoML, DadosPagamentoMP } from './venda.ts';
 
@@ -46,6 +46,33 @@ export async function carregarLiquidoMP(
     return montarMapaLiquido(pagamentos, contaId);
   } catch (e) {
     console.warn('carregarLiquidoMP falhou:', (e as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Igual a `carregarLiquidoMP`, mas só dos pagamentos DO pedido — para os workers de evento
+ * (`sync-venda`, `sync-devolucao`), que atendem um pedido por vez. A varredura de 120 dias custa
+ * até 40 requisições ao MP para extrair o estorno de um único pedido; aqui é 1 por pagamento
+ * (1-2 por pedido). Os workers de lote continuam varrendo — lá a varredura é o certo.
+ *
+ * Mesma semântica de retorno: `null` = a leitura falhou (chamador re-tenta); mapa vazio = nada a
+ * gravar (sem ids, ou conta não resolvida — condição permanente).
+ */
+export async function carregarLiquidoMPDoPedido(
+  token: string, contaId: number, paymentIds: Array<string | number>,
+): Promise<Map<string, DadosPagamentoMP> | null> {
+  // Ver o comentário do guard em montarMapaLiquido: aqui ele evita o fetch, lá mantém a pureza.
+  if (!contaId || !Number.isFinite(contaId)) return new Map();
+  if (paymentIds.length === 0) return new Map();
+  try {
+    const pagamentos = await Promise.all(paymentIds.map((id) => buscarPagamentoMP(token, id)));
+    // A varredura pede `status=approved` na busca; por id vem qualquer status, então o filtro
+    // equivalente entra aqui — sem ele um pagamento recusado do mesmo pedido gravaria estorno 0
+    // (e uma data de liberação) por cima do que já estava correto.
+    return montarMapaLiquido(pagamentos.filter((p) => p.status === 'approved'), contaId);
+  } catch (e) {
+    console.warn('carregarLiquidoMPDoPedido falhou:', (e as Error).message);
     return null;
   }
 }

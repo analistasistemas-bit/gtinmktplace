@@ -10,7 +10,7 @@ import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
-import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
+import { carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
 import { enviarMensagemPedido } from '../_shared/ml/mensagem.ts';
@@ -86,7 +86,9 @@ Deno.serve(async (req) => {
   const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
     buscarFreteVendedor(token, shippingId),
     buscarShipment(token, shippingId),
-    carregarLiquidoMP(token, Number(conexao.contaExternaId)),
+    // Só os pagamentos deste pedido (1-2 requisições), não a varredura de 120 dias do MP.
+    carregarLiquidoMPDoPedido(token, Number(conexao.contaExternaId),
+      (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
     carregarGtinsFallback(token, [pedido], idsPubliai),
   ]);
 

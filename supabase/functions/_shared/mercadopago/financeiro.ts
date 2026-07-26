@@ -3,7 +3,8 @@
 // Não existe "conexão do Mercado Pago": o worker chamador resolve o token e o `contaExternaId`
 // da conexão `mercado_livre` da org e os repassa aqui — este módulo não resolve token próprio
 // nem sabe de organização (ADR-0093). O consumidor é `carregarLiquidoMP`
-// (`_shared/faturamento/enriquecimento.ts`), que usa `buscarPagamentosMP` para alimentar
+// (`_shared/faturamento/enriquecimento.ts`), que usa `buscarPagamentosMP` (lote) e
+// `buscarPagamentoMP` (workers de evento, por id do pedido) para alimentar
 // `estorno`/`money_release_date` em `ml_vendas`; os dois filtros de ruído (pagamento de
 // terceiro via `collector_id`, pagamento de frete via `description === 'marketplace_shipment'`)
 // vivem em `montarMapaLiquido`, não neste arquivo.
@@ -81,4 +82,22 @@ export async function buscarPagamentosMP(
   }
 
   return pagamentos;
+}
+
+/**
+ * GET /v1/payments/{id} — um pagamento específico, para quem já sabe o id (workers de evento, que
+ * atendem um pedido por vez e têm os ids em `pedido.payments`). Lança em erro, como a 1ª página de
+ * `buscarPagamentosMP`: o chamador precisa distinguir leitura falha de "não achei".
+ * Busca multi-id (`?id=a,b`) não existe no MP — devolve total 0 —, então é 1 requisição por id.
+ */
+export async function buscarPagamentoMP(token: string, id: string | number): Promise<PagamentoMP> {
+  const resp = await fetch(`${MP_API}/v1/payments/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(25_000),
+  });
+  if (!resp.ok) {
+    const corpo = await resp.text().catch(() => '');
+    throw new Error(`MP /payments/${id} ${resp.status}: ${corpo.slice(0, 200)}`);
+  }
+  return await resp.json() as PagamentoMP;
 }
