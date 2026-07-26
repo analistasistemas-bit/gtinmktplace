@@ -1,9 +1,30 @@
 // Enriquecimento das vendas (ADR-0037): líquido real (Mercado Pago) e GTIN p/ vendas de
 // catálogo. Reusa os helpers do financeiro (ADR-0031) e do _shared/ml. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { buscarPagamentosMP, getContaId, resolverTokenMP } from '../mercadopago/financeiro.ts';
+import { buscarPagamentosMP, getContaId, resolverTokenMP, type PagamentoMP } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
 import type { PedidoML, DadosPagamentoMP } from './venda.ts';
+
+/** paymentId → dados do MP, só das vendas da própria conta. Pura. */
+export function montarMapaLiquido(
+  pagamentos: PagamentoMP[],
+  contaId: number,
+): Map<string, DadosPagamentoMP> {
+  const mapa = new Map<string, DadosPagamentoMP>();
+  // Sem conta resolvida não dá para separar venda própria de compra: `Number(null)` é 0 (não NaN),
+  // então com contaId 0/null/undefined um pagamento sem collector_id passaria como venda da conta.
+  if (!contaId || !Number.isFinite(contaId)) return mapa;
+  for (const p of pagamentos) {
+    if (Number(p.collector_id) !== contaId) continue;       // exclui compras/terceiros
+    if (p.description === 'marketplace_shipment') continue;  // exclui pagamento de frete
+    mapa.set(String(p.id), {
+      net: Number(p.transaction_details?.net_received_amount ?? 0),
+      estorno: Number(p.transaction_amount_refunded ?? 0),
+      releaseDate: p.money_release_date ?? null,
+    });
+  }
+  return mapa;
+}
 
 /**
  * paymentId → dados do MP (líquido, estorno, data de liberação) das vendas da própria conta.
@@ -15,25 +36,16 @@ import type { PedidoML, DadosPagamentoMP } from './venda.ts';
 export async function carregarLiquidoMP(
   admin: SupabaseClient, orgId: string | null, lookbackDias = 120,
 ): Promise<Map<string, DadosPagamentoMP>> {
-  const out = new Map<string, DadosPagamentoMP>();
   const token = await resolverTokenMP(admin, orgId);
-  if (!token) return out;
+  if (!token) return new Map();
   try {
     const contaId = await getContaId(token);
     const pagamentos = await buscarPagamentosMP(token, lookbackDias);
-    for (const p of pagamentos) {
-      if (Number(p.collector_id) !== contaId) continue;       // exclui compras/terceiros
-      if (p.description === 'marketplace_shipment') continue;  // exclui pagamento de frete
-      out.set(String(p.id), {
-        net: Number(p.transaction_details?.net_received_amount ?? 0),
-        estorno: Number(p.transaction_amount_refunded ?? 0),
-        releaseDate: p.money_release_date ?? null,
-      });
-    }
+    return montarMapaLiquido(pagamentos, contaId);
   } catch (e) {
     console.warn('carregarLiquidoMP falhou:', (e as Error).message);
+    return new Map();
   }
-  return out;
 }
 
 /** ml_item_id → GTIN, só p/ itens cujo id NÃO está no escopo (vendas de catálogo). */
