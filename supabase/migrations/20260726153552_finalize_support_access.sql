@@ -49,8 +49,9 @@ begin
       raise exception 'previous support session does not match';
     end if;
     if v_previous.status <> 'active'::public.support_status
-       or v_previous.expires_at <= p_now then
-      raise exception 'previous support session is not active';
+       or v_previous.expires_at <= p_now
+       or p_now < v_previous.expires_at - interval '15 minutes' then
+      raise exception 'previous support session is not renewable';
     end if;
 
     update public.support_requests

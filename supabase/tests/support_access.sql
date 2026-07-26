@@ -206,6 +206,41 @@ update public.support_requests
 set renewal_of = '90000000-0000-0000-0000-000000000204'
 where id = '90000000-0000-0000-0000-000000000202';
 
+-- A renewal is rejected before the predecessor enters its final 15 minutes.
+do $$
+declare v_failed boolean := false; v_audit_count bigint;
+begin
+  select count(*) into v_audit_count from public.support_audit_events
+  where support_request_id in (
+    '90000000-0000-0000-0000-000000000204',
+    '90000000-0000-0000-0000-000000000202'
+  );
+  begin
+    perform public.start_support_session(
+      '90000000-0000-0000-0000-000000000202',
+      '90000000-0000-0000-0000-000000000102',
+      '2026-07-25 11:59:59+00'
+    );
+  exception when others then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'renewal started before the final 15 minutes';
+  end if;
+  if (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000204') <> 'active'
+     or (select status from public.support_requests where id = '90000000-0000-0000-0000-000000000202') <> 'approved' then
+    raise exception 'early renewal changed session state';
+  end if;
+  if (select count(*) from public.support_audit_events
+      where support_request_id in (
+        '90000000-0000-0000-0000-000000000204',
+        '90000000-0000-0000-0000-000000000202'
+      )) <> v_audit_count then
+    raise exception 'early renewal changed audit history';
+  end if;
+end;
+$$;
+
 -- The session state and both audit rows roll back together.
 do $$
 begin
