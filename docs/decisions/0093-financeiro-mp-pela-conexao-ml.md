@@ -114,9 +114,17 @@ Vault e refresh automático — e já dá acesso à conta MP do vendedor.
   passa a preservar o valor anterior quando o novo vier `null`, no mesmo padrão que a
   função já aplica a `comprador_nome`. Esses campos nunca voltam legitimamente para
   `null` — o MP não "des-estorna".
-- **Dívida remanescente:** `carregarLiquidoMP` continua engolindo erro de rede do MP com
-  `console.warn` e mapa vazio. Com o guard acima isso passa a significar "não atualiza"
-  em vez de "apaga", que é degradação aceitável.
+- **Falha do MP passa a ser distinguível de "não achei nada".** `carregarLiquidoMP` hoje
+  engole o erro e devolve mapa vazio, tornando os dois casos idênticos. Isso derrota a
+  intenção declarada do `sync-devolucao` — cujo comentário diz que a falha "usa o mesmo
+  retry via QStash" —, porque o erro nunca chega ao `catch` externo: o worker responde
+  200, o QStash não re-tenta, e nada volta àquele pedido. Como devolução chega dias ou
+  semanas depois da venda (fora da janela do `reconciliar-faturamento`), o estorno fica
+  permanentemente errado. O retorno passa a ser `Map | null`, e cada worker decide: os de
+  evento (`sync-venda`, `sync-devolucao`) gravam e respondem 502 para re-tentar; os de
+  varredura (`backfill`, `reconciliar`) logam e seguem, porque voltam sozinhos.
+- **Dívida remanescente:** o erro de rede do MP continua sem cobertura de teste — só a
+  parte pura da montagem do mapa fica testada.
 - **Dependência não contratual:** o acesso à API do MP vem do escopo concedido ao app do
   ML. Se o Mercado Livre separar os escopos no futuro, a leitura financeira quebra — e
   quebrará de forma visível (HTTP 401/403 no worker), não em silêncio.
