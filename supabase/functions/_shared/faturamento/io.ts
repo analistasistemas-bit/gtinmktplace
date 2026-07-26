@@ -1,5 +1,6 @@
 // IO do módulo Faturamento (ADR-0037): chamadas à API do ML e persistência.
-// Não testado por vitest (usa Deno/supabase-js); a lógica pura fica em venda.ts.
+// Usa Deno/supabase-js; a lógica pura fica em venda.ts. Só `upsertVenda` tem teste de vitest
+// (io.test.ts, com um fake do client) — é o caminho que grava estorno/liberação.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
