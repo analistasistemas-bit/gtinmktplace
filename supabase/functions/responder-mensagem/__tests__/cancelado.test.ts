@@ -48,7 +48,6 @@ beforeAll(async () => {
 
 describe('responder-mensagem — pedido cancelado', () => {
   it('retorna 409 sem renovar token, resolver comprador ou enviar', async () => {
-    fronteiras.token.mockResolvedValue('token');
     fronteiras.meta.mockResolvedValue({ orderStatus: 'cancelled' });
 
     const response = await handler(new Request('http://localhost', {

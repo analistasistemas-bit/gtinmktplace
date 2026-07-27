@@ -68,13 +68,10 @@ export async function buscarConversas(): Promise<Conversa[]> {
     if (m.item_id) c.item_id = m.item_id;
     if (m.comprador_nome) c.comprador_nome = m.comprador_nome;
     if (m.comprador_nick) c.comprador_nick = m.comprador_nick;
-    // Igual à RPC: o status efetivo é o da mensagem mais recente do pack, inclusive null.
     c.order_status = m.order_status;
     c.ultima = m.data_ml;
   }
   const conversas = [...porPack.values()];
-  // Aguardando = última mensagem (cronológica) é do comprador em pedido não cancelado — some
-  // quando há resposta nossa (pelo PubliAI OU pelo painel do ML, que o backfill/webhook traz como 'enviada').
   for (const c of conversas) {
     const ultima = c.mensagens[c.mensagens.length - 1];
     c.aguardando = c.order_status !== 'cancelled' && ultima?.direcao === 'recebida';
