@@ -10,6 +10,8 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Omissão de estorno de devolução no Dashboard/Faturamento (2026-07-27)** — Diego reportou que o reembolso de R$ 35,76 do pedido `#2000017218710936` não aparecia no card "Faturamento Bruto" do Dashboard (que mostrava apenas `1 devolução · R$ 12,50`). Causa raiz em duas frentes: (1) O pedido original foi criado em 02/07/2026 e o reembolso foi concluído em 20/07/2026; o `reconciliar-faturamento` só re-sincronizava vendas dos últimos 3 dias (`72h`), então o campo `estorno` no banco (`ml_vendas`) permaneceu `null`. (2) Em devoluções abertas sobre envios (`resource === 'shipment'`), `mapearDevolucao` mantinha `order_id = null`, impedindo o worker `sync-devolucao` de atualizar a venda. **Fix:** `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) passou a resolver o `order_id` via `shipping_id` na tabela `ml_vendas`. `reconciliar-faturamento` foi atualizado para re-sincronizar o pagamento/estorno via Mercado Pago para todos os pedidos com devoluções recentes (últimos 30 dias), independentemente da data da venda. Registro do pedido `#2000017218710936` reconciliado no banco (`estorno = 35.76`). 2.175 testes verdes, build limpo. Ver [[Faturamento]], [[Edge Functions]].
+
 - **Semáforo da variação ignorava imposto por origem (lote 35, 2026-07-18)** — Diego reportou
   divergência: o card "Análise para publicação" mostrava "Abaixo do mínimo" no topo mas "Vale a
   pena" na linha da variação, para o mesmo item. Causa raiz: o rollout do ADR-0055 (imposto por

@@ -9,6 +9,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-07-27
+
+- **Fix: reconciliação de estornos e devoluções antigas no Faturamento/Dashboard.** Reembolso de R$ 35,76 do pedido `#2000017218710936` não aparecia no Dashboard. `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) resolve `order_id` por `shipping_id` quando `claim.resource === 'shipment'`; `reconciliar-faturamento` re-sincroniza o pagamento/estorno via Mercado Pago para pedidos com devoluções recentes de até 30 dias. Ver [[Problemas Resolvidos]].
+
 ## 2026-07-12
 
 - **Fix: re-ingest UPDATE republicava a foto antiga ao trocar capa/imagem (plano 031).** O re-ingest
