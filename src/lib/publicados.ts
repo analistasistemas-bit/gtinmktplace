@@ -105,7 +105,6 @@ export function rotuloTipo(item: Pick<PublicadoItem, 'categoria' | 'tipo'>): str
 export const STATUS_PROBLEMA: ReadonlySet<StatusPublicado> = new Set<StatusPublicado>([
   'moderado',
   'inativo',
-  'pausado',
 ]);
 
 export interface FiltroPublicados {

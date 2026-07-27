@@ -8,10 +8,10 @@ const item = (status: StatusPublicado | undefined): PublicadoItem => ({
 });
 
 describe('filtrarPublicados — filtro virtual "problema"', () => {
-  it('inclui moderado, inativo e pausado; exclui ativo/encerrado/sem status', () => {
+  it('inclui apenas moderado e inativo; exclui ativo/pausado/encerrado/sem status', () => {
     const itens = (['ativo', 'pausado', 'encerrado', 'moderado', 'inativo', 'indisponivel', undefined] as const)
       .map((s) => item(s));
     const filtrados = filtrarPublicados(itens, { status: 'problema' });
-    expect(filtrados.map((i) => i.status)).toEqual(['pausado', 'moderado', 'inativo']);
+    expect(filtrados.map((i) => i.status)).toEqual(['moderado', 'inativo']);
   });
 });

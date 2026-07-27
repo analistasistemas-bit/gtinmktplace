@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, TrendingUp, Coins, Layers } from 'lucide-react';
+import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, TrendingUp, Coins, Layers, PauseCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
@@ -96,6 +96,12 @@ export function DashboardPublicados({
             <span className="flex items-center gap-1 text-warning"><AlertTriangle className="h-3.5 w-3.5" /> Com problema</span>
             <span className="font-semibold tabular-nums text-warning">{resumo.comProblema}</span>
           </div>
+          {resumo.pausados > 0 && (
+            <div className="mt-1 flex items-center justify-between text-muted-foreground">
+              <span className="flex items-center gap-1"><PauseCircle className="h-3.5 w-3.5" /> Pausados</span>
+              <span className="font-semibold tabular-nums">{resumo.pausados}</span>
+            </div>
+          )}
           <div className="mt-2 flex items-center justify-between border-t pt-2">
             <span className="flex items-center gap-1 text-info"><Layers className="h-3.5 w-3.5" /> Variações publicadas</span>
             <span className="font-semibold tabular-nums text-info">{resumo.variacoesPublicadas}</span>

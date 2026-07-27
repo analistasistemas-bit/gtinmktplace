@@ -7,6 +7,7 @@ export interface KpisDashboard {
   publicados: number;
   ativos: number;
   comProblema: number;
+  pausados: number;
   erros: number;
   aRevisar: number;
   variacoesPublicadas: number;
@@ -21,6 +22,7 @@ export function calcularKpisDashboard(
     publicados: publicados.length,
     ativos: statusItens.filter((s) => s.status === 'ativo').length,
     comProblema: statusItens.filter((s) => STATUS_PROBLEMA.has(s.status)).length,
+    pausados: statusItens.filter((s) => s.status === 'pausado').length,
     erros: lotes.reduce((acc, l) => acc + l.totalErros, 0),
     aRevisar: lotes.filter((l) => l.status === 'revisao').length,
     variacoesPublicadas: publicados.reduce((acc, p) => acc + (p.qtdVariacoes ?? 0), 0),

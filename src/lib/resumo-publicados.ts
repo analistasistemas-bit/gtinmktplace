@@ -4,6 +4,7 @@ export interface ResumoPublicados {
   total: number;
   ativos: number;
   comProblema: number;
+  pausados: number;
   encalhados: number;
   variacoesPublicadas: number;
   topFat: PublicadoItem[];
@@ -19,8 +20,9 @@ export function calcularResumoPublicados(itens: PublicadoItem[]): ResumoPublicad
   const total = itens.length;
   const ativos = itens.filter((i) => i.status === 'ativo').length;
   const comProblema = itens.filter(
-    (i) => i.status === 'moderado' || i.status === 'inativo' || i.status === 'pausado',
+    (i) => i.status === 'moderado' || i.status === 'inativo',
   ).length;
+  const pausados = itens.filter((i) => i.status === 'pausado').length;
   const encalhados = itens.filter(
     (i) => i.status === 'ativo' && (i.unidadesVendidas ?? 0) === 0,
   ).length;
@@ -33,5 +35,5 @@ export function calcularResumoPublicados(itens: PublicadoItem[]): ResumoPublicad
     .filter((i) => (i.unidadesVendidas ?? 0) > 0)
     .sort((a, b) => (b.unidadesVendidas ?? 0) - (a.unidadesVendidas ?? 0))
     .slice(0, 5);
-  return { total, ativos, comProblema, encalhados, variacoesPublicadas, topFat, topUnid };
+  return { total, ativos, comProblema, pausados, encalhados, variacoesPublicadas, topFat, topUnid };
 }

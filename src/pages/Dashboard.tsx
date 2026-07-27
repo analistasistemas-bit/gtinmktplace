@@ -124,6 +124,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const atencao = montarAtencao({
     aRevisar: kpis.aRevisar,
     comProblema: semStatus ? 0 : kpis.comProblema,
+    pausados: semStatus ? 0 : kpis.pausados,
     erros: kpis.erros,
     errosDestino,
     perguntas: perguntasQ.count,

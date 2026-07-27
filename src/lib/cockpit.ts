@@ -70,6 +70,7 @@ export interface ItemAtencao { chave: string; label: string; destino: string }
 export function montarAtencao(input: {
   aRevisar: number;
   comProblema: number;
+  pausados?: number;
   erros: number;
   errosDestino: string;
   perguntas: number;
@@ -81,6 +82,8 @@ export function montarAtencao(input: {
     out.push({ chave: 'revisar', label: plural(input.aRevisar, 'lote a revisar', 'lotes a revisar'), destino: '/revisao' });
   if (input.comProblema > 0)
     out.push({ chave: 'problema', label: plural(input.comProblema, 'anúncio com problema', 'anúncios com problema'), destino: '/publicados?status=problema' });
+  if (input.pausados && input.pausados > 0)
+    out.push({ chave: 'pausado', label: plural(input.pausados, 'anúncio pausado', 'anúncios pausados'), destino: '/publicados?status=pausado' });
   if (input.erros > 0)
     out.push({ chave: 'erros', label: plural(input.erros, 'erro de publicação', 'erros de publicação'), destino: input.errosDestino });
   if (input.perguntas > 0)

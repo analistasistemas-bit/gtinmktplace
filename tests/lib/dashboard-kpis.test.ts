@@ -26,7 +26,7 @@ function st(status: StatusPublicadoItem['status']): StatusPublicadoItem {
 describe('calcularKpisDashboard', () => {
   it('tudo zero para entradas vazias', () => {
     expect(calcularKpisDashboard([], [], [])).toEqual({
-      publicados: 0, ativos: 0, comProblema: 0, erros: 0, aRevisar: 0, variacoesPublicadas: 0,
+      publicados: 0, ativos: 0, comProblema: 0, pausados: 0, erros: 0, aRevisar: 0, variacoesPublicadas: 0,
     });
   });
 
@@ -38,16 +38,19 @@ describe('calcularKpisDashboard', () => {
   it('ativos conta apenas status "ativo"', () => {
     const r = calcularKpisDashboard([], [], [st('ativo'), st('ativo'), st('pausado')]);
     expect(r.ativos).toBe(2);
+    expect(r.pausados).toBe(1);
   });
 
-  it('comProblema conta moderado + inativo + pausado', () => {
+  it('comProblema conta moderado + inativo', () => {
     const r = calcularKpisDashboard([], [], [st('moderado'), st('inativo'), st('pausado')]);
-    expect(r.comProblema).toBe(3);
+    expect(r.comProblema).toBe(2);
+    expect(r.pausados).toBe(1);
   });
 
   it('comProblema NÃO conta ativo, encerrado nem indisponivel', () => {
     const r = calcularKpisDashboard([], [], [st('ativo'), st('encerrado'), st('indisponivel')]);
     expect(r.comProblema).toBe(0);
+    expect(r.pausados).toBe(0);
   });
 
   it('erros = soma de totalErros dos lotes', () => {

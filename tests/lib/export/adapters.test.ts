@@ -196,7 +196,7 @@ describe('buildPublicadosReport — KPIs batem com a tela', () => {
   const todos = [
     pub({ familiaId: 'a', titulo: 'Linha', status: 'ativo', valorVendido: 300, unidadesVendidas: 5, qtdVariacoes: 10 }),
     pub({ familiaId: 'b', titulo: 'Cola', status: 'ativo', valorVendido: 0, unidadesVendidas: 0, qtdVariacoes: 5 }),
-    pub({ familiaId: 'c', titulo: 'Fita', status: 'pausado', valorVendido: 0, unidadesVendidas: 0, qtdVariacoes: 3 }),
+    pub({ familiaId: 'c', titulo: 'Fita', status: 'moderado', valorVendido: 0, unidadesVendidas: 0, qtdVariacoes: 3 }),
   ];
   const base = {
     itens: [], todosItens: todos, liquido: 602.92,
