@@ -4,38 +4,66 @@
 
 ## `backfill-faturamento` — timeout horário corrigido (2026-07-27)
 
-**Sintoma:** 504 de hora em hora, **28 FAILED contra 1 DELIVERED** em 2026-07-26. Não era
+**Sintoma:** 504/546 de hora em hora, **28 FAILED contra 1 DELIVERED** em 2026-07-26. Não era
 regressão do ADR-0093 — o primeiro erro do ciclo das 23:00 foi às 23:02:32, antes daquele deploy
 terminar (~23:35).
 
-**Causa (medida, não presumida):** com `dias:1` — quase só o custo fixo — a execução já levava
-**117s** de um teto de ~150s. Logo o problema não era a janela de 30 dias, e sim o custo fixo:
-três laços rodavam **um item por vez**, o pior deles 1 GET por pack de mensagens, até 200 packs.
+### Causa raiz: o body do schedule estava duplamente codificado
 
-**Correção:** paralelizar perguntas, claims e mensagens com o mesmo `chunk(_, PARALELAS=5)` que o
-laço de pedidos já usava no mesmo arquivo. Nos títulos das perguntas a dedupe por item foi
-preservada (prefetch dos ids únicos antes do upsert).
+O schedule do QStash guardava `body = '"{\"dias\":30}"'`. O worker faz `JSON.parse(body)` e
+recebia uma **string**, não um objeto — logo `payload.dias` era `undefined` e o `janela()` caía no
+default `dias = 90`. **O backfill agendado nunca rodou 30 dias: sempre rodou 90.** Pelo modelo de
+custo medido (abaixo), 90 dias ≈ 294s contra um teto de ~150s — nunca teve como passar.
 
-**Medido em produção depois do fix:**
+É a mesma armadilha de double-encoding do QStash já registrada no runbook do projeto. Auditados os
+5 schedules: **só o backfill passa body**, e era o único afetado.
+
+**Correção:** schedule recriado com body JSON correto. Corrigir só o body **não bastou** — o ciclo
+das 02:00 ainda falhou (546/504). O run agendado erra em ~150s enquanto a mesma carga disparada
+isoladamente passa em 129s: 14% de folga não sobrevive à variação, e no minuto `:00` disparam três
+schedules ao mesmo tempo (`backfill`, `reconciliar-faturamento`, `reconciliar-convergencia-up`),
+todos batendo na API do ML.
+
+Config final: cron **`30 * * * *`** (fora do minuto congestionado) e **`{"dias":7}`** (66s, ~56% de
+folga). Reduzir a janela **não perde cobertura**: o schedule nunca funcionou, então não havia
+cobertura a preservar — sai de "falha sempre" para "sincroniza 7 dias de forma confiável". O
+`reconciliar-faturamento` já cobre 72h de hora em hora sem falhar, e 7 dias dá 2,3× essa margem.
+Schedule atual: `scd_5cJRAXQbinVvzgg5vfRKhzhRH6sJ`.
+
+### Correção de desempenho (necessária, mas não era a causa raiz)
+
+Medição antes de assumir: com `dias:1` — quase só o custo fixo — a execução levava **117s**. Três
+laços rodavam **um item por vez**, o pior 1 GET por pack de mensagens, até 200 packs. Passaram a
+usar o mesmo `chunk(_, PARALELAS=5)` que o laço de pedidos já usava. A dedupe de títulos por item
+foi preservada (prefetch dos ids únicos).
+
+Sem isso, mesmo com o body corrigido os 30 dias não caberiam.
+
+**Medido em produção depois das duas correções:**
 
 | janela | antes | depois |
 |---|---|---|
-| 30 dias (carga do schedule) | timeout 504 | **129s · DELIVERED 200** |
+| 30 dias (o que o schedule pede) | timeout | **129s · DELIVERED 200** |
 | 7 dias | — | 66s |
 
 Modelo de custo: ≈**47s fixos + ~2,7s por dia de janela** (Avil, ~600 pedidos/30d).
 
-**Achado junto:** o botão "Sincronizar" do Faturamento mandava `dias=90` → ~294s pelo modelo.
-**Nunca completou.** Reduzido para 30 (≈129s). O cabeçalho do backfill também mentia ("não busca
-shipment por pedido, evita N+1") — o `9675f3a` adicionou frete/rastreio de propósito; comentário
-corrigido com o teto medido.
+### Achados junto
 
-- [x] Paralelizar os laços sequenciais; deploy v47; 30 dias passa em 129s.
+- O botão "Sincronizar" do Faturamento mandava `dias=90` → ~294s pelo modelo. **Nunca completou.**
+  Reduzido para 30 (≈129s).
+- O cabeçalho do backfill afirmava "não busca shipment por pedido (evita N+1)" — o `9675f3a`
+  adicionou frete/rastreio de propósito. Comentário corrigido, com o teto medido documentado.
+
+- [x] Body do schedule corrigido (causa raiz).
+- [x] Laços sequenciais paralelizados; deploy v48.
 - [x] Botão "Sincronizar" de 90 → 30 dias.
-- [ ] **Decisão pendente do Diego:** 129s deixa só 14% de folga e o volume cresce. Reduzir a
-  janela do schedule de 30 → 7 dias (66s) daria folga confortável, já que o
-  `reconciliar-faturamento` cobre 72h de hora em hora sem falhar — ao custo de deixar de
-  re-sincronizar pedidos de 8 a 30 dias, que é dado financeiro. Não alterado em silêncio.
+- [x] Schedule para `30 * * * *` + `dias:7` (66s, ~56% de folga).
+- [ ] **Observar:** o custo cresce ~2,7s por dia de janela e com o volume de pedidos. Quando os 7
+  dias passarem de ~100s, o caminho é tornar o backfill retomável entre execuções (processar em
+  fatias e continuar na execução seguinte), não encolher mais a janela.
+- [ ] **Nota de arquitetura:** o botão "Sincronizar" (30 dias, ~129s) roda isolado e passa, mas
+  está no mesmo limite. Se der timeout para o usuário, é o mesmo teto — não um bug novo.
 
 ## Financeiro do Mercado Pago pela conexão OAuth do ML (ADR-0093) — 2026-07-26
 
