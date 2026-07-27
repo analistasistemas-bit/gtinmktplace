@@ -69,6 +69,34 @@
 | **Utilitário** ||||
 | hello | false | HTTP (smoke test) | sim |
 
+
+## Schedules do QStash (cron + body)
+
+Só existem dentro do QStash — **não há schedules-as-code neste repositório**. Esta tabela é a
+referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cron.
+
+| Função | Cron (UTC) | Body | Retries |
+|---|---|---|---|
+| `reconciliar-convergencia-up` | `*/15 * * * *` | *(sem body)* | 3 |
+| `backfill-faturamento` | `30 * * * *` | `{"dias":7}` | 3 |
+| `monitorar-moderados` | `0 */6 * * *` | *(sem body)* | 3 |
+| `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
+| `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
+
+⚠️ **Armadilha do body duplamente codificado.** O `backfill-faturamento` é o único schedule que
+passa parâmetros, e ficou semanas com `body = '"{\"dias\":30}"'` — uma **string** contendo JSON,
+não um objeto. O worker faz `JSON.parse` e recebia string, `dias` virava `undefined` e a janela caía
+no default de 90 dias, carga que não cabe numa execução: falhava de hora em hora, calado. Ao criar
+ou editar um schedule com body, conferir depois:
+
+```bash
+curl -s https://qstash.upstash.io/v2/schedules -H "Authorization: Bearer $QSTASH_TOKEN" \
+  | python3 -c "import sys,json;[print(s['cron'], repr(s.get('body'))) for s in json.load(sys.stdin)]"
+```
+
+O body tem que aparecer como `'{"dias":7}'` — se vier com aspas escapadas por fora, está errado.
+O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corrigido mesmo assim.
+
 ---
 
 ## Módulos compartilhados (`_shared/`)

@@ -64,15 +64,21 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
     const perguntas = await buscarPerguntasSeller(token);
     const itemIds = [...new Set(perguntas.map((q) => q.item_id).filter((i): i is string => !!i))];
     const titulos = new Map<string, string | null>();
+    const tituloFalhou = new Set<string>();
     for (const lote of chunk(itemIds, PARALELAS)) {
       await Promise.all(lote.map(async (itemId) => {
-        try { titulos.set(itemId, await buscarTituloItem(token, itemId)); } catch { /* título é best-effort */ }
+        try { titulos.set(itemId, await buscarTituloItem(token, itemId)); } catch { tituloFalhou.add(itemId); }
       }));
     }
     for (const lote of chunk(perguntas, PARALELAS)) {
       await Promise.all(lote.map(async (q) => {
         try {
           const itemId = q.item_id ?? null;
+          // `upsertPergunta` grava item_titulo incondicionalmente: passar null quando a busca do
+          // título FALHOU apagaria o título já salvo. Antes da paralelização o catch pulava o
+          // upsert inteiro nesse caso; preserva-se o mesmo efeito. Título que veio null de verdade
+          // (item sem título) segue sendo gravado.
+          if (itemId && tituloFalhou.has(itemId)) return;
           await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
         } catch { /* segue */ }
       }));
@@ -173,8 +179,21 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
   }
 
   let payload: Body = {};
-  try { payload = body ? JSON.parse(body) : {}; } catch { /* vazio */ }
+  try {
+    let parsed: unknown = body ? JSON.parse(body) : {};
+    // O QStash pode guardar o body duplamente codificado (uma string contendo JSON). Foi
+    // exatamente isso: o schedule tinha `"{\"dias\":30}"`, o parse devolvia uma string, `dias`
+    // ficava undefined e a janela caía no default de 90 dias — carga que não cabe numa execução.
+    // Passou despercebido por semanas porque falhava calado. Desembrulha e avisa alto.
+    if (typeof parsed === 'string') {
+      console.warn('backfill: body duplamente codificado (string em vez de objeto) — desembrulhando; corrija o schedule');
+      parsed = JSON.parse(parsed);
+    }
+    if (parsed && typeof parsed === 'object') payload = parsed as Body;
+  } catch { /* vazio */ }
   const intervalo = janela(payload);
+  // A janela efetiva vai para o log: sem isso, cair no default é indistinguível de ter sido pedido.
+  console.log(`backfill: janela efetiva ${intervalo.desde}..${intervalo.ate} (dias=${payload.dias ?? 'DEFAULT 90'})`);
 
   let query = admin.from('marketplace_connections').select('id, org_id, canal, conta_externa_id, expires_at, criado_por').eq('canal', 'mercado_livre');
   if (scopedOrgId) query = query.eq('org_id', scopedOrgId);
