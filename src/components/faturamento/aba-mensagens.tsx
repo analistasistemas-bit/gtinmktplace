@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Sparkles, Send, MessagesSquare } from 'lucide-react';
+import { Sparkles, Send, MessagesSquare, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
 import { responderMensagem, sugerirRespostaMensagem, type Conversa } from '@/lib/mensagens';
-import { fmtDataCurta } from '@/lib/ml-status';
+import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -17,6 +17,8 @@ function CardConversa({ c }: { c: Conversa }) {
   const [enviando, setEnviando] = useState(false);
 
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
+  const cancelada = c.order_status === 'cancelled';
+  const cliente = c.comprador_nome?.trim() || c.comprador_nick?.trim() || 'Comprador';
 
   async function sugerir() {
     if (!ultimaRecebida) return;
@@ -50,10 +52,21 @@ function CardConversa({ c }: { c: Conversa }) {
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
             <span className="truncate">{c.item_titulo ?? (c.order_id ? `Pedido ${c.order_id}` : c.pack_id)}</span>
+            {c.item_id && (
+              <a
+                href={urlAnuncioML(c.item_id)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Abrir anúncio no Mercado Livre"
+                className="ml-1 inline-block text-info hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
             <span> · {fmtDataCurta(c.ultima)}</span>
           </div>
         </div>
-        {c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
+        {cancelada ? <StatusPill tone="danger">Pedido cancelado</StatusPill> : c.aguardando && <StatusPill tone="warning">Aguardando resposta</StatusPill>}
       </div>
 
       <div className="mb-3 space-y-2">
@@ -65,7 +78,7 @@ function CardConversa({ c }: { c: Conversa }) {
             )}>
               <p className="whitespace-pre-wrap">{m.texto}</p>
               <div className="mt-1 text-[10px] text-muted-foreground">
-                {m.direcao === 'enviada' ? 'Você' : 'Comprador'} · {fmtDataCurta(m.data_ml)}
+                {m.direcao === 'enviada' ? 'Você' : cliente} · {fmtDataCurta(m.data_ml)}
               </div>
             </div>
           </div>
@@ -79,15 +92,16 @@ function CardConversa({ c }: { c: Conversa }) {
           placeholder="Escreva ao comprador ou use a sugestão da IA…"
           rows={2}
           maxLength={350}
+          disabled={cancelada}
         />
         <div className="flex items-center justify-between gap-2">
-          <Button variant="outline" size="sm" onClick={sugerir} disabled={sugerindo || !ultimaRecebida}>
+          <Button variant="outline" size="sm" onClick={sugerir} disabled={cancelada || sugerindo || !ultimaRecebida}>
             <Sparkles className={cn('mr-1.5 h-4 w-4', sugerindo && 'animate-pulse')} />
             {sugerindo ? 'Gerando…' : 'Sugerir resposta (IA)'}
           </Button>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-muted-foreground">{texto.length}/350</span>
-            <Button size="sm" onClick={responder} disabled={enviando || !texto.trim()}>
+            <Button size="sm" onClick={responder} disabled={cancelada || enviando || !texto.trim()}>
               <Send className="mr-1.5 h-4 w-4" />
               {enviando ? 'Enviando…' : 'Responder'}
             </Button>

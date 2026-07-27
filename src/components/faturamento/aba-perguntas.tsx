@@ -52,6 +52,7 @@ function CardPergunta({ p }: { p: Pergunta }) {
           <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="truncate">{p.item_titulo ?? p.item_id ?? '—'}</span>
             {urlItem && <a href={urlItem} target="_blank" rel="noreferrer" className="text-info hover:underline"><ExternalLink className="h-3 w-3" /></a>}
+            <span>· {p.comprador_nick?.trim() || 'Comprador'}</span>
             <span>· {fmtDataCurta(p.criada_em)}</span>
           </div>
           <p className="text-sm font-medium">{p.texto}</p>

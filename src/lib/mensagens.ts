@@ -8,6 +8,10 @@ export interface Mensagem {
   direcao: 'recebida' | 'enviada';
   texto: string;
   item_titulo: string | null;
+  item_id: string | null;
+  comprador_nome: string | null;
+  comprador_nick: string | null;
+  order_status: string | null;
   data_ml: string | null;
 }
 
@@ -16,8 +20,12 @@ export interface Conversa {
   pack_id: string;
   order_id: string | null;
   item_titulo: string | null;
+  item_id: string | null;
+  comprador_nome: string | null;
+  comprador_nick: string | null;
+  order_status: string | null;
   mensagens: Mensagem[];
-  /** Aguardando resposta = a última mensagem é do comprador (ainda não respondemos). ADR-0067. */
+  /** Aguardando resposta = última mensagem do comprador em pedido não cancelado. ADR-0067. */
   aguardando: boolean;
   ultima: string | null;
 }
@@ -26,7 +34,7 @@ export interface Conversa {
 export async function buscarConversas(): Promise<Conversa[]> {
   const { data, error } = await supabase
     .from('ml_mensagens')
-    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, data_ml')
+    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, item_id, comprador_nome, comprador_nick, order_status, data_ml')
     // 1000 últimas mensagens; paginação real se a aba crescer. Ordena desc (mais recentes
     // primeiro) para o .limit() pegar as certas, depois reverte para a ordem cronológica
     // ascendente que o resto da função espera. nullsFirst: false → nulls ficam no FIM do desc,
@@ -41,19 +49,34 @@ export async function buscarConversas(): Promise<Conversa[]> {
   for (const m of lista) {
     let c = porPack.get(m.pack_id);
     if (!c) {
-      c = { pack_id: m.pack_id, order_id: m.order_id, item_titulo: m.item_titulo, mensagens: [], aguardando: false, ultima: null };
+      c = {
+        pack_id: m.pack_id,
+        order_id: m.order_id,
+        item_titulo: m.item_titulo,
+        item_id: m.item_id,
+        comprador_nome: m.comprador_nome,
+        comprador_nick: m.comprador_nick,
+        order_status: m.order_status,
+        mensagens: [],
+        aguardando: false,
+        ultima: null,
+      };
       porPack.set(m.pack_id, c);
     }
     c.mensagens.push(m);
     if (m.item_titulo && !c.item_titulo) c.item_titulo = m.item_titulo;
+    if (m.item_id && !c.item_id) c.item_id = m.item_id;
+    if (m.comprador_nome && !c.comprador_nome) c.comprador_nome = m.comprador_nome;
+    if (m.comprador_nick && !c.comprador_nick) c.comprador_nick = m.comprador_nick;
+    if (m.order_status && !c.order_status) c.order_status = m.order_status;
     c.ultima = m.data_ml;
   }
   const conversas = [...porPack.values()];
-  // Aguardando = última mensagem (cronológica) é do comprador — some quando há resposta nossa
-  // (pelo PubliAI OU pelo painel do ML, que o backfill/webhook traz como 'enviada').
+  // Aguardando = última mensagem (cronológica) é do comprador em pedido não cancelado — some
+  // quando há resposta nossa (pelo PubliAI OU pelo painel do ML, que o backfill/webhook traz como 'enviada').
   for (const c of conversas) {
     const ultima = c.mensagens[c.mensagens.length - 1];
-    c.aguardando = ultima?.direcao === 'recebida';
+    c.aguardando = c.order_status !== 'cancelled' && ultima?.direcao === 'recebida';
   }
   // Aguardando no topo; depois mais recentes.
   return conversas.sort((a, b) =>

@@ -23,6 +23,10 @@ const msg = (over: Partial<Mensagem>): Mensagem => ({
   direcao: over.direcao ?? 'recebida',
   texto: over.texto ?? 'texto',
   item_titulo: over.item_titulo ?? null,
+  item_id: over.item_id ?? null,
+  comprador_nome: over.comprador_nome ?? null,
+  comprador_nick: over.comprador_nick ?? null,
+  order_status: over.order_status ?? null,
   // `??` trataria um `null` explícito como "não informado" e cairia no default — usa 'in' para
   // permitir que o teste do caso `data_ml: null` passe null de propósito.
   data_ml: 'data_ml' in over ? (over.data_ml as string | null) : '2026-07-10T10:00:00Z',
@@ -54,6 +58,27 @@ describe('buscarConversas', () => {
     const conversas = await buscarConversas();
     expect(conversas[0].aguardando).toBe(false);
     expect(contarAguardando(conversas)).toBe(0);
+  });
+
+  it('pedido cancelado nunca aguarda resposta mesmo se a última mensagem é recebida', async () => {
+    mockOrder.mockResolvedValueOnce({
+      data: [msg({
+        direcao: 'recebida',
+        order_status: 'cancelled',
+        comprador_nome: 'Maria Silva',
+        comprador_nick: 'MARIA_01',
+        item_id: 'MLB123',
+      })],
+      error: null,
+    });
+    const [conversa] = await buscarConversas();
+    expect(conversa).toMatchObject({
+      aguardando: false,
+      order_status: 'cancelled',
+      comprador_nome: 'Maria Silva',
+      comprador_nick: 'MARIA_01',
+      item_id: 'MLB123',
+    });
   });
 
   it('multi-pack: aguardando vem antes; entre não-aguardando, mais recente primeiro', async () => {

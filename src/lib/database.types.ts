@@ -611,13 +611,17 @@ export type Database = {
       ml_mensagens: {
         Row: {
           atualizado_em: string
+          comprador_nick: string | null
+          comprador_nome: string | null
           data_ml: string | null
           direcao: string
           id: string
+          item_id: string | null
           item_titulo: string | null
           lida: boolean
           message_id: string
           order_id: string | null
+          order_status: string | null
           org_id: string | null
           pack_id: string
           raw: Json | null
@@ -626,13 +630,17 @@ export type Database = {
         }
         Insert: {
           atualizado_em?: string
+          comprador_nick?: string | null
+          comprador_nome?: string | null
           data_ml?: string | null
           direcao: string
           id?: string
+          item_id?: string | null
           item_titulo?: string | null
           lida?: boolean
           message_id: string
           order_id?: string | null
+          order_status?: string | null
           org_id?: string | null
           pack_id: string
           raw?: Json | null
@@ -641,13 +649,17 @@ export type Database = {
         }
         Update: {
           atualizado_em?: string
+          comprador_nick?: string | null
+          comprador_nome?: string | null
           data_ml?: string | null
           direcao?: string
           id?: string
+          item_id?: string | null
           item_titulo?: string | null
           lida?: boolean
           message_id?: string
           order_id?: string | null
+          order_status?: string | null
           org_id?: string | null
           pack_id?: string
           raw?: Json | null
@@ -707,6 +719,7 @@ export type Database = {
         Row: {
           atualizado_em: string
           comprador_id: number | null
+          comprador_nick: string | null
           criada_em: string | null
           id: string
           item_id: string | null
@@ -723,6 +736,7 @@ export type Database = {
         Insert: {
           atualizado_em?: string
           comprador_id?: number | null
+          comprador_nick?: string | null
           criada_em?: string | null
           id?: string
           item_id?: string | null
@@ -739,6 +753,7 @@ export type Database = {
         Update: {
           atualizado_em?: string
           comprador_id?: number | null
+          comprador_nick?: string | null
           criada_em?: string | null
           id?: string
           item_id?: string | null

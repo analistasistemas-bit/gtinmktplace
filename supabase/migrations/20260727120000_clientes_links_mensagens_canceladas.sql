@@ -42,3 +42,21 @@ set item_id = coalesce(m.item_id, meta.item_id),
     order_status = coalesce(meta.order_status, m.order_status)
 from meta
 where m.id = meta.id;
+
+create or replace function public.contar_conversas_aguardando()
+returns integer
+language sql
+security definer
+set search_path = public
+as $$
+  with ultimas as (
+    select distinct on (pack_id) direcao, order_status
+    from public.ml_mensagens
+    where user_id = auth.uid()
+    order by pack_id, data_ml desc nulls last, message_id desc
+  )
+  select count(*)::int
+  from ultimas
+  where direcao = 'recebida'
+    and coalesce(order_status, '') <> 'cancelled';
+$$;

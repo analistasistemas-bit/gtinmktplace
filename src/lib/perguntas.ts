@@ -5,6 +5,7 @@ export interface Pergunta {
   question_id: number;
   item_id: string | null;
   item_titulo: string | null;
+  comprador_nick: string | null;
   texto: string;
   status: string;
   resposta: string | null;
@@ -16,7 +17,7 @@ export interface Pergunta {
 export async function buscarPerguntas(): Promise<Pergunta[]> {
   const { data, error } = await supabase
     .from('ml_perguntas')
-    .select('id, question_id, item_id, item_titulo, texto, status, resposta, respondida_em, criada_em')
+    .select('id, question_id, item_id, item_titulo, comprador_nick, texto, status, resposta, respondida_em, criada_em')
     .order('criada_em', { ascending: false });
   if (error) throw new Error(error.message);
   const lista = (data ?? []) as Pergunta[];
