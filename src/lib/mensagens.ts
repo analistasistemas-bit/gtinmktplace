@@ -41,6 +41,7 @@ export async function buscarConversas(): Promise<Conversa[]> {
     // e após o .reverse() acabam no INÍCIO da lista cronológica — nunca decidem `aguardando`/
     // `ultima` de um pack (plan 037).
     .order('data_ml', { ascending: false, nullsFirst: false })
+    .order('message_id', { ascending: false })
     .limit(1000);
   if (error) throw new Error(error.message);
   const lista = ((data ?? []) as Mensagem[]).reverse();

@@ -11,6 +11,9 @@ type Linha = Record<string, unknown> | null;
  */
 function criarAdminFake() {
   let linha: Linha = null;
+  const atualizarMensagens = vi.fn(() => ({
+    eq: () => ({ or: async () => ({ error: null }) }),
+  }));
   const upsertVendas = vi.fn((row: Record<string, unknown>) => {
     linha = row;
     return { select: () => ({ single: async () => ({ data: { id: 'venda-1' }, error: null }) }) };
@@ -21,11 +24,13 @@ function criarAdminFake() {
           select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: linha }) }) }) }),
           upsert: upsertVendas,
         }
-      : {
+      : tabela === 'ml_mensagens'
+        ? { update: atualizarMensagens }
+        : {
           delete: () => ({ eq: async () => ({ error: null }) }),
           upsert: async () => ({ error: null }),
         });
-  return { admin: { from } as unknown as Parameters<typeof upsertVenda>[0], upsertVendas };
+  return { admin: { from } as unknown as Parameters<typeof upsertVenda>[0], upsertVendas, atualizarMensagens };
 }
 
 const pedido: PedidoML = {
@@ -59,4 +64,13 @@ describe('upsertVenda', () => {
       estorno: 12.5, money_release_date: '2026-07-30T00:00:00.000-04:00',
     });
   });
+});
+
+it('transição para cancelado atualiza os snapshots do pack sem sincronizar mensagem nova', async () => {
+  const { admin, atualizarMensagens } = criarAdminFake();
+
+  await upsertVenda(admin, 'user-1', 'org-1', pedido, opts);
+  await upsertVenda(admin, 'user-1', 'org-1', { ...pedido, status: 'cancelled', pack_id: 777 }, opts);
+
+  expect(atualizarMensagens).toHaveBeenLastCalledWith({ order_status: 'cancelled' });
 });

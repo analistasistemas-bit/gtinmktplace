@@ -45,18 +45,23 @@ export async function upsertMensagens(
   sellerId: string | number,
   msgs: MensagemML[],
 ): Promise<{ novasRecebidas: number }> {
+  // null significa que a fonte atual não sabe o valor; omitir a coluna no upsert preserva o
+  // snapshot já completo de uma sincronização anterior (novas linhas continuam com null no DB).
+  const metadata = {
+    ...(meta.orderId != null ? { order_id: meta.orderId } : {}),
+    ...(meta.itemId != null ? { item_id: meta.itemId } : {}),
+    ...(meta.itemTitulo != null ? { item_titulo: meta.itemTitulo } : {}),
+    ...(meta.compradorNome != null ? { comprador_nome: meta.compradorNome } : {}),
+    ...(meta.compradorNick != null ? { comprador_nick: meta.compradorNick } : {}),
+    ...(meta.orderStatus != null ? { order_status: meta.orderStatus } : {}),
+  };
   const rows = msgs.map((m) => {
     const r = mapearMensagem(m, sellerId);
     return {
       user_id: userId,
       org_id: orgId,
       pack_id: String(packId),
-      order_id: meta.orderId,
-      item_id: meta.itemId,
-      item_titulo: meta.itemTitulo,
-      comprador_nome: meta.compradorNome,
-      comprador_nick: meta.compradorNick,
-      order_status: meta.orderStatus,
+      ...metadata,
       raw: m as unknown as Record<string, unknown>,
       atualizado_em: new Date().toISOString(),
       ...r,
@@ -108,11 +113,12 @@ export async function resolverCompradorId(
 export async function resolverMetaPack(
   admin: SupabaseClient, userId: string, packId: string | number,
 ): Promise<MetaPack> {
-  const { data } = await admin.from('ml_vendas')
+  const { data, error } = await admin.from('ml_vendas')
     .select('order_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)')
     .eq('user_id', userId)
     .or(`pack_id.eq.${packId},order_id.eq.${packId}`)
     .limit(1).maybeSingle();
+  if (error) throw new Error(`resolver meta pack: ${error.message}`);
   const v = data as {
     order_id?: number | string | null;
     status?: string | null;

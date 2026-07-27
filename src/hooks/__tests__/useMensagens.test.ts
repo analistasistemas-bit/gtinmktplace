@@ -12,9 +12,10 @@ vi.mock('@/lib/supabase', () => ({
 const { contarConversasAguardando } = await import('../useMensagens');
 
 describe('contarConversasAguardando', () => {
-  it('retorna o número da RPC', async () => {
+  it('consulta a regra SQL da badge e retorna seu número', async () => {
     mockRpc.mockResolvedValueOnce({ data: 3, error: null });
     expect(await contarConversasAguardando()).toBe(3);
+    expect(mockRpc).toHaveBeenCalledWith('contar_conversas_aguardando');
   });
 
   it('error não-nulo → lança (o hook expõe isError; badge distingue de "0")', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mensagemErroEnvioML, pedidoCancelado, responderMensagemPedido, upsertMensagens } from '../mensagens-io';
+import { mensagemErroEnvioML, pedidoCancelado, resolverMetaPack, responderMensagemPedido, upsertMensagens } from '../mensagens-io';
 import type { MensagemML } from '../mensagem-mapper';
 
 const SELLER_ID = 999;
@@ -37,6 +37,19 @@ function criarAdminMock(idsQueSeraoInseridos: string[] | null = null) {
   const from = vi.fn(() => ({ upsert }));
   const admin = { from } as unknown as Parameters<typeof upsertMensagens>[0];
   return { admin, from, upsert };
+}
+
+function criarAdminMeta(data: unknown, error: { message: string } | null = null) {
+  const maybeSingle = vi.fn().mockResolvedValue({ data, error });
+  const limit = vi.fn(() => ({ maybeSingle }));
+  const or = vi.fn(() => ({ limit }));
+  const eq = vi.fn(() => ({ or }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+  return {
+    admin: { from } as unknown as Parameters<typeof resolverMetaPack>[0],
+    select,
+  };
 }
 
 const msgDoComprador = (id: string, dataMl: string): MensagemML => ({
@@ -98,6 +111,42 @@ describe('upsertMensagens', () => {
     expect(r).toEqual({ novasRecebidas: 0 });
     expect(from).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it('metadados ausentes não enviam null para apagar um snapshot já persistido', async () => {
+    const { admin, upsert } = criarAdminMock(['m1']);
+    await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', {
+      orderId: null, itemId: null, itemTitulo: null, compradorNome: null, compradorNick: null, orderStatus: null,
+    }, SELLER_ID, [msgDoComprador('m1', '2026-07-10T10:00:00Z')]);
+
+    const [row] = upsert.mock.calls[0][0] as Array<Record<string, unknown>>;
+    expect(row).not.toHaveProperty('order_id');
+    expect(row).not.toHaveProperty('item_id');
+    expect(row).not.toHaveProperty('item_titulo');
+    expect(row).not.toHaveProperty('comprador_nome');
+    expect(row).not.toHaveProperty('comprador_nick');
+    expect(row).not.toHaveProperty('order_status');
+  });
+});
+
+describe('resolverMetaPack', () => {
+  it('compõe os metadados completos da venda e do primeiro item', async () => {
+    const { admin, select } = criarAdminMeta({
+      order_id: 123,
+      status: 'paid',
+      comprador_nome: 'Maria Silva',
+      comprador_nick: 'MARIA_01',
+      ml_vendas_itens: [{ ml_item_id: 'MLB123', titulo: 'Produto X' }],
+    });
+
+    await expect(resolverMetaPack(admin, 'user-1', 'pack-1')).resolves.toEqual({ ...META, orderId: '123' });
+    expect(select).toHaveBeenCalledWith('order_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)');
+  });
+
+  it('erro ao ler a venda não vira metadados ausentes silenciosamente', async () => {
+    const { admin } = criarAdminMeta(null, { message: 'database unavailable' });
+
+    await expect(resolverMetaPack(admin, 'user-1', 'pack-1')).rejects.toThrow('resolver meta pack: database unavailable');
   });
 });
 

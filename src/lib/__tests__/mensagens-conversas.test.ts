@@ -4,16 +4,30 @@ import type { Mensagem } from '../mensagens';
 // buscarConversas agora encadeia .order().limit(1000) e reverte o array (plan 036) — o mock
 // representa o retorno bruto do Postgrest (desc + limit); mockOrder segue sendo o ponto de
 // controle dos fixtures, só que agora por trás de um `.limit()` na cadeia.
-const { mockOrder } = vi.hoisted(() => ({ mockOrder: vi.fn() }));
+const { mockLimit, mockDataOrder, mockMessageIdOrder } = vi.hoisted(() => ({
+  mockLimit: vi.fn(), mockDataOrder: vi.fn(), mockMessageIdOrder: vi.fn(),
+}));
 vi.mock('@/lib/supabase', () => ({
-  supabase: { from: () => ({ select: () => ({ order: () => ({ limit: mockOrder }) }) }) },
+  supabase: {
+    from: () => ({
+      select: () => ({
+        order: (...args: unknown[]) => {
+          mockDataOrder(...args);
+          const query = {
+            limit: mockLimit,
+            order: (...messageIdArgs: unknown[]) => {
+              mockMessageIdOrder(...messageIdArgs);
+              return query;
+            },
+          };
+          return query;
+        },
+      }),
+    }),
+  },
 }));
 
 const { buscarConversas } = await import('../mensagens');
-
-/** Espelha o reduce de useMensagensAguardando (src/hooks/useMensagens.ts) sem montar o hook/react-query. */
-const contarAguardando = (conversas: Array<{ aguardando: boolean }>) =>
-  conversas.reduce((n, c) => n + (c.aguardando ? 1 : 0), 0);
 
 const msg = (over: Partial<Mensagem>): Mensagem => ({
   id: over.id ?? 'id-1',
@@ -34,7 +48,7 @@ const msg = (over: Partial<Mensagem>): Mensagem => ({
 
 describe('buscarConversas', () => {
   it('pack com última mensagem do comprador → aguardando: true; badge conta 1', async () => {
-    mockOrder.mockResolvedValueOnce({
+    mockLimit.mockResolvedValueOnce({
       data: [
         msg({ id: '2', message_id: 'm2', direcao: 'recebida', data_ml: '2026-07-10T11:00:00Z' }),
         msg({ id: '1', message_id: 'm1', direcao: 'enviada', data_ml: '2026-07-10T10:00:00Z' }),
@@ -44,11 +58,10 @@ describe('buscarConversas', () => {
     const conversas = await buscarConversas();
     expect(conversas).toHaveLength(1);
     expect(conversas[0].aguardando).toBe(true);
-    expect(contarAguardando(conversas)).toBe(1);
   });
 
   it('pack respondido (última é enviada) → aguardando: false', async () => {
-    mockOrder.mockResolvedValueOnce({
+    mockLimit.mockResolvedValueOnce({
       data: [
         msg({ id: '2', message_id: 'm2', direcao: 'enviada', data_ml: '2026-07-10T11:00:00Z' }),
         msg({ id: '1', message_id: 'm1', direcao: 'recebida', data_ml: '2026-07-10T10:00:00Z' }),
@@ -57,11 +70,10 @@ describe('buscarConversas', () => {
     });
     const conversas = await buscarConversas();
     expect(conversas[0].aguardando).toBe(false);
-    expect(contarAguardando(conversas)).toBe(0);
   });
 
   it('pedido cancelado nunca aguarda resposta mesmo se a última mensagem é recebida', async () => {
-    mockOrder.mockResolvedValueOnce({
+    mockLimit.mockResolvedValueOnce({
       data: [msg({
         direcao: 'recebida',
         order_status: 'cancelled',
@@ -82,7 +94,7 @@ describe('buscarConversas', () => {
   });
 
   it('status da mensagem mais recente cancela o pack mesmo após status paid', async () => {
-    mockOrder.mockResolvedValueOnce({
+    mockLimit.mockResolvedValueOnce({
       data: [
         msg({ id: '2', message_id: 'm2', direcao: 'recebida', order_status: 'cancelled', data_ml: '2026-07-10T11:00:00Z' }),
         msg({ id: '1', message_id: 'm1', direcao: 'enviada', order_status: 'paid', data_ml: '2026-07-10T10:00:00Z' }),
@@ -94,7 +106,7 @@ describe('buscarConversas', () => {
   });
 
   it('multi-pack: aguardando vem antes; entre não-aguardando, mais recente primeiro', async () => {
-    mockOrder.mockResolvedValueOnce({
+    mockLimit.mockResolvedValueOnce({
       data: [
         // pack "aguardando": última é do comprador
         msg({ id: '3', pack_id: 'aguardando', message_id: 'm3', direcao: 'recebida', data_ml: '2026-07-10T09:00:00Z' }),
@@ -110,14 +122,13 @@ describe('buscarConversas', () => {
   });
 
   it('lista vazia → [], badge 0', async () => {
-    mockOrder.mockResolvedValueOnce({ data: [], error: null });
+    mockLimit.mockResolvedValueOnce({ data: [], error: null });
     const conversas = await buscarConversas();
     expect(conversas).toEqual([]);
-    expect(contarAguardando(conversas)).toBe(0);
   });
 
   it('data_ml: null vai para o início cronológico (nulls last no desc) e nunca decide o aguardando', async () => {
-    mockOrder.mockResolvedValueOnce({
+    mockLimit.mockResolvedValueOnce({
       data: [
         // query real: order('data_ml', { ascending: false, nullsFirst: false }) — desc com nulls
         // LAST. A mensagem datada vem primeiro no bruto, a null (sem data) vem por último.
@@ -132,5 +143,21 @@ describe('buscarConversas', () => {
     // aguardando: true, e `ultima` reflete a data dela em vez de null.
     expect(conversas[0].aguardando).toBe(true);
     expect(conversas[0].ultima).toBe('2026-07-10T10:00:00Z');
+  });
+
+  it('timestamp igual usa message_id para manter a mesma última mensagem da RPC', async () => {
+    mockLimit.mockResolvedValueOnce({
+      data: [
+        msg({ id: '2', message_id: 'm2', direcao: 'recebida', order_status: 'cancelled', data_ml: '2026-07-10T10:00:00Z' }),
+        msg({ id: '1', message_id: 'm1', direcao: 'enviada', order_status: 'paid', data_ml: '2026-07-10T10:00:00Z' }),
+      ],
+      error: null,
+    });
+
+    const [conversa] = await buscarConversas();
+
+    expect(mockDataOrder).toHaveBeenLastCalledWith('data_ml', { ascending: false, nullsFirst: false });
+    expect(mockMessageIdOrder).toHaveBeenLastCalledWith('message_id', { ascending: false });
+    expect(conversa).toMatchObject({ order_status: 'cancelled', aguardando: false });
   });
 });
