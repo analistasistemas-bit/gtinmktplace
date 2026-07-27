@@ -64,6 +64,19 @@ export async function upsertDevolucao(
   admin: SupabaseClient, userId: string, orgId: string | null, claim: ClaimML, ret: ReturnML | null,
 ): Promise<{ nova: boolean; row: ReturnType<typeof mapearDevolucao> }> {
   const row = mapearDevolucao(claim, ret);
+
+  // Se order_id é nulo mas o claim é sobre envio (resource = shipment), resolve order_id em ml_vendas
+  if (row.order_id === null && claim.resource === 'shipment' && claim.resource_id != null) {
+    const { data: venda } = await admin.from('ml_vendas')
+      .select('order_id')
+      .eq('user_id', userId)
+      .eq('shipping_id', String(claim.resource_id))
+      .maybeSingle();
+    if (venda?.order_id != null) {
+      row.order_id = Number(venda.order_id);
+    }
+  }
+
   const { data: anterior } = await admin.from('ml_devolucoes')
     .select('id').eq('user_id', userId).eq('claim_id', row.claim_id).maybeSingle();
   const nova = !anterior;

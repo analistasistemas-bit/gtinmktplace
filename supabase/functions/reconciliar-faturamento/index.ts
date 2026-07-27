@@ -6,8 +6,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
-import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
-import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
+import { buscarPedidosPeriodo, buscarPedido, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
@@ -65,6 +65,7 @@ Deno.serve(async (req) => {
       if (liquidoPorPayment === null) {
         console.warn(`reconciliar: leitura do MP falhou para a org ${orgId}; estorno/liberação preservados`);
       }
+      const pedidosReconciliadosIds = new Set<number>();
       for (const pedido of pedidos) {
         try {
           const shippingId = pedido.shipping?.id ?? null;
@@ -76,6 +77,7 @@ Deno.serve(async (req) => {
             freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
             liquidoPorPayment: liquidoPorPayment ?? undefined,
           });
+          pedidosReconciliadosIds.add(Number(pedido.id));
           total++;
         } catch { /* segue */ }
       }
@@ -99,7 +101,27 @@ Deno.serve(async (req) => {
         for (const claim of claims) {
           try {
             const ret = await buscarReturn(token, String(claim.id));
-            await upsertDevolucao(admin, userId, orgId, claim, ret);
+            const { row } = await upsertDevolucao(admin, userId, orgId, claim, ret);
+            if (row.order_id != null && !pedidosReconciliadosIds.has(row.order_id)) {
+              // Se a devolução tem order_id associado que não estava na janela recente (ex: venda antiga),
+              // re-sincroniza essa venda para capturar o estorno atualizado no Mercado Pago.
+              try {
+                const pedido = await buscarPedido(token, String(row.order_id));
+                const shippingId = pedido.shipping?.id ?? null;
+                const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
+                  buscarFreteVendedor(token, shippingId),
+                  buscarShipment(token, shippingId),
+                  carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId),
+                    (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
+                  carregarGtinsFallback(token, [pedido], idsPubliai),
+                ]);
+                await upsertVenda(admin, userId, orgId, pedido, {
+                  freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+                  liquidoPorPayment: liquidoPorPayment ?? undefined,
+                });
+                pedidosReconciliadosIds.add(row.order_id);
+              } catch { /* segue */ }
+            }
           } catch { /* segue */ }
         }
       } catch { /* segue */ }

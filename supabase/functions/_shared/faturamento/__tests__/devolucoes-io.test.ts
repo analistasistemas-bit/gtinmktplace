@@ -44,3 +44,58 @@ describe('buscarClaimsSeller', () => {
     expect(url2).toContain('status=closed');
   });
 });
+
+describe('upsertDevolucao', () => {
+  it('resolve order_id a partir do shipping_id se claim.resource === "shipment" e order_id original for null', async () => {
+    const { upsertDevolucao } = await import('../devolucoes-io');
+    const mockMaybeSingleDev = vi.fn().mockResolvedValue({ data: null });
+    const mockMaybeSingleVenda = vi.fn().mockResolvedValue({ data: { order_id: 2000017600380594 } });
+
+    const mockAdmin: any = {
+      from: vi.fn((table: string) => {
+        if (table === 'ml_devolucoes') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: mockMaybeSingleDev,
+                }),
+              }),
+            }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        if (table === 'ml_vendas') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: mockMaybeSingleVenda,
+                }),
+              }),
+            }),
+            update: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ error: null }),
+              }),
+            }),
+          };
+        }
+        return {};
+      }),
+    };
+
+    const claimMock = {
+      id: 5549631650,
+      resource: 'shipment',
+      resource_id: 47611358807,
+      type: 'cancel_purchase',
+      players: [],
+    };
+
+    const res = await upsertDevolucao(mockAdmin, 'user-123', 'org-123', claimMock, null);
+
+    expect(res.row.order_id).toBe(2000017600380594);
+  });
+});
+
