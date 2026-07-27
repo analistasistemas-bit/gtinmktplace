@@ -246,16 +246,14 @@ export async function upsertVenda(
   if (error) throw new Error(`upsert ml_vendas: ${error.message}`);
   const vendaId = up!.id as string;
 
-  // O webhook de pedido pode chegar sem uma mensagem nova. Nesse caso, a conversa já gravada
-  // ainda precisa refletir o status atual para não ficar aguardando uma resposta cancelada.
-  if (anterior?.status !== venda.status) {
-    const packId = pedido.pack_id ?? pedido.id;
-    const { error: mensagensError } = await admin.from('ml_mensagens')
-      .update({ order_status: venda.status })
-      .eq('user_id', userId)
-      .or(`order_id.eq.${venda.order_id},pack_id.eq.${packId}`);
-    if (mensagensError) throw new Error(`atualizar status das mensagens: ${mensagensError.message}`);
-  }
+  // O webhook de pedido pode chegar sem uma mensagem nova. Atualiza sempre o snapshot: se uma
+  // tentativa anterior falhou depois do upsert da venda, o retry ainda precisa refazê-lo.
+  const packId = pedido.pack_id ?? pedido.id;
+  const { error: mensagensError } = await admin.from('ml_mensagens')
+    .update({ order_status: venda.status })
+    .eq('user_id', userId)
+    .or(`order_id.eq.${venda.order_id},pack_id.eq.${packId}`);
+  if (mensagensError) throw new Error(`atualizar status das mensagens: ${mensagensError.message}`);
 
   // Substitui os itens. Idempotente: unique (venda_id, ml_item_id, variation_id) impede
   // duplicata quando dois syncs do mesmo pedido correm concorrentes (ver plans/012).

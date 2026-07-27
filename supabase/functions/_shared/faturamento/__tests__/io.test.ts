@@ -9,10 +9,10 @@ type Linha = Record<string, unknown> | null;
  * última linha gravada e a devolve como estado anterior na leitura seguinte — é isso que permite
  * exercitar "grava, depois reprocessa o mesmo pedido".
  */
-function criarAdminFake() {
+function criarAdminFake(errosSnapshot: Array<{ message: string } | null> = []) {
   let linha: Linha = null;
   const atualizarMensagens = vi.fn(() => ({
-    eq: () => ({ or: async () => ({ error: null }) }),
+    eq: () => ({ or: async () => ({ error: errosSnapshot.shift() ?? null }) }),
   }));
   const upsertVendas = vi.fn((row: Record<string, unknown>) => {
     linha = row;
@@ -72,5 +72,17 @@ it('transição para cancelado atualiza os snapshots do pack sem sincronizar men
   await upsertVenda(admin, 'user-1', 'org-1', pedido, opts);
   await upsertVenda(admin, 'user-1', 'org-1', { ...pedido, status: 'cancelled', pack_id: 777 }, opts);
 
+  expect(atualizarMensagens).toHaveBeenLastCalledWith({ order_status: 'cancelled' });
+});
+
+it('retry repete o snapshot quando a venda já foi atualizada antes da falha', async () => {
+  const { admin, atualizarMensagens } = criarAdminFake([{ message: 'timeout' }, null]);
+  const cancelado = { ...pedido, status: 'cancelled', pack_id: 777 };
+
+  await expect(upsertVenda(admin, 'user-1', 'org-1', cancelado, opts))
+    .rejects.toThrow('atualizar status das mensagens: timeout');
+  await expect(upsertVenda(admin, 'user-1', 'org-1', cancelado, opts)).resolves.toBeDefined();
+
+  expect(atualizarMensagens).toHaveBeenCalledTimes(2);
   expect(atualizarMensagens).toHaveBeenLastCalledWith({ order_status: 'cancelled' });
 });
