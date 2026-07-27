@@ -14,6 +14,15 @@ export interface MetaPack {
   orderStatus: string | null;
 }
 
+export const pedidoCancelado = (status: string | null | undefined): boolean => status === 'cancelled';
+
+export function mensagemErroEnvioML(status: number, corpo: string): string {
+  if (status === 403 && corpo.includes('blocked_by_cancelled_order')) {
+    return 'Não é possível responder porque o pedido foi cancelado.';
+  }
+  return `ML /messages ${status}: ${corpo.slice(0, 200)}`;
+}
+
 /** GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale. [] em erro (não trava o worker). */
 export async function buscarMensagensPack(
   token: string, packId: string | number, sellerId: string | number,
@@ -75,7 +84,10 @@ export async function responderMensagemPedido(
   token: string, packId: string | number, sellerId: string | number, buyerId: string | number, texto: string,
 ): Promise<void> {
   const resp = await enviarMsgML(token, packId, sellerId, buyerId, texto);
-  if (!resp.ok) throw new Error(`ML /messages ${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 200)}`);
+  if (!resp.ok) {
+    const corpo = await resp.text().catch(() => '');
+    throw new Error(mensagemErroEnvioML(resp.status, corpo));
+  }
 }
 
 /** user_id do comprador no pack, lido de uma mensagem `recebida` já sincronizada — o `from` de

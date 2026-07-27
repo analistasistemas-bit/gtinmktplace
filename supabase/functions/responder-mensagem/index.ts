@@ -6,7 +6,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
-import { buscarMensagensPack, upsertMensagens, resolverMetaPack, responderMensagemPedido, resolverCompradorId } from '../_shared/faturamento/mensagens-io.ts';
+import { buscarMensagensPack, pedidoCancelado, upsertMensagens, resolverMetaPack, responderMensagemPedido, resolverCompradorId } from '../_shared/faturamento/mensagens-io.ts';
 
 interface Body { pack_id?: string; text?: string }
 
@@ -43,6 +43,11 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   let token: string;
   try { token = await getValidAccessTokenConexao(conexao); }
   catch { return erro('Conta ML não conectada.', 400); }
+
+  const meta = await resolverMetaPack(admin, dono ?? context.userId, packId);
+  if (pedidoCancelado(meta.orderStatus)) {
+    return erro('Não é possível responder porque o pedido foi cancelado.', 409);
+  }
 
   const buyerId = await resolverCompradorId(admin, orgId, packId);
   if (!buyerId) return erro('Não foi possível identificar o comprador desta conversa.', 400);

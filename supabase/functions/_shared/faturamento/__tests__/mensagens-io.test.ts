@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { upsertMensagens, responderMensagemPedido } from '../mensagens-io';
+import { mensagemErroEnvioML, pedidoCancelado, responderMensagemPedido, upsertMensagens } from '../mensagens-io';
 import type { MensagemML } from '../mensagem-mapper';
 
 const SELLER_ID = 999;
@@ -123,5 +123,21 @@ describe('responderMensagemPedido', () => {
     expect(JSON.parse(options.body as string)).toEqual({
       from: { user_id: '999' }, to: { user_id: '111' }, text: 'Olá, tudo bem?',
     });
+  });
+});
+
+describe('regras de envio pós-venda', () => {
+  it('reconhece somente pedido cancelado', () => {
+    expect(pedidoCancelado('cancelled')).toBe(true);
+    expect(pedidoCancelado('paid')).toBe(false);
+    expect(pedidoCancelado(null)).toBe(false);
+  });
+
+  it('traduz bloqueio por cancelamento e preserva erros genéricos do ML', () => {
+    expect(mensagemErroEnvioML(
+      403,
+      '{"code":"forbidden","message":"blocked_by_cancelled_order"}',
+    )).toBe('Não é possível responder porque o pedido foi cancelado.');
+    expect(mensagemErroEnvioML(429, 'Too many requests')).toMatch(/ML \/messages 429/);
   });
 });
