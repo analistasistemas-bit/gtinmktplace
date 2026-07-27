@@ -244,7 +244,7 @@ export function AbaVendas() {
   async function sincronizar() {
     setSincronizando(true);
     try {
-      const r = await sincronizarFaturamento(90);
+      const r = await sincronizarFaturamento(30);
       toast.success(`Sincronizado: ${r.sincronizados} pedido(s).`);
       await refetch();
     } catch (e) {

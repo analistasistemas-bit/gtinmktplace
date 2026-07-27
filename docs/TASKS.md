@@ -2,28 +2,40 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## ⚠️ ABERTO — `backfill-faturamento` falha por timeout de hora em hora (descoberto 2026-07-27)
+## `backfill-faturamento` — timeout horário corrigido (2026-07-27)
 
-**Não é regressão do ADR-0093** — já falhava o dia inteiro antes daquele deploy (primeiro erro
-do run das 23:00 foi às 23:02:32; o deploy terminou ~23:35).
+**Sintoma:** 504 de hora em hora, **28 FAILED contra 1 DELIVERED** em 2026-07-26. Não era
+regressão do ADR-0093 — o primeiro erro do ciclo das 23:00 foi às 23:02:32, antes daquele deploy
+terminar (~23:35).
 
-Histórico do QStash: **28 FAILED contra 1 DELIVERED** nas execuções horárias de 2026-07-26.
-Padrão por execução: `ERROR 504` (gateway timeout) após ~2min30 de processamento, 3 retries,
-depois `FAILED`. Um dos erros veio como `546` (limite de recurso da edge function).
+**Causa (medida, não presumida):** com `dias:1` — quase só o custo fixo — a execução já levava
+**117s** de um teto de ~150s. Logo o problema não era a janela de 30 dias, e sim o custo fixo:
+três laços rodavam **um item por vez**, o pior deles 1 GET por pack de mensagens, até 200 packs.
 
-Os demais workers estão saudáveis: `reconciliar-faturamento` 29/29 DELIVERED,
-`sync-venda` 58/58 DELIVERED, `notificar-liberacao` OK. Como o `reconciliar` cobre a janela
-de 72h e roda de hora em hora sem falhar, o impacto operacional está contido — o que se perde
-é a recarga histórica de 30 dias (`{"dias":30}`) do backfill.
+**Correção:** paralelizar perguntas, claims e mensagens com o mesmo `chunk(_, PARALELAS=5)` que o
+laço de pedidos já usava no mesmo arquivo. Nos títulos das perguntas a dedupe por item foi
+preservada (prefetch dos ids únicos antes do upsert).
 
-Hipótese: o volume cresceu e o `backfill` com `dias:30` não cabe mais no limite de execução da
-edge function. Caminho provável: paginar/reduzir a janela por execução, ou aplicar ao backfill a
-mesma ideia do ADR-0093 para os workers de evento (buscar só o necessário em vez de varrer).
-Investigar antes de assumir a causa.
+**Medido em produção depois do fix:**
 
-- [ ] Diagnosticar a causa do timeout (medir onde os ~150s são gastos: `/orders` do ML vs
-  varredura do MP vs upsert).
-- [ ] Corrigir e confirmar 3 execuções horárias seguidas em DELIVERED.
+| janela | antes | depois |
+|---|---|---|
+| 30 dias (carga do schedule) | timeout 504 | **129s · DELIVERED 200** |
+| 7 dias | — | 66s |
+
+Modelo de custo: ≈**47s fixos + ~2,7s por dia de janela** (Avil, ~600 pedidos/30d).
+
+**Achado junto:** o botão "Sincronizar" do Faturamento mandava `dias=90` → ~294s pelo modelo.
+**Nunca completou.** Reduzido para 30 (≈129s). O cabeçalho do backfill também mentia ("não busca
+shipment por pedido, evita N+1") — o `9675f3a` adicionou frete/rastreio de propósito; comentário
+corrigido com o teto medido.
+
+- [x] Paralelizar os laços sequenciais; deploy v47; 30 dias passa em 129s.
+- [x] Botão "Sincronizar" de 90 → 30 dias.
+- [ ] **Decisão pendente do Diego:** 129s deixa só 14% de folga e o volume cresce. Reduzir a
+  janela do schedule de 30 → 7 dias (66s) daria folga confortável, já que o
+  `reconciliar-faturamento` cobre 72h de hora em hora sem falhar — ao custo de deixar de
+  re-sincronizar pedidos de 8 a 30 dias, que é dado financeiro. Não alterado em silêncio.
 
 ## Financeiro do Mercado Pago pela conexão OAuth do ML (ADR-0093) — 2026-07-26
 

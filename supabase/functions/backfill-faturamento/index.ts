@@ -2,8 +2,14 @@
 // Dois modos (espelha monitorar-moderados):
 //  - Usuário logado (botão "Sincronizar"): JWT → escopo só à própria org (E7).
 //  - QStash agendado: assinatura válida → todas as conexões (todas as orgs).
-// Não busca shipment por pedido (evita N+1); frete fica null no backfill (líquido = total−comissão).
-// O sync-venda (webhook) preenche frete/envio quando o pedido muda.
+// Busca frete/envio por pedido (1 GET de shipment + 1 de custo por pedido, desde 9675f3a). É o
+// item mais caro da execução e cresce com o volume — ver PARALELAS e o teto medido abaixo.
+//
+// TETO MEDIDO (2026-07-27, conta Avil ~600 pedidos/30d, limite da edge function ~150s):
+//   dias=7 → 66s · dias=30 → 129s · custo fixo ≈47s + ~2,7s por dia de janela.
+// Logo `dias=90` (~294s) NÃO cabe numa execução e nunca coube. Ao mexer aqui, meça de novo:
+// quando 30 dias passar de ~140s, ou se reduz a janela do schedule (o reconciliar-faturamento
+// já cobre 72h de hora em hora) ou o backfill precisa virar retomável entre execuções.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -19,6 +25,13 @@ import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/fa
 import { chunk } from '../_shared/faturamento/utils.ts';
 
 interface Body { dias?: number; desde?: string; ate?: string }
+
+// Requisições ao ML em paralelo por lote. Era 5 só no laço de pedidos; perguntas, claims e
+// mensagens rodavam uma a uma e estouravam o tempo da edge function (504 de hora em hora,
+// 28 falhas em 2026-07-26). Medido: com `dias:1` — ou seja, quase só o custo fixo — a execução
+// levava 117s de um orçamento de ~150s, e o pior ofensor era 1 GET por pack de mensagens,
+// sequencial, até 200 packs. Mesmo grau de paralelismo já provado seguro no laço de pedidos.
+const PARALELAS = 5;
 
 // E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
 type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
@@ -46,15 +59,23 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   try { token = await getValidAccessTokenConexao(cx); } catch { return 0; }
 
   // 1. Perguntas (sem alerta no backfill — só importa o estado atual).
+  //    Títulos primeiro, deduplicados por item: várias perguntas caem no mesmo anúncio.
   try {
     const perguntas = await buscarPerguntasSeller(token);
+    const itemIds = [...new Set(perguntas.map((q) => q.item_id).filter((i): i is string => !!i))];
     const titulos = new Map<string, string | null>();
-    for (const q of perguntas) {
-      try {
-        const itemId = q.item_id ?? null;
-        if (itemId && !titulos.has(itemId)) titulos.set(itemId, await buscarTituloItem(token, itemId));
-        await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
-      } catch { /* segue */ }
+    for (const lote of chunk(itemIds, PARALELAS)) {
+      await Promise.all(lote.map(async (itemId) => {
+        try { titulos.set(itemId, await buscarTituloItem(token, itemId)); } catch { /* título é best-effort */ }
+      }));
+    }
+    for (const lote of chunk(perguntas, PARALELAS)) {
+      await Promise.all(lote.map(async (q) => {
+        try {
+          const itemId = q.item_id ?? null;
+          await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
+        } catch { /* segue */ }
+      }));
     }
   } catch (e) {
     console.warn(`backfill: erro lendo perguntas de ${userId}: ${(e as Error).message}`);
@@ -63,11 +84,13 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   // 2. Devoluções/claims (sem alerta no backfill).
   try {
     const claims = await buscarClaimsSeller(token);
-    for (const claim of claims) {
-      try {
-        const ret = await buscarReturn(token, String(claim.id));
-        await upsertDevolucao(admin, userId, orgId, claim, ret);
-      } catch { /* segue */ }
+    for (const lote of chunk(claims, PARALELAS)) {
+      await Promise.all(lote.map(async (claim) => {
+        try {
+          const ret = await buscarReturn(token, String(claim.id));
+          await upsertDevolucao(admin, userId, orgId, claim, ret);
+        } catch { /* segue */ }
+      }));
     }
   } catch (e) {
     console.warn(`backfill: erro lendo claims de ${userId}: ${(e as Error).message}`);
@@ -91,7 +114,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   }
 
   let n = 0;
-  const lotes = chunk(pedidos, 5);
+  const lotes = chunk(pedidos, PARALELAS);
   for (const lote of lotes) {
     await Promise.all(lote.map(async (pedido) => {
       try {
@@ -116,11 +139,14 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   if (cx.contaExternaId) {
     try {
       const packs = await listarPacksDeVendas(admin, userId);
-      for (const p of packs) {
-        try {
-          const msgs = await buscarMensagensPack(token, p.packId, cx.contaExternaId);
-          if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p.orderId, p.itemTitulo, cx.contaExternaId, msgs);
-        } catch { /* segue */ }
+      const contaExternaId = cx.contaExternaId;
+      for (const lote of chunk(packs, PARALELAS)) {
+        await Promise.all(lote.map(async (p) => {
+          try {
+            const msgs = await buscarMensagensPack(token, p.packId, contaExternaId);
+            if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p.orderId, p.itemTitulo, contaExternaId, msgs);
+          } catch { /* segue */ }
+        }));
       }
     } catch (e) {
       console.warn(`backfill: erro lendo mensagens de ${userId}: ${(e as Error).message}`);
