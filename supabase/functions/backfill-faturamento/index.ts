@@ -150,7 +150,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
         await Promise.all(lote.map(async (p) => {
           try {
             const msgs = await buscarMensagensPack(token, p.packId, contaExternaId);
-            if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p.orderId, p.itemTitulo, contaExternaId, msgs);
+            if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs);
           } catch { /* segue */ }
         }));
       }

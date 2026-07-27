@@ -32,18 +32,18 @@ Deno.serve(async (req) => {
     token = await getValidAccessTokenConexao(conexao);
   } catch { return new Response(JSON.stringify({ ok: false, semCredencial: true }), { status: 200, headers: corsHeaders }); }
 
-  // Metadados do pedido (order_id + título) para exibir junto da conversa. Best-effort.
-  const { orderId, itemTitulo } = await resolverMetaPack(admin, job.user_id, job.pack_id);
+  // Metadados do pedido para exibir junto da conversa. Best-effort.
+  const meta = await resolverMetaPack(admin, job.user_id, job.pack_id);
 
   const msgs = await buscarMensagensPack(token, job.pack_id, sellerId);
-  const { novasRecebidas } = await upsertMensagens(admin, job.user_id, orgId, job.pack_id, orderId, itemTitulo, sellerId, msgs);
+  const { novasRecebidas } = await upsertMensagens(admin, job.user_id, orgId, job.pack_id, meta, sellerId, msgs);
 
   if (novasRecebidas > 0 && orgId) {
     // Última mensagem recebida (mais recente) para o alerta.
     const recebidas = msgs.map((m) => mapearMensagem(m, sellerId)).filter((r) => r.direcao === 'recebida');
     const ultima = recebidas[recebidas.length - 1];
     if (ultima) {
-      await notificarCategoria(admin, orgId, 'mensagens', montarMensagemNovaMensagem({ texto: ultima.texto, item_titulo: itemTitulo }));
+      await notificarCategoria(admin, orgId, 'mensagens', montarMensagemNovaMensagem({ texto: ultima.texto, item_titulo: meta.itemTitulo }));
     }
   }
 

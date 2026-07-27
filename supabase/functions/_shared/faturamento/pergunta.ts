@@ -7,7 +7,7 @@ export interface PerguntaML {
   status?: string | null;
   item_id?: string | null;
   date_created?: string | null;
-  from?: { id?: number | string | null } | null;
+  from?: { id?: number | string | null; nickname?: string | null } | null;
   answer?: { text?: string | null; status?: string | null; date_created?: string | null } | null;
 }
 
@@ -19,6 +19,7 @@ export interface PerguntaRow {
   resposta: string | null;
   respondida_em: string | null;
   comprador_id: number | null;
+  comprador_nick: string | null;
   criada_em: string | null;
 }
 
@@ -37,6 +38,7 @@ export function mapearPergunta(q: PerguntaML): PerguntaRow {
     resposta: q.answer?.text ?? null,
     respondida_em: q.answer?.date_created ?? null,
     comprador_id: num(q.from?.id ?? null),
+    comprador_nick: q.from?.nickname?.trim() || null,
     criada_em: q.date_created ?? null,
   };
 }

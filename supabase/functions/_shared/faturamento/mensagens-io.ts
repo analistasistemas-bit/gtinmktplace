@@ -5,6 +5,15 @@ import { enviarMsgML } from '../ml/mensagem.ts';
 
 const API = 'https://api.mercadolibre.com';
 
+export interface MetaPack {
+  orderId: string | null;
+  itemId: string | null;
+  itemTitulo: string | null;
+  compradorNome: string | null;
+  compradorNick: string | null;
+  orderStatus: string | null;
+}
+
 /** GET /messages/packs/{pack}/sellers/{seller}?tag=post_sale. [] em erro (não trava o worker). */
 export async function buscarMensagensPack(
   token: string, packId: string | number, sellerId: string | number,
@@ -23,8 +32,7 @@ export async function upsertMensagens(
   userId: string,
   orgId: string | null,
   packId: string | number,
-  orderId: string | number | null,
-  itemTitulo: string | null,
+  meta: MetaPack,
   sellerId: string | number,
   msgs: MensagemML[],
 ): Promise<{ novasRecebidas: number }> {
@@ -34,8 +42,12 @@ export async function upsertMensagens(
       user_id: userId,
       org_id: orgId,
       pack_id: String(packId),
-      order_id: orderId != null ? String(orderId) : null,
-      item_titulo: itemTitulo,
+      order_id: meta.orderId,
+      item_id: meta.itemId,
+      item_titulo: meta.itemTitulo,
+      comprador_nome: meta.compradorNome,
+      comprador_nick: meta.compradorNick,
+      order_status: meta.orderStatus,
       raw: m as unknown as Record<string, unknown>,
       atualizado_em: new Date().toISOString(),
       ...r,
@@ -80,35 +92,62 @@ export async function resolverCompradorId(
   return id != null ? String(id) : null;
 }
 
-/** order_id + título do pedido dono do pack (pack_id ou, se solo, o próprio order_id). */
+/** Metadados do pedido dono do pack (pack_id ou, se solo, o próprio order_id). */
 export async function resolverMetaPack(
   admin: SupabaseClient, userId: string, packId: string | number,
-): Promise<{ orderId: string | null; itemTitulo: string | null }> {
+): Promise<MetaPack> {
   const { data } = await admin.from('ml_vendas')
-    .select('order_id, ml_vendas_itens(titulo)')
+    .select('order_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)')
     .eq('user_id', userId)
     .or(`pack_id.eq.${packId},order_id.eq.${packId}`)
     .limit(1).maybeSingle();
-  const v = data as { order_id?: number; ml_vendas_itens?: Array<{ titulo: string | null }> } | null;
-  return { orderId: v?.order_id != null ? String(v.order_id) : null, itemTitulo: v?.ml_vendas_itens?.[0]?.titulo ?? null };
+  const v = data as {
+    order_id?: number | string | null;
+    status?: string | null;
+    comprador_nome?: string | null;
+    comprador_nick?: string | null;
+    ml_vendas_itens?: Array<{ ml_item_id: string | null; titulo: string | null }>;
+  } | null;
+  const item = v?.ml_vendas_itens?.[0];
+  return {
+    orderId: v?.order_id != null ? String(v.order_id) : null,
+    itemId: item?.ml_item_id ?? null,
+    itemTitulo: item?.titulo ?? null,
+    compradorNome: v?.comprador_nome ?? null,
+    compradorNick: v?.comprador_nick ?? null,
+    orderStatus: v?.status ?? null,
+  };
 }
 
-export interface PackVenda { packId: string; orderId: string; itemTitulo: string | null }
+export interface PackVenda extends MetaPack { packId: string }
 
 /** Packs dos pedidos já conhecidos (backfill). Sem pack_id, usa o próprio order_id (pedido solo). */
 export async function listarPacksDeVendas(admin: SupabaseClient, userId: string, limite = 200): Promise<PackVenda[]> {
   const { data } = await admin.from('ml_vendas')
-    .select('order_id, pack_id, ml_vendas_itens(titulo)')
+    .select('order_id, pack_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)')
     .eq('user_id', userId)
     .order('date_closed', { ascending: false })
     .limit(limite);
   const vistos = new Set<string>();
   const out: PackVenda[] = [];
-  for (const v of (data ?? []) as Array<{ order_id: number; pack_id: number | null; ml_vendas_itens?: Array<{ titulo: string | null }> }>) {
+  for (const v of (data ?? []) as Array<{
+    order_id: number | string; pack_id: number | string | null; status?: string | null;
+    comprador_nome?: string | null; comprador_nick?: string | null;
+    ml_vendas_itens?: Array<{ ml_item_id: string | null; titulo: string | null }>;
+  }>) {
     const packId = String(v.pack_id ?? v.order_id);
     if (vistos.has(packId)) continue;
     vistos.add(packId);
-    out.push({ packId, orderId: String(v.order_id), itemTitulo: v.ml_vendas_itens?.[0]?.titulo ?? null });
+    const item = v.ml_vendas_itens?.[0];
+    out.push({
+      packId,
+      orderId: String(v.order_id),
+      itemId: item?.ml_item_id ?? null,
+      itemTitulo: item?.titulo ?? null,
+      compradorNome: v.comprador_nome ?? null,
+      compradorNick: v.comprador_nick ?? null,
+      orderStatus: v.status ?? null,
+    });
   }
   return out;
 }

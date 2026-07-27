@@ -4,6 +4,14 @@ import type { MensagemML } from '../mensagem-mapper';
 
 const SELLER_ID = 999;
 const COMPRADOR_ID = 111;
+const META = {
+  orderId: 'order-1',
+  itemId: 'MLB123',
+  itemTitulo: 'Produto X',
+  compradorNome: 'Maria Silva',
+  compradorNick: 'MARIA_01',
+  orderStatus: 'paid',
+};
 
 /**
  * Mock do admin client para as DUAS chamadas de `.upsert()` de upsertMensagens: a 1ª encadeada
@@ -42,16 +50,26 @@ const msgDoVendedor = (id: string, dataMl: string): MensagemML => ({
 
 describe('upsertMensagens', () => {
   it('N mensagens novas do comprador → novasRecebidas === N', async () => {
-    const { admin } = criarAdminMock(['m1', 'm2']); // 1ª upsert (ignoreDuplicates) insere as duas.
+    const { admin, upsert } = criarAdminMock(['m1', 'm2']); // 1ª upsert (ignoreDuplicates) insere as duas.
     const msgs = [msgDoComprador('m1', '2026-07-10T10:00:00Z'), msgDoComprador('m2', '2026-07-10T10:01:00Z')];
-    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
+    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs);
     expect(r.novasRecebidas).toBe(2);
+    expect(upsert.mock.calls[0][0]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        order_id: 'order-1',
+        item_id: 'MLB123',
+        item_titulo: 'Produto X',
+        comprador_nome: 'Maria Silva',
+        comprador_nick: 'MARIA_01',
+        order_status: 'paid',
+      }),
+    ]));
   });
 
   it('re-execução com o mesmo payload (nada novo inserido) → novasRecebidas === 0', async () => {
     const { admin } = criarAdminMock([]); // ignoreDuplicates: já existiam, nada é inserido de novo.
     const msgs = [msgDoComprador('m1', '2026-07-10T10:00:00Z'), msgDoComprador('m2', '2026-07-10T10:01:00Z')];
-    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
+    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs);
     expect(r.novasRecebidas).toBe(0);
   });
 
@@ -62,7 +80,7 @@ describe('upsertMensagens', () => {
       msgDoComprador('b', '2026-07-10T10:00:00Z'), // nova, recebida
       msgDoVendedor('c', '2026-07-10T11:00:00Z'), // nova, enviada pelo vendedor
     ];
-    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
+    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs);
     expect(r.novasRecebidas).toBe(1);
   });
 
@@ -70,13 +88,13 @@ describe('upsertMensagens', () => {
     const { admin } = criarAdminMock(['d1']); // só d1 chega a entrar no upsert (semId é filtrada antes).
     const semId: MensagemML = { from: { user_id: COMPRADOR_ID }, text: 'sem id', message_date: { created: '2026-07-10T12:00:00Z' } };
     const msgs = [msgDoComprador('d1', '2026-07-10T10:00:00Z'), semId];
-    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, msgs);
+    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, msgs);
     expect(r.novasRecebidas).toBe(1);
   });
 
   it('lista vazia → { novasRecebidas: 0 } sem chamar upsert', async () => {
     const { admin, from, upsert } = criarAdminMock([]);
-    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', 'order-1', 'Produto X', SELLER_ID, []);
+    const r = await upsertMensagens(admin, 'user-1', 'org-1', 'pack-1', META, SELLER_ID, []);
     expect(r).toEqual({ novasRecebidas: 0 });
     expect(from).not.toHaveBeenCalled();
     expect(upsert).not.toHaveBeenCalled();

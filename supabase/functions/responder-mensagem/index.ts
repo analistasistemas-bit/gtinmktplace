@@ -58,8 +58,8 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   if (dono) {
     const msgs = await buscarMensagensPack(token, packId, sellerId);
     if (msgs.length) {
-      const { orderId, itemTitulo } = await resolverMetaPack(admin, dono, packId);
-      await upsertMensagens(admin, dono, orgId, packId, orderId, itemTitulo, sellerId, msgs);
+      const meta = await resolverMetaPack(admin, dono, packId);
+      await upsertMensagens(admin, dono, orgId, packId, meta, sellerId, msgs);
     }
     await admin.from('ml_mensagens').update({ lida: true, atualizado_em: new Date().toISOString() })
       .eq('user_id', dono).eq('pack_id', packId).eq('direcao', 'recebida').eq('lida', false);

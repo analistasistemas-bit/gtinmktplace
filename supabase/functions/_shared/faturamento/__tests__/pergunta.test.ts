@@ -5,11 +5,11 @@ describe('mapearPergunta', () => {
   it('mapeia pergunta não respondida', () => {
     const r = mapearPergunta({
       id: 123, text: 'Tem na cor azul?', status: 'UNANSWERED', item_id: 'MLB1',
-      date_created: '2026-06-21T10:00:00Z', from: { id: 999 }, answer: null,
+      date_created: '2026-06-21T10:00:00Z', from: { id: 999, nickname: 'CLIENTE_01' }, answer: null,
     });
     expect(r).toEqual({
       question_id: 123, item_id: 'MLB1', texto: 'Tem na cor azul?', status: 'UNANSWERED',
-      resposta: null, respondida_em: null, comprador_id: 999, criada_em: '2026-06-21T10:00:00Z',
+      resposta: null, respondida_em: null, comprador_id: 999, comprador_nick: 'CLIENTE_01', criada_em: '2026-06-21T10:00:00Z',
     });
   });
   it('mapeia pergunta respondida com answer', () => {
@@ -26,7 +26,7 @@ describe('mapearPergunta', () => {
     const r = mapearPergunta({ id: 7 });
     expect(r).toEqual({
       question_id: 7, item_id: null, texto: '', status: 'UNKNOWN',
-      resposta: null, respondida_em: null, comprador_id: null, criada_em: null,
+      resposta: null, respondida_em: null, comprador_id: null, comprador_nick: null, criada_em: null,
     });
   });
 });
