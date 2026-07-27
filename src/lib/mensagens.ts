@@ -64,11 +64,12 @@ export async function buscarConversas(): Promise<Conversa[]> {
       porPack.set(m.pack_id, c);
     }
     c.mensagens.push(m);
-    if (m.item_titulo && !c.item_titulo) c.item_titulo = m.item_titulo;
-    if (m.item_id && !c.item_id) c.item_id = m.item_id;
-    if (m.comprador_nome && !c.comprador_nome) c.comprador_nome = m.comprador_nome;
-    if (m.comprador_nick && !c.comprador_nick) c.comprador_nick = m.comprador_nick;
-    if (m.order_status && !c.order_status) c.order_status = m.order_status;
+    if (m.item_titulo) c.item_titulo = m.item_titulo;
+    if (m.item_id) c.item_id = m.item_id;
+    if (m.comprador_nome) c.comprador_nome = m.comprador_nome;
+    if (m.comprador_nick) c.comprador_nick = m.comprador_nick;
+    // Igual à RPC: o status efetivo é o da mensagem mais recente do pack, inclusive null.
+    c.order_status = m.order_status;
     c.ultima = m.data_ml;
   }
   const conversas = [...porPack.values()];

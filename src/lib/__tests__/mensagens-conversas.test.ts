@@ -81,6 +81,18 @@ describe('buscarConversas', () => {
     });
   });
 
+  it('status da mensagem mais recente cancela o pack mesmo após status paid', async () => {
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        msg({ id: '2', message_id: 'm2', direcao: 'recebida', order_status: 'cancelled', data_ml: '2026-07-10T11:00:00Z' }),
+        msg({ id: '1', message_id: 'm1', direcao: 'enviada', order_status: 'paid', data_ml: '2026-07-10T10:00:00Z' }),
+      ],
+      error: null,
+    });
+    const [conversa] = await buscarConversas();
+    expect(conversa).toMatchObject({ order_status: 'cancelled', aguardando: false });
+  });
+
   it('multi-pack: aguardando vem antes; entre não-aguardando, mais recente primeiro', async () => {
     mockOrder.mockResolvedValueOnce({
       data: [
