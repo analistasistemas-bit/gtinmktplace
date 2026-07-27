@@ -40,14 +40,14 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   const sellerId = conexao.contaExternaId;
   const dono = (cxRow?.criado_por as string | null) ?? null; // mesma chave user_id do sync/backfill.
 
-  let token: string;
-  try { token = await getValidAccessTokenConexao(conexao); }
-  catch { return erro('Conta ML não conectada.', 400); }
-
   const meta = await resolverMetaPack(admin, dono ?? context.userId, packId);
   if (pedidoCancelado(meta.orderStatus)) {
     return erro('Não é possível responder porque o pedido foi cancelado.', 409);
   }
+
+  let token: string;
+  try { token = await getValidAccessTokenConexao(conexao); }
+  catch { return erro('Conta ML não conectada.', 400); }
 
   const buyerId = await resolverCompradorId(admin, orgId, packId);
   if (!buyerId) return erro('Não foi possível identificar o comprador desta conversa.', 400);
