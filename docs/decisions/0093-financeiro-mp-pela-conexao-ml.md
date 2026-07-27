@@ -89,12 +89,16 @@ Vault e refresh automático — e já dá acesso à conta MP do vendedor.
 
 ## Consequências
 
-- **Multi-tenant sem tela nova.** O financeiro deixa de depender de um token de instância
-  e passa a seguir a conexão de cada org. Ressalva do que foi de fato testado: a
-  verificação usou uma conexão **pré-existente** (Avil, com escopo amplo). `montarAuthUrl`
-  não pede escopo — o ML concede o padrão do app, provavelmente idêntico — mas uma conexão
-  recém-criada não foi exercitada. Quando a DSA conectar, confirmar
-  `/v1/payments/search` 200 com o token dela antes de dar o benefício como entregue.
+- **Multi-tenant sem tela nova — CONFIRMADO em conexão nova (2026-07-26).** O financeiro
+  deixa de depender de um token de instância e passa a seguir a conexão de cada org. A
+  ressalva anterior (o teste inicial usou a conexão **pré-existente** da Avil) está
+  fechada: a org DSA conectou o Mercado Livre às 23:58:37 e a conexão recém-criada foi
+  exercitada — conta `$ANALISTA$` (`ml_user_id` 9757132), `GET api.mercadopago.com/users/me`
+  **HTTP 200** com `id` batendo com o `conta_externa_id`, e `/v1/payments/search`
+  **HTTP 200** (`total: 0` porque a conta não tem vendas aprovadas — é ausência de dado,
+  não de permissão; falta de escopo devolveria 401/403). O escopo concedido é **idêntico**
+  ao da Avil, caractere por caractere: `montarAuthUrl` não pede escopo e o ML concede o
+  padrão do app, igual para toda conexão nova.
 - **Acaba o risco cross-tenant.** Não existe mais token global capaz de servir a conta da
   Avil para outra org.
 - **Token deixa de ser estático.** Passa a ter refresh proativo com lock distribuído

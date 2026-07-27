@@ -214,9 +214,12 @@ regra do projeto e planta drift.
    mostra exatamente **4 remoções** — `mp_access_token_secret_id` em Row/Insert/Update de
    `configuracoes` e a RPC `get_mp_token` — e nada mais. É exatamente o que a migration
    derruba.
-5. Quando a DSA conectar o Mercado Livre, conferir que `/v1/payments/search` responde 200
-   com o token dela **antes** de considerar o benefício multi-tenant entregue: o teste de
-   2026-07-26 cobriu uma conexão pré-existente, não uma recém-criada.
+5. ~~Quando a DSA conectar o Mercado Livre, conferir que `/v1/payments/search` responde 200
+   com o token dela~~ — **FEITO em 2026-07-26 23:58.** A DSA conectou a conta `$ANALISTA$`
+   (`ml_user_id` 9757132): `/users/me` **200** com id batendo, `/v1/payments/search`
+   **200** (`total: 0` — conta sem vendas; ausência de dado, não de permissão). Escopo
+   concedido idêntico ao da Avil. Conexão gravada na org da sessão (DSA), como manda o
+   ADR-0091, e o índice único `(canal, conta_externa_id)` cobre o roubo entre orgs.
 6. **Só depois de tudo isso**, remover os secrets `MP_ACCESS_TOKEN` e
    `MP_FALLBACK_ORG_ID`. Antes de remover, **re-conferir a versão das 7 funções** e
    **repetir a validação do passo 3 logo após a remoção**.

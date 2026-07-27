@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## ⚠️ ABERTO — `backfill-faturamento` falha por timeout de hora em hora (descoberto 2026-07-27)
+
+**Não é regressão do ADR-0093** — já falhava o dia inteiro antes daquele deploy (primeiro erro
+do run das 23:00 foi às 23:02:32; o deploy terminou ~23:35).
+
+Histórico do QStash: **28 FAILED contra 1 DELIVERED** nas execuções horárias de 2026-07-26.
+Padrão por execução: `ERROR 504` (gateway timeout) após ~2min30 de processamento, 3 retries,
+depois `FAILED`. Um dos erros veio como `546` (limite de recurso da edge function).
+
+Os demais workers estão saudáveis: `reconciliar-faturamento` 29/29 DELIVERED,
+`sync-venda` 58/58 DELIVERED, `notificar-liberacao` OK. Como o `reconciliar` cobre a janela
+de 72h e roda de hora em hora sem falhar, o impacto operacional está contido — o que se perde
+é a recarga histórica de 30 dias (`{"dias":30}`) do backfill.
+
+Hipótese: o volume cresceu e o `backfill` com `dias:30` não cabe mais no limite de execução da
+edge function. Caminho provável: paginar/reduzir a janela por execução, ou aplicar ao backfill a
+mesma ideia do ADR-0093 para os workers de evento (buscar só o necessário em vez de varrer).
+Investigar antes de assumir a causa.
+
+- [ ] Diagnosticar a causa do timeout (medir onde os ~150s são gastos: `/orders` do ML vs
+  varredura do MP vs upsert).
+- [ ] Corrigir e confirmar 3 execuções horárias seguidas em DELIVERED.
+
 ## Financeiro do Mercado Pago pela conexão OAuth do ML (ADR-0093) — 2026-07-26
 
 Substitui o token estático `MP_ACCESS_TOKEN`/fallback cross-tenant: o financeiro passa a ler a
