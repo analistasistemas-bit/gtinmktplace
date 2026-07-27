@@ -18,17 +18,25 @@ custo medido (abaixo), 90 dias ≈ 294s contra um teto de ~150s — nunca teve c
 É a mesma armadilha de double-encoding do QStash já registrada no runbook do projeto. Auditados os
 5 schedules: **só o backfill passa body**, e era o único afetado.
 
-**Correção:** schedule recriado com body JSON correto. Corrigir só o body **não bastou** — o ciclo
-das 02:00 ainda falhou (546/504). O run agendado erra em ~150s enquanto a mesma carga disparada
-isoladamente passa em 129s: 14% de folga não sobrevive à variação, e no minuto `:00` disparam três
-schedules ao mesmo tempo (`backfill`, `reconciliar-faturamento`, `reconciliar-convergencia-up`),
-todos batendo na API do ML.
+**Correção:** schedule recriado com body JSON correto.
 
-Config final: cron **`30 * * * *`** (fora do minuto congestionado) e **`{"dias":7}`** (66s, ~56% de
-folga). Reduzir a janela **não perde cobertura**: o schedule nunca funcionou, então não havia
-cobertura a preservar — sai de "falha sempre" para "sincroniza 7 dias de forma confiável". O
-`reconciliar-faturamento` já cobre 72h de hora em hora sem falhar, e 7 dias dá 2,3× essa margem.
-Schedule atual: `scd_5cJRAXQbinVvzgg5vfRKhzhRH6sJ`.
+Config final: cron **`30 * * * *`** e **`{"dias":7}`** (66s, ~56% de folga). Duas razões, ambas de
+margem e não de falha observada:
+- 30 dias fecha em **129s** contra teto de ~150s — 14% de folga é pouco para um job de produção
+  cujo custo cresce com o volume de pedidos.
+- No minuto `:00` disparam três schedules juntos (`backfill`, `reconciliar-faturamento`,
+  `reconciliar-convergencia-up`), todos batendo na API do ML. Sair do `:00` remove essa disputa.
+
+Reduzir a janela **não perde cobertura**: o schedule nunca funcionou (sempre 90 dias por causa do
+body), então não havia cobertura a preservar — sai de "falha sempre" para "sincroniza 7 dias de
+forma confiável". O `reconciliar-faturamento` cobre 72h de hora em hora sem falhar, e 7 dias dá
+2,3× essa margem. Schedule atual: `scd_5cJRAXQbinVvzgg5vfRKhzhRH6sJ`.
+
+> **Correção de método (registrada de propósito):** durante a verificação eu reportei que os ciclos
+> das 01:00 e 02:00 haviam falhado *depois* da correção. **Era falso** — o filtro de eventos
+> comparava só a hora (`hour==1`), sem a data, e casou com eventos do dia anterior. Os dados reais:
+> última falha em **26/07 23:40** (pré-correção) e **três DELIVERED 200** em 27/07 00:09, 00:13 e
+> 00:15 (pós-correção). Ao auditar QStash, sempre comparar timestamp absoluto contra `date -u`.
 
 ### Correção de desempenho (necessária, mas não era a causa raiz)
 
