@@ -433,7 +433,7 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
-  de todos os usuários com credencial (cobre webhooks perdidos). Liveness (ADR-0069): só o catch
+  de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims de até 30 dias (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`). Liveness (ADR-0069): só o catch
   do token classifica (`registrarFalhaAuth`/alerta 'integracao' em 401/403); os catches internos
   de pedidos/perguntas/claims (`buscarPedidosPeriodo` etc.) continuam "segue" sem classificar —
   não é backstop de auth-liveness para esses casos, só para falha no token em si.
