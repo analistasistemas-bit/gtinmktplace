@@ -70,4 +70,18 @@ describe('calcularKpisDashboard', () => {
     const r = calcularKpisDashboard([], [pub('a', 5), pub('b', 3), pub('c')], []);
     expect(r.variacoesPublicadas).toBe(8);
   });
+
+  it('cruza pelo mlItemId dos publicados para garantir mesma contagem da tela Publicados', () => {
+    const publicados = [pub('a'), pub('b')]; // MLBa e MLBb
+    const statusItens: StatusPublicadoItem[] = [
+      { ml_item_id: 'MLBa', status: 'ativo', motivo: null, estoque: 10, preco: 10 },
+      { ml_item_id: 'MLBb', status: 'pausado', motivo: null, estoque: 0, preco: 10 },
+      // item extra no ML (sub-item/UP SKU) que não é o mlItemId principal da família
+      { ml_item_id: 'MLBextra', status: 'pausado', motivo: null, estoque: 0, preco: 10 },
+    ];
+    const r = calcularKpisDashboard([], publicados, statusItens);
+    expect(r.publicados).toBe(2);
+    expect(r.ativos).toBe(1);
+    expect(r.pausados).toBe(1); // ignora o MLBextra para bater 1:1 com a listagem de anúncios
+  });
 });
