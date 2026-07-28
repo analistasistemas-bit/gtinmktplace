@@ -139,7 +139,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       ml_item_id: null,
       ml_permalink: null,
       publicado_em: null,
-      status: 'revisao',
+      status: 'pronto',
       erro_mensagem: null,
     }).eq('id', alvo.id).eq('org_id', orgId);
     if (famErr) throw new Error(`remover-publicado: preparar família para republicação falhou: ${famErr.message}`);
