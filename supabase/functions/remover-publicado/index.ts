@@ -17,7 +17,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
   // canal (E6/ADR-0061): default 'mercado_livre' — chamadas atuais (sem o campo) ficam idênticas.
-  const { familia_id, canal = 'mercado_livre' } = await req.json().catch(() => ({}));
+  const { familia_id, canal = 'mercado_livre', preservar_familia = false } = await req.json().catch(() => ({}));
   if (!familia_id) return new Response('familia_id obrigatório', { status: 400, headers: corsHeaders });
 
   const admin = adminClient();
@@ -34,7 +34,10 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       : Promise.reject(new Error('Organização sem conexão com o Mercado Livre')),
   };
 
-  const r = await removerPublicado({ admin, ctx, conexao: conexao ?? undefined }, { familiaId: familia_id, orgId, canal });
+  const r = await removerPublicado(
+    { admin, ctx, conexao: conexao ?? undefined },
+    { familiaId: familia_id, orgId, canal, preservarFamilia: preservar_familia },
+  );
   const target = { type: 'familia', id: familia_id as string };
   switch (r.tipo) {
     case 'nao_encontrada':
@@ -53,6 +56,9 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
           + 'Nada foi removido — tente de novo em instantes; se persistir, contate o suporte.',
         pendentes: r.pendentes,
       }, 409);
+    case 'preservada':
+      await auditarOperacaoSuporte(admin, context, target, 'succeeded');
+      return json({ ok: true, familia_id: r.familiaId, lote_id: r.loteId });
     case 'ok':
       await auditarOperacaoSuporte(admin, context, target, 'succeeded');
       return json({ ok: true, familias_removidas: r.familiasRemovidas, lotes_removidos: r.lotesRemovidos });

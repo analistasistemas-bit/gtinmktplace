@@ -119,6 +119,27 @@ describe('montarPayloadItem', () => {
     expect(p.price).toBe(9.9);
     expect(p.variations).toBeUndefined();
   });
+  it('item plano com rótulo TAM envia atributo personalizado Tamanho, não COLOR', () => {
+    const tamanho = { ...variacoes[0], cor: 'TAM 01', gtin: '3000028543500' };
+    const p = montarPayloadItem(
+      { ...familia, categoria_ml_id: 'MLB270264' },
+      [tamanho],
+      capaPictureId,
+      null,
+      null,
+      undefined,
+      null,
+      null,
+      undefined,
+      'plano',
+    );
+    expect(p.attributes).toEqual(expect.arrayContaining([
+      { name: 'Tamanho', value_name: 'TAM 01' },
+    ]));
+    expect(p.attributes).not.toEqual(expect.arrayContaining([
+      { id: 'COLOR', value_name: 'TAM 01' },
+    ]));
+  });
 });
 
 describe('montarPayloadItem com 2a foto', () => {

@@ -13,6 +13,7 @@ export interface RemoverPublicadoInput {
   familiaId: string;
   orgId: string;
   canal: string;
+  preservarFamilia?: boolean;
 }
 
 export interface RemoverPublicadoDeps {
@@ -33,6 +34,7 @@ export type ResultadoRemocao =
   /** ADR-0088: 1+ filhos não confirmaram pausado no ML nesta tentativa. Nada foi deletado
    *  (raiz e filhas preservadas) — o operador pode clicar "Remover" de novo (idempotente). */
   | { tipo: 'remocao_pendente'; pendentes: string[] }
+  | { tipo: 'preservada'; familiaId: string; loteId: string }
   | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number };
 
 export async function removerPublicado(deps: RemoverPublicadoDeps, input: RemoverPublicadoInput): Promise<ResultadoRemocao> {
@@ -40,7 +42,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   const { familiaId, orgId, canal } = input;
 
   const { data: alvo, error: alvoErr } = await admin.from('familias')
-    .select('id, codigo_pai, ml_item_id, org_id')
+    .select('id, lote_id, codigo_pai, ml_item_id, org_id')
     .eq('id', familiaId).eq('org_id', orgId).maybeSingle();
   if (alvoErr) throw new Error(`remover-publicado: consultar família falhou: ${alvoErr.message}`);
   if (!alvo) return { tipo: 'nao_encontrada' };
@@ -122,6 +124,35 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       }
       // pronto_para_deletar → segue o fluxo comum de delete abaixo, idêntico ao Legacy.
     }
+  }
+
+  if (input.preservarFamilia) {
+    if (idsExternos.length > 0) {
+      const { data: recheck, error: recheckErr } = await admin.from('anuncios_externos')
+        .select('mudando_composicao').in('id', idsExternos);
+      if (recheckErr) throw new Error(`remover-publicado: re-checar mudando_composicao falhou: ${recheckErr.message}`);
+      if ((recheck ?? []).some((e: { mudando_composicao?: boolean }) => e.mudando_composicao)) {
+        return { tipo: 'em_voo' };
+      }
+    }
+    const { error: famErr } = await admin.from('familias').update({
+      ml_item_id: null,
+      ml_permalink: null,
+      publicado_em: null,
+      status: 'revisao',
+      erro_mensagem: null,
+    }).eq('id', alvo.id).eq('org_id', orgId);
+    if (famErr) throw new Error(`remover-publicado: preparar família para republicação falhou: ${famErr.message}`);
+    const { error: varErr } = await admin.from('variacoes').update({
+      ml_variation_id: null,
+      preco_publicado_ml: null,
+    }).eq('familia_id', alvo.id);
+    if (varErr) throw new Error(`remover-publicado: limpar vínculos das variações falhou: ${varErr.message}`);
+    const { error: extErr } = await admin.from('anuncios_externos')
+      .delete().eq('org_id', alvo.org_id).eq('canal', canal).eq('codigo_pai', alvo.codigo_pai);
+    if (extErr) throw new Error(`remover-publicado: limpar anúncios externos falhou: ${extErr.message}`);
+    await admin.from('lotes').update({ status: 'revisao' }).eq('id', alvo.lote_id);
+    return { tipo: 'preservada', familiaId: alvo.id, loteId: alvo.lote_id };
   }
 
   // Codex P2: o vínculo de UPDATE é GLOBAL por (user_id, codigo_pai, ml_item_id not null) —

@@ -68,6 +68,13 @@ const LISTING_TYPE_PADRAO = 'gold_special';
 const CONDITION = 'new';
 const COR_UNITARIA = 'Único';
 
+function atributoVariacaoPlano(valor: string): AtributoItem {
+  if (/^TAM(?:ANHO)?(?:\s|$)/i.test(valor)) {
+    return { name: 'Tamanho', value_name: valor };
+  }
+  return { id: 'COLOR', value_name: valor };
+}
+
 // Ausência legítima de código universal: nulo/vazio, código interno 3000* (não-EAN GS1),
 // ou comprimento inválido (GTIN válido = 8, 12, 13 ou 14 dígitos). Códigos de 9 dígitos
 // são IDs internos de fornecedor, não GTINs reais — tratamos como ausentes para evitar
@@ -137,7 +144,7 @@ export function montarPayloadItem(
     const cor = v.cor?.trim() || COR_UNITARIA;
     const atributosFlat: AtributoItem[] = [
       ...(familia.atributos_ml ?? []),
-      { id: 'COLOR', value_name: cor },
+      atributoVariacaoPlano(cor),
     ];
     if (gtinAusente(v.gtin)) {
       if (aceitaEmptyGtin) atributosFlat.push({ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO });

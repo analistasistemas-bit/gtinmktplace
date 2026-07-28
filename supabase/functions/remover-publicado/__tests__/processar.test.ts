@@ -77,6 +77,40 @@ const CTX = { getToken: async () => 'tok' } as never;
 const CONEXAO = { id: 'c', contaExternaId: 'seller-1' } as never;
 
 describe('removerPublicado — família User Products (ADR-0088: mini-saga de remoção)', () => {
+  it('modo republicar pausa filhos, preserva família/imagens e limpa somente vínculos ML', async () => {
+    const { admin, deletes, updates, removidos } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '02854309', ml_item_id: 'MLB1', org_id: ORG },
+        [],
+      ],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[
+        { sku: 'TAM01', item_externo_id: 'MLB1', retirado: false, status: 'ativo' },
+        { sku: 'TAM02', item_externo_id: 'MLB2', retirado: false, status: 'ativo' },
+        { sku: 'TAM03', item_externo_id: 'MLB3', retirado: false, status: 'ativo' },
+      ]],
+    });
+
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO, removerComposicao: async () => ({ tipo: 'pronto_para_deletar' }) },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true } as never,
+    );
+
+    expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-1', loteId: 'lote-40' });
+    expect(deletes.map((d) => d.tabela)).toEqual(['anuncios_externos']);
+    expect(updates).toEqual(expect.arrayContaining([
+      {
+        tabela: 'familias',
+        payload: expect.objectContaining({ ml_item_id: null, status: 'revisao' }),
+      },
+      {
+        tabela: 'variacoes',
+        payload: expect.objectContaining({ ml_variation_id: null, preco_publicado_ml: null }),
+      },
+    ]));
+    expect(removidos).toEqual([]);
+  });
+
   it('todos os filhos confirmam pausado → deleta normalmente (fluxo idêntico ao Legacy)', async () => {
     const { admin, deletes, updates } = fakeAdmin({
       familias: [

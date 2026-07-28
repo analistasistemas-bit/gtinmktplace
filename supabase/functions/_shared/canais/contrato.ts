@@ -3,8 +3,13 @@
 // ml/*. Os módulos ML re-exportam para não quebrar imports existentes (inversão de
 // dependência: o canal genérico não depende do ML).
 
-/** Atributo de item no formato canônico (id + valor por nome ou id). */
-export interface AtributoItem { id: string; value_name?: string; value_id?: string; }
+/** Atributo de item no formato canônico: catálogo por id ou personalizado por name. */
+export interface AtributoItem {
+  id?: string;
+  name?: string;
+  value_name?: string;
+  value_id?: string;
+}
 
 /** Dimensões/peso da embalagem para frete (ADR-0018): cm e gramas. */
 export interface DimensoesPacote {

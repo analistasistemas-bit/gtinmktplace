@@ -699,7 +699,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
 
         <div>
           <label className="mb-2 block text-xs font-semibold text-muted-foreground">
-            {publicado ? 'CORES PENDENTES' : 'VARIAÇÕES'} ({variacoesExibidas.length})
+              {publicado ? 'VARIAÇÕES PENDENTES' : 'VARIAÇÕES'} ({variacoesExibidas.length})
           </label>
           {publicado && variacoesExibidas.length === 0 ? (
             <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-success">

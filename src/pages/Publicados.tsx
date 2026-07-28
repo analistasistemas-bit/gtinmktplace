@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -58,7 +58,7 @@ import { useCustos } from '@/hooks/useCustos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
-import { useRemoverPublicado } from '@/hooks/useRemoverPublicado';
+import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
 import { useProfile } from '@/hooks/useProfile';
 import { paginar } from '@/lib/paginacao';
@@ -116,6 +116,8 @@ interface LinhaProps {
   item: PublicadoItem;
   onRemover: (familiaId: string) => void;
   removendo: boolean;
+  onRepublicar: (familiaId: string) => void;
+  republicando: boolean;
   onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => void;
   pausando: boolean;
   isAdmin: boolean;
@@ -143,7 +145,9 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
   );
 }
 
-function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, isAdmin }: LinhaProps) {
+function LinhaTabela({
+  item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando, isAdmin,
+}: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:publicados:${item.familiaId}`, false);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
@@ -268,6 +272,37 @@ function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, i
               <Button
                 variant="ghost"
                 size="sm"
+                aria-label="Corrigir e republicar"
+                title="Corrigir e republicar"
+                className="h-7 px-2 text-xs"
+                disabled={!isAdmin || republicando}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Corrigir e republicar?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Todos os itens desta família serão pausados no Mercado Livre. Os dados,
+                  variações e imagens serão preservados e o produto voltará para a Revisão.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onRepublicar(item.familiaId)}>
+                  Pausar e voltar à Revisão
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
                 aria-label="Remover"
                 title="Remover"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
@@ -308,11 +343,19 @@ function LinhaTabela({ item, onRemover, removendo, onPausarReativar, pausando, i
           ) : erroFamilia || !familia ? (
             <p className="text-xs text-muted-foreground">não foi possível carregar a análise deste item.</p>
           ) : (
-            <PainelAnalise
-              familia={familia}
-              precoOverride={item.precoAtual ?? item.precoPublicacao}
-              listingTypeReal={item.listingType ?? null}
-            />
+            <div className="space-y-3">
+              {familia.variacoes.length > 1 && (
+                <div className="rounded-md border bg-background px-3 py-2 text-xs">
+                  <span className="font-medium">Variações publicadas:</span>{' '}
+                  {familia.variacoes.map((v) => v.cor || v.codigo).join(' · ')}
+                </div>
+              )}
+              <PainelAnalise
+                familia={familia}
+                precoOverride={item.precoAtual ?? item.precoPublicacao}
+                listingTypeReal={item.listingType ?? null}
+              />
+            </div>
           )}
         </TableCell>
       </TableRow>
@@ -364,9 +407,11 @@ function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelPr
 // ============================================================================
 
 export default function Publicados() {
+  const navigate = useNavigate();
   const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
+  const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
   const { isAdmin } = useProfile();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
@@ -395,6 +440,7 @@ export default function Publicados() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { filtro, ord, pagina, tamanho } = useMemo(() => paramsParaEstado(searchParams), [searchParams]);
   const [removendoId, setRemovendoId] = useState<string | null>(null);
+  const [republicandoId, setRepublicandoId] = useState<string | null>(null);
   const [pausandoId, setPausandoId] = useState<string | null>(null);
 
   const aplicar = useCallback(
@@ -436,6 +482,21 @@ export default function Publicados() {
           description: err instanceof Error ? err.message : String(err),
         }),
       onSettled: () => setRemovendoId(null),
+    });
+  };
+
+  const handleRepublicar = (familiaId: string) => {
+    setRepublicandoId(familiaId);
+    prepararRepublicar(familiaId, {
+      onSuccess: ({ lote_id }) => {
+        toast.success('Itens pausados; família pronta para republicar');
+        navigate(`/revisao/${lote_id}`);
+      },
+      onError: (err) =>
+        toast.error('Falha ao preparar republicação', {
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      onSettled: () => setRepublicandoId(null),
     });
   };
 
@@ -778,6 +839,8 @@ export default function Publicados() {
                       item={item}
                       onRemover={handleRemover}
                       removendo={removendo && removendoId === item.familiaId}
+                      onRepublicar={handleRepublicar}
+                      republicando={preparandoRepublicar && republicandoId === item.familiaId}
                       onPausarReativar={handlePausarReativar}
                       pausando={pausandoOuReativando && pausandoId === item.mlItemId}
                       isAdmin={isAdmin}
