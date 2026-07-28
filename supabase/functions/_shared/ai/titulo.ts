@@ -104,6 +104,42 @@ function normalizarSegmentos(titulo: string): string {
   return titulo.split(' | ').map((s) => s.trim()).filter(Boolean).join(' | ');
 }
 
+const RE_CONTAGEM = /\b(\d+)\s*(UNIDADES?|UNDS?|UND|UN|PEÇAS?|PECAS?|PÇS?|PCS?|PC)\b/i;
+const RE_CONTAGEM_TOKEN = /\b\d+\s*(?:UNIDADES?|UNDS?|UND|UN|PEÇAS?|PECAS?|PÇS?|PCS?|PC)\b/gi;
+
+function extrairContagem(texto: string): string | null {
+  const m = texto.match(RE_CONTAGEM);
+  if (!m) return null;
+  const unidade = /^(?:P|PC)/i.test(m[2]) ? 'PEÇAS' : 'UNIDADES';
+  return `${m[1]} ${unidade}`;
+}
+
+// Garante contagens de embalagem grounded no nome OU na descrição da planilha. Diferente de
+// metragem/largura, a quantidade frequentemente vem só na descrição ("pacote com 10 unidades");
+// deixar isso apenas a cargo da IA gerou títulos inconsistentes no lote #40. A contagem ocupa
+// o último segmento e derruba diferenciais genéricos antes de ser aparada.
+export function garantirQuantidadeTitulo(titulo: string, nomePai: string, descricaoPai: string): string {
+  const quantidade = extrairContagem(`${nomePai}\n${descricaoPai}`);
+  if (!quantidade) return titulo;
+
+  const semContagem = normalizarSegmentos(
+    titulo.replace(RE_CONTAGEM_TOKEN, ' ').replace(/\s{2,}/g, ' '),
+  );
+  const partes = semContagem ? semContagem.split(' | ') : [''];
+  let candidato = [...partes, quantidade].filter(Boolean).join(' | ');
+
+  while (candidato.length > TITULO_MAX && partes.length > 1) {
+    partes.pop();
+    candidato = [...partes, quantidade].filter(Boolean).join(' | ');
+  }
+  if (candidato.length > TITULO_MAX) {
+    const sufixo = ` | ${quantidade}`;
+    partes[0] = partes[0].slice(0, TITULO_MAX - sufixo.length).trimEnd();
+    candidato = `${partes[0]}${sufixo}`;
+  }
+  return removerCaudaConectiva(candidato);
+}
+
 // Garante que a metragem do nome apareça no título (dado crucial que diferencia
 // produtos — ex.: fita 10MT vs 100MT), com exatamente UM valor: o real. Rede de segurança
 // determinística porque a IA, sob o teto de 60 chars, descarta a metragem mesmo presente no

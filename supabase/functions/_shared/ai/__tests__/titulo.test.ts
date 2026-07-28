@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { clampTitulo, extrairMetragem, garantirMetragemTitulo, removerCaudaConectiva } from '../titulo';
+import {
+  clampTitulo,
+  extrairMetragem,
+  garantirMetragemTitulo,
+  garantirQuantidadeTitulo,
+  removerCaudaConectiva,
+} from '../titulo';
 
 describe('removerCaudaConectiva', () => {
   it('remove conectivo solto no fim ("VERSÁTIL E" → "VERSÁTIL")', () => {
@@ -139,5 +145,15 @@ describe('garantirMetragemTitulo', () => {
     );
     expect(out.length).toBeLessThanOrEqual(60);
     expect(out).toContain('100MT');
+  });
+});
+
+describe('garantirQuantidadeTitulo', () => {
+  it('prioriza a quantidade presente na descrição sobre diferencial genérico — lote #40', () => {
+    expect(garantirQuantidadeTitulo(
+      'SACO DE ORGANZA 10X15CM BRANCO | EMBALAGENS ELEGANTES',
+      'SACO DE ORGANZA 10X15CM BRANCO',
+      'Pacote com 10 unidades.',
+    )).toBe('SACO DE ORGANZA 10X15CM BRANCO | 10 UNIDADES');
   });
 });
