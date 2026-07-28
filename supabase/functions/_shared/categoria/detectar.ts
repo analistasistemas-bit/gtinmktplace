@@ -4,7 +4,7 @@ export type TipoOrigem = 'regex' | 'ia' | 'manual';
 // Palavras-chave por tipo (texto já normalizado: minúsculo, sem acento).
 // Ordem importa: 'fita' antes de 'linha' para que "fita ... costura" caia em fita.
 const REGRAS: { tipo: TipoAviamento; termos: string[] }[] = [
-  { tipo: 'fita', termos: ['fita', 'fitas', 'cetim', 'gorgorao', 'gorgurao', 'vies', 'organza', 'renda', 'veludo', 'fitilho'] },
+  { tipo: 'fita', termos: ['fita', 'fitas', 'cetim', 'gorgorao', 'gorgurao', 'vies', 'renda', 'veludo', 'fitilho'] },
   { tipo: 'botao', termos: ['botao', 'botoes', 'pressao'] },
   { tipo: 'cola', termos: ['cola', 'colas'] },
   { tipo: 'linha', termos: ['linha', 'linhas', 'linhao', 'costura', 'cost', 'bobina', 'cone', 'fio', 'fios', 'barbante', 'barbantes'] },

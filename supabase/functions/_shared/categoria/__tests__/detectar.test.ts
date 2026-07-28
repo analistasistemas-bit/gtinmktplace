@@ -18,6 +18,11 @@ describe('detectarTipoAviamento (ADR-0009)', () => {
     expect(detectarTipoAviamento('FITA CETIM PROGRESSO N.3 CORES 10MT').tipo).toBe('fita');
     expect(detectarTipoAviamento('Fita Gorgorão 22mm').tipo).toBe('fita');
     expect(detectarTipoAviamento('VIÉS 18MM').tipo).toBe('fita');
+    expect(detectarTipoAviamento('Fita de Organza 38mm').tipo).toBe('fita');
+  });
+
+  it('não confunde saco feito de organza com fita', () => {
+    expect(detectarTipoAviamento('SACO DE ORGANZA 13X18CM BRANCO | 10 UNIDADES').tipo).toBe('outro');
   });
 
   it('detecta botão', () => {
