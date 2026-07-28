@@ -7,6 +7,7 @@ import type { PublicadoItem } from '@/lib/publicados';
 const usePublicadosMock = vi.fn();
 const useStatusPublicadosMock = vi.fn();
 const useRemoverPublicadoMock = vi.fn();
+const usePrepararRepublicacaoMock = vi.fn();
 const usePausarReativarPublicadoMock = vi.fn();
 const useResumoFinanceiroMock = vi.fn();
 const useVendasMock = vi.fn();
@@ -39,6 +40,7 @@ vi.mock('@/hooks/useStatusPublicados', () => ({
 
 vi.mock('@/hooks/useRemoverPublicado', () => ({
   useRemoverPublicado: () => useRemoverPublicadoMock(),
+  usePrepararRepublicacao: () => usePrepararRepublicacaoMock(),
 }));
 
 vi.mock('@/hooks/usePausarReativarPublicado', () => ({
@@ -90,6 +92,11 @@ describe('Publicados', () => {
       refetch: vi.fn(),
     });
     useRemoverPublicadoMock.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      error: null,
+    });
+    usePrepararRepublicacaoMock.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
       error: null,
