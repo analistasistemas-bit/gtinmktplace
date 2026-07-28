@@ -34,10 +34,36 @@ function chaveCache(q: string): string {
   return `dd:${norm.slice(0, 120)}`;
 }
 
+/** Valida um ID MLB diretamente na API oficial; null indica que a query é texto comum. */
+export async function buscarCategoriaDireta(
+  query: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<CategoriaCandidata[] | null> {
+  const categoriaId = (query ?? '').trim().toUpperCase();
+  if (!/^MLB\d+$/.test(categoriaId)) return null;
+
+  try {
+    const r = await fetchFn(`https://api.mercadolibre.com/categories/${categoriaId}`);
+    if (!r.ok) return [];
+    const json = await r.json().catch(() => null) as { id?: unknown; name?: unknown } | null;
+    if (json?.id !== categoriaId || typeof json.name !== 'string' || !json.name.trim()) return [];
+    return [{
+      domainId: '',
+      domainName: '',
+      categoriaId,
+      categoriaNome: json.name.trim(),
+    }];
+  } catch {
+    return [];
+  }
+}
+
 /** Busca a categoria prevista pelo ML. Resiliente: rede/4xx → []. Cacheado no Redis. */
 export async function buscarCategoriaPreditor(token: string, query: string): Promise<CategoriaCandidata[]> {
   const q = (query ?? '').trim();
   if (!q) return [];
+  const direta = await buscarCategoriaDireta(q);
+  if (direta !== null) return direta;
   const key = chaveCache(q);
   const cached = await redisGet(key).catch(() => null);
   if (cached) return JSON.parse(cached) as CategoriaCandidata[];
