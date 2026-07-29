@@ -58,8 +58,21 @@
 ### Task 0: Corrigir `talvezFinalizarLote` — lote com família pendente não pode virar `concluido`
 
 **Files:**
-- Modify: `supabase/functions/publish-familia-ml/processar.ts`
-- Test: `supabase/functions/publish-familia-ml/__tests__/finalizar-lote.test.ts` (criar)
+- Create: `supabase/functions/_shared/lote/finalizar.ts`
+- Test: `supabase/functions/_shared/lote/__tests__/finalizar.test.ts`
+- Modify: `supabase/functions/publish-familia-ml/processar.ts:44-51`
+- Modify: `supabase/functions/update-familia-ml/processar.ts:41-48`
+- Modify: `supabase/functions/publicar-split-ml/index.ts:35-42`
+
+**São TRÊS cópias, não duas** (verificado):
+
+```
+publish-familia-ml/processar.ts:44   export async function talvezFinalizarLote(...)
+update-familia-ml/processar.ts:41    export async function talvezFinalizarLote(...)
+publicar-split-ml/index.ts:35        async function talvezFinalizarLote(...)   ← privada, caminho de split
+```
+
+Corrigir só a primeira deixaria duas com a semântica antiga — inclusive a do split, que é caminho de planilha. Por isso a task **extrai uma função compartilhada** e migra os três call sites.
 
 **Por que esta task existe (achado da revisão adversarial):** `talvezFinalizarLote`
 (`publish-familia-ml/processar.ts:44-52`) olha só famílias em `publicando` e `pronto` — **ignora
@@ -123,9 +136,9 @@ pnpm test supabase/functions/publish-familia-ml/__tests__/finalizar-lote.test.ts
 
 Expected: **FAIL** — `decidirStatusLote` não existe.
 
-- [ ] **Step 4: Implementar**
+- [ ] **Step 4: Implementar no módulo compartilhado**
 
-Em `supabase/functions/publish-familia-ml/processar.ts`:
+Crie `supabase/functions/_shared/lote/finalizar.ts` (o diretório já existe — `recontar.ts` mora nele):
 
 ```ts
 /** Contagem de famílias do lote por situação relevante. */
@@ -164,24 +177,47 @@ Nota: a versão antiga fazia **duas** queries (uma por status); esta faz uma só
 - [ ] **Step 5: Rodar e verificar que PASSA**
 
 ```bash
-pnpm test supabase/functions/publish-familia-ml/__tests__/finalizar-lote.test.ts
+pnpm test supabase/functions/_shared/lote/__tests__/finalizar.test.ts
+```
+
+Expected: **PASS**, 5 testes.
+
+- [ ] **Step 6: Migrar os TRÊS call sites**
+
+Em cada um dos três arquivos, apague a cópia local de `talvezFinalizarLote` e importe a compartilhada:
+
+```ts
+import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
+```
+
+- `publish-familia-ml/processar.ts` — a função é **exportada**; verifique quem a importa antes de remover o export (`rtk proxy grep -rn "from './processar'" supabase/functions/publish-familia-ml/`), e re-exporte se algum teste depender dela.
+- `update-familia-ml/processar.ts` — mesma checagem.
+- `publicar-split-ml/index.ts` — a cópia é **privada**, dois call sites (linhas ~468 e ~486). Só trocar o import.
+
+```bash
+# Depois da migração, não pode sobrar nenhuma definição local:
+rtk proxy grep -rn "function talvezFinalizarLote" supabase/functions/ --include=*.ts
+# Expected: só supabase/functions/_shared/lote/finalizar.ts
+```
+
+- [ ] **Step 7: Rodar a suite inteira**
+
+```bash
 pnpm test 2>&1 | tail -5
 ```
 
-Expected: **PASS**, 5 testes novos, e **nenhum teste existente quebrado**. Se algum teste de publicação afirmava que o lote vira `concluido` com família pendente, ele estava caracterizando o bug — corrija o teste e registre no commit.
+Expected: **nenhum teste existente quebrado**. Se algum teste de publicação afirmava que o lote vira `concluido` com família pendente, ele estava caracterizando o bug — corrija o teste e registre isso no commit.
 
-- [ ] **Step 6: Verificar o outro worker**
-
-`update-familia-ml/processar.ts` tem a mesma função ou importa esta? Se for cópia, aplique a mesma correção lá; se importar, nada a fazer. Confirme com o grep do Step 1.
-
-- [ ] **Step 7: Baseline + commit**
+- [ ] **Step 8: Baseline + commit**
 
 ```bash
 pnpm test && npx tsc --noEmit && pnpm lint
-deno check supabase/functions/publish-familia-ml/processar.ts
-git add supabase/functions/publish-familia-ml/
-git commit -m "fix(lote): nao concluir lote que ainda tem familia pendente ou processando"
+deno check supabase/functions/publish-familia-ml/processar.ts supabase/functions/update-familia-ml/processar.ts supabase/functions/publicar-split-ml/index.ts
+git add supabase/functions/_shared/lote/ supabase/functions/publish-familia-ml/ supabase/functions/update-familia-ml/ supabase/functions/publicar-split-ml/
+git commit -m "fix(lote): nao concluir lote com familia pendente + unificar as 3 copias de talvezFinalizarLote"
 ```
+
+**Deploy:** esta task toca três workers de publicação. Eles entram no blast radius do deploy da Task 9 — recalcule com `deno info` e redeploy os três.
 
 ---
 
@@ -847,6 +883,27 @@ Deno.serve(async (req) => {
     }, 409);
   }
 
+  // Guard de SKU (achado da revisão adversarial): a unique do banco é (familia_id, codigo)
+  // — NÃO existe unique por org. As RPCs de estoque resolvem a variação por (org_id, codigo)
+  // pegando a família mais recente, então um SKU repetido entre produtos diferentes faria
+  // uma venda baixar o estoque do produto ERRADO. Aqui é o único lugar onde dá para impedir.
+  const codigosNovos = produto.variacoes.map((v) => v.codigo.trim());
+  const { data: skusEmUso } = await admin.from('variacoes')
+    .select('codigo, familias!inner(codigo_pai)')
+    .eq('org_id', orgId).in('codigo', codigosNovos);
+  const conflitos = [...new Set(
+    (skusEmUso ?? [])
+      .filter((v) => (v.familias as { codigo_pai: string }).codigo_pai !== codigoPai)
+      .map((v) => v.codigo as string),
+  )];
+  if (conflitos.length > 0) {
+    return json({
+      error: `Estes SKUs já pertencem a outro produto desta organização: ${conflitos.join(', ')}. `
+        + 'Um SKU só pode existir em um produto — renomeie ou use o produto existente.',
+      conflitos,
+    }, 409);
+  }
+
   // D-1.1: reusa o lote manual ABERTO da org; cria um novo se não houver.
   const { data: aberto } = await admin.from('lotes')
     .select('id').eq('org_id', orgId).eq('origem', 'manual')
@@ -875,8 +932,11 @@ Deno.serve(async (req) => {
   if (famErr || !familiaCriada) return json({ error: famErr?.message ?? 'Falha criando família.' }, 400);
   const familiaId = familiaCriada.id as string;
 
-  const { error: varErr } = await admin.from('variacoes')
-    .insert(variacoes.map((v) => ({ ...v, familia_id: familiaId })));
+  // O `select` é obrigatório: a etapa de fotos precisa do `variacoes.id` de cada SKU
+  // (pre-subir-fotos.ts:42-55 vincula a foto pelo id da variação, não pelo código).
+  const { data: variacoesCriadas, error: varErr } = await admin.from('variacoes')
+    .insert(variacoes.map((v) => ({ ...v, familia_id: familiaId })))
+    .select('id, codigo');
   if (varErr) {
     // Família sem variação é lixo — remove para não deixar estado parcial na Revisão.
     await admin.from('familias').delete().eq('id', familiaId);
@@ -914,7 +974,11 @@ Deno.serve(async (req) => {
 
   // Estado parcial é devolvido explicitamente, nunca escondido — a tela avisa o operador
   // em vez de deixá-lo achar que deu tudo certo e depois bater no 409 sem entender.
-  return json({ loteId, familiaId, filaOk, falhasEstoque });
+  // `variacoes` é o que a etapa de fotos consome para saber onde gravar cada imagem.
+  return json({
+    loteId, familiaId, filaOk, falhasEstoque,
+    variacoes: (variacoesCriadas ?? []).map((v) => ({ id: v.id, codigo: v.codigo })),
+  });
 });
 ```
 
@@ -1004,19 +1068,20 @@ Deno.serve(async (req) => {
     p_criado_por: userId, p_ref: `entrada:${ref}`,
   });
   if (error) return json({ error: error.message }, 400);
-  // null = a mesma submissão já foi aplicada. Não é erro: devolve o saldo atual.
-  if (estoque === null) {
-    const { data: v } = await admin.from('variacoes')
-      .select('estoque').eq('org_id', orgId).eq('codigo', codigo)
-      .order('criado_em', { ascending: false }).limit(1).maybeSingle();
-    return json({ estoque: v?.estoque ?? null, duplicada: true });
-  }
+  const duplicada = estoque === null;   // a mesma submissão já foi aplicada — não é erro
 
   // Propaga na hora, para TODOS os canais publicados — inclusive o ML (D-10).
   // canal_origem null = push para todo mundo.
+  //
+  // O enfileiramento roda TAMBÉM no caminho duplicado: se a primeira tentativa
+  // aplicou a entrada mas morreu antes de enfileirar, o retry cairia no `duplicada`
+  // e o push nunca aconteceria. Push absoluto é idempotente, então re-enfileirar
+  // é inofensivo — bem mais barato que perder a propagação.
   const { data: mov } = await admin.from('estoque_movimentos')
-    .select('codigo_pai').eq('org_id', orgId).eq('codigo', codigo)
-    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+    .select('codigo_pai, estoque_resultante')
+    .eq('org_id', orgId).eq('referencia_externa', `entrada:${ref}`).maybeSingle();
+
+  let pushOk = true;
   if (mov?.codigo_pai) {
     try {
       await enfileirarSincronizacaoEstoque(
@@ -1024,13 +1089,19 @@ Deno.serve(async (req) => {
       );
     } catch (e) {
       // A entrada já foi gravada e é a verdade; o push é recuperável pela reconciliação diária.
+      pushOk = false;
       console.error('entrada_push_falhou', e);
     }
   }
 
-  return json({ estoque });
+  return json({
+    estoque: duplicada ? (mov?.estoque_resultante ?? null) : estoque,
+    duplicada, pushOk,
+  });
 });
 ```
+
+`pushOk: false` não é erro de entrada — a tela mostra um aviso discreto ("saldo atualizado; os anúncios serão sincronizados em até 24h") em vez de sugerir que a entrada falhou.
 
 - [ ] **Step 2: Baseline**
 
@@ -1222,12 +1293,23 @@ Expected: **PASS**, 4 testes.
 Crie `src/pages/Estoque.tsx` seguindo o layout e os tokens visuais que as páginas existentes já usam (leia `src/pages/Publicados.tsx` como referência de estrutura). Conteúdo:
 
 - Cabeçalho com título "Estoque" e dois botões: **Cadastrar produto** e **Dar entrada**.
-- Tabela de produtos: **Produto · SKUs · Saldo total · Ações**. Linha expansível mostrando as variações (SKU, cor, saldo, custo, preço) e o histórico de movimentos (reusa `fetchMovimentosEstoque` e `rotuloMotivo` do Bloco A).
+- Tabela de produtos: **Produto · SKUs · Saldo total · Canais · Ações**. A coluna **Canais** (exigida pela spec §9) mostra em quais marketplaces o produto está publicado — um select adicional em `anuncios_externos` por `codigo_pai` com `status='publicado'`, agregado por canal, reusando o `CanalBadge` que já existe. Produto cadastrado e ainda não publicado aparece como "—".
+- Linha expansível mostrando as variações (SKU, cor, saldo, custo, preço) e o histórico de movimentos (reusa `fetchMovimentosEstoque` e `rotuloMotivo` do Bloco A).
 - Saldo zero destacado visualmente (o anúncio está pausado no ML).
 - Estado vazio: "Nenhum produto cadastrado ainda. Comece cadastrando o primeiro."
 - Light **e** dark.
 
 Crie `src/components/estoque/dialog-entrada.tsx`: seleção de SKU (busca por código ou nome), quantidade (inteiro > 0), custo unitário (opcional; se preenchido tem que ser > 0), documento (texto livre, opcional). Ao salvar, chama `registrarEntrada` e invalida `['produtos-saldo']` e `QK.movimentosEstoque(codigoPai)`.
+
+- [ ] **Step 5b: Rótulo de origem na tela de Lotes**
+
+Exigido pela spec §9 e esquecido nas tasks. Localize a tela:
+
+```bash
+rtk proxy grep -rn "lotes" src/pages/ --include=*.tsx | rtk proxy grep -i "export default\|function Lotes" | rtk proxy head -3
+```
+
+Na listagem, mostre um chip discreto distinguindo **Planilha** de **Cadastro manual**, lendo `lotes.origem`. Inclua `origem` no `select` da query que alimenta a tela. Sem isso, o operador de uma org do módulo vê "Lote #12" sem saber de onde veio, e o operador de uma org mista não distingue os dois fluxos.
 
 - [ ] **Step 6: Registrar a rota**
 
@@ -1280,15 +1362,37 @@ export async function uploadFotoProduto(loteId: string, arquivo: File, alvo: { t
 Em `src/lib/queries.ts`:
 
 ```ts
-export async function cadastrarProduto(p: ProdutoEntradaUI): Promise<{ loteId: string; familiaId: string }> {
+export interface ResultadoCadastro {
+  loteId: string;
+  familiaId: string;
+  /** id + codigo de cada variação criada — a etapa de fotos depende disto. */
+  variacoes: Array<{ id: string; codigo: string }>;
+  /** false = a família ficou 'pendente' sem job de IA; precisa reprocessar. */
+  filaOk: boolean;
+  /** SKUs cujo estoque inicial não foi aplicado. */
+  falhasEstoque: string[];
+}
+
+export async function cadastrarProduto(p: ProdutoEntradaUI): Promise<ResultadoCadastro> {
   const { data, error } = await supabase.functions.invoke('cadastrar-produto', { body: p });
   if (error) throw error;
-  const r = data as { error?: string; erros?: Array<{ campo: string; mensagem: string }>; loteId?: string; familiaId?: string };
+  const r = data as Partial<ResultadoCadastro> & {
+    error?: string; erros?: Array<{ campo: string; mensagem: string }>;
+  };
   if (r.erros?.length) throw new Error(r.erros.map((e) => e.mensagem).join('\n'));
   if (r.error) throw new Error(r.error);
-  return { loteId: r.loteId!, familiaId: r.familiaId! };
+  return {
+    loteId: r.loteId!, familiaId: r.familiaId!,
+    variacoes: r.variacoes ?? [], filaOk: r.filaOk !== false, falhasEstoque: r.falhasEstoque ?? [],
+  };
 }
 ```
+
+**A UI não pode engolir `filaOk`/`falhasEstoque`.** Cadastro parcial reportado como sucesso é a pior falha possível aqui: o operador segue para as fotos e para a Revisão achando que está tudo certo, e o produto nunca é enriquecido pela IA (ou entra sem estoque). Regra:
+
+- `filaOk === false` → banner de erro com botão **"Reprocessar"** chamando a edge `reprocessar-familia` (ADR-0030) com o `familiaId`. Não avance para a Revisão sem isso.
+- `falhasEstoque.length > 0` → listar os SKUs e oferecer **"Dar entrada"** para cada um. O cadastro em si está bom; só o saldo faltou.
+- Só quando os dois estiverem limpos a tela mostra "Produto cadastrado" e libera o "Ir para a Revisão".
 
 Para a foto, escreva direto no bucket `imagens` no path `{user_id}/{lote_id}/{arquivo}` — as policies de storage exigem que a primeira pasta do path seja `auth.uid()`, e é exatamente o que `buildStoragePath` já monta. Reuse `buildStoragePath` e `uploadFile` de onde `useUploadLote.ts` os importa; **não** reescreva.
 
@@ -1329,6 +1433,8 @@ Confirme o nome exato de `storageOwner` e `buildStoragePath` lendo `src/hooks/us
 - Salvar → `cadastrarProduto` → recebe `{ loteId, familiaId }`.
 
 **Etapa 2 — fotos** (agora que família e variações existem):
+- Só é liberada se `filaOk` e `falhasEstoque` estiverem limpos (ver acima); senão, mostra os avisos e as ações de reparo primeiro.
+- Usa o `variacoes: [{id, codigo}]` devolvido pela edge para saber em qual `variacaoId` gravar cada foto — **não** tente descobrir o id por uma busca posterior.
 - Upload da capa, capa2 e capa3 da família.
 - Upload de uma foto por variação.
 - Botão "Concluir" → navega para `/revisao/{loteId}`.
@@ -1437,7 +1543,8 @@ git commit -m "docs(e6b): documentar cadastro manual, entrada de mercadoria e ga
 
 ## Riscos residuais aceitos (registrar no ADR-0054)
 
-- **O guard D-4 não é atômico.** É check-then-insert, e não existe unique real por `(org_id, codigo_pai)` — nem pode existir, porque org de planilha legitimamente tem N famílias com o mesmo `codigo_pai` (uma por lote). Dois cadastros concorrentes do mesmo produto sem lote aberto criariam dois lotes e duas famílias canônicas concorrentes. Probabilidade baixíssima (um operador, um formulário), consequência recuperável (excluir uma das famílias), custo de blindar alto. Aceito e documentado.
+- **O guard D-4 e o guard de SKU não são atômicos.** São check-then-insert, e não existe unique real por `(org_id, codigo_pai)` nem por `(org_id, codigo)` — nem pode existir, porque org de planilha legitimamente tem N famílias com o mesmo `codigo_pai` (uma por lote) e N variações com o mesmo `codigo`. Dois cadastros concorrentes do mesmo produto criariam duas famílias canônicas concorrentes. Probabilidade baixíssima (um operador, um formulário), consequência recuperável (excluir uma das famílias), custo de blindar alto. Aceito e documentado.
+- **SKU repetido vindo de planilha continua possível.** O guard acima só protege o cadastro manual; uma planilha pode legitimamente trazer o mesmo `codigo` em produtos diferentes, e nesse caso a resolução por "família mais recente do `(org_id, codigo)`" nas RPCs pode baixar o produto errado. É risco **pré-existente** (o mesmo critério já governa o dedupe de Publicados, ADR-0025), não introduzido aqui — mas passa a ter consequência de estoque. Registrar no ADR e, se aparecer na prática, tratar com um relatório de SKUs ambíguos por org.
 - **Ajuste manual não propaga na hora** (herdado do Bloco A): trigger Postgres não enfileira QStash. A reconciliação diária cobre em ≤24h.
 - **Devolução não é tocada:** só o cancelamento visto pelo `sync-venda`.
 

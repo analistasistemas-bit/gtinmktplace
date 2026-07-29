@@ -150,8 +150,10 @@ Anote o total de testes que passa hoje. Toda task seguinte deve manter esse núm
 **Interfaces:**
 - Consumes: `public.organizations`, `public.familias`, `public.variacoes`, `public.current_org_id()` (todos já existem).
 - Produces, consumidos pelas Tasks 5, 7, 8 e pelo Bloco B:
-  - `public.baixar_estoque(p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text) returns integer`
-  - `public.estornar_estoque(p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text) returns integer`
+  - `public.baixar_estoque(p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text) returns jsonb`
+    — `{ aplicado, motivo, codigo_pai?, estoque_anterior?, estoque_resultante? }`
+  - `public.estornar_estoque(p_org uuid, p_canal text, p_ref_venda text) returns jsonb`
+    — ancorada no movimento de venda; sem venda registrada devolve `aplicado:false`
   - `public.registrar_entrada(p_org uuid, p_codigo text, p_qtd integer, p_custo numeric, p_doc text, p_obs text, p_criado_por uuid, p_ref text) returns integer`
   - tabela `public.estoque_movimentos`
 
@@ -184,7 +186,7 @@ create table public.estoque_movimentos (
   criado_por         uuid references auth.users(id),
   criado_em          timestamptz not null default now(),
   constraint estoque_movimentos_motivo_check check (motivo in (
-    'venda', 'entrada', 'ajuste_manual', 'estorno_venda',
+    'venda', 'entrada', 'estorno_venda',
     'venda_sku_nao_encontrado', 'estorno_sku_nao_encontrado'
   ))
 );
@@ -208,26 +210,37 @@ create policy "estoque_movimentos: select org" on public.estoque_movimentos
 
 - [ ] **Step 3: Escrever `baixar_estoque`**
 
+**Mudança de contrato em relação ao rascunho:** a função devolve **`jsonb`**, não `integer`. O chamador precisa saber, numa só chamada e sem reler o ledger, se **esta execução** foi a que aplicou o movimento (`aplicado`) e qual `codigo_pai` foi afetado. Isso elimina três problemas de uma vez: a releitura do ledger cujo `error` era ignorado, o enfileiramento duplicado quando duas execuções concorrentes leem o mesmo estado, e a impossibilidade de saber o que já foi feito num retry.
+
 ```sql
--- Baixa atômica e idempotente. Devolve o estoque resultante, ou null quando a
--- referência já foi aplicada (duplicata) ou o SKU não existe na org.
+-- Baixa atômica e idempotente.
+-- Devolve jsonb: { aplicado, motivo, codigo_pai, estoque_anterior, estoque_resultante }.
+-- `aplicado=false` significa "esta execução não mudou nada" (duplicata ou SKU órfão) —
+-- é o que permite ao chamador enfileirar push SÓ quando de fato houve mudança.
 create or replace function public.baixar_estoque(
   p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text
-) returns integer language plpgsql security definer set search_path = ''
+) returns jsonb language plpgsql security definer set search_path = ''
 as $$
 declare v_var uuid; v_pai text; v_antes integer; v_novo integer;
 begin
   if p_qtd is null or p_qtd <= 0 then
     raise exception 'baixar_estoque: quantidade deve ser positiva (recebeu %)', p_qtd;
   end if;
+  -- Sem referência não há idempotência: o índice único é PARCIAL (where ref is not null),
+  -- então um p_ref nulo permitiria baixar o mesmo pedido infinitas vezes.
+  if p_ref is null or btrim(p_ref) = '' then
+    raise exception 'baixar_estoque: referência de idempotência é obrigatória';
+  end if;
 
   -- 1) Idempotência: a unique parcial rejeita a 2ª aplicação da mesma referência.
+  --    O bloco EXCEPTION abre uma subtransação PL/pgSQL — ele NÃO aborta a transação
+  --    externa (verificado; o chamador continua normalmente).
   begin
     insert into public.estoque_movimentos
       (org_id, codigo, quantidade, motivo, canal_origem, referencia_externa)
     values (p_org, p_codigo, -p_qtd, 'venda', p_canal, p_ref);
   exception when unique_violation then
-    return null;
+    return jsonb_build_object('aplicado', false, 'motivo', 'duplicata');
   end;
 
   -- 2) Variação canônica = a da família mais recente do produto (âncora ADR-0025).
@@ -241,7 +254,7 @@ begin
   if v_var is null then
     update public.estoque_movimentos set motivo = 'venda_sku_nao_encontrado'
     where org_id = p_org and referencia_externa = p_ref;
-    return null;
+    return jsonb_build_object('aplicado', false, 'motivo', 'sku_nao_encontrado');
   end if;
 
   -- 3) FOR UPDATE trava a linha: sem isso, duas baixas concorrentes do mesmo SKU leem
@@ -258,60 +271,88 @@ begin
   set codigo_pai = v_pai, estoque_anterior = v_antes, estoque_resultante = v_novo
   where org_id = p_org and referencia_externa = p_ref;
 
-  return v_novo;
+  return jsonb_build_object(
+    'aplicado', true, 'motivo', 'venda', 'codigo_pai', v_pai,
+    'estoque_anterior', v_antes, 'estoque_resultante', v_novo
+  );
 end $$;
 ```
 
 - [ ] **Step 4: Escrever `estornar_estoque`**
 
+**Mudança de contrato:** a função **não recebe mais a quantidade**. Ela localiza o movimento de
+`venda` da referência original, trava-o, e usa `abs(quantidade)` dele. Isso resolve dois defeitos de
+uma vez: o `houveBaixa()` seguido de outra RPC era um check-then-act não atômico, e a quantidade do
+snapshot do pedido cancelado pode divergir da que foi realmente baixada. Se não existe movimento de
+venda, não há o que estornar — **é assim que "pedido nunca pago, depois cancelado" deixa de criar
+estoque fantasma**, sem depender de o chamador lembrar de checar.
+
 ```sql
--- Reposição por cancelamento antes do despacho (D-7). Espelha baixar_estoque com
--- sinal invertido e referência própria, então é idempotente independentemente da baixa.
+-- Reposição por cancelamento antes do despacho (D-7). ATÔMICA e ancorada no movimento
+-- de venda original: sem venda registrada, não estorna nada.
+-- Devolve jsonb { aplicado, motivo, codigo_pai, estoque_resultante }.
 create or replace function public.estornar_estoque(
-  p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text
-) returns integer language plpgsql security definer set search_path = ''
+  p_org uuid, p_canal text, p_ref_venda text
+) returns jsonb language plpgsql security definer set search_path = ''
 as $$
-declare v_var uuid; v_pai text; v_antes integer; v_novo integer;
+declare v_qtd integer; v_codigo text; v_var uuid; v_pai text;
+        v_antes integer; v_novo integer; v_ref_estorno text;
 begin
-  if p_qtd is null or p_qtd <= 0 then
-    raise exception 'estornar_estoque: quantidade deve ser positiva (recebeu %)', p_qtd;
+  if p_ref_venda is null or btrim(p_ref_venda) = '' then
+    raise exception 'estornar_estoque: referência da venda é obrigatória';
+  end if;
+  v_ref_estorno := 'estorno:' || p_ref_venda;
+
+  -- 1) Só estorna o que foi de fato baixado. FOR UPDATE serializa contra uma baixa
+  --    concorrente do mesmo pedido (sincronizações paid/cancelled podem intercalar).
+  select abs(quantidade), codigo into v_qtd, v_codigo
+  from public.estoque_movimentos
+  where org_id = p_org and referencia_externa = p_ref_venda and motivo = 'venda'
+  for update;
+
+  if v_qtd is null then
+    return jsonb_build_object('aplicado', false, 'motivo', 'sem_baixa_registrada');
   end if;
 
+  -- 2) Idempotência do próprio estorno.
   begin
     insert into public.estoque_movimentos
       (org_id, codigo, quantidade, motivo, canal_origem, referencia_externa)
-    values (p_org, p_codigo, p_qtd, 'estorno_venda', p_canal, p_ref);
+    values (p_org, v_codigo, v_qtd, 'estorno_venda', p_canal, v_ref_estorno);
   exception when unique_violation then
-    return null;
+    return jsonb_build_object('aplicado', false, 'motivo', 'duplicata');
   end;
 
   select v.id, f.codigo_pai into v_var, v_pai
   from public.variacoes v
   join public.familias f on f.id = v.familia_id
-  where v.org_id = p_org and v.codigo = p_codigo
+  where v.org_id = p_org and v.codigo = v_codigo
   order by f.criado_em desc
   limit 1;
 
   if v_var is null then
-    -- Preserva a trilha (espelha 'venda_sku_nao_encontrado' da baixa) em vez de
-    -- apagar o movimento — estorno de SKU inexistente é um evento que alguém precisa ver.
+    -- Preserva a trilha (espelha 'venda_sku_nao_encontrado') em vez de apagar o
+    -- movimento — estorno de SKU sumido é evento que alguém precisa ver.
     update public.estoque_movimentos
     set motivo = 'estorno_sku_nao_encontrado', quantidade = 0
-    where org_id = p_org and referencia_externa = p_ref;
-    return null;
+    where org_id = p_org and referencia_externa = v_ref_estorno;
+    return jsonb_build_object('aplicado', false, 'motivo', 'sku_nao_encontrado');
   end if;
 
   select estoque into v_antes from public.variacoes where id = v_var for update;
 
-  update public.variacoes set estoque = estoque + p_qtd
+  update public.variacoes set estoque = estoque + v_qtd
   where id = v_var
   returning estoque into v_novo;
 
   update public.estoque_movimentos
   set codigo_pai = v_pai, estoque_anterior = v_antes, estoque_resultante = v_novo
-  where org_id = p_org and referencia_externa = p_ref;
+  where org_id = p_org and referencia_externa = v_ref_estorno;
 
-  return v_novo;
+  return jsonb_build_object(
+    'aplicado', true, 'motivo', 'estorno_venda', 'codigo_pai', v_pai,
+    'estoque_anterior', v_antes, 'estoque_resultante', v_novo
+  );
 end $$;
 ```
 
@@ -382,42 +423,57 @@ A coluna `observacao text` entra no DDL do Step 2 (a spec §7 previa `p_obs`; o 
 
 - [ ] **Step 6: Escrever o trigger de ajuste manual e revogar as permissões**
 
+**Isto é o que torna D-15 verdadeiro em vez de aspiracional.** A RLS do E7
+(`20260705165828_e7_rls_org.sql:18-21`) concede `UPDATE` **completo** em `variacoes` a qualquer
+membro da org. Sem o revoke de coluna abaixo, um usuário autenticado alteraria `estoque` direto pelo
+PostgREST: contornaria o gate do módulo pago, não geraria movimento no ledger e não enfileiraria push
+— exatamente os três invariantes deste épico.
+
+Consequência de desenho: com a coluna trancada, **não existe ajuste manual pelo app**, então o
+trigger de `ajuste_manual` que estava no rascunho seria código morto por construção. Ele foi
+**removido** — junto com o motivo `ajuste_manual`. Ajuste manual, se um dia for pedido, entra como
+uma edge que grava o ledger e enfileira o push, igual à entrada.
+
 ```sql
--- Ajuste manual: rede de auditoria. Hoje NÃO existe nenhum escritor de variacoes.estoque
--- no browser (src/lib/queries.ts só tem mutations de preço/cor/gtin; ingest e workers usam
--- adminClient → auth.uid() null), então este trigger nasce sem gatilho no app — ele existe
--- para capturar edição manual futura ou direta no banco, não como feature.
--- auth.uid() é NULL quando quem escreve é service_role (as RPCs acima), então
--- entrada/baixa/estorno NÃO disparam um segundo movimento aqui (D-15).
--- ATENÇÃO: um trigger Postgres NÃO consegue enfileirar QStash. Ajuste manual, portanto,
--- NÃO propaga na hora — a reconciliação diária cobre em ≤24h. Isso é corte declarado.
-create or replace function public.registrar_ajuste_manual_estoque()
-returns trigger language plpgsql security definer set search_path = ''
-as $$
-declare v_pai text;
-begin
-  if new.estoque = old.estoque or auth.uid() is null then
-    return new;
-  end if;
-  select f.codigo_pai into v_pai from public.familias f where f.id = new.familia_id;
-  insert into public.estoque_movimentos
-    (org_id, codigo, codigo_pai, quantidade, motivo, estoque_resultante, criado_por)
-  values (new.org_id, new.codigo, coalesce(v_pai, ''), new.estoque - old.estoque,
-          'ajuste_manual', new.estoque, auth.uid());
-  return new;
-end $$;
+-- Trava a escrita direta de estoque pelo app. Toda mudança de saldo passa a existir
+-- SÓ através das RPCs acima, chamadas por edge com service_role (D-15).
+-- As demais colunas de `variacoes` (preço, cor, gtin…) seguem editáveis como hoje.
+revoke update (estoque) on public.variacoes from authenticated;
 
-create trigger variacoes_registrar_ajuste_manual
-  after update of estoque on public.variacoes
-  for each row execute procedure public.registrar_ajuste_manual_estoque();
-
+-- Padrão do repo (ver 20260723215424_adr88_reconciliacao_tentativas.sql:80-81):
+-- revogar de todo mundo E conceder explicitamente ao service_role. Sem o grant,
+-- as RPCs ficam inexecutáveis também pelas edge functions.
 revoke execute on function public.baixar_estoque(uuid, text, integer, text, text)
   from public, anon, authenticated;
-revoke execute on function public.estornar_estoque(uuid, text, integer, text, text)
+grant execute on function public.baixar_estoque(uuid, text, integer, text, text)
+  to service_role;
+
+revoke execute on function public.estornar_estoque(uuid, text, text)
   from public, anon, authenticated;
+grant execute on function public.estornar_estoque(uuid, text, text)
+  to service_role;
+
 revoke execute on function public.registrar_entrada(uuid, text, integer, numeric, text, text, uuid, text)
   from public, anon, authenticated;
+grant execute on function public.registrar_entrada(uuid, text, integer, numeric, text, text, uuid, text)
+  to service_role;
 ```
+
+- [ ] **Step 6b: PRÉ-VOO OBRIGATÓRIO do revoke de coluna**
+
+Antes de aplicar, provar que **nenhum caminho do app** escreve `variacoes.estoque` com o token do
+usuário. Se escrever, o revoke quebra produção.
+
+```bash
+rtk proxy grep -rn "from('variacoes')" src/ | rtk proxy grep -i "update\|upsert"
+rtk proxy grep -rn "estoque" src/lib/queries.ts | rtk proxy grep -i "update"
+rtk proxy grep -rn "\.update(" src/ | rtk proxy grep -i "estoque"
+```
+
+Expected: **nenhum match** que escreva `estoque` (só preço, cor, gtin, título, descrição, principal).
+Qualquer match = parar, e decidir entre migrar aquele caminho para a edge ou abandonar o revoke e
+aceitar D-15 como convenção não-forçada (registrando no ADR). `ingest-lote` e os workers usam
+`adminClient`/`service_role` e **não** são afetados pelo revoke.
 
 - [ ] **Step 7: Aplicar e validar o schema**
 
@@ -471,10 +527,21 @@ select public.registrar_entrada('<org>', '<sku>', 5, null, null, null, null, '')
 select public.estornar_estoque('<org>', 'SKU-QUE-NAO-EXISTE', 1, 'mercado_livre', 'estorno:x');
 -- Expected: NULL, e existe 1 linha motivo='estorno_sku_nao_encontrado' com quantidade 0.
 
--- F) Trigger de ajuste manual não dispara para service_role.
--- Confirme que os passos A-E NÃO criaram nenhuma linha com motivo='ajuste_manual'.
-select count(*) from public.estoque_movimentos where motivo = 'ajuste_manual';
--- Expected: 0.
+-- F) Escrita direta de estoque está TRANCADA para o app.
+--    Como usuário `authenticated` (não service_role), pelo PostgREST ou psql com o papel:
+update public.variacoes set estoque = 999 where codigo = '<sku>';
+-- Expected: ERRO de permissão na coluna `estoque`.
+update public.variacoes set preco = preco where codigo = '<sku>';
+-- Expected: OK — as demais colunas continuam editáveis como hoje.
+
+-- G) As RPCs continuam executáveis pelo service_role (o grant explícito funcionou).
+--    Rode os passos A-E conectado como service_role: nenhum deles pode dar
+--    "permission denied for function".
+
+-- H) Estorno sem baixa registrada não cria estoque fantasma.
+select public.estornar_estoque('<org>', 'mercado_livre', 'mercado_livre:12345:<sku>');
+-- Expected (nenhuma baixa com essa ref): {"aplicado": false, "motivo": "sem_baixa_registrada"}
+--           e o estoque NÃO mudou.
 ```
 
 - [ ] **Step 9: Commit**
@@ -484,7 +551,7 @@ git add supabase/migrations/
 git commit -m "feat(e6b): ledger estoque_movimentos + baixar/estornar/registrar_entrada atômicos"
 ```
 
-**Reversão:** `drop trigger variacoes_registrar_ajuste_manual on public.variacoes; drop function public.registrar_ajuste_manual_estoque, public.baixar_estoque, public.estornar_estoque, public.registrar_entrada; drop table public.estoque_movimentos;` — nada depende até a Task 5.
+**Reversão:** `grant update (estoque) on public.variacoes to authenticated; drop function public.baixar_estoque, public.estornar_estoque, public.registrar_entrada; drop table public.estoque_movimentos;` — nada depende até a Task 5.
 
 ---
 
@@ -702,9 +769,10 @@ export interface ResultadoBaixaVenda {
   semSaldo: Array<{ codigo: string; pedido: number }>;
   falhas: Array<{ codigo: string; mensagem: string }>;
 }
-export async function houveBaixa(
-  admin: SupabaseClient, orgId: string, canal: string, orderId: string | number, codigo: string,
-): Promise<boolean>
+export async function estornarVendaCancelada(
+  admin: SupabaseClient,
+  p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
+): Promise<{ paisAfetados: string[]; falhas: Array<{ codigo: string; mensagem: string }> }>
 export async function registrarBaixaVenda(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
@@ -808,58 +876,66 @@ export async function registrarBaixaVenda(
   const baixas = selecionarBaixas(p.itens);
   if (baixas.length === 0) return { paisAfetados: [], semSaldo: [], falhas: [] };
 
-  const refs: string[] = [];
+  const pais = new Set<string>();
+  const semSaldo: Array<{ codigo: string; pedido: number }> = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
+
   for (const b of baixas) {
     const ref = refBaixa(p.canal, p.orderId, b.codigo);
-    refs.push(ref);
     // supabase-js NÃO lança em erro de rpc — ignorar `error` faria a baixa sumir em
-    // silêncio, e como `novaPaga` é one-shot o retry do QStash nunca re-executaria
-    // este bloco. Caminho que alimenta saldo falha LOUD (regra da casa, ADR-0055).
-    const { error } = await admin.rpc('baixar_estoque', {
+    // silêncio. Caminho que alimenta saldo falha LOUD (regra da casa, ADR-0055).
+    const { data, error } = await admin.rpc('baixar_estoque', {
       p_org: p.orgId, p_codigo: b.codigo, p_qtd: b.quantity, p_canal: p.canal, p_ref: ref,
     });
     if (error) {
       console.error('baixar_estoque_falhou', { orderId: p.orderId, codigo: b.codigo, erro: error.message });
       falhas.push({ codigo: b.codigo, mensagem: error.message });
+      continue;
+    }
+    const r = data as {
+      aplicado: boolean; motivo: string; codigo_pai?: string;
+      estoque_anterior?: number; estoque_resultante?: number;
+    };
+    // `aplicado=false` = duplicata (retry, execução concorrente) ou SKU órfão.
+    // NÃO enfileirar nesses casos é o que impede job duplicado — sem isso, duas
+    // execuções concorrentes leriam o mesmo estado e enfileirariam as duas.
+    if (!r.aplicado) continue;
+    if (r.codigo_pai) pais.add(r.codigo_pai);
+    // "Vendeu sem saldo": o pedido foi maior que o saldo que existia antes da baixa.
+    if (r.estoque_anterior !== undefined && r.estoque_anterior < b.quantity) {
+      semSaldo.push({ codigo: b.codigo, pedido: b.quantity });
     }
   }
 
-  // Relê os movimentos desta venda: a função SQL preencheu codigo_pai, estoque_anterior
-  // e estoque_resultante. Duplicatas (retry) não aparecem duas vezes — a ref é única.
-  const { data: movs } = await admin.from('estoque_movimentos')
-    .select('codigo, codigo_pai, quantidade, estoque_anterior, estoque_resultante, motivo')
-    .eq('org_id', p.orgId).in('referencia_externa', refs);
-
-  const pais = new Set<string>();
-  const semSaldo: Array<{ codigo: string; pedido: number }> = [];
-  for (const m of movs ?? []) {
-    if (m.codigo_pai) pais.add(m.codigo_pai as string);
-    if (m.motivo !== 'venda') continue;
-    // "Vendeu sem saldo": o pedido foi maior que o saldo que existia antes da baixa.
-    // Comparação local graças a estoque_anterior — nada de reconstruir por timestamp.
-    const pedido = Math.abs(m.quantidade as number);
-    const anterior = m.estoque_anterior as number | null;
-    if (anterior !== null && anterior < pedido) semSaldo.push({ codigo: m.codigo as string, pedido });
-  }
   return { paisAfetados: [...pais], semSaldo, falhas };
 }
 
 /**
- * Existe movimento de VENDA para este (canal, pedido, sku)?
- * O estorno depende disso: a baixa só acontece na transição `novaPaga`, então
- * pedido criado → nunca pago → cancelado (comum no ML) jamais gerou baixa.
- * Estornar sem baixa criaria estoque fantasma, propagado para todos os canais.
+ * Estorna, para um pedido cancelado, tudo que foi de fato baixado dele.
+ * A checagem "houve baixa?" vive DENTRO da RPC (com FOR UPDATE no movimento de venda) —
+ * fazer o check aqui e o estorno lá seria check-then-act não atômico, e a quantidade
+ * do snapshot do pedido cancelado pode divergir da que foi realmente baixada.
  */
-export async function houveBaixa(
-  admin: SupabaseClient, orgId: string, canal: string, orderId: string | number, codigo: string,
-): Promise<boolean> {
-  const { data } = await admin.from('estoque_movimentos')
-    .select('id').eq('org_id', orgId)
-    .eq('referencia_externa', refBaixa(canal, orderId, codigo))
-    .eq('motivo', 'venda')
-    .maybeSingle();
-  return !!data;
+export async function estornarVendaCancelada(
+  admin: SupabaseClient,
+  p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
+): Promise<{ paisAfetados: string[]; falhas: Array<{ codigo: string; mensagem: string }> }> {
+  const pais = new Set<string>();
+  const falhas: Array<{ codigo: string; mensagem: string }> = [];
+  for (const b of selecionarBaixas(p.itens)) {
+    const { data, error } = await admin.rpc('estornar_estoque', {
+      p_org: p.orgId, p_canal: p.canal,
+      p_ref_venda: refBaixa(p.canal, p.orderId, b.codigo),
+    });
+    if (error) {
+      console.error('estornar_estoque_falhou', { orderId: p.orderId, codigo: b.codigo, erro: error.message });
+      falhas.push({ codigo: b.codigo, mensagem: error.message });
+      continue;
+    }
+    const r = data as { aplicado: boolean; codigo_pai?: string };
+    if (r.aplicado && r.codigo_pai) pais.add(r.codigo_pai);
+  }
+  return { paisAfetados: [...pais], falhas };
 }
 ```
 
@@ -1237,6 +1313,13 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import { resolverAlvosPush } from '../_shared/estoque/alvos.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 
+// Obtenção de token POR CANAL. Hoje só o ML existe; a Shopee entra aqui no E5.
+// Um mapa explícito impede que a semântica de refresh do ML seja aplicada
+// silenciosamente a outro canal quando ele chegar.
+const FABRICA_TOKEN: Record<string, ((conexao: unknown) => Promise<string>) | undefined> = {
+  mercado_livre: (conexao) => getValidAccessTokenConexao(conexao as never),
+};
+
 // O miolo é uma função com dependências injetadas — sem isso o teste com o conector
 // `fake` não roda: resolverConexao devolveria null para um canal sem credencial real.
 export interface DepsSincronizacao {
@@ -1290,7 +1373,16 @@ export async function processarSincronizacao(
     if (!getToken) {
       const conexao = await deps.resolverConexao(admin, org_id, alvo.canal);
       if (!conexao) continue;                       // canal desconectado: nada a fazer
-      getToken = () => getValidAccessTokenConexao(conexao);
+      // getValidAccessTokenConexao implementa o refresh rotativo ESPECÍFICO do ML
+      // (_shared/ml/token.ts:95-110). Aplicá-lo a qualquer canal é um bug esperando
+      // o E5. Enquanto só o ML existe, o mapa deixa isso explícito e falha alto
+      // para canal desconhecido em vez de vazar semântica de token do ML.
+      const fabrica = FABRICA_TOKEN[alvo.canal];
+      if (!fabrica) {
+        console.error('estoque_push_sem_fabrica_de_token', alvo.canal);
+        continue;
+      }
+      getToken = () => fabrica(conexao);
       tokenPorCanal.set(alvo.canal, getToken);
     }
     const conn = deps.getConnector(alvo.canal);
@@ -1357,7 +1449,7 @@ git commit -m "feat(e6b): worker sincronizar-estoque com resolucao de alvos (spl
 No topo de `supabase/functions/sync-venda/index.ts`:
 
 ```ts
-import { registrarBaixaVenda, refBaixa, selecionarBaixas, houveBaixa } from '../_shared/estoque/baixa.ts';
+import { registrarBaixaVenda, estornarVendaCancelada } from '../_shared/estoque/baixa.ts';
 import { enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 ```
 
@@ -1371,7 +1463,12 @@ Localize o bloco que começa em `if (novaPaga && orgId && await reservarNotifica
   // E6b (ADR-0054): baixa de estoque na transição para pago. A venda é SAGRADA —
   // nenhuma falha aqui pode derrubar o sync. A baixa é idempotente por referência,
   // então o retry do QStash re-executando este bloco não duplica nada.
-  if (novaPaga && orgId) {
+  // ATENÇÃO — a condição é `pedido pago`, NÃO `novaPaga`. `novaPaga` é one-shot
+  // (calculado do status já persistido, io.ts:223-270): se a baixa falhar no meio,
+  // o retry do QStash veria novaPaga=false e a perda seria permanente. Gatear em
+  // "está pago" faz o retry retomar naturalmente, e a idempotência vem do ledger:
+  // cada SKU já baixado devolve `aplicado=false` e não é reaplicado nem re-enfileirado.
+  if (pedido.status === 'paid' && orgId) {
     try {
       const { paisAfetados, semSaldo, falhas } = await registrarBaixaVenda(admin, {
         orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
@@ -1420,39 +1517,30 @@ Localize onde o status do pedido é gravado (`upsertVenda` já recebe `pedido`).
   // Cancelado ANTES do despacho: a mercadoria nunca saiu, então repõe (D-7).
   // Já despachado ou devolvido: só o alerta — repor exige conferir o que voltou.
   if (orgId && pedido.status === 'cancelled') {
-    const despachado = shipment?.status != null
-      && !['pending', 'handling', 'ready_to_ship', 'cancelled'].includes(String(shipment.status));
+    // FALHA FECHADA: `buscarShipment` devolve null em QUALQUER erro HTTP ou de rede
+    // (io.ts:139-163), inclusive para pedido já despachado. Tratar null como
+    // "não despachado" reporia estoque de mercadoria que saiu. Só repõe quando o
+    // status é explicitamente um estado pré-despacho conhecido.
+    const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
+    const st = shipment?.status != null ? String(shipment.status) : null;
+    const preDespachoConhecido = st !== null && PRE_DESPACHO.includes(st);
+    const semEnvio = pedido.shipping?.id == null;   // pedido sem envio: nada a despachar
     try {
-      if (!despachado) {
-        const refsEstorno: string[] = [];
-        for (const b of selecionarBaixas(itens)) {
-          // CRÍTICO: estornar só o que foi de fato baixado. A baixa acontece na
-          // transição `novaPaga`; pedido criado → nunca pago → cancelado (comum no ML)
-          // jamais gerou baixa, e estornar aí somaria estoque que nunca saiu — ainda
-          // por cima propagado para TODOS os canais.
-          if (!(await houveBaixa(admin, orgId, 'mercado_livre', pedido.id, b.codigo))) continue;
-          const ref = `estorno:${refBaixa('mercado_livre', pedido.id, b.codigo)}`;
-          refsEstorno.push(ref);
-          const { error } = await admin.rpc('estornar_estoque', {
-            p_org: orgId, p_codigo: b.codigo, p_qtd: b.quantity,
-            p_canal: 'mercado_livre', p_ref: ref,
-          });
-          if (error) console.error('estornar_estoque_falhou', { orderId: pedido.id, codigo: b.codigo, erro: error.message });
-        }
-        if (refsEstorno.length > 0) {
-          const { data: movs } = await admin.from('estoque_movimentos')
-            .select('codigo_pai').eq('org_id', orgId).in('referencia_externa', refsEstorno);
-          for (const codigoPai of new Set((movs ?? []).map((m) => m.codigo_pai as string).filter(Boolean))) {
-            await enfileirarSincronizacaoEstoque(
-              { org_id: orgId, codigo_pai: codigoPai, canal_origem: null }, orgId,
-            );
-          }
+      if (preDespachoConhecido || semEnvio) {
+        // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno.
+        const { paisAfetados } = await estornarVendaCancelada(admin, {
+          orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
+        });
+        for (const codigoPai of paisAfetados) {
+          await enfileirarSincronizacaoEstoque(
+            { org_id: orgId, codigo_pai: codigoPai, canal_origem: null }, orgId,
+          );
         }
       } else if (await reservarNotificacao(admin, orgId, userId, 'estoque_cancelado_despachado', String(pedido.id))) {
         // Sem o dedupe, cada re-sync do mesmo pedido cancelado re-notificaria.
         await notificarCategoria(
           admin, orgId, 'pos_venda',
-          `📦 Pedido ${pedido.id} cancelado após o despacho.\n\n`
+          `📦 Pedido ${pedido.id} cancelado, mas o envio ${st === null ? 'não pôde ser consultado' : `está em "${st}"`}.\n\n`
           + 'O estoque NÃO foi reposto automaticamente — confira o que voltou e dê entrada manual.',
         );
       }
@@ -1461,6 +1549,16 @@ Localize onde o status do pedido é gravado (`upsertVenda` já recebe `pedido`).
     }
   }
 ```
+
+**Ajuste o import** desta task: `estornarVendaCancelada` em vez de `houveBaixa` (que deixou de existir), e `selecionarBaixas` só é usado dentro do helper agora.
+
+**Confirme os valores reais de status de envio** antes de codar:
+
+```bash
+rtk proxy grep -rn "ready_to_ship\|handling\|shipped\|delivered" supabase/functions/_shared/ | rtk proxy head -10
+```
+
+Se a lista de estados pré-despacho do ML for outra, corrija `PRE_DESPACHO` — e mantenha a política de falha fechada: **o que não estiver explicitamente na lista não repõe.**
 
 **Atenção:** `canal_origem: null` no estorno é proposital — a reposição precisa alcançar **todos** os canais, inclusive o ML, porque o ML não repõe sozinho um cancelamento.
 
@@ -1601,7 +1699,7 @@ export interface MovimentoEstoque {
   criado_em: string;
   codigo: string;
   quantidade: number;
-  motivo: 'venda' | 'entrada' | 'ajuste_manual' | 'estorno_venda'
+  motivo: 'venda' | 'entrada' | 'estorno_venda'
     | 'venda_sku_nao_encontrado' | 'estorno_sku_nao_encontrado';
   canal_origem: string | null;
   estoque_resultante: number | null;
@@ -1630,7 +1728,6 @@ describe('rotuloMotivo', () => {
   it('traduz cada motivo para texto do operador', () => {
     expect(rotuloMotivo('venda')).toBe('Venda');
     expect(rotuloMotivo('entrada')).toBe('Entrada');
-    expect(rotuloMotivo('ajuste_manual')).toBe('Ajuste manual');
     expect(rotuloMotivo('estorno_venda')).toBe('Estorno de venda');
     expect(rotuloMotivo('venda_sku_nao_encontrado')).toBe('Venda de SKU não cadastrado');
     expect(rotuloMotivo('estorno_sku_nao_encontrado')).toBe('Estorno de SKU não cadastrado');
@@ -1653,7 +1750,7 @@ export interface MovimentoEstoque {
   criado_em: string;
   codigo: string;
   quantidade: number;
-  motivo: 'venda' | 'entrada' | 'ajuste_manual' | 'estorno_venda'
+  motivo: 'venda' | 'entrada' | 'estorno_venda'
     | 'venda_sku_nao_encontrado' | 'estorno_sku_nao_encontrado';
   canal_origem: string | null;
   estoque_resultante: number | null;
@@ -1662,7 +1759,6 @@ export interface MovimentoEstoque {
 const ROTULO_MOTIVO: Record<MovimentoEstoque['motivo'], string> = {
   venda: 'Venda',
   entrada: 'Entrada',
-  ajuste_manual: 'Ajuste manual',
   estorno_venda: 'Estorno de venda',
   venda_sku_nao_encontrado: 'Venda de SKU não cadastrado',
   estorno_sku_nao_encontrado: 'Estorno de SKU não cadastrado',
@@ -1825,7 +1921,7 @@ git commit -m "docs(e6b): documentar ledger de estoque, workers e fluxo de push"
 5. ✅ Venda sem saldo baixa até zero, registra a quantidade real e notifica (com dedupe).
 6. ✅ Falha de RPC de baixa é registrada e **notificada** — nunca silenciosa.
 7. ✅ Falha de estoque nunca falha a venda; falha de um canal nunca afeta outro.
-8. ✅ Split (ADR-0048) e user products (ADR-0088) recebem push no item externo correto — **incluindo o caso real em que a linha-mãe UP tem `item_externo_id` NULL**.
+8. ✅ Split (ADR-0048) e user products (ADR-0088) recebem push no item externo correto — **incluindo o caso real em que a linha-mãe UP tem `item_externo_id` NULL**. Nota honesta: a combinação **split + UP simultâneos** é coberta por construção mas **não é fluxo validado** — `publicar-familia-up.ts:54-60` diz que o worker UP só publica a partição 0 e que `publicar-split-ml` ainda não integra a saga UP. O resolvedor é forward-compatible; o teste real entra quando o split integrar UP.
 9. ✅ Item UP fora de `ativo` (erro, remoção pendente, compensação) **não** recebe push.
 10. ✅ `estoque_movimentos` isolado por org, provado por `scripts/verificar-isolamento-tenant.ts`.
 11. ✅ Movimentos visíveis no expandir de Publicados, light e dark.
