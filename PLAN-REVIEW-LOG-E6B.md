@@ -392,3 +392,50 @@ Round 4 — todos aceitos:
 Aceito também o veredito do Codex sobre o enqueue direto da entrada: não é defeito
 material depois de push_canal_origem — causa no máximo um push redundante, e push
 absoluto é idempotente.
+
+## Round 5 — Codex (final, MAX_ROUNDS atingido)
+
+Ainda restam dois problemas materiais. Ambos são correções locais, mas o plano não deve ser executado literalmente antes delas.
+
+1. **HIGH — bloqueador de implementação: a drenagem pode repetir a mesma falha 50 vezes**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:1097-1113` e `:1896-1903`.
+   - Evidência real: cada enqueue realiza chamadas remotas aguardadas ao QStash, como mostra `supabase/functions/_shared/queue.ts:103-114`.
+   - Quebra: `despacharPushPendente` captura tanto falha de enqueue quanto falha ao marcar o ledger e retorna normalmente. O laço imediatamente relê os mesmos pendentes. Uma falha persistente pode gerar 50 tentativas na mesma execução; se o enqueue foi aceito mas a marca falhou, pode criar 50 jobs duplicados. Além disso, 50 páginas de 500 grupos podem representar milhares de chamadas sequenciais numa única edge.
+   - **Fix:** fazer o dispatcher retornar contagem de marcados/falhas e interromper a drenagem quando houver falha ou nenhum progresso; limitar cada execução a uma quantidade operacionalmente pequena de páginas.
+
+2. **HIGH — bloqueador documental antes da implementação: D-12 perigosa continua na fonte copiada para o ADR**
+
+   - Plano/spec: spec `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md:142`; `PLAN-E6B.md:26`; Plano A `:32,73`.
+   - Evidência real: webhook ausente não gera leitura do pedido; `supabase/functions/sync-venda/index.ts:65-98` só consulta o ML quando já existe um job com pedido/envio.
+   - Quebra: a spec ainda manda reconciliar produtos multicanal e afirma que isso recupera webhook perdido. O plano mestre repete essa abrangência. Pior: a Task 1 manda copiar a tabela da spec `verbatim`, produzindo um ADR que contradiz o worker corrigido. Ela ainda diz D-1..D-15, omitindo D-16..D-20, apesar de `CLAUDE.md:72-75` exigir que a decisão arquitetural esteja no ADR antes da implementação.
+   - A spec também mantém critérios antigos em `:390-391`: “ajuste manual propaga” e “devolução notifica”, ambos explicitamente removidos.
+   - **Fix:** atualizar D-12, o resumo, os critérios de saída e a Task 1 para D-1..D-20 antes de escrever o ADR.
+
+As correções centrais estão tecnicamente boas: advisory lock comum fecha a corrida; tombstone não bloqueia venda legítima no fluxo modelado; intenção do outbox está preservada; `chavesPendentes` funciona; os helpers consomem `Response.json()` uma vez; e o trigger continua seguro para `service_role` e re-ingest.
+
+O byte NUL ainda presente em `e6b-a-estoque.md:1090` é apenas ajuste mecânico durante a execução: substitua-o por um separador escapado ou uma chave estruturada. Ele não muda o desenho, mas já faz ferramentas tratarem o Markdown como binário.
+
+VERDICT: REVISE
+### Resposta do Claude (round 5) — aplicada SEM re-verificação do Codex
+
+Ambos aceitos. Não houve desacordo em nenhuma das 5 rodadas.
+
+1. Drenagem do outbox: `despacharPushPendente` passa a devolver `{marcados, falhas}` e o
+   laço da reconciliação PARA no primeiro sinal de falha ou de não-progresso. Teto baixado
+   de 50 páginas de 500 para 5 páginas de 200. Sem isso, uma falha persistente repetiria a
+   chamada remota N vezes na mesma execução e, com enqueue aceito + marca falhando,
+   criaria N jobs duplicados.
+2. D-12 reescrita na spec, no PLAN-E6B.md e no plano A: a reconciliação é rede de segurança
+   do PUSH, não do WEBHOOK. Critérios de saída antigos ("ajuste manual propaga", "devolução
+   notifica") removidos. A Task 1 agora manda copiar D-1..D-20 (antes: D-1..D-15), incluindo
+   as cinco decisões nascidas nesta revisão.
+3. Byte NUL na linha 1090 (eu havia escrito um separador NUL literal numa chave de Map):
+   trocado por `JSON.stringify([codigoPai, canalOrigem])`. Nenhum doc tem NUL agora.
+
+ESTADO FINAL: o loop terminou por esgotar MAX_ROUNDS=5, não por APPROVED. O último veredito
+foi REVISE com 2 HIGH, ambos classificados pelo próprio Codex como "correções locais", e o
+próprio veredito afirma que "as correções centrais estão tecnicamente boas". As duas foram
+aplicadas — mas NÃO foram re-verificadas por uma sexta rodada. Quem executar o plano deve
+tratar esses dois pontos (drenagem do outbox e D-12/ADR) como os mais recentes e menos
+revisados.

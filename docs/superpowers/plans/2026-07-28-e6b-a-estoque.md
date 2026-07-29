@@ -29,7 +29,7 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `docs/decisions/0054-estoque-unico-cadastro-manual.md` | ADR das decisões D-1..D-15 |
+| `docs/decisions/0054-estoque-unico-cadastro-manual.md` | ADR das decisões D-1..D-20 |
 | `supabase/migrations/<ts>_e6b_estoque_movimentos.sql` | Ledger + 3 RPCs atômicas + trigger de ajuste manual |
 | `supabase/functions/_shared/estoque/baixa.ts` | `selecionarBaixas` (pura) + `registrarBaixaVenda` (I/O) |
 | `supabase/functions/_shared/estoque/__tests__/baixa.test.ts` | Testes da seleção pura |
@@ -70,7 +70,7 @@ Use o formato dos ADRs existentes em `docs/decisions/` (leia `0089-atualizacao-r
 
 - **Status:** Aceito · **Data:** 2026-07-28
 - **Contexto:** estoque hoje flui só PubliAI → ML na publicação; `sync-venda` grava `ml_vendas`/`ml_vendas_itens` e não toca `variacoes`; oversell cross-canal é o risco que trava o multicanal; produto só entra por planilha, o que exige ERP do cliente.
-- **Decisão:** copie a tabela D-1..D-15 da seção 5 da spec `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`, **verbatim**.
+- **Decisão:** copie a tabela **D-1..D-20 INTEIRA** (inclusive D-16..D-20, que nasceram na revisão adversarial: correção do `talvezFinalizarLote`, idempotência obrigatória na entrada, outbox no ledger, tombstone de cancelamento e bloqueio da escrita direta) da seção 5 da spec `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`, **verbatim**. Copiar só até D-15 produziria um ADR que contradiz o código do próprio plano.
 - **Diagrama do fluxo:** copie o bloco ASCII da seção 6 da spec.
 - **Alternativas rejeitadas:** (a) `lote_id` nullable — custo verificado em 6 frentes, duas em código que publica anúncio real; (b) delta em vez de push absoluto — não é idempotente, um retry duplica a correção; (c) tabela `produtos` separada — duplica a fonte de verdade do produto; (d) custo médio ponderado — cálculo num caminho financeiro sem demanda; (e) emissão de NF-e — ver seção 11 da spec.
 - **Consequências:** extensões futuras registradas — importação do XML de compra, reposição automática em devolução, custo médio ponderado, leitura comparativa por variação na reconciliação.
@@ -1079,15 +1079,19 @@ export async function lerPushPendente(
  * existe para evitar. Marcar depois pode, no pior caso, enfileirar duas vezes — e push
  * absoluto é idempotente, então duplicar é inofensivo.
  */
+export interface ResultadoDespacho { marcados: number; falhas: number }
+
 export async function despacharPushPendente(
   admin: SupabaseClient,
   orgId: string,
   pendentes: MovimentoPendente[],
   enfileirar: (job: { org_id: string; codigo_pai: string; canal_origem: string | null }, orgId: string) => Promise<string>,
-): Promise<void> {
+): Promise<ResultadoDespacho> {
+  let marcados = 0;
+  let falhas = 0;
   const grupos = new Map<string, { codigoPai: string; canalOrigem: string | null; ids: string[] }>();
   for (const p of pendentes) {
-    const chave = `${p.codigoPai} ${p.canalOrigem ?? ''}`;
+    const chave = JSON.stringify([p.codigoPai, p.canalOrigem]);
     if (!grupos.has(chave)) {
       grupos.set(chave, { codigoPai: p.codigoPai, canalOrigem: p.canalOrigem, ids: [] });
     }
@@ -1105,13 +1109,20 @@ export async function despacharPushPendente(
         .update({ push_enfileirado_em: new Date().toISOString() })
         .in('id', g.ids);
       if (error) {
+        // Enqueue aceito mas marca falhou: o movimento CONTINUA pendente. Sinalizar a
+        // falha é o que impede o chamador de reler e re-enfileirar o mesmo grupo em laço.
+        falhas++;
         console.error('marcar_push_entregue_falhou', { orgId, codigoPai: g.codigoPai, erro: error.message });
+      } else {
+        marcados += g.ids.length;
       }
     } catch (e) {
       // Fica no outbox. A próxima execução do sync ou a reconciliação diária pega.
+      falhas++;
       console.error('despachar_push_falhou', { orgId, codigoPai: g.codigoPai, erro: String(e) });
     }
   }
+  return { marcados, falhas };
 }
 
 /**
@@ -1893,13 +1904,20 @@ Deno.serve(async (req) => {
   const orgsComPendencia = new Set(pendentes.map((m) => m.org_id));
   for (const orgId of orgsComPendencia) {
     try {
-      // Drena em páginas até esvaziar: um único lote de 1000 deixaria pendência para
-      // trás justamente na org com mais movimento. O laço termina porque cada volta
-      // marca `push_enfileirado_em` no que despachou.
-      for (let volta = 0; volta < 50; volta++) {
-        const pagina = await lerPushPendente(admin, orgId, 500);
+      // Drena em páginas, mas PARA no primeiro sinal de falha ou de não-progresso.
+      // Sem isso, uma falha persistente (QStash fora, marca rejeitada) faria o laço
+      // reler os mesmos pendentes e repetir a chamada remota N vezes na mesma execução
+      // — e, se o enqueue tivesse sido aceito com a marca falhando, criaria N jobs
+      // duplicados. O que sobrar fica no outbox para a próxima execução.
+      const MAX_PAGINAS = 5;               // teto operacional pequeno, de propósito
+      for (let volta = 0; volta < MAX_PAGINAS; volta++) {
+        const pagina = await lerPushPendente(admin, orgId, 200);
         if (pagina.length === 0) break;
-        await despacharPushPendente(admin, orgId, pagina, enfileirarSincronizacaoEstoque);
+        const r = await despacharPushPendente(admin, orgId, pagina, enfileirarSincronizacaoEstoque);
+        if (r.falhas > 0 || r.marcados === 0) {
+          console.error('reconciliar_outbox_interrompido', { orgId, ...r });
+          break;
+        }
       }
     } catch (e) {
       console.error('reconciliar_outbox_falhou', orgId, e);   // uma org nunca bloqueia outra

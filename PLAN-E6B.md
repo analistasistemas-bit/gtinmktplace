@@ -23,7 +23,7 @@ Contexto: PubliAI é um SaaS multi-tenant em produção, com dinheiro real passa
 2. **Baixa sempre que o pedido está pago** (`pedido.status === 'paid'`, NÃO na transição `novaPaga`, que é one-shot e impediria retomada), dentro de try/catch — a venda nunca falha por estoque. A idempotência vem do ledger.
 3. **Método novo `atualizarEstoque`** no `ChannelConnector`, implementado no ML reusando `montarVariacoesUpdate` (que casa por `seller_custom_field`) e `atualizarItemPlanoML` para item plano.
 4. **Worker `sincronizar-estoque`** atrás de fila serial QStash `estoque-{orgId}` (parallelism 1), com uma função pura `resolverAlvosPush` que traduz linhas de `anuncios_externos` + `anuncios_externos_itens` em uma lista de pushes por item externo — cobrindo split (ADR-0048) e user products (ADR-0088).
-5. **Reconciliação diária** restrita a produtos com movimento nas últimas 24h e produtos publicados em ≥2 canais.
+5. **Reconciliação diária** = rede de segurança do PUSH, restrita a produtos **com movimento no ledger** (outbox pendente ou movimento recente). NÃO re-empurra produto sem movimento: webhook perdido deixa o saldo alto demais e o re-push restauraria unidades vendidas.
 6. **Cadastro manual = um lote normal** com `lotes.origem = 'manual'`, caindo na mesma Revisão de sempre.
 7. **Módulo opt-in por org** via `organizations.modulos_habilitados text[]`, com gate no menu **e** nas edges.
 
