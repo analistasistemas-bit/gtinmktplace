@@ -31,6 +31,7 @@ export const QK = {
   statusPublicados: ['statusPublicados'] as const,
   conexoes: ['conexoes'] as const,
   canaisHabilitados: ['canais-habilitados'] as const,
+  movimentosEstoque: (codigoPai: string) => ['movimentos-estoque', codigoPai] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];

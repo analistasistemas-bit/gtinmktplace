@@ -156,6 +156,77 @@ export type Database = {
           },
         ]
       }
+      estoque_movimentos: {
+        Row: {
+          canal_origem: string | null
+          codigo: string
+          codigo_pai: string
+          criado_em: string
+          criado_por: string | null
+          custo_unitario: number | null
+          documento: string | null
+          estoque_anterior: number | null
+          estoque_resultante: number | null
+          id: string
+          motivo: string
+          observacao: string | null
+          org_id: string
+          push_canal_origem: string | null
+          push_enfileirado_em: string | null
+          quantidade: number
+          quantidade_pedida: number | null
+          referencia_externa: string | null
+        }
+        Insert: {
+          canal_origem?: string | null
+          codigo: string
+          codigo_pai?: string
+          criado_em?: string
+          criado_por?: string | null
+          custo_unitario?: number | null
+          documento?: string | null
+          estoque_anterior?: number | null
+          estoque_resultante?: number | null
+          id?: string
+          motivo: string
+          observacao?: string | null
+          org_id: string
+          push_canal_origem?: string | null
+          push_enfileirado_em?: string | null
+          quantidade: number
+          quantidade_pedida?: number | null
+          referencia_externa?: string | null
+        }
+        Update: {
+          canal_origem?: string | null
+          codigo?: string
+          codigo_pai?: string
+          criado_em?: string
+          criado_por?: string | null
+          custo_unitario?: number | null
+          documento?: string | null
+          estoque_anterior?: number | null
+          estoque_resultante?: number | null
+          id?: string
+          motivo?: string
+          observacao?: string | null
+          org_id?: string
+          push_canal_origem?: string | null
+          push_enfileirado_em?: string | null
+          quantidade?: number
+          quantidade_pedida?: number | null
+          referencia_externa?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "estoque_movimentos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       familias: {
         Row: {
           analise_mercado: Json | null

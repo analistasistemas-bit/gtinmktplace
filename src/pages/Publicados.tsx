@@ -38,6 +38,7 @@ import { fmtBRL } from '@/lib/formato';
 import { filtrarPublicados, ordenarPublicados, rotuloTipo } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { CanalBadge } from '@/components/canal-badge';
+import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
@@ -355,6 +356,7 @@ function LinhaTabela({
                 precoOverride={item.precoAtual ?? item.precoPublicacao}
                 listingTypeReal={item.listingType ?? null}
               />
+              <MovimentosEstoque codigoPai={item.codigoPai} ativo={aberto} />
             </div>
           )}
         </TableCell>
