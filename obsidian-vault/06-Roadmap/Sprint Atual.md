@@ -47,8 +47,15 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > `functions deploy` → merge na main. O frontend chama `modulos_habilitados_da_org` dentro do
 > MenuGuard e o Render auto-deploya no push — inverter deixaria toda org na tela de carregando.
 >
-> **Pendente:** E2E manual (cadastrar produto real, conferir reuso do lote, 409 de duplicata e
-> publicação pela Revisão). Nenhum teste automatizado cobre isso.
+> **E2E manual concluído 2026-07-29** (Playwright CLI, org DSA ao vivo, módulo ligado em
+> `/admin`): cadastro real com 2 variações, IA rodando de verdade, D-1.1 (mesmo lote), 409 de
+> duplicata, ledger — tudo confirmado. Parado antes do clique de publicar de verdade no ML
+> (decisão do Diego). **4 bugs de UI achados e corrigidos no mesmo dia** (deploy `7efb89a`):
+> dialog de cadastro cortando a tabela de variações (classe Tailwind sem prefixo `sm:`, `min-w-0`
+> faltando, e largura insuficiente — `sm:max-w-4xl` → `sm:max-w-5xl`) e GTIN/dimensões/descrição
+> ausentes na tela `/estoque` (dado já gravado, agora também exibido). Suíte 2255 → 2256.
+> Produtos de teste (`99000001`/`99000002`) seguem na DSA — procedimento de limpeza em
+> `docs/how-to/operacoes-rotineiras.md`.
 >
 > **Depois: E5 Shopee.**
 

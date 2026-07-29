@@ -104,6 +104,13 @@ antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquite
   **Ordem de deploy usada (obrigatoria):** `db push` -> `functions deploy` -> merge na main. O
   frontend chama `modulos_habilitados_da_org` dentro do MenuGuard e o Render auto-deploya no
   push, entao inverter a ordem deixaria toda org na tela de carregando.
+  **E2E manual concluido 2026-07-29** (via Playwright CLI, org DSA ao vivo): cadastro, IA rodando,
+  D-1.1 (mesmo lote), 409 de duplicata e ledger todos confirmados; parado antes do publish real no
+  ML (decisao do Diego). Achou e corrigiu **4 bugs de UI** (2 rodadas, deploy `7efb89a`): dialog de
+  cadastro cortado por classe Tailwind sem prefixo `sm:` + `min-w-0` faltando no grid + largura
+  insuficiente pra tabela de 10 colunas (`sm:max-w-4xl` -> `sm:max-w-5xl`); e GTIN/dimensoes/
+  descricao capturados no cadastro mas ausentes da tela `/estoque` (adicionados). Suite 2255 -> 2256.
+  Ver `docs/TASKS.md` para o detalhe tecnico completo.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

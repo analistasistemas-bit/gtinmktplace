@@ -114,7 +114,29 @@ entrada de novo. Se relançar mesmo assim na mesma janela do formulário, a refe
 idempotência faz a 2ª aplicação virar no-op.
 
 O histórico completo de movimentos de cada produto fica no expandir da linha, em `/estoque` e em
-Publicados.
+Publicados. A tabela de variações expandida também mostra GTIN, dimensões (peso/altura/largura/
+comprimento) e a descrição do produto — dados capturados no cadastro que antes só eram visíveis
+na Revisão.
+
+## Excluir ou alterar um produto cadastrado manualmente
+
+A tela `/estoque` não tem botão de excluir/editar — só "Dar entrada". Os caminhos reais:
+
+- **Alterar** (título, descrição, preço, categoria, atributos) — só funciona **antes de
+  publicar** (`status='pronto'`/`'revisao'`): editar em **Revisão**, os mesmos campos do fluxo de
+  planilha. Depois de publicado não existe edição "ao vivo" para um produto cadastrado manualmente
+  — as únicas rotas de atualização (nova planilha com o mesmo código, ou Publicados → Remover →
+  Republicar) exigem despublicar e recriar o anúncio.
+- **Excluir** — tela **Lotes**, achar o lote com o chip "Cadastro manual" → lixeira no card →
+  confirmar. Roda a edge `excluir-lote`: remove a família e a variação (`ON DELETE CASCADE` de
+  `variacoes.familia_id`), e a tela `/estoque` some sozinha (ela lê ao vivo de `variacoes`+
+  `familias`, não tem tabela própria). Se o produto já estava **publicado**, a exclusão é
+  **parcial** — só as famílias não-publicadas saem, a publicada é preservada.
+  **O `estoque_movimentos` (ledger) não é apagado** — é auditoria imutável (D-15), guarda
+  `codigo`/`codigo_pai` como texto solto, sem FK para `variacoes`/`familias`. Se o produto excluído
+  nunca foi publicado, esse histórico fica **órfão**: sem UI que o mostre isoladamente (só aparece
+  dentro do expandir de `/estoque` ou `/publicados`, que exigem o produto vivo/publicado) —
+  só uma consulta direta no banco.
 
 ## Monitorar anúncios moderados
 

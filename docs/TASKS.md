@@ -50,12 +50,24 @@
   `modulos_habilitados` vazio (impacto zero até ligar em `/admin`), e a RPC
   `modulos_habilitados_da_org` devolve `null` para `anon` (mesma ACL do
   `canais_habilitados_da_org`, que é o default privilege do Supabase — não vaza).
-- [ ] **E2E manual do Bloco B** — não coberto por teste automatizado: cadastrar produto real com
-  2 variações + estoque inicial + fotos, confirmar que caiu na Revisão com a IA rodando, que o
-  2º produto entrou no MESMO lote (D-1.1), que o mesmo `codigo_pai` dá 409, e publicar pelo
-  fluxo normal. O guard de SKU usa o embed `familias!inner(codigo_pai)` do PostgREST — se o
-  formato vier como array em vez de objeto, todo SKU lê como conflito e o cadastro 409 sempre.
-  Falha alto, mas só um cadastro real exercita.
+- [x] **E2E manual do Bloco B** — feito 2026-07-29 via Playwright CLI, ao vivo na org DSA
+  (`is_test=true`), módulo `estoque` ligado em `/admin`. Confirmado: cadastro de 2 produtos reais
+  (2 variações + estoque inicial cada) caiu na Revisão com a IA rodando de verdade (título gerado,
+  preço recalculado com markup+alíquota, categoria detectada); 2º produto entrou no MESMO lote
+  (D-1.1); mesmo `codigo_pai` deu 409 com toast + "Abrir na Revisão"; ledger gravou `motivo=entrada`
+  com o custo certo. Embed `familias!inner(codigo_pai)` confirmado como objeto (não array) via
+  curl direto no PostgREST — guard de SKU correto. Parado **antes** do clique de publicar de
+  verdade no Mercado Livre (decisão do Diego); produtos de teste (`99000001`/`99000002`) deixados
+  na DSA — procedimento de limpeza em `docs/how-to/operacoes-rotineiras.md`.
+  **4 bugs reais achados e corrigidos no mesmo dia** (só apareciam com screenshot real, não no
+  snapshot de acessibilidade): (1) `className="max-w-4xl"`/`"max-w-lg"` sem o prefixo `sm:` não
+  vencia o `sm:max-w-sm` default do `DialogContent` — tailwind-merge trata como grupos diferentes,
+  o dialog renderizava com 384px em qualquer desktop; (2) `min-w-0` faltando no wrapper do
+  formulário — `DialogContent` é um `grid` sem `minmax(0,1fr)`, o min-content da tabela de
+  variações vazava pro dialog inteiro; (3) mesmo corrigido, a tabela de 10 colunas ainda cortava a
+  SKU em `sm:max-w-4xl` (862px úteis vs 924px necessários) — subiu para `sm:max-w-5xl`;
+  (4) GTIN/dimensões/descrição eram capturados no cadastro mas não apareciam de volta na tela
+  `/estoque` — adicionadas colunas GTIN/Dimensões + linha de descrição na tabela expandida.
 
 > **Divergências encontradas na documentação pré-existente (corrigidas nesta entrega):**
 > `glossario.md` descrevia "Ajuste manual" como um tipo de movimento existente (não existe — a
