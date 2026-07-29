@@ -43,6 +43,9 @@
 | invalidar-cache-cor | true | HTTP (frontend) | não |
 | reconciliar-user-products | false | HTTP (JWT manual, admin) | sim (upsert atômico) |
 | reconciliar-convergencia-up | false | QStash schedule | sim (claim atômico) |
+| **Estoque (ADR-0094, Bloco A)** ||||
+| sincronizar-estoque | false | QStash (fila serial por org) | sim (push absoluto) |
+| reconciliar-estoque | false | QStash schedule | sim (escopo restrito ao ledger) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -82,6 +85,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `monitorar-moderados` | `0 */6 * * *` | *(sem body)* | 3 |
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
+| `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
 
 ⚠️ **Armadilha do body duplamente codificado.** O `backfill-faturamento` é o único schedule que
 passa parâmetros, e ficou semanas com `body = '"{\"dias\":30}"'` — uma **string** contendo JSON,
@@ -114,6 +118,7 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 | `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
 | `mercadopago/*` | Leitura de pagamentos MP com o token da conexão `mercado_livre` da org (ADR-0093). `buscarPagamentoMP` (1 id) nos workers de evento; `buscarPagamentosMP` (varredura por período) nos de lote |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
+| `estoque/*` (ADR-0094) | `baixa.ts` → `registrarBaixaVenda`/`estornarVendaCancelada` (chamam as RPCs `baixar_estoque`/`estornar_estoque`), `lerPushPendente`/`despacharPushPendente` (drena o outbox do ledger); `alvos.ts` → `resolverAlvosPush` (resolve qual item externo recebe qual SKU: variações num item, split em N partições, ou N itens planos user products) |
 | `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os assinantes por categoria, grava notificação in-app (tabela `notificacoes`, ADR-0085) e envia Telegram a quem tem chat_id (`config.ts`); `categorias.ts` (7 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Assinatura por profile (`telegram_categorias`) vale para os dois canais; bot Telegram é por org (ADR-0068) |
 | `parser.ts` | Validação de colunas da planilha, agrupamento por PAI, matching de fotos |
 
@@ -389,6 +394,24 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   `ativo`/`pausado`/`null` — nunca defaulta status desconhecido pra ativo.
 - **invalidar-cache-cor** — limpa o cache Redis de cor de um código (após refazer a foto).
 
+### Estoque (ADR-0094, Bloco A — EM PRODUÇÃO 2026-07-29)
+- **sincronizar-estoque** *(worker, fila serial `estoque-{orgId}`)* — push **absoluto** (nunca
+  delta) do estoque canônico (variações da família mais recente do produto) para todos os anúncios
+  publicados do produto, exceto o `canal_origem` do job (a venda naquele canal já se decrementou
+  sozinha). `resolverAlvosPush` (`_shared/estoque/alvos.ts`) resolve qual item externo recebe qual
+  SKU nas três formas de publicação: variações num item, split em N partições (ADR-0048) e N itens
+  planos user products (ADR-0088). Token por canal via `fabricarTokenPadrao` (hoje só ML; Shopee
+  entra no E5). Falha de um canal nunca afeta outro (try/catch por alvo); exceção inesperada é
+  tratada como retentável — devolve 500 para o QStash re-tentar (push absoluto é idempotente).
+- **reconciliar-estoque** *(schedule QStash)* — rede de segurança do **push**, não do webhook
+  (D-12): só re-empurra produtos que **têm movimento no ledger** (outbox pendente, drenado pelo
+  mesmo `despacharPushPendente` do `sync-venda`, ou movimento nas últimas 24h já despachado mas cujo
+  push falhou em definitivo no canal). **Nunca** re-empurra produto sem movimento — um webhook de
+  venda perdido significa que o saldo local está **alto demais**, e reempurrar restauraria unidades
+  já vendidas. Paginado (`paginarTudo`, teto de 5 páginas × 200 por org por execução). Schedule
+  criado em produção: **`30 12 * * *`**, 3 retries, body `{}`
+  (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`).
+
 ### Faturamento
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,
   roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions), `sync-devolucao`
@@ -402,6 +425,20 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
   upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. `sync-venda` também
   envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
+  **Baixa de estoque (ADR-0094, Bloco A):** sempre que `pedido.status === 'paid'` (nunca o gancho
+  one-shot `novaPaga` — a idempotência vem do ledger, então o retry do QStash retoma uma baixa que
+  falhou no meio), chama `registrarBaixaVenda` (`_shared/estoque/baixa.ts`), que roda a RPC
+  `baixar_estoque` por SKU e despacha o outbox de push pendente (`despacharPushPendente`) — nunca o
+  que só esta execução aplicou, para reencontrar um push perdido de execuções anteriores. Notifica
+  categoria `vendas` em venda sem saldo suficiente e em falha de RPC (nunca some em silêncio, é
+  caminho financeiro). Cancelamento **antes do despacho** (`pedido.status === 'cancelled'` com
+  shipment em estado pré-despacho conhecido, ou sem envio) chama `estornarVendaCancelada` (RPC
+  `estornar_estoque`, D-7) e despacha o outbox de reposição para **todos** os canais (inclusive o
+  ML, que não repõe sozinho); despacho **desconhecido ou já ocorrido** apenas notifica categoria
+  `pos_venda` (não repõe). **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
+  operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
+  venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
   Liveness da integração (ADR-0069): erro no token ou no fetch do recurso é classificado via
   `classificarErroML` — 401/403 (`permanente-auth`) grava `marketplace_connections.auth_alerta_em`
   e alerta `notificarCategoria(..., 'integracao', ...)` só na 1ª falha (200, sem retry); 404

@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-28
+atualizado: 2026-07-29
 ---
 
 # Sprint Atual
@@ -8,7 +8,28 @@ atualizado: 2026-07-28
 Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 `docs/project-status.md`. Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-07-28)
+## 📍 Passo atual (2026-07-29)
+
+> **✅ E6b BLOCO A EM PRODUÇÃO (2026-07-29).** Ledger `estoque_movimentos`, baixa automática na
+> venda paga, estorno no cancelamento pré-despacho, push absoluto cross-canal e reconciliação
+> diária. Migration aplicada, `sincronizar-estoque` (v1) e `reconciliar-estoque` (v1) deployadas
+> com `verify_jwt=false`, `sync-venda` redeployada (v50), schedule QStash `30 12 * * *` criado e
+> **confirmado na listagem**. Suíte 2181 → 2215. Invariantes verificados ao vivo em produção:
+> RLS ligada com uma única policy (SELECT/authenticated), trigger de bloqueio de escrita direta
+> habilitado, e as 3 RPCs executáveis só por `service_role`.
+>
+> **Bug achado rodando, não pela revisão:** faltava `grant select ... to authenticated` na tabela.
+> A policy de RLS existia, mas privilégio de tabela e RLS são checagens independentes — sem o
+> grant, a tela de movimentos daria "permission denied". (Em produção os grants já vinham por
+> default privileges; local não. Só apareceu ao assumir o papel `authenticated` de fato.)
+>
+> **Pendente do Bloco A:** a UI de movimentos está implementada mas **não deployada** — está na
+> branch `worktree-estoque-nfe-design`, não na main. E a suíte `verificar-isolamento-tenant.ts`
+> ainda não rodou contra produção (precisa do `SUPABASE_SERVICE_ROLE_KEY`, que não está em nenhum
+> env do repo).
+>
+> **Próximo: E6b Bloco B** — cadastro manual de produto + entrada de mercadoria. Plano pronto e
+> revisado em `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md`. Depois, o **E5 Shopee**.
 
 > **Próximo épico: `E6b` — cadastro manual de produto + entrada de mercadoria + estoque único
 > cross-canal.** Decisão do Diego em 2026-07-28: o E6b foi **ampliado** (deixa de ser só "estoque

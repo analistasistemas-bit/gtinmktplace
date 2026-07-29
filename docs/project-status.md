@@ -2,13 +2,13 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-07-24
+**Ultima atualizacao:** 2026-07-29
 
 ## Snapshot
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**
-- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`
-- **Próximo épico: `E6b` — cadastro manual de produto + entrada de mercadoria + estoque único cross-canal** (decisão do Diego em 2026-07-28: E6b foi ampliado e antecipado na frente do E5). Motivo: hoje um produto só entra por planilha, o que exige que o cliente já tenha um ERP para usar o PubliAI; o cadastro manual destrava um público que hoje não é atendível. Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`. ADR-0094 a escrever antes de codar. **Descartado na mesma sessão:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
+- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Bloco A)
+- **`E6b` Bloco A (estoque único cross-canal) EM PRODUÇÃO (2026-07-29)** — ver seção dedicada abaixo. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo) segue em design**, próximo a entrar em construção. Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`. ADR: [0094](decisions/0094-estoque-unico-cadastro-manual.md). **Descartado na mesma sessão de design:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
 - Depois do E6b: `E5` Shopee (o worker genérico `publicar-anuncio` do E6 espera só o conector)
 
 ### E6 — Orquestracao multicanal EM PRODUCAO (2026-07-06)
@@ -72,6 +72,24 @@ antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquite
   Plano revisado adversarialmente pelo Fable 5 antes de codar (achou e evitou 1 furo real: cor
   nova completa nao podia entrar no atalho) e revisado com `/code-review-fable5` depois de pronto
   (88/100, 2 achados medios corrigidos no mesmo dia). Merge direto pra `main` (`3906a2a`), sem PR.
+- **E6b Bloco A — Estoque unico cross-canal** (ADR-0094, EM PRODUCAO 2026-07-29): ate aqui o
+  estoque so fluia numa direcao (PubliAI -> ML na publicacao) — venda no ML nao baixava o saldo
+  local, risco de oversell assim que um produto vive em mais de um canal. Ledger imutavel e
+  idempotente `estoque_movimentos` (migration `20260729084329_e6b_estoque_movimentos.sql`) +
+  3 RPCs `security definer` (`baixar_estoque`/`estornar_estoque`/`registrar_entrada`,
+  service_role-only) + trigger que bloqueia escrita direta em `variacoes.estoque`. Toda venda paga
+  (`pedido.status === 'paid'`, nao o gancho one-shot `novaPaga`) baixa o estoque atomicamente e
+  enfileira push **absoluto** (nunca delta) na fila serial `estoque-{orgId}` para todos os canais
+  publicados exceto o de origem; cancelamento pre-despacho repoe (D-7); devolucao **nao e tocada**.
+  Reconciliacao diaria (`reconciliar-estoque`, schedule QStash `30 12 * * *`,
+  `scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`) e rede de seguranca do push, nao do webhook — so re-empurra
+  produto com movimento no ledger. 2 edge functions novas (`sincronizar-estoque` v1,
+  `reconciliar-estoque` v1, ambas `verify_jwt=false`) + `sync-venda` redeployada v50. Suite de
+  testes 2181 -> 2215. **Frontend implementado mas NAO deployado:** a secao "Movimentos de
+  estoque" no expandir de Publicados vive na branch `worktree-estoque-nfe-design`, ainda nao
+  mergeada/deployada. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated
+  por modulo) segue em design** — nada dele existe no schema (sem
+  `organizations.modulos_habilitados`, sem edge de cadastro/entrada).
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

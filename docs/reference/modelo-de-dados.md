@@ -291,6 +291,70 @@ CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca*
 
 ---
 
+## Estoque (ADR-0094)
+
+> **Bloco A** (ledger + baixa/estorno atômicos + push cross-canal) **EM PRODUÇÃO** desde
+> 2026-07-29. **Bloco B** (cadastro manual de produto + entrada de mercadoria pela UI, gated por
+> módulo) segue em design — nada deste bloco existe no schema ainda (sem `organizations.
+> modulos_habilitados`, sem edge de cadastro/entrada).
+
+### `estoque_movimentos`
+Ledger imutável de toda alteração de saldo de estoque — venda, entrada, estorno. Única forma de
+alterar `variacoes.estoque`: a escrita direta é bloqueada por trigger (ver abaixo).
+*Migration `20260729084329_e6b_estoque_movimentos.sql`.*
+
+Colunas: `id`, `org_id` (FK organizations), `codigo` (SKU interno = `variacoes.codigo`),
+`codigo_pai` (default `''`, preenchido ao resolver a variação canônica), **`quantidade`** (o
+**delta REALMENTE APLICADO** ao saldo — negativo=baixa, positivo=entrada/estorno; **nunca** o valor
+pedido: com saldo 2 e venda de 5, `greatest(0,…)` só remove 2, então `quantidade = -2`, não `-5` —
+gravar `-5` faria o estorno devolver 5 e criar 3 unidades do nada), **`quantidade_pedida`** (o que o
+pedido pediu, auditoria/alerta de venda-sem-saldo), `motivo` (check: `venda`, `entrada`,
+`estorno_venda`, `venda_sku_nao_encontrado`, `estorno_sku_nao_encontrado`, `cancelamento_sem_baixa`
+— tombstone de cancelamento que chegou antes da baixa existir —, `venda_cancelada_antes`),
+`canal_origem`, `referencia_externa` (idempotência), `custo_unitario numeric(12,2)` (só em
+`entrada`), `documento` (NF do fornecedor), `observacao`, `estoque_anterior`, `estoque_resultante`,
+**`push_enfileirado_em`** (outbox no próprio ledger: marca quando o push foi de fato aceito pelo
+QStash — sem isso, uma RPC que commita seguida de enfileiramento que falha vira perda permanente),
+**`push_canal_origem`** (a **intenção** de propagação gravada por quem criou o movimento: venda =
+canal da venda que já se decrementou sozinho; entrada/estorno = `null` = todos os canais — um
+despachante genérico que reusasse um único `canal_origem` por lote confundiria as duas políticas),
+`criado_por` (FK auth.users), `criado_em`.
+
+Índices:
+- **`estoque_movimentos_ref_uniq`** — unique **parcial** `(org_id, referencia_externa) where
+  referencia_externa is not null`: idempotência (referência nula não bloqueia nada, então a baixa
+  exige referência obrigatória a nível de função).
+- `estoque_movimentos_org_pai_idx` — `(org_id, codigo_pai, criado_em desc)`.
+- `estoque_movimentos_org_codigo_idx` — `(org_id, codigo, criado_em desc)`.
+- `estoque_movimentos_push_pendente_idx` — `(org_id, criado_em) where push_enfileirado_em is null
+  and codigo_pai <> ''`: varredura do outbox.
+
+RLS: policy `"estoque_movimentos: select org"` (`for select to authenticated using org_id =
+(select current_org_id())`); **sem policy de escrita** — só `service_role`, via as RPCs abaixo.
+`grant select ... to authenticated` é obrigatório **além** da policy (privilégio de tabela e RLS
+são checagens independentes; mesmo padrão de `notificacoes`, ADR-0085).
+
+**Funções `security definer`** (`search_path=''`), revogadas de `public`/`anon`/`authenticated` e
+concedidas só a `service_role` (as RPCs nunca são chamadas pelo browser — sempre via edge com
+`service_role`, D-15):
+
+| Função | Papel |
+|---|---|
+| `baixar_estoque(p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text) returns jsonb` | Baixa atômica e idempotente (D-8). Advisory lock por `(org, ref)` compartilhado com o estorno; consulta o tombstone de cancelamento antes de aplicar; resolve a variação canônica (família mais recente do `(org_id, codigo)`); `estoque = greatest(0, estoque - qtd)`, nunca negativo. |
+| `estornar_estoque(p_org uuid, p_canal text, p_ref_venda text, p_codigo text) returns jsonb` | Repõe só o que foi **de fato** baixado — lê `abs(quantidade)` do movimento `'venda'` original (D-7). Sem venda registrada, grava o tombstone `cancelamento_sem_baixa` na referência `estorno:<ref_venda>`, para a execução `paid` posterior recusar a baixa. |
+| `registrar_entrada(p_org uuid, p_codigo text, p_qtd integer, p_custo numeric, p_doc text, p_obs text, p_criado_por uuid, p_ref text) returns integer` | Entrada de mercadoria (D-9). Soma `estoque`; sobrescreve `variacoes.custo` só quando `p_custo` é informado **e** `> 0` — custo `<= 0` levanta exceção (nunca vira default silencioso, é caminho financeiro ADR-0055); `p_ref` obrigatório (idempotência). |
+
+**Trigger `variacoes_bloquear_escrita_direta_estoque`** (`before update of estoque on
+public.variacoes`, executa `bloquear_escrita_direta_estoque()`, D-20): bloqueia qualquer `UPDATE`
+que mude `variacoes.estoque` de fato (`is distinct from`, então reenviar o mesmo valor passa) quando
+`auth.uid()` não é nulo — preserva `service_role` (usado pelas 3 RPCs acima). É trigger e não
+`revoke update (estoque)` porque privilégios de coluna são **cumulativos** em Postgres: como
+`authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. **Não existe
+mais "ajuste manual de estoque pelo app"** como consequência direta desta trigger — toda mudança de
+saldo passa por entrada, baixa ou estorno.
+
+---
+
 ## Credenciais
 
 ### `ml_credentials` — **deprecada (remoção pendente, Task 17)**
@@ -451,6 +515,9 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `reconciliar_convergencia_claim(p_root_id, p_atualizado_antes)` | ADR-0088: claim atômico de uma raiz travada em `mudando_composicao=true` — reserva service_role-only |
 | `reconciliar_backfill_up_candidatas(p_org_id)` | ADR-0088: lista candidatas ao backfill UP server-side (sem truncar por paginação) — service_role-only |
 | `reconciliar_backfill_up_upsert(...)` | ADR-0088: upsert atômico raiz+filho do backfill UP numa única transação — service_role-only |
+| `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref)` | ADR-0094: baixa atômica e idempotente de estoque na venda paga — service_role-only |
+| `estornar_estoque(p_org, p_canal, p_ref_venda, p_codigo)` | ADR-0094: repõe só o que foi de fato baixado no cancelamento pré-despacho — service_role-only |
+| `registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, p_obs, p_criado_por, p_ref)` | ADR-0094: entrada de mercadoria, sobrescreve custo quando informado — service_role-only |
 | ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
 | ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
 | ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |

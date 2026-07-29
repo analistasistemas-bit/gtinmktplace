@@ -36,18 +36,23 @@
 
 ## Estoque
 
-> ADR-0094 (em design) — ver `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`.
+> ADR-0094 — **Bloco A** (ledger + baixa/estorno atômicos + push cross-canal) **EM PRODUÇÃO** desde
+> 2026-07-29. **Bloco B** (cadastro manual de produto + entrada de mercadoria pela UI, gated por
+> módulo) segue **em design** — ver
+> `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`; nada dele existe no
+> schema ainda.
 
 | Termo | Definição |
 |---|---|
 | **Estoque canônico** | O saldo de verdade de um SKU na organização: `variacoes.estoque` da **família mais recente** do `(org_id, codigo)` — mesma âncora do dedupe de Publicados (ADR-0025). Não existe tabela de saldo separada. |
 | **Movimento de estoque** | Registro imutável de toda alteração de saldo (`estoque_movimentos`): quem, quando, quanto, por quê e qual saldo resultou. Idempotente por `(org_id, referencia_externa)` — a mesma venda nunca baixa duas vezes. É a trilha de auditoria do estoque. |
-| **Entrada de mercadoria** | Movimento positivo lançado pelo operador ao receber mercadoria: quantidade + custo unitário + documento. Soma no estoque canônico e **sobrescreve** `variacoes.custo` com o último custo. Não confundir com **UPDATE de estoque**, que é a publicação do saldo no marketplace. |
-| **Baixa de estoque** | Movimento negativo automático na transição para pedido **pago** (gancho `novaPaga` do `sync-venda`). Nunca deixa o saldo negativo (`greatest(0, …)`) e **nunca** faz a venda falhar. Vale para toda organização, com ou sem o módulo. |
-| **Ajuste manual** | Movimento gerado quando um humano edita `variacoes.estoque` direto na UI. Registrado no ledger com a diferença aplicada, sem referência de idempotência. |
-| **Estorno de venda** | Movimento positivo que repõe o saldo quando um pedido é **cancelado antes do despacho** (mercadoria nunca saiu). **Devolução não repõe** automaticamente: só notifica, porque repor exige conferir o que voltou e em que estado. |
-| **Push de estoque** | Propagação do saldo para os marketplaces onde o produto está publicado, sempre por **valor absoluto** (nunca delta), em fila serial por organização. Entrada e ajuste propagam para todos os canais; baixa por venda propaga para todos **menos** o canal de origem, que já se decrementou sozinho. |
-| **Módulo** | Funcionalidade opcional habilitada por organização pelo super-admin (`organizations.modulos_habilitados`), espelhando `canais_habilitados`. Gate em dois níveis: esconde o menu **e** bloqueia a edge — diferente de **permissão de menu**, que é só navegação. |
+| **Entrada de mercadoria** | Movimento positivo lançado ao receber mercadoria: quantidade + custo unitário + documento, via RPC `registrar_entrada` (existe no schema desde o Bloco A). Soma no estoque canônico e **sobrescreve** `variacoes.custo` com o último custo só quando o custo é informado e maior que zero. **A tela de lançamento pelo operador é Bloco B — ainda não construída**; hoje a RPC não tem nenhuma edge que a chame. Não confundir com **UPDATE de estoque**, que é a publicação do saldo no marketplace. |
+| **Baixa de estoque** | Movimento negativo automático sempre que o pedido está **pago** (`pedido.status === 'paid'` no `sync-venda` — **não** o gancho one-shot `novaPaga`, que não seria retomado pelo retry do QStash se a baixa falhasse no meio; a idempotência vem do ledger, não do gatilho). Nunca deixa o saldo negativo (`greatest(0, …)`) e **nunca** faz a venda falhar. Vale para toda organização, com ou sem o módulo. |
+| **Estorno de venda** | Movimento positivo que repõe o saldo quando um pedido é **cancelado antes do despacho** (mercadoria nunca saiu) — só repõe o que foi **de fato** baixado (RPC `estornar_estoque`, ancorada no movimento de venda original). Quando o despacho não pôde ser confirmado ou já ocorreu, o `sync-venda` **só notifica** (não repõe). **Devolução (fluxo `sync-devolucao`/claims) não é tocada por este épico: nem repõe, nem notifica** — repor exige saber o que voltou e em que estado, decisão do operador, fora de escopo. |
+| **Push de estoque** | Propagação do saldo para os marketplaces onde o produto está publicado, sempre por **valor absoluto** (nunca delta), em fila serial por organização (`estoque-{orgId}`). Entrada e estorno propagam para **todos** os canais; baixa por venda propaga para todos **menos** o canal de origem, que já se decrementou sozinho. Outbox no próprio ledger (`push_enfileirado_em`) garante que o push seja reencontrado se o enfileiramento falhar depois da RPC commitar. |
+| **Reconciliação de estoque** | Job diário (`reconciliar-estoque`, schedule QStash `30 12 * * *`) — rede de segurança do **push**, não do webhook: só re-empurra produto com movimento no ledger (outbox pendente ou movimento recente); nunca re-empurra produto sem movimento nenhum. |
+| ~~**Ajuste manual**~~ | **Não existe.** A escrita direta de `variacoes.estoque` é bloqueada por trigger (`variacoes_bloquear_escrita_direta_estoque`) — toda mudança de saldo passa por entrada, baixa ou estorno, e todas propagam. Se um dia for pedido, entra como edge própria que grava o ledger e enfileira o push, igual à entrada. |
+| **Módulo** | Funcionalidade opcional habilitada por organização pelo super-admin, espelhando `canais_habilitados` — **Bloco B, ainda em design**: `organizations.modulos_habilitados` não existe no schema hoje. Gate previsto em dois níveis: esconder o menu **e** bloquear a edge — diferente de **permissão de menu**, que é só navegação. |
 
 ## Estados (enums)
 

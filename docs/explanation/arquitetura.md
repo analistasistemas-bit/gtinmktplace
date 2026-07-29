@@ -216,6 +216,58 @@ nova neste registry (front) **e** no `ShopeeConnector`/enum (back, abaixo) — s
 Shopee = preencher `ShopeeConnector` implementando a mesma interface + registrar no registry +
 adicionar `'shopee'` ao enum `canal_externo`. A orquestração já cobre tudo.
 
+## Estoque único cross-canal — Bloco A (ADR-0094, EM PRODUÇÃO 2026-07-29)
+
+Até aqui o estoque só fluía numa direção (PubliAI → ML na publicação); uma venda no ML não baixava
+o saldo local, o que é inofensivo com 1 canal mas abre oversell assim que um produto é publicado em
+mais de um marketplace. O Bloco A fecha essa lacuna: toda venda paga baixa o estoque de forma
+atômica e idempotente (ledger `estoque_movimentos`), e todo movimento propaga o saldo **absoluto**
+para os canais publicados. O Bloco B (cadastro manual de produto + entrada de mercadoria pela UI,
+gated por módulo) segue em design — nada dele existe no schema ainda.
+
+```
+venda paga (sync-venda, pedido.status === 'paid')
+  └─ registrarBaixaVenda(admin, {orgId, canal, orderId, itens})
+       └─ RPC baixar_estoque(org, codigo, qtd, canal, ref)   [atômica, idempotente]
+            ├─ insert em estoque_movimentos (unique ref → duplicata = no-op)
+            ├─ resolve variação canônica: família mais recente do (org_id, codigo)
+            └─ update variacoes.estoque = greatest(0, estoque - qtd)
+       └─ enfileirarSincronizacaoEstoque({org_id, codigo_pai, canal_origem})
+            └─ fila serial estoque-{orgId}
+                 └─ worker sincronizar-estoque
+                      └─ push ABSOLUTO por anúncio publicado (≠ canal_origem)
+                           └─ conn.atualizarEstoque(ctx, itemExternoId, estoques, variacoesExternas)
+
+pedido cancelado (sync-venda)
+  └─ cancelado antes do despacho → RPC estornar_estoque (repõe só o que foi de fato baixado, D-7)
+  └─ despacho desconhecido/já ocorrido → notificarCategoria (só avisa, não repõe)
+
+devolução (sync-devolucao)
+  └─ NÃO tocada por este épico: nem repõe, nem notifica
+
+diário (QStash, 30 12 * * *)
+  └─ reconciliar-estoque → re-push absoluto só do que tem movimento no ledger
+```
+
+Pontos que moldam o desenho (detalhe completo no ADR):
+
+- **`quantidade` no ledger é o delta REALMENTE aplicado, nunca o pedido** (`quantidade_pedida` é a
+  auditoria) — com saldo 2 e venda de 5, gravar `-5` faria o estorno devolver 5 e criar estoque do
+  nada (D-8).
+- **Outbox no próprio ledger** (`push_enfileirado_em`): o que enfileirar vem de uma varredura de
+  pendentes, não do retorno da RPC — sem isso, uma RPC que commita seguida de enfileiramento que
+  falha vira perda permanente (D-18).
+- **Tombstone de cancelamento** (`cancelamento_sem_baixa`): como `FOR UPDATE` não trava linha
+  inexistente, nada garante a ordem entre as execuções `paid` e `cancelled` do mesmo pedido; sem o
+  tombstone, um cancelamento que chega antes da baixa deixaria o saldo cair sem nunca ser reposto
+  (D-19).
+- **Escrita direta de `variacoes.estoque` é bloqueada por trigger**, não por revoke de coluna —
+  privilégios de coluna são cumulativos em Postgres, então `revoke update (estoque)` seria inócuo
+  (D-20). Não existe mais "ajuste manual de estoque pelo app" como consequência.
+- **Reconciliação diária é rede de segurança do push, não do webhook** (D-12): só re-empurra
+  produto com movimento no ledger; re-empurrar produto sem movimento restauraria unidades já
+  vendidas em caso de webhook de venda perdido.
+
 ## Módulos além da publicação
 
 - **Faturamento** (ADR-0037/0038/0039): vendas, perguntas e devoluções do ML via webhooks +

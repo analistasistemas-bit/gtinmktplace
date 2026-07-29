@@ -2,6 +2,48 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## E6b Bloco A — Estoque único cross-canal (ADR-0094) — EM PRODUÇÃO 2026-07-29
+
+- [x] **ADR-0094 escrito e aceito** — `docs/decisions/0094-estoque-unico-cadastro-manual.md`
+  (numerado 0094 porque o 0054 já estava ocupado por outro ADR). Cobre os dois blocos do épico;
+  só o Bloco A (estoque) foi construído e deployado nesta entrega.
+- [x] **Ledger `estoque_movimentos` + 3 RPCs `security definer`** — migration
+  `20260729084329_e6b_estoque_movimentos.sql`: `baixar_estoque` (baixa atômica e idempotente,
+  advisory lock compartilhado com o estorno, tombstone de cancelamento), `estornar_estoque`
+  (repõe só o que foi de fato baixado, D-7), `registrar_entrada` (entrada de mercadoria, custo
+  falha LOUD se `<= 0`). As três revogadas de `public`/`anon`/`authenticated`, concedidas só a
+  `service_role`. Trigger `variacoes_bloquear_escrita_direta_estoque` bloqueia escrita direta em
+  `variacoes.estoque` (D-20) — não existe mais "ajuste manual" pelo app.
+- [x] **2 edge functions novas deployadas** — `sincronizar-estoque` v1 (worker, fila serial
+  `estoque-{orgId}`, push absoluto por canal publicado exceto o de origem) e `reconciliar-estoque`
+  v1 (schedule QStash, rede de segurança do push — só re-empurra produto com movimento no ledger,
+  D-12). Ambas `verify_jwt=false`.
+- [x] **`sync-venda` redeployada (v50)** — baixa em `pedido.status === 'paid'` (não o gancho
+  one-shot `novaPaga`) via `registrarBaixaVenda`; estorno no cancelamento pré-despacho via
+  `estornarVendaCancelada`; despacho desconhecido/já ocorrido só notifica; devolução
+  (`sync-devolucao`) não é tocada. Try/catch: a venda é sagrada, estoque nunca a derruba.
+- [x] **Schedule QStash criado e confirmado** — `reconciliar-estoque`, cron `30 12 * * *`, 3
+  retries, body `{}` (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`), confirmado via `GET /v2/schedules`.
+- [x] **Suíte de testes 2181 → 2215.**
+- [x] **Docs atualizadas no mesmo lote:** `modelo-de-dados.md` (tabela `estoque_movimentos` +
+  RPCs + trigger), `edge-functions.md` (as 2 funções + schedule + mudança no `sync-venda`),
+  `arquitetura.md` (fluxo venda paga→baixa→outbox→fila serial→push absoluto), `glossario.md`
+  (removida a marcação "em design" das entradas de estoque; corrigidas 3 divergências — ver nota
+  abaixo), `project-status.md`.
+- [ ] **Frontend NÃO deployado** — a seção "Movimentos de estoque" no expandir de Publicados está
+  implementada na branch `worktree-estoque-nfe-design`, ainda não mergeada/deployada.
+- [ ] **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo)**
+  segue em design — nada existe no schema (sem `organizations.modulos_habilitados`, sem edge de
+  cadastro/entrada); `registrar_entrada` já existe no schema desde o Bloco A, mas sem nenhuma edge
+  que a chame ainda.
+
+> **Divergências encontradas na documentação pré-existente (corrigidas nesta entrega):**
+> `glossario.md` descrevia "Ajuste manual" como um tipo de movimento existente (não existe — a
+> escrita direta é bloqueada por trigger, D-20); descrevia a baixa como acionada pelo gancho
+> `novaPaga` (é `pedido.status === 'paid'`); e descrevia devolução como "não repõe, só notifica"
+> quando na verdade devolução **não é tocada de forma nenhuma** (nem repõe, nem notifica — quem só
+> notifica é o cancelamento com despacho desconhecido/confirmado, caminho diferente).
+
 ## `backfill-faturamento` — timeout horário corrigido (2026-07-27)
 
 **Sintoma:** 504/546 de hora em hora, **28 FAILED contra 1 DELIVERED** em 2026-07-26. Não era
@@ -1425,7 +1467,9 @@ aplicado no banco nem deployado.
 - [x] **Épico novo E6b — Estoque único e sincronização cross-canal (2026-07-02)** — venda paga em qualquer canal → baixa atômica idempotente no estoque canônico (ledger `estoque_movimentos` + `baixar_estoque`) → push de valores absolutos aos demais canais (`sincronizar-estoque`, fila serial por org) → reconciliação diária. Registrado no doc mestre (seção E6b) e com plano completo: [E6b estoque único](superpowers/plans/2026-07-02-e6b-estoque-unico-cross-canal.md). Executa após E7+E6; validação plena (2 canais reais) depende do E5.
 - [ ] **Execução do E7** — próximo passo (iniciar pela Task 1: ADR-0027).
 - [ ] **Execução do E6** — após E7 concluído.
-- [ ] **Execução do E6b** — após E6 concluído (pré-voo obrigatório na Task 2 do plano).
+- [x] **Execução do E6b Bloco A** — EM PRODUÇÃO 2026-07-29, ver
+  "E6b Bloco A — Estoque único cross-canal (ADR-0094)" no topo deste arquivo. Bloco B (cadastro
+  manual + entrada de mercadoria) segue pendente.
 
 ## Lote #49 — barbante recusado por atributo/tipo (ADR-0051) — 2026-07-01
 
