@@ -28,6 +28,7 @@ if (!URL || !SERVICE || !ANON) {
 const TABELAS = [
   'lotes', 'familias', 'variacoes', 'anuncios_externos', 'ml_credentials', 'ml_vendas',
   'ml_vendas_itens', 'ml_perguntas', 'ml_devolucoes', 'ml_moderacao', 'ml_webhook_eventos', 'configuracoes',
+  'estoque_movimentos',
 ];
 
 type Resultado = { assercao: string; status: 'PASS' | 'FAIL'; detalhe: string };
@@ -71,6 +72,14 @@ async function criarTenant(tag: string) {
   await svc.from('ml_moderacao').insert({ user_id: userId, org_id: orgId, ml_item_id: `MLB${tag}${Date.now()}`, status: 'under_review' });
   await svc.from('ml_webhook_eventos').insert({ user_id: userId, org_id: orgId });
   await svc.from('configuracoes').insert({ user_id: userId, org_id: orgId });
+  // E6b (ADR-0094): o movimento entra pela RPC, não por insert direto — assim o seed
+  // também prova que `baixar_estoque` é executável pelo service_role (o revoke sem o
+  // grant explícito a tornaria inexecutável até pelas edge functions).
+  const { error: baixaErr } = await svc.rpc('baixar_estoque', {
+    p_org: orgId, p_codigo: `V${tag}`, p_qtd: 1,
+    p_canal: 'mercado_livre', p_ref: `iso:${tag}:${Date.now()}`,
+  });
+  if (baixaErr) throw new Error(`baixar_estoque no seed ${tag}: ${baixaErr.message}`);
 
   return { orgId, userId, email, senha, loteId: lote!.id as string, famId: fam!.id as string };
 }
@@ -110,6 +119,40 @@ async function main() {
   // 3. Escrita cruzada: B não insere linha com org_id de A (WITH CHECK bloqueia).
   const { error: insErr } = await cliB.from('lotes').insert({ user_id: B.userId, org_id: A.orgId, numero: (Date.now() % 2000000000) + 1 });
   assert(!!insErr, 'B não insere lote com org_id de A (WITH CHECK bloqueia)', 'insert cruzado NÃO foi bloqueado');
+
+  // 3b. E6b/D-15: `estoque_movimentos` não tem policy de escrita — nem na própria org.
+  const { error: movInsErr } = await cliB.from('estoque_movimentos').insert({
+    org_id: B.orgId, codigo: 'X', quantidade: -1, motivo: 'venda',
+  });
+  assert(!!movInsErr, 'B não insere movimento de estoque nem na própria org (sem policy de escrita)',
+    'insert em estoque_movimentos NÃO foi bloqueado');
+
+  // 3c. E6b/D-15: as RPCs de estoque são revogadas de `authenticated`.
+  for (const [fn, args] of [
+    ['baixar_estoque', { p_org: B.orgId, p_codigo: 'X', p_qtd: 1, p_canal: 'mercado_livre', p_ref: 'hack' }],
+    ['estornar_estoque', { p_org: B.orgId, p_canal: 'mercado_livre', p_ref_venda: 'hack', p_codigo: 'X' }],
+    ['registrar_entrada', { p_org: B.orgId, p_codigo: 'X', p_qtd: 1, p_custo: null, p_doc: null, p_obs: null, p_criado_por: null, p_ref: 'hack' }],
+  ] as const) {
+    const { error } = await cliB.rpc(fn, args as never);
+    assert(!!error, `${fn}: usuário autenticado não executa a RPC (revogada)`,
+      'RPC de estoque executável por authenticated');
+  }
+
+  // 3d. E6b/D-20: escrita direta em variacoes.estoque é bloqueada por trigger.
+  //     O UPDATE precisa ser numa variação DA PRÓPRIA org de B — se fosse de A, a RLS
+  //     barraria antes e o teste passaria pelo motivo errado.
+  const { data: varB } = await cliB.from('variacoes').select('id, estoque').limit(1).maybeSingle();
+  if (varB) {
+    const { error: estErr } = await cliB.from('variacoes')
+      .update({ estoque: (varB.estoque ?? 0) + 999 }).eq('id', varB.id).select('id');
+    assert(!!estErr, 'B não altera variacoes.estoque nem na própria org (trigger D-20)',
+      'UPDATE direto de estoque NÃO foi bloqueado');
+    // Contraprova: outra coluna da MESMA linha continua editável — o trigger é cirúrgico.
+    const { error: precoErr } = await cliB.from('variacoes')
+      .update({ preco: 11 }).eq('id', varB.id).select('id');
+    assert(!precoErr, 'B ainda altera outras colunas da variação (trigger não é bloqueio geral)',
+      precoErr?.message ?? '');
+  }
 
   // 4. Storage: B não lista/baixa objeto no path do usuário de A.
   const pathA = `${A.userId}/e7-iso/prova.txt`;

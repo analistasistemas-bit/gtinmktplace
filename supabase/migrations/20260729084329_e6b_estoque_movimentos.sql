@@ -65,6 +65,13 @@ create policy "estoque_movimentos: select org" on public.estoque_movimentos
   for select to authenticated using (org_id = (select public.current_org_id()));
 -- Sem policy de escrita: só service_role, via as funções abaixo.
 
+-- GRANT é obrigatório além da policy: sem ele a policy é letra morta e o app recebe
+-- "permission denied for table estoque_movimentos" (privilégio de tabela e RLS são
+-- checagens independentes). Mesmo padrão de `notificacoes`
+-- (20260721094323_notificacoes_in_app.sql:24). Só SELECT: a escrita é service_role-only
+-- via as RPCs, e `anon` fica de fora de propósito.
+grant select on public.estoque_movimentos to authenticated;
+
 -- ----------------------------------------------------------------------------
 -- baixar_estoque — baixa atômica e idempotente.
 -- Devolve jsonb { aplicado, motivo, movimento_id?, codigo_pai?, quantidade_aplicada?,
