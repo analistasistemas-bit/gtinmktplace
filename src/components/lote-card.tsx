@@ -72,6 +72,10 @@ export function LoteCard({ lote }: { lote: Lote }) {
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold">Lote #{lote.numero}</h3>
                 <StatusBadge status={lote.status} />
+                {/* E6b: numa org que usa os dois fluxos, "Lote #12" sozinho não diz de onde veio. */}
+                <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                  {lote.origem === 'manual' ? 'Cadastro manual' : 'Planilha'}
+                </span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{formatarData(lote.criadoEm)}</p>
             </div>

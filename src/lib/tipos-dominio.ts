@@ -87,6 +87,8 @@ export interface Lote {
   totalPublicadas: number;
   totalErros: number;
   anomalias: AnomaliasPlanilha;
+  /** E6b: de onde vieram as famílias deste lote — planilha ou cadastro manual. */
+  origem: 'planilha' | 'manual';
 }
 
 import type { FaixaAtacado } from './atacado';

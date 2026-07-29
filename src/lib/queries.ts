@@ -252,6 +252,7 @@ export function loteFromRow(r: LoteRow): Lote {
     totalPublicadas: r.total_publicadas,
     totalErros: r.total_erros,
     anomalias: parseAnomalias(r.anomalias_planilha),
+    origem: r.origem === 'manual' ? 'manual' : 'planilha',
   };
 }
 

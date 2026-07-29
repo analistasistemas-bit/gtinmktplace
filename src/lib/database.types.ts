@@ -449,6 +449,7 @@ export type Database = {
           numero: number
           numero_org: number | null
           org_id: string
+          origem: string
           planilha_path: string | null
           status: Database["public"]["Enums"]["lote_status"]
           total_erros: number
@@ -467,6 +468,7 @@ export type Database = {
           numero?: number
           numero_org?: number | null
           org_id: string
+          origem?: string
           planilha_path?: string | null
           status?: Database["public"]["Enums"]["lote_status"]
           total_erros?: number
@@ -485,6 +487,7 @@ export type Database = {
           numero?: number
           numero_org?: number | null
           org_id?: string
+          origem?: string
           planilha_path?: string | null
           status?: Database["public"]["Enums"]["lote_status"]
           total_erros?: number
