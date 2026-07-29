@@ -230,12 +230,20 @@ async function main() {
 
   // Cleanup: remove seeds, profiles, users e orgs (ordem respeita FKs).
   async function limpar(tenant: { orgId: string; userId: string }) {
-    for (const t of ['ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
-      await svc.from(t).delete().eq('org_id', tenant.orgId);
+    // ATENÇÃO: esta lista é SEPARADA de TABELAS (aqui a ordem respeita as FKs). Tabela
+    // nova precisa entrar NOS DOIS lugares — só no TABELAS ela é asseverada mas nunca
+    // limpa, e a FK para `organizations` trava o delete da org, deixando lixo no banco.
+    // `estoque_movimentos` vem primeiro: referencia organizations sem ON DELETE CASCADE.
+    for (const t of ['estoque_movimentos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
+      const { error } = await svc.from(t).delete().eq('org_id', tenant.orgId);
+      // Limpeza silenciosa que falha deixa dado de teste no banco (aconteceu em
+      // 2026-07-29 com estoque_movimentos). Erro aqui tem que aparecer.
+      if (error) console.error(`[cleanup] ${t}: ${error.message}`);
     }
     await svc.storage.from('imagens').remove([`${tenant.userId}/e7-iso/prova.txt`]);
     await svc.auth.admin.deleteUser(tenant.userId); // cascata remove profile
-    await svc.from('organizations').delete().eq('id', tenant.orgId);
+    const { error: orgErr } = await svc.from('organizations').delete().eq('id', tenant.orgId);
+    if (orgErr) console.error(`[cleanup] organizations ${tenant.orgId}: ${orgErr.message}`);
   }
   await limpar(A);
   await limpar(B);
