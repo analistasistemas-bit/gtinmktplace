@@ -153,7 +153,10 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+      {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
+          `max-w-4xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
+          grupos diferentes) e o dialog renderiza com 384px em qualquer desktop. */}
+      <DialogContent className="max-h-[90vh] sm:max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{resultado ? 'Fotos do produto' : 'Cadastrar produto'}</DialogTitle>
           <DialogDescription>

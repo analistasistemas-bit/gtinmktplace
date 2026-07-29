@@ -91,7 +91,8 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial }: {
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="max-w-lg">
+      {/* sm: obrigatorio: ver nota em dialog-cadastro-produto.tsx. */}
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Dar entrada de mercadoria</DialogTitle>
           <DialogDescription>
