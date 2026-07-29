@@ -167,7 +167,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         </DialogHeader>
 
         {!resultado ? (
-          <div className="flex flex-col gap-4">
+          // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
+          // definido), entao o min-content da tabela de variacoes (10 colunas com `min-w-20`
+          // cada, ~924px) vaza pro dialog inteiro em vez de ficar contido no scroll horizontal
+          // do proprio wrapper da tabela. Sem isto, o dialog abre mais largo que a viewport.
+          <div className="flex min-w-0 flex-col gap-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="cad-codigo" className="text-sm font-medium">Código do produto (PAI)</label>
@@ -262,7 +266,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-4">
             {/* Cadastro parcial NUNCA é reportado como sucesso: o operador seguiria para a
                 Revisão achando que está tudo certo. */}
             {!resultado.filaOk && (
