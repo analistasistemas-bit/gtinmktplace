@@ -31,32 +31,26 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > **Próximo: E6b Bloco B** — cadastro manual de produto + entrada de mercadoria. Plano pronto e
 > revisado em `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md`. Depois, o **E5 Shopee**.
 
-> **Próximo épico: `E6b` — cadastro manual de produto + entrada de mercadoria + estoque único
-> cross-canal.** Decisão do Diego em 2026-07-28: o E6b foi **ampliado** (deixa de ser só "estoque
-> único" e passa a incluir cadastro de produto sem planilha e entrada de mercadoria) e **antecipado
-> na frente do E5 Shopee**.
+> **Contexto da decisão (2026-07-28).** O E6b foi **ampliado** (deixou de ser só "estoque único"
+> e passou a incluir cadastro de produto sem planilha e entrada de mercadoria) e **antecipado na
+> frente do E5 Shopee**. Motivo: hoje um produto só entra por planilha (`ingest-lote`), o que exige
+> que o cliente **já tenha um ERP** para usar o PubliAI — o funil ficava restrito exatamente ao
+> público que menos precisa do produto.
 >
-> **Motivo:** hoje um produto só entra por planilha (`ingest-lote`), o que exige que o cliente
-> **já tenha um ERP** para conseguir usar o PubliAI — o funil está restrito exatamente ao público
-> que menos precisa do produto. O cadastro manual destrava um público hoje não atendível.
+> **Descartado na mesma sessão: módulo de emissão de NF-e.** Commodity (6 providers entregam igual),
+> passivo e não ativo (nota errada vira chamado de suporte contábil), manutenção fiscal perpétua
+> (reforma tributária em transição) e não multiplica nada do que o PubliAI já construiu. Racional
+> completo e dados dos providers na seção 11 da spec.
 >
-> **Descartado na mesma sessão: módulo de emissão de NF-e.** É commodity (6 providers entregam
-> igual), é passivo e não ativo (nota errada vira chamado de suporte contábil), é manutenção fiscal
-> perpétua (reforma tributária em transição) e não multiplica nada do que o PubliAI já construiu.
-> Racional completo e dados dos providers na seção 11 da spec.
->
-> **Decisão de arquitetura central:** cadastro manual **não** usa `lote_id` nulo — "sessão de
+> **Decisão de arquitetura do Bloco B:** cadastro manual **não** usa `lote_id` nulo — "sessão de
 > cadastro = um lote" (`lotes.origem = 'manual'`). Verificado no código que `lote_id` é `NOT NULL`
-> e sustenta `process-familia`, `finalizarLote` nos dois workers de publicação, todo o roteamento
+> e sustenta `process-familia`, `finalizarLote` nos TRÊS workers de publicação, todo o roteamento
 > da Revisão e a unique `(lote_id, codigo_pai)` — que ficaria furada com `NULL`.
 >
 > **Spec:** `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`
-> **ADR a escrever antes de codar:** 0054 — ver [[Índice de ADRs]].
->
-> Depois do E6b vem o **E5 — Shopee** (conector real; o worker genérico `publicar-anuncio` do E6
-> já espera só ele). A validação plena do estoque cross-canal com 2 canais depende do E5 — até lá,
-> a infra é provada com o conector fake. E7 (multi-tenancy), E6 (orquestração multicanal) e a UI
-> multi-marketplace seguem concluídos e em produção. ADRs de referência: ADR-0027, ADR-0061.
+> **ADR:** [[Índice de ADRs|ADR-0094]] (o número 0054 do plano original já estava ocupado).
+> Os planos passaram por 1 revisão do Fable + 7 rodadas adversariais com o Codex (`gpt-5.6-sol`),
+> convergindo em APPROVED; 9 bloqueadores corrigidos. Log em `PLAN-REVIEW-LOG-E6B.md`.
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
