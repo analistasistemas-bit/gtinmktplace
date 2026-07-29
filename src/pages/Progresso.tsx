@@ -109,6 +109,15 @@ export default function Progresso() {
       <PageHeader
         title={`Processando lote #${lote.numero}`}
         subtitle={`Status: ${lote.status} · ${prontas} de ${total} prontas${erradas > 0 ? ` · ${erradas} com erro` : ''}`}
+        actions={
+          // Saída manual para a Revisão. Um lote com família travada em 'pendente' (job de
+          // IA perdido) fica em 'processando' para sempre: o auto-redirect da linha 51 só
+          // dispara com TODAS prontas, e o botão do atalho de estoque só aparece quando há
+          // elegíveis. Sem isto o operador fica preso nesta tela com famílias publicáveis.
+          prontas > 0
+            ? <Button variant="outline" onClick={() => nav(`/revisao/${loteId}`)}>Ir para a Revisão</Button>
+            : undefined
+        }
       />
       <div className="mb-6">
         <JornadaLote status={lote.status} />
