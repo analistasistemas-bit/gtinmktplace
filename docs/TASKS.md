@@ -30,12 +30,27 @@
   `arquitetura.md` (fluxo venda paga→baixa→outbox→fila serial→push absoluto), `glossario.md`
   (removida a marcação "em design" das entradas de estoque; corrigidas 3 divergências — ver nota
   abaixo), `project-status.md`.
-- [ ] **Frontend NÃO deployado** — a seção "Movimentos de estoque" no expandir de Publicados está
-  implementada na branch `worktree-estoque-nfe-design`, ainda não mergeada/deployada.
-- [ ] **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo)**
-  segue em design — nada existe no schema (sem `organizations.modulos_habilitados`, sem edge de
-  cadastro/entrada); `registrar_entrada` já existe no schema desde o Bloco A, mas sem nenhuma edge
-  que a chame ainda.
+- [x] **Frontend deployado** — a seção "Movimentos de estoque" no expandir de Publicados foi
+  mergeada e está no ar (deploy `823843e9` no Render). Suíte `verificar-isolamento-tenant.ts`
+  rodada contra produção: 54 asserções passando.
+- [x] **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo)**
+  — implementado 2026-07-29, **aguardando deploy**. Migration
+  `20260729124711_e6b_origem_lote_e_modulos.sql` (`lotes.origem`,
+  `organizations.modulos_habilitados`, `modulos_habilitados_da_org()`), edges
+  `cadastrar-produto` e `entrada-estoque`, tela `/estoque`, `set_modulos_org` no `/admin`,
+  chip de origem no LoteCard. Suíte 2215 → 2255.
+- [ ] **Deploy do Bloco B** — pendente de OK do Diego. Ordem obrigatória, porque o frontend
+  depende da RPC nova e o Render auto-deploya no push da main:
+  1. `supabase db push` + `npm run db:check`
+  2. `supabase functions deploy cadastrar-produto entrada-estoque publish-familia-ml
+     update-familia-ml publicar-split-ml usuarios`
+  3. merge na main
+- [ ] **E2E manual do Bloco B** — não coberto por teste automatizado: cadastrar produto real com
+  2 variações + estoque inicial + fotos, confirmar que caiu na Revisão com a IA rodando, que o
+  2º produto entrou no MESMO lote (D-1.1), que o mesmo `codigo_pai` dá 409, e publicar pelo
+  fluxo normal. O guard de SKU usa o embed `familias!inner(codigo_pai)` do PostgREST — se o
+  formato vier como array em vez de objeto, todo SKU lê como conflito e o cadastro 409 sempre.
+  Falha alto, mas só um cadastro real exercita.
 
 > **Divergências encontradas na documentação pré-existente (corrigidas nesta entrega):**
 > `glossario.md` descrevia "Ajuste manual" como um tipo de movimento existente (não existe — a

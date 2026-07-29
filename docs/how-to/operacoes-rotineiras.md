@@ -59,6 +59,63 @@ Isso só controla **visibilidade/rollout** por org; o canal só publica de verda
 do backend existir (`ShopeeConnector` etc. — ver [[Publicação Shopee]] no vault) e o `status` virar
 `'ativo'` no registry.
 
+## Habilitar o módulo Estoque para uma organização (ADR-0094)
+
+O módulo `estoque` (cadastro manual de produto + entrada de mercadoria) é **pago e opt-in**:
+nenhuma org nasce com ele.
+
+1. Tela **`/admin`** (super-admin) → botão **"Módulos"** na linha da organização.
+2. Marcar **Estoque** e salvar (edge `usuarios`, action `set_modulos_org`).
+3. Na org, o menu **Estoque** passa a aparecer para quem tem a permissão de menu correspondente.
+
+Desabilitar esconde o menu e faz as edges `cadastrar-produto`/`entrada-estoque` responderem 403 —
+**o dado já gravado não é apagado** (produtos, saldo e ledger continuam lá; a baixa automática por
+venda e o push de estoque valem para toda org, com ou sem o módulo).
+
+## Cadastrar produto sem planilha e dar entrada de mercadoria (ADR-0094)
+
+Fluxo do operador de uma org com o módulo `estoque` habilitado.
+
+**Cadastrar produto** (tela `/estoque` → "Cadastrar produto"):
+
+1. Dados do PAI: código, nome, descrição, unidade, fornecedor e **origem**
+   (nacional/importado — obrigatório, define a alíquota de imposto; o botão de salvar fica
+   travado sem ela).
+2. Uma linha por variação: SKU, cor/nome, GTIN, preço, custo, estoque inicial, peso e dimensões.
+3. Salvar. Se aparecer aviso de pendência (**"Reprocessar"** ou lista de SKUs sem estoque),
+   resolva antes de seguir — o botão "Ir para a Revisão" fica travado de propósito, porque
+   cadastro parcial reportado como sucesso é a pior falha possível aqui.
+4. Etapa de fotos: capa (até 3) e uma foto por variação.
+5. "Ir para a Revisão" — **o cadastro não publica nada**; publicar continua sendo ato explícito
+   na Revisão, como no fluxo de planilha.
+
+Produtos cadastrados em sequência caem no **mesmo lote** (a "sessão de cadastro"). Na tela de
+Lotes eles aparecem com o chip **Cadastro manual**, para distinguir do fluxo de planilha.
+
+Erros esperados e o que significam:
+
+| Erro | O que fazer |
+|---|---|
+| 409 "produto já existe" | Já há família com esse `codigo_pai` na org. Para repor saldo use **Dar entrada**; o toast oferece abrir o produto na Revisão. |
+| 409 "estes SKUs já pertencem a outro produto" | O SKU é a chave que a baixa de venda usa. Renomeie o SKU ou use o produto existente — repetir faria uma venda baixar o estoque do produto errado. |
+| 403 "módulo não habilitado" | A org perdeu o módulo. Ver a seção acima. |
+
+**Dar entrada de mercadoria** (tela `/estoque` → "Dar entrada"):
+
+1. Buscar o SKU por código ou nome do produto.
+2. Quantidade (inteiro > 0), custo unitário (opcional; se informado tem que ser > 0 e
+   **sobrescreve** o custo da variação) e documento (NF do fornecedor, texto livre).
+3. Registrar. O saldo sobe e o novo estoque é empurrado na hora para **todos** os marketplaces
+   onde o produto está publicado.
+
+Se aparecer *"Saldo atualizado. A sincronização com os marketplaces falhou…"*, a entrada **foi
+gravada** — só a propagação falhou, e a reconciliação diária (`30 12 * * *`) a refaz. Não lance a
+entrada de novo. Se relançar mesmo assim na mesma janela do formulário, a referência de
+idempotência faz a 2ª aplicação virar no-op.
+
+O histórico completo de movimentos de cada produto fica no expandir da linha, em `/estoque` e em
+Publicados.
+
 ## Monitorar anúncios moderados
 
 Configuração, deploy (`--no-verify-jwt`... veja a ressalva abaixo) e agendamento estão no

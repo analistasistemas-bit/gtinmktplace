@@ -37,6 +37,16 @@ registry híbrido (registry do código decide o que **existe**/está implementad
 o que a **org** pode operar). Editada só por super-admin via edge `usuarios` (action `set_canais_org`,
 trava `mercado_livre` sempre habilitado). Lida pelo front via RPC `canais_habilitados_da_org()`.
 
+**`modulos_habilitados` text[]** (default `'{}'`, migration `20260729124711_e6b_origem_lote_e_modulos.sql`,
+E6b/ADR-0094 D-13): módulos **pagos** que a org contratou — hoje só `'estoque'` (cadastro manual +
+entrada de mercadoria). Default vazio: habilitar é sempre ato explícito do super-admin, via edge
+`usuarios` action `set_modulos_org`. Diferente de `canais_habilitados`, **não há módulo
+obrigatório** — lista vazia é estado válido. Lida pelo front via RPC `modulos_habilitados_da_org()`
+(`security definer`, sem parâmetro de propósito: não existe caminho para ler os módulos de outra
+org; `revoke all from public`, `grant execute to authenticated`).
+Esconder o menu é **navegação**, não fronteira de segurança (ADR-0047): o gate real são as edges
+`cadastrar-produto` e `entrada-estoque`, que respondem 403 para org sem o módulo.
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration
@@ -149,8 +159,16 @@ Colunas-chave: `id`, `user_id` (FK auth.users), `org_id` (FK organizations, ADR-
 pelo front — `numero_org ?? numero`; gerada por `proximo_numero_lote(org)`), único
 `(org_id, numero_org)`, `status` (`lote_status`), `planilha_path`, `imagens_paths text[]`,
 `total_familias` / `total_publicadas` / `total_erros` (mantidos por trigger),
-`erro_mensagem`, `criado_em`, `atualizado_em`.
-Índice: `(user_id, criado_em DESC)`, `(org_id)`. RLS por organização (`org_id = current_org_id()`).
+`erro_mensagem`, `criado_em`, `atualizado_em`,
+**`origem`** (`text not null default 'planilha'`, check `planilha | manual` — E6b/ADR-0094 D-2;
+o default backfilla todo lote histórico como planilha, que é correto: até a migration
+`20260729124711_e6b_origem_lote_e_modulos.sql`, planilha era a única origem possível).
+Índice: `(user_id, criado_em DESC)`, `(org_id)`, e **`lotes_org_manual_aberto_idx`** —
+parcial `(org_id, criado_em desc) where origem='manual' and status in ('importando',
+'processando','revisao')`, que sustenta o reuso do lote manual ABERTO da org (D-1.1: sessão de
+cadastro = um lote). O predicado espelha **exatamente** a query da edge `cadastrar-produto`;
+divergir só torna o índice inútil, a query continua correta.
+RLS por organização (`org_id = current_org_id()`).
 Trigger `update_lote_counters` recalcula contadores e faz a transição `processando → revisao`
 quando todas as famílias saem de pendente/processando (*`20260609132501_lote_transicao_revisao.sql`*).
 
@@ -295,8 +313,9 @@ CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca*
 
 > **Bloco A** (ledger + baixa/estorno atômicos + push cross-canal) **EM PRODUÇÃO** desde
 > 2026-07-29. **Bloco B** (cadastro manual de produto + entrada de mercadoria pela UI, gated por
-> módulo) segue em design — nada deste bloco existe no schema ainda (sem `organizations.
-> modulos_habilitados`, sem edge de cadastro/entrada).
+> módulo) **implementado** — migration `20260729124711_e6b_origem_lote_e_modulos.sql`
+> (`lotes.origem`, `organizations.modulos_habilitados`, `modulos_habilitados_da_org()`) e as
+> edges `cadastrar-produto` / `entrada-estoque`.
 
 ### `estoque_movimentos`
 Ledger imutável de toda alteração de saldo de estoque — venda, entrada, estorno. Única forma de

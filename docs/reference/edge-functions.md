@@ -46,6 +46,9 @@
 | **Estoque (ADR-0094, Bloco A)** ||||
 | sincronizar-estoque | false | QStash (fila serial por org) | sim (push absoluto) |
 | reconciliar-estoque | false | QStash schedule | sim (escopo restrito ao ledger) |
+| **Estoque (ADR-0094, Bloco B — módulo pago)** ||||
+| cadastrar-produto | **true** | HTTP (frontend) | sim (guard 409 + ref no estoque inicial) |
+| entrada-estoque | **true** | HTTP (frontend) | sim (`ref` de idempotência obrigatória) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -411,6 +414,43 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   já vendidas. Paginado (`paginarTudo`, teto de 5 páginas × 200 por org por execução). Schedule
   criado em produção: **`30 12 * * *`**, 3 retries, body `{}`
   (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`).
+
+### Estoque (ADR-0094, Bloco B — módulo pago `estoque`)
+
+As duas são chamadas pelo **app** com o JWT do usuário (não pelo QStash), então `verify_jwt = true`
+— declarado explicitamente no `config.toml` ao lado dos workers, para a intenção ficar registrada.
+Ambas resolvem a identidade com `requireUserOrg(req, { access: 'write' })` e recusam org sem o
+módulo com **403** via `exigirModulo` (`_shared/produto/modulo.ts`), que **fecha por padrão**:
+falha ao ler `organizations` não libera.
+
+- **cadastrar-produto** — cadastro manual de produto (D-1/D-1.1). Grava um **lote normal** com
+  `origem='manual'`, reusando o lote manual ABERTO da org, e cai na **mesma Revisão de sempre** —
+  `process-familia`, `publish-familia-ml`, split e user products não mudam uma linha. Validação
+  pura em `_shared/produto/validar.ts` (`validarProdutoNovo` / `montarLinhasProduto`), com trava
+  **LOUD de `origem`**: `familias.origem` é `NOT NULL DEFAULT 'nacional'`, então omitir o campo
+  gravaria imposto errado em silêncio (ADR-0055) — a edge responde 400 em vez de assumir.
+  Dois guards de 409: **produto duplicado** (a unique é `(lote_id, codigo_pai)`, então dois lotes
+  aceitariam o mesmo produto e criariam linhas canônicas concorrentes — a resposta carrega
+  `familiaId`/`loteId` para a tela oferecer "abrir o produto") e **SKU já usado por outro produto**
+  (a unique é `(familia_id, codigo)`; não há unique por org, e as RPCs de estoque resolvem a
+  variação por `(org_id, codigo)` pegando a família mais recente — SKU repetido faria uma venda
+  baixar o estoque do produto **errado**).
+  Ordem que **não pode mudar**: o lote reusado só é marcado `processando` **depois** do insert da
+  família; antes disso existe janela para `talvezFinalizarLote` fechar o lote e a família nascer
+  dentro de um lote fechado. Estoque inicial entra por `registrar_entrada` (caminho único, D-15)
+  com referência `cadastro:{familiaId}:{codigo}`, o que torna o retry no-op.
+  **Sem transação de propósito** (tabela + RPC `security definer` + QStash são três caminhos, e o
+  supabase-js não expõe transação multi-statement): o desenho compensa com idempotência. Estado
+  parcial volta explícito no corpo (`filaOk`, `falhasEstoque`) — a tela nunca reporta sucesso limpo
+  com pendência.
+- **entrada-estoque** — entrada de mercadoria. Chama `registrar_entrada` e enfileira o push
+  absoluto para **todos** os canais (`canal_origem: null`). `ref` de idempotência é
+  **obrigatória** (o cliente gera um uuid por submissão): sem ela, duplo clique soma o saldo 2× e
+  sobrescreve o custo 2×, e isso é caminho financeiro. O enfileiramento do push roda **também** no
+  caminho duplicado — se a 1ª tentativa aplicou a entrada e morreu antes de enfileirar, o retry
+  cairia em `duplicada` e o push nunca aconteceria; push absoluto é idempotente, então
+  re-enfileirar é mais barato que perder a propagação. `pushOk: false` **não** é erro de entrada:
+  o saldo já é verdade e a reconciliação diária recupera o push.
 
 ### Faturamento
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,

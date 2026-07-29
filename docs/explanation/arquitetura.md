@@ -223,7 +223,7 @@ o saldo local, o que é inofensivo com 1 canal mas abre oversell assim que um pr
 mais de um marketplace. O Bloco A fecha essa lacuna: toda venda paga baixa o estoque de forma
 atômica e idempotente (ledger `estoque_movimentos`), e todo movimento propaga o saldo **absoluto**
 para os canais publicados. O Bloco B (cadastro manual de produto + entrada de mercadoria pela UI,
-gated por módulo) segue em design — nada dele existe no schema ainda.
+gated por módulo) está implementado — ver a seção logo abaixo.
 
 ```
 venda paga (sync-venda, pedido.status === 'paid')
@@ -268,8 +268,41 @@ Pontos que moldam o desenho (detalhe completo no ADR):
   produto com movimento no ledger; re-empurrar produto sem movimento restauraria unidades já
   vendidas em caso de webhook de venda perdido.
 
+## Cadastro manual e entrada de mercadoria — Bloco B (ADR-0094)
+
+Até aqui produto só entrava por planilha (`ingest-lote`), o que exige que o cliente **já tenha um
+ERP** gerando essa planilha — o funil ficava restrito a quem menos precisa do produto. O Bloco B
+abre a porta pela UI, sem tocar no caminho de planilha.
+
+A decisão que sustenta isso: **"sessão de cadastro = um lote"**. O cadastro grava um `lote` normal
+com `origem='manual'` e cai na **mesma tela de Revisão de sempre** — `process-familia`,
+`publish-familia-ml`, `update-familia-ml`, split e user products não mudam uma linha. Alternativa
+rejeitada com verificação no código: `lote_id` nullable quebraria 6 frentes, duas delas em código
+que publica anúncio real, e furaria a unique `(lote_id, codigo_pai)`.
+
+```
+tela /estoque  (menu só aparece com o módulo 'estoque' na org)
+  ├─ [Cadastrar produto] → edge cadastrar-produto  (verify_jwt, 403 sem módulo)
+  │    ├─ valida (origem LOUD; 409 de produto duplicado; 409 de SKU de outro produto)
+  │    ├─ reusa o lote manual ABERTO da org, ou cria um novo
+  │    ├─ insere familias (operacao='CREATE') + variacoes (estoque = 0)
+  │    ├─ marca o lote 'processando' SÓ DEPOIS do insert da família
+  │    ├─ estoque inicial → RPC registrar_entrada  [caminho único de escrita, D-15]
+  │    └─ enfileirarFamilia → IA de atributos, INTACTA
+  │    → etapa de fotos → /revisao/{loteId}   ← fluxo existente daqui pra frente
+  │
+  └─ [Dar entrada] → edge entrada-estoque  →  RPC registrar_entrada
+       └─ enfileira push absoluto para TODOS os canais (canal_origem: null)
+```
+
+O módulo é **pago e opt-in por org** (`organizations.modulos_habilitados`, ligado pelo super-admin
+em `/admin`), com gate em dois níveis: esconder o menu é navegação (ADR-0047), e as duas edges
+recusam org sem o módulo com **403** — é ali que está a fronteira de segurança.
+
 ## Módulos além da publicação
 
+- **Estoque** (ADR-0094, módulo pago): ver as duas seções acima. Único módulo hoje em
+  `organizations.modulos_habilitados`.
 - **Faturamento** (ADR-0037/0038/0039): vendas, perguntas e devoluções do ML via webhooks +
   backfill + reconciliação periódica. Tabelas `ml_vendas`, `ml_perguntas`, `ml_devolucoes`.
 - **Financeiro** (ADR-0031/0040/0093): "a receber" e liberações via Mercado Pago. Não existe

@@ -23,13 +23,27 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > grant, a tela de movimentos daria "permission denied". (Em produção os grants já vinham por
 > default privileges; local não. Só apareceu ao assumir o papel `authenticated` de fato.)
 >
-> **Pendente do Bloco A:** a UI de movimentos está implementada mas **não deployada** — está na
-> branch `worktree-estoque-nfe-design`, não na main. E a suíte `verificar-isolamento-tenant.ts`
-> ainda não rodou contra produção (precisa do `SUPABASE_SERVICE_ROLE_KEY`, que não está em nenhum
-> env do repo).
+> **Bloco A não tem mais pendência:** a UI de movimentos foi mergeada e está no ar (deploy
+> `823843e9` no Render), e a suíte `verificar-isolamento-tenant.ts` rodou contra produção com
+> 54 asserções passando.
 >
-> **Próximo: E6b Bloco B** — cadastro manual de produto + entrada de mercadoria. Plano pronto e
-> revisado em `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md`. Depois, o **E5 Shopee**.
+> **✅ E6b BLOCO B IMPLEMENTADO (2026-07-29), aguardando deploy.** Cadastro manual de produto
+> (edge `cadastrar-produto`), entrada de mercadoria (edge `entrada-estoque`), tela `/estoque`,
+> módulo pago ligado por org pelo super-admin (`organizations.modulos_habilitados` +
+> `set_modulos_org` no `/admin`), chip Planilha/Cadastro manual no LoteCard. Migration
+> `20260729124711_e6b_origem_lote_e_modulos.sql` validada no banco local. Suíte 2215 → 2255.
+>
+> **Corrigido de quebra (defeito pré-existente, valia também para planilha):**
+> `talvezFinalizarLote` marcava o lote como `concluido` — status terminal — mesmo com família
+> em `pendente`, e o trigger de transição só resgata lote em `processando`, então o lote ficava
+> concluído com família publicável dentro. Eram TRÊS cópias idênticas; viraram uma em
+> `_shared/lote/finalizar.ts`.
+>
+> **Ordem de deploy obrigatória** (o frontend depende da RPC nova): `supabase db push` →
+> `supabase functions deploy` das 5 funções tocadas → só então merge na main (o Render
+> auto-deploya no push). Deploy pendente de OK explícito do Diego.
+>
+> **Depois: E5 Shopee.**
 
 > **Contexto da decisão (2026-07-28).** O E6b foi **ampliado** (deixou de ser só "estoque único"
 > e passou a incluir cadastro de produto sem planilha e entrada de mercadoria) e **antecipado na

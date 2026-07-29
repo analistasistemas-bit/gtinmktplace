@@ -103,6 +103,54 @@ tela Estoque (menu novo)
   └─ histórico de movimentos por SKU (data, motivo, qtd, canal, estoque resultante)
 ```
 
+### O que a implementação do Bloco B acrescentou ao desenho acima
+
+Cinco decisões que o plano não previa e o código exigiu:
+
+1. **Trava LOUD de `origem` no cadastro.** `familias.origem` é `NOT NULL DEFAULT 'nacional'`.
+   Sem validação explícita, um cliente que omitisse o campo gravaria o produto como nacional
+   em silêncio e pagaria a alíquota errada — o mesmo risco do incidente de 2026-07-14 no
+   `ingest-lote` (ADR-0055). `validarProdutoNovo` recusa `origem` ausente ou inválida com 400,
+   e a UI mantém o rádio sem seleção inicial, travando o botão de salvar.
+
+2. **Guard de SKU entre produtos.** A unique do banco é `(familia_id, codigo)` — **não existe**
+   unique por org. Como as RPCs de estoque resolvem a variação por `(org_id, codigo)` pegando a
+   família mais recente (âncora ADR-0025), um SKU repetido entre produtos diferentes faria uma
+   venda baixar o estoque do produto **errado**. A edge é o único ponto onde isso dá para
+   impedir; responde 409 listando os SKUs em conflito.
+
+3. **Correção de `talvezFinalizarLote` (defeito pré-existente).** A função olhava só `publicando`
+   e `pronto`, ignorando `pendente`/`processando`: um lote com IA ainda rodando virava
+   `concluido` — status terminal — quando o worker de outra família terminava, e o trigger de
+   transição (`20260609132501`) só promove lote em `processando`, então o lote nunca era
+   resgatado e ficava concluído com família publicável dentro. Acontecia **também no caminho de
+   planilha**. Eram três cópias idênticas (`publish-familia-ml`, `update-familia-ml`,
+   `publicar-split-ml`); viraram uma em `_shared/lote/finalizar.ts`.
+   A leitura das famílias agora checa `error` e **não escreve** quando falha (contagem vazia
+   decidiria `concluido`), e **não lança** de propósito: a chamada roda dentro do `try` dos
+   workers e o `catch` marcaria a família como `erro` mesmo já publicada com sucesso no ML.
+
+4. **`useModulosHabilitados` sem retry.** O hook roda dentro do `MenuGuard`, que bloqueia toda
+   rota enquanto carrega. Com retry padrão, uma falha da RPC deixaria o app inteiro na tela
+   "Carregando…" — inclusive para org que não usa o módulo. Falhando de primeira, o guard
+   degrada para "nenhum módulo" e o resto do sistema segue funcionando.
+
+5. **Ordem de escrita no reuso de lote.** O lote reusado só é marcado `processando` **depois**
+   do insert da família. Fazer antes abre uma janela em que um worker de publicação roda
+   `talvezFinalizarLote`, não enxerga a família (que ainda não existe) e fecha o lote — a
+   família nasceria dentro de um lote fechado.
+
+### Risco residual aceito
+
+Um lote com família travada em `pendente` (job de IA perdido) fica em `processando`
+indefinidamente: o `LoteCard` desabilita excluir nesse status e `destinoDoLote` manda para
+`/progresso`. Isso **já acontecia** no caminho de planilha — o trigger de transição também só
+promove quando não há família pendente. O que a correção (3) removeu foi uma válvula de escape
+acidental (o worker fechava o lote errado como `concluido`, tornando-o deletável). Mitigação:
+a tela Progresso ganhou um botão **"Ir para a Revisão"** sempre visível quando há família
+pronta, para o operador nunca ficar preso com famílias publicáveis. O gate de exclusão **não**
+foi afrouxado — `processando` bloqueia exclusão por um motivo real (worker em voo).
+
 ## Alternativas rejeitadas
 
 - **`lote_id` nullable** — custo verificado em 6 frentes, duas em código que publica anúncio
