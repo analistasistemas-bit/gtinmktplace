@@ -8,8 +8,8 @@
 
 | Termo | Definição |
 |---|---|
-| **Lote** | Um conjunto de produtos que entra no sistema junto e inicia o pipeline que cria famílias e variações. Exibido como "Lote #N" (`lotes.numero`). Duas origens (`lotes.origem`): **planilha** (upload de planilha + imagens, o caminho histórico) e **manual** (uma sessão de cadastro pela UI) — ADR-0054, em design. |
-| **Cadastro manual de produto** | Criar família + variações direto na UI, sem planilha, para organização que não tem ERP. Uma sessão de cadastro grava um **lote manual** e segue pelo mesmo pipeline (IA de atributos → Revisão → publicação) — o cadastro é uma segunda **origem** de produto, nunca um modelo de dados paralelo. Disponível só com o módulo habilitado. ADR-0054 (em design). |
+| **Lote** | Um conjunto de produtos que entra no sistema junto e inicia o pipeline que cria famílias e variações. Exibido como "Lote #N" (`lotes.numero`). Duas origens (`lotes.origem`): **planilha** (upload de planilha + imagens, o caminho histórico) e **manual** (uma sessão de cadastro pela UI) — ADR-0094, em design. |
+| **Cadastro manual de produto** | Criar família + variações direto na UI, sem planilha, para organização que não tem ERP. Uma sessão de cadastro grava um **lote manual** e segue pelo mesmo pipeline (IA de atributos → Revisão → publicação) — o cadastro é uma segunda **origem** de produto, nunca um modelo de dados paralelo. Disponível só com o módulo habilitado. ADR-0094 (em design). |
 | **Família** | Um PAI = um produto único que vira **1 anúncio** no marketplace com N variações. Agrega metadados, resultado da IA e estado de publicação. Tabela `familias`. |
 | **Variação** | Um SKU/cor dentro da família = **1 variação** do anúncio. Tem preço, estoque, dimensões, cor e foto próprios. Tabela `variacoes`. |
 | **PAI** | Coluna da planilha que agrupa variações. `PAI = 0` marca o **agrupador** (a própria família), **nunca um item vendável**. Os filhos referenciam o código do pai. |
@@ -36,7 +36,7 @@
 
 ## Estoque
 
-> ADR-0054 (em design) — ver `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`.
+> ADR-0094 (em design) — ver `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`.
 
 | Termo | Definição |
 |---|---|

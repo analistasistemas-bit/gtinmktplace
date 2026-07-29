@@ -21,7 +21,7 @@
 - **Baseline em todo checkpoint:** `pnpm test` + `npx tsc --noEmit` + `pnpm lint` + `pnpm build` + `deno check` nas funções tocadas.
 - **TDD obrigatório** em toda função pura. Teste RED antes da implementação, sempre.
 - **PONTOS DE DEPLOY só com OK explícito do Diego.**
-- **Nomes fixos deste plano (não renomear entre tasks):** tabela `estoque_movimentos`; funções SQL `baixar_estoque`, `estornar_estoque`, `registrar_entrada`; helper `registrarBaixaVenda` e função pura `selecionarBaixas` em `_shared/estoque/baixa.ts`; worker `sincronizar-estoque`; worker `reconciliar-estoque`; enfileirador `enfileirarSincronizacaoEstoque`; tipos `EstoquePorSku` e `SincronizarEstoqueJob`; método de contrato `atualizarEstoque`; capability `atualizarEstoque`; ADR `0054-estoque-unico-cadastro-manual.md`.
+- **Nomes fixos deste plano (não renomear entre tasks):** tabela `estoque_movimentos`; funções SQL `baixar_estoque`, `estornar_estoque`, `registrar_entrada`; helper `registrarBaixaVenda` e função pura `selecionarBaixas` em `_shared/estoque/baixa.ts`; worker `sincronizar-estoque`; worker `reconciliar-estoque`; enfileirador `enfileirarSincronizacaoEstoque`; tipos `EstoquePorSku` e `SincronizarEstoqueJob`; método de contrato `atualizarEstoque`; capability `atualizarEstoque`; ADR `0094-estoque-unico-cadastro-manual.md`.
 
 ## File Structure
 
@@ -29,7 +29,7 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `docs/decisions/0054-estoque-unico-cadastro-manual.md` | ADR das decisões D-1..D-20 |
+| `docs/decisions/0094-estoque-unico-cadastro-manual.md` | ADR das decisões D-1..D-20 |
 | `supabase/migrations/<ts>_e6b_estoque_movimentos.sql` | Ledger + 3 RPCs atômicas + trigger de ajuste manual |
 | `supabase/functions/_shared/estoque/baixa.ts` | `selecionarBaixas` (pura) + `registrarBaixaVenda` (I/O) |
 | `supabase/functions/_shared/estoque/__tests__/baixa.test.ts` | Testes da seleção pura |
@@ -55,10 +55,10 @@
 
 ---
 
-### Task 1: ADR-0054
+### Task 1: ADR-0094
 
 **Files:**
-- Create: `docs/decisions/0054-estoque-unico-cadastro-manual.md`
+- Create: `docs/decisions/0094-estoque-unico-cadastro-manual.md`
 
 **Interfaces:**
 - Consumes: nada.
@@ -77,12 +77,12 @@ Use o formato dos ADRs existentes em `docs/decisions/` (leia `0089-atualizacao-r
 
 - [ ] **Step 2: Registrar no índice do vault**
 
-Adicione uma linha para o ADR-0054 em `obsidian-vault/04-Decisões/Índice de ADRs.md`, seguindo exatamente o formato das linhas vizinhas.
+Adicione uma linha para o ADR-0094 em `obsidian-vault/04-Decisões/Índice de ADRs.md`, seguindo exatamente o formato das linhas vizinhas.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add docs/decisions/0054-estoque-unico-cadastro-manual.md "obsidian-vault/04-Decisões/Índice de ADRs.md"
+git add docs/decisions/0094-estoque-unico-cadastro-manual.md "obsidian-vault/04-Decisões/Índice de ADRs.md"
 git commit -m "docs(adr-0054): estoque único, cadastro manual e entrada de mercadoria"
 ```
 
@@ -167,7 +167,7 @@ supabase migration new e6b_estoque_movimentos
 - [ ] **Step 2: Escrever o DDL da tabela**
 
 ```sql
--- E6b (ADR-0054): ledger de movimentos de estoque + operações atômicas idempotentes.
+-- E6b (ADR-0094): ledger de movimentos de estoque + operações atômicas idempotentes.
 -- Toda escrita de estoque passa por estas funções (D-15); o app só lê a tabela.
 
 create table public.estoque_movimentos (
@@ -522,7 +522,7 @@ as $$
 begin
   if new.estoque is distinct from old.estoque and auth.uid() is not null then
     raise exception
-      'Estoque não pode ser alterado diretamente. Use Entrada de estoque (ADR-0054, D-15).'
+      'Estoque não pode ser alterado diretamente. Use Entrada de estoque (ADR-0094, D-15).'
       using errcode = 'insufficient_privilege';
   end if;
   return new;
@@ -657,7 +657,7 @@ select public.estornar_estoque('<org>', 'mercado_livre', 'mercado_livre:995:SUMI
 --    Como usuário `authenticated` (não service_role), pelo PostgREST ou psql com o papel:
 update public.variacoes set estoque = 999 where codigo = '<sku>';
 -- Expected: ERRO "Estoque não pode ser alterado diretamente. Use Entrada de estoque
---           (ADR-0054, D-15)." — exceção do trigger, com errcode insufficient_privilege.
+--           (ADR-0094, D-15)." — exceção do trigger, com errcode insufficient_privilege.
 --           NÃO é erro de permissão de coluna: o revoke de coluna seria inócuo aqui.
 update public.variacoes set preco = preco where codigo = '<sku>';
 -- Expected: OK — as demais colunas continuam editáveis como hoje.
@@ -966,7 +966,7 @@ Expected: **FAIL** — "Cannot find module '../baixa'".
 Crie `supabase/functions/_shared/estoque/baixa.ts`:
 
 ```ts
-// E6b (ADR-0054): seleção e aplicação da baixa de estoque de uma venda paga.
+// E6b (ADR-0094): seleção e aplicação da baixa de estoque de uma venda paga.
 // A venda é sagrada — nada aqui pode derrubar o sync-venda; o chamador envolve em try/catch.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -1433,7 +1433,7 @@ Expected: **FAIL** — "Cannot find module '../alvos'".
 - [ ] **Step 3: Implementar `alvos.ts`**
 
 ```ts
-// E6b (ADR-0054): quem sabe qual SKU vive em qual item externo é o worker, não o conector.
+// E6b (ADR-0094): quem sabe qual SKU vive em qual item externo é o worker, não o conector.
 // Cobre as três formas de publicação: variações num item, split em N partições (ADR-0048)
 // e user products com N itens planos por família (ADR-0088).
 import type { EstoquePorSku } from '../canais/contrato.ts';
@@ -1513,7 +1513,7 @@ Expected: **PASS**, 10 testes.
 Crie `supabase/functions/sincronizar-estoque/index.ts`:
 
 ```ts
-// E6b (ADR-0054): push de estoque por VALOR ABSOLUTO para os canais publicados.
+// E6b (ADR-0094): push de estoque por VALOR ABSOLUTO para os canais publicados.
 // Chamado pela fila serial estoque-{orgId} (parallelism=1), então a ordem é garantida
 // e repetir é sempre seguro. verify_jwt=false + assinatura QStash (worker de fila).
 // verificarAssinatura vive em _shared/queue.ts (é de lá que sync-venda/index.ts:6 importa).
@@ -1697,7 +1697,7 @@ import { enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 Localize o bloco que começa em `if (novaPaga && orgId && await reservarNotificacao(...))` (por volta da linha 105). **Depois** do fechamento desse bloco `}` (linha ~126) e **antes** do `if (liquidoPorPayment === null)`, insira:
 
 ```ts
-  // E6b (ADR-0054): baixa de estoque na transição para pago. A venda é SAGRADA —
+  // E6b (ADR-0094): baixa de estoque na transição para pago. A venda é SAGRADA —
   // nenhuma falha aqui pode derrubar o sync. A baixa é idempotente por referência,
   // então o retry do QStash re-executando este bloco não duplica nada.
   // ATENÇÃO — a condição é `pedido pago`, NÃO `novaPaga`. `novaPaga` é one-shot
@@ -1798,7 +1798,7 @@ Se a lista de estados pré-despacho do ML for outra, corrija `PRE_DESPACHO` — 
 
 **Atenção:** `canal_origem: null` no estorno é proposital — a reposição precisa alcançar **todos** os canais, inclusive o ML, porque o ML não repõe sozinho um cancelamento.
 
-**Nota de escopo (D-7):** este ramo cobre o cancelamento visto pelo `sync-venda`. A **devolução** (fluxo de `sync-devolucao` / `_shared/faturamento/devolucao.ts`) **não** é tocada por este plano — nem repõe, nem notifica. Isso é corte deliberado e precisa estar escrito assim no ADR-0054 (a spec §6 sugeria notificação também na devolução).
+**Nota de escopo (D-7):** este ramo cobre o cancelamento visto pelo `sync-venda`. A **devolução** (fluxo de `sync-devolucao` / `_shared/faturamento/devolucao.ts`) **não** é tocada por este plano — nem repõe, nem notifica. Isso é corte deliberado e precisa estar escrito assim no ADR-0094 (a spec §6 sugeria notificação também na devolução).
 
 - [ ] **Step 4: Verificar que os testes existentes do `sync-venda` continuam passando**
 
@@ -1840,7 +1840,7 @@ git commit -m "feat(e6b): baixa de estoque na venda paga + estorno no cancelamen
 - [ ] **Step 1: Implementar o worker**
 
 ```ts
-// E6b (ADR-0054, D-12): rede de segurança do PUSH — não do webhook.
+// E6b (ADR-0094, D-12): rede de segurança do PUSH — não do webhook.
 //
 // ESCOPO DELIBERADAMENTE ESTREITO: só re-empurra produtos que TÊM movimento no ledger
 // (outbox pendente ou movimento recente). Um re-push "preventivo" de produto SEM
@@ -2218,7 +2218,7 @@ git commit -m "docs(e6b): documentar ledger de estoque, workers e fluxo de push"
 10. ✅ `estoque_movimentos` isolado por org, provado por `scripts/verificar-isolamento-tenant.ts`.
 11. ✅ Movimentos visíveis no expandir de Publicados, light e dark.
 
-**Cortes declarados (não são critério de saída — vão escritos no ADR-0054):**
+**Cortes declarados (não são critério de saída — vão escritos no ADR-0094):**
 
 - **Não existe ajuste manual de estoque pelo app** (a escrita direta é bloqueada por trigger). Toda mudança de saldo é entrada, baixa ou estorno — e todas propagam.
 - **Webhook de venda perdido NÃO é recuperado.** A reconciliação é rede de segurança do *push*, não do *webhook*: ela só re-empurra produtos com movimento no ledger. Recuperar uma venda que nunca chegou exigiria importar o pedido faltante e aplicar a baixa — fora de escopo, e re-empurrar saldo sem movimento seria pior que não fazer nada (restauraria unidades já vendidas).

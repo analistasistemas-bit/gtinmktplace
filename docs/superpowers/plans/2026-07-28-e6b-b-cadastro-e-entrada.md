@@ -241,7 +241,7 @@ supabase migration new e6b_origem_lote_e_modulos
 - [ ] **Step 2: Escrever o DDL**
 
 ```sql
--- E6b (ADR-0054, D-2): distinguir lote de planilha de lote de cadastro manual.
+-- E6b (ADR-0094, D-2): distinguir lote de planilha de lote de cadastro manual.
 -- O default 'planilha' backfilla TODO lote histórico como planilha — correto e
 -- intencional: até esta migration, planilha era a única origem possível.
 alter table public.lotes
@@ -253,7 +253,7 @@ create index lotes_org_manual_aberto_idx
   on public.lotes (org_id, criado_em desc)
   where origem = 'manual' and status in ('importando', 'processando', 'revisao');
 
--- E6b (ADR-0054, D-13): módulos pagos habilitados por org pelo super-admin.
+-- E6b (ADR-0094, D-13): módulos pagos habilitados por org pelo super-admin.
 -- Default '{}' = nenhum módulo; habilitar é sempre ato explícito.
 alter table public.organizations
   add column modulos_habilitados text[] not null default '{}';
@@ -363,7 +363,7 @@ Expected: **FAIL** — módulo `../modulos` não existe.
 - [ ] **Step 3: Implementar `src/lib/modulos.ts`**
 
 ```ts
-// E6b (ADR-0054, D-13): módulos pagos opcionais, habilitados por org pelo super-admin.
+// E6b (ADR-0094, D-13): módulos pagos opcionais, habilitados por org pelo super-admin.
 // Espelha o padrão de src/lib/canais.ts. Manter em sincronia com o MODULOS_VALIDOS
 // da edge `usuarios` (não há geração automática — é uma lista curta e estável).
 import type { MenuKey } from './menus';
@@ -672,7 +672,7 @@ Expected: **FAIL** — módulo `../validar` não existe.
 - [ ] **Step 3: Implementar `validar.ts`**
 
 ```ts
-// E6b (ADR-0054, D-3/D-4/D-9): validação e montagem do produto cadastrado à mão.
+// E6b (ADR-0094, D-3/D-4/D-9): validação e montagem do produto cadastrado à mão.
 // Grava exatamente as mesmas linhas que o ingest-lote grava a partir da planilha —
 // o downstream (IA, Revisão, publicação) não sabe de onde o produto veio.
 
@@ -808,7 +808,7 @@ git commit -m "feat(e6b): validacao e montagem do produto cadastrado a mao (TDD)
 Crie `supabase/functions/_shared/produto/modulo.ts`:
 
 ```ts
-// E6b (ADR-0054, D-13): esconder o menu é navegação (ADR-0047), NÃO é fronteira de
+// E6b (ADR-0094, D-13): esconder o menu é navegação (ADR-0047), NÃO é fronteira de
 // segurança. Sem esta checagem, qualquer token autenticado chamaria as edges do módulo.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
@@ -839,7 +839,7 @@ verify_jwt = true
 Crie `supabase/functions/cadastrar-produto/index.ts`. Copie o cabeçalho de autenticação (resolução de `userId`/`orgId` a partir do JWT) de uma edge existente que também é chamada pelo app — leia `supabase/functions/usuarios/index.ts` e siga o mesmo padrão.
 
 ```ts
-// E6b (ADR-0054, D-1/D-1.1): cadastro manual de produto. Grava um LOTE normal
+// E6b (ADR-0094, D-1/D-1.1): cadastro manual de produto. Grava um LOTE normal
 // (origem='manual') e cai na mesma Revisão de sempre — process-familia,
 // publish-familia-ml, split e user products não mudam uma linha.
 import { adminClient } from '../_shared/supabase.ts';
@@ -1033,7 +1033,7 @@ git commit -m "feat(e6b): edge cadastrar-produto (lote manual, guard de duplicat
 - [ ] **Step 1: Implementar a edge**
 
 ```ts
-// E6b (ADR-0054, D-9/D-10/D-15): entrada de mercadoria. Escrita de estoque só passa
+// E6b (ADR-0094, D-9/D-10/D-15): entrada de mercadoria. Escrita de estoque só passa
 // por aqui (service_role), nunca do browser direto — senão o trigger de ajuste manual
 // registraria um segundo movimento para a mesma entrada.
 import { adminClient } from '../_shared/supabase.ts';
@@ -1609,7 +1609,7 @@ git commit -m "docs(e6b): documentar cadastro manual, entrada de mercadoria e ga
 7. ✅ Org de planilha segue funcionando byte-a-byte: nenhum número de nenhuma tela muda, `lotes.origem = 'planilha'` em todo lote histórico e novo.
 8. ✅ Isolamento cross-tenant re-provado com `scripts/verificar-isolamento-tenant.ts`.
 
-## Riscos residuais aceitos (registrar no ADR-0054)
+## Riscos residuais aceitos (registrar no ADR-0094)
 
 - **O guard D-4 e o guard de SKU não são atômicos.** São check-then-insert, e não existe unique real por `(org_id, codigo_pai)` nem por `(org_id, codigo)` — nem pode existir, porque org de planilha legitimamente tem N famílias com o mesmo `codigo_pai` (uma por lote) e N variações com o mesmo `codigo`. Dois cadastros concorrentes do mesmo produto criariam duas famílias canônicas concorrentes. Probabilidade baixíssima (um operador, um formulário), consequência recuperável (excluir uma das famílias), custo de blindar alto. Aceito e documentado.
 - **SKU repetido vindo de planilha continua possível.** O guard acima só protege o cadastro manual; uma planilha pode legitimamente trazer o mesmo `codigo` em produtos diferentes, e nesse caso a resolução por "família mais recente do `(org_id, codigo)`" nas RPCs pode baixar o produto errado. É risco **pré-existente** (o mesmo critério já governa o dedupe de Publicados, ADR-0025), não introduzido aqui — mas passa a ter consequência de estoque. Registrar no ADR e, se aparecer na prática, tratar com um relatório de SKUs ambíguos por org.

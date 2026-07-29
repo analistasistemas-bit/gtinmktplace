@@ -414,7 +414,7 @@ no mesmo commit da entrega; Graphify re-ingerido.
 
 ## 13. ADR
 
-Escrever **ADR-0054 — Estoque único, cadastro manual e entrada de mercadoria** antes de codar,
+Escrever **ADR-0094 — Estoque único, cadastro manual e entrada de mercadoria** antes de codar,
 cobrindo **D-1..D-20 integralmente, incluindo D-16..D-20** (e os cortes declarados: não há ajuste manual de estoque pelo app; devolução não é
 tocada; o guard D-4 não é atômico), com as alternativas rejeitadas registradas: `lote_id` nullable (custo verificado
 em 6 frentes, duas em código de publicação real), delta em vez de push absoluto (não idempotente),

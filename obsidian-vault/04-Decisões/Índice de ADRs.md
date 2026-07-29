@@ -105,5 +105,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0091 | [A conexão do Mercado Livre é gravada na org da SESSÃO, não na do `state`](../../docs/decisions/0091-conexao-ml-confirmada-pela-sessao.md) |
 | 0092 | [Identidade da plataforma e acesso temporário de suporte](../../docs/decisions/0092-identidade-da-plataforma-e-acesso-super-admin.md) |
 | 0093 | [Financeiro do Mercado Pago pela conexão OAuth do Mercado Livre](../../docs/decisions/0093-financeiro-mp-pela-conexao-ml.md) |
+| 0094 | [Estoque único, cadastro manual e entrada de mercadoria](../../docs/decisions/0094-estoque-unico-cadastro-manual.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
