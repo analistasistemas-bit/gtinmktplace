@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 
 const MENU_LABEL: Record<MenuKey, string> = {
   dashboard: 'Dashboard', lotes: 'Lotes', revisao: 'Revisão', publicados: 'Publicados',
+  estoque: 'Estoque',
   faturamento: 'Faturamento', financeiro: 'Financeiro', viabilidade: 'Viabilidade',
   canais: 'Canais', configuracoes: 'Configurações', usuarios: 'Usuários',
 };

@@ -3,7 +3,9 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 
-const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
+// Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
+// silenciosamente a permissão do menu novo.
+const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'estoque', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

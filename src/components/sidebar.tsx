@@ -1,9 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Users, Plug } from 'lucide-react';
+import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Users, Plug, Boxes } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/logo';
 import { useProfile } from '@/hooks/useProfile';
 import { visibleMenus, type MenuKey } from '@/lib/menus';
+import { menusDeModulosDesabilitados } from '@/lib/modulos';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { useSupportStore } from '@/stores/support-store';
 
 export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboard; end: boolean; key: MenuKey }[] = [
@@ -11,6 +13,7 @@ export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboar
   { to: '/lotes', label: 'Lotes', icon: Layers, end: false, key: 'lotes' },
   { to: '/revisao', label: 'Revisão', icon: ListChecks, end: false, key: 'revisao' },
   { to: '/publicados', label: 'Publicados', icon: Package, end: false, key: 'publicados' },
+  { to: '/estoque', label: 'Estoque', icon: Boxes, end: false, key: 'estoque' },
   { to: '/faturamento', label: 'Faturamento', icon: Receipt, end: false, key: 'faturamento' },
   { to: '/financeiro', label: 'Financeiro', icon: Wallet, end: false, key: 'financeiro' },
   { to: '/viabilidade', label: 'Viabilidade', icon: Scale, end: false, key: 'viabilidade' },
@@ -26,7 +29,11 @@ export function BrandMark() {
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { profile } = useProfile();
   const context = useSupportStore((state) => state.context);
+  const { data: modulos } = useModulosHabilitados();
   const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context));
+  // Módulo desligado (ou ainda carregando) → menu some. Falha fechada: mostrar e sumir
+  // é pior que aparecer um instante depois.
+  for (const m of menusDeModulosDesabilitados(modulos ?? [])) allowed.delete(m);
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
       {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end }) => (
