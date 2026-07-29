@@ -3,7 +3,10 @@
 // Faz fetch autenticado do pedido (+ shipment/frete), upsert e alerta Telegram em venda nova.
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
+import {
+  registrarBaixaVenda, estornarVendaCancelada, despacharPushPendente,
+} from '../_shared/estoque/baixa.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import {
@@ -122,6 +125,84 @@ Deno.serve(async (req) => {
         String(pedido.buyer.id),
         'Olá! Recebemos seu pedido e já estamos separando. Em caso de dúvida, fique à vontade para chamar aqui pelo chat. Obrigado pela compra! 🙏',
       );
+    }
+  }
+
+  // E6b (ADR-0094): baixa de estoque. A venda é SAGRADA — nenhuma falha aqui pode
+  // derrubar o sync.
+  //
+  // ATENÇÃO — a condição é `pedido pago`, NÃO `novaPaga`. `novaPaga` é one-shot
+  // (calculado do status já persistido, io.ts:270): se a baixa falhasse no meio, o
+  // retry veria novaPaga=false e a perda seria permanente. Gatear em "está pago" faz
+  // o retry retomar naturalmente, e a idempotência vem do ledger: cada SKU já baixado
+  // devolve `aplicado=false` e não é reaplicado.
+  if (pedido.status === 'paid' && orgId) {
+    try {
+      const { pendentesDePush, semSaldo, falhas } = await registrarBaixaVenda(admin, {
+        orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
+      });
+      // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
+      // para trás numa execução anterior é reenviado aqui. O canal de origem NÃO é
+      // passado — cada movimento carrega a própria intenção.
+      await despacharPushPendente(admin, orgId, pendentesDePush, enfileirarSincronizacaoEstoque);
+
+      // Todo alerta passa por reservarNotificacao: o sync-venda roda várias vezes para
+      // o mesmo pedido (webhooks de order + de shipment).
+      if (semSaldo.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_sem_saldo', String(pedido.id))) {
+        const linhas = semSaldo.map((s) => `• ${s.codigo} — pedido de ${s.pedido} un.`).join('\n');
+        await notificarCategoria(
+          admin, orgId, 'vendas',
+          `⚠️ Venda sem saldo suficiente (pedido ${pedido.id})\n\n${linhas}\n\n`
+          + 'O estoque foi zerado e o anúncio pode ter vendido mais do que você tem.',
+        );
+      }
+      // Falha de RPC é irrecuperável sozinha: o operador PRECISA saber para ajustar.
+      if (falhas.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_baixa_falhou', String(pedido.id))) {
+        const linhas = falhas.map((f) => `• ${f.codigo}: ${f.mensagem}`).join('\n');
+        await notificarCategoria(
+          admin, orgId, 'vendas',
+          `🚨 Falha ao baixar estoque do pedido ${pedido.id}\n\n${linhas}\n\n`
+          + 'O saldo NÃO foi decrementado desses SKUs. Ajuste manualmente na tela de Estoque.',
+        );
+      }
+    } catch (e) {
+      console.error('baixa_estoque_falhou', e);
+    }
+  }
+
+  // Cancelado ANTES do despacho: a mercadoria nunca saiu, então repõe (D-7).
+  //
+  // FALHA FECHADA: `buscarShipment` devolve null em QUALQUER erro HTTP ou de rede
+  // (io.ts:139-163), inclusive para pedido já despachado. Tratar null como "não
+  // despachado" reporia estoque de mercadoria que saiu. Só repõe quando o status é
+  // explicitamente um estado pré-despacho conhecido (ou o pedido não tem envio).
+  if (orgId && pedido.status === 'cancelled') {
+    const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
+    const st = shipment?.status != null ? String(shipment.status) : null;
+    const preDespachoConhecido = st !== null && PRE_DESPACHO.includes(st);
+    const semEnvio = pedido.shipping?.id == null;
+    try {
+      if (preDespachoConhecido || semEnvio) {
+        // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno — e
+        // quando não há baixa ela grava o tombstone que impede a execução `paid`
+        // posterior de baixar um pedido já cancelado.
+        const { pendentesDePush } = await estornarVendaCancelada(admin, {
+          orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
+        });
+        // Os movimentos de estorno nascem com push_canal_origem = null, então a
+        // reposição alcança TODOS os canais — inclusive o ML, que não repõe sozinho.
+        await despacharPushPendente(admin, orgId, pendentesDePush, enfileirarSincronizacaoEstoque);
+      } else if (await reservarNotificacao(admin, orgId, userId, 'estoque_cancelado_despachado', String(pedido.id))) {
+        await notificarCategoria(
+          admin, orgId, 'pos_venda',
+          `📦 Pedido ${pedido.id} cancelado, mas o envio ${st === null ? 'não pôde ser consultado' : `está em "${st}"`}.\n\n`
+          + 'O estoque NÃO foi reposto automaticamente — confira o que voltou e dê entrada manual.',
+        );
+      }
+    } catch (e) {
+      console.error('estorno_estoque_falhou', e);
     }
   }
 
