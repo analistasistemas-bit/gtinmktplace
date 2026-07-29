@@ -8,7 +8,8 @@
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**
 - Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`
-- Proximo epico: `E5` Shopee (agora o worker generico `publicar-anuncio` do E6 espera so o conector); depois E6b (estoque unico)
+- **Próximo épico: `E6b` — cadastro manual de produto + entrada de mercadoria + estoque único cross-canal** (decisão do Diego em 2026-07-28: E6b foi ampliado e antecipado na frente do E5). Motivo: hoje um produto só entra por planilha, o que exige que o cliente já tenha um ERP para usar o PubliAI; o cadastro manual destrava um público que hoje não é atendível. Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`. ADR-0054 a escrever antes de codar. **Descartado na mesma sessão:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
+- Depois do E6b: `E5` Shopee (o worker genérico `publicar-anuncio` do E6 espera só o conector)
 
 ### E6 — Orquestracao multicanal EM PRODUCAO (2026-07-06)
 

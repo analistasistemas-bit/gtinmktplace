@@ -265,6 +265,19 @@ Sistema em uso recorrente; operador é autônomo no fluxo principal.
 (revisão de CTO, 2026-07-12, 8 fases de construção da empresa) — supersede a ordem abaixo;
 principal mudança: Shopee (E5) antecipado, roda em paralelo à fundação comercial, não "depois".
 
+> **⚠️ Decisão do Diego (2026-07-28) — E6b ampliado e antecipado na frente do E5.**
+> O **E6b** deixa de ser só "estoque único cross-canal" e passa a incluir **cadastro manual de
+> produto (sem planilha) + entrada de mercadoria**, e passa **na frente do E5 Shopee**.
+> **Motivo:** hoje um produto só entra por planilha, o que exige que o cliente **já tenha um ERP**
+> para poder usar o PubliAI — o funil está restrito exatamente ao público que menos precisa do
+> produto. O cadastro manual destrava um público que hoje não é atendível.
+> **Descartado na mesma sessão:** módulo de **emissão de NF-e**. É commodity (6 providers entregam
+> igual), é passivo e não ativo (nota errada vira suporte contábil), é manutenção fiscal perpétua
+> (reforma tributária em transição) e não multiplica nada do que o PubliAI já construiu.
+> Racional completo e dados dos providers na seção 11 da spec.
+> **Spec:** [superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md](superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md)
+> **ADR a escrever antes de codar:** 0054 — Estoque único, cadastro manual e entrada de mercadoria.
+
 Transformar o PubliAI de ferramenta interna (ML-only, single-operador, aviamentos) em **SaaS
 multi-tenant, multi-marketplace, para qualquer produto** — comercializável. Abordagem *strangler fig*
 (evoluir in-place, sem big-bang), em 4 fases / 9 épicos:
@@ -273,7 +286,7 @@ multi-tenant, multi-marketplace, para qualquer produto** — comercializável. A
 |---|---|---|---|
 | **0 — Fundação** | E1 Camada de abstração de canais · E2 Modelo de dados multicanal (`anuncios_externos`) | ML atrás de uma interface; catálogo agnóstico (sem mudança visível) | ✅ Em produção |
 | **1 — Qualquer produto** | E3 Taxonomia canônica + categoria por IA · E4 Atributos por IA (closed-set) | Sai do regex por nicho; aceita qualquer segmento | ✅ Em produção |
-| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · E6b Estoque único cross-canal | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada | ✅ E6 em produção (2026-07-06); 📋 E5/E6b pendentes, E5 antecipado pelo roadmap v2 |
+| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · **E6b Cadastro manual + entrada + estoque único cross-canal** | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada — e aceita produto cadastrado direto na UI, sem exigir ERP do cliente | ✅ E6 em produção (2026-07-06); 🔜 **E6b é o próximo** (ampliado e antecipado, 2026-07-28); 📋 E5 depois |
 | **3 — Virar SaaS** | E7 Multi-tenancy · E8 Billing (Asaas) + LGPD · E9 Operação SaaS | Multi-cliente, cobrável, escalável | ✅ E7 em produção (2026-07-05/06); 📋 E8/E9 pendentes (billing mínimo viável, roadmap v2) |
 
 **Decisões-chave:** strangler in-place (D1) · Shopee como 2º canal (D2) · assinatura por planos + metering

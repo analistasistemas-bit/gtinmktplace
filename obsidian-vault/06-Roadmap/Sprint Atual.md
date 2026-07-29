@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-24
+atualizado: 2026-07-28
 ---
 
 # Sprint Atual
@@ -8,17 +8,34 @@ atualizado: 2026-07-24
 Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 `docs/project-status.md`. Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-07-24)
+## 📍 Passo atual (2026-07-28)
 
-> **E7 (Multi-tenancy) e E6 (Orquestração multicanal) concluídos e em produção; UI multi-marketplace
-> (menus/tabs/registry) também concluída e em produção (2026-07-15) — o app já mostra os 5
-> marketplaces do roadmap (Mercado Livre ativo, Shopee/Magalu/Amazon/Casas Bahia vitrine "em
-> breve"), faltando só os conectores reais.** Restam no épico do 2º canal o **E5 — Shopee**
-> (conector real) e o **E6b** (estoque único cross-canal); a validação plena de E6/E6b com 2
-> canais depende do E5. Próximo passo natural: **E5** — e, pela revisão de CTO do roadmap v2
-> (2026-07-12), deve rodar **em paralelo** à Fase 1 comercial (billing mínimo), não mais adiado.
-> Planos em `docs/superpowers/plans/2026-07-02-*` e `2026-07-14-menus-multicanal.md`; ADRs de
-> referência ADR-0027 (multi-tenancy) e ADR-0061 (orquestração multicanal) — ver [[Índice de ADRs]].
+> **Próximo épico: `E6b` — cadastro manual de produto + entrada de mercadoria + estoque único
+> cross-canal.** Decisão do Diego em 2026-07-28: o E6b foi **ampliado** (deixa de ser só "estoque
+> único" e passa a incluir cadastro de produto sem planilha e entrada de mercadoria) e **antecipado
+> na frente do E5 Shopee**.
+>
+> **Motivo:** hoje um produto só entra por planilha (`ingest-lote`), o que exige que o cliente
+> **já tenha um ERP** para conseguir usar o PubliAI — o funil está restrito exatamente ao público
+> que menos precisa do produto. O cadastro manual destrava um público hoje não atendível.
+>
+> **Descartado na mesma sessão: módulo de emissão de NF-e.** É commodity (6 providers entregam
+> igual), é passivo e não ativo (nota errada vira chamado de suporte contábil), é manutenção fiscal
+> perpétua (reforma tributária em transição) e não multiplica nada do que o PubliAI já construiu.
+> Racional completo e dados dos providers na seção 11 da spec.
+>
+> **Decisão de arquitetura central:** cadastro manual **não** usa `lote_id` nulo — "sessão de
+> cadastro = um lote" (`lotes.origem = 'manual'`). Verificado no código que `lote_id` é `NOT NULL`
+> e sustenta `process-familia`, `finalizarLote` nos dois workers de publicação, todo o roteamento
+> da Revisão e a unique `(lote_id, codigo_pai)` — que ficaria furada com `NULL`.
+>
+> **Spec:** `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`
+> **ADR a escrever antes de codar:** 0054 — ver [[Índice de ADRs]].
+>
+> Depois do E6b vem o **E5 — Shopee** (conector real; o worker genérico `publicar-anuncio` do E6
+> já espera só ele). A validação plena do estoque cross-canal com 2 canais depende do E5 — até lá,
+> a infra é provada com o conector fake. E7 (multi-tenancy), E6 (orquestração multicanal) e a UI
+> multi-marketplace seguem concluídos e em produção. ADRs de referência: ADR-0027, ADR-0061.
 
 ## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
 
