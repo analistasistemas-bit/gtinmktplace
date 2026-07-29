@@ -115,6 +115,40 @@ export async function enfileirarPublicacaoCanal(job: PublicarAnuncioJob, orgId: 
   return messageId;
 }
 
+// ---------------------------------------------------------------------------
+// E6b (ADR-0094): sincronização de estoque.
+// ---------------------------------------------------------------------------
+
+export interface SincronizarEstoqueJob {
+  org_id: string;
+  codigo_pai: string;
+  /** null = push para TODOS os canais (entrada, estorno, reconciliação). */
+  canal_origem: string | null;
+}
+
+/** Fila serial de estoque por org: pushes absolutos precisam chegar em ordem. */
+export function filaEstoque(orgId: string): string {
+  return `estoque-${orgId}`;
+}
+
+/**
+ * Fila serial por org (parallelism=1): dois movimentos seguidos do mesmo produto
+ * nunca aplicam estoque velho por cima do novo. O push é absoluto, então repetir
+ * é sempre seguro.
+ */
+export async function enfileirarSincronizacaoEstoque(
+  job: SincronizarEstoqueJob, orgId: string,
+): Promise<string> {
+  const nomeFila = filaEstoque(orgId);
+  await garantirFilaSerialCanal(nomeFila);
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/sincronizar-estoque`;
+  const { messageId } = await qstashClient()
+    .queue({ queueName: nomeFila })
+    .enqueueJSON({ url: target, body: job, retries: 3, retryDelay: '10000' });
+  return messageId;
+}
+
 export interface VincularCatalogoJob { familia_id: string; tentativa?: number; }
 
 /**

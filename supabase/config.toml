@@ -34,6 +34,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.publicar-anuncio]
 verify_jwt = false
+[functions.sincronizar-estoque]
+verify_jwt = false
+[functions.reconciliar-estoque]
+verify_jwt = false
 [functions.reprocessar-familia]
 verify_jwt = false
 [functions.monitorar-moderados]
