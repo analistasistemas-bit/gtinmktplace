@@ -1,8 +1,21 @@
 name: CI
+# Roda em TODA branch, não só na main. Isto não é preferência: a proteção da `main` exige os
+# checks `frontend` e `backend-lint`, e um push direto só pode satisfazê-los se eles já tiverem
+# rodado NAQUELE commit antes. Enquanto o CI só rodava na main, a proteção era impossível de
+# satisfazer por push direto e todo push saía com "Bypassed rule violations".
+#
+# Fluxo que isto habilita (sem exigir PR): push na branch → CI verde no SHA →
+# fast-forward da main com o MESMO SHA → o push passa porque os checks já estão verdes.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
+
+# Push rápido em sequência cancela o run anterior da mesma ref — economiza minuto de Actions.
+# Nunca cancela o run de um SHA que já virou tip da main (aquele já terminou).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:
