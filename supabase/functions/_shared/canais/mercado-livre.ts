@@ -1,6 +1,7 @@
 import type {
   ChannelConnector, ContextoCanal, AnuncioCanonico, ResultadoCanal, RefAnuncio,
   AtualizacaoCanonica, ResultadoAtualizacao, StatusCanal, MetricasVendasCanal,
+  EstoquePorSku,
 } from './contrato.ts';
 import { lerVendasML } from '../ml/vendas.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
@@ -56,6 +57,7 @@ export const mercadoLivreConnector: ChannelConnector = {
     desconto: true,
     atacado: true,
     dimensoesPacote: true,
+    atualizarEstoque: true,
   },
 
   async subirFoto(ctx: ContextoCanal, sourceUrl: string): Promise<string> {
@@ -225,6 +227,48 @@ export const mercadoLivreConnector: ChannelConnector = {
         varsParaCasar = refetch.variations;
       }
       return { ok: true, valor: { variacoesExternas: mapearVariacoesPorSku(varsParaCasar), precoVivo } };
+    } catch (e) {
+      return { ok: false, erro: classificarErroCanal(e) };
+    }
+  },
+
+  // E6b (ADR-0094): push de estoque por VALOR ABSOLUTO, sem passar pelo pipeline pesado
+  // de UPDATE. `estoques` cobre só os SKUs que vivem NESTE item externo — quem resolve
+  // isso é o worker, que conhece split (ADR-0048) e user products (ADR-0088).
+  async atualizarEstoque(
+    ctx: ContextoCanal,
+    itemExternoId: string,
+    estoques: EstoquePorSku[],
+  ): Promise<ResultadoCanal<void>> {
+    if (estoques.length === 0) return { ok: true };
+    const token = await ctx.getToken();
+    try {
+      const atual = await buscarItemML(token, itemExternoId);
+
+      // Item plano (ADR-0084/0088): sem sub-recurso `variations`. Repõe na raiz do item.
+      // Um item plano corresponde a exatamente 1 SKU; mais que isso é alvo mal resolvido.
+      if (atual.variations.length === 0) {
+        if (estoques.length !== 1) {
+          return {
+            ok: false,
+            erro: {
+              codigo: 'ESTOQUE',
+              mensagemOperador:
+                `Item plano ${itemExternoId} recebeu ${estoques.length} SKUs no push de estoque `
+                + '(esperado exatamente 1). Isso indica alvo mal resolvido, não erro do Mercado Livre.',
+              retentavel: false,
+            },
+          };
+        }
+        await atualizarItemPlanoML(token, itemExternoId, { available_quantity: estoques[0].estoque });
+        return { ok: true };
+      }
+
+      // Item com variações: reenvia TODAS (o ML deleta as omitidas), só available_quantity.
+      const desejados = estoques.map((e) => ({ codigo: e.sku, estoque: e.estoque }));
+      const variations = montarVariacoesUpdate(atual.variations, desejados, undefined, null, null, undefined, true);
+      await atualizarItemML(token, itemExternoId, variations);
+      return { ok: true };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };
     }

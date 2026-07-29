@@ -4,7 +4,7 @@
 import type {
   ChannelConnector, ContextoCanal, AnuncioCanonico, AtualizacaoCanonica,
   ResultadoCanal, RefAnuncio, ResultadoAtualizacao, StatusCanal, MetricasVendasCanal,
-  ErroCanalCodigo, FaixaAtacado,
+  ErroCanalCodigo, FaixaAtacado, EstoquePorSku,
 } from './contrato.ts';
 
 interface FalhaArmada { codigo: ErroCanalCodigo; retentavel: boolean }
@@ -15,6 +15,7 @@ class FakeConnector implements ChannelConnector {
   readonly capabilities = {
     variacoes: true, descricaoSeparada: false, catalogo: false,
     desconto: false, atacado: false, dimensoesPacote: true,
+    atualizarEstoque: true,
   };
 
   chamadas: Array<{ metodo: string; args: unknown }> = [];
@@ -32,6 +33,23 @@ class FakeConnector implements ChannelConnector {
   subirFoto(_ctx: ContextoCanal, sourceUrl: string): Promise<string> {
     this.registrar('subirFoto', { sourceUrl });
     return Promise.resolve(`FAKE-FOTO-${this.seq++}`);
+  }
+
+  // E6b (ADR-0094): grava a chamada para o teste inspecionar os valores absolutos.
+  atualizarEstoque(
+    _ctx: ContextoCanal,
+    itemExternoId: string,
+    estoques: EstoquePorSku[],
+  ): Promise<ResultadoCanal<void>> {
+    this.registrar('atualizarEstoque', { itemExternoId, estoques });
+    const f = this.consumirFalha();
+    if (f) {
+      return Promise.resolve({
+        ok: false,
+        erro: { codigo: f.codigo, mensagemOperador: `fake:${f.codigo}`, retentavel: f.retentavel },
+      });
+    }
+    return Promise.resolve({ ok: true });
   }
 
   criarAnuncio(_ctx: ContextoCanal, anuncio: AnuncioCanonico): Promise<ResultadoCanal<RefAnuncio>> {

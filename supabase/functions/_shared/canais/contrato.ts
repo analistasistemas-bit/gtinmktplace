@@ -28,6 +28,9 @@ export interface FaixaAtacado {
 /** Canais suportados. Expandir conforme novos adapters (ADR-0024). */
 export type CanalId = 'mercado_livre';
 
+/** Estoque absoluto desejado para um SKU dentro de um anúncio (E6b, ADR-0054). */
+export interface EstoquePorSku { sku: string; estoque: number }
+
 /** Recursos que variam por canal; a orquestração consulta antes de agir. */
 export interface Capabilities {
   variacoes: boolean;        // suporta variações sob 1 anúncio
@@ -36,6 +39,7 @@ export interface Capabilities {
   desconto: boolean;
   atacado: boolean;          // preço por quantidade (PxQ B2B)
   dimensoesPacote: boolean;
+  atualizarEstoque: boolean; // push barato de estoque, sem o pipeline de UPDATE completo
 }
 
 /** Taxonomia de erro unificada (generaliza humanizarErroML/ehErroRetentavel). */
@@ -179,6 +183,17 @@ export interface ChannelConnector {
   aplicarAtacado(ctx: ContextoCanal, itemExternoId: string, precoBase: number, faixas: FaixaAtacado[]): Promise<void>;
   /** Atualiza um anúncio existente (estoque / cores novas / preço / atributos). Não lança: erros viram ResultadoCanal.erro. */
   atualizarAnuncio(ctx: ContextoCanal, a: AtualizacaoCanonica): Promise<ResultadoCanal<ResultadoAtualizacao>>;
+  /**
+   * Push de estoque por VALOR ABSOLUTO para um anúncio já publicado (E6b, ADR-0094).
+   * `estoques` cobre apenas os SKUs que vivem neste item externo — quem resolve isso
+   * é o worker, que conhece split (ADR-0048) e user products (ADR-0088).
+   * Não lança: erros viram ResultadoCanal.erro.
+   */
+  atualizarEstoque(
+    ctx: ContextoCanal,
+    itemExternoId: string,
+    estoques: EstoquePorSku[],
+  ): Promise<ResultadoCanal<void>>;
   /** Sincroniza a descrição ao vivo (resolve + push). Retorna a descrição a persistir, ou null se nada mudou. */
   sincronizarDescricao(ctx: ContextoCanal, itemExternoId: string, descricaoAtual: string, cores: string[]): Promise<string | null>;
   /** Lê o status de N anúncios em lote. Lança se o token falhar (sem credencial). */
