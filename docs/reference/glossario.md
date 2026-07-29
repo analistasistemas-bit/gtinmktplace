@@ -38,7 +38,7 @@
 
 > ADR-0094 — **Bloco A** (ledger + baixa/estorno atômicos + push cross-canal) **EM PRODUÇÃO** desde
 > 2026-07-29. **Bloco B** (cadastro manual de produto + entrada de mercadoria pela UI, gated por
-> módulo) **implementado** — migration `20260729124711_e6b_origem_lote_e_modulos.sql`, edges
+> módulo) **EM PRODUÇÃO desde 2026-07-29** — migration `20260729124711_e6b_origem_lote_e_modulos.sql`, edges
 > `cadastrar-produto` e `entrada-estoque`, tela `/estoque`. Ver
 > `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`.
 

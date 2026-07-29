@@ -27,11 +27,15 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > `823843e9` no Render), e a suíte `verificar-isolamento-tenant.ts` rodou contra produção com
 > 54 asserções passando.
 >
-> **✅ E6b BLOCO B IMPLEMENTADO (2026-07-29), aguardando deploy.** Cadastro manual de produto
+> **✅ E6b BLOCO B EM PRODUÇÃO (2026-07-29).** Cadastro manual de produto
 > (edge `cadastrar-produto`), entrada de mercadoria (edge `entrada-estoque`), tela `/estoque`,
 > módulo pago ligado por org pelo super-admin (`organizations.modulos_habilitados` +
 > `set_modulos_org` no `/admin`), chip Planilha/Cadastro manual no LoteCard. Migration
-> `20260729124711_e6b_origem_lote_e_modulos.sql` validada no banco local. Suíte 2215 → 2255.
+> `20260729124711_e6b_origem_lote_e_modulos.sql` aplicada, 6 edge functions deployadas
+> (`cadastrar-produto` v1 e `entrada-estoque` v1 com `verify_jwt=true`), frontend `live` no
+> Render (`2d94b4e9`) e CI verde. Suíte 2215 → 2255.
+> **Nenhuma org enxerga o módulo ainda** — `modulos_habilitados` nasce vazio; ligar em `/admin`
+> → botão "Módulos" na linha da empresa.
 >
 > **Corrigido de quebra (defeito pré-existente, valia também para planilha):**
 > `talvezFinalizarLote` marcava o lote como `concluido` — status terminal — mesmo com família
@@ -39,9 +43,12 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > concluído com família publicável dentro. Eram TRÊS cópias idênticas; viraram uma em
 > `_shared/lote/finalizar.ts`.
 >
-> **Ordem de deploy obrigatória** (o frontend depende da RPC nova): `supabase db push` →
-> `supabase functions deploy` das 5 funções tocadas → só então merge na main (o Render
-> auto-deploya no push). Deploy pendente de OK explícito do Diego.
+> **Ordem de deploy usada (e obrigatória em qualquer repetição):** `db push` →
+> `functions deploy` → merge na main. O frontend chama `modulos_habilitados_da_org` dentro do
+> MenuGuard e o Render auto-deploya no push — inverter deixaria toda org na tela de carregando.
+>
+> **Pendente:** E2E manual (cadastrar produto real, conferir reuso do lote, 409 de duplicata e
+> publicação pela Revisão). Nenhum teste automatizado cobre isso.
 >
 > **Depois: E5 Shopee.**
 

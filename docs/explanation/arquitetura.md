@@ -223,7 +223,7 @@ o saldo local, o que é inofensivo com 1 canal mas abre oversell assim que um pr
 mais de um marketplace. O Bloco A fecha essa lacuna: toda venda paga baixa o estoque de forma
 atômica e idempotente (ledger `estoque_movimentos`), e todo movimento propaga o saldo **absoluto**
 para os canais publicados. O Bloco B (cadastro manual de produto + entrada de mercadoria pela UI,
-gated por módulo) está implementado — ver a seção logo abaixo.
+gated por módulo) está EM PRODUÇÃO desde 2026-07-29 — ver a seção logo abaixo.
 
 ```
 venda paga (sync-venda, pedido.status === 'paid')
@@ -268,7 +268,7 @@ Pontos que moldam o desenho (detalhe completo no ADR):
   produto com movimento no ledger; re-empurrar produto sem movimento restauraria unidades já
   vendidas em caso de webhook de venda perdido.
 
-## Cadastro manual e entrada de mercadoria — Bloco B (ADR-0094)
+## Cadastro manual e entrada de mercadoria — Bloco B (ADR-0094, EM PRODUÇÃO 2026-07-29)
 
 Até aqui produto só entrava por planilha (`ingest-lote`), o que exige que o cliente **já tenha um
 ERP** gerando essa planilha — o funil ficava restrito a quem menos precisa do produto. O Bloco B

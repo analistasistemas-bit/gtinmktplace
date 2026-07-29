@@ -34,17 +34,22 @@
   mergeada e está no ar (deploy `823843e9` no Render). Suíte `verificar-isolamento-tenant.ts`
   rodada contra produção: 54 asserções passando.
 - [x] **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo)**
-  — implementado 2026-07-29, **aguardando deploy**. Migration
+  — **EM PRODUÇÃO 2026-07-29**. Migration
   `20260729124711_e6b_origem_lote_e_modulos.sql` (`lotes.origem`,
   `organizations.modulos_habilitados`, `modulos_habilitados_da_org()`), edges
   `cadastrar-produto` e `entrada-estoque`, tela `/estoque`, `set_modulos_org` no `/admin`,
   chip de origem no LoteCard. Suíte 2215 → 2255.
-- [ ] **Deploy do Bloco B** — pendente de OK do Diego. Ordem obrigatória, porque o frontend
-  depende da RPC nova e o Render auto-deploya no push da main:
-  1. `supabase db push` + `npm run db:check`
-  2. `supabase functions deploy cadastrar-produto entrada-estoque publish-familia-ml
-     update-familia-ml publicar-split-ml usuarios`
-  3. merge na main
+- [x] **Deploy do Bloco B** — feito 2026-07-29 na ordem obrigatória (o frontend depende da RPC
+  nova e o Render auto-deploya no push da main):
+  1. `supabase db push` + `npm run db:check` ✓ (migrations alinhadas)
+  2. `supabase functions deploy` das 6 funções ✓ — `cadastrar-produto` v1, `entrada-estoque` v1
+     (ambas `verify_jwt=true`), `usuarios` v22, `publish-familia-ml` v82, `update-familia-ml`
+     v69, `publicar-split-ml` v47
+  3. merge na main (`823843e..2d94b4e`, fast-forward) → Render `live` em `2d94b4e9`, CI verde
+  Verificado em produção: todos os lotes históricos com `origem='planilha'`, as 2 orgs com
+  `modulos_habilitados` vazio (impacto zero até ligar em `/admin`), e a RPC
+  `modulos_habilitados_da_org` devolve `null` para `anon` (mesma ACL do
+  `canais_habilitados_da_org`, que é o default privilege do Supabase — não vaza).
 - [ ] **E2E manual do Bloco B** — não coberto por teste automatizado: cadastrar produto real com
   2 variações + estoque inicial + fotos, confirmar que caiu na Revisão com a IA rodando, que o
   2º produto entrou no MESMO lote (D-1.1), que o mesmo `codigo_pai` dá 409, e publicar pelo

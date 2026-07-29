@@ -7,8 +7,8 @@
 ## Snapshot
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**
-- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Bloco A)
-- **`E6b` Bloco A (estoque único cross-canal) EM PRODUÇÃO (2026-07-29)** — ver seção dedicada abaixo. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo) IMPLEMENTADO (2026-07-29), aguardando deploy** — ordem obrigatória `db push` → `functions deploy` → merge na main, porque o frontend depende da RPC `modulos_habilitados_da_org` e o Render auto-deploya no push. Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`. ADR: [0094](decisions/0094-estoque-unico-cadastro-manual.md). **Descartado na mesma sessão de design:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
+- Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Blocos A e B)
+- **`E6b` Bloco A (estoque único cross-canal) EM PRODUÇÃO (2026-07-29)** — ver seção dedicada abaixo. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo) EM PRODUÇÃO (2026-07-29)** — nenhuma org enxerga o módulo até o super-admin ligar em `/admin` (`modulos_habilitados` nasce vazio). Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`. ADR: [0094](decisions/0094-estoque-unico-cadastro-manual.md). **Descartado na mesma sessão de design:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
 - Depois do E6b: `E5` Shopee (o worker genérico `publicar-anuncio` do E6 espera só o conector)
 
 ### E6 — Orquestracao multicanal EM PRODUCAO (2026-07-06)
@@ -88,18 +88,22 @@ antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquite
   testes 2181 -> 2215. Frontend (secao "Movimentos de estoque" no expandir de Publicados)
   mergeado e no ar (deploy `823843e9` no Render); suite `verificar-isolamento-tenant.ts` rodada
   contra producao com 54 assercoes passando.
-- **E6b Bloco B — Cadastro manual + entrada de mercadoria** (ADR-0094, IMPLEMENTADO 2026-07-29,
-  **aguardando deploy**): modulo pago `estoque` ligado por org pelo super-admin
+- **E6b Bloco B — Cadastro manual + entrada de mercadoria** (ADR-0094, EM PRODUCAO 2026-07-29): modulo pago `estoque` ligado por org pelo super-admin
   (`organizations.modulos_habilitados` + action `set_modulos_org` no `/admin`), edges
   `cadastrar-produto` e `entrada-estoque` (`verify_jwt=true`, gate de modulo com 403), tela
   `/estoque` (saldo por produto, entrada, ledger, canais publicados), formulario de cadastro
   multi-variacao com fotos, `lotes.origem` + chip Planilha/Cadastro manual no LoteCard.
-  Migration `20260729124711_e6b_origem_lote_e_modulos.sql` validada no banco local. Suite
+  Migration `20260729124711_e6b_origem_lote_e_modulos.sql` aplicada em producao (todos os lotes
+  historicos ficaram `origem='planilha'`; as 2 orgs com `modulos_habilitados` vazio = impacto
+  zero). 6 edge functions deployadas: `cadastrar-produto` v1 e `entrada-estoque` v1 (ambas
+  `verify_jwt=true`), `usuarios` v22, `publish-familia-ml` v82, `update-familia-ml` v69,
+  `publicar-split-ml` v47. Frontend `live` no Render (deploy `2d94b4e9`), CI verde. Suite
   2215 -> 2255. Corrigido de quebra um defeito **pre-existente que valia tambem para planilha**:
   `talvezFinalizarLote` fechava o lote como `concluido` com familia ainda `pendente` (as TRES
   copias viraram uma em `_shared/lote/finalizar.ts`).
-  **Ordem de deploy obrigatoria:** `db push` -> `functions deploy` -> merge na main (o frontend
-  depende da RPC `modulos_habilitados_da_org`, e o Render auto-deploya no push).
+  **Ordem de deploy usada (obrigatoria):** `db push` -> `functions deploy` -> merge na main. O
+  frontend chama `modulos_habilitados_da_org` dentro do MenuGuard e o Render auto-deploya no
+  push, entao inverter a ordem deixaria toda org na tela de carregando.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

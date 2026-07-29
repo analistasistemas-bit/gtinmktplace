@@ -313,7 +313,7 @@ CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca*
 
 > **Bloco A** (ledger + baixa/estorno atômicos + push cross-canal) **EM PRODUÇÃO** desde
 > 2026-07-29. **Bloco B** (cadastro manual de produto + entrada de mercadoria pela UI, gated por
-> módulo) **implementado** — migration `20260729124711_e6b_origem_lote_e_modulos.sql`
+> módulo) **EM PRODUÇÃO desde 2026-07-29** — migration `20260729124711_e6b_origem_lote_e_modulos.sql`
 > (`lotes.origem`, `organizations.modulos_habilitados`, `modulos_habilitados_da_org()`) e as
 > edges `cadastrar-produto` / `entrada-estoque`.
 

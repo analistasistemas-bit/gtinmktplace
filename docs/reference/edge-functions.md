@@ -415,7 +415,7 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   criado em produção: **`30 12 * * *`**, 3 retries, body `{}`
   (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`).
 
-### Estoque (ADR-0094, Bloco B — módulo pago `estoque`)
+### Estoque (ADR-0094, Bloco B — módulo pago `estoque`, EM PRODUÇÃO 2026-07-29)
 
 As duas são chamadas pelo **app** com o JWT do usuário (não pelo QStash), então `verify_jwt = true`
 — declarado explicitamente no `config.toml` ao lado dos workers, para a intenção ficar registrada.
