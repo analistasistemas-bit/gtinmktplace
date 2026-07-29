@@ -472,3 +472,37 @@ push_enfileirado_em NULL e volta em FIFO); e a chave do Map é inequívoca.
 
 Aplicada também a sugestão não-bloqueadora: log `reconciliar_outbox_backlog` quando
 MAX_PAGINAS é atingido com a página ainda cheia, para backlog não sumir em silêncio.
+
+## Round 7 — Codex — CONVERGIU
+
+Verificado:
+
+- Critérios da spec agora refletem entrada/estorno, ausência de ajuste manual, cancelamento e `quantidade_pedida`.
+- Plano B está consistente com D-20.
+- Zero ocorrências das duas frases antigas nos quatro arquivos.
+- O log `reconciliar_outbox_backlog` está no limite correto. Pode gerar um aviso conservador quando existirem exatamente 1.000 pendências, mas isso não afeta correção nem implementação.
+
+VERDICT: APPROVED
+---
+
+## Encerramento
+
+Loop encerrado por **APPROVED** na rodada 7, não por esgotamento do cap.
+
+Revisores: Fable (1 passada) + OpenAI Codex `gpt-5.6-sol`, `model_reasoning_effort=medium`,
+7 rodadas na mesma sessão (contexto preservado entre rodadas).
+
+Placar: 9 bloqueadores e ~20 achados altos, todos aceitos e corrigidos. Nenhum rejeitado.
+
+Os que mudaram o desenho, não só o código:
+- Estorno criava estoque do nada quando a venda excedia o saldo (saldo 2, venda 5 → saldo 5).
+- Duas proteções escritas pelo Claude eram inócuas: `revoke update (coluna)` não anula
+  `UPDATE` de tabela em Postgres, e `FOR UPDATE` não trava linha inexistente.
+- O racional da reconciliação estava invertido: re-push de produto sem movimento
+  restauraria unidades já vendidas em vez de recuperar webhook perdido.
+- `novaPaga` é one-shot: baixa parcial que falhasse nunca seria retomada.
+- A linha-mãe de família user products tem `item_externo_id` NULL, então o resolvedor
+  original pulava 100% das famílias ADR-0088 — e o teste mascarava com dado irreal.
+
+Decisões nascidas da revisão: D-16 (talvezFinalizarLote), D-17 (idempotência na entrada),
+D-18 (outbox no ledger), D-19 (tombstone de cancelamento), D-20 (bloqueio da escrita direta).
