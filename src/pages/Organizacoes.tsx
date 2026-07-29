@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { LISTA_CANAIS } from '@/lib/canais';
+import { MODULOS } from '@/lib/modulos';
 import { CanalBadge } from '@/components/canal-badge';
 import { cancelSupport, listSupportRequests, requestSupport, type SupportRequest, type SupportScope } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
@@ -23,6 +24,7 @@ interface OrgRow {
   membros: number;
   criado_em: string;
   canais_habilitados: string[];
+  modulos_habilitados: string[];
   is_test: boolean;
 }
 
@@ -53,6 +55,7 @@ export default function Organizacoes() {
   const [novaOpen, setNovaOpen] = useState(false);
   const [delOrg, setDelOrg] = useState<OrgRow | null>(null);
   const [canaisOrg, setCanaisOrg] = useState<OrgRow | null>(null);
+  const [modulosOrg, setModulosOrg] = useState<OrgRow | null>(null);
   const [supportOrg, setSupportOrg] = useState<OrgRow | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
 
@@ -154,6 +157,7 @@ export default function Organizacoes() {
                 <TableCell className="w-full whitespace-normal md:min-w-[32rem]">
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setCanaisOrg(o)}>Canais</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setModulosOrg(o)}>Módulos</Button>
                     {request && <span className="text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
                     {request?.status === 'pending' && (
                       <Button
@@ -189,6 +193,11 @@ export default function Organizacoes() {
       <CanaisOrgDialog
         org={canaisOrg}
         onClose={() => setCanaisOrg(null)}
+        onSaved={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
+      />
+      <ModulosOrgDialog
+        org={modulosOrg}
+        onClose={() => setModulosOrg(null)}
         onSaved={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
       />
       <SupportRequestDialog
@@ -373,6 +382,70 @@ function NovaOrgDialog({ open, onOpenChange, onCreated }: {
           <Button onClick={criar} disabled={!nome || !slug || !adminEmail || enviando}>
             {enviando ? 'Criando…' : 'Criar empresa'}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// E6b (D-13): módulos pagos por org. Espelha CanaisOrgDialog, com uma diferença
+// proposital — não existe módulo obrigatório, lista vazia é o default de toda org.
+function ModulosOrgDialog({ org, onClose, onSaved }: {
+  org: OrgRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [modulos, setModulos] = useState<Set<string>>(new Set());
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => {
+    if (org) setModulos(new Set(org.modulos_habilitados ?? []));
+  }, [org]);
+
+  async function salvar() {
+    if (!org) return;
+    setSalvando(true);
+    try {
+      await callUsuarios({ action: 'set_modulos_org', org_id: org.id, modulos: [...modulos] });
+      toast.success('✓ Módulos atualizados');
+      onClose();
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao salvar módulos');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Dialog open={!!org} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Módulos de {org?.nome}</DialogTitle></DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Módulos pagos desta empresa. Desligar esconde o menu e faz as edges do módulo
+          recusarem chamadas dessa empresa — o dado já gravado não é apagado.
+        </p>
+        <div className="flex flex-col gap-2">
+          {MODULOS.map((m) => (
+            <label key={m.id} className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={modulos.has(m.id)}
+                onCheckedChange={(v) => setModulos((prev) => {
+                  const novo = new Set(prev);
+                  if (v === true) novo.add(m.id); else novo.delete(m.id);
+                  return novo;
+                })}
+              />
+              <span>
+                {m.nome}
+                <span className="block text-xs text-muted-foreground">{m.descricao}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={salvando}>Cancelar</Button>
+          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

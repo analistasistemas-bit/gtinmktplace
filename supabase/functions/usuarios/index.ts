@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   const { data: me } = await db.from('profiles')
     .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
   if (!me || !me.is_active) return json({ error: 'forbidden' }, 403);
-  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'delete_org'].includes(action);
+  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'delete_org'].includes(action);
   if (!(me.is_super_admin && !me.org_id && platformAction)) {
     if (!me.org_id || !me.is_admin) return json({ error: 'forbidden' }, 403);
   }
@@ -105,14 +105,15 @@ Deno.serve(async (req) => {
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const [{ data: orgs }, { data: profiles }] = await Promise.all([
-        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, is_test').order('criado_em'),
+        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, is_test').order('criado_em'),
         db.from('profiles').select('org_id'),
       ]);
       const counts = new Map<string, number>();
       for (const member of profiles ?? []) counts.set(member.org_id, (counts.get(member.org_id) ?? 0) + 1);
       const result = (orgs ?? []).map((o) => ({
           id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em,
-          canais_habilitados: o.canais_habilitados, is_test: o.is_test, membros: counts.get(o.id) ?? 0,
+          canais_habilitados: o.canais_habilitados, modulos_habilitados: o.modulos_habilitados ?? [],
+          is_test: o.is_test, membros: counts.get(o.id) ?? 0,
       }));
       return json({ orgs: result });
     }
@@ -162,6 +163,23 @@ Deno.serve(async (req) => {
       }
       const { error } = await db.from('organizations')
         .update({ canais_habilitados: canaisUnicos, atualizado_em: new Date().toISOString() })
+        .eq('id', alvo);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+    case 'set_modulos_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const alvo = String(body.org_id ?? '');
+      if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
+      // Mesmos ids do registry do frontend (src/lib/modulos.ts) — manter em sincronia.
+      const MODULOS_VALIDOS = ['estoque'];
+      const modulos = Array.isArray(body.modulos)
+        ? (body.modulos as string[]).filter((m) => MODULOS_VALIDOS.includes(m))
+        : [];
+      // Diferente de set_canais_org: NÃO há módulo obrigatório. Lista vazia é estado
+      // válido (org sem nenhum módulo) e é o default de toda org.
+      const { error } = await db.from('organizations')
+        .update({ modulos_habilitados: [...new Set(modulos)], atualizado_em: new Date().toISOString() })
         .eq('id', alvo);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
