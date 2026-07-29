@@ -151,9 +151,10 @@ Anote o total de testes que passa hoje. Toda task seguinte deve manter esse núm
 - Consumes: `public.organizations`, `public.familias`, `public.variacoes`, `public.current_org_id()` (todos já existem).
 - Produces, consumidos pelas Tasks 5, 7, 8 e pelo Bloco B:
   - `public.baixar_estoque(p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text) returns jsonb`
-    — `{ aplicado, motivo, codigo_pai?, estoque_anterior?, estoque_resultante? }`
-  - `public.estornar_estoque(p_org uuid, p_canal text, p_ref_venda text) returns jsonb`
-    — ancorada no movimento de venda; sem venda registrada devolve `aplicado:false`
+    — `{ aplicado, motivo, movimento_id?, codigo_pai?, quantidade_aplicada?, quantidade_pedida?, estoque_anterior?, estoque_resultante? }`
+  - `public.estornar_estoque(p_org uuid, p_canal text, p_ref_venda text, p_codigo text) returns jsonb`
+    — **quatro** argumentos; ancorada no movimento de venda. Sem venda registrada grava o
+    tombstone `cancelamento_sem_baixa` e devolve `aplicado:false`
   - `public.registrar_entrada(p_org uuid, p_codigo text, p_qtd integer, p_custo numeric, p_doc text, p_obs text, p_criado_por uuid, p_ref text) returns integer`
   - tabela `public.estoque_movimentos`
 
@@ -645,13 +646,19 @@ select public.registrar_entrada('<org>', '<sku>', 5, null, null, null, null, '')
 -- Expected: ERRO "referência de idempotência é obrigatória".
 
 -- E3) Estorno de SKU inexistente preserva a trilha em vez de apagar.
-select public.estornar_estoque('<org>', 'SKU-QUE-NAO-EXISTE', 1, 'mercado_livre', 'estorno:x');
--- Expected: NULL, e existe 1 linha motivo='estorno_sku_nao_encontrado' com quantidade 0.
+-- E3) Estorno de SKU que sumiu do catálogo preserva a trilha.
+--     (Precisa existir movimento de venda com essa ref; senão cai no tombstone.)
+select public.estornar_estoque('<org>', 'mercado_livre', 'mercado_livre:995:SUMIU', 'SUMIU');
+-- Expected: {"aplicado": false, "motivo": "sem_baixa_registrada"} — sem venda registrada,
+--           grava o tombstone. Para exercitar 'estorno_sku_nao_encontrado' é preciso ter
+--           baixado o SKU antes e removido a variação depois.
 
 -- F) Escrita direta de estoque está TRANCADA para o app.
 --    Como usuário `authenticated` (não service_role), pelo PostgREST ou psql com o papel:
 update public.variacoes set estoque = 999 where codigo = '<sku>';
--- Expected: ERRO de permissão na coluna `estoque`.
+-- Expected: ERRO "Estoque não pode ser alterado diretamente. Use Entrada de estoque
+--           (ADR-0054, D-15)." — exceção do trigger, com errcode insufficient_privilege.
+--           NÃO é erro de permissão de coluna: o revoke de coluna seria inócuo aqui.
 update public.variacoes set preco = preco where codigo = '<sku>';
 -- Expected: OK — as demais colunas continuam editáveis como hoje.
 
@@ -886,14 +893,14 @@ export interface ItemVendaBaixa { codigo: string | null; quantity: number }
 export interface BaixaSelecionada { codigo: string; quantity: number }
 export function selecionarBaixas(itens: ItemVendaBaixa[]): BaixaSelecionada[]
 export interface ResultadoBaixaVenda {
-  paisAfetados: string[];
+  pendentesDePush: MovimentoPendente[];
   semSaldo: Array<{ codigo: string; pedido: number }>;
   falhas: Array<{ codigo: string; mensagem: string }>;
 }
 export async function estornarVendaCancelada(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
-): Promise<{ paisAfetados: string[]; falhas: Array<{ codigo: string; mensagem: string }> }>
+): Promise<{ pendentesDePush: MovimentoPendente[]; falhas: Array<{ codigo: string; mensagem: string }> }>
 export async function registrarBaixaVenda(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
@@ -1822,14 +1829,15 @@ git commit -m "feat(e6b): baixa de estoque na venda paga + estorno no cancelamen
 - [ ] **Step 1: Implementar o worker**
 
 ```ts
-// E6b (ADR-0054, D-12): rede de segurança de estoque, com DOIS conjuntos e dois motivos
-// distintos — o ADR precisa dizer isso direito:
-//   (a) produtos com movimento nas últimas 24h → cobre o push que FALHOU em definitivo
-//       (o movimento existe, o anúncio ficou defasado).
-//   (b) produtos publicados em ≥2 canais → cobre o webhook PERDIDO (não há movimento
-//       para o conjunto (a) achar) e a divergência silenciosa entre canais.
-// O conjunto (b) roda todo dia mesmo em produto parado; é aceito porque só existe
-// quando há multicanal de verdade (hoje: nenhum produto, custo zero até o E5).
+// E6b (ADR-0054, D-12): rede de segurança do PUSH — não do webhook.
+//
+// ESCOPO DELIBERADAMENTE ESTREITO: só re-empurra produtos que TÊM movimento no ledger
+// (outbox pendente ou movimento recente). Um re-push "preventivo" de produto SEM
+// movimento seria ativamente perigoso: webhook perdido significa que a venda nunca
+// baixou e o saldo local está ALTO DEMAIS; empurrar esse saldo para todos os canais
+// — inclusive aquele onde a venda ocorreu — RESTAURARIA unidades já vendidas e
+// ampliaria o oversell. Recuperar webhook perdido exige importar o pedido faltante
+// e aplicar a baixa; isso NÃO existe hoje e está registrado como fora de escopo.
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
@@ -1866,22 +1874,17 @@ Deno.serve(async (req) => {
       .is('push_enfileirado_em', null).neq('codigo_pai', '').range(de, ate),
   );
 
-  // (b) Produtos publicados em ≥2 canais.
-  const pub = await paginarTudo<{ org_id: string; codigo_pai: string; canal: string }>(
-    (de, ate) => admin.from('anuncios_externos')
-      .select('org_id, codigo_pai, canal').eq('status', 'publicado').range(de, ate),
-  );
-  const canaisPorProduto = new Map<string, Set<string>>();
-  for (const p of pub ?? []) {
-    const chave = `${p.org_id}|${p.codigo_pai}`;
-    if (!canaisPorProduto.has(chave)) canaisPorProduto.set(chave, new Set());
-    canaisPorProduto.get(chave)!.add(p.canal as string);
-  }
+  // NÃO existe conjunto "produtos multicanal sem movimento". Ver o cabeçalho.
 
+  // Pendentes são drenados pelo outbox (passo 1) com a intenção correta. Precisam
+  // ficar FORA do re-push do passo 2, senão cada um geraria um segundo job com
+  // canal_origem=null que anularia a exclusão do canal de origem.
+  const chavesPendentes = new Set(pendentes.map((m) => `${m.org_id}|${m.codigo_pai}`));
   const alvos = new Set<string>();
-  for (const m of movs) alvos.add(`${m.org_id}|${m.codigo_pai}`);
-  for (const m of pendentes) alvos.add(`${m.org_id}|${m.codigo_pai}`);
-  for (const [chave, canais] of canaisPorProduto) if (canais.size >= 2) alvos.add(chave);
+  for (const m of movs) {
+    const chave = `${m.org_id}|${m.codigo_pai}`;
+    if (!chavesPendentes.has(chave)) alvos.add(chave);
+  }
 
   // (1) OUTBOX: drena pelo MESMO dispatcher do sync-venda, para que a intenção de
   //     propagação venha do movimento e o `push_enfileirado_em` seja de fato marcado.
@@ -1890,21 +1893,26 @@ Deno.serve(async (req) => {
   const orgsComPendencia = new Set(pendentes.map((m) => m.org_id));
   for (const orgId of orgsComPendencia) {
     try {
-      await despacharPushPendente(
-        admin, orgId, await lerPushPendente(admin, orgId, 1000), enfileirarSincronizacaoEstoque,
-      );
+      // Drena em páginas até esvaziar: um único lote de 1000 deixaria pendência para
+      // trás justamente na org com mais movimento. O laço termina porque cada volta
+      // marca `push_enfileirado_em` no que despachou.
+      for (let volta = 0; volta < 50; volta++) {
+        const pagina = await lerPushPendente(admin, orgId, 500);
+        if (pagina.length === 0) break;
+        await despacharPushPendente(admin, orgId, pagina, enfileirarSincronizacaoEstoque);
+      }
     } catch (e) {
       console.error('reconciliar_outbox_falhou', orgId, e);   // uma org nunca bloqueia outra
     }
   }
 
-  // (2) Re-push preventivo dos demais alvos (movimento recente, multicanal). Estes NÃO
-  //     têm movimento pendente — são varredura, não recuperação — então vão com
-  //     canal_origem null (alcança todos os canais) e não mexem no outbox.
+  // (2) Re-push dos produtos com movimento recente JÁ DESPACHADO (push_enfileirado_em
+  //     preenchido). Cobre o caso em que o job foi enfileirado mas o push falhou em
+  //     definitivo no canal. O saldo aqui é fresco — houve movimento —, então empurrar
+  //     para todos os canais é seguro.
   let enfileirados = 0;
   for (const chave of alvos) {
     const [orgId, codigoPai] = chave.split('|');
-    if (!canaisPorProduto.has(chave)) continue;   // só produto publicado em algum lugar
     try {
       await enfileirarSincronizacaoEstoque(
         { org_id: orgId, codigo_pai: codigoPai, canal_origem: null }, orgId,
@@ -2188,7 +2196,8 @@ git commit -m "docs(e6b): documentar ledger de estoque, workers e fluxo de push"
 
 **Cortes declarados (não são critério de saída — vão escritos no ADR-0054):**
 
-- **Ajuste manual não propaga na hora.** Um trigger Postgres não enfileira QStash, e hoje não existe escritor de `variacoes.estoque` no browser. A reconciliação diária cobre em ≤24h.
+- **Não existe ajuste manual de estoque pelo app** (a escrita direta é bloqueada por trigger). Toda mudança de saldo é entrada, baixa ou estorno — e todas propagam.
+- **Webhook de venda perdido NÃO é recuperado.** A reconciliação é rede de segurança do *push*, não do *webhook*: ela só re-empurra produtos com movimento no ledger. Recuperar uma venda que nunca chegou exigiria importar o pedido faltante e aplicar a baixa — fora de escopo, e re-empurrar saldo sem movimento seria pior que não fazer nada (restauraria unidades já vendidas).
 - **Devolução não é tocada.** O fluxo `sync-devolucao` não repõe nem notifica neste plano; só o cancelamento visto pelo `sync-venda`.
 - ⏳ **Pleno (bloqueado pelo E5):** venda no ML atualiza anúncio Shopee real e vice-versa. Até lá, a infra cross-canal é provada com o conector fake.
 

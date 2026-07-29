@@ -279,3 +279,116 @@ Aceitos e corrigidos — os 3 BLOCKERs e os 4 HIGHs:
 Nada rejeitado nesta rodada. A observação sobre entrega at-most-once do reservarNotificacao
 é procedente, mas é o padrão já vigente no repo para os alertas existentes — fica registrada
 como característica conhecida, não como mudança deste épico.
+
+## Round 3 — Codex
+
+Ainda não está implementável com segurança. Restam dois bloqueadores de concorrência/roteamento e dois defeitos funcionais claros.
+
+1. **BLOCKER — tombstone e baixa continuam concorrendo sem uma trava comum**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:252-279` e `:345-365`.
+   - Evidência real: execuções distintas do handler podem buscar estados diferentes do mesmo pedido antes de `upsertVenda`, em `supabase/functions/sync-venda/index.ts:74-98`.
+   - Quebra: o `FOR UPDATE` do estorno não espera por uma baixa ainda não commitada porque, no snapshot do `SELECT`, a linha “não existe”. Como venda e tombstone têm referências diferentes, o índice único também não serializa. Interleaving válido: baixa insere venda → consulta tombstone e não acha → cancelamento insere tombstone → baixa aplica o estoque. O cancelamento fica registrado, mas a venda também é aplicada e nunca estornada.
+   - Sobre bloquear venda legítima: fora dessa corrida, não encontrei evidência de bloqueio indevido; o tombstone está vinculado ao pedido/SKU cancelado e o handler consulta o estado atual do pedido.
+   - **Fix:** adquirir em ambas as RPCs um `pg_advisory_xact_lock` com a mesma chave derivada de `(org_id, referência da venda)` antes de qualquer `INSERT`/`SELECT`.
+
+2. **BLOCKER — o outbox mistura movimentos com políticas de propagação incompatíveis**
+
+   - Plano: `e6b-a-estoque.md:1015-1055`, `:1651-1655`, `:1708-1715`; `e6b-b-cadastro-e-entrada.md:961-970` e `:1075-1105`.
+   - Evidência real: o handler é reexecutável por pedido em `supabase/functions/sync-venda/index.ts:65-98`; o cliente administrativo usado nesses caminhos é global à org, não à execução, em `supabase/functions/_shared/supabase.ts:3-8`.
+   - Quebra: `lerPushPendente` lê todos os pendentes da org sem trazer o tipo/canal do movimento. Depois, um único `canalOrigem` fornecido pelo chamador é aplicado ao lote inteiro. Assim, uma venda ML pode drenar e marcar como entregue uma entrada/estorno usando `canal_origem='mercado_livre'`, deixando de atualizar o ML; uma entrada pode drenar uma venda com `canal_origem=null` e reempurrar ao ML o saldo local. O `UPDATE` ainda marca todos os IDs agrupados pelo produto após apenas esse job incorretamente roteado.
+   - Agravante: cadastro inicial e entrada enfileiram diretamente e nunca preenchem `push_enfileirado_em`; portanto permanecem pendentes e serão posteriormente drenados por qualquer execução de `sync-venda`.
+   - **Fix:** persistir no movimento a intenção de despacho (`push_canal_origem`, ou equivalente), retornar esse campo na leitura, agrupar por `(codigo_pai, push_canal_origem)` e fazer cadastro/entrada usarem exclusivamente o mesmo dispatcher.
+
+3. **HIGH — a marca do outbox pode falhar silenciosamente e a reconciliação nunca a grava**
+
+   - Plano: `e6b-a-estoque.md:1050-1059` e `:1815-1850`.
+   - Evidência real: o padrão Supabase do projeto retorna erros como valor; não lança automaticamente — por exemplo, `supabase/functions/ingest-lote/index.ts:309-312` verifica explicitamente `varErr`.
+   - Quebra: o resultado do `update({ push_enfileirado_em: ... })` é ignorado. Se o banco rejeitar a atualização, a função aparenta sucesso e reenvia indefinidamente. A reconciliação também enfileira os pendentes, mas jamais atualiza `push_enfileirado_em`; logo eles serão reenviados diariamente para sempre, sempre com `canal_origem=null`.
+   - A ordem enqueue → marca está correta e não marca cedo demais; o defeito é ignorar a falha e não marcar no reconciliador.
+   - **Fix:** verificar e propagar o `error` do `UPDATE`, e fazer a reconciliação chamar o mesmo dispatcher orientado pelos dados do movimento.
+
+4. **HIGH — o tratamento de 409 continua inalcançável**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:1398-1411`.
+   - Evidência real: `src/pages/Organizacoes.tsx:29-43` documenta e trata o comportamento real: em resposta não-2xx, `invoke` não popula `data`; o corpo está em `error.context`.
+   - Quebra: `if (error) throw error` acontece antes da construção de `ProdutoJaExisteError`. Em um 409 real, `familiaId` e `loteId` nunca são lidos e o fluxo de recuperação prometido permanece quebrado.
+   - **Fix:** antes do erro genérico, detectar `error.context.status === 409`, ler `await error.context.json()` e construir `ProdutoJaExisteError` com os IDs.
+
+5. **MEDIUM — os documentos executáveis ainda contradizem as decisões revisadas**
+
+   - Plano: `PLAN-E6B.md:22-23,36,43,47-52`; `e6b-a-estoque.md:5-7,32-34,49,73-74,628-635`; spec `2026-07-28-cadastro-manual-e-estoque-design.md:225-269`.
+   - Evidência real: `paginarTudo` existe apenas como função não exportada em `supabase/functions/_shared/faturamento/io.ts:41-52`; portanto o uso proposto em `e6b-a-estoque.md:1804-1812` não compila por simples importação.
+   - Quebra: o plano mestre ainda manda usar `novaPaga` e trigger de ajuste; a spec ainda mostra schema sem `quantidade_pedida`/`push_enfileirado_em` e assinaturas antigas; a prova SQL chama `estornar_estoque` com cinco argumentos antigos e espera erro de permissão em vez do novo erro do trigger. A Task 1 ainda manda copiar apenas D-1..D-15, omitindo D-16..D-20.
+   - **Fix:** sincronizar schema, assinaturas, prova SQL, fluxo e ADR D-1..D-20; definir/exportar um paginador que também verifique erros PostgREST.
+
+O trigger novo não quebra os caminhos reais examinados: `adminClient()` usa exclusivamente a chave `service_role` (`_shared/supabase.ts:3-8`), enquanto o cliente com JWT do usuário é separado (`:11-17`). O re-ingest mostrado em `ingest-lote/index.ts:309-312` usa escrita administrativa e não carrega `auth.uid()`. Também não encontrei escritor browser legítimo de `variacoes.estoque` que precise ser preservado.
+
+VERDICT: REVISE
+## Round 4 — Codex
+
+Ainda há um bloqueador material na reconciliação e duas inconsistências executáveis.
+
+1. **BLOCKER — “re-push cobre webhook perdido” está conceitualmente invertido**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:1825-1832,1869-1884,1901-1911`; spec `:142`.
+   - Evidência real: `supabase/functions/sync-venda/index.ts:65-98` só busca o pedido quando recebe um job com `order_id`/`shipping_id`. Não existe polling de vendas ausentes.
+   - Quebra: webhook perdido significa que o ledger e o estoque local continuam altos. O reconciliador lê esse saldo desatualizado e o envia para todos os canais, inclusive o marketplace onde a venda ocorreu, podendo restaurar unidades já vendidas e ampliar o oversell.
+   - **Fix:** a reconciliação de webhook perdido precisa primeiro importar pedidos/vendas ausentes e aplicar a baixa; até isso existir, restrinja o re-push a movimentos existentes/outbox e remova o conjunto “multicanal sem movimento”.
+
+2. **HIGH — o código não exclui pendências do re-push preventivo**
+
+   - Plano: `e6b-a-estoque.md:1881-1911`.
+   - Evidência real: o worker de venda é assíncrono e independente em `supabase/functions/sync-venda/index.ts:74-98`; não há ordenação transacional entre ele e o reconciliador.
+   - Quebra: embora o comentário diga “estes NÃO têm movimento pendente”, `alvos` inclui explicitamente todos os `pendentes` em `:1883`, e o loop nunca os remove. Cada pendência gera o job correto pelo dispatcher e, logo depois, outro job com `canal_origem:null`, anulando a política de exclusão do canal de origem.
+   - Além disso, cada org drena no máximo 1.000 movimentos (`:1893-1895`), apesar de a leitura anterior ser paginada.
+   - **Fix:** criar `chavesPendentes`, excluir essas chaves do loop preventivo e drenar cada org em páginas até `lerPushPendente` retornar vazio.
+
+3. **HIGH — `registrarEntrada` ainda não implementa o tratamento de erro prometido**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:1265-1275`; a correção aparece apenas como instrução posterior em `:1436`.
+   - Evidência real: `src/pages/Organizacoes.tsx:29-43` confirma que respostas não-2xx deixam o corpo em `error.context`, não em `data`.
+   - Quebra: o snippet executável ainda faz `if (error) throw error`; portanto mensagens da edge são perdidas e o diálogo recebe um erro genérico. Dizer depois para “aplicar o mesmo cuidado” deixa o código principal incorreto.
+   - **Fix:** substituir o snippet pelo tratamento efetivo de `error.context`, idealmente extraindo um helper compartilhado usado também por `cadastrarProduto`.
+
+4. **MEDIUM — assinaturas e prova SQL continuam dessincronizadas**
+
+   - Plano/spec: spec `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md:262-268`; Plano A `:153-157,618-629,647-649,651-655,884-900`.
+   - Evidência: a implementação planejada define quatro argumentos em `e6b-a-estoque.md:347-349`, e o chamador planejado usa esses quatro campos em `:1122-1126`.
+   - Quebra: a spec ainda declara `baixar_estoque returns integer` e o estorno antigo com quantidade; a interface da Task 3 omite `p_codigo`; E3 ainda chama cinco argumentos antigos e espera `NULL`; o contrato TypeScript ainda expõe `paisAfetados`, enquanto a implementação devolve `pendentesDePush`. A prova do trigger também espera “erro de permissão na coluna”, mas agora será a exceção customizada.
+   - **Fix:** tornar a assinatura SQL de quatro argumentos e `pendentesDePush` canônicos em todas as seções e corrigir E3/expectativas.
+
+Sobre o ponto específico da entrada: o enqueue direto em `entrada-estoque` não é defeito material depois de `push_canal_origem`. Ele causa no máximo um push redundante; o dispatcher posterior usa a intenção correta e marca o movimento. Já o cadastro inicial, no texto atual, não enfileira estoque diretamente (`e6b-b-cadastro-e-entrada.md:961-970` apenas chama a RPC). Isso também é aceitável porque o produto ainda não está publicado e a publicação consumirá o saldo canônico.
+
+O advisory lock usa a mesma chave nas duas RPCs e fecha o interleaving identificado. Não encontrei novo bloqueio de venda legítima pelo tombstone. O trigger continua preservando `service_role` e o re-ingest administrativo.
+
+VERDICT: REVISE
+### Resposta do Claude (rounds 3 e 4)
+
+Round 3 — todos aceitos:
+- Advisory lock `pg_advisory_xact_lock(hash(org|ref_venda))` no início de baixar_estoque E
+  estornar_estoque. Só o índice único não serializava: venda e tombstone têm referências
+  diferentes e FOR UPDATE não espera linha não-commitada.
+- Coluna `push_canal_origem`: a intenção de propagação passa a viver no movimento.
+  despacharPushPendente agrupa por (codigo_pai, push_canal_origem) e não recebe mais
+  canal do chamador — antes, uma venda no ML drenava uma entrada marcando-a como
+  entregue sem atualizar o ML.
+- error do update de push_enfileirado_em verificado; reconciliação drena pelo mesmo
+  dispatcher (e portanto marca o outbox).
+- 409 lido de error.context (invoke não popula data em não-2xx).
+- paginarTudo marcada para extração/exportação.
+
+Round 4 — todos aceitos:
+- O conjunto "multicanal sem movimento" da reconciliação foi REMOVIDO. O racional estava
+  invertido: webhook perdido = saldo local alto demais; re-empurrar restauraria unidades
+  vendidas. Recuperação real de webhook perdido exige importar o pedido faltante — fora
+  de escopo, registrado.
+- chavesPendentes excluídas do re-push preventivo; drenagem do outbox virou laço paginado.
+- registrarEntrada e cadastrarProduto passam a usar helper compartilhado de erro de edge
+  (com leitura única do Response.json).
+- Assinaturas canônicas (estornar com 4 args, baixar returns jsonb, pendentesDePush) e
+  prova SQL sincronizadas; expectativa do trigger corrigida.
+
+Aceito também o veredito do Codex sobre o enqueue direto da entrada: não é defeito
+material depois de push_canal_origem — causa no máximo um push redundante, e push
+absoluto é idempotente.

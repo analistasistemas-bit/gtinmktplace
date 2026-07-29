@@ -259,11 +259,11 @@ create policy "estoque_movimentos: select org" on public.estoque_movimentos
 
 Funções `security definer` (`set search_path = ''`), todas revogadas de `public`/`anon`/`authenticated`:
 
-- `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref) returns integer` — insere movimento
+- `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref) returns jsonb` — insere movimento
   (duplicata → `null`, sem tocar estoque), resolve a variação canônica (família mais recente do
   `(org_id, codigo)`, mesma âncora do ADR-0025), aplica `greatest(0, estoque - qtd)`, devolve o saldo.
   SKU não encontrado → movimento vira `venda_sku_nao_encontrado` e devolve `null`.
-- `estornar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref)` — espelho de `baixar_estoque` com
+- `estornar_estoque(p_org, p_canal, p_ref_venda, p_codigo) returns jsonb` — espelho de `baixar_estoque` com
   `motivo = 'estorno_venda'` e referência própria (`estorno:{canal}:{order_id}:{codigo}`), para ser
   idempotente independentemente da baixa.
 - `registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, p_obs, p_criado_por, p_ref) returns integer` —

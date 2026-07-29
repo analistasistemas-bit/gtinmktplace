@@ -1269,12 +1269,39 @@ export async function registrarEntrada(p: {
   ref: string;
 }): Promise<{ estoque: number | null; duplicada?: boolean; pushOk: boolean }> {
   const { data, error } = await supabase.functions.invoke('entrada-estoque', { body: p });
-  if (error) throw error;
-  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  if (error) throw await erroDaEdge(error);   // NÃO `throw error`: ver helper abaixo
   const r = data as { estoque: number | null; duplicada?: boolean; pushOk?: boolean };
   return { ...r, pushOk: r.pushOk !== false };
 }
 ```
+
+**Helper compartilhado** (`src/lib/edge-erro.ts`), usado por `registrarEntrada` **e** por `cadastrarProduto`. Existe porque `supabase.functions.invoke` **não** popula `data` em resposta não-2xx — o corpo fica em `error.context`. Sem ele, toda mensagem da edge (validação, 403 de módulo, 409 de duplicata) vira um erro genérico inútil na tela:
+
+```ts
+/** Extrai a mensagem real do corpo de erro de uma edge; devolve o Error a lançar. */
+export async function erroDaEdge(error: unknown): Promise<Error> {
+  const ctx = (error as { context?: Response }).context;
+  if (!ctx) return error instanceof Error ? error : new Error(String(error));
+  const corpo = await ctx.json().catch(() => ({} as Record<string, unknown>));
+  const { error: msg, erros } = corpo as {
+    error?: string; erros?: Array<{ campo: string; mensagem: string }>;
+  };
+  if (erros?.length) return new Error(erros.map((e) => e.mensagem).join('\n'));
+  if (msg) return new Error(msg);
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+/** Lê o corpo de erro sem consumir a decisão — para quem precisa dos campos, não da mensagem. */
+export async function corpoDoErroDaEdge(error: unknown): Promise<{ status: number; corpo: Record<string, unknown> } | null> {
+  const ctx = (error as { context?: Response }).context;
+  if (!ctx) return null;
+  return { status: ctx.status, corpo: await ctx.json().catch(() => ({})) };
+}
+```
+
+**Atenção:** `Response.json()` só pode ser consumido **uma vez**. Em `cadastrarProduto`, chame `corpoDoErroDaEdge` **uma** vez e decida a partir do resultado (409 com ids → `ProdutoJaExisteError`; senão → `Error` com a mensagem) em vez de ler o corpo duas vezes.
+
+Antes de codar, confira `src/pages/Organizacoes.tsx:29-43`: se já existir helper equivalente, use-o e não crie o `edge-erro.ts`.
 
 **`pushOk` não pode ser descartado pelo diálogo.** Quando ele vem `false`, o saldo foi gravado mas os anúncios ficaram defasados — o operador precisa saber, senão acha que já pode vender. Regra: `pushOk === false` → toast de aviso ("Saldo atualizado. A sincronização com os marketplaces falhou e será refeita automaticamente em até 24h."), não um toast de sucesso limpo.
 
@@ -1404,25 +1431,19 @@ export async function cadastrarProduto(p: ProdutoEntradaUI): Promise<ResultadoCa
   // 409 abaixo INALCANÇÁVEL, e o operador ficaria travado sem caminho de retomada
   // quando a resposta da primeira tentativa se perdesse na rede.
   if (error) {
-    const ctx = (error as { context?: Response }).context;
-    if (ctx?.status === 409) {
-      const corpo = await ctx.json().catch(() => ({} as Record<string, unknown>));
-      const { error: msg, familiaId, loteId } = corpo as {
-        error?: string; familiaId?: string; loteId?: string;
-      };
-      if (familiaId && loteId) {
-        throw new ProdutoJaExisteError(msg ?? 'Produto já existe.', familiaId, loteId);
-      }
+    // UMA leitura só: Response.json() não pode ser consumido duas vezes.
+    const r = await corpoDoErroDaEdge(error);
+    if (!r) throw error instanceof Error ? error : new Error(String(error));
+    const { error: msg, erros, familiaId, loteId } = r.corpo as {
+      error?: string;
+      erros?: Array<{ campo: string; mensagem: string }>;
+      familiaId?: string; loteId?: string;
+    };
+    if (r.status === 409 && familiaId && loteId) {
+      throw new ProdutoJaExisteError(msg ?? 'Produto já existe.', familiaId, loteId);
     }
-    if (ctx) {
-      const corpo = await ctx.json().catch(() => ({} as Record<string, unknown>));
-      const { error: msg, erros } = corpo as {
-        error?: string; erros?: Array<{ campo: string; mensagem: string }>;
-      };
-      if (erros?.length) throw new Error(erros.map((e) => e.mensagem).join('\n'));
-      if (msg) throw new Error(msg);
-    }
-    throw error;
+    if (erros?.length) throw new Error(erros.map((e) => e.mensagem).join('\n'));
+    throw new Error(msg ?? 'Falha ao cadastrar o produto.');
   }
 
   const r = data as Partial<ResultadoCadastro>;
