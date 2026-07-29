@@ -122,6 +122,7 @@ de foto. Foi por isso que o desenho mudou para "sessão de cadastro = um lote" (
 | # | Decisão | Racional |
 |---|---|---|
 | **D-1** | **Sessão de cadastro = um lote.** O cadastro manual cria um `lote` normal (marcado como manual) com N famílias e suas variações, e cai na **mesma tela de Revisão de sempre**. | Zero mudança em `process-familia`, nos dois workers de publicação, no realtime, no roteamento e na unique `(lote_id, codigo_pai)`. Nada do caminho que fatura é tocado. A alternativa (`lote_id` nullable) custa 6 frentes, duas delas em código que publica anúncio real. |
+| **D-1.1** | **"Sessão" = o lote manual aberto da org.** O cadastro reusa o lote com `origem='manual'` e `status in ('importando','processando','revisao')`; se não houver, cria um novo. Ao anexar família, o lote volta para `status='processando'`. | Verificado: `talvezFinalizarLote` (`publish-familia-ml/processar.ts:44-52`) **não** compara contadores — recalcula do estado vivo (`publicando` → não mexe; senão `pronto` → `revisao`; senão `concluido`). Logo o ciclo se auto-corrige e nenhum worker precisa mudar. A regra evita os dois extremos: um lote por produto (polui a tela de Lotes) e um lote permanente (nunca fecha, e a Revisão vira lista infinita misturando produto novo com produto de 6 meses). Corresponde ao que o operador chama de "meus cadastros ainda não publicados". |
 | **D-2** | `lotes.origem text not null default 'planilha'` com check `in ('planilha','manual')`. A tela de Lotes rotula. | 1 linha de migration, sem ambiguidade. Inferir por `planilha_path is null` funcionaria na maioria dos casos, mas quebra num lote que falhou antes de gravar o path. |
 | **D-3** | Cadastro é **multi-variação desde a fase 1**: dados do PAI + tabela de linhas de variação. | Família = 1 anúncio, variação = 1 SKU é o modelo do PubliAI inteiro; split, user products e resolução de cor já assumem N. Fazer só produto simples obrigaria a refazer a tela. |
 | **D-4** | **Guard LOUD de duplicata:** o cadastro rejeita `codigo_pai` que já exista na org (em qualquer lote), com mensagem "esse produto já existe — use Entrada de estoque". | A unique é `(lote_id, codigo_pai)`, então dois lotes diferentes aceitariam o mesmo produto e criariam duas linhas canônicas concorrentes. Erro explícito, nunca merge silencioso. |
@@ -129,7 +130,7 @@ de foto. Foi por isso que o desenho mudou para "sessão de cadastro = um lote" (
 | **D-6** | **Baixa na transição `novaPaga`, para todas as orgs, sem flag.** | Mesmo mecanismo, dois regimes de graça: para a org de planilha evita oversell **entre** importações e a próxima importação segue sobrescrevendo (D-E6b.1 intacto); para a org do módulo é a verdade permanente, porque ela nunca importa. Um caminho só para testar. |
 | **D-7** | **Cancelamento repõe** (movimento `estorno_venda`, idempotente pela mesma referência); **devolução não repõe** — só notifica. | Fisicamente diferentes: cancelado antes do despacho = mercadoria nunca saiu; devolvido = precisa conferir o estado do que voltou. **Inverte parcialmente D-E6b.7**, que não repunha em nenhum caso. |
 | **D-8** | **Venda maior que o saldo:** baixa até zero (`greatest(0, estoque - qtd)`), o ledger registra a quantidade **real** vendida, e dispara notificação via `notificarCategoria`. A venda **nunca** falha por causa de estoque. | O saldo negativo obrigaria todo o resto (publicabilidade, push, ML) a aguentar negativo — e o ML não aceita quantidade negativa. Mas venda sem saldo é exatamente o evento que o operador precisa saber. |
-| **D-9** | **Entrada sobrescreve `variacoes.custo`** com o custo unitário informado (último custo). | É como o operador pensa e é o que a planilha já faz na importação. Zero estado extra; o histórico por entrada fica no ledger. Custo médio ponderado é extensão futura. |
+| **D-9** | **Entrada sobrescreve `variacoes.custo`** com o custo unitário informado (último custo) — **só quando o custo é informado e maior que zero**. Custo ausente → entrada registra a quantidade e **não toca** em `custo`. Custo zero ou negativo → **rejeita a entrada** com erro explícito, nunca trata como ausente. | É como o operador pensa e é o que a planilha já faz na importação. Zero estado extra; o histórico por entrada fica em `estoque_movimentos.custo_unitario`, que é a trilha de auditoria. `variacoes.custo` alimenta markup e preço (ADR-0055): é caminho financeiro, então valor inválido falha LOUD em vez de virar default silencioso — mesma classe do incidente de ORIGEM em `ingest-lote`. **Efeito aceito e intencional:** dar entrada com custo novo num produto já publicado muda o markup exibido em Revisão/Publicados/Financeiro; o ledger explica a mudança. |
 | **D-10** | **Propagação por valor absoluto**, fila serial `estoque-{orgId}` (parallelism 1). Entrada e ajuste manual propagam **na hora, para TODOS os canais publicados, inclusive o ML**. Baixa por venda propaga para todos os canais **exceto o de origem** (que já se auto-decrementou). | Push absoluto é idempotente e auto-corretivo; a fila serial garante ordem. **Amplia D-E6b.5**, que excluía sempre o canal de origem — regra que só valia para venda. |
 | **D-11** | **Estoque zero: nenhuma ação.** Push manda `available_quantity: 0` e o ML pausa sozinho; ao entrar mercadoria, o push sobe o saldo e o anúncio volta. | Comportamento nativo do ML. Pausar explicitamente duplicaria a lógica e criaria a pergunta "quem reativa, e quando?". |
 | **D-12** | **Reconciliação diária** = re-push absoluto, restrito a (a) produtos com movimento nas últimas 24h e (b) produtos publicados em ≥2 canais. Não varre o catálogo inteiro. | Rede de segurança contra webhook perdido / push que falhou definitivamente, sem gastar centenas de chamadas por dia em produto parado. Aperta D-E6b.8, que re-empurrava todo produto multi-canal. |
@@ -266,13 +267,21 @@ e `referencia_externa = null`.
 ### Migration 2 — origem do lote + flag de módulo
 
 ```sql
+-- O default 'planilha' backfilla TODO lote histórico como planilha — correto e
+-- intencional: até esta migration, planilha era a única origem possível.
 alter table public.lotes
   add column origem text not null default 'planilha'
   check (origem in ('planilha','manual'));
 
+-- Default '{}' = nenhum módulo. Habilitação é sempre ato explícito do super-admin.
 alter table public.organizations
   add column modulos_habilitados text[] not null default '{}';
 ```
+
+**RLS verificada:** `lotes` já usa `org_id = (select public.current_org_id())` desde o E7
+(`20260705165828_e7_rls_org.sql:13-21`, grupo A com CRUD por membro da org) — o lote manual nasce
+visível para toda a organização, coerente com a "operação compartilhada" do ADR-0047. Nenhuma
+policy nova é necessária para `lotes`.
 
 ---
 
