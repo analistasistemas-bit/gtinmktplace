@@ -228,7 +228,8 @@ create table public.estoque_movimentos (
   org_id             uuid not null references public.organizations(id),
   codigo             text not null,             -- SKU (variacoes.codigo)
   codigo_pai         text not null default '',  -- preenchido ao resolver a variação
-  quantidade         integer not null,          -- negativo = baixa, positivo = entrada
+  quantidade         integer not null,          -- DELTA APLICADO (não o pedido!)
+  quantidade_pedida  integer,                   -- o que o pedido pediu (auditoria)
   motivo             text not null,             -- venda | entrada | estorno_venda | ...
                                                 -- | estorno_venda | venda_sku_nao_encontrado
   canal_origem       text,
@@ -236,6 +237,8 @@ create table public.estoque_movimentos (
   custo_unitario     numeric(12,2),             -- só em 'entrada'
   documento          text,                      -- NF do fornecedor / observação curta
   estoque_resultante integer,
+  push_enfileirado_em timestamptz,              -- outbox: push entregue ao QStash
+  push_canal_origem  text,                      -- intenção de propagação do movimento
   criado_por         uuid references auth.users(id),
   criado_em          timestamptz not null default now()
 );

@@ -191,6 +191,12 @@ create table public.estoque_movimentos (
   -- Sem isso, uma RPC que commita seguida de um enfileiramento que falha vira perda
   -- permanente: o retry recebe `aplicado=false` e nunca re-enfileira.
   push_enfileirado_em timestamptz,
+  -- INTENÇÃO de propagação, gravada por quem criou o movimento. Sem ela, um
+  -- despachante genérico aplicaria um único canal_origem ao lote inteiro e, p.ex.,
+  -- uma venda no ML drenaria uma ENTRADA marcando canal_origem='mercado_livre' —
+  -- deixando de atualizar exatamente o canal que precisava.
+  -- Venda: o canal da venda (que já se decrementou). Entrada/estorno: NULL (todos).
+  push_canal_origem  text,
   criado_por         uuid references auth.users(id),
   criado_em          timestamptz not null default now(),
   constraint estoque_movimentos_motivo_check check (motivo in (
@@ -249,20 +255,28 @@ begin
     raise exception 'baixar_estoque: referência de idempotência é obrigatória';
   end if;
 
-  -- 1) Idempotência: a unique parcial rejeita a 2ª aplicação da mesma referência.
+  -- 1) TRAVA COMUM com o estorno. Só o índice único não serializa: venda e tombstone
+  --    ocupam referências DIFERENTES, e FOR UPDATE não espera por linha ainda não
+  --    commitada. Sem este lock existe o interleaving: baixa insere → consulta
+  --    tombstone e não acha → cancelamento insere tombstone → baixa aplica assim mesmo.
+  --    A chave é derivada de (org, referência da venda) e vale até o fim da transação.
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text || '|' || p_ref, 0));
+
+  -- 2) Idempotência: a unique parcial rejeita a 2ª aplicação da mesma referência.
   --    O bloco EXCEPTION abre uma subtransação PL/pgSQL — ele NÃO aborta a transação
   --    externa (verificado; o chamador continua normalmente).
   --    A quantidade entra 0 e é corrigida depois de saber o delta REAL aplicado.
   begin
     insert into public.estoque_movimentos
-      (org_id, codigo, quantidade, quantidade_pedida, motivo, canal_origem, referencia_externa)
-    values (p_org, p_codigo, 0, p_qtd, 'venda', p_canal, p_ref)
+      (org_id, codigo, quantidade, quantidade_pedida, motivo, canal_origem,
+       referencia_externa, push_canal_origem)
+    values (p_org, p_codigo, 0, p_qtd, 'venda', p_canal, p_ref, p_canal)
     returning id into v_mov;
   exception when unique_violation then
     return jsonb_build_object('aplicado', false, 'motivo', 'duplicata');
   end;
 
-  -- 2) TOMBSTONE: o cancelamento pode ter chegado ANTES desta baixa existir
+  -- 3) TOMBSTONE: o cancelamento pode ter chegado ANTES desta baixa existir
   --    (SELECT ... FOR UPDATE não trava linha ausente, então nenhuma ordem é garantida
   --    entre as execuções `paid` e `cancelled` do mesmo pedido). Se houver marca de
   --    cancelamento para esta referência, NÃO baixa — senão o saldo cairia e nunca
@@ -278,7 +292,7 @@ begin
     return jsonb_build_object('aplicado', false, 'motivo', 'cancelada_antes_da_baixa');
   end if;
 
-  -- 3) Variação canônica = a da família mais recente do produto (âncora ADR-0025).
+  -- 4) Variação canônica = a da família mais recente do produto (âncora ADR-0025).
   select v.id, f.codigo_pai into v_var, v_pai
   from public.variacoes v
   join public.familias f on f.id = v.familia_id
@@ -292,11 +306,11 @@ begin
     return jsonb_build_object('aplicado', false, 'motivo', 'sku_nao_encontrado');
   end if;
 
-  -- 4) FOR UPDATE trava a linha da variação: duas baixas concorrentes do mesmo SKU
+  -- 5) FOR UPDATE trava a linha da variação: duas baixas concorrentes do mesmo SKU
   --    não podem ler o MESMO estoque_anterior (a detecção de "vendeu sem saldo" erraria).
   select estoque into v_antes from public.variacoes where id = v_var for update;
 
-  -- 5) Baixa atômica, nunca negativa (D-8).
+  -- 6) Baixa atômica, nunca negativa (D-8).
   update public.variacoes set estoque = greatest(0, estoque - p_qtd)
   where id = v_var
   returning estoque into v_novo;
@@ -342,6 +356,10 @@ begin
   end if;
   v_ref_estorno := 'estorno:' || p_ref_venda;
 
+  -- MESMA TRAVA da baixa, mesma chave: é o que garante que "consultar o tombstone"
+  -- e "inserir o tombstone" nunca se cruzem com "inserir a venda" e "aplicar a baixa".
+  perform pg_advisory_xact_lock(hashtextextended(p_org::text || '|' || p_ref_venda, 0));
+
   -- 1) Só estorna o que foi DE FATO baixado — `quantidade` é o delta aplicado, não o
   --    pedido. FOR UPDATE serializa contra uma baixa concorrente do mesmo pedido.
   select abs(quantidade), codigo into v_qtd, v_codigo
@@ -356,9 +374,10 @@ begin
     -- Ocupa a MESMA referência do estorno, então é idempotente por construção.
     begin
       insert into public.estoque_movimentos
-        (org_id, codigo, codigo_pai, quantidade, motivo, canal_origem, referencia_externa)
+        (org_id, codigo, codigo_pai, quantidade, motivo, canal_origem,
+         referencia_externa, push_canal_origem)
       values (p_org, p_codigo, '', 0, 'cancelamento_sem_baixa',
-              p_canal, v_ref_estorno);
+              p_canal, v_ref_estorno, null);
     exception when unique_violation then
       null;   -- já marcado numa execução anterior
     end;
@@ -368,8 +387,8 @@ begin
   -- 2) Idempotência do próprio estorno.
   begin
     insert into public.estoque_movimentos
-      (org_id, codigo, quantidade, motivo, canal_origem, referencia_externa)
-    values (p_org, v_codigo, v_qtd, 'estorno_venda', p_canal, v_ref_estorno)
+      (org_id, codigo, quantidade, motivo, canal_origem, referencia_externa, push_canal_origem)
+    values (p_org, v_codigo, v_qtd, 'estorno_venda', p_canal, v_ref_estorno, null)
     returning id into v_mov;
   exception when unique_violation then
     return jsonb_build_object('aplicado', false, 'motivo', 'duplicata');
@@ -447,9 +466,9 @@ begin
   begin
     insert into public.estoque_movimentos
       (org_id, codigo, codigo_pai, quantidade, motivo, custo_unitario, documento,
-       observacao, criado_por, referencia_externa)
+       observacao, criado_por, referencia_externa, push_canal_origem)
     values (p_org, p_codigo, v_pai, p_qtd, 'entrada', p_custo, p_doc,
-            p_obs, p_criado_por, p_ref)
+            p_obs, p_criado_por, p_ref, null)
     returning id into v_mov;
   exception when unique_violation then
     return null;
@@ -959,7 +978,7 @@ export function selecionarBaixas(itens: ItemVendaBaixa[]): BaixaSelecionada[] {
 
 export interface ResultadoBaixaVenda {
   /** Movimentos com push ainda não entregue ao QStash (outbox no ledger). */
-  pendentesDePush: Array<{ id: string; codigoPai: string }>;
+  pendentesDePush: MovimentoPendente[];
   /** SKUs cuja venda excedeu o saldo (D-8) — o operador precisa saber. */
   semSaldo: Array<{ codigo: string; pedido: number }>;
   /** RPCs que erraram. Nunca vazio em silêncio: o chamador notifica. */
@@ -1011,12 +1030,19 @@ export async function registrarBaixaVenda(
   return { pendentesDePush: await lerPushPendente(admin, p.orgId), semSaldo, falhas };
 }
 
+export interface MovimentoPendente {
+  id: string;
+  codigoPai: string;
+  /** Intenção gravada no movimento. NUNCA fornecida pelo chamador. */
+  canalOrigem: string | null;
+}
+
 /** Movimentos aplicados cujo push ao QStash ainda não foi confirmado (outbox no ledger). */
 export async function lerPushPendente(
   admin: SupabaseClient, orgId: string, limite = 200,
-): Promise<Array<{ id: string; codigoPai: string }>> {
+): Promise<MovimentoPendente[]> {
   const { data, error } = await admin.from('estoque_movimentos')
-    .select('id, codigo_pai')
+    .select('id, codigo_pai, push_canal_origem')
     .eq('org_id', orgId)
     .is('push_enfileirado_em', null)
     .neq('codigo_pai', '')
@@ -1026,36 +1052,57 @@ export async function lerPushPendente(
     console.error('ler_push_pendente_falhou', error.message);
     return [];
   }
-  return (data ?? []).map((m) => ({ id: m.id as string, codigoPai: m.codigo_pai as string }));
+  return (data ?? []).map((m) => ({
+    id: m.id as string,
+    codigoPai: m.codigo_pai as string,
+    canalOrigem: (m.push_canal_origem as string | null) ?? null,
+  }));
 }
 
 /**
- * Enfileira o push de cada produto pendente e SÓ ENTÃO marca o outbox como entregue.
- * A ordem importa: marcar antes do enqueue reintroduziria a perda que o outbox existe
- * para evitar. Marcar depois pode, no pior caso, enfileirar duas vezes — e push
+ * Enfileira o push de cada pendente e SÓ ENTÃO marca o outbox como entregue.
+ *
+ * O agrupamento é por `(codigoPai, canalOrigem)` — nunca só por produto. Movimentos
+ * do mesmo produto podem ter políticas de propagação OPOSTAS: uma venda no ML exclui
+ * o ML do push (ele já se decrementou), enquanto uma entrada precisa alcançar o ML.
+ * Agrupar só por produto faria um despacho de venda drenar e marcar como entregue a
+ * entrada, deixando o ML defasado com o saldo errado.
+ *
+ * A ordem enqueue → marca importa: marcar antes reintroduziria a perda que o outbox
+ * existe para evitar. Marcar depois pode, no pior caso, enfileirar duas vezes — e push
  * absoluto é idempotente, então duplicar é inofensivo.
  */
 export async function despacharPushPendente(
   admin: SupabaseClient,
   orgId: string,
-  pendentes: Array<{ id: string; codigoPai: string }>,
-  canalOrigem: string | null,
+  pendentes: MovimentoPendente[],
   enfileirar: (job: { org_id: string; codigo_pai: string; canal_origem: string | null }, orgId: string) => Promise<string>,
 ): Promise<void> {
-  const porProduto = new Map<string, string[]>();
+  const grupos = new Map<string, { codigoPai: string; canalOrigem: string | null; ids: string[] }>();
   for (const p of pendentes) {
-    if (!porProduto.has(p.codigoPai)) porProduto.set(p.codigoPai, []);
-    porProduto.get(p.codigoPai)!.push(p.id);
+    const chave = `${p.codigoPai} ${p.canalOrigem ?? ''}`;
+    if (!grupos.has(chave)) {
+      grupos.set(chave, { codigoPai: p.codigoPai, canalOrigem: p.canalOrigem, ids: [] });
+    }
+    grupos.get(chave)!.ids.push(p.id);
   }
-  for (const [codigoPai, ids] of porProduto) {
+
+  for (const g of grupos.values()) {
     try {
-      await enfileirar({ org_id: orgId, codigo_pai: codigoPai, canal_origem: canalOrigem }, orgId);
-      await admin.from('estoque_movimentos')
+      await enfileirar(
+        { org_id: orgId, codigo_pai: g.codigoPai, canal_origem: g.canalOrigem }, orgId,
+      );
+      // supabase-js devolve o erro como valor, não lança. Ignorar aqui faria a função
+      // aparentar sucesso e reenviar o mesmo push para sempre.
+      const { error } = await admin.from('estoque_movimentos')
         .update({ push_enfileirado_em: new Date().toISOString() })
-        .in('id', ids);
+        .in('id', g.ids);
+      if (error) {
+        console.error('marcar_push_entregue_falhou', { orgId, codigoPai: g.codigoPai, erro: error.message });
+      }
     } catch (e) {
       // Fica no outbox. A próxima execução do sync ou a reconciliação diária pega.
-      console.error('despachar_push_falhou', { orgId, codigoPai, erro: String(e) });
+      console.error('despachar_push_falhou', { orgId, codigoPai: g.codigoPai, erro: String(e) });
     }
   }
 }
@@ -1069,10 +1116,7 @@ export async function despacharPushPendente(
 export async function estornarVendaCancelada(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
-): Promise<{
-  pendentesDePush: Array<{ id: string; codigoPai: string }>;
-  falhas: Array<{ codigo: string; mensagem: string }>;
-}> {
+): Promise<{ pendentesDePush: MovimentoPendente[]; falhas: Array<{ codigo: string; mensagem: string }> }> {
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   for (const b of selecionarBaixas(p.itens)) {
     const { data, error } = await admin.rpc('estornar_estoque', {
@@ -1650,9 +1694,8 @@ Localize o bloco que começa em `if (novaPaga && orgId && await reservarNotifica
       });
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que
       // ficou para trás numa execução anterior é reenviado aqui.
-      await despacharPushPendente(
-        admin, orgId, pendentesDePush, 'mercado_livre', enfileirarSincronizacaoEstoque,
-      );
+      // O canal de origem NÃO é passado: cada movimento carrega a própria intenção.
+      await despacharPushPendente(admin, orgId, pendentesDePush, enfileirarSincronizacaoEstoque);
       // Todo alerta passa por reservarNotificacao: o sync-venda roda várias vezes
       // para o mesmo pedido (webhooks de order + de shipment) e execuções concorrentes
       // podem ambas ver novaPaga=true. Mesmo padrão do alerta de venda paga.
@@ -1708,11 +1751,9 @@ Localize onde o status do pedido é gravado (`upsertVenda` já recebe `pedido`).
         const { pendentesDePush } = await estornarVendaCancelada(admin, {
           orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
         });
-        // canal_origem null: a reposição precisa alcançar TODOS os canais, inclusive
-        // o ML, porque o ML não repõe sozinho um cancelamento.
-        await despacharPushPendente(
-          admin, orgId, pendentesDePush, null, enfileirarSincronizacaoEstoque,
-        );
+        // O estorno gravou push_canal_origem = null nos seus movimentos, então a
+        // reposição alcança TODOS os canais — inclusive o ML, que não repõe sozinho.
+        await despacharPushPendente(admin, orgId, pendentesDePush, enfileirarSincronizacaoEstoque);
       } else if (await reservarNotificacao(admin, orgId, userId, 'estoque_cancelado_despachado', String(pedido.id))) {
         // Sem o dedupe, cada re-sync do mesmo pedido cancelado re-notificaria.
         await notificarCategoria(
@@ -1803,8 +1844,13 @@ Deno.serve(async (req) => {
 
   // PAGINAÇÃO OBRIGATÓRIA: o PostgREST trunca em ~1000 linhas. Sem isto a
   // reconciliação — que é justamente a última rede de recuperação — ignoraria
-  // movimentos e anúncios em silêncio. `paginarTudo` já existe em
-  // _shared/faturamento/io.ts; reuse-a (ou extraia para _shared/pagina.ts).
+  // movimentos e anúncios em silêncio.
+  //
+  // ATENÇÃO: `paginarTudo` existe em `_shared/faturamento/io.ts:41-52` mas NÃO é
+  // exportada, então não dá para simplesmente importá-la. Extraia-a para
+  // `_shared/pagina.ts` como `paginarTudo`, faça `io.ts` importar de lá (sem mudar
+  // comportamento), e aproveite para tratar o `error` do PostgREST — a versão atual
+  // ignora e um erro de página viraria "acabou a lista" em silêncio.
 
   // (a) Produtos com movimento nas últimas 24h — inclui o OUTBOX pendente.
   const movs = await paginarTudo<{ org_id: string; codigo_pai: string }>(
@@ -1837,19 +1883,34 @@ Deno.serve(async (req) => {
   for (const m of pendentes) alvos.add(`${m.org_id}|${m.codigo_pai}`);
   for (const [chave, canais] of canaisPorProduto) if (canais.size >= 2) alvos.add(chave);
 
+  // (1) OUTBOX: drena pelo MESMO dispatcher do sync-venda, para que a intenção de
+  //     propagação venha do movimento e o `push_enfileirado_em` seja de fato marcado.
+  //     Sem isso, os pendentes seriam reenviados todo dia para sempre, e sempre com
+  //     canal_origem errado.
+  const orgsComPendencia = new Set(pendentes.map((m) => m.org_id));
+  for (const orgId of orgsComPendencia) {
+    try {
+      await despacharPushPendente(
+        admin, orgId, await lerPushPendente(admin, orgId, 1000), enfileirarSincronizacaoEstoque,
+      );
+    } catch (e) {
+      console.error('reconciliar_outbox_falhou', orgId, e);   // uma org nunca bloqueia outra
+    }
+  }
+
+  // (2) Re-push preventivo dos demais alvos (movimento recente, multicanal). Estes NÃO
+  //     têm movimento pendente — são varredura, não recuperação — então vão com
+  //     canal_origem null (alcança todos os canais) e não mexem no outbox.
   let enfileirados = 0;
   for (const chave of alvos) {
     const [orgId, codigoPai] = chave.split('|');
-    // Só vale re-empurrar produto que está publicado em algum lugar.
-    if (!canaisPorProduto.has(chave)) continue;
+    if (!canaisPorProduto.has(chave)) continue;   // só produto publicado em algum lugar
     try {
-      // canal_origem null = push para TODOS os canais.
       await enfileirarSincronizacaoEstoque(
         { org_id: orgId, codigo_pai: codigoPai, canal_origem: null }, orgId,
       );
       enfileirados++;
     } catch (e) {
-      // Uma org nunca bloqueia outra.
       console.error('reconciliar_estoque_enfileirar_falhou', orgId, codigoPai, e);
     }
   }
@@ -1857,6 +1918,8 @@ Deno.serve(async (req) => {
   return Response.json({ ok: true, enfileirados, avaliados: alvos.size });
 });
 ```
+
+Importe `despacharPushPendente` e `lerPushPendente` de `../_shared/estoque/baixa.ts`.
 
 - [ ] **Step 2: Baseline**
 

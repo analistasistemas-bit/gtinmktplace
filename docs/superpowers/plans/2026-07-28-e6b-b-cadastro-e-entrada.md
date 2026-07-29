@@ -1397,25 +1397,43 @@ export class ProdutoJaExisteError extends Error {
 
 export async function cadastrarProduto(p: ProdutoEntradaUI): Promise<ResultadoCadastro> {
   const { data, error } = await supabase.functions.invoke('cadastrar-produto', { body: p });
-  if (error) throw error;
-  const r = data as Partial<ResultadoCadastro> & {
-    error?: string; erros?: Array<{ campo: string; mensagem: string }>;
-  };
-  if (r.erros?.length) throw new Error(r.erros.map((e) => e.mensagem).join('\n'));
-  // 409 "produto já existe" NÃO pode virar mensagem seca: se a resposta da primeira
-  // tentativa se perdeu na rede, o produto foi criado e o operador ficaria travado
-  // sem caminho para as fotos, o estoque ou o reprocessamento. Preservar os ids
-  // permite à tela oferecer "abrir o produto existente".
-  if (r.error && r.familiaId && r.loteId) {
-    throw new ProdutoJaExisteError(r.error, r.familiaId, r.loteId);
+
+  // CUIDADO: em resposta não-2xx o supabase-js NÃO popula `data` — o corpo fica em
+  // `error.context` (a app já lida com isso em src/pages/Organizacoes.tsx:29-43).
+  // Fazer `if (error) throw error` antes de ler o contexto tornaria o tratamento de
+  // 409 abaixo INALCANÇÁVEL, e o operador ficaria travado sem caminho de retomada
+  // quando a resposta da primeira tentativa se perdesse na rede.
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx?.status === 409) {
+      const corpo = await ctx.json().catch(() => ({} as Record<string, unknown>));
+      const { error: msg, familiaId, loteId } = corpo as {
+        error?: string; familiaId?: string; loteId?: string;
+      };
+      if (familiaId && loteId) {
+        throw new ProdutoJaExisteError(msg ?? 'Produto já existe.', familiaId, loteId);
+      }
+    }
+    if (ctx) {
+      const corpo = await ctx.json().catch(() => ({} as Record<string, unknown>));
+      const { error: msg, erros } = corpo as {
+        error?: string; erros?: Array<{ campo: string; mensagem: string }>;
+      };
+      if (erros?.length) throw new Error(erros.map((e) => e.mensagem).join('\n'));
+      if (msg) throw new Error(msg);
+    }
+    throw error;
   }
-  if (r.error) throw new Error(r.error);
+
+  const r = data as Partial<ResultadoCadastro>;
   return {
     loteId: r.loteId!, familiaId: r.familiaId!,
     variacoes: r.variacoes ?? [], filaOk: r.filaOk !== false, falhasEstoque: r.falhasEstoque ?? [],
   };
 }
 ```
+
+**Confirme o formato exato antes de codar** — leia `src/pages/Organizacoes.tsx:29-43` e reuse o helper que já existe lá, se houver, em vez de reimplementar a extração do corpo de erro. Aplique o mesmo cuidado em `registrarEntrada`: hoje ela assume que o erro vem em `data.error`, o que só vale para respostas 2xx.
 
 **A UI não pode engolir `filaOk`/`falhasEstoque`.** Cadastro parcial reportado como sucesso é a pior falha possível aqui: o operador segue para as fotos e para a Revisão achando que está tudo certo, e o produto nunca é enriquecido pela IA (ou entra sem estoque). Regra:
 
