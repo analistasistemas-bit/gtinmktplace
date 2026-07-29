@@ -153,3 +153,129 @@ Aceitos e corrigidos (todos os 4 BLOCKERs e 9 dos HIGHs):
 17. Aceitos: coluna Canais na tela de Estoque e chip de origem na tela de Lotes.
 
 Nada rejeitado nesta rodada.
+
+## Round 2 — Codex
+
+O plano ainda não está seguro para implementação. Há três bloqueadores de integridade de estoque.
+
+### Achados materiais
+
+1. **BLOCKER — cancelamento de venda sem saldo cria estoque fantasma**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:265-276,308-311,344-345`.
+   - Evidência real: o estoque atual é inteiro em `supabase/migrations/20260527125643_familias_variacoes.sql:108`; a spec exige baixar até zero e estornar somente o efetivamente baixado em `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md:131,134`.
+   - Problema: com saldo 2 e venda de 5, `baixar_estoque` grava `quantidade=-5`, mas só remove 2; `estornar_estoque` usa `abs(-5)` e deixa saldo 5, criando 3 unidades.
+   - Fix: grave no movimento `-(v_antes-v_novo)` — e guarde a quantidade pedida em outra coluna se ela for necessária para auditoria/notificação.
+
+2. **BLOCKER — `FOR UPDATE` não serializa cancelamento quando a baixa ainda não existe**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:306-315`.
+   - Evidência real: o handler atual busca e persiste pedidos de forma concorrente em `supabase/functions/sync-venda/index.ts:74-98`; `upsertVenda` faz leitura anterior e upsert separados em `supabase/functions/_shared/faturamento/io.ts:226-245`.
+   - Problema: `SELECT ... FOR UPDATE` não bloqueia uma linha ausente. Se o cancelamento consultar antes de a execução `paid` inserir o movimento, retorna `sem_baixa_registrada`; depois a execução `paid` baixa o saldo, sem novo cancelamento garantido.
+   - Fix: serialize por `(org, canal, pedido, sku)` e persista um tombstone de cancelamento que `baixar_estoque` consulte atomicamente; apenas advisory lock não basta quando o cancelamento vence a corrida.
+
+3. **BLOCKER — ledger + `aplicado` não equivale a outbox**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:872-910,1471-1506,1519-1549`.
+   - Evidência real: o publish QStash é uma chamada externa independente em `supabase/functions/_shared/queue.ts:30-38,64-90`; o `sync-venda` encerra com sucesso em `supabase/functions/sync-venda/index.ts:136-145`.
+   - Problema: a RPC pode commitar `aplicado=true` e o enqueue falhar. A exceção é engolida; no retry, a RPC devolve `aplicado=false`, `paisAfetados` fica vazio e o enqueue nunca é repetido. Isso afeta baixa e estorno. A reconciliação diária reduz impacto, mas não entrega o mesmo efeito nem propagação imediata.
+   - Fix: use outbox transacional — ou estado durável equivalente no ledger, com claim/dispatch confirmado — em vez de usar `aplicado` como marcador de entrega ao QStash.
+
+4. **HIGH — o `REVOKE UPDATE (estoque)` não revoga um privilégio `UPDATE` concedido na tabela**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:424-476`.
+   - Evidência real: existe policy de UPDATE amplo em `supabase/migrations/20260705165828_e7_rls_org.sql:13-21`, e o browser realmente atualiza outras colunas de `variacoes` em `src/lib/queries.ts:292-303,342-355,378-386,755-768` e `src/lib/publicar.ts:3-9`.
+   - Problema: privilégios de tabela e coluna são cumulativos; não existe “deny” de coluna. Se `authenticated` conserva `UPDATE` na tabela, revogar somente o grant da coluna não bloqueia `estoque`. Portanto, o pré-voo pode passar e D-15 continuar falso. Isso provavelmente não quebra os caminhos existentes justamente porque é ineficaz.
+   - Fix: revogue `UPDATE` da tabela e conceda explicitamente as colunas editáveis, ou adicione um `BEFORE UPDATE OF estoque` que rejeite `authenticated`, preservando `service_role`.
+
+5. **HIGH — a janela de reutilização do lote ainda permite lote concluído com família pendente**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:907-932`; finalizador em `:158-207`.
+   - Evidência real: o trigger só promove lote cujo estado ainda seja `processando` em `supabase/migrations/20260609132501_lote_transicao_revisao.sql:27-34`; os três finalizadores atuais realmente existem em `publish-familia-ml/processar.ts:44-51`, `update-familia-ml/processar.ts:41-48` e `publicar-split-ml/index.ts:35-42`.
+   - Problema: no lote reutilizado, a Task 5 atualiza o lote para `processando` antes de inserir a família. Um worker pode finalizar o lote nesse intervalo, não enxergar a família e gravar `concluido`; a inserção posterior deixa uma família `pendente` dentro dele.
+   - Fix: mova a atualização para `processando` para depois da inserção bem-sucedida da família, ou faça reuso + inserção numa RPC transacional com lock do lote.
+
+6. **HIGH — o gate de integração com conector fake não pode passar**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:1316-1329,1371-1397,1854-1865`.
+   - Evidência real: `getValidAccessTokenConexao` é exclusivamente ML em `supabase/functions/_shared/ml/token.ts:95-113`; o registry aceita fake em teste em `supabase/functions/_shared/canais/registry.ts:8-18`.
+   - Problema: `resolverConexao` e `getConnector` são injetáveis, mas `FABRICA_TOKEN` não. Para `fake`, o worker cai em “sem fábrica” e nunca chama o conector, contrariando todos os casos da Task 11. Além disso, `resolverConexao`, `getConnector` e `atualizarEstoque` podem lançar fora de qualquer `try`, então “falha de um canal nunca afeta outro” não é verdade.
+   - Fix: injete também `fabricarToken` em `DepsSincronizacao` e encapsule cada alvo inteiro em `try/catch`, classificando a exceção como retentável ou definitiva.
+
+7. **HIGH — a reconciliação e a tela truncam dados acima do limite PostgREST**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-a-estoque.md:1627-1649`; `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:1208-1247`.
+   - Evidência real: o projeto já possui paginação porque o PostgREST trunca aproximadamente em 1.000 linhas, conforme `src/lib/fotos-produto.ts:21-28`; o faturamento também pagina em `supabase/functions/_shared/faturamento/io.ts:45-69`.
+   - Problema: a reconciliação pode ignorar movimentos/anúncios, inclusive a única recuperação prevista para enqueue perdido; a tela pode escolher uma família histórica como canônica ou omitir produtos.
+   - Fix: use `buscarTodasPaginas`/`.range()` nas consultas da tela e paginação equivalente no worker.
+
+8. **MEDIUM — retry do cadastro após perda da resposta não é retomável**
+
+   - Plano: `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:868-883,975-985,1376-1387`.
+   - Evidência real: a aplicação usa `supabase.functions.invoke` e trata respostas de erro como exceção; o padrão planejado em `:1377-1383` descarta `familiaId`/`loteId` assim que encontra `r.error`.
+   - Problema: se o cadastro concluir e a resposta se perder, o retry recebe 409. Embora a edge devolva IDs, `cadastrarProduto` lança apenas a mensagem e a UI não consegue retomar fotos, estoque ou fila.
+   - Fix: trate o 409 “mesmo produto” como resultado recuperável com IDs e consulte/devolva também `variacoes`, `filaOk` e falhas pendentes, ou introduza uma referência idempotente de cadastro.
+
+9. **MEDIUM — `pushOk` é produzido, mas descartado pela UI**
+
+   - Plano: a edge devolve e exige aviso em `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:1073-1104`; o cliente tipa e retorna somente estoque/duplicada em `:1250-1260`; o diálogo em `:1291-1303` não trata `pushOk`.
+   - Evidência real: chamadas QStash podem falhar porque são operações remotas em `supabase/functions/_shared/queue.ts:30-38,64-90`.
+   - Problema: o operador recebe sucesso silencioso mesmo quando os anúncios ficaram defasados, contrariando a própria regra da Task 6.
+   - Fix: inclua `pushOk` no retorno de `registrarEntrada` e obrigue o diálogo a exibir o aviso previsto.
+
+10. **MEDIUM — os documentos executáveis continuam contradizendo as mudanças**
+
+   - Plano: `PLAN-E6B.md:22-23,43`; plano A `:7,33,49,73-74,1458-1460,1493-1494,1894,1931`; prova SQL obsoleta em `:493-510,526-528`.
+   - Evidência real: `novaPaga` é one-shot em `supabase/functions/_shared/faturamento/io.ts:269-270`; não existe hoje trigger de estoque nem qualquer das novas RPCs no código real.
+   - Problema: a Task 1 manda copiar a spec verbatim, mas a spec ainda exige `novaPaga`, trigger, `ajuste_manual` e assinaturas antigas em `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md:129-140,152-173,253-269,379-385`. A prova SQL chama `estornar_estoque` com cinco argumentos e espera `NULL`, portanto falhará com o contrato novo.
+   - Fix: atualize spec, resumo, cabeçalhos, ADR source e prova SQL antes de começar a implementação.
+
+### Rastreamento do segundo `sync-venda`
+
+Na segunda execução de um pedido pago, `upsertVenda` devolve `novaPaga=false`, então o alerta de venda paga e a mensagem ao comprador não duplicam. O novo bloco ainda executa, mas `baixar_estoque` devolve `aplicado=false`: não há nova baixa, job ou alerta de sem saldo. No cancelamento, o estorno duplicado também não altera saldo nem enfileira. `reservarNotificacao` aceita qualquer entidade (`string`) em `supabase/functions/_shared/faturamento/notificacoes-dedupe.ts:13-24`, e `vendas`/`pos_venda` são categorias válidas em `supabase/functions/_shared/notificacoes/categorias.ts:5-13`.
+
+Isso evita duplicatas, mas cria entrega *at-most-once*: a reserva acontece antes de `notificarCategoria`; se o envio falhar, o retry encontra a reserva e não tenta novamente. Para os novos alertas, isso é perda possível, não idempotência de entrega.
+
+### Pontos revalidados sem achado
+
+- O bloco `EXCEPTION WHEN unique_violation` não aborta a transação externa; a subtransação PL/pgSQL é adequada.
+- `search_path = ''` não quebra as funções apresentadas: tabelas estão qualificadas e `pg_catalog` continua implicitamente pesquisado.
+- O índice parcial funciona para referências não nulas, e os novos guards impedem `p_ref` vazio nas RPCs relevantes.
+- Com `EXECUTE` apenas para `service_role`, não encontrei vazamento cross-tenant direto nas três funções `security definer`.
+- `itens`, `pedido`, `orgId`, `userId`, `shipment` e `admin` estão no escopo real do ponto proposto em `sync-venda`; os novos helpers serão imports.
+- `resolverAlvosPush` corresponde à forma real de `anuncios_externos` e `anuncios_externos_itens`, incluindo split e pai UP com `item_externo_id=null`; não encontrei defeito material nessa resolução.
+- A extração de `talvezFinalizarLote` cobre as três cópias reais; não existe quarta cópia encontrada.
+
+VERDICT: REVISE
+### Resposta do Claude (round 2)
+
+Aceitos e corrigidos — os 3 BLOCKERs e os 4 HIGHs:
+
+1. Estoque fantasma no estorno: `quantidade` passa a ser o DELTA REALMENTE APLICADO
+   (v_novo - v_antes) e o pedido vai para `quantidade_pedida`. Com saldo 2 e venda 5, o
+   movimento grava -2 e o estorno devolve 2, não 5. Prova SQL nova (passo C+D) cobre isso.
+2. FOR UPDATE não trava linha ausente: adicionado TOMBSTONE. `estornar_estoque` sem baixa
+   correspondente grava `cancelamento_sem_baixa` na mesma referência; `baixar_estoque`
+   consulta a marca e recusa aplicar, virando `venda_cancelada_antes`. Prova SQL passo D2.
+3. Outbox: eu estava errado ao rejeitar. Coluna `push_enfileirado_em` no ledger, mais
+   `lerPushPendente`/`despacharPushPendente`. O que enfileirar vem da varredura de pendentes,
+   não do retorno da RPC; a marca só é gravada DEPOIS do enqueue aceito. Sem tabela nova,
+   mas com a durabilidade que o `aplicado` não dava.
+4. `revoke update (estoque)` era inócuo (privilégios de tabela e coluna são cumulativos,
+   não existe deny de coluna). Trocado por trigger `before update of estoque` que levanta
+   exceção quando auth.uid() não é nulo. Preserva service_role.
+5. Janela de corrida do lote: o UPDATE para 'processando' foi movido para DEPOIS do insert
+   da família.
+6. `fabricarToken` virou dependência injetável (sem isso o teste com o fake não exercitava
+   nada), e cada alvo do push ficou dentro de try/catch com exceção tratada como retentável.
+7. Paginação (`paginarTudo` / `buscarTodasPaginas`, que já existem no repo) na reconciliação
+   e em fetchProdutosComSaldo.
+8. 409 vira ProdutoJaExisteError com familiaId/loteId, para a tela poder retomar.
+9. `pushOk` incluído no retorno de registrarEntrada e obrigatório no diálogo.
+10. Spec sincronizada: D-6 (paid, não novaPaga), D-8 (duas quantidades), D-18 (outbox),
+    D-19 (tombstone), D-20 (trigger de bloqueio); motivos, diagrama e prova SQL atualizados;
+    ajuste manual e devolução movidos para "fora de escopo".
+
+Nada rejeitado nesta rodada. A observação sobre entrega at-most-once do reservarNotificacao
+é procedente, mas é o padrão já vigente no repo para os alertas existentes — fica registrada
+como característica conhecida, não como mudança deste épico.

@@ -911,10 +911,14 @@ Deno.serve(async (req) => {
     .order('criado_em', { ascending: false }).limit(1).maybeSingle();
 
   let loteId: string;
+  let precisaMarcarProcessando = false;
   if (aberto) {
     loteId = aberto.id as string;
-    // Entrou família nova → há trabalho pendente de IA. talvezFinalizarLote reavalia depois.
-    await admin.from('lotes').update({ status: 'processando' }).eq('id', loteId);
+    // NÃO marcar 'processando' agora. Entre o UPDATE e o INSERT da família existe uma
+    // janela em que um worker de publicação pode rodar talvezFinalizarLote, não enxergar
+    // a família (que ainda não existe) e gravar 'concluido' — e aí a família nasceria
+    // dentro de um lote já fechado. A marcação vai DEPOIS do insert.
+    precisaMarcarProcessando = true;
   } else {
     const { data: novo, error: loteErr } = await admin.from('lotes')
       .insert({ user_id: userId, org_id: orgId, status: 'processando', origem: 'manual' })
@@ -941,6 +945,13 @@ Deno.serve(async (req) => {
     // Família sem variação é lixo — remove para não deixar estado parcial na Revisão.
     await admin.from('familias').delete().eq('id', familiaId);
     return json({ error: varErr.message }, 400);
+  }
+
+  // AGORA sim: a família já existe, então talvezFinalizarLote passa a enxergá-la e o
+  // lote não pode ser fechado por baixo. Fazer isto antes do insert abriria a janela
+  // de corrida com os workers de publicação.
+  if (precisaMarcarProcessando) {
+    await admin.from('lotes').update({ status: 'processando' }).eq('id', loteId);
   }
 
   // Estoque inicial entra pelo caminho ÚNICO de escrita de estoque (D-15), nunca por
@@ -1240,11 +1251,15 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
  * agrupamento acontece no cliente, sobre um select simples com RLS por org.
  */
 export async function fetchProdutosComSaldo(): Promise<ProdutoComSaldo[]> {
-  const { data, error } = await supabase.from('variacoes')
+  // PAGINAÇÃO OBRIGATÓRIA: o PostgREST trunca em ~1000 linhas. Truncar aqui é pior
+  // que uma lista incompleta — o corte "família mais recente por codigo_pai" passaria
+  // a escolher uma família HISTÓRICA como canônica se a atual caísse fora da página,
+  // e a tela mostraria saldo errado. `buscarTodasPaginas` já existe (src/lib/fotos-produto.ts).
+  const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
+    .from('variacoes')
     .select('codigo, nome, cor, estoque, custo, preco, familias!inner(codigo_pai, nome_pai, criado_em)')
-    .order('criado_em', { referencedTable: 'familias', ascending: false });
-  if (error) throw error;
-  return agruparProdutosComSaldo((data ?? []) as unknown as LinhaVariacaoCrua[]);
+    .range(de, ate));
+  return agruparProdutosComSaldo(data as unknown as LinhaVariacaoCrua[]);
 }
 
 export async function registrarEntrada(p: {
@@ -1252,13 +1267,16 @@ export async function registrarEntrada(p: {
   documento?: string | null; observacao?: string | null;
   /** uuid gerado UMA vez por submissão do formulário — não regenerar no retry. */
   ref: string;
-}): Promise<{ estoque: number | null; duplicada?: boolean }> {
+}): Promise<{ estoque: number | null; duplicada?: boolean; pushOk: boolean }> {
   const { data, error } = await supabase.functions.invoke('entrada-estoque', { body: p });
   if (error) throw error;
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-  return data as { estoque: number | null; duplicada?: boolean };
+  const r = data as { estoque: number | null; duplicada?: boolean; pushOk?: boolean };
+  return { ...r, pushOk: r.pushOk !== false };
 }
 ```
+
+**`pushOk` não pode ser descartado pelo diálogo.** Quando ele vem `false`, o saldo foi gravado mas os anúncios ficaram defasados — o operador precisa saber, senão acha que já pode vender. Regra: `pushOk === false` → toast de aviso ("Saldo atualizado. A sincronização com os marketplaces falhou e será refeita automaticamente em até 24h."), não um toast de sucesso limpo.
 
 **Regra do `ref`:** o dialog gera `crypto.randomUUID()` ao **abrir**, não ao submeter, e só troca depois de um sucesso confirmado. Assim duplo clique e retry reusam a mesma referência e a segunda aplicação vira no-op.
 
@@ -1373,6 +1391,10 @@ export interface ResultadoCadastro {
   falhasEstoque: string[];
 }
 
+export class ProdutoJaExisteError extends Error {
+  constructor(msg: string, readonly familiaId: string, readonly loteId: string) { super(msg); }
+}
+
 export async function cadastrarProduto(p: ProdutoEntradaUI): Promise<ResultadoCadastro> {
   const { data, error } = await supabase.functions.invoke('cadastrar-produto', { body: p });
   if (error) throw error;
@@ -1380,6 +1402,13 @@ export async function cadastrarProduto(p: ProdutoEntradaUI): Promise<ResultadoCa
     error?: string; erros?: Array<{ campo: string; mensagem: string }>;
   };
   if (r.erros?.length) throw new Error(r.erros.map((e) => e.mensagem).join('\n'));
+  // 409 "produto já existe" NÃO pode virar mensagem seca: se a resposta da primeira
+  // tentativa se perdeu na rede, o produto foi criado e o operador ficaria travado
+  // sem caminho para as fotos, o estoque ou o reprocessamento. Preservar os ids
+  // permite à tela oferecer "abrir o produto existente".
+  if (r.error && r.familiaId && r.loteId) {
+    throw new ProdutoJaExisteError(r.error, r.familiaId, r.loteId);
+  }
   if (r.error) throw new Error(r.error);
   return {
     loteId: r.loteId!, familiaId: r.familiaId!,
