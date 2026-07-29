@@ -8,7 +8,8 @@
 
 | Termo | Definição |
 |---|---|
-| **Lote** | Um upload de planilha + imagens. Inicia o pipeline de importação que cria famílias e variações. Exibido como "Lote #N" (`lotes.numero`). |
+| **Lote** | Um conjunto de produtos que entra no sistema junto e inicia o pipeline que cria famílias e variações. Exibido como "Lote #N" (`lotes.numero`). Duas origens (`lotes.origem`): **planilha** (upload de planilha + imagens, o caminho histórico) e **manual** (uma sessão de cadastro pela UI) — ADR-0054, em design. |
+| **Cadastro manual de produto** | Criar família + variações direto na UI, sem planilha, para organização que não tem ERP. Uma sessão de cadastro grava um **lote manual** e segue pelo mesmo pipeline (IA de atributos → Revisão → publicação) — o cadastro é uma segunda **origem** de produto, nunca um modelo de dados paralelo. Disponível só com o módulo habilitado. ADR-0054 (em design). |
 | **Família** | Um PAI = um produto único que vira **1 anúncio** no marketplace com N variações. Agrega metadados, resultado da IA e estado de publicação. Tabela `familias`. |
 | **Variação** | Um SKU/cor dentro da família = **1 variação** do anúncio. Tem preço, estoque, dimensões, cor e foto próprios. Tabela `variacoes`. |
 | **PAI** | Coluna da planilha que agrupa variações. `PAI = 0` marca o **agrupador** (a própria família), **nunca um item vendável**. Os filhos referenciam o código do pai. |
@@ -32,6 +33,21 @@
 | **Reprocessar** | Re-enfileirar uma família travada em `erro` resetando o status para `pendente` (ADR-0030, função `reprocessar-familia`). |
 | **Pausar / Reativar** | Alterna a visibilidade de um anúncio já publicado no marketplace (`ativo` ⇄ `pausado`) sem afetar o vínculo local de UPDATE nem os dados do produto. Ação restrita a admin, feita via `ChannelConnector.atualizarStatus` (ADR-0060). Distinto de "Remover" (que só apaga o vínculo local; o anúncio no ML continua ativo). |
 | **Publicável / viabilidade** | Conjunto de checagens (foto, cor, preço, categoria) que liberam ou bloqueiam a publicação. Fonte única em `src/lib/publicavel.ts`. |
+
+## Estoque
+
+> ADR-0054 (em design) — ver `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`.
+
+| Termo | Definição |
+|---|---|
+| **Estoque canônico** | O saldo de verdade de um SKU na organização: `variacoes.estoque` da **família mais recente** do `(org_id, codigo)` — mesma âncora do dedupe de Publicados (ADR-0025). Não existe tabela de saldo separada. |
+| **Movimento de estoque** | Registro imutável de toda alteração de saldo (`estoque_movimentos`): quem, quando, quanto, por quê e qual saldo resultou. Idempotente por `(org_id, referencia_externa)` — a mesma venda nunca baixa duas vezes. É a trilha de auditoria do estoque. |
+| **Entrada de mercadoria** | Movimento positivo lançado pelo operador ao receber mercadoria: quantidade + custo unitário + documento. Soma no estoque canônico e **sobrescreve** `variacoes.custo` com o último custo. Não confundir com **UPDATE de estoque**, que é a publicação do saldo no marketplace. |
+| **Baixa de estoque** | Movimento negativo automático na transição para pedido **pago** (gancho `novaPaga` do `sync-venda`). Nunca deixa o saldo negativo (`greatest(0, …)`) e **nunca** faz a venda falhar. Vale para toda organização, com ou sem o módulo. |
+| **Ajuste manual** | Movimento gerado quando um humano edita `variacoes.estoque` direto na UI. Registrado no ledger com a diferença aplicada, sem referência de idempotência. |
+| **Estorno de venda** | Movimento positivo que repõe o saldo quando um pedido é **cancelado antes do despacho** (mercadoria nunca saiu). **Devolução não repõe** automaticamente: só notifica, porque repor exige conferir o que voltou e em que estado. |
+| **Push de estoque** | Propagação do saldo para os marketplaces onde o produto está publicado, sempre por **valor absoluto** (nunca delta), em fila serial por organização. Entrada e ajuste propagam para todos os canais; baixa por venda propaga para todos **menos** o canal de origem, que já se decrementou sozinho. |
+| **Módulo** | Funcionalidade opcional habilitada por organização pelo super-admin (`organizations.modulos_habilitados`), espelhando `canais_habilitados`. Gate em dois níveis: esconde o menu **e** bloqueia a edge — diferente de **permissão de menu**, que é só navegação. |
 
 ## Estados (enums)
 
