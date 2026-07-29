@@ -91,10 +91,46 @@ supabase migration fetch --linked                      # reespelha o histórico 
 
 ---
 
+## Chegar na `main` sem bypassar a proteção
+
+A `main` é protegida e exige os checks **`frontend`** e **`backend-lint`** (`enforce_admins`
+**ligado** desde 2026-07-29 — vale inclusive para admin). Como o projeto **não usa PR**, a regra
+é: **o commit chega na main já com o CI verde**.
+
+```bash
+git push -u origin <sua-branch>          # CI roda NA BRANCH (ci.yml dispara em '**')
+gh run list --branch <sua-branch> --limit 1   # esperar completed|success
+git push origin HEAD:main                # fast-forward do MESMO SHA → passa sem bypass
+```
+
+Empurrar direto para a main antes do CI terminar agora é **rejeitado** (`protected branch hook
+declined`), não mais "bypassado". Isso é intencional.
+
+> **Histórico do problema.** Até 2026-07-29 o `ci.yml` só rodava em `push: [main]` e
+> `pull_request`. Num push direto os checks nunca haviam rodado naquele SHA, então a proteção era
+> **impossível de satisfazer** e todo push saía com `Bypassed rule violations: 2 of 2 required
+> status checks are expected` — o código entrava na main **antes** de qualquer verificação. Não
+> era descuido pontual: era garantido por construção. Corrigido rodando o CI em toda branch.
+
+**Emergência** (CI quebrado e é preciso publicar na main mesmo assim) — desligar, empurrar,
+**religar na mesma sessão**:
+
+```bash
+gh api -X DELETE repos/analistasistemas-bit/gtinmktplace/branches/main/protection/enforce_admins
+git push origin HEAD:main
+gh api -X POST   repos/analistasistemas-bit/gtinmktplace/branches/main/protection/enforce_admins
+```
+
 ## Ordem de uma entrega de backend típica
 
 1. Código da função / SQL da migration no worktree de trabalho.
 2. `pnpm lint:functions` + `pnpm db:check` locais.
 3. Validação local (Diego) — só faz merge sob comando.
-4. Após merge: `supabase db push --linked` (se houve migration) → `supabase functions deploy`
+4. Push na branch → **esperar o CI ficar verde** → fast-forward da main (ver seção acima).
+5. Após merge: `supabase db push --linked` (se houve migration) → `supabase functions deploy`
    (todas as afetadas) → verificar versão.
+
+> **Ordem importa quando o frontend depende de schema/RPC novo:** `db push` → `functions deploy`
+> → só então a main. O Render auto-deploya no push da main, então inverter coloca no ar um
+> frontend que chama algo que ainda não existe (incidente evitado no E6b Bloco B: a RPC
+> `modulos_habilitados_da_org` é lida dentro do `MenuGuard`, que bloqueia **toda** rota).
