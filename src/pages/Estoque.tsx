@@ -16,7 +16,18 @@ import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-prod
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { fetchProdutosComSaldo, fetchCanaisPorProduto, type ProdutoComSaldo } from '@/lib/produtos-saldo';
+import {
+  fetchProdutosComSaldo, fetchCanaisPorProduto, type ProdutoComSaldo, type VariacaoComSaldo,
+} from '@/lib/produtos-saldo';
+
+/** "200g · 10×20×30cm", só as partes informadas. "—" se nada foi preenchido. */
+function rotuloDimensoes(v: VariacaoComSaldo): string {
+  const partes: string[] = [];
+  if (v.pesoGramas != null) partes.push(`${v.pesoGramas}g`);
+  const { alturaCm: a, larguraCm: l, comprimentoCm: c } = v;
+  if (a != null || l != null || c != null) partes.push(`${a ?? '—'}×${l ?? '—'}×${c ?? '—'}cm`);
+  return partes.length > 0 ? partes.join(' · ') : '—';
+}
 
 function LinhaProduto({ produto, canais, onDarEntrada }: {
   produto: ProdutoComSaldo;
@@ -69,11 +80,17 @@ function LinhaProduto({ produto, canais, onDarEntrada }: {
             <div className="flex flex-col gap-3">
               <div className="overflow-x-auto rounded-lg border bg-background p-3 shadow-sm">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Variações</span>
+                {/* Descrição é do produto (familias.descricao_pai), não da variação — uma linha só. */}
+                {produto.descricaoPai && (
+                  <p className="mt-1 text-xs text-muted-foreground">{produto.descricaoPai}</p>
+                )}
                 <table className="mt-2 w-full text-xs">
                   <thead>
                     <tr className="text-left text-muted-foreground">
                       <th className="pb-1 pr-3 font-medium">SKU</th>
                       <th className="pb-1 pr-3 font-medium">Cor / nome</th>
+                      <th className="pb-1 pr-3 font-medium">GTIN</th>
+                      <th className="pb-1 pr-3 font-medium">Dimensões</th>
                       <th className="pb-1 pr-3 text-right font-medium">Saldo</th>
                       <th className="pb-1 pr-3 text-right font-medium">Custo</th>
                       <th className="pb-1 text-right font-medium">Preço</th>
@@ -84,6 +101,8 @@ function LinhaProduto({ produto, canais, onDarEntrada }: {
                       <tr key={v.codigo} className="border-t border-border/50">
                         <td className="py-1 pr-3 whitespace-nowrap font-mono">{v.codigo}</td>
                         <td className="py-1 pr-3">{v.cor ?? v.nome ?? '—'}</td>
+                        <td className="py-1 pr-3 whitespace-nowrap font-mono text-muted-foreground">{v.gtin ?? '—'}</td>
+                        <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{rotuloDimensoes(v)}</td>
                         <td className={cn('py-1 pr-3 text-right tabular-nums', v.estoque === 0 && 'text-destructive')}>
                           {v.estoque}
                         </td>

@@ -6,19 +6,22 @@ import { erroDaEdge, corpoDoErroDaEdge } from '@/lib/edge-erro';
 import type { ProdutoEntrada } from '@/lib/produto-entrada';
 
 export interface LinhaVariacaoCrua {
-  codigo: string; nome: string | null; cor: string | null;
+  codigo: string; nome: string | null; cor: string | null; gtin: string | null;
   estoque: number; custo: number | null; preco: number;
-  familias: { codigo_pai: string; nome_pai: string; criado_em: string } | null;
+  peso_gramas: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null;
+  familias: { codigo_pai: string; nome_pai: string; descricao_pai: string | null; criado_em: string } | null;
 }
 
 export interface VariacaoComSaldo {
-  codigo: string; nome: string | null; cor: string | null;
+  codigo: string; nome: string | null; cor: string | null; gtin: string | null;
   estoque: number; custo: number | null; preco: number;
+  pesoGramas: number | null; alturaCm: number | null; larguraCm: number | null; comprimentoCm: number | null;
 }
 
 export interface ProdutoComSaldo {
   codigoPai: string;
   nomePai: string;
+  descricaoPai: string | null;
   variacoes: VariacaoComSaldo[];
   saldoTotal: number;
 }
@@ -44,10 +47,13 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
     const pai = f.codigo_pai;
     if (f.criado_em !== maisRecentePorPai.get(pai)) continue;
     if (!porPai.has(pai)) {
-      porPai.set(pai, { codigoPai: pai, nomePai: f.nome_pai, variacoes: [], saldoTotal: 0 });
+      porPai.set(pai, { codigoPai: pai, nomePai: f.nome_pai, descricaoPai: f.descricao_pai, variacoes: [], saldoTotal: 0 });
     }
     const p = porPai.get(pai)!;
-    p.variacoes.push({ codigo: l.codigo, nome: l.nome, cor: l.cor, estoque: l.estoque, custo: l.custo, preco: l.preco });
+    p.variacoes.push({
+      codigo: l.codigo, nome: l.nome, cor: l.cor, gtin: l.gtin, estoque: l.estoque, custo: l.custo, preco: l.preco,
+      pesoGramas: l.peso_gramas, alturaCm: l.altura_cm, larguraCm: l.largura_cm, comprimentoCm: l.comprimento_cm,
+    });
     p.saldoTotal += l.estoque;
   }
   return [...porPai.values()].sort((a, b) => a.nomePai.localeCompare(b.nomePai, 'pt-BR'));
@@ -62,7 +68,7 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
 export async function fetchProdutosComSaldo(): Promise<ProdutoComSaldo[]> {
   const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
     .from('variacoes')
-    .select('codigo, nome, cor, estoque, custo, preco, familias!inner(codigo_pai, nome_pai, criado_em)')
+    .select('codigo, nome, cor, gtin, estoque, custo, preco, peso_gramas, altura_cm, largura_cm, comprimento_cm, familias!inner(codigo_pai, nome_pai, descricao_pai, criado_em)')
     .range(de, ate));
   return agruparProdutosComSaldo(data as unknown as LinhaVariacaoCrua[]);
 }

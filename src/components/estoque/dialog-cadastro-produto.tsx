@@ -155,8 +155,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
           `max-w-4xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
-          grupos diferentes) e o dialog renderiza com 384px em qualquer desktop. */}
-      <DialogContent className="max-h-[90vh] sm:max-w-4xl overflow-y-auto">
+          grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
+          5xl (nao 4xl): a tabela de variacoes (10 colunas min-w-20 + botao excluir) precisa
+          de ~924px; em 4xl sobravam so 862px de area util e a tabela cortava a coluna SKU
+          no scroll interno (achado do Diego testando ao vivo). */}
+      <DialogContent className="max-h-[90vh] sm:max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{resultado ? 'Fotos do produto' : 'Cadastrar produto'}</DialogTitle>
           <DialogDescription>

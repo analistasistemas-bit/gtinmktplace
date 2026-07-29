@@ -2,9 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { agruparProdutosComSaldo } from '../produtos-saldo';
 
 const linhas = [
-  { codigo: 'A1', nome: 'Azul', cor: 'Azul', estoque: 5, custo: 10, preco: 30, familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', criado_em: '2026-07-02' } },
-  { codigo: 'A2', nome: 'Rosa', cor: 'Rosa', estoque: 3, custo: 10, preco: 30, familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', criado_em: '2026-07-02' } },
-  { codigo: 'B1', nome: null, cor: null, estoque: 0, custo: null, preco: 15, familias: { codigo_pai: 'P2', nome_pai: 'Meia', criado_em: '2026-07-01' } },
+  { codigo: 'A1', nome: 'Azul', cor: 'Azul', gtin: '789', estoque: 5, custo: 10, preco: 30,
+    peso_gramas: 200, altura_cm: 10, largura_cm: 20, comprimento_cm: 30,
+    familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: 'Camiseta de algodão', criado_em: '2026-07-02' } },
+  { codigo: 'A2', nome: 'Rosa', cor: 'Rosa', gtin: '790', estoque: 3, custo: 10, preco: 30,
+    peso_gramas: 200, altura_cm: 10, largura_cm: 20, comprimento_cm: 30,
+    familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: 'Camiseta de algodão', criado_em: '2026-07-02' } },
+  { codigo: 'B1', nome: null, cor: null, gtin: null, estoque: 0, custo: null, preco: 15,
+    peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+    familias: { codigo_pai: 'P2', nome_pai: 'Meia', descricao_pai: null, criado_em: '2026-07-01' } },
 ];
 
 describe('agruparProdutosComSaldo', () => {
@@ -29,15 +35,31 @@ describe('agruparProdutosComSaldo', () => {
     expect(agruparProdutosComSaldo([])).toEqual([]);
   });
 
+  // Achado do Diego (2026-07-29): estes campos existiam no cadastro mas não apareciam
+  // depois na tela de Estoque — dado gravado, mas invisível para conferência.
+  it('propaga gtin, dimensões e descrição do produto para a tela', () => {
+    const r = agruparProdutosComSaldo(linhas as never);
+    const p1 = r.find((p) => p.codigoPai === 'P1')!;
+    expect(p1.descricaoPai).toBe('Camiseta de algodão');
+    const a1 = p1.variacoes.find((v) => v.codigo === 'A1')!;
+    expect(a1.gtin).toBe('789');
+    expect(a1.pesoGramas).toBe(200);
+    expect(a1.alturaCm).toBe(10);
+    expect(a1.larguraCm).toBe(20);
+    expect(a1.comprimentoCm).toBe(30);
+  });
+
   // Âncora do ADR-0025: a família mais recente de cada codigo_pai é a canônica — a mesma
   // que baixar_estoque e o worker de push usam. Org de planilha tem N lotes do mesmo
   // produto; sem o corte a tela duplicaria a variação e somaria saldo histórico.
   it('mantém só a família mais recente de cada codigo_pai', () => {
     const r = agruparProdutosComSaldo([
-      { codigo: 'A1', nome: null, cor: null, estoque: 2, custo: null, preco: 10,
-        familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', criado_em: '2026-06-01' } },
-      { codigo: 'A1', nome: null, cor: null, estoque: 9, custo: null, preco: 10,
-        familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', criado_em: '2026-07-02' } },
+      { codigo: 'A1', nome: null, cor: null, gtin: null, estoque: 2, custo: null, preco: 10,
+        peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+        familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: null, criado_em: '2026-06-01' } },
+      { codigo: 'A1', nome: null, cor: null, gtin: null, estoque: 9, custo: null, preco: 10,
+        peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+        familias: { codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: null, criado_em: '2026-07-02' } },
     ] as never);
     expect(r).toHaveLength(1);
     expect(r[0].variacoes).toHaveLength(1);
@@ -46,7 +68,8 @@ describe('agruparProdutosComSaldo', () => {
 
   it('linha sem família é ignorada', () => {
     expect(agruparProdutosComSaldo([
-      { codigo: 'X', nome: null, cor: null, estoque: 5, custo: null, preco: 1, familias: null },
+      { codigo: 'X', nome: null, cor: null, gtin: null, estoque: 5, custo: null, preco: 1,
+        peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null, familias: null },
     ] as never)).toEqual([]);
   });
 });
