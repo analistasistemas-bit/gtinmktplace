@@ -19,6 +19,7 @@ import {
 } from '../_shared/ml/formato-publicacao.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { publicarFamiliaUP, type PublicarFamiliaUPArgs, type ResultadoUP } from '../_shared/user-products/publicar-familia-up.ts';
+import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 
 export interface Job { familia_id: string; lote_id: string; listing_type_id?: string; }
 
@@ -38,18 +39,6 @@ export interface ProcessarDeps {
   finalizarLote?: (loteId: string) => Promise<void>;
 }
 export interface ProcessarOpts { tentativas: number }
-
-// Reavalia o status do lote quando o worker some da fila (sucesso ou erro definitivo).
-// Sem famílias 'publicando' → 'concluido', ou 'revisao' se ainda restam publicáveis ('pronto').
-export async function talvezFinalizarLote(admin: SupabaseClient, loteId: string): Promise<void> {
-  const { data: publicando } = await admin.from('familias')
-    .select('id').eq('lote_id', loteId).eq('status', 'publicando');
-  if (publicando && publicando.length > 0) return;
-  const { data: prontas } = await admin.from('familias')
-    .select('id').eq('lote_id', loteId).eq('status', 'pronto');
-  const novo = prontas && prontas.length > 0 ? 'revisao' : 'concluido';
-  await admin.from('lotes').update({ status: novo }).eq('id', loteId);
-}
 
 export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;

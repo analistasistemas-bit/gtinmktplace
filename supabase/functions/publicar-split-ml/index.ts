@@ -25,22 +25,12 @@ import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { precosDivergentes, precoCentavos } from '../_shared/preco/grupos.ts';
 import { resolverConfigGrupo, agregarAtacadoStatus } from '../_shared/preco/config-grupo.ts';
+import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona.
-
-// Idêntico ao publish/update: reavalia o status do lote quando o worker some da fila.
-async function talvezFinalizarLote(admin: ReturnType<typeof adminClient>, loteId: string): Promise<void> {
-  const { data: publicando } = await admin.from('familias')
-    .select('id').eq('lote_id', loteId).eq('status', 'publicando');
-  if (publicando && publicando.length > 0) return;
-  const { data: prontas } = await admin.from('familias')
-    .select('id').eq('lote_id', loteId).eq('status', 'pronto');
-  const novo = prontas && prontas.length > 0 ? 'revisao' : 'concluido';
-  await admin.from('lotes').update({ status: novo }).eq('id', loteId);
-}
 
 type Conn = ReturnType<typeof getConnector>;
 

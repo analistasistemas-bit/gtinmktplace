@@ -16,6 +16,7 @@ import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs, type ResultadoAtualizarUP } from '../_shared/user-products/atualizar-familia-up.ts';
+import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -36,17 +37,6 @@ export interface ProcessarDeps {
   finalizarLote?: (loteId: string) => Promise<void>;
 }
 export interface ProcessarOpts { tentativas: number }
-
-// Idêntico ao publish-familia-ml: reavalia o status do lote quando o worker some da fila.
-export async function talvezFinalizarLote(admin: SupabaseClient, loteId: string): Promise<void> {
-  const { data: publicando } = await admin.from('familias')
-    .select('id').eq('lote_id', loteId).eq('status', 'publicando');
-  if (publicando && publicando.length > 0) return;
-  const { data: prontas } = await admin.from('familias')
-    .select('id').eq('lote_id', loteId).eq('status', 'pronto');
-  const novo = prontas && prontas.length > 0 ? 'revisao' : 'concluido';
-  await admin.from('lotes').update({ status: novo }).eq('id', loteId);
-}
 
 export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;
