@@ -1918,6 +1918,12 @@ Deno.serve(async (req) => {
           console.error('reconciliar_outbox_interrompido', { orgId, ...r });
           break;
         }
+        // Teto atingido com a página ainda cheia: sobrou backlog. Logar em vez de
+        // truncar em silêncio — é o único sinal de que uma org está acumulando
+        // pendência mais rápido do que a drenagem consegue escoar.
+        if (volta === MAX_PAGINAS - 1 && pagina.length === 200) {
+          console.warn('reconciliar_outbox_backlog', { orgId, teto: MAX_PAGINAS * 200 });
+        }
       }
     } catch (e) {
       console.error('reconciliar_outbox_falhou', orgId, e);   // uma org nunca bloqueia outra

@@ -1613,7 +1613,7 @@ git commit -m "docs(e6b): documentar cadastro manual, entrada de mercadoria e ga
 
 - **O guard D-4 e o guard de SKU não são atômicos.** São check-then-insert, e não existe unique real por `(org_id, codigo_pai)` nem por `(org_id, codigo)` — nem pode existir, porque org de planilha legitimamente tem N famílias com o mesmo `codigo_pai` (uma por lote) e N variações com o mesmo `codigo`. Dois cadastros concorrentes do mesmo produto criariam duas famílias canônicas concorrentes. Probabilidade baixíssima (um operador, um formulário), consequência recuperável (excluir uma das famílias), custo de blindar alto. Aceito e documentado.
 - **SKU repetido vindo de planilha continua possível.** O guard acima só protege o cadastro manual; uma planilha pode legitimamente trazer o mesmo `codigo` em produtos diferentes, e nesse caso a resolução por "família mais recente do `(org_id, codigo)`" nas RPCs pode baixar o produto errado. É risco **pré-existente** (o mesmo critério já governa o dedupe de Publicados, ADR-0025), não introduzido aqui — mas passa a ter consequência de estoque. Registrar no ADR e, se aparecer na prática, tratar com um relatório de SKUs ambíguos por org.
-- **Ajuste manual não propaga na hora** (herdado do Bloco A): trigger Postgres não enfileira QStash. A reconciliação diária cobre em ≤24h.
+- **Não existe ajuste manual de estoque pelo app** (herdado do Bloco A, D-20): a escrita direta em `variacoes.estoque` é bloqueada por trigger, então toda mudança de saldo é entrada, baixa ou estorno — e todas propagam na hora.
 - **Devolução não é tocada:** só o cancelamento visto pelo `sync-venda`.
 
 ## Self-review (executado na escrita do plano)

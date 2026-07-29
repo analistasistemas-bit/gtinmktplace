@@ -439,3 +439,36 @@ próprio veredito afirma que "as correções centrais estão tecnicamente boas".
 aplicadas — mas NÃO foram re-verificadas por uma sexta rodada. Quem executar o plano deve
 tratar esses dois pontos (drenagem do outbox e D-12/ADR) como os mais recentes e menos
 revisados.
+
+## Round 6 — Codex (rodada extra autorizada pelo Diego)
+
+A lógica nova da drenagem está correta, mas os critérios de saída ainda não foram realmente sincronizados. É uma correção documental pequena, porém necessária antes do handoff.
+
+- `r.marcados === 0` não para cedo em caso legítimo. Com página não vazia, cada grupo contém ao menos um ID; sucesso incrementa `marcados`, e qualquer falha incrementa `falhas`. Página vazia já termina antes do dispatcher.
+- Contar `marcados` por IDs é coerente: o critério usa apenas zero versus progresso. Um grupo com 20 movimentos corretamente representa 20 linhas removidas do outbox.
+- O teto de 1.000 movimentos por execução não perde dados. O restante permanece com `push_enfileirado_em IS NULL` e volta na próxima reconciliação, em ordem FIFO. Só haveria crescimento crônico se uma org produzisse sustentadamente mais de 1.000 pendências não despachadas por dia; no fluxo normal, os próprios handlers também drenam o outbox. Convém apenas logar quando `MAX_PAGINAS` for atingido, para observar backlog — não é bloqueador.
+- `JSON.stringify([codigoPai, canalOrigem])` é uma chave inequívoca para a tupla e os quatro arquivos têm zero bytes NUL.
+
+**MEDIUM — critérios de saída ainda contradizem D-12/D-20**
+
+- Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md:390-391` ainda exige “ajuste manual propaga” e “devolução notifica”.
+- Plano B: `docs/superpowers/plans/2026-07-28-e6b-b-cadastro-e-entrada.md:1616` ainda afirma que existe ajuste manual coberto por reconciliação.
+- Isso contradiz a própria spec em `:140,142,414-415`, o Plano A em `:2217-2219` e o desenho efetivo: escrita direta está bloqueada e devolução não é tocada.
+- **Fix:** substituir essas três linhas pelos critérios já corretos do Plano A. Não exige mudança arquitetural ou de implementação, mas precisa ser corrigido para o plano ter um único critério de aceite.
+
+VERDICT: REVISE
+### Resposta do Claude (round 6)
+
+A drenagem do outbox foi CONFIRMADA correta nos quatro pontos questionados: o critério
+`marcados === 0` não para cedo em caso legítimo (numa página não-vazia, todo grupo
+incrementa marcados ou falhas, então marcados=0 implica falhas>0); contar por IDs é
+coerente com o critério; o teto de 1.000/execução não perde dado (o resto continua com
+push_enfileirado_em NULL e volta em FIFO); e a chave do Map é inequívoca.
+
+Único achado, MEDIUM documental, corrigido:
+- Critérios de saída da spec (itens 3, 4 e 5) e do Plano B ainda diziam "ajuste manual
+  propaga" e "devolução notifica" — ambos removidos do desenho nas rodadas anteriores.
+  Reescritos para bater com D-12/D-19/D-20 e com o Plano A.
+
+Aplicada também a sugestão não-bloqueadora: log `reconciliar_outbox_backlog` quando
+MAX_PAGINAS é atingido com a página ainda cheia, para backlog não sumir em silêncio.

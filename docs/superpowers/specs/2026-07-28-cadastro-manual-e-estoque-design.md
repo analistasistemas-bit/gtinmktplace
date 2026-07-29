@@ -387,9 +387,13 @@ emitisse também, sairia nota duplicada.
    por venda+item e re-entrega não duplica.
 2. Push absoluto para os demais canais em ≤1 job de fila (provado com o conector fake; ordem
    garantida pela fila serial por org).
-3. Entrada e ajuste manual propagam na hora, para todos os canais publicados, inclusive o ML.
-4. Cancelamento antes do despacho repõe; devolução notifica sem repor.
-5. Venda sem saldo baixa até zero, registra a quantidade real no ledger e notifica.
+3. Entrada e estorno propagam na hora, para todos os canais publicados, inclusive o ML.
+   **Não existe ajuste manual de estoque pelo app** — a escrita direta é bloqueada por trigger (D-20),
+   então toda mudança de saldo passa por entrada, baixa ou estorno, e todas propagam.
+4. Cancelamento antes do despacho repõe **só o que foi de fato baixado** (pedido nunca pago não gera
+   estorno); cancelamento pós-despacho apenas notifica, uma vez só. **Devolução não é tocada.**
+5. Venda sem saldo baixa até zero, grava o delta aplicado em `quantidade` e o pedido em
+   `quantidade_pedida`, e notifica.
 6. Falha de estoque nunca falha a venda; falha de um canal nunca afeta outro.
 7. `estoque_movimentos` entra em `scripts/verificar-isolamento-tenant.ts` e a suite re-passa.
 
