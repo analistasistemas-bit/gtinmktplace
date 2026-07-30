@@ -63,6 +63,34 @@ Fix: `value_type=string` é sempre texto-livre — os `values` são sugestão, n
 `list`/`number`. As 2 famílias afetadas do Lote 31 foram corrigidas (02954818 resolvido; 02954524 segue no
 fallback manual por não haver material na fonte).
 
+### Adendo (2026-07-30) — cobertura máxima: multivalued + texto-livre opcional sem sugestão
+
+Comparado ao "Sugerir características" nativo do ML, o pipeline preenchia bem menos atributos —
+investigação achou que a informação estava na planilha, mas era descartada por 4 causas de código
+(não falta de dado). Detalhe completo em
+`docs/superpowers/specs/2026-07-30-atributos-ml-cobertura-maxima-design.md`.
+
+1. **Decisão 1 (linha 20-22) revista.** Texto-livre deixa de ser restrito a atributos
+   `required`/`conditionalRequired` — passa a tentar qualquer `valueType === 'string'` sem
+   `values[]` sugeridos, com um denylist de atributos regulatórios/certificação (padrão de id
+   `REGISTRATION|CERTIF|ANVISA|ANATEL|INMETRO|LICENSE`) fora do escopo. A regra de ouro (substring
+   no nome+descrição) continua sendo o único portão de aceitação — não afrouxa, só amplia quais
+   atributos chegam a ser tentados.
+2. **Atributos `multivalued` deixam de ser banidos do alvo da IA.** Antes excluídos por completo
+   (`TAGS_EXCLUIR`); passam a preencher **um único valor** (o melhor extraído do texto) — array
+   multi-valor completo (a ML aceita repetir o id com vários `values`) fica fora de escopo, exigiria
+   mudar o shape de `AtributoML` e o builder de publicação. `multivalued` continua banido do gate de
+   obrigatórios (`TAGS_NAO_FALTANTE`) — divergência proposital entre os dois sets, comentada no
+   código pra não ser revertida por engano.
+3. **Guard de atributos `number_unit` fica mais estrito.** Antes só checava se o número aparecia em
+   qualquer lugar do texto; passa a exigir que a unidade da resposta bata com a unidade encontrada
+   junto daquele número no texto-fonte (evita "224 metros" virar `UNIT_WEIGHT: 224 g` só porque 224
+   está solto em algum lugar do texto).
+4. **Bug de tokenizer corrigido.** `validarTextoLivre` tokenizava por `split(/\s+/)`, então
+   pontuação colada ("ALGODÃO.") quebrava o match contra a resposta limpa da IA ("algodão") mesmo a
+   palavra estando literalmente no texto — provavelmente já causava perda silenciosa antes deste
+   adendo, não só nos casos novos que ele destrava.
+
 ### Adendo (2026-07-10) — mesmo bug no fallback manual (`faltantes-editaveis.ts`)
 
 02954524 (fallback manual, citado acima) expôs a mesma classificação errada num segundo lugar: `tipoDe`
