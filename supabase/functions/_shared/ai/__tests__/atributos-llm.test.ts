@@ -261,4 +261,12 @@ describe('multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-30)'
     expect(alvos.map((a) => a.id)).toEqual(['COMPOSITION']);
     expect(alvos[0].multivalued).toBe(true);
   });
+
+  const input = { nome: 'Linha Algodão Poliéster 100%' };
+  it('aceita 1 valor extraído do texto', () => {
+    expect(validarRespostaAtributos({ COMPOSITION: 'Algodão' }, alvos, input)).toEqual([{ id: 'COMPOSITION', value_name: 'Algodão' }]);
+  });
+  it('resposta com vírgula (tentativa de multi-valor) é rejeitada — fase 1 só sabe 1 valor por atributo', () => {
+    expect(validarRespostaAtributos({ COMPOSITION: 'Algodão, Poliéster' }, alvos, input)).toEqual([]);
+  });
 });

@@ -196,6 +196,10 @@ export function validarRespostaAtributos(
       const valor = validarNumerico(String(bruto), alvo.unidades);
       if (valor && numeroConstaNoTexto(parseFloat(valor), input)) out.push({ id: alvo.id, value_name: valor });
     } else {
+      // Multivalued (fase 1: só 1 valor) — resposta com vírgula é rejeitada, não aceita truncada
+      // nem dividida: a ML trataria vírgula em value_name multivalued como separador de vários
+      // valores, publicando algo que não foi validado (adendo ADR-0052, 2026-07-30).
+      if (alvo.multivalued && String(bruto).includes(',')) continue;
       const valor = validarTextoLivre(String(bruto), input);
       if (valor) out.push({ id: alvo.id, value_name: valor });
     }
