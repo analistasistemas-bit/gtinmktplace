@@ -24,10 +24,19 @@ export function freteSeVendedorPaga(ac: CoverageAllCountry | undefined): number 
   return vendedorPaga ? (Number(ac.list_cost) || 0) : 0;
 }
 
+const DIMENSOES_DEFAULT: DimensoesPacote = {
+  altura_cm: 16,
+  largura_cm: 11,
+  comprimento_cm: 6,
+  peso_gramas: 300,
+};
+
 /**
  * GET /users/{id}/shipping_options/free → custo de frete que o vendedor absorve (R$), ou 0
- * quando o comprador paga / dimensões inválidas / falha. Clássico == Premium (mesmo custo),
- * então uma chamada basta. `mlUserId` é do vendedor: o desconto depende da reputação dele.
+ * quando o comprador paga / falha. Clássico == Premium (mesmo custo), então uma chamada basta.
+ * `mlUserId` é do vendedor: o desconto depende da reputação dele.
+ * Quando dimensões não forem informadas ou forem inválidas, usa DIMENSOES_DEFAULT (16x11x6cm, 300g)
+ * para a API do ML retornar a estimativa de frete da categoria.
  */
 export async function buscarFreteVendedor(
   token: string,
@@ -36,13 +45,12 @@ export async function buscarFreteVendedor(
   categoria: string,
   dim?: DimensoesPacote | null,
 ): Promise<number> {
-  const dimensionsQuery = dim && dimensoesValidas(dim)
-    ? `&dimensions=${Math.round(dim.altura_cm!)}x${Math.round(dim.largura_cm!)}x${Math.round(dim.comprimento_cm!)},${Math.round(dim.peso_gramas!)}`
-    : '';
+  const d = dim && dimensoesValidas(dim) ? dim : DIMENSOES_DEFAULT;
+  const dimensions =
+    `${Math.round(d.altura_cm!)}x${Math.round(d.largura_cm!)}x${Math.round(d.comprimento_cm!)},${Math.round(d.peso_gramas!)}`;
   const url = `https://api.mercadolibre.com/users/${mlUserId}/shipping_options/free`
-    + `?item_price=${preco}&listing_type_id=gold_special`
-    + `&condition=new&mode=me2&verbose=true&category_id=${categoria}`
-    + dimensionsQuery;
+    + `?dimensions=${dimensions}&item_price=${preco}&listing_type_id=gold_special`
+    + `&condition=new&mode=me2&verbose=true&category_id=${categoria}`;
 
   let resp: Response;
   try {
