@@ -178,17 +178,22 @@ const SINONIMOS_UNIDADE: Record<string, string> = {
 // unidade da resposta bata com a unidade que está de fato junto daquele número na fonte. Quando
 // não acha NENHUMA unidade reconhecida perto do número (Set vazio), quem chama trata como "sem
 // sinal confiável" e não bloqueia — só bloqueia quando acha uma unidade reconhecida e diferente.
+// Se o número aparece MAIS DE UMA VEZ no texto (cada ocorrência podendo ser de um atributo
+// diferente — ex.: "5 metros de fita e 5 ml de cola"), não há como saber qual ocorrência é o
+// contexto do atributo respondido: devolve Set vazio (ambíguo, mesmo tratamento de "sem sinal").
 function unidadesJuntoAoNumero(num: number, texto: string): Set<string> {
   const out = new Set<string>();
+  let ocorrencias = 0;
   const re = /(\d+(?:[.,]\d+)?)\s*([\p{L}"]+)/gu;
   for (const m of normalizar(texto).matchAll(re)) {
     const n = parseFloat(m[1].replace(',', '.'));
     if (Math.abs(n - num) < 1e-9) {
+      ocorrencias++;
       const un = SINONIMOS_UNIDADE[normalizar(m[2])];
       if (un) out.add(un);
     }
   }
-  return out;
+  return ocorrencias > 1 ? new Set() : out;
 }
 
 function validarTextoLivre(bruto: string, input: InputAtributos): string | null {

@@ -143,6 +143,14 @@ describe('validarRespostaAtributos (numérico, unidade precisa bater com o conte
     expect(validarRespostaAtributos({ UNIT_WEIGHT: '100 g' }, alvos, input)).toEqual([{ id: 'UNIT_WEIGHT', value_name: '100 g' }]);
     expect(validarRespostaAtributos({ LENGTH: '100 m' }, alvos, input)).toEqual([]);
   });
+  it('número aparece mais de uma vez no texto, cada ocorrência de um atributo diferente → ambíguo, não bloqueia (bug real: GLUE_VOLUME "5 ml" rejeitado por causa de "5 metros" solto no texto)', () => {
+    const schemaGlue = [
+      A({ id: 'GLUE_VOLUME', nome: 'Volume de cola', valueType: 'number_unit', allowedUnits: [{ id: 'ml', nome: 'ml' }] }),
+    ];
+    const alvosGlue = atributosAlvo(schemaGlue, []);
+    const input = { nome: 'Kit 5 metros de fita e 5 ml de cola' };
+    expect(validarRespostaAtributos({ GLUE_VOLUME: '5 ml' }, alvosGlue, input)).toEqual([{ id: 'GLUE_VOLUME', value_name: '5 ml' }]);
+  });
 });
 
 describe('validarRespostaAtributos (texto-livre, anti-invenção)', () => {
