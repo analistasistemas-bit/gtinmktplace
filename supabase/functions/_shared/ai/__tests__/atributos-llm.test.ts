@@ -151,6 +151,10 @@ describe('validarRespostaAtributos (numérico, unidade precisa bater com o conte
     const input = { nome: 'Kit 5 metros de fita e 5 ml de cola' };
     expect(validarRespostaAtributos({ GLUE_VOLUME: '5 ml' }, alvosGlue, input)).toEqual([{ id: 'GLUE_VOLUME', value_name: '5 ml' }]);
   });
+  it('número aparece mais de uma vez no texto, MESMA unidade reconhecida nas duas ocorrências → ainda bloqueia unidade diferente (regressão real: "guard vira Set vazio sempre que repete" deixava passar peso pra um comprimento claro)', () => {
+    const input = { nome: 'Kit 224 metros de fio dourado e 224 metros de fio prateado' };
+    expect(validarRespostaAtributos({ UNIT_WEIGHT: '224 g' }, alvos, input)).toEqual([]);
+  });
 });
 
 describe('validarRespostaAtributos (texto-livre, anti-invenção)', () => {

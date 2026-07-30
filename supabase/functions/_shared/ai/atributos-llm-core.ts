@@ -172,28 +172,28 @@ const SINONIMOS_UNIDADE: Record<string, string> = {
   quilo: 'kg', quilos: 'kg', quilograma: 'kg', quilogramas: 'kg', kg: 'kg',
 };
 
-// Unidades do schema encontradas COLADAS a um número específico no texto (não em qualquer lugar
-// do texto). Fecha a confusão real (adendo ADR-0052, 2026-07-30): "224 METROS" no texto virando
-// resposta da IA em UNIT_WEIGHT "224 g" só porque 224 aparece solto em algum lugar — exige que a
-// unidade da resposta bata com a unidade que está de fato junto daquele número na fonte. Quando
-// não acha NENHUMA unidade reconhecida perto do número (Set vazio), quem chama trata como "sem
-// sinal confiável" e não bloqueia — só bloqueia quando acha uma unidade reconhecida e diferente.
-// Se o número aparece MAIS DE UMA VEZ no texto (cada ocorrência podendo ser de um atributo
-// diferente — ex.: "5 metros de fita e 5 ml de cola"), não há como saber qual ocorrência é o
-// contexto do atributo respondido: devolve Set vazio (ambíguo, mesmo tratamento de "sem sinal").
-function unidadesJuntoAoNumero(num: number, texto: string): Set<string> {
-  const out = new Set<string>();
-  let ocorrencias = 0;
+// Decide se a unidade respondida pela IA para este número é compatível com o texto-fonte.
+// Aceita se ALGUM trecho perto de uma ocorrência do número bate com a resposta (direto ou via
+// sinônimo) — mesmo que outro trecho não relacionado tenha uma unidade reconhecida diferente
+// (número repetido pra outro atributo, ex.: "5 METROS de fita e 5 ML de cola" não pode derrubar
+// "5 ml" correto). Só rejeita quando NENHUM trecho bate com a resposta E existe pelo menos um
+// trecho com unidade reconhecida (via sinônimo) diferente — sinal confiável de confusão real
+// (o bug original: "224 metros" no texto virando resposta em peso "224 g"). Sem nenhum sinal
+// (nem bate, nem conflita) → aceita, sem bloquear (comportamento atual preservado).
+function unidadeBateContexto(num: number, texto: string, unidadeResp: string): boolean {
+  const respNorm = normalizar(unidadeResp);
+  let achouIgual = false;
+  let achouDiferente = false;
   const re = /(\d+(?:[.,]\d+)?)\s*([\p{L}"]+)/gu;
   for (const m of normalizar(texto).matchAll(re)) {
     const n = parseFloat(m[1].replace(',', '.'));
-    if (Math.abs(n - num) < 1e-9) {
-      ocorrencias++;
-      const un = SINONIMOS_UNIDADE[normalizar(m[2])];
-      if (un) out.add(un);
-    }
+    if (Math.abs(n - num) >= 1e-9) continue;
+    const tokenNorm = normalizar(m[2]);
+    const un = SINONIMOS_UNIDADE[tokenNorm];
+    if (tokenNorm === respNorm || un === respNorm) { achouIgual = true; break; }
+    if (un) achouDiferente = true;
   }
-  return ocorrencias > 1 ? new Set() : out;
+  return achouIgual || !achouDiferente;
 }
 
 function validarTextoLivre(bruto: string, input: InputAtributos): string | null {
@@ -238,8 +238,7 @@ export function validarRespostaAtributos(
       if (!numeroConstaNoTexto(num, input)) continue;
       if (unidadeResp) {
         const texto = `${input.nome} ${input.descricao ?? ''}`;
-        const unidadesTexto = unidadesJuntoAoNumero(num, texto);
-        if (unidadesTexto.size > 0 && !unidadesTexto.has(normalizar(unidadeResp))) continue;
+        if (!unidadeBateContexto(num, texto, unidadeResp)) continue;
       }
       out.push({ id: alvo.id, value_name: valor });
     } else {
