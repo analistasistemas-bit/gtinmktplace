@@ -141,6 +141,18 @@ describe('validarRespostaAtributos (texto-livre, anti-invenção)', () => {
     const inp = { nome: 'Linha Anne Cores', descricao: '' };
     expect(validarRespostaAtributos({ LINE: 'Anne Cores' }, alvos, inp)).toEqual([{ id: 'LINE', value_name: 'Anne Cores' }]);
   });
+  it('casa mesmo com pontuação colada na fonte (bug real: "ALGODÃO." não batia com "algodão")', () => {
+    const inp = { nome: 'Linha Renascença', descricao: 'COMPOSIÇÃO: 100% ALGODÃO. USO: CROCHÊ' };
+    expect(validarRespostaAtributos({ LINE: 'algodão' }, atributosAlvo(schema, []), inp)).toEqual([{ id: 'LINE', value_name: 'algodão' }]);
+  });
+  it('NÃO casa contíguo através de pontuação forte (dois itens de lista não viram um valor só)', () => {
+    const inp = { nome: 'Linha X', descricao: 'COMPOSIÇÃO: ALGODÃO. POLIÉSTER PREMIUM' };
+    expect(validarRespostaAtributos({ LINE: 'Algodão Poliéster' }, atributosAlvo(schema, []), inp)).toEqual([]);
+  });
+  it('vírgula NÃO é pontuação forte (contiguidade de 2 palavras sobrevive a vírgula, só não a ponto/ponto-e-vírgula/dois-pontos)', () => {
+    const inp = { nome: 'Linha X', descricao: 'É a tradicional Renda Renascença, uma das mais belas técnicas' };
+    expect(validarRespostaAtributos({ LINE: 'Renda Renascença' }, atributosAlvo(schema, []), inp)).toEqual([{ id: 'LINE', value_name: 'Renda Renascença' }]);
+  });
 });
 
 // value_type=string com valores SUGERIDOS (ex.: MATERIAL de Pingentes: Alpaca/Ouro/Prata/Vidro).

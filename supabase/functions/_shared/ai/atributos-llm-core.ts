@@ -115,8 +115,21 @@ function preencherMedidasObvias(input: InputAtributos, alvos: AtributoAlvo[]): A
 // revisão humana barrarem.
 const MIN_TEXTO_LIVRE = 2;
 const MAX_TEXTO_LIVRE = 60;
+
+// Tokeniza por corrida de letra/número (unicode), não por espaço — pontuação colada na palavra
+// ("ALGODÃO." na planilha) NUNCA deve quebrar o match contra a resposta limpa da IA ("algodão").
+// Bug real (adendo ADR-0052, 2026-07-30): split(/\s+/) fazia esse match falhar sempre que havia
+// ponto/vírgula grudado, mesmo a palavra estando literalmente no texto.
 function tokens(s: string): string[] {
-  return normalizar(s).split(/\s+/).filter(Boolean);
+  return normalizar(s).match(/\p{L}+|\p{N}+/gu) ?? [];
+}
+
+// Segmenta em pontuação FORTE (fim de frase/item de lista) — a contiguidade de um valor
+// multi-palavra não pode atravessar isso, senão "ALGODÃO. POLIÉSTER" (dois itens de lista)
+// casaria como um valor só "algodão poliéster". Vírgula fica de fora de propósito: "RENDA
+// RENASCENÇA," continua um match válido de 2 palavras (é só uma pausa, não um novo item).
+function segmentos(s: string): string[] {
+  return s.split(/[.;:|]+/);
 }
 
 // Mesma trava anti-invenção do texto-livre, para número: só aceita se o valor extraído aparecer
@@ -132,9 +145,12 @@ function validarTextoLivre(bruto: string, input: InputAtributos): string | null 
   if (valor.length < MIN_TEXTO_LIVRE || valor.length > MAX_TEXTO_LIVRE) return null;
   const alvo = tokens(valor);
   if (alvo.length === 0) return null;
-  const fonte = tokens(`${input.nome} ${input.descricao ?? ''}`);
-  for (let i = 0; i + alvo.length <= fonte.length; i++) {
-    if (alvo.every((t, j) => fonte[i + j] === t)) return valor;
+  const texto = `${input.nome} ${input.descricao ?? ''}`;
+  for (const seg of segmentos(texto)) {
+    const fonte = tokens(seg);
+    for (let i = 0; i + alvo.length <= fonte.length; i++) {
+      if (alvo.every((t, j) => fonte[i + j] === t)) return valor;
+    }
   }
   return null;
 }
