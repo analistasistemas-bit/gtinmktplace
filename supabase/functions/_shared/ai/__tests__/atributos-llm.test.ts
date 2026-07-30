@@ -227,6 +227,15 @@ describe('montarPromptAtributos', () => {
     expect(p.toLowerCase()).toMatch(/copie|extraia/);
     expect(p.toLowerCase()).toMatch(/n[aã]o.*invent/);
   });
+  it('reforça para não reciclar o mesmo número em atributos diferentes quando há alvo numérico', () => {
+    const p = montarPromptAtributos({ nome: 'Fita', descricao: 'rolo 25m veludo' }, atributosAlvo(SCHEMA, base));
+    expect(p.toLowerCase()).toContain('não reutilize o mesmo número');
+  });
+  it('multivalued: pede só 1 valor, sem juntar por vírgula', () => {
+    const schema = [A({ id: 'COMPOSITION', nome: 'Composição', valueType: 'string', tags: ['multivalued'] })];
+    const p = montarPromptAtributos({ nome: 'Linha Algodão' }, atributosAlvo(schema, []));
+    expect(p.toLowerCase()).toContain('não junte vários separados por vírgula');
+  });
 });
 
 describe('preencherAtributosClosedSet', () => {

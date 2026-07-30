@@ -282,8 +282,12 @@ export function montarPromptAtributos(input: InputAtributos, alvos: AtributoAlvo
       }
       return `- ${a.id} (${a.nome}): apenas o número.`;
     }
-    return `- ${a.id} (${a.nome}): copie exatamente do título/descrição; se não constar lá, omita (não invente).`;
+    const sufixoMultivalor = a.multivalued
+      ? ' Se houver mais de um valor possível, informe só o mais relevante (não junte vários separados por vírgula).'
+      : '';
+    return `- ${a.id} (${a.nome}): copie exatamente do título/descrição; se não constar lá, omita (não invente).${sufixoMultivalor}`;
   }).join('\n');
+  const temNumerico = alvos.some((a) => a.tipo === 'numero');
   return [
     `Produto: ${input.nome}`,
     input.descricao ? `Descrição: ${input.descricao}` : '',
@@ -293,6 +297,9 @@ export function montarPromptAtributos(input: InputAtributos, alvos: AtributoAlvo
     '',
     blocos,
     '',
+    temNumerico
+      ? 'Não reutilize o mesmo número para mais de um atributo — cada número do texto pertence a um contexto específico (ex.: comprimento ≠ peso ≠ quantidade).'
+      : '',
     'Responda um JSON { "ATRIBUTO_ID": "valor", ... } só com os que tiver certeza',
     '(value_id para listas; número com unidade para medidas).',
   ].filter(Boolean).join('\n');
