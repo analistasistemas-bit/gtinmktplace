@@ -43,7 +43,9 @@ A IA preenche **um único valor** por atributo multivalued (o melhor extraído d
 implementa array multi-valor completo (mudaria o shape de `AtributoML` e o builder do payload de
 publicação; adiado, não é hoje o gargalo). Valor validado não pode conter vírgula quando o
 atributo é multivalued — a API do ML trata vírgula em `value_name` como separador de múltiplos
-valores, então aceitar sem checar publicaria valores não pretendidos.
+valores, então aceitar sem checar publicaria valores não pretendidos. `AtributoAlvo` (interface em
+`atributos-llm-core.ts`) ganha um campo `multivalued: boolean` — hoje `tipoAlvo` não distingue isso,
+e a checagem de vírgula em `validarRespostaAtributos` precisa saber quais alvos são multivalued.
 
 ### 3. Texto-livre opcional sem valores sugeridos é ignorado
 
@@ -79,12 +81,17 @@ não reciclar o mesmo número em atributos diferentes, como reforço, não como 
   teste golden (abaixo) antes de decidir se é necessário.
 - Selo "preenchido por IA" na tela de Revisão (já previsto na ADR-0026 §E4-UI, UI separada).
 
-## Verificação antes de implementar
+## Verificação feita: reprocessamento não pula a revisão humana
 
-Checar se o reprocessamento de uma família **já publicada** manda atributos novos direto num
-`UPDATE` pro ML sem passar pela Revisão humana. Se sim, decidir nesta fase se as regras novas
-tocam só famílias ainda não publicadas, ou se o UPDATE de atributos já é coberto pela revisão
-existente.
+Checado: `process-familia` (onde a resolução de atributos roda) nunca escreve na ML sozinho — ele
+só resolve dados e marca a família `pronto`/`revisao`. A escrita real na ML (`publish-familia-ml`/
+`update-familia-ml`) só é enfileirada por `publicar-familias`, chamada explicitamente pelo
+frontend (`src/lib/publicar.ts:publicarFamilias`) quando o operador seleciona famílias na Revisão e
+clica publicar/atualizar. O caminho `operacao === 'UPDATE'` parcial (`process-familia/index.ts:193`,
+adição de variação nova a um anúncio já publicado) nem chega a rodar a resolução de atributos —
+retorna antes, só resolve cor. Logo: as correções desta fase valem tanto pra família nova quanto pra
+reprocessamento de família ainda não publicada, sem risco de pular a revisão — o gate humano já
+existe e cobre os dois casos. Sem restrição de escopo adicional.
 
 ## Testes
 
@@ -102,7 +109,10 @@ Em `_shared/ai/__tests__/atributos-llm.test.ts`:
 6. Valor multivalued com vírgula é rejeitado.
 7. Teste golden com fixture do schema real de `MLB270273`: conta quantos atributos viram alvo e
    quantos preenchem antes/depois da mudança, usando a descrição real da família investigada —
-   é a métrica que motivou a mudança e vira guard de regressão.
+   é a métrica que motivou a mudança e vira guard de regressão. Fixture nova (não existe ainda):
+   JSON capturado nesta investigação (`curl .../categories/MLB270273/attributes`) salvo em
+   `__tests__/fixtures/schema-mlb270273.json`, junto com nome/descrição reais da família
+   `c1fb33e4-...` como input — sem chamada de rede no teste.
 
 A suíte existente (`atributos.test.ts`, `atributos-llm.test.ts`) deve continuar passando sem
 mudança de comportamento para categorias de aviamento (regressão zero, conforme ADR-0026).
