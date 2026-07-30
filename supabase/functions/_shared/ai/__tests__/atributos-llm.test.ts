@@ -6,6 +6,8 @@ import {
   preencherAtributosClosedSet,
 } from '../atributos-llm-core';
 import type { AtributoSchema } from '../../categoria/schema';
+import schemaMlb270273Raw from './fixtures/schema-mlb270273.json';
+import { parseAtributosSchema } from '../../categoria/schema';
 
 const A = (o: Partial<AtributoSchema> & { id: string }): AtributoSchema => ({
   nome: o.id, required: false, conditionalRequired: false, valueType: 'string', valores: [], allowedUnits: [], tags: [], ...o,
@@ -303,5 +305,53 @@ describe('multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-30)'
   });
   it('resposta com vírgula (tentativa de multi-valor) é rejeitada — fase 1 só sabe 1 valor por atributo', () => {
     expect(validarRespostaAtributos({ COMPOSITION: 'Algodão, Poliéster' }, alvos, input)).toEqual([]);
+  });
+});
+
+// Guard de regressão da cobertura (adendo ADR-0052, 2026-07-30): schema REAL da categoria
+// MLB270273 (Fios e Cadarços) + texto REAL da família c1fb33e4-ec56-489d-b0ff-c7354b3b0444 em
+// produção (a que motivou toda essa investigação). Antes deste adendo, só 3 atributos viravam
+// alvo pra essa família (LENGTH, THICKNESS, FINISH); depois, 6 (+ LINE, COMPOSITION,
+// RECOMMENDED_USES) — os mesmos 3 que ficavam em branco na Revisão comparado ao "Sugerir
+// características" nativo do ML.
+describe('golden: categoria real MLB270273 — família real da investigação 2026-07-30', () => {
+  const schema = parseAtributosSchema(schemaMlb270273Raw);
+  // Já preenchido pelo caminho determinístico + closed-set/numérico que já funcionava antes
+  // desta mudança — snapshot real da família em produção.
+  const jaPreenchidos = [
+    { id: 'BRAND', value_name: 'BR17-COATS CORRENTE LTDA' },
+    { id: 'MODEL', value_name: 'LINHA ESP. P/RENASCENCA COR BRANCO C/10UND' },
+    { id: 'PRESENTATION_TYPE', value_name: 'PACOTE COM 10 NOVELOS' },
+    { id: 'UNITS_PER_PACKAGE', value_name: '10' },
+    { id: 'UNIT_WEIGHT', value_name: '224 g' },
+    { id: 'IS_WAXED', value_id: '242084' },
+    { id: 'IS_ELASTIC', value_id: '242084' },
+    { id: 'SALE_FORMAT', value_id: '1359392' },
+  ];
+  const input = {
+    nome: 'LINHA ESP. P/RENASCENCA COR BRANCO C/10UND',
+    descricao: 'LINHA ESPECIAL PARA RENASCENÇA NA COR BRANCA.TEX 87 ET.140. CONTÉM: PACOTE COM 10 NOVELOS COM 224 METROS CADA. COMPOSIÇÃO: 100% ALGODÃO. A LINHA RENASCENÇA É O FIO IDEAL PARA A CONFECÇÃO DA TRADICIONAL RENDA RENASCENÇA, UMA DAS MAIS BELAS E REFINADAS TÉCNICAS DO ARTESANATO BRASILEIRO. COM EXCELENTE QUALIDADE E ACABAMENTO, ELA PROPORCIONA O CAIMENTO E A FIRMEZA NECESSÁRIOS PARA UNIR OS LACÊS E FORMAR OS DELICADOS DESENHOS CARACTERÍSTICOS DESSA RENDA. SUA RESISTÊNCIA GARANTE QUE AS PEÇAS MANTENHAM A BELEZA E A DURABILIDADE AO LONGO DO TEMPO, MESMO APÓS LAVAGENS. PERFEITA PARA QUEM APRECIA TRABALHOS MANUAIS SOFISTICADOS, A LINHA RENASCENÇA PERMITE CRIAR PEÇAS EXCLUSIVAS COMO TOALHAS, CAMINHOS DE MESA, BLUSAS, VESTIDOS, GOLAS E ITENS DE DECORAÇÃO QUE ENCANTAM PELA ELEGÂNCIA E PELO TRABALHO ARTESANAL MINUCIOSO.',
+  };
+
+  it('6 atributos viram alvo (antes do adendo eram só 3: LENGTH/THICKNESS/FINISH)', () => {
+    const alvos = atributosAlvo(schema, jaPreenchidos);
+    expect(alvos.map((a) => a.id).sort()).toEqual(
+      ['COMPOSITION', 'FINISH', 'LENGTH', 'LINE', 'RECOMMENDED_USES', 'THICKNESS'].sort(),
+    );
+  });
+
+  it('preenche LINE, COMPOSITION, RECOMMENDED_USES e LENGTH com valores literalmente presentes na descrição real (FINISH/THICKNESS ficam de fora — sem info clara no texto, igual ao "Sugerir características" nativo do ML nesse mesmo produto)', () => {
+    const respostaIaSimulada = {
+      LINE: 'Linha Especial para Renascença',
+      COMPOSITION: 'Algodão',
+      RECOMMENDED_USES: 'Renda Renascença',
+      LENGTH: '224 m',
+    };
+    const alvos = atributosAlvo(schema, jaPreenchidos);
+    const preenchidos = validarRespostaAtributos(respostaIaSimulada, alvos, input);
+    expect(preenchidos).toContainEqual({ id: 'LINE', value_name: 'Linha Especial para Renascença' });
+    expect(preenchidos).toContainEqual({ id: 'COMPOSITION', value_name: 'Algodão' });
+    expect(preenchidos).toContainEqual({ id: 'RECOMMENDED_USES', value_name: 'Renda Renascença' });
+    expect(preenchidos).toContainEqual({ id: 'LENGTH', value_name: '224 m' });
   });
 });
