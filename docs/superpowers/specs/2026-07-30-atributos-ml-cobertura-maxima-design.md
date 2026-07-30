@@ -113,8 +113,12 @@ Em `_shared/ai/__tests__/atributos-llm.test.ts`:
    continuam de fora (guard de regressão do unban seletivo).
 3. String opcional sem `values[]` entra; um `value_type` desconhecido não entra.
 4. Guard número+unidade: texto com "224 metros" rejeita resposta `UNIT_WEIGHT: "224 g"` e aceita
-   `LENGTH: "224 m"` (valida a tabela de sinônimo metro→m). Unidade do texto fora da tabela de
-   sinônimos (ex.: "224 braças") não valida nenhum atributo — fica de fora, não trava.
+   `LENGTH: "224 m"` (valida a tabela de sinônimo metro→m). Correção feita ao escrever o código
+   exato (ver plano de implementação): o guard só REJEITA quando acha, perto do número, uma
+   unidade reconhecida e DIFERENTE da resposta — quando não acha nenhuma unidade reconhecida ali
+   (tabela de sinônimos não bate com nada, ex. "224 braças", ou não há palavra de unidade no
+   lugar, ex. "3,00 X 1,80 Metros"), não tem sinal confiável e cai no comportamento atual (não
+   bloqueia) — senão quebraria um caso real já coberto pelos testes existentes.
 5. Denylist regulatório: atributo com id `ANVISA_REGISTRATION` (string, sem values, opcional) não
    vira alvo mesmo com número no texto.
 6. Valor multivalued com vírgula é rejeitado.
