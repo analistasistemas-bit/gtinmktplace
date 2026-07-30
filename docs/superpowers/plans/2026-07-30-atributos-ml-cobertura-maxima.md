@@ -398,10 +398,10 @@ git commit -m "feat(atributos-ia): multivalued e texto-livre opcional sem sugest
 
 - [ ] **Step 1: Escrever o teste que falha**
 
-No describe `'multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-30)'` criado no Task 3, adicionar:
+No describe `'multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-30)'` criado no Task 3, adicionar (nota: o `input` usa "Algodão Poliéster 100%" — os DOIS tokens precisam constar contíguos na fonte pro teste da vírgula ser um teste real da trava, não um caso que já seria rejeitado por outro motivo):
 
 ```typescript
-  const input = { nome: 'Linha 100% Algodão' };
+  const input = { nome: 'Linha Algodão Poliéster 100%' };
   it('aceita 1 valor extraído do texto', () => {
     expect(validarRespostaAtributos({ COMPOSITION: 'Algodão' }, alvos, input)).toEqual([{ id: 'COMPOSITION', value_name: 'Algodão' }]);
   });
@@ -413,9 +413,7 @@ No describe `'multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-
 - [ ] **Step 2: Rodar e confirmar que falha**
 
 Run: `pnpm exec vitest run supabase/functions/_shared/ai/__tests__/atributos-llm.test.ts -t "vírgula"`
-Expected: FAIL no segundo (`Algodão, Poliéster` seria aceito hoje, já que "algodão" bate como substring inicial... na verdade `validarTextoLivre` exige o token completo bater; "Algodão, Poliéster" tokeniza pra `['algodao','poliester']`, 2 tokens, e o texto fonte "Linha 100% Algodão" só tem 1 "algodao" — então hoje já seria rejeitado por não ter os 2 tokens contíguos na fonte. Ajustar o teste se necessário pra um caso onde os dois valores REALMENTE constam na fonte, ex. `input = { nome: 'Linha 100% Algodão e Poliéster' }`, garantindo que sem a trava de vírgula o teste falharia por aceitar, e com a trava passa por rejeitar).
-
-Reescrever o `input` do describe pra: `const input = { nome: 'Linha 100% Algodão e Poliéster' };` — assim "Algodão, Poliéster" bateria nos tokens da fonte (algodao ... poliester, não contíguos por causa do "e" no meio — na verdade ainda não bateria contíguo). Usar um texto onde os tokens seriam contíguos SEM a vírgula atrapalhar: `const input = { nome: 'Linha Algodão Poliéster 100%' };` — aí "Algodão, Poliéster" tokeniza pra `['algodao','poliester']`, contíguos na fonte "algodao poliester 100" → SEM a trava de vírgula isso seria aceito (bug); COM a trava, é rejeitado antes de chegar em `validarTextoLivre` porque a resposta bruta tem vírgula.
+Expected: FAIL no segundo teste — sem a trava, "Algodão, Poliéster" tokeniza pra `['algodao','poliester']`, contíguos na fonte "algodao poliester 100" ("Linha Algodão Poliéster 100%" normalizado), então `validarTextoLivre` aceitaria hoje (bug que este task fecha).
 
 - [ ] **Step 3: Implementar**
 
