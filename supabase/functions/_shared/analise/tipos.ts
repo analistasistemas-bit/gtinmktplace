@@ -1,3 +1,5 @@
+import type { DimensoesPacote } from '../ml/pacote.ts';
+
 /** Item a analisar (uma linha da planilha ou um GTIN colado). */
 export interface ItemAnalise {
   gtin: string;
@@ -8,6 +10,8 @@ export interface ItemAnalise {
   custo: number | null;
   /** Origem tributária (ADR-0055); ausência → 'nacional'. */
   origem: 'nacional' | 'importado';
+  /** Dimensões e peso para cálculo de frete (quando informados na planilha). */
+  dimensoes?: DimensoesPacote | null;
 }
 
 /** Comissão real do ML num preço, por tipo de anúncio (vinda de listing_prices). */
@@ -41,6 +45,8 @@ export interface ItemAnalisado {
   mercado?: Mercado;
   classico?: ComissaoTipo;
   premium?: ComissaoTipo;
+  /** Custo de frete que o vendedor absorve (0 quando o comprador paga). */
+  frete?: number;
   /** true quando a busca/comissão falhou para este item (os demais seguem). */
   erro?: boolean;
 }

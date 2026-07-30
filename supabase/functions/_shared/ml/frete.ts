@@ -34,14 +34,15 @@ export async function buscarFreteVendedor(
   mlUserId: string,
   preco: number,
   categoria: string,
-  dim: DimensoesPacote,
+  dim?: DimensoesPacote | null,
 ): Promise<number> {
-  if (!dimensoesValidas(dim)) return 0;
-  const dimensions =
-    `${Math.round(dim.altura_cm!)}x${Math.round(dim.largura_cm!)}x${Math.round(dim.comprimento_cm!)},${Math.round(dim.peso_gramas!)}`;
+  const dimensionsQuery = dim && dimensoesValidas(dim)
+    ? `&dimensions=${Math.round(dim.altura_cm!)}x${Math.round(dim.largura_cm!)}x${Math.round(dim.comprimento_cm!)},${Math.round(dim.peso_gramas!)}`
+    : '';
   const url = `https://api.mercadolibre.com/users/${mlUserId}/shipping_options/free`
-    + `?dimensions=${dimensions}&item_price=${preco}&listing_type_id=gold_special`
-    + `&condition=new&mode=me2&verbose=true&category_id=${categoria}`;
+    + `?item_price=${preco}&listing_type_id=gold_special`
+    + `&condition=new&mode=me2&verbose=true&category_id=${categoria}`
+    + dimensionsQuery;
 
   let resp: Response;
   try {
@@ -53,3 +54,4 @@ export async function buscarFreteVendedor(
   const ac = (await resp.json())?.coverage?.all_country as CoverageAllCountry | undefined;
   return freteSeVendedorPaga(ac);
 }
+

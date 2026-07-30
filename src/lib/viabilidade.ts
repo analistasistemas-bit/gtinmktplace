@@ -12,7 +12,8 @@ export interface ItemAnalisado {
   minimo: number | null; custo: number | null;
   origem: 'nacional' | 'importado';
   existeNoML: boolean; mercado?: Mercado;
-  classico?: ComissaoTipo; premium?: ComissaoTipo; erro?: boolean;
+  classico?: ComissaoTipo; premium?: ComissaoTipo;
+  frete?: number; erro?: boolean;
 }
 export interface RespostaAnalise { itens: ItemAnalisado[]; ignorados: number }
 
@@ -21,22 +22,23 @@ const PRECO_MIN_ACIMA_ABISMO = 12.55; // ADR-0023
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 function arredondar5Cima(n: number): number { return Math.ceil(n * 20) / 20; }
 
-/** Líquido se você igualar o menor preço do mercado: menor − comissão total − imposto (ADR-0055). */
-export function liquidoNoMercado(menor: number | null, saleFeeAmount: number, imposto = 0): number | null {
+/** Líquido se você igualar o menor preço do mercado: menor − comissão total − imposto (ADR-0055) − frete do vendedor. */
+export function liquidoNoMercado(menor: number | null, saleFeeAmount: number, imposto = 0, frete = 0): number | null {
   if (menor == null) return null;
-  return round2(menor - saleFeeAmount - imposto);
+  return round2(menor - saleFeeAmount - imposto - frete);
 }
 
 /**
  * Preço de etiqueta necessário para receber `minimo` líquido (gross-up, ADR-0023).
  * Acima do abismo a tarifa fixa zera, então usa só o percentual; o imposto (ADR-0055)
- * incide sobre o preço, então entra no denominador. Nunca abaixo de R$ 12,55.
+ * incide sobre o preço, então entra no denominador. O frete do vendedor entra no numerador.
  */
-export function etiquetaParaMinimo(minimo: number | null, percentual: number, aliquotaPct = 0): number | null {
+export function etiquetaParaMinimo(minimo: number | null, percentual: number, aliquotaPct = 0, frete = 0): number | null {
   if (minimo == null) return null;
   const denom = 1 - percentual / 100 - aliquotaPct / 100;
-  if (denom <= 0) return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(minimo));
-  return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(minimo / denom));
+  const num = minimo + frete;
+  if (denom <= 0) return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(num));
+  return Math.max(PRECO_MIN_ACIMA_ABISMO, arredondar5Cima(num / denom));
 }
 
 /** Semáforo de viabilidade ao igualar o menor preço do mercado. */
@@ -46,9 +48,10 @@ export function semaforoTipo(
   minimo: number | null,
   custo: number | null,
   imposto = 0,
+  frete = 0,
 ): Semaforo {
   if (minimo == null) return 'indisponivel';
-  return calcularSemaforo(liquidoNoMercado(menor, saleFeeAmount, imposto), minimo, custo);
+  return calcularSemaforo(liquidoNoMercado(menor, saleFeeAmount, imposto, frete), minimo, custo);
 }
 
 async function lerArquivoBase64(file: File): Promise<string> {

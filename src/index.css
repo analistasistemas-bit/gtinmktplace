@@ -72,6 +72,7 @@
 }
 
 :root {
+    color-scheme: light;
     --background: oklch(0.99 0.004 277);
     --foreground: oklch(0.21 0.02 277);
     --card: oklch(1 0 0);
@@ -123,6 +124,7 @@
 }
 
 .dark {
+    color-scheme: dark;
     --background: oklch(0.14 0.012 277);
     --foreground: oklch(0.96 0.005 277);
     --card: oklch(0.265 0.016 277);
@@ -178,6 +180,14 @@
   html {
     @apply font-sans;
     }
+  html.dark, .dark {
+    color-scheme: dark;
+  }
+  /* Inverte as setas nativas pretas dos campos number no modo dark para ficarem visíveis (brancas) */
+  .dark input[type="number"]::-webkit-inner-spin-button,
+  .dark input[type="number"]::-webkit-outer-spin-button {
+    filter: invert(1);
+  }
 }
 
 @layer components {
