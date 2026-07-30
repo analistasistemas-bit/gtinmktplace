@@ -340,12 +340,15 @@ describe('golden: categoria real MLB270273 — família real da investigação 2
     );
   });
 
-  it('preenche LINE, COMPOSITION, RECOMMENDED_USES e LENGTH com valores literalmente presentes na descrição real (FINISH/THICKNESS ficam de fora — sem info clara no texto, igual ao "Sugerir características" nativo do ML nesse mesmo produto)', () => {
+  it('preenche LINE, COMPOSITION, RECOMMENDED_USES e LENGTH com valores literalmente presentes na descrição real (FINISH: testado e rejeitado — "Brilhante" não consta no texto; THICKNESS: sem resposta simulada — "TEX 87" não é uma unidade reconhecível como mm, igual ao "Sugerir características" nativo do ML nesse mesmo produto, que também deixou os dois em branco)', () => {
     const respostaIaSimulada = {
       LINE: 'Linha Especial para Renascença',
       COMPOSITION: 'Algodão',
       RECOMMENDED_USES: 'Renda Renascença',
       LENGTH: '224 m',
+      // "Brilhante" não aparece no texto (só o elogio genérico "EXCELENTE... ACABAMENTO") —
+      // deve ser rejeitado pelo guard anti-invenção de texto livre.
+      FINISH: 'Brilhante',
     };
     const alvos = atributosAlvo(schema, jaPreenchidos);
     const preenchidos = validarRespostaAtributos(respostaIaSimulada, alvos, input);
@@ -353,5 +356,6 @@ describe('golden: categoria real MLB270273 — família real da investigação 2
     expect(preenchidos).toContainEqual({ id: 'COMPOSITION', value_name: 'Algodão' });
     expect(preenchidos).toContainEqual({ id: 'RECOMMENDED_USES', value_name: 'Renda Renascença' });
     expect(preenchidos).toContainEqual({ id: 'LENGTH', value_name: '224 m' });
+    expect(preenchidos.find((a) => a.id === 'FINISH')).toBeUndefined();
   });
 });
