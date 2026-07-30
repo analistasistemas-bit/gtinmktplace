@@ -24,4 +24,12 @@ describe('Página Viabilidade', () => {
     expect(screen.getByText('Subir planilha')).toBeInTheDocument();
     expect(screen.getByText('Colar GTINs')).toBeInTheDocument();
   });
+
+  it('explica a limitação dos preços retornados pela API do ML', () => {
+    renderPage();
+    expect(screen.getByText('Menor na API do ML')).toBeInTheDocument();
+    expect(screen.getByText(
+      'Promoções exibidas no site do Mercado Livre podem não aparecer na API oficial.',
+    )).toBeInTheDocument();
+  });
 });
