@@ -20,7 +20,11 @@ export interface ItemAnalisado {
   classico?: ComissaoTipo; premium?: ComissaoTipo;
   frete?: number; dimensoesEncontradas?: boolean; erro?: boolean;
 }
-export interface RespostaAnalise { itens: ItemAnalisado[]; ignorados: number }
+export interface RespostaAnalise {
+  itens: ItemAnalisado[]; ignorados: number;
+  /** false = conta ML da org sem Mercado Envios (me2) — frete sai 0 em todos os itens. */
+  me2Habilitado?: boolean | null;
+}
 
 const PRECO_MIN_ACIMA_ABISMO = 12.55; // ADR-0023
 

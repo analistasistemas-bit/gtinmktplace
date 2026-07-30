@@ -153,7 +153,11 @@ Deno.serve(async (req) => {
 
   console.log(`analisar-viabilidade: ${itens.length} itens, ${ignorados} ignorados`);
   const db = adminClient();
-  const conexao = await resolverConexao(db, orgId, 'mercado_livre');
+  const [conexao, mc] = await Promise.all([
+    resolverConexao(db, orgId, 'mercado_livre'),
+    db.from('marketplace_connections').select('me2_habilitado')
+      .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle(),
+  ]);
   const analisados = await emLotes(db, orgId, conexao, itens);
-  return json({ itens: analisados, ignorados });
+  return json({ itens: analisados, ignorados, me2Habilitado: mc.data?.me2_habilitado ?? null });
 });
