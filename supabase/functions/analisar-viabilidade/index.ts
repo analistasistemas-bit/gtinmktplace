@@ -31,12 +31,11 @@ async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Pr
 
     if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
     const token = await getValidAccessTokenConexao(conexao);
+    const mlUserId = conexao.contaExternaId || 'me';
     const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, menor, categoria, 'gold_special'),
       buscarListingPrice(token, menor, categoria, 'gold_pro'),
-      conexao.contaExternaId
-        ? buscarFreteVendedor(token, conexao.contaExternaId, menor, categoria, item.dimensoes ?? null)
-        : Promise.resolve(0),
+      buscarFreteVendedor(token, mlUserId, menor, categoria, item.dimensoes ?? null),
     ]);
 
     return {

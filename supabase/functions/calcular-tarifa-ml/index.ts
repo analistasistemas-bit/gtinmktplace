@@ -55,13 +55,12 @@ Deno.serve(async (req) => {
     if (cached) return json(JSON.parse(cached));
 
     const token = await getValidAccessTokenConexao(conexao);
+    const mlUserId = conexao.contaExternaId || 'me';
 
     const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, preco, categoria_ml_id, 'gold_special'),
       buscarListingPrice(token, preco, categoria_ml_id, 'gold_pro'),
-      conexao.contaExternaId
-        ? buscarFreteVendedor(token, conexao.contaExternaId, preco, categoria_ml_id, dim)
-        : Promise.resolve(0),
+      buscarFreteVendedor(token, mlUserId, preco, categoria_ml_id, dim),
     ]);
     const tarifa = montarTarifa(preco, classicoML, premiumML, frete);
 
