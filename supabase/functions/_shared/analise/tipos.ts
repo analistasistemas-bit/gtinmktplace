@@ -47,6 +47,8 @@ export interface ItemAnalisado {
   premium?: ComissaoTipo;
   /** Custo de frete que o vendedor absorve (0 quando o comprador paga). */
   frete?: number;
+  /** false = frete calculado com pacote genérico (16x11x6cm/300g) por falta de dimensão real. */
+  dimensoesEncontradas?: boolean;
   /** true quando a busca/comissão falhou para este item (os demais seguem). */
   erro?: boolean;
 }

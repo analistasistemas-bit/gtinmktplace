@@ -532,7 +532,11 @@ falha ao ler `organizations` não libera.
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
   Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);
-  margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055).
+  margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055). Frete do
+  vendedor (`buscarFreteVendedor`) usa a dimensão vinda do caller (planilha) quando válida; senão
+  busca em `variacoes` por `org_id`+`gtin` (produto já cadastrado antes); sem nenhuma das duas, cai
+  no pacote genérico do `frete.ts` e devolve `dimensoesEncontradas: false` para o front oferecer
+  input manual (modo "Colar GTINs" reenvia só esse GTIN com `dimensoes` preenchidas).
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
 
 ### Acesso / usuários

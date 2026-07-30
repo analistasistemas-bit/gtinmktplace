@@ -7,13 +7,18 @@ export interface Mercado {
   menor: number | null; maior: number | null;
   vendedores: number; freteGratis: number; full: number;
 }
+// Espelha _shared/canais/contrato.ts.
+export interface DimensoesPacote {
+  altura_cm: number | null; largura_cm: number | null;
+  comprimento_cm: number | null; peso_gramas: number | null;
+}
 export interface ItemAnalisado {
   gtin: string; nome: string; unidade: string | null;
   minimo: number | null; custo: number | null;
   origem: 'nacional' | 'importado';
   existeNoML: boolean; mercado?: Mercado;
   classico?: ComissaoTipo; premium?: ComissaoTipo;
-  frete?: number; erro?: boolean;
+  frete?: number; dimensoesEncontradas?: boolean; erro?: boolean;
 }
 export interface RespostaAnalise { itens: ItemAnalisado[]; ignorados: number }
 
@@ -87,4 +92,11 @@ export async function analisarPlanilha(file: File): Promise<RespostaAnalise> {
 export async function analisarGtins(gtins: string[]): Promise<RespostaAnalise> {
   const itens = gtins.map((g) => g.trim()).filter(Boolean).map((gtin) => ({ gtin }));
   return postAnalise({ modo: 'gtins', itens });
+}
+
+/** Recalcula um item com dimensões informadas manualmente (produto sem cadastro prévio). */
+export async function analisarComDimensoes(gtin: string, dimensoes: DimensoesPacote): Promise<ItemAnalisado> {
+  const { itens } = await postAnalise({ modo: 'gtins', itens: [{ gtin, dimensoes }] });
+  if (!itens[0]) throw new Error('Falha ao recalcular o frete');
+  return itens[0];
 }

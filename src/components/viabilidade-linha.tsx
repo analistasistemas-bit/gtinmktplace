@@ -6,8 +6,8 @@ import { fmtBRL } from '@/lib/formato';
 import { calcularMarkup } from '@/lib/markup';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import {
-  liquidoNoMercado, etiquetaParaMinimo, semaforoTipo,
-  type ItemAnalisado, type ComissaoTipo,
+  liquidoNoMercado, etiquetaParaMinimo, semaforoTipo, analisarComDimensoes,
+  type ItemAnalisado, type ComissaoTipo, type DimensoesPacote,
 } from '@/lib/viabilidade';
 import type { Semaforo } from '@/lib/semaforo';
 
@@ -60,8 +60,65 @@ function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct, frete }: {
   );
 }
 
-export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; editavel: boolean }) {
+function FormDimensoes({ gtin, onAtualizado }: { gtin: string; onAtualizado: (item: ItemAnalisado) => void }) {
+  const [dim, setDim] = useState({ altura_cm: '', largura_cm: '', comprimento_cm: '', peso_gramas: '' });
+  const [recalculando, setRecalculando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const faltaCampo = Object.values(dim).some((v) => v === '');
+
+  const recalcular = async () => {
+    const dimensoes: DimensoesPacote = {
+      altura_cm: Number(dim.altura_cm), largura_cm: Number(dim.largura_cm),
+      comprimento_cm: Number(dim.comprimento_cm), peso_gramas: Number(dim.peso_gramas),
+    };
+    setRecalculando(true);
+    setErro(null);
+    try {
+      onAtualizado(await analisarComDimensoes(gtin, dimensoes));
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setRecalculando(false);
+    }
+  };
+
+  return (
+    <div className="mb-3 rounded-md border border-border bg-muted/40 p-3 text-sm">
+      <p className="mb-2 text-muted-foreground">
+        Frete estimado com pacote genérico (16×11×6cm, 300g) — sem dimensões cadastradas pra esse GTIN.
+        Informe as reais para um cálculo mais preciso.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label htmlFor={`alt-${gtin}`} className="flex flex-col gap-1 text-xs">Altura (cm)
+          <Input id={`alt-${gtin}`} type="number" step="0.1" min="0" className="w-20" value={dim.altura_cm}
+            onChange={(e) => setDim((d) => ({ ...d, altura_cm: e.target.value }))} />
+        </label>
+        <label htmlFor={`larg-${gtin}`} className="flex flex-col gap-1 text-xs">Largura (cm)
+          <Input id={`larg-${gtin}`} type="number" step="0.1" min="0" className="w-20" value={dim.largura_cm}
+            onChange={(e) => setDim((d) => ({ ...d, largura_cm: e.target.value }))} />
+        </label>
+        <label htmlFor={`comp-${gtin}`} className="flex flex-col gap-1 text-xs">Compr. (cm)
+          <Input id={`comp-${gtin}`} type="number" step="0.1" min="0" className="w-20" value={dim.comprimento_cm}
+            onChange={(e) => setDim((d) => ({ ...d, comprimento_cm: e.target.value }))} />
+        </label>
+        <label htmlFor={`peso-${gtin}`} className="flex flex-col gap-1 text-xs">Peso (g)
+          <Input id={`peso-${gtin}`} type="number" step="1" min="0" className="w-20" value={dim.peso_gramas}
+            onChange={(e) => setDim((d) => ({ ...d, peso_gramas: e.target.value }))} />
+        </label>
+        <button onClick={recalcular} disabled={recalculando || faltaCampo}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50">
+          {recalculando ? 'Recalculando…' : 'Recalcular frete'}
+        </button>
+      </div>
+      {erro && <p className="mt-1 text-xs text-destructive">{erro}</p>}
+    </div>
+  );
+}
+
+export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAnalisado; editavel: boolean }) {
   const [aberto, setAberto] = useState(false);
+  const [override, setOverride] = useState<ItemAnalisado | null>(null);
+  const item = override ?? itemInicial;
   const [minimo, setMinimo] = useState<number | null>(item.minimo);
   const [custo, setCusto] = useState<number | null>(item.custo);
   const { data: aliquotas } = useAliquotas();
@@ -112,6 +169,9 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
       {aberto && (
         <tr className="border-t border-border bg-muted/30">
           <td colSpan={6} className="px-3 py-3 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">
+            {editavel && item.dimensoesEncontradas === false && (
+              <FormDimensoes gtin={item.gtin} onAtualizado={setOverride} />
+            )}
             <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
               <label htmlFor={`minimo-${item.gtin}`} className="flex items-center gap-2">Seu mínimo
                 <Input id={`minimo-${item.gtin}`} type="number" step="0.01" disabled={!editavel} className="w-28"

@@ -1,5 +1,6 @@
 // @deno-types="../_shared/vendor/xlsx.d.ts"
 import * as XLSX from '../_shared/vendor/xlsx.mjs';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
@@ -8,12 +9,35 @@ import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
+import { dimensoesValidas, type DimensoesPacote } from '../_shared/ml/pacote.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
 
 const LOTE = 5; // concorrência limitada p/ não estourar a API do ML
 
-async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Promise<ItemAnalisado> {
+/** Dimensões já cadastradas (produto já publicado antes) para o GTIN, dentro da org. Best-effort. */
+async function buscarDimensoesSalvas(
+  db: SupabaseClient, orgId: string, gtin: string,
+): Promise<DimensoesPacote | null> {
+  const { data } = await db
+    .from('variacoes')
+    .select('peso_gramas, altura_cm, largura_cm, comprimento_cm')
+    .eq('org_id', orgId)
+    .eq('gtin', gtin)
+    .limit(5);
+  for (const row of data ?? []) {
+    const d: DimensoesPacote = {
+      peso_gramas: row.peso_gramas, altura_cm: row.altura_cm,
+      largura_cm: row.largura_cm, comprimento_cm: row.comprimento_cm,
+    };
+    if (dimensoesValidas(d)) return d;
+  }
+  return null;
+}
+
+async function analisarItem(
+  db: SupabaseClient, orgId: string, conexao: ConexaoCanal | null, item: ItemAnalise,
+): Promise<ItemAnalisado> {
   const base: ItemAnalisado = {
     gtin: item.gtin, nome: item.nome, unidade: item.unidade,
     minimo: item.minimo, custo: item.custo, origem: item.origem, existeNoML: false,
@@ -32,10 +56,18 @@ async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Pr
     if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
     const token = await getValidAccessTokenConexao(conexao);
     const mlUserId = conexao.contaExternaId || 'me';
+
+    // Sem dimensão vinda do caller (modo GTIN colado): tenta achar no produto já cadastrado
+    // antes de cair no pacote genérico (16x11x6cm/300g) do frete.ts.
+    const dimensoesInformadas = item.dimensoes && dimensoesValidas(item.dimensoes);
+    const dimensoes = dimensoesInformadas
+      ? item.dimensoes!
+      : await buscarDimensoesSalvas(db, orgId, item.gtin);
+
     const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, menor, categoria, 'gold_special'),
       buscarListingPrice(token, menor, categoria, 'gold_pro'),
-      buscarFreteVendedor(token, mlUserId, menor, categoria, item.dimensoes ?? null),
+      buscarFreteVendedor(token, mlUserId, menor, categoria, dimensoes),
     ]);
 
     return {
@@ -53,6 +85,7 @@ async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Pr
       classico: { saleFeeAmount: classicoML.sale_fee_amount ?? 0, ...comissaoDe(classicoML) },
       premium: { saleFeeAmount: premiumML.sale_fee_amount ?? 0, ...comissaoDe(premiumML) },
       frete,
+      dimensoesEncontradas: dimensoes != null,
     };
   } catch (e) {
     console.warn(`analisarItem ${item.gtin} falhou: ${(e as Error).message}`);
@@ -60,11 +93,13 @@ async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Pr
   }
 }
 
-async function emLotes(conexao: ConexaoCanal | null, itens: ItemAnalise[]): Promise<ItemAnalisado[]> {
+async function emLotes(
+  db: SupabaseClient, orgId: string, conexao: ConexaoCanal | null, itens: ItemAnalise[],
+): Promise<ItemAnalisado[]> {
   const out: ItemAnalisado[] = [];
   for (let i = 0; i < itens.length; i += LOTE) {
     const fatia = itens.slice(i, i + LOTE);
-    out.push(...(await Promise.all(fatia.map((it) => analisarItem(conexao, it)))));
+    out.push(...(await Promise.all(fatia.map((it) => analisarItem(db, orgId, conexao, it)))));
   }
   return out;
 }
@@ -96,13 +131,16 @@ Deno.serve(async (req) => {
     } else if (body.modo === 'gtins' && Array.isArray(body.itens)) {
       itens = body.itens
         .filter((x: { gtin?: unknown }) => typeof x?.gtin === 'string' && x.gtin.trim().length > 0)
-        .map((x: { gtin: string; minimo?: number; custo?: number; nome?: string }) => ({
+        .map((x: {
+          gtin: string; minimo?: number; custo?: number; nome?: string; dimensoes?: DimensoesPacote | null;
+        }) => ({
           gtin: x.gtin.trim(),
           nome: x.nome ?? x.gtin.trim(),
           unidade: null,
           minimo: typeof x.minimo === 'number' ? x.minimo : null,
           custo: typeof x.custo === 'number' ? x.custo : null,
           origem: 'nacional',
+          dimensoes: x.dimensoes ?? null,
         }));
     } else {
       return json({ erro: 'modo inválido (use "planilha" com arquivoBase64 ou "gtins" com itens)' }, 400);
@@ -114,7 +152,8 @@ Deno.serve(async (req) => {
   if (itens.length === 0) return json({ itens: [], ignorados });
 
   console.log(`analisar-viabilidade: ${itens.length} itens, ${ignorados} ignorados`);
-  const conexao = await resolverConexao(adminClient(), orgId, 'mercado_livre');
-  const analisados = await emLotes(conexao, itens);
+  const db = adminClient();
+  const conexao = await resolverConexao(db, orgId, 'mercado_livre');
+  const analisados = await emLotes(db, orgId, conexao, itens);
   return json({ itens: analisados, ignorados });
 });
