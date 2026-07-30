@@ -20,14 +20,14 @@ const ROTULO: Record<Semaforo, string> = {
 
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 
-function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct }: {
+function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct, frete }: {
   titulo: string; c: ComissaoTipo; menor: number | null;
-  minimo: number | null; custo: number | null; aliquotaPct: number;
+  minimo: number | null; custo: number | null; aliquotaPct: number; frete: number;
 }) {
   const imposto = round2((menor ?? 0) * aliquotaPct / 100);
-  const liquido = liquidoNoMercado(menor, c.saleFeeAmount, imposto);
-  const etiqueta = etiquetaParaMinimo(minimo, c.percentual, aliquotaPct);
-  const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo, imposto);
+  const liquido = liquidoNoMercado(menor, c.saleFeeAmount, imposto, frete);
+  const etiqueta = etiquetaParaMinimo(minimo, c.percentual, aliquotaPct, frete);
+  const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo, imposto, frete);
   const temCusto = custo != null && custo > 0;
   const mk = temCusto && liquido != null ? calcularMarkup(liquido, custo) : null;
   const prejuizo = mk != null && mk.lucro < 0;
@@ -41,6 +41,9 @@ function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct }: {
         <div className="flex justify-between"><dt>Comissão</dt><dd>−{fmtBRL(c.saleFeeAmount)} ({c.percentual}%)</dd></div>
         {imposto > 0 && (
           <div className="flex justify-between"><dt>Imposto</dt><dd>−{fmtBRL(imposto)} ({aliquotaPct}%)</dd></div>
+        )}
+        {frete > 0 && (
+          <div className="flex justify-between"><dt>Frete (vendedor)</dt><dd>−{fmtBRL(frete)}</dd></div>
         )}
         <div className="flex justify-between"><dt>Líquido se igualar o mercado</dt><dd>{liquido != null ? fmtBRL(liquido) : '—'}</dd></div>
         {mk != null && (
@@ -81,9 +84,10 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
   }
 
   const c = item.classico!;
+  const frete = item.frete ?? 0;
   const impostoResumo = round2((item.mercado!.menor ?? 0) * aliquotaPct / 100);
-  const semaforo = semaforoTipo(item.mercado!.menor, c.saleFeeAmount, minimo, custo, impostoResumo);
-  const liquido = liquidoNoMercado(item.mercado!.menor, c.saleFeeAmount, impostoResumo);
+  const semaforo = semaforoTipo(item.mercado!.menor, c.saleFeeAmount, minimo, custo, impostoResumo, frete);
+  const liquido = liquidoNoMercado(item.mercado!.menor, c.saleFeeAmount, impostoResumo, frete);
 
   return (
     <>
@@ -123,8 +127,8 @@ export function ViabilidadeLinha({ item, editavel }: { item: ItemAnalisado; edit
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <BlocoTipo titulo="Clássico" c={item.classico!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} />
-              <BlocoTipo titulo="Premium" c={item.premium!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} />
+              <BlocoTipo titulo="Clássico" c={item.classico!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
+              <BlocoTipo titulo="Premium" c={item.premium!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
             </div>
           </td>
         </tr>

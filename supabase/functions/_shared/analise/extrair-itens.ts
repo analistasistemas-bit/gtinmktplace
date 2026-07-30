@@ -57,6 +57,12 @@ export function extrairItensAnalise(
       ignorados++;
       continue;
     }
+    const altura_cm = parseNumero(r.ALTURA_CM ?? r.ALTURA);
+    const largura_cm = parseNumero(r.LARGURA_CM ?? r.LARGURA);
+    const comprimento_cm = parseNumero(r.COMPRIMENTO_CM ?? r.COMPRIMENTO);
+    const peso_gramas = parseNumero(r.PESO_GRAMAS ?? r.PESO);
+    const temDimensoes = altura_cm != null || largura_cm != null || comprimento_cm != null || peso_gramas != null;
+
     itens.push({
       gtin,
       nome: String(r.NOME ?? '').trim(),
@@ -64,6 +70,7 @@ export function extrairItensAnalise(
       minimo,
       custo,
       origem: normalizarOrigem(r.ORIGEM != null ? String(r.ORIGEM) : undefined),
+      ...(temDimensoes ? { dimensoes: { altura_cm, largura_cm, comprimento_cm, peso_gramas } } : {}),
     });
   }
 

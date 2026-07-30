@@ -68,4 +68,10 @@ describe('extrairItensAnalise', () => {
     const rows = [{ NOME: 'X', GTIN: '789', PRECO: 5, CUSTO: 2 }]; // falta UNIDADE
     expect(() => extrairItensAnalise(rows)).toThrow(/UNIDADE/);
   });
+
+  it('lê dimensões e peso quando presentes na planilha', () => {
+    const rows = [{ NOME: 'X', UNIDADE: 'UN', GTIN: '789', PRECO: 5, CUSTO: 2, ALTURA_CM: 10, LARGURA_CM: 15, COMPRIMENTO_CM: 20, PESO_GRAMAS: 300 }];
+    const { itens } = extrairItensAnalise(rows);
+    expect(itens[0].dimensoes).toEqual({ altura_cm: 10, largura_cm: 15, comprimento_cm: 20, peso_gramas: 300 });
+  });
 });

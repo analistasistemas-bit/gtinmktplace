@@ -7,6 +7,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
+import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
 
@@ -30,9 +31,12 @@ async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Pr
 
     if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
     const token = await getValidAccessTokenConexao(conexao);
-    const [classicoML, premiumML] = await Promise.all([
+    const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, menor, categoria, 'gold_special'),
       buscarListingPrice(token, menor, categoria, 'gold_pro'),
+      conexao.contaExternaId
+        ? buscarFreteVendedor(token, conexao.contaExternaId, menor, categoria, item.dimensoes ?? null)
+        : Promise.resolve(0),
     ]);
 
     return {
@@ -49,6 +53,7 @@ async function analisarItem(conexao: ConexaoCanal | null, item: ItemAnalise): Pr
       },
       classico: { saleFeeAmount: classicoML.sale_fee_amount ?? 0, ...comissaoDe(classicoML) },
       premium: { saleFeeAmount: premiumML.sale_fee_amount ?? 0, ...comissaoDe(premiumML) },
+      frete,
     };
   } catch (e) {
     console.warn(`analisarItem ${item.gtin} falhou: ${(e as Error).message}`);
