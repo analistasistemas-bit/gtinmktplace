@@ -117,6 +117,32 @@ describe('validarRespostaAtributos (numérico)', () => {
   });
 });
 
+describe('validarRespostaAtributos (numérico, unidade precisa bater com o contexto do número)', () => {
+  const schema = [
+    A({ id: 'LENGTH', nome: 'Comprimento', valueType: 'number_unit', allowedUnits: [{ id: 'm', nome: 'm' }, { id: 'cm', nome: 'cm' }] }),
+    A({ id: 'UNIT_WEIGHT', nome: 'Peso da unidade', valueType: 'number_unit', allowedUnits: [{ id: 'g', nome: 'g' }, { id: 'kg', nome: 'kg' }] }),
+  ];
+  const alvos = atributosAlvo(schema, []);
+
+  it('aceita LENGTH=224 m (sinônimo "metros"→"m" bate com o número no texto)', () => {
+    const input = { nome: 'Linha 224 metros' };
+    expect(validarRespostaAtributos({ LENGTH: '224 m' }, alvos, input)).toEqual([{ id: 'LENGTH', value_name: '224 m' }]);
+  });
+  it('rejeita UNIT_WEIGHT=224 g quando o 224 do texto só aparece com "metros" (bug real: comprimento confundido com peso)', () => {
+    const input = { nome: 'Linha 224 metros' };
+    expect(validarRespostaAtributos({ UNIT_WEIGHT: '224 g' }, alvos, input)).toEqual([]);
+  });
+  it('unidade não reconhecida perto do número (fora da tabela de sinônimos) não bloqueia — sem sinal confiável, mantém o comportamento atual', () => {
+    const input = { nome: 'Linha 224 braças' };
+    expect(validarRespostaAtributos({ LENGTH: '224 m' }, alvos, input)).toEqual([{ id: 'LENGTH', value_name: '224 m' }]);
+  });
+  it('quilo/kg também tem sinônimo (grama/quilo cobertos, não só metro)', () => {
+    const input = { nome: 'Novelo 100 gramas' };
+    expect(validarRespostaAtributos({ UNIT_WEIGHT: '100 g' }, alvos, input)).toEqual([{ id: 'UNIT_WEIGHT', value_name: '100 g' }]);
+    expect(validarRespostaAtributos({ LENGTH: '100 m' }, alvos, input)).toEqual([]);
+  });
+});
+
 describe('validarRespostaAtributos (texto-livre, anti-invenção)', () => {
   const schema = [A({ id: 'LINE', nome: 'Linha', required: true })];
   const alvos = atributosAlvo(schema, []);

@@ -158,6 +158,39 @@ function numeroConstaNoTexto(num: number, input: InputAtributos): boolean {
   return nums.some((n) => Math.abs(n - num) < 1e-9);
 }
 
+// Sinônimo (forma do texto da planilha) → unidade do schema da ML. A planilha costuma escrever
+// por extenso ("224 METROS"); o schema só expõe a forma abreviada ("m"). Tabela pequena e
+// curada, escopada às unidades já observadas no domínio — cresce sob demanda, não tenta cobrir o
+// sistema métrico inteiro. Inclui a própria forma abreviada como entrada (identity) pro texto que
+// já vem abreviado continuar batendo direto.
+const SINONIMOS_UNIDADE: Record<string, string> = {
+  metro: 'm', metros: 'm', m: 'm',
+  centimetro: 'cm', centimetros: 'cm', cm: 'cm',
+  milimetro: 'mm', milimetros: 'mm', mm: 'mm',
+  polegada: '"', polegadas: '"', '"': '"',
+  grama: 'g', gramas: 'g', g: 'g',
+  quilo: 'kg', quilos: 'kg', quilograma: 'kg', quilogramas: 'kg', kg: 'kg',
+};
+
+// Unidades do schema encontradas COLADAS a um número específico no texto (não em qualquer lugar
+// do texto). Fecha a confusão real (adendo ADR-0052, 2026-07-30): "224 METROS" no texto virando
+// resposta da IA em UNIT_WEIGHT "224 g" só porque 224 aparece solto em algum lugar — exige que a
+// unidade da resposta bata com a unidade que está de fato junto daquele número na fonte. Quando
+// não acha NENHUMA unidade reconhecida perto do número (Set vazio), quem chama trata como "sem
+// sinal confiável" e não bloqueia — só bloqueia quando acha uma unidade reconhecida e diferente.
+function unidadesJuntoAoNumero(num: number, texto: string): Set<string> {
+  const out = new Set<string>();
+  const re = /(\d+(?:[.,]\d+)?)\s*([\p{L}"]+)/gu;
+  for (const m of normalizar(texto).matchAll(re)) {
+    const n = parseFloat(m[1].replace(',', '.'));
+    if (Math.abs(n - num) < 1e-9) {
+      const un = SINONIMOS_UNIDADE[normalizar(m[2])];
+      if (un) out.add(un);
+    }
+  }
+  return out;
+}
+
 function validarTextoLivre(bruto: string, input: InputAtributos): string | null {
   const valor = bruto.trim();
   if (valor.length < MIN_TEXTO_LIVRE || valor.length > MAX_TEXTO_LIVRE) return null;
@@ -194,7 +227,16 @@ export function validarRespostaAtributos(
       if (escolhido) out.push({ id: alvo.id, value_id: escolhido.id });
     } else if (alvo.tipo === 'numero') {
       const valor = validarNumerico(String(bruto), alvo.unidades);
-      if (valor && numeroConstaNoTexto(parseFloat(valor), input)) out.push({ id: alvo.id, value_name: valor });
+      if (!valor) continue;
+      const [numStr, unidadeResp] = valor.split(' ');
+      const num = parseFloat(numStr);
+      if (!numeroConstaNoTexto(num, input)) continue;
+      if (unidadeResp) {
+        const texto = `${input.nome} ${input.descricao ?? ''}`;
+        const unidadesTexto = unidadesJuntoAoNumero(num, texto);
+        if (unidadesTexto.size > 0 && !unidadesTexto.has(normalizar(unidadeResp))) continue;
+      }
+      out.push({ id: alvo.id, value_name: valor });
     } else {
       // Multivalued (fase 1: só 1 valor) — resposta com vírgula é rejeitada, não aceita truncada
       // nem dividida: a ML trataria vírgula em value_name multivalued como separador de vários
