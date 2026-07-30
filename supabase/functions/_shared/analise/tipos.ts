@@ -57,4 +57,6 @@ export interface RespostaAnalise {
   itens: ItemAnalisado[];
   /** linhas da planilha descartadas (sem GTIN/preço/custo válidos). */
   ignorados: number;
+  /** false = conta ML da org sem Mercado Envios (me2) — frete sai 0 em todos os itens. null = não checado. */
+  me2Habilitado?: boolean | null;
 }

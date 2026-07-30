@@ -70,6 +70,17 @@ export default function Viabilidade() {
         </p>
       </div>
 
+      {analise.data?.me2Habilitado === false && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <p className="font-medium">Frete (vendedor) indisponível nesta análise</p>
+          <p>
+            Sua conta do Mercado Livre ainda não aderiu ao Mercado Envios — o frete de todos os
+            itens abaixo saiu R$0 (não calculado), não R$0 real. Ative em Mercado Livre → Vender →
+            Preferências de venda, ou no fluxo de criar um anúncio, e refaça a análise.
+          </p>
+        </div>
+      )}
+
       <Tabs defaultValue="planilha">
         <TabsList>
           <TabsTrigger value="planilha">Subir planilha</TabsTrigger>
