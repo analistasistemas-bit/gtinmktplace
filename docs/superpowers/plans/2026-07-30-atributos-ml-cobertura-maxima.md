@@ -219,6 +219,20 @@ Expected: FAIL — `PRODUCT_FEATURES` ok, mas `NOTE` não vira alvo ainda (`toEq
 
 - [ ] **Step 3: Implementar**
 
+Antes disso, atualizar o comentário de topo do arquivo (fica impreciso depois desta task — hoje
+diz que texto-livre opcional fica sempre de fora, o que deixa de ser verdade). Localizar:
+
+```typescript
+// Texto livre (string sem values, ex.: MODEL) fica de fora — risco alto de invenção.
+```
+
+Substituir por:
+
+```typescript
+// Texto livre obrigatório (ex.: MODEL) e texto-livre OPCIONAL sem sugestão e sem denylist
+// regulatório também entram (adendo ADR-0052, 2026-07-30) — ver REGULATORIO_ID mais abaixo.
+```
+
 Em `atributos-llm-core.ts`, localizar a interface `AtributoAlvo`:
 
 ```typescript
@@ -779,14 +793,14 @@ git commit -m "test(atributos-ia): golden test com schema+produto reais da famí
 Run: `pnpm test`
 Expected: PASS em tudo (não só nos arquivos tocados — `resolver-atributos-genericos.ts` e `process-familia/index.ts` consomem `atributosAlvo`/`preencherAtributosClosedSet` e precisam continuar passando sem alteração).
 
-- [ ] **Step 2: Typecheck**
+- [ ] **Step 2: Typecheck (edge functions rodam em Deno, não no `tsc`/`tsconfig` do front — `supabase/functions/**` não está em nenhum project reference do `tsc -b`, então só `check:functions` de fato cobre os arquivos deste plano)**
 
-Run: `pnpm exec tsc -b --noEmit`
+Run: `pnpm run check:functions`
 Expected: sem erros (o campo novo `multivalued` em `AtributoAlvo` é lido em 2 lugares só — `atributos-llm-core.ts` e o teste; `resolver-atributos-genericos.ts`/`process-familia/index.ts` só passam `AtributoAlvo[]` adiante, não constroem objetos literais do tipo, então não quebram por campo faltante).
 
-- [ ] **Step 3: Lint**
+- [ ] **Step 3: Lint (idem — `eslint.config.js` ignora `supabase/functions`; quem cobre é o lint do Deno)**
 
-Run: `pnpm lint`
+Run: `pnpm run lint:functions`
 Expected: sem erros.
 
 - [ ] **Step 4: Se algo quebrou fora dos arquivos tocados, investigar antes de seguir**
