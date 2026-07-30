@@ -85,7 +85,9 @@ investigação achou que a informação estava na planilha, mas era descartada p
 3. **Guard de atributos `number_unit` fica mais estrito.** Antes só checava se o número aparecia em
    qualquer lugar do texto; passa a exigir que a unidade da resposta bata com a unidade encontrada
    junto daquele número no texto-fonte (evita "224 metros" virar `UNIT_WEIGHT: 224 g` só porque 224
-   está solto em algum lugar do texto).
+   está solto em algum lugar do texto). Usa uma tabela pequena e curada de sinônimo → unidade do
+   schema (metro/m, quilo/kg, etc.), já que o texto da planilha usa a palavra por extenso e o schema
+   da ML só expõe a forma abreviada.
 4. **Bug de tokenizer corrigido.** `validarTextoLivre` tokenizava por `split(/\s+/)`, então
    pontuação colada ("ALGODÃO.") quebrava o match contra a resposta limpa da IA ("algodão") mesmo a
    palavra estando literalmente no texto — provavelmente já causava perda silenciosa antes deste
