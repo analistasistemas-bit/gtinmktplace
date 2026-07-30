@@ -83,11 +83,19 @@ investigação achou que a informação estava na planilha, mas era descartada p
    obrigatórios (`TAGS_NAO_FALTANTE`) — divergência proposital entre os dois sets, comentada no
    código pra não ser revertida por engano.
 3. **Guard de atributos `number_unit` fica mais estrito.** Antes só checava se o número aparecia em
-   qualquer lugar do texto; passa a exigir que a unidade da resposta bata com a unidade encontrada
-   junto daquele número no texto-fonte (evita "224 metros" virar `UNIT_WEIGHT: 224 g` só porque 224
-   está solto em algum lugar do texto). Usa uma tabela pequena e curada de sinônimo → unidade do
-   schema (metro/m, quilo/kg, etc.), já que o texto da planilha usa a palavra por extenso e o schema
-   da ML só expõe a forma abreviada.
+   qualquer lugar do texto; passa a exigir sinal de unidade compatível (`unidadeBateContexto`, em
+   `atributos-llm-core.ts`): aceita se QUALQUER ocorrência do número no texto tiver, perto, a mesma
+   unidade da resposta (direto ou via sinônimo); só rejeita quando nenhuma ocorrência bate E existe
+   pelo menos uma ocorrência com unidade reconhecida diferente (sinal confiável de confusão real,
+   como "224 metros" virando `UNIT_WEIGHT: 224 g`). Comparação por ocorrência (não por conjunto
+   global de unidades do texto) — evita que o mesmo número reaproveitado por outro atributo em outro
+   trecho ("5 metros de fita e 5 ml de cola") derrube uma resposta correta. Usa uma tabela pequena e
+   curada de sinônimo → unidade do schema (metro/m, quilo/kg, etc.), já que o texto da planilha usa a
+   palavra por extenso e o schema da ML só expõe a forma abreviada. Limitação conhecida (documentada
+   como `ponytail:` no código): a detecção exige unidade colada ao número (regex de adjacência), não
+   entende frase com unidade não-adjacente ("224 de comprimento") — nesse caso, se o mesmo número
+   aparecer noutro trecho com unidade adjacente conflitante, sub-preenche uma resposta correta. Nunca
+   inventa, só perde cobertura; fica como teto aceito, não bloqueador desta entrega.
 4. **Bug de tokenizer corrigido.** `validarTextoLivre` tokenizava por `split(/\s+/)`, então
    pontuação colada ("ALGODÃO.") quebrava o match contra a resposta limpa da IA ("algodão") mesmo a
    palavra estando literalmente no texto — provavelmente já causava perda silenciosa antes deste

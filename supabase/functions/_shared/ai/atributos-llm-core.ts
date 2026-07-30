@@ -180,6 +180,11 @@ const SINONIMOS_UNIDADE: Record<string, string> = {
 // trecho com unidade reconhecida (via sinônimo) diferente — sinal confiável de confusão real
 // (o bug original: "224 metros" no texto virando resposta em peso "224 g"). Sem nenhum sinal
 // (nem bate, nem conflita) → aceita, sem bloquear (comportamento atual preservado).
+// ponytail: adjacência de regex, não semântica — só enxerga unidade colada ao número
+// ("224 metros"). Frase idiomática "224 de comprimento" (unidade não-adjacente) + outra
+// ocorrência adjacente conflitante do mesmo número em outro trecho do texto pode sub-preencher
+// uma resposta correta (nunca inventa — só perde cobertura). Janela de proximidade textual
+// (N palavras entre número e unidade) se isso aparecer em dado real.
 function unidadeBateContexto(num: number, texto: string, unidadeResp: string): boolean {
   const respNorm = normalizar(unidadeResp);
   let achouIgual = false;

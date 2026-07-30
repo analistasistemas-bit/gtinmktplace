@@ -2,6 +2,30 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cobertura máxima de atributos ML sem inventar dado (adendo ADR-0052) — BRANCH 2026-07-30
+
+- [x] **4 causas de código corrigidas** em `supabase/functions/_shared/ai/atributos-llm-core.ts`:
+  tokenizer do guard anti-invenção quebrava em pontuação colada ("ALGODÃO." não batia "algodão");
+  atributos `multivalued` (COMPOSITION, RECOMMENDED_USES) eram banidos do alvo da IA; texto-livre
+  opcional sem `values[]` sugeridos nunca era tentado (só obrigatório, ADR-0052 original); guard de
+  `number_unit` só checava se o número aparecia solto no texto, sem checar unidade do contexto
+  (deixava "224 metros" virar `UNIT_WEIGHT: 224 g`). Detalhe completo:
+  `docs/superpowers/specs/2026-07-30-atributos-ml-cobertura-maxima-design.md` e adendo em
+  `docs/decisions/0052-camada2-atributos-ia-first-com-fallback.md`.
+- [x] **Teste golden com schema real** (`MLB270273`, família da investigação): alvos de IA foram de
+  3 para 6 atributos pro mesmo produto, sem inventar valor (regra de ouro substring continua o único
+  portão de aceitação).
+- [x] **Limitação conhecida documentada** (`ponytail:` no código, item 3 do adendo ADR-0052): guard de
+  unidade exige adjacência regex (número colado à unidade); frase com unidade não-adjacente ("224 de
+  comprimento") pode sub-preencher se o mesmo número aparecer noutro trecho com unidade conflitante
+  adjacente. Direção seletiva a favor da segurança (nunca inventa, só perde cobertura) — aceito sem
+  bloquear esta entrega.
+- [ ] **Deploy pendente** — mudou `_shared/ai/atributos-llm-core.ts` e `_shared/categoria/atributos.ts`,
+  consumidos por `process-familia` e `definir-categoria-familia`; exige `supabase functions deploy`
+  (todas as funções que importam `_shared/**`) antes de considerar em produção (regra "Deploy nunca
+  defasado" do CLAUDE.md).
+- [ ] **Branch aguardando validação local do Diego** antes de push/merge (fluxo de entrega padrão).
+
 ## E6b Bloco A — Estoque único cross-canal (ADR-0094) — EM PRODUÇÃO 2026-07-29
 
 - [x] **ADR-0094 escrito e aceito** — `docs/decisions/0094-estoque-unico-cadastro-manual.md`
