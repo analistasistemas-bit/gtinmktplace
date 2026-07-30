@@ -8,7 +8,8 @@ import type { AtributoML } from '../categoria/atributos.ts';
 //     número constar no título/descrição — mesma invariante anti-invenção do texto-livre
 //     (ADR-0052), fechando a lacuna que deixava a IA "chutar" um número plausível sem lastro no
 //     texto (ex.: WEIGHT inventado por não haver peso no texto — lote #30, 2026-07-09).
-// Texto livre (string sem values, ex.: MODEL) fica de fora — risco alto de invenção.
+// Texto livre obrigatório (ex.: MODEL) e texto-livre OPCIONAL sem sugestão e sem denylist
+// regulatório também entram (adendo ADR-0052, 2026-07-30) — ver REGULATORIO_ID mais abaixo.
 
 export interface AtributoAlvo {
   id: string;
@@ -16,6 +17,7 @@ export interface AtributoAlvo {
   tipo: 'closed' | 'numero' | 'texto';        // closed-set / numérico / texto-livre (só obrigatório)
   valores: { id: string; nome: string }[];   // closed-set; vazio quando é numérico/texto
   unidades?: { id: string; nome: string }[]; // só p/ number_unit (ex.: cm, m)
+  multivalued: boolean;                      // ML aceita mais de 1 valor; preenchemos só 1 (fase 1)
 }
 export interface InputAtributos {
   nome: string;
@@ -27,9 +29,20 @@ export interface InputAtributos {
 const IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR', 'UNITS_PER_PACK']);
 
 // Tags que tiram o atributo do escopo da IA no nível do item: read_only/hidden (não editável /
-// não conta p/ a nota), variation_attribute (preenchido por variação, ex.: MAIN_COLOR) e
-// multivalued (a IA monta um único valor, não lista). Validado no schema real de MLB255054.
-const TAGS_EXCLUIR = new Set(['read_only', 'hidden', 'variation_attribute', 'multivalued']);
+// não conta p/ a nota) e variation_attribute (preenchido por variação, ex.: MAIN_COLOR).
+// Validado no schema real de MLB255054. `multivalued` NÃO entra mais aqui (adendo ADR-0052,
+// 2026-07-30) — a IA passa a preencher um único valor pra esses atributos. Continua banido do
+// gate de obrigatórios (TAGS_NAO_FALTANTE, em categoria/atributos.ts) DE PROPÓSITO: o editor
+// manual de faltantes ainda não sabe mostrar/editar multivalued, então um multivalued required
+// não pode travar a publicação por lá — ver comentário espelhado em categoria/atributos.ts.
+const TAGS_EXCLUIR = new Set(['read_only', 'hidden', 'variation_attribute']);
+
+// Padrão de id de atributo regulatório/certificação — fora do escopo do texto-livre OPCIONAL
+// novo (adendo ADR-0052, 2026-07-30): a IA não deve copiar um número/texto qualquer do produto
+// pra um campo de compliance só porque "parece bater". Atributo regulatório OBRIGATÓRIO segue
+// coberto como antes (branch de baixo, inalterado) — só a expansão nova pra opcional respeita
+// esta lista.
+const REGULATORIO_ID = /REGISTRATION|CERTIF|ANVISA|ANATEL|INMETRO|LICENSE/;
 
 function normalizar(s: string): string {
   return (s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
@@ -63,9 +76,13 @@ export function atributosAlvo(schema: AtributoSchema[], jaPreenchidos: AtributoM
       // ?? [] defende contra schema de shape antigo (sem tags) vindo de cache stale: degrada
       // pra "sem tag de exclusão" em vez de estourar TypeError e derrubar o enriquecimento inteiro.
       !(a.tags ?? []).some((t) => TAGS_EXCLUIR.has(t)) &&
-      // closed-set e numéricos (obrig. e opcional) OU texto-livre SÓ quando obrigatório
+      // closed-set e numéricos (obrig. e opcional); texto-livre obrigatório sempre; texto-livre
+      // OPCIONAL sem sugestão também vira alvo, exceto id regulatório/certificação (adendo
+      // ADR-0052, 2026-07-30) — checagem explícita de valueType==='string', não por negação, pra
+      // não capturar um value_type futuro/desconhecido tratado como string por acidente.
       (a.valores.length > 0 || ehNumerico(a) ||
-        (a.valueType === 'string' && (a.required || a.conditionalRequired))),
+        (a.valueType === 'string' && (a.required || a.conditionalRequired)) ||
+        (a.valueType === 'string' && a.valores.length === 0 && !REGULATORIO_ID.test(a.id))),
     )
     .map((a) => ({
       id: a.id,
@@ -73,6 +90,7 @@ export function atributosAlvo(schema: AtributoSchema[], jaPreenchidos: AtributoM
       tipo: tipoAlvo(a),
       valores: a.valores,
       unidades: a.valueType === 'number_unit' ? a.allowedUnits : undefined,
+      multivalued: (a.tags ?? []).includes('multivalued'),
     }));
 }
 

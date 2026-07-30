@@ -41,15 +41,19 @@ describe('atributosAlvo', () => {
     expect(alvos.map((a) => a.id)).toContain('LINE');
     expect(alvos.find((a) => a.id === 'LINE')?.tipo).toBe('texto');
   });
-  it('texto-livre OPCIONAL não é alvo (evita poluição/invenção)', () => {
-    const schema = [A({ id: 'NOTE', nome: 'Observação', required: false })];
-    expect(atributosAlvo(schema, []).map((a) => a.id)).toEqual([]);
-  });
-  it('exclui variation_attribute, hidden/read_only e multivalued', () => {
+  it('exclui variation_attribute, hidden/read_only (multivalued sozinho NÃO exclui mais — adendo ADR-0052 2026-07-30)', () => {
     const ids = atributosAlvo(SCHEMA, base).map((a) => a.id);
     expect(ids).not.toContain('MAIN_COLOR');
     expect(ids).not.toContain('IMPORT_DUTY');
-    expect(ids).not.toContain('PRODUCT_FEATURES');
+    expect(ids).not.toContain('PRODUCT_FEATURES'); // multivalued + read_only → ainda de fora (read_only)
+  });
+  it('texto-livre OPCIONAL sem sugestão agora é alvo (cobertura máxima, adendo ADR-0052 2026-07-30)', () => {
+    const schema = [A({ id: 'NOTE', nome: 'Observação', required: false })];
+    expect(atributosAlvo(schema, []).map((a) => a.id)).toEqual(['NOTE']);
+  });
+  it('texto-livre OPCIONAL com id regulatório/certificação continua de fora (denylist)', () => {
+    const schema = [A({ id: 'ANVISA_REGISTRATION', nome: 'Registro ANVISA', required: false })];
+    expect(atributosAlvo(schema, []).map((a) => a.id)).toEqual([]);
   });
   it('atributo já preenchido → não é alvo', () => {
     const r = atributosAlvo(SCHEMA, [...base, { id: 'VOLTAGE', value_id: '3' }, { id: 'RIBBON_FORMAT', value_id: '5' }, { id: 'LENGTH', value_name: '10 cm' }, { id: 'THICKNESS', value_name: '2 mm' }]);
@@ -244,5 +248,17 @@ describe('preencherAtributosClosedSet', () => {
     const schema = [A({ id: 'LINE', nome: 'Linha', required: true })];
     const r = await preencherAtributosClosedSet(schema, [], { nome: 'Barbante Anne 400g' }, async () => ({ LINE: 'Marca Fantasma' }));
     expect(r).toEqual([]);
+  });
+});
+
+describe('multivalued vira alvo (cobertura máxima, adendo ADR-0052 2026-07-30)', () => {
+  const schema = [A({
+    id: 'COMPOSITION', nome: 'Composição', valueType: 'string',
+    valores: [{ id: '1', nome: 'Algodão' }, { id: '2', nome: 'Poliéster' }], tags: ['multivalued'],
+  })];
+  const alvos = atributosAlvo(schema, []);
+  it('multivalued sem read_only/hidden vira alvo, com a flag multivalued=true', () => {
+    expect(alvos.map((a) => a.id)).toEqual(['COMPOSITION']);
+    expect(alvos[0].multivalued).toBe(true);
   });
 });

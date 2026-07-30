@@ -125,6 +125,11 @@ const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR']);
 // variation_attribute (vem da variação) e multivalued (não montamos lista). DEVE casar com o
 // filtro do editor (faltantes-editaveis.ts) — se o gate contasse um destes como faltante mas o
 // editor não o mostrasse, a família ficaria impublicável sem campo para corrigir.
+// `multivalued` fica banido AQUI de propósito (diferente de TAGS_EXCLUIR em
+// atributos-llm-core.ts, que parou de banir multivalued no adendo ADR-0052 2026-07-30): a IA já
+// sabe preencher 1 valor pra um multivalued opcional, mas o editor manual de faltantes ainda não
+// sabe mostrar/editar esse tipo — um multivalued required teria que aparecer aqui como faltante
+// sem ter como o operador corrigir. Não "ressincronizar" os dois sets sem atualizar o editor junto.
 export const TAGS_NAO_FALTANTE = new Set(['read_only', 'hidden', 'variation_attribute', 'multivalued']);
 
 // Sentinela persistido em familias.atributos_faltantes quando NÃO foi possível validar os
