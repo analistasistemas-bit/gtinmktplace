@@ -8,7 +8,7 @@ import { ViabilidadeLinha } from '@/components/viabilidade-linha';
 import { useAnaliseViabilidade } from '@/hooks/useAnaliseViabilidade';
 import type { ItemAnalisado } from '@/lib/viabilidade';
 
-const COLS = ['Produto', 'Menor ML', 'Vendedores', 'Seu mínimo', 'Líquido se igualar', 'Viabilidade'];
+const COLS = ['Produto', 'Menor na API do ML', 'Vendedores', 'Seu mínimo', 'Líquido se igualar', 'Viabilidade'];
 
 function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean }) {
   if (itens.length === 0) return null;
@@ -62,6 +62,13 @@ export default function Viabilidade() {
     <div className="space-y-6 p-4 sm:p-6">
       <PageHeader title="Análise de viabilidade"
         subtitle="Veja, antes de subir um lote, se os produtos já vendem no ML e se o preço é viável." />
+
+      <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+        <p className="font-medium text-foreground">Menor na API do ML</p>
+        <p className="text-muted-foreground">
+          Promoções exibidas no site do Mercado Livre podem não aparecer na API oficial.
+        </p>
+      </div>
 
       <Tabs defaultValue="planilha">
         <TabsList>
