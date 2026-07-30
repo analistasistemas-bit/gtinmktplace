@@ -537,7 +537,10 @@ falha ao ler `organizations` não libera.
   vendedor (`buscarFreteVendedor`) usa a dimensão vinda do caller (planilha) quando válida; senão
   busca em `variacoes` por `org_id`+`gtin` (produto já cadastrado antes); sem nenhuma das duas, cai
   no pacote genérico do `frete.ts` e devolve `dimensoesEncontradas: false` para o front oferecer
-  input manual (modo "Colar GTINs" reenvia só esse GTIN com `dimensoes` preenchidas).
+  input manual (modo "Colar GTINs" reenvia só esse GTIN com `dimensoes` preenchidas). Resposta
+  também traz `me2Habilitado` (lido de `marketplace_connections.me2_habilitado`) — quando `false`,
+  o front avisa que o frete de todos os itens saiu 0 por falta de adesão ao Mercado Envios, não
+  porque o frete real é zero.
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
 
 ### Acesso / usuários
