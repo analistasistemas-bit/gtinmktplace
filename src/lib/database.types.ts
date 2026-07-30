@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       anuncios_externos: {
@@ -23,15 +48,20 @@ export type Database = {
           codigo_pai: string
           criado_em: string
           erro_mensagem: string | null
+          estado_desejado: string | null
           id: string
           item_externo_id: string | null
           metadados_canal: Json
+          mudando_composicao: boolean
+          mudando_composicao_familia_id: string | null
           org_id: string
           particao: number
           permalink: string | null
           preco_override: number | null
           publicado_em: string | null
           qstash_message_id: string | null
+          reconciliacao_tentativas: number
+          skus_esperados: Json | null
           status: string
           titulo: string | null
           user_id: string
@@ -45,15 +75,20 @@ export type Database = {
           codigo_pai: string
           criado_em?: string
           erro_mensagem?: string | null
+          estado_desejado?: string | null
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          mudando_composicao?: boolean
+          mudando_composicao_familia_id?: string | null
           org_id: string
           particao?: number
           permalink?: string | null
           preco_override?: number | null
           publicado_em?: string | null
           qstash_message_id?: string | null
+          reconciliacao_tentativas?: number
+          skus_esperados?: Json | null
           status?: string
           titulo?: string | null
           user_id: string
@@ -67,15 +102,20 @@ export type Database = {
           codigo_pai?: string
           criado_em?: string
           erro_mensagem?: string | null
+          estado_desejado?: string | null
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          mudando_composicao?: boolean
+          mudando_composicao_familia_id?: string | null
           org_id?: string
           particao?: number
           permalink?: string | null
           preco_override?: number | null
           publicado_em?: string | null
           qstash_message_id?: string | null
+          reconciliacao_tentativas?: number
+          skus_esperados?: Json | null
           status?: string
           titulo?: string | null
           user_id?: string
@@ -83,10 +123,92 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "anuncios_externos_mudando_composicao_familia_id_fkey"
+            columns: ["mudando_composicao_familia_id"]
+            isOneToOne: false
+            referencedRelation: "familias"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "anuncios_externos_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      anuncios_externos_itens: {
+        Row: {
+          anuncio_externo_id: string
+          atualizado_em: string
+          catalog_erro: string | null
+          catalog_listing_id: string | null
+          catalog_product_id: string | null
+          catalog_status: string | null
+          criado_em: string
+          family_id: string | null
+          id: string
+          item_externo_id: string | null
+          org_id: string
+          permalink: string | null
+          retirado: boolean
+          sku: string
+          status: string
+          user_product_id: string | null
+          variacao_id: string | null
+        }
+        Insert: {
+          anuncio_externo_id: string
+          atualizado_em?: string
+          catalog_erro?: string | null
+          catalog_listing_id?: string | null
+          catalog_product_id?: string | null
+          catalog_status?: string | null
+          criado_em?: string
+          family_id?: string | null
+          id?: string
+          item_externo_id?: string | null
+          org_id: string
+          permalink?: string | null
+          retirado?: boolean
+          sku: string
+          status: string
+          user_product_id?: string | null
+          variacao_id?: string | null
+        }
+        Update: {
+          anuncio_externo_id?: string
+          atualizado_em?: string
+          catalog_erro?: string | null
+          catalog_listing_id?: string | null
+          catalog_product_id?: string | null
+          catalog_status?: string | null
+          criado_em?: string
+          family_id?: string | null
+          id?: string
+          item_externo_id?: string | null
+          org_id?: string
+          permalink?: string | null
+          retirado?: boolean
+          sku?: string
+          status?: string
+          user_product_id?: string | null
+          variacao_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "anuncios_externos_itens_pai_fk"
+            columns: ["anuncio_externo_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "anuncios_externos"
+            referencedColumns: ["id", "org_id"]
+          },
+          {
+            foreignKeyName: "anuncios_externos_itens_variacao_id_fkey"
+            columns: ["variacao_id"]
+            isOneToOne: false
+            referencedRelation: "variacoes"
             referencedColumns: ["id"]
           },
         ]
@@ -150,7 +272,7 @@ export type Database = {
           {
             foreignKeyName: "configuracoes_org_id_fkey"
             columns: ["org_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -255,8 +377,10 @@ export type Database = {
           custo_centavos: number | null
           desconto_pct: number | null
           descricao_editada_pelo_operador: boolean
+          descricao_erro: string | null
           descricao_ml: string | null
           descricao_pai: string | null
+          descricao_status: string | null
           editado_em: string | null
           erro_mensagem: string | null
           estrategia_motivo: string | null
@@ -319,8 +443,10 @@ export type Database = {
           custo_centavos?: number | null
           desconto_pct?: number | null
           descricao_editada_pelo_operador?: boolean
+          descricao_erro?: string | null
           descricao_ml?: string | null
           descricao_pai?: string | null
+          descricao_status?: string | null
           editado_em?: string | null
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
@@ -383,8 +509,10 @@ export type Database = {
           custo_centavos?: number | null
           desconto_pct?: number | null
           descricao_editada_pelo_operador?: boolean
+          descricao_erro?: string | null
           descricao_ml?: string | null
           descricao_pai?: string | null
+          descricao_status?: string | null
           editado_em?: string | null
           erro_mensagem?: string | null
           estrategia_motivo?: string | null
@@ -517,6 +645,7 @@ export type Database = {
           criado_por: string | null
           expires_at: string | null
           id: string
+          me2_habilitado: boolean | null
           org_id: string
           refresh_token_secret_id: string | null
           scope: string | null
@@ -533,6 +662,7 @@ export type Database = {
           criado_por?: string | null
           expires_at?: string | null
           id?: string
+          me2_habilitado?: boolean | null
           org_id: string
           refresh_token_secret_id?: string | null
           scope?: string | null
@@ -549,6 +679,7 @@ export type Database = {
           criado_por?: string | null
           expires_at?: string | null
           id?: string
+          me2_habilitado?: boolean | null
           org_id?: string
           refresh_token_secret_id?: string | null
           scope?: string | null
@@ -682,6 +813,38 @@ export type Database = {
           },
         ]
       }
+      ml_formato_publicacao: {
+        Row: {
+          atualizado_em: string
+          categoria_id: string
+          connection_id: string
+          criado_em: string
+          formato: string
+        }
+        Insert: {
+          atualizado_em?: string
+          categoria_id: string
+          connection_id: string
+          criado_em?: string
+          formato: string
+        }
+        Update: {
+          atualizado_em?: string
+          categoria_id?: string
+          connection_id?: string
+          criado_em?: string
+          formato?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_formato_publicacao_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_mensagens: {
         Row: {
           atualizado_em: string
@@ -782,6 +945,38 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ml_moderacao_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_notificacoes_enviadas: {
+        Row: {
+          chave: string
+          entidade: string
+          enviado_em: string
+          org_id: string
+          user_id: string | null
+        }
+        Insert: {
+          chave: string
+          entidade: string
+          enviado_em?: string
+          org_id: string
+          user_id?: string | null
+        }
+        Update: {
+          chave?: string
+          entidade?: string
+          enviado_em?: string
+          org_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_notificacoes_enviadas_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -1126,8 +1321,10 @@ export type Database = {
           canais_habilitados: string[]
           criado_em: string
           id: string
+          is_test: boolean
           lote_seq: number
           marca_padrao: string | null
+          modulos_habilitados: string[]
           nome: string
           slug: string
         }
@@ -1136,8 +1333,10 @@ export type Database = {
           canais_habilitados?: string[]
           criado_em?: string
           id?: string
+          is_test?: boolean
           lote_seq?: number
           marca_padrao?: string | null
+          modulos_habilitados?: string[]
           nome: string
           slug: string
         }
@@ -1146,8 +1345,10 @@ export type Database = {
           canais_habilitados?: string[]
           criado_em?: string
           id?: string
+          is_test?: boolean
           lote_seq?: number
           marca_padrao?: string | null
+          modulos_habilitados?: string[]
           nome?: string
           slug?: string
         }
@@ -1163,7 +1364,7 @@ export type Database = {
           is_admin: boolean
           is_super_admin: boolean
           nome: string
-          org_id: string
+          org_id: string | null
           telegram_categorias: string[]
           telegram_chat_id: string | null
           updated_at: string
@@ -1177,7 +1378,7 @@ export type Database = {
           is_admin?: boolean
           is_super_admin?: boolean
           nome?: string
-          org_id: string
+          org_id?: string | null
           telegram_categorias?: string[]
           telegram_chat_id?: string | null
           updated_at?: string
@@ -1191,7 +1392,7 @@ export type Database = {
           is_admin?: boolean
           is_super_admin?: boolean
           nome?: string
-          org_id?: string
+          org_id?: string | null
           telegram_categorias?: string[]
           telegram_chat_id?: string | null
           updated_at?: string
@@ -1202,6 +1403,168 @@ export type Database = {
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_audit_events: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          event: Database["public"]["Enums"]["support_audit_event"]
+          id: string
+          legal_hold: boolean
+          org_id: string
+          result: Database["public"]["Enums"]["support_audit_result"]
+          support_request_id: string
+          target_id: string | null
+          target_type: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          event: Database["public"]["Enums"]["support_audit_event"]
+          id?: string
+          legal_hold?: boolean
+          org_id: string
+          result: Database["public"]["Enums"]["support_audit_result"]
+          support_request_id: string
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          event?: Database["public"]["Enums"]["support_audit_event"]
+          id?: string
+          legal_hold?: boolean
+          org_id?: string
+          result?: Database["public"]["Enums"]["support_audit_result"]
+          support_request_id?: string
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_audit_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_audit_events_request_org_fk"
+            columns: ["support_request_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "support_requests"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      support_requests: {
+        Row: {
+          approval_expires_at: string | null
+          approved_at: string | null
+          cancelled_at: string | null
+          created_at: string
+          decided_by: string | null
+          ended_at: string | null
+          expired_at: string | null
+          expires_at: string | null
+          id: string
+          org_id: string
+          pending_expires_at: string
+          reason: string
+          rejected_at: string | null
+          renewal_of: string | null
+          requester_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          scope: Database["public"]["Enums"]["support_scope"]
+          started_at: string | null
+          status: Database["public"]["Enums"]["support_status"]
+          updated_at: string
+        }
+        Insert: {
+          approval_expires_at?: string | null
+          approved_at?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          decided_by?: string | null
+          ended_at?: string | null
+          expired_at?: string | null
+          expires_at?: string | null
+          id?: string
+          org_id: string
+          pending_expires_at?: string
+          reason: string
+          rejected_at?: string | null
+          renewal_of?: string | null
+          requester_id: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          scope: Database["public"]["Enums"]["support_scope"]
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["support_status"]
+          updated_at?: string
+        }
+        Update: {
+          approval_expires_at?: string | null
+          approved_at?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          decided_by?: string | null
+          ended_at?: string | null
+          expired_at?: string | null
+          expires_at?: string | null
+          id?: string
+          org_id?: string
+          pending_expires_at?: string
+          reason?: string
+          rejected_at?: string | null
+          renewal_of?: string | null
+          requester_id?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          scope?: Database["public"]["Enums"]["support_scope"]
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["support_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_requests_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_requests_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_requests_renewal_of_fkey"
+            columns: ["renewal_of"]
+            isOneToOne: false
+            referencedRelation: "support_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_requests_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "support_requests_revoked_by_fkey"
+            columns: ["revoked_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1340,16 +1703,40 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      baixar_estoque: {
+        Args: {
+          p_canal: string
+          p_codigo: string
+          p_org: string
+          p_qtd: number
+          p_ref: string
+        }
+        Returns: Json
+      }
+      can_write_current_org: { Args: never; Returns: boolean }
+      canais_habilitados_da_org: { Args: never; Returns: string[] }
+      cleanup_support_audit_events: { Args: never; Returns: number }
       contar_conversas_aguardando: { Args: never; Returns: number }
       current_org_id: { Args: never; Returns: string }
+      current_support_scope: {
+        Args: never
+        Returns: Database["public"]["Enums"]["support_scope"]
+      }
       delete_marketplace_connection: {
         Args: { p_connection_id: string }
         Returns: undefined
       }
       delete_ml_credentials: { Args: { p_user_id: string }; Returns: undefined }
       desfazer_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
-      canais_habilitados_da_org: { Args: Record<PropertyKey, never>; Returns: string[] }
-      modulos_habilitados_da_org: { Args: Record<PropertyKey, never>; Returns: string[] }
+      estornar_estoque: {
+        Args: {
+          p_canal: string
+          p_codigo: string
+          p_org: string
+          p_ref_venda: string
+        }
+        Returns: Json
+      }
       get_connection_tokens: {
         Args: { p_connection_id: string }
         Returns: {
@@ -1371,8 +1758,89 @@ export type Database = {
       is_super_admin: { Args: never; Returns: boolean }
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
       marcar_notificacoes_lidas: { Args: { p_ids?: string[] }; Returns: number }
+      modulos_habilitados_da_org: { Args: never; Returns: string[] }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
+      reconciliar_backfill_up_candidatas: {
+        Args: { p_org_id: string }
+        Returns: {
+          codigo_pai: string
+          familia_id: string
+          ml_item_id: string
+          user_id: string
+        }[]
+      }
+      reconciliar_backfill_up_upsert: {
+        Args: {
+          p_codigo_pai: string
+          p_family_id: string
+          p_ml_item_id: string
+          p_org_id: string
+          p_permalink: string
+          p_sku: string
+          p_status: string
+          p_user_id: string
+          p_user_product_id: string
+        }
+        Returns: boolean
+      }
+      reconciliar_convergencia_claim: {
+        Args: { p_atualizado_antes: string; p_root_id: string }
+        Returns: {
+          codigo_pai: string
+          criado_em: string
+          mudando_composicao_familia_id: string
+          org_id: string
+          reconciliacao_tentativas: number
+          skus_esperados: Json
+          titulo: string
+        }[]
+      }
+      registrar_entrada: {
+        Args: {
+          p_codigo: string
+          p_criado_por: string
+          p_custo: number
+          p_doc: string
+          p_obs: string
+          p_org: string
+          p_qtd: number
+          p_ref: string
+        }
+        Returns: number
+      }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      start_support_session: {
+        Args: { p_now: string; p_request_id: string; p_requester_id: string }
+        Returns: {
+          approval_expires_at: string | null
+          approved_at: string | null
+          cancelled_at: string | null
+          created_at: string
+          decided_by: string | null
+          ended_at: string | null
+          expired_at: string | null
+          expires_at: string | null
+          id: string
+          org_id: string
+          pending_expires_at: string
+          reason: string
+          rejected_at: string | null
+          renewal_of: string | null
+          requester_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          scope: Database["public"]["Enums"]["support_scope"]
+          started_at: string | null
+          status: Database["public"]["Enums"]["support_status"]
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "support_requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       telegram_config_status: {
         Args: never
         Returns: {
@@ -1389,6 +1857,7 @@ export type Database = {
           p_conta_label: string
           p_criado_por: string
           p_expires_at: string
+          p_me2_habilitado?: boolean
           p_org_id: string
           p_refresh_token: string
           p_scope: string
@@ -1430,7 +1899,30 @@ export type Database = {
       operacao_ml: "CREATE" | "UPDATE"
       origem_concorrencia: "gtin" | "titulo" | "nenhuma"
       origem_produto: "nacional" | "importado"
-      tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola"
+      support_audit_event:
+        | "request_created"
+        | "request_cancelled"
+        | "request_approved"
+        | "request_rejected"
+        | "session_started"
+        | "session_ended"
+        | "session_expired"
+        | "session_revoked"
+        | "renewal_requested"
+        | "operation"
+        | "notification_delivery_failed"
+      support_audit_result: "succeeded" | "failed" | "denied"
+      support_scope: "read" | "full"
+      support_status:
+        | "pending"
+        | "approved"
+        | "active"
+        | "rejected"
+        | "cancelled"
+        | "expired"
+        | "revoked"
+        | "ended"
+      tipo_aviamento: "linha" | "botao" | "fita" | "outro" | "cola" | "cursor"
       tipo_origem: "regex" | "ia" | "manual" | "preditor" | "generico"
     }
     CompositeTypes: {
@@ -1557,6 +2049,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       canal_externo: ["mercado_livre"],
@@ -1582,7 +2077,32 @@ export const Constants = {
       operacao_ml: ["CREATE", "UPDATE"],
       origem_concorrencia: ["gtin", "titulo", "nenhuma"],
       origem_produto: ["nacional", "importado"],
-      tipo_aviamento: ["linha", "botao", "fita", "outro", "cola"],
+      support_audit_event: [
+        "request_created",
+        "request_cancelled",
+        "request_approved",
+        "request_rejected",
+        "session_started",
+        "session_ended",
+        "session_expired",
+        "session_revoked",
+        "renewal_requested",
+        "operation",
+        "notification_delivery_failed",
+      ],
+      support_audit_result: ["succeeded", "failed", "denied"],
+      support_scope: ["read", "full"],
+      support_status: [
+        "pending",
+        "approved",
+        "active",
+        "rejected",
+        "cancelled",
+        "expired",
+        "revoked",
+        "ended",
+      ],
+      tipo_aviamento: ["linha", "botao", "fita", "outro", "cola", "cursor"],
       tipo_origem: ["regex", "ia", "manual", "preditor", "generico"],
     },
   },

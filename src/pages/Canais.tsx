@@ -149,6 +149,13 @@ export default function Canais() {
                     <span className="truncate text-xs text-muted-foreground" title={conexaoML.scope ?? 'não informado'}>
                       Escopo OAuth: {conexaoML.scope ?? 'não informado'}
                     </span>
+                    {conexaoML.me2Habilitado === false && (
+                      <p className="rounded border border-warning/30 bg-warning/10 px-2 py-1.5 text-xs text-warning">
+                        Essa conta ainda não aderiu ao Mercado Envios — sem isso, o cálculo de frete
+                        na Viabilidade fica indisponível (mostra R$0). Ative em Mercado Livre →
+                        Vender → Preferências de venda, ou no fluxo de criar um anúncio.
+                      </p>
+                    )}
                     {isAdmin ? (
                       <Button variant="outline" size="sm" className="self-start" onClick={handleDesconectarML}>
                         Desconectar

@@ -142,7 +142,8 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   authUrl para um vendedor e recebia os tokens dele. Invariante: **não lê org de lugar nenhum
   além do `requireUserOrg`**. Traduz o 23505 do índice `(canal, conta_externa_id)` para "conta já
   conectada em outra organização". `verify_jwt=false` acompanhando as irmãs de OAuth, com a
-  checagem dentro da function.
+  checagem dentro da function. Também checa `GET /users/{id}/shipping_preferences` (`"me2"` em
+  `modes`) e grava `me2_habilitado` — best-effort, `null` se a chamada falhar.
 - **ml-oauth-disconnect** — remove a conexão (`delete_marketplace_connection`).
 
 ### Ingest de planilha
