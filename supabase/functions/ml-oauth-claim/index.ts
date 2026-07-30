@@ -37,6 +37,24 @@ async function buscarNickname(mlUserId: number, accessToken: string): Promise<st
   }
 }
 
+/**
+ * `status.mercadoenvios` de GET /users/{id} fica desatualizado por um tempo após a adesão
+ * (confirmado ao vivo: dizia "not_accepted" com o frete já funcionando) — a fonte confiável
+ * em tempo real é shipping_preferences.modes conter "me2". null = não deu pra checar (best-effort).
+ */
+async function buscarMe2Habilitado(mlUserId: number, accessToken: string): Promise<boolean | null> {
+  try {
+    const r = await fetch(`https://api.mercadolibre.com/users/${mlUserId}/shipping_preferences`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) return null;
+    const j = await r.json() as { modes?: string[] };
+    return Array.isArray(j.modes) ? j.modes.includes('me2') : null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -71,7 +89,10 @@ if (!isAdmin && context.support?.scope !== 'full') {
     // O `code` é de uso único e já foi consumido do Redis: se o ML recusar (invalid_grant por
     // expirado/reusado), NÃO há como repetir daqui — o usuário refaz o consentimento.
     const tok = await trocarCodePorToken(code);
-    const nickname = await buscarNickname(tok.user_id, tok.access_token);
+    const [nickname, me2Habilitado] = await Promise.all([
+      buscarNickname(tok.user_id, tok.access_token),
+      buscarMe2Habilitado(tok.user_id, tok.access_token),
+    ]);
     const expiresAt = new Date(Date.now() + tok.expires_in * 1000).toISOString();
 
     const { error } = await adminClient().rpc('upsert_marketplace_connection', {
@@ -84,6 +105,7 @@ if (!isAdmin && context.support?.scope !== 'full') {
       p_scope: tok.scope ?? null,
       p_expires_at: expiresAt,
       p_criado_por: userId,
+      p_me2_habilitado: me2Habilitado,
     });
     if (error) {
       // 23505 = índice único (canal, conta_externa_id): a conta ML pertence a outra org. Acontece

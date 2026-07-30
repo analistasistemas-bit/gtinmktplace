@@ -70,6 +70,15 @@ e `auth_alerta_em timestamptz` (marcado na 1ª falha 401/403 detectada, resetado
 sucesso — anti-spam do alerta Telegram categoria `integracao`). Escritas via `registrarSyncOk`/
 `registrarFalhaAuth` (`_shared/ml/liveness.ts`), só `service_role` (sem policy de UPDATE extra).
 
+`me2_habilitado boolean` (migration `20260730185835_marketplace_connections_mercadoenvios.sql`):
+a conta ML aderiu ao Mercado Envios (`"me2"` em `GET /users/{id}/shipping_preferences → modes`).
+Sem isso, `buscarFreteVendedor` (`_shared/ml/frete.ts`) falha silenciosamente (400 "does Not have
+me2 enabled") e o frete sai como 0 na Viabilidade — achado ao vivo numa conta NEWBIE sem vendas.
+**Não usar `GET /users/{id}` (`status.mercadoenvios`) para isso** — fica desatualizado por um tempo
+após a adesão (confirmado: dizia `"not_accepted"` com o frete já funcionando). Populado em
+`ml-oauth-claim` no momento da conexão; `null` = não checado (conexão antiga, best-effort). UI:
+`useMlConnection`/`Canais.tsx` avisa o operador quando `false`.
+
 ### `configuracoes` — 1 por organização (ADR-0086)
 
 `org_id` é a **PRIMARY KEY** (1 linha por org); trigger `seed_configuracoes_org` cria a linha default
