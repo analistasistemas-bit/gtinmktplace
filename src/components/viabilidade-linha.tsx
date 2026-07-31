@@ -190,6 +190,11 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
               <BlocoTipo titulo="Clássico" c={item.classico!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
               <BlocoTipo titulo="Premium" c={item.premium!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
             </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              {frete > 0
+                ? <>ℹ️ Já desconta o frete grátis ao comprador por sua conta: <span className="font-medium text-foreground">−{fmtBRL(frete)}</span> (estimado; varia por região).</>
+                : 'ℹ️ Acima de R$19, o Mercado Livre dá frete grátis ao comprador por sua conta (varia por região).'}
+            </p>
           </td>
         </tr>
       )}
