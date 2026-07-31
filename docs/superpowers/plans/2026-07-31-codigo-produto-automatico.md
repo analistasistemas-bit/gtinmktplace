@@ -732,7 +732,12 @@ precisa respeitar, e que os testes acima cobrem:
   (`_shared/produto/validar.ts`): `?.trim() || null`. Se divergir, o retry legítimo é barrado
   e a feature inteira perde o sentido.
 - `preco` e `custo` chegam do PostgREST podendo ser string (coluna `numeric`). Compare como
-  número, em centavos, e trate `null` em `custo` (que é opcional) sem tratá-lo como zero.
+  número e trate `null` em `custo` (que é opcional) sem tratá-lo como zero.
+- **As escalas são diferentes e isso decide a comparação.** `preco` é `numeric(12,2)` e as
+  dimensões são `numeric(10,2)` — nesses, comparar em centavos é correto e resolve o empate de
+  arredondamento. Já `custo` é `numeric` **sem escala**: o Postgres guarda `4.251` como
+  `4.251`, então truncar em centavos deixaria passar uma edição sub-centavo, e custo alimenta
+  markup (ADR-0055). Compare `custo` sem truncar.
 - A comparação é posicional, e é isso que faz a reordenação divergir — comportamento desejado.
 - **Compare TODAS as colunas que `montarLinhasProduto` grava e têm contrapartida armazenada:**
   `nome, gtin, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm`. Uma lista
@@ -763,7 +768,7 @@ com falha explícita (`if (c == null) throw`), nunca com `!` ou `?? 0`.
 - [ ] **Step 4: Rodar para ver passar**
 
 Run: `pnpm test -- processar`
-Expected: PASS, 10 testes.
+Expected: PASS, 17 testes.
 
 - [ ] **Step 5: Ligar o handler à função extraída**
 
@@ -776,7 +781,7 @@ markup, então um retry que grave custo divergente no ledger é caminho financei
 - [ ] **Step 6: Verificar e commitar**
 
 Run: `pnpm test && pnpm check:functions && pnpm lint:functions`
-Expected: tudo verde, incluindo os 10 testes novos.
+Expected: tudo verde, incluindo os 17 testes novos.
 
 ```bash
 git add supabase/functions/cadastrar-produto/
