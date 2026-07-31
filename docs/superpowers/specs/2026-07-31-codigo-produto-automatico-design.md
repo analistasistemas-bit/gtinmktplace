@@ -2,7 +2,8 @@
 
 **Data:** 2026-07-31
 **Decisor:** Diego
-**Relacionado:** ADR-0094 (D-3, D-4, D-13), convenção de fotos do CLAUDE.md
+**Relacionado:** ADR-0094 (D-3, D-4, D-13, D-15, D-17), convenção de fotos do CLAUDE.md
+**Revisão adversarial:** Fable 5, 2026-07-31 — achados B-1, I-1, I-2, I-3, M-1..M-4 incorporados
 
 ## 1. Problema
 
@@ -32,13 +33,16 @@ e o código inventado pelo sistema já nasce no formato que o resto do projeto e
 | # | Decisão | Racional |
 |---|---|---|
 | **D-1** | **Código gerado pelo sistema, oito dígitos com zeros à esquerda** (`00000001`). | É a convenção real do projeto — a Avil tem 346.608 SKUs exatamente nesse formato — e é o contrato do upload de foto (`^\d{8}`). Número puro (`1`, `2`) manteria o upload de foto quebrado nos produtos novos. |
-| **D-2** | **Sequência única para PAI e SKU:** o PAI consome um número e cada variação consome o seguinte. | Foi o pedido explícito. Um contador só significa que nenhum número se repete dentro da org, então PAI e SKU nunca se confundem em log, busca ou conversa com o operador. |
-| **D-3** | **Sequência por org**, em `organizations.produto_seq`, reservada por RPC `SECURITY DEFINER` atômica. | Espelha o padrão que já existe no repo (`organizations.lote_seq` + `proximo_numero_lote`). Gerar no front colidiria entre duas abas; gerar por `max(codigo)+1` colidiria sob concorrência. |
-| **D-4** | **A sequência é inicializada, por org, com o maior código numérico de até oito dígitos que já existe lá** (considerando `familias.codigo_pai` e `variacoes.codigo`). Valores apurados hoje: DSA → `1`, Avil → `31327733`. | Sem isso, uma org que já tem códigos numéricos receberia um código gerado igual a um existente, e o cadastro morreria no guard D-4 do ADR-0094 — com o operador sem ter escolhido o código e sem ação possível. |
+| **D-2** | **Sequência única para PAI e SKU:** o PAI consome um número e cada variação consome o seguinte. **O PAI é o menor número da faixa reservada.** | Foi o pedido explícito. Um contador só significa que nenhum número se repete dentro da org, então PAI e SKU nunca se confundem em log, busca ou conversa com o operador. A ordem é fixada aqui porque é indiferente funcionalmente e divergiria entre implementadores. |
+| **D-3** | **Sequência por org**, em `organizations.produto_seq`, reservada por RPC `SECURITY DEFINER` atômica. A RPC **rejeita `p_qtd <= 0`**. | Espelha o padrão que já existe no repo (`organizations.lote_seq` + `proximo_numero_lote`). Gerar no front colidiria entre duas abas; gerar por `max(codigo)+1` colidiria sob concorrência. `p_qtd` negativo rebobinaria a sequência, e sequência rebobinada é colisão silenciosa no futuro — uma linha de trava, mesma filosofia LOUD do resto. |
+| **D-4** | **A sequência é inicializada, por org, com o maior código numérico de até oito dígitos que já existe lá** (considerando `familias.codigo_pai` e `variacoes.codigo`). Valores apurados hoje: DSA → `1`, Avil → `31327733`. **A comparação é numérica, nunca de string.** | Sem isso, uma org que já tem códigos numéricos receberia um código gerado igual a um existente. E a comparação precisa ser numérica por um canal que nenhum guard cobre: `subirCapaFamilia` faz `padStart(8,'0')` no `codigo_pai` (`src/lib/upload-imagens.ts:43`), então o `codigo_pai='1'` da DSA e um gerado `00000001` são strings distintas no banco mas produzem **o mesmo arquivo de capa** `CAPA_00000001.jpg` — a capa de um sobrescreveria a do outro no storage. |
+| **D-4.1** | **A inicialização não é suficiente sozinha: colisão sobre código gerado dispara ressincronização e uma nova tentativa.** Se ainda colidir, é erro de sistema (500), não erro do operador. | A init da migration é uma foto de um alvo em movimento. Uma org sem o módulo hoje (Avil) continua importando planilha e seus códigos passam de 31.327.733; ao habilitar o módulo meses depois, `produto_seq` estaria congelado e o primeiro cadastro colidiria. Nada impede também uma org de ter o módulo **e** continuar importando planilha (D-13/D-14 são opt-in, não exclusão) — aí a dessincronização é permanente. O resync no caminho da colisão cobre os dois casos sem pagar um scan no caminho feliz. |
 | **D-5** | **Estouro de `99999999` falha LOUD**, com erro explícito, em vez de truncar ou seguir com nove dígitos. | Os oito dígitos são contrato com o upload de foto, não formatação. Truncar geraria código duplicado silencioso; passar a nove quebraria a foto de novo. Mesma classe de trava do `origem` no `validarProdutoNovo`. |
-| **D-6** | **Os guards D-4 (PAI duplicado) e de SKU do ADR-0094 permanecem.** | Defesa em profundidade. Com a sequência correta eles nunca disparam; se um dia a sequência for reinicializada errado, o cadastro falha alto em vez de criar duas linhas canônicas concorrentes — o risco que o D-4 original existe para impedir. |
-| **D-7** | **Vale só para quem tem o módulo `estoque` habilitado.** | Já é consequência do gate existente (`exigirModulo(admin, orgId, 'estoque')` na edge, ADR-0094 D-13), não um `if` novo: a geração vive dentro do cadastro manual, que só existe para org com o módulo ligado. O `ingest-lote` não é tocado — org de planilha continua com os códigos dela. |
+| **D-6** | **Os guards D-4 (PAI duplicado) e de SKU do ADR-0094 permanecem, e passam a cruzar as duas tabelas:** o PAI gerado é conferido contra `familias.codigo_pai` **e** `variacoes.codigo`; cada SKU gerado, contra as duas também. | Defesa em profundidade. Hoje o guard de PAI só olha `familias` (`cadastrar-produto/index.ts:48-50`) e o de SKU só olha `variacoes` (`index.ts:66-68`). Com sequência dessincronizada, um PAI gerado igual a um SKU existente passa pelos dois — e a resolução de estoque por `(org_id, codigo)` não distingue os dois campos. É o gatilho de D-4.1. |
+| **D-7** | **Vale só para quem tem o módulo `estoque` habilitado.** | Já é consequência do gate existente (`exigirModulo(admin, orgId, 'estoque')` em `index.ts:32`, ADR-0094 D-13), não um `if` novo: a geração vive dentro do cadastro manual, que só existe para org com o módulo ligado. O `ingest-lote` não é tocado — org de planilha continua com os códigos dela. |
 | **D-8** | **Os campos "Código do produto (PAI)" e "SKU" saem da tela.** | O operador nunca digita código. Menos campo para errar, e impede recriar o problema de origem (colar o EAN no SKU). O EAN continua no campo GTIN, que é o lugar dele. |
+| **D-9** | **Chave de idempotência por submissão:** o front gera um uuid ao abrir o diálogo e o envia; a edge grava em `familias.chave_cadastro` com unique parcial `(org_id, chave_cadastro)`. Reenvio com a mesma chave devolve o resultado do cadastro original, não cria um segundo. | **Sem isto a geração de código destrói uma propriedade de segurança que a edge documenta.** O cabeçalho declara "re-executar o cadastro do mesmo produto para no guard 409" (`index.ts:6-8`), o que só funciona porque `codigo_pai` vem do operador e é estável entre tentativas. Com código gerado, cada chamada produz códigos novos e **os guards nunca disparam num retry, por construção**. Um timeout depois do insert (o form continua preenchido, `dialog-cadastro-produto.tsx:109-119`) e um segundo clique criariam duas famílias, com o estoque inicial aplicado duas vezes — as refs `cadastro:{familiaId}:{codigo}` do D-17 mudam junto com a família, então a idempotência do ledger não salva. "Edge Functions idempotentes" é regra inegociável do CLAUDE.md. O padrão já existe no projeto: `dialog-entrada.tsx:33-45` gera o uuid ao abrir e só troca após sucesso confirmado. |
+| **D-10** | **Erro sobre código gerado é erro de sistema, não instrução ao operador.** As mensagens atuais dos guards ("renomeie ou use o produto existente", "use Entrada de estoque") só valem para código digitado. | Com D-8 o operador não tem código para renomear e não escolheu nada — a mensagem antiga seria uma instrução impossível. O caminho de `ProdutoJaExisteError` no front (`src/lib/produtos-saldo.ts:96-101`, `dialog-cadastro-produto.tsx:110-113`) pressupõe o 409 de código digitado e **não deve** ser reusado para colisão de código gerado. |
 
 ## 3. Arquitetura
 
@@ -48,30 +52,30 @@ e o código inventado pelo sistema já nasce no formato que o resto do projeto e
 alter table public.organizations
   add column produto_seq bigint not null default 0;
 
--- D-4: inicializa acima do que já existe, por org.
+alter table public.familias
+  add column chave_cadastro uuid;
+
+-- D-9: idempotência por submissão. Parcial porque só o cadastro manual preenche.
+create unique index familias_org_chave_cadastro_key
+  on public.familias (org_id, chave_cadastro) where chave_cadastro is not null;
+
+-- D-4: inicializa acima do que já existe, por org, comparando NUMERICAMENTE.
 update public.organizations o set produto_seq = greatest(
   coalesce((select max(f.codigo_pai::bigint) from public.familias f
             where f.org_id = o.id and f.codigo_pai ~ '^[0-9]{1,8}$'), 0),
   coalesce((select max(v.codigo::bigint) from public.variacoes v
             where v.org_id = o.id and v.codigo ~ '^[0-9]{1,8}$'), 0)
 );
-
-create function public.proximo_codigo_produto(p_org uuid, p_qtd int)
-returns bigint language sql security definer set search_path to '' as $$
-  update public.organizations set produto_seq = produto_seq + p_qtd, atualizado_em = now()
-  where id = p_org returning produto_seq
-$$;
-
-revoke all on function public.proximo_codigo_produto(uuid, int) from public, anon, authenticated;
-grant execute on function public.proximo_codigo_produto(uuid, int) to service_role;
 ```
 
-A RPC devolve o **último** número da faixa reservada; a edge deriva os `p_qtd` números para
-trás. Uma chamada por cadastro, atômica — duas sessões cadastrando ao mesmo tempo recebem
-faixas disjuntas.
+A RPC `proximo_codigo_produto(p_org uuid, p_qtd int, p_resync boolean default false)`:
 
-O `revoke`/`grant` segue D-15 do ADR-0094: o browser nunca chama a RPC, só a edge com
-`service_role`.
+- rejeita `p_qtd <= 0` com exceção (D-3);
+- quando `p_resync`, eleva `produto_seq` para o maior código existente antes de reservar (D-4.1);
+- reserva a faixa num `update … returning` atômico e devolve o **último** número dela.
+
+`SECURITY DEFINER`, `search_path` vazio, revogada de `public`/`anon`/`authenticated` e concedida
+ao `service_role` — D-15 do ADR-0094: o browser nunca chama a RPC, só a edge.
 
 **Buraco na sequência é esperado, não defeito.** Um cadastro que reserva a faixa e depois falha
 (guard, insert, rede) deixa aqueles números queimados. A alternativa — devolver o contador —
@@ -80,44 +84,55 @@ já declarou inviável aqui. Código de produto não precisa ser contíguo, prec
 
 ### Edge `cadastrar-produto`
 
-Ordem das operações (a reserva acontece **antes** dos inserts, para que a falha de estouro
-aconteça sem estado parcial):
-
 ```
-requireUserOrg(write) → exigirModulo('estoque')   [inalterado, D-7]
+requireUserOrg(write) → exigirModulo('estoque')          [inalterado, D-7]
   ↓
-validarProdutoNovo(produto)                       [não exige mais codigoPai/codigo]
+chave_cadastro presente? → já existe família com ela?     [D-9]
+  └─ sim → devolve o resultado original, 200, sem criar nada
   ↓
-proximo_codigo_produto(org, 1 + variacoes.length) [D-3]
+validarProdutoNovo(produto)              [não exige mais codigoPai/codigo]
   ↓
-derivarCodigos(ultimo, 1 + N)  →  { codigoPai, codigos[] }   [D-1, D-5]
+proximo_codigo_produto(org, 1 + N)  →  derivarCodigos()   [D-1, D-2, D-5]
   ↓
-guards D-4 e SKU do ADR-0094 sobre os códigos GERADOS        [D-6]
+guards cruzados sobre os códigos GERADOS                  [D-6]
+  └─ colidiu → proximo_codigo_produto(org, 1 + N, resync=true) → derivar → conferir de novo
+       └─ colidiu de novo → 500 "falha de numeração"      [D-4.1, D-10]
   ↓
-lote → familia → variacoes → estoque inicial → fila          [inalterado]
+lote → familia (com chave_cadastro) → variacoes → estoque inicial → fila   [inalterado]
 ```
 
-`derivarCodigos` é função pura em `_shared/produto/` — é o que o teste cobre.
+A reserva acontece **antes** dos inserts, para que o estouro de D-5 falhe sem estado parcial.
+
+### Ponto de injeção dos códigos (fixado para não divergir)
+
+`validarProdutoNovo` deixa de validar código. `derivarCodigos(ultimoDaFaixa, qtd)` é função pura
+em `_shared/produto/` e devolve `{ codigoPai, codigos[] }`. `montarLinhasProduto` passa a
+**receber os códigos como parâmetro** — o payload da request nunca é mutado, porque mutar
+objeto de request é a variante que gera bug seis meses depois.
+
+### Contrato de tipos
+
+Existem **duas** definições de `ProdutoEntrada`: a da edge (`_shared/produto/validar.ts:18`) e a
+do front (`src/lib/produto-entrada.ts`). Nas duas, `codigoPai` e `VariacaoEntrada.codigo` saem do
+payload; a do front ganha `chaveCadastro: string`.
 
 ### Front `dialog-cadastro-produto.tsx`
 
 - Remove o input "Código do produto (PAI)" e a coluna SKU da tabela de variações.
 - `podeSalvar` deixa de exigir código; passa a exigir nome, origem e preço > 0 por linha.
 - Aviso na etapa 1: "Códigos gerados automaticamente ao salvar".
+- `chaveCadastro` nasce com `crypto.randomUUID()` ao abrir e só troca após sucesso confirmado —
+  cópia do padrão de `dialog-entrada.tsx:33-45`.
 - Etapa 2 (fotos) exibe o código **gerado**, que já vem em `resultado.variacoes[].codigo`.
-
-### Contrato de tipos
-
-`ProdutoEntrada.codigoPai` e `VariacaoEntrada.codigo` passam a ser opcionais no payload. A
-edge é a única autoridade que os preenche — o front nunca envia código.
 
 ## 4. Testes
 
-Não existe teste de `validarProdutoNovo` hoje. Este trabalho adiciona um teste para a função
-pura de derivação:
+Não existe teste de `validarProdutoNovo` hoje. Este trabalho adiciona testes para a função pura
+de derivação:
 
 - `N` números reservados → um PAI e `N-1` SKUs, todos com oito dígitos e zeros à esquerda
-- sequência contígua e sem repetição entre PAI e SKUs (D-2)
+- PAI é o menor número da faixa (D-2)
+- sequência contígua e sem repetição entre PAI e SKUs
 - faixa que ultrapassa `99999999` → lança, não trunca (D-5)
 
 ## 5. Fora de escopo
@@ -127,9 +142,18 @@ pura de derivação:
 | Corrigir o produto já cadastrado na DSA (SKU `4005800241901`) | Decisão do Diego nesta sessão. Continua sem foto até ser recadastrado ou corrigido à parte. |
 | Corrigir o silêncio de erro do `lidarTrocaFoto` | Bug real e confirmado (`variacao-card.tsx:64` ignora `erros`/`sem_match`), mas separado deste trabalho. Registrado para depois. |
 | Numeração automática no caminho de planilha (`ingest-lote`) | Org de planilha tem ERP e códigos próprios — é exatamente o caso que este trabalho não atende (D-7). |
+| Ressincronizar a sequência ao habilitar o módulo (`set_modulos_org`) | Seria otimização do primeiro cadastro, não correção: D-4.1 já cobre o caso pelo caminho da colisão. Não vale uma segunda cópia da regra. |
 | Formato configurável (prefixo, largura, por org) | YAGNI. Oito dígitos é contrato com o upload de foto; um segundo formato reabriria o bug que este trabalho fecha. |
 
-## 6. Efeito colateral esperado
+## 6. Casos conhecidos, sem ação
+
+**Códigos com zeros à esquerda e mais de oito caracteres** (ex.: `0000000042`, valor 42) escapam
+do regex `^[0-9]{1,8}$` da inicialização. Verificado que não há canal de colisão real: a string
+difere no banco, o match de foto compara string exata de oito dígitos
+(`upload-imagens-lote/processar.ts:115`) e `padStart(8)` não encolhe string maior. Registrado
+para não ser reinvestigado.
+
+## 7. Efeito colateral esperado
 
 Produto cadastrado por este caminho passa a aceitar foto pelo ícone de câmera na Revisão,
 porque o código gerado casa com o `^\d{8}` do match. Não é o objetivo do trabalho, mas é a
