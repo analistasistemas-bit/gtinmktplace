@@ -586,6 +586,133 @@ git commit -m "feat(cadastro): idempotencia por chave de submissao, retry nao du
 
 ---
 
+### Task 4b: Extrair a decisão de divergência e cobri-la com testes
+
+Acrescentada durante a execução, aprovada por Diego em 2026-07-31. Motivo: nenhum teste do
+projeto executa `cadastrar-produto/index.ts` — a suíte verde prova que nada mais regrediu,
+não que a idempotência funciona. Três quebras novas passaram batido nos rounds 1-3 da Task 4
+por causa disso, e a única rede foi revisão por leitura. O repositório já tem o padrão de
+extrair a lógica para um `processar.ts` testável (`publish-familia-ml`, `upload-imagens-lote`).
+
+Só a decisão PURA é extraída. As consultas continuam no handler — o objetivo é cobrir o que
+decide dinheiro, não simular o banco.
+
+**Files:**
+- Create: `supabase/functions/cadastrar-produto/processar.ts`
+- Create: `supabase/functions/cadastrar-produto/__tests__/processar.test.ts`
+- Modify: `supabase/functions/cadastrar-produto/index.ts`
+
+**Interfaces:**
+- Consumes: nada novo.
+- Produces: `variacoesDivergem(payload, gravadas): boolean` — usada pelo handler no guard do
+  retry idempotente.
+
+- [ ] **Step 1: Escrever os testes que falham**
+
+Criar `supabase/functions/cadastrar-produto/__tests__/processar.test.ts`. Os casos abaixo são
+o requisito — o reenvio legítimo NUNCA pode ser barrado, e qualquer edição TEM que ser:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { variacoesDivergem } from '../processar.ts';
+
+const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
+const enviada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
+
+describe('variacoesDivergem', () => {
+  it('reenvio idêntico não diverge', () => {
+    expect(variacoesDivergem([enviada()], [gravada()])).toBe(false);
+  });
+
+  it('normalização: espaços e string vazia equivalem ao que foi gravado', () => {
+    expect(variacoesDivergem(
+      [enviada({ nome: '  Azul  ', gtin: '' })],
+      [gravada({ nome: 'Azul', gtin: null })],
+    )).toBe(false);
+  });
+
+  it('nulos em ambos os lados não divergem', () => {
+    expect(variacoesDivergem(
+      [enviada({ nome: null, gtin: null, custo: null })],
+      [gravada({ nome: null, gtin: null, custo: null })],
+    )).toBe(false);
+  });
+
+  it('contagem diferente diverge', () => {
+    expect(variacoesDivergem([enviada(), enviada()], [gravada()])).toBe(true);
+  });
+
+  it('reordenação diverge', () => {
+    const a = enviada({ nome: 'Azul' });
+    const b = enviada({ nome: 'Verde' });
+    expect(variacoesDivergem([b, a], [gravada({ nome: 'Azul' }), gravada({ nome: 'Verde' })])).toBe(true);
+  });
+
+  it('preço alterado em um centavo diverge', () => {
+    expect(variacoesDivergem([enviada({ preco: 10.51 })], [gravada({ preco: 10.5 })])).toBe(true);
+  });
+
+  it('custo alterado diverge — alimenta markup (ADR-0055)', () => {
+    expect(variacoesDivergem([enviada({ custo: 4.26 })], [gravada({ custo: 4.25 })])).toBe(true);
+  });
+
+  it('custo que sai de ausente para preenchido diverge', () => {
+    expect(variacoesDivergem([enviada({ custo: 4.25 })], [gravada({ custo: null })])).toBe(true);
+  });
+
+  it('nome ou gtin alterado diverge', () => {
+    expect(variacoesDivergem([enviada({ nome: 'Verde' })], [gravada()])).toBe(true);
+    expect(variacoesDivergem([enviada({ gtin: '111' })], [gravada()])).toBe(true);
+  });
+
+  it('preço vindo do PostgREST como string compara igual', () => {
+    expect(variacoesDivergem([enviada({ preco: 10.5 })], [gravada({ preco: '10.50' })])).toBe(false);
+  });
+});
+```
+
+- [ ] **Step 2: Rodar para ver falhar**
+
+Run: `pnpm test -- processar`
+Expected: FAIL — não resolve `../processar.ts`.
+
+- [ ] **Step 3: Implementar `processar.ts`**
+
+Extraia a lógica que hoje vive inline no guard do retry em `index.ts`. Regras que o código
+precisa respeitar, e que os testes acima cobrem:
+
+- A normalização de `nome`/`gtin` tem que ser IDÊNTICA à de `montarLinhasProduto`
+  (`_shared/produto/validar.ts`): `?.trim() || null`. Se divergir, o retry legítimo é barrado
+  e a feature inteira perde o sentido.
+- `preco` e `custo` chegam do PostgREST podendo ser string (coluna `numeric`). Compare como
+  número, em centavos, e trate `null` em `custo` (que é opcional) sem tratá-lo como zero.
+- A comparação é posicional, e é isso que faz a reordenação divergir — comportamento desejado.
+
+- [ ] **Step 4: Rodar para ver passar**
+
+Run: `pnpm test -- processar`
+Expected: PASS, 10 testes.
+
+- [ ] **Step 5: Ligar o handler à função extraída**
+
+Em `index.ts`, substitua o guard inline pela chamada a `variacoesDivergem(...)`, preservando
+exatamente o comportamento atual: divergiu → 409 **com** `familiaId` e `loteId` (que o front
+converte em `ProdutoJaExisteError`); lista vazia → 409 **sem** `familiaId`. O `custo` passa a
+entrar na comparação — é a correção pendente da Task 4, e a razão é ADR-0055: custo alimenta
+markup, então um retry que grave custo divergente no ledger é caminho financeiro.
+
+- [ ] **Step 6: Verificar e commitar**
+
+Run: `pnpm test && pnpm check:functions && pnpm lint:functions`
+Expected: tudo verde, incluindo os 10 testes novos.
+
+```bash
+git add supabase/functions/cadastrar-produto/
+git commit -m "test(cadastro): extrai decisao de divergencia e cobre os ramos de idempotencia"
+```
+
+---
+
 ### Task 5: Front — remover os campos de código e enviar a chave
 
 **Files:**
