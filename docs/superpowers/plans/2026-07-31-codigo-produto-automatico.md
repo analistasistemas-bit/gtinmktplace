@@ -668,6 +668,31 @@ describe('variacoesDivergem', () => {
   it('preço vindo do PostgREST como string compara igual', () => {
     expect(variacoesDivergem([enviada({ preco: 10.5 })], [gravada({ preco: '10.50' })])).toBe(false);
   });
+
+  it('peso e dimensões alterados divergem', () => {
+    expect(variacoesDivergem(
+      [enviada({ pesoGramas: 500 })],
+      [gravada({ peso_gramas: 400 })],
+    )).toBe(true);
+    expect(variacoesDivergem(
+      [enviada({ alturaCm: 10 })],
+      [gravada({ altura_cm: 12 })],
+    )).toBe(true);
+  });
+
+  it('troca de posição entre linhas que só diferem no custo diverge', () => {
+    // Sem comparar `custo`, estas duas seriam indistinguíveis e a troca passaria —
+    // aplicando o estoque inicial de uma no SKU da outra.
+    const a = enviada({ custo: 4.25 });
+    const b = enviada({ custo: 9.9 });
+    expect(variacoesDivergem([b, a], [gravada({ custo: 4.25 }), gravada({ custo: 9.9 })])).toBe(true);
+  });
+
+  it('preço com empate de arredondamento não é falso positivo', () => {
+    // `1.005 * 100` em IEEE dá 100.49999…, mas numeric(12,2) guarda 1.01.
+    // Só passa se a gravação arredondar antes (Step 3b).
+    expect(variacoesDivergem([enviada({ preco: 1.005 })], [gravada({ preco: '1.01' })])).toBe(false);
+  });
 });
 ```
 
@@ -687,6 +712,23 @@ precisa respeitar, e que os testes acima cobrem:
 - `preco` e `custo` chegam do PostgREST podendo ser string (coluna `numeric`). Compare como
   número, em centavos, e trate `null` em `custo` (que é opcional) sem tratá-lo como zero.
 - A comparação é posicional, e é isso que faz a reordenação divergir — comportamento desejado.
+- **Compare TODAS as colunas que `montarLinhasProduto` grava e têm contrapartida armazenada:**
+  `nome, gtin, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm`. Uma lista
+  curada (só nome/gtin/preço) deixa passar a troca de posição entre duas linhas que diferem
+  apenas em peso ou custo — e aí o estoque inicial de uma entra no SKU da outra.
+  `estoqueInicial` fica de fora porque não tem contrapartida gravada (`estoque` nasce 0).
+- O `select` do handler precisa passar a trazer essas colunas; hoje ele busca menos campos.
+
+- [ ] **Step 3b: Gravar `preco` já arredondado a duas casas**
+
+Em `montarLinhasProduto` (`_shared/produto/validar.ts`), grave `preco` arredondado a 2 casas
+em vez do float cru. A coluna é `numeric(12,2)`, então o Postgres arredonda de qualquer jeito
+— o problema é que o JS e o Postgres discordam em empates: `1.005 * 100` em IEEE dá
+`100.4999…` (arredonda para 1.00) enquanto `1.005::numeric(12,2)` dá `1.01`. Sem isto, um
+retry legítimo com preço nesse formato é barrado por engano.
+
+Não é "3+ casas decimais" em geral — é só o subconjunto de empates `x.xx5` cujo double cai
+logo abaixo do meio. Arredondar na gravação elimina a classe inteira.
 
 - [ ] **Step 4: Rodar para ver passar**
 
