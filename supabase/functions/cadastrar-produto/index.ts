@@ -9,8 +9,8 @@
 // idempotente depende de `chave_cadastro`: uma checagem prévia devolve o cadastro já criado, e
 // a unique parcial (org_id, chave_cadastro) cobre a corrida entre duas submissões simultâneas —
 // a perdedora devolve 409 "tente novamente" em vez de um 23505 cru (nada é observável da
-// vencedora enquanto ela ainda está em voo). Reexecutar o estoque inicial já é no-op pela
-// referência `cadastro:{familiaId}:{codigo}`.
+// vencedora enquanto ela ainda está em voo); um 23505 de OUTRA constraint devolve o erro real.
+// Reexecutar o estoque inicial já é no-op pela referência `cadastro:{familiaId}:{codigo}`.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -95,6 +95,9 @@ Deno.serve(async (req) => {
   let jaEnfileirado = false;
 
   if (jaCadastrado) {
+    // `.order('codigo')` NÃO é cosmético: o laço do estoque casa `variacoesCriadas[i]` com
+    // `produto.variacoes[i]` por índice. Ver o comentário do laço — sem esta ordenação o
+    // estoque inicial entra no SKU errado.
     const { data: vars } = await admin.from('variacoes')
       .select('id, codigo').eq('familia_id', jaCadastrado.id).order('codigo');
     // Família e variações são dois inserts, dois commits: existe uma janela em que a família
@@ -103,11 +106,22 @@ Deno.serve(async (req) => {
     if (!vars || vars.length === 0) {
       return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
     }
-    // A chave só muda depois de sucesso: se a contagem divergir, o operador editou o
-    // formulário entre as tentativas. Casar por índice aqui aplicaria estoque na variação
-    // errada — caminho financeiro, não arrisca.
+    // Contagem diferente ⇒ o formulário mudou entre as tentativas (a chave só é trocada quando
+    // o diálogo fecha). Casar por índice aqui aplicaria estoque na variação errada — caminho
+    // financeiro, não arrisca. Ao contrário do guard acima, aqui a família É verificável: o
+    // cadastro está gravado e completo, então "tente novamente" seria falso (nenhum retry com
+    // esta chave vai passar) e deixaria o operador em loop. Devolve `familiaId`/`loteId` para
+    // `src/lib/produtos-saldo.ts` virar `ProdutoJaExisteError` e a tela oferecer "Abrir na
+    // Revisão".
+    // Limite conhecido: contagem IGUAL não prova formulário igual — uma reordenação das linhas
+    // passa por aqui. O payload não carrega os códigos (são gerados), então não há chave de
+    // casamento confiável; comparar nome/gtin (opcionais/nuláveis) falsearia o retry normal.
     if (vars.length !== produto.variacoes.length) {
-      return json({ error: 'Cadastro em andamento diverge do que foi enviado. Tente novamente.' }, 409);
+      return json({
+        error: 'Este cadastro já foi gravado e o que foi enviado agora diverge do que está salvo. Abra na Revisão para conferir.',
+        familiaId: jaCadastrado.id as string,
+        loteId: jaCadastrado.lote_id as string,
+      }, 409);
     }
     familiaId = jaCadastrado.id as string;
     loteId = jaCadastrado.lote_id as string;
@@ -188,8 +202,17 @@ Deno.serve(async (req) => {
       // variações, reaplica estoque de forma idempotente e decide `filaOk` pelo
       // `qstash_message_id` real. Preferir "tente novamente" a inventar um sucesso não
       // verificável.
+      //
+      // Discrimina por DADO, não pelo texto da mensagem: `familias` tem outra unique alcançável
+      // por este mesmo insert (`familias_lote_id_codigo_pai_key`), e com o reuso do lote manual
+      // aberto uma colisão de `codigo_pai` chegaria aqui como 23505 também — reportá-la como
+      // "cadastro em andamento" seria mentira no erro e no log. Se existe família com esta
+      // chave, foi a corrida de idempotência; se não existe, o 23505 veio de outra constraint.
+      // `error` do select descartado de propósito: sem linha, cai no erro real logo abaixo.
       if (famErr.code === '23505') {
-        return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
+        const { data: mesmaChave } = await admin.from('familias')
+          .select('id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro).maybeSingle();
+        if (mesmaChave) return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
       }
       return json({ error: famErr.message }, 400);
     }
@@ -205,7 +228,16 @@ Deno.serve(async (req) => {
       await admin.from('familias').delete().eq('id', familiaId);
       return json({ error: varErr.message }, 400);
     }
-    variacoesCriadas = novasVariacoes ?? [];
+    // RETURNING incompleto sem erro: o laço do estoque indexaria `undefined` e estouraria com
+    // TypeError. Mesmo tratamento do `varErr` — família sem variação é lixo.
+    if (!novasVariacoes || novasVariacoes.length !== variacoes.length) {
+      await admin.from('familias').delete().eq('id', familiaId);
+      return json({ error: 'Falha criando variações.' }, 400);
+    }
+    // O Postgres NÃO garante que a ordem do RETURNING seja a ordem do array inserido. Ordenar
+    // por `codigo` aqui dá ao caminho de criação o MESMO invariante que o `.order('codigo')` do
+    // caminho de retry. Ver o comentário do laço do estoque — não remover por parecer supérfluo.
+    variacoesCriadas = [...novasVariacoes].sort((a, b) => (a.codigo as string).localeCompare(b.codigo as string));
 
     // AGORA sim: a família já existe, então talvezFinalizarLote passa a enxergá-la e o lote não
     // pode ser fechado por baixo.
@@ -219,6 +251,13 @@ Deno.serve(async (req) => {
   // referência derivada da família torna o retry idempotente pela unique parcial do ledger:
   // aplica se faltou, no-op se já aplicou — inclusive quando a primeira tentativa morreu entre
   // o insert das variações e este laço, e a segunda caiu no ramo `jaCadastrado` acima.
+  //
+  // INVARIANTE (obrigatório, os dois caminhos): `variacoesCriadas` chega aqui ORDENADA por
+  // `codigo` — `.order('codigo')` no retry, `.sort` depois do insert na criação. Os códigos são
+  // gerados sequencialmente na ordem do payload e formatados com oito dígitos (largura fixa),
+  // então ordem lexicográfica = ordem numérica = ordem de `produto.variacoes`. É isso que torna
+  // o casamento por índice abaixo correto; sem a ordenação, o estoque inicial entra no SKU
+  // errado, em silêncio, e alimenta markup e preço.
   const falhasEstoque: string[] = [];
   for (const [i, v] of produto.variacoes.entries()) {
     if (!v.estoqueInicial || v.estoqueInicial <= 0) continue;
@@ -257,6 +296,6 @@ Deno.serve(async (req) => {
   // de deixá-lo achar que deu tudo certo.
   return json({
     loteId, familiaId, filaOk, falhasEstoque,
-    variacoes: (variacoesCriadas ?? []).map((v) => ({ id: v.id, codigo: v.codigo })),
+    variacoes: variacoesCriadas.map((v) => ({ id: v.id, codigo: v.codigo })),
   });
 });
