@@ -4,8 +4,12 @@
 //
 // Por que não há transação: as escritas passam por três caminhos diferentes (tabela, RPC
 // security definer, QStash) e o supabase-js não expõe transação multi-statement. O desenho
-// compensa com idempotência — re-executar o cadastro do mesmo produto para no guard 409, e
-// re-executar o estoque inicial é no-op pela referência `cadastro:{familiaId}:{codigo}`.
+// compensa com idempotência — mas ainda pela metade: os códigos (PAI e SKUs) são gerados
+// pelo sistema (proximo_codigo_produto + derivarCodigos), não mais digitados pelo operador,
+// e o retry idempotente passa a depender de `chave_cadastro` — cujo retorno limpo (detectar
+// a repetição e devolver o resultado já criado, em vez de deixar a unique estourar) ainda
+// não está implementado aqui. Reexecutar o estoque inicial já é no-op pela referência
+// `cadastro:{familiaId}:{codigo}`.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -32,10 +36,14 @@ async function codigosJaUsados(
   orgId: string,
   codigos: string[],
 ): Promise<string[]> {
-  const [{ data: pais }, { data: vars }] = await Promise.all([
+  const [{ data: pais, error: ePais }, { data: vars, error: eVars }] = await Promise.all([
     admin.from('familias').select('codigo_pai').eq('org_id', orgId).in('codigo_pai', codigos),
     admin.from('variacoes').select('codigo').eq('org_id', orgId).in('codigo', codigos),
   ]);
+  // Nenhuma unique é org-wide hoje ((lote_id, codigo_pai) e (familia_id, codigo) só). Erro de
+  // consulta tratado como "sem colisão" deixaria passar um código duplicado sem rede de
+  // segurança no banco — falha alto em vez de assumir. Não trocar por `?? []` de novo.
+  if (ePais || eVars) throw new Error(`Falha conferindo códigos: ${(ePais ?? eVars)!.message}`);
   return [...new Set([
     ...(pais ?? []).map((f) => f.codigo_pai as string),
     ...(vars ?? []).map((v) => v.codigo as string),
