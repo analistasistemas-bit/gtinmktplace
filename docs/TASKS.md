@@ -33,7 +33,9 @@
   (sem exigir ação do vendedor) não parecem virar card/busca confiável naquela tela do próprio ML
   — mesmo padrão do "Não foi possível exibir esta informação da venda" visto na aba Reclamações e
   mediações. **6 devoluções · R$212,42 (mês atual) confirmado correto.**
-- [x] **Branch validada e mesclada** (PR #45 + #46, `main`).
+- [x] **Branch validada e mesclada** (PR #45 + #46 + #47, `main`).
+- Docs: `docs/reference/glossario.md` ("Devolução (concluída)") e
+  `obsidian-vault/05-Bugs/Incidentes.md` (continuação do incidente "2026-07-31 — Devoluções do ML").
 
 ## Devoluções ML não computadas automaticamente — 2 bugs corrigidos e DEPLOYADOS 2026-07-31
 

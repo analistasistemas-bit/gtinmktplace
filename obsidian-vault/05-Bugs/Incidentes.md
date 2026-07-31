@@ -93,6 +93,37 @@ allowlist (`=== 'approved'`) pra proteger contra um caso ruim (`rejected`) pode 
 silenciosamente um caso bom que o autor não previu (`refunded`) — pensar em todos os status
 terminais válidos, não só no que se quer bloquear.
 
+### Continuação, mesmo dia — a própria correção acima gerou uma supercorreção (28 devoluções)
+
+**Sintoma:** horas depois do fix acima, o Dashboard passou a mostrar **"28 devoluções ·
+R$1.648,01"** no mês. O `reconciliar-faturamento` corrigido fez o backfill completo de
+`ml_vendas.estorno`, e o proxy do Dashboard (`estorno > 0`) — decisão original do ADR-0038 para
+fugir das lacunas de `ml_devolucoes` — passou a contar **qualquer** pedido com reembolso parcial
+ou negociado no Mercado Pago, não só devolução de verdade. Antes do backfill completo a proxy
+"acertava por acaso" (poucos pedidos tinham `estorno` populado); depois, não.
+
+**Correção (2 rodadas):** trocado o proxy de `ml_vendas.estorno > 0` para `ml_devolucoes` com
+`type = 'returns'` e `return_status_money = 'refunded'` — ver [[Glossário]] ("Devolução
+(concluída)") para a definição completa. Primeira tentativa usou só `status !== 'opened'`, frouxa demais (contava
+devolução rejeitada com dinheiro retido). Segunda rodada apertou pra `return_status_money`,
+conferida pedido a pedido contra o painel do ML. PRs #45/#46/#47.
+
+**Desvio investigado e descartado:** cheguei a suspeitar de um novo bug de sync (`buscarReturn`
+gravando "reembolsada" antes da hora) porque 1 devolução batia no banco mas não aparecia como
+"finalizada" no painel Devoluções do ML. Puxando a API do ML ao vivo (token da própria conexão via
+RPC `get_connection_tokens`) para os 6 claims do período: todos batiam 1:1 com o banco
+(`status: closed`, `status_money: refunded`, `resolution.applied_coverage: true`). Não era bug
+nosso — claims resolvidos automaticamente por mediador (`low_cost`: item de baixo valor, ML
+reembolsa sem devolução física; `item_returned`: devolução física normal, ambos com
+`applied_coverage`) não geram card/busca confiável na própria tela "Devoluções" do ML. Resultado
+final: **6 devoluções · R$212,42** confirmado correto.
+
+**Lição:** um proxy "temporário" pra fugir de lacuna de sync (ADR-0038) precisa ser revisto quando
+a causa que motivou o desvio é corrigida — ele pode passar a errar pro lado oposto. E "não bate com
+a tela do sistema terceiro" nem sempre é bug nosso: a UI do próprio ML pode não listar de forma
+confiável eventos resolvidos automaticamente (sem ação do vendedor) — checar a API ao vivo antes de
+assumir que o dado gravado está errado.
+
 ## 2026-07-10 — Cache Redis de schema no formato antigo zerava o enriquecimento IA de atributos (fita)
 
 **Sintoma:** Diego reportou que a IA não preencheu Comprimento/Largura em "Características
