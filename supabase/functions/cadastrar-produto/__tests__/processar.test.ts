@@ -45,6 +45,17 @@ describe('variacoesDivergem', () => {
     expect(variacoesDivergem([enviada({ custo: 4.25 })], [gravada({ custo: null })])).toBe(true);
   });
 
+  // custo é `numeric` SEM escala fixa (arbitrária) — ao contrário de preco/dimensões
+  // (numeric(_,2)), o Postgres não arredonda custo na escrita. Comparar em centavos, como preco,
+  // esconderia justamente este caso (achado de revisão, Task 4b fix round 1).
+  it('custo com diferença abaixo de um centavo diverge — custo não tem escala fixa, não pode truncar', () => {
+    expect(variacoesDivergem([enviada({ custo: 4.251 })], [gravada({ custo: 4.252 })])).toBe(true);
+  });
+
+  it('custo número (payload) e string (PostgREST) do mesmo valor não divergem', () => {
+    expect(variacoesDivergem([enviada({ custo: 4.25 })], [gravada({ custo: '4.25' })])).toBe(false);
+  });
+
   it('nome ou gtin alterado diverge', () => {
     expect(variacoesDivergem([enviada({ nome: 'Verde' })], [gravada()])).toBe(true);
     expect(variacoesDivergem([enviada({ gtin: '111' })], [gravada()])).toBe(true);
@@ -65,6 +76,31 @@ describe('variacoesDivergem', () => {
     )).toBe(true);
   });
 
+  // largura_cm/comprimento_cm não tinham teste próprio — sem isto, remover as duas colunas da
+  // comparação não quebrava nenhum teste (achado de revisão, Task 4b fix round 1).
+  it('largura e comprimento alterados divergem', () => {
+    expect(variacoesDivergem(
+      [enviada({ larguraCm: 20 })],
+      [gravada({ largura_cm: 15 })],
+    )).toBe(true);
+    expect(variacoesDivergem(
+      [enviada({ comprimentoCm: 30 })],
+      [gravada({ comprimento_cm: 25 })],
+    )).toBe(true);
+  });
+
+  // As 4 colunas de dimensão são numeric(10,2): `10` (payload, number) e `"10.00"` (PostgREST,
+  // string) representam o MESMO valor. `!==` estrito trataria como diferentes e barraria todo
+  // retry de um produto com dimensões preenchidas — é o caso que a suíte não cobria antes
+  // (achado de revisão, Task 4b fix round 1): os testes acima só exercitam a DIVERGÊNCIA, que
+  // passaria com `!==` estrito também.
+  it('dimensões iguais com tipos diferentes (número vs string do PostgREST) não divergem', () => {
+    expect(variacoesDivergem(
+      [enviada({ pesoGramas: 500, alturaCm: 10, larguraCm: 20, comprimentoCm: 30 })],
+      [gravada({ peso_gramas: '500.00', altura_cm: '10.00', largura_cm: '20.00', comprimento_cm: '30.00' })],
+    )).toBe(false);
+  });
+
   it('troca de posição entre linhas que só diferem no custo diverge', () => {
     // Sem comparar `custo`, estas duas seriam indistinguíveis e a troca passaria —
     // aplicando o estoque inicial de uma no SKU da outra.
@@ -74,8 +110,11 @@ describe('variacoesDivergem', () => {
   });
 
   it('preço com empate de arredondamento não é falso positivo', () => {
-    // `1.005 * 100` em IEEE dá 100.49999…, mas numeric(12,2) guarda 1.01.
-    // Só passa se a gravação arredondar antes (Step 3b).
+    // `1.005 * 100` em IEEE dá 100.49999…, que um `Math.round` ingênuo arredondaria para 1.00.
+    // `numeric(12,2)` no Postgres guarda 1.01 (parseia o TEXTO decimal do JSON, não multiplica
+    // float). Prova que `centavosExatos` concorda com o Postgres nesse empate sem depender de
+    // arredondar na gravação — `montarLinhasProduto` grava `v.preco` cru, sem Math.round algum:
+    // o texto decimal que o JSON manda ("1.005") é o mesmo texto que `centavosExatos` lê aqui.
     expect(variacoesDivergem([enviada({ preco: 1.005 })], [gravada({ preco: '1.01' })])).toBe(false);
   });
 });

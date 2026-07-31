@@ -112,4 +112,15 @@ describe('montarLinhasProduto', () => {
     const { familia } = montarLinhasProduto({ ...valido, nomePai: '  Camiseta básica  ' }, ctx);
     expect(familia.nome_pai).toBe('Camiseta básica');
   });
+
+  // Fixa o comportamento: `preco` grava CRU, sem arredondar aqui. O Postgres parseia o texto
+  // decimal do JSON e arredonda para numeric(12,2) na escrita — arredondar de novo neste ponto
+  // (Step 3b, revertido) era desnecessário e um `?? 0`/`!` sobre entrada inválida gravaria
+  // R$ 0,00 em silêncio (achado de revisão, Task 4b fix round 1). Não reintroduzir.
+  it('grava preco exatamente como recebido, sem arredondar — quem arredonda é o Postgres (numeric(12,2))', () => {
+    const { variacoes } = montarLinhasProduto(
+      { ...valido, variacoes: [{ ...valido.variacoes[0], preco: 1.005 }] }, ctx,
+    );
+    expect(variacoes[0].preco).toBe(1.005);
+  });
 });
