@@ -69,8 +69,11 @@ export async function carregarLiquidoMPDoPedido(
     const pagamentos = await Promise.all(paymentIds.map((id) => buscarPagamentoMP(token, id)));
     // A varredura pede `status=approved` na busca; por id vem qualquer status, então o filtro
     // equivalente entra aqui — sem ele um pagamento recusado do mesmo pedido gravaria estorno 0
-    // (e uma data de liberação) por cima do que já estava correto.
-    return montarMapaLiquido(pagamentos.filter((p) => p.status === 'approved'), contaId);
+    // (e uma data de liberação) por cima do que já estava correto. 'refunded' também entra: no
+    // estorno TOTAL o MP move o pagamento de 'approved' para 'refunded' (não mantém 'approved'
+    // com transaction_amount_refunded>0 como no estorno PARCIAL) — só aceitar 'approved' descarta
+    // esse pagamento pra sempre, em qualquer execução futura.
+    return montarMapaLiquido(pagamentos.filter((p) => p.status === 'approved' || p.status === 'refunded'), contaId);
   } catch (e) {
     console.warn('carregarLiquidoMPDoPedido falhou:', (e as Error).message);
     return null;

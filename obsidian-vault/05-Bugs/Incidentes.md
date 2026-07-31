@@ -1,6 +1,6 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-07-30
+atualizado: 2026-07-31
 ---
 
 # Incidentes
@@ -46,6 +46,47 @@ de "não conseguimos nem tentar". E campos de status de conta de plataforma exte
 propagação assíncrona: não assumir que o campo "óbvio" reflete o estado real; testar
 funcionalmente quando possível (aqui, `shipping_preferences` bateu com a realidade;
 `status.mercadoenvios` não).
+
+## 2026-07-31 — Devoluções do ML "sempre" divergindo do Dashboard (dois bugs, ambos silenciosos)
+
+**Sintoma:** Diego reportou que as devoluções do ML "nunca são computadas" no PubliAI sozinhas —
+sempre precisa pedir revisão manual. Print do painel do ML: 3 devoluções (R$59,99+R$35,76+R$12,50 =
+R$108,25). Dashboard do PubliAI (90 dias): "2 devoluções · R$48,26" (só R$35,76+R$12,50).
+
+**Causa raiz nº 1 — `reconciliar-faturamento` nunca completava, desde a criação do schedule
+(24/06).** `GET /v2/events` do QStash: 94 de ~747 execuções em `ERROR`, TODAS aos ~150s
+(`WORKER_RESOURCE_LIMIT`/`IDLE_TIMEOUT`) — ou seja, TODA hora, sem exceção. A função processava
+Vendas (item mais caro) → Perguntas → Devoluções por último, para 2 orgs no mesmo loop: o
+orçamento de 150s da edge function estourava antes de chegar em Devoluções. Mesmo sintoma já
+corrigido em `backfill-faturamento` em 26/07 (reordenar + paralelizar), nunca replicado aqui — a
+"rede de segurança" contra webhooks perdidos nunca rodava de fato.
+
+**Causa raiz nº 2 — estorno TOTAL nunca era capturado, em nenhuma execução (não era timing).**
+`carregarLiquidoMPDoPedido` só aceitava pagamento MP com `status === 'approved'`. No estorno
+PARCIAL o MP mantém `approved` com `transaction_amount_refunded > 0`; no estorno TOTAL o `status`
+vira `refunded` — excluído pra sempre pelo filtro, em qualquer execução futura. Afetava os 3
+callers: `sync-devolucao` (real-time), `sync-venda`, `reconciliar-faturamento`. Provado ao vivo:
+pedido do "Tecido Oxford" (R$59,99, estorno total) tinha claim `refunded` em `ml_devolucoes` mas
+`ml_vendas.estorno = null` — o pagamento MP tinha `status: "refunded"`, descartado pelo filtro.
+
+**Por que o Dashboard some com devolução mesmo tendo `ml_devolucoes` certo:** o Dashboard conta
+por `ml_vendas.estorno > 0`, não por `ml_devolucoes` (decisão deliberada — comentário em
+`Dashboard.tsx` diz que `ml_devolucoes` "tem lacunas de sincronização"). Só que o mecanismo que
+alimenta `ml_vendas.estorno` pra devoluções antigas é o PRÓPRIO `reconciliar-faturamento` — os dois
+bugs se reforçavam.
+
+**Correção:** `reconciliar-faturamento` em duas passadas (devoluções+perguntas de todas as orgs
+antes de vendas) + lotes de 5 + guarda de orçamento (nunca mais estoura 150s, responde 200 com o
+que teve que pular). Filtro de estorno aceita `approved` e `refunded`. Redeploy das 3 funções.
+Verificado ao vivo via QStash publish direto + `supabase db query`: 2 execuções `DELIVERED`/200 em
+~65s, `ml_vendas.estorno` do pedido Oxford virou `59.99`. Detalhe técnico completo:
+[[Edge Functions#Histórico — reconciliar-faturamento estourava 150s em TODA execução + estorno total nunca capturado (corrigida)]].
+
+**Lição:** um schedule "existir e não estar pausado" não prova que ele COMPLETA — checar o
+histórico de execuções (`GET /v2/events`), não só `GET /v2/schedules`. E um filtro de status
+allowlist (`=== 'approved'`) pra proteger contra um caso ruim (`rejected`) pode excluir
+silenciosamente um caso bom que o autor não previu (`refunded`) — pensar em todos os status
+terminais válidos, não só no que se quer bloquear.
 
 ## 2026-07-10 — Cache Redis de schema no formato antigo zerava o enriquecimento IA de atributos (fita)
 

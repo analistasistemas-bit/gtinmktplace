@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Devoluções ML não computadas automaticamente — 2 bugs corrigidos e DEPLOYADOS 2026-07-31
+
+- [x] **Causa raiz nº 1:** `reconciliar-faturamento` (schedule QStash 1h) estourava o limite de
+  150s da edge function em TODA execução desde a criação (94/747 eventos `ERROR` via `GET
+  /v2/events` do QStash) — Vendas rodava antes de Devoluções, que nunca era alcançada. Fix: duas
+  passadas (devoluções+perguntas de todas as orgs antes de vendas) + lotes de 5 + guarda de
+  orçamento (nunca mais 546/504, responde 200 com o que pulou). Mesmo padrão já usado em
+  `backfill-faturamento` (26/07).
+- [x] **Causa raiz nº 2:** `carregarLiquidoMPDoPedido` só aceitava pagamento MP `status ===
+  'approved'`, excluindo pra sempre estornos TOTAIS (MP muda o status pra `refunded`, não mantém
+  `approved`). Afetava `sync-devolucao`, `sync-venda` e `reconciliar-faturamento`. Fix: aceitar
+  `approved` OU `refunded`. Teste novo em `enriquecimento.test.ts`.
+- [x] **Verificado ao vivo em produção:** publish direto via QStash (2x) + `supabase db query` —
+  `reconciliar-faturamento` completou em ~65s (era 546/504 sempre); `ml_vendas.estorno` do pedido
+  com estorno total foi de `null` para `59.99`. Dashboard passa a bater com o painel do ML (3
+  devoluções · R$108,25 em vez de 2 · R$48,26).
+- [x] **Deploy já feito** (`reconciliar-faturamento`, `sync-devolucao`, `sync-venda` — mudou
+  `_shared/faturamento/enriquecimento.ts`) — urgência: bug financeiro ativo em produção,
+  reconciliação horária rodando e falhando desde 24/06.
+- [ ] **Branch aguardando validação local do Diego** antes de push/merge (fluxo de entrega padrão).
+- Docs: `docs/reference/edge-functions.md` (histórico + descrição atualizada) e
+  `obsidian-vault/05-Bugs/Incidentes.md` (2026-07-31).
+
 ## Cobertura máxima de atributos ML sem inventar dado (adendo ADR-0052) — BRANCH 2026-07-30
 
 - [x] **4 causas de código corrigidas** em `supabase/functions/_shared/ai/atributos-llm-core.ts`:
