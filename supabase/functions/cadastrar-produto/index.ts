@@ -81,12 +81,17 @@ Deno.serve(async (req) => {
   // rede de segurança de verdade. Um select que falhar aqui não duplica nada — cai no insert
   // normal, que se colidir é pego pelo ramo 23505 mais abaixo.
   const { data: jaCadastrado } = await admin.from('familias')
-    .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+    .select('id, lote_id, qstash_message_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
     .maybeSingle();
 
   let familiaId: string;
   let loteId: string;
   let variacoesCriadas: { id: string; codigo: string }[];
+  // Enfileirar de novo dispara o enriquecimento por IA (OpenRouter, pago) e pode sobrescrever
+  // título/descrição que o operador já tenha editado — "idempotente" precisa valer para esse
+  // efeito colateral caro, não só para o estado no banco. `false` para o caminho de criação
+  // (a família é nova, nunca foi enfileirada).
+  let jaEnfileirado = false;
 
   if (jaCadastrado) {
     const { data: vars } = await admin.from('variacoes')
@@ -106,6 +111,7 @@ Deno.serve(async (req) => {
     familiaId = jaCadastrado.id as string;
     loteId = jaCadastrado.lote_id as string;
     variacoesCriadas = vars;
+    jaEnfileirado = jaCadastrado.qstash_message_id != null;
   } else {
     // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
     // colisão falham sem deixar lote/família pela metade.
@@ -241,13 +247,20 @@ Deno.serve(async (req) => {
   // dois existem aqui justamente porque o cadastro cria um lote de verdade (D-1). Falha de
   // enfileiramento NÃO derruba o cadastro: a família fica 'pendente' e o operador reprocessa
   // pelo caminho que já existe (ADR-0030).
+  //
+  // `jaEnfileirado` pula esta chamada no retry idempotente: reenfileirar rodaria o
+  // enriquecimento por IA de novo (custo de tokens) e poderia sobrescrever título/descrição
+  // já editados pelo operador. `filaOk: true` aqui é verdade — foi enfileirado na tentativa
+  // anterior — não um valor fabricado.
   let filaOk = true;
-  try {
-    const messageId = await enfileirarFamilia({ familia_id: familiaId, lote_id: loteId });
-    await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', familiaId);
-  } catch (e) {
-    filaOk = false;
-    console.error('cadastrar_produto_enfileirar_falhou', { familiaId, erro: String(e) });
+  if (!jaEnfileirado) {
+    try {
+      const messageId = await enfileirarFamilia({ familia_id: familiaId, lote_id: loteId });
+      await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', familiaId);
+    } catch (e) {
+      filaOk = false;
+      console.error('cadastrar_produto_enfileirar_falhou', { familiaId, erro: String(e) });
+    }
   }
 
   await auditarOperacaoSuporte(admin, context, { type: 'familia', id: familiaId }, 'succeeded');
