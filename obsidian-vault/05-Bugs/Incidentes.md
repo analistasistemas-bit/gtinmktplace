@@ -1,12 +1,51 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-07-10
+atualizado: 2026-07-30
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## 2026-07-30 — Frete da Viabilidade saía R$0 sem explicação (conta ML sem Mercado Envios)
+
+**Sintoma:** Diego reportou que o "Frete (vendedor)" na Viabilidade estava R$12,35 pra um GTIN e
+questionou se o ML pagava 50% do frete. Investigando, achou-se um segundo problema: no Safari
+(logado como a org DSA) o mesmo GTIN mostrava frete **R$0**, sem a linha "Frete (vendedor)" — no
+Chrome (org Avil), R$12,35 normal.
+
+**Causa raiz nº 1 (menor, resolvida no mesmo fio):** o modo "Colar GTINs" da Viabilidade nunca
+enviava dimensões de pacote pra `buscarFreteVendedor`, então sempre caía no pacote genérico
+(16×11×6cm/300g) do `_shared/ml/frete.ts`, mesmo quando o produto já tinha dimensões reais
+cadastradas em `variacoes`. Fix: buscar por `org_id`+`gtin` antes do fallback; sem achar (caso mais
+comum — produto ainda não cadastrado, é o propósito da tela), oferecer input manual por linha.
+
+**Causa raiz nº 2 (a divergência Safari×Chrome):** a conta DSA ($ANALISTA$, `ml_user_id` 9757132) —
+NEWBIE, zero vendas — nunca aderiu ao **Mercado Envios** no Mercado Livre. `GET
+/users/9757132/shipping_options/free` respondia **400 "does Not have me2 enabled"**, e
+`buscarFreteVendedor` (best-effort, ADR-0050) engolia o erro e devolvia 0 silenciosamente — sem
+distinguir "comprador paga o frete" (0 real) de "não deu pra calcular" (0 por falha).
+
+**Achado colateral importante:** `GET /users/{id}` → `status.mercadoenvios` fica **desatualizado**
+por um tempo depois da adesão real — confirmado ao vivo (um subagente checou minutos depois de
+Diego ativar o Mercado Envios pelo painel: o campo ainda dizia `"not_accepted"`, mas
+`shipping_options/free` já respondia 200 normalmente). A fonte confiável em tempo real é
+`GET /users/{id}/shipping_preferences` → `"me2"` em `modes`.
+
+**Correção (ADR-0095, PRs #37/#38/#39):** `ml-oauth-claim` passou a checar `shipping_preferences`
+no momento da conexão e grava `marketplace_connections.me2_habilitado`. Quando `false`: aviso na
+tela **Canais** (junto do card da conexão) e banner em toda análise da **Viabilidade** explicando
+que o frete saiu R$0 por falta de adesão, não porque é zero de verdade. Testado ao vivo contra a
+API real do ML via `supabase db query --linked` + extensão `http` do Postgres (token nunca exposto
+no output — só usado dentro do header da chamada).
+
+**Lição:** um "best-effort" que devolve 0 em qualquer falha (padrão correto pra não travar a tela)
+fica mudo por design — sem um sinal parceiro do PORQUÊ, o operador não distingue "o comprador paga"
+de "não conseguimos nem tentar". E campos de status de conta de plataforma externa podem ter
+propagação assíncrona: não assumir que o campo "óbvio" reflete o estado real; testar
+funcionalmente quando possível (aqui, `shipping_preferences` bateu com a realidade;
+`status.mercadoenvios` não).
 
 ## 2026-07-10 — Cache Redis de schema no formato antigo zerava o enriquecimento IA de atributos (fita)
 
