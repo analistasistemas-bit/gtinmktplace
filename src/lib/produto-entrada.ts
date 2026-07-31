@@ -5,9 +5,11 @@
 //
 // `origem` é obrigatória de propósito — define a alíquota de imposto (ADR-0055) e a edge
 // recusa a chamada sem ela em vez de assumir 'nacional'.
+//
+// Os códigos (do PAI e das variações) são gerados pela edge — não existem campos de código
+// aqui. `chaveCadastro` é a chave de idempotência da submissão (ver dialog-cadastro-produto.tsx).
 
 export interface VariacaoEntrada {
-  codigo: string;
   nome?: string | null;
   gtin?: string | null;
   preco: number;
@@ -20,11 +22,13 @@ export interface VariacaoEntrada {
 }
 
 export interface ProdutoEntrada {
-  codigoPai: string;
   nomePai: string;
   descricaoPai?: string | null;
   unidade?: string | null;
   fornecedor?: string | null;
   origem: 'nacional' | 'importado';
+  // Idempotência da submissão: o mesmo uuid reenviado devolve o cadastro original em vez de
+  // criar um segundo produto. Nasce ao abrir o diálogo (ver dialog-cadastro-produto.tsx).
+  chaveCadastro: string;
   variacoes: VariacaoEntrada[];
 }
