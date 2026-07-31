@@ -427,18 +427,34 @@ Ambas resolvem a identidade com `requireUserOrg(req, { access: 'write' })` e rec
 módulo com **403** via `exigirModulo` (`_shared/produto/modulo.ts`), que **fecha por padrão**:
 falha ao ler `organizations` não libera.
 
-- **cadastrar-produto** — cadastro manual de produto (D-1/D-1.1). Grava um **lote normal** com
-  `origem='manual'`, reusando o lote manual ABERTO da org, e cai na **mesma Revisão de sempre** —
-  `process-familia`, `publish-familia-ml`, split e user products não mudam uma linha. Validação
-  pura em `_shared/produto/validar.ts` (`validarProdutoNovo` / `montarLinhasProduto`), com trava
-  **LOUD de `origem`**: `familias.origem` é `NOT NULL DEFAULT 'nacional'`, então omitir o campo
-  gravaria imposto errado em silêncio (ADR-0055) — a edge responde 400 em vez de assumir.
-  Dois guards de 409: **produto duplicado** (a unique é `(lote_id, codigo_pai)`, então dois lotes
-  aceitariam o mesmo produto e criariam linhas canônicas concorrentes — a resposta carrega
-  `familiaId`/`loteId` para a tela oferecer "abrir o produto") e **SKU já usado por outro produto**
-  (a unique é `(familia_id, codigo)`; não há unique por org, e as RPCs de estoque resolvem a
-  variação por `(org_id, codigo)` pegando a família mais recente — SKU repetido faria uma venda
-  baixar o estoque do produto **errado**).
+- **cadastrar-produto** — cadastro manual de produto (D-1/D-1.1; código automático, ADR-0096).
+  Grava um **lote normal** com `origem='manual'`, reusando o lote manual ABERTO da org, e cai na
+  **mesma Revisão de sempre** — `process-familia`, `publish-familia-ml`, split e user products
+  não mudam uma linha. Validação pura em `_shared/produto/validar.ts` (`validarProdutoNovo` /
+  `montarLinhasProduto`), com trava **LOUD de `origem`**: `familias.origem` é `NOT NULL DEFAULT
+  'nacional'`, então omitir o campo gravaria imposto errado em silêncio (ADR-0055) — a edge
+  responde 400 em vez de assumir.
+  **Código gerado pelo sistema (ADR-0096), não mais pelo operador.** O payload não carrega mais
+  `codigoPai` nem `codigo` por variação; passa a exigir `chaveCadastro` (uuid, validado com trava
+  LOUD em `validarProdutoNovo` — ausência ou formato inválido é 400). A edge reserva a faixa
+  numérica via RPC `proximo_codigo_produto(org, 1 + N variações)` e deriva PAI + SKUs com
+  `derivarCodigos` (`_shared/produto/codigos.ts`), oito dígitos com zeros à esquerda
+  (`00000001`), o PAI sendo o menor número da faixa (D-1/D-2 do ADR-0096). Faixa que ultrapassa
+  `99999999` falha LOUD (D-5), sem truncar.
+  Guards de 409, **três casos distintos**: (1) **idempotência da submissão** (D-9 do ADR-0096) —
+  reenvio com a mesma `chaveCadastro` de um cadastro já gravado e completo devolve o resultado
+  original, 200, sem criar nada; (2) **cadastro em andamento, SEM `familiaId`** — a família com
+  aquela `chaveCadastro` existe mas ainda não tem variações gravadas (janela entre os dois
+  inserts) ou está em corrida com outra submissão da mesma chave; resposta é "tente novamente",
+  sem `familiaId` porque não há o que abrir ainda; (3) **cadastro gravado diverge do enviado,
+  COM `familiaId`/`loteId`** — o formulário mudou entre tentativas com a mesma chave
+  (`variacoesDivergem`, `processar.ts`); a família É verificável e completa, então a resposta
+  carrega `familiaId`/`loteId` para a tela oferecer "abrir na Revisão" em vez de mandar
+  "tentar de novo" (que geraria loop). Os guards de duplicata sobre os códigos GERADOS
+  cruzam as duas tabelas (`familias.codigo_pai` **e** `variacoes.codigo`, D-6 do ADR-0096); se
+  colidirem, a edge ressincroniza a sequência com o maior código existente e tenta reservar
+  de novo — colidindo ainda assim, é 500 de erro de sistema, nunca instrução ao operador
+  (D-4.1/D-10 do ADR-0096, porque o operador não escolheu nenhum código para "renomear").
   Ordem que **não pode mudar**: o lote reusado só é marcado `processando` **depois** do insert da
   família; antes disso existe janela para `talvezFinalizarLote` fechar o lote e a família nascer
   dentro de um lote fechado. Estoque inicial entra por `registrar_entrada` (caminho único, D-15)

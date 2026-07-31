@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Código de produto automático no cadastro manual — concluído 2026-07-31
+
+- [x] **Causa raiz:** quem usa o módulo de estoque não tem ERP, então não tem código de produto
+  nem SKU — o `DialogCadastroProduto` exigia os dois e o operador preenchia com o que tinha à
+  mão. No primeiro cadastro real da DSA o SKU virou o próprio EAN de 13 dígitos, que nunca casa
+  com o contrato de oito dígitos do upload de foto (`^\d{8}`), quebrando a foto em silêncio.
+- [x] **Fix:** o sistema passou a gerar PAI e SKUs — sequência única e crescente por
+  organização (`organizations.produto_seq`), oito dígitos com zeros à esquerda, reservada pela
+  RPC `proximo_codigo_produto` (`SECURITY DEFINER`, só a edge `cadastrar-produto` chama). Campos
+  "Código do produto (PAI)" e "SKU" saíram da tela. Idempotência da submissão por
+  `familias.chave_cadastro` (uuid gerado pelo front, unique parcial por org). Guards de
+  duplicata agora cruzam `familias.codigo_pai` e `variacoes.codigo`; colisão sobre código
+  gerado dispara ressincronização automática da sequência antes de falhar.
+  Três migrations: `20260731192443` (coluna, índice, RPC), `20260731193955` (inicialização
+  reaplicável — a original rebobinava a sequência se reaplicada), `20260731194443` (Avil
+  deslocada para a faixa reservada `99000000`; DSA permanece em `1`).
+- [ ] **Branch em validação** (`worktree-codigo-produto-automatico`) — pendente QA/merge.
+- Docs: `docs/decisions/0096-codigo-produto-automatico.md`,
+  `docs/reference/edge-functions.md` (`cadastrar-produto`), `docs/reference/modelo-de-dados.md`
+  (`organizations.produto_seq`, `familias.chave_cadastro`, RPC `proximo_codigo_produto`).
+
 ## Dashboard mostrava 28 devoluções (só 3 são reais) — corrigido 2026-07-31
 
 - [x] **Causa raiz:** o backfill completo do `reconciliar-faturamento` (task abaixo, mesmo dia)
