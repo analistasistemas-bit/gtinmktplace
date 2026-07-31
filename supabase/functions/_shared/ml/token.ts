@@ -71,10 +71,13 @@ async function lerTokensConexao(connectionId: string) {
 }
 
 async function gravarRotacaoConexao(conexao: ConexaoCanal, tok: TokenML) {
-  // Preserva conta_externa_id/label/scope/criado_por existentes (refresh não os retorna).
+  // Preserva conta_externa_id/label/scope/criado_por/me2_habilitado existentes (refresh não os
+  // retorna). `upsert_marketplace_connection` sobrescreve me2_habilitado com o parâmetro recebido
+  // mesmo no UPDATE (ADR-0095) — sem reler e repassar aqui, todo refresh de token zerava a coluna
+  // de volta pra null a cada ~6h, apagando silenciosamente o backfill/claim anterior.
   const { data: meta } = await adminClient()
     .from('marketplace_connections')
-    .select('conta_externa_id, conta_label, scope, criado_por')
+    .select('conta_externa_id, conta_label, scope, criado_por, me2_habilitado')
     .eq('id', conexao.id)
     .maybeSingle();
   const expiresAt = new Date(Date.now() + tok.expires_in * 1000).toISOString();
@@ -88,6 +91,7 @@ async function gravarRotacaoConexao(conexao: ConexaoCanal, tok: TokenML) {
     p_scope: tok.scope ?? meta?.scope ?? null,
     p_expires_at: expiresAt,
     p_criado_por: meta?.criado_por ?? null,
+    p_me2_habilitado: meta?.me2_habilitado ?? null,
   });
   if (error) throw new Error(`upsert_marketplace_connection: ${error.message}`);
 }

@@ -68,3 +68,29 @@ Quando `false`:
 Remover as leituras de `me2Habilitado`/`me2_habilitado` em `Canais.tsx`, `Viabilidade.tsx` e
 `analisar-viabilidade/index.ts`, e a chamada a `buscarMe2Habilitado` em `ml-oauth-claim`. A coluna
 pode ficar (nullable, não quebra nada) ou ser dropada numa migration própria.
+
+## Adendo 2026-07-31 — refresh de token zerava `me2_habilitado` a cada ~6h
+
+Investigando "Viabilidade da DSA não recalcula o frete" (a mecânica de recálculo estava correta —
+`buscarFreteVendedor` usa mesmo as dimensões informadas, confirmado ao vivo com o token real da
+conta 9757132: `list_cost` variou com dimensão maior, e ficou igual pro item testado só porque
+84,99/50ml cai na mesma faixa da tabela do ML pro pacote genérico e pro real, até ~2kg), achado um
+bug de verdade: `gravarRotacaoConexao` (`_shared/ml/token.ts`), chamada a **cada refresh de token**
+(o access token do ML dura ~6h), reescreve a conexão via `upsert_marketplace_connection` sem passar
+`p_me2_habilitado`. A função SQL usa `default null` e o branch de UPDATE grava
+`me2_habilitado = p_me2_habilitado` incondicionalmente — ou seja, todo refresh apagava de volta pra
+`null` o valor gravado na conexão (pelo claim OAuth ou por um backfill manual), silenciosamente.
+Achado ao vivo: a conexão da DSA foi backfillada `true` em 2026-07-30, tinha `atualizado_em` de
+2026-07-31 (refresh de token do dia) e `me2_habilitado` já estava `null` de novo — mesmo com
+`shipping_preferences.modes` incluindo `me2` e o frete real funcionando (`GET
+.../shipping_options/free` 200, `list_cost` coerente).
+
+**Fix:** `gravarRotacaoConexao` agora relê `me2_habilitado` junto com os outros campos preservados
+(`conta_externa_id`/`conta_label`/`scope`/`criado_por`) e repassa pro upsert. Regressão coberta em
+`_shared/ml/__tests__/token-refresh-me2.test.ts`.
+
+Efeito prático do bug: o aviso "sua conta não aderiu ao Mercado Envios" (quando `me2_habilitado`
+está `false`) tende a nunca aparecer de forma estável — vira `null` de novo no próximo refresh,
+mascarando o "false" real. Não chega a ser pior que o comportamento pré-ADR-0095 (nunca dava aviso
+nenhum), mas esvaziava o objetivo do ADR de forma silenciosa e periódica, não só nas conexões antigas
+que nunca reconectaram.

@@ -143,7 +143,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   além do `requireUserOrg`**. Traduz o 23505 do índice `(canal, conta_externa_id)` para "conta já
   conectada em outra organização". `verify_jwt=false` acompanhando as irmãs de OAuth, com a
   checagem dentro da function. Também checa `GET /users/{id}/shipping_preferences` (`"me2"` em
-  `modes`) e grava `me2_habilitado` — best-effort, `null` se a chamada falhar.
+  `modes`) e grava `me2_habilitado` — best-effort, `null` se a chamada falhar. `_shared/ml/token.ts`
+  (`getValidAccessTokenConexao`, chamada por toda função que precisa de token ML) relê e repassa
+  esse valor a cada refresh de token (~6h) — sem isso, `upsert_marketplace_connection` zerava a
+  coluna de volta pra `null` em todo refresh (adendo ADR-0095, 2026-07-31).
 - **ml-oauth-disconnect** — remove a conexão (`delete_marketplace_connection`).
 
 ### Ingest de planilha
