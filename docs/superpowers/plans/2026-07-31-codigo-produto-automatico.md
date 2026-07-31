@@ -689,9 +689,31 @@ describe('variacoesDivergem', () => {
   });
 
   it('preço com empate de arredondamento não é falso positivo', () => {
-    // `1.005 * 100` em IEEE dá 100.49999…, mas numeric(12,2) guarda 1.01.
-    // Só passa se a gravação arredondar antes (Step 3b).
+    // Prova que a comparação lê o valor como TEXTO decimal, e não via `x * 100` em IEEE
+    // (onde 1.005 * 100 = 100.4999… arredondaria para 1.00 e divergiria do 1.01 que o
+    // Postgres guardou). Não depende de a gravação arredondar — ver Step 3b revogado.
     expect(variacoesDivergem([enviada({ preco: 1.005 })], [gravada({ preco: '1.01' })])).toBe(false);
+  });
+
+  it('dimensão igual com tipos diferentes não diverge', () => {
+    // O PostgREST devolve numeric como string; o payload traz número. Sem conversão, um
+    // retry legítimo com dimensões preenchidas seria barrado.
+    expect(variacoesDivergem(
+      [enviada({ alturaCm: 10, larguraCm: 20, comprimentoCm: 30 })],
+      [gravada({ altura_cm: '10.00', largura_cm: '20.00', comprimento_cm: '30.00' })],
+    )).toBe(false);
+  });
+
+  it('largura e comprimento entram na comparação', () => {
+    expect(variacoesDivergem([enviada({ larguraCm: 21 })], [gravada({ largura_cm: 20 })])).toBe(true);
+    expect(variacoesDivergem([enviada({ comprimentoCm: 31 })], [gravada({ comprimento_cm: 30 })])).toBe(true);
+  });
+
+  it('custo diverge abaixo de um centavo — a coluna é numeric SEM escala', () => {
+    // `custo` não é numeric(12,2) como preco: o Postgres guarda 4.251 como 4.251.
+    // Truncar em centavos deixaria passar edição sub-centavo, e custo alimenta markup.
+    expect(variacoesDivergem([enviada({ custo: 4.251 })], [gravada({ custo: '4.252' })])).toBe(true);
+    expect(variacoesDivergem([enviada({ custo: 4.25 })], [gravada({ custo: '4.25' })])).toBe(false);
   });
 });
 ```
@@ -719,16 +741,24 @@ precisa respeitar, e que os testes acima cobrem:
   `estoqueInicial` fica de fora porque não tem contrapartida gravada (`estoque` nasce 0).
 - O `select` do handler precisa passar a trazer essas colunas; hoje ele busca menos campos.
 
-- [ ] **Step 3b: Gravar `preco` já arredondado a duas casas**
+- [ ] ~~**Step 3b: Gravar `preco` já arredondado a duas casas**~~ — **REVOGADO**
 
-Em `montarLinhasProduto` (`_shared/produto/validar.ts`), grave `preco` arredondado a 2 casas
-em vez do float cru. A coluna é `numeric(12,2)`, então o Postgres arredonda de qualquer jeito
-— o problema é que o JS e o Postgres discordam em empates: `1.005 * 100` em IEEE dá
-`100.4999…` (arredonda para 1.00) enquanto `1.005::numeric(12,2)` dá `1.01`. Sem isto, um
-retry legítimo com preço nesse formato é barrado por engano.
+**Não execute este passo. A premissa estava errada e ele introduziu um defeito financeiro.**
 
-Não é "3+ casas decimais" em geral — é só o subconjunto de empates `x.xx5` cujo double cai
-logo abaixo do meio. Arredondar na gravação elimina a classe inteira.
+Eu escrevi este passo supondo que JS e Postgres discordariam no empate `x.xx5`. Isso valia
+para o guard ANTIGO (`Math.round(v.preco * 100)`), que a extração deste próprio trabalho
+substituiu. Com `centavosExatos`, os dois lados leem o MESMO texto: `n.toString()` é o que o
+`JSON.stringify` envia, e o Postgres parseia esse texto como decimal exato. Não há
+discordância a corrigir.
+
+Ao executá-lo, a gravação virou `preco: centavosExatos(v.preco)! / 100`. O `!` é asserção de
+TypeScript, apagada no emit — e `null / 100` em JS é `0`. Como `validarProdutoNovo` só testa
+`preco == null || preco <= 0`, um payload com `"abc"`, `true`, `NaN` ou `Infinity` passava e
+gravava **R$ 0,00 em silêncio**, onde antes o Postgres recusava a escrita. Falha ruidosa
+convertida em dado financeiro errado.
+
+Mantenha `preco: v.preco` na gravação. Se um dia alguém quiser arredondar ali, tem que ser
+com falha explícita (`if (c == null) throw`), nunca com `!` ou `?? 0`.
 
 - [ ] **Step 4: Rodar para ver passar**
 
