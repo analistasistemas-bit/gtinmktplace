@@ -158,15 +158,23 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
     [vendasRaw.data, custos, aliquotas],
   );
   const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
-  // Devoluções concluídas com reembolso no período, para o discreto do card de Faturamento
-  // Bruto. Critério: pedido com estorno > 0 (dinheiro já confirmado pelo Mercado Pago) — mesma
-  // fonte e mesma janela (date_closed) do card "Estornos" do Financeiro (ADR-0038), não a tabela
-  // ml_devolucoes (claims/mediações do ML), que tem lacunas de sincronização e não distingue
-  // devolução em andamento de concluída sem reembolso.
+  // Devoluções concluídas no período, para o discreto do card de Faturamento Bruto. Critério:
+  // ml_devolucoes com type='returns' (devolução de verdade, não mediação/cancelamento/reclamação)
+  // e status fechado (mesmo "Fechada" da aba Devoluções) — bate com o painel nativo do ML. Antes
+  // usava pedido com estorno > 0 no MP, mas isso conta qualquer reembolso parcial/negociado sem
+  // devolução real, inflando a contagem bem acima das devoluções de fato concluídas.
   const devolucoesPeriodo = useMemo(() => {
-    const comEstorno = pedidos.filter((p) => p.estorno > 0);
-    return { qtd: comEstorno.length, valor: comEstorno.reduce((s, p) => s + p.estorno, 0) };
-  }, [pedidos]);
+    const de = janela.desde;
+    const ate = janela.ate;
+    const concluidas = (devolucoesQ.data ?? []).filter((d) =>
+      d.type === 'returns'
+      && d.status !== 'opened'
+      && d.aberto_em != null && d.aberto_em >= de && d.aberto_em <= ate);
+    return {
+      qtd: concluidas.length,
+      valor: concluidas.reduce((s, d) => s + (d.valor_estornado ?? 0), 0),
+    };
+  }, [devolucoesQ.data, janela]);
   const kpisPedidosAnt = useMemo(
     () => calcularKpisPedidos(agruparPorPedido(
       vendasRawAnt.data ?? [],

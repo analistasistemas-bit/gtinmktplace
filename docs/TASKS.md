@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Dashboard mostrava 28 devoluções (só 3 são reais) — corrigido 2026-07-31
+
+- [x] **Causa raiz:** o backfill completo do `reconciliar-faturamento` (task abaixo, mesmo dia)
+  passou a popular `ml_vendas.estorno` para TODO pedido com `transaction_amount_refunded > 0` no
+  Mercado Pago — inclusive reembolsos parciais/negociados sem devolução real (ajuste de preço,
+  frete, etc.). O card "Faturamento Bruto" do Dashboard usava `pedido.estorno > 0` como proxy de
+  "devolução concluída" (decisão do ADR-0038, para fugir das lacunas de sync de `ml_devolucoes`).
+  Antes do backfill completo essa proxy coincidia por acaso com as devoluções reais; depois,
+  passou a contar 28 pedidos com algum estorno no mês vs. as 3 devoluções de fato concluídas no
+  painel nativo do ML.
+- [x] **Fix:** `devolucoesPeriodo` em `src/pages/Dashboard.tsx` agora conta `ml_devolucoes` com
+  `type === 'returns'` e `status !== 'opened'` (mesma definição de "Fechada" da aba Devoluções),
+  em vez de estorno no MP. `pnpm test` (2284 testes) e `pnpm lint` passando.
+- [ ] **Branch aguardando validação local do Diego** antes de push/merge (fluxo de entrega padrão).
+
 ## Devoluções ML não computadas automaticamente — 2 bugs corrigidos e DEPLOYADOS 2026-07-31
 
 - [x] **Causa raiz nº 1:** `reconciliar-faturamento` (schedule QStash 1h) estourava o limite de
