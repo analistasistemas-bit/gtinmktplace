@@ -2,6 +2,8 @@
 // Grava exatamente as mesmas colunas que o ingest-lote grava a partir da planilha — o
 // downstream (IA, Revisão, publicação) não sabe de onde o produto veio.
 
+import { centavosExatos } from '../dinheiro.ts';
+
 export interface VariacaoEntrada {
   nome?: string | null;
   gtin?: string | null;
@@ -105,7 +107,11 @@ export function montarLinhasProduto(
     codigo: ctx.codigos[i],
     nome: v.nome?.trim() || null,
     gtin: v.gtin?.trim() || null,
-    preco: v.preco,
+    // Arredondado ANTES de gravar com o mesmo arredondamento decimal-seguro usado pelo guard de
+    // retry idempotente (`variacoesDivergem`, cadastrar-produto/processar.ts) — ver
+    // `centavosExatos` em `_shared/dinheiro.ts` para o porquê de x.xx5 quebrar `preco * 100` em
+    // IEEE 754.
+    preco: centavosExatos(v.preco)! / 100,
     custo: v.custo ?? null,
     // Estoque nasce ZERO: o saldo entra por registrar_entrada, caminho único de escrita (D-15).
     estoque: 0,

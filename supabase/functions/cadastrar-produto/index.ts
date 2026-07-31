@@ -19,6 +19,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, derivarCodigos } from '../_shared/produto/codigos.ts';
+import { variacoesDivergem } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -99,7 +100,8 @@ Deno.serve(async (req) => {
     // `produto.variacoes[i]` por índice. Ver o comentário do laço — sem esta ordenação o
     // estoque inicial entra no SKU errado.
     const { data: vars } = await admin.from('variacoes')
-      .select('id, codigo, nome, gtin, preco').eq('familia_id', jaCadastrado.id).order('codigo');
+      .select('id, codigo, nome, gtin, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm')
+      .eq('familia_id', jaCadastrado.id).order('codigo');
     // Família e variações são dois inserts, dois commits: existe uma janela em que a família
     // já existe com zero variações. Sem este guard o operador chegaria à tela de fotos com
     // zero slots e toast de sucesso (cobre também erro de select engolido — mesmo teste).
@@ -108,27 +110,15 @@ Deno.serve(async (req) => {
     }
     // O formulário mudou entre as tentativas (a chave só é trocada quando o diálogo fecha).
     // Casar por índice aqui aplicaria estoque na variação errada — valor financeiro não se
-    // assume, falha alto. Contagem NÃO basta: reordenar duas linhas, ou excluir uma e adicionar
-    // outra, mantém a contagem. Não precisamos casar payload↔linha salva (o payload não carrega
-    // o código, que é gerado) — basta DETECTAR que mudou e recusar.
-    //
-    // Comparação com a MESMA normalização da gravação, senão barraria o retry legítimo, que é a
-    // razão de existir da feature: `montarLinhasProduto` grava `nome`/`gtin` como
-    // `v.campo?.trim() || null` — a expressão aqui é a mesma, caractere por caractere. `preco`
-    // em centavos porque a coluna é `numeric(12,2)`: comparar o float cru barraria um reenvio
-    // idêntico de qualquer preço com mais de duas casas (o banco arredonda na escrita, o payload
-    // não).
+    // assume, falha alto. Decisão extraída para `variacoesDivergem` (processar.ts) e coberta por
+    // teste — nenhum outro teste do projeto executa este handler.
     //
     // Ao contrário do guard de lista vazia acima, aqui a família É verificável: está gravada e
     // completa, então "tente novamente" seria falso (nenhum retry com esta chave passa) e
     // deixaria o operador em loop — a saída seria fechar/reabrir o diálogo, gerando chave nova e
     // um SEGUNDO produto. Devolve `familiaId`/`loteId` para `src/lib/produtos-saldo.ts` virar
     // `ProdutoJaExisteError` e a tela oferecer "Abrir na Revisão".
-    const divergiu = vars.length !== produto.variacoes.length
-      || produto.variacoes.some((v, i) => (v.nome?.trim() || null) !== (vars[i].nome ?? null)
-        || (v.gtin?.trim() || null) !== (vars[i].gtin ?? null)
-        || Math.round(v.preco * 100) !== Math.round(Number(vars[i].preco) * 100));
-    if (divergiu) {
+    if (variacoesDivergem(produto.variacoes, vars)) {
       return json({
         error: 'Este cadastro já foi gravado e o que foi enviado agora diverge do que está salvo. Abra na Revisão para conferir.',
         familiaId: jaCadastrado.id as string,
