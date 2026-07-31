@@ -4,12 +4,12 @@
 //
 // Por que não há transação: as escritas passam por três caminhos diferentes (tabela, RPC
 // security definer, QStash) e o supabase-js não expõe transação multi-statement. O desenho
-// compensa com idempotência — mas ainda pela metade: os códigos (PAI e SKUs) são gerados
-// pelo sistema (proximo_codigo_produto + derivarCodigos), não mais digitados pelo operador,
-// e o retry idempotente passa a depender de `chave_cadastro` — cujo retorno limpo (detectar
-// a repetição e devolver o resultado já criado, em vez de deixar a unique estourar) ainda
-// não está implementado aqui. Reexecutar o estoque inicial já é no-op pela referência
-// `cadastro:{familiaId}:{codigo}`.
+// compensa com idempotência — os códigos (PAI e SKUs) são gerados pelo sistema
+// (proximo_codigo_produto + derivarCodigos), não mais digitados pelo operador, então o retry
+// idempotente depende de `chave_cadastro`: uma checagem prévia devolve o cadastro já criado, e
+// a unique parcial (org_id, chave_cadastro) cobre a corrida entre duas submissões simultâneas —
+// a perdedora também devolve o cadastro da vencedora em vez de um 23505 cru. Reexecutar o
+// estoque inicial já é no-op pela referência `cadastro:{familiaId}:{codigo}`.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -71,6 +71,25 @@ Deno.serve(async (req) => {
 
   const erros = validarProdutoNovo(produto);
   if (erros.length > 0) return json({ erros }, 400);
+
+  // D-9: idempotência da submissão. Com código gerado, um retry produz códigos NOVOS e os
+  // guards de duplicata não disparam — sem esta checagem, um timeout depois do insert
+  // seguido de um segundo clique criaria uma segunda família e aplicaria o estoque inicial
+  // duas vezes (a ref `cadastro:{familiaId}:{codigo}` muda junto com a família).
+  const { data: jaCadastrado } = await admin.from('familias')
+    .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+    .maybeSingle();
+  if (jaCadastrado) {
+    const { data: vars } = await admin.from('variacoes')
+      .select('id, codigo').eq('familia_id', jaCadastrado.id).order('codigo');
+    return json({
+      loteId: jaCadastrado.lote_id,
+      familiaId: jaCadastrado.id,
+      filaOk: true,
+      falhasEstoque: [],
+      variacoes: (vars ?? []).map((v) => ({ id: v.id, codigo: v.codigo })),
+    });
+  }
 
   // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
   // colisão falham sem deixar lote/família pela metade.
@@ -138,7 +157,27 @@ Deno.serve(async (req) => {
 
   const { data: familiaCriada, error: famErr } = await admin.from('familias')
     .insert(familia).select('id').single();
-  if (famErr || !familiaCriada) return json({ error: famErr?.message ?? 'Falha criando família.' }, 400);
+  if (famErr) {
+    // Corrida com outra submissão da MESMA chave: a unique parcial decidiu quem grava.
+    // A perdedora devolve o cadastro da vencedora em vez de um erro que o operador não
+    // consegue interpretar.
+    if (famErr.code === '23505' && famErr.message.includes('chave_cadastro')) {
+      const { data: vencedora } = await admin.from('familias')
+        .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+        .maybeSingle();
+      if (vencedora) {
+        const { data: vars } = await admin.from('variacoes')
+          .select('id, codigo').eq('familia_id', vencedora.id).order('codigo');
+        return json({
+          loteId: vencedora.lote_id, familiaId: vencedora.id,
+          filaOk: true, falhasEstoque: [],
+          variacoes: (vars ?? []).map((v) => ({ id: v.id, codigo: v.codigo })),
+        });
+      }
+    }
+    return json({ error: famErr.message }, 400);
+  }
+  if (!familiaCriada) return json({ error: 'Falha criando família.' }, 400);
   const familiaId = familiaCriada.id as string;
 
   // O `select` é obrigatório: a etapa de fotos vincula a imagem pelo id da variação, não pelo código.
