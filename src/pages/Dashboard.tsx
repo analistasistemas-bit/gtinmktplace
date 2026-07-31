@@ -159,16 +159,18 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
   );
   const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
   // Devoluções concluídas no período, para o discreto do card de Faturamento Bruto. Critério:
-  // ml_devolucoes com type='returns' (devolução de verdade, não mediação/cancelamento/reclamação)
-  // e status fechado (mesmo "Fechada" da aba Devoluções) — bate com o painel nativo do ML. Antes
-  // usava pedido com estorno > 0 no MP, mas isso conta qualquer reembolso parcial/negociado sem
-  // devolução real, inflando a contagem bem acima das devoluções de fato concluídas.
+  // ml_devolucoes com type='returns' (devolução de verdade) e return_status_money='refunded'
+  // (o mesmo "Devolução finalizada com reembolso para o comprador" do painel nativo do ML) —
+  // conferido caso a caso contra o ML. status!=='opened' sozinho é raso demais: inclui claim
+  // fechado sem reembolso (ex.: devolução cancelada/rejeitada com dinheiro retido) e, em pelo
+  // menos 1 caso encontrado, uma devolução que o ML ainda mostra em andamento. Antes disso usava
+  // pedido com estorno > 0 no MP, que conta qualquer reembolso parcial/negociado sem devolução.
   const devolucoesPeriodo = useMemo(() => {
     const de = janela.desde;
     const ate = janela.ate;
     const concluidas = (devolucoesQ.data ?? []).filter((d) =>
       d.type === 'returns'
-      && d.status !== 'opened'
+      && d.return_status_money === 'refunded'
       && d.aberto_em != null && d.aberto_em >= de && d.aberto_em <= ate);
     return {
       qtd: concluidas.length,

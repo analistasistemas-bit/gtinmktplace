@@ -12,9 +12,23 @@
   Antes do backfill completo essa proxy coincidia por acaso com as devoluções reais; depois,
   passou a contar 28 pedidos com algum estorno no mês vs. as 3 devoluções de fato concluídas no
   painel nativo do ML.
-- [x] **Fix:** `devolucoesPeriodo` em `src/pages/Dashboard.tsx` agora conta `ml_devolucoes` com
-  `type === 'returns'` e `status !== 'opened'` (mesma definição de "Fechada" da aba Devoluções),
-  em vez de estorno no MP. `pnpm test` (2284 testes) e `pnpm lint` passando.
+- [x] **Fix v1:** `devolucoesPeriodo` em `src/pages/Dashboard.tsx` passou a contar `ml_devolucoes`
+  com `type === 'returns'` e `status !== 'opened'`. Commitado, PR #45 mesclado em `main`.
+- [x] **Fix v2 (mesmo dia, ainda mais preciso):** `status !== 'opened'` sozinho ainda incluía claim
+  fechado sem reembolso de verdade — achado ao conferir pedido a pedido contra o ML: 1 caso com
+  `return_status='cancelled'`/`status_money='retained'` (devolução rejeitada, dinheiro retido, não
+  é devolução) e 1 caso com `status_money='refunded'` no banco mas que o ML ainda mostra em
+  andamento ("Venda entregue", não "finalizada") — ver achado de bug abaixo. Critério trocado para
+  `return_status_money === 'refunded'`, que bate com a frase exata do ML ("Devolução finalizada
+  com reembolso para o comprador") e foi conferido 1:1 contra as devoluções reais do Diego.
+- [ ] **Bug de sincronização encontrado, NÃO corrigido ainda:** `buscarReturn` em
+  `supabase/functions/_shared/faturamento/devolucoes-io.ts:19-28` grava `status_money='refunded'`
+  para pelo menos 1 devolução (pack `#2000013737917865`, claim `5540650071`) que o ML ainda mostra
+  como não concluída ("Venda entregue" só, sem "Devolução finalizada"). Suspeita: `data[0]` do
+  array de returns do claim pode estar pegando um registro errado/desatualizado quando o claim tem
+  mais de um registro de devolução no histórico. Precisa de investigação com token ML ao vivo (não
+  dá pra confirmar só com o dado já gravado no banco). Achado durante a investigação acima, fora de
+  escopo naquele momento (mesmo padrão do achado do TIPO_LABEL, ver task anterior).
 - [ ] **Branch aguardando validação local do Diego** antes de push/merge (fluxo de entrega padrão).
 
 ## Devoluções ML não computadas automaticamente — 2 bugs corrigidos e DEPLOYADOS 2026-07-31
