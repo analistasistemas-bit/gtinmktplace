@@ -8,8 +8,9 @@
 // (proximo_codigo_produto + derivarCodigos), não mais digitados pelo operador, então o retry
 // idempotente depende de `chave_cadastro`: uma checagem prévia devolve o cadastro já criado, e
 // a unique parcial (org_id, chave_cadastro) cobre a corrida entre duas submissões simultâneas —
-// a perdedora também devolve o cadastro da vencedora em vez de um 23505 cru. Reexecutar o
-// estoque inicial já é no-op pela referência `cadastro:{familiaId}:{codigo}`.
+// a perdedora devolve 409 "tente novamente" em vez de um 23505 cru (nada é observável da
+// vencedora enquanto ela ainda está em voo). Reexecutar o estoque inicial já é no-op pela
+// referência `cadastro:{familiaId}:{codigo}`.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -179,29 +180,16 @@ Deno.serve(async (req) => {
     const { data: familiaCriada, error: famErr } = await admin.from('familias')
       .insert(familia).select('id').single();
     if (famErr) {
-      // Corrida com outra submissão da MESMA chave: a unique parcial decidiu quem grava. Quem
-      // decide se é "corrida na mesma chave" é o DADO (o select abaixo, escopado por org_id +
-      // chave_cadastro), não o texto da mensagem do Postgres — um 23505 de outra constraint
-      // simplesmente não acha linha e cai no erro normal.
+      // Corrida com outra submissão da MESMA chave: a vencedora ainda está em voo — ainda vai
+      // aplicar o estoque e enfileirar. Qualquer resposta de sucesso aqui seria previsão do que
+      // a outra requisição vai fazer, não observação: o dado não existe ainda no instante desta
+      // leitura, então não tem como montar. Devolvemos 409 e mandamos tentar de novo — o retry
+      // passa pela pré-checagem (`jaCadastrado`) acima, que já tem a lógica certa: confere
+      // variações, reaplica estoque de forma idempotente e decide `filaOk` pelo
+      // `qstash_message_id` real. Preferir "tente novamente" a inventar um sucesso não
+      // verificável.
       if (famErr.code === '23505') {
-        const { data: vencedora } = await admin.from('familias')
-          .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
-          .maybeSingle();
-        if (vencedora) {
-          const { data: vars } = await admin.from('variacoes')
-            .select('id, codigo').eq('familia_id', vencedora.id).order('codigo');
-          // Mesmo guard de cima: a vencedora pode ainda não ter commitado as variações. Aqui
-          // devolvemos erro em vez de seguir para o estoque — a outra requisição está viva e
-          // cuidando disso; duas execuções concorrentes do mesmo laço não ajudariam.
-          if (!vars || vars.length === 0) {
-            return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
-          }
-          return json({
-            loteId: vencedora.lote_id, familiaId: vencedora.id,
-            filaOk: true, falhasEstoque: [],
-            variacoes: vars.map((v) => ({ id: v.id, codigo: v.codigo })),
-          });
-        }
+        return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
       }
       return json({ error: famErr.message }, 400);
     }
