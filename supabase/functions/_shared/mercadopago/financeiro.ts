@@ -35,50 +35,57 @@ const MP_API = 'https://api.mercadopago.com';
 
 /**
  * Varre /v1/payments/search da conta no período de lookback (relativo, para evitar problema de
- * fuso) e devolve os pagamentos aprovados. Resiliente: erro na 1ª página propaga; nas seguintes
- * devolve o parcial. Espelha lerVendasML.
+ * fuso) e devolve os pagamentos aprovados + os totalmente estornados. Duas buscas (status é
+ * excludente na API do MP — não existe `status=approved,refunded`): estorno TOTAL move o
+ * pagamento de 'approved' para 'refunded' (só o PARCIAL mantém 'approved' com
+ * `transaction_amount_refunded>0`); sem a 2ª busca, `montarMapaLiquido` nunca vê esse pagamento e
+ * `ml_vendas.estorno` fica `null` pra sempre (não é timing, é exclusão permanente na fonte).
+ * Resiliente: erro na 1ª página de 'approved' propaga (é a busca que sustenta o líquido/receita);
+ * erro na 1ª página de 'refunded' ou em páginas seguintes de qualquer uma devolve o parcial já
+ * lido. Espelha lerVendasML/buscarClaimsSeller (duas buscas por status, mesma forma).
  */
 export async function buscarPagamentosMP(
   token: string,
   lookbackDias = 120,
 ): Promise<PagamentoMP[]> {
   const headers = { Authorization: `Bearer ${token}` };
-  const signal = AbortSignal.timeout(25_000);
   const pagamentos: PagamentoMP[] = [];
   const limit = 50;
-  let offset = 0;
 
-  while (offset < 2000) {
-    const params = new URLSearchParams({
-      sort: 'date_created',
-      criteria: 'desc',
-      range: 'date_created',
-      begin_date: `NOW-${lookbackDias}DAYS`,
-      end_date: 'NOW',
-      status: 'approved',
-      offset: String(offset),
-      limit: String(limit),
-    });
-    let resp: Response;
-    try {
-      resp = await fetch(`${MP_API}/v1/payments/search?${params}`, { headers, signal });
-    } catch (e) {
-      if (offset === 0) throw new Error(`MP /payments indisponível: ${(e as Error).message}`);
-      break;
-    }
-    if (!resp.ok) {
-      if (offset === 0) {
-        const corpo = await resp.text().catch(() => '');
-        throw new Error(`MP /payments ${resp.status}: ${corpo.slice(0, 200)}`);
+  for (const status of ['approved', 'refunded']) {
+    let offset = 0;
+    while (offset < 2000) {
+      const params = new URLSearchParams({
+        sort: 'date_created',
+        criteria: 'desc',
+        range: 'date_created',
+        begin_date: `NOW-${lookbackDias}DAYS`,
+        end_date: 'NOW',
+        status,
+        offset: String(offset),
+        limit: String(limit),
+      });
+      let resp: Response;
+      try {
+        resp = await fetch(`${MP_API}/v1/payments/search?${params}`, { headers, signal: AbortSignal.timeout(25_000) });
+      } catch (e) {
+        if (offset === 0 && status === 'approved') throw new Error(`MP /payments indisponível: ${(e as Error).message}`);
+        break;
       }
-      break;
+      if (!resp.ok) {
+        if (offset === 0 && status === 'approved') {
+          const corpo = await resp.text().catch(() => '');
+          throw new Error(`MP /payments ${resp.status}: ${corpo.slice(0, 200)}`);
+        }
+        break;
+      }
+      const data = await resp.json();
+      const results: PagamentoMP[] = Array.isArray(data?.results) ? data.results : [];
+      pagamentos.push(...results);
+      const total = Number(data?.paging?.total ?? results.length);
+      offset += limit;
+      if (results.length === 0 || offset >= total) break;
     }
-    const data = await resp.json();
-    const results: PagamentoMP[] = Array.isArray(data?.results) ? data.results : [];
-    pagamentos.push(...results);
-    const total = Number(data?.paging?.total ?? pagamentos.length);
-    offset += limit;
-    if (results.length === 0 || offset >= total) break;
   }
 
   return pagamentos;

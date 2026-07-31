@@ -5,17 +5,29 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { mapearConexao } from '../_shared/canais/conexao.ts';
+import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarPedidosPeriodo, buscarPedido, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { chunk } from '../_shared/faturamento/utils.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
 
 const JANELA_HORAS = 72; // re-checa os últimos 3 dias (cobre atrasos/falhas de entrega).
+
+// Requisições ao ML em paralelo por lote — mesmo grau já provado seguro em backfill-faturamento.
+const PARALELAS = 5;
+
+// Margem sob o limite de 150s da edge function (confirmado em produção: toda execução desde a
+// criação do schedule em 2026-06-22 terminava em WORKER_RESOURCE_LIMIT/IDLE_TIMEOUT aos ~150s,
+// derrubando perguntas/devoluções — que rodavam por último — em TODA execução, não só picos).
+const ORCAMENTO_MS = 120_000;
+
+type ConexaoComDono = ConexaoCanal & { criadoPor: string };
+interface Estado { cx: ConexaoComDono; userId: string; orgId: string; token: string }
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -24,40 +36,109 @@ Deno.serve(async (req) => {
     return new Response('Invalid signature', { status: 401, headers: corsHeaders });
   }
 
+  const inicio = Date.now();
+  const restante = () => ORCAMENTO_MS - (Date.now() - inicio);
+
   const admin = adminClient();
   const ate = new Date();
   const desde = new Date(ate.getTime() - JANELA_HORAS * 60 * 60 * 1000);
   const intervalo = { desde: desde.toISOString(), ate: ate.toISOString() };
 
   // E7: itera as conexões (marketplace_connections), não mais ml_credentials.user_id.
-  const { data: conexoes } = await admin.from('marketplace_connections')
+  const { data: conexoesRaw } = await admin.from('marketplace_connections')
     .select('id, org_id, canal, conta_externa_id, expires_at, criado_por').eq('canal', 'mercado_livre');
-  let total = 0;
-  for (const c of conexoes ?? []) {
+
+  // Resolve token uma vez por conexão (liveness já registrada aqui — não depende do resto da
+  // execução, mesma semântica de antes: só o catch do token classifica erro de auth).
+  const estados: Estado[] = [];
+  for (const c of conexoesRaw ?? []) {
     const orgId = c.org_id as string;
     const userId = (c.criado_por as string | null) ?? null; // proxy legado por user_id
+    if (!userId) continue;
+    const cx = { ...mapearConexao(c)!, criadoPor: userId };
     try {
-      if (!userId) continue;
-      const cx = { ...mapearConexao(c)!, criadoPor: userId };
-      let token: string;
-      try {
-        token = await getValidAccessTokenConexao(cx);
-      } catch (e) {
-        const status = e instanceof MLApiError ? e.status : null;
-        const oauthError = e instanceof MLApiError ? e.oauthError : null;
-        if (classificarErroML(status, oauthError) === 'permanente-auth') {
-          const { jaAlertado } = await registrarFalhaAuth(admin, cx.id, (e as Error).message);
-          if (!jaAlertado) {
-            await notificarCategoria(admin, orgId, 'integracao', montarMensagemConexaoBloqueada(orgId, (e as Error).message));
-          }
+      const token = await getValidAccessTokenConexao(cx);
+      await registrarSyncOk(admin, cx.id);
+      estados.push({ cx, userId, orgId, token });
+    } catch (e) {
+      const status = e instanceof MLApiError ? e.status : null;
+      const oauthError = e instanceof MLApiError ? e.oauthError : null;
+      if (classificarErroML(status, oauthError) === 'permanente-auth') {
+        const { jaAlertado } = await registrarFalhaAuth(admin, cx.id, (e as Error).message);
+        if (!jaAlertado) {
+          await notificarCategoria(admin, orgId, 'integracao', montarMensagemConexaoBloqueada(orgId, (e as Error).message));
         }
-        continue;
       }
-      let pedidos;
-      try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch { continue; }
+    }
+  }
+
+  const pulou: string[] = [];
+
+  // Passo 1 (TODAS as orgs primeiro): perguntas + devoluções/claims + resync do estorno via MP
+  // dos pedidos associados a devoluções fora da janela de 72h. Roda antes de Vendas para nunca
+  // ficar de fora se o orçamento estourar — mesmo achado que já corrigiu 504/546 em
+  // backfill-faturamento (reordenar o item mais barato pra frente do mais caro).
+  for (const e of estados) {
+    if (restante() < 15_000) { pulou.push(`${e.orgId}:perguntas+devolucoes`); continue; }
+    const { cx, userId, orgId, token } = e;
+
+    try {
+      const perguntas = await buscarPerguntasSeller(token);
+      const itemIds = [...new Set(perguntas.map((q) => q.item_id).filter((i): i is string => !!i))];
+      const titulos = new Map<string, string | null>();
+      for (const lote of chunk(itemIds, PARALELAS)) {
+        await Promise.all(lote.map(async (itemId) => {
+          try { titulos.set(itemId, await buscarTituloItem(token, itemId)); } catch { /* segue sem título */ }
+        }));
+      }
+      for (const lote of chunk(perguntas, PARALELAS)) {
+        await Promise.all(lote.map(async (q) => {
+          try {
+            const itemId = q.item_id ?? null;
+            await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
+          } catch { /* segue */ }
+        }));
+      }
+    } catch { /* segue */ }
+
+    try {
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+      const claims = await buscarClaimsSeller(token);
+      for (const lote of chunk(claims, PARALELAS)) {
+        await Promise.all(lote.map(async (claim) => {
+          try {
+            const ret = await buscarReturn(token, String(claim.id));
+            const { row } = await upsertDevolucao(admin, userId, orgId, claim, ret);
+            if (row.order_id == null) return;
+            const pedido = await buscarPedido(token, String(row.order_id));
+            const shippingId = pedido.shipping?.id ?? null;
+            const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
+              buscarFreteVendedor(token, shippingId),
+              buscarShipment(token, shippingId),
+              carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId),
+                (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
+              carregarGtinsFallback(token, [pedido], idsPubliai),
+            ]);
+            await upsertVenda(admin, userId, orgId, pedido, {
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+              liquidoPorPayment: liquidoPorPayment ?? undefined,
+            });
+          } catch { /* segue */ }
+        }));
+      }
+    } catch { /* segue */ }
+  }
+
+  // Passo 2 (TODAS as orgs): Vendas (72h) — o item mais caro, agora por último.
+  let total = 0;
+  for (const e of estados) {
+    if (restante() < 10_000) { pulou.push(`${e.orgId}:vendas`); continue; }
+    const { userId, orgId, token } = e;
+    try {
+      const pedidos = await buscarPedidosPeriodo(token, intervalo);
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-        carregarLiquidoMP(token, Number(cx.contaExternaId)),
+        carregarLiquidoMP(token, Number(e.cx.contaExternaId)),
         carregarGtinsFallback(token, pedidos, idsPubliai),
       ]);
       // Varredura periódica: loga e segue. preservarDadosMP impede que o mapa vazio apague
@@ -65,76 +146,30 @@ Deno.serve(async (req) => {
       if (liquidoPorPayment === null) {
         console.warn(`reconciliar: leitura do MP falhou para a org ${orgId}; estorno/liberação preservados`);
       }
-      const pedidosReconciliadosIds = new Set<number>();
-      for (const pedido of pedidos) {
-        try {
-          const shippingId = pedido.shipping?.id ?? null;
-          const [frete, shipment] = await Promise.all([
-            buscarFreteVendedor(token, shippingId),
-            buscarShipment(token, shippingId),
-          ]);
-          await upsertVenda(admin, userId, orgId, pedido, {
-            freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
-            liquidoPorPayment: liquidoPorPayment ?? undefined,
-          });
-          pedidosReconciliadosIds.add(Number(pedido.id));
-          total++;
-        } catch { /* segue */ }
+      for (const lote of chunk(pedidos, PARALELAS)) {
+        await Promise.all(lote.map(async (pedido) => {
+          try {
+            const shippingId = pedido.shipping?.id ?? null;
+            const [frete, shipment] = await Promise.all([
+              buscarFreteVendedor(token, shippingId),
+              buscarShipment(token, shippingId),
+            ]);
+            await upsertVenda(admin, userId, orgId, pedido, {
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+              liquidoPorPayment: liquidoPorPayment ?? undefined,
+            });
+            total++;
+          } catch { /* segue */ }
+        }));
       }
-
-      // Perguntas (pega não respondidas perdidas por webhook).
-      try {
-        const perguntas = await buscarPerguntasSeller(token);
-        const titulos = new Map<string, string | null>();
-        for (const q of perguntas) {
-          try {
-            const itemId = q.item_id ?? null;
-            if (itemId && !titulos.has(itemId)) titulos.set(itemId, await buscarTituloItem(token, itemId));
-            await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
-          } catch { /* segue */ }
-        }
-      } catch { /* segue */ }
-
-      // Devoluções/claims.
-      try {
-        const claims = await buscarClaimsSeller(token);
-        for (const claim of claims) {
-          try {
-            const ret = await buscarReturn(token, String(claim.id));
-            const { row } = await upsertDevolucao(admin, userId, orgId, claim, ret);
-            if (row.order_id != null && !pedidosReconciliadosIds.has(row.order_id)) {
-              // Se a devolução tem order_id associado que não estava na janela recente (ex: venda antiga),
-              // re-sincroniza essa venda para capturar o estorno atualizado no Mercado Pago.
-              try {
-                const pedido = await buscarPedido(token, String(row.order_id));
-                const shippingId = pedido.shipping?.id ?? null;
-                const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
-                  buscarFreteVendedor(token, shippingId),
-                  buscarShipment(token, shippingId),
-                  carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId),
-                    (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
-                  carregarGtinsFallback(token, [pedido], idsPubliai),
-                ]);
-                await upsertVenda(admin, userId, orgId, pedido, {
-                  freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
-                  liquidoPorPayment: liquidoPorPayment ?? undefined,
-                });
-                pedidosReconciliadosIds.add(row.order_id);
-              } catch { /* segue */ }
-            }
-          } catch { /* segue */ }
-        }
-      } catch { /* segue */ }
-
-      // Token obtido com sucesso: registra liveness (reseta auth_alerta_em). Não depende de
-      // pedidos/perguntas/claims individuais terem sucedido — esses catches continuam "segue".
-      await registrarSyncOk(admin, cx.id);
-    } catch (e) {
-      console.error(`reconciliar-faturamento: falhou para org ${orgId}:`, e instanceof Error ? e.message : e);
+    } catch (err) {
+      console.error(`reconciliar-faturamento: vendas falhou para org ${orgId}:`, err instanceof Error ? err.message : err);
     }
   }
 
-  return new Response(JSON.stringify({ ok: true, reconciliados: total }), {
+  if (pulou.length > 0) console.warn(`reconciliar-faturamento: orçamento de tempo esgotado, pulou: ${pulou.join(', ')}`);
+
+  return new Response(JSON.stringify({ ok: true, reconciliados: total, pulou }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });

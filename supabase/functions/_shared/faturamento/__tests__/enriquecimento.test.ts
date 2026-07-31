@@ -127,4 +127,16 @@ describe('carregarLiquidoMPDoPedido', () => {
     const mapa = await carregarLiquidoMPDoPedido('token', 123, [1, 2, 3, 4]);
     expect([...(mapa?.keys() ?? [])]).toEqual(['1']);
   });
+
+  // Estorno TOTAL: o MP muda o status do pagamento de 'approved' para 'refunded' (não mantém
+  // 'approved' com transaction_amount_refunded > 0, como no estorno PARCIAL). Um filtro que só
+  // aceita 'approved' descarta esse pagamento pra sempre — o estorno nunca é gravado em
+  // ml_vendas, em NENHUMA execução futura (não é timing, é exclusão permanente).
+  it('pagamento com status refunded (estorno total) é incluído', async () => {
+    vi.mocked(fetch).mockResolvedValue(respOk({
+      id: 1, status: 'refunded', collector_id: 123, transaction_amount_refunded: 59.99,
+    }) as unknown as Response);
+    const mapa = await carregarLiquidoMPDoPedido('token', 123, [1]);
+    expect(mapa?.get('1')).toEqual({ estorno: 59.99, releaseDate: null });
+  });
 });

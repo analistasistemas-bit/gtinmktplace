@@ -514,10 +514,21 @@ falha ao ler `organizations` não libera.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
-  de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims de até 30 dias (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`). Liveness (ADR-0069): só o catch
+  de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`), sem limite de janela — `buscarClaimsSeller` varre TODOS os
+  claims opened+closed do vendedor. Liveness (ADR-0069): só o catch
   do token classifica (`registrarFalhaAuth`/alerta 'integracao' em 401/403); os catches internos
   de pedidos/perguntas/claims (`buscarPedidosPeriodo` etc.) continuam "segue" sem classificar —
   não é backstop de auth-liveness para esses casos, só para falha no token em si.
+  **Duas passadas (2026-07-31, ver histórico abaixo):** Passo 1 roda perguntas+devoluções (+
+  resync de estorno via MP por pedido associado) de TODAS as orgs primeiro, em lotes de 5
+  (`chunk`+`Promise.all`, mesmo padrão do `backfill-faturamento`); Passo 2 roda vendas (72h) por
+  último. Guarda de orçamento (`ORCAMENTO_MS=120_000`, sob o limite de 150s da edge function):
+  antes de cada org em cada passo, se o tempo restante cair abaixo do piso, pula o resto e devolve
+  200 com `pulou: string[]` (nunca mais 546/504 — e nunca mais deixa QStash gastar 3 retries por
+  hora numa chamada fadada a estourar). `pedidosReconciliadosIds` (otimização que evitava
+  re-buscar um pedido já coberto pela janela de vendas) foi removida: como devoluções agora rodam
+  antes de vendas, não dá pra saber se o pedido será coberto — o custo extra é irrelevante (limitado
+  ao nº de devoluções, tipicamente poucas).
 
 ### Monitoramento / alertas
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram
@@ -622,6 +633,63 @@ contra webhooks perdidos de vendas/perguntas/devoluções **nunca rodou automati
 foi construída (~1 mês). `verify_jwt=false` estava correto (ver histórico abaixo) — não era esse o
 problema, era a ausência literal do schedule. Corrigido: schedule `0 * * * *` (1h, conforme
 ADR-0037) criado em produção (`scd_7HR22qXe5kx4LogfYb2GStCDGcTD`).
+
+## Histórico — `reconciliar-faturamento` estourava 150s em TODA execução + estorno total nunca capturado (corrigida)
+
+Achado 2026-07-31 (Diego reportou devoluções do ML "sempre" divergindo do Dashboard, precisando
+de revisão manual recorrente): dois bugs independentes, ambos de dados silenciosamente incompletos
+(sem erro visível na UI).
+
+**1) `reconciliar-faturamento` nunca completava desde que o schedule foi criado (24/07).**
+Confirmado via `GET /v2/events` do QStash: 94 dos ~747 eventos em `ERROR`, TODOS aos ~150s
+(`WORKER_RESOURCE_LIMIT` HTTP 546 ou `IDLE_TIMEOUT` HTTP 504) — ou seja, toda hora, sem exceção,
+desde a criação. A função rodava Vendas (o item mais caro, 72h de pedidos com frete+shipment
+sequenciais) → Perguntas → Devoluções, para 2 orgs no mesmo loop sequencial: o orçamento de 150s
+da edge function estourava antes de alcançar Devoluções (por último) — exatamente o sintoma já
+corrigido em `backfill-faturamento` em 26/07 (504/546 "de hora em hora", corrigido reordenando +
+paralelizando), mas o fix nunca foi replicado aqui. Resultado: a rede de segurança contra webhooks
+perdidos nunca rodava de fato. Fix: duas passadas (devoluções+perguntas de TODAS as orgs antes de
+vendas) + lotes de 5 (`chunk`) + guarda de orçamento (120s, retorna 200 com `pulou` em vez de
+estourar). Verificado ao vivo: 2 execuções via QStash publish direto, ambas `DELIVERED`/200 em
+~65s.
+
+**2) Estorno TOTAL nunca era gravado, em nenhuma execução — não era timing.**
+`carregarLiquidoMPDoPedido` (`_shared/faturamento/enriquecimento.ts`) filtrava pagamentos do MP
+com `status === 'approved'`, pensado para descartar pagamento recusado (`rejected`) de sobrescrever
+dado bom. Mas no estorno TOTAL o Mercado Pago move o `status` do pagamento de `approved` para
+`refunded` (só no PARCIAL ele mantém `approved` com `transaction_amount_refunded > 0`) — o filtro
+excluía esse pagamento para sempre, em qualquer reconciliação futura. Usado por 3 callers:
+`sync-devolucao`, `sync-venda` e `reconciliar-faturamento` — o real-time também nunca capturava.
+Provado ao vivo: pedido 2000017347779820 (devolução "Tecido Oxford", R$59,99) tinha
+`ml_vendas.estorno = null` mesmo com o claim já `refunded` em `ml_devolucoes`; o pagamento MP
+168125592416 tinha `status: "refunded"`. Fix: aceitar `status === 'approved' || status === 'refunded'`.
+Teste adicionado em `enriquecimento.test.ts`. Redeploy: `sync-devolucao`, `sync-venda`,
+`reconciliar-faturamento`. Verificado ao vivo: `estorno` do pedido virou `59.99` na execução
+seguinte do reconciliador.
+
+O Dashboard usa `ml_vendas.estorno > 0` para contar devoluções (não `ml_devolucoes`, que "tem
+lacunas de sincronização" por design — comentário em `src/pages/Dashboard.tsx`) — os dois bugs
+juntos explicam "2 devoluções · R$48,26" no Dashboard vs 3 devoluções (R$108,25) no painel do ML.
+
+**3) `buscarPagamentosMP` (varredura em lote) tinha o MESMO filtro `status=approved` — na query
+de busca do MP, não só no client.** Menu Financeiro (`src/pages/Financeiro.tsx`) lê de
+`useResumoVendas`/`ml_vendas` (ADR-0038/0093 — o caminho MP "ao vivo" separado virou código morto),
+mesma fonte única do Dashboard: não havia razão pra manter esse filtro restrito a `approved`. Fix:
+mesmo padrão de `buscarClaimsSeller` — 2 buscas (`approved` + `refunded`), merge dos resultados.
+Fecha a lacuna pra pedidos SEM claim associado (cancelamento com estorno direto no MP, sem
+`ml_devolucoes`): confirmado por SQL — 4 pedidos com pagamento `refunded` e `estorno` nulo/zero
+sem claim (R$66,12 total: R$24,99+R$13,68+R$12,80+R$14,65).
+
+**Limitação conhecida (não corrigida agora):** esses 4 pedidos são de 30/06–22/07 — mais antigos
+que a janela de 72h do `reconciliar-faturamento` e os 7 dias do schedule de
+`backfill-faturamento` (`dias:7`), e sem claim então o Passo 1 (devoluções) também não os alcança.
+Tentativa de backfill manual com janela ampla (`desde/ate` cobrindo 30/06–23/07) estourou os
+mesmos 150s (`backfill-faturamento` não tem a guarda de orçamento que `reconciliar-faturamento`
+ganhou nesta correção) — abortado sem insistir, pra não repetir o problema que acabou de ser
+corrigido. Esses 4 pedidos específicos ficam órfãos até um backfill manual mais estreito (1 org por
+vez, ou `backfill-faturamento` ganhar a mesma guarda de orçamento). Novos casos do mesmo tipo
+(estorno sem claim) a partir de agora são cobertos normalmente pelas janelas de rotina, já com o
+filtro `refunded` incluído.
 
 ## Histórico — divergência de `verify_jwt` no faturamento (corrigida)
 
