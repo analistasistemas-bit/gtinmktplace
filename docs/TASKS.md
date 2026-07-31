@@ -21,15 +21,19 @@
   andamento ("Venda entregue", não "finalizada") — ver achado de bug abaixo. Critério trocado para
   `return_status_money === 'refunded'`, que bate com a frase exata do ML ("Devolução finalizada
   com reembolso para o comprador") e foi conferido 1:1 contra as devoluções reais do Diego.
-- [ ] **Bug de sincronização encontrado, NÃO corrigido ainda:** `buscarReturn` em
-  `supabase/functions/_shared/faturamento/devolucoes-io.ts:19-28` grava `status_money='refunded'`
-  para pelo menos 1 devolução (pack `#2000013737917865`, claim `5540650071`) que o ML ainda mostra
-  como não concluída ("Venda entregue" só, sem "Devolução finalizada"). Suspeita: `data[0]` do
-  array de returns do claim pode estar pegando um registro errado/desatualizado quando o claim tem
-  mais de um registro de devolução no histórico. Precisa de investigação com token ML ao vivo (não
-  dá pra confirmar só com o dado já gravado no banco). Achado durante a investigação acima, fora de
-  escopo naquele momento (mesmo padrão do achado do TIPO_LABEL, ver task anterior).
-- [ ] **Branch aguardando validação local do Diego** antes de push/merge (fluxo de entrega padrão).
+- [x] **Suspeita de bug de sync DESCARTADA, verificado ao vivo:** cheguei a suspeitar que
+  `buscarReturn` (`devolucoes-io.ts:19-28`) gravava `status_money='refunded'` cedo demais (pack
+  `#2000013737917865`, claim `5540650071`, que no painel Devoluções do ML aparecia só como "Venda
+  entregue"). Puxando a API do ML ao vivo (token da conexão via `get_connection_tokens`) pros 6
+  claims do período: todos batem 1:1 com o banco — `status: closed`, `status_money: refunded`,
+  `resolution.applied_coverage: true`, comprador (`complainant`) beneficiado. Duas categorias
+  legítimas: `item_returned` (devolução física normal) e `low_cost` (item de baixo valor — ML
+  reembolsa direto sem exigir devolução física, não compensa a logística reversa). A divergência
+  com o painel "Devoluções" do ML não é bug nosso: claims resolvidos automaticamente por mediador
+  (sem exigir ação do vendedor) não parecem virar card/busca confiável naquela tela do próprio ML
+  — mesmo padrão do "Não foi possível exibir esta informação da venda" visto na aba Reclamações e
+  mediações. **6 devoluções · R$212,42 (mês atual) confirmado correto.**
+- [x] **Branch validada e mesclada** (PR #45 + #46, `main`).
 
 ## Devoluções ML não computadas automaticamente — 2 bugs corrigidos e DEPLOYADOS 2026-07-31
 
