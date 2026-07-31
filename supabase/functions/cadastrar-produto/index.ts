@@ -76,133 +76,159 @@ Deno.serve(async (req) => {
   // guards de duplicata não disparam — sem esta checagem, um timeout depois do insert
   // seguido de um segundo clique criaria uma segunda família e aplicaria o estoque inicial
   // duas vezes (a ref `cadastro:{familiaId}:{codigo}` muda junto com a família).
+  //
+  // `error` descartado de propósito: a unique parcial (org_id, chave_cadastro) no banco é a
+  // rede de segurança de verdade. Um select que falhar aqui não duplica nada — cai no insert
+  // normal, que se colidir é pego pelo ramo 23505 mais abaixo.
   const { data: jaCadastrado } = await admin.from('familias')
     .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
     .maybeSingle();
+
+  let familiaId: string;
+  let loteId: string;
+  let variacoesCriadas: { id: string; codigo: string }[];
+
   if (jaCadastrado) {
     const { data: vars } = await admin.from('variacoes')
       .select('id, codigo').eq('familia_id', jaCadastrado.id).order('codigo');
-    return json({
-      loteId: jaCadastrado.lote_id,
-      familiaId: jaCadastrado.id,
-      filaOk: true,
-      falhasEstoque: [],
-      variacoes: (vars ?? []).map((v) => ({ id: v.id, codigo: v.codigo })),
-    });
-  }
-
-  // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
-  // colisão falham sem deixar lote/família pela metade.
-  const qtd = produto.variacoes.length + 1;
-  let gerados: CodigosGerados;
-  try {
-    const { data: ultimo, error } = await admin.rpc('proximo_codigo_produto', {
-      p_org: orgId, p_qtd: qtd,
-    });
-    if (error || ultimo == null) throw new Error(error?.message ?? 'sequência indisponível');
-    gerados = derivarCodigos(Number(ultimo), qtd);
-
-    // Colisão sobre código gerado: a sequência está atrás do que existe na org (planilha em
-    // paralelo, ou módulo habilitado depois). Ressincroniza e tenta UMA vez (D-4.1).
-    let usados = await codigosJaUsados(admin, orgId, [gerados.codigoPai, ...gerados.codigos]);
-    if (usados.length > 0) {
-      console.warn('cadastrar_produto_resync_sequencia', { orgId, usados });
-      const { data: reUltimo, error: reErro } = await admin.rpc('proximo_codigo_produto', {
-        p_org: orgId, p_qtd: qtd, p_resync: true,
-      });
-      if (reErro || reUltimo == null) throw new Error(reErro?.message ?? 'sequência indisponível');
-      gerados = derivarCodigos(Number(reUltimo), qtd);
-      usados = await codigosJaUsados(admin, orgId, [gerados.codigoPai, ...gerados.codigos]);
-      if (usados.length > 0) {
-        // D-10: erro de sistema. O operador não escolheu código nenhum — mandá-lo "renomear"
-        // seria instrução impossível.
-        console.error('cadastrar_produto_colisao_pos_resync', { orgId, usados });
-        return json({ error: 'Falha na numeração automática. Tente novamente.' }, 500);
-      }
+    // Família e variações são dois inserts, dois commits: existe uma janela em que a família
+    // já existe com zero variações. Sem este guard o operador chegaria à tela de fotos com
+    // zero slots e toast de sucesso (cobre também erro de select engolido — mesmo teste).
+    if (!vars || vars.length === 0) {
+      return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
     }
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : 'Falha na numeração automática.' }, 500);
-  }
-
-  // D-1.1: reusa o lote manual ABERTO da org; cria um novo se não houver.
-  const { data: aberto } = await admin.from('lotes')
-    .select('id').eq('org_id', orgId).eq('origem', 'manual')
-    .in('status', ['importando', 'processando', 'revisao'])
-    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
-
-  let loteId: string;
-  let precisaMarcarProcessando = false;
-  if (aberto) {
-    loteId = aberto.id as string;
-    // NÃO marcar 'processando' agora. Entre o UPDATE e o INSERT da família existe uma janela
-    // em que um worker de publicação pode rodar talvezFinalizarLote, não enxergar a família
-    // (que ainda não existe) e fechar o lote — a família nasceria dentro de um lote fechado.
-    precisaMarcarProcessando = true;
+    // A chave só muda depois de sucesso: se a contagem divergir, o operador editou o
+    // formulário entre as tentativas. Casar por índice aqui aplicaria estoque na variação
+    // errada — caminho financeiro, não arrisca.
+    if (vars.length !== produto.variacoes.length) {
+      return json({ error: 'Cadastro em andamento diverge do que foi enviado. Tente novamente.' }, 409);
+    }
+    familiaId = jaCadastrado.id as string;
+    loteId = jaCadastrado.lote_id as string;
+    variacoesCriadas = vars;
   } else {
-    const { data: novo, error: loteErr } = await admin.from('lotes')
-      .insert({ user_id: userId, org_id: orgId, status: 'processando', origem: 'manual' })
-      .select('id').single();
-    if (loteErr || !novo) return json({ error: 'Falha criando lote de cadastro.' }, 500);
-    loteId = novo.id as string;
-    const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
-    if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
-  }
+    // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
+    // colisão falham sem deixar lote/família pela metade.
+    const qtd = produto.variacoes.length + 1;
+    let gerados: CodigosGerados;
+    try {
+      const { data: ultimo, error } = await admin.rpc('proximo_codigo_produto', {
+        p_org: orgId, p_qtd: qtd,
+      });
+      if (error || ultimo == null) throw new Error(error?.message ?? 'sequência indisponível');
+      gerados = derivarCodigos(Number(ultimo), qtd);
 
-  const { familia, variacoes } = montarLinhasProduto(produto, {
-    loteId, userId, orgId,
-    codigoPai: gerados.codigoPai,
-    codigos: gerados.codigos,
-    chaveCadastro: produto.chaveCadastro,
-  });
-
-  const { data: familiaCriada, error: famErr } = await admin.from('familias')
-    .insert(familia).select('id').single();
-  if (famErr) {
-    // Corrida com outra submissão da MESMA chave: a unique parcial decidiu quem grava.
-    // A perdedora devolve o cadastro da vencedora em vez de um erro que o operador não
-    // consegue interpretar.
-    if (famErr.code === '23505' && famErr.message.includes('chave_cadastro')) {
-      const { data: vencedora } = await admin.from('familias')
-        .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
-        .maybeSingle();
-      if (vencedora) {
-        const { data: vars } = await admin.from('variacoes')
-          .select('id, codigo').eq('familia_id', vencedora.id).order('codigo');
-        return json({
-          loteId: vencedora.lote_id, familiaId: vencedora.id,
-          filaOk: true, falhasEstoque: [],
-          variacoes: (vars ?? []).map((v) => ({ id: v.id, codigo: v.codigo })),
+      // Colisão sobre código gerado: a sequência está atrás do que existe na org (planilha em
+      // paralelo, ou módulo habilitado depois). Ressincroniza e tenta UMA vez (D-4.1).
+      let usados = await codigosJaUsados(admin, orgId, [gerados.codigoPai, ...gerados.codigos]);
+      if (usados.length > 0) {
+        console.warn('cadastrar_produto_resync_sequencia', { orgId, usados });
+        const { data: reUltimo, error: reErro } = await admin.rpc('proximo_codigo_produto', {
+          p_org: orgId, p_qtd: qtd, p_resync: true,
         });
+        if (reErro || reUltimo == null) throw new Error(reErro?.message ?? 'sequência indisponível');
+        gerados = derivarCodigos(Number(reUltimo), qtd);
+        usados = await codigosJaUsados(admin, orgId, [gerados.codigoPai, ...gerados.codigos]);
+        if (usados.length > 0) {
+          // D-10: erro de sistema. O operador não escolheu código nenhum — mandá-lo "renomear"
+          // seria instrução impossível.
+          console.error('cadastrar_produto_colisao_pos_resync', { orgId, usados });
+          return json({ error: 'Falha na numeração automática. Tente novamente.' }, 500);
+        }
       }
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : 'Falha na numeração automática.' }, 500);
     }
-    return json({ error: famErr.message }, 400);
-  }
-  if (!familiaCriada) return json({ error: 'Falha criando família.' }, 400);
-  const familiaId = familiaCriada.id as string;
 
-  // O `select` é obrigatório: a etapa de fotos vincula a imagem pelo id da variação, não pelo código.
-  const { data: variacoesCriadas, error: varErr } = await admin.from('variacoes')
-    .insert(variacoes.map((v) => ({ ...v, familia_id: familiaId })))
-    .select('id, codigo');
-  if (varErr) {
-    // Família sem variação é lixo — remove para não deixar estado parcial na Revisão.
-    await admin.from('familias').delete().eq('id', familiaId);
-    return json({ error: varErr.message }, 400);
-  }
+    // D-1.1: reusa o lote manual ABERTO da org; cria um novo se não houver.
+    const { data: aberto } = await admin.from('lotes')
+      .select('id').eq('org_id', orgId).eq('origem', 'manual')
+      .in('status', ['importando', 'processando', 'revisao'])
+      .order('criado_em', { ascending: false }).limit(1).maybeSingle();
 
-  // AGORA sim: a família já existe, então talvezFinalizarLote passa a enxergá-la e o lote não
-  // pode ser fechado por baixo.
-  if (precisaMarcarProcessando) {
-    await admin.from('lotes').update({ status: 'processando' }).eq('id', loteId);
+    let precisaMarcarProcessando = false;
+    if (aberto) {
+      loteId = aberto.id as string;
+      // NÃO marcar 'processando' agora. Entre o UPDATE e o INSERT da família existe uma janela
+      // em que um worker de publicação pode rodar talvezFinalizarLote, não enxergar a família
+      // (que ainda não existe) e fechar o lote — a família nasceria dentro de um lote fechado.
+      precisaMarcarProcessando = true;
+    } else {
+      const { data: novo, error: loteErr } = await admin.from('lotes')
+        .insert({ user_id: userId, org_id: orgId, status: 'processando', origem: 'manual' })
+        .select('id').single();
+      if (loteErr || !novo) return json({ error: 'Falha criando lote de cadastro.' }, 500);
+      loteId = novo.id as string;
+      const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
+      if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
+    }
+
+    const { familia, variacoes } = montarLinhasProduto(produto, {
+      loteId, userId, orgId,
+      codigoPai: gerados.codigoPai,
+      codigos: gerados.codigos,
+      chaveCadastro: produto.chaveCadastro,
+    });
+
+    const { data: familiaCriada, error: famErr } = await admin.from('familias')
+      .insert(familia).select('id').single();
+    if (famErr) {
+      // Corrida com outra submissão da MESMA chave: a unique parcial decidiu quem grava. Quem
+      // decide se é "corrida na mesma chave" é o DADO (o select abaixo, escopado por org_id +
+      // chave_cadastro), não o texto da mensagem do Postgres — um 23505 de outra constraint
+      // simplesmente não acha linha e cai no erro normal.
+      if (famErr.code === '23505') {
+        const { data: vencedora } = await admin.from('familias')
+          .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', produto.chaveCadastro)
+          .maybeSingle();
+        if (vencedora) {
+          const { data: vars } = await admin.from('variacoes')
+            .select('id, codigo').eq('familia_id', vencedora.id).order('codigo');
+          // Mesmo guard de cima: a vencedora pode ainda não ter commitado as variações. Aqui
+          // devolvemos erro em vez de seguir para o estoque — a outra requisição está viva e
+          // cuidando disso; duas execuções concorrentes do mesmo laço não ajudariam.
+          if (!vars || vars.length === 0) {
+            return json({ error: 'Cadastro em andamento. Tente novamente.' }, 409);
+          }
+          return json({
+            loteId: vencedora.lote_id, familiaId: vencedora.id,
+            filaOk: true, falhasEstoque: [],
+            variacoes: vars.map((v) => ({ id: v.id, codigo: v.codigo })),
+          });
+        }
+      }
+      return json({ error: famErr.message }, 400);
+    }
+    if (!familiaCriada) return json({ error: 'Falha criando família.' }, 400);
+    familiaId = familiaCriada.id as string;
+
+    // O `select` é obrigatório: a etapa de fotos vincula a imagem pelo id da variação, não pelo código.
+    const { data: novasVariacoes, error: varErr } = await admin.from('variacoes')
+      .insert(variacoes.map((v) => ({ ...v, familia_id: familiaId })))
+      .select('id, codigo');
+    if (varErr) {
+      // Família sem variação é lixo — remove para não deixar estado parcial na Revisão.
+      await admin.from('familias').delete().eq('id', familiaId);
+      return json({ error: varErr.message }, 400);
+    }
+    variacoesCriadas = novasVariacoes ?? [];
+
+    // AGORA sim: a família já existe, então talvezFinalizarLote passa a enxergá-la e o lote não
+    // pode ser fechado por baixo.
+    if (precisaMarcarProcessando) {
+      await admin.from('lotes').update({ status: 'processando' }).eq('id', loteId);
+    }
   }
 
   // Estoque inicial entra pelo caminho ÚNICO de escrita de estoque (D-15), nunca por UPDATE
   // direto — assim o movimento aparece no ledger e o custo é validado no mesmo lugar. A
-  // referência derivada da família torna o retry idempotente pela unique parcial do ledger.
+  // referência derivada da família torna o retry idempotente pela unique parcial do ledger:
+  // aplica se faltou, no-op se já aplicou — inclusive quando a primeira tentativa morreu entre
+  // o insert das variações e este laço, e a segunda caiu no ramo `jaCadastrado` acima.
   const falhasEstoque: string[] = [];
   for (const [i, v] of produto.variacoes.entries()) {
     if (!v.estoqueInicial || v.estoqueInicial <= 0) continue;
-    const codigo = gerados.codigos[i];
+    const codigo = variacoesCriadas[i].codigo;
     const { error } = await admin.rpc('registrar_entrada', {
       p_org: orgId, p_codigo: codigo, p_qtd: v.estoqueInicial,
       p_custo: v.custo ?? null, p_doc: 'Cadastro inicial', p_obs: null,
