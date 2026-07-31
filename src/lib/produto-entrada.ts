@@ -28,7 +28,8 @@ export interface ProdutoEntrada {
   fornecedor?: string | null;
   origem: 'nacional' | 'importado';
   // Idempotência da submissão: o mesmo uuid reenviado devolve o cadastro original em vez de
-  // criar um segundo produto. Nasce ao abrir o diálogo (ver dialog-cadastro-produto.tsx).
+  // criar um segundo produto. Só troca quando o diálogo fecha ou após sucesso confirmado —
+  // nunca a cada tentativa (ver dialog-cadastro-produto.tsx).
   chaveCadastro: string;
   variacoes: VariacaoEntrada[];
 }
