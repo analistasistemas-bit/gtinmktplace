@@ -21,6 +21,11 @@
   amplo estourou 150s (`backfill-faturamento` não tem guarda de orçamento ainda) e foi abortada.
   Corrigir com backfill manual mais estreito (1 org) ou levar a guarda de orçamento pra
   `backfill-faturamento` também.
+- [x] **Achado à parte, corrigido junto:** `TIPO_LABEL` em `src/lib/devolucoes.ts` mapeava a
+  chave `'return'` (singular), mas a API do ML manda `type: 'returns'` (plural) — toda devolução
+  de verdade mostrava a string crua na aba Devoluções (e no export) em vez de "Devolução". Também
+  faltavam `ml_case`/`fulfillment` (4+1 ocorrências sem label no banco). Puramente cosmético, sem
+  impacto em dado/cálculo. Teste novo em `src/lib/__tests__/devolucoes.test.ts`.
 - [x] **Verificado ao vivo em produção:** publish direto via QStash (2x) + `supabase db query` —
   `reconciliar-faturamento` completou em ~65s (era 546/504 sempre); `ml_vendas.estorno` do pedido
   com estorno total foi de `null` para `59.99`. Dashboard passa a bater com o painel do ML (3

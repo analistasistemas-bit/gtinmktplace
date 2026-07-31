@@ -55,9 +55,11 @@ export async function buscarDevolucoes(): Promise<Devolucao[]> {
 }
 
 const TIPO_LABEL: Record<string, string> = {
-  return: 'Devolução',
+  returns: 'Devolução', // API do ML manda 'returns' (plural) — 'return' nunca ocorre
   mediations: 'Mediação',
   cancel_purchase: 'Cancelamento (compra)',
   cancel_sale: 'Cancelamento (venda)',
+  ml_case: 'Reclamação',
+  fulfillment: 'Fulfillment',
 };
 export const labelTipoDevolucao = (t: string | null): string => (t ? TIPO_LABEL[t] ?? t : '—');
