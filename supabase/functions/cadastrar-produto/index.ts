@@ -13,9 +13,33 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
+import { type CodigosGerados, derivarCodigos } from '../_shared/produto/codigos.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+
+/**
+ * Confere os códigos GERADOS contra as duas tabelas (D-6).
+ *
+ * Cruzado de propósito: o guard antigo de PAI só olhava `familias` e o de SKU só olhava
+ * `variacoes`. Com a sequência dessincronizada, um PAI gerado igual a um SKU já existente
+ * passava pelos dois — e a resolução de estoque por (org_id, codigo) não distingue os dois
+ * campos, então a venda baixaria o produto errado.
+ */
+async function codigosJaUsados(
+  admin: ReturnType<typeof adminClient>,
+  orgId: string,
+  codigos: string[],
+): Promise<string[]> {
+  const [{ data: pais }, { data: vars }] = await Promise.all([
+    admin.from('familias').select('codigo_pai').eq('org_id', orgId).in('codigo_pai', codigos),
+    admin.from('variacoes').select('codigo').eq('org_id', orgId).in('codigo', codigos),
+  ]);
+  return [...new Set([
+    ...(pais ?? []).map((f) => f.codigo_pai as string),
+    ...(vars ?? []).map((v) => v.codigo as string),
+  ])];
 }
 
 Deno.serve(async (req) => {
@@ -40,43 +64,37 @@ Deno.serve(async (req) => {
   const erros = validarProdutoNovo(produto);
   if (erros.length > 0) return json({ erros }, 400);
 
-  // D-4: guard LOUD de duplicata. A unique do banco é (lote_id, codigo_pai), então dois lotes
-  // diferentes aceitariam o mesmo produto e criariam duas linhas canônicas concorrentes —
-  // e a âncora do estoque (ADR-0025: família mais recente de (org_id, codigo)) passaria a
-  // apontar para a errada. Erro explícito, nunca merge silencioso.
-  const codigoPai = produto.codigoPai.trim();
-  const { data: jaExiste } = await admin.from('familias')
-    .select('id, lote_id').eq('org_id', orgId).eq('codigo_pai', codigoPai)
-    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
-  if (jaExiste) {
-    return json({
-      error: `O produto ${codigoPai} já existe nesta organização. `
-        + 'Para repor saldo, use Entrada de estoque.',
-      // A tela usa isto para oferecer "abrir o produto" em vez de deixar o operador preso:
-      // se um cadastro anterior falhou no meio, a família existe mas está incompleta.
-      familiaId: jaExiste.id, loteId: jaExiste.lote_id,
-    }, 409);
-  }
+  // A reserva vem ANTES de qualquer insert: assim o estouro de oito dígitos (D-5) e a
+  // colisão falham sem deixar lote/família pela metade.
+  const qtd = produto.variacoes.length + 1;
+  let gerados: CodigosGerados;
+  try {
+    const { data: ultimo, error } = await admin.rpc('proximo_codigo_produto', {
+      p_org: orgId, p_qtd: qtd,
+    });
+    if (error || ultimo == null) throw new Error(error?.message ?? 'sequência indisponível');
+    gerados = derivarCodigos(Number(ultimo), qtd);
 
-  // Guard de SKU: a unique do banco é (familia_id, codigo) — NÃO existe unique por org. As RPCs
-  // de estoque resolvem a variação por (org_id, codigo) pegando a família mais recente, então um
-  // SKU repetido entre produtos diferentes faria uma venda baixar o estoque do produto ERRADO.
-  // Aqui é o único lugar onde dá para impedir.
-  const codigosNovos = produto.variacoes.map((v) => v.codigo.trim());
-  const { data: skusEmUso } = await admin.from('variacoes')
-    .select('codigo, familias!inner(codigo_pai)')
-    .eq('org_id', orgId).in('codigo', codigosNovos);
-  const conflitos = [...new Set(
-    (skusEmUso ?? [])
-      .filter((v) => (v.familias as unknown as { codigo_pai: string }).codigo_pai !== codigoPai)
-      .map((v) => v.codigo as string),
-  )];
-  if (conflitos.length > 0) {
-    return json({
-      error: `Estes SKUs já pertencem a outro produto desta organização: ${conflitos.join(', ')}. `
-        + 'Um SKU só pode existir em um produto — renomeie ou use o produto existente.',
-      conflitos,
-    }, 409);
+    // Colisão sobre código gerado: a sequência está atrás do que existe na org (planilha em
+    // paralelo, ou módulo habilitado depois). Ressincroniza e tenta UMA vez (D-4.1).
+    let usados = await codigosJaUsados(admin, orgId, [gerados.codigoPai, ...gerados.codigos]);
+    if (usados.length > 0) {
+      console.warn('cadastrar_produto_resync_sequencia', { orgId, usados });
+      const { data: reUltimo, error: reErro } = await admin.rpc('proximo_codigo_produto', {
+        p_org: orgId, p_qtd: qtd, p_resync: true,
+      });
+      if (reErro || reUltimo == null) throw new Error(reErro?.message ?? 'sequência indisponível');
+      gerados = derivarCodigos(Number(reUltimo), qtd);
+      usados = await codigosJaUsados(admin, orgId, [gerados.codigoPai, ...gerados.codigos]);
+      if (usados.length > 0) {
+        // D-10: erro de sistema. O operador não escolheu código nenhum — mandá-lo "renomear"
+        // seria instrução impossível.
+        console.error('cadastrar_produto_colisao_pos_resync', { orgId, usados });
+        return json({ error: 'Falha na numeração automática. Tente novamente.' }, 500);
+      }
+    }
+  } catch (e) {
+    return json({ error: e instanceof Error ? e.message : 'Falha na numeração automática.' }, 500);
   }
 
   // D-1.1: reusa o lote manual ABERTO da org; cria um novo se não houver.
@@ -103,7 +121,12 @@ Deno.serve(async (req) => {
     if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
   }
 
-  const { familia, variacoes } = montarLinhasProduto(produto, { loteId, userId, orgId });
+  const { familia, variacoes } = montarLinhasProduto(produto, {
+    loteId, userId, orgId,
+    codigoPai: gerados.codigoPai,
+    codigos: gerados.codigos,
+    chaveCadastro: produto.chaveCadastro,
+  });
 
   const { data: familiaCriada, error: famErr } = await admin.from('familias')
     .insert(familia).select('id').single();
@@ -130,9 +153,9 @@ Deno.serve(async (req) => {
   // direto — assim o movimento aparece no ledger e o custo é validado no mesmo lugar. A
   // referência derivada da família torna o retry idempotente pela unique parcial do ledger.
   const falhasEstoque: string[] = [];
-  for (const v of produto.variacoes) {
+  for (const [i, v] of produto.variacoes.entries()) {
     if (!v.estoqueInicial || v.estoqueInicial <= 0) continue;
-    const codigo = v.codigo.trim();
+    const codigo = gerados.codigos[i];
     const { error } = await admin.rpc('registrar_entrada', {
       p_org: orgId, p_codigo: codigo, p_qtd: v.estoqueInicial,
       p_custo: v.custo ?? null, p_doc: 'Cadastro inicial', p_obs: null,
