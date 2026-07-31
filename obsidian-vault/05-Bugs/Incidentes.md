@@ -54,7 +54,7 @@ sempre precisa pedir revisão manual. Print do painel do ML: 3 devoluções (R$5
 R$108,25). Dashboard do PubliAI (90 dias): "2 devoluções · R$48,26" (só R$35,76+R$12,50).
 
 **Causa raiz nº 1 — `reconciliar-faturamento` nunca completava, desde a criação do schedule
-(24/06).** `GET /v2/events` do QStash: 94 de ~747 execuções em `ERROR`, TODAS aos ~150s
+(24/07).** `GET /v2/events` do QStash: 94 de ~747 execuções em `ERROR`, TODAS aos ~150s
 (`WORKER_RESOURCE_LIMIT`/`IDLE_TIMEOUT`) — ou seja, TODA hora, sem exceção. A função processava
 Vendas (item mais caro) → Perguntas → Devoluções por último, para 2 orgs no mesmo loop: o
 orçamento de 150s da edge function estourava antes de chegar em Devoluções. Mesmo sintoma já
@@ -77,9 +77,14 @@ bugs se reforçavam.
 
 **Correção:** `reconciliar-faturamento` em duas passadas (devoluções+perguntas de todas as orgs
 antes de vendas) + lotes de 5 + guarda de orçamento (nunca mais estoura 150s, responde 200 com o
-que teve que pular). Filtro de estorno aceita `approved` e `refunded`. Redeploy das 3 funções.
-Verificado ao vivo via QStash publish direto + `supabase db query`: 2 execuções `DELIVERED`/200 em
-~65s, `ml_vendas.estorno` do pedido Oxford virou `59.99`. Detalhe técnico completo:
+que teve que pular). Filtro de estorno aceita `approved` e `refunded`, tanto no fetch por-pedido
+quanto na varredura em lote (`buscarPagamentosMP`, 2 buscas por status — mesmo padrão de
+`buscarClaimsSeller`). Redeploy de 4 funções (`reconciliar-faturamento`, `sync-devolucao`,
+`sync-venda`, `backfill-faturamento`). Verificado ao vivo via QStash publish direto +
+`supabase db query`: 2 execuções `DELIVERED`/200 em ~65s, `ml_vendas.estorno` do pedido Oxford
+virou `59.99`. Detalhe técnico completo, incluindo a lacuna conhecida de 4 pedidos antigos sem
+claim que ficaram de fora (fora das janelas de 72h/7d, tentativa de backfill manual amplo estourou
+150s e foi abortada sem insistir):
 [[Edge Functions#Histórico — reconciliar-faturamento estourava 150s em TODA execução + estorno total nunca capturado (corrigida)]].
 
 **Lição:** um schedule "existir e não estar pausado" não prova que ele COMPLETA — checar o

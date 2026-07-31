@@ -667,9 +667,26 @@ seguinte do reconciliador.
 O Dashboard usa `ml_vendas.estorno > 0` para contar devoluções (não `ml_devolucoes`, que "tem
 lacunas de sincronização" por design — comentário em `src/pages/Dashboard.tsx`) — os dois bugs
 juntos explicam "2 devoluções · R$48,26" no Dashboard vs 3 devoluções (R$108,25) no painel do ML.
-`carregarLiquidoMP` (varredura em lote, usada por Vendas/Financeiro) **não** foi alterada — o
-`status=approved` na query de busca do MP é decisão deliberada do menu Financeiro (ADR-0038/0031,
-"vendas aprovadas"), fora do escopo desta correção.
+
+**3) `buscarPagamentosMP` (varredura em lote) tinha o MESMO filtro `status=approved` — na query
+de busca do MP, não só no client.** Menu Financeiro (`src/pages/Financeiro.tsx`) lê de
+`useResumoVendas`/`ml_vendas` (ADR-0038/0093 — o caminho MP "ao vivo" separado virou código morto),
+mesma fonte única do Dashboard: não havia razão pra manter esse filtro restrito a `approved`. Fix:
+mesmo padrão de `buscarClaimsSeller` — 2 buscas (`approved` + `refunded`), merge dos resultados.
+Fecha a lacuna pra pedidos SEM claim associado (cancelamento com estorno direto no MP, sem
+`ml_devolucoes`): confirmado por SQL — 4 pedidos com pagamento `refunded` e `estorno` nulo/zero
+sem claim (R$66,12 total: R$24,99+R$13,68+R$12,80+R$14,65).
+
+**Limitação conhecida (não corrigida agora):** esses 4 pedidos são de 30/06–22/07 — mais antigos
+que a janela de 72h do `reconciliar-faturamento` e os 7 dias do schedule de
+`backfill-faturamento` (`dias:7`), e sem claim então o Passo 1 (devoluções) também não os alcança.
+Tentativa de backfill manual com janela ampla (`desde/ate` cobrindo 30/06–23/07) estourou os
+mesmos 150s (`backfill-faturamento` não tem a guarda de orçamento que `reconciliar-faturamento`
+ganhou nesta correção) — abortado sem insistir, pra não repetir o problema que acabou de ser
+corrigido. Esses 4 pedidos específicos ficam órfãos até um backfill manual mais estreito (1 org por
+vez, ou `backfill-faturamento` ganhar a mesma guarda de orçamento). Novos casos do mesmo tipo
+(estorno sem claim) a partir de agora são cobertos normalmente pelas janelas de rotina, já com o
+filtro `refunded` incluído.
 
 ## Histórico — divergência de `verify_jwt` no faturamento (corrigida)
 

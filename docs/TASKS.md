@@ -10,17 +10,25 @@
   passadas (devoluções+perguntas de todas as orgs antes de vendas) + lotes de 5 + guarda de
   orçamento (nunca mais 546/504, responde 200 com o que pulou). Mesmo padrão já usado em
   `backfill-faturamento` (26/07).
-- [x] **Causa raiz nº 2:** `carregarLiquidoMPDoPedido` só aceitava pagamento MP `status ===
-  'approved'`, excluindo pra sempre estornos TOTAIS (MP muda o status pra `refunded`, não mantém
-  `approved`). Afetava `sync-devolucao`, `sync-venda` e `reconciliar-faturamento`. Fix: aceitar
-  `approved` OU `refunded`. Teste novo em `enriquecimento.test.ts`.
+- [x] **Causa raiz nº 2:** `carregarLiquidoMPDoPedido` (por-pedido) e `buscarPagamentosMP`
+  (varredura em lote) só aceitavam pagamento MP `status === 'approved'`, excluindo pra sempre
+  estornos TOTAIS (MP muda o status pra `refunded`, não mantém `approved`). Afetava
+  `sync-devolucao`, `sync-venda`, `reconciliar-faturamento` e `backfill-faturamento`. Fix: aceitar
+  `approved` OU `refunded` nos dois (2 buscas na varredura, mesmo padrão de `buscarClaimsSeller`).
+  Teste novo em `enriquecimento.test.ts`.
+- [ ] **Lacuna conhecida, não corrigida:** 4 pedidos antigos (30/06–22/07, R$66,12) com estorno
+  total mas SEM claim ficaram fora das janelas de rotina (72h/7d) — tentativa de backfill manual
+  amplo estourou 150s (`backfill-faturamento` não tem guarda de orçamento ainda) e foi abortada.
+  Corrigir com backfill manual mais estreito (1 org) ou levar a guarda de orçamento pra
+  `backfill-faturamento` também.
 - [x] **Verificado ao vivo em produção:** publish direto via QStash (2x) + `supabase db query` —
   `reconciliar-faturamento` completou em ~65s (era 546/504 sempre); `ml_vendas.estorno` do pedido
   com estorno total foi de `null` para `59.99`. Dashboard passa a bater com o painel do ML (3
   devoluções · R$108,25 em vez de 2 · R$48,26).
-- [x] **Deploy já feito** (`reconciliar-faturamento`, `sync-devolucao`, `sync-venda` — mudou
-  `_shared/faturamento/enriquecimento.ts`) — urgência: bug financeiro ativo em produção,
-  reconciliação horária rodando e falhando desde 24/06.
+- [x] **Deploy já feito** (`reconciliar-faturamento`, `sync-devolucao`, `sync-venda`,
+  `backfill-faturamento` — mudou `_shared/faturamento/enriquecimento.ts` e
+  `_shared/mercadopago/financeiro.ts`) — urgência: bug financeiro ativo em produção,
+  reconciliação horária rodando e falhando desde a criação do schedule em 24/07.
 - [ ] **Branch aguardando validação local do Diego** antes de push/merge (fluxo de entrega padrão).
 - Docs: `docs/reference/edge-functions.md` (histórico + descrição atualizada) e
   `obsidian-vault/05-Bugs/Incidentes.md` (2026-07-31).
