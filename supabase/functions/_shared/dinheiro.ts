@@ -12,7 +12,11 @@ export function round2(n: number): number {
  *
  * Não substitui `round2`/`precoCentavos` (preço de publicação, faturamento): aqueles cobrem o
  * caminho de dinheiro já em produção e não precisam do guard de notação exponencial abaixo.
- * Esta função existe só para o guard de divergência do cadastro (`preco`, `custo`, dimensões).
+ * Esta função existe só para o guard de divergência do cadastro — `preco` e as dimensões
+ * (`peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`), todas `numeric(_,2)`. `custo` NÃO
+ * usa esta função: é `numeric` sem escala fixa, então truncar a 2 casas esconderia uma
+ * divergência sub-centavo (ver `custosDivergem` em `cadastrar-produto/processar.ts`) — não
+ * "unificar" os dois de novo.
  *
  * Aceita string (colunas `numeric` do PostgREST chegam como texto). Notação exponencial
  * (`|n| < 1e-6` ou `>= 1e21` — nunca ocorre em preço/peso digitados por humano, mas pode ocorrer
