@@ -19,7 +19,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, derivarCodigos } from '../_shared/produto/codigos.ts';
-import { variacoesDivergem } from './processar.ts';
+import { estoqueInicialDiverge, variacoesDivergem } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -118,13 +118,30 @@ Deno.serve(async (req) => {
     // deixaria o operador em loop — a saída seria fechar/reabrir o diálogo, gerando chave nova e
     // um SEGUNDO produto. Devolve `familiaId`/`loteId` para `src/lib/produtos-saldo.ts` virar
     // `ProdutoJaExisteError` e a tela oferecer "Abrir na Revisão".
-    if (variacoesDivergem(produto.variacoes, vars)) {
-      return json({
-        error: 'Este cadastro já foi gravado e o que foi enviado agora diverge do que está salvo. Abra na Revisão para conferir.',
-        familiaId: jaCadastrado.id as string,
-        loteId: jaCadastrado.lote_id as string,
-      }, 409);
+    const divergiu = () => json({
+      error: 'Este cadastro já foi gravado e o que foi enviado agora diverge do que está salvo. Abra na Revisão para conferir.',
+      familiaId: jaCadastrado.id as string,
+      loteId: jaCadastrado.lote_id as string,
+    }, 409);
+    if (variacoesDivergem(produto.variacoes, vars)) return divergiu();
+
+    // Estoque inicial tem contrapartida no LEDGER, não em `variacoes.estoque` (que nasce 0 e
+    // continua 0 se a primeira tentativa morreu antes do laço). Sem esta conferência, mudar o
+    // Estoque entre as tentativas era descartado em silêncio: o laço lá embaixo reusa a mesma
+    // referência, `registrar_entrada` faz `return null` no unique_violation, `falhasEstoque` fica
+    // vazio e a tela mostra sucesso com o número novo enquanto o banco guarda o antigo.
+    // Filtrar por `referencia_externa` (e não por `codigo`) é o que mantém venda/ajuste fora da
+    // conta. Só roda depois de `variacoesDivergem`: é ela que descarta reordenação, sem a qual o
+    // casamento por índice abaixo não valeria.
+    const { data: movs, error: movErr } = await admin.from('estoque_movimentos')
+      .select('codigo, quantidade').eq('org_id', orgId)
+      .in('referencia_externa', vars.map((v) => `cadastro:${jaCadastrado.id}:${v.codigo}`));
+    // Erro (ou retorno vazio sem erro) tratado como "nada aplicado" reabriria o defeito inteiro —
+    // seguiria para o laço, que é no-op silencioso. Falha alto. Não trocar por `?? []`.
+    if (movErr || !movs) {
+      return json({ error: 'Falha conferindo o estoque já aplicado neste cadastro. Tente novamente.' }, 500);
     }
+    if (estoqueInicialDiverge(produto.variacoes, vars.map((v) => v.codigo as string), movs)) return divergiu();
     familiaId = jaCadastrado.id as string;
     loteId = jaCadastrado.lote_id as string;
     variacoesCriadas = vars;

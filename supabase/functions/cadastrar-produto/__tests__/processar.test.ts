@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { variacoesDivergem } from '../processar.ts';
+import { estoqueInicialDiverge, variacoesDivergem } from '../processar.ts';
 
 const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
 const enviada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
@@ -116,5 +116,75 @@ describe('variacoesDivergem', () => {
     // arredondar na gravação — `montarLinhasProduto` grava `v.preco` cru, sem Math.round algum:
     // o texto decimal que o JSON manda ("1.005") é o mesmo texto que `centavosExatos` lê aqui.
     expect(variacoesDivergem([enviada({ preco: 1.005 })], [gravada({ preco: '1.01' })])).toBe(false);
+  });
+});
+
+describe('estoqueInicialDiverge', () => {
+  const codigos = ['00000002', '00000003'];
+
+  it('sem movimento para o código não diverge — a primeira tentativa morreu antes do laço', () => {
+    // CASO PRIMÁRIO da feature: comparar contra `variacoes.estoque` (que é 0 aqui) daria 409
+    // falso e barraria o retry legítimo. Se este teste quebrar, a feature quebrou.
+    expect(estoqueInicialDiverge([{ estoqueInicial: 10 }], ['00000002'], [])).toBe(false);
+  });
+
+  it('movimento com a mesma quantidade não diverge — no-op normal do retry', () => {
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: 10 }],
+      ['00000002'],
+      [{ codigo: '00000002', quantidade: 10 }],
+    )).toBe(false);
+  });
+
+  it('movimento com quantidade diferente diverge — 10 gravado, 50 reenviado', () => {
+    // O defeito: sem esta checagem `registrar_entrada` era no-op silencioso (unique_violation →
+    // return null), `falhasEstoque` ficava vazio e a tela mostrava sucesso com 50.
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: 50 }],
+      ['00000002'],
+      [{ codigo: '00000002', quantidade: 10 }],
+    )).toBe(true);
+  });
+
+  it('variação sem estoqueInicial e sem movimento não diverge', () => {
+    expect(estoqueInicialDiverge([{ estoqueInicial: null }], ['00000002'], [])).toBe(false);
+    expect(estoqueInicialDiverge([{ estoqueInicial: 0 }], ['00000002'], [])).toBe(false);
+    expect(estoqueInicialDiverge([{}], ['00000002'], [])).toBe(false);
+  });
+
+  it('movimento existente e estoque zerado/limpo no reenvio DIVERGE', () => {
+    // Espelho do defeito: ledger 10, tela 0, resposta 200. A decisão é por PRESENÇA do
+    // movimento — não trocar por early-out em `estoqueInicial` falsy.
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: null }],
+      ['00000002'],
+      [{ codigo: '00000002', quantidade: 10 }],
+    )).toBe(true);
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: 0 }],
+      ['00000002'],
+      [{ codigo: '00000002', quantidade: 10 }],
+    )).toBe(true);
+  });
+
+  it('quantidade vinda como string do PostgREST compara igual', () => {
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: 10 }],
+      ['00000002'],
+      [{ codigo: '00000002', quantidade: '10' }],
+    )).toBe(false);
+  });
+
+  it('casa por código, não por posição da lista de movimentos', () => {
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: 10 }, { estoqueInicial: 5 }],
+      codigos,
+      [{ codigo: '00000003', quantidade: 5 }, { codigo: '00000002', quantidade: 10 }],
+    )).toBe(false);
+    expect(estoqueInicialDiverge(
+      [{ estoqueInicial: 10 }, { estoqueInicial: 5 }],
+      codigos,
+      [{ codigo: '00000003', quantidade: 7 }],
+    )).toBe(true);
   });
 });

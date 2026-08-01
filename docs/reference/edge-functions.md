@@ -450,7 +450,13 @@ falha ao ler `organizations` não libera.
   que abrir ainda; (3) **409, cadastro gravado diverge do enviado, COM `familiaId`/`loteId`** —
   o formulário mudou entre tentativas com a mesma chave (`variacoesDivergem`, `processar.ts`); a
   família É verificável e completa, então a resposta carrega `familiaId`/`loteId` para a tela
-  oferecer "abrir na Revisão" em vez de mandar "tentar de novo" (que geraria loop). Os guards de
+  oferecer "abrir na Revisão" em vez de mandar "tentar de novo" (que geraria loop). O mesmo 409
+  cobre o **estoque inicial alterado no reenvio** (`estoqueInicialDiverge`): a contrapartida dele
+  não é `variacoes.estoque` (que nasce 0), e sim o ledger — a edge lê `estoque_movimentos` pelas
+  referências `cadastro:{familiaId}:{codigo}` e compara `quantidade` com o `estoqueInicial`
+  enviado. Sem movimento = retry legítimo (aplica); quantidade diferente (inclusive campo zerado)
+  = 409, porque `registrar_entrada` faria no-op silencioso pela unique da referência e a tela
+  mostraria sucesso com o número errado. Falha ao ler o ledger é **500**, nunca "nada aplicado". Os guards de
   duplicata sobre os códigos GERADOS
   cruzam as duas tabelas (`familias.codigo_pai` **e** `variacoes.codigo`, D-6 do ADR-0096); se
   colidirem, a edge ressincroniza a sequência com o maior código existente e tenta reservar
