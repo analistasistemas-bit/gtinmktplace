@@ -1,6 +1,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { pathsDaFamilia, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
 import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
+import { limparMovimentosOrfaos } from '../_shared/estoque/limpeza.ts';
 import type { ContextoCanal } from '../_shared/canais/contrato.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { atualizarStatusML } from '../_shared/ml/atualizar-item.ts';
@@ -218,6 +219,12 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   // aceita: sem transação/RPC cross-table nesta camada). Propagar pelo menos torna o erro visível
   // em vez de reportar `ok` com o espelho `anuncios_externos` órfão.
   if (delExternosErr) throw new Error(`remover-publicado: deletar anuncios_externos falhou: ${delExternosErr.message}`);
+
+  // ADR-0097: o ledger não tem FK para variacoes, então o cascade das famílias não o
+  // alcança. Depois do delete — antes dele o conjunto órfão sairia vazio. Aqui a varredura
+  // pode levar HISTÓRICO DE VENDA junto (decisão registrada no ADR): esta é a única porta
+  // que remove família publicada, e o operador pediu exclusão sem resíduo.
+  await limparMovimentosOrfaos(admin, alvo.org_id as string);
 
   // Reconta (ou remove se vazio) cada lote afetado. Remover não "conclui" o lote → setConcluido=false.
   let lotesRemovidos = 0;

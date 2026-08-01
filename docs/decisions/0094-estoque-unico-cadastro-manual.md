@@ -184,3 +184,16 @@ Cópia da seção 3 (`## 3. Fora de escopo`) da spec.
 | **Custo médio ponderado** | Decidido: último custo sobrescreve (D-9). O ledger guarda o histórico por entrada, então nada se perde e dá para evoluir depois. |
 | **Devolução (fluxo `sync-devolucao`)** | **Não é tocada:** nem repõe estoque, nem notifica. Repor exige saber se a mercadoria voltou e em que estado — decisão do operador. Só o **cancelamento** visto pelo `sync-venda` é tratado (D-7). |
 | **Ajuste manual de estoque pelo app** | Consequência de D-20: com a escrita direta bloqueada, não existe caminho de ajuste. Toda mudança de saldo é entrada, baixa ou estorno. Se for pedido, entra como edge própria. |
+
+---
+
+## Adendo (2026-08-01) — D-5 deixa de valer após a exclusão do produto
+
+`estoque_movimentos` não tem FK para `variacoes`, então o cascade da exclusão de família nunca
+alcançou o ledger: excluir um produto deixava seus movimentos para trás (5 linhas assim existiam
+na DSA em 2026-08-01). **ADR-0097** fecha isso — `excluir-lote` e `remover-publicado` passam a
+varrer os movimentos cujo SKU não existe mais em nenhuma variação viva da org.
+
+A imutabilidade de D-5 continua valendo **enquanto o produto existir**; a exclusão do produto
+agora leva a trilha junto. Ver ADR-0097 para o risco assumido (histórico de venda e liberação da
+guarda de idempotência por `referencia_externa`).

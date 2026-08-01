@@ -2,6 +2,34 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Exclusão deixava movimentos de estoque órfãos no banco — corrigido 2026-08-01
+
+- [x] **Causa raiz:** `estoque_movimentos` não tem FK para `variacoes` (de propósito — uma venda
+  de SKU inexistente precisa ser gravável como `venda_sku_nao_encontrado`). Logo o cascade da
+  exclusão de família nunca alcançou o ledger: excluir produto ou lote deixava os movimentos para
+  trás. Auditoria da DSA em 2026-08-01: **5 movimentos órfãos**, 3 deles de 29/07.
+- [x] RPC `limpar_movimentos_orfaos(p_org)` (`security definer`, só `service_role`): apaga os
+  movimentos da org cujo `codigo` não existe em nenhuma variação viva. **Anti-join**, não "os
+  códigos recém-apagados" — `excluir-lote` preserva famílias publicadas (ADR-0019 D-1) e o mesmo
+  `codigo_pai` tem várias famílias após ciclos de UPDATE.
+- [x] Chamada em `excluir-lote` e `remover-publicado`, **depois** do delete commitar (antes, o
+  cascade ainda não rodou e o conjunto sairia vazio). Modo republicar não varre.
+- [x] **Achado da revisão:** o anti-join sozinho apagava o tombstone `cancelamento_sem_baixa` —
+  guarda funcional do D-19, lida por `baixar_estoque` para recusar baixa de pedido cancelado.
+  Perdê-la abriria baixa silenciosa num pedido cancelado após reimportar o mesmo CODIGO.
+  Migration `20260801092323` exclui os 4 motivos que nascem órfãos por construção. Validado no
+  banco em transação com rollback: tombstone e `venda_sku_nao_encontrado` sobrevivem, `entrada`
+  órfã é removida.
+- [x] A migration limpou os 5 órfãos existentes na aplicação (o pedido era no presente).
+- [x] **Fotos já estavam limpas** — auditoria do Storage: zero arquivos órfãos. `pathsDaFamilia`
+  cobre capas + imagens de variação nas duas portas. Nada a construir; registrado no ADR para a
+  próxima revisão não "consertar" o que funciona.
+- [x] Deploy: migration aplicada (`npm run db:check` ✓), `excluir-lote` v20 e `remover-publicado`
+  v31 ACTIVE. 2321 testes passando.
+- Docs: `docs/decisions/0097-exclusao-limpa-movimentos-orfaos.md`, adendo em ADR-0094 (D-5),
+  `docs/reference/modelo-de-dados.md`, `docs/reference/edge-functions.md`,
+  `obsidian-vault/04-Decisões/Índice de ADRs.md`.
+
 ## Código de produto automático no cadastro manual — concluído 2026-07-31
 
 - [x] **Causa raiz:** quem usa o módulo de estoque não tem ERP, então não tem código de produto

@@ -387,6 +387,15 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   inicial e o delete). Todas as queries agora falham alto em erro (antes, várias liam `{error}` e
   seguiam como se tivesse dado certo).
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
+- **Varredura de movimentos órfãos (ADR-0097, 2026-08-01)** — as **duas** funções acima chamam
+  `limpar_movimentos_orfaos(org)` depois do delete das famílias commitar: `estoque_movimentos` não
+  tem FK para `variacoes`, então o cascade não alcança o ledger e a exclusão deixava movimento de
+  produto inexistente. Best-effort (falha só loga — a exclusão já commitou e a RPC é idempotente).
+  A RPC preserva 4 motivos que nascem órfãos por construção (ADR-0097 D-1.1), incluindo o
+  tombstone `cancelamento_sem_baixa` — guarda do D-19, não histórico.
+  `remover-publicado` é a única porta onde a varredura pode levar **histórico de venda** junto:
+  consequência aceita e registrada no ADR. O modo republicar (`preservar_familia`) não varre — o
+  SKU continua vivo. `excluir-lote` devolve `movimentos_removidos` no JSON.
 - **reprocessar-familia** — reseta `erro→pendente` e re-enfileira (guard idempotente, ADR-0030).
 - **reconciliar-user-products** *(HTTP, admin — ADR-0088, 2026-07-23)* — backfill: importa pro
   modelo User Products itens planos já existentes no ML publicados antes do ADR-0088
