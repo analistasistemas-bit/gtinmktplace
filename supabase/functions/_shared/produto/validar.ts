@@ -108,8 +108,9 @@ export function montarLinhasProduto(
       nome,
       // Operador digitou "Cor / nome" no cadastro manual → grava direto como cor, com
       // cor_origem 'manual' (ADR-0004). Sem isso o process-familia tenta adivinhar a cor a
-      // partir do nome (dicionário não cobre "Invisível"/"Incolor"/"Transparente") e o Vision
-      // nunca roda neste fluxo — a foto só chega na etapa 2, DEPOIS do enfileiramento (ADR-0094).
+      // partir do nome (dicionário não cobre "Invisível"/"Incolor"/"Transparente") e não dá
+      // para contar com o Vision — a foto só chega na etapa 2, DEPOIS do enfileiramento
+      // (ADR-0094): é uma corrida entre a latência do QStash e o upload, não impossibilidade.
       // Vazio mantém cor null: a IA resolve normalmente (process-familia respeita `if (v.cor)`).
       // `cor: null` explícito é redundante hoje (INSERT puro, único caller — ver
       // cadastrar-produto/index.ts) mas fica assim de propósito, igual a nome/gtin abaixo:
