@@ -123,4 +123,30 @@ describe('montarLinhasProduto', () => {
     );
     expect(variacoes[0].preco).toBe(1.005);
   });
+
+  // Cadastro manual: o operador digitou "Invisível" no campo "Cor / nome" e a cor chegava
+  // NULA na Revisão — o process-familia tenta adivinhar a partir do nome (dicionário não
+  // cobre "invisível"/"incolor"/"transparente") e o Vision nunca roda neste fluxo (a foto só
+  // chega na etapa 2, depois do enfileiramento). Quando o campo vem preenchido, o operador
+  // informou a cor explicitamente — grava em `nome` (como hoje) E em `cor`, com
+  // `cor_origem: 'manual'`. `process-familia/index.ts` respeita `if (v.cor) return v`.
+  it('campo "Cor / nome" preenchido grava nome E cor iguais, com cor_origem manual', () => {
+    const { variacoes } = montarLinhasProduto(
+      { ...valido, variacoes: [{ ...valido.variacoes[0], nome: 'Invisível' }] }, ctx,
+    );
+    expect(variacoes[0].nome).toBe('Invisível');
+    expect(variacoes[0].cor).toBe('Invisível');
+    expect(variacoes[0].cor_origem).toBe('manual');
+  });
+
+  it('campo "Cor / nome" vazio/espaços/ausente mantém nome e cor null, sem forçar cor_origem', () => {
+    for (const nome of ['', '   ', undefined]) {
+      const { variacoes } = montarLinhasProduto(
+        { ...valido, variacoes: [{ ...valido.variacoes[0], nome }] }, ctx,
+      );
+      expect(variacoes[0].nome).toBeNull();
+      expect(variacoes[0].cor).toBeNull();
+      expect(variacoes[0].cor_origem).toBeUndefined();
+    }
+  });
 });

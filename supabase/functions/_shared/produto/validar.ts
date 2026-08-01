@@ -99,28 +99,37 @@ export function montarLinhasProduto(
     status: 'pendente',
   };
 
-  const variacoes = p.variacoes.map((v, i) => ({
-    user_id: ctx.userId,
-    org_id: ctx.orgId,
-    codigo: ctx.codigos[i],
-    nome: v.nome?.trim() || null,
-    gtin: v.gtin?.trim() || null,
-    // Cru, sem arredondar aqui: o Postgres parseia o texto decimal do JSON (não multiplica
-    // float) e arredonda para numeric(12,2) na escrita — concorda com o que o guard de retry
-    // idempotente (`variacoesDivergem`, cadastrar-produto/processar.ts) calcula via
-    // `centavosExatos`, que também lê o texto decimal do número, não `preco * 100`. Ver o teste
-    // "preço com empate de arredondamento" em cadastrar-produto/__tests__/processar.test.ts —
-    // NÃO reintroduzir arredondamento aqui, um `?? 0`/`!` sobre valor inválido grava R$ 0,00 em
-    // silêncio (achado de revisão, Task 4b fix round 1).
-    preco: v.preco,
-    custo: v.custo ?? null,
-    // Estoque nasce ZERO: o saldo entra por registrar_entrada, caminho único de escrita (D-15).
-    estoque: 0,
-    peso_gramas: v.pesoGramas ?? null,
-    altura_cm: v.alturaCm ?? null,
-    largura_cm: v.larguraCm ?? null,
-    comprimento_cm: v.comprimentoCm ?? null,
-  }));
+  const variacoes = p.variacoes.map((v, i) => {
+    const nome = v.nome?.trim() || null;
+    return {
+      user_id: ctx.userId,
+      org_id: ctx.orgId,
+      codigo: ctx.codigos[i],
+      nome,
+      // Operador digitou "Cor / nome" no cadastro manual → grava direto como cor, com
+      // cor_origem 'manual' (ADR-0004). Sem isso o process-familia tenta adivinhar a cor a
+      // partir do nome (dicionário não cobre "Invisível"/"Incolor"/"Transparente") e o Vision
+      // nunca roda neste fluxo — a foto só chega na etapa 2, DEPOIS do enfileiramento (ADR-0094).
+      // Vazio mantém cor null: a IA resolve normalmente (process-familia respeita `if (v.cor)`).
+      ...(nome ? { cor: nome, cor_origem: 'manual' } : { cor: null }),
+      gtin: v.gtin?.trim() || null,
+      // Cru, sem arredondar aqui: o Postgres parseia o texto decimal do JSON (não multiplica
+      // float) e arredonda para numeric(12,2) na escrita — concorda com o que o guard de retry
+      // idempotente (`variacoesDivergem`, cadastrar-produto/processar.ts) calcula via
+      // `centavosExatos`, que também lê o texto decimal do número, não `preco * 100`. Ver o teste
+      // "preço com empate de arredondamento" em cadastrar-produto/__tests__/processar.test.ts —
+      // NÃO reintroduzir arredondamento aqui, um `?? 0`/`!` sobre valor inválido grava R$ 0,00 em
+      // silêncio (achado de revisão, Task 4b fix round 1).
+      preco: v.preco,
+      custo: v.custo ?? null,
+      // Estoque nasce ZERO: o saldo entra por registrar_entrada, caminho único de escrita (D-15).
+      estoque: 0,
+      peso_gramas: v.pesoGramas ?? null,
+      altura_cm: v.alturaCm ?? null,
+      largura_cm: v.larguraCm ?? null,
+      comprimento_cm: v.comprimentoCm ?? null,
+    };
+  });
 
   return { familia, variacoes };
 }
