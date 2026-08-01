@@ -74,17 +74,30 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
 
-  // Re-sincroniza o estado local quando o servidor altera campos que só ELE preenche
-  // (upload de foto pela câmera; corOrigem, que só muda após confirmação de save no
-  // backend). Sem isso, o estado local — inicializado só uma vez — ignora a mudança e a
-  // linha mostra o valor pré-edição até um F5 (ex.: badge "Sem cor identificada" preso
-  // mesmo com o banco já correto). Chaveado só por esses campos p/ não descartar edições
-  // locais de cor/preço/GTIN ainda não salvas.
-  const fotosKey = familia.variacoes.map((v) => `${v.codigo}:${v.fotoPath ?? ''}:${v.corOrigem ?? ''}`).join('|');
+  // Re-sincroniza o estado local quando o servidor altera a FOTO de alguma variação
+  // (upload pela câmera → invalidate → refetch). Sem isso, o estado local — inicializado
+  // só uma vez — ignora a foto nova e a linha continua "sem foto". Chaveado apenas por
+  // código+foto p/ não descartar edições locais de cor/preço/GTIN ainda não salvas.
+  const fotosKey = familia.variacoes.map((v) => `${v.codigo}:${v.fotoPath ?? ''}`).join('|');
   useEffect(() => {
     setVariacoes(familia.variacoes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fotosKey]);
+
+  // corOrigem muda como efeito colateral do PRÓPRIO operador digitando no input de cor
+  // (salva com debounce de 600ms) — um replace total aqui (como o de fotosKey acima)
+  // reverteria o texto que ele está digitando na mesma linha, e não é raro: qualquer
+  // invalidate de QK.familias (realtime, process-familia gravando status) muda a chave.
+  // Por isso é MERGE — só o campo corOrigem é atualizado por código, preservando cor/
+  // preço/GTIN locais ainda não salvos em qualquer linha, inclusive a que mudou.
+  const corOrigemKey = familia.variacoes.map((v) => `${v.codigo}:${v.corOrigem ?? ''}`).join('|');
+  useEffect(() => {
+    setVariacoes((vs) => vs.map((v) => {
+      const servidor = familia.variacoes.find((x) => x.codigo === v.codigo);
+      return servidor ? { ...v, corOrigem: servidor.corOrigem } : v;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [corOrigemKey]);
 
   const [tituloStatus, setTituloStatus] = useState<SaveStatus>(undefined);
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
@@ -399,7 +412,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               const excluida = marcado !== true;
               // Reflete o clique no estado local na hora: o refetch do
               // invalidate NÃO re-sincroniza este campo (fotosKey só cobre
-              // código+foto+corOrigem, p/ não descartar edições não salvas de cor/preço).
+              // código+foto, p/ não descartar edições não salvas de cor/preço).
               // Sem isto o checkbox fica preso e a cor nova "não marca".
               setVariacoes((vs) =>
                 vs.map((x) => (x.codigo === v.codigo ? { ...x, excluidaDaPublicacao: excluida } : x)),
