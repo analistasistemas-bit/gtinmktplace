@@ -14,6 +14,12 @@
   `codigo_pai` tem várias famílias após ciclos de UPDATE.
 - [x] Chamada em `excluir-lote` e `remover-publicado`, **depois** do delete commitar (antes, o
   cascade ainda não rodou e o conjunto sairia vazio). Modo republicar não varre.
+- [x] **Achado da revisão:** o anti-join sozinho apagava o tombstone `cancelamento_sem_baixa` —
+  guarda funcional do D-19, lida por `baixar_estoque` para recusar baixa de pedido cancelado.
+  Perdê-la abriria baixa silenciosa num pedido cancelado após reimportar o mesmo CODIGO.
+  Migration `20260801092323` exclui os 4 motivos que nascem órfãos por construção. Validado no
+  banco em transação com rollback: tombstone e `venda_sku_nao_encontrado` sobrevivem, `entrada`
+  órfã é removida.
 - [x] A migration limpou os 5 órfãos existentes na aplicação (o pedido era no presente).
 - [x] **Fotos já estavam limpas** — auditoria do Storage: zero arquivos órfãos. `pathsDaFamilia`
   cobre capas + imagens de variação nas duas portas. Nada a construir; registrado no ADR para a

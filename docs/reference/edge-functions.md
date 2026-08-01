@@ -391,6 +391,8 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   `limpar_movimentos_orfaos(org)` depois do delete das famílias commitar: `estoque_movimentos` não
   tem FK para `variacoes`, então o cascade não alcança o ledger e a exclusão deixava movimento de
   produto inexistente. Best-effort (falha só loga — a exclusão já commitou e a RPC é idempotente).
+  A RPC preserva 4 motivos que nascem órfãos por construção (ADR-0097 D-1.1), incluindo o
+  tombstone `cancelamento_sem_baixa` — guarda do D-19, não histórico.
   `remover-publicado` é a única porta onde a varredura pode levar **histórico de venda** junto:
   consequência aceita e registrada no ADR. O modo republicar (`preservar_familia`) não varre — o
   SKU continua vivo. `excluir-lote` devolve `movimentos_removidos` no JSON.

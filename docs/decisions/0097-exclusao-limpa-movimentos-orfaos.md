@@ -34,6 +34,19 @@ publicadas (ADR-0019 D-1) e o mesmo `codigo_pai` tem várias famílias por ciclo
 (ADR-0019, adendo) — o SKU sobrevive em outra linha e seu histórico deve sobreviver junto.
 O anti-join também é auto-curativo: absorve os órfãos que já existem, sem script avulso.
 
+**D-1.1. Quatro motivos ficam FORA da varredura — nascem órfãos por construção.**
+O anti-join sozinho apagaria linhas cujo propósito é existir sem variação correspondente:
+
+| Motivo | Por que sobrevive |
+|---|---|
+| `cancelamento_sem_baixa` | **Guarda funcional, não histórico.** É o tombstone do ADR-0094 D-19: `baixar_estoque` (passo 3) o lê para recusar a baixa de um pedido já cancelado. Varrer abre este caminho: cancelamento grava tombstone → produto excluído → varredura apaga → mesmo CODIGO reimportado (padrão normal de planilha, o que o ADR-0019 existe para proteger) → webhook `paid` re-entregue → **baixa silenciosa de um pedido cancelado**. |
+| `venda_sku_nao_encontrado` | É o alarme de que chegou venda de produto não cadastrado — a migration do E6b registra em letra: "Preserva a trilha … evento que alguém precisa ver". Apagá-lo também libera a `referencia_externa`, então uma re-entrega voltaria a aplicar a baixa. |
+| `estorno_sku_nao_encontrado` | Mesma razão. |
+| `venda_cancelada_antes` | Venda recusada pelo tombstone; preservada por simetria com ele. |
+
+Nenhum dos quatro é "lixo da exclusão" — não pertencem a produto nenhum.
+(Migration `20260801092323`; a `20260801091410` original não tinha o filtro.)
+
 **D-2. A varredura roda DEPOIS do delete commitar, em cada porta.** As variações somem por
 cascade; calcular o conjunto órfão antes do delete devolveria vazio. Chamadas em
 `excluir-lote` e `remover-publicado`. O rollback do `cadastrar-produto` **não** chama: seus
