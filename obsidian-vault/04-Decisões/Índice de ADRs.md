@@ -5,7 +5,7 @@ atualizado: 2026-07-31
 
 # Índice de ADRs
 
-`docs/decisions/` é a fonte de verdade (96 ADRs, `0001`–`0096`). Este índice espelha só os
+`docs/decisions/` é a fonte de verdade (97 ADRs, `0001`–`0097`). Este índice espelha só os
 títulos, pra navegação rápida a partir do vault — o conteúdo completo (contexto, alternativas,
 consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. Ver também
 [[ADR-001]] / [[ADR-002]] (exemplos de mirror completo) e [[ADR Template]].
@@ -108,5 +108,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0094 | [Estoque único, cadastro manual e entrada de mercadoria](../../docs/decisions/0094-estoque-unico-cadastro-manual.md) |
 | 0095 | [Mercado Envios (me2) detectado via shipping_preferences, não status.mercadoenvios](../../docs/decisions/0095-mercado-envios-via-shipping-preferences.md) |
 | 0096 | [Código de produto automático no cadastro manual](../../docs/decisions/0096-codigo-produto-automatico.md) |
+| 0097 | [Exclusão de produto/lote limpa os movimentos de estoque órfãos](../../docs/decisions/0097-exclusao-limpa-movimentos-orfaos.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

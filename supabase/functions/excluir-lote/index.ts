@@ -5,6 +5,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { podeExcluirLote } from '../_shared/support-state.ts';
 import { particionarExclusao, type FamiliaExclusao } from '../_shared/lote/exclusao.ts';
 import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
+import { limparMovimentosOrfaos } from '../_shared/estoque/limpeza.ts';
 
 const BLOQUEADOS = ['processando', 'publicando'];
 
@@ -48,6 +49,12 @@ Deno.serve(async (req) => {
   const ids = part.paraExcluir.map((f) => f.id);
   if (ids.length > 0) await admin.from('familias').delete().in('id', ids);
 
+  // ADR-0097: o ledger não tem FK para variacoes, então o cascade não o alcança.
+  // Depois do delete — antes dele o conjunto órfão sairia vazio.
+  const movimentosRemovidos = ids.length > 0
+    ? await limparMovimentosOrfaos(admin, user.orgId)
+    : 0;
+
   // Reconta (ou remove se vazio) a partir do estado real do DB. Sobrou só publicada → concluido.
   const loteRemovido = await recontarOuRemoverLote(admin, lote_id, true);
 
@@ -55,5 +62,6 @@ Deno.serve(async (req) => {
   return new Response(JSON.stringify({
     familias_removidas: ids.length, imagens_removidas: part.pathsRemover.length,
     familias_preservadas: part.preservadas.length, lote_removido: loteRemovido,
+    movimentos_removidos: movimentosRemovidos,
   }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 });
