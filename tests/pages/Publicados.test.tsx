@@ -92,50 +92,57 @@ function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
   };
 }
 
+// Defaults compartilhados: Publicados consome estes hooks incondicionalmente (sem depender de
+// dado/estado), então qualquer describe que renderize <Publicados /> precisa deles configurados —
+// não só o describe que os exercita diretamente. Reaproveitado pelo describe de movimentos abaixo.
+function mockHooksPadrao() {
+  usePublicadosMock.mockReturnValue({
+    data: [itemBase()],
+    isLoading: false,
+    error: null,
+  });
+  useStatusPublicadosMock.mockReturnValue({
+    data: { itens: [] },
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  useRemoverPublicadoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  usePrepararRepublicacaoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  usePausarReativarPublicadoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  useResumoFinanceiroMock.mockReturnValue({
+    data: { semCredencialMP: true },
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  useVendasMock.mockReturnValue({
+    data: [],
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  });
+  useCustosMock.mockReturnValue({ data: undefined });
+  useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
+  useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+  fetchMovimentosEstoqueMock.mockResolvedValue([]);
+}
+
 describe('Publicados', () => {
   beforeEach(() => {
     sessionStorage.clear(); // expansão da linha agora persiste em sessionStorage; isolar entre casos
     HTMLElement.prototype.scrollIntoView = vi.fn();
-    usePublicadosMock.mockReturnValue({
-      data: [itemBase()],
-      isLoading: false,
-      error: null,
-    });
-    useStatusPublicadosMock.mockReturnValue({
-      data: { itens: [] },
-      isFetching: false,
-      refetch: vi.fn(),
-    });
-    useRemoverPublicadoMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      error: null,
-    });
-    usePrepararRepublicacaoMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      error: null,
-    });
-    usePausarReativarPublicadoMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      error: null,
-    });
-    useResumoFinanceiroMock.mockReturnValue({
-      data: { semCredencialMP: true },
-      isFetching: false,
-      refetch: vi.fn(),
-    });
-    useVendasMock.mockReturnValue({
-      data: [],
-      isFetching: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    useCustosMock.mockReturnValue({ data: undefined });
-    useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
-    useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
-    fetchMovimentosEstoqueMock.mockResolvedValue([]);
+    mockHooksPadrao();
   });
 
   it('oferece Cola no filtro de tipos', () => {
@@ -277,9 +284,10 @@ function movimentoBase(over: Partial<MovimentoEstoque> = {}): MovimentoEstoque {
 
 describe('Publicados — trilha de movimentos no painel expandido', () => {
   beforeEach(() => {
-    // O describe anterior deixa usePublicadosMock com a lista de 2 itens do último teste;
-    // volta para 1 item para não haver dois botões "Expandir análise" na tela.
-    usePublicadosMock.mockReturnValue({ data: [itemBase()], isLoading: false, error: null });
+    // Publicados consome ~8 hooks incondicionalmente (useStatusPublicados, useVendas, etc.) —
+    // mockHooksPadrao() garante que este describe não dependa do describe irmão ter rodado antes
+    // para deixá-los num estado utilizável (a suíte deve passar mesmo isolada com `-t`).
+    mockHooksPadrao();
     useFamiliaMock.mockReturnValue({ data: familiaCarregada(), isLoading: false, isError: false });
     fetchMovimentosEstoqueMock.mockResolvedValue([movimentoBase()]);
   });
