@@ -183,9 +183,11 @@ Variação 1                                    [remover]
                                     [+ Adicionar variação]
 ```
 
-Com os campos agrupados em quatro linhas rotuladas, o dialog volta a caber em `sm:max-w-3xl`
-sem scroll horizontal, e o comentário sobre `4xl`/`5xl` deixa de ser necessário. Cada input
-recebe `id`/`htmlFor` únicos por índice de variação.
+Com os campos agrupados em quatro linhas rotuladas, o dialog deixa de precisar de scroll
+horizontal e o comentário sobre `4xl`/`5xl` perde a razão de existir. A largura final **não é
+fixada aqui**: o histórico do arquivo mostra duas medidas erradas seguidas (`4xl`, depois `5xl`,
+esta última ainda cortando colunas em teste ao vivo). Ela é escolhida e confirmada
+visualmente no QA. Cada input recebe `id`/`htmlFor` únicos por índice de variação.
 
 ### 5.2 Foto na etapa de cadastro
 
