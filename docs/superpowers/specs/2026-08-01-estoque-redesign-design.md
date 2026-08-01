@@ -148,6 +148,15 @@ Mantém a lógica de dados (`fetchMovimentosEstoque`, `rotuloMotivo`, `movimento
 `data · SKU · motivo` à esquerda, `delta · saldo resultante · canal` à direita, com quebra em
 telas estreitas. A `<table>` interna sai.
 
+**Nenhum campo pode sumir na tradução.** Além dos seis óbvios, o componente atual exibe dois
+dados de auditoria fáceis de perder ao reescrever o layout, e ambos são obrigatórios:
+
+- **quantidade pedida** quando a baixa foi parcial (`movimentos-estoque.tsx:73-77`) — é o que
+  revela que se vendeu mais do que havia e o saldo parou em zero;
+- **documento** do movimento (`:79`) — a NF ou pedido que originou a entrada.
+
+Este é um painel de auditoria: perder campo aqui é perder rastro, não perder estética.
+
 **Este componente tem dois consumidores**, e isso é um ganho, não um risco de escopo:
 `Estoque.tsx:118` e `Publicados.tsx:359`. Em Publicados ele também vive dentro de um
 `<TableCell colSpan={9}>` (`Publicados.tsx:341`), ou seja, **a tela de Publicados sofre do mesmo
@@ -182,6 +191,25 @@ falha por rede ou RLS — uma tela que mente sobre o que está publicado. Por is
 erro da query visível ao lado. `undefined` (não carregado) e `[]` (carregado, sem canal) nunca
 podem ser tratados como a mesma coisa.
 
+**E a trava acima não basta, porque a fonte está errada.** Distinguir `undefined` de `Map`
+vazio só cobre a query que *falha*. O caso pior é a query que **tem sucesso e devolve dado
+incompleto**:
+
+- `fetchCanaisPorProduto` lê `anuncios_externos` (`produtos-saldo.ts:164-169`), que é um
+  **espelho best-effort**: o upsert que o alimenta falha apenas com `console.error` e não
+  desfaz a publicação (`_shared/anuncios/espelhar.ts:117-119`);
+- Publicados usa a fonte **canônica**, `familias.ml_item_id IS NOT NULL`
+  (`queries.ts:810-814`).
+
+Resultado: um produto publicado de verdade no ML, visível na tela Publicados, aparece no
+Estoque como "não publicado" — sem nenhum erro, com tudo verde. A tela afirma um fato falso
+sobre o catálogo, que é pior que não ter o filtro.
+
+Correção: para o Mercado Livre, derivar publicação de `familias.ml_item_id`, que vem no
+**mesmo select** que a §4 já amplia — custo zero de query. O mapa de `anuncios_externos`
+continua servindo os demais canais e os badges de canal. Teste obrigatório: família com
+`ml_item_id` preenchido e **sem** linha no espelho não pode cair em `nao-publicado`.
+
 Máquina de estados completa, porque "desabilita o filtro" sozinho deixa buracos:
 
 | Estado da query | `canaisPorProduto` | Opção `nao-publicado` | Se já estava selecionada |
@@ -202,7 +230,10 @@ Uma alteração de `select`, sem mudança de contrato de edge, migration ou RLS.
 `fetchProdutosComSaldo` (`src/lib/produtos-saldo.ts:69-73`) passa a selecionar também:
 
 - de `variacoes`: `imagem_path`
-- de `familias`: `capa_storage_path`, `fornecedor`, `unidade`, `origem`
+- de `familias`: `capa_storage_path`, `fornecedor`, `unidade`, `origem`, `ml_item_id`
+
+`ml_item_id` é o que torna o filtro "não publicado" confiável (§3.4) — sem ele a tela depende
+de um espelho que pode estar furado.
 
 Os tipos `VariacaoComSaldo` e `ProdutoComSaldo` ganham os campos correspondentes
 (`imagemPath`, `capaStoragePath`, `fornecedor`, `unidade`, `origem`, `criadoEm`). `criadoEm`
@@ -234,6 +265,15 @@ Variação 1                                    [remover]
 └──────────────────────────────────────────────────────┘
                                     [+ Adicionar variação]
 ```
+
+**Cada linha ganha um `clientId` estável** (`crypto.randomUUID()` ao criar a variação), usado
+como `key` do card e como chave do `File` escolhido, que passa a viver **dentro do objeto da
+linha** — nunca em array paralelo. Hoje as linhas usam `key={i}` e são removidas por índice
+(`dialog-cadastro-produto.tsx:267-284`), o que já é frágil e vira defeito real com upload:
+`<input type="file">` é DOM não-controlável, então remover a variação 2 de três faz React
+reaproveitar a posição e o arquivo pode acabar exibido — ou enviado — na variação errada. Como
+o casamento final com o id do banco é posicional (§5.2), um deslocamento aqui grava a foto no
+SKU errado sem nenhum sinal.
 
 Com os campos agrupados em quatro linhas rotuladas, o dialog deixa de precisar de scroll
 horizontal e o comentário sobre `4xl`/`5xl` perde a razão de existir. A largura final **não é
@@ -278,14 +318,15 @@ isso é correto por dois invariantes encadeados, ambos verificados:
 
 1. `derivarCodigos` (`_shared/produto/codigos.ts:38`) atribui `primeiro + 1 + i` à variação de
    índice `i`, ou seja, códigos sequenciais **na ordem do array enviado**;
-2. a edge ordena o retorno por `codigo` (`cadastrar-produto/index.ts:259`, deliberadamente,
+2. `montarLinhasProduto` (`_shared/produto/validar.ts:102-106`) casa `p.variacoes[i]` com
+   `ctx.codigos[i]` — a atribuição é posicional, e é esse elo que liga o formulário ao código;
+3. a edge ordena o retorno por `codigo` (`cadastrar-produto/index.ts:256-259`, deliberadamente,
    porque o `RETURNING` do Postgres não garante ordem), e como todo código tem exatamente 8
-   dígitos com zero à esquerda, a ordem lexicográfica é igual à numérica.
+   dígitos com zero à esquerda, a ordem lexicográfica é igual à numérica;
+4. o retry idempotente usa `.order('codigo')` (`:98-104`) e a resposta preserva a ordem em
+   ambos os caminhos (`:316-319`).
 
-O caminho de retry usa `.order('codigo')` (`cadastrar-produto/index.ts:98`) e a resposta
-preserva essa ordem (`:316`), então criação e retry concordam.
-
-Logo, o retorno chega na mesma ordem do formulário. **Isso é uma coincidência de dois
+Logo, o retorno chega na mesma ordem do formulário. **Isso é uma coincidência de quatro
 invariantes, não uma garantia de contrato**: se a geração de código deixar de ser sequencial,
 ou o zero-padding mudar, a foto passa a ser gravada na variação errada em silêncio — sem erro,
 sem log. O código leva um comentário apontando para os dois arquivos acima.
@@ -297,10 +338,12 @@ a resposta já ordenada prova apenas que o frontend usa o índice — ele passar
 a resposta da edge sai na ordem do payload. É esse que a §7 exige, nos dois caminhos (criação
 e retry).
 
-**Ciclo de vida do lote de upload.** Enquanto os uploads estiverem em voo, fechar o diálogo é
-bloqueado: `onOpenChange` (`dialog-cadastro-produto.tsx:167`) e o botão "Fechar" (`:377`) ficam
-inertes, porque o `useEffect` de reset (`:97-103`) descarta todo o state ao fechar — e os
-`File` só existem em memória. Perdê-los significa que a etapa 2 não consegue reconstruir a
+**Ciclo de vida do lote de upload.** A trava de fechamento vale para `salvando || enviandoFotos`
+— **não só durante os uploads**. Fechar durante o `cadastrarProduto` (`:109-130`) é igualmente
+destrutivo: a edge segue criando o produto, e o reset já descartou todos os `File` que o
+operador escolheu. `onOpenChange` (`dialog-cadastro-produto.tsx:167`) e o botão "Fechar"
+(`:377`) ficam inertes nesses dois estados, porque o `useEffect` de reset (`:97-103`) descarta
+todo o state ao fechar — e os `File` só existem em memória. Perdê-los significa que a etapa 2 não consegue reconstruir a
 lista de pendências, já que o banco não registra "foto que deveria existir". Após o lote:
 
 - **todas enviadas** → segue para a etapa 2 já sem pendência de foto;
@@ -426,6 +469,16 @@ bloqueado (§5.2).
    nos dois caminhos: criação (que ordena via `.sort()`) e retry idempotente (que usa
    `.order('codigo')`). Sem este, o teste 1 continuaria verde com a ordenação quebrada, porque
    o mock entrega a resposta já ordenada.
+
+**Publicado sem espelho (§3.4):** família com `ml_item_id` preenchido e sem linha em
+`anuncios_externos` **não** aparece no filtro `nao-publicado`. É a guarda do único defeito da
+spec que produzia dado factualmente errado com todas as queries verdes.
+
+**Identidade da variação (§5.1):** preencher três variações com fotos distintas, remover a do
+meio e confirmar que as duas restantes mantêm seus próprios arquivos e previews.
+
+**Saldo negativo no card (§3.5):** produto e variação com saldo `-3` mostram pill `danger` com
+"saldo inconsistente" — não basta testar a função de filtro, o pill é render.
 
 **Entrada por produto multivariação (§5.5):** abrir "Dar entrada" pelo card de um produto com
 duas variações filtra a lista pelas duas e não pré-seleciona nenhuma. Falha hoje, porque o
