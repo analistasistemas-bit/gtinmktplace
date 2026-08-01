@@ -23,13 +23,24 @@
 ## Organizações e multi-tenancy (ADR-0027, E7)
 
 ### `organizations`
-O tenant. Hoje 1 linha (**Avil** — `slug='avil'`), dona de todos os dados atuais (backfill do E7).
-*Migration `20260705163656_e7_organizations.sql`.*
+O tenant. Hoje 2 linhas — **Avil** (`slug='avil'`, dona de todos os dados do backfill do E7) e
+**DSA** (`slug='diego-souza'`). *Migration `20260705163656_e7_organizations.sql`.*
 
 `id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
 `lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,
 `atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
 só via `service_role` (edge `usuarios`, action `create_org`, restrita a super-admin).
+
+**`produto_seq bigint not null default 0`** (migration `20260731192443_codigo_produto_automatico.sql`,
+ADR-0096): contador do código de produto/SKU gerado no cadastro manual, mesmo padrão de
+`lote_seq` — reservado só via RPC `proximo_codigo_produto()`, nunca escrito direto. Inicializado
+por org com o maior código numérico de até oito dígitos já existente em `familias.codigo_pai`/
+`variacoes.codigo` (comparação **numérica**, não de string — ver a RPC abaixo). A migration
+seguinte (`20260731193955_codigo_produto_seq_reaplicavel.sql`) trocou a inicialização por um
+ratchet (`greatest(produto_seq, …)`) para a migration ficar reaplicável sem rebobinar a
+sequência. Uma terceira (`20260731194443_avil_produto_seq_faixa_reservada.sql`) deslocou só a
+**Avil** para a faixa reservada `99000000` (decisão pontual desta org, ADR-0096 D-4.2) — a
+**DSA** permanece em `1`.
 
 **`canais_habilitados` text[]** (default `'{mercado_livre}'`, migration `20260715014055_menus_multicanal.sql`,
 spec 2026-07-14 "menus multicanal"): quais marketplaces a org enxerga como conectáveis — D5 do
@@ -188,6 +199,12 @@ edição. *Migration `20260527125643_familias_variacoes.sql` (ADR-0007/0008/0009
 Grupos de colunas:
 - **Identidade:** `lote_id` (FK→lotes, cascade), `user_id`, `org_id` (FK organizations,
   ADR-0027), `codigo_pai`, `nome_pai`, `descricao_pai`, `unidade`. Único: `(lote_id, codigo_pai)`.
+- **Idempotência do cadastro manual (ADR-0096):** `chave_cadastro uuid` (nullable — só o
+  cadastro manual preenche; o caminho de planilha deixa null). Índice único parcial
+  **`familias_org_chave_cadastro_key`** em `(org_id, chave_cadastro) where chave_cadastro is
+  not null`: reenvio da mesma submissão (uuid gerado pelo front ao abrir o diálogo) devolve o
+  cadastro original em vez de criar um segundo produto. *Migration
+  `20260731192443_codigo_produto_automatico.sql`.*
 - **Lifecycle:** `status` (`familia_status`), `operacao` (`operacao_ml`).
 - **Categorização:** `tipo_aviamento`, `tipo_origem`, `categoria_ml_id`, `categoria_nome`.
 - **Origem/imposto (ADR-0055):** `origem` (enum `origem_produto` `nacional`/`importado`,
@@ -533,6 +550,7 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `cleanup_support_audit_events()` | Remove auditoria com mais de um ano sem `legal_hold`; chamada pelo cron diário |
 | `org_id_default()` | Trigger `BEFORE INSERT`: preenche `org_id` do INSERT a partir de `current_org_id()` quando ausente |
 | `proximo_numero_lote(org)` | Incrementa `organizations.lote_seq` e retorna o próximo `numero_org` (row-lock na org) |
+| `proximo_codigo_produto(p_org, p_qtd, p_resync default false)` | ADR-0096: reserva `p_qtd` números de `organizations.produto_seq` num `update … returning` atômico e devolve o **último** da faixa; rejeita `p_qtd <= 0`. Com `p_resync=true`, primeiro eleva a sequência ao maior código existente na org (comparação numérica) antes de reservar — caminho da colisão, não do cadastro feliz. `search_path=''`, revogada de `public`/`anon`/`authenticated`, concedida só a `service_role` — o browser nunca chama, só a edge `cadastrar-produto` |
 | `upsert_marketplace_connection(...)` | Grava conexão de canal por org, criando/atualizando secrets no Vault |
 | `get_connection_tokens(connection_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |

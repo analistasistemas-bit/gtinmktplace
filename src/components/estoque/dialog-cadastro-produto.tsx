@@ -24,13 +24,13 @@ import {
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
 
 type LinhaVariacao = {
-  codigo: string; nome: string; gtin: string;
+  nome: string; gtin: string;
   preco: string; custo: string; estoqueInicial: string;
   pesoGramas: string; alturaCm: string; larguraCm: string; comprimentoCm: string;
 };
 
 const LINHA_VAZIA: LinhaVariacao = {
-  codigo: '', nome: '', gtin: '', preco: '', custo: '', estoqueInicial: '',
+  nome: '', gtin: '', preco: '', custo: '', estoqueInicial: '',
   pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
 };
 
@@ -42,11 +42,11 @@ function num(v: string): number | null {
 }
 
 function montarPayload(
-  pai: { codigoPai: string; nomePai: string; descricaoPai: string; unidade: string; fornecedor: string; origem: 'nacional' | 'importado' },
+  pai: { nomePai: string; descricaoPai: string; unidade: string; fornecedor: string; origem: 'nacional' | 'importado' },
   linhas: LinhaVariacao[],
+  chaveCadastro: string,
 ): ProdutoEntrada {
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
-    codigo: l.codigo.trim(),
     nome: l.nome.trim() || null,
     gtin: l.gtin.trim() || null,
     preco: num(l.preco) ?? 0,
@@ -58,12 +58,12 @@ function montarPayload(
     comprimentoCm: num(l.comprimentoCm),
   }));
   return {
-    codigoPai: pai.codigoPai.trim(),
     nomePai: pai.nomePai.trim(),
     descricaoPai: pai.descricaoPai.trim() || null,
     unidade: pai.unidade.trim() || null,
     fornecedor: pai.fornecedor.trim() || null,
     origem: pai.origem,
+    chaveCadastro,
     variacoes,
   };
 }
@@ -72,7 +72,6 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const [codigoPai, setCodigoPai] = useState('');
   const [nomePai, setNomePai] = useState('');
   const [descricaoPai, setDescricaoPai] = useState('');
   const [unidade, setUnidade] = useState('UN');
@@ -81,33 +80,46 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
   const [linhas, setLinhas] = useState<LinhaVariacao[]>([{ ...LINHA_VAZIA }]);
+  // Só troca depois de um sucesso confirmado (ou ao fechar, deixando pronta pro próximo
+  // cadastro): duplo clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve
+  // o cadastro original em vez de duplicar.
+  const [chaveCadastro, setChaveCadastro] = useState(() => crypto.randomUUID());
 
   const [salvando, setSalvando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoCadastro | null>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  // 409 de divergência: a chave já foi usada e o que está no formulário não bate com o que
+  // foi salvo. A partir daqui todo retry com esta chave devolve o mesmo erro — o toast some
+  // ou expira, então a saída (ir na Revisão) precisa ficar visível enquanto o diálogo estiver
+  // aberto, não só no instante do erro.
+  const [divergencia, setDivergencia] = useState<{ mensagem: string; loteId: string } | null>(null);
 
   useEffect(() => {
     if (aberto) return;
-    setCodigoPai(''); setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
+    setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
     setOrigem(null); setLinhas([{ ...LINHA_VAZIA }]); setResultado(null);
+    setChaveCadastro(crypto.randomUUID());
+    setDivergencia(null);
   }, [aberto]);
 
-  const podeSalvar = !!codigoPai.trim() && !!nomePai.trim() && !!origem
+  const podeSalvar = !!nomePai.trim() && !!origem
     && linhas.length > 0
-    && linhas.every((l) => l.codigo.trim() && (num(l.preco) ?? 0) > 0);
+    && linhas.every((l) => (num(l.preco) ?? 0) > 0);
 
   async function salvar() {
     if (!origem) return;
     setSalvando(true);
     try {
       const r = await cadastrarProduto(montarPayload(
-        { codigoPai, nomePai, descricaoPai, unidade, fornecedor, origem }, linhas,
+        { nomePai, descricaoPai, unidade, fornecedor, origem }, linhas, chaveCadastro,
       ));
       setResultado(r);
+      setChaveCadastro(crypto.randomUUID());
       qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
       if (r.filaOk && r.falhasEstoque.length === 0) toast.success('✓ Produto cadastrado');
     } catch (e) {
       if (e instanceof ProdutoJaExisteError) {
+        setDivergencia({ mensagem: e.message, loteId: e.loteId });
         toast.error(e.message, {
           action: { label: 'Abrir na Revisão', onClick: () => navigate(`/revisao/${e.loteId}`) },
         });
@@ -156,9 +168,9 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
       {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
           `max-w-4xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
           grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
-          5xl (nao 4xl): a tabela de variacoes (10 colunas min-w-20 + botao excluir) precisa
-          de ~924px; em 4xl sobravam so 862px de area util e a tabela cortava a coluna SKU
-          no scroll interno (achado do Diego testando ao vivo). */}
+          5xl (nao 4xl): a tabela de variacoes (antes 10 colunas com SKU, hoje 9) precisava de
+          ~924px; em 4xl sobravam so 862px de area util e a tabela cortava colunas no scroll
+          interno (achado do Diego testando ao vivo). */}
       <DialogContent className="max-h-[90vh] sm:max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{resultado ? 'Fotos do produto' : 'Cadastrar produto'}</DialogTitle>
@@ -171,19 +183,29 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
 
         {!resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
-          // definido), entao o min-content da tabela de variacoes (10 colunas com `min-w-20`
-          // cada, ~924px) vaza pro dialog inteiro em vez de ficar contido no scroll horizontal
+          // definido), entao o min-content da tabela de variacoes (9 colunas com `min-w-20`
+          // cada) vaza pro dialog inteiro em vez de ficar contido no scroll horizontal
           // do proprio wrapper da tabela. Sem isto, o dialog abre mais largo que a viewport.
           <div className="flex min-w-0 flex-col gap-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="cad-codigo" className="text-sm font-medium">Código do produto (PAI)</label>
-                <Input id="cad-codigo" value={codigoPai} onChange={(e) => setCodigoPai(e.target.value)} />
+            {divergencia && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div className="flex-1">
+                  {divergencia.mensagem}
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      onClick={() => { onFechar(); navigate(`/revisao/${divergencia.loteId}`); }}
+                    >
+                      Abrir na Revisão
+                    </Button>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="cad-nome" className="text-sm font-medium">Nome</label>
-                <Input id="cad-nome" value={nomePai} onChange={(e) => setNomePai(e.target.value)} />
-              </div>
+            )}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="cad-nome" className="text-sm font-medium">Nome</label>
+              <Input id="cad-nome" value={nomePai} onChange={(e) => setNomePai(e.target.value)} />
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -229,11 +251,14 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
                   <Plus className="mr-1 h-3.5 w-3.5" /> Adicionar variação
                 </Button>
               </div>
+              <span className="text-xs text-muted-foreground">
+                Códigos gerados automaticamente ao salvar.
+              </span>
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-muted-foreground">
-                      {['SKU', 'Cor / nome', 'GTIN', 'Preço', 'Custo', 'Estoque', 'Peso (g)', 'Alt (cm)', 'Larg (cm)', 'Comp (cm)', ''].map((h) => (
+                      {['Cor / nome', 'GTIN', 'Preço', 'Custo', 'Estoque', 'Peso (g)', 'Alt (cm)', 'Larg (cm)', 'Comp (cm)', ''].map((h) => (
                         <th key={h} className="p-2 font-medium">{h}</th>
                       ))}
                     </tr>
@@ -241,7 +266,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
                   <tbody>
                     {linhas.map((l, i) => (
                       <tr key={i} className="border-t">
-                        {(['codigo', 'nome', 'gtin', 'preco', 'custo', 'estoqueInicial', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'] as const).map((campo) => (
+                        {(['nome', 'gtin', 'preco', 'custo', 'estoqueInicial', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'] as const).map((campo) => (
                           <td key={campo} className="p-1">
                             <Input
                               className="h-8 min-w-20 text-xs"

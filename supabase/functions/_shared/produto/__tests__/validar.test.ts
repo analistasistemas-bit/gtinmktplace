@@ -3,26 +3,21 @@ import { validarProdutoNovo, montarLinhasProduto } from '../validar';
 import type { ProdutoEntrada } from '../validar';
 
 const valido: ProdutoEntrada = {
-  codigoPai: '09912345',
   nomePai: 'Camiseta básica',
   descricaoPai: 'Camiseta de algodão',
   unidade: 'UN',
   fornecedor: 'Fornecedor X',
   origem: 'nacional',
+  chaveCadastro: '11111111-1111-1111-1111-111111111111',
   variacoes: [
-    { codigo: '09912345AZ', nome: 'Azul', gtin: '7891234567895', preco: 49.9, custo: 20, estoqueInicial: 10 },
-    { codigo: '09912345RS', nome: 'Rosa', gtin: '7891234567901', preco: 49.9, custo: 20, estoqueInicial: 5 },
+    { nome: 'Azul', gtin: '7891234567895', preco: 49.9, custo: 20, estoqueInicial: 10 },
+    { nome: 'Rosa', gtin: '7891234567901', preco: 49.9, custo: 20, estoqueInicial: 5 },
   ],
 };
 
 describe('validarProdutoNovo', () => {
   it('produto completo não tem erro', () => {
     expect(validarProdutoNovo(valido)).toEqual([]);
-  });
-
-  it('exige codigoPai', () => {
-    const e = validarProdutoNovo({ ...valido, codigoPai: '  ' });
-    expect(e.map((x) => x.campo)).toContain('codigoPai');
   });
 
   it('exige nomePai', () => {
@@ -33,36 +28,32 @@ describe('validarProdutoNovo', () => {
     expect(validarProdutoNovo({ ...valido, variacoes: [] }).map((x) => x.campo)).toContain('variacoes');
   });
 
-  it('exige codigo em cada variação', () => {
-    const e = validarProdutoNovo({ ...valido, variacoes: [{ codigo: '', preco: 10 }] });
-    expect(e.map((x) => x.campo)).toContain('variacoes[0].codigo');
-  });
-
-  it('rejeita codigo de variação duplicado', () => {
-    const e = validarProdutoNovo({
-      ...valido,
-      variacoes: [{ codigo: 'A1', preco: 10 }, { codigo: 'A1', preco: 10 }],
-    });
-    expect(e.map((x) => x.campo)).toContain('variacoes[1].codigo');
-  });
-
   it('exige preço positivo', () => {
-    expect(validarProdutoNovo({ ...valido, variacoes: [{ codigo: 'A1', preco: 0 }] })
+    expect(validarProdutoNovo({ ...valido, variacoes: [{ preco: 0 }] })
       .map((x) => x.campo)).toContain('variacoes[0].preco');
-    expect(validarProdutoNovo({ ...valido, variacoes: [{ codigo: 'A1', preco: -1 }] })
+    expect(validarProdutoNovo({ ...valido, variacoes: [{ preco: -1 }] })
       .map((x) => x.campo)).toContain('variacoes[0].preco');
   });
 
   it('custo informado tem que ser positivo — zero é erro, ausente não é', () => {
-    expect(validarProdutoNovo({ ...valido, variacoes: [{ codigo: 'A1', preco: 10, custo: 0 }] })
+    expect(validarProdutoNovo({ ...valido, variacoes: [{ preco: 10, custo: 0 }] })
       .map((x) => x.campo)).toContain('variacoes[0].custo');
-    expect(validarProdutoNovo({ ...valido, variacoes: [{ codigo: 'A1', preco: 10, custo: null }] }))
+    expect(validarProdutoNovo({ ...valido, variacoes: [{ preco: 10, custo: null }] }))
       .toEqual([]);
   });
 
   it('estoque inicial negativo é erro', () => {
-    expect(validarProdutoNovo({ ...valido, variacoes: [{ codigo: 'A1', preco: 10, estoqueInicial: -1 }] })
+    expect(validarProdutoNovo({ ...valido, variacoes: [{ preco: 10, estoqueInicial: -1 }] })
       .map((x) => x.campo)).toContain('variacoes[0].estoqueInicial');
+  });
+
+  // Idempotência da submissão (spec 2026-07-31, D-9): sem chave válida, um retry duplica o
+  // produto e o estoque inicial — o código é gerado, então os guards de duplicata não pegam.
+  it('exige chaveCadastro em formato UUID', () => {
+    expect(validarProdutoNovo({ ...valido, chaveCadastro: '' }).map((x) => x.campo))
+      .toContain('chaveCadastro');
+    expect(validarProdutoNovo({ ...valido, chaveCadastro: 'nao-uuid' }).map((x) => x.campo))
+      .toContain('chaveCadastro');
   });
 
   // ADR-0055: familias.origem é NOT NULL com DEFAULT 'nacional'. Sem esta trava, um cliente
@@ -84,7 +75,11 @@ describe('validarProdutoNovo', () => {
 });
 
 describe('montarLinhasProduto', () => {
-  const ctx = { loteId: 'lote-1', userId: 'user-1', orgId: 'org-1' };
+  const ctx = {
+    loteId: 'lote-1', userId: 'user-1', orgId: 'org-1',
+    codigoPai: '09912345', codigos: ['09912346', '09912347'],
+    chaveCadastro: '11111111-1111-1111-1111-111111111111',
+  };
 
   it('família nasce como CREATE e pendente', () => {
     const { familia } = montarLinhasProduto(valido, ctx);
@@ -93,6 +88,7 @@ describe('montarLinhasProduto', () => {
     expect(familia.lote_id).toBe('lote-1');
     expect(familia.org_id).toBe('org-1');
     expect(familia.codigo_pai).toBe('09912345');
+    expect(familia.chave_cadastro).toBe('11111111-1111-1111-1111-111111111111');
   });
 
   it('grava a origem informada, nunca o default da coluna', () => {
@@ -105,14 +101,26 @@ describe('montarLinhasProduto', () => {
     expect(variacoes.every((v) => v.estoque === 0)).toBe(true);
   });
 
-  it('uma linha por variação, com org_id e user_id propagados', () => {
+  it('uma linha por variação, com org_id, user_id e código gerado propagados', () => {
     const { variacoes } = montarLinhasProduto(valido, ctx);
     expect(variacoes).toHaveLength(2);
     expect(variacoes.every((v) => v.org_id === 'org-1' && v.user_id === 'user-1')).toBe(true);
+    expect(variacoes.map((v) => v.codigo)).toEqual(['09912346', '09912347']);
   });
 
   it('trima os textos', () => {
-    const { familia } = montarLinhasProduto({ ...valido, codigoPai: '  09912345  ' }, ctx);
-    expect(familia.codigo_pai).toBe('09912345');
+    const { familia } = montarLinhasProduto({ ...valido, nomePai: '  Camiseta básica  ' }, ctx);
+    expect(familia.nome_pai).toBe('Camiseta básica');
+  });
+
+  // Fixa o comportamento: `preco` grava CRU, sem arredondar aqui. O Postgres parseia o texto
+  // decimal do JSON e arredonda para numeric(12,2) na escrita — arredondar de novo neste ponto
+  // (Step 3b, revertido) era desnecessário e um `?? 0`/`!` sobre entrada inválida gravaria
+  // R$ 0,00 em silêncio (achado de revisão, Task 4b fix round 1). Não reintroduzir.
+  it('grava preco exatamente como recebido, sem arredondar — quem arredonda é o Postgres (numeric(12,2))', () => {
+    const { variacoes } = montarLinhasProduto(
+      { ...valido, variacoes: [{ ...valido.variacoes[0], preco: 1.005 }] }, ctx,
+    );
+    expect(variacoes[0].preco).toBe(1.005);
   });
 });
