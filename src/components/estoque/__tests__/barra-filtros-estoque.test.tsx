@@ -1,0 +1,32 @@
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { BarraFiltrosEstoque } from '../barra-filtros-estoque';
+
+const props = {
+  termo: '', filtro: 'todos' as const, ordem: 'nome' as const,
+  canaisIndisponivel: false,
+  onTermo: vi.fn(), onFiltro: vi.fn(), onOrdem: vi.fn(),
+};
+
+describe('BarraFiltrosEstoque', () => {
+  it('digitar na busca emite o termo', async () => {
+    const onTermo = vi.fn();
+    const user = userEvent.setup();
+    render(<BarraFiltrosEstoque {...props} onTermo={onTermo} />);
+    await user.type(screen.getByPlaceholderText(/Buscar por nome, código, SKU, GTIN/), 'abc');
+    expect(onTermo).toHaveBeenCalled();
+  });
+
+  // A UI não pode oferecer um filtro que ela sabe que responderia errado.
+  it('com canais indisponíveis, o filtro "não publicado" fica desabilitado e o motivo aparece', () => {
+    render(<BarraFiltrosEstoque {...props} canaisIndisponivel />);
+    expect(screen.getByRole('button', { name: 'Não publicado' })).toBeDisabled();
+    expect(screen.getByText(/não foi possível carregar os canais/i)).toBeInTheDocument();
+  });
+
+  it('com canais disponíveis o filtro está habilitado', () => {
+    render(<BarraFiltrosEstoque {...props} />);
+    expect(screen.getByRole('button', { name: 'Não publicado' })).toBeEnabled();
+  });
+});
