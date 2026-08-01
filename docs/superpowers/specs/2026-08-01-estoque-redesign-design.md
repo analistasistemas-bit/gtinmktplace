@@ -85,7 +85,7 @@ Estoque (página)
 │   └─ ProdutoCard (colapsado)
 │       ├─ FotoCapaFamilia tamanho="small"  (40px)
 │       ├─ nome_pai (truncate) · codigo_pai (mono, text-caption)
-│       ├─ saldo total (tabular-nums) + StatusPill tone="danger" "sem estoque" se 0
+│       ├─ saldo total (tabular-nums) + StatusPill de alerta se <= 0 (ver §3.5)
 │       ├─ N variações · CanalBadge[] dos canais publicados
 │       └─ [Dar entrada] [expandir]
 │   └─ ProdutoCard (expandido) — renderizado como filho do card, não de célula
@@ -123,9 +123,23 @@ Substitui a linha de 7 colunas. Cada variação vira um card compacto:
 └────────────────────────────────────────────┘
 ```
 
-Grade responsiva: `grid-cols-1 sm:grid-cols-2 xl:grid-cols-3`. Saldo zero recebe
-`StatusPill tone="danger"`. A foto usa `imagem_path` da variação; sem ela, cai no placeholder
-de `FotoCapaFamilia`.
+Grade responsiva: `grid-cols-1 sm:grid-cols-2 xl:grid-cols-3`. A foto usa `imagem_path` da
+variação; sem ela, cai no placeholder de `FotoCapaFamilia`. O pill de saldo segue a §3.5.
+
+### 3.5 Saldo zero vs. saldo negativo
+
+Não existe constraint de não-negativo no banco (`variacoes.estoque` é inteiro puro), e todo
+movimento passa por RPC — mas um saldo negativo, se aparecer, é sintoma de bug de ledger, não
+de "acabou o estoque". Tratá-los igual esconderia o caso grave dentro do caso rotineiro:
+
+| Saldo | Pill | Rótulo |
+|---|---|---|
+| `> 0` | nenhum | — |
+| `== 0` | `warning` | "sem estoque" |
+| `< 0` | `danger` | "saldo inconsistente" |
+
+Vale para o produto e para a variação, e os dois entram no filtro `sem-estoque` (`<= 0`) —
+o operador precisa **encontrar** o negativo, não perdê-lo por ele não ser exatamente zero.
 
 ### 3.3 MovimentosEstoque
 
@@ -167,6 +181,19 @@ falha por rede ou RLS — uma tela que mente sobre o que está publicado. Por is
 `undefined` a opção `nao-publicado` fica **desabilitada** (não silenciosamente ineficaz), com o
 erro da query visível ao lado. `undefined` (não carregado) e `[]` (carregado, sem canal) nunca
 podem ser tratados como a mesma coisa.
+
+Máquina de estados completa, porque "desabilita o filtro" sozinho deixa buracos:
+
+| Estado da query | `canaisPorProduto` | Opção `nao-publicado` | Se já estava selecionada |
+|---|---|---|---|
+| `isLoading` | `undefined` | desabilitada | cai para `todos`, sem avisar (é transitório) |
+| `isError` | `undefined` | desabilitada, com o erro visível ao lado | cai para `todos` **e avisa** que o filtro saiu por falha ao carregar canais |
+| sucesso | o `Map` | habilitada | mantida |
+
+A página passa a extrair `isLoading`/`isError` da query (hoje `Estoque.tsx:140` desestrutura só
+`data`) e converter para `undefined` explicitamente — `data` já é `undefined` durante loading,
+mas depender disso confunde "carregando" com "falhou". `fetchCanaisPorProduto` de fato falha
+alto: a paginação lança (`paginacao-supabase.ts:9`), então `isError` é confiável.
 
 ## 4. Mudanças de dados
 
@@ -219,9 +246,31 @@ visualmente no QA. Cada input recebe `id`/`htmlFor` únicos por índice de varia
 O `<input type="file">` de cada variação e os três de capa passam a existir na **etapa 1**. O
 `File` selecionado fica no state e o preview é gerado com `URL.createObjectURL` (revogado no
 unmount e ao trocar o arquivo). Ao salvar com sucesso, os uploads disparam em sequência usando
-os ids devolvidos por `cadastrarProduto`, com progresso "enviando fotos (2/4)". Isso realiza o
-desenho original do ADR-0094 (foto junto da variação) sem mudar a ordem física obrigatória — a
-foto continua sendo gravada depois que família e variação têm id.
+os ids devolvidos por `cadastrarProduto`, com progresso "enviando fotos (2/4)".
+
+**O que isso resolve e o que NÃO resolve.** Resolve a ergonomia: o operador escolhe a foto no
+mesmo lugar em que descreve a variação, em vez de numa segunda tela. **Não** faz a foto chegar
+a tempo do enriquecimento por IA, e a spec não pode fingir que faz:
+
+- `cadastrar-produto/index.ts:303` chama `enfileirarFamilia` **antes** de responder ao browser;
+- `process-familia` lê `imagem_path` ao carregar as variações (`index.ts:109-111`) e a camada
+  Vision aborta com `if (!v.imagem_path) return v` (`index.ts:157`);
+- logo, qualquer upload disparado após a resposta pode chegar depois de o worker já ter lido
+  `imagem_path` vazio — e a cor resolvida por Vision, que alimenta a geração de copy
+  (`index.ts:198`), simplesmente não acontece.
+
+Isso **já é verdade hoje** (a etapa 2 também sobe foto depois do enfileiramento), então não é
+regressão introduzida por esta entrega. Mas invalida a leitura de que mover o seletor para a
+etapa 1 "realiza o desenho do ADR-0094": o ADR desenhou a foto participando do cadastro, e o
+que muda aqui é só onde o operador clica.
+
+Fechar a lacuna de verdade exige deferir o `enfileirarFamilia` para depois do lote de fotos —
+mudança na edge, portanto **fora do "100% frontend" declarado na §2.1**. `reprocessar-familia`
+não é saída: só aceita família em `erro` (`reprocessar-familia/index.ts:45`).
+
+> **Decisão pendente do Diego (§10).** Esta entrega segue frontend-only e declara a limitação,
+> ou incorpora a mudança na edge para a foto participar da IA? Não decidido aqui — muda o
+> escopo e toca caminho de publicação.
 
 **Como cada `File` acha sua variação.** O formulário não conhece os códigos: eles são gerados
 na edge (ADR-0096). O casamento é **por índice** — `linhas[i]` ↔ `resultado.variacoes[i]` — e
@@ -233,11 +282,20 @@ isso é correto por dois invariantes encadeados, ambos verificados:
    porque o `RETURNING` do Postgres não garante ordem), e como todo código tem exatamente 8
    dígitos com zero à esquerda, a ordem lexicográfica é igual à numérica.
 
+O caminho de retry usa `.order('codigo')` (`cadastrar-produto/index.ts:98`) e a resposta
+preserva essa ordem (`:316`), então criação e retry concordam.
+
 Logo, o retorno chega na mesma ordem do formulário. **Isso é uma coincidência de dois
 invariantes, não uma garantia de contrato**: se a geração de código deixar de ser sequencial,
 ou o zero-padding mudar, a foto passa a ser gravada na variação errada em silêncio — sem erro,
-sem log. Por isso o índice recebe um teste dedicado (§7) que trava o encadeamento, e o código
-leva um comentário apontando para os dois arquivos acima.
+sem log. O código leva um comentário apontando para os dois arquivos acima.
+
+**A guarda tem que ficar do lado da edge, não do frontend.** Um teste de componente que mocka
+a resposta já ordenada prova apenas que o frontend usa o índice — ele passaria igual se
+`derivarCodigos` ou o `.sort()` quebrassem, porque o mock não executa nenhum dos dois.
+`codigos.test.ts` já cobre sequencialidade e padding; o que **não** existe hoje é teste de que
+a resposta da edge sai na ordem do payload. É esse que a §7 exige, nos dois caminhos (criação
+e retry).
 
 **Ciclo de vida do lote de upload.** Enquanto os uploads estiverem em voo, fechar o diálogo é
 bloqueado: `onOpenChange` (`dialog-cadastro-produto.tsx:167`) e o botão "Fechar" (`:377`) ficam
@@ -247,9 +305,19 @@ lista de pendências, já que o banco não registra "foto que deveria existir". 
 
 - **todas enviadas** → segue para a etapa 2 já sem pendência de foto;
 - **algumas falharam** → a etapa 2 lista os alvos que faltaram, mantendo os `File` em memória
-  para reenvio individual, e avisa em texto que sair da tela perde os arquivos;
+  para reenvio individual. Enquanto restar **qualquer** `File` pendente, fechar exige
+  confirmação destrutiva explícita — um aviso em texto não basta, porque `Escape` e clique no
+  backdrop disparam `onOpenChange` (`:167`) direto, e o reset (`:97-103`) apaga os arquivos sem
+  nenhuma chance de recuperá-los;
 - **nenhuma foto escolhida** → caminho válido e silencioso; a foto pode ser enviada depois pela
   Revisão, que é o fluxo que já existe.
+
+**Invalidar de novo ao fim do lote.** Hoje `invalidateQueries(['produtos-saldo'])` roda logo
+após o cadastro (`dialog-cadastro-produto.tsx:118`), enquanto `imagem_path` e
+`capa_storage_path` só são gravados depois, dentro de `uploadFotoProduto`
+(`produtos-saldo.ts:150,159`). Sem uma segunda invalidação ao fim do lote, a lista fica em cache
+sem os paths e **o card mostra o placeholder mesmo com a foto já enviada** — exatamente a queixa
+que originou esta entrega. A invalidação final é obrigatória, não otimização.
 
 Falha de upload individual não desfaz o cadastro: o produto já está salvo. Nunca reportar
 sucesso limpo com foto pendente.
@@ -291,6 +359,13 @@ Isso muda o contrato do `DialogEntrada`, que hoje aceita só `produtos`, `aberto
 `busca` no mesmo `useEffect` de reset (`:37-45`) e limpo junto com os demais campos ao fechar.
 O `ref` de idempotência (`:35`) e a mutation não são tocados.
 
+**Só isso não funciona.** Passar o `codigo_pai` para `busca` filtraria zero SKUs: o predicado
+atual casa apenas contra `o.rotulo` (`dialog-entrada.tsx:56`), e o rótulo é montado com SKU,
+nome do produto e cor (`:50`) — o `codigoPai` existe no objeto (`:51`) mas está fora da string
+pesquisada. O diálogo abriria com a lista vazia e o operador sem entender por quê. O predicado
+passa a incluir `o.codigoPai.toLowerCase().includes(termo)`, com teste cobrindo abrir pelo card
+de um produto multivariação.
+
 ## 6. Estados
 
 | Estado | Tratamento |
@@ -327,6 +402,11 @@ ordem devolve a sequência esperada. O filtro `nao-publicado` é testado nos **t
 mapa carregado com canal (exclui), mapa carregado vazio (inclui), mapa `undefined` (filtro
 indisponível — nunca "tudo não publicado").
 
+**Componente, não função pura, para a trava da §3.4:** o teste unitário acima prova o
+predicado, mas não prova que a *opção* ficou desabilitada nem que o erro apareceu na tela — e é
+isso que impede a UI de mentir. Teste de `Estoque` com a query de canais em erro: opção
+`nao-publicado` com `disabled`, erro visível, e seleção prévia caindo para `todos`.
+
 **Componente:** `Estoque` renderiza um card por produto e nenhum `<table>` no painel expandido
 (guarda de regressão de D1); busca por GTIN encontra o produto (guarda de D3); card sem
 `capa_storage_path` mostra `capa-placeholder` (D4); a expansão responde a teclado via o botão
@@ -337,17 +417,36 @@ com `aria-expanded`.
 estoque `2,5` e preço `"abc"` são recusados inline (§5.4); fechar durante o lote de upload é
 bloqueado (§5.2).
 
-**Casamento foto↔variação (§5.2):** com três variações preenchidas em ordem e a edge devolvendo
-`[00000002, 00000003, 00000004]`, cada `File` sobe para o id correspondente. Este teste existe
-para falhar barulhentamente se a geração de código deixar de ser sequencial — é a única coisa
-que impede a foto ir para a variação errada em silêncio.
+**Casamento foto↔variação (§5.2), em dois níveis:**
 
-**Teste existente que vai quebrar:** `dialog-cadastro-produto.test.tsx:44` localiza o preço via
-`table tbody`. Com o formulário em cards não há mais `table`; o seletor passa a ser o label
-único por variação, que a §5.1 já exige. É atualização obrigatória do plano, não opcional.
+1. *frontend* — com três variações preenchidas em ordem e a edge devolvendo
+   `[00000002, 00000003, 00000004]`, cada `File` sobe para o id correspondente. Prova que o
+   frontend usa o índice corretamente, **e nada além disso**;
+2. *edge (o que realmente trava)* — `cadastrar-produto` devolve `variacoes` na ordem do payload,
+   nos dois caminhos: criação (que ordena via `.sort()`) e retry idempotente (que usa
+   `.order('codigo')`). Sem este, o teste 1 continuaria verde com a ordenação quebrada, porque
+   o mock entrega a resposta já ordenada.
 
-**Regressão em Publicados:** os testes existentes de `Publicados` devem continuar verdes sem
-alteração; o painel expandido de lá passa a exibir os movimentos em `flex`.
+**Entrada por produto multivariação (§5.5):** abrir "Dar entrada" pelo card de um produto com
+duas variações filtra a lista pelas duas e não pré-seleciona nenhuma. Falha hoje, porque o
+predicado não olha `codigoPai`.
+
+**Foto aparece sem recarregar (§5.2):** após o lote de upload, a lista é invalidada de novo e o
+card passa a exibir a foto — guarda contra o placeholder persistente.
+
+**Testes existentes que vão quebrar ou não protegem:**
+
+- `dialog-cadastro-produto.test.tsx:44` localiza o preço via `table tbody`. Sem `table`, o
+  seletor passa a ser o label único por variação (§5.1). Atualização obrigatória.
+- `Publicados.test.tsx` **não** protege a regressão de `MovimentosEstoque`: `useFamilia` está
+  mockado com `data: undefined` (`:54`), e `Publicados.tsx:342` só monta os movimentos depois de
+  a família carregar — ou seja, o componente nunca é renderizado nesses testes. "Os testes de
+  Publicados continuam verdes" não prova nada aqui. É preciso um teste novo, com família
+  carregada e movimentos mockados, verificando data, SKU, motivo, delta, saldo e canal.
+
+**Regressão em Publicados:** os testes existentes devem continuar verdes, mas isso é condição
+necessária e **não suficiente** — eles não renderizam `MovimentosEstoque` (ver acima). A guarda
+real é o teste novo com família carregada.
 
 **Regressão de layout:** o teste de "nenhum `<table>` no painel" é a guarda barata que impede a
 volta do bug. Verificação visual real (screenshot em viewport estreito, com o painel expandido,
@@ -362,7 +461,7 @@ protocolo do projeto — snapshot de acessibilidade não pega bug de layout CSS.
 | Uma foto por variação = N requisições de URL assinada | O cache do `useImageUrl` (ADR-0081) só ajuda **depois** da primeira resolução — a URL é assinada por 7 dias mas a entrada local expira 1 dia antes (`RENOVAR_ANTES_MS`), então o reaproveitamento efetivo é ~6 dias. Na primeira visita ainda é uma requisição por foto inédita. Mitigação barata: as fotos de variação só são montadas quando a aba "Variações" está ativa, e a lista colapsada carrega apenas a capa da família (1 por produto). |
 | Suporte somente leitura preenche o cadastro inteiro para levar 403 | `canWrite()` só é consultado no upload (`dialog-cadastro-produto.tsx:149-155`), enquanto a edge exige escrita (`cadastrar-produto/index.ts:59-67`) e os botões aparecem sempre (`Estoque.tsx:167-174`). "Dar entrada" e "Cadastrar produto" passam a ser desabilitados sob `canWrite() === false`, com `title` explicando. |
 | Reflow visual em telas estreitas | Cada card usa `min-w-0` + `truncate`; o teste de ausência de `<table>` e a checagem no Playwright cobrem. |
-| Mudar `MovimentosEstoque` quebrar Publicados | Publicados é consumidor do mesmo componente (§3.3). Testes existentes de Publicados devem passar sem edição, e a tela entra na verificação visual antes do merge. |
+| Mudar `MovimentosEstoque` quebrar Publicados | Publicados é consumidor do mesmo componente (§3.3), e a suíte atual **não** o cobre (§7). Mitigação: teste novo com família carregada + verificação visual da tela antes do merge. |
 | Upload em lote na etapa 1 falhar no meio | Cadastro já está salvo; a etapa 2 lista os alvos que faltaram com reenvio individual. Nunca reportar sucesso limpo com foto pendente. |
 
 ## 8.1 Dívida registrada, não corrigida aqui
@@ -381,6 +480,27 @@ faria a tela discordar do que o sistema realmente debita.
 
 Entrega própria, com: `familias.id` no `select`, desempate igual ao do backend, e teste de
 timestamps iguais em `src/lib/__tests__/produtos-saldo.test.ts`.
+
+## 8.2 Decisão pendente — a foto participa do enriquecimento por IA?
+
+Levantada na segunda revisão adversarial e **não decidida nesta spec**, porque muda o escopo
+declarado na §2.1.
+
+O problema (detalhado na §5.2): `cadastrar-produto` enfileira `process-familia` antes de
+responder, e o worker pula a resolução de cor por Vision quando `imagem_path` está vazio. Como
+o upload só pode acontecer depois da resposta, a foto tende a chegar tarde demais para a IA.
+Vale para o fluxo atual e continua valendo com a foto movida para a etapa 1.
+
+| Opção | Custo | Consequência |
+|---|---|---|
+| **A — Frontend-only, limitação declarada** | zero | Entrega sai como planejada. A cor por Vision continua não acontecendo no cadastro manual; o operador ajusta na Revisão, como hoje. |
+| **B — Deferir o enfileiramento para depois do lote de fotos** | mexe em `cadastrar-produto` e no contrato da tela | A foto passa a participar da IA. Toca caminho de publicação, exige cuidado de edge (idempotência, o que fazer se o operador nunca subir foto, timeout) e provavelmente ADR. |
+
+**Recomendação: A nesta entrega, B como trabalho próprio.** O pedido do Diego foi de usabilidade
+da tela; B é uma mudança de pipeline com risco desproporcional para embutir num redesenho de UI,
+e a limitação já existe hoje — não estaríamos entregando uma regressão, apenas deixando de
+consertar algo que não foi pedido. Se a resposta for B, ela vira spec própria e esta entrega não
+espera por ela.
 
 ## 9. Documentação a atualizar na entrega
 
