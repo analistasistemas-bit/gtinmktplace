@@ -9,13 +9,19 @@ export interface LinhaVariacaoCrua {
   codigo: string; nome: string | null; cor: string | null; gtin: string | null;
   estoque: number; custo: number | null; preco: number;
   peso_gramas: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null;
-  familias: { codigo_pai: string; nome_pai: string; descricao_pai: string | null; criado_em: string } | null;
+  imagem_path: string | null;
+  familias: {
+    codigo_pai: string; nome_pai: string; descricao_pai: string | null; criado_em: string;
+    capa_storage_path: string | null; fornecedor: string | null;
+    unidade: string | null; origem: string; ml_item_id: string | null;
+  } | null;
 }
 
 export interface VariacaoComSaldo {
   codigo: string; nome: string | null; cor: string | null; gtin: string | null;
   estoque: number; custo: number | null; preco: number;
   pesoGramas: number | null; alturaCm: number | null; larguraCm: number | null; comprimentoCm: number | null;
+  imagemPath: string | null;
 }
 
 export interface ProdutoComSaldo {
@@ -24,6 +30,14 @@ export interface ProdutoComSaldo {
   descricaoPai: string | null;
   variacoes: VariacaoComSaldo[];
   saldoTotal: number;
+  capaStoragePath: string | null;
+  fornecedor: string | null;
+  unidade: string | null;
+  origem: string;
+  /** Fonte CANÔNICA de "publicado no ML". `anuncios_externos` é espelho best-effort e pode
+   *  estar furado (espelhar.ts:117 só loga a falha) — ver §3.4 da spec. */
+  mlItemId: string | null;
+  criadoEm: string;
 }
 
 export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoComSaldo[] {
@@ -47,12 +61,19 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
     const pai = f.codigo_pai;
     if (f.criado_em !== maisRecentePorPai.get(pai)) continue;
     if (!porPai.has(pai)) {
-      porPai.set(pai, { codigoPai: pai, nomePai: f.nome_pai, descricaoPai: f.descricao_pai, variacoes: [], saldoTotal: 0 });
+      porPai.set(pai, {
+        codigoPai: pai, nomePai: f.nome_pai, descricaoPai: f.descricao_pai,
+        variacoes: [], saldoTotal: 0,
+        capaStoragePath: f.capa_storage_path, fornecedor: f.fornecedor,
+        unidade: f.unidade, origem: f.origem, mlItemId: f.ml_item_id,
+        criadoEm: f.criado_em,
+      });
     }
     const p = porPai.get(pai)!;
     p.variacoes.push({
       codigo: l.codigo, nome: l.nome, cor: l.cor, gtin: l.gtin, estoque: l.estoque, custo: l.custo, preco: l.preco,
       pesoGramas: l.peso_gramas, alturaCm: l.altura_cm, larguraCm: l.largura_cm, comprimentoCm: l.comprimento_cm,
+      imagemPath: l.imagem_path,
     });
     p.saldoTotal += l.estoque;
   }
@@ -68,7 +89,7 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
 export async function fetchProdutosComSaldo(): Promise<ProdutoComSaldo[]> {
   const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
     .from('variacoes')
-    .select('codigo, nome, cor, gtin, estoque, custo, preco, peso_gramas, altura_cm, largura_cm, comprimento_cm, familias!inner(codigo_pai, nome_pai, descricao_pai, criado_em)')
+    .select('codigo, nome, cor, gtin, estoque, custo, preco, peso_gramas, altura_cm, largura_cm, comprimento_cm, imagem_path, familias!inner(codigo_pai, nome_pai, descricao_pai, criado_em, capa_storage_path, fornecedor, unidade, origem, ml_item_id)')
     .range(de, ate));
   return agruparProdutosComSaldo(data as unknown as LinhaVariacaoCrua[]);
 }

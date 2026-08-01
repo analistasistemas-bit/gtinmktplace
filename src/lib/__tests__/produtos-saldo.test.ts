@@ -72,4 +72,26 @@ describe('agruparProdutosComSaldo', () => {
         peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null, familias: null },
     ] as never)).toEqual([]);
   });
+
+  it('copia os campos novos da família e da variação para o produto agrupado', () => {
+    const linhas = [{
+      codigo: '00000002', nome: null, cor: 'azul', gtin: '789', estoque: 5,
+      custo: 10, preco: 20, peso_gramas: null, altura_cm: null, largura_cm: null,
+      comprimento_cm: null, imagem_path: 'org/lote/00000002.jpg',
+      familias: {
+        codigo_pai: '00000001', nome_pai: 'Camiseta', descricao_pai: null,
+        criado_em: '2026-08-01T10:00:00Z', capa_storage_path: 'org/lote/capa.jpg',
+        fornecedor: 'Fornecedor X', unidade: 'UN', origem: 'nacional',
+        ml_item_id: 'MLB123',
+      },
+    }];
+    const [p] = agruparProdutosComSaldo(linhas as never);
+    expect(p.capaStoragePath).toBe('org/lote/capa.jpg');
+    expect(p.fornecedor).toBe('Fornecedor X');
+    expect(p.unidade).toBe('UN');
+    expect(p.origem).toBe('nacional');
+    expect(p.mlItemId).toBe('MLB123');
+    expect(p.criadoEm).toBe('2026-08-01T10:00:00Z');
+    expect(p.variacoes[0].imagemPath).toBe('org/lote/00000002.jpg');
+  });
 });
