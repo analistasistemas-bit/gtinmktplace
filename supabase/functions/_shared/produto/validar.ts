@@ -111,6 +111,10 @@ export function montarLinhasProduto(
       // partir do nome (dicionário não cobre "Invisível"/"Incolor"/"Transparente") e o Vision
       // nunca roda neste fluxo — a foto só chega na etapa 2, DEPOIS do enfileiramento (ADR-0094).
       // Vazio mantém cor null: a IA resolve normalmente (process-familia respeita `if (v.cor)`).
+      // `cor: null` explícito é redundante hoje (INSERT puro, único caller — ver
+      // cadastrar-produto/index.ts) mas fica assim de propósito, igual a nome/gtin abaixo:
+      // se este caminho um dia virar upsert, null aqui apagaria uma cor já resolvida pela
+      // Vision — melhor um lembrete visível do que um `cor` ausente que passa despercebido.
       ...(nome ? { cor: nome, cor_origem: 'manual' } : { cor: null }),
       gtin: v.gtin?.trim() || null,
       // Cru, sem arredondar aqui: o Postgres parseia o texto decimal do JSON (não multiplica
