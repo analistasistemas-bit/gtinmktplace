@@ -308,9 +308,9 @@ Fechar a lacuna de verdade exige deferir o `enfileirarFamilia` para depois do lo
 mudança na edge, portanto **fora do "100% frontend" declarado na §2.1**. `reprocessar-familia`
 não é saída: só aceita família em `erro` (`reprocessar-familia/index.ts:45`).
 
-> **Decisão pendente do Diego (§10).** Esta entrega segue frontend-only e declara a limitação,
-> ou incorpora a mudança na edge para a foto participar da IA? Não decidido aqui — muda o
-> escopo e toca caminho de publicação.
+**Decidido (§8.2): esta entrega segue frontend-only e declara a limitação.** A tela não promete
+ao operador que a foto será usada pela IA; quem depende da cor por Vision resolve na Revisão,
+como já acontece hoje.
 
 **Como cada `File` acha sua variação.** O formulário não conhece os códigos: eles são gerados
 na edge (ADR-0096). O casamento é **por índice** — `linhas[i]` ↔ `resultado.variacoes[i]` — e
@@ -534,10 +534,13 @@ faria a tela discordar do que o sistema realmente debita.
 Entrega própria, com: `familias.id` no `select`, desempate igual ao do backend, e teste de
 timestamps iguais em `src/lib/__tests__/produtos-saldo.test.ts`.
 
-## 8.2 Decisão pendente — a foto participa do enriquecimento por IA?
+## 8.2 Decidido — a foto NÃO participa do enriquecimento por IA nesta entrega
 
-Levantada na segunda revisão adversarial e **não decidida nesta spec**, porque muda o escopo
-declarado na §2.1.
+**Decisão do Diego em 2026-08-01: opção A.** A entrega segue frontend-only e declara a
+limitação. A opção B (deferir o enfileiramento) vira trabalho próprio, se for pedida.
+
+Levantada na segunda revisão adversarial. Registrada aqui porque muda o escopo da §2.1 e
+porque a §5.2 depende dela.
 
 O problema (detalhado na §5.2): `cadastrar-produto` enfileira `process-familia` antes de
 responder, e o worker pula a resolução de cor por Vision quando `imagem_path` está vazio. Como
