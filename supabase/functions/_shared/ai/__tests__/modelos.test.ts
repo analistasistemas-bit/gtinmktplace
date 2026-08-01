@@ -18,8 +18,8 @@ function fakeClient(aiModelTexto: string | null) {
 
 describe('resolverModeloTexto', () => {
   it('devolve o slug configurado pela org quando presente', async () => {
-    const client = fakeClient('deepseek/deepseek-v4-flash');
-    expect(await resolverModeloTexto(client, 'org-1')).toBe('deepseek/deepseek-v4-flash');
+    const client = fakeClient('deepseek/deepseek-v4-flash-0731');
+    expect(await resolverModeloTexto(client, 'org-1')).toBe('deepseek/deepseek-v4-flash-0731');
   });
 
   it('cai no fallback MODELO_COPY quando a org não configurou (null)', async () => {

@@ -32,11 +32,11 @@ describe('custoCentavos', () => {
     expect(custoCentavos('openai/gpt-4o-mini', { prompt_tokens: 0, completion_tokens: 0 })).toBe(0);
   });
 
-  it('calcula o custo real do deepseek/deepseek-v4-flash (referência por 1M tokens)', () => {
+  it('calcula o custo real do deepseek/deepseek-v4-flash-0731 (referência por 1M tokens)', () => {
     // 1M input = $0.09 = 9 centavos
-    expect(custoCentavos('deepseek/deepseek-v4-flash', { prompt_tokens: 1_000_000, completion_tokens: 0 })).toBe(9);
+    expect(custoCentavos('deepseek/deepseek-v4-flash-0731', { prompt_tokens: 1_000_000, completion_tokens: 0 })).toBe(9);
     // 1M output = $0.18 = 18 centavos
-    expect(custoCentavos('deepseek/deepseek-v4-flash', { prompt_tokens: 0, completion_tokens: 1_000_000 })).toBe(18);
+    expect(custoCentavos('deepseek/deepseek-v4-flash-0731', { prompt_tokens: 0, completion_tokens: 1_000_000 })).toBe(18);
   });
 
   it('avisa (console.warn) quando o modelo está fora de PRECOS; não avisa para modelo conhecido', () => {
