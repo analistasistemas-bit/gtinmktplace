@@ -23,8 +23,8 @@
 ## Organizações e multi-tenancy (ADR-0027, E7)
 
 ### `organizations`
-O tenant. Hoje 1 linha (**Avil** — `slug='avil'`), dona de todos os dados atuais (backfill do E7).
-*Migration `20260705163656_e7_organizations.sql`.*
+O tenant. Hoje 2 linhas — **Avil** (`slug='avil'`, dona de todos os dados do backfill do E7) e
+**DSA** (`slug='diego-souza'`). *Migration `20260705163656_e7_organizations.sql`.*
 
 `id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
 `lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,

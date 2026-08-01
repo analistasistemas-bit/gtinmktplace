@@ -72,32 +72,37 @@ Desabilitar esconde o menu e faz as edges `cadastrar-produto`/`entrada-estoque` 
 **o dado já gravado não é apagado** (produtos, saldo e ledger continuam lá; a baixa automática por
 venda e o push de estoque valem para toda org, com ou sem o módulo).
 
-## Cadastrar produto sem planilha e dar entrada de mercadoria (ADR-0094)
+## Cadastrar produto sem planilha e dar entrada de mercadoria (ADR-0094, código automático ADR-0096)
 
 Fluxo do operador de uma org com o módulo `estoque` habilitado.
 
 **Cadastrar produto** (tela `/estoque` → "Cadastrar produto"):
 
-1. Dados do PAI: código, nome, descrição, unidade, fornecedor e **origem**
-   (nacional/importado — obrigatório, define a alíquota de imposto; o botão de salvar fica
-   travado sem ela).
-2. Uma linha por variação: SKU, cor/nome, GTIN, preço, custo, estoque inicial, peso e dimensões.
+1. Dados do PAI: nome, descrição, unidade, fornecedor e **origem** (nacional/importado —
+   obrigatório, define a alíquota de imposto; o botão de salvar fica travado sem ela). **Sem
+   campo de código** — o aviso na tela diz "Códigos gerados automaticamente ao salvar" (D-8 do
+   ADR-0096).
+2. Uma linha por variação: cor/nome, GTIN, preço, custo, estoque inicial, peso e dimensões.
+   **Sem coluna de SKU** — o GTIN continua sendo o lugar do EAN; o SKU é gerado junto com o
+   código do PAI.
 3. Salvar. Se aparecer aviso de pendência (**"Reprocessar"** ou lista de SKUs sem estoque),
    resolva antes de seguir — o botão "Ir para a Revisão" fica travado de propósito, porque
    cadastro parcial reportado como sucesso é a pior falha possível aqui.
-4. Etapa de fotos: capa (até 3) e uma foto por variação.
+4. Etapa de fotos: capa (até 3) e uma foto por variação, já pelo código **gerado**.
 5. "Ir para a Revisão" — **o cadastro não publica nada**; publicar continua sendo ato explícito
    na Revisão, como no fluxo de planilha.
 
 Produtos cadastrados em sequência caem no **mesmo lote** (a "sessão de cadastro"). Na tela de
 Lotes eles aparecem com o chip **Cadastro manual**, para distinguir do fluxo de planilha.
 
-Erros esperados e o que significam:
+Erros esperados e o que significam — como o operador não digita código nem SKU, os dois 409 de
+hoje não são mais "renomeie X"; são sempre reação a uma submissão repetida (mesma chave de
+idempotência), nunca a uma escolha do operador:
 
 | Erro | O que fazer |
 |---|---|
-| 409 "produto já existe" | Já há família com esse `codigo_pai` na org. Para repor saldo use **Dar entrada**; o toast oferece abrir o produto na Revisão. |
-| 409 "estes SKUs já pertencem a outro produto" | O SKU é a chave que a baixa de venda usa. Renomeie o SKU ou use o produto existente — repetir faria uma venda baixar o estoque do produto errado. |
+| 409 "Cadastro em andamento. Tente novamente." | Sem produto para abrir ainda — reenviar (clicar Salvar de novo) resolve: ou o cadastro anterior com esta chave ainda está terminando de gravar, ou houve corrida entre duas submissões da mesma chave. |
+| 409 de divergência (banner fixo no diálogo + toast com ação **"Abrir na Revisão"**) | Esta chave já gerou um produto gravado, e o que está no formulário agora é diferente do que foi salvo. Não adianta reenviar — abra o produto na Revisão para conferir/editar o que já existe. |
 | 403 "módulo não habilitado" | A org perdeu o módulo. Ver a seção acima. |
 
 **Dar entrada de mercadoria** (tela `/estoque` → "Dar entrada"):

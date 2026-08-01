@@ -441,16 +441,17 @@ falha ao ler `organizations` não libera.
   `derivarCodigos` (`_shared/produto/codigos.ts`), oito dígitos com zeros à esquerda
   (`00000001`), o PAI sendo o menor número da faixa (D-1/D-2 do ADR-0096). Faixa que ultrapassa
   `99999999` falha LOUD (D-5), sem truncar.
-  Guards de 409, **três casos distintos**: (1) **idempotência da submissão** (D-9 do ADR-0096) —
-  reenvio com a mesma `chaveCadastro` de um cadastro já gravado e completo devolve o resultado
-  original, 200, sem criar nada; (2) **cadastro em andamento, SEM `familiaId`** — a família com
-  aquela `chaveCadastro` existe mas ainda não tem variações gravadas (janela entre os dois
-  inserts) ou está em corrida com outra submissão da mesma chave; resposta é "tente novamente",
-  sem `familiaId` porque não há o que abrir ainda; (3) **cadastro gravado diverge do enviado,
-  COM `familiaId`/`loteId`** — o formulário mudou entre tentativas com a mesma chave
-  (`variacoesDivergem`, `processar.ts`); a família É verificável e completa, então a resposta
-  carrega `familiaId`/`loteId` para a tela oferecer "abrir na Revisão" em vez de mandar
-  "tentar de novo" (que geraria loop). Os guards de duplicata sobre os códigos GERADOS
+  Reenvio com a mesma `chaveCadastro` (D-9 do ADR-0096) tem três desfechos possíveis, só dois
+  deles são guard de 409 — o primeiro é o retorno feliz da idempotência: (1) **200, idempotente**
+  — cadastro já gravado e igual ao enviado devolve o resultado original, sem criar nada; (2)
+  **409, cadastro em andamento, SEM `familiaId`** — a família com aquela `chaveCadastro` existe
+  mas ainda não tem variações gravadas (janela entre os dois inserts) ou está em corrida com
+  outra submissão da mesma chave; resposta é "tente novamente", sem `familiaId` porque não há o
+  que abrir ainda; (3) **409, cadastro gravado diverge do enviado, COM `familiaId`/`loteId`** —
+  o formulário mudou entre tentativas com a mesma chave (`variacoesDivergem`, `processar.ts`); a
+  família É verificável e completa, então a resposta carrega `familiaId`/`loteId` para a tela
+  oferecer "abrir na Revisão" em vez de mandar "tentar de novo" (que geraria loop). Os guards de
+  duplicata sobre os códigos GERADOS
   cruzam as duas tabelas (`familias.codigo_pai` **e** `variacoes.codigo`, D-6 do ADR-0096); se
   colidirem, a edge ressincroniza a sequência com o maior código existente e tenta reservar
   de novo — colidindo ainda assim, é 500 de erro de sistema, nunca instrução ao operador
