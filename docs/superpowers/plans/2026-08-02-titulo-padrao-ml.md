@@ -933,6 +933,17 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.medida).not.toContain('13,7m ');
   });
 
+  it('não descarta dimensão composta que só a IA trouxe', () => {
+    // As quatro famílias SACO DE ORGANZA se distinguem por 10X12CM / 13X18CM / 10X15CM /
+    // 15X20CM — nenhum regex da fonte captura isso. Perder a dimensão as tornaria títulos
+    // idênticos, que é como o ML derruba anúncio por duplicado.
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'SACO DE ORGANZA', medida: '10X15CM' }),
+      fonte({ nomePai: 'SACO DE ORGANZA 10X15CM CORES C/10UND', descricaoPai: 'LARGURA: 10CM.' }),
+    );
+    expect(s.medida).toContain('10X15CM');
+  });
+
   it('acrescenta a largura grounded à medida', () => {
     const s = aplicarGuardsTitulo(
       slots({ produto: 'LANTEJOULA', medida: '50m' }),
@@ -1114,11 +1125,26 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
 
   // Metragem: SEMPRE reescreve a partir da fonte. A IA arredonda ("13,7m" para "13,71m" real) e
   // às vezes duplica — checar "já contém a certa?" não pega a errada que ficou junto.
+  //
+  // ATENÇÃO ao alcance desta garantia: ela cobre metragem e largura, e SÓ. Dimensões compostas
+  // ("10X12CM" nos sacos de organza) não casam com nenhum dos dois regex — se a IA as omitir,
+  // nada as repõe, e quatro famílias irmãs viram títulos idênticos. Não é regressão (o código
+  // antigo tinha o mesmo furo) e não vamos alargar o escopo aqui, mas é por isso que a métrica
+  // de COLISÕES é o critério de aceite que carrega o peso, não um extra.
+  //
+  // A reescrita preserva o que a IA pôs em `medida` quando a fonte não tem nem metragem nem
+  // largura — sem isso, um produto com dimensão no slot e um "LARGURA:" solto na descrição
+  // perderia a dimensão inteira.
   const metragem = extrairMetragem(fonte.nomePai);
   const largura = extrairLargura(textoFonte);
   if (metragem || largura) {
     const partes = [metragem, largura].filter(Boolean) as string[];
-    out.medida = partes.join(' ');
+    const dimensaoDaIa = out.medida.trim();
+    const coberta = partes.some((p) => jaContem(dimensaoDaIa, p));
+    // Dimensão que a IA trouxe e a fonte não sabe reproduzir entra na frente, não é descartada.
+    out.medida = dimensaoDaIa && !coberta && /\d+\s*[xX]\s*\d+/.test(dimensaoDaIa)
+      ? `${dimensaoDaIa} ${partes.join(' ')}`.trim()
+      : partes.join(' ');
   }
 
   // Quantidade: costuma vir só na descrição ("pacote com 10 unidades").
@@ -1494,8 +1520,13 @@ describe('bloco TÍTULO do SYSTEM (ADR-0099)', () => {
     expect(SYSTEM).not.toContain('| RESISTENTE');
   });
 
-  it('nomeia os dez slots exatamente como o contrato', () => {
-    for (const slot of ORDEM_LEITURA) expect(SYSTEM).toContain(slot);
+  it('nomeia os dez slots no bloco de campos, não só na prosa', () => {
+    // Ancorado na linha do campo ("produto        — ..."). Um `toContain('produto')` solto
+    // passaria de graça: a palavra aparece na prosa em português ao redor.
+    for (const slot of ORDEM_LEITURA) {
+      expect(SYSTEM, `slot ${slot} não está declarado no bloco de campos`)
+        .toMatch(new RegExp(`^${slot}\\s*[—-]`, 'm'));
+    }
   });
 
   it('carrega a frase decisiva de T6', () => {
@@ -1703,9 +1734,31 @@ E em `gerarTituloParticao`, trocar a cadeia manual (linhas 58-61) por:
       descricaoPai: opts.descricao_detalhado ?? '',
       tipoProdutoBusca: out.tipo_produto_busca,
       cores: [...new Set(opts.cores.map((c) => c.cor).filter((c): c is string => !!c))],
-      fornecedor: null, // a partição não carrega fornecedor; a marca vem ancorada da fonte
+      fornecedor: opts.fornecedor ?? null,
     });
 ```
+
+**O `fornecedor` PRECISA chegar aqui.** Com `null`, `marcaDoFornecedor` devolve `null`, o
+`BUFALO` que a IA escreveu sobrevive a `validarSlotsAncorados` (ele *está* ancorado na fonte) e
+renderiza **`Bufalo`**, sem acento — enquanto o título principal do mesmo produto sai `Búfalo`.
+O mapa é a única coisa que corrige grafia. Acrescentar o campo à interface:
+
+```ts
+export interface OpcoesTituloParticao {
+  nome: string;
+  descricao_detalhado: string;
+  unidade?: string | null;
+  cores: CorParticaoTitulo[];
+  tituloBase: string;
+  particao: number;
+  modelo?: string;
+  /** familias.fornecedor — só para o mapa de marcas corrigir a grafia (ADR-0099). */
+  fornecedor?: string | null;
+}
+```
+
+E passá-lo no caller `publicar-split-ml/index.ts`, onde `gerarTituloParticao` é chamada —
+confirmar que o `select` da família de lá inclui `fornecedor`.
 
 Em `process-familia/index.ts`, substituir o bloco `titulo_ml:` (linhas 450-464) por:
 
@@ -1745,7 +1798,33 @@ E envolver a chamada num tratamento que traduz o erro (ADR-0030: sem isso a fam�
 
 e usar `titulo_ml: tituloFinal`. Importar `TituloInviavelError` de `../_shared/ai/titulo-montar.ts` e `posProcessarTitulo` de `../_shared/ai/titulo-pos.ts`. **Confirmar que `claimed` traz `fornecedor`** — se o `select` da família não o incluir, acrescentar `fornecedor` à lista de colunas.
 
-Aplicar o mesmo tratamento em `regenerar-copy-familia/index.ts` (linhas 63-77), devolvendo `new Response(mensagem, { status: 422, headers: corsHeaders })` em vez de `throw`, já que ali há uma resposta HTTP ao operador.
+Aplicar o mesmo tratamento em `regenerar-copy-familia/index.ts` (linhas 63-77), devolvendo `new Response(mensagem, { status: 422, headers: corsHeaders })` em vez de `throw`, já que ali há uma resposta HTTP ao operador:
+
+```ts
+    let tituloFinal: string;
+    try {
+      tituloFinal = posProcessarTitulo(result.titulo_slots, {
+        nomePai: familia.nome_pai,
+        descricaoPai: familia.descricao_pai ?? '',
+        tipoProdutoBusca: result.tipo_produto_busca,
+        cores: coresUnicas,
+        fornecedor: (familia.fornecedor as string | null) ?? null,
+      });
+    } catch (e) {
+      if (e instanceof TituloInviavelError) {
+        const campos = Object.entries(e.slotsObrigatorios).map(([k, v]) => `${k}="${v}"`).join(', ');
+        return new Response(
+          `Título obrigatório não cabe em 60 caracteres (${e.comprimento}). Encurte o nome do produto na planilha. Campos: ${campos}`,
+          { status: 422, headers: corsHeaders },
+        );
+      }
+      throw e;
+    }
+```
+
+**Conferir o `select` desta função também.** Se ele não trouxer `fornecedor`, regenerar um
+título perde a correção de grafia da marca em silêncio — o título sairia `Bufalo` onde a
+publicação original gravou `Búfalo`. Acrescentar a coluna à lista.
 
 - [ ] **Step 4: Rodar tudo**
 
@@ -1927,12 +2006,27 @@ describe('unidadeCanonica', () => {
 });
 
 describe('marcaAncorada', () => {
-  it('confirma marca presente na fonte', () => {
-    expect(marcaAncorada('Fita de Cetim Búfalo N.3', 'FITA CETIM BUFALO N.3 CORES')).toBe(true);
+  it('confirma a marca do mapa presente no título E na fonte', () => {
+    expect(marcaAncorada('Fita de Cetim Búfalo N.3', 'FITA CETIM BUFALO N.3 CORES', 'BUFALO')).toBe(true);
   });
 
-  it('acusa marca ausente da fonte', () => {
-    expect(marcaAncorada('Fita Detallia 25m', 'FITAS DE VELUDO 20MM CORES C/25MTS')).toBe(false);
+  it('acusa marca no título que NÃO está na fonte', () => {
+    expect(marcaAncorada('Fita Detallia 25m', 'FITAS DE VELUDO 20MM CORES C/25MTS', 'DETALLIA FITAS TEXTEIS LTDA')).toBe(false);
+  });
+
+  it('acusa marca ausente do título mesmo estando na fonte', () => {
+    expect(marcaAncorada('Fita de Cetim N.3 10m', 'FITA CETIM BUFALO N.3', 'BUFALO')).toBe(false);
+  });
+
+  it('devolve null quando o fornecedor está fora do mapa — não entra no denominador', () => {
+    expect(marcaAncorada('Fita de Cetim 10m', 'FITA CETIM', 'FORNECEDOR NOVO')).toBeNull();
+    expect(marcaAncorada('Fita de Cetim 10m', 'FITA CETIM', null)).toBeNull();
+  });
+
+  it('não confunde o substantivo do produto com marca', () => {
+    // "Fita" está na fonte, mas não é marca. A medida tem de olhar SÓ a marca do mapa,
+    // senão retorna true para quase todo título e o critério de aceite vira infalsificável.
+    expect(marcaAncorada('Fita de Veludo 25m', 'FITAS DE VELUDO 20MM CORES C/25MTS', 'DETALLIA FITAS TEXTEIS LTDA')).toBe(false);
   });
 });
 
@@ -1963,6 +2057,7 @@ Expected: FAIL — `Failed to resolve import`
 
 ```ts
 // scripts/experimento-titulo/metricas.ts
+import { marcaDoFornecedor } from '../../supabase/functions/_shared/ai/titulo-marcas.ts';
 
 const norm = (s: string) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 
@@ -1992,12 +2087,22 @@ export function unidadeCanonica(titulo: string): boolean {
   return !/\d\s*(MT|MTS|METROS|UND|UNDS|GR)\b/i.test(titulo);
 }
 
-export function marcaAncorada(titulo: string, fonte: string): boolean {
-  const alvo = norm(fonte);
-  // Toda palavra capitalizada do título que não seja unidade nem número é candidata a marca;
-  // basta uma constar da fonte para o título estar ancorado.
-  const candidatas = titulo.split(/\s+/).filter((p) => /^[A-ZÁ-Ú]/.test(p) && !/^\d/.test(p));
-  return candidatas.some((c) => alvo.includes(norm(c)));
+/**
+ * A marca do mapa está no título E ancorada na fonte?
+ *
+ * Devolve `null` quando o fornecedor não está no mapa — essas famílias saem do denominador,
+ * porque não há marca conhecida contra a qual medir. O baseline de 36% foi apurado assim, sobre
+ * as 138 famílias com fornecedor mapeado.
+ *
+ * NÃO tente inferir a marca varrendo as palavras capitalizadas do título: o substantivo do
+ * produto ("Fita", "Linha") está sempre na fonte, a medida daria ~100% e o critério de aceite
+ * viraria infalsificável.
+ */
+export function marcaAncorada(titulo: string, fonte: string, fornecedor: string | null): boolean | null {
+  const marca = marcaDoFornecedor(fornecedor);
+  if (!marca) return null;
+  const alvo = norm(marca);
+  return norm(titulo).includes(alvo) && norm(fonte).includes(alvo);
 }
 
 /** Grupos de título idêntico entre codigo_pai DISTINTOS — o mesmo produto reingerido não conta. */
