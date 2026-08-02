@@ -193,13 +193,19 @@ Seção nova. Redação normativa:
 
 **O dado gera a pergunta, nunca o inverso.**
 
-| Campo na fonte | Pergunta destravada |
-|---|---|
-| Composição | "Qual a composição?" |
-| Metragem / comprimento | "Quantos metros possui?" |
-| Tex / título | "Qual o Tex?" |
-| Largura / diâmetro | "Qual a largura?" |
-| Conteúdo da embalagem | "O que acompanha o produto?" |
+Exemplos do mecanismo, atravessando segmentos — **não é lista fechada** (ver R9):
+
+| Campo na fonte | Pergunta destravada | Segmento |
+|---|---|---|
+| Composição | "Qual a composição?" | qualquer |
+| Metragem / comprimento | "Quantos metros possui?" | aviamento |
+| Tex / título | "Qual o Tex?" | aviamento |
+| Voltagem | "Qual a voltagem?" | eletro / ferramenta |
+| Capacidade | "Quantos litros comporta?" | utilidade |
+| Conteúdo da embalagem | "O que acompanha o produto?" | qualquer |
+
+Qualquer campo quantitativo ou descritivo presente na fonte destrava sua pergunta pelo
+mesmo mecanismo, mesmo que não apareça nesta tabela.
 
 O nome da seção é **"Perguntas sobre este produto"**, não "FAQ" — deixa explícito que são
 perguntas respondidas pelas informações disponíveis, e não as perguntas que qualquer
@@ -213,6 +219,43 @@ campo, a pergunta nunca aparece.
 
 O CTA final liga-se ao ganho concreto do produto, derivado da fonte. Frase genérica de
 urgência ("garanta já o seu") é insuficiente.
+
+### R9 — Neutralidade de segmento nos exemplos
+
+O `SYSTEM` declara desde a linha 104 atender **qualquer tipo de produto** — aviamentos,
+ferramentas, papelaria, decoração, adesivos, utilidades. As regras R1–R8 são neutras por
+construção: operam sobre o dado que a fonte fornece, não sobre um vocabulário de segmento.
+
+**O risco está nos exemplos, não nas regras.** Os few-shot de hoje são todos de aviamento
+(linha 146: *confecções, facções, malharias*; linha 154: *não desfia facilmente, costura
+firme*). Parte dos 75% de "Alta resistência" no catálogo é esse viés. Substituir esses
+exemplos por outros exemplos de aviamento replicaria o problema com roupa nova — agora
+mais difícil de detectar, porque coberto por regras melhores.
+
+Portanto, todo exemplo que entrar no `SYSTEM` obedece a duas condições:
+
+1. **Cobertura multi-segmento.** Os exemplos de um mesmo bloco atravessam segmentos
+   distintos, nunca todos do mesmo ramo.
+
+   | Fonte | Benefício derivado (R1) | Segmento |
+   |---|---|---|
+   | `10.000 metros` | maior tempo de uso antes da substituição do cone | aviamento |
+   | `capacidade 5 litros` | menos reabastecimentos por aplicação | utilidade |
+   | `bateria 20V` | compatível com as demais ferramentas da mesma plataforma 20V | ferramenta |
+   | `bloco com 100 folhas` | rende 100 registros antes da reposição | papelaria |
+
+2. **Ensinam o mecanismo, não a frase.** O exemplo demonstra a *transformação*
+   `dado → benefício derivado`, e o `SYSTEM` diz explicitamente que o padrão é o que se
+   reaplica, jamais o texto. Cardápio de frases prontas é o que produziu a Causa C.
+
+O mesmo vale para a tabela de campos de R6: ela ilustra o mecanismo *o dado gera a
+pergunta* com campos de segmentos variados, e não é uma lista fechada.
+
+**Limitação declarada:** o catálogo atual é majoritariamente aviamento, então o
+experimento (§5) valida bem esse segmento e fracamente os demais. A amostra prioriza
+diversidade dentro do que existe, mas a generalidade para segmentos ausentes fica
+sustentada pelo desenho das regras, não por evidência medida. Ao entrar um segmento novo
+em volume, reavaliar.
 
 ### R8 — Alcance das regras
 
