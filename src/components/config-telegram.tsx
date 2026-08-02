@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Send, RefreshCw } from 'lucide-react';
+import { ChevronRight, Save, Send, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -56,6 +56,7 @@ export function ConfigTelegram() {
     });
 
   const tokenPlaceholder = cfg?.temToken ? '•••••••• (configurado — deixe vazio p/ manter)' : 'Cole o token do @BotFather';
+  const temAlteracoes = chatId !== (cfg?.chatId ?? '') || Boolean(botToken.trim());
 
   return (
     <Card className="p-4">
@@ -85,7 +86,6 @@ export function ConfigTelegram() {
             value={chatId}
             placeholder="ex.: 123456789"
             onChange={(e) => setChatId(e.target.value)}
-            onBlur={() => { if (chatId !== (cfg?.chatId ?? '')) persistir({ chatId }); }}
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Usado só pelo botão "Enviar teste" abaixo. Não é para onde as notificações vão — isso é por
@@ -101,11 +101,18 @@ export function ConfigTelegram() {
             value={botToken}
             placeholder={tokenPlaceholder}
             onChange={(e) => setBotToken(e.target.value)}
-            onBlur={() => { if (botToken.trim()) persistir({ botToken }); }}
           />
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => persistir({ chatId, botToken: botToken.trim() || undefined })}
+            disabled={!temAlteracoes || salvar.isPending}
+          >
+            <Save className="mr-1.5 h-3.5 w-3.5" />
+            {salvar.isPending ? 'Salvando…' : 'Salvar configurações'}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleTeste} disabled={teste.isPending}>
             <Send className="mr-1.5 h-3.5 w-3.5" />
             {teste.isPending ? 'Enviando…' : 'Enviar teste'}
@@ -114,7 +121,6 @@ export function ConfigTelegram() {
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${verificar.isPending ? 'animate-spin' : ''}`} />
             {verificar.isPending ? 'Verificando…' : 'Verificar agora'}
           </Button>
-          {salvar.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
           {salvar.isSuccess && !salvar.isPending && <span className="text-xs text-success">✓ Salvo</span>}
         </div>
       </div>
