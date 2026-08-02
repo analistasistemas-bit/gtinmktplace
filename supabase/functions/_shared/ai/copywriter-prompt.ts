@@ -162,14 +162,22 @@ export function removerPerguntasIncompletas(descricao: string): string {
 }
 
 /**
- * Todo o pós-processamento determinístico da descrição, na ordem correta. Os dois call sites
- * (process-familia e regenerar-copy-familia) compunham os guards à mão e por isso divergiam a
- * cada guard novo — aqui a composição vive num lugar só.
+ * Todo o pós-processamento determinístico da descrição. Os dois call sites (process-familia e
+ * regenerar-copy-familia) compunham os guards à mão e por isso divergiam a cada guard novo —
+ * aqui a composição vive num lugar só.
+ *
+ * A ORDEM É PARTE DA CORREÇÃO, não estética: podar ANTES de ancorar.
+ *
+ * garantirLargura/MetragemDescricao pulam a injeção quando enxergam o dado em qualquer lugar
+ * do texto — tolerância deliberada, para não duplicar o que a IA já disse em prosa. Só que a
+ * seção de perguntas é texto como qualquer outro: uma resposta "Qual a largura? 16mm."
+ * convence o guard de que a largura está coberta. Se a poda rodasse depois, levaria o único
+ * lugar onde o dado aparecia e a descrição terminaria SEM a largura — perda silenciosa, não
+ * só bullet ausente. Podando primeiro, os guards enxergam o texto final e injetam o que falta.
  */
 export function posProcessarDescricao(descricao: string, nomePai: string, descricaoPai: string): string {
-  return removerPerguntasIncompletas(
-    garantirMetragemDescricao(garantirLarguraDescricao(descricao, nomePai, descricaoPai), nomePai),
-  );
+  const podada = removerPerguntasIncompletas(descricao);
+  return garantirMetragemDescricao(garantirLarguraDescricao(podada, nomePai, descricaoPai), nomePai);
 }
 
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.

@@ -313,3 +313,54 @@ describe('posProcessarDescricao — composição única dos guards (ADR-0098)', 
     expect(r).toContain('🎨 CORES DISPONÍVEIS');
   });
 });
+
+// Regressão de PERDA DE DADO. Os guards pulam a injeção quando enxergam o dado em qualquer
+// lugar do texto — inclusive dentro de uma resposta da seção de perguntas. Se a poda de R6
+// rodasse DEPOIS deles, levaria embora o único lugar onde o dado aparecia e a descrição
+// terminaria sem a medida. Por isso posProcessarDescricao poda antes de ancorar.
+describe('posProcessarDescricao — poda antes de ancorar (ADR-0098)', () => {
+  it('largura só existia dentro da seção podada: é reinjetada em ESPECIFICAÇÕES', () => {
+    const descricao = [
+      '🧵 INTRO', '', 'Texto.', '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO', '',
+      '▪ Qual a composição? Poliéster.',
+      '▪ Qual a largura? 16mm.',
+    ].join('\n');
+
+    const r = posProcessarDescricao(descricao, 'FITA CETIM N.3', 'LARGURA: 16MM.');
+
+    expect(r).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('📌 ESPECIFICAÇÕES');
+    expect(r).toContain('• Largura: 16mm');
+    expect(r).toContain('🧵 INTRO');
+  });
+
+  it('metragem só existia dentro da seção podada: é reinjetada em ESPECIFICAÇÕES', () => {
+    const descricao = [
+      '🧵 INTRO', '', 'Texto.', '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO', '',
+      '▪ Quantos metros possui? 50 metros.',
+      '▪ Qual a cor? Preto.',
+    ].join('\n');
+
+    const r = posProcessarDescricao(descricao, 'LANTEJOULAS TAM 6 CORES C/50MTS', '');
+
+    expect(r).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('• Metragem: 50MT');
+  });
+
+  it('seção COMPLETA (3 perguntas) é preservada e o guard respeita o dado que ela contém', () => {
+    const descricao = [
+      '🧵 INTRO', '', 'Texto.', '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO', '',
+      '▪ Quantos metros possui? 50 metros.',
+      '▪ Qual a cor? Preto.',
+      '▪ Qual a composição? Poliéster.',
+    ].join('\n');
+
+    const r = posProcessarDescricao(descricao, 'LANTEJOULAS TAM 6 CORES C/50MTS', '');
+
+    expect(r).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).not.toContain('• Metragem:'); // já dito em prosa na seção preservada
+  });
+});

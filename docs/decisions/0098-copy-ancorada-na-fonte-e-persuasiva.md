@@ -378,6 +378,33 @@ Os dois call sites que compunham os guards à mão (`process-familia` e
 `regenerar-copy-familia`) passaram a chamar `posProcessarDescricao`, que concentra o
 pós-processamento num lugar só — eles divergiam a cada guard novo.
 
+### Ordem do pós-processamento: podar antes de ancorar
+
+Consolidar os guards expôs um bug de **perda de dado**, encontrado em revisão e reproduzido
+antes de corrigir.
+
+`garantirLarguraDescricao` e `garantirMetragemDescricao` pulam a injeção quando enxergam o
+dado em qualquer lugar do texto — tolerância deliberada, para não duplicar o que a IA já
+disse em prosa. Só que a seção de perguntas é texto como qualquer outro: uma resposta
+*"Qual a largura? 16mm."* convence o guard de que a largura está coberta.
+
+Com a poda rodando **depois** dos guards, o resultado para uma descrição cuja largura só
+aparecia dentro de uma seção de 2 perguntas era:
+
+```
+🧵 INTRO
+
+Texto.
+```
+
+A seção foi removida levando o único lugar onde o dado existia, e o guard já havia
+desistido de injetar o bullet. Não é bullet ausente — é a medida sumindo da descrição
+inteira.
+
+`posProcessarDescricao` poda primeiro e ancora depois, para que os guards enxerguem o texto
+final e injetem o que de fato falta. Três testes de regressão cobrem largura, metragem e o
+caso de seção completa (que deve ser preservada, com o guard respeitando o dado nela).
+
 ### Evidência qualitativa
 
 Amostra do cenário B para um protetor solar (a amostra por diversidade puxou produtos fora
