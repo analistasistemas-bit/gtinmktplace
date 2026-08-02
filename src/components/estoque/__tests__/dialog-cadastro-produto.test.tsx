@@ -148,9 +148,15 @@ describe('DialogCadastroProduto — formulário em cards', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remover variação 2' }));
 
-    // Se a linha fosse identificada por índice (key={i}), o React reaproveitaria o <input
-    // type="file"> da posição 2 e a foto "andaria" para a variação errada.
-    expect(screen.getByAltText('Prévia da foto da variação 1')).toHaveAttribute('src', 'blob:azul.png');
-    expect(screen.getByAltText('Prévia da foto da variação 2')).toHaveAttribute('src', 'blob:preto.png');
+    // Assere no `.files` do próprio <input type="file"> — DOM não-controlado, é o que o
+    // navegador guarda no elemento, não o que o state/preview React mostra. Sob key={i}
+    // (bug antigo), o React reaproveitaria o NÓ DOM da posição 2: o preview (derivado do
+    // state) mostraria a foto certa mesmo assim, mas o `.files` do input real ficaria
+    // vazio/errado, porque o React nunca escreve de volta em `<input type="file">`
+    // (é uncontrolled). Testar via preview/state não captura esse desalinhamento.
+    const inputVar1 = screen.getByLabelText('Foto da variação 1') as HTMLInputElement;
+    const inputVar2 = screen.getByLabelText('Foto da variação 2') as HTMLInputElement;
+    expect(inputVar1.files?.[0]?.name).toBe('azul.png');
+    expect(inputVar2.files?.[0]?.name).toBe('preto.png');
   });
 });
