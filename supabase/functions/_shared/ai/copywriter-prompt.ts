@@ -39,6 +39,33 @@ export function validarTipoProdutoBusca(tipoProdutoBusca: string, nome: string, 
   return grounded ? valor : '';
 }
 
+/**
+ * Fórmulas de R3 (ADR-0098): afirmam prova social, autoridade ou intenção de projeto sem
+ * respaldo na fonte. Esta função VERIFICA apenas — nunca edita. Remover a expressão por
+ * substituição parcial quebraria a pontuação e a concordância da frase em volta ("A Linha
+ * Búfalo, reconhecida por profissionais, oferece..." → vírgula órfã), e a lista tem falso
+ * positivo legítimo: uma citação do fabricante pode conter "desenvolvida para". Quem decide
+ * o que fazer com o achado é o harness do experimento hoje e o validador com regeneração
+ * controlada na fase 2 — jamais um replace cego.
+ */
+const FORMULAS_PROIBIDAS = [
+  'reconhecida por', 'reconhecido por',
+  'preferida pelos profissionais', 'preferido pelos profissionais',
+  'utilizada por', 'utilizado por',
+  'desenvolvida para', 'desenvolvido para',
+  'projetada para', 'projetado para',
+  'pensada para', 'pensado para',
+  'a melhor', 'o melhor', 'a mais', 'o mais',
+  'ideal para producao intensa',
+] as const;
+
+export function detectarFormulasProibidas(texto: string): string[] {
+  // normalizar já baixa a caixa e remove acento — o regex não precisa da flag i, e
+  // 'producao intensa' na lista casa com 'produção intensa' no texto.
+  const alvo = normalizar(texto ?? '');
+  return FORMULAS_PROIBIDAS.filter((f) => new RegExp(`\\b${f}\\b`).test(alvo));
+}
+
 const SECAO_ESPECIFICACOES = '📌 ESPECIFICAÇÕES';
 // Ordem do template (SYSTEM acima) a partir de ESPECIFICAÇÕES — usada só para achar onde a
 // seção termina, caso ela exista, ou onde inserir uma nova, caso a IA tenha pulado a seção
