@@ -63,11 +63,19 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
     return obj;
   }
 
+  // ADR-0097: a varredura de movimentos órfãos roda por RPC. Registra a ORDEM junto com os
+  // deletes — a varredura só é correta DEPOIS do delete das famílias (antes, o cascade
+  // ainda não rodou e o conjunto órfão sai vazio).
+  const rpcs: { nome: string; args: unknown; tabelasDeletadasAntes: string[] }[] = [];
   const admin: any = {
     from: (tabela: string) => chain(tabela),
     storage: { from: () => ({ remove: async (paths: string[]) => { removidos.push(paths); return { error: null }; } }) },
+    rpc: async (nome: string, args: unknown) => {
+      rpcs.push({ nome, args, tabelasDeletadasAntes: deletes.map((d) => d.tabela) });
+      return { data: 0, error: null };
+    },
   };
-  return { admin, deletes, updates, removidos };
+  return { admin, deletes, updates, removidos, rpcs };
 }
 
 const ORG = 'org-1';
@@ -387,6 +395,66 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
     await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
 
     expect(removidos).toEqual([[`${DONO}/capas/legitima.jpg`]]);
+  });
+});
+
+// ADR-0097 — a exclusão não pode deixar movimento de estoque órfão no ledger.
+describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () => {
+  const cenarioRemove = () => fakeAdmin({
+    familias: [
+      { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+      [],
+      [{
+        id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
+        capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null,
+        variacoes: [],
+      }],
+      [],
+    ],
+    anuncios_externos: [[]],
+    anuncios_externos_itens: [[]],
+    lotes: [],
+  });
+
+  it('varre os órfãos da org DEPOIS de deletar as famílias', async () => {
+    const { admin, rpcs } = cenarioRemove();
+
+    await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+
+    expect(rpcs).toHaveLength(1);
+    expect(rpcs[0].nome).toBe('limpar_movimentos_orfaos');
+    expect(rpcs[0].args).toEqual({ p_org: ORG });
+    // A ordem é a regra: antes do delete o cascade das variações ainda não rodou e o
+    // conjunto órfão sairia vazio — a varredura não limparia nada.
+    expect(rpcs[0].tabelasDeletadasAntes).toContain('familias');
+  });
+
+  it('falha da varredura NÃO derruba a exclusão já commitada', async () => {
+    const { admin } = cenarioRemove();
+    admin.rpc = async () => ({ data: null, error: { message: 'boom' } });
+
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+
+    expect(r.tipo).toBe('ok');
+  });
+
+  it('modo republicar preserva a família — e portanto NÃO varre', async () => {
+    const { admin, rpcs } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+        [],
+      ],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+    });
+
+    await removerPublicado({ admin }, {
+      familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true,
+    });
+
+    // O SKU continua vivo: varrer aqui apagaria o histórico de um produto que só está
+    // sendo republicado.
+    expect(rpcs).toEqual([]);
   });
 });
 

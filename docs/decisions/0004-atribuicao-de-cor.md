@@ -93,3 +93,25 @@ fallback projetado. Sinônimos do dicionário (inclusive `colorido`) são preser
 muda é a **fonte**, não o léxico. Só afeta CREATE/reprocessamento daqui pra frente; o único
 anúncio já publicado afetado (`MLB6953626078`) foi corrigido ao vivo (COLOR
 `Multicolor`→`Branco` + seção "CORES DISPONÍVEIS").
+
+## Adendo (2026-08-01) — Cadastro manual (ADR-0094): cor `manual`, sem camadas de IA
+
+No cadastro manual (ADR-0094), a tabela de variações tem uma coluna "Cor / nome" única —
+não existe campo de cor separado. `montarLinhasProduto` (`_shared/produto/validar.ts`)
+grava esse valor em `variacoes.nome` (como sempre) **e também** em `variacoes.cor`, com
+`cor_origem = 'manual'`, sempre que o campo vem preenchido. Vazio mantém `cor` nula, como
+antes.
+
+Motivo: nesse fluxo as três camadas descritas acima não davam conta. O padrão "{número}
+{cor}" não casa com uma cor pura (ex.: "Invisível"); o dicionário de sinônimos não cobre
+"invisível"/"incolor"/"transparente"; e **não dá para contar com a Vision** — a foto só é
+anexada na etapa 2 do cadastro, DEPOIS do enfileiramento para `process-familia`. Na prática
+o enfileiramento acontece primeiro, então `if (!v.imagem_path) return v` costuma ser
+verdadeiro no momento da resolução, mas é uma corrida: a entrega do QStash tem latência, e
+um operador rápido pode gravar `imagem_path` antes de o worker rodar. Não dá pra depender
+disso — sem a cor explícita, o produto chegava à Revisão com cor nula na maioria das vezes,
+e o operador tinha que digitar de novo.
+
+O pipeline respeita a cor gravada sem qualquer mudança: `process-familia/index.ts` já faz
+`if (v.cor) return v;` antes de tentar as camadas de inferência — cor pré-gravada
+simplesmente pula a resolução automática, igual a qualquer outra origem.

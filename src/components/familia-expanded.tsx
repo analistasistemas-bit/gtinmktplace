@@ -84,6 +84,21 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fotosKey]);
 
+  // corOrigem muda como efeito colateral do PRÓPRIO operador digitando no input de cor
+  // (salva com debounce de 600ms) — um replace total aqui (como o de fotosKey acima)
+  // reverteria o texto que ele está digitando na mesma linha, e não é raro: qualquer
+  // invalidate de QK.familias (realtime, process-familia gravando status) muda a chave.
+  // Por isso é MERGE — só o campo corOrigem é atualizado por código, preservando cor/
+  // preço/GTIN locais ainda não salvos em qualquer linha, inclusive a que mudou.
+  const corOrigemKey = familia.variacoes.map((v) => `${v.codigo}:${v.corOrigem ?? ''}`).join('|');
+  useEffect(() => {
+    setVariacoes((vs) => vs.map((v) => {
+      const servidor = familia.variacoes.find((x) => x.codigo === v.codigo);
+      return servidor ? { ...v, corOrigem: servidor.corOrigem } : v;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [corOrigemKey]);
+
   const [tituloStatus, setTituloStatus] = useState<SaveStatus>(undefined);
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});

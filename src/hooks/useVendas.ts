@@ -3,15 +3,25 @@ import { buscarVendas, marcaDagua, mesclarVendas, type Venda, type OrigemVenda }
 import type { Janela } from '@/lib/metricas';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 
-/** Chave de cache da janela: `desde` inteiro, `ate` só na data.
+/** Chave de cache da janela: `desde` inteiro, `ate` truncado na data SÓ quando a janela termina
+ *  HOJE.
  *
  *  `resolverJanela` chama `new Date()`, então o `ate` de 'hoje'/'mes_atual'/'preset' é sempre
  *  "agora". Com o ISO cheio na chave, duas montagens do mesmo período viravam caches distintos —
  *  e como as abas do Faturamento desmontam ao trocar (Radix `TabsContent`), cada ida e volta
  *  refazia o fetch completo da janela e descartava o cache de que o delta do ADR-0082 depende.
+ *  Truncar o `ate` na data resolve isso e é seguro PRA JANELA QUE TERMINA HOJE: não existe venda
+ *  com `date_closed` no futuro, então duas janelas que terminam hoje cobrem o mesmo conjunto pelo
+ *  lado de cima — toda venda nova nesse intervalo tem `atualizado_em` necessariamente recente.
  *
- *  Truncar o `ate` na data é seguro: não existe venda com `date_closed` no futuro, então duas
- *  janelas que terminam no mesmo dia cobrem o mesmo conjunto pelo lado de cima.
+ *  Fora disso — a janela "anterior" de 'hoje' (termina ONTEM na mesma hora do relógio de agora,
+ *  comparativo "vs. anterior") e qualquer range/'Personalizado' com data passada — o `ate` fica
+ *  inteiro na chave. Truncar aí colidiria duas janelas com hora de corte DIFERENTE no mesmo dia
+ *  PASSADO: ex. "anterior" de 'hoje' calculada às 06h (corta ontem 06h) e recalculada às 18h
+ *  (corta ontem 18h) cairiam na mesma chave truncada; o refetch em modo delta (`buscarVendas` só
+ *  filtra `atualizado_em >= marca`, ADR-0082) não preenche o buraco — uma venda de ontem entre
+ *  06h-18h com `atualizado_em` mais velho que a marca já cacheada nunca seria buscada. KPI
+ *  financeiro menor que o real, em silêncio.
  *
  *  O `desde` NÃO pode ser truncado, e isso custa caro: um preset resolvido às 15:00 começa às
  *  15:00 de N dias atrás, enquanto um range que escolha aquele mesmo dia começa às 00:00. Pela
@@ -20,9 +30,11 @@ import type { CanalAtivo } from '@/lib/canal-ativo';
  *  perder o compartilhamento de cache entre presets a arriscar número financeiro errado.
  *  Consequência aceita: telas com período 'preset' ('preset' tem `desde` móvel) continuam
  *  refazendo o fetch completo a cada remontagem; 'hoje', 'mes_atual' e 'range' têm `desde` fixo
- *  e passam a reaproveitar o cache. */
+ *  e passam a reaproveitar o cache (quando `ate` também cai no dia de hoje). */
 export function chaveJanela(janela: Janela): [string, string] {
-  return [janela.desde, janela.ate.slice(0, 10)];
+  const hoje = new Date().toISOString().slice(0, 10);
+  const ateEhHoje = janela.ate.slice(0, 10) === hoje;
+  return [janela.desde, ateEhHoje ? hoje : janela.ate];
 }
 
 export function useVendas(janela: Janela, origem: OrigemVenda, canal: CanalAtivo = 'todos') {

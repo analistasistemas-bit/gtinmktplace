@@ -42,14 +42,28 @@ export function resolverJanela(p: Periodo): Janela {
 
 /** Janela imediatamente anterior. Presets/range: mesma duração, encostada no início da atual
  *  ([desde - dur, desde]). 'hoje': a janela cresce o dia todo, então deslocar pela duração
- *  decorrida não dá "ontem" — dá um pedaço de ontem colado à meia-noite. Usa o dia anterior no
- *  mesmo ponto do relógio (ontem 00:00 → ontem mesma hora de agora). */
+ *  decorrida não dá "ontem" — dá um pedaço colado à meia-noite. Usa o dia anterior no mesmo ponto
+ *  do relógio. 'mes_atual': dias INTEIROS do mês anterior (não a mesma hora) — decisão do Diego
+ *  pra bater com o card "Personalizado" e não oscilar por causa de 1 pedido de madrugada; o dia
+ *  corrente do mês atual, ainda incompleto, segue sendo comparado contra o mês anterior inteiro
+ *  até o dia correspondente (subestima o crescimento enquanto o dia não fecha, aceito). */
 export function janelaAnterior(j: Janela, p?: Periodo): Janela {
   if (p?.tipo === 'hoje') {
     const DIA_MS = 24 * 60 * 60 * 1000;
     return {
       desde: new Date(Date.parse(j.desde) - DIA_MS).toISOString(),
       ate: new Date(Date.parse(j.ate) - DIA_MS).toISOString(),
+    };
+  }
+  if (p?.tipo === 'mes_atual') {
+    const agora = new Date(j.ate);
+    const ano = agora.getFullYear();
+    const mes = agora.getMonth();
+    const ultimoDiaMesAnterior = new Date(ano, mes, 0).getDate();
+    const dia = Math.min(agora.getDate(), ultimoDiaMesAnterior); // clampa 31/mar → 28/fev
+    return {
+      desde: new Date(ano, mes - 1, 1, 0, 0, 0, 0).toISOString(),
+      ate: new Date(ano, mes - 1, dia, 23, 59, 59, 999).toISOString(),
     };
   }
   const desdeMs = Date.parse(j.desde);

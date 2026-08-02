@@ -59,6 +59,39 @@ describe('janelaAnterior', () => {
     const a = janelaAnterior(j, { tipo: 'hoje' }); // fix: ontem, mesmo ponto do relógio
     expect(a).toEqual({ desde: '2026-07-05T00:00:00.000Z', ate: '2026-07-05T12:00:00.000Z' });
   });
+
+  it('"mes_atual": compara com os mesmos DIAS INTEIROS do mês passado, não a mesma hora do relógio (bug real)', () => {
+    // "mes_atual" também cresce (mês todo) — deslocar pelos ~1,5 dia decorridos de agosto dá um
+    // pedaço do FIM de julho, não "01-02/07 completos". E comparar até a mesma HORA do relógio
+    // (em vez de dia inteiro) oscila com 1 pedido de madrugada e diverge do card "Personalizado"
+    // — por isso o fix usa dia inteiro (00:00→23:59:59.999), não hora exata. Datas sem "Z" (hora
+    // local), como no resto do arquivo, porque a resolução do fix opera em hora local.
+    const desde = new Date(2026, 7, 1, 0, 0, 0).toISOString(); // 01/08 00:00 local
+    const ate = new Date(2026, 7, 2, 15, 0, 0).toISOString(); // 02/08 15:00 local (~1,625 dia decorrido)
+    const j = { desde, ate };
+
+    const semTipo = janelaAnterior(j); // comportamento genérico (bug): desloca pela duração decorrida
+    const durMs = Date.parse(ate) - Date.parse(desde);
+    expect(semTipo).toEqual({ desde: new Date(Date.parse(desde) - durMs).toISOString(), ate: desde });
+
+    const a = janelaAnterior(j, { tipo: 'mes_atual' }); // fix: mesmos dias inteiros do mês anterior
+    expect(a).toEqual({
+      desde: new Date(2026, 6, 1, 0, 0, 0).toISOString(), // 01/07 00:00 local
+      ate: new Date(2026, 6, 2, 23, 59, 59, 999).toISOString(), // 02/07 23:59:59.999 local — dia inteiro
+    });
+  });
+
+  it('"mes_atual": clampa dia 31 quando o mês anterior é mais curto (31/mar → 28/fev, sem rollover pra março)', () => {
+    const j = {
+      desde: new Date(2026, 2, 1, 0, 0, 0).toISOString(), // 01/03 00:00 local
+      ate: new Date(2026, 2, 31, 9, 0, 0).toISOString(), // 31/03 09:00 local
+    };
+    const a = janelaAnterior(j, { tipo: 'mes_atual' });
+    expect(a).toEqual({
+      desde: new Date(2026, 1, 1, 0, 0, 0).toISOString(), // 01/02 00:00 local
+      ate: new Date(2026, 1, 28, 23, 59, 59, 999).toISOString(), // 28/02 23:59:59.999 (2026 não é bissexto)
+    });
+  });
 });
 
 describe('periodo <-> params', () => {
