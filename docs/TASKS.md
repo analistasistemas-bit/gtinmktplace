@@ -2,6 +2,40 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Redesenho da tela de Estoque — concluído 2026-08-02
+
+- [x] **Causa raiz:** listagem, cadastro e o card de movimentos/variações usavam `<table>`
+  aninhada dentro de `<table>`; em telas estreitas isso forçava scroll horizontal na página
+  inteira (bug visível tanto em Estoque quanto em Publicados, que compartilha o componente
+  `MovimentosEstoque`).
+- [x] **Fix:** listagem de Estoque virou cards; movimentos e variações saíram de dentro de
+  `<table>`; cadastro virou cards por variação com upload de foto já na etapa 1. 11 tasks de
+  implementação (TDD, review em 2 estágios) + esta Task 12 de fechamento. Spec completa em
+  `docs/superpowers/specs/2026-08-01-estoque-redesign-design.md`; plano e reports por task em
+  `.superpowers/sdd/2026-08-01-estoque-redesign/`.
+- [x] **Suíte automatizada:** `pnpm lint` (0 erros, 11 warnings pré-existentes de
+  `react-refresh/only-export-components`, nenhum novo) e `pnpm test` (287 arquivos, 2355 testes,
+  0 skip) verdes.
+- [x] **QA visual — concluído via `playwright-cli` contra conta de validação.** Depois de duas
+  tentativas frustradas de anexar via CDP no Chrome pessoal do Diego, ele criou uma conta de
+  validação (`VALIDATION_EMAIL`/`VALIDATION_PASSWORD` em `.env.local`) e o `playwright-cli`
+  logou sozinho, sem depender do Chrome de ninguém — sessão só leitura, nenhuma publicação,
+  exclusão ou edição de dado real. 10 screenshots reais (5 cenários × 1440px/768px), todos com
+  `document.documentElement.scrollWidth <= window.innerWidth` **confirmado**:
+  - Estoque colapsado: 1440 → `1440 vs 1440`; 768 → `768 vs 768`.
+  - Estoque expandido, aba Variações: 1440 → `1440 vs 1440`; 768 → `768 vs 768`.
+  - Estoque expandido, aba Movimentos: 1440 → `1440 vs 1440`; 768 → `768 vs 768`.
+  - Publicados, linha expandida (`MovimentosEstoque` compartilhado): 1440 → `1440 vs 1440`; 768 →
+    `768 vs 768`.
+  - Diálogo de cadastro com 3 variações preenchidas: 1440 → `1440 vs 1440`; 768 → `768 vs 768`
+    (checagem repetida no `[role=dialog]` isoladamente: `768 vs 768` nos dois viewports).
+  10/10 checagens passaram — o bug de scroll horizontal por tabela aninhada está morto em
+  Estoque e em Publicados, larga e estreita. O diálogo de cadastro coube nos dois viewports sem
+  corte visível nos prints, então `src/components/estoque/dialog-cadastro-produto.tsx` não
+  precisou de ajuste de largura.
+- [x] **`docs/reference/` e `obsidian-vault/`:** conferidos, sem necessidade de alteração —
+  entrega 100% frontend, sem mudança de edge function, modelo de dados ou decisão arquitetural.
+
 ## Código de produto automático no cadastro manual — concluído 2026-07-31
 
 - [x] **Causa raiz:** quem usa o módulo de estoque não tem ERP, então não tem código de produto
