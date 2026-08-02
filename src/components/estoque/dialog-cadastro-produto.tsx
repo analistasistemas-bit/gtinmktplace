@@ -254,7 +254,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     const falhas: string[] = [];
     if (linhas.length !== r.variacoes.length) {
       linhas.forEach((l, i) => {
-        if (l.foto) falhas.push(`Variação (linha ${i + 1}, contagem divergente — reenvie manualmente na Revisão)`);
+        if (l.foto) falhas.push(`Variação (linha ${i + 1}, contagem divergente — vá pra Revisão)`);
       });
     } else {
       linhas.forEach((l, i) => {

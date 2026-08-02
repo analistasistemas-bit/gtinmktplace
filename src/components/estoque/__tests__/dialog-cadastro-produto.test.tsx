@@ -441,7 +441,7 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
   // contagem de variações diferente do formulário atual (linhas editadas entre tentativas).
   // Casar por índice nesse caso arriscaria gravar a foto no SKU errado — o fix trava o
   // casamento de variação inteiro e avisa o operador em vez de arriscar.
-  it('contagem de variações divergente: não casa foto nenhuma por índice, e avisa o operador', async () => {
+  it('contagem de variações divergente: não casa foto de variação, mas a capa sobe normalmente e o operador é avisado', async () => {
     cadastrarProdutoMock.mockResolvedValueOnce({
       loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
       variacoes: [{ id: 'v1', codigo: '00000005' }], // edge devolveu só 1 variação
@@ -457,6 +457,11 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     await user.type(screen.getByLabelText('Preço da variação 1'), '10');
     await user.type(screen.getByLabelText('Preço da variação 2'), '10');
 
+    // Capa presente neste cenário — precisa provar que a divergência de VARIAÇÃO não
+    // arrasta a capa junto pro `if` de bloqueio (a capa casa por `familiaId`, não índice).
+    const capaFile = new File(['c'], 'capa.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Capa'), capaFile);
+
     const fotoAzul = new File(['a'], 'azul.png', { type: 'image/png' });
     const fotoPreto = new File(['p'], 'preto.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Foto da variação 1'), fotoAzul);
@@ -467,13 +472,17 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     // O operador é avisado.
     expect(await screen.findByText(/contagem divergente/)).toBeInTheDocument();
 
-    // Nenhuma foto de variação foi enviada — só a checagem de que uploadFotoProdutoMock
-    // nunca foi chamado com um alvo `tipo: 'variacao'` prova isso (não há capa neste teste,
-    // então "nunca chamado" já bastaria, mas ser explícito documenta a intenção do teste).
+    // Positiva: a capa sobe normalmente, mesmo com a divergência de variação.
+    await waitFor(() => expect(uploadFotoProdutoMock).toHaveBeenCalledWith(
+      'owner-1', 'l1', capaFile, { tipo: 'capa', familiaId: 'f1' },
+    ));
+
+    // Negativa: nenhuma foto de variação foi enviada por índice.
     expect(uploadFotoProdutoMock).not.toHaveBeenCalledWith(
       expect.anything(), expect.anything(), expect.anything(),
       expect.objectContaining({ tipo: 'variacao' }),
     );
-    expect(uploadFotoProdutoMock).not.toHaveBeenCalled();
+    // Só a capa foi chamada — prova que a capa é a ÚNICA coisa que subiu.
+    expect(uploadFotoProdutoMock).toHaveBeenCalledTimes(1);
   });
 });
