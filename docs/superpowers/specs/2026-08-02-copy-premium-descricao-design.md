@@ -67,6 +67,18 @@ declarada.** Escrever R1 e deixar a linha 154 intacta tornaria R1 inerte. Todo e
 dentro do `SYSTEM` precisa ser substituído por um exemplo R1-conforme — o prompt novo
 ensina pelo exemplo, não só pela regra.
 
+E a linha 154 não é a única armadilha. São **três**, e as outras duas produzem exatamente
+a forma que R8 proíbe:
+
+| Linha | Texto atual | Regra que viola |
+|---|---|---|
+| 146 | `Ideal para [aplicações típicas do tipo de produto — … (confecções, facções, malharias, artesanato…)]` | R8 — manda afirmar sobre *este* produto |
+| 154 | `benefícios genéricos do tipo: "Alta resistência", "Costura firme", "Bom rendimento"…` | R1, R1b |
+| 174 | `(4 a 6 bullets sobre aplicações típicas. Conhecimento de domínio público é permitido…)` | R8 — sem exigir forma de categoria |
+
+As três precisam ser reescritas. Enumerá-las aqui evita que a regra genérica ("todo
+exemplo precisa ser substituído") deixe alguma passar na implementação.
+
 ### O que NÃO é o problema
 
 A própria análise dá **8/10 para estrutura**. Os problemas graves são todos de conteúdo
@@ -157,11 +169,17 @@ explícita na fonte.
 
 ### R5 — SEO
 
-Repetir naturalmente, dentro de frases, os termos de busca formados a partir de
-`nome_pai` + `descricao_pai` + `tipo_produto_busca` — *linha de costura, linha 100%
-poliéster, cone de linha, linha para máquina, linha 10000 metros*.
+Repetir naturalmente, dentro de frases, os termos de busca formados a partir do **nome e
+da descrição detalhada recebidos no input, mais o tipo de produto que a própria geração
+identificar** — *linha de costura, linha 100% poliéster, cone de linha, linha para
+máquina, linha 10000 metros*.
 
 Proibido empilhar palavra-chave fora de frase (keyword stuffing).
+
+> **Nota de implementação:** `tipo_produto_busca` é **saída** do `SCHEMA`, não campo de
+> entrada — `montarUserPrompt` não o envia. A regra no `SYSTEM` precisa ser fraseada como
+> "o tipo de produto que você identificar", nunca como se fosse um campo disponível no
+> input, ou o modelo procura um dado que não existe.
 
 ### R6 — Perguntas sobre este produto
 
@@ -311,9 +329,16 @@ Três cenários sobre a mesma amostra:
 
 | Cenário | Prompt | Modelo | Origem |
 |---|---|---|---|
-| **A** | atual | `gpt-4o-mini` | **`familias.descricao_ml` já gravada** — não re-executa |
+| **A — baseline de produção** | histórico | `gpt-4o-mini` | **`familias.descricao_ml` já gravada** — não re-executa |
 | **B** | novo | `gpt-4o-mini` | geração nova |
 | **C** | novo | `gpt-4o` | geração nova |
+
+O cenário A é rotulado **baseline de produção**, não "prompt atual": as 166 descrições
+foram geradas ao longo da evolução do prompt, e parte delas é anterior aos guards e às
+correções que entraram depois. É a linha de base real que a análise externa criticou —
+que é o que interessa — mas não é uma execução limpa do `SYSTEM` de hoje. Para reduzir a
+dispersão, a amostra prefere famílias geradas recentemente, dentro dos critérios de
+diversidade acima.
 
 **B − A** mede o ganho do prompt. **C − B** mede o ganho do modelo. Rodar os dois juntos
 tornaria a causa inatribuível.
@@ -349,13 +374,29 @@ Três são automáticos e não dependem de julgamento:
 | Critério | Como se mede |
 |---|---|
 | Ausência de afirmação não comprovada | `detectarFormulasProibidas` — contagem de violações por cenário |
-| Fidelidade numérica | todo número, unidade, comparação quantitativa e causalidade numérica da saída presente literalmente na fonte, ou transformação matemática determinística documentada (R1b) |
+| Fidelidade numérica | todo número, unidade, comparação quantitativa e causalidade numérica da saída presente literalmente na fonte, ou transformação matemática determinística documentada (R1b) — ver redução operacional abaixo |
 | Variedade entre anúncios | taxa de bullets idênticos entre os 30 do mesmo cenário |
 
 Dois são subjetivos e ficam para leitura do operador, comparando pares B vs C:
 
 - qualidade da tradução característica → benefício
 - fluidez e naturalidade da copy
+
+#### Redução operacional da fidelidade numérica
+
+R1b como está redigida exige interpretação e por isso não é diretamente calculável. O
+harness a reduz a três checagens mecânicas:
+
+1. **Extrair pares número+unidade** da saída e da fonte.
+2. **Normalizar formato antes de comparar** — `10.000`, `10000` e "10 mil" são o mesmo
+   valor. Sem essa normalização a métrica acusa falso positivo contra a própria fonte,
+   que escreve `10.000 METROS`.
+3. **Sinalizar padrões de comparação** para revisão manual: `%`, `X vezes`, `mais que`,
+   `menos que`, `até`, `superior a`. Comparação quantitativa raramente é derivável da
+   fonte, e a lista é curta o bastante para o operador conferir uma a uma.
+
+A checagem 3 sinaliza, não reprova — é a fronteira onde a métrica automática entrega para
+o julgamento humano.
 
 ### Saída
 
@@ -444,8 +485,15 @@ Registrados no ADR-0098 como evolução futura, não implementados agora:
 - ADR-0098 escrito **antes** da implementação do prompt, registrando a decisão e as
   regras R1–R8. O resultado do experimento (seção 5) é acrescentado ao mesmo ADR depois
   que ele roda — o ADR nasce com a decisão e ganha a evidência.
-- Testes novos: `detectarFormulasProibidas` (função pura) e cobertura dos guards de
-  largura/metragem com a seção nova presente e ausente.
+- Testes novos:
+  - `detectarFormulasProibidas` (função pura), cobrindo cada fórmula de R3.
+  - Guards de largura/metragem com `❓ PERGUNTAS SOBRE ESTE PRODUTO` presente e ausente.
+  - **Caso específico:** metragem citada apenas dentro de uma resposta da seção de
+    perguntas ("Quantos metros possui? 10.000 metros"). `contemMetragem` considera o dado
+    presente e `garantirMetragemDescricao` não injeta o bullet em `📌 ESPECIFICAÇÕES`.
+    Esse é o comportamento pré-existente e desejado — a tolerância a menção em prosa
+    evita duplicar o dado — mas a seção nova cria um lugar a mais onde ele dispara, e o
+    teste tem que fixar isso de propósito, não por acidente.
 - Experimento executado, saída comparativa gerada e as três métricas automáticas
   registradas no ADR.
 - Documentação atualizada no mesmo commit da entrega:
