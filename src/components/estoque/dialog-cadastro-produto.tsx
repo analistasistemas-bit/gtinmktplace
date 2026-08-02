@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -22,23 +22,13 @@ import {
   type ResultadoCadastro,
 } from '@/lib/produtos-saldo';
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
+import { LinhaVariacaoForm, novaLinha, parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 
-type LinhaVariacao = {
-  nome: string; gtin: string;
-  preco: string; custo: string; estoqueInicial: string;
-  pesoGramas: string; alturaCm: string; larguraCm: string; comprimentoCm: string;
-};
-
-const LINHA_VAZIA: LinhaVariacao = {
-  nome: '', gtin: '', preco: '', custo: '', estoqueInicial: '',
-  pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
-};
-
-function num(v: string): number | null {
-  const t = v.trim().replace(',', '.');
-  if (t === '') return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
+// Normaliza `NaN` (texto inválido) para `null` — a validação inline (`erroCampo`) já impediu
+// o envio nesse caso; aqui só resta converter o que passou.
+function numOuNull(v: string): number | null {
+  const n = parseNum(v);
+  return typeof n === 'number' && !Number.isNaN(n) ? n : null;
 }
 
 function montarPayload(
@@ -49,13 +39,13 @@ function montarPayload(
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
     gtin: l.gtin.trim() || null,
-    preco: num(l.preco) ?? 0,
-    custo: num(l.custo),
-    estoqueInicial: num(l.estoqueInicial),
-    pesoGramas: num(l.pesoGramas),
-    alturaCm: num(l.alturaCm),
-    larguraCm: num(l.larguraCm),
-    comprimentoCm: num(l.comprimentoCm),
+    preco: numOuNull(l.preco) ?? 0,
+    custo: numOuNull(l.custo),
+    estoqueInicial: numOuNull(l.estoqueInicial),
+    pesoGramas: numOuNull(l.pesoGramas),
+    alturaCm: numOuNull(l.alturaCm),
+    larguraCm: numOuNull(l.larguraCm),
+    comprimentoCm: numOuNull(l.comprimentoCm),
   }));
   return {
     nomePai: pai.nomePai.trim(),
@@ -79,7 +69,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   // Sem default silencioso: origem define a alíquota de imposto (ADR-0055) e o operador
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
-  const [linhas, setLinhas] = useState<LinhaVariacao[]>([{ ...LINHA_VAZIA }]);
+  const [linhas, setLinhas] = useState<LinhaVariacao[]>([novaLinha()]);
   // Só troca depois de um sucesso confirmado (ou ao fechar, deixando pronta pro próximo
   // cadastro): duplo clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve
   // o cadastro original em vez de duplicar.
@@ -97,14 +87,16 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   useEffect(() => {
     if (aberto) return;
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
-    setOrigem(null); setLinhas([{ ...LINHA_VAZIA }]); setResultado(null);
+    setOrigem(null); setLinhas([novaLinha()]); setResultado(null);
     setChaveCadastro(crypto.randomUUID());
     setDivergencia(null);
   }, [aberto]);
 
-  const podeSalvar = !!nomePai.trim() && !!origem
-    && linhas.length > 0
-    && linhas.every((l) => (num(l.preco) ?? 0) > 0);
+  const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
+    && linhas.every((l) => {
+      const p = parseNum(l.preco);
+      return typeof p === 'number' && !Number.isNaN(p) && p > 0;
+    });
 
   async function salvar() {
     if (!origem) return;
@@ -166,12 +158,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
-          `max-w-4xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
+          `max-w-3xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
           grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
-          5xl (nao 4xl): a tabela de variacoes (antes 10 colunas com SKU, hoje 9) precisava de
-          ~924px; em 4xl sobravam so 862px de area util e a tabela cortava colunas no scroll
-          interno (achado do Diego testando ao vivo). */}
-      <DialogContent className="max-h-[90vh] sm:max-w-5xl overflow-y-auto">
+          3xl: as variacoes agora sao cards empilhados (nao uma tabela larga com scroll
+          horizontal), entao a largura so precisa acomodar um card por vez. */}
+      <DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{resultado ? 'Fotos do produto' : 'Cadastrar produto'}</DialogTitle>
           <DialogDescription>
@@ -183,9 +174,9 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
 
         {!resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
-          // definido), entao o min-content da tabela de variacoes (9 colunas com `min-w-20`
-          // cada) vaza pro dialog inteiro em vez de ficar contido no scroll horizontal
-          // do proprio wrapper da tabela. Sem isto, o dialog abre mais largo que a viewport.
+          // definido), entao o min-content do conteudo interno vaza pro dialog inteiro em vez
+          // de ficar contido na largura do proprio wrapper. Sem isto, o dialog abre mais largo
+          // que a viewport.
           <div className="flex min-w-0 flex-col gap-4">
             {divergencia && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
@@ -246,7 +237,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
                 <span className="text-sm font-medium">Variações</span>
                 <Button
                   type="button" variant="outline" size="sm"
-                  onClick={() => setLinhas((l) => [...l, { ...LINHA_VAZIA }])}
+                  onClick={() => setLinhas((l) => [...l, novaLinha()])}
                 >
                   <Plus className="mr-1 h-3.5 w-3.5" /> Adicionar variação
                 </Button>
@@ -254,42 +245,17 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
               <span className="text-xs text-muted-foreground">
                 Códigos gerados automaticamente ao salvar.
               </span>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      {['Cor / nome', 'GTIN', 'Preço', 'Custo', 'Estoque', 'Peso (g)', 'Alt (cm)', 'Larg (cm)', 'Comp (cm)', ''].map((h) => (
-                        <th key={h} className="p-2 font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {linhas.map((l, i) => (
-                      <tr key={i} className="border-t">
-                        {(['nome', 'gtin', 'preco', 'custo', 'estoqueInicial', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'] as const).map((campo) => (
-                          <td key={campo} className="p-1">
-                            <Input
-                              className="h-8 min-w-20 text-xs"
-                              value={l[campo]}
-                              onChange={(e) => setLinhas((prev) => prev.map((x, j) => (
-                                j === i ? { ...x, [campo]: e.target.value } : x
-                              )))}
-                            />
-                          </td>
-                        ))}
-                        <td className="p-1">
-                          <Button
-                            type="button" variant="ghost" size="sm"
-                            disabled={linhas.length === 1}
-                            onClick={() => setLinhas((prev) => prev.filter((_, j) => j !== i))}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex flex-col gap-3">
+                {linhas.map((l, i) => (
+                  <LinhaVariacaoForm
+                    key={l.clientId}
+                    linha={l}
+                    indice={i}
+                    podeRemover={linhas.length > 1}
+                    onMudar={(patch) => setLinhas((prev) => prev.map((x) => (x.clientId === l.clientId ? { ...x, ...patch } : x)))}
+                    onRemover={() => setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId))}
+                  />
+                ))}
               </div>
             </div>
           </div>

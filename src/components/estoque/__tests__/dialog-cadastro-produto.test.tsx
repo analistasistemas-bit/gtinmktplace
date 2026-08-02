@@ -41,7 +41,7 @@ describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
     // isso a busca é em `document`, não em `container`.
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    const precoInput = document.querySelector('table tbody tr td:nth-child(3) input') as HTMLInputElement;
+    const precoInput = screen.getByLabelText('Preço da variação 1');
     await user.type(precoInput, '10');
 
     const botao = screen.getByRole('button', { name: 'Cadastrar' });
@@ -55,5 +55,50 @@ describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
     const chave2 = cadastrarProdutoMock.mock.calls[1][0].chaveCadastro;
     expect(chave1).toBeTruthy();
     expect(chave2).toBe(chave1);
+  });
+});
+
+describe('DialogCadastroProduto — formulário em cards', () => {
+  it('remover a variação do meio preserva os dados das outras', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: /Adicionar variação/ }));
+    await user.click(screen.getByRole('button', { name: /Adicionar variação/ }));
+
+    await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'azul');
+    await user.type(screen.getByLabelText('Cor / nome da variação 2'), 'verde');
+    await user.type(screen.getByLabelText('Cor / nome da variação 3'), 'preto');
+
+    await user.click(screen.getByRole('button', { name: 'Remover variação 2' }));
+
+    expect(screen.getByLabelText('Cor / nome da variação 1')).toHaveValue('azul');
+    expect(screen.getByLabelText('Cor / nome da variação 2')).toHaveValue('preto');
+  });
+
+  it('preço vazio mostra mensagem e mantém o botão travado', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.click(screen.getByLabelText('Preço da variação 1'));
+    await user.tab();
+    expect(screen.getByText('Preço é obrigatório e deve ser maior que zero.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+  });
+
+  it('estoque fracionário é recusado inline', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Estoque inicial da variação 1'), '2,5');
+    await user.tab();
+    expect(screen.getByText('Estoque inicial deve ser um número inteiro.')).toBeInTheDocument();
+  });
+
+  it('texto não numérico no custo é recusado em vez de virar campo vazio', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Custo da variação 1'), 'abc');
+    await user.tab();
+    expect(screen.getByText('Valor inválido.')).toBeInTheDocument();
   });
 });
