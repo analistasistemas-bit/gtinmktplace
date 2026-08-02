@@ -321,8 +321,55 @@ segmento novo em volume, reavaliar.
 
 ## Resultado do experimento
 
-Executado em 2026-08-02 sobre 30 famílias reais (60 gerações). Métricas com o
-pós-processamento de produção aplicado aos três cenários.
+Duas rodadas. A **rodada 1** (30 famílias) rodou antes da correção de ordem do
+pós-processamento; a **rodada 2** (10 famílias) confirmou os achados depois dela e testou um
+terceiro modelo. As conclusões são as mesmas nas duas.
+
+### Rodada 2 — 10 famílias, pós-correção de ordem
+
+| Métrica | A (baseline) | B (prompt novo, mini) | C (prompt novo, 4o) |
+|---|---|---|---|
+| Taxa de bullets repetidos | 0,192 | **0,076** | 0,140 |
+| Bullets prescritos pela Causa C¹ | 13 | **3** | 0 |
+| Seção de perguntas gerada | 0/10 | **6/10** | 2/10 |
+| Fórmulas proibidas (R3) | 2 | 2 | **1** |
+| Medidas não ancoradas (R1b) | 1 | 1 | **0** |
+| Comparações não ancoradas (R1b) | 0 | 0 | 0 |
+| Descrição média (chars) | 1.191 | 1.575 | 1.414 |
+| Custo dos 10 produtos | — | **$0,0080** | $0,1262 |
+| Falhas de geração | — | 0 | 0 |
+
+¹ soma de "alta resistência" + "ótimo custo-benefício" + "bom rendimento".
+
+**`gpt-4o-mini` com o prompt novo é a melhor relação.** O `gpt-4o` elimina 100% dos bullets
+prescritos (contra 77% do mini), mas troca os clichês antigos pelos seus próprios: repete
+**mais** bullets entre anúncios (0,140 contra 0,076) e adere menos ao template (2 seções de
+perguntas contra 6). E custa **15,8× mais**. A vantagem dele em ancoragem é de 1 ocorrência
+em cada métrica, dentro do ruído para n=10.
+
+As métricas variam entre execuções (temperatura 0.4): na rodada 2 repetida, `medidas não
+ancoradas` de B oscilou entre 1 e 2. Diferenças de uma unidade não sustentam conclusão; a
+queda de bullets repetidos e de bullets prescritos, sim.
+
+### DeepSeek V4 Flash — testado e rejeitado
+
+`deepseek/deepseek-v4-flash-0731` (a opção da ADR-0074) foi incluído numa terceira posição.
+É o mais barato dos três — **$0,09/$0,18 por 1M tokens**, output 3,3× mais barato que o
+`gpt-4o-mini` — e já consta na tabela `PRECOS` de `tokens.ts`.
+
+Foi **rejeitado por falha de geração**: devolveu JSON truncado sob `json_schema` strict,
+falhando em 1 dos 3 primeiros produtos (`Unexpected end of JSON input`). `gpt-4o-mini` e
+`gpt-4o` não falharam em nenhum dos 10.
+
+Isso é eliminatório independente do preço: `gerarCopy` é a única etapa de IA **sem fallback
+resiliente** (ADR-0030) — falha ali derruba a família inteira. Um modelo com taxa de falha
+não desprezível no contrato de saída não pode ocupar essa posição sem um retry dedicado, que
+está fora do escopo desta decisão.
+
+### Rodada 1 — 30 famílias, pré-correção de ordem
+
+Executada sobre 30 famílias reais (60 gerações). Métricas com o pós-processamento de
+produção aplicado aos três cenários.
 
 | Métrica | A (baseline) | B (prompt novo, mini) | C (prompt novo, 4o) |
 |---|---|---|---|
