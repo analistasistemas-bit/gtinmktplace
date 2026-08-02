@@ -7,7 +7,7 @@ import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirQuantidadeTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
-import { garantirLarguraDescricao, garantirMetragemDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -462,10 +462,7 @@ Deno.serve(async (req) => {
         claimed.nome_pai,
         claimed.descricao_pai ?? '',
       ),
-      descricao_ml: garantirMetragemDescricao(
-        garantirLarguraDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? ''),
-        claimed.nome_pai,
-      ),
+      descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? ''),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
       custo_centavos: copy.custo_centavos + custoDesempateLLM,

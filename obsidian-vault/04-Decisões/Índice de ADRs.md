@@ -109,5 +109,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0095 | [Mercado Envios (me2) detectado via shipping_preferences, não status.mercadoenvios](../../docs/decisions/0095-mercado-envios-via-shipping-preferences.md) |
 | 0096 | [Código de produto automático no cadastro manual](../../docs/decisions/0096-codigo-produto-automatico.md) |
 | 0097 | [Exclusão de produto/lote limpa os movimentos de estoque órfãos](../../docs/decisions/0097-exclusao-limpa-movimentos-orfaos.md) |
+| 0098 | [Copy de anúncio ancorada na fonte e persuasiva](../../docs/decisions/0098-copy-ancorada-na-fonte-e-persuasiva.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

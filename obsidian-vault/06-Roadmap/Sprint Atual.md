@@ -183,6 +183,12 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 - Split de produto em N anúncios para produtos com >100 cores (ADR-0048, 2026-06-29)
 - Multiusuário com permissão de menu (ADR-0047, 2026-06-29) — antecipa parte do `E7`
 
+- **Copy da descrição de anúncio ancorada na fonte** (ADR-0098, 2026-08-02) — prompt
+  reescrito com R1–R9 após análise externa de conversão. Achado central: o próprio prompt
+  prescrevia os bullets genéricos ("Alta resistência" em 75% do catálogo). Experimento
+  A/B/C provou que o ganho é do prompt, não do modelo — `gpt-4o-mini` mantido. Rollout sob
+  demanda via `regenerar-copy-familia`; nada regerado em lote.
+
 ## Ver também
 
 - [[Backlog]] — os épicos da evolução SaaS (agora com E6b)
