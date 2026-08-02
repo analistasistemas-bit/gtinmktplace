@@ -1,5 +1,6 @@
 // Card de variação do cadastro. Substitui a linha de 9 inputs minúsculos numa tabela com scroll
 // horizontal. Campos agrupados por natureza: identificação, comercial, logística, foto.
+import { useEffect, useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +67,11 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, onMudar, onRemov
   const n = indice + 1;
   const id = (campo: string) => `var-${linha.clientId}-${campo}`;
 
+  // useMemo: só cria uma blob URL nova quando o `File` muda — sem isto, qualquer tecla em
+  // qualquer campo do card re-renderiza e cria (e vaza) uma URL nova pra mesma foto.
+  const fotoUrl = useMemo(() => (linha.foto ? URL.createObjectURL(linha.foto) : null), [linha.foto]);
+  useEffect(() => () => { if (fotoUrl) URL.revokeObjectURL(fotoUrl); }, [fotoUrl]);
+
   const campoTexto = (campo: keyof LinhaVariacao, rotulo: string) => (
     <div key={campo} className="flex flex-col gap-1">
       <label htmlFor={id(campo)} className="text-xs text-muted-foreground">
@@ -120,9 +126,9 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, onMudar, onRemov
             onChange={(e) => onMudar({ foto: e.target.files?.[0] ?? null })}
           />
         </div>
-        {linha.foto && (
+        {fotoUrl && (
           <img
-            src={URL.createObjectURL(linha.foto)}
+            src={fotoUrl}
             alt={`Prévia da foto da variação ${n}`}
             className="h-16 w-16 shrink-0 rounded-md object-cover"
           />

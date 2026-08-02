@@ -22,10 +22,19 @@ import {
   type ResultadoCadastro,
 } from '@/lib/produtos-saldo';
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
-import { LinhaVariacaoForm, novaLinha, parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
+import {
+  LinhaVariacaoForm, novaLinha, parseNum, erroCampo, type LinhaVariacao,
+} from '@/components/estoque/linha-variacao-form';
 
-// Normaliza `NaN` (texto inválido) para `null` — a validação inline (`erroCampo`) já impediu
-// o envio nesse caso; aqui só resta converter o que passou.
+// Todo campo numérico que `erroCampo` valida — usado pelo gate `podeSalvar` para travar o
+// submit se QUALQUER um, em QUALQUER linha, tiver erro (não só `preco`).
+const CAMPOS_NUMERICOS = [
+  'preco', 'custo', 'estoqueInicial', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm',
+] as const;
+
+// Normaliza `NaN` (texto inválido) para `null`. `podeSalvar` já garante que nenhum campo
+// numérico de nenhuma linha tem erro antes de chegar aqui — NaN não deveria ocorrer; isto é
+// só uma conversão defensiva de tipo, não a validação em si.
 function numOuNull(v: string): number | null {
   const n = parseNum(v);
   return typeof n === 'number' && !Number.isNaN(n) ? n : null;
@@ -93,10 +102,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   }, [aberto]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
-    && linhas.every((l) => {
-      const p = parseNum(l.preco);
-      return typeof p === 'number' && !Number.isNaN(p) && p > 0;
-    });
+    && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
 
   async function salvar() {
     if (!origem) return;
