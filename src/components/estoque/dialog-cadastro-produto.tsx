@@ -234,6 +234,13 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
    *   3. a edge ordena a resposta por codigo                (cadastrar-produto/index.ts:256)
    *   4. todo codigo tem 8 digitos, entao ordem lexicografica = numerica
    * Se qualquer um deles mudar, a foto vai para o SKU errado EM SILENCIO.
+   *
+   * Se `linhas.length !== r.variacoes.length`, os invariantes acima não garantem mais nada —
+   * a contagem divergente é sinal de que um retry idempotente devolveu o cadastro ORIGINAL da
+   * edge, que pode ter menos ou mais variações do que o formulário atual (o operador editou
+   * linhas entre tentativas). Pular o casamento de variação nesse caso é mais seguro do que
+   * arriscar o índice errado; o operador é avisado via `falhasFoto`. A foto de capa não é
+   * afetada — casa por `familiaId`, não por índice.
    */
   async function subirLoteDeFotos(r: ResultadoCadastro) {
     // `rotulo` é só para a mensagem de falha (o operador não reconhece um variacaoId em UUID);
@@ -244,23 +251,31 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
       const rotulo = tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3';
       if (arquivo) alvos.push({ arquivo, alvo: { tipo, familiaId: r.familiaId }, rotulo });
     });
-    linhas.forEach((l, i) => {
-      const v = r.variacoes[i];
-      if (l.foto && v) alvos.push({ arquivo: l.foto, alvo: { tipo: 'variacao', variacaoId: v.id }, rotulo: v.codigo });
-    });
-    if (alvos.length === 0) return;
-
-    setEnviandoFotos({ feitos: 0, total: alvos.length });
     const falhas: string[] = [];
-    for (const [i, a] of alvos.entries()) {
-      try {
-        await subirFoto(a.arquivo, a.alvo, r.loteId);
-      } catch {
-        falhas.push(a.rotulo);
-      }
-      setEnviandoFotos({ feitos: i + 1, total: alvos.length });
+    if (linhas.length !== r.variacoes.length) {
+      linhas.forEach((l, i) => {
+        if (l.foto) falhas.push(`Variação (linha ${i + 1}, contagem divergente — reenvie manualmente na Revisão)`);
+      });
+    } else {
+      linhas.forEach((l, i) => {
+        const v = r.variacoes[i];
+        if (l.foto && v) alvos.push({ arquivo: l.foto, alvo: { tipo: 'variacao', variacaoId: v.id }, rotulo: v.codigo });
+      });
     }
-    setEnviandoFotos(null);
+    if (alvos.length === 0 && falhas.length === 0) return;
+
+    if (alvos.length > 0) {
+      setEnviandoFotos({ feitos: 0, total: alvos.length });
+      for (const [i, a] of alvos.entries()) {
+        try {
+          await subirFoto(a.arquivo, a.alvo, r.loteId);
+        } catch {
+          falhas.push(a.rotulo);
+        }
+        setEnviandoFotos({ feitos: i + 1, total: alvos.length });
+      }
+      setEnviandoFotos(null);
+    }
     setFalhasFoto(falhas);
   }
 

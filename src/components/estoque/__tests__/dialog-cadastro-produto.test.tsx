@@ -436,4 +436,44 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
       'owner-1', 'l1', fotoPreto, { tipo: 'variacao', variacaoId: 'v2' },
     );
   });
+
+  // Achado real: retry idempotente pode devolver o cadastro ORIGINAL da edge, com uma
+  // contagem de variações diferente do formulário atual (linhas editadas entre tentativas).
+  // Casar por índice nesse caso arriscaria gravar a foto no SKU errado — o fix trava o
+  // casamento de variação inteiro e avisa o operador em vez de arriscar.
+  it('contagem de variações divergente: não casa foto nenhuma por índice, e avisa o operador', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }], // edge devolveu só 1 variação
+    });
+    const user = userEvent.setup();
+    renderDialog();
+
+    // Formulário atual tem 2 linhas — diverge do retorno da edge (1 variação).
+    await user.click(screen.getByRole('button', { name: /Adicionar variação/ }));
+
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço da variação 2'), '10');
+
+    const fotoAzul = new File(['a'], 'azul.png', { type: 'image/png' });
+    const fotoPreto = new File(['p'], 'preto.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Foto da variação 1'), fotoAzul);
+    await user.upload(screen.getByLabelText('Foto da variação 2'), fotoPreto);
+
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    // O operador é avisado.
+    expect(await screen.findByText(/contagem divergente/)).toBeInTheDocument();
+
+    // Nenhuma foto de variação foi enviada — só a checagem de que uploadFotoProdutoMock
+    // nunca foi chamado com um alvo `tipo: 'variacao'` prova isso (não há capa neste teste,
+    // então "nunca chamado" já bastaria, mas ser explícito documenta a intenção do teste).
+    expect(uploadFotoProdutoMock).not.toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.anything(),
+      expect.objectContaining({ tipo: 'variacao' }),
+    );
+    expect(uploadFotoProdutoMock).not.toHaveBeenCalled();
+  });
 });
