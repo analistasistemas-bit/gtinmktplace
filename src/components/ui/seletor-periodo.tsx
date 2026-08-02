@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
+import { diaLocal, resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
 
 interface Props {
   periodo: Periodo;
@@ -17,11 +17,13 @@ const PERIODOS: { dias: PeriodoDias; label: string }[] = [
   { dias: 90, label: '90 dias' },
 ];
 
-/** Datas YYYY-MM-DD para o rascunho. No range usa as do período (sem round-trip UTC). */
+/** Datas YYYY-MM-DD para o rascunho. No range usa as do período (sem round-trip UTC); nos demais
+ *  converte a janela pelo fuso LOCAL — `slice(0, 10)` no ISO prefilava o dia seguinte depois das
+ *  21h em BRT. */
 function rascunhoDe(p: Periodo): { desde: string; ate: string } {
   if (p.tipo === 'range') return { desde: p.desde, ate: p.ate };
   const j = resolverJanela(p);
-  return { desde: j.desde.slice(0, 10), ate: j.ate.slice(0, 10) };
+  return { desde: diaLocal(j.desde), ate: diaLocal(j.ate) };
 }
 
 /**

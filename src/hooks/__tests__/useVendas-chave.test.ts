@@ -14,9 +14,23 @@ describe('chaveJanela', () => {
   it('mesmo período que termina HOJE, resolvido em instantes diferentes → mesma chave', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-20T12:00:00.000Z')); // "hoje" = 2026-07-20, bate com o `ate` abaixo
-    const a = { desde: '2026-07-01T03:00:00.000Z', ate: '2026-07-20T01:42:22.585Z' };
-    const b = { desde: '2026-07-01T03:00:00.000Z', ate: '2026-07-20T01:45:13.306Z' };
+    // `ate` no meio do dia (11h UTC = 08h BRT): o dia é 2026-07-20 tanto local quanto em UTC.
+    const a = { desde: '2026-07-01T03:00:00.000Z', ate: '2026-07-20T11:42:22.585Z' };
+    const b = { desde: '2026-07-01T03:00:00.000Z', ate: '2026-07-20T11:45:13.306Z' };
     expect(chaveJanela(a)).toEqual(chaveJanela(b));
+  });
+
+  // O bug do "Personalizado" (Dashboard): escolher 01/08→01/08 mostrava os números de 'mes_atual'.
+  // Em BRT o fim do dia local (01/08 23:59:59.999 = 02/08 02:59Z) caía na data UTC de HOJE, era
+  // truncado como "termina hoje" e colidia com a chave de 'mes_atual', que tem o mesmo `desde`.
+  it('range que termina ONTEM não herda o cache de mes_atual', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-02T20:00:00.000Z')); // 02/08 17:00 BRT
+    const mesAtual = resolverJanela({ tipo: 'mes_atual' });
+    const range = resolverJanela({ tipo: 'range', desde: '2026-08-01', ate: '2026-08-01' });
+
+    expect(mesAtual.desde).toBe(range.desde); // mesmo início: 01/08 00:00 local
+    expect(chaveJanela(mesAtual)).not.toEqual(chaveJanela(range));
   });
 
   it('"hoje": janela "anterior" com hora de corte diferente no mesmo dia PASSADO não compartilha cache (bug real)', () => {

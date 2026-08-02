@@ -1,10 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { buscarVendas, marcaDagua, mesclarVendas, type Venda, type OrigemVenda } from '@/lib/faturamento';
-import type { Janela } from '@/lib/metricas';
+import { diaLocal, type Janela } from '@/lib/metricas';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 
 /** Chave de cache da janela: `desde` inteiro, `ate` truncado na data SÓ quando a janela termina
- *  HOJE.
+ *  HOJE — hoje no fuso LOCAL (`diaLocal`), não em UTC. Comparar `ate.slice(0, 10)` com a data UTC
+ *  de hoje quebrava o "Personalizado": em BRT, um range que termina ONTEM 23:59:59.999 vira HOJE
+ *  em UTC, era truncado, e colidia com a chave de 'mes_atual' (mesmo `desde`) — a tela mostrava os
+ *  números do mês inteiro em cima do range escolhido.
  *
  *  `resolverJanela` chama `new Date()`, então o `ate` de 'hoje'/'mes_atual'/'preset' é sempre
  *  "agora". Com o ISO cheio na chave, duas montagens do mesmo período viravam caches distintos —
@@ -32,8 +35,8 @@ import type { CanalAtivo } from '@/lib/canal-ativo';
  *  refazendo o fetch completo a cada remontagem; 'hoje', 'mes_atual' e 'range' têm `desde` fixo
  *  e passam a reaproveitar o cache (quando `ate` também cai no dia de hoje). */
 export function chaveJanela(janela: Janela): [string, string] {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const ateEhHoje = janela.ate.slice(0, 10) === hoje;
+  const hoje = diaLocal(new Date());
+  const ateEhHoje = diaLocal(janela.ate) === hoje;
   return [janela.desde, ateEhHoje ? hoje : janela.ate];
 }
 
