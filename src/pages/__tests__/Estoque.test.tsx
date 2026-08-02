@@ -5,7 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import Estoque from '../Estoque';
 import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
-import type { filtrarProdutos as FiltrarProdutosType } from '@/lib/produtos-saldo-filtro';
+
+// `typeof import(...)` em vez de `import type { filtrarProdutos as X }`: importar um VALOR sob
+// `import type` não produz um tipo utilizável em `Parameters<X>`/`ReturnType<X>` — TS recusa com
+// "refers to a value, but is being used as a type" (pedindo `typeof X`, que aqui já nasce certo).
+type FiltrarProdutosFn = (typeof import('@/lib/produtos-saldo-filtro'))['filtrarProdutos'];
 
 const produto: ProdutoComSaldo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
@@ -41,7 +45,7 @@ vi.mock('@/lib/produtos-saldo', async (orig) => ({
 // `filtrarProdutos` ORIGINAL de `orig()` (não do módulo já mockado, senão a implementação
 // chamaria a si mesma e estouraria a pilha).
 const { filtrarProdutosMock } = vi.hoisted(() => ({
-  filtrarProdutosMock: vi.fn<Parameters<FiltrarProdutosType>, ReturnType<FiltrarProdutosType>>(),
+  filtrarProdutosMock: vi.fn<FiltrarProdutosFn>(),
 }));
 vi.mock('@/lib/produtos-saldo-filtro', async (orig) => {
   const mod = await orig<typeof import('@/lib/produtos-saldo-filtro')>();
