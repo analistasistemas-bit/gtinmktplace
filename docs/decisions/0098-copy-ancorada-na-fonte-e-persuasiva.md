@@ -351,6 +351,46 @@ As métricas variam entre execuções (temperatura 0.4): na rodada 2 repetida, `
 ancoradas` de B oscilou entre 1 e 2. Diferenças de uma unidade não sustentam conclusão; a
 queda de bullets repetidos e de bullets prescritos, sim.
 
+### Rodada 3 — quatro modelos, três execuções independentes
+
+`openai/gpt-4.1-mini` entrou como cenário D. Fica entre os dois anteriores em preço:
+**$0,40/$1,60** por 1M — 2,7× o `gpt-4o-mini`, 6,3× mais barato que o `gpt-4o`.
+
+Como as métricas oscilam com temperatura 0.4 e n=10, esta rodada foi executada **três vezes
+sobre os mesmos 10 produtos**, e o que segue são médias, com os valores individuais entre
+parênteses. Zero falhas de geração em todos os modelos, nas três execuções.
+
+| Métrica | A (baseline) | B (gpt-4o-mini) | C (gpt-4o) | D (gpt-4.1-mini) |
+|---|---|---|---|---|
+| Bullets repetidos | 0,192 | 0,089 (0,109 · 0,083 · 0,075) | 0,136 | **0,066** (0,051 · 0,079 · 0,068) |
+| Fórmulas proibidas (R3) | 2 | 0,3 (0 · 0 · 1) | 1,0 (2 · 1 · 0) | **0** (0 · 0 · 0) |
+| Medidas não ancoradas (R1b) | 1 | 1,3 (2 · 2 · 0) | **0** (0 · 0 · 0) | **0** (0 · 0 · 0) |
+| Seção de perguntas | 0/10 | **5** (5 · 6 · 4) | 1 (1 · 1 · 0) | 3 (3 · 6 · 1) |
+| Descrição média (chars) | 1.191 | 1.594 | 1.401 | 1.291 |
+| Custo dos 10 produtos | — | $0,0080 | $0,1257 | $0,0197 |
+
+**`gpt-4.1-mini` é o melhor modelo para esta tarefa.** As vantagens não são de uma rodada:
+
+- **Ancoragem perfeita.** Zero fórmulas proibidas e zero medidas não ancoradas nas três
+  execuções. O `gpt-4o-mini` escorregou em ambas (1 fórmula numa execução; 2 medidas em
+  duas). Ancorar na fonte é o objetivo central desta decisão.
+- **Maior variedade entre anúncios.** Venceu o `gpt-4o-mini` em bullets repetidos nas **três**
+  execuções (0,051/0,079/0,068 contra 0,109/0,083/0,075) — consistente, não ruído.
+- **Custo aceitável.** $0,00197 por produto, ~1,1 centavo de real por família contra ~0,45
+  do `gpt-4o-mini`. Continua 6,4× mais barato que o `gpt-4o`.
+
+O ponto fraco é a **seção de perguntas**: entrega em 3 de 10 produtos contra 5 do
+`gpt-4o-mini`, e de forma instável (3 · 6 · 1). É uma seção opcional por design — R6 manda
+omiti-la sem três dados — mas o `gpt-4o-mini` é mais consistente em produzi-la.
+
+O `gpt-4o` está descartado: pior que os dois minis em variedade, quase não gera a seção de
+perguntas, e custa 15,7× o `gpt-4o-mini`.
+
+`openai/gpt-4.1-mini` foi acrescentado à tabela `PRECOS` de `tokens.ts`. Sem isso,
+`custoCentavos` logaria warning e contabilizaria qualquer família gerada com ele como custo
+zero. A troca em si é configuração por organização (`configuracoes.ai_model_texto`,
+ADR-0074), não código.
+
 ### DeepSeek V4 Flash — testado e rejeitado
 
 `deepseek/deepseek-v4-flash-0731` (a opção da ADR-0074) foi incluído numa terceira posição.

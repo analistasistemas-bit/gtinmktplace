@@ -57,6 +57,10 @@ const CONCORRENCIA = Number(process.env.CONCORRENCIA ?? 5);
 const CENARIOS = [
   { chave: 'B', rotulo: 'B — prompt novo, gpt-4o-mini', modelo: 'openai/gpt-4o-mini', preco: { in: 0.00015, out: 0.0006 } },
   { chave: 'C', rotulo: 'C — prompt novo, gpt-4o', modelo: 'openai/gpt-4o', preco: { in: 0.0025, out: 0.01 } },
+  // gpt-4.1-mini fica entre os dois: 2,7× o custo do gpt-4o-mini, 6,3× mais barato que o
+  // gpt-4o. Ainda NÃO está na tabela PRECOS de tokens.ts — adotá-lo exige acrescentá-lo lá,
+  // senão custoCentavos loga warning e contabiliza a família como custo zero.
+  { chave: 'D', rotulo: 'D — prompt novo, gpt-4.1-mini', modelo: 'openai/gpt-4.1-mini', preco: { in: 0.0004, out: 0.0016 } },
 ] as const;
 
 for (const v of ['SUPABASE_PROJECT_REF', 'SUPABASE_ACCESS_TOKEN', 'OPENROUTER_API_KEY']) {

@@ -39,6 +39,13 @@ describe('custoCentavos', () => {
     expect(custoCentavos('deepseek/deepseek-v4-flash-0731', { prompt_tokens: 0, completion_tokens: 1_000_000 })).toBe(18);
   });
 
+  it('gpt-4.1-mini está em PRECOS (ADR-0098) — sem ele a família sairia com custo zero', () => {
+    // 1M input = $0.40 = 40 centavos
+    expect(custoCentavos('openai/gpt-4.1-mini', { prompt_tokens: 1_000_000, completion_tokens: 0 })).toBe(40);
+    // 1M output = $1.60 = 160 centavos
+    expect(custoCentavos('openai/gpt-4.1-mini', { prompt_tokens: 0, completion_tokens: 1_000_000 })).toBe(160);
+  });
+
   it('avisa (console.warn) quando o modelo está fora de PRECOS; não avisa para modelo conhecido', () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
