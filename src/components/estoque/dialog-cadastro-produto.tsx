@@ -1,6 +1,9 @@
 // E6b (ADR-0094, D-1/D-3): cadastro manual de produto, em duas etapas.
-// Etapa 1 grava família + variações (a edge é a autoridade da validação); etapa 2 sobe as
-// fotos, que só podem existir depois que família e variações têm id.
+// Etapa 1 grava família + variações (a edge é a autoridade da validação) — capa e fotos por
+// variação já são ESCOLHIDAS aqui, mas só existem `familiaId`/`variacaoId` para gravá-las
+// depois que o cadastro responde, então o upload em lote roda logo em seguida, ainda dentro
+// de `salvar()`. Etapa 2 mostra o progresso desse lote e mantém um upload manual avulso
+// (capa / por variação) como caminho de correção/retry.
 //
 // O cadastro NÃO publica nada — a publicação continua sendo um ato explícito na Revisão.
 import { useEffect, useState } from 'react';
@@ -87,6 +90,13 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   const [salvando, setSalvando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoCadastro | null>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  // Capa escolhida na etapa 1 — só existe familiaId depois do cadastro, então o upload real
+  // só acontece dentro de subirLoteDeFotos, depois que `cadastrarProduto` devolve o resultado.
+  const [fotosCapa, setFotosCapa] = useState<Record<'capa' | 'capa2' | 'capa3', File | null>>({
+    capa: null, capa2: null, capa3: null,
+  });
+  const [enviandoFotos, setEnviandoFotos] = useState<{ feitos: number; total: number } | null>(null);
+  const [falhasFoto, setFalhasFoto] = useState<string[]>([]);
   // 409 de divergência: a chave já foi usada e o que está no formulário não bate com o que
   // foi salvo. A partir daqui todo retry com esta chave devolve o mesmo erro — o toast some
   // ou expira, então a saída (ir na Revisão) precisa ficar visível enquanto o diálogo estiver
@@ -99,6 +109,9 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     setOrigem(null); setLinhas([novaLinha()]); setResultado(null);
     setChaveCadastro(crypto.randomUUID());
     setDivergencia(null);
+    setFotosCapa({ capa: null, capa2: null, capa3: null });
+    setEnviandoFotos(null);
+    setFalhasFoto([]);
   }, [aberto]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
@@ -113,6 +126,12 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
       ));
       setResultado(r);
       setChaveCadastro(crypto.randomUUID());
+      // Primeira invalidação: o produto já aparece na listagem, sem esperar as fotos.
+      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      await subirLoteDeFotos(r);
+      // Segunda invalidação, OBRIGATÓRIA: a primeira roda antes dos uploads, e `imagem_path` /
+      // `capa_storage_path` só são gravados dentro de uploadFotoProduto. Sem esta, o card fica
+      // com placeholder mesmo com a foto já enviada.
       qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
       if (r.filaOk && r.falhasEstoque.length === 0) toast.success('✓ Produto cadastrado');
     } catch (e) {
@@ -140,8 +159,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     }
   }
 
-  async function subirFoto(arquivo: File, alvo: Parameters<typeof uploadFotoProduto>[3]) {
-    if (!resultado) return;
+  // `loteId` explícito (não lido de `resultado`): quando chamada pelo lote logo após
+  // `setResultado(r)`, o state ainda não re-renderizou — `resultado` no closure continuaria
+  // `null` e o upload seria descartado em silêncio. Etapa 2 passa `resultado.loteId` (já
+  // válido ali); o lote passa o `r` recebido como parâmetro de `cadastrarProduto`.
+  async function subirFoto(arquivo: File, alvo: Parameters<typeof uploadFotoProduto>[3], loteId: string) {
     setEnviandoFoto(true);
     try {
       const { data: ud } = await supabase.auth.getUser();
@@ -150,19 +172,61 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
       if (!userId || !orgId) throw new Error('Sem sessão ou organização.');
       if (!canWrite()) throw new Error('Suporte somente leitura.');
       const owner = storageOwnerForUpload(userId, orgId, useSupportStore.getState().context?.scope ?? null);
-      await uploadFotoProduto(owner, resultado.loteId, arquivo, alvo);
+      await uploadFotoProduto(owner, loteId, arquivo, alvo);
       toast.success('✓ Foto enviada');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao enviar a foto.');
+      throw e;
     } finally {
       setEnviandoFoto(false);
     }
   }
 
+  /**
+   * Casamento POSICIONAL, e ele é correto por quatro invariantes encadeados:
+   *   1. derivarCodigos numera na ordem do array           (_shared/produto/codigos.ts:38)
+   *   2. montarLinhasProduto casa variacoes[i] ↔ codigos[i] (_shared/produto/validar.ts:102)
+   *   3. a edge ordena a resposta por codigo                (cadastrar-produto/index.ts:256)
+   *   4. todo codigo tem 8 digitos, entao ordem lexicografica = numerica
+   * Se qualquer um deles mudar, a foto vai para o SKU errado EM SILENCIO.
+   */
+  async function subirLoteDeFotos(r: ResultadoCadastro) {
+    // `rotulo` é só para a mensagem de falha (o operador não reconhece um variacaoId em UUID);
+    // não participa do casamento em si, que usa `alvo`.
+    const alvos: Array<{ arquivo: File; alvo: Parameters<typeof uploadFotoProduto>[3]; rotulo: string }> = [];
+    (['capa', 'capa2', 'capa3'] as const).forEach((tipo) => {
+      const arquivo = fotosCapa[tipo];
+      const rotulo = tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3';
+      if (arquivo) alvos.push({ arquivo, alvo: { tipo, familiaId: r.familiaId }, rotulo });
+    });
+    linhas.forEach((l, i) => {
+      const v = r.variacoes[i];
+      if (l.foto && v) alvos.push({ arquivo: l.foto, alvo: { tipo: 'variacao', variacaoId: v.id }, rotulo: v.codigo });
+    });
+    if (alvos.length === 0) return;
+
+    setEnviandoFotos({ feitos: 0, total: alvos.length });
+    const falhas: string[] = [];
+    for (const [i, a] of alvos.entries()) {
+      try {
+        await subirFoto(a.arquivo, a.alvo, r.loteId);
+      } catch {
+        falhas.push(a.rotulo);
+      }
+      setEnviandoFotos({ feitos: i + 1, total: alvos.length });
+    }
+    setEnviandoFotos(null);
+    setFalhasFoto(falhas);
+  }
+
   const pendencias = resultado && (!resultado.filaOk || resultado.falhasEstoque.length > 0);
+  // Cobre as duas fases destrutivas de fechar no meio: `salvando` (cadastrarProduto em voo —
+  // fechar aqui não cancela a chamada, só descarta os `File`s escolhidos no useEffect de
+  // reset) e `enviandoFotos !== null` (lote de fotos em andamento).
+  const ocupado = salvando || enviandoFotos !== null;
 
   return (
-    <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
+    <Dialog open={aberto} onOpenChange={(o) => { if (!o && !ocupado) onFechar(); }}>
       {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
           `max-w-3xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
           grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
@@ -239,6 +303,24 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
             </div>
 
             <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Fotos do produto</span>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(['capa', 'capa2', 'capa3'] as const).map((tipo) => (
+                  <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    {tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3'}
+                    <Input
+                      type="file" accept="image/*" disabled={salvando}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        setFotosCapa((prev) => ({ ...prev, [tipo]: f }));
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Variações</span>
                 <Button
@@ -294,61 +376,71 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
               </div>
             )}
 
-            {!pendencias && (
-              <>
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">Fotos do produto</span>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {(['capa', 'capa2', 'capa3'] as const).map((tipo) => (
-                      <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
-                        {tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3'}
-                        <Input
-                          type="file" accept="image/*" disabled={enviandoFoto}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) subirFoto(f, { tipo, familiaId: resultado.familiaId });
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">Foto por variação</span>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {resultado.variacoes.map((v) => (
-                      <label key={v.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
-                        <span className="font-mono">{v.codigo}</span>
-                        <Input
-                          type="file" accept="image/*" disabled={enviandoFoto}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) subirFoto(f, { tipo: 'variacao', variacaoId: v.id });
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </>
+            {enviandoFotos && (
+              <p className="text-sm text-muted-foreground">
+                enviando fotos ({enviandoFotos.feitos}/{enviandoFotos.total})…
+              </p>
             )}
+            {falhasFoto.length > 0 && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div>
+                  Falha ao enviar a foto de: {falhasFoto.join(', ')}. Envie de novo abaixo.
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Fotos do produto</span>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(['capa', 'capa2', 'capa3'] as const).map((tipo) => (
+                  <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    {tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3'}
+                    <Input
+                      type="file" accept="image/*" disabled={enviandoFoto}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) subirFoto(f, { tipo, familiaId: resultado.familiaId }, resultado.loteId).catch(() => {});
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Foto por variação</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {resultado.variacoes.map((v) => (
+                  <label key={v.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <span className="font-mono">{v.codigo}</span>
+                    <Input
+                      type="file" accept="image/*" disabled={enviandoFoto}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) subirFoto(f, { tipo: 'variacao', variacaoId: v.id }, resultado.loteId).catch(() => {});
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         <DialogFooter>
           {!resultado ? (
             <>
-              <Button variant="outline" onClick={onFechar} disabled={salvando}>Cancelar</Button>
+              <Button variant="outline" onClick={onFechar} disabled={ocupado}>Cancelar</Button>
               <Button onClick={salvar} disabled={!podeSalvar || salvando}>
                 {salvando ? 'Cadastrando…' : 'Cadastrar'}
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={onFechar}>Fechar</Button>
+              <Button variant="outline" onClick={onFechar} disabled={ocupado}>Fechar</Button>
               <Button
-                disabled={!!pendencias || enviandoFoto}
+                disabled={!!pendencias || ocupado}
                 onClick={() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); }}
               >
                 Ir para a Revisão

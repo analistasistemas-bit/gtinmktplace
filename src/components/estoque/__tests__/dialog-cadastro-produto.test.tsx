@@ -10,10 +10,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { DialogCadastroProduto } from '../dialog-cadastro-produto';
 
 const cadastrarProdutoMock = vi.fn().mockRejectedValue(new Error('falhou'));
+// Hoisted (não `vi.fn()` inline na factory) para o teste do lote de fotos poder inspecionar
+// COM QUE argumentos `uploadFotoProduto` foi chamado — é isso que prova o casamento posicional
+// e o fix de `loteId` (ver comentário em `subirFoto`, dialog-cadastro-produto.tsx).
+const uploadFotoProdutoMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@/lib/produtos-saldo', () => ({
   cadastrarProduto: (...args: unknown[]) => cadastrarProdutoMock(...args),
-  uploadFotoProduto: vi.fn(),
+  uploadFotoProduto: (...args: unknown[]) => uploadFotoProdutoMock(...args),
   ProdutoJaExisteError: class ProdutoJaExisteError extends Error {
     constructor(mensagem: string, readonly familiaId: string, readonly loteId: string) {
       super(mensagem);
@@ -21,15 +25,36 @@ vi.mock('@/lib/produtos-saldo', () => ({
   },
 }));
 
-function renderDialog() {
+// subirFoto (dialog-cadastro-produto.tsx) chama estes três diretamente antes de delegar a
+// uploadFotoProduto — sem mocká-los o teste do lote bateria na rede real.
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
+    functions: { invoke: vi.fn() },
+  },
+}));
+vi.mock('@/stores/support-store', () => ({
+  effectiveOrgId: () => 'org-1',
+  canWrite: () => true,
+  useSupportStore: { getState: () => ({ context: null }) },
+}));
+vi.mock('@/hooks/useUploadLote', () => ({
+  storageOwnerForUpload: () => 'owner-1',
+}));
+
+function renderDialogCom(props: Partial<{ onFechar: () => void }> = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <DialogCadastroProduto aberto onFechar={() => {}} />
+        <DialogCadastroProduto aberto onFechar={props.onFechar ?? (() => {})} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+function renderDialog() {
+  return renderDialogCom();
 }
 
 describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
@@ -158,5 +183,108 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     const inputVar2 = screen.getByLabelText('Foto da variação 2') as HTMLInputElement;
     expect(inputVar1.files?.[0]?.name).toBe('azul.png');
     expect(inputVar2.files?.[0]?.name).toBe('preto.png');
+  });
+});
+
+describe('DialogCadastroProduto — fotos e travas', () => {
+  // D6: pendência de IA ou de estoque NÃO pode esconder o upload — a foto é o que o operador
+  // veio fazer, e ele fica sem nenhum caminho para enviá-la.
+  it('mostra os campos de foto mesmo com filaOk false', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: false, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    expect(await screen.findByText(/não foi enfileirado/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Capa')).toBeInTheDocument();
+  });
+
+  it('não fecha enquanto o cadastro está em voo', async () => {
+    let resolver: (v: unknown) => void = () => {};
+    cadastrarProdutoMock.mockImplementationOnce(() => new Promise((r) => { resolver = r; }));
+    const onFechar = vi.fn();
+    const user = userEvent.setup();
+    renderDialogCom({ onFechar });
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await user.keyboard('{Escape}');
+    expect(onFechar).not.toHaveBeenCalled();
+    resolver({ loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [], variacoes: [] });
+  });
+});
+
+describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () => {
+  beforeEach(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((f: File) => `blob:${f.name}`),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+    uploadFotoProdutoMock.mockClear();
+  });
+
+  // Cobre a cadeia inteira que a task descreve como de maior risco: fotos escolhidas na
+  // etapa 1 (capa + por variação), uma linha removida do MEIO antes do submit (reindexa
+  // `linhas`), e o lote sobe cada arquivo pro id certo — usando o `loteId` que veio da
+  // RESPOSTA do cadastro, não de `resultado` (que ainda está `null` no momento da chamada).
+  it('sobe capa e fotos de variação casando por posição, mesmo após remover a linha do meio', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }, { id: 'v2', codigo: '00000006' }],
+    });
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.click(screen.getByRole('button', { name: /Adicionar variação/ }));
+    await user.click(screen.getByRole('button', { name: /Adicionar variação/ }));
+
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço da variação 2'), '10');
+    await user.type(screen.getByLabelText('Preço da variação 3'), '10');
+
+    const capaFile = new File(['c'], 'capa.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Capa'), capaFile);
+
+    const fotoAzul = new File(['a'], 'azul.png', { type: 'image/png' });
+    const fotoPreto = new File(['p'], 'preto.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Foto da variação 1'), fotoAzul);
+    await user.upload(screen.getByLabelText('Foto da variação 3'), fotoPreto);
+
+    // Remove a variação do meio DEPOIS de escolher os arquivos — é o cenário que quebraria
+    // sob `key={indice}` (bug antigo) ou sob qualquer casamento que não seja por posição.
+    await user.click(screen.getByRole('button', { name: 'Remover variação 2' }));
+
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(uploadFotoProdutoMock).toHaveBeenCalledTimes(3));
+
+    expect(uploadFotoProdutoMock).toHaveBeenCalledWith(
+      'owner-1', 'l1', capaFile, { tipo: 'capa', familiaId: 'f1' },
+    );
+    // linhas[0] (azul) ↔ variacoes[0] (v1); linhas[1] (preto, era a 3ª antes da remoção) ↔
+    // variacoes[1] (v2) — prova que a remoção reindexou `linhas` e o casamento seguiu junto.
+    expect(uploadFotoProdutoMock).toHaveBeenCalledWith(
+      'owner-1', 'l1', fotoAzul, { tipo: 'variacao', variacaoId: 'v1' },
+    );
+    expect(uploadFotoProdutoMock).toHaveBeenCalledWith(
+      'owner-1', 'l1', fotoPreto, { tipo: 'variacao', variacaoId: 'v2' },
+    );
   });
 });
