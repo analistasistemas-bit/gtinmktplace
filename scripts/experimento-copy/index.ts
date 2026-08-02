@@ -15,36 +15,52 @@
  * NÃO importa ../ai/client.ts: aquele módulo usa `npm:openai@^4` e `Deno.env`, que não
  * resolvem em Node. Fala com o OpenRouter por fetch direto.
  *
+ * Lê a amostra pela management API do Supabase (SUPABASE_ACCESS_TOKEN), e não com service
+ * role: é a credencial que já existe no .env.local do projeto, então o experimento roda sem
+ * exigir segredo novo. A leitura é um SELECT único, sem escrita.
+ *
  * Uso:
- *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... OPENROUTER_API_KEY=... \
+ *   SUPABASE_PROJECT_REF=... SUPABASE_ACCESS_TOKEN=... OPENROUTER_API_KEY=... \
  *     pnpm tsx scripts/experimento-copy/index.ts
  */
-import { createClient } from '@supabase/supabase-js';
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   SYSTEM,
   montarUserPrompt,
-  garantirLarguraDescricao,
-  garantirMetragemDescricao,
+  posProcessarDescricao,
   detectarFormulasProibidas,
   type InputCopy,
 } from '../../supabase/functions/_shared/ai/copywriter-prompt.ts';
 import {
   medidasNaoAncoradas,
-  padroesDeComparacao,
+  comparacoesNaoAncoradas,
   taxaBulletsRepetidos,
 } from './metricas.ts';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const TAMANHO_AMOSTRA = 30;
 
-for (const v of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'OPENROUTER_API_KEY']) {
+for (const v of ['SUPABASE_PROJECT_REF', 'SUPABASE_ACCESS_TOKEN', 'OPENROUTER_API_KEY']) {
   if (!process.env[v]) throw new Error(`falta a variável de ambiente ${v} — veja o cabeçalho deste arquivo`);
 }
 
-const db = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
+async function consultar<T>(sql: string): Promise<T[]> {
+  const r = await fetch(
+    `https://api.supabase.com/v1/projects/${process.env.SUPABASE_PROJECT_REF}/database/query`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.SUPABASE_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: sql }),
+    },
+  );
+  if (!r.ok) throw new Error(`management API ${r.status}: ${await r.text()}`);
+  return (await r.json()) as T[];
+}
 
 type Familia = {
   codigo_pai: string;
@@ -62,16 +78,20 @@ type Familia = {
  * menor a dispersão da linha de base.
  */
 async function amostra(): Promise<Familia[]> {
-  const { data, error } = await db
-    .from('familias')
-    .select('codigo_pai, nome_pai, descricao_pai, unidade, descricao_ml, variacoes(codigo, cor, preco)')
-    .not('descricao_ml', 'is', null)
-    .eq('descricao_editada_pelo_operador', false)
-    .order('criado_em', { ascending: false })
-    .limit(150);
-  if (error) throw new Error(`amostra: ${error.message}`);
-
-  const candidatas = (data ?? []) as Familia[];
+  const candidatas = await consultar<Familia>(`
+    select f.codigo_pai, f.nome_pai, f.descricao_pai, f.unidade, f.descricao_ml,
+           coalesce(
+             (select json_agg(json_build_object('codigo', v.codigo, 'cor', v.cor, 'preco', v.preco))
+              from variacoes v where v.familia_id = f.id),
+             '[]'::json
+           ) as variacoes
+    from familias f
+    where f.descricao_ml is not null
+      and f.descricao_pai is not null
+      and f.descricao_editada_pelo_operador = false
+    order by f.criado_em desc
+    limit 150
+  `);
   const vistos = new Set<string>();
   const escolhidas: Familia[] = [];
 
@@ -136,17 +156,14 @@ async function gerar(input: InputCopy, modelo: string): Promise<string> {
  * crus contra um A pós-processado, enviesando estrutura e fidelidade contra os cenários novos.
  */
 function comoEmProducao(descricao: string, f: Familia): string {
-  return garantirMetragemDescricao(
-    garantirLarguraDescricao(descricao, f.nome_pai, f.descricao_pai),
-    f.nome_pai,
-  );
+  return posProcessarDescricao(descricao, f.nome_pai, f.descricao_pai);
 }
 
 function metricas(descricoes: string[], fontes: string[]) {
   return {
     formulas_proibidas: descricoes.reduce((n, d) => n + detectarFormulasProibidas(d).length, 0),
     medidas_nao_ancoradas: descricoes.reduce((n, d, i) => n + medidasNaoAncoradas(d, fontes[i]).length, 0),
-    comparacoes_a_revisar: descricoes.reduce((n, d) => n + padroesDeComparacao(d).length, 0),
+    comparacoes_nao_ancoradas: descricoes.reduce((n, d, i) => n + comparacoesNaoAncoradas(d, fontes[i]).length, 0),
     taxa_bullets_repetidos: Number(taxaBulletsRepetidos(descricoes).toFixed(3)),
   };
 }

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { garantirLarguraDescricao, garantirMetragemDescricao } from '../copywriter-prompt';
+import {
+  garantirLarguraDescricao,
+  garantirMetragemDescricao,
+  removerPerguntasIncompletas,
+  posProcessarDescricao,
+} from '../copywriter-prompt';
 
 describe('garantirLarguraDescricao', () => {
   const nomePai = 'LANTEJOULAS TAM 6 CORES C/50MTS';
@@ -232,5 +237,79 @@ describe('guards × seção "Perguntas sobre este produto" (ADR-0098)', () => {
 
     expect(r).not.toContain('• Metragem:');
     expect(r).toBe(descricao);
+  });
+});
+
+// R6 manda omitir a seção com menos de 3 perguntas. Medido no experimento do ADR-0098:
+// 10 das 22 seções geradas pelo gpt-4o-mini saíram com 1 ou 2 perguntas. O guard cobre
+// a desobediência do modelo removendo o BLOCO INTEIRO — nunca remendando uma frase.
+describe('removerPerguntasIncompletas — R6 (ADR-0098)', () => {
+  const comPerguntas = (qtd: number) => [
+    '📌 ESPECIFICAÇÕES',
+    '',
+    '• Composição: 100% poliéster',
+    '',
+    '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+    '',
+    ...Array.from({ length: qtd }, (_, i) => `▪ Pergunta ${i + 1}? Resposta ${i + 1}.`),
+    '',
+    '🎨 CORES DISPONÍVEIS',
+    '',
+    '- Preto',
+  ].join('\n');
+
+  it('mantém a seção com 3 perguntas', () => {
+    const r = removerPerguntasIncompletas(comPerguntas(3));
+    expect(r).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('▪ Pergunta 3?');
+  });
+
+  it('remove a seção inteira com 2 perguntas, preservando o resto', () => {
+    const r = removerPerguntasIncompletas(comPerguntas(2));
+    expect(r).not.toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).not.toContain('▪ Pergunta 1?');
+    expect(r).toContain('📌 ESPECIFICAÇÕES');
+    expect(r).toContain('• Composição: 100% poliéster');
+    expect(r).toContain('🎨 CORES DISPONÍVEIS');
+    expect(r).toContain('- Preto');
+  });
+
+  it('remove a seção com 1 pergunta', () => {
+    expect(removerPerguntasIncompletas(comPerguntas(1))).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
+  });
+
+  it('descrição sem a seção passa intacta', () => {
+    const d = '📌 ESPECIFICAÇÕES\n\n• Composição: 100% poliéster';
+    expect(removerPerguntasIncompletas(d)).toBe(d);
+  });
+
+  it('seção incompleta no fim da descrição (sem cabeçalho posterior) é removida', () => {
+    const d = '📌 ESPECIFICAÇÕES\n\n• Composição: X\n\n❓ PERGUNTAS SOBRE ESTE PRODUTO\n\n▪ Só uma? Sim.';
+    const r = removerPerguntasIncompletas(d);
+    expect(r).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('📌 ESPECIFICAÇÕES');
+  });
+});
+
+describe('posProcessarDescricao — composição única dos guards (ADR-0098)', () => {
+  it('aplica largura, metragem e a poda de perguntas numa passada só', () => {
+    const descricao = [
+      '🧵 INTRO',
+      '',
+      'Texto.',
+      '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+      '',
+      '▪ Uma só? Sim.',
+      '',
+      '🎨 CORES DISPONÍVEIS',
+    ].join('\n');
+
+    const r = posProcessarDescricao(descricao, 'FITA CETIM N.3 50MT', 'LARGURA: 16MM.');
+
+    expect(r).toContain('• Largura: 16mm');
+    expect(r).toContain('• Metragem: 50MT');
+    expect(r).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
+    expect(r).toContain('🎨 CORES DISPONÍVEIS');
   });
 });

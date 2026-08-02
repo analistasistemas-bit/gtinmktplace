@@ -132,6 +132,46 @@ export function garantirMetragemDescricao(descricao: string, nomePai: string): s
   return injetarBulletEspecificacoes(descricao, `• Metragem: ${metragem}`);
 }
 
+const SECAO_PERGUNTAS = '❓ PERGUNTAS SOBRE ESTE PRODUTO';
+const CABECALHOS_APOS_PERGUNTAS = ['🎨 CORES DISPONÍVEIS', '📦 CONTEÚDO DA EMBALAGEM', '🚚 ENVIO RÁPIDO'];
+const MIN_PERGUNTAS = 3;
+
+/**
+ * R6 manda omitir a seção de perguntas quando não há dados para ao menos três. O modelo
+ * desobedece com frequência: medido no experimento do ADR-0098, 10 das 22 seções geradas pelo
+ * gpt-4o-mini saíram com uma ou duas perguntas (o gpt-4o acertou 7/7, mas só gerou a seção em
+ * 7 dos 30 produtos). 45% de violação é alto demais para confiar só na instrução.
+ *
+ * Remove a SEÇÃO INTEIRA, nunca uma frase. É por isso que este guard é legítimo e a edição de
+ * prosa por regex não é: o alvo é um bloco estruturado com fronteira conhecida (do cabeçalho
+ * até o próximo cabeçalho do template), não uma oração no meio de um período.
+ */
+export function removerPerguntasIncompletas(descricao: string): string {
+  const ini = descricao.indexOf(SECAO_PERGUNTAS);
+  if (ini === -1) return descricao;
+
+  const posteriores = CABECALHOS_APOS_PERGUNTAS
+    .map((h) => descricao.indexOf(h, ini))
+    .filter((i) => i > -1);
+  const fim = posteriores.length > 0 ? Math.min(...posteriores) : descricao.length;
+
+  const quantas = (descricao.slice(ini, fim).match(/^\s*▪/gm) ?? []).length;
+  if (quantas >= MIN_PERGUNTAS) return descricao;
+
+  return `${descricao.slice(0, ini).trimEnd()}\n\n${descricao.slice(fim)}`.trim();
+}
+
+/**
+ * Todo o pós-processamento determinístico da descrição, na ordem correta. Os dois call sites
+ * (process-familia e regenerar-copy-familia) compunham os guards à mão e por isso divergiam a
+ * cada guard novo — aqui a composição vive num lugar só.
+ */
+export function posProcessarDescricao(descricao: string, nomePai: string, descricaoPai: string): string {
+  return removerPerguntasIncompletas(
+    garantirMetragemDescricao(garantirLarguraDescricao(descricao, nomePai, descricaoPai), nomePai),
+  );
+}
+
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.
 
 Sua descrição precisa fazer duas coisas ao mesmo tempo: convencer quem ainda está decidindo e entregar rápido o dado técnico para quem já está comparando. Tudo o que você escrever nasce da fonte.

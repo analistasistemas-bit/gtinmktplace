@@ -5,7 +5,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
-import { garantirLarguraDescricao, garantirMetragemDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
 Deno.serve(async (req) => {
@@ -74,10 +74,7 @@ Deno.serve(async (req) => {
       coresUnicas.length === 1 ? coresUnicas[0] : null,
       coresUnicas.length,
     );
-    const descricaoFinal = garantirMetragemDescricao(
-      garantirLarguraDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? ''),
-      familia.nome_pai,
-    );
+    const descricaoFinal = posProcessarDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '');
 
     const { error: upErr } = await sb
       .from('familias')

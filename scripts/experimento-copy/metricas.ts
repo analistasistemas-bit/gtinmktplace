@@ -41,22 +41,33 @@ export function medidasNaoAncoradas(saida: string, fonte: string): string[] {
   return extrairMedidas(saida).filter((m) => !daFonte.has(m));
 }
 
-/**
- * Sinaliza — não reprova. Comparação quantitativa raramente é derivável da fonte, mas pode
- * ser legítima; a lista é curta o bastante para o operador conferir uma a uma. É a fronteira
- * onde a métrica automática entrega para o julgamento humano.
- */
-export function padroesDeComparacao(texto: string): string[] {
+const PADROES_COMPARACAO = [
+  /\d+\s*%/g,
+  /\b\d+\s*vezes\b/g,
+  /\bmais (?:que|do que)\b/g,
+  /\bmenos (?:que|do que)\b/g,
+  /\bsuperior a\b/g,
+  /\binferior a\b/g,
+];
+
+function comparacoesBrutas(texto: string): string[] {
   const alvo = normalizar(texto ?? '');
-  const padroes = [
-    /\d+\s*%/g,
-    /\b\d+\s*vezes\b/g,
-    /\bmais (?:que|do que)\b/g,
-    /\bmenos (?:que|do que)\b/g,
-    /\bsuperior a\b/g,
-    /\binferior a\b/g,
-  ];
-  return padroes.flatMap((p) => [...alvo.matchAll(p)].map((m) => m[0]));
+  return PADROES_COMPARACAO.flatMap((p) => [...alvo.matchAll(p)].map((m) => m[0].replace(/\s+/g, '')));
+}
+
+/**
+ * Comparações quantitativas da saída que NÃO existem na fonte — candidatas a invenção (R1b).
+ *
+ * Comparar contra a fonte é obrigatório, não refinamento: a primeira versão desta métrica
+ * contava qualquer `\d+%` e classificava "100% poliéster" (composição, vinda da fonte) como
+ * comparação inventada. Pior, acusava MAIS o prompt novo, porque R5 manda repetir "linha 100%
+ * poliéster" entre os termos de busca — a métrica lia como regressão exatamente o
+ * comportamento que o prompt foi desenhado para produzir. Percentual de composição é fato,
+ * não comparação.
+ */
+export function comparacoesNaoAncoradas(saida: string, fonte: string): string[] {
+  const naFonte = new Set(comparacoesBrutas(fonte));
+  return comparacoesBrutas(saida).filter((c) => !naFonte.has(c));
 }
 
 function bullets(descricao: string): string[] {

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   extrairMedidas,
   medidasNaoAncoradas,
-  padroesDeComparacao,
+  comparacoesNaoAncoradas,
   taxaBulletsRepetidos,
 } from '../scripts/experimento-copy/metricas';
 
@@ -39,17 +39,29 @@ describe('medidasNaoAncoradas', () => {
   });
 });
 
-describe('padroesDeComparacao', () => {
-  it('sinaliza percentual', () => {
-    expect(padroesDeComparacao('30% mais resistente')).not.toHaveLength(0);
+describe('comparacoesNaoAncoradas', () => {
+  it('sinaliza percentual que a saída inventou', () => {
+    expect(comparacoesNaoAncoradas('30% mais resistente', 'COMPOSIÇÃO: POLIÉSTER.')).not.toHaveLength(0);
   });
 
   it('sinaliza comparação sem base', () => {
-    expect(padroesDeComparacao('rende mais que os concorrentes')).not.toHaveLength(0);
+    expect(comparacoesNaoAncoradas('rende mais que os concorrentes', 'CONE COM 10.000 METROS.'))
+      .not.toHaveLength(0);
   });
 
   it('não sinaliza texto ancorado sem comparação', () => {
-    expect(padroesDeComparacao('A metragem de 10.000 metros permite maior tempo de uso.')).toEqual([]);
+    expect(comparacoesNaoAncoradas('A metragem de 10.000 metros permite maior tempo de uso.', 'CONTÉM 10.000 METROS.'))
+      .toEqual([]);
+  });
+
+  // Regressão: "100% poliéster" é composição vinda da fonte, não comparação inventada. A
+  // primeira versão da métrica acusava isso — e acusava MAIS o prompt novo, porque R5 manda
+  // repetir "linha 100% poliéster" entre os termos de busca.
+  it('não acusa percentual de composição que já está na fonte', () => {
+    expect(comparacoesNaoAncoradas(
+      'Linha 100% poliéster. A composição em 100% poliéster mantém o acabamento uniforme.',
+      'LINHA PARA COSTURA. COMPOSIÇÃO: 100% POLIÉSTER.',
+    )).toEqual([]);
   });
 });
 

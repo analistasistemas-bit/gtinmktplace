@@ -321,4 +321,80 @@ segmento novo em volume, reavaliar.
 
 ## Resultado do experimento
 
-Pendente — preenchido após a execução do harness.
+Executado em 2026-08-02 sobre 30 famílias reais (60 gerações). Métricas com o
+pós-processamento de produção aplicado aos três cenários.
+
+| Métrica | A (baseline) | B (prompt novo, mini) | C (prompt novo, 4o) |
+|---|---|---|---|
+| Fórmulas proibidas (R3) | 2 | **1** | 2 |
+| Medidas não ancoradas (R1b) | 3 | **1** | 1 |
+| Comparações não ancoradas (R1b) | 0 | 0 | 0 |
+| Taxa de bullets repetidos | 0,352 | **0,254** | 0,307 |
+| Descrição média (chars) | 1.266 | 1.598 | 1.424 |
+| Seção de perguntas gerada | 0/30 | **12/30** | 7/30 |
+
+Contagem direta dos bullets que a Causa C prescrevia:
+
+| Bullet | A | B |
+|---|---|---|
+| "Alta resistência" | 18 | **5** (−72%) |
+| "Ótimo custo-benefício" | 10 | **2** (−80%) |
+
+### Leitura
+
+**B − A é o ganho relevante, e C − B é negativo.** A previsão registrada antes de rodar se
+confirmou: o texto genérico vinha dos exemplos do prompt, não do teto do `gpt-4o-mini`. O
+`gpt-4o` sai **pior** que o modelo barato em duas frentes — repete mais bullets entre
+anúncios (0,307 contra 0,254) e adere menos ao template (gera a seção de perguntas em 7 dos
+30 produtos, contra 12). **O modelo permanece `gpt-4o-mini`**, e o custo segue em ~1,2
+centavo por família em vez dos ~9 que a troca implicaria.
+
+### Correção de métrica durante a execução
+
+A primeira medição acusou as comparações não ancoradas subindo de 36 para 72 em B. Era
+**falso positivo integral**: a métrica contava qualquer `\d+%`, e `100% poliéster` —
+composição vinda da fonte — entrava na conta. Pior, acusava mais o prompt novo justamente
+porque R5 manda repetir "linha 100% poliéster" entre os termos de busca; a régua lia como
+regressão o comportamento que o prompt foi desenhado para produzir. Corrigida para comparar
+contra a fonte, a métrica dá **0 em todos os cenários**: nenhum deles inventa comparação.
+
+### Defeito encontrado e corrigido: R6 desobedecida
+
+O experimento revelou que o modelo desobedece o mínimo de três perguntas de R6. Na primeira
+medição, **10 das 22 seções geradas pelo `gpt-4o-mini` saíram com uma ou duas perguntas**
+(45% de violação). O `gpt-4o` acertou 7 de 7, mas ao custo de gerar a seção muito menos.
+
+45% é alto demais para confiar só na instrução, então entrou o guard determinístico
+`removerPerguntasIncompletas`: contando menos de três itens, remove a **seção inteira**.
+
+Isso não contradiz a rejeição de "editar prosa por regex": o alvo aqui é um bloco
+estruturado com fronteira conhecida — do cabeçalho até o próximo cabeçalho do template — e
+não uma oração no meio de um período. Remover um bloco inteiro é seguro; remendar uma frase
+não é.
+
+Com o guard, B entrega 12 seções de perguntas, **todas conformes**.
+
+Os dois call sites que compunham os guards à mão (`process-familia` e
+`regenerar-copy-familia`) passaram a chamar `posProcessarDescricao`, que concentra o
+pós-processamento num lugar só — eles divergiam a cada guard novo.
+
+### Evidência qualitativa
+
+Amostra do cenário B para um protetor solar (a amostra por diversidade puxou produtos fora
+de aviamento, exercitando R9):
+
+> **A:** "O Eucerin Sun Pigment Control FPS 60 é um protetor solar facial que vai além do
+> básico…" → sem indicações de uso, sem perguntas, fecha em "Não perca a oportunidade".
+>
+> **B:** "Quem se preocupa com a saúde da pele sabe que a proteção solar é essencial para
+> evitar danos e o surgimento de manchas." → abre pela dor da categoria sem prometer que
+> este produto a resolve (R4), traz indicações de uso, perguntas ancoradas em campo, e
+> fecha em "Mantenha sua pele protegida e uniforme todos os dias com Eucerin" (R7).
+
+### Limitação
+
+A amostra tem 30 famílias de um catálogo majoritariamente de aviamento. As métricas de
+fórmulas proibidas e medidas não ancoradas partem de valores já baixos em A (2 e 3), então
+a melhora nelas é pequena em termos absolutos e pouco conclusiva — o sinal forte está na
+repetição de bullets e na contagem direta dos bullets prescritos. A avaliação de fluidez e
+de qualidade da tradução característica→benefício permanece humana.
