@@ -129,3 +129,35 @@ Apagar as colunas `ai_model_texto`/`ai_model_imagem` de `configuracoes`, remover
 `resolverModeloTexto`, voltar as 4 funções de IA-texto a usar `MODELO_COPY` direto (sem parâmetro),
 e remover a seção de seletor de modelo da tela Configurações. Nenhum dado histórico de família é
 afetado — `custo_centavos` já gravado permanece correto (é calculado no momento da chamada).
+
+
+---
+
+## Adendo (2026-08-02) — lista curada revista pelo ADR-0098
+
+A lista curada de modelos de texto mudou depois do experimento do
+[ADR-0098](0098-copy-ancorada-na-fonte-e-persuasiva.md):
+
+| Modelo | Situação | Preço ($/1M in / out) |
+|---|---|---|
+| `openai/gpt-4.1-mini` | **entra, e vira o padrão** | $0,40 / $1,60 |
+| `openai/gpt-4o-mini` | continua selecionável (mais barato), deixa de ser padrão | $0,15 / $0,60 |
+| `deepseek/deepseek-v4-flash-0731` | **sai** | $0,09 / $0,18 |
+
+**Por que o DeepSeek saiu.** Era o mais barato da lista, mas devolvia JSON truncado sob
+`json_schema` strict — falhou em 1 dos 3 primeiros produtos do experimento, enquanto os
+modelos da OpenAI não falharam em nenhum dos 10. Como `gerarCopy` é a única etapa de IA sem
+fallback resiliente (ADR-0030), falha ali derruba a família inteira. Preço não compensa
+indisponibilidade numa etapa sem rede.
+
+**Por que o gpt-4.1-mini virou padrão.** Em três execuções sobre os mesmos produtos: zero
+fórmula proibida e zero medida não ancorada nas três (o `gpt-4o-mini` escorregou em ambas), e
+menos repetição de bullets entre anúncios nas três. Custa ~1,1 centavo por família contra
+~0,45 do `gpt-4o-mini`.
+
+Mudanças: migration `20260802220728_adr98_gpt41_mini_padrao.sql` (constraint + migração das
+orgs fixadas no modelo antigo), `MODELO_COPY` em `_shared/ai/modelos.ts`, tabela `PRECOS` em
+`_shared/ai/tokens.ts` e a lista da tela em `src/lib/ai-modelos.ts`.
+
+Detalhe operacional confirmado na época: **não existe secret `AI_MODEL_COPY` no projeto**, então
+o default do código é o que vale em produção para orgs com `ai_model_texto` nulo.

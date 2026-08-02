@@ -7,9 +7,12 @@ export interface OpcaoModeloIA {
   precoLabel: string;
 }
 
+// DeepSeek V4 Flash saiu da lista no ADR-0098: devolvia JSON truncado sob json_schema strict,
+// e gerarCopy é a única etapa de IA sem fallback resiliente (ADR-0030) — falha ali derruba a
+// família. Slug removido da constraint em migration; nenhuma org o usava.
 export const MODELOS_TEXTO: OpcaoModeloIA[] = [
-  { slug: 'openai/gpt-4o-mini', label: 'GPT-4o-mini (padrão)', precoLabel: '$0,15 / $0,60 por 1M tokens' },
-  { slug: 'deepseek/deepseek-v4-flash-0731', label: 'DeepSeek V4 Flash 0731', precoLabel: '$0,09 / $0,18 por 1M tokens' },
+  { slug: 'openai/gpt-4.1-mini', label: 'GPT-4.1-mini (padrão)', precoLabel: '$0,40 / $1,60 por 1M tokens' },
+  { slug: 'openai/gpt-4o-mini', label: 'GPT-4o-mini (mais barato)', precoLabel: '$0,15 / $0,60 por 1M tokens' },
 ];
 
 // Dormente: nenhuma feature consome geração de imagem ainda (ADR-0074).

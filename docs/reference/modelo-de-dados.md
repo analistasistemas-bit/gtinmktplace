@@ -520,7 +520,7 @@ do preço no menor preço entre concorrentes MercadoLíder quando o preço compe
 — liga a exibição do lucro (`lucro R$ X`) no card "Líquido no faturamento" do Dashboard —,
 **`ai_model_texto`/`ai_model_imagem`** (text, nullable, ADR-0074, migration
 `20260713120000_ai_model_por_org.sql`): slug OpenRouter do modelo de IA da org, lista curada via
-CHECK constraint (texto: `openai/gpt-4o-mini` padrão ou `deepseek/deepseek-v4-flash`; imagem, hoje
+CHECK constraint (texto: `openai/gpt-4.1-mini` padrão ou `openai/gpt-4o-mini`; imagem, hoje
 dormente sem consumidor: só `google/gemini-2.5-flash-image`, "Nano Banana") — incluir um novo
 modelo exige migration (altera o CHECK), não é config/env. `NULL` (caso comum,
 inclusive todas as orgs em produção hoje) → `ai_model_texto` cai no fallback `MODELO_COPY`/env

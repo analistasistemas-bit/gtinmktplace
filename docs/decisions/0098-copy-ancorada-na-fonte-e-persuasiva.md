@@ -386,10 +386,30 @@ omiti-la sem três dados — mas o `gpt-4o-mini` é mais consistente em produzi-
 O `gpt-4o` está descartado: pior que os dois minis em variedade, quase não gera a seção de
 perguntas, e custa 15,7× o `gpt-4o-mini`.
 
-`openai/gpt-4.1-mini` foi acrescentado à tabela `PRECOS` de `tokens.ts`. Sem isso,
-`custoCentavos` logaria warning e contabilizaria qualquer família gerada com ele como custo
-zero. A troca em si é configuração por organização (`configuracoes.ai_model_texto`,
-ADR-0074), não código.
+### Decisão: gpt-4.1-mini passa a ser o padrão do PubliAI
+
+Adotado em 2026-08-02. A troca envolveu quatro pontos, porque o modelo efetivo é decidido em
+mais de um lugar:
+
+| Onde | Mudança |
+|---|---|
+| `_shared/ai/modelos.ts` | `MODELO_COPY` passa a `openai/gpt-4.1-mini` |
+| `_shared/ai/tokens.ts` | `gpt-4.1-mini` entra em `PRECOS`; DeepSeek sai |
+| `src/lib/ai-modelos.ts` | lista da tela: `gpt-4.1-mini` (padrão) e `gpt-4o-mini`; DeepSeek removido |
+| migration `20260802220728_adr98_gpt41_mini_padrao.sql` | CHECK constraint da coluna + migração das orgs |
+
+**Trocar a constante não bastaria.** A coluna `configuracoes.ai_model_texto` tem CHECK
+constraint com lista fechada, e o valor gravado nela vence o default de `MODELO_COPY`. No
+levantamento: a org **DSA** tinha `null` (herda o default, alcançada pela constante) e a org
+**Avil** tinha `openai/gpt-4o-mini` **explícito** — ficaria presa ao modelo antigo. A migration
+atualiza quem estava fixado no modelo anterior, seguindo o precedente da migration do DeepSeek.
+
+`gpt-4o-mini` **continua selecionável** na tela por ser mais barato; só deixa de ser o padrão.
+
+Também confirmado: **não existe secret `AI_MODEL_COPY` no projeto** (conferido em
+`supabase secrets list`), então em produção `Deno.env.get` devolve `undefined` e o default do
+código é o que vale. Criar esse secret no futuro passaria a mascarar o default — é o primeiro
+lugar a olhar se produção parecer presa num modelo antigo.
 
 ### DeepSeek V4 Flash — testado e rejeitado
 

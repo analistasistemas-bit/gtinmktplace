@@ -8,13 +8,10 @@ interface PrecoModelo {
 const PRECOS: Record<string, PrecoModelo> = {
   'openai/gpt-4o-mini': { input: 0.00015, output: 0.0006 },
   'openai/gpt-4o': { input: 0.0025, output: 0.01 },
-  // DeepSeek V4 Flash 0731 (ADR-0074): $0.09/1M in · $0.18/1M out.
-  'deepseek/deepseek-v4-flash-0731': { input: 0.00009, output: 0.00018 },
-  // GPT-4.1-mini: $0.40/1M in · $1.60/1M out. Entra na tabela porque o experimento do
-  // ADR-0098 o mediu como o melhor em ancoragem e variedade — sem ele aqui, uma org que o
-  // selecionasse teria toda a família contabilizada com custo zero (custoCentavos loga
-  // warning e devolve 0 para modelo fora da tabela).
+  // GPT-4.1-mini (padrão desde o ADR-0098): $0.40/1M in · $1.60/1M out.
   'openai/gpt-4.1-mini': { input: 0.0004, output: 0.0016 },
+  // DeepSeek V4 Flash saiu da lista (ADR-0098): devolvia JSON truncado sob json_schema
+  // strict, e gerarCopy é a única etapa de IA sem fallback resiliente (ADR-0030).
 };
 
 export interface UsageTokens {
