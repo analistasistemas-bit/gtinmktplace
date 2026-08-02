@@ -121,6 +121,12 @@ export class ProdutoJaExisteError extends Error {
   }
 }
 
+/** Resultado indeterminado — nem confirma nem nega a gravação (rede caiu antes da resposta,
+ *  ou a edge devolveu um erro que não é 409 nem validação). Quem chama NÃO pode tratar como
+ *  resolvido: a chave de idempotência do cadastro precisa sobreviver pro retry (D-9/ADR-0094),
+ *  senão um segundo submit gera um segundo produto. */
+export class CadastroResultadoAmbiguoError extends Error {}
+
 export interface ResultadoCadastro {
   loteId: string;
   familiaId: string;
@@ -144,7 +150,10 @@ export async function cadastrarProduto(produto: ProdutoEntrada): Promise<Resulta
     }
     const erros = detalhe?.corpo.erros as Array<{ mensagem: string }> | undefined;
     if (erros?.length) throw new Error(erros.map((e) => e.mensagem).join('\n'));
-    throw new Error(String(detalhe?.corpo.error ?? (error as Error).message));
+    // Ambíguo: `detalhe === null` é falha de rede (sem resposta HTTP real); `detalhe !== null`
+    // aqui é um corpo de erro que não bate com 409 nem validação. Os dois merecem o mesmo
+    // tratamento no cliente — ver CadastroResultadoAmbiguoError.
+    throw new CadastroResultadoAmbiguoError(String(detalhe?.corpo.error ?? (error as Error).message));
   }
   return data as ResultadoCadastro;
 }

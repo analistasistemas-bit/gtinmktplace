@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { DialogCadastroProduto } from '../dialog-cadastro-produto';
+import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
 
 const cadastrarProdutoMock = vi.fn().mockRejectedValue(new Error('falhou'));
 // Hoisted (não `vi.fn()` inline na factory) para o teste do lote de fotos poder inspecionar
@@ -23,6 +24,9 @@ vi.mock('@/lib/produtos-saldo', () => ({
       super(mensagem);
     }
   },
+  // Fallback ambíguo (rede, ou erro que não é 409/validação) — ver cadastrarProduto em
+  // produtos-saldo.ts. `class extends Error` basta: o dialog só faz `instanceof`.
+  CadastroResultadoAmbiguoError: class CadastroResultadoAmbiguoError extends Error {},
 }));
 
 // subirFoto (dialog-cadastro-produto.tsx) chama estes três diretamente antes de delegar a
@@ -57,7 +61,39 @@ function renderDialog() {
   return renderDialogCom();
 }
 
+// Controla `aberto` de fora (fechar/reabrir sem desmontar `DialogCadastroProduto`) — é o que
+// dispara o useEffect de reset que decide se `chaveCadastro` regenera ou não.
+function renderDialogControlado() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  function Wrapper({ aberto }: { aberto: boolean }) {
+    return (
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroProduto aberto={aberto} onFechar={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+  const utils = render(<Wrapper aberto />);
+  return {
+    fechar: () => utils.rerender(<Wrapper aberto={false} />),
+    reabrir: () => utils.rerender(<Wrapper aberto />),
+  };
+}
+
+async function preencherEEnviar(user: ReturnType<typeof userEvent.setup>, nome: string) {
+  await user.type(screen.getByLabelText('Nome'), nome);
+  await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+  await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+  await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+}
+
 describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
+  // afterEach (não beforeEach): limpar ANTES do próximo teste começar, depois que as
+  // promises do teste atual já settled — mockClear() num beforeEach corrompe o rastreamento
+  // interno do Vitest de rejeicoes tratadas quando a promise ainda esta em voo.
+  afterEach(() => cadastrarProdutoMock.mockClear());
+
   it('submit que falha e resubmit reenviam a MESMA chaveCadastro', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -80,6 +116,53 @@ describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
     const chave2 = cadastrarProdutoMock.mock.calls[1][0].chaveCadastro;
     expect(chave1).toBeTruthy();
     expect(chave2).toBe(chave1);
+  });
+
+  // Achado do fix: resultado AMBÍGUO (rede caiu, ou erro que não é 409/validação) não prova
+  // que a edge não gravou. Fechar e reabrir o diálogo regenerando a chave faria o próximo
+  // submit ser tratado como um cadastro NOVO pela idempotência da edge — duplicando o produto.
+  it('resultado ambíguo: fechar e reabrir preserva a MESMA chaveCadastro (retry idempotente)', async () => {
+    cadastrarProdutoMock.mockRejectedValueOnce(new CadastroResultadoAmbiguoError('falha de rede'));
+    const user = userEvent.setup();
+    const { fechar, reabrir } = renderDialogControlado();
+
+    await preencherEEnviar(user, 'Produto Teste');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const chave1 = cadastrarProdutoMock.mock.calls[0][0].chaveCadastro;
+
+    fechar();
+    reabrir();
+
+    await preencherEEnviar(user, 'Produto Teste');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(2));
+    const chave2 = cadastrarProdutoMock.mock.calls[1][0].chaveCadastro;
+
+    expect(chave1).toBeTruthy();
+    expect(chave2).toBe(chave1);
+  });
+
+  // Regressão: um 409 CONHECIDO (a edge confirmou que já existe — caso resolvido, não
+  // ambíguo) continua liberando a chave pra regenerar ao fechar, como já fazia antes do fix.
+  it('409 conhecido: fechar e reabrir troca a chaveCadastro normalmente', async () => {
+    cadastrarProdutoMock.mockRejectedValueOnce(
+      new ProdutoJaExisteError('Produto já existe.', 'fam-1', 'lote-1'),
+    );
+    const user = userEvent.setup();
+    const { fechar, reabrir } = renderDialogControlado();
+
+    await preencherEEnviar(user, 'Produto Teste');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const chave1 = cadastrarProdutoMock.mock.calls[0][0].chaveCadastro;
+
+    fechar();
+    reabrir();
+
+    await preencherEEnviar(user, 'Produto Teste');
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(2));
+    const chave2 = cadastrarProdutoMock.mock.calls[1][0].chaveCadastro;
+
+    expect(chave1).toBeTruthy();
+    expect(chave2).not.toBe(chave1);
   });
 });
 

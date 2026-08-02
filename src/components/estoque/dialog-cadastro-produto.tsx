@@ -30,7 +30,7 @@ import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import {
-  cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError,
+  cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError, CadastroResultadoAmbiguoError,
   type ResultadoCadastro,
 } from '@/lib/produtos-saldo';
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
@@ -91,10 +91,13 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
   const [linhas, setLinhas] = useState<LinhaVariacao[]>([novaLinha()]);
-  // Só troca depois de um sucesso confirmado (ou ao fechar, deixando pronta pro próximo
-  // cadastro): duplo clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve
-  // o cadastro original em vez de duplicar.
+  // Só troca quando o último resultado foi CONHECIDO (sucesso, 409 ou validação): duplo
+  // clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve o cadastro original
+  // em vez de duplicar. Ver `resultadoAmbiguo` e o useEffect de reset abaixo.
   const [chaveCadastro, setChaveCadastro] = useState(() => crypto.randomUUID());
+  // true só quando o último submit terminou em CadastroResultadoAmbiguoError (rede caiu, ou
+  // erro que não é 409/validação) — a edge pode ou não ter gravado. Zera a cada novo submit.
+  const [resultadoAmbiguo, setResultadoAmbiguo] = useState(false);
 
   const [salvando, setSalvando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoCadastro | null>(null);
@@ -125,14 +128,17 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     if (aberto) return;
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
     setOrigem(null); setLinhas([novaLinha()]); setResultado(null);
-    setChaveCadastro(crypto.randomUUID());
+    // chaveCadastro só regenera se o último resultado foi conhecido — resultado ambíguo (rede)
+    // preserva a chave pro retry ser reconhecido pela idempotência da edge, em vez de criar
+    // um segundo produto.
+    if (!resultadoAmbiguo) setChaveCadastro(crypto.randomUUID());
     setDivergencia(null);
     setFotosCapa({ capa: null, capa2: null, capa3: null });
     setEnviandoFotos(null);
     setFalhasFoto([]);
     setConfirmarFechar(null);
     setTentouSalvar(false);
-  }, [aberto]);
+  }, [aberto, resultadoAmbiguo]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
@@ -150,6 +156,8 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   async function salvar() {
     if (!origem) return;
     setSalvando(true);
+    // Toda nova tentativa merece a chance de resolver limpo de novo.
+    setResultadoAmbiguo(false);
     try {
       const r = await cadastrarProduto(montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem }, linhas, chaveCadastro,
@@ -170,6 +178,9 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         toast.error(e.message, {
           action: { label: 'Abrir na Revisão', onClick: () => navigate(`/revisao/${e.loteId}`) },
         });
+      } else if (e instanceof CadastroResultadoAmbiguoError) {
+        setResultadoAmbiguo(true);
+        toast.error(e.message);
       } else {
         toast.error(e instanceof Error ? e.message : 'Falha ao cadastrar o produto.');
       }
