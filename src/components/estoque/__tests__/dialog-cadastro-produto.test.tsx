@@ -120,14 +120,19 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     expect(screen.getByLabelText('Cor / nome da variação 2')).toHaveValue('preto');
   });
 
-  it('preço vazio mostra mensagem e mantém o botão travado', async () => {
+  // Achado 4 (revisão final): a mensagem de erro não pode aparecer no formulário virgem — a
+  // spec (§5.4) exige que ela só apareça depois do primeiro blur do campo (ou de uma tentativa
+  // de salvar). O teste anterior documentava o comportamento errado como intencional.
+  it('preço vazio: sem mensagem no formulário virgem; aparece só depois do blur', async () => {
     const user = userEvent.setup();
     renderDialog();
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    // erroCampo não tem noção de "campo tocado" — a mensagem já aparece no formulário
-    // virgem, sem precisar focar/desfocar o campo (comportamento intencional; ver Achado
-    // Importante 3 da revisão da Task 10).
+    expect(screen.queryByText('Preço é obrigatório e deve ser maior que zero.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+
+    await user.click(screen.getByLabelText('Preço da variação 1'));
+    await user.tab();
     expect(screen.getByText('Preço é obrigatório e deve ser maior que zero.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
   });
@@ -187,6 +192,12 @@ describe('DialogCadastroProduto — formulário em cards', () => {
 });
 
 describe('DialogCadastroProduto — fotos e travas', () => {
+  // uploadFotoProdutoMock é compartilhado com o describe seguinte (lote de fotos), que conta
+  // chamadas absolutas — sem isto, os testes daqui vazam contagem para lá.
+  afterEach(() => {
+    uploadFotoProdutoMock.mockClear();
+  });
+
   // D6: pendência de IA ou de estoque NÃO pode esconder o upload — a foto é o que o operador
   // veio fazer, e ele fica sem nenhum caminho para enviá-la.
   it('mostra os campos de foto mesmo com filaOk false', async () => {
@@ -203,6 +214,61 @@ describe('DialogCadastroProduto — fotos e travas', () => {
 
     expect(await screen.findByText(/não foi enfileirado/)).toBeInTheDocument();
     expect(screen.getByLabelText('Capa')).toBeInTheDocument();
+  });
+
+  // Achado 3 (revisão final): `enviandoFotos` volta a `null` mesmo quando o lote termina com
+  // falha — sem a trava, "Fechar" descartava os `File` pendentes sem nenhum aviso.
+  it('fechar com foto pendente de reenvio exige confirmação antes de descartar', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    uploadFotoProdutoMock.mockRejectedValueOnce(new Error('falhou'));
+    const onFechar = vi.fn();
+    const user = userEvent.setup();
+    renderDialogCom({ onFechar });
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
+
+    // "Fechar" não fecha direto: abre a confirmação, sem descartar nada ainda.
+    await user.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(onFechar).not.toHaveBeenCalled();
+    expect(screen.getByText('Fechar sem reenviar as fotos que falharam?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Fechar mesmo assim' }));
+    expect(onFechar).toHaveBeenCalledTimes(1);
+  });
+
+  // A mesma trava vale para "Ir para a Revisão": ele também chama `onFechar` por baixo (para
+  // fechar o diálogo antes de navegar), então também descartaria o `File` pendente sem avisar.
+  it('"Ir para a Revisão" com foto pendente também exige confirmação, e navega ao confirmar', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    uploadFotoProdutoMock.mockRejectedValueOnce(new Error('falhou'));
+    const onFechar = vi.fn();
+    const user = userEvent.setup();
+    renderDialogCom({ onFechar });
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ir para a Revisão' }));
+    expect(onFechar).not.toHaveBeenCalled();
+    expect(screen.getByText('Fechar sem reenviar as fotos que falharam?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Fechar mesmo assim' }));
+    expect(onFechar).toHaveBeenCalledTimes(1);
   });
 
   it('não fecha enquanto o cadastro está em voo', async () => {

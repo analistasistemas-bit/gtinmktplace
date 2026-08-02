@@ -1,6 +1,6 @@
 // Card de variação do cadastro. Substitui a linha de 9 inputs minúsculos numa tabela com scroll
 // horizontal. Campos agrupados por natureza: identificação, comercial, logística, foto.
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,37 +57,49 @@ const LOGISTICA = [
   { campo: 'comprimentoCm', rotulo: 'Comprimento (cm)' },
 ] as const;
 
-export function LinhaVariacaoForm({ linha, indice, podeRemover, onMudar, onRemover }: {
+export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, onMudar, onRemover }: {
   linha: LinhaVariacao;
   indice: number;
   podeRemover: boolean;
+  /** true depois do primeiro clique em "Cadastrar" — a partir daí, erro aparece em TODO campo
+   *  inválido, tocado ou não (§5.4: senão o operador não descobre o que falta sem clicar em
+   *  cada campo). */
+  tentouSalvar: boolean;
   onMudar: (patch: Partial<LinhaVariacao>) => void;
   onRemover: () => void;
 }) {
   const n = indice + 1;
   const id = (campo: string) => `var-${linha.clientId}-${campo}`;
 
+  // Campo tocado (perdeu foco ao menos uma vez). Sem isto, `erroCampo` mostrava a mensagem no
+  // formulário virgem, antes de qualquer interação — a spec (§5.4) só quer o erro depois do
+  // primeiro blur do campo ou da primeira tentativa de salvar.
+  const [tocados, setTocados] = useState<Set<string>>(new Set());
+
   // useMemo: só cria uma blob URL nova quando o `File` muda — sem isto, qualquer tecla em
   // qualquer campo do card re-renderiza e cria (e vaza) uma URL nova pra mesma foto.
   const fotoUrl = useMemo(() => (linha.foto ? URL.createObjectURL(linha.foto) : null), [linha.foto]);
   useEffect(() => () => { if (fotoUrl) URL.revokeObjectURL(fotoUrl); }, [fotoUrl]);
 
-  const campoTexto = (campo: keyof LinhaVariacao, rotulo: string) => (
-    <div key={campo} className="flex flex-col gap-1">
-      <label htmlFor={id(campo)} className="text-xs text-muted-foreground">
-        {rotulo} da variação {n}
-      </label>
-      <Input
-        id={id(campo)}
-        className="h-8 text-sm"
-        value={linha[campo] as string}
-        onChange={(e) => onMudar({ [campo]: e.target.value } as Partial<LinhaVariacao>)}
-      />
-      {erroCampo(campo, linha[campo] as string) && (
-        <span className="text-xs text-destructive">{erroCampo(campo, linha[campo] as string)}</span>
-      )}
-    </div>
-  );
+  const campoTexto = (campo: keyof LinhaVariacao, rotulo: string) => {
+    const erro = erroCampo(campo, linha[campo] as string);
+    const mostrarErro = !!erro && (tocados.has(campo) || tentouSalvar);
+    return (
+      <div key={campo} className="flex flex-col gap-1">
+        <label htmlFor={id(campo)} className="text-xs text-muted-foreground">
+          {rotulo} da variação {n}
+        </label>
+        <Input
+          id={id(campo)}
+          className="h-8 text-sm"
+          value={linha[campo] as string}
+          onChange={(e) => onMudar({ [campo]: e.target.value } as Partial<LinhaVariacao>)}
+          onBlur={() => setTocados((prev) => (prev.has(campo) ? prev : new Set(prev).add(campo)))}
+        />
+        {mostrarErro && <span className="text-xs text-destructive">{erro}</span>}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border p-3">

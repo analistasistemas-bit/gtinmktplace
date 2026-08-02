@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Boxes, Plus, PackagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
@@ -42,12 +43,20 @@ export default function Estoque() {
     enabled: !!modulos?.includes('estoque'),
     staleTime: 60_000,
   });
+  // `canaisIndisponivel` só serve para decidir o dado (`undefined` em vez do Map) — loading e
+  // erro tratam a UI (mensagem, aviso) de forma diferente, ver BarraFiltrosEstoque.
   const canaisIndisponivel = canaisLoading || canaisErro;
 
   // Filtro selecionado + canais caíram = a tela responderia errado. Volta para "todos".
+  // Loading é transitório (sem aviso); erro precisa avisar, porque o filtro saiu por falha.
   useEffect(() => {
-    if (canaisIndisponivel && filtro === 'nao-publicado') setFiltro('todos');
-  }, [canaisIndisponivel, filtro]);
+    if (canaisIndisponivel && filtro === 'nao-publicado') {
+      setFiltro('todos');
+      if (canaisErro) {
+        toast.error('Filtro "Não publicado" desativado: falha ao carregar os canais.');
+      }
+    }
+  }, [canaisIndisponivel, canaisErro, filtro]);
 
   // Esconder o menu NÃO protege a rota — URL direta renderiza a tela. A escrita já está
   // protegida pelas edges (403); isto é coerência de navegação.
@@ -97,7 +106,7 @@ export default function Estoque() {
         <>
           <BarraFiltrosEstoque
             termo={busca} filtro={filtro} ordem={ordem}
-            canaisIndisponivel={canaisIndisponivel}
+            canaisCarregando={canaisLoading} canaisErro={canaisErro}
             onTermo={setBusca} onFiltro={setFiltro} onOrdem={setOrdem}
           />
           <div className="flex flex-col gap-2">
@@ -110,7 +119,11 @@ export default function Estoque() {
               />
             ))}
             {lista.length === 0 && (
-              <p className="p-4 text-sm text-muted-foreground">Nenhum produto bate com “{busca}”.</p>
+              <p className="p-4 text-sm text-muted-foreground">
+                {busca.trim() !== ''
+                  ? `Nenhum produto bate com “${busca}”.`
+                  : 'Nenhum produto encontrado com o filtro selecionado.'}
+              </p>
             )}
           </div>
         </>

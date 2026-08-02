@@ -35,6 +35,9 @@
   precisou de ajuste de largura.
 - [x] **`docs/reference/` e `obsidian-vault/`:** conferidos, sem necessidade de alteração —
   entrega 100% frontend, sem mudança de edge function, modelo de dados ou decisão arquitetural.
+- [x] **Limitação conhecida:** a foto escolhida no cadastro NÃO participa do enriquecimento por
+  IA nesta entrega (decisão §8.2 da spec) — a edge enfileira o processamento antes do upload
+  terminar. O operador que depende da cor por Vision resolve na Revisão, como já acontece hoje.
 
 ## Código de produto automático no cadastro manual — concluído 2026-07-31
 

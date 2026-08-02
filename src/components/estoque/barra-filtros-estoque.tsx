@@ -16,17 +16,20 @@ const ORDENS: Array<{ valor: OrdemEstoque; rotulo: string }> = [
 ];
 
 export function BarraFiltrosEstoque({
-  termo, filtro, ordem, canaisIndisponivel, onTermo, onFiltro, onOrdem,
+  termo, filtro, ordem, canaisCarregando, canaisErro, onTermo, onFiltro, onOrdem,
 }: {
   termo: string;
   filtro: FiltroEstoque;
   ordem: OrdemEstoque;
-  /** Query de canais carregando ou em erro: o filtro por publicação não pode ser oferecido. */
-  canaisIndisponivel: boolean;
+  /** Carregando é transitório — desabilita a opção, mas sem mensagem de erro. */
+  canaisCarregando: boolean;
+  /** Erro real — desabilita a opção E mostra o motivo. */
+  canaisErro: boolean;
   onTermo: (v: string) => void;
   onFiltro: (v: FiltroEstoque) => void;
   onOrdem: (v: OrdemEstoque) => void;
 }) {
+  const canaisIndisponivel = canaisCarregando || canaisErro;
   return (
     <div className="mb-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -68,7 +71,7 @@ export function BarraFiltrosEstoque({
           ))}
         </div>
       </div>
-      {canaisIndisponivel && (
+      {canaisErro && (
         <p className="text-xs text-muted-foreground">
           Não foi possível carregar os canais — o filtro por publicação está indisponível.
         </p>

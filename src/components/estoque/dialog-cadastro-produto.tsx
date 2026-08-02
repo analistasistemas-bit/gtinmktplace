@@ -6,6 +6,11 @@
 // (capa / por variação) como caminho de correção/retry.
 //
 // O cadastro NÃO publica nada — a publicação continua sendo um ato explícito na Revisão.
+//
+// Limitação conhecida (spec §8.2): a foto escolhida aqui NÃO participa do enriquecimento por
+// IA nesta entrega — `cadastrar-produto` enfileira `process-familia` antes de o upload em lote
+// terminar, então a resolução de cor por Vision não enxerga a foto a tempo. Decisão consciente
+// (opção A da §8.2), não bug; quem depende da cor por Vision resolve na Revisão.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -17,6 +22,10 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
@@ -102,6 +111,15 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   // ou expira, então a saída (ir na Revisão) precisa ficar visível enquanto o diálogo estiver
   // aberto, não só no instante do erro.
   const [divergencia, setDivergencia] = useState<{ mensagem: string; loteId: string } | null>(null);
+  // Confirmação destrutiva antes de fechar com foto pendente (Achado 3, revisão final): sem
+  // isto, Escape/backdrop/"Fechar"/"Ir para a Revisão" descartavam os `File` que ainda não
+  // foram reenviados com sucesso, sem nenhum sinal de que a foto deveria existir. Guarda a
+  // AÇÃO (não só "fechar"), porque "Ir para a Revisão" fecha E navega — a confirmação precisa
+  // rodar a ação certa, não sempre `onFechar`.
+  const [confirmarFechar, setConfirmarFechar] = useState<(() => void) | null>(null);
+  // "Cadastrar" clicado ao menos uma vez — junto com o blur por campo, decide quando as
+  // mensagens de erro inline aparecem (§5.4, Achado 4 da revisão final).
+  const [tentouSalvar, setTentouSalvar] = useState(false);
 
   useEffect(() => {
     if (aberto) return;
@@ -112,10 +130,22 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     setFotosCapa({ capa: null, capa2: null, capa3: null });
     setEnviandoFotos(null);
     setFalhasFoto([]);
+    setConfirmarFechar(null);
+    setTentouSalvar(false);
   }, [aberto]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
+
+  // Guarda ÚNICA por onde toda saída destrutiva passa — Escape, clique fora, "Cancelar",
+  // "Fechar" e "Ir para a Revisão" (que também descarta o state ao chamar `onFechar`). Com
+  // foto pendente (falha no lote da etapa 2), exige confirmação explícita antes de rodar a
+  // ação em vez de travar para sempre ou deixar passar direto.
+  function comConfirmacao(acao: () => void) {
+    if (ocupado) return;
+    if (falhasFoto.length > 0) { setConfirmarFechar(() => acao); return; }
+    acao();
+  }
 
   async function salvar() {
     if (!origem) return;
@@ -231,7 +261,8 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   const ocupado = salvando || enviandoFoto || enviandoFotos !== null;
 
   return (
-    <Dialog open={aberto} onOpenChange={(o) => { if (!o && !ocupado) onFechar(); }}>
+    <>
+    <Dialog open={aberto} onOpenChange={(o) => { if (!o) comConfirmacao(onFechar); }}>
       {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
           `max-w-3xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
           grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
@@ -345,6 +376,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
                     linha={l}
                     indice={i}
                     podeRemover={linhas.length > 1}
+                    tentouSalvar={tentouSalvar}
                     onMudar={(patch) => setLinhas((prev) => prev.map((x) => (x.clientId === l.clientId ? { ...x, ...patch } : x)))}
                     onRemover={() => setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId))}
                   />
@@ -449,17 +481,21 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         <DialogFooter>
           {!resultado ? (
             <>
-              <Button variant="outline" onClick={onFechar} disabled={ocupado}>Cancelar</Button>
-              <Button onClick={salvar} disabled={!podeSalvar || salvando}>
+              <Button variant="outline" onClick={() => comConfirmacao(onFechar)} disabled={ocupado}>Cancelar</Button>
+              {/* setTentouSalvar: por completude com a spec (§5.4, branch "b"). Na prática o
+                  botão só é clicável quando `podeSalvar` já é true — ou seja, sem nenhum campo
+                  com erro — então este ramo nunca revela mensagem nova hoje. Só passaria a
+                  importar se o gate `disabled={!podeSalvar}` abaixo for removido. */}
+              <Button onClick={() => { setTentouSalvar(true); salvar(); }} disabled={!podeSalvar || salvando}>
                 {salvando ? 'Cadastrando…' : 'Cadastrar'}
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={onFechar} disabled={ocupado}>Fechar</Button>
+              <Button variant="outline" onClick={() => comConfirmacao(onFechar)} disabled={ocupado}>Fechar</Button>
               <Button
                 disabled={!!pendencias || ocupado}
-                onClick={() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); }}
+                onClick={() => comConfirmacao(() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); })}
               >
                 Ir para a Revisão
               </Button>
@@ -468,5 +504,30 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Confirmação destrutiva (Achado 3, revisão final): lote de fotos com falha ainda em
+        memória — fechar sem confirmar descartaria os `File` sem nenhum sinal de que a foto
+        deveria existir. Padrão igual ao já usado em familia-expanded.tsx/lote-card.tsx. */}
+    <AlertDialog open={!!confirmarFechar} onOpenChange={(o) => { if (!o) setConfirmarFechar(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Fechar sem reenviar as fotos que falharam?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {falhasFoto.length} foto(s) não foram enviadas ({falhasFoto.join(', ')}). Continuar
+            descarta os arquivos escolhidos — você vai precisar selecioná-los de novo depois.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Continuar aqui</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => { const acao = confirmarFechar; setConfirmarFechar(null); acao?.(); }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Fechar mesmo assim
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
