@@ -13,6 +13,9 @@ describe('parseNumeroPtBr', () => {
     ['1.234.567', 1234567],
     ['1.234.567,89', 1234567.89],
     ['-5', -5],
+    // Limite superior do quantificador {3}: 4+ dígitos não casa como milhar, cai no
+    // ramo "passa direto". Guarda contra um refactor futuro trocar {3} por {3,}.
+    ['1.2345', 1.2345],
   ])('parseNumeroPtBr(%s) === %s', (input, esperado) => {
     expect(parseNumeroPtBr(input)).toBe(esperado);
   });
@@ -24,5 +27,9 @@ describe('parseNumeroPtBr', () => {
 
   it('texto não numérico é NaN, nunca vira vazio em silêncio', () => {
     expect(parseNumeroPtBr('abc')).toBeNaN();
+  });
+
+  it('milhar malformado (grupos incompletos) é NaN, não um número lixo', () => {
+    expect(parseNumeroPtBr('1.234.56')).toBeNaN();
   });
 });
