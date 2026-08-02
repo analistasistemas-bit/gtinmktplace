@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-07-29
+atualizado: 2026-08-02
 ---
 
 # Sprint Atual
@@ -56,6 +56,31 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > ausentes na tela `/estoque` (dado já gravado, agora também exibido). Suíte 2255 → 2256.
 > Produtos de teste (`99000001`/`99000002`) seguem na DSA — procedimento de limpeza em
 > `docs/how-to/operacoes-rotineiras.md`.
+>
+> **✅ Redesenho da tela `/estoque` EM PRODUÇÃO (2026-08-02, PR #56).** O `sm:max-w-5xl` do
+> Bloco B (linha acima) aliviou o corte da tabela de variações no cadastro, mas a causa raiz
+> era estrutural: `<table>` aninhada dentro de `<TableCell>` forçava scroll horizontal em telas
+> estreitas — no cadastro, na listagem, e em `/publicados` (compartilha `MovimentosEstoque`).
+> Listagem e cadastro viraram cards, sem nenhuma `<table>` no caminho. Busca ampliada
+> (GTIN/fornecedor); filtro "não publicado" corrigido pra derivar de `familias.ml_item_id`
+> (fonte canônica) em vez de só `anuncios_externos` (espelho que pode ficar furado sem erro —
+> upsert falha só com `console.error`, sem desfazer a publicação real).
+>
+> **Duas rodadas de revisão** (12 tasks TDD via `subagent-driven-development` + revisão final
+> de branch + `code-review-fable5` independente) acharam e corrigiram, cada achado re-revisado
+> antes de aceitar: um bug financeiro real herdado da própria tela (`"1.234"` gravava preço/custo
+> como `R$ 1,23` — parsing de milhar pt-BR ausente; `parseNumeroPtBr` em `src/lib/formato.ts`),
+> idempotência do cadastro em retry ambíguo (risco de duplicar produto), casamento
+> posicional de foto travado quando a contagem diverge do formulário, mais 3 achados baixos.
+> 10/10 checagens reais de scroll horizontal via `playwright-cli` (5 cenários × 2 viewports).
+>
+> **100% frontend** — nenhuma mudança em edge function, migration ou RLS. Decisão consciente
+> registrada (§8.2 da spec): a foto do cadastro não participa do enriquecimento por IA nesta
+> entrega (a edge enfileira antes do upload terminar).
+>
+> **Fora do escopo, registrado para entrega própria:** `src/components/variacao-card.tsx`
+> (edição de preço em `/publicados`) tem o mesmo bug de parsing de milhar pt-BR corrigido aqui —
+> não tocado neste PR.
 >
 > **Depois: E5 Shopee.**
 
