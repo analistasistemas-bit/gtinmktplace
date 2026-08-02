@@ -59,6 +59,25 @@ describe('janelaAnterior', () => {
     const a = janelaAnterior(j, { tipo: 'hoje' }); // fix: ontem, mesmo ponto do relógio
     expect(a).toEqual({ desde: '2026-07-05T00:00:00.000Z', ate: '2026-07-05T12:00:00.000Z' });
   });
+
+  it('"mes_atual": compara com o mesmo trecho do mês passado, não desloca pela duração decorrida (bug real)', () => {
+    // "mes_atual" também cresce (mês todo) — deslocar pelos ~1,5 dia decorridos de agosto dá um
+    // pedaço do FIM de julho, não "01-02/07 até a mesma hora de agora". Datas sem "Z" (hora local),
+    // como no resto do arquivo, porque setMonth() do fix opera em hora local.
+    const desde = new Date(2026, 7, 1, 0, 0, 0).toISOString(); // 01/08 00:00 local
+    const ate = new Date(2026, 7, 2, 15, 0, 0).toISOString(); // 02/08 15:00 local (~1,625 dia decorrido)
+    const j = { desde, ate };
+
+    const semTipo = janelaAnterior(j); // comportamento genérico (bug): desloca pela duração decorrida
+    const durMs = Date.parse(ate) - Date.parse(desde);
+    expect(semTipo).toEqual({ desde: new Date(Date.parse(desde) - durMs).toISOString(), ate: desde });
+
+    const a = janelaAnterior(j, { tipo: 'mes_atual' }); // fix: mesmo trecho do mês anterior
+    expect(a).toEqual({
+      desde: new Date(2026, 6, 1, 0, 0, 0).toISOString(), // 01/07 00:00 local
+      ate: new Date(2026, 6, 2, 15, 0, 0).toISOString(), // 02/07 15:00 local
+    });
+  });
 });
 
 describe('periodo <-> params', () => {
