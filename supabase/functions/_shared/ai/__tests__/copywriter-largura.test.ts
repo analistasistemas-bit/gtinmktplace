@@ -192,3 +192,45 @@ describe('garantirMetragemDescricao', () => {
     expect(out).toContain('• Metragem: 50MT');
   });
 });
+
+describe('guards × seção "Perguntas sobre este produto" (ADR-0098)', () => {
+  it('injeta largura ANTES da seção de perguntas quando ESPECIFICAÇÕES foi pulada', () => {
+    const descricao = [
+      '🧵 INTRO',
+      '',
+      'Texto.',
+      '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+      '',
+      '▪ Qual a composição? 100% poliéster.',
+    ].join('\n');
+
+    // RE_LARGURA exige a palavra LARGURA perto do número — largura vem da descrição.
+    const r = garantirLarguraDescricao(descricao, 'FITA CETIM N.3', 'LARGURA: 16MM.');
+
+    expect(r).toContain('📌 ESPECIFICAÇÕES');
+    expect(r).toContain('• Largura: 16mm');
+    expect(r.indexOf('📌 ESPECIFICAÇÕES')).toBeLessThan(r.indexOf('❓ PERGUNTAS SOBRE ESTE PRODUTO'));
+  });
+
+  // Fixa comportamento PRÉ-EXISTENTE de propósito: contemMetragem aceita a menção em prosa
+  // para não duplicar o dado. A seção nova cria mais um lugar onde isso dispara, então o
+  // teste torna a decisão explícita em vez de acidental. Se falhar, não "conserte" o guard —
+  // releia contemMetragem em titulo.ts e confirme o que ela aceita.
+  it('metragem citada SÓ na resposta de uma pergunta suprime o bullet — tolerância a prosa é intencional', () => {
+    const descricao = [
+      '📌 ESPECIFICAÇÕES',
+      '',
+      '• Composição: 100% poliéster',
+      '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+      '',
+      '▪ Quantos metros possui? 10 metros.',
+    ].join('\n');
+
+    const r = garantirMetragemDescricao(descricao, 'FITA CETIM N.3 16MM 10MT');
+
+    expect(r).not.toContain('• Metragem:');
+    expect(r).toBe(descricao);
+  });
+});
