@@ -1,44 +1,55 @@
 // E6b (ADR-0094, D-1/D-3): cadastro manual de produto, em duas etapas.
-// Etapa 1 grava família + variações (a edge é a autoridade da validação); etapa 2 sobe as
-// fotos, que só podem existir depois que família e variações têm id.
+// Etapa 1 grava família + variações (a edge é a autoridade da validação) — capa e fotos por
+// variação já são ESCOLHIDAS aqui, mas só existem `familiaId`/`variacaoId` para gravá-las
+// depois que o cadastro responde, então o upload em lote roda logo em seguida, ainda dentro
+// de `salvar()`. Etapa 2 mostra o progresso desse lote e mantém um upload manual avulso
+// (capa / por variação) como caminho de correção/retry.
 //
 // O cadastro NÃO publica nada — a publicação continua sendo um ato explícito na Revisão.
+//
+// Limitação conhecida (spec §8.2): a foto escolhida aqui NÃO participa do enriquecimento por
+// IA nesta entrega — `cadastrar-produto` enfileira `process-familia` antes de o upload em lote
+// terminar, então a resolução de cor por Vision não enxerga a foto a tempo. Decisão consciente
+// (opção A da §8.2), não bug; quem depende da cor por Vision resolve na Revisão.
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import {
-  cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError,
+  cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError, CadastroResultadoAmbiguoError,
   type ResultadoCadastro,
 } from '@/lib/produtos-saldo';
 import type { ProdutoEntrada, VariacaoEntrada } from '@/lib/produto-entrada';
+import {
+  LinhaVariacaoForm, novaLinha, parseNum, erroCampo, type LinhaVariacao,
+} from '@/components/estoque/linha-variacao-form';
 
-type LinhaVariacao = {
-  nome: string; gtin: string;
-  preco: string; custo: string; estoqueInicial: string;
-  pesoGramas: string; alturaCm: string; larguraCm: string; comprimentoCm: string;
-};
+// Todo campo numérico que `erroCampo` valida — usado pelo gate `podeSalvar` para travar o
+// submit se QUALQUER um, em QUALQUER linha, tiver erro (não só `preco`).
+const CAMPOS_NUMERICOS = [
+  'preco', 'custo', 'estoqueInicial', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm',
+] as const;
 
-const LINHA_VAZIA: LinhaVariacao = {
-  nome: '', gtin: '', preco: '', custo: '', estoqueInicial: '',
-  pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
-};
-
-function num(v: string): number | null {
-  const t = v.trim().replace(',', '.');
-  if (t === '') return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
+// Normaliza `NaN` (texto inválido) para `null`. `podeSalvar` já garante que nenhum campo
+// numérico de nenhuma linha tem erro antes de chegar aqui — NaN não deveria ocorrer; isto é
+// só uma conversão defensiva de tipo, não a validação em si.
+function numOuNull(v: string): number | null {
+  const n = parseNum(v);
+  return typeof n === 'number' && !Number.isNaN(n) ? n : null;
 }
 
 function montarPayload(
@@ -49,13 +60,13 @@ function montarPayload(
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
     gtin: l.gtin.trim() || null,
-    preco: num(l.preco) ?? 0,
-    custo: num(l.custo),
-    estoqueInicial: num(l.estoqueInicial),
-    pesoGramas: num(l.pesoGramas),
-    alturaCm: num(l.alturaCm),
-    larguraCm: num(l.larguraCm),
-    comprimentoCm: num(l.comprimentoCm),
+    preco: numOuNull(l.preco) ?? 0,
+    custo: numOuNull(l.custo),
+    estoqueInicial: numOuNull(l.estoqueInicial),
+    pesoGramas: numOuNull(l.pesoGramas),
+    alturaCm: numOuNull(l.alturaCm),
+    larguraCm: numOuNull(l.larguraCm),
+    comprimentoCm: numOuNull(l.comprimentoCm),
   }));
   return {
     nomePai: pai.nomePai.trim(),
@@ -79,42 +90,86 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   // Sem default silencioso: origem define a alíquota de imposto (ADR-0055) e o operador
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
-  const [linhas, setLinhas] = useState<LinhaVariacao[]>([{ ...LINHA_VAZIA }]);
-  // Só troca depois de um sucesso confirmado (ou ao fechar, deixando pronta pro próximo
-  // cadastro): duplo clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve
-  // o cadastro original em vez de duplicar.
+  const [linhas, setLinhas] = useState<LinhaVariacao[]>([novaLinha()]);
+  // Só troca quando o último resultado foi CONHECIDO (sucesso, 409 ou validação): duplo
+  // clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve o cadastro original
+  // em vez de duplicar. Ver `resultadoAmbiguo` e o useEffect de reset abaixo.
   const [chaveCadastro, setChaveCadastro] = useState(() => crypto.randomUUID());
+  // true só quando o último submit terminou em CadastroResultadoAmbiguoError (rede caiu, ou
+  // erro que não é 409/validação) — a edge pode ou não ter gravado. Zera a cada novo submit.
+  const [resultadoAmbiguo, setResultadoAmbiguo] = useState(false);
 
   const [salvando, setSalvando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoCadastro | null>(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  // Capa escolhida na etapa 1 — só existe familiaId depois do cadastro, então o upload real
+  // só acontece dentro de subirLoteDeFotos, depois que `cadastrarProduto` devolve o resultado.
+  const [fotosCapa, setFotosCapa] = useState<Record<'capa' | 'capa2' | 'capa3', File | null>>({
+    capa: null, capa2: null, capa3: null,
+  });
+  const [enviandoFotos, setEnviandoFotos] = useState<{ feitos: number; total: number } | null>(null);
+  const [falhasFoto, setFalhasFoto] = useState<string[]>([]);
   // 409 de divergência: a chave já foi usada e o que está no formulário não bate com o que
   // foi salvo. A partir daqui todo retry com esta chave devolve o mesmo erro — o toast some
   // ou expira, então a saída (ir na Revisão) precisa ficar visível enquanto o diálogo estiver
   // aberto, não só no instante do erro.
   const [divergencia, setDivergencia] = useState<{ mensagem: string; loteId: string } | null>(null);
+  // Confirmação destrutiva antes de fechar com foto pendente (Achado 3, revisão final): sem
+  // isto, Escape/backdrop/"Fechar"/"Ir para a Revisão" descartavam os `File` que ainda não
+  // foram reenviados com sucesso, sem nenhum sinal de que a foto deveria existir. Guarda a
+  // AÇÃO (não só "fechar"), porque "Ir para a Revisão" fecha E navega — a confirmação precisa
+  // rodar a ação certa, não sempre `onFechar`.
+  const [confirmarFechar, setConfirmarFechar] = useState<(() => void) | null>(null);
+  // "Cadastrar" clicado ao menos uma vez — junto com o blur por campo, decide quando as
+  // mensagens de erro inline aparecem (§5.4, Achado 4 da revisão final).
+  const [tentouSalvar, setTentouSalvar] = useState(false);
 
   useEffect(() => {
     if (aberto) return;
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
-    setOrigem(null); setLinhas([{ ...LINHA_VAZIA }]); setResultado(null);
-    setChaveCadastro(crypto.randomUUID());
+    setOrigem(null); setLinhas([novaLinha()]); setResultado(null);
+    // chaveCadastro só regenera se o último resultado foi conhecido — resultado ambíguo (rede)
+    // preserva a chave pro retry ser reconhecido pela idempotência da edge, em vez de criar
+    // um segundo produto.
+    if (!resultadoAmbiguo) setChaveCadastro(crypto.randomUUID());
     setDivergencia(null);
-  }, [aberto]);
+    setFotosCapa({ capa: null, capa2: null, capa3: null });
+    setEnviandoFotos(null);
+    setFalhasFoto([]);
+    setConfirmarFechar(null);
+    setTentouSalvar(false);
+  }, [aberto, resultadoAmbiguo]);
 
-  const podeSalvar = !!nomePai.trim() && !!origem
-    && linhas.length > 0
-    && linhas.every((l) => (num(l.preco) ?? 0) > 0);
+  const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
+    && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
+
+  // Guarda ÚNICA por onde toda saída destrutiva passa — Escape, clique fora, "Cancelar",
+  // "Fechar" e "Ir para a Revisão" (que também descarta o state ao chamar `onFechar`). Com
+  // foto pendente (falha no lote da etapa 2), exige confirmação explícita antes de rodar a
+  // ação em vez de travar para sempre ou deixar passar direto.
+  function comConfirmacao(acao: () => void) {
+    if (ocupado) return;
+    if (falhasFoto.length > 0) { setConfirmarFechar(() => acao); return; }
+    acao();
+  }
 
   async function salvar() {
     if (!origem) return;
     setSalvando(true);
+    // Toda nova tentativa merece a chance de resolver limpo de novo.
+    setResultadoAmbiguo(false);
     try {
       const r = await cadastrarProduto(montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem }, linhas, chaveCadastro,
       ));
       setResultado(r);
       setChaveCadastro(crypto.randomUUID());
+      // Primeira invalidação: o produto já aparece na listagem, sem esperar as fotos.
+      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      await subirLoteDeFotos(r);
+      // Segunda invalidação, OBRIGATÓRIA: a primeira roda antes dos uploads, e `imagem_path` /
+      // `capa_storage_path` só são gravados dentro de uploadFotoProduto. Sem esta, o card fica
+      // com placeholder mesmo com a foto já enviada.
       qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
       if (r.filaOk && r.falhasEstoque.length === 0) toast.success('✓ Produto cadastrado');
     } catch (e) {
@@ -123,6 +178,9 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         toast.error(e.message, {
           action: { label: 'Abrir na Revisão', onClick: () => navigate(`/revisao/${e.loteId}`) },
         });
+      } else if (e instanceof CadastroResultadoAmbiguoError) {
+        setResultadoAmbiguo(true);
+        toast.error(e.message);
       } else {
         toast.error(e instanceof Error ? e.message : 'Falha ao cadastrar o produto.');
       }
@@ -142,8 +200,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     }
   }
 
-  async function subirFoto(arquivo: File, alvo: Parameters<typeof uploadFotoProduto>[3]) {
-    if (!resultado) return;
+  // `loteId` explícito (não lido de `resultado`): quando chamada pelo lote logo após
+  // `setResultado(r)`, o state ainda não re-renderizou — `resultado` no closure continuaria
+  // `null` e o upload seria descartado em silêncio. Etapa 2 passa `resultado.loteId` (já
+  // válido ali); o lote passa o `r` recebido como parâmetro de `cadastrarProduto`.
+  async function subirFoto(arquivo: File, alvo: Parameters<typeof uploadFotoProduto>[3], loteId: string) {
     setEnviandoFoto(true);
     try {
       const { data: ud } = await supabase.auth.getUser();
@@ -152,26 +213,88 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
       if (!userId || !orgId) throw new Error('Sem sessão ou organização.');
       if (!canWrite()) throw new Error('Suporte somente leitura.');
       const owner = storageOwnerForUpload(userId, orgId, useSupportStore.getState().context?.scope ?? null);
-      await uploadFotoProduto(owner, resultado.loteId, arquivo, alvo);
+      await uploadFotoProduto(owner, loteId, arquivo, alvo);
+      // Cobre os dois chamadores: o retry manual da etapa 2 (que sem isto nunca invalidava —
+      // o card ficava com placeholder mesmo com o path já gravado) e o lote automático (que já
+      // invalida de novo ao fim de `salvar()`; repetir aqui é redundante mas inofensivo).
+      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
       toast.success('✓ Foto enviada');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao enviar a foto.');
+      throw e;
     } finally {
       setEnviandoFoto(false);
     }
   }
 
+  /**
+   * Casamento POSICIONAL, e ele é correto por quatro invariantes encadeados:
+   *   1. derivarCodigos numera na ordem do array           (_shared/produto/codigos.ts:38)
+   *   2. montarLinhasProduto casa variacoes[i] ↔ codigos[i] (_shared/produto/validar.ts:102)
+   *   3. a edge ordena a resposta por codigo                (cadastrar-produto/index.ts:256)
+   *   4. todo codigo tem 8 digitos, entao ordem lexicografica = numerica
+   * Se qualquer um deles mudar, a foto vai para o SKU errado EM SILENCIO.
+   *
+   * Se `linhas.length !== r.variacoes.length`, os invariantes acima não garantem mais nada —
+   * a contagem divergente é sinal de que um retry idempotente devolveu o cadastro ORIGINAL da
+   * edge, que pode ter menos ou mais variações do que o formulário atual (o operador editou
+   * linhas entre tentativas). Pular o casamento de variação nesse caso é mais seguro do que
+   * arriscar o índice errado; o operador é avisado via `falhasFoto`. A foto de capa não é
+   * afetada — casa por `familiaId`, não por índice.
+   */
+  async function subirLoteDeFotos(r: ResultadoCadastro) {
+    // `rotulo` é só para a mensagem de falha (o operador não reconhece um variacaoId em UUID);
+    // não participa do casamento em si, que usa `alvo`.
+    const alvos: Array<{ arquivo: File; alvo: Parameters<typeof uploadFotoProduto>[3]; rotulo: string }> = [];
+    (['capa', 'capa2', 'capa3'] as const).forEach((tipo) => {
+      const arquivo = fotosCapa[tipo];
+      const rotulo = tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3';
+      if (arquivo) alvos.push({ arquivo, alvo: { tipo, familiaId: r.familiaId }, rotulo });
+    });
+    const falhas: string[] = [];
+    if (linhas.length !== r.variacoes.length) {
+      linhas.forEach((l, i) => {
+        if (l.foto) falhas.push(`Variação (linha ${i + 1}, contagem divergente — vá pra Revisão)`);
+      });
+    } else {
+      linhas.forEach((l, i) => {
+        const v = r.variacoes[i];
+        if (l.foto && v) alvos.push({ arquivo: l.foto, alvo: { tipo: 'variacao', variacaoId: v.id }, rotulo: v.codigo });
+      });
+    }
+    if (alvos.length === 0 && falhas.length === 0) return;
+
+    if (alvos.length > 0) {
+      setEnviandoFotos({ feitos: 0, total: alvos.length });
+      for (const [i, a] of alvos.entries()) {
+        try {
+          await subirFoto(a.arquivo, a.alvo, r.loteId);
+        } catch {
+          falhas.push(a.rotulo);
+        }
+        setEnviandoFotos({ feitos: i + 1, total: alvos.length });
+      }
+      setEnviandoFotos(null);
+    }
+    setFalhasFoto(falhas);
+  }
+
   const pendencias = resultado && (!resultado.filaOk || resultado.falhasEstoque.length > 0);
+  // Cobre as três fases destrutivas de fechar no meio: `salvando` (cadastrarProduto em voo —
+  // fechar aqui não cancela a chamada, só descarta os `File`s escolhidos no useEffect de
+  // reset), `enviandoFotos !== null` (lote automático em andamento) e `enviandoFoto` (retry
+  // manual da etapa 2 em andamento — o guard original, preservado).
+  const ocupado = salvando || enviandoFoto || enviandoFotos !== null;
 
   return (
-    <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
+    <>
+    <Dialog open={aberto} onOpenChange={(o) => { if (!o) comConfirmacao(onFechar); }}>
       {/* sm: obrigatorio: o default do componente e `sm:max-w-sm`; sobrescrever com
-          `max-w-4xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
+          `max-w-3xl` sem o mesmo prefixo nao vence a cascata (tailwind-merge trata como
           grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
-          5xl (nao 4xl): a tabela de variacoes (antes 10 colunas com SKU, hoje 9) precisava de
-          ~924px; em 4xl sobravam so 862px de area util e a tabela cortava colunas no scroll
-          interno (achado do Diego testando ao vivo). */}
-      <DialogContent className="max-h-[90vh] sm:max-w-5xl overflow-y-auto">
+          3xl: as variacoes agora sao cards empilhados (nao uma tabela larga com scroll
+          horizontal), entao a largura so precisa acomodar um card por vez. */}
+      <DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{resultado ? 'Fotos do produto' : 'Cadastrar produto'}</DialogTitle>
           <DialogDescription>
@@ -183,9 +306,9 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
 
         {!resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
-          // definido), entao o min-content da tabela de variacoes (9 colunas com `min-w-20`
-          // cada) vaza pro dialog inteiro em vez de ficar contido no scroll horizontal
-          // do proprio wrapper da tabela. Sem isto, o dialog abre mais largo que a viewport.
+          // definido), entao o min-content do conteudo interno vaza pro dialog inteiro em vez
+          // de ficar contido na largura do proprio wrapper. Sem isto, o dialog abre mais largo
+          // que a viewport.
           <div className="flex min-w-0 flex-col gap-4">
             {divergencia && (
               <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
@@ -242,11 +365,29 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
             </div>
 
             <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Fotos do produto</span>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(['capa', 'capa2', 'capa3'] as const).map((tipo) => (
+                  <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    {tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3'}
+                    <Input
+                      type="file" accept="image/*" disabled={salvando}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        setFotosCapa((prev) => ({ ...prev, [tipo]: f }));
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">Variações</span>
                 <Button
                   type="button" variant="outline" size="sm"
-                  onClick={() => setLinhas((l) => [...l, { ...LINHA_VAZIA }])}
+                  onClick={() => setLinhas((l) => [...l, novaLinha()])}
                 >
                   <Plus className="mr-1 h-3.5 w-3.5" /> Adicionar variação
                 </Button>
@@ -254,42 +395,18 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
               <span className="text-xs text-muted-foreground">
                 Códigos gerados automaticamente ao salvar.
               </span>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      {['Cor / nome', 'GTIN', 'Preço', 'Custo', 'Estoque', 'Peso (g)', 'Alt (cm)', 'Larg (cm)', 'Comp (cm)', ''].map((h) => (
-                        <th key={h} className="p-2 font-medium">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {linhas.map((l, i) => (
-                      <tr key={i} className="border-t">
-                        {(['nome', 'gtin', 'preco', 'custo', 'estoqueInicial', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm'] as const).map((campo) => (
-                          <td key={campo} className="p-1">
-                            <Input
-                              className="h-8 min-w-20 text-xs"
-                              value={l[campo]}
-                              onChange={(e) => setLinhas((prev) => prev.map((x, j) => (
-                                j === i ? { ...x, [campo]: e.target.value } : x
-                              )))}
-                            />
-                          </td>
-                        ))}
-                        <td className="p-1">
-                          <Button
-                            type="button" variant="ghost" size="sm"
-                            disabled={linhas.length === 1}
-                            onClick={() => setLinhas((prev) => prev.filter((_, j) => j !== i))}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex flex-col gap-3">
+                {linhas.map((l, i) => (
+                  <LinhaVariacaoForm
+                    key={l.clientId}
+                    linha={l}
+                    indice={i}
+                    podeRemover={linhas.length > 1}
+                    tentouSalvar={tentouSalvar}
+                    onMudar={(patch) => setLinhas((prev) => prev.map((x) => (x.clientId === l.clientId ? { ...x, ...patch } : x)))}
+                    onRemover={() => setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId))}
+                  />
+                ))}
               </div>
             </div>
           </div>
@@ -322,62 +439,89 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
               </div>
             )}
 
-            {!pendencias && (
-              <>
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">Fotos do produto</span>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {(['capa', 'capa2', 'capa3'] as const).map((tipo) => (
-                      <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
-                        {tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3'}
-                        <Input
-                          type="file" accept="image/*" disabled={enviandoFoto}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) subirFoto(f, { tipo, familiaId: resultado.familiaId });
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-medium">Foto por variação</span>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {resultado.variacoes.map((v) => (
-                      <label key={v.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
-                        <span className="font-mono">{v.codigo}</span>
-                        <Input
-                          type="file" accept="image/*" disabled={enviandoFoto}
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) subirFoto(f, { tipo: 'variacao', variacaoId: v.id });
-                          }}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </>
+            {enviandoFotos && (
+              <p className="text-sm text-muted-foreground">
+                enviando fotos ({enviandoFotos.feitos}/{enviandoFotos.total})…
+              </p>
             )}
+            {falhasFoto.length > 0 && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                <div>
+                  Falha ao enviar a foto de: {falhasFoto.join(', ')}. Envie de novo abaixo.
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Fotos do produto</span>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(['capa', 'capa2', 'capa3'] as const).map((tipo) => {
+                  const rotulo = tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3';
+                  return (
+                    <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      {rotulo}
+                      <Input
+                        type="file" accept="image/*" disabled={enviandoFoto}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            subirFoto(f, { tipo, familiaId: resultado.familiaId }, resultado.loteId)
+                              // Retry manual bem-sucedido apaga o aviso de falha desse alvo —
+                              // sem isto o banner vermelho ficava contradizendo o toast de sucesso.
+                              .then(() => setFalhasFoto((prev) => prev.filter((x) => x !== rotulo)))
+                              .catch(() => {});
+                          }
+                        }}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Foto por variação</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {resultado.variacoes.map((v) => (
+                  <label key={v.id} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    <span className="font-mono">{v.codigo}</span>
+                    <Input
+                      type="file" accept="image/*" disabled={enviandoFoto}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          subirFoto(f, { tipo: 'variacao', variacaoId: v.id }, resultado.loteId)
+                            .then(() => setFalhasFoto((prev) => prev.filter((x) => x !== v.codigo)))
+                            .catch(() => {});
+                        }
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
         <DialogFooter>
           {!resultado ? (
             <>
-              <Button variant="outline" onClick={onFechar} disabled={salvando}>Cancelar</Button>
-              <Button onClick={salvar} disabled={!podeSalvar || salvando}>
+              <Button variant="outline" onClick={() => comConfirmacao(onFechar)} disabled={ocupado}>Cancelar</Button>
+              {/* setTentouSalvar: por completude com a spec (§5.4, branch "b"). Na prática o
+                  botão só é clicável quando `podeSalvar` já é true — ou seja, sem nenhum campo
+                  com erro — então este ramo nunca revela mensagem nova hoje. Só passaria a
+                  importar se o gate `disabled={!podeSalvar}` abaixo for removido. */}
+              <Button onClick={() => { setTentouSalvar(true); salvar(); }} disabled={!podeSalvar || salvando}>
                 {salvando ? 'Cadastrando…' : 'Cadastrar'}
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={onFechar}>Fechar</Button>
+              <Button variant="outline" onClick={() => comConfirmacao(onFechar)} disabled={ocupado}>Fechar</Button>
               <Button
-                disabled={!!pendencias || enviandoFoto}
-                onClick={() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); }}
+                disabled={!!pendencias || ocupado}
+                onClick={() => comConfirmacao(() => { onFechar(); navigate(`/revisao/${resultado.loteId}`); })}
               >
                 Ir para a Revisão
               </Button>
@@ -386,5 +530,30 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Confirmação destrutiva (Achado 3, revisão final): lote de fotos com falha ainda em
+        memória — fechar sem confirmar descartaria os `File` sem nenhum sinal de que a foto
+        deveria existir. Padrão igual ao já usado em familia-expanded.tsx/lote-card.tsx. */}
+    <AlertDialog open={!!confirmarFechar} onOpenChange={(o) => { if (!o) setConfirmarFechar(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Fechar sem reenviar as fotos que falharam?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {falhasFoto.length} foto(s) não foram enviadas ({falhasFoto.join(', ')}). Continuar
+            descarta os arquivos escolhidos — você vai precisar selecioná-los de novo depois.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Continuar aqui</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => { const acao = confirmarFechar; setConfirmarFechar(null); acao?.(); }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Fechar mesmo assim
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }

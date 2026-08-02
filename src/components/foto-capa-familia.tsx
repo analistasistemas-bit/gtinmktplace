@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 
 interface Props {
@@ -10,7 +11,12 @@ const CLASSE_ICONE = { small: 'h-4 w-4', medium: 'h-6 w-6', large: 'h-8 w-8' } a
 
 export function FotoCapaFamilia({ capaUrl, tamanho }: Props) {
   const classe = CLASSE_FOTO[tamanho];
-  if (!capaUrl) {
+  const [falhou, setFalhou] = useState(false);
+
+  // URL nova (troca de foto) merece nova chance de carregar.
+  useEffect(() => { setFalhou(false); }, [capaUrl]);
+
+  if (!capaUrl || falhou) {
     return (
       <div
         data-testid="capa-placeholder"
@@ -24,6 +30,7 @@ export function FotoCapaFamilia({ capaUrl, tamanho }: Props) {
     <img
       src={capaUrl}
       alt="Capa da família"
+      onError={() => setFalhou(true)}
       className={`${classe} shrink-0 rounded-md object-cover`}
     />
   );

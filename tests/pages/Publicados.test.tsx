@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Publicados from '@/pages/Publicados';
 import type { PublicadoItem } from '@/lib/publicados';
+import type { Familia } from '@/lib/tipos-dominio';
+import type { MovimentoEstoque } from '@/lib/movimentos-estoque';
 
 const usePublicadosMock = vi.fn();
 const useStatusPublicadosMock = vi.fn();
@@ -13,6 +16,8 @@ const useResumoFinanceiroMock = vi.fn();
 const useVendasMock = vi.fn();
 const useCustosMock = vi.fn();
 const useCanaisHabilitadosMock = vi.fn();
+const useFamiliaMock = vi.fn();
+const fetchMovimentosEstoqueMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
@@ -53,8 +58,18 @@ vi.mock('@/hooks/useResumoFinanceiro', () => ({
 
 // Expandir item carrega a família via react-query; sem QueryClient no teste, mockamos o hook.
 vi.mock('@/hooks/useFamilia', () => ({
-  useFamilia: () => ({ data: undefined, isLoading: false, isError: false }),
+  useFamilia: () => useFamiliaMock(),
 }));
+
+// MovimentosEstoque (dentro do painel expandido) usa useQuery de verdade — só a busca é mockada.
+vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/movimentos-estoque')>();
+  return {
+    ...actual,
+    fetchMovimentosEstoque: (...args: Parameters<typeof actual.fetchMovimentosEstoque>) =>
+      fetchMovimentosEstoqueMock(...args),
+  };
+});
 
 function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
   return {
@@ -77,48 +92,57 @@ function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
   };
 }
 
+// Defaults compartilhados: Publicados consome estes hooks incondicionalmente (sem depender de
+// dado/estado), então qualquer describe que renderize <Publicados /> precisa deles configurados —
+// não só o describe que os exercita diretamente. Reaproveitado pelo describe de movimentos abaixo.
+function mockHooksPadrao() {
+  usePublicadosMock.mockReturnValue({
+    data: [itemBase()],
+    isLoading: false,
+    error: null,
+  });
+  useStatusPublicadosMock.mockReturnValue({
+    data: { itens: [] },
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  useRemoverPublicadoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  usePrepararRepublicacaoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  usePausarReativarPublicadoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  useResumoFinanceiroMock.mockReturnValue({
+    data: { semCredencialMP: true },
+    isFetching: false,
+    refetch: vi.fn(),
+  });
+  useVendasMock.mockReturnValue({
+    data: [],
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  });
+  useCustosMock.mockReturnValue({ data: undefined });
+  useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
+  useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+  fetchMovimentosEstoqueMock.mockResolvedValue([]);
+}
+
 describe('Publicados', () => {
   beforeEach(() => {
     sessionStorage.clear(); // expansão da linha agora persiste em sessionStorage; isolar entre casos
     HTMLElement.prototype.scrollIntoView = vi.fn();
-    usePublicadosMock.mockReturnValue({
-      data: [itemBase()],
-      isLoading: false,
-      error: null,
-    });
-    useStatusPublicadosMock.mockReturnValue({
-      data: { itens: [] },
-      isFetching: false,
-      refetch: vi.fn(),
-    });
-    useRemoverPublicadoMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      error: null,
-    });
-    usePrepararRepublicacaoMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      error: null,
-    });
-    usePausarReativarPublicadoMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      error: null,
-    });
-    useResumoFinanceiroMock.mockReturnValue({
-      data: { semCredencialMP: true },
-      isFetching: false,
-      refetch: vi.fn(),
-    });
-    useVendasMock.mockReturnValue({
-      data: [],
-      isFetching: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-    useCustosMock.mockReturnValue({ data: undefined });
-    useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
+    mockHooksPadrao();
   });
 
   it('oferece Cola no filtro de tipos', () => {
@@ -226,5 +250,66 @@ describe('Publicados', () => {
     );
     expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
     expect(screen.getByText('TESOURA INOX SHOPEE')).toBeInTheDocument();
+  });
+});
+
+// Fixture mínima, mesma forma usada em tests/components/painel-analise.test.tsx.
+function familiaCarregada(over: Partial<Familia> = {}): Familia {
+  return {
+    id: 'f1', loteId: 'l1', codigoPai: '01829149',
+    titulo: 'COLA LIQUIDA SILICONE 250ML', descricao: '', operacao: 'CREATE',
+    estrategiaPreco: 'PROPRIO', estrategiaMotivo: 'nosso preço já é mais competitivo que o mercado',
+    precoReancoradoLider: false,
+    concorrencia: 'sem', concorrenciaVendedores: 0, concorrenciaPrecoMin: null,
+    tipoAviamento: null, categoriaMlId: null,
+    precoMin: 24.1, precoMax: 24.1, precoAbaixo20pc: false,
+    capaStoragePath: null, variacoes: [], status: 'pronto',
+    tokensInput: null, tokensOutput: null, custoCentavos: null,
+    tituloEditadoPeloOperador: false, descricaoEditadaPeloOperador: false,
+    variacoesSemCor: 0,
+    analiseMercado: null,
+    concorrenciaCategoriaId: null,
+    ...over,
+  } as Familia;
+}
+
+function movimentoBase(over: Partial<MovimentoEstoque> = {}): MovimentoEstoque {
+  return {
+    id: 'm1', codigo: '00000005', motivo: 'entrada', quantidade: 10,
+    quantidade_pedida: null, estoque_resultante: 10, estoque_anterior: 0,
+    criado_em: '2026-08-01T05:11:00Z', canal_origem: null, documento: 'NF 1234',
+    ...over,
+  };
+}
+
+describe('Publicados — trilha de movimentos no painel expandido', () => {
+  beforeEach(() => {
+    // Publicados consome ~8 hooks incondicionalmente (useStatusPublicados, useVendas, etc.) —
+    // mockHooksPadrao() garante que este describe não dependa do describe irmão ter rodado antes
+    // para deixá-los num estado utilizável (a suíte deve passar mesmo isolada com `-t`).
+    mockHooksPadrao();
+    useFamiliaMock.mockReturnValue({ data: familiaCarregada(), isLoading: false, isError: false });
+    fetchMovimentosEstoqueMock.mockResolvedValue([movimentoBase()]);
+  });
+
+  function renderPublicados() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('exibe os movimentos sem usar <table>', async () => {
+    renderPublicados();
+    fireEvent.click(screen.getByRole('button', { name: 'Expandir análise' }));
+
+    expect(await screen.findByText('00000005')).toBeInTheDocument();
+    expect(screen.getByText(/NF 1234/)).toBeInTheDocument();
+    const painel = screen.getByText('Movimentos de estoque').closest('div')!;
+    expect(painel.querySelector('table')).toBeNull();
   });
 });

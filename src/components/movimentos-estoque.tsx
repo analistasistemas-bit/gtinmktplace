@@ -49,45 +49,34 @@ export function MovimentosEstoque({ codigoPai, ativo }: { codigoPai: string; ati
       ) : !data || data.length === 0 ? (
         <p className="text-xs text-muted-foreground">Nenhum movimento registrado para este produto.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="pb-1 pr-3 font-medium">Data</th>
-                <th className="pb-1 pr-3 font-medium">SKU</th>
-                <th className="pb-1 pr-3 font-medium">Motivo</th>
-                <th className="pb-1 pr-3 text-right font-medium">Qtd</th>
-                <th className="pb-1 pr-3 text-right font-medium">Saldo</th>
-                <th className="pb-1 font-medium">Canal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((m) => (
-                <tr key={m.id} className="border-t border-border/50">
-                  <td className="py-1 pr-3 whitespace-nowrap tabular-nums text-muted-foreground">
-                    {fmtDataHora(m.criado_em)}
-                  </td>
-                  <td className="py-1 pr-3 whitespace-nowrap font-mono">{m.codigo}</td>
-                  <td className="py-1 pr-3">
-                    {rotuloMotivo(m.motivo)}
-                    {/* Vendeu mais do que havia: o saldo parou em 0 e o pedido real fica visível. */}
-                    {m.quantidade_pedida != null && Math.abs(m.quantidade) !== m.quantidade_pedida && (
-                      <span className="ml-1 text-destructive">
-                        (pedido de {m.quantidade_pedida})
-                      </span>
-                    )}
-                    {m.documento && <span className="ml-1 text-muted-foreground">· {m.documento}</span>}
-                  </td>
-                  <td className="py-1 pr-3 text-right"><Delta m={m} /></td>
-                  <td className="py-1 pr-3 text-right tabular-nums">
-                    {m.estoque_resultante != null ? m.estoque_resultante : '—'}
-                  </td>
-                  <td className="py-1 whitespace-nowrap text-muted-foreground">{m.canal_origem ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="flex flex-col gap-1.5">
+          {data.map((m) => (
+            <li
+              key={m.id}
+              className="flex flex-col gap-1 border-t border-border/50 py-1.5 text-xs sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
+            >
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="tabular-nums text-muted-foreground">{fmtDataHora(m.criado_em)}</span>
+                <span className="font-mono">{m.codigo}</span>
+                <span className="min-w-0">
+                  {rotuloMotivo(m.motivo)}
+                  {/* Vendeu mais do que havia: o saldo parou em 0 e o pedido real fica visível. */}
+                  {m.quantidade_pedida != null && Math.abs(m.quantidade) !== m.quantidade_pedida && (
+                    <span className="ml-1 text-destructive">(pedido de {m.quantidade_pedida})</span>
+                  )}
+                  {m.documento && <span className="ml-1 text-muted-foreground">· {m.documento}</span>}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-baseline gap-3">
+                <Delta m={m} />
+                <span className="tabular-nums">
+                  {m.estoque_resultante != null ? m.estoque_resultante : '—'}
+                </span>
+                <span className="text-muted-foreground">{m.canal_origem ?? '—'}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
