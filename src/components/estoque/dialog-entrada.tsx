@@ -18,12 +18,12 @@ interface OpcaoSku {
   estoque: number;
 }
 
-export function DialogEntrada({ produtos, aberto, onFechar, skuInicial }: {
+export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroInicial }: {
   produtos: ProdutoComSaldo[];
   aberto: boolean;
   onFechar: () => void;
   skuInicial?: string;
-  // ponytail: recebida e ainda não usada — comportamento real entra na Task 9.
+  /** Pré-filtra a lista (usado com o `codigo_pai` quando o produto tem várias variações). */
   filtroInicial?: string;
 }) {
   const qc = useQueryClient();
@@ -39,12 +39,12 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial }: {
   useEffect(() => {
     if (!aberto) return;
     setRef(crypto.randomUUID());
-    setBusca('');
+    setBusca(filtroInicial ?? '');
     setCodigo(skuInicial ?? '');
     setQuantidade('');
     setCusto('');
     setDocumento('');
-  }, [aberto, skuInicial]);
+  }, [aberto, skuInicial, filtroInicial]);
 
   const opcoes = useMemo<OpcaoSku[]>(() => {
     const todas = produtos.flatMap((p) => p.variacoes.map((v) => ({
@@ -55,7 +55,8 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial }: {
     })));
     const termo = busca.trim().toLowerCase();
     if (!termo) return todas.slice(0, 50);
-    return todas.filter((o) => o.rotulo.toLowerCase().includes(termo)).slice(0, 50);
+    return todas.filter((o) => o.rotulo.toLowerCase().includes(termo)
+      || o.codigoPai.toLowerCase().includes(termo)).slice(0, 50);
   }, [produtos, busca]);
 
   const selecionada = useMemo(
