@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { parseNumeroPtBr } from '@/lib/formato';
 
 export interface LinhaVariacao {
   /** Identidade estável da linha. `key` por índice + <input type="file"> (DOM não-controlável)
@@ -25,12 +26,7 @@ export function novaLinha(): LinhaVariacao {
 }
 
 /** `null` = campo vazio. `NaN` = texto inválido — que NÃO pode virar "vazio" em silêncio. */
-export function parseNum(v: string): number | null | typeof NaN {
-  const t = v.trim().replace(',', '.');
-  if (t === '') return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : NaN;
-}
+export const parseNum = parseNumeroPtBr;
 
 export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | null {
   if (campo === 'nome' || campo === 'gtin') return null;

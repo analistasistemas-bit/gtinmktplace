@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { QK } from '@/lib/queries';
 import { registrarEntrada, type ProdutoComSaldo } from '@/lib/produtos-saldo';
+import { parseNumeroPtBr } from '@/lib/formato';
 
 interface OpcaoSku {
   codigo: string;
@@ -66,7 +67,7 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
   );
 
   const qtdNum = Number(quantidade);
-  const custoNum = custo.trim() === '' ? null : Number(custo.replace(',', '.'));
+  const custoNum = parseNumeroPtBr(custo);
   const custoInvalido = custoNum !== null && !(custoNum > 0);
   const podeSalvar = !!codigo && Number.isInteger(qtdNum) && qtdNum > 0 && !custoInvalido;
 
