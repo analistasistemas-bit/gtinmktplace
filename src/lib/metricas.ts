@@ -10,6 +10,16 @@ export type Periodo =
 /** Janela resolvida em ISO 8601 (limites inclusive) para filtrar as vendas. */
 export interface Janela { desde: string; ate: string }
 
+/** Data YYYY-MM-DD do instante no fuso LOCAL. `iso.slice(0, 10)` responde em UTC e, em fuso
+ *  negativo (BRT = -03), o fim de um dia local (23:59:59.999) já caiu no dia seguinte em UTC —
+ *  o que fazia um range terminando ONTEM parecer terminar HOJE. */
+export function diaLocal(instante: string | Date): string {
+  const d = typeof instante === 'string' ? new Date(instante) : instante;
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
 /** Calcula a janela ISO a partir do período (hoje → meia-noite local…agora; preset →
  *  agora−dias…agora; range → dia inteiro). */
 export function resolverJanela(p: Periodo): Janela {

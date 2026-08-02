@@ -70,9 +70,16 @@ desmontam ao trocar (Radix `TabsContent`), cada ida e volta entre Vendas e Geogr
 fetch completo da janela e ainda descartava o cache de que o delta depende — medido: 3 fetches
 completos em 4 trocas de aba, contra **0** depois da correção.
 
-`chaveJanela` trunca **só o `ate`** na data. Isso é seguro porque não existe venda com
-`date_closed` no futuro: duas janelas que terminam no mesmo dia cobrem o mesmo conjunto pelo lado
-de cima. A janela real, com hora, continua indo para a query.
+`chaveJanela` trunca **só o `ate`** na data, e só quando a janela termina hoje. Isso é seguro
+porque não existe venda com `date_closed` no futuro: duas janelas que terminam no mesmo dia cobrem
+o mesmo conjunto pelo lado de cima. A janela real, com hora, continua indo para a query.
+
+O "hoje" dessa comparação é o **dia local** (`diaLocal`), não a data do ISO. Comparar
+`ate.slice(0, 10)` com a data UTC de hoje quebrou o filtro "Personalizado" do Dashboard: em BRT, o
+fim de um dia local (`23:59:59.999`) já é o dia seguinte em UTC, então um range terminando ONTEM
+era truncado como se terminasse hoje e colidia com a chave de `mes_atual`, que tem o mesmo `desde`
+(1º do mês 00:00 local) — a tela devolvia os KPIs do mês inteiro para o range escolhido. A suíte
+roda com `TZ=America/Sao_Paulo` fixo (`vitest.config.ts`) porque em UTC o bug não se manifesta.
 
 O `desde` fica inteiro na chave, de propósito. Truncá-lo também seria mais eficiente e foi a
 primeira versão — mas abre um furo financeiro: um preset resolvido às 15:00 começa às 15:00 de N
