@@ -13,8 +13,11 @@ const RE_METRAGEM = /(\d+(?:,\d+)?)\s*(MTS|MT|METROS|METRO|M)\b/i;
 // segmentos), não só a 1ª.
 const RE_METRAGEM_TOKEN = /\b\d+(?:,\d+)?\s*(?:MTS|MT|METROS|METRO|M)\b/gi;
 
-function normalizarUnidade(raw: string): string {
-  return /^MT/i.test(raw) ? 'MT' : 'M';
+// A unidade canônica do padrão ML é "m" minúsculo (ADR-0099): "570m", nunca "570mt".
+// Esta função ANTES emitia 'MT'/'M' — era a origem dos 38% de títulos com "MT" medidos em
+// produção. A DETECÇÃO continua aceitando MT/MTS/METROS/M na entrada; só a EMISSÃO mudou.
+function normalizarUnidade(_raw: string): string {
+  return 'm';
 }
 
 export function extrairMetragem(nome: string): string | null {
@@ -107,11 +110,13 @@ function normalizarSegmentos(titulo: string): string {
 const RE_CONTAGEM = /\b(\d+)\s*(UNIDADES?|UNDS?|UND|UN|PEÇAS?|PECAS?|PÇS?|PCS?|PC)\b/i;
 const RE_CONTAGEM_TOKEN = /\b\d+\s*(?:UNIDADES?|UNDS?|UND|UN|PEÇAS?|PECAS?|PÇS?|PCS?|PC)\b/gi;
 
-function extrairContagem(texto: string): string | null {
+// Canônico: "10un" / "12pc" (ADR-0099). Antes emitia "10 UNIDADES", que gastava caractere e
+// destoava do padrão ML. A detecção segue aceitando UNIDADES/UND/UN/PEÇAS/PÇS/PCS/PC.
+export function extrairContagem(texto: string): string | null {
   const m = texto.match(RE_CONTAGEM);
   if (!m) return null;
-  const unidade = /^(?:P|PC)/i.test(m[2]) ? 'PEÇAS' : 'UNIDADES';
-  return `${m[1]} ${unidade}`;
+  const unidade = /^(?:P|PC)/i.test(m[2]) ? 'pc' : 'un';
+  return `${m[1]}${unidade}`;
 }
 
 // Garante contagens de embalagem grounded no nome OU na descrição da planilha. Diferente de

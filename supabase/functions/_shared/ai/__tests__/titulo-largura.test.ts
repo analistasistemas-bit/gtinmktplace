@@ -97,7 +97,7 @@ describe('garantirLarguraTitulo', () => {
       1,
     );
     expect(out.length).toBeLessThanOrEqual(60);
-    expect(out).toContain('50MT');
+    expect(out).toContain('50m');
     expect(out).toContain('6MM');
   });
 });

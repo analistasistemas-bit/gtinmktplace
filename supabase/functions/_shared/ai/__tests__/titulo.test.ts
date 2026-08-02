@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   clampTitulo,
+  extrairContagem,
   extrairMetragem,
   garantirMetragemTitulo,
   garantirQuantidadeTitulo,
@@ -68,14 +69,14 @@ describe('clampTitulo', () => {
 });
 
 describe('extrairMetragem', () => {
-  it('extrai metragem em MT preservando a unidade', () => {
-    expect(extrairMetragem('FITA CETIM PROGRESSO N.1 CORES 100MT')).toBe('100MT');
-    expect(extrairMetragem('FITA CETIM PROGRESSO N.1 CORES 10MT (P)')).toBe('10MT');
+  it('extrai metragem em MT convertendo para a unidade canônica "m"', () => {
+    expect(extrairMetragem('FITA CETIM PROGRESSO N.1 CORES 100MT')).toBe('100m');
+    expect(extrairMetragem('FITA CETIM PROGRESSO N.1 CORES 10MT (P)')).toBe('10m');
   });
 
-  it('normaliza "metros" e espaços para M', () => {
-    expect(extrairMetragem('FITA 50 METROS')).toBe('50M');
-    expect(extrairMetragem('FITA 30 M')).toBe('30M');
+  it('normaliza "metros" e espaços para "m"', () => {
+    expect(extrairMetragem('FITA 50 METROS')).toBe('50m');
+    expect(extrairMetragem('FITA 30 M')).toBe('30m');
   });
 
   it('retorna null quando não há metragem (jardas não conta)', () => {
@@ -94,7 +95,7 @@ describe('garantirMetragemTitulo', () => {
       'FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL E ELEGANTE',
       'FITA CETIM PROGRESSO N.1 CORES 100MT',
     );
-    expect(out).toBe('FITAS PROGRESSO N.1 100MT | 100% POLIÉSTER');
+    expect(out).toBe('FITAS PROGRESSO N.1 100m | 100% POLIÉSTER');
     expect(out.length).toBeLessThanOrEqual(60);
   });
 
@@ -107,13 +108,13 @@ describe('garantirMetragemTitulo', () => {
       'FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL',
       'FITA CETIM PROGRESSO N.1 CORES 10MT (P)',
     );
-    expect(a).toContain('100MT');
-    expect(b).toContain('10MT');
+    expect(a).toContain('100m');
+    expect(b).toContain('10m');
     expect(a).not.toBe(b);
   });
 
   it('não duplica quando a IA já incluiu a metragem', () => {
-    const titulo = 'FITA PROGRESSO N.1 100MT | 100% POLIÉSTER | RESISTENTE';
+    const titulo = 'FITA PROGRESSO N.1 100m | 100% POLIÉSTER | RESISTENTE';
     expect(garantirMetragemTitulo(titulo, 'FITA CETIM PROGRESSO N.1 CORES 100MT')).toBe(titulo);
   });
 
@@ -121,7 +122,7 @@ describe('garantirMetragemTitulo', () => {
     expect(garantirMetragemTitulo(
       'FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | VERSÁTIL E',
       'FITA CETIM PROGRESSO N.1 CORES 100MT',
-    )).toBe('FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | VERSÁTIL');
+    )).toBe('FITA CETIM PROGRESSO N.1 100m | 100% POLIÉSTER | VERSÁTIL');
   });
 
   it('deixa o título intacto quando o nome não tem metragem', () => {
@@ -144,16 +145,55 @@ describe('garantirMetragemTitulo', () => {
       'FITA 100MT',
     );
     expect(out.length).toBeLessThanOrEqual(60);
-    expect(out).toContain('100MT');
+    expect(out).toContain('100m');
   });
 });
 
 describe('garantirQuantidadeTitulo', () => {
   it('prioriza a quantidade presente na descrição sobre diferencial genérico — lote #40', () => {
+    // "10un" (unidade canônica) é bem mais curto que "10 UNIDADES" — com o título curto do
+    // teste antigo o segmento cabia nos 60 chars sem precisar derrubar nada, o que deixava de
+    // exercitar o comportamento real do teste. Título alongado aqui pra continuar estourando o
+    // teto e forçar o drop do diferencial genérico.
     expect(garantirQuantidadeTitulo(
-      'SACO DE ORGANZA 10X15CM BRANCO | EMBALAGENS ELEGANTES',
+      'SACO DE ORGANZA 10X15CM BRANCO TRANSPARENTE | EMBALAGENS ELEGANTES PARA PRESENTE',
       'SACO DE ORGANZA 10X15CM BRANCO',
       'Pacote com 10 unidades.',
-    )).toBe('SACO DE ORGANZA 10X15CM BRANCO | 10 UNIDADES');
+    )).toBe('SACO DE ORGANZA 10X15CM BRANCO TRANSPARENTE | 10un');
+  });
+
+  it('é idempotente: não duplica a contagem já presente no título (paralelo ao guard de metragem)', () => {
+    const uma = garantirQuantidadeTitulo(
+      'SACO DE ORGANZA BRANCO',
+      'SACO DE ORGANZA BRANCO',
+      'Pacote com 10 unidades.',
+    );
+    expect(garantirQuantidadeTitulo(
+      uma,
+      'SACO DE ORGANZA BRANCO',
+      'Pacote com 10 unidades.',
+    )).toBe(uma);
+  });
+});
+
+describe('unidade canônica (ADR-0099)', () => {
+  it('metragem sai em "m" minúsculo, nunca "MT"', () => {
+    expect(extrairMetragem('FITA CETIM N.3 100MT')).toBe('100m');
+    expect(extrairMetragem('LANTEJOULAS CORES C/50MTS')).toBe('50m');
+    expect(extrairMetragem('TECIDO HELANCA 10 METROS')).toBe('10m');
+  });
+
+  it('preserva decimal em formato BR', () => {
+    expect(extrairMetragem('BORDADO EM PECA C/13,71MT')).toBe('13,71m');
+  });
+
+  it('contagem sai em "un", nunca "UNIDADES" nem "UND"', () => {
+    expect(extrairContagem('SACO DE ORGANZA C/10UND')).toBe('10un');
+    expect(extrairContagem('POMPOM C/100UND')).toBe('100un');
+    expect(extrairContagem('KIT COM 12 PEÇAS')).toBe('12pc');
+  });
+
+  it('sem metragem no texto devolve null', () => {
+    expect(extrairMetragem('COLCHETE C/GANCHO TAM')).toBeNull();
   });
 });

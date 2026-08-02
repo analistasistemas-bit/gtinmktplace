@@ -87,7 +87,7 @@ describe('garantirCorTitulo', () => {
       1,
     );
     expect(out.length).toBeLessThanOrEqual(60);
-    expect(out).toContain('100MT');
+    expect(out).toContain('100m');
     expect(out).toContain('VERMELHO');
   });
 });
