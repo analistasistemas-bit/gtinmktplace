@@ -96,29 +96,43 @@ Hoje `gerarCopy` devolve `{ titulo: string, descricao, tipo_produto_busca }`. O 
 slots só funciona se receber os slots; decompor um título plano de volta em slots por regex
 seria adivinhação.
 
-`json_schema` do copywriter passa a exigir:
+`json_schema` do copywriter passa a exigir as **dez chaves, todas obrigatórias**, com string
+vazia para slot ausente:
 
 ```ts
-titulo_slots: {
-  produto: string;          // obrigatório
-  marca?: string;
-  modelo?: string;          // numeração, linha, referência do consumidor
-  medida?: string;
-  quantidade?: string;
-  material?: string;
-  variacao?: string;        // cor ou tamanho
-  compatibilidade?: string;
-  aplicacao?: string;
-  sinonimo?: string;
+export interface TituloSlots {
+  produto: string;          // único que nunca pode ser ""
+  marca: string;
+  modelo: string;           // numeração, linha, referência do consumidor
+  medida: string;
+  quantidade: string;
+  material: string;
+  variacao: string;         // cor, tamanho, espessura — o discriminador da família
+  compatibilidade: string;
+  aplicacao: string;
+  sinonimo: string;
 }
 ```
+
+Com `"additionalProperties": false` e as dez chaves em `required`. Chave obrigatória com `""`
+para ausente, em vez de propriedade opcional, porque:
+
+- elimina a diferença entre chave ausente, `null` e `""`, que de outro modo aparece em todo
+  guard e no montador como ramificação;
+- mantém o contrato estável entre modelos (o `json_schema` strict do OpenRouter trata
+  `required` de forma mais previsível que opcionalidade);
+- torna snapshot e métrica diretos — todo título tem as mesmas dez colunas;
+- `additionalProperties: false` impede o modelo de improvisar um slot `diferencial` ou
+  `beneficio`. Sem isso, a lição da Causa C reaparece pela porta do schema.
+
+Isso é coerente com o resto do design, que já trata slot vazio como normal e esperado.
 
 `familias.titulo_ml` continua sendo `string` — os slots são um artefato intermediário, montado
 e descartado. Nenhuma migration.
 
 **Não existe slot `extra`.** Um slot genérico misturaria compatibilidade, aplicação, sinônimo e
 composição secundária, que têm prioridades de corte diferentes — o corte deixaria de ser
-auditável. Slots vazios são normais e esperados.
+auditável.
 
 ### 3.2 Ordem de leitura ≠ ordem de corte
 
@@ -143,9 +157,15 @@ sinonimo → aplicacao → compatibilidade → variacao → material → quantid
   descarta a metragem sob o teto de 60 chars mesmo com o dado no nome. O prompt em produção já
   crava `MEDIDA > MARCA`. O documento do padrão ML põe marca (#2) acima de medida (#4); aqui a
   prática vence, porque perder a medida funde dois produtos diferentes num título só.
-- **`variacao`, quando `nCores === 1`.** Nesse caso a cor é o único dado que distingue duas
-  famílias irmãs, e perdê-la produz títulos idênticos — o `garantirCorTitulo` existe porque o
-  ML derrubou o segundo anúncio como duplicado.
+- **`variacao`, quando ela é discriminadora.** Não "quando é cor": a regra é sobre a **função**
+  do dado, não sobre o seu tipo. `variacao` é discriminadora quando identifica unicamente a
+  família perante suas irmãs — hoje isso acontece quando `nCores === 1` (a planilha separou as
+  cores em PAI distintos, e a cor é o que diferencia), mas amanhã pode ser tamanho, espessura ou
+  numeração. Perder o discriminador produz títulos idênticos, e o `garantirCorTitulo` existe
+  porque o ML já derrubou um segundo anúncio como duplicado.
+
+  Expressar a regra em termos de discriminador, e não de cor, é o que faz o contrato sobreviver
+  à próxima categoria de produto sem precisar de um guard novo.
 
 A proteção altera só a ordem de corte; a posição de leitura não muda. Dentro do conjunto
 cortável, a regra "nenhum slot de prioridade maior sai enquanto existir um de menor" vale
@@ -173,10 +193,70 @@ Tecido Helanca Light 10m 1,80m Poliéster Preto              ← removeu `aplica
 Tecido Helanca Light 10m 1,80m Poliéster Preto Para Fo      ← PROIBIDO
 ```
 
-### 3.4 `posProcessarTitulo`
+### 3.4 Quando não há solução válida
+
+Caso extremo que o design precisa fechar: `produto` + `medida` + `variacao` discriminadora já
+passam de 60 caracteres. Não existe corte legítimo — todo slot restante é obrigatório.
+
+**Contrato:** esgotadas as reduções determinísticas e removidos todos os slots cortáveis, se o
+conjunto obrigatório ainda exceder 60 chars, `montarTitulo` **falha com erro tipado**. Nunca
+trunca, nunca remove um discriminador em silêncio.
+
+```ts
+export class TituloInviavelError extends Error {
+  constructor(
+    readonly slotsObrigatorios: Partial<TituloSlots>,
+    readonly comprimento: number,
+  ) {
+    super(`Título obrigatório excede 60 caracteres: ${comprimento}`);
+    this.name = 'TituloInviavelError';
+  }
+}
+```
+
+**Consequência que o plano precisa tratar.** `gerarCopy` é a única etapa de IA sem fallback
+resiliente (ADR-0030): uma exceção ali derruba a família inteira. Então o erro tipado não pode
+apenas subir. Cada call site captura `TituloInviavelError` e o traduz em erro **acionável pelo
+operador**, nomeando os slots que não couberam — a família falha, mas com a causa na tela e o
+caminho de correção óbvio (encurtar o nome na planilha). Uma família morta com stack trace
+opaco seria trocar um defeito silencioso por outro.
+
+Falhar alto aqui é deliberado e segue a regra que o projeto já aplica a dado de negócio: nunca
+defaultar em silêncio. Fundir dois produtos num título só é pior que uma família que falha
+visivelmente.
+
+### 3.5 `posProcessarTitulo` — pipeline fechado, montagem única
 
 Composição única, chamada pelos três call sites. Substitui as três cadeias divergentes.
-Recebe os slots da IA e os dados da fonte; devolve a string final.
+
+```ts
+function posProcessarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo): string
+```
+
+Ordem exata, sem ambiguidade:
+
+```
+1. validar schema (dez chaves, additionalProperties: false, produto não-vazio)
+2. higienizar e canonicalizar slots        → normalizarSlots
+3. aplicar guards sobre slots              → aplicarGuardsTitulo
+4. validar ancoragem dos slots             → validarSlotsAncorados
+5. aplicar Title Case por slot
+6. montar, reduzir e remover por prioridade → montarTitulo
+7. validar invariantes do título final
+8. devolver string
+```
+
+```ts
+const slots     = normalizarSlots(slotsIa);
+const garantidos= aplicarGuardsTitulo(slots, fonte);
+const validados = validarSlotsAncorados(garantidos, fonte);
+return montarTitulo(validados, contextoDeCorte(fonte));
+```
+
+**A montagem acontece uma única vez, depois de todos os guards.** É o ponto crucial do design.
+Se qualquer guard injetar metragem, cor ou quantidade *depois* da montagem, o sistema volta
+exatamente à classe de bug que esta spec existe para eliminar: injeção e corte na mesma ponta,
+com perda silenciosa. Os guards operam sobre slots — estrutura — e nunca sobre a string final.
 
 ---
 
@@ -362,14 +442,50 @@ normalizam os dois lados.
 
 ### Asserções duras (falham o build, não viram percentual)
 
-1. **Todo dado garantido sobrevive** à montagem por slots: metragem, largura, cor e quantidade.
-   É a regressão que o refactor arrisca e a mesma classe de perda silenciosa já vista no ADR-0098.
+1. **Todo discriminador garantido aplicável sobrevive** à montagem: `medida`, largura,
+   `quantidade`, e `variacao` quando ela identifica unicamente a família (hoje: `nCores === 1`).
+
+   Redigido em termos de discriminador, não de "cor", porque a regra de corte só protege
+   `variacao` quando ela discrimina. "Cor sobrevive sempre" seria um contrato incompatível com a
+   ordem de corte e confundiria quatro coisas distintas: cor de produto único (sobrevive);
+   `CORES` genérico indicando que há variação (descartado, é ruído de planilha, T4); cor da
+   variação escolhida pelo comprador (não pertence ao título do anúncio-pai); e variação
+   discriminadora entre irmãs (obrigatória). O teste espelha a regra de negócio, não o nome do
+   guard antigo.
 2. **Nenhum token truncado no meio.** Todo token do título final existe íntegro na entrada ou na
    tabela de reduções.
 3. **Nenhum slot de prioridade maior é removido enquanto existir slot de prioridade menor.**
-4. **`variacao` sobrevive aos 60 chars quando `nCores === 1`** — é o que separa famílias irmãs.
+4. **Conjunto obrigatório que não cabe falha com `TituloInviavelError`** — nunca com título
+   truncado ou discriminador removido (§3.4).
 5. **Nome da loja nunca aparece no título:** `Avil`, `DS`, e o fornecedor `AVIL`.
 6. **Nenhum `|` no título.**
+
+### Testes de contrato do modelo
+
+Além dos testes do montador, o `json_schema` precisa dos seus:
+
+```
+rejeita chave desconhecida em titulo_slots      (additionalProperties: false)
+rejeita produto vazio
+aceita os demais slots como string vazia
+não aceita `titulo` string no contrato novo
+```
+
+### Testes de propriedade do montador
+
+```
+resultado.length <= 60
+resultado não termina com espaço
+resultado não contém dois espaços consecutivos
+resultado não contém slot removido pela metade
+montarTitulo é determinístico para a mesma entrada
+posProcessarTitulo é idempotente
+```
+
+A **idempotência** é a que mais importa: `posProcessarTitulo` sobre os mesmos slots e a mesma
+fonte devolve o mesmo título, independentemente do call site. É a propriedade que a divergência
+atual entre `process-familia`, `regenerar-copy-familia` e `titulo-particao` viola hoje, e a que
+prova que a unificação funcionou.
 
 ### Experimento A/B
 
