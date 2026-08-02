@@ -2,13 +2,13 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-07-29
+**Ultima atualizacao:** 2026-08-02
 
 ## Snapshot
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**
 - Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Blocos A e B)
-- **`E6b` Bloco A (estoque único cross-canal) EM PRODUÇÃO (2026-07-29)** — ver seção dedicada abaixo. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo) EM PRODUÇÃO (2026-07-29)** — nenhuma org enxerga o módulo até o super-admin ligar em `/admin` (`modulos_habilitados` nasce vazio). Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`. ADR: [0094](decisions/0094-estoque-unico-cadastro-manual.md). **Descartado na mesma sessão de design:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
+- **`E6b` Bloco A (estoque único cross-canal) EM PRODUÇÃO (2026-07-29)** — ver seção dedicada abaixo. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo) EM PRODUÇÃO (2026-07-29)**, **redesenho da tela `/estoque` EM PRODUÇÃO (2026-08-02)** — nenhuma org enxerga o módulo até o super-admin ligar em `/admin` (`modulos_habilitados` nasce vazio). Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md` (Bloco B), `docs/superpowers/specs/2026-08-01-estoque-redesign-design.md` (redesenho). ADR: [0094](decisions/0094-estoque-unico-cadastro-manual.md). **Descartado na mesma sessão de design:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
 - Depois do E6b: `E5` Shopee (o worker genérico `publicar-anuncio` do E6 espera só o conector)
 
 ### E6 — Orquestracao multicanal EM PRODUCAO (2026-07-06)
@@ -111,6 +111,18 @@ antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquite
   insuficiente pra tabela de 10 colunas (`sm:max-w-4xl` -> `sm:max-w-5xl`); e GTIN/dimensoes/
   descricao capturados no cadastro mas ausentes da tela `/estoque` (adicionados). Suite 2255 -> 2256.
   Ver `docs/TASKS.md` para o detalhe tecnico completo.
+- **Redesenho da tela `/estoque` EM PRODUCAO (2026-08-02, PR #56):** o `sm:max-w-5xl` acima
+  aliviou o corte da tabela de variacoes, mas nao eliminou a causa — `<table>` aninhada dentro
+  de `<TableCell>` continuava forcando scroll horizontal estrutural em telas estreitas, tanto no
+  cadastro quanto na listagem (e em `/publicados`, que compartilha `MovimentosEstoque`). Listagem
+  e cadastro viraram cards (nenhuma `<table>` no caminho); busca passou a achar GTIN/fornecedor;
+  filtro "nao publicado" corrigido para derivar de `familias.ml_item_id` (fonte canonica) em vez
+  de so `anuncios_externos` (espelho que pode ficar furado sem erro). Duas rodadas de revisao
+  (12 tasks TDD + `code-review-fable5` independente) corrigiram 1 bug financeiro real herdado
+  desta mesma tela: parsing de milhar pt-BR (`"1.234"` gravava `R$ 1,23`) em campo de
+  preco/custo — `parseNumeroPtBr` em `src/lib/formato.ts`, o mesmo bug segue aberto em
+  `src/components/variacao-card.tsx` (`/publicados`), fora do escopo desta entrega. 10/10
+  checagens reais de scroll horizontal via Playwright. Ver `docs/TASKS.md`.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
