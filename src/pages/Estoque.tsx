@@ -65,8 +65,14 @@ export default function Estoque() {
   }
   if (!modulos?.includes('estoque')) return <Navigate to="/" replace />;
 
+  // Filtro efetivo pro RENDER atual: o useEffect acima só corrige o state `filtro` no próximo
+  // ciclo — sem isto, o render atual ainda calcularia `lista` com filtro 'nao-publicado' e
+  // `canaisPorProduto: undefined`, e como `produtoPublicado` assume "publicado" quando os
+  // canais não carregaram, a lista ficaria vazia por um frame até o efeito corrigir o state.
+  const filtroEfetivo = canaisIndisponivel && filtro === 'nao-publicado' ? 'todos' : filtro;
+
   const lista = filtrarProdutos(produtos ?? [], {
-    termo: busca, filtro, ordem,
+    termo: busca, filtro: filtroEfetivo, ordem,
     canaisPorProduto: canaisIndisponivel ? undefined : canaisPorProduto,
   });
 

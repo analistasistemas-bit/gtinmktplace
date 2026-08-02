@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import Estoque from '../Estoque';
 import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
+import type { filtrarProdutos as FiltrarProdutosType } from '@/lib/produtos-saldo-filtro';
 
 const produto: ProdutoComSaldo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
@@ -30,6 +31,23 @@ vi.mock('@/lib/produtos-saldo', async (orig) => ({
   fetchProdutosComSaldo: () => Promise.resolve([produto]),
   fetchCanaisPorProduto: () => fetchCanaisPorProdutoMock(),
 }));
+
+// Achado 3 (revisão de baixas): spy que delega pro real `filtrarProdutos`, mas grava os
+// argumentos de CADA chamada — inclusive a do render que acontece ANTES do useEffect de reset
+// rodar. É essa história de chamadas, não o DOM num instante específico, que prova
+// deterministicamente se o `filtro` usado nesse render já veio corrigido (sem depender de
+// vencer a corrida contra o efeito, que o React já roda em lote nos testes).
+// `vi.hoisted` guarda o mock isolado da variável interna do módulo mockado: o factory pega o
+// `filtrarProdutos` ORIGINAL de `orig()` (não do módulo já mockado, senão a implementação
+// chamaria a si mesma e estouraria a pilha).
+const { filtrarProdutosMock } = vi.hoisted(() => ({
+  filtrarProdutosMock: vi.fn<Parameters<FiltrarProdutosType>, ReturnType<FiltrarProdutosType>>(),
+}));
+vi.mock('@/lib/produtos-saldo-filtro', async (orig) => {
+  const mod = await orig<typeof import('@/lib/produtos-saldo-filtro')>();
+  filtrarProdutosMock.mockImplementation((...args: Parameters<typeof mod.filtrarProdutos>) => mod.filtrarProdutos(...args));
+  return { ...mod, filtrarProdutos: filtrarProdutosMock };
+});
 
 function renderEstoque() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -109,5 +127,50 @@ describe('Estoque', () => {
     // Caiu de volta para "todos" — a seleção anterior não sobrevive a um filtro que a UI sabe
     // que responderia errado.
     expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('data-variant', 'secondary');
+  });
+
+  // Achado 3 (revisão de baixas): o useEffect que reseta `filtro` para 'todos' quando os canais
+  // ficam indisponíveis só se aplica no PRÓXIMO render — sem um `filtroEfetivo` calculado no
+  // render atual, a MESMA chamada de `filtrarProdutos` que dispara logo que a query de canais
+  // erra ainda usaria `filtro: 'nao-publicado'` com `canaisPorProduto: undefined`, e a lista
+  // apareceria vazia por um frame (mesmo havendo produtos) até o efeito corrigir o state.
+  //
+  // Testar Library com act()/waitFor não prova ausência de flash de forma confiável: o React
+  // já lida com passive effects em lote nos testes, então checar o DOM depois de um `waitFor`
+  // não garante que a checagem aconteceu ANTES do efeito rodar. Em vez de correr essa corrida,
+  // o teste inspeciona o HISTÓRICO de chamadas de `filtrarProdutos` (spy que delega pro real) —
+  // nenhuma delas, nem a que roda no exato render em que a query vira erro, pode combinar
+  // `filtro: 'nao-publicado'` com `canaisPorProduto: undefined`. Essa combinação é precisamente
+  // a que produz lista vazia (ver `produtoPublicado`, que assume "publicado" com canais
+  // indisponíveis).
+  it('canais falham com "não publicado" selecionado: nenhuma chamada de filtrarProdutos combina o filtro velho com canais indisponíveis (sem flash de lista vazia)', async () => {
+    const user = userEvent.setup();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(['canais-por-produto'], new Map());
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><Estoque /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Protetor Solar');
+    await user.click(screen.getByRole('button', { name: 'Não publicado' }));
+
+    filtrarProdutosMock.mockClear();
+    fetchCanaisPorProdutoMock.mockRejectedValueOnce(new Error('falhou ao carregar canais'));
+    await qc.refetchQueries({ queryKey: ['canais-por-produto'] });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Não publicado' })).toBeDisabled();
+    });
+
+    const chamadasComCanaisIndisponiveis = filtrarProdutosMock.mock.calls.filter(
+      ([, opts]) => opts.canaisPorProduto === undefined,
+    );
+    expect(chamadasComCanaisIndisponiveis.length).toBeGreaterThan(0);
+    for (const [, opts] of chamadasComCanaisIndisponiveis) {
+      expect(opts.filtro).not.toBe('nao-publicado');
+    }
+    // E a lista de fato não fica vazia no estado final.
+    expect(screen.getByText('Protetor Solar')).toBeInTheDocument();
   });
 });

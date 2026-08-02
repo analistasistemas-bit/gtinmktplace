@@ -36,6 +36,9 @@ export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | n
   if (campo === 'estoqueInicial' && n != null && !Number.isInteger(n)) {
     return 'Estoque inicial deve ser um número inteiro.';
   }
+  if (campo === 'estoqueInicial' && n != null && n < 0) {
+    return 'Estoque inicial não pode ser negativo.';
+  }
   if (campo === 'custo' && n != null && n <= 0) return 'Custo, quando informado, deve ser maior que zero.';
   return null;
 }

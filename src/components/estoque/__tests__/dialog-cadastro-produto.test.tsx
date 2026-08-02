@@ -228,6 +228,14 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     expect(screen.getByText('Estoque inicial deve ser um número inteiro.')).toBeInTheDocument();
   });
 
+  it('estoque inicial negativo é recusado inline', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.type(screen.getByLabelText('Estoque inicial da variação 1'), '-5');
+    await user.tab();
+    expect(screen.getByText('Estoque inicial não pode ser negativo.')).toBeInTheDocument();
+  });
+
   it('texto não numérico no custo é recusado em vez de virar campo vazio', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -435,6 +443,56 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     expect(uploadFotoProdutoMock).toHaveBeenCalledWith(
       'owner-1', 'l1', fotoPreto, { tipo: 'variacao', variacaoId: 'v2' },
     );
+  });
+
+  // Achado (revisão de baixas): o comentário em `salvar()` chama a 2ª invalidação de
+  // ['produtos-saldo'] de "OBRIGATÓRIA" — a 1ª roda antes dos uploads, e `imagem_path` /
+  // `capa_storage_path` só são gravados dentro de `uploadFotoProduto`, chamado pelo lote
+  // automático. Sem um teste pinando essa chamada, um refactor futuro podia removê-la
+  // (parecendo redundante) e o card voltaria a ficar com placeholder mesmo com a foto já
+  // enviada, sem nenhum teste acusando.
+  //
+  // `uploadFotoProdutoMock` REJEITA de propósito: `subirFoto` só invalida `produtos-saldo` no
+  // caminho de SUCESSO (antes do `toast.success`), então com sucesso ela mascararia a remoção
+  // da 2ª invalidação de `salvar()` — o total continuaria >= 2 mesmo sem a linha "OBRIGATÓRIA"
+  // (1ª do cadastro + a de `subirFoto`). Forçando a falha, a invalidação de `subirFoto` não
+  // dispara, e o total só bate 2 se a 2ª chamada de `salvar()` (incondicional, roda depois de
+  // `subirLoteDeFotos` mesmo com falha) ainda existir — é essa, especificamente, que este
+  // teste prova.
+  it('lote automático de fotos invalida produtos-saldo pelo menos duas vezes mesmo quando o upload da foto falha', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    uploadFotoProdutoMock.mockRejectedValueOnce(new Error('falhou'));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <DialogCadastroProduto aberto onFechar={() => {}} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+
+    const fotoAzul = new File(['a'], 'azul.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Foto da variação 1'), fotoAzul);
+
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    // Espera o lote terminar (falha reportada), não um segundo act() só pra aguardar a
+    // invalidação em si.
+    expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
+
+    const chamadasProdutosSaldo = invalidateSpy.mock.calls.filter(
+      ([arg]) => (arg as { queryKey?: unknown[] } | undefined)?.queryKey?.[0] === 'produtos-saldo',
+    );
+    expect(chamadasProdutosSaldo.length).toBeGreaterThanOrEqual(2);
   });
 
   // Achado real: retry idempotente pode devolver o cadastro ORIGINAL da edge, com uma

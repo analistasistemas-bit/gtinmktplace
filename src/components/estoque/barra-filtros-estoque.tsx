@@ -48,6 +48,7 @@ export function BarraFiltrosEstoque({
                 type="button"
                 size="sm"
                 variant={filtro === f.valor ? 'secondary' : 'ghost'}
+                aria-pressed={filtro === f.valor}
                 disabled={desabilitado}
                 onClick={() => onFiltro(f.valor)}
               >
@@ -63,6 +64,7 @@ export function BarraFiltrosEstoque({
               type="button"
               size="sm"
               variant={ordem === o.valor ? 'secondary' : 'ghost'}
+              aria-pressed={ordem === o.valor}
               onClick={() => onOrdem(o.valor)}
               className={cn(ordem === o.valor && 'font-medium')}
             >
