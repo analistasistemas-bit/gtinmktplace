@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filtrarProdutos, type FiltroEstoque } from '../produtos-saldo-filtro';
+import { filtrarProdutos, canaisEfetivos, type FiltroEstoque } from '../produtos-saldo-filtro';
 import type { ProdutoComSaldo } from '../produtos-saldo';
 
 function produto(over: Partial<ProdutoComSaldo> = {}): ProdutoComSaldo {
@@ -74,6 +74,31 @@ describe('filtrarProdutos — nao-publicado', () => {
   it('com canaisPorProduto undefined não devolve tudo como não publicado', () => {
     const r = filtrarProdutos([semCanal], { ...base, termo: '', filtro: 'nao-publicado', canaisPorProduto: undefined });
     expect(r).toHaveLength(0);
+  });
+});
+
+// M-3: o badge de canal usava só o espelho `anuncios_externos`, que pode estar furado — produto
+// com ml_item_id preenchido mas sem linha no espelho não mostrava NENHUM badge, mesmo publicado.
+describe('canaisEfetivos', () => {
+  it('inclui mercado_livre por ml_item_id mesmo sem entrada no espelho', () => {
+    const p = produto({ mlItemId: 'MLB123' });
+    expect(canaisEfetivos(p, new Map())).toEqual(['mercado_livre']);
+  });
+
+  it('inclui mercado_livre por ml_item_id mesmo com mapa de canais undefined', () => {
+    const p = produto({ mlItemId: 'MLB123' });
+    expect(canaisEfetivos(p, undefined)).toEqual(['mercado_livre']);
+  });
+
+  it('não duplica mercado_livre quando já está no espelho', () => {
+    const p = produto({ mlItemId: 'MLB123' });
+    const canais = new Map([['00000001', ['mercado_livre']]]);
+    expect(canaisEfetivos(p, canais)).toEqual(['mercado_livre']);
+  });
+
+  it('sem ml_item_id, devolve só o que está no espelho', () => {
+    const p = produto();
+    expect(canaisEfetivos(p, new Map())).toEqual([]);
   });
 });
 

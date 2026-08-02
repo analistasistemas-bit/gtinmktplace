@@ -85,4 +85,28 @@ describe('ProdutoCard', () => {
     await user.click(screen.getByRole('button', { name: 'Dar entrada' }));
     expect(onDarEntrada).toHaveBeenCalledWith({ codigoPai: '00000004' });
   });
+
+  // M-3: garante que o card exibe o badge quando a prop `canais` inclui o canal — a correção
+  // real (incluir 'mercado_livre' por ml_item_id mesmo sem espelho) mora em `canaisEfetivos`
+  // (produtos-saldo-filtro.ts), que decide essa prop; aqui só confirma que o card a respeita.
+  it('mostra o badge do canal recebido via prop', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={['mercado_livre']} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('Mercado Livre')).toBeInTheDocument();
+  });
+
+  // M-5: saldo positivo não podia sumir inteiro em telas estreitas — só o pill (que só
+  // aparece com saldo <= 0) sobrava no mobile, escondendo o número atrás de `hidden sm:block`.
+  // O menor breakpoint do Tailwind (sm, 640px) já é maior que 375px: qualquer `hidden` na
+  // cadeia de ancestrais — mesmo com `sm:block` — esconde o saldo no celular.
+  it('saldo positivo não fica dentro de container escondido no mobile', () => {
+    renderCard();
+    for (let el: HTMLElement | null = screen.getByText('40'); el; el = el.parentElement) {
+      expect(el.className.split(/\s+/)).not.toContain('hidden');
+    }
+  });
 });

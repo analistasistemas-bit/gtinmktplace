@@ -14,7 +14,7 @@ import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-prod
 import { ProdutoCard, type AlvoEntrada } from '@/components/estoque/produto-card';
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
-import { filtrarProdutos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
+import { filtrarProdutos, canaisEfetivos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
 import { fetchProdutosComSaldo, fetchCanaisPorProduto } from '@/lib/produtos-saldo';
 
 export default function Estoque() {
@@ -114,7 +114,7 @@ export default function Estoque() {
               <ProdutoCard
                 key={p.codigoPai}
                 produto={p}
-                canais={canaisPorProduto?.get(p.codigoPai) ?? []}
+                canais={canaisEfetivos(p, canaisPorProduto)}
                 onDarEntrada={(alvo) => { setAlvoEntrada(alvo); setEntradaAberta(true); }}
               />
             ))}

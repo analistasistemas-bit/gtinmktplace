@@ -22,10 +22,25 @@ const normalizar = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, 
  * apenas com console.error (`_shared/anuncios/espelhar.ts:117`) sem desfazer a publicação, então
  * produto publicado de verdade pode não ter linha lá.
  */
+function publicadoNoMlPorIdCanonico(p: ProdutoComSaldo): boolean {
+  return p.mlItemId != null;
+}
+
 export function produtoPublicado(p: ProdutoComSaldo, canais: Map<string, string[]> | undefined): boolean {
-  if (p.mlItemId != null) return true;
+  if (publicadoNoMlPorIdCanonico(p)) return true;
   if (canais === undefined) return true; // Dados incompletos: assume publicado (safe default para não esconder catálogo inteiro)
   return (canais.get(p.codigoPai)?.length ?? 0) > 0;
+}
+
+/**
+ * Canais para o badge da listagem: o espelho `anuncios_externos`, mais 'mercado_livre' se o
+ * produto tiver `ml_item_id` e o espelho não tiver essa linha — mesmo furo que `produtoPublicado`
+ * trata (upsert best-effort do espelho, ver `_shared/anuncios/espelhar.ts:117`).
+ */
+export function canaisEfetivos(p: ProdutoComSaldo, canais: Map<string, string[]> | undefined): string[] {
+  const lista = canais?.get(p.codigoPai) ?? [];
+  if (publicadoNoMlPorIdCanonico(p) && !lista.includes('mercado_livre')) return [...lista, 'mercado_livre'];
+  return lista;
 }
 
 function casaTermo(p: ProdutoComSaldo, termo: string): boolean {

@@ -52,9 +52,9 @@ export function ProdutoCard({ produto, canais, onDarEntrada }: {
         </button>
 
         <div className="flex shrink-0 items-center gap-3">
-          <div className="hidden text-right sm:block">
+          <div className="text-right">
             <div className="tabular-nums font-medium">{produto.saldoTotal}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="hidden text-xs text-muted-foreground sm:block">
               {produto.variacoes.length} {produto.variacoes.length === 1 ? 'SKU' : 'SKUs'}
             </div>
           </div>
