@@ -41,9 +41,9 @@ export function resolverJanela(p: Periodo): Janela {
 }
 
 /** Janela imediatamente anterior. Presets/range: mesma duração, encostada no início da atual
- *  ([desde - dur, desde]). 'hoje': a janela cresce o dia todo, então deslocar pela duração
- *  decorrida não dá "ontem" — dá um pedaço de ontem colado à meia-noite. Usa o dia anterior no
- *  mesmo ponto do relógio (ontem 00:00 → ontem mesma hora de agora). */
+ *  ([desde - dur, desde]). 'hoje' e 'mes_atual': a janela cresce (dia/mês todo), então deslocar
+ *  pela duração decorrida não dá "ontem"/"mês passado" — dá um pedaço colado ao início. Usa o
+ *  dia/mês anterior no mesmo ponto do relógio. */
 export function janelaAnterior(j: Janela, p?: Periodo): Janela {
   if (p?.tipo === 'hoje') {
     const DIA_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +51,16 @@ export function janelaAnterior(j: Janela, p?: Periodo): Janela {
       desde: new Date(Date.parse(j.desde) - DIA_MS).toISOString(),
       ate: new Date(Date.parse(j.ate) - DIA_MS).toISOString(),
     };
+  }
+  if (p?.tipo === 'mes_atual') {
+    // ponytail: setMonth() em dias 29-31 pode rolar pro mês seguinte quando o mês anterior é
+    // mais curto (ex.: 31/03 → "31/02" não existe, vira 02-03/03). Ceiling raro (fim de mês em
+    // fev), upgrade: clampar ao último dia do mês anterior se isso virar reclamação real.
+    const desdeAnt = new Date(j.desde);
+    desdeAnt.setMonth(desdeAnt.getMonth() - 1);
+    const ateAnt = new Date(j.ate);
+    ateAnt.setMonth(ateAnt.getMonth() - 1);
+    return { desde: desdeAnt.toISOString(), ate: ateAnt.toISOString() };
   }
   const desdeMs = Date.parse(j.desde);
   const dur = Date.parse(j.ate) - desdeMs;
