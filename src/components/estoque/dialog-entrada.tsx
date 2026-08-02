@@ -23,6 +23,8 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial }: {
   aberto: boolean;
   onFechar: () => void;
   skuInicial?: string;
+  // ponytail: recebida e ainda não usada — comportamento real entra na Task 9.
+  filtroInicial?: string;
 }) {
   const qc = useQueryClient();
   const [busca, setBusca] = useState('');
