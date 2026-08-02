@@ -37,8 +37,35 @@ O `SYSTEM` atual tem 96 linhas e é quase inteiramente **proibitivo**: o que nã
 o que omitir, o que nunca escrever. Não há nenhuma instrução sobre *como vender*. A IA
 cumpre o template e para.
 
-Isso explica os pontos ⭐⭐⭐⭐⭐ da análise: sem dor do comprador (#3), sem diferenciação
-(#6), sem gatilhos (#8), sem SEO (#10), sem perguntas respondidas (#11).
+Isso explica os pontos ⭐⭐⭐⭐⭐ da análise: sem dor do comprador (#3), sem gatilhos (#8),
+sem SEO (#10), sem perguntas respondidas (#11).
+
+### Causa C — o prompt prescreve literalmente os bullets genéricos
+
+`copywriter-prompt.ts:154` instrui:
+
+> `(4 a 7 bullets. Use características reais do produto + benefícios genéricos do tipo:`
+> `"Alta resistência", "Costura firme", "Bom rendimento", "Não desfia facilmente",`
+> `"Ótimo custo-benefício".)`
+
+Medição no catálogo real (166 famílias com descrição):
+
+| Bullet listado no prompt | Aparece em |
+|---|---|
+| "Alta resistência" | **125 de 166** (75%) |
+| "Ótimo custo-benefício" | **78 de 166** (47%) |
+| "Não desfia facilmente" | 34 |
+| "Bom rendimento" | 16 |
+
+Os pontos #5 ("benefícios muito genéricos") e #6 ("não existe diferenciação") da análise
+externa são **o prompt se auto-cumprindo**. Não são falha do modelo nem falta de regra:
+são os exemplos few-shot do próprio `SYSTEM` voltando na saída, verbatim, em três quartos
+do catálogo.
+
+Consequência prática, e é a mais importante deste design: **exemplo few-shot vence regra
+declarada.** Escrever R1 e deixar a linha 154 intacta tornaria R1 inerte. Todo exemplo
+dentro do `SYSTEM` precisa ser substituído por um exemplo R1-conforme — o prompt novo
+ensina pelo exemplo, não só pela regra.
 
 ### O que NÃO é o problema
 
@@ -174,17 +201,32 @@ urgência ("garanta já o seu") é insuficiente.
 **R1, R1b, R2 e R3 valem para TODAS as seções da descrição**, não apenas intro e
 benefícios. Isso inclui explicitamente `🎯 INDICAÇÕES DE USO`.
 
-Aplicações genéricas do tipo de produto continuam permitidas *como categoria*. O que é
-proibido é convertê-las em afirmação específica sobre este produto quando a fonte não as
-sustenta.
+A restrição aqui é de **forma**, não de existência da seção. Aplicação típica do tipo de
+produto continua permitida — é o mesmo carve-out de conhecimento de domínio público
+(`SYSTEM` linha 115) do qual R4 depende para abrir pela dor. O que muda é que ela precisa
+ser enunciada **como declaração sobre a categoria**, nunca como afirmação sobre este
+produto, quando a fonte não a sustenta.
 
 | | Exemplo |
 |---|---|
-| ❌ Proibido sem fonte | "Indicado para confecções, facções, artesanato e reparos." (afirmação sobre o produto) |
-| ✅ Permitido | Aplicação típica da categoria, formulada como tal, ou derivada de dado da fonte |
+| ❌ Proibido sem fonte | "Indicado para confecções, facções, artesanato e reparos." — afirma sobre *este* produto |
+| ✅ Permitido sem fonte | "Fitas de cetim são usadas em lembrancinhas, convites e acabamento de embalagens." — declara sobre a *categoria* |
+| ✅ Permitido com fonte | "Indicado para lembrancinhas de casamento e batizado." — quando `descricao_pai` diz isso |
 
-Sem fonte que sustente aplicações, a seção `🎯 INDICAÇÕES DE USO` é omitida — mesmo
-padrão de omissão que já governa os bullets de `📌 ESPECIFICAÇÕES`.
+**Coerência com R4:** dor da categoria e aplicação da categoria são a mesma permissão sob
+o mesmo carve-out, e recebem a mesma restrição — contexto sobre a categoria é livre,
+promessa sobre o produto exige fonte. Um implementador que ler R4 e R8 lado a lado deve
+ver uma única regra aplicada a dois lugares.
+
+A seção só é omitida quando não houver **nem** aplicação na fonte **nem** aplicação
+conhecida da categoria — na prática, produto cujo tipo o prompt não conseguiu identificar.
+
+**Efeito esperado nos dados reais:** `LINHA DE COST 10.000MT` tem aplicação genérica na
+fonte ("para costuras que exigem alta resistência", "para a sua confecção", "tecidos leves
+a médios") e mantém a seção com formulação ancorada. As linhas `FITA CETIM BUFALO` têm
+aplicações explícitas e detalhadas na fonte e mantêm a seção com formulação direta. Sob a
+leitura estrita alternativa — omitir sem fonte — a linha perderia a seção; esta spec
+rejeita esse resultado.
 
 ---
 
@@ -214,7 +256,7 @@ objeção, e cores/embalagem/envio são operacionais.
 
 | Arquivo | Mudança | Risco |
 |---|---|---|
-| `copywriter-prompt.ts` — const `SYSTEM` | reescrita incorporando R1–R8 | nenhum teste trava o `SYSTEM` |
+| `copywriter-prompt.ts` — const `SYSTEM` | reescrita incorporando R1–R8, **inclusive substituição dos exemplos few-shot da linha 154** (Causa C) e do `❓` na whitelist de emojis da linha 199 | nenhum teste trava o `SYSTEM` |
 | `copywriter-prompt.ts:46` — `CABECALHOS_APOS_ESPECIFICACOES` | acrescentar `'❓ PERGUNTAS SOBRE ESTE PRODUTO'` | uma linha; preserva os guards |
 | `copywriter-prompt.ts` — novo export | `detectarFormulasProibidas(texto): string[]` | função pura |
 | `scripts/experimento-copy.ts` — novo | harness A/B/C | offline, não toca produção |
@@ -222,6 +264,14 @@ objeção, e cores/embalagem/envio são operacionais.
 **Intocados nesta entrega:** `montarUserPrompt`, `copywriter.ts`, `SCHEMA`, os guards
 `garantirLarguraDescricao` / `garantirMetragemDescricao`, e todas as edge functions.
 (`copywriter.ts` só é alterado na fase 2, seção 6, se o experimento a justificar.)
+
+### Por que a whitelist de emojis precisa do `❓`
+
+`SYSTEM:199` termina com: *"Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 🎨 📦 🚚)"*.
+Sem acrescentar `❓` a essa lista, o modelo tende a suprimir o emoji do cabeçalho novo — e
+o cabeçalho sem emoji deixa de casar com a string em `CABECALHOS_APOS_ESPECIFICACOES`,
+quebrando silenciosamente a injeção dos guards. Duas mudanças de uma linha que dependem
+uma da outra.
 
 ### Por que `CABECALHOS_APOS_ESPECIFICACOES` precisa da entrada nova
 
@@ -259,16 +309,38 @@ exatamente o mesmo conjunto.
 
 Três cenários sobre a mesma amostra:
 
-| Cenário | Prompt | Modelo |
-|---|---|---|
-| **A** | atual | `gpt-4o-mini` |
-| **B** | novo | `gpt-4o-mini` |
-| **C** | novo | `gpt-4o` |
+| Cenário | Prompt | Modelo | Origem |
+|---|---|---|---|
+| **A** | atual | `gpt-4o-mini` | **`familias.descricao_ml` já gravada** — não re-executa |
+| **B** | novo | `gpt-4o-mini` | geração nova |
+| **C** | novo | `gpt-4o` | geração nova |
 
 **B − A** mede o ganho do prompt. **C − B** mede o ganho do modelo. Rodar os dois juntos
 tornaria a causa inatribuível.
 
-Custo estimado: menos de R$ 5 no total.
+**Cenário A não é re-executado.** Assim que `SYSTEM` for editado, o prompt antigo deixa de
+existir na árvore e A só seria reproduzível com ginástica de git. A alternativa é melhor:
+usar a `descricao_ml` que já está no banco. É a saída real de produção, é mais fiel do que
+uma regeração, e custa zero. Filtrar `descricao_editada_pelo_operador = false` para que as
+5 edições manuais não contaminem a linha de base.
+
+**Paridade de pós-processamento.** Produção aplica `garantirLarguraDescricao` e
+`garantirMetragemDescricao` *depois* de `gerarCopy`. A `descricao_ml` do cenário A já
+passou por eles. O harness deve aplicar os mesmos guards às saídas de B e C antes de
+comparar — senão a comparação estrutural e a de fidelidade ficam enviesadas contra os
+cenários novos.
+
+**Montagem do input.** `InputCopy` exige `variacoes` (`codigo`, `cor`, `preco`) além dos
+campos de `familias`. A query da amostra precisa do join com `variacoes`; sem ele a seção
+`🎨 CORES` e o `rotuloQuantidade` não são exercitados.
+
+**Prior esperado.** Dada a Causa C (§1), a expectativa é que **B − A seja grande**: os
+bullets genéricos são prescritos pelo prompt, não escolhidos pelo modelo. Se C − B vier
+pequeno, isso confirma que "genérico" era problema de prompt, não teto do `gpt-4o-mini` —
+e o modelo barato fica. Registrar essa expectativa antes de rodar evita ler o resultado a
+favor da hipótese mais cara.
+
+Custo estimado: menos de R$ 5 no total (A não consome tokens).
 
 ### Critérios de avaliação
 
