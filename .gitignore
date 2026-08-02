@@ -37,6 +37,9 @@ supabase/.temp
 coverage/
 .nyc_output/
 
+# Artefatos temporários (PDFs de dashboard, dumps de investigação)
+tmp/
+
 # OS
 Thumbs.db
 

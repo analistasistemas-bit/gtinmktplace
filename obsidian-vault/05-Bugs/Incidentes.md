@@ -1,6 +1,6 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-07-31
+atualizado: 2026-08-02
 ---
 
 # Incidentes
@@ -27,6 +27,37 @@ rotacionado e o anterior revogado.
 **Lição:** `service_role`/SQL administrativo não substitui o fluxo de domínio. Toda mutação de
 tenant precisa resolver o `org_id` explicitamente, mostrar o alvo antes da autorização e terminar
 com readback cruzado comprovando que as demais organizações não mudaram.
+
+## 2026-08-02 — Alertas Telegram pararam de chegar (token corrompido em Configurações)
+
+**Sintoma:** Diego reportou que desde sexta-feira (2026-07-31) não recebia mais alertas Telegram
+(vendas, perguntas, financeiro etc.), embora o resto do sistema seguisse normal.
+
+**Causa raiz:** `configuracoes.telegram_bot_token` da org Avil tinha um valor de **8 caracteres** —
+não é um token válido do Telegram (formato real `\d+:[A-Za-z0-9_-]{35}`, ~46 chars). Confirmado ao
+vivo contra a API real do Telegram (`GET /bot<token>/getMe` via extensão `http` do Postgres, mesmo
+padrão do incidente de frete/Mercado Envios — token nunca exposto no output): **404 Not Found**.
+`atualizado_em` da linha: 2026-08-01 08:56 UTC (sábado), editado pela própria conta do Diego —
+provável colagem incompleta do Bot token em Configurações → Alertas no Telegram.
+
+**Por que ficou silencioso:** `enviarTelegram` (`_shared/notificacoes/telegram.ts`) só faz
+`console.warn` na falha e retorna `false` — sem sinal nenhum na tela. As notificações in-app (mesmo
+ponto de disparo, `notificarCategoria`) continuaram sendo gravadas normalmente todos os dias
+(inclusive sexta, 40 registros) — isso isolou o problema no envio Telegram, não no pipeline de
+disparo em si. RPC `telegram_config_status()` só informa `tem_token boolean`; não valida
+formato/validade, então "tem token" não provava "token funciona".
+
+**Alcance:** o bot é único por organização (ADR-0068) — Michael e Samuel (mesma org Avil) também
+pararam de receber, não só o Diego.
+
+**Correção:** Diego recolou o Bot token correto em Configurações → Alertas no Telegram.
+
+**Lição:** um `console.warn`-e-segue em envio de notificação externa (mesmo padrão de outros
+"best-effort" já documentados aqui) esconde falha de configuração indefinidamente. Testar o token
+direto contra `getMe` da API do Telegram via extensão `http` é mais confiável que assumir "token
+presente = token válido". Candidato a melhoria futura (não implementado): validar o formato do
+token no momento do save em Configurações (checável sem nem chamar a API do Telegram) para falhar
+LOUD ali, em vez de silenciar no primeiro envio real.
 
 ## 2026-07-30 — Frete da Viabilidade saía R$0 sem explicação (conta ML sem Mercado Envios)
 
