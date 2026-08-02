@@ -173,6 +173,10 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
       if (!canWrite()) throw new Error('Suporte somente leitura.');
       const owner = storageOwnerForUpload(userId, orgId, useSupportStore.getState().context?.scope ?? null);
       await uploadFotoProduto(owner, loteId, arquivo, alvo);
+      // Cobre os dois chamadores: o retry manual da etapa 2 (que sem isto nunca invalidava —
+      // o card ficava com placeholder mesmo com o path já gravado) e o lote automático (que já
+      // invalida de novo ao fim de `salvar()`; repetir aqui é redundante mas inofensivo).
+      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
       toast.success('✓ Foto enviada');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao enviar a foto.');
@@ -220,10 +224,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
   }
 
   const pendencias = resultado && (!resultado.filaOk || resultado.falhasEstoque.length > 0);
-  // Cobre as duas fases destrutivas de fechar no meio: `salvando` (cadastrarProduto em voo —
+  // Cobre as três fases destrutivas de fechar no meio: `salvando` (cadastrarProduto em voo —
   // fechar aqui não cancela a chamada, só descarta os `File`s escolhidos no useEffect de
-  // reset) e `enviandoFotos !== null` (lote de fotos em andamento).
-  const ocupado = salvando || enviandoFotos !== null;
+  // reset), `enviandoFotos !== null` (lote automático em andamento) e `enviandoFoto` (retry
+  // manual da etapa 2 em andamento — o guard original, preservado).
+  const ocupado = salvando || enviandoFoto || enviandoFotos !== null;
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => { if (!o && !ocupado) onFechar(); }}>
@@ -393,18 +398,27 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">Fotos do produto</span>
               <div className="grid gap-2 sm:grid-cols-3">
-                {(['capa', 'capa2', 'capa3'] as const).map((tipo) => (
-                  <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
-                    {tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3'}
-                    <Input
-                      type="file" accept="image/*" disabled={enviandoFoto}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) subirFoto(f, { tipo, familiaId: resultado.familiaId }, resultado.loteId).catch(() => {});
-                      }}
-                    />
-                  </label>
-                ))}
+                {(['capa', 'capa2', 'capa3'] as const).map((tipo) => {
+                  const rotulo = tipo === 'capa' ? 'Capa' : tipo === 'capa2' ? 'Capa 2' : 'Capa 3';
+                  return (
+                    <label key={tipo} className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      {rotulo}
+                      <Input
+                        type="file" accept="image/*" disabled={enviandoFoto}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            subirFoto(f, { tipo, familiaId: resultado.familiaId }, resultado.loteId)
+                              // Retry manual bem-sucedido apaga o aviso de falha desse alvo —
+                              // sem isto o banner vermelho ficava contradizendo o toast de sucesso.
+                              .then(() => setFalhasFoto((prev) => prev.filter((x) => x !== rotulo)))
+                              .catch(() => {});
+                          }
+                        }}
+                      />
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
@@ -418,7 +432,11 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
                       type="file" accept="image/*" disabled={enviandoFoto}
                       onChange={(e) => {
                         const f = e.target.files?.[0];
-                        if (f) subirFoto(f, { tipo: 'variacao', variacaoId: v.id }, resultado.loteId).catch(() => {});
+                        if (f) {
+                          subirFoto(f, { tipo: 'variacao', variacaoId: v.id }, resultado.loteId)
+                            .then(() => setFalhasFoto((prev) => prev.filter((x) => x !== v.codigo)))
+                            .catch(() => {});
+                        }
                       }}
                     />
                   </label>
