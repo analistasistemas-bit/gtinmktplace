@@ -81,7 +81,7 @@ describe('aplicarGuardsTitulo', () => {
   });
 
   it('não crava cor quando há várias (o comprador escolhe)', () => {
-    const s = aplicarGuardsTitulo(slots({ produto: 'FITA' }), fonte({ cores: ['Branco', 'Preto'] }));
+    const s = aplicarGuardsTitulo(slots({ produto: 'FITA', variacao: 'AZUL' }), fonte({ cores: ['Branco', 'Preto'] }));
     expect(s.variacao).toBe('');
   });
 
