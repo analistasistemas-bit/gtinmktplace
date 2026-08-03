@@ -56,6 +56,84 @@ const RE_DIMENSAO_COMPOSTA = /\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(?:\s*[xX]
 // — 13 famílias de fitas/bordado/pompom colapsavam em 4 títulos por perder o discriminador).
 const RE_MEDIDA_SIMPLES = /\d+(?:,\d+)?\s*(?:mm|cm|m)\b/gi;
 
+// Versão global de RE_DIMENSAO_COMPOSTA só pra mascarar "10X15CM" durante a canonicalização de
+// unidade abaixo — a dimensão composta é tratada em outro guard (aplicarGuardsTitulo) e não pode
+// sair daqui alterada (nem "10x15cm" nem "10X15cm").
+const RE_DIMENSAO_COMPOSTA_G = new RegExp(RE_DIMENSAO_COMPOSTA.source, 'gi');
+
+// Unidade de medida canônica (achado do experimento A/B, 2026-08-02): a IA às vezes escreve a
+// unidade por extenso ou abreviada com espaço ("500 Metros", "13,71 MT"), e isso atravessa o
+// pipeline intocado quando a fonte não tem NENHUMA medida extraível — o bloco de dimensão em
+// aplicarGuardsTitulo só roda quando extrairMetragem/extrairLargura acham algo (fonte real:
+// "L.LIZA GROSSA CORES", sem medida nenhuma no nome). Por isso a canonicalização mora aqui, no
+// passo de higienização que roda pra TODOS os slots independente da fonte.
+// Cada entrada exige um NÚMERO imediatamente antes (\s* opcional) e \b no fim — o boundary evita
+// que uma alternativa curta case sozinha dentro de uma palavra maior (ex.: "M" dentro de
+// "METROS") mesmo que seja tentada primeiro pelo motor de regex; ainda assim a mais longa vem
+// primeiro em cada grupo. SEM abreviação de uma letra só (M/G/L): "G" e "L" colidem com tamanho
+// de roupa (P/M/G/GG) e com a convenção de fornecedor "L.CLEA" deste catálogo — fora do que o
+// plano pediu, e um "3 G" ou "5 L.CLEA" virando "3g"/"5l.CLEA" seria pior que o bug original.
+const CONVERSOES_UNIDADE: Array<[RegExp, string]> = [
+  [/(\d+(?:,\d+)?)\s*(?:MILIMETROS|MILÍMETROS|MM)\b/gi, 'mm'],
+  [/(\d+(?:,\d+)?)\s*(?:CENTIMETROS|CENTÍMETROS|CM)\b/gi, 'cm'],
+  [/(\d+(?:,\d+)?)\s*(?:MILILITROS|ML)\b/gi, 'ml'],
+  [/(\d+(?:,\d+)?)\s*(?:METROS|METRO|MTS|MT)\b/gi, 'm'],
+  [/(\d+(?:,\d+)?)\s*(?:GRAMAS|GRAMA|GR)\b/gi, 'g'],
+  [/(\d+(?:,\d+)?)\s*(?:QUILOS|QUILO|KG)\b/gi, 'kg'],
+  [/(\d+(?:,\d+)?)\s*(?:LITROS|LITRO|LT)\b/gi, 'l'],
+  [/(\d+(?:,\d+)?)\s*(?:UNIDADES|UNIDADE|UNDS|UNID|UND|UN)\b/gi, 'un'],
+  [/(\d+(?:,\d+)?)\s*(?:PEÇAS|PECAS|PEÇA|PECA|PÇS|PCS|PC)\b/gi, 'pc'],
+];
+
+// Mesmos alvos de comprimento de CONVERSOES_UNIDADE, mas sem exigir dígito antes — usada só pra
+// absorver uma unidade por EXTENSO logo depois de uma dimensão composta ("10 X 15 Centimetros"),
+// onde o dígito que ancoraria a conversão normal já foi consumido pela dimensão em si. Restrita
+// a comprimento (mm/cm/m) porque RE_DIMENSAO_COMPOSTA só faz sentido como medida de comprimento
+// — o próprio sufixo opcional dela já é só mm|cm|m.
+const SUFIXO_COMPRIMENTO_POS_COMPOSTA: Array<[RegExp, string]> = [
+  [/^\s*(?:MILIMETROS|MILÍMETROS|MM)\b/i, 'mm'],
+  [/^\s*(?:CENTIMETROS|CENTÍMETROS|CM)\b/i, 'cm'],
+  [/^\s*(?:METROS|METRO|MTS|MT)\b/i, 'm'],
+];
+
+function converterUnidadesSegmento(segmento: string): string {
+  let out = segmento;
+  for (const [re, canon] of CONVERSOES_UNIDADE) {
+    out = out.replace(re, (_, num: string) => `${num}${canon}`);
+  }
+  return out;
+}
+
+// Divide em segmentos ao redor da dimensão composta em vez de mascarar com um marcador —
+// mais simples e sem risco de um marcador colidir com o próprio texto. Só os segmentos FORA
+// da dimensão composta passam pela conversão; ela atravessa intocada. Quando uma unidade por
+// extenso vem colada logo depois da composta ("10 X 15 Centimetros"), gruda no fim dela — sem
+// isso o dígito já consumido pela composta deixaria essa unidade sem número pra ancorar e ela
+// atravessaria intocada, o mesmo bug que este guard existe pra fechar.
+function canonicalizarUnidades(v: string): string {
+  const partes: string[] = [];
+  let cursor = 0;
+  for (const m of v.matchAll(RE_DIMENSAO_COMPOSTA_G)) {
+    const inicio = m.index ?? 0;
+    partes.push(converterUnidadesSegmento(v.slice(cursor, inicio)));
+    let composta = m[0];
+    let fim = inicio + m[0].length;
+    const resto = v.slice(fim);
+    for (const [re, canon] of SUFIXO_COMPRIMENTO_POS_COMPOSTA) {
+      const suf = resto.match(re);
+      if (suf) {
+        composta += canon;
+        fim += suf[0].length;
+        break;
+      }
+    }
+    partes.push(composta);
+    cursor = fim;
+  }
+  partes.push(converterUnidadesSegmento(v.slice(cursor)));
+  return partes.join('');
+}
+
 /** Passo 2 do pipeline: higieniza e canonicaliza o que a IA devolveu. */
 export function normalizarSlots(slots: TituloSlots): TituloSlots {
   const out = { ...slots };
@@ -67,6 +145,7 @@ export function normalizarSlots(slots: TituloSlots): TituloSlots {
     for (const [re, sub] of ABREVIACOES) v = v.replace(re, sub);
     v = v.replace(/\s{2,}/g, ' ').trim();
     if (RUIDO.some((re) => re.test(v))) v = '';
+    v = canonicalizarUnidades(v);
     out[slot] = v;
   }
   return out;

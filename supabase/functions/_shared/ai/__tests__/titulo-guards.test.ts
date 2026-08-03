@@ -39,6 +39,47 @@ describe('normalizarSlots', () => {
     expect(normalizarSlots(slots({ produto: 'FITA | CETIM ESPECIAL' })).produto).toBe('FITA CETIM ESPECIAL');
     expect(normalizarSlots(slots({ material: '100% POLIESTER ★' })).material).toBe('100% POLIESTER');
   });
+
+  // Achado do experimento A/B: unidade por extenso/abreviada com espaço que a IA escreve no
+  // slot atravessava o pipeline intocada quando a fonte não tinha medida nenhuma pra ancorar o
+  // guard de dimensão em aplicarGuardsTitulo ("Linha Tex 376 500 Metros Polipropileno").
+  it('canonicaliza unidade de medida escrita pela IA', () => {
+    const casos: Array<[string, string]> = [
+      ['500 Metros', '500m'],
+      ['10 METROS', '10m'],
+      ['13,71 MT', '13,71m'],
+      ['500 GR', '500g'],
+      ['1 KG', '1kg'],
+      ['250 ML', '250ml'],
+      ['10 UNIDADES', '10un'],
+      ['12 PEÇAS', '12pc'],
+      ['25MM', '25mm'],
+      ['3,5 CM', '3,5cm'],
+      ['Tex 376', 'Tex 376'],
+      ['Metros de Fita', 'Metros de Fita'],
+      ['N.3', 'N.3'],
+      ['10X15CM', '10X15CM'],
+    ];
+    for (const [entrada, esperado] of casos) {
+      expect(normalizarSlots(slots({ medida: entrada })).medida).toBe(esperado);
+    }
+  });
+
+  // Achado do revisor: RE_DIMENSAO_COMPOSTA só absorve unidade colada/abreviada (mm|cm|m) no
+  // próprio sufixo opcional — uma unidade por EXTENSO depois da composta ficava com o dígito já
+  // consumido pela composta e sem número pra ancorar, atravessando intocada.
+  it('gruda unidade por extenso que vem logo depois de uma dimensão composta', () => {
+    expect(normalizarSlots(slots({ medida: '10 X 15 Centimetros' })).medida).toBe('10 X 15cm');
+    expect(normalizarSlots(slots({ medida: '3,00 X 1,80 Metros' })).medida).toBe('3,00 X 1,80m');
+  });
+
+  // Sem abreviação de uma letra só: "G"/"L" colidem com tamanho de roupa (P/M/G/GG) e com a
+  // convenção de fornecedor "L.CLEA" deste catálogo — fora do que o plano pediu.
+  it('NÃO converte abreviação de uma letra só (fora do escopo do plano)', () => {
+    expect(normalizarSlots(slots({ variacao: '3 G' })).variacao).toBe('3 G');
+    expect(normalizarSlots(slots({ produto: '2 L.CLEA' })).produto).toBe('2 L.CLEA');
+    expect(normalizarSlots(slots({ medida: '10 M' })).medida).toBe('10 M');
+  });
 });
 
 describe('aplicarGuardsTitulo', () => {

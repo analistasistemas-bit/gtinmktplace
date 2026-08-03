@@ -155,4 +155,16 @@ describe('posProcessarTitulo', () => {
     ));
     expect(new Set(titulos).size).toBe(4);
   });
+
+  // Achado do experimento A/B contra a API real: "L.LIZA GROSSA CORES" não tem medida nenhuma
+  // no nome, então extrairMetragem/extrairLargura devolvem null e o bloco de dimensão em
+  // aplicarGuardsTitulo nem roda — o "500 Metros" que a IA escreveu no slot atravessava cru.
+  it('unidade por extenso vinda da IA é canonicalizada mesmo sem medida na fonte', () => {
+    const t = posProcessarTitulo(
+      slots({ produto: 'LINHA', modelo: 'TEX 376', medida: '500 Metros', material: 'POLIPROPILENO' }),
+      fonte({ nomePai: 'L.LIZA GROSSA CORES', descricaoPai: 'LINHA DE POLIPROPILENO COM 500 METROS.' }),
+    );
+    expect(t).toContain('500m');
+    expect(t).not.toMatch(/\bMetros\b/i);
+  });
 });
