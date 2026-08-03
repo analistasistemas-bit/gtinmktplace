@@ -258,17 +258,69 @@ TIPO DE PRODUTO (campo tipo_produto_busca)
 Preencha "tipo_produto_busca" com um substantivo curto (2-5 palavras) que identifica O QUE o produto FISICAMENTE É (ex.: "barbante de crochê", "fita de cetim", "tesoura de costura", "bainha adesiva"). REGRA ABSOLUTA: só preencha se essa palavra aparecer literalmente no nome OU na descrição — nunca infira o tipo só a partir da marca. Se nenhuma palavra do tipo de produto aparecer no texto-fonte, devolva "" (vazio).
 
 ═══════════════════════════════════════════════════════
-TÍTULO
+TÍTULO — DEVOLVA SLOTS, NÃO UMA FRASE
 ═══════════════════════════════════════════════════════
-- Até 60 caracteres.
-- Formato: \`MARCA MODELO MEDIDA | CARACTERÍSTICA PRINCIPAL | DIFERENCIAL\`
-- Exemplo: \`FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | RESISTENTE\`
-- TUDO EM CAPS.
-- Se o NOME do produto não contém uma palavra que identifique o tipo do produto (ex.: "EUROROMA 4/6 CORES 600G" não diz o que é), mas a descrição diz (ex.: "BARBANTE"), esse substantivo é OBRIGATÓRIO como primeiro segmento do título — à frente até da marca. Prioridade de conteúdo quando faltar espaço: TIPO DE PRODUTO > MEDIDA > MARCA > DIFERENCIAL (corte o DIFERENCIAL antes de cortar o tipo).
-- SE o nome do produto contém medida ou quantidade (ex.: 10MT, 100MT, 50M, 1KG, 500G), inclua-a OBRIGATORIAMENTE no título logo após o modelo. É dado crucial que diferencia o produto (10MT e 100MT são produtos distintos; 1KG e 500G também) — priorize a medida real sobre adjetivos genéricos de "DIFERENCIAL".
-- O segmento "DIFERENCIAL" é OPCIONAL. Só inclua se a palavra/frase couber INTEIRA dentro dos 60 caracteres. NUNCA corte uma palavra no meio nem termine o título com conectivo solto (ex.: "... VERSÁTIL E", "... DE", "... COM"). Prefira um título mais curto e completo (ex.: "... | 100% POLIÉSTER") a um terminado em fragmento.
-- NUNCA mencione quantidade de cores nem "Disponível em N cores".
-- Use apenas dados do input.
+Você NÃO escreve o título. Você preenche dez campos e o sistema monta o título a partir deles.
+Todos os dez são obrigatórios no JSON; devolva "" (string vazia) para o que não se aplica ou
+não está na fonte. Slot vazio é normal e esperado.
+
+produto        — o que o item É, no termo que o comprador digita na busca. NUNCA "".
+marca          — só se a marca aparecer no nome ou na descrição. Nome de loja não é marca.
+modelo         — numeração/linha que o CONSUMIDOR usa para escolher: N.3, Nº 6, Tex 29, 4/6.
+medida         — comprimento, largura, peso, volume: 570m, 6mm, 500g, 2l.
+quantidade     — contagem da embalagem: 10un, 12pc.
+material       — composição: 100% Poliéster, 85% Algodão, PVC, Alumínio.
+variacao       — cor ou tamanho, quando o anúncio é de UMA opção só.
+compatibilidade— com o que funciona, se a fonte disser: Para DeskJet 2774.
+aplicacao      — uso principal, só se a fonte confirmar: Para Forro.
+sinonimo       — outro termo de busca REAL, apenas se estiver na fonte: Helanquinha.
+
+T1 ORDEM. O sistema monta nesta ordem: produto, marca, modelo, medida, quantidade, material,
+variacao, compatibilidade, aplicacao, sinonimo. Você não precisa se preocupar com a ordem nem
+com o limite de 60 caracteres — só com o conteúdo de cada campo.
+
+T2 SEM SEPARADOR. Não use "|", "★", "!!!", colchete, emoji ou qualquer caractere decorativo
+dentro dos campos.
+
+T3 PROIBIDO ADJETIVO SEM DADO. Nunca escreva, em campo nenhum: elegante, versátil, resistente,
+super resistente, alta resistência, alta durabilidade, qualidade premium, alta qualidade,
+qualidade superior, toque macio, macio, conforto e controle, secagem limpa, adesão firme, alta
+aderência, uso profissional, alta performance, excelente qualidade, paleta vibrante, premium,
+melhor, imperdível, promoção, oferta, pronta entrega, envio rápido, compre agora. Também
+proibidos: telefone, contato e nome da loja.
+
+T4 EXPANDA O DIALETO DE PLANILHA. O comprador não busca por abreviação de estoque:
+C/ → com · S/ → sem · P/ → para · NIQ → niquelado · AG → agulha · HEXAG → hexagonal ·
+ESP. → especial · BCO → branco. Ruído sem valor de busca vira "": TAM UND, TAM VR, C VAR, e
+"CORES" quando significa apenas que há variação.
+
+T5 PROIBIDO CÓDIGO INTERNO. Referência de estoque não é buscada por ninguém: T-007, BAR-03-VR,
+REF.275, GRD 7, e código de cor solto (o "610" em "COR 610 BEGE"). Numeração que o consumidor
+usa para escolher (N.3, Tex 29, 4/6) é modelo legítimo e DEVE ficar.
+
+T6 COMPLETUDE ACIMA DE OCUPAÇÃO. O título não deve tentar preencher os 60 caracteres. Depois de
+incluir todos os dados relevantes e comprovados, pare. Um título curto, preciso e completo é
+superior a um título longo preenchido com adjetivos, aplicações genéricas, sinônimos fracos ou
+expressões promocionais. Espaço restante não é motivo para adicionar palavras.
+
+T7 SINÔNIMO SÓ DA FONTE. Preencha "sinonimo" apenas com termo que APARECE no nome ou na
+descrição. Nunca invente sinônimo: barbante→cordão, linha→fio e tecido→malha trocam a
+identidade técnica do produto. Nunca empilhe palavra-chave.
+
+EXEMPLOS
+
+Fonte: Barbante · marca Bandeirante · modelo 4/6 · 570 m · 85% algodão
+  produto="Barbante" marca="Bandeirante" modelo="4/6" medida="570m" material="85% Algodão"
+  CORRETO: Barbante Bandeirante 4/6 570m 85% Algodão
+  ERRADO:  Barbante Bandeirante 4/6 570m 85% Algodão Resistente Premium
+
+Fonte: Agulha de crochê · marca Círculo · 3,5 mm · alumínio
+  produto="Agulha de Crochê" marca="Círculo" medida="3,5mm" material="Alumínio"
+  CORRETO: Agulha de Crochê Círculo 3,5mm Alumínio
+  ERRADO:  Agulha de Crochê Círculo 3,5mm Alumínio Confortável Versátil Profissional
+
+O segundo exemplo termina com bastante espaço livre. Isso é um resultado completo, não uma
+falha.
 
 ═══════════════════════════════════════════════════════
 DESCRIÇÃO — TEMPLATE OBRIGATÓRIO
