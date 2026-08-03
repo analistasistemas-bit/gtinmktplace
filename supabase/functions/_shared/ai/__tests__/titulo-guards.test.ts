@@ -48,15 +48,39 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.medida).not.toContain('13,7m ');
   });
 
-  it('não descarta dimensão composta que só a IA trouxe', () => {
-    // As quatro famílias SACO DE ORGANZA se distinguem por 10X12CM / 13X18CM / 10X15CM /
-    // 15X20CM — nenhum regex da fonte captura isso. Perder a dimensão as tornaria títulos
-    // idênticos, que é como o ML derruba anúncio por duplicado.
+  it('preserva dimensão composta quando a IA a traz SOZINHA', () => {
     const s = aplicarGuardsTitulo(
       slots({ produto: 'SACO DE ORGANZA', medida: '10X15CM' }),
       fonte({ nomePai: 'SACO DE ORGANZA 10X15CM CORES C/10UND', descricaoPai: 'LARGURA: 10CM.' }),
     );
     expect(s.medida).toContain('10X15CM');
+  });
+
+  it('preserva dimensão composta quando a IA a traz JUNTO com a metragem — o caso que se perdia', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FITA', medida: '10X20CM 50m' }),
+      fonte({ nomePai: 'FITA 10X20CM C/50MT' }),
+    );
+    expect(s.medida).toContain('10X20CM');
+    expect(s.medida).toContain('50m');
+  });
+
+  it('não duplica a medida que a dimensão composta já expressa (Tecido Helanca real)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'TECIDO HELANCA LIGHT', medida: '3,00 X 1,80' }),
+      fonte({ nomePai: 'Tecido Helanca Light  Lycra Tensionada 3,00 X 1,80 Metros' }),
+    );
+    expect(s.medida).toContain('3,00 X 1,80');
+    expect(s.medida.match(/1,80/g)).toHaveLength(1);
+  });
+
+  it('não confunde a inicial de "Metros" por extenso com unidade da dimensão', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'TECIDO HELANCA LIGHT', medida: '3,00 X 1,80 Metros' }),
+      fonte({ nomePai: 'Tecido Helanca Light  Lycra Tensionada 3,00 X 1,80 Metros' }),
+    );
+    expect(s.medida).not.toMatch(/\bM$/);
+    expect(s.medida).toContain('3,00 X 1,80');
   });
 
   it('acrescenta a largura grounded à medida', () => {

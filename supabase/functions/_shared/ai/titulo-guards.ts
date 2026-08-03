@@ -39,6 +39,13 @@ const RUIDO = [
   /^GRD\s*\d+$/i,              // GRD 7
 ];
 
+// Dimensão composta: 10X15CM, 10 x 12, 3,00 X 1,80, 12X3.1X5CM. Unidade opcional no fim.
+// Flag `i` porque a planilha grava a unidade em CAIXA ALTA ("10X15CM"); sem ela a unidade
+// ficava de fora e a dimensão saía mutilada ("10X15").
+// O `\b` depois da unidade impede que o "M" de "3,00 X 1,80 Metros" seja lido como unidade e
+// vire um "M" solto pendurado no fim da medida.
+const RE_DIMENSAO_COMPOSTA = /\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(?:\s*[xX]\s*\d+(?:[.,]\d+)?)*(?:\s*(?:mm|cm|m)\b)?/i;
+
 /** Passo 2 do pipeline: higieniza e canonicaliza o que a IA devolveu. */
 export function normalizarSlots(slots: TituloSlots): TituloSlots {
   const out = { ...slots };
@@ -73,28 +80,22 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     if (palavras.length > 0 && !presente) out.produto = `${tipo.toUpperCase()} ${out.produto}`.trim();
   }
 
-  // Metragem: SEMPRE reescreve a partir da fonte. A IA arredonda ("13,7m" para "13,71m" real) e
-  // às vezes duplica — checar "já contém a certa?" não pega a errada que ficou junto.
-  //
-  // ATENÇÃO ao alcance desta garantia: ela cobre metragem e largura, e SÓ. Dimensões compostas
-  // ("10X12CM" nos sacos de organza) não casam com nenhum dos dois regex — se a IA as omitir,
-  // nada as repõe, e quatro famílias irmãs viram títulos idênticos. Não é regressão (o código
-  // antigo tinha o mesmo furo) e não vamos alargar o escopo aqui, mas é por isso que a métrica
-  // de COLISÕES é o critério de aceite que carrega o peso, não um extra.
-  //
-  // A reescrita preserva o que a IA pôs em `medida` quando a fonte não tem nem metragem nem
-  // largura — sem isso, um produto com dimensão no slot e um "LARGURA:" solto na descrição
-  // perderia a dimensão inteira.
+  // Dimensão composta (10X15CM, 3,00 X 1,80) não é capturada por extrairMetragem nem por
+  // extrairLargura, e às vezes é o ÚNICO dado que distingue famílias irmãs — as quatro
+  // SACO DE ORGANZA e o Tecido Helanca 3,00 X 1,80 do catálogo real. Ela SEMPRE entra na
+  // frente. A versão anterior a condicionava a "a fonte ainda não cobriu", que a apagava
+  // exatamente quando a IA acertava e trazia dimensão e metragem juntas.
   const metragem = extrairMetragem(fonte.nomePai);
   const largura = extrairLargura(textoFonte);
   if (metragem || largura) {
     const partes = [metragem, largura].filter(Boolean) as string[];
-    const dimensaoDaIa = out.medida.trim();
-    const coberta = partes.some((p) => jaContem(dimensaoDaIa, p));
-    // Dimensão que a IA trouxe e a fonte não sabe reproduzir entra na frente, não é descartada.
-    out.medida = dimensaoDaIa && !coberta && /\d+\s*[xX]\s*\d+/.test(dimensaoDaIa)
-      ? `${dimensaoDaIa} ${partes.join(' ')}`.trim()
-      : partes.join(' ');
+    const composta = out.medida.match(RE_DIMENSAO_COMPOSTA)?.[0]?.trim();
+    // Não repetir o que a dimensão composta já expressa: em "3,00 X 1,80 Metros" a fonte
+    // extrai "1,80m", que a composta já contém. Compara sem a unidade.
+    const restantes = composta
+      ? partes.filter((p) => !jaContem(composta, p.replace(/[a-z]+$/i, '')))
+      : partes;
+    out.medida = composta ? [composta, ...restantes].join(' ').trim() : partes.join(' ');
   }
 
   // Quantidade: costuma vir só na descrição ("pacote com 10 unidades").
