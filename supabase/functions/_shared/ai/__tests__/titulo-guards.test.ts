@@ -120,6 +120,32 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.quantidade).toBe('10un');
   });
 
+  it('descarta valor não-contagem que a IA pôs em quantidade (caso real: metragem)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FRANJA', medida: '5cm', quantidade: '5m' }),
+      fonte({ nomePai: 'FRANJA 5MM 100%FIBRA DE POLI 5MT' }),
+    );
+    expect(s.quantidade).toBe('');
+    // e a metragem não pode acabar duplicada entre medida e quantidade
+    expect(`${s.medida} ${s.quantidade}`.match(/5m\b/g) ?? []).toHaveLength(1);
+  });
+
+  it('descarta contagem 1 vinda da IA, não só a vinda da fonte', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'PROTETOR SOLAR', quantidade: '1un' }),
+      fonte({ nomePai: 'Protetor Solar Facial FPS 60 50ml' }),
+    );
+    expect(s.quantidade).toBe('');
+  });
+
+  it('a contagem da fonte vence a da IA', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'SACO DE ORGANZA', quantidade: '3un' }),
+      fonte({ nomePai: 'SACO DE ORGANZA 10X15CM CORES C/10UND' }),
+    );
+    expect(s.quantidade).toBe('10un');
+  });
+
   it('crava a cor no slot variacao quando há exatamente uma', () => {
     const s = aplicarGuardsTitulo(slots({ produto: 'FITA' }), fonte({ cores: ['Branco'] }));
     expect(s.variacao).toBe('Branco');

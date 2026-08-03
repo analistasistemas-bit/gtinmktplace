@@ -66,6 +66,14 @@ function jaContem(valor: string, agulha: string): boolean {
   return new RegExp(`\\b${agulha.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(valor);
 }
 
+// Só contagem canônica (10un, 12pc) com número > 1 sobrevive no slot `quantidade`.
+// Devolve null para qualquer outra coisa — inclusive para o que a IA escreveu no slot errado.
+function contagemValida(valor: string | null): string | null {
+  const m = valor?.trim().match(/^(\d+)\s*(un|pc)$/i);
+  if (!m) return null;
+  return Number(m[1]) > 1 ? `${m[1]}${m[2].toLowerCase()}` : null;
+}
+
 /**
  * Passo 3: crava os dados que a fonte garante e a IA costuma descartar sob o teto de 60 chars.
  * Opera sobre SLOTS, nunca sobre a string final — é o que impede injeção e corte de disputarem
@@ -101,13 +109,15 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     out.medida = composta ? [composta, ...restantes].join(' ').trim() : partes.join(' ');
   }
 
-  // Quantidade: costuma vir só na descrição ("pacote com 10 unidades").
-  // Contagem 1 NÃO entra: "CONTÉM: 1 UNIDADE" é boilerplate da planilha (49 das 91 famílias
-  // com contagem extraível, medido em produção), e "1 unidade" é a suposição padrão do
-  // comprador — ocuparia caractere do título sem informar nada.
-  const contagem = extrairContagem(textoFonte);
-  const numero = contagem ? Number(contagem.replace(/\D+/g, '')) : 0;
-  if (contagem && numero > 1) out.quantidade = contagem;
+  // Quantidade: costuma vir só na descrição ("pacote com 10 unidades"). A fonte vence a IA,
+  // que erra o slot com frequência — observado em execução real: com a fonte
+  // "FRANJA 5MM 100%FIBRA DE POLI 5MT" a IA pôs quantidade="5m" (metragem, não contagem) e o
+  // título saiu com "5m" duas vezes.
+  //
+  // Contagem 1 NÃO entra, venha da fonte ou da IA: "CONTÉM: 1 UNIDADE" é boilerplate da
+  // planilha (49 das 91 famílias com contagem extraível, medido em produção) e "1 unidade" é
+  // a suposição padrão do comprador — ocuparia caractere do título sem informar nada.
+  out.quantidade = contagemValida(extrairContagem(textoFonte)) ?? contagemValida(out.quantidade) ?? '';
 
   // Cor única → discriminador da família (anti-duplicado do ML, ADR-0044). Multi-cor não entra:
   // o comprador escolhe na variação, e afirmar uma cor induziria a erro.
