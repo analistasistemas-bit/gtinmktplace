@@ -67,6 +67,24 @@ function jaContem(valor: string, agulha: string): boolean {
   return new RegExp(`\\b${agulha.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(valor);
 }
 
+// Termo cujas palavras já estão em outro slot não é recravado — duplicaria o dado no título
+// ("Lapis de Escrever Resina 7 Verde ... Verde 7", lote #33). Não exige ordem nem adjacência:
+// "Verde 7" está coberta por "RESINA 7 VERDE".
+function todasPalavrasCobertas(texto: string, termo: string): boolean {
+  const alvo = normalizar(texto);
+  const palavras = normalizar(termo).split(/\s+/).filter(Boolean);
+  return palavras.length > 0 && palavras.every((w) => jaContem(alvo, w));
+}
+
+// Fallback para termo composto que a IA devolve colado ("pompom") enquanto o nome já usa a
+// forma espaçada ("POM POM") — a checagem por palavra inteira não bate porque o espaço quebra
+// a contiguidade. Só entra em jogo quando a checagem por palavra falha (lote #33).
+function termoColado(texto: string, termo: string): boolean {
+  const semEspacoTexto = normalizar(texto).replace(/\s+/g, '');
+  const semEspacoTermo = normalizar(termo).replace(/\s+/g, '');
+  return semEspacoTermo.length > 0 && semEspacoTexto.includes(semEspacoTermo);
+}
+
 // Sinônimos concorrentes para "tipo de fio" que a descrição usa para o MESMO produto. Não usa
 // tipo_aviamento (categoria ML) como sinal: o bucket "Fios e Cadarços" mistura barbante/fio/linha
 // legítimos (ADR-0054).
@@ -117,7 +135,8 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   const tipo = fonte.tipoProdutoBusca?.trim();
   if (tipo) {
     const palavras = normalizar(tipo).split(/\s+/).filter((w) => w.length >= 3);
-    const presente = palavras.some((w) => jaContem(normalizar(out.produto), w));
+    const presente = palavras.some((w) => jaContem(normalizar(out.produto), w))
+      || termoColado(out.produto, tipo);
     if (palavras.length > 0 && !presente) out.produto = `${tipo.toUpperCase()} ${out.produto}`.trim();
   }
 
@@ -160,8 +179,16 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   // identificada NUNCA entram — incidente do lote #31, "OUTRA" publicado no título de um pote
   // de lápis. O guard antigo (garantirCorTitulo) tinha essa trava; ela precisa sobreviver aqui.
   const corUnica = fonte.cores.length === 1 ? fonte.cores[0] : null;
-  if (corUnica && !ehCorIndefinida(corUnica)) out.variacao = corUnica;
-  else if (fonte.cores.length !== 1 || ehCorIndefinida(corUnica)) out.variacao = '';
+  // Cor cujas palavras já estão em outro slot (ex.: tipo_produto_busca prefixou "Resina 7
+  // Verde" em `produto`) não é recravada em `variacao` — duplicaria o dado no título (lote
+  // #33). Alvo é o texto dos demais slots JÁ preenchidos neste ponto do pipeline, nunca o
+  // próprio `variacao`.
+  const corJaCoberta = corUnica != null && todasPalavrasCobertas(
+    ORDEM_LEITURA.filter((s) => s !== 'variacao').map((s) => out[s]).join(' '),
+    corUnica,
+  );
+  if (corUnica && !ehCorIndefinida(corUnica) && !corJaCoberta) out.variacao = corUnica;
+  else if (fonte.cores.length !== 1 || ehCorIndefinida(corUnica) || corJaCoberta) out.variacao = '';
 
   // Marca: o mapa só corrige a GRAFIA. A permissão vem de validarSlotsAncorados.
   const doMapa = marcaDoFornecedor(fonte.fornecedor);

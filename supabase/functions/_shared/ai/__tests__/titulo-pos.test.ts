@@ -98,4 +98,14 @@ describe('posProcessarTitulo', () => {
     );
     expect(t).not.toContain('Outra');
   });
+
+  // Famílias reais medidas em produção (lote #33) que publicavam hoje sem o termo duplicado —
+  // POMPOM BÚFALO 14MM/20MM — e que o pipeline de slots, sem a trava, regeneraria quebrado.
+  it('família POM POM real não gera título com o termo duplicado', () => {
+    const t = posProcessarTitulo(
+      slots({ produto: 'POM POM', marca: 'BUFALO', medida: '14mm', quantidade: '100un' }),
+      fonte({ nomePai: 'POM POM 14MM C/100UND CORES', descricaoPai: 'POMPOM BÚFALO 100% POLIESTER.', tipoProdutoBusca: 'pompom', fornecedor: 'BUFALO' }),
+    );
+    expect(t.toLowerCase()).not.toMatch(/pom\s*pom\s*pom/);
+  });
 });

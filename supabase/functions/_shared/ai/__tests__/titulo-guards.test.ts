@@ -171,6 +171,43 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.produto.toUpperCase()).toContain('BARBANTE');
   });
 
+  // Portado de titulo-tipo-produto.test.ts (deletado nesta task): não duplica quando o tipo já
+  // está no produto.
+  it('não duplica o tipo de produto quando ele já está no produto', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'BAINHA INSTANTÂNEA 4MT UND' }),
+      fonte({ nomePai: 'BAINHA INSTANTANEA 4MT', tipoProdutoBusca: 'bainha instantânea' }),
+    );
+    expect(s.produto).toBe('BAINHA INSTANTÂNEA 4MT UND');
+  });
+
+  // Portado de titulo-tipo-produto.test.ts: tipoProdutoBusca vazio não mexe no produto.
+  it('tipoProdutoBusca vazio não mexe no produto', () => {
+    const s = aplicarGuardsTitulo(slots({ produto: 'X Y' }), fonte({ tipoProdutoBusca: '' }));
+    expect(s.produto).toBe('X Y');
+  });
+
+  // Portado de titulo-tipo-produto.test.ts ("BUG a evitar"): sem palavra >=3 letras não prefixa
+  // às cegas — arriscaria duplicar (ex.: "FIO FIO DE COSTURA 100M").
+  it('tipoProdutoBusca sem palavra significativa (>=3 letras) não prefixa às cegas', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FIO DE COSTURA 100M' }),
+      fonte({ tipoProdutoBusca: 'e a' }),
+    );
+    expect(s.produto).toBe('FIO DE COSTURA 100M');
+  });
+
+  // Portado de titulo-tipo-produto.test.ts: caso de controle do fix desta task — prefixa
+  // normalmente quando o tipo colado realmente NÃO está em nenhum slot (termoColado não pode
+  // bloquear o caso legítimo).
+  it('prefixa normalmente quando o tipo colado realmente não está em nenhum slot', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'BUFALO 14MM C/100UND' }),
+      fonte({ nomePai: 'BUFALO 14MM C/100UND', tipoProdutoBusca: 'pompom' }),
+    );
+    expect(s.produto.toUpperCase().startsWith('POMPOM')).toBe(true);
+  });
+
   it('usa o mapa para corrigir a grafia da marca', () => {
     const s = aplicarGuardsTitulo(
       slots({ produto: 'FITA CETIM', marca: 'BUFALO' }),
@@ -248,6 +285,63 @@ describe('tipo de fio declarado no nome (ADR-0070)', () => {
       fonte({ nomePai: 'L.CLEA 1000 CORES', tipoProdutoBusca: 'fio de crochê' }),
     );
     expect(s.produto.toUpperCase()).toMatch(/^LINHA DE CROCH[ÊE]/);
+  });
+});
+
+describe('dedup entre slots (lote #33)', () => {
+  it('não recrava cor cujas palavras já estão em outro slot (lote #33)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LAPIS DE ESCREVER RESINA 7 VERDE' }),
+      fonte({ nomePai: 'LAPIS DE ESCREVER RESINA 7 VERDE', cores: ['Verde 7'] }),
+    );
+    expect(s.variacao).toBe('');
+  });
+
+  it('crava a cor normalmente quando ela NÃO está em outro slot', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LAPIS DE ESCREVER RESINA' }),
+      fonte({ nomePai: 'LAPIS DE ESCREVER RESINA', cores: ['Verde 7'] }),
+    );
+    expect(s.variacao).toBe('Verde 7');
+  });
+
+  it('não prefixa tipo de produto que já está na forma colada (lote #33)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'POM POM BUFALO' }),
+      fonte({ nomePai: 'POM POM 14MM C/100UND CORES', descricaoPai: 'POMPOM DECORATIVO.', tipoProdutoBusca: 'pompom' }),
+    );
+    expect(s.produto.toLowerCase()).not.toContain('pompom pom pom');
+  });
+
+  // Portado de titulo-cor.test.ts (deletado nesta task): idempotência quando a cor já está
+  // literalmente no produto — mesma trava do teste acima, caso de palavra única.
+  it('é idempotente quando a cor já está literalmente em outro slot', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'ALFINETE DE SEGURANCA N.0 PRATA' }),
+      fonte({ nomePai: 'ALFINETE DE SEGURANCA N.0 PRATA', cores: ['Prata'] }),
+    );
+    expect(s.variacao).toBe('');
+  });
+
+  // Portado de titulo-cor.test.ts: o dedup ignora acento na comparação (mesmo `normalizar` já
+  // usado em todo o arquivo, ex.: marca "Búfalo"/"BUFALO").
+  it('detecta cor já presente em outro slot ignorando acento', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'CADARCO CAFE 1,5CM' }), // sem acento no slot
+      fonte({ nomePai: 'CADARCO CAFE 1,5CM', cores: ['Café'] }), // com acento na cor
+    );
+    expect(s.variacao).toBe('');
+  });
+
+  // Portado de titulo-cor.test.ts: cor multi-palavra PARCIALMENTE ausente (só "VERDE" está
+  // presente, falta "7") ainda é cravada — o dedup exige TODAS as palavras cobertas, não just
+  // uma. Preserva a diferenciação quando a cobertura é só parcial.
+  it('cor multi-palavra parcialmente ausente em outro slot ainda é cravada', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LAPIS DE ESCREVER RESINA VERDE' }),
+      fonte({ nomePai: 'LAPIS DE ESCREVER RESINA VERDE', cores: ['Verde 7'] }),
+    );
+    expect(s.variacao).toBe('Verde 7');
   });
 });
 
