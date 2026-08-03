@@ -52,17 +52,19 @@ slot `diferencial`/`beneficio`, o que reabriria a Causa C pela porta do schema.
 
 **Ordem de leitura ≠ ordem de corte.** A posição no texto final segue `produto → marca →
 modelo → medida → quantidade → material → variacao → compatibilidade → aplicacao →
-sinonimo`. A ordem de corte ao estourar 60 caracteres é a hierarquia invertida, com dois
-desvios deliberados: **`medida`** (sempre que existir) e **`variacao` quando é
-discriminadora** nunca são cortados — são os únicos slots incortáveis. `montarTitulo` reduz
-antes de remover (`10 Metros` → `10m`, `100% Poliéster` → `Poliéster`), nunca trunca no meio
-de um token, e remove slots inteiros por prioridade quando a redução não basta.
+sinonimo`. A ordem de corte ao estourar 60 caracteres é a hierarquia invertida, com três
+slots protegidos: **`produto`** (único que o contrato promete nunca vazio), **`medida`**
+(sempre que existir) e **`variacao` quando é discriminadora** nunca são cortados — são os
+únicos slots incortáveis. `montarTitulo` reduz antes de remover (`10 Metros` → `10m` —
+redução que mora em `normalizarSlots`, não em `REDUCOES` de `montarTitulo`; `REDUCOES` cobre
+`100% Poliéster` → `Poliéster`, `Número 6` → `N.6` e `10 Unidades` → `10un`), nunca trunca no
+meio de um token, e remove slots inteiros por prioridade quando a redução não basta.
 
 **`TituloInviavelError`** — quando o conjunto de slots obrigatórios (produto + medida +
 variação discriminadora) já excede 60 caracteres mesmo depois de esgotadas as reduções e
 removidos todos os slots cortáveis, `montarTitulo` falha com erro tipado em vez de truncar ou
-remover um discriminador em silêncio. Cada call site traduz o erro em falha acionável pelo
-operador, nomeando os slots que não couberam.
+remover um discriminador em silêncio, nomeando os slots que não couberam. Como cada um dos três
+call sites trata o erro — 2 traduzem em falha acionável, 1 engole — ver abaixo.
 
 **`posProcessarTitulo`** — pipeline único (validar schema → normalizar slots → aplicar guards
 → validar ancoragem → Title Case → montar/reduzir/remover por prioridade → validar
@@ -70,6 +72,14 @@ invariantes), chamado pelos três call sites que antes compunham guards divergen
 montagem acontece **uma única vez, depois de todos os guards** — se um guard injetasse dado
 depois da montagem, o sistema voltaria à classe de bug que este design existe para eliminar
 (injeção e corte na mesma ponta, com perda silenciosa).
+
+`TituloInviavelError` é traduzido em falha acionável por **2 dos 3** call sites:
+`process-familia` relança como `Error` rotulado (a família cai em `erro`) e
+`regenerar-copy-familia` devolve HTTP 422 com a mensagem do operador. O terceiro,
+`titulo-particao.ts` (split, ADR-0048), **engole o erro no seu `catch` genérico** e cai no
+fallback determinístico (`tituloParticaoDeterministico`) — deliberado, porque esse caller já é
+resiliente por desenho (título de partição sempre tem uma saída determinística), diferente dos
+outros dois, que são terminais.
 
 ### Discriminador é sobre função, não sobre tipo
 
@@ -104,12 +114,24 @@ corretamente não a terá — marca é **best-effort**, nunca inventada.
 
 - Anúncios novos (CREATE) adotam o formato de dez slots automaticamente.
 - Título não termina mais em adjetivo vazio, unidade passa a canônica, pipe sai do padrão.
+- **A descrição também passa a emitir unidade canônica** nos bullets de Metragem/Largura que
+  `garantirMetragemDescricao`/`garantirLarguraDescricao` (`_shared/ai/copywriter-prompt.ts`)
+  injetam: `normalizarUnidade` (`_shared/ai/titulo.ts`) agora sempre emite `'m'`, e os dois
+  guards de descrição reusam o mesmo `extrairMetragem`/`extrairLargura` do título — o bullet
+  vira `• Metragem: 50m` no lugar de `• Metragem: 50MT`. Mudança deliberada (os testes desses
+  guards foram atualizados junto), mas **não estava declarada** nesta seção na versão original
+  deste ADR. **Diferente do título, isto NÃO tem raio zero**: descrição é reenviada em anúncio
+  já publicado — `sincronizarDescricao` (`_shared/canais/mercado-livre.ts`), chamado por
+  `update-familia-ml/processar.ts` no fluxo de UPDATE. Consequência prática: no próximo UPDATE
+  de um anúncio já vivo, a descrição troca `50MT` por `50m` nos bullets que esses guards
+  tocarem — mudança de conteúdo visível ao comprador num anúncio que já estava no ar, não só em
+  anúncios novos.
 
 **Não muda:**
 
 - Os 167 títulos já publicados — `atualizarItemML` nunca envia `title`. Corrigir título de
   anúncio já publicado exige um caminho que hoje não existe e está fora de escopo.
-- A ordem das seções da descrição (ADR-0098) e os guards de largura/metragem da descrição.
+- A ordem das seções da descrição (ADR-0098).
 
 ## Alternativas descartadas
 
@@ -168,3 +190,14 @@ garantia sobreviveu à refatoração quando o teste que a provava foi removido j
 antigo que ele testava. A suíte ficar verde é necessária, não suficiente — o método que fecha a
 lacuna é comparar a garantia antiga, uma a uma, contra onde ela vive agora, não confiar que a
 migração preservou tudo por construção.
+
+**As próprias rodadas de correção não receberam a auditoria que a migração recebeu.** O
+CRITICAL do lote de revisão seguinte (dimensão composta duplicada quando a unidade da IA vem
+por extenso: `"Tecido Helanca 3,00 X 1,80m 1,80m"`) nasceu no **último commit da branch**
+(canonicalização de unidade em `normalizarSlots`) e sobreviveu à entrega porque os testes de
+dimensão composta em `titulo-guards.test.ts` chamavam `aplicarGuardsTitulo` **isolado**, sem
+`normalizarSlots` antes — a composta nunca chegava com a unidade colada (`"1,80m"`) nesses
+testes, então o `\b` que falha entre dígito e letra de unidade nunca foi exercitado. A mesma
+lição da migração original se aplica de novo, um nível acima: testar uma função do pipeline
+isolada de suas vizinhas de composição é o mesmo ponto cego que testar o guard isolado do
+código que ele substituiu.

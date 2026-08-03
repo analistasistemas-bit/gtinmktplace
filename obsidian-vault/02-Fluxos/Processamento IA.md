@@ -1,6 +1,6 @@
 ---
 tags: [fluxos, ia]
-atualizado: 2026-07-02
+atualizado: 2026-08-03
 ---
 
 # Processamento IA
@@ -37,9 +37,13 @@ flowchart TD
   automática; a IA de desempate roda sempre que houver candidato específico (não só quando
   ambíguo) e pode abster-se deliberadamente (`category_id: null`) em vez de escolher o
   menos-pior — abstenção e falha técnica da IA são tratadas em caminhos diferentes.
-- **Título** — `garantirTipoProdutoTitulo` (`_shared/ai/titulo.ts`) prefixa o tipo de produto
-  quando ausente do `nome_pai` mas presente na descrição (ADR-0054); conectado em
-  `process-familia`, `regenerar-copy-familia` e `titulo-particao.ts` (split ADR-0048).
+- **Título (ADR-0099)** — `gerarCopy` devolve dez slots nomeados (não mais uma string); a
+  montagem é determinística em `posProcessarTitulo` (`_shared/ai/titulo-pos.ts`):
+  `normalizarSlots` → `aplicarGuardsTitulo` → `validarSlotsAncorados` → `montarTitulo`. O guard
+  de tipo de produto (ex-`garantirTipoProdutoTitulo`, ADR-0054) hoje é o bloco de `produto` em
+  `aplicarGuardsTitulo` (`_shared/ai/titulo-guards.ts`), mesmo princípio (prefixa quando ausente
+  do `nome_pai` mas presente na descrição); único ponto chamado por `process-familia`,
+  `regenerar-copy-familia` e `titulo-particao.ts` (split ADR-0048).
 - **Atributos obrigatórios** — `_shared/categoria/atributos.ts` +
   `_shared/ai/atributos-llm*.ts`, preenchimento closed-set (IA só escolhe `value_id` de lista
   permitida)
