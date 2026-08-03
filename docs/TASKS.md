@@ -2,6 +2,41 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Enfileiramento em loop deixando famílias órfãs — 3 correções (2026-08-03)
+
+Um incidente, três lugares com o mesmo padrão: marcar N registros no banco e **depois**
+enfileirar um por um em loop. Quando o loop morre no meio, os registros já marcados ficam
+órfãos — sem mensagem no QStash, invisíveis para o operador e fora do alcance do "Reenviar".
+
+- [x] **Lote #44 — `ingest-lote` (PR #64).** Planilha de 3.299 linhas: 1 publish por família
+  pendente em loop; falhou na 1ª chamada com `"Rate limit exceeded for trace ... Retry after
+  42349ms"`, derrubando o lote (18 famílias presas em `pendente`). Fix: `enfileirarFamilias`
+  publica em blocos (`batchJSON`, até 100). **Causa raiz não confirmada** — a doc da Upstash diz
+  que `publish`/`batch` NÃO têm rate limit por segundo, e a mensagem não bate com nenhuma das
+  classes de erro tipadas do SDK. O batch é melhor de todo modo (menos HTTP, menos superfície).
+- [x] **Upsert de fila repetido (PR #65).** `garantirFilaSerial`/`garantirFilaSerialCanal` faziam
+  `queue().upsert()` 1x por item dentro dos loops, sempre com a MESMA fila — até 1000 chamadas
+  numa execução do `reconciliar-estoque`. `queues` **é** endpoint com rate limit por segundo
+  (ao contrário de publish/batch), então era o candidato real. Fix: `memoizar-por-chave.ts`.
+- [x] **Lote #45 — `publicar-familias` (PR #66).** O que de fato falhou em produção: 126 famílias
+  marcadas `publicando` num UPDATE em massa, depois enfileiradas uma a uma; o loop morreu com 68
+  feitas e **58 presas em `publicando` sem mensagem**. Invisíveis (não são `erro`) e fora do
+  alcance do `reprocessar-familia` (que filtra `status='erro'`) — a tela ficou parada em 38/135
+  sem ação possível pela UI. Recuperado com reenfileiramento manual em batch via API do QStash
+  (117 publicadas). Fix: `enfileirarPublicacoes` (1 batch por dono/alvo na mesma fila serial) +
+  órfãs viram `erro` recuperável quando o batch falha.
+- [x] **Achado de método (revisão do Opus 5 no PR #64):** a 1ª versão do fix revertia TODAS as
+  famílias para `erro` quando o batch falhava — inclusive as de um bloco anterior que já tinham
+  mensagem viva, podendo pisar em família que o worker já movera para `processando`/`pronto`.
+  Corrigido antes do merge: o erro carrega `enfileirados` (prefixo já publicado) e só quem
+  ficou sem mensagem é revertido, com guard de status.
+- [x] **Achado de processo:** o `deno lint` do CI (`require-await`) pegou o que o `deno check`
+  local não pegava. Passei a rodar os 5 passos do CI localmente antes do push.
+- Docs: `docs/reference/edge-functions.md` (`queue.ts`).
+- **Pendente:** 9 famílias do #45 com erro de negócio do ML (`variations is not modifiable`,
+  `cannot change attribute combinations if the variation has bids`) — ADR-0062, sem relação com
+  enfileiramento; precisa decisão de produto sobre rename de cor em variação com vendas.
+
 ## Botão "Sincronizar" dando 546 — a correção anterior era inerte (2026-08-03)
 
 - [x] **A correção de 03/08 (`a3a4f2c`) não chegava a alterar o botão.** Ela mudou o *default* de

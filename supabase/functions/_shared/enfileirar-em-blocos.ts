@@ -1,8 +1,9 @@
 // Lógica pura de publicação em blocos — sem import específico do Deno, pra ser testável
 // direto (queue.ts importa `npm:@upstash/qstash`, que o Vite/vitest do frontend não resolve).
-export type PublicarBloco<TJob> = (
-  msgs: { url: string; body: TJob; retries: number }[],
-) => Promise<{ messageId: string }[]>;
+//
+// `montarMsg` fica a cargo do caller porque as mensagens variam: publish simples usa só
+// {url, body, retries}; a fila serial do ML (ADR-0034) precisa de queueName + retryDelay.
+export type PublicarBloco<TMsg> = (msgs: TMsg[]) => Promise<{ messageId: string }[]>;
 
 // Lote #44 (03/08, 3299 linhas): ingest-lote enfileirava 1 publish por família num loop
 // sequencial e o QStash devolveu "Rate limit exceeded for trace ..., Retry after 42349ms" já
@@ -13,10 +14,10 @@ export type PublicarBloco<TJob> = (
 // melhor que 1 por família (menos latência, menos superfície de falha), então mantém.
 // ponytail: bloco de 100 sem limite documentado da API — mesmo tamanho do DEFAULT_BULK_COUNT
 // do próprio SDK; sobe se algum lote legítimo passar disso.
-export async function enfileirarEmBlocos<TJob>(
+export async function enfileirarEmBlocos<TJob, TMsg>(
   jobs: TJob[],
-  target: string,
-  publicarBloco: PublicarBloco<TJob>,
+  montarMsg: (job: TJob) => TMsg,
+  publicarBloco: PublicarBloco<TMsg>,
   tamanhoBloco = 100,
 ): Promise<string[]> {
   const ids: string[] = [];
@@ -24,7 +25,7 @@ export async function enfileirarEmBlocos<TJob>(
     const bloco = jobs.slice(i, i + tamanhoBloco);
     let respostas: { messageId: string }[];
     try {
-      respostas = await publicarBloco(bloco.map((body) => ({ url: target, body, retries: 3 })));
+      respostas = await publicarBloco(bloco.map(montarMsg));
     } catch (e) {
       // Blocos anteriores já publicaram de verdade (mensagem viva no QStash) — o caller
       // precisa saber quais pra não marcar 'erro' por cima de família que já está sendo
