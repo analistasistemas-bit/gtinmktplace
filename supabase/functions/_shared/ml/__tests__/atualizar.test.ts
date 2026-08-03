@@ -136,6 +136,28 @@ describe('montarVariacoesUpdate', () => {
     expect(r.find((v) => v.id === 'V1')).not.toHaveProperty('attribute_combinations');
   });
 
+  // Lote #45 (03/08): 9 famílias falharam numa reposição PURA de estoque com
+  // "You cannot change attribute combinations if the variation has bids" / "variations is not
+  // modifiable" — o nome da cor da planilha divergia do anúncio, o PUT levava COLOR junto e o ML
+  // derrubou a atualização inteira, estoque incluído.
+  it('somenteEstoque NÃO envia COLOR mesmo com a cor divergente (o ML recusa em variação com vendas)', () => {
+    const r = montarVariacoesUpdate(
+      atuaisCor, [{ codigo: '02710013', estoque: 7 }], undefined, undefined, null,
+      { '02710013': 'Rosa Pink' }, true /* somenteEstoque */,
+    );
+    const v1 = r.find((v) => v.id === 'V1')!;
+    expect(v1).not.toHaveProperty('attribute_combinations');
+    expect(v1.available_quantity).toBe(7); // o estoque continua indo
+  });
+
+  it('sem somenteEstoque o rename de cor segue funcionando (ADR-0062 intacto)', () => {
+    const r = montarVariacoesUpdate(
+      atuaisCor, [{ codigo: '02710013', estoque: 7 }], undefined, undefined, null,
+      { '02710013': 'Rosa Pink' }, false,
+    );
+    expect(r.find((v) => v.id === 'V1')?.attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Rosa Pink' }]);
+  });
+
   it('somenteEstoque suprime price e original_price mesmo com desconto e precoFamilia', () => {
     const atuais = [{ id: 1, seller_custom_field: 'A1', available_quantity: 5, cor: 'Azul' }];
     const desejados = [{ codigo: 'A1', estoque: 9 }];

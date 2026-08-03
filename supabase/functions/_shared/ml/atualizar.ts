@@ -91,6 +91,12 @@ export interface VariacaoUpdate { id: string | number; available_quantity: numbe
 // Só inclui COLOR quando a cor desejada é não-vazia E difere da que está no ML (idempotente;
 // não toca variação cuja cor não mudou). Atenção: o ML pode recusar troca de COLOR em variação
 // com vendas — nesse caso o PUT falha e o erro chega ao operador (ADR-0062).
+// Em `somenteEstoque` o rename NUNCA sai (lote #45, 03/08): 9 famílias falharam com
+// "You cannot change attribute combinations if the variation has bids" / "variations is not
+// modifiable" numa reposição pura — o nome da cor da planilha divergia do que estava no anúncio
+// (ex.: ML com "8mm wide × 20 m long", planilha com "Branco"), o PUT levava COLOR junto e o ML
+// derrubou a atualização INTEIRA, estoque incluído. "Somente estoque" promete não mexer em mais
+// nada; renomear cor é decisão consciente do operador e continua no fluxo "Atualizar tudo".
 export function montarVariacoesUpdate(
   atuais: MLVariacaoAtual[],
   desejados: EstoqueDesejado[],
@@ -105,7 +111,7 @@ export function montarVariacoesUpdate(
     const codigo = a.seller_custom_field ?? '';
     const novo = estoquePorCodigo.get(codigo);
     const base: VariacaoUpdate = { id: a.id, available_quantity: novo ?? a.available_quantity };
-    const corDesejada = corDesejadaPorCodigo?.[codigo];
+    const corDesejada = somenteEstoque ? undefined : corDesejadaPorCodigo?.[codigo];
     if (corDesejada && corDesejada !== a.cor) {
       base.attribute_combinations = [{ id: 'COLOR', value_name: corDesejada }];
     }
