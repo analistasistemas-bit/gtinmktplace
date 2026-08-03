@@ -1,8 +1,16 @@
 import { Client, Receiver } from 'npm:@upstash/qstash@^2';
 import { enfileirarEmBlocos } from './enfileirar-em-blocos.ts';
+import { memoizarPorChave } from './memoizar-por-chave.ts';
 
 let cachedClient: Client | null = null;
 let cachedReceiver: Receiver | null = null;
+
+// `queues` é endpoint COM rate limit por segundo na Upstash (publish/batch/enqueue não têm),
+// e o upsert é disparado 1x por item nos loops — sempre com o mesmo nome de fila. Memoiza por
+// nome, no isolate, igual ao cachedClient acima. Ver memoizar-por-chave.ts.
+const garantirFilaMemo = memoizarPorChave((nomeFila) =>
+  qstashClient().queue({ queueName: nomeFila }).upsert({ parallelism: 1 }),
+);
 
 export function qstashClient(): Client {
   if (cachedClient) return cachedClient;
@@ -62,8 +70,8 @@ function nomeFilaPublicacao(userId: string): string {
 }
 
 /** Garante a fila serial (parallelism=1) do usuário. Idempotente; chamar antes de enfileirar. */
-export async function garantirFilaSerial(userId: string): Promise<void> {
-  await qstashClient().queue({ queueName: nomeFilaPublicacao(userId) }).upsert({ parallelism: 1 });
+export function garantirFilaSerial(userId: string): Promise<void> {
+  return garantirFilaMemo(nomeFilaPublicacao(userId));
 }
 
 // Rede de segurança do retry das escritas no ML (CREATE/UPDATE/split). Com o pré-upload das fotos
@@ -115,8 +123,8 @@ export function filaCanal(canal: string, orgId: string): string {
 }
 
 /** Garante a fila serial (parallelism=1) do (canal, org). Idempotente; espelha garantirFilaSerial. */
-export async function garantirFilaSerialCanal(nomeFila: string): Promise<void> {
-  await qstashClient().queue({ queueName: nomeFila }).upsert({ parallelism: 1 });
+export function garantirFilaSerialCanal(nomeFila: string): Promise<void> {
+  return garantirFilaMemo(nomeFila);
 }
 
 export async function enfileirarPublicacaoCanal(job: PublicarAnuncioJob, orgId: string): Promise<string> {
