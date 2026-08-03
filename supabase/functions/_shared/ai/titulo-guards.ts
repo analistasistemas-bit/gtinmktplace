@@ -151,10 +151,49 @@ const ADJETIVOS_VAZIOS = [
   'imperdivel', 'promocao', 'oferta', 'pronta entrega', 'envio rapido', 'compre agora',
 ];
 
+// Adjetivos de marketing que a IA inventa mesmo com a regra no prompt — o prompt não GARANTE
+// (bug real do lote #28: "NOVO NOVELO ANNE 500MT", com "NOVO" ausente da planilha). Diferente
+// de ADJETIVOS_VAZIOS, que é proibição absoluta do slot inteiro, aqui a remoção é por TOKEN e
+// condicional: o termo FICA quando genuinamente consta na fonte.
+const MARKETING_TERMOS = new Set([
+  'novo', 'nova', 'novos', 'novas', 'lancamento', 'inedito', 'exclusivo', 'exclusiva',
+  'original', 'originais', 'premium', 'importado', 'importada', 'imperdivel',
+]);
+
+// Normaliza para comparação por token: sem acento, minúsculo, só letras (ignora pontuação e
+// número grudados). Comparação é sempre por TOKEN inteiro, nunca substring — não pode confundir
+// "NOVO" com "NOVELO".
+function normalizarToken(w: string): string {
+  return w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function removerMarketingNaoAncorado(valor: string, tokensFonte: Set<string>): string {
+  return valor
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((p) => {
+      const n = normalizarToken(p);
+      return !MARKETING_TERMOS.has(n) || tokensFonte.has(n);
+    })
+    .join(' ')
+    .trim();
+}
+
 /** Passo 4: tudo que sobrevive precisa de respaldo na fonte. */
 export function validarSlotsAncorados(slots: TituloSlots, fonte: DadosFonteTitulo): TituloSlots {
   const out = { ...slots };
   const alvoFonte = normalizar(`${fonte.nomePai} ${fonte.descricaoPai}`);
+
+  // T-lote#28: marketing não-ancorado sai por TOKEN de qualquer slot (produto incluso — nada
+  // ancorava o slot produto antes disso). Roda ANTES do T3 abaixo de propósito: um termo de
+  // marketing pode ser o único sobrevivente de um slot depois de perder as outras palavras
+  // ("Novo Premium" → "Premium"), e precisa ainda estar sujeito à proibição absoluta seguinte.
+  const tokensFonte = new Set(
+    `${fonte.nomePai} ${fonte.descricaoPai}`.split(/\s+/).filter(Boolean).map(normalizarToken),
+  );
+  for (const slot of ORDEM_LEITURA) {
+    if (out[slot]) out[slot] = removerMarketingNaoAncorado(out[slot], tokensFonte);
+  }
 
   // T3: adjetivo vazio sai de QUALQUER slot.
   for (const slot of ORDEM_LEITURA) {

@@ -5,6 +5,7 @@
 // que crava uma cor da partição no título-base — garantindo ≤60 chars, distinto entre partições.
 
 import { posProcessarTitulo } from '../ai/titulo-pos.ts';
+import { ehCorIndefinida } from '../cor/indefinida.ts';
 // gerarCopy é importado dinamicamente dentro de gerarTituloParticao: a cadeia do copywriter
 // (cliente OpenRouter, specifiers npm:/jsr:) só carrega no runtime Deno. Mantê-la fora do topo
 // deixa o fallback determinístico (e seu teste vitest) importável sem puxar esse grafo.
@@ -42,7 +43,9 @@ export function tituloParticaoDeterministico(
 ): string {
   const corRep = cores
     .map((c) => c.cor?.trim())
-    .filter((c): c is string => !!c)
+    // 'Outra' (veredito do Vision) nunca vira discriminador — incidente do lote #31. E como o
+    // sort é alfabético, sem este filtro 'Outra' ainda GANHARIA de Preto/Rosa/Verde/Vermelho.
+    .filter((c): c is string => !!c && !ehCorIndefinida(c))
     .sort((a, b) => a.localeCompare(b, 'pt'))[0];
   // ponytail: ordinal só entra quando a partição não tem nenhuma cor nomeada (improvável
   // num produto com >100 cores); ainda assim garante título não-vazio e distinto.
@@ -56,7 +59,11 @@ export function tituloParticaoDeterministico(
   while (palavras.length > 1 && `${palavras.join(' ')} ${discriminador}`.length > TITULO_MAX) {
     palavras.pop();
   }
-  return `${palavras.join(' ')} ${discriminador}`.trim();
+  const titulo = `${palavras.join(' ')} ${discriminador}`.trim();
+  // Caso degenerado: tituloBase de uma única palavra longa + discriminador ainda estoura 60 —
+  // o while acima nunca reduz abaixo de 1 palavra (para não devolver só o discriminador, que
+  // colidiria entre partições). Corte de segurança por caractere, só aqui, só nesse resto.
+  return titulo.length > TITULO_MAX ? titulo.slice(0, TITULO_MAX).trim() : titulo;
 }
 
 export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<string> {
@@ -76,7 +83,9 @@ export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<s
       nomePai: opts.nome,
       descricaoPai: opts.descricao_detalhado ?? '',
       tipoProdutoBusca: out.tipo_produto_busca,
-      cores: [...new Set(opts.cores.map((c) => c.cor).filter((c): c is string => !!c))],
+      // DadosFonteTitulo.cores é documentado como "cores REAIS (sem 'Outra' nem placeholder)" —
+      // defesa em profundidade além da trava interna do guard (ehCorIndefinida).
+      cores: [...new Set(opts.cores.map((c) => c.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))],
       fornecedor: opts.fornecedor ?? null,
     });
     // Se a IA repetir o título-base, não serve (ML bloqueia idênticos) → cai no determinístico.

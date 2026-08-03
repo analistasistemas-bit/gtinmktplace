@@ -7,8 +7,9 @@ import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
-import { TituloInviavelError } from '../_shared/ai/titulo-montar.ts';
+import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -445,7 +446,9 @@ Deno.serve(async (req) => {
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044): famílias-irmãs que
     // diferem só na cor (PAI separado) não podem ter título idêntico.
-    const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
+    // DadosFonteTitulo.cores é documentado como "cores REAIS (sem 'Outra' nem placeholder)" —
+    // filtra aqui na origem, defesa em profundidade além da trava interna do guard.
+    const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
     // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
     // A família falha de propósito (nunca truncar nem fundir produtos), mas o operador precisa
     // saber O QUE encurtar na planilha — daí nomear os slots em vez de deixar subir cru.
@@ -459,10 +462,7 @@ Deno.serve(async (req) => {
         fornecedor: claimed.fornecedor ?? null,
       });
     } catch (e) {
-      if (e instanceof TituloInviavelError) {
-        const campos = Object.entries(e.slotsObrigatorios).map(([k, v]) => `${k}="${v}"`).join(', ');
-        throw new Error(`Título obrigatório não cabe em 60 caracteres (${e.comprimento}). Encurte o nome do produto na planilha. Campos: ${campos}`);
-      }
+      if (e instanceof TituloInviavelError) throw new Error(mensagemTituloInviavel(e));
       throw e;
     }
     const { error: persistErr } = await admin.from('familias').update({

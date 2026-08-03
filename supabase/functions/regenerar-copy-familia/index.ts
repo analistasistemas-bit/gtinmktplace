@@ -5,9 +5,10 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
 import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
-import { TituloInviavelError } from '../_shared/ai/titulo-montar.ts';
+import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -65,7 +66,9 @@ Deno.serve(async (req) => {
     }, modeloTexto);
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
-    const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
+    // DadosFonteTitulo.cores é documentado como "cores REAIS (sem 'Outra' nem placeholder)" —
+    // filtra aqui na origem, defesa em profundidade além da trava interna do guard.
+    const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
     // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
     // Aqui há resposta HTTP direta ao operador, então devolve 422 acionável em vez de 500 cru.
     let tituloFinal: string;
@@ -79,11 +82,7 @@ Deno.serve(async (req) => {
       });
     } catch (e) {
       if (e instanceof TituloInviavelError) {
-        const campos = Object.entries(e.slotsObrigatorios).map(([k, v]) => `${k}="${v}"`).join(', ');
-        return new Response(
-          `Título obrigatório não cabe em 60 caracteres (${e.comprimento}). Encurte o nome do produto na planilha. Campos: ${campos}`,
-          { status: 422, headers: corsHeaders },
-        );
+        return new Response(mensagemTituloInviavel(e), { status: 422, headers: corsHeaders });
       }
       throw e;
     }

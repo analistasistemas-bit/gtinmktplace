@@ -25,6 +25,15 @@ export class TituloInviavelError extends Error {
   }
 }
 
+/**
+ * Mensagem acionável para o operador. Fica aqui, e não duplicada nos call sites, porque é a
+ * única parte testável do tratamento — as pastas de edge function não têm suíte.
+ */
+export function mensagemTituloInviavel(e: TituloInviavelError): string {
+  const campos = Object.entries(e.slotsObrigatorios).map(([k, v]) => `${k}="${v}"`).join(', ');
+  return `Título obrigatório não cabe em 60 caracteres (${e.comprimento}). Encurte o nome do produto na planilha. Campos: ${campos}`;
+}
+
 export interface ContextoCorte {
   /**
    * `variacao` identifica unicamente esta família perante as irmãs. Hoje isso vale quando

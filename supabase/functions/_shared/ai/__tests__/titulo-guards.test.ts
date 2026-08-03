@@ -229,4 +229,28 @@ describe('validarSlotsAncorados', () => {
     );
     expect(s.sinonimo).toBe('HELANQUINHA');
   });
+
+  it('remove adjetivo de marketing NÃO ancorado, por token (lote #28)', () => {
+    const s = validarSlotsAncorados(
+      slots({ produto: 'NOVO NOVELO ANNE' }),
+      fonte({ nomePai: 'NOVELO ANNE 500MT', descricaoPai: 'NOVELO DE ALGODAO.' }),
+    );
+    expect(s.produto).toBe('NOVELO ANNE');
+  });
+
+  it('mantém o termo quando ele consta na fonte', () => {
+    const s = validarSlotsAncorados(
+      slots({ produto: 'FIO PREMIUM' }),
+      fonte({ nomePai: 'FIO DE MALHA EXTRA PREMIUM 25MM', descricaoPai: '' }),
+    );
+    expect(s.produto).toBe('FIO PREMIUM');
+  });
+
+  it('não confunde NOVO com NOVELO (comparação por token, nunca substring)', () => {
+    const s = validarSlotsAncorados(
+      slots({ produto: 'NOVELO ANNE' }),
+      fonte({ nomePai: 'NOVELO ANNE 500MT', descricaoPai: '' }),
+    );
+    expect(s.produto).toBe('NOVELO ANNE');
+  });
 });

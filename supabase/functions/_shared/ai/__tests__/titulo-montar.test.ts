@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarTitulo, TituloInviavelError } from '../titulo-montar';
+import { montarTitulo, mensagemTituloInviavel, TituloInviavelError } from '../titulo-montar';
 import { ORDEM_CORTE, SLOTS_VAZIOS, type SlotTitulo, type TituloSlots } from '../titulo-slots';
 
 const slots = (p: Partial<TituloSlots>): TituloSlots => ({ ...SLOTS_VAZIOS, ...p });
@@ -133,6 +133,26 @@ describe('montarTitulo — inviável', () => {
       expect(err.slotsObrigatorios.produto).toBeTruthy();
       expect(err.slotsObrigatorios.medida).toBe('13,71m');
     }
+  });
+});
+
+describe('mensagemTituloInviavel', () => {
+  it('nomeia os slots obrigatórios e traz o comprimento — pastas de edge function não têm suíte', () => {
+    let capturado: TituloInviavelError | undefined;
+    try {
+      montarTitulo(slots({
+        produto: 'BORDADO INGLES EM PECA REFERENCIA CORES PASSA FITA ESPECIAL PREMIUM EXTRA',
+        medida: '13,71m', variacao: 'BRANCO',
+      }), comDiscriminador);
+      expect.unreachable('deveria ter lançado');
+    } catch (e) {
+      capturado = e as TituloInviavelError;
+    }
+    const msg = mensagemTituloInviavel(capturado!);
+    expect(msg).toContain('60 caracteres');
+    expect(msg).toContain(String(capturado!.comprimento));
+    expect(msg).toContain('produto=');
+    expect(msg).toContain('medida="13,71m"');
   });
 });
 

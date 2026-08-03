@@ -98,4 +98,20 @@ describe('tituloParticaoDeterministico sem pipe (ADR-0099)', () => {
     expect(t).not.toContain('|');
     expect(t).toContain('Azul');
   });
+
+  it('cor indefinida nunca vira discriminador de partição (lote #31)', () => {
+    expect(tituloParticaoDeterministico('Fita Cetim 10m', [{ cor: 'Outra' }], 1)).not.toContain('Outra');
+  });
+
+  it('cor real vence Outra, mesmo Outra vindo antes no alfabeto', () => {
+    const t = tituloParticaoDeterministico('Fita Cetim 10m', [{ cor: 'Outra' }, { cor: 'Vermelho' }], 1);
+    expect(t).toContain('Vermelho');
+    expect(t).not.toContain('Outra');
+  });
+
+  it('corta por caractere no caso degenerado: uma palavra só, ainda estoura 60', () => {
+    const umaPalavraLonga = 'A'.repeat(58); // + discriminador curto passa de 60 mesmo com 1 palavra
+    const t = tituloParticaoDeterministico(umaPalavraLonga, [{ cor: 'Azul' }], 1);
+    expect(t.length).toBeLessThanOrEqual(60);
+  });
 });
