@@ -462,7 +462,16 @@ Deno.serve(async (req) => {
         fornecedor: claimed.fornecedor ?? null,
       });
     } catch (e) {
-      if (e instanceof TituloInviavelError) throw new Error(mensagemTituloInviavel(e));
+      if (e instanceof TituloInviavelError) {
+        // Determinístico: a mesma família vai gerar o mesmo título curto demais toda vez.
+        // Sem marcar retentavel=false, decidirRetryPorErro (status desconhecido → retenta por
+        // padrão) repetia gerarCopy até 10x pagando IA de novo a cada tentativa, sempre pra
+        // falhar do mesmo jeito. Mesmo idiom já usado em publicar-split-ml/update-familia-ml.
+        const err = new Error(mensagemTituloInviavel(e)) as Error & { status?: number; retentavel?: boolean };
+        err.status = 422;
+        err.retentavel = false;
+        throw err;
+      }
       throw e;
     }
     const { error: persistErr } = await admin.from('familias').update({
