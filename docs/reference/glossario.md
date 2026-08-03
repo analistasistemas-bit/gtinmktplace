@@ -21,6 +21,8 @@
 | **Alíquota de imposto** | Percentual de imposto sobre o preço de venda, parametrizável por origem em Configurações (`configuracoes.aliquota_nacional_pct` default 8%, `aliquota_importado_pct` default 16%). Descontado do líquido junto com comissão e frete, e somado ao gross-up do preço sugerido (ADR-0055). |
 | **Preço-líder (de referência)** | Preço do concorrente MercadoLíder com **MAIS VENDAS** de uma família (não o menor preço). Base da re-âncora quando o preço competitivo dá prejuízo (ADR-0065). |
 | **Re-âncora (de preço)** | Trocar a base do preço competitivo de `menor_preço` para o **preço-líder (de referência)** quando o preço competitivo deixa o líquido Clássico < custo (prejuízo real, 🔴). Gated pelo toggle `configuracoes.reancora_lider_ativa`; sinalizada por `familias.preco_reancorado_lider` + selo. Nunca sobe acima do preço-líder nem faz gross-up no ramo competitivo (ADR-0065). |
+| **Slot de título** | Um dos dez campos nomeados (`produto`, `marca`, `modelo`, `medida`, `quantidade`, `material`, `variacao`, `compatibilidade`, `aplicacao`, `sinonimo`) que a IA preenche no lugar de devolver o título como string plana, e que `montarTitulo` ordena, corta e reduz por prioridade até caber em 60 caracteres (ADR-0099). |
+| **Discriminador** | Dado que identifica unicamente uma família perante suas irmãs. Hoje é sempre o slot `medida` e também o slot `variacao` quando a família é mono-cor com cor definida. Um discriminador nunca é cortado do título, mesmo sob estouro de 60 caracteres — perdê-lo funde dois produtos distintos num título só (ADR-0099). |
 
 ## Lifecycle e operações
 

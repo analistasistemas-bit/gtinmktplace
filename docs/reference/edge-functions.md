@@ -192,19 +192,29 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   na Revisão) sempre que o fluxo abandonaria um específico — sem candidato específico, ou com
   candidato(s) mas a IA de desempate abstém do falso-amigo — em vez de bloquear a família
   (ADR-0058, adendo 2026-07-04); só cai em `manual` quando não sobra genérico nenhum pra resgatar.
-  `garantirTipoFioTitulo` (`_shared/ai/titulo.ts`, ADR-0070) corrige a IA quando ela troca o
-  sinônimo de tipo de fio/linha/barbante que `nome_pai` já declara (ex.: "FIO Cléa" quando a
-  planilha diz "L.CLEA" = Linha Cléa) — os dois sinônimos aparecem "grounded" na descrição, então
-  o guard de tipo de produto (ADR-0054) sozinho não decide qual é o certo.
+  **Título (ADR-0099):** `gerarCopy` devolve dez slots nomeados (`produto`, `marca`, `modelo`,
+  `medida`, `quantidade`, `material`, `variacao`, `compatibilidade`, `aplicacao`, `sinonimo`) em
+  vez de uma string; a montagem é 100% determinística em `posProcessarTitulo`
+  (`_shared/ai/titulo-pos.ts`), único ponto chamado pelos três call sites (`process-familia`,
+  `regenerar-copy-familia`, `titulo-particao.ts`). Pipeline, nesta ordem: `normalizarSlots`
+  (higieniza e canonicaliza unidade) → `aplicarGuardsTitulo` (crava o que a fonte garante —
+  dimensão/metragem/largura, quantidade, cor única como discriminador, correção de sinônimo de
+  tipo de fio ex-`garantirTipoFioTitulo`/ADR-0070, marca via mapa) → `validarSlotsAncorados`
+  (derruba marketing não-ancorado e adjetivo vazio, exige respaldo pra marca/sinônimo) →
+  `montarTitulo` (`_shared/ai/titulo-montar.ts`, reduz e corta por prioridade, protegendo
+  `produto`/`medida`/`variacao` discriminadora; lança `TituloInviavelError` se nem assim couber
+  em 60 chars). Guards antigos por string (`garantirTipoFioTitulo`, `garantirLarguraTitulo`,
+  `garantirMetragemTitulo`, `garantirTipoProdutoTitulo`, `garantirCorTitulo`) foram removidos
+  nesta migração; suas garantias vivem agora em `_shared/ai/titulo-guards.ts`.
   `garantirLarguraDescricao`/`garantirMetragemDescricao` (`_shared/ai/copywriter-prompt.ts`)
   cravam largura (mm ou cm) e metragem (grounded em nome/descrição da planilha) na seção "📌
   ESPECIFICAÇÕES" da descrição, criando a seção se a IA a tiver pulado inteira — mesma classe de
   rede de segurança dos guards de título, mas na descrição, onde não havia nenhuma (bug lote
-  02994771). `garantirLarguraTitulo` (`_shared/ai/titulo.ts`) crava a largura também no título
-  (decisão de produto, 2026-07-24), logo após `garantirMetragemTitulo`; `extrairLargura` mora em
-  `titulo.ts` ao lado de `extrairMetragem` e é reusado pelos guards de descrição — reconhece as
-  duas unidades porque a planilha mistura mm/cm entre nome_pai e descricao_pai do mesmo produto
-  (achado: franjas com "5MM" no nome mas "5 CM DE LARGURA" na descrição).
+  02994771); `extrairLargura`/`extrairMetragem` moram em `_shared/ai/titulo.ts` e são reusados
+  pelo bloco de dimensão do título — reconhecem as duas unidades porque a planilha mistura mm/cm
+  entre nome_pai e descricao_pai do mesmo produto (achado: franjas com "5MM" no nome mas "5 CM DE
+  LARGURA" na descrição). Metragem emitida na descrição é canônica (`50m`, nunca `50MT`) desde
+  ADR-0099 — a mesma mudança de unidade do título, não declarada originalmente nesse ADR.
   **Pré-upload de foto (ADR-0033, 2026-07-10):** sobe ao ML as fotos ainda sem `picture_id` e
   persiste o id (`_shared/anuncios/pre-subir-fotos.ts`), tirando a propagação (~2,5 min) do caminho
   crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.

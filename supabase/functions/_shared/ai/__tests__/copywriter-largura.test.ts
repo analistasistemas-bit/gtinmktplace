@@ -144,7 +144,7 @@ describe('garantirMetragemDescricao', () => {
     const out = garantirMetragemDescricao(descricao, nomePai);
 
     expect(out).toContain('📌 ESPECIFICAÇÕES');
-    expect(out).toContain('• Metragem: 50MT');
+    expect(out).toContain('• Metragem: 50m');
     expect(out.indexOf('📌 ESPECIFICAÇÕES')).toBeLessThan(out.indexOf('🎯 INDICAÇÕES DE USO'));
   });
 
@@ -194,7 +194,7 @@ describe('garantirMetragemDescricao', () => {
 
     expect((out.match(/📌 ESPECIFICAÇÕES/g) ?? []).length).toBe(1);
     expect(out).toContain('• Largura: 6mm');
-    expect(out).toContain('• Metragem: 50MT');
+    expect(out).toContain('• Metragem: 50m');
   });
 });
 
@@ -308,7 +308,7 @@ describe('posProcessarDescricao — composição única dos guards (ADR-0098)', 
     const r = posProcessarDescricao(descricao, 'FITA CETIM N.3 50MT', 'LARGURA: 16MM.');
 
     expect(r).toContain('• Largura: 16mm');
-    expect(r).toContain('• Metragem: 50MT');
+    expect(r).toContain('• Metragem: 50m');
     expect(r).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
     expect(r).toContain('🎨 CORES DISPONÍVEIS');
   });
@@ -346,7 +346,7 @@ describe('posProcessarDescricao — poda antes de ancorar (ADR-0098)', () => {
     const r = posProcessarDescricao(descricao, 'LANTEJOULAS TAM 6 CORES C/50MTS', '');
 
     expect(r).not.toContain('PERGUNTAS SOBRE ESTE PRODUTO');
-    expect(r).toContain('• Metragem: 50MT');
+    expect(r).toContain('• Metragem: 50m');
   });
 
   it('seção COMPLETA (3 perguntas) é preservada e o guard respeita o dado que ela contém', () => {
@@ -362,5 +362,17 @@ describe('posProcessarDescricao — poda antes de ancorar (ADR-0098)', () => {
 
     expect(r).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
     expect(r).not.toContain('• Metragem:'); // já dito em prosa na seção preservada
+  });
+});
+
+describe('regressão: descrição não perde a metragem com a unidade nova', () => {
+  it('injeta o bullet com "m" minúsculo', () => {
+    const out = garantirMetragemDescricao('🧵 INTRO\n\nTexto.', 'FITA CETIM 100MT');
+    expect(out).toContain('• Metragem: 100m');
+  });
+
+  it('continua não duplicando quando a IA já citou em prosa', () => {
+    const out = garantirMetragemDescricao('🧵 INTRO\n\nRolo com 100 metros.', 'FITA CETIM 100MT');
+    expect(out).not.toContain('• Metragem');
   });
 });

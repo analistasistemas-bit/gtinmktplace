@@ -4,9 +4,11 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
+import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -36,7 +38,10 @@ Deno.serve(async (req) => {
   // família; a RLS is_membro_operacao já restringe à operação. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, org_id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
+    // fornecedor entra só para o mapa de marcas corrigir a grafia (ADR-0099) — sem ele a
+    // regeneração perde em silêncio a correção que a publicação original tinha (ex.: "Bufalo" no
+    // lugar de "Búfalo").
+    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, cor, preco)')
     .eq('id', body.familia_id)
     .eq('org_id', context.orgId)
     .maybeSingle();
@@ -61,19 +66,26 @@ Deno.serve(async (req) => {
     }, modeloTexto);
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
-    const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
-    const largura = extrairLargura(`${familia.nome_pai}\n${familia.descricao_pai ?? ''}`);
-    const tituloFinal = garantirCorTitulo(
-      garantirLarguraTitulo(
-        garantirMetragemTitulo(
-          garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(result.titulo, familia.nome_pai, familia.descricao_pai ?? ''), result.tipo_produto_busca), familia.nome_pai),
-          familia.nome_pai,
-        ),
-        largura,
-      ),
-      coresUnicas.length === 1 ? coresUnicas[0] : null,
-      coresUnicas.length,
-    );
+    // DadosFonteTitulo.cores é documentado como "cores REAIS (sem 'Outra' nem placeholder)" —
+    // filtra aqui na origem, defesa em profundidade além da trava interna do guard.
+    const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
+    // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
+    // Aqui há resposta HTTP direta ao operador, então devolve 422 acionável em vez de 500 cru.
+    let tituloFinal: string;
+    try {
+      tituloFinal = posProcessarTitulo(result.titulo_slots, {
+        nomePai: familia.nome_pai,
+        descricaoPai: familia.descricao_pai ?? '',
+        tipoProdutoBusca: result.tipo_produto_busca,
+        cores: coresUnicas,
+        fornecedor: (familia.fornecedor as string | null) ?? null,
+      });
+    } catch (e) {
+      if (e instanceof TituloInviavelError) {
+        return new Response(mensagemTituloInviavel(e), { status: 422, headers: corsHeaders });
+      }
+      throw e;
+    }
     const descricaoFinal = posProcessarDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '');
 
     const { error: upErr } = await sb

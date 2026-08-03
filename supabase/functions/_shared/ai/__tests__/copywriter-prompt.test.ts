@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { montarUserPrompt } from '../copywriter-prompt';
+import { montarUserPrompt, SYSTEM } from '../copywriter-prompt';
+import { ORDEM_LEITURA } from '../titulo-slots';
 
 const base = {
   nome: 'PRODUTO X',
@@ -58,5 +59,39 @@ describe('montarUserPrompt — rótulo de quantidade pela unidade', () => {
     ] });
     expect(p).toContain('- Azul');
     expect(p).not.toMatch(/-\s*Outra\b/);
+  });
+});
+
+describe('bloco TÍTULO do SYSTEM (ADR-0099)', () => {
+  it('não ensina mais o formato com pipe nem o slot DIFERENCIAL', () => {
+    expect(SYSTEM).not.toContain('DIFERENCIAL');
+    expect(SYSTEM).not.toContain('MARCA MODELO MEDIDA |');
+    expect(SYSTEM).not.toContain('| RESISTENTE');
+  });
+
+  it('nomeia os dez slots no bloco de campos, não só na prosa', () => {
+    // Ancorado na linha do campo ("produto        — ..."). Um `toContain('produto')` solto
+    // passaria de graça: a palavra aparece na prosa em português ao redor.
+    for (const slot of ORDEM_LEITURA) {
+      expect(SYSTEM, `slot ${slot} não está declarado no bloco de campos`)
+        .toMatch(new RegExp(`^${slot}\\s*[—-]`, 'm'));
+    }
+  });
+
+  it('carrega a frase decisiva de T6', () => {
+    expect(SYSTEM).toContain('Espaço restante não é motivo para adicionar palavras');
+  });
+
+  it('traz pelo menos dois exemplos CORRETO de título', () => {
+    expect(SYSTEM.match(/CORRETO:/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it('nenhum exemplo CORRETO termina em adjetivo — é o mecanismo que criou o problema', () => {
+    const proibidos = ['resistente', 'premium', 'versatil', 'elegante', 'macio', 'profissional'];
+    for (const linha of SYSTEM.split('\n').filter((l) => l.includes('CORRETO:'))) {
+      const texto = linha.split('CORRETO:')[1].trim().replace(/\s*\(\d+ chars\)\s*$/, '');
+      const ultima = texto.split(/\s+/).pop()?.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '') ?? '';
+      expect(proibidos).not.toContain(ultima);
+    }
   });
 });

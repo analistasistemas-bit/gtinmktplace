@@ -6,8 +6,10 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo, garantirQuantidadeTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
+import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
+import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { sugerirPrecoVenda, grossUp, freteEstavelGrossUp, PRECO_REF_COMISSAO } from '../_shared/preco/sugerir.ts';
 import { arredondar5Proximo } from '../_shared/preco/arredondar.ts';
@@ -444,24 +446,36 @@ Deno.serve(async (req) => {
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044): famílias-irmãs que
     // diferem só na cor (PAI separado) não podem ter título idêntico.
-    const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c))];
-    const largura = extrairLargura(`${claimed.nome_pai}\n${claimed.descricao_pai ?? ''}`);
+    // DadosFonteTitulo.cores é documentado como "cores REAIS (sem 'Outra' nem placeholder)" —
+    // filtra aqui na origem, defesa em profundidade além da trava interna do guard.
+    const coresUnicas = [...new Set(resolvidas.map((v) => v.cor).filter((c): c is string => !!c && !ehCorIndefinida(c)))];
+    // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
+    // A família falha de propósito (nunca truncar nem fundir produtos), mas o operador precisa
+    // saber O QUE encurtar na planilha — daí nomear os slots em vez de deixar subir cru.
+    let tituloFinal: string;
+    try {
+      tituloFinal = posProcessarTitulo(copy.titulo_slots, {
+        nomePai: claimed.nome_pai,
+        descricaoPai: claimed.descricao_pai ?? '',
+        tipoProdutoBusca: copy.tipo_produto_busca,
+        cores: coresUnicas,
+        fornecedor: claimed.fornecedor ?? null,
+      });
+    } catch (e) {
+      if (e instanceof TituloInviavelError) {
+        // Determinístico: a mesma família vai gerar o mesmo título curto demais toda vez.
+        // Sem marcar retentavel=false, decidirRetryPorErro (status desconhecido → retenta por
+        // padrão) repetia gerarCopy até 10x pagando IA de novo a cada tentativa, sempre pra
+        // falhar do mesmo jeito. Mesmo idiom já usado em publicar-split-ml/update-familia-ml.
+        const err = new Error(mensagemTituloInviavel(e)) as Error & { status?: number; retentavel?: boolean };
+        err.status = 422;
+        err.retentavel = false;
+        throw err;
+      }
+      throw e;
+    }
     const { error: persistErr } = await admin.from('familias').update({
-      titulo_ml: garantirQuantidadeTitulo(
-        garantirCorTitulo(
-          garantirLarguraTitulo(
-            garantirMetragemTitulo(
-              garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(copy.titulo, claimed.nome_pai, claimed.descricao_pai ?? ''), copy.tipo_produto_busca), claimed.nome_pai),
-              claimed.nome_pai,
-            ),
-            largura,
-          ),
-          coresUnicas.length === 1 ? coresUnicas[0] : null,
-          coresUnicas.length,
-        ),
-        claimed.nome_pai,
-        claimed.descricao_pai ?? '',
-      ),
+      titulo_ml: tituloFinal,
       descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? ''),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
