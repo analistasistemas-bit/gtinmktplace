@@ -54,4 +54,40 @@ describe('posProcessarTitulo', () => {
     expect(t).toContain('Bege');
     expect(t.length).toBeLessThanOrEqual(60);
   });
+
+  it('valida a ancoragem DEPOIS de cravar — marca do mapa sem menção na fonte não vaza', () => {
+    // A ordem é o desenho: aplicarGuardsTitulo escreve a marca do mapa (grafia), e só então
+    // validarSlotsAncorados a derruba por falta de respaldo na fonte. Invertida, a marca vaza.
+    const t = posProcessarTitulo(
+      slots({ produto: 'LINHA', material: '100% ALGODAO' }),
+      fonte({ nomePai: 'LINHA CONES CORES', descricaoPai: 'LINHA PARA COSTURA.', fornecedor: 'CIRCULO S.A.' }),
+    );
+    expect(t).not.toContain('Círculo');
+    expect(t).toContain('Linha');
+  });
+
+  it('cor única vira discriminador protegido; várias cores não', () => {
+    const base = {
+      produto: 'LINHA ESPECIAL PARA RENASCENCA BORDADA MANUAL',
+      material: '100% ALGODAO MERCERIZADO',
+    };
+    const fonteBase = {
+      nomePai: 'LINHA ESP. P/RENASCENCA BORDADA MANUAL C/10UND',
+      descricaoPai: 'LINHA 100% ALGODAO MERCERIZADO PARA BORDADO A MAO.',
+    };
+    const umaCor = posProcessarTitulo(slots(base), fonte({ ...fonteBase, cores: ['Bege Clarinho'] }));
+    const variasCores = posProcessarTitulo(slots(base), fonte({ ...fonteBase, cores: ['Bege', 'Branco'] }));
+
+    expect(umaCor).toContain('Bege Clarinho');   // protegida do corte
+    expect(variasCores).not.toContain('Bege');   // nem entra: o comprador escolhe
+    expect(umaCor).not.toBe(variasCores);
+  });
+
+  it('nenhum pipe sobrevive ao pipeline, venha de onde vier', () => {
+    const t = posProcessarTitulo(
+      slots({ produto: 'FITA | CETIM', material: '100% POLIESTER' }),
+      fonte({ nomePai: 'FITA CETIM 10MT', descricaoPai: '100% POLIESTER.' }),
+    );
+    expect(t).not.toContain('|');
+  });
 });

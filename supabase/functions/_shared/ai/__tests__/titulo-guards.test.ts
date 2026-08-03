@@ -34,6 +34,11 @@ describe('normalizarSlots', () => {
   it('colapsa espaço e apara', () => {
     expect(normalizarSlots(slots({ produto: '  NOVELO   LINHA  ' })).produto).toBe('NOVELO LINHA');
   });
+
+  it('remove pipe e caractere decorativo de qualquer slot', () => {
+    expect(normalizarSlots(slots({ produto: 'FITA | CETIM ESPECIAL' })).produto).toBe('FITA CETIM ESPECIAL');
+    expect(normalizarSlots(slots({ material: '100% POLIESTER ★' })).material).toBe('100% POLIESTER');
+  });
 });
 
 describe('aplicarGuardsTitulo', () => {

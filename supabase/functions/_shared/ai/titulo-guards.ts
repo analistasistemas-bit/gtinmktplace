@@ -51,6 +51,9 @@ export function normalizarSlots(slots: TituloSlots): TituloSlots {
   const out = { ...slots };
   for (const slot of ORDEM_LEITURA) {
     let v = (out[slot] ?? '').trim().replace(/\s{2,}/g, ' ');
+    // T2: separador e caractere decorativo nunca chegam ao título. A instrução no prompt não
+    // basta — o formato antigo "proibia" adjetivo vazio e ele saía em 35% dos anúncios.
+    v = v.replace(/[|★•·]/g, ' ').replace(/\s{2,}/g, ' ').trim();
     for (const [re, sub] of ABREVIACOES) v = v.replace(re, sub);
     v = v.replace(/\s{2,}/g, ' ').trim();
     if (RUIDO.some((re) => re.test(v))) v = '';
