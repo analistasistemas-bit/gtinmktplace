@@ -84,7 +84,9 @@ export function montarTitulo(slots: TituloSlots, ctx: ContextoCorte): string {
   // 1. Reduções — preservam a informação, só encurtam a forma.
   for (const [slot, reduzir] of Object.entries(REDUCOES) as Array<[SlotTitulo, (v: string) => string]>) {
     if (!presentes.has(slot)) continue;
-    atual = { ...atual, [slot]: reduzir(atual[slot]) };
+    const novo = reduzir(atual[slot]);
+    if (!novo.trim()) continue; // redução que zera o slot é pior que não reduzir: o dado sumiria sem remoção e sem erro
+    atual = { ...atual, [slot]: novo };
     if (render(atual, presentes).length <= TITULO_MAX) return render(atual, presentes);
   }
 

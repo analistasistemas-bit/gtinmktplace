@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { montarTitulo, TituloInviavelError } from '../titulo-montar';
-import { SLOTS_VAZIOS, type TituloSlots } from '../titulo-slots';
+import { ORDEM_CORTE, SLOTS_VAZIOS, type SlotTitulo, type TituloSlots } from '../titulo-slots';
 
 const slots = (p: Partial<TituloSlots>): TituloSlots => ({ ...SLOTS_VAZIOS, ...p });
 const semDiscriminador = { variacaoDiscrimina: false };
@@ -60,14 +60,22 @@ describe('montarTitulo — corte por prioridade', () => {
     expect(t.length).toBeLessThanOrEqual(60);
   });
 
-  it('variacao sobrevive quando discrimina, mesmo custando outros slots', () => {
-    const t = montarTitulo(slots({
-      produto: 'LINHA ESPECIAL PARA RENASCENCA',
-      marca: 'CIRCULO', quantidade: '10un', material: '100% ALGODAO',
-      variacao: 'BEGE', aplicacao: 'PARA BORDADO',
-    }), comDiscriminador);
-    expect(t).toContain('Bege');
-    expect(t.length).toBeLessThanOrEqual(60);
+  it('variacao é cortada sem discriminar, e sobrevive discriminando — mesmos slots', () => {
+    const base = {
+      produto: 'LINHA ESPECIAL PARA RENASCENCA BORDADA MANUAL',
+      marca: 'CIRCULO', quantidade: '10un', material: '100% ALGODAO MERCERIZADO',
+      variacao: 'BEGE CLARINHO', compatibilidade: 'PARA MAQUINA DOMESTICA',
+      aplicacao: 'PARA BORDADO A MAO', sinonimo: 'LINHAZINHA',
+    };
+    const off = montarTitulo(slots(base), semDiscriminador);
+    const on = montarTitulo(slots(base), comDiscriminador);
+
+    expect(off).toBe('Linha Especial para Renascenca Bordada Manual Circulo 10un');
+    expect(on).toBe('Linha Especial para Renascenca Bordada Manual Bege Clarinho');
+    // O par é o teste: se a proteção sumir, `on` vira igual a `off`.
+    expect(on).not.toBe(off);
+    expect(off).not.toContain('Bege');
+    expect(on).toContain('Bege Clarinho');
   });
 
   it('variacao é cortável quando NÃO discrimina', () => {
@@ -90,6 +98,16 @@ describe('montarTitulo — reduções antes de remover', () => {
     expect(t).toContain('Poliester');
     expect(t).toContain('Amarelo Ouro');
     expect(t.length).toBeLessThanOrEqual(60);
+  });
+
+  it('redução que zeraria o slot é pulada — o dado não some sem remoção', () => {
+    const t = montarTitulo(slots({
+      produto: 'FITAS DE VELUDO DECORATIVA', marca: 'BUFALO', medida: '25m',
+      material: '100%', aplicacao: 'PARA ENFEITE', sinonimo: 'FITINHA',
+    }), semDiscriminador);
+    expect(t).toBe('Fitas de Veludo Decorativa Bufalo 25m 100% para Enfeite');
+    expect(t).toContain('100%');
+    expect(t).not.toContain('Fitinha'); // sinonimo, menos prioritário, é quem sai
   });
 });
 
@@ -147,30 +165,45 @@ describe('montarTitulo — propriedades', () => {
     }
   });
 
-  it('nunca remove um slot de prioridade maior enquanto existir um de menor', () => {
-    // Preenche TODOS os slots com valores longos e força o corte até o limite. A cada remoção,
-    // o slot que saiu tem de ser o de menor prioridade ainda presente.
+  it('os slots ausentes são um prefixo de ORDEM_CORTE, não um sufixo de ORDEM_LEITURA', () => {
+    // Contraexemplo real: `medida` é protegido, então o corte o PULA — `modelo` (menos
+    // prioritário na ordem de leitura, mas processado depois de `medida` na ordem de corte)
+    // pode sair enquanto `medida` e `marca` ficam. A invariante certa não é "sufixo da ordem
+    // de leitura", é "prefixo de ORDEM_CORTE filtrada pelos protegidos".
+    const protegidos = new Set<SlotTitulo>(['produto', 'medida']);
     const cheio = slots({
-      produto: 'TECIDO OXFORD', marca: 'DETALLIA', modelo: 'N.12', medida: '10m',
-      quantidade: '5un', material: 'POLIESTER', variacao: 'AZUL',
-      compatibilidade: 'PARA MAQUINA', aplicacao: 'PARA FORRO', sinonimo: 'OXFORDINHO',
+      produto: 'TECIDO OXFORD LISO ESTAMPADO PREMIUM ESPECIAL',
+      marca: 'DETALLIA', modelo: 'N.12', medida: '10m', quantidade: '5un',
+      material: 'POLIESTER', variacao: 'AZUL', compatibilidade: 'PARA MAQUINA',
+      aplicacao: 'PARA FORRO', sinonimo: 'OXFORDINHO',
     });
     const t = montarTitulo(cheio, semDiscriminador);
-    const presente = (v: string) => t.toLowerCase().includes(v.toLowerCase());
 
-    // Lido do MENOS para o MAIS prioritário, o vetor de presença tem de ser monotônico:
-    // uma sequência de ausentes seguida de uma sequência de presentes, nunca intercalado.
-    const porPrioridade: Array<[string, string]> = [
-      ['produto', 'Oxford'], ['marca', 'Detallia'], ['modelo', 'N.12'], ['medida', '10m'],
-      ['quantidade', '5un'], ['material', 'Poliester'], ['variacao', 'Azul'],
-      ['compatibilidade', 'Maquina'], ['aplicacao', 'Forro'], ['sinonimo', 'Oxfordinho'],
-    ];
-    let viuPresente = false;
-    for (let i = porPrioridade.length - 1; i >= 0; i--) {
-      const [nome, valor] = porPrioridade[i];
-      if (presente(valor)) viuPresente = true;
-      // Ausente DEPOIS de já ter visto um presente menos prioritário = ordem de corte violada.
-      else expect(viuPresente, `${nome} foi cortado, mas um slot menos prioritário sobreviveu`).toBe(false);
+    expect(t).toBe('Tecido Oxford Liso Estampado Premium Especial Detallia 10m');
+
+    const valores: Record<SlotTitulo, string> = {
+      produto: 'Oxford', marca: 'Detallia', modelo: 'N.12', medida: '10m', quantidade: '5un',
+      material: 'Poliester', variacao: 'Azul', compatibilidade: 'Maquina', aplicacao: 'Forro',
+      sinonimo: 'Oxfordinho',
+    };
+    const presente = (slot: SlotTitulo) => t.toLowerCase().includes(valores[slot].toLowerCase());
+
+    // Contraexemplo documentado: `modelo` saiu, `marca` e `medida` (esta última protegida)
+    // ficaram — provando que a ordem de corte, não a de leitura, governa quem sai.
+    expect(presente('modelo')).toBe(false);
+    expect(presente('marca')).toBe(true);
+    expect(presente('medida')).toBe(true);
+
+    const cortavel = ORDEM_CORTE.filter((s) => !protegidos.has(s));
+    const ausentes = cortavel.filter((s) => !presente(s));
+    const presentes = cortavel.filter((s) => presente(s));
+    // Invariante verdadeira: ausentes é um PREFIXO de ORDEM_CORTE (filtrada pelos protegidos) —
+    // ou seja, todo slot ausente vem antes, na ordem de corte, de todo slot presente.
+    for (const a of ausentes) {
+      for (const p of presentes) {
+        expect(cortavel.indexOf(a), `${a} ausente deveria vir antes de ${p} presente em ORDEM_CORTE`)
+          .toBeLessThan(cortavel.indexOf(p));
+      }
     }
   });
 });
