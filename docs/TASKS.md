@@ -16,8 +16,11 @@
   hora, com guarda de orçamento) e o `sync-devolucao` em tempo real, que re-busca o pedido e chama
   `upsertVenda` em qualquer idade. O Passo 2 do backfill grava o claim mas **não** recalcula a
   venda — não era ele que sustentava os 30 dias.
-- [x] **O problema de fundo não é a janela.** O custo do backfill cresce sem depender de `dias`
-  (claims do seller + 1 GET por pack de `ml_vendas`). Medido no schedule (`dias:7`, todas as orgs,
+- [x] **O problema de fundo não é a janela.** O custo do backfill cresce sem depender de `dias`:
+  os Passos 1 e 2 releem o histórico inteiro do vendedor a cada execução (`buscarPerguntasSeller`
+  e `buscarClaimsSeller`, sem filtro de data, teto de 2000 cada, + 1 GET de return por claim) —
+  cada devolução nova encarece TODA execução futura, para sempre. O Passo 4 é capado
+  (`listarPacksDeVendas`, `limite = 200`). Medido no schedule (`dias:7`, todas as orgs,
   só ciclos sem retry): mediana **70s em 27/07 → 81s em 03/08** (~+1,6s/dia), com 5 falhas no
   período (546 em 30/07, 31/07, 02/08; 504 em 30/07; 520 em 02/08), todas salvas pelo retry do
   QStash. Encolher a janela só compra tempo. **Pendente (não feito aqui):** portar `ORCAMENTO_MS`
