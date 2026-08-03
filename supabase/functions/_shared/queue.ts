@@ -32,7 +32,7 @@ export interface ProcessFamiliaJob {
   lote_id: string;
   listing_type_id?: string;
   // ADR-0078 F1: quando true, o worker de update/split repõe só estoque (não empurra preço).
-  // enfileirarAtualizacao/enfileirarSplit serializam o job inteiro → propaga sozinho.
+  // `enfileirarPublicacoes` serializa o job inteiro no body → propaga sozinho.
   somenteEstoque?: boolean;
 }
 
@@ -58,7 +58,11 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
 export function enfileirarFamilias(jobs: ProcessFamiliaJob[]): Promise<string[]> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/process-familia`;
-  return enfileirarEmBlocos(jobs, target, (msgs) => qstashClient().batchJSON(msgs));
+  return enfileirarEmBlocos(
+    jobs,
+    (body) => ({ url: target, body, retries: 3 }),
+    (msgs) => qstashClient().batchJSON(msgs),
+  );
 }
 
 // Fila serial das escritas no ML por usuário (parallelism=1), ADR-0034. Publicar várias
@@ -84,33 +88,59 @@ export function garantirFilaSerial(userId: string): Promise<void> {
 const RETRIES_PUBLICACAO_ML = 10;
 const RETRY_DELAY_PUBLICACAO_ML = '30000'; // 30s × 10 = 5 min de cobertura, granularidade fina
 
-export async function enfileirarPublicacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
-  const url = Deno.env.get('SUPABASE_URL')!;
-  const target = `${url}/functions/v1/publish-familia-ml`;
-  const { messageId } = await qstashClient()
-    .queue({ queueName: nomeFilaPublicacao(userId) })
-    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
-  return messageId;
-}
+/** Alvo de cada família na publicação: CREATE, UPDATE ou split (>100 cores / preço divergente). */
+export type AlvoPublicacao = 'publish' | 'update' | 'split';
 
-export async function enfileirarAtualizacao(job: ProcessFamiliaJob, userId: string): Promise<string> {
-  const url = Deno.env.get('SUPABASE_URL')!;
-  const target = `${url}/functions/v1/update-familia-ml`;
-  const { messageId } = await qstashClient()
-    .queue({ queueName: nomeFilaPublicacao(userId) })
-    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
-  return messageId;
-}
+const WORKER_POR_ALVO: Record<AlvoPublicacao, string> = {
+  publish: 'publish-familia-ml',
+  update: 'update-familia-ml',
+  split: 'publicar-split-ml',
+};
 
-// Split (ADR-0048): produto com >100 cores vai para o worker de split (N anúncios por partição),
-// não para publish/update. Mesma fila serial por usuário (uma escrita no ML por vez, ADR-0034).
-export async function enfileirarSplit(job: ProcessFamiliaJob, userId: string): Promise<string> {
+/**
+ * Versão em lote de `enfileirarPublicacao/Atualizacao/Split`, na MESMA fila serial do vendedor
+ * (parallelism=1, ADR-0034 — o batch muda só como as mensagens entram na fila, não como saem).
+ *
+ * Lote #45 (03/08): `publicar-familias` marcava as 126 famílias como 'publicando' de uma vez e
+ * depois enfileirava UMA POR UMA em loop. O loop morreu no meio: 68 enfileiradas, 58 presas em
+ * 'publicando' sem mensagem — invisíveis para o operador (não aparecem como erro) e fora do
+ * alcance do "Reenviar", que só pega status 'erro'. Precisou de reenfileiramento manual.
+ *
+ * Devolve os messageIds na ORDEM DE ENTRADA de `itens` (agrupa por alvo internamente só para
+ * economizar requisições), pra o caller conseguir casar item↔messageId por índice.
+ */
+export async function enfileirarPublicacoes(
+  itens: { job: ProcessFamiliaJob; alvo: AlvoPublicacao }[],
+  userId: string,
+): Promise<string[]> {
+  if (itens.length === 0) return [];
   const url = Deno.env.get('SUPABASE_URL')!;
-  const target = `${url}/functions/v1/publicar-split-ml`;
-  const { messageId } = await qstashClient()
-    .queue({ queueName: nomeFilaPublicacao(userId) })
-    .enqueueJSON({ url: target, body: job, retries: RETRIES_PUBLICACAO_ML, retryDelay: RETRY_DELAY_PUBLICACAO_ML });
-  return messageId;
+  const queueName = nomeFilaPublicacao(userId);
+  const ids = new Array<string>(itens.length);
+
+  // Um batch por alvo (no máximo 3), preservando o índice original de cada item.
+  const porAlvo = new Map<AlvoPublicacao, { indice: number; job: ProcessFamiliaJob }[]>();
+  for (const [indice, it] of itens.entries()) {
+    if (!porAlvo.has(it.alvo)) porAlvo.set(it.alvo, []);
+    porAlvo.get(it.alvo)!.push({ indice, job: it.job });
+  }
+
+  for (const [alvo, grupo] of porAlvo) {
+    const target = `${url}/functions/v1/${WORKER_POR_ALVO[alvo]}`;
+    const messageIds = await enfileirarEmBlocos(
+      grupo,
+      ({ job }) => ({
+        url: target,
+        body: job,
+        queueName,
+        retries: RETRIES_PUBLICACAO_ML,
+        retryDelay: RETRY_DELAY_PUBLICACAO_ML,
+      }),
+      (msgs) => qstashClient().batchJSON(msgs),
+    );
+    for (const [i, { indice }] of grupo.entries()) ids[indice] = messageIds[i];
+  }
+  return ids;
 }
 
 // E6 (ADR-0061): fan-out por (canal, org) — o worker genérico publicar-anuncio atende

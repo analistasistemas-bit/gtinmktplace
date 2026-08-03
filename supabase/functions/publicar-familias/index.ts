@@ -3,8 +3,8 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import {
-  enfileirarPublicacao, enfileirarAtualizacao, enfileirarSplit, garantirFilaSerial,
-  enfileirarPublicacaoCanal,
+  enfileirarPublicacoes, garantirFilaSerial, enfileirarPublicacaoCanal,
+  type AlvoPublicacao,
 } from '../_shared/queue.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { garantirAnuncioExterno, claimAnuncioExterno } from '../_shared/anuncios/estado.ts';
@@ -126,24 +126,63 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
       });
     };
 
-    for (const f of novos ?? []) {
-      const job = { familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType };
-      const messageId = ehSplit(f.id)
-        ? await enfileirarSplit(job, f.user_id as string)
-        : await enfileirarPublicacao(job, f.user_id as string);
-      await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
-      loteId = f.lote_id;
-      enfileiradas++;
+    // Um batch por (dono, alvo) em vez de 1 publish por família em loop. Lote #45: o loop
+    // sequencial morreu no meio com 126 famílias — 68 enfileiradas, 58 presas em 'publicando'
+    // sem mensagem, invisíveis (não são 'erro', então o "Reenviar" nem as enxergava).
+    const aEnfileirar = [
+      ...(novos ?? []).map((f) => ({
+        f,
+        alvo: (ehSplit(f.id) ? 'split' : 'publish') as AlvoPublicacao,
+        job: { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType },
+      })),
+      ...(updates ?? []).map((f) => {
+        // ADR-0078 F1: propaga a escolha "somente estoque" resolvida por família (global±override).
+        const somenteEstoque = resolverSomenteEstoque(f.id, somenteEstoqueGlobal, somenteEstoqueOverrides);
+        const ehS = ehSplit(f.id);
+        return {
+          f,
+          alvo: (ehS ? 'split' : 'update') as AlvoPublicacao,
+          job: ehS
+            ? { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType, somenteEstoque }
+            : { familia_id: f.id as string, lote_id: f.lote_id as string, somenteEstoque },
+        };
+      }),
+    ];
+
+    // Uma fila serial por dono (ADR-0056: familias.user_id = conta ML), então agrupa por dono.
+    const porDono = new Map<string, typeof aEnfileirar>();
+    for (const it of aEnfileirar) {
+      const dono = it.f.user_id as string;
+      if (!porDono.has(dono)) porDono.set(dono, []);
+      porDono.get(dono)!.push(it);
     }
-    for (const f of updates ?? []) {
-      // ADR-0078 F1: propaga a escolha "somente estoque" resolvida por família (global±override).
-      const somenteEstoque = resolverSomenteEstoque(f.id, somenteEstoqueGlobal, somenteEstoqueOverrides);
-      const messageId = ehSplit(f.id)
-        ? await enfileirarSplit({ familia_id: f.id, lote_id: f.lote_id, listing_type_id: listingType, somenteEstoque }, f.user_id as string)
-        : await enfileirarAtualizacao({ familia_id: f.id, lote_id: f.lote_id, somenteEstoque }, f.user_id as string);
-      await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
-      loteId = f.lote_id;
-      enfileiradas++;
+
+    for (const [dono, itens] of porDono) {
+      let messageIds: string[];
+      try {
+        messageIds = await enfileirarPublicacoes(itens.map(({ job, alvo }) => ({ job, alvo })), dono);
+      } catch (e) {
+        // Sem isto a família fica presa em 'publicando' para sempre: nenhum worker a processa
+        // e `reprocessar-familia` (o "Reenviar" da UI) só alcança status 'erro'. Marca só as que
+        // NÃO chegaram a ter mensagem — um bloco anterior pode já ter publicado de verdade.
+        const enfileirados = new Set(
+          ((e as Error & { enfileirados?: { job: { familia_id: string } }[] }).enfileirados ?? [])
+            .map((x) => x.job.familia_id),
+        );
+        const orfas = itens.filter((it) => !enfileirados.has(it.f.id as string)).map((it) => it.f.id as string);
+        if (orfas.length > 0) {
+          await admin.from('familias')
+            .update({ status: 'erro', erro_mensagem: `Falha ao enfileirar: ${(e as Error).message}` })
+            .in('id', orfas)
+            .eq('status', 'publicando');
+        }
+        throw e;
+      }
+      for (const [i, it] of itens.entries()) {
+        await admin.from('familias').update({ qstash_message_id: messageIds[i] }).eq('id', it.f.id);
+        loteId = it.f.lote_id as string;
+        enfileiradas++;
+      }
     }
     if (loteId) {
       await admin.from('lotes').update({ status: 'publicando' }).eq('id', loteId);

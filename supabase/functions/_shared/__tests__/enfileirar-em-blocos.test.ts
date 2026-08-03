@@ -14,7 +14,7 @@ describe('enfileirarEmBlocos', () => {
     );
     const jobs = [job('a'), job('b'), job('c')];
 
-    const ids = await enfileirarEmBlocos(jobs, 'https://x/process-familia', publicar);
+    const ids = await enfileirarEmBlocos(jobs, (body) => ({ url: 'https://x/process-familia', body, retries: 3 }), publicar);
 
     expect(publicar).toHaveBeenCalledTimes(1);
     expect(ids).toEqual(['msg-a', 'msg-b', 'msg-c']);
@@ -26,7 +26,7 @@ describe('enfileirarEmBlocos', () => {
     );
     const jobs = Array.from({ length: 150 }, (_, i) => job(String(i)));
 
-    const ids = await enfileirarEmBlocos(jobs, 'https://x/process-familia', publicar, 100);
+    const ids = await enfileirarEmBlocos(jobs, (body) => ({ url: 'https://x/process-familia', body, retries: 3 }), publicar, 100);
 
     expect(publicar).toHaveBeenCalledTimes(2);
     expect(publicar.mock.calls[0][0]).toHaveLength(100);
@@ -42,7 +42,7 @@ describe('enfileirarEmBlocos', () => {
       .mockRejectedValueOnce(new Error('QStash indisponível'));
     const jobs = [job('0'), job('1')];
 
-    await expect(enfileirarEmBlocos(jobs, 'https://x', publicar, 1)).rejects.toThrow('QStash indisponível');
+    await expect(enfileirarEmBlocos(jobs, (body) => ({ url: 'https://x', body, retries: 3 }), publicar, 1)).rejects.toThrow('QStash indisponível');
   });
 
   it('expõe `enfileirados` = itens do(s) bloco(s) já publicado(s) antes da falha', async () => {
@@ -53,7 +53,7 @@ describe('enfileirarEmBlocos', () => {
 
     let erro: (Error & { enfileirados?: Job[] }) | null = null;
     try {
-      await enfileirarEmBlocos(jobs, 'https://x', publicar, 100);
+      await enfileirarEmBlocos(jobs, (body) => ({ url: 'https://x', body, retries: 3 }), publicar, 100);
     } catch (e) {
       erro = e as Error & { enfileirados?: Job[] };
     }
@@ -68,7 +68,7 @@ describe('enfileirarEmBlocos', () => {
     const publicar = vi.fn(async () => [{ messageId: 'msg-0' }]); // 1 resposta pra 2 jobs
     const jobs = [job('0'), job('1')];
 
-    await expect(enfileirarEmBlocos(jobs, 'https://x', publicar)).rejects.toThrow(/devolveu 1 ids para 2 jobs/);
+    await expect(enfileirarEmBlocos(jobs, (body) => ({ url: 'https://x', body, retries: 3 }), publicar)).rejects.toThrow(/devolveu 1 ids para 2 jobs/);
   });
 
   it('anexa `enfileirados` também quando é o mismatch de comprimento que falha (não só exceção do publicador)', async () => {
@@ -79,7 +79,7 @@ describe('enfileirarEmBlocos', () => {
 
     let erro: (Error & { enfileirados?: Job[] }) | null = null;
     try {
-      await enfileirarEmBlocos(jobs, 'https://x', publicar, 2);
+      await enfileirarEmBlocos(jobs, (body) => ({ url: 'https://x', body, retries: 3 }), publicar, 2);
     } catch (e) {
       erro = e as Error & { enfileirados?: Job[] };
     }
@@ -91,7 +91,7 @@ describe('enfileirarEmBlocos', () => {
 
   it('lista vazia não chama o publicador', async () => {
     const publicar = vi.fn();
-    const ids = await enfileirarEmBlocos([], 'https://x', publicar);
+    const ids = await enfileirarEmBlocos([], (body) => ({ url: 'https://x', body, retries: 3 }), publicar);
     expect(publicar).not.toHaveBeenCalled();
     expect(ids).toEqual([]);
   });
