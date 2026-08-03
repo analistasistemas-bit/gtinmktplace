@@ -67,6 +67,35 @@ function jaContem(valor: string, agulha: string): boolean {
   return new RegExp(`\\b${agulha.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(valor);
 }
 
+// Sinônimos concorrentes para "tipo de fio" que a descrição usa para o MESMO produto. Não usa
+// tipo_aviamento (categoria ML) como sinal: o bucket "Fios e Cadarços" mistura barbante/fio/linha
+// legítimos (ADR-0054).
+const SINONIMOS_TIPO_FIO = ['LINHA', 'FIO', 'BARBANTE'];
+
+// A planilha às vezes já declara qual sinônimo é o certo: por extenso ("FIO NAUTICO") ou pela
+// abreviação "L." (convenção do catálogo: L.CLEA = "Linha Cléa").
+function tipoFioDeclaradoNoNome(nomePai: string): string | null {
+  if (/^L\./i.test(nomePai.trim())) return 'LINHA';
+  const m = nomePai.match(/\b(LINHA|FIO|BARBANTE)\b/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/**
+ * ADR-0070: corrige a 1ª palavra de `produto` quando ela é um sinônimo de tipo de fio DIFERENTE
+ * do que nome_pai declara (bug lote #63: "FIO CLÉA 1000" quando a planilha diz "L.CLEA").
+ * Sem sinal em nome_pai não mexe — conservador por construção, nunca inventa a partir de
+ * sinônimo só grounded na descrição.
+ */
+function corrigirTipoFio(produto: string, nomePai: string): string {
+  const declarado = tipoFioDeclaradoNoNome(nomePai);
+  if (!declarado) return produto;
+  const palavras = produto.split(/\s+/);
+  const primeira = normalizar(palavras[0] ?? '');
+  if (primeira === declarado || !SINONIMOS_TIPO_FIO.includes(primeira)) return produto;
+  palavras[0] = declarado;
+  return palavras.join(' ');
+}
+
 // Só contagem canônica (10un, 12pc) com número > 1 sobrevive no slot `quantidade`.
 // Devolve null para qualquer outra coisa — inclusive para o que a IA escreveu no slot errado.
 function contagemValida(valor: string | null): string | null {
@@ -91,6 +120,11 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     const presente = palavras.some((w) => jaContem(normalizar(out.produto), w));
     if (palavras.length > 0 && !presente) out.produto = `${tipo.toUpperCase()} ${out.produto}`.trim();
   }
+
+  // Tipo de fio (ADR-0070): roda DEPOIS do bloco acima de propósito — o bloco de tipo de
+  // produto pode ter acabado de prefixar um sinônimo (ex.: "FIO DE CROCHÊ"), e é esse prefixo
+  // que precisa ser corrigido também, não só o que a IA escreveu originalmente.
+  out.produto = corrigirTipoFio(out.produto, fonte.nomePai);
 
   // Dimensão composta (10X15CM, 3,00 X 1,80) não é capturada por extrairMetragem nem por
   // extrairLargura, e às vezes é o ÚNICO dado que distingue famílias irmãs — as quatro

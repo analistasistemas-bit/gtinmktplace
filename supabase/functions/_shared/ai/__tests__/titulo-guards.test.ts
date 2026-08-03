@@ -180,6 +180,77 @@ describe('aplicarGuardsTitulo', () => {
   });
 });
 
+describe('tipo de fio declarado no nome (ADR-0070)', () => {
+  it('corrige FIO para LINHA quando a planilha diz L.CLEA', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FIO CLEA 1000' }),
+      fonte({ nomePai: 'L.CLEA 1000 CORES', descricaoPai: 'LINHA CLÉA.' }),
+    );
+    expect(s.produto.toUpperCase()).toContain('LINHA');
+    expect(s.produto.toUpperCase()).not.toMatch(/^FIO\b/);
+  });
+
+  it('corrige quando nome_pai declara BARBANTE por extenso', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LINHA ALGODAO' }),
+      fonte({ nomePai: 'BARBANTE ALGODAO 600G', descricaoPai: '' }),
+    );
+    expect(s.produto.toUpperCase()).toContain('BARBANTE');
+  });
+
+  it('sem sinal em nome_pai não mexe — nunca inventa a partir da descrição', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FIO ECOAMIGURUMI' }),
+      fonte({ nomePai: 'EUROROMA 160G', descricaoPai: 'LINHA RECICLADA.' }),
+    );
+    expect(s.produto.toUpperCase()).toMatch(/^FIO\b/);
+  });
+
+  // Portado de titulo-tipo-fio.test.ts (deletado nesta task): idempotência quando o produto
+  // já usa o sinônimo certo — não pode reescrever à toa.
+  it('não mexe quando já está correto (idempotente, sinônimo LINHA)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LINHA CLEA 125 CIRCULO' }),
+      fonte({ nomePai: 'L.CLEA 125 CROCHE CORES' }),
+    );
+    expect(s.produto).toBe('LINHA CLEA 125 CIRCULO');
+  });
+
+  // Portado de titulo-tipo-fio.test.ts: idempotência do lado FIO (nome_pai declara FIO por
+  // extenso e o produto já usa FIO) — cobre o outro sinônimo, não só LINHA.
+  it('não mexe quando já está correto (idempotente, sinônimo FIO por extenso)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FIO NAUTICO CIRCULO 500G' }),
+      fonte({ nomePai: 'FIO NAUTICO CORES UND 500G' }),
+    );
+    expect(s.produto).toBe('FIO NAUTICO CIRCULO 500G');
+  });
+
+  // Portado de titulo-tipo-fio.test.ts: a 1ª palavra não é sinônimo nenhum de tipo de fio —
+  // corrigirTipoFio não pode mexer em palavra fora da lista fechada.
+  it('não mexe quando a 1ª palavra do produto não é nenhum sinônimo de tipo de fio', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'CLÉA 1000 151,3G' }),
+      fonte({ nomePai: 'L.CLEA 1000 CORES' }),
+    );
+    expect(s.produto).toBe('CLÉA 1000 151,3G');
+  });
+
+  // Portado (versão adaptada) de titulo-tipo-fio.test.ts "ordem correta com
+  // garantirTipoProdutoTitulo". O teste original degenerava em no-op porque "FIO" já estava
+  // presente no título antes do prefixo entrar em jogo. Esta versão realmente exercita a ordem:
+  // o bloco de tipo de produto injeta "FIO DE CROCHÊ" como prefixo, e corrigirTipoFio, rodando
+  // DEPOIS, corrige esse prefixo recém-injetado — prova que a ordem (depois do bloco de tipo)
+  // importa de verdade.
+  it('roda DEPOIS do bloco de tipo de produto e corrige o prefixo que ele acabou de injetar', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'CLEA 1000 151,3G' }),
+      fonte({ nomePai: 'L.CLEA 1000 CORES', tipoProdutoBusca: 'fio de crochê' }),
+    );
+    expect(s.produto.toUpperCase()).toMatch(/^LINHA DE CROCH[ÊE]/);
+  });
+});
+
 describe('validarSlotsAncorados', () => {
   it('remove marca que não aparece na fonte', () => {
     const s = validarSlotsAncorados(

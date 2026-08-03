@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  clampTitulo,
+  contemMetragem,
   extrairContagem,
+  extrairLargura,
   extrairMetragem,
-  garantirMetragemTitulo,
-  garantirQuantidadeTitulo,
   removerCaudaConectiva,
 } from '../titulo';
 
@@ -35,39 +34,6 @@ describe('removerCaudaConectiva', () => {
   });
 });
 
-describe('clampTitulo', () => {
-  it('título já curto e completo permanece intacto', () => {
-    const ok = 'COLA EM BASTÃO 11MM GROSSA 1KG | ADESÃO FIRME';
-    expect(clampTitulo(ok)).toBe(ok);
-  });
-
-  it('derruba o segmento final inteiro quando estoura 60 (nunca corta palavra)', () => {
-    // Sem maxLength no schema, a IA devolve o diferencial inteiro; o clamp derruba
-    // o último segmento em vez de cortar "PISTOLAS" no meio (bug do lote #26).
-    const out = clampTitulo('COLA EM BASTÃO 11MM GROSSA 1KG | ADESÃO FIRME | IDEAL PARA PISTOLAS');
-    expect(out).toBe('COLA EM BASTÃO 11MM GROSSA 1KG | ADESÃO FIRME');
-    expect(out.length).toBeLessThanOrEqual(60);
-  });
-
-  it('derruba palavras inteiras quando há um só segmento longo (nunca mid-word)', () => {
-    const out = clampTitulo('COLA EM BASTÃO QUENTE PROFISSIONAL GROSSA PARA PISTOLAS GRANDES MINI');
-    expect(out.length).toBeLessThanOrEqual(60);
-    // nenhuma palavra cortada: o resultado é prefixo de palavras inteiras do original
-    expect('COLA EM BASTÃO QUENTE PROFISSIONAL GROSSA PARA PISTOLAS GRANDES MINI')
-      .toContain(out);
-    expect(out.endsWith(' ')).toBe(false);
-  });
-
-  it('limpa conectivo solto que sobra após derrubar segmento', () => {
-    const out = clampTitulo('COLA EM BASTÃO 11MM GROSSA 1KG PARA | ADESÃO FORTE DURÁVEL E FIRME HOJE');
-    expect(out.length).toBeLessThanOrEqual(60);
-    expect(out.trim()).toBe(out);
-    // não termina em conectivo nem pipe pendurado
-    expect(/\b(E|DE|PARA|COM|OU)$/i.test(out)).toBe(false);
-    expect(out.endsWith('|')).toBe(false);
-  });
-});
-
 describe('extrairMetragem', () => {
   it('extrai metragem em MT convertendo para a unidade canônica "m"', () => {
     expect(extrairMetragem('FITA CETIM PROGRESSO N.1 CORES 100MT')).toBe('100m');
@@ -89,90 +55,61 @@ describe('extrairMetragem', () => {
   });
 });
 
-describe('garantirMetragemTitulo', () => {
-  it('injeta a metragem ausente e derruba o diferencial genérico para caber em 60', () => {
-    const out = garantirMetragemTitulo(
-      'FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL E ELEGANTE',
-      'FITA CETIM PROGRESSO N.1 CORES 100MT',
-    );
-    expect(out).toBe('FITAS PROGRESSO N.1 100m | 100% POLIÉSTER');
-    expect(out.length).toBeLessThanOrEqual(60);
+// Portado de titulo-largura.test.ts (deletado na Task 11): extrairLargura/contemMetragem
+// sobrevivem à remoção dos guards de string — consumidos por titulo-guards.ts (ADR-0099) e por
+// copywriter-prompt.ts (lado da descrição).
+describe('extrairLargura', () => {
+  it('captura "6MM DE LARGURA"', () => {
+    expect(extrairLargura('A LANTEJOULA DE 6MM DE LARGURA É IDEAL')).toBe('6mm');
   });
 
-  it('diferencia 10MT de 100MT (não gera títulos idênticos)', () => {
-    const a = garantirMetragemTitulo(
-      'FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL',
-      'FITA CETIM PROGRESSO N.1 CORES 100MT',
-    );
-    const b = garantirMetragemTitulo(
-      'FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL',
-      'FITA CETIM PROGRESSO N.1 CORES 10MT (P)',
-    );
-    expect(a).toContain('100m');
-    expect(b).toContain('10m');
-    expect(a).not.toBe(b);
+  it('captura ordem invertida "LARGURA DE 6MM"', () => {
+    expect(extrairLargura('FITA COM LARGURA DE 10MM')).toBe('10mm');
   });
 
-  it('não duplica quando a IA já incluiu a metragem', () => {
-    const titulo = 'FITA PROGRESSO N.1 100m | 100% POLIÉSTER | RESISTENTE';
-    expect(garantirMetragemTitulo(titulo, 'FITA CETIM PROGRESSO N.1 CORES 100MT')).toBe(titulo);
+  it('captura "LARGURA: 6MM" (rótulo com dois-pontos)', () => {
+    expect(extrairLargura('LARGURA: 6MM')).toBe('6mm');
   });
 
-  it('limpa conectivo solto mesmo com a metragem já presente (bug do upload real)', () => {
-    expect(garantirMetragemTitulo(
-      'FITA CETIM PROGRESSO N.1 100MT | 100% POLIÉSTER | VERSÁTIL E',
-      'FITA CETIM PROGRESSO N.1 CORES 100MT',
-    )).toBe('FITA CETIM PROGRESSO N.1 100m | 100% POLIÉSTER | VERSÁTIL');
+  it('aceita decimal com vírgula (formato BR)', () => {
+    expect(extrairLargura('FITA DE 2,5MM DE LARGURA')).toBe('2,5mm');
   });
 
-  it('deixa o título intacto quando o nome não tem metragem', () => {
-    const titulo = 'LINHA SETTA XIK TEX 120 | 100% POLIÉSTER | RESISTENTE';
-    expect(garantirMetragemTitulo(titulo, 'LINHA SETTA XIK 2000J')).toBe(titulo);
+  it('não confunde metragem em metros ("M"/"MT"/"METROS") com largura em mm/cm', () => {
+    expect(extrairLargura('ROLO CONTENDO 50 METROS')).toBeNull();
+    expect(extrairLargura('FITA 10MT BRANCA')).toBeNull();
   });
 
-  it('produto sem metragem ainda assim é clampado sem cortar palavra (cola, lote #26)', () => {
-    const out = garantirMetragemTitulo(
-      'COLA EM BASTÃO 11MM GROSSA 1KG | ADESÃO FIRME | IDEAL PARA PISTOLAS',
-      'COLA EM BASTAO 11MM GROSSA 1KG',
-    );
-    expect(out).toBe('COLA EM BASTÃO 11MM GROSSA 1KG | ADESÃO FIRME');
-    expect(out.length).toBeLessThanOrEqual(60);
+  it('sem menção a largura em mm/cm → null', () => {
+    expect(extrairLargura('BARBANTE DE ALGODÃO 4/6 FIOS')).toBeNull();
   });
 
-  it('mantém o resultado dentro de 60 caracteres mesmo sem segmentos para derrubar', () => {
-    const out = garantirMetragemTitulo(
-      'FITA CETIM PROGRESSO NUMERO UM EXTRA LONGA DE TESTE AQUI OK',
-      'FITA 100MT',
-    );
-    expect(out.length).toBeLessThanOrEqual(60);
-    expect(out).toContain('100m');
+  it('captura largura em CM (bug real: franjas com nome_pai em MM mas descrição em CM)', () => {
+    expect(extrairLargura('A FRANJA DA BÚFALO, COM 5 CM DE LARGURA, É CONFECCIONADA...')).toBe('5cm');
+  });
+
+  it('captura CM na ordem invertida e com dois-pontos', () => {
+    expect(extrairLargura('FRANJA COM LARGURA DE 10CM')).toBe('10cm');
+    expect(extrairLargura('LARGURA: 8CM')).toBe('8cm');
+  });
+
+  it('não confunde CM com MM: cada um só bate com sua própria unidade', () => {
+    expect(extrairLargura('5 CM DE LARGURA')).toBe('5cm');
+    expect(extrairLargura('5 MM DE LARGURA')).toBe('5mm');
   });
 });
 
-describe('garantirQuantidadeTitulo', () => {
-  it('prioriza a quantidade presente na descrição sobre diferencial genérico — lote #40', () => {
-    // "10un" (unidade canônica) é bem mais curto que "10 UNIDADES" — com o título curto do
-    // teste antigo o segmento cabia nos 60 chars sem precisar derrubar nada, o que deixava de
-    // exercitar o comportamento real do teste. Título alongado aqui pra continuar estourando o
-    // teto e forçar o drop do diferencial genérico.
-    expect(garantirQuantidadeTitulo(
-      'SACO DE ORGANZA 10X15CM BRANCO TRANSPARENTE | EMBALAGENS ELEGANTES PARA PRESENTE',
-      'SACO DE ORGANZA 10X15CM BRANCO',
-      'Pacote com 10 unidades.',
-    )).toBe('SACO DE ORGANZA 10X15CM BRANCO TRANSPARENTE | 10un');
+describe('contemMetragem', () => {
+  it('aceita token exato ("50MT")', () => {
+    expect(contemMetragem('FITA 50MT BRANCA')).toBe(true);
   });
 
-  it('é idempotente: não duplica a contagem já presente no título (paralelo ao guard de metragem)', () => {
-    const uma = garantirQuantidadeTitulo(
-      'SACO DE ORGANZA BRANCO',
-      'SACO DE ORGANZA BRANCO',
-      'Pacote com 10 unidades.',
-    );
-    expect(garantirQuantidadeTitulo(
-      uma,
-      'SACO DE ORGANZA BRANCO',
-      'Pacote com 10 unidades.',
-    )).toBe(uma);
+  it('aceita por extenso ("50 metros")', () => {
+    expect(contemMetragem('O produto vem em um rolo contendo 50 metros.')).toBe(true);
+  });
+
+  it('sem menção a metragem → false', () => {
+    expect(contemMetragem('Produzida em PVC de alta qualidade.')).toBe(false);
   });
 });
 

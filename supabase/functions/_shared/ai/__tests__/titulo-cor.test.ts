@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { garantirCorTitulo, garantirMetragemTitulo } from '../titulo';
+import { garantirCorTitulo } from '../titulo';
 
 describe('garantirCorTitulo', () => {
   it('crava a cor no 1º segmento quando a família é mono-cor e a cor não está no título', () => {
@@ -78,16 +78,5 @@ describe('garantirCorTitulo', () => {
     const titulo = 'LÁPIS DE ESCREVER RESINA VERDE REF.SL101066-8';
     const out = garantirCorTitulo(titulo, 'Verde 7', 1);
     expect(out).toContain('VERDE 7');
-  });
-
-  it('encadeia com garantirMetragemTitulo mantendo metragem e cor (≤60)', () => {
-    const out = garantirCorTitulo(
-      garantirMetragemTitulo('FITAS PROGRESSO N.1 | 100% POLIÉSTER | VERSÁTIL', 'FITA CETIM PROGRESSO N.1 100MT'),
-      'Vermelho',
-      1,
-    );
-    expect(out.length).toBeLessThanOrEqual(60);
-    expect(out).toContain('100m');
-    expect(out).toContain('VERMELHO');
   });
 });
