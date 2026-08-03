@@ -238,6 +238,7 @@ Deno.serve(async (req) => {
             tituloBase: familia.titulo_ml ?? familia.nome_pai,
             particao: p,
             modelo: modeloTexto,
+            fornecedor: (familia.fornecedor as string | null) ?? null,
           }));
 
       let itemIdP = itemExternoId;

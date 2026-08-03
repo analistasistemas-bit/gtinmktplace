@@ -4,7 +4,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { garantirMetragemTitulo, garantirCorTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, garantirLarguraTitulo, extrairLargura, removerMarketingNaoGrounded } from '../_shared/ai/titulo.ts';
+import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
+import { TituloInviavelError } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 
@@ -36,7 +37,10 @@ Deno.serve(async (req) => {
   // família; a RLS is_membro_operacao já restringe à operação. Sem filtro por user.id.
   const { data: familia, error } = await sb
     .from('familias')
-    .select('id, org_id, nome_pai, descricao_pai, unidade, variacoes(codigo, cor, preco)')
+    // fornecedor entra só para o mapa de marcas corrigir a grafia (ADR-0099) — sem ele a
+    // regeneração perde em silêncio a correção que a publicação original tinha (ex.: "Bufalo" no
+    // lugar de "Búfalo").
+    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, cor, preco)')
     .eq('id', body.familia_id)
     .eq('org_id', context.orgId)
     .maybeSingle();
@@ -62,18 +66,27 @@ Deno.serve(async (req) => {
 
     // Cor única → crava a cor no título (anti-duplicado do ML, ADR-0044).
     const coresUnicas = [...new Set(variacoes.map((v) => v.cor).filter((c): c is string => !!c))];
-    const largura = extrairLargura(`${familia.nome_pai}\n${familia.descricao_pai ?? ''}`);
-    const tituloFinal = garantirCorTitulo(
-      garantirLarguraTitulo(
-        garantirMetragemTitulo(
-          garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(result.titulo, familia.nome_pai, familia.descricao_pai ?? ''), result.tipo_produto_busca), familia.nome_pai),
-          familia.nome_pai,
-        ),
-        largura,
-      ),
-      coresUnicas.length === 1 ? coresUnicas[0] : null,
-      coresUnicas.length,
-    );
+    // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
+    // Aqui há resposta HTTP direta ao operador, então devolve 422 acionável em vez de 500 cru.
+    let tituloFinal: string;
+    try {
+      tituloFinal = posProcessarTitulo(result.titulo_slots, {
+        nomePai: familia.nome_pai,
+        descricaoPai: familia.descricao_pai ?? '',
+        tipoProdutoBusca: result.tipo_produto_busca,
+        cores: coresUnicas,
+        fornecedor: (familia.fornecedor as string | null) ?? null,
+      });
+    } catch (e) {
+      if (e instanceof TituloInviavelError) {
+        const campos = Object.entries(e.slotsObrigatorios).map(([k, v]) => `${k}="${v}"`).join(', ');
+        return new Response(
+          `Título obrigatório não cabe em 60 caracteres (${e.comprimento}). Encurte o nome do produto na planilha. Campos: ${campos}`,
+          { status: 422, headers: corsHeaders },
+        );
+      }
+      throw e;
+    }
     const descricaoFinal = posProcessarDescricao(result.descricao, familia.nome_pai, familia.descricao_pai ?? '');
 
     const { error: upErr } = await sb

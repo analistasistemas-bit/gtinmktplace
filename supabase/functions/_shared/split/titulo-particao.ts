@@ -4,10 +4,12 @@
 // tentam a IA (só as cores daquela partição) e, se ela falhar/colidir, caem num determinístico
 // que crava uma cor da partição no título-base — garantindo ≤60 chars, distinto entre partições.
 
-import { garantirCorTitulo, garantirMetragemTitulo, garantirTipoProdutoTitulo, garantirTipoFioTitulo, removerMarketingNaoGrounded } from '../ai/titulo.ts';
+import { posProcessarTitulo } from '../ai/titulo-pos.ts';
 // gerarCopy é importado dinamicamente dentro de gerarTituloParticao: a cadeia do copywriter
 // (cliente OpenRouter, specifiers npm:/jsr:) só carrega no runtime Deno. Mantê-la fora do topo
 // deixa o fallback determinístico (e seu teste vitest) importável sem puxar esse grafo.
+
+const TITULO_MAX = 60;
 
 export interface CorParticaoTitulo {
   codigo: string;
@@ -23,13 +25,15 @@ export interface OpcoesTituloParticao {
   tituloBase: string; // título da partição 0 (familia.titulo_ml) — referência de unicidade
   particao: number; // índice (>0) desta partição
   modelo?: string; // ADR-0074 — resolvido pelo caller (publicar-split-ml)
+  /** familias.fornecedor — só para o mapa de marcas corrigir a grafia (ADR-0099). */
+  fornecedor?: string | null;
 }
 
 /**
- * Fallback determinístico e puro: crava no título-base uma cor representativa da partição
- * (a 1ª alfabética). `garantirCorTitulo` (nCores=1) força o discriminador no 1º segmento e
- * apara o texto-base se preciso — então o clamp de 60 nunca descarta o discriminador, e como
- * as partições têm conjuntos de cor disjuntos os títulos saem distintos entre si e do base.
+ * Fallback determinístico e puro. Opera sobre o título-base JÁ MONTADO (familias.titulo_ml da
+ * partição 0), não sobre slots — não há como decompor uma string pronta em slots sem adivinhar.
+ * Por isso continua em string, mas respeitando as invariantes do ADR-0099: sem pipe, e derrubando
+ * PALAVRA INTEIRA do base, nunca cortando token no meio. O discriminador nunca é derrubado.
  */
 export function tituloParticaoDeterministico(
   tituloBase: string,
@@ -42,8 +46,17 @@ export function tituloParticaoDeterministico(
     .sort((a, b) => a.localeCompare(b, 'pt'))[0];
   // ponytail: ordinal só entra quando a partição não tem nenhuma cor nomeada (improvável
   // num produto com >100 cores); ainda assim garante título não-vazio e distinto.
-  const discriminador = corRep ?? `OPCAO ${particao + 1}`;
-  return garantirCorTitulo(tituloBase, discriminador, 1);
+  const discriminador = corRep ?? `Opcao ${particao + 1}`;
+
+  // tituloBase pode ser familias.titulo_ml de uma família publicada antes do ADR-0099 (pipe
+  // como separador legado) — remove o caractere antes de tokenizar para que a invariante
+  // "sem pipe" valha também para o fallback determinístico, não só para o caminho de IA
+  // (normalizarSlots já limpa `|` desse lado).
+  const palavras = tituloBase.replace(/\|/g, ' ').trim().split(/\s+/).filter(Boolean);
+  while (palavras.length > 1 && `${palavras.join(' ')} ${discriminador}`.length > TITULO_MAX) {
+    palavras.pop();
+  }
+  return `${palavras.join(' ')} ${discriminador}`.trim();
 }
 
 export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<string> {
@@ -55,10 +68,17 @@ export async function gerarTituloParticao(opts: OpcoesTituloParticao): Promise<s
       unidade: opts.unidade ?? null,
       variacoes: opts.cores.map((c) => ({ codigo: c.codigo, cor: c.cor, preco: c.preco })),
     }, opts.modelo);
-    const titulo = garantirMetragemTitulo(
-      garantirTipoFioTitulo(garantirTipoProdutoTitulo(removerMarketingNaoGrounded(out.titulo, opts.nome, opts.descricao_detalhado ?? ''), out.tipo_produto_busca), opts.nome),
-      opts.nome,
-    ); // ≤60, metragem preservada, tipo de produto garantido (ADR-0054), sinônimo de tipo de fio corrigido (ADR-0070), sem marketing não-grounded (lote #28)
+    // TituloInviavelError (slots obrigatórios não cabem em 60) cai no catch abaixo como qualquer
+    // outra falha de IA — este caller já é resiliente por desenho (fallback determinístico), ao
+    // contrário de process-familia/regenerar-copy-familia, que são terminais e precisam traduzir
+    // o erro para o operador.
+    const titulo = posProcessarTitulo(out.titulo_slots, {
+      nomePai: opts.nome,
+      descricaoPai: opts.descricao_detalhado ?? '',
+      tipoProdutoBusca: out.tipo_produto_busca,
+      cores: [...new Set(opts.cores.map((c) => c.cor).filter((c): c is string => !!c))],
+      fornecedor: opts.fornecedor ?? null,
+    });
     // Se a IA repetir o título-base, não serve (ML bloqueia idênticos) → cai no determinístico.
     if (titulo.trim() && titulo.trim() !== opts.tituloBase.trim()) return titulo;
   } catch (e) {

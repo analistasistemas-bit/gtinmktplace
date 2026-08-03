@@ -1,6 +1,6 @@
 import { extrairContagem, extrairLargura, extrairMetragem } from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
-import { ORDEM_LEITURA, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
+import { ORDEM_LEITURA, type TituloSlots } from './titulo-slots.ts';
 
 export interface DadosFonteTitulo {
   nomePai: string;

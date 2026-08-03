@@ -37,9 +37,13 @@ describe('tituloParticaoDeterministico', () => {
 
 // gerarCopy é importado dinamicamente dentro de gerarTituloParticao (ver comentário no módulo)
 // justamente pra permitir mockar aqui sem puxar o grafo real do cliente OpenRouter (Deno npm:).
+// Shape do mock segue OutputCopy pós-ADR-0099: titulo_slots, não mais titulo pronto (Task 8).
 vi.mock('../../ai/copywriter.ts', () => ({
   gerarCopy: vi.fn(async () => ({
-    titulo: 'EUROROMA 4/6 600G 610MT | 85% ALGODÃO',
+    titulo_slots: {
+      produto: 'Euroroma', marca: '', modelo: '4/6', medida: '', quantidade: '',
+      material: '', variacao: '', compatibilidade: '', aplicacao: '', sinonimo: '',
+    },
     descricao: 'x',
     tipo_produto_busca: 'barbante',
     tokens_input: 0,
@@ -48,8 +52,8 @@ vi.mock('../../ai/copywriter.ts', () => ({
   })),
 }));
 
-describe('gerarTituloParticao — conecta garantirTipoProdutoTitulo (ADR-0054)', () => {
-  it('prefixa o tipo de produto ausente do título gerado pela IA', async () => {
+describe('gerarTituloParticao — conecta posProcessarTitulo (ADR-0099)', () => {
+  it('prefixa o tipo de produto ausente do slot `produto` (ADR-0054, via aplicarGuardsTitulo)', async () => {
     const { gerarTituloParticao } = await import('../titulo-particao');
     const titulo = await gerarTituloParticao({
       nome: 'EUROROMA 4/6 CORES 600G 610MT',
@@ -58,7 +62,40 @@ describe('gerarTituloParticao — conecta garantirTipoProdutoTitulo (ADR-0054)',
       tituloBase: 'EUROROMA 4/6 600G 610MT | OUTRA COR',
       particao: 1,
     });
-    expect(titulo.startsWith('BARBANTE ')).toBe(true);
+    expect(titulo.startsWith('Barbante ')).toBe(true);
     expect(titulo.length).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('tituloParticaoDeterministico sem pipe (ADR-0099)', () => {
+  it('acrescenta a cor representativa ao título-base', () => {
+    const t = tituloParticaoDeterministico('Fita de Cetim Búfalo N.3 10m', [{ cor: 'Vermelho' }], 1);
+    expect(t).toBe('Fita de Cetim Búfalo N.3 10m Vermelho');
+    expect(t).not.toContain('|');
+  });
+
+  it('escolhe a primeira cor em ordem alfabética', () => {
+    const t = tituloParticaoDeterministico('Fita 10m', [{ cor: 'Verde' }, { cor: 'Azul' }], 1);
+    expect(t).toContain('Azul');
+    expect(t).not.toContain('Verde');
+  });
+
+  it('derruba palavras inteiras do base para caber, nunca corta token', () => {
+    const base = 'Bordado Inglês Búfalo Referência Cores Passa Fita Especial 13,71m';
+    const t = tituloParticaoDeterministico(base, [{ cor: 'Branco' }], 1);
+    expect(t.length).toBeLessThanOrEqual(60);
+    expect(t).toContain('Branco');
+    for (const token of t.split(' ')) expect(`${base} Branco`.split(' ')).toContain(token);
+  });
+
+  it('sem cor nomeada usa ordinal da partição', () => {
+    const t = tituloParticaoDeterministico('Fita 10m', [{ cor: null }], 2);
+    expect(t).toContain('Opcao 3');
+  });
+
+  it('remove pipe de título-base legado (familias.titulo_ml pré-ADR-0099)', () => {
+    const t = tituloParticaoDeterministico('LINHA COSTURA 1500M | 100% POLIÉSTER | RESISTENTE', [{ cor: 'Azul' }], 1);
+    expect(t).not.toContain('|');
+    expect(t).toContain('Azul');
   });
 });
