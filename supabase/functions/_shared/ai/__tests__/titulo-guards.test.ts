@@ -156,6 +156,13 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.variacao).toBe('');
   });
 
+  it('NUNCA crava cor indefinida no título (incidente do lote #31)', () => {
+    for (const cor of ['Outra', '(sem cor identificada)']) {
+      const s = aplicarGuardsTitulo(slots({ produto: 'COLA LIQUIDA SILICONE' }), fonte({ cores: [cor] }));
+      expect(s.variacao, `cor "${cor}" vazou para o slot`).toBe('');
+    }
+  });
+
   it('crava o tipo de produto quando o nome não diz o que o produto é', () => {
     const s = aplicarGuardsTitulo(
       slots({ produto: 'EUROROMA 4/6' }),

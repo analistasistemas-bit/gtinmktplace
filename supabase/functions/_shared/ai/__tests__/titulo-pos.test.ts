@@ -90,4 +90,12 @@ describe('posProcessarTitulo', () => {
     );
     expect(t).not.toContain('|');
   });
+
+  it('cor indefinida não vira discriminador nem aparece no título', () => {
+    const t = posProcessarTitulo(
+      slots({ produto: 'COLA LIQUIDA SILICONE', medida: '100ml' }),
+      fonte({ nomePai: 'COLA LIQUIDA SILICONE 100ML', descricaoPai: 'COLA DE SILICONE.', cores: ['Outra'] }),
+    );
+    expect(t).not.toContain('Outra');
+  });
 });

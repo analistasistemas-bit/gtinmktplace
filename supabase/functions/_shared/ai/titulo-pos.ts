@@ -1,6 +1,7 @@
 import { aplicarGuardsTitulo, normalizarSlots, validarSlotsAncorados, type DadosFonteTitulo } from './titulo-guards.ts';
 import { montarTitulo } from './titulo-montar.ts';
 import { type TituloSlots } from './titulo-slots.ts';
+import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 export type { DadosFonteTitulo };
 
@@ -31,5 +32,7 @@ export function posProcessarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo
   const validados = validarSlotsAncorados(garantidos, fonte);
   // `variacao` discrimina quando a família é mono-cor: a planilha separou as cores em PAI
   // distintos, então a cor é o que diferencia esta família das irmãs (ADR-0044).
-  return montarTitulo(validados, { variacaoDiscrimina: fonte.cores.length === 1 });
+  // Cor indefinida não discrimina nada — não faz sentido protegê-la do corte.
+  const corUnica = fonte.cores.length === 1 ? fonte.cores[0] : null;
+  return montarTitulo(validados, { variacaoDiscrimina: !!corUnica && !ehCorIndefinida(corUnica) });
 }

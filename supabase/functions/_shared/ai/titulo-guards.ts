@@ -1,6 +1,7 @@
 import { extrairContagem, extrairLargura, extrairMetragem } from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
 import { ORDEM_LEITURA, type TituloSlots } from './titulo-slots.ts';
+import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 export interface DadosFonteTitulo {
   nomePai: string;
@@ -121,8 +122,12 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
 
   // Cor única → discriminador da família (anti-duplicado do ML, ADR-0044). Multi-cor não entra:
   // o comprador escolhe na variação, e afirmar uma cor induziria a erro.
-  if (fonte.cores.length === 1) out.variacao = fonte.cores[0];
-  else if (fonte.cores.length > 1) out.variacao = '';
+  // 'Outra' (veredito do Vision quando não classifica a foto) e o placeholder de cor não
+  // identificada NUNCA entram — incidente do lote #31, "OUTRA" publicado no título de um pote
+  // de lápis. O guard antigo (garantirCorTitulo) tinha essa trava; ela precisa sobreviver aqui.
+  const corUnica = fonte.cores.length === 1 ? fonte.cores[0] : null;
+  if (corUnica && !ehCorIndefinida(corUnica)) out.variacao = corUnica;
+  else if (fonte.cores.length !== 1 || ehCorIndefinida(corUnica)) out.variacao = '';
 
   // Marca: o mapa só corrige a GRAFIA. A permissão vem de validarSlotsAncorados.
   const doMapa = marcaDoFornecedor(fonte.fornecedor);
