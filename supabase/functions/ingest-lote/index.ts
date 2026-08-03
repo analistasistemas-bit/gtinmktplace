@@ -6,7 +6,7 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matc
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
 import { verificarOrigemInviolavel } from './verificar-origem.ts';
-import { enfileirarFamilia } from '../_shared/queue.ts';
+import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
@@ -312,12 +312,34 @@ Deno.serve(async (req) => {
       if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
     }
 
-    let temPendente = false;
-    for (const f of familiasCriadas) {
-      if (f.status !== 'pendente') continue; // CREATE + UPDATE com cor nova precisam de IA
-      temPendente = true;
-      const messageId = await enfileirarFamilia({ familia_id: f.id, lote_id: lote.id });
-      await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
+    // CREATE + UPDATE com cor nova precisam de IA. 1 batch (não 1 publish por família) —
+    // lote #44 (3299 linhas) precisou de 1 requisição em vez de 18 pro enfileiramento.
+    const pendentes = familiasCriadas.filter((f) => f.status === 'pendente');
+    const temPendente = pendentes.length > 0;
+    if (temPendente) {
+      try {
+        const messageIds = await enfileirarFamilias(pendentes.map((f) => ({ familia_id: f.id, lote_id: lote.id })));
+        for (const [i, f] of pendentes.entries()) {
+          await admin.from('familias').update({ qstash_message_id: messageIds[i] }).eq('id', f.id);
+        }
+      } catch (e) {
+        // Achado no lote #44: sem isto, a família fica 'pendente' pra sempre — nada dispara
+        // process-familia pra ela, e "Reenviar" (reprocessar-familia) só alcança família em
+        // 'erro'. Marca só quem de fato não tem mensagem viva (um bloco anterior pode já ter
+        // publicado antes deste bloco falhar — ver `enfileirados` em enfileirarFamilias).
+        const enfileiradas = new Set(
+          ((e as Error & { enfileirados?: { familia_id: string }[] }).enfileirados ?? []).map((j) => j.familia_id),
+        );
+        const orfas = pendentes.filter((f) => !enfileiradas.has(f.id));
+        if (orfas.length > 0) {
+          await admin
+            .from('familias')
+            .update({ status: 'erro', erro_mensagem: `Falha ao enfileirar: ${(e as Error).message}` })
+            .in('id', orfas.map((f) => f.id))
+            .eq('status', 'pendente');
+        }
+        throw e; // lote inteiro ainda vira 'erro' (comportamento existente, ver catch abaixo)
+      }
     }
 
     // Sem família pendente (reposição UPDATE sem cor nova → todas já 'pronto'): vai

@@ -1,4 +1,5 @@
 import { Client, Receiver } from 'npm:@upstash/qstash@^2';
+import { enfileirarEmBlocos } from './enfileirar-em-blocos.ts';
 
 let cachedClient: Client | null = null;
 let cachedReceiver: Receiver | null = null;
@@ -36,6 +37,20 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
     retries: 3,
   });
   return messageId;
+}
+
+// Lote #44 (03/08, 3299 linhas): ingest-lote enfileirava 1 publish por família num loop
+// sequencial e o QStash devolveu "Rate limit exceeded for trace ..., Retry after 42349ms" já
+// na 1ª chamada, derrubando o lote inteiro — 18 famílias travadas em 'pendente' sem nenhuma
+// mensagem enfileirada. NÃO é o "burst rate limit" documentado da Upstash (esse não existe
+// para publish/batch, só para endpoints de gestão como queues/schedules) — a causa exata dessa
+// mensagem específica não foi confirmada. Ainda assim, 1 requisição HTTP por bloco é estritamente
+// melhor que 1 por família (menos latência, menos superfície de falha), então mantém.
+// Lógica de blocos/erro em enfileirar-em-blocos.ts (testada lá; aqui só liga o QStash real).
+export function enfileirarFamilias(jobs: ProcessFamiliaJob[]): Promise<string[]> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/process-familia`;
+  return enfileirarEmBlocos(jobs, target, (msgs) => qstashClient().batchJSON(msgs));
 }
 
 // Fila serial das escritas no ML por usuário (parallelism=1), ADR-0034. Publicar várias

@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { chamarIngest } from '@/lib/ingest';
+import { QK } from '@/lib/queries';
 import { type SupportScope } from '@/lib/suporte';
 import { canWrite, effectiveOrgId, useSupportStore } from '@/stores/support-store';
 
@@ -12,6 +14,7 @@ export function storageOwnerForUpload(userId: string, orgId: string, supportScop
 }
 
 export function useUploadLote() {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<UploadStatus>('idle');
   const [progresso, setProgresso] = useState(0);
   const [loteId, setLoteId] = useState<string | null>(null);
@@ -20,11 +23,16 @@ export function useUploadLote() {
   const iniciar = useCallback(async (planilha: File, imagens: File[]) => {
     setErro(null);
     setProgresso(0);
+    // O lote é inserido direto pelo cliente (fora do react-query), então nada invalida
+    // QK.lotes sozinho — "Histórico de lotes" ficava com a lista de antes do upload até
+    // um F5 (achado: lote #44 sumia da tela mesmo existindo no banco, inclusive após falha
+    // no ingest). userId hoisted para o catch poder invalidar mesmo se o insert falhar cedo.
+    let userId: string | undefined;
 
     try {
       setStatus('criando');
       const { data: ud } = await supabase.auth.getUser();
-      const userId = ud.user?.id;
+      userId = ud.user?.id;
       if (!userId) throw new Error('Sem sessão');
       const orgId = effectiveOrgId();
       if (!orgId) throw new Error('Sem organização');
@@ -39,6 +47,7 @@ export function useUploadLote() {
       if (error || !lote) throw error ?? new Error('Falha criando lote');
 
       setLoteId(lote.id);
+      queryClient.invalidateQueries({ queryKey: QK.lotes(userId) });
       setStatus('enviando');
 
       const planilhaPath = buildStoragePath(storageOwner, lote.id, planilha.name);
@@ -74,13 +83,15 @@ export function useUploadLote() {
       const resultado = await chamarIngest(lote.id);
       setProgresso(100);
       setStatus('concluido');
+      queryClient.invalidateQueries({ queryKey: QK.lotes(userId) });
       return resultado;
     } catch (err) {
       setStatus('erro');
       setErro(err instanceof Error ? err.message : String(err));
+      if (userId) queryClient.invalidateQueries({ queryKey: QK.lotes(userId) });
       throw err;
     }
-  }, []);
+  }, [queryClient]);
 
   return { status, progresso, loteId, erro, iniciar };
 }
