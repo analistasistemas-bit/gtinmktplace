@@ -234,6 +234,35 @@ describe('posProcessarTitulo', () => {
       expect(t).toContain('10un');
     });
 
+    // N2 (achado do revisor): largura "já coberta" só por `variacao` era falso-positivo — a IA
+    // pôs '25mm' em `variacao` (uso previsto: cor/tamanho/ESPESSURA, titulo-slots.ts), o guard de
+    // largura via "já coberta" e não cravava `medida`, e o bloco de cor mais abaixo, rodando
+    // DEPOIS, zera `variacao` porque a família é multi-cor — a largura sumia junto. Restrito a
+    // `produto` (durável), a largura sobrevive independente do que acontece com `variacao`.
+    it('largura não é suprimida por cobertura em `variacao`, que é zerada depois (N2)', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Fita Veludo', variacao: '25mm' }),
+        fonte({ nomePai: 'FITA VELUDO', descricaoPai: 'LARGURA: 25MM.', cores: ['Azul', 'Preto'] }),
+      );
+      expect(t).toMatch(/\b25mm\b/);
+    });
+
+    // N3 (achado do revisor): tipo de produto coberto só por um slot CORTÁVEL mais longo que o
+    // prefixo é falsa segurança — o guard de tipo roda ANTES do corte de 60 chars, decide "já
+    // presente" vendo 'Barbante' em `aplicacao`, e o corte (que roda depois, sem volta) derruba
+    // `aplicacao` primeiro por ser a mais baixa prioridade — o tipo some do título inteiro.
+    // `produto` calibrado pra caber sozinho com o prefixo (<=60) mas estourar com `aplicacao`
+    // junto, forçando o corte a de fato remover `aplicacao`.
+    it('tipo de produto sobrevive quando a única cobertura está num slot cortável longo demais (N3)', () => {
+      const produto = 'EUROROMA DUPLO 4/6 PARA TRICO E ARTESANATO GERAL';
+      const t = posProcessarTitulo(
+        slots({ produto, aplicacao: 'Barbante para Croche' }),
+        fonte({ nomePai: produto, tipoProdutoBusca: 'barbante' }),
+      );
+      expect(t.toLowerCase()).toContain('barbante');
+      expect(t.length).toBeLessThanOrEqual(60);
+    });
+
     it('largura simples (mm) + metragem grounded distintas: as duas sobrevivem', () => {
       const t = posProcessarTitulo(
         slots({ produto: 'Fitas Veludo', medida: '25mm' }),
@@ -241,6 +270,32 @@ describe('posProcessarTitulo', () => {
       );
       expect(t).toContain('25mm');
       expect(t).toContain('1m');
+    });
+
+    // N1 (achado do revisor pós-CRITICAL-1): numeroAncorado comparava o número CRU sem olhar a
+    // unidade — "5" de "5mm" (largura) "cobria" o "5" de "5m" (metragem), duas medidas
+    // DIFERENTES do mesmo produto, e a metragem sumia em silêncio. Caso real do catálogo
+    // (scripts/experimento-titulo/resultado.md).
+    it('largura e metragem de mesmo número, unidades diferentes: as duas sobrevivem (N1)', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Franja', medida: '5mm' }),
+        fonte({ nomePai: 'FRANJA 5MM 100%FIBRA DE POLI 5MT' }),
+      );
+      // \b...\b: "5mm" contém "5m" como substring — precisa do token "5m" ISOLADO (não colado
+      // a outro "m"), senão a asserção passaria mesmo com a metragem ausente.
+      expect(t).toMatch(/\b5mm\b/);
+      expect(t).toMatch(/\b5m\b/);
+    });
+
+    // Variante pedida: mesmo número (25) em `medida`(largura, mm) e na fonte (metragem, MT) —
+    // sem a trava de unidade, "25" batia como já ancorado e a metragem "25m" sumia.
+    it('largura 25mm e metragem 25MT (mesmo número): as duas sobrevivem (N1)', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Fitas Veludo', medida: '25mm' }),
+        fonte({ nomePai: 'FITAS VELUDO 25MM CORES C/25MT' }),
+      );
+      expect(t).toMatch(/\b25mm\b/);
+      expect(t).toMatch(/\b25m\b/);
     });
   });
 

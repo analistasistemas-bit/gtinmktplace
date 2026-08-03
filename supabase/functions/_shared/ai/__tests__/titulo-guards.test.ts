@@ -160,6 +160,18 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.medida).toContain('6mm');
   });
 
+  // N1 (achado do revisor pós-CRITICAL-1): número cru sem unidade fazia "5" de "5mm" (largura)
+  // "cobrir" o "5" de "5m" (metragem) — medidas DIFERENTES do mesmo produto, e a metragem
+  // sumia. Caso real: FRANJA 5MM ... 5MT.
+  it('largura Nmm não apaga metragem Nm de mesmo número (N1)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FRANJA', medida: '5mm' }),
+      fonte({ nomePai: 'FRANJA 5MM 100%FIBRA DE POLI 5MT' }),
+    );
+    expect(s.medida).toMatch(/\b5mm\b/);
+    expect(s.medida).toMatch(/\b5m\b/);
+  });
+
   it('crava a quantidade grounded', () => {
     const s = aplicarGuardsTitulo(
       slots({ produto: 'SACO DE ORGANZA' }),

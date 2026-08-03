@@ -2,7 +2,7 @@ import {
   extrairContagem, extrairLargura, extrairMetragem, RE_CONTAGEM_TOKEN, RE_METRAGEM_TOKEN,
 } from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
-import { ORDEM_LEITURA, type TituloSlots } from './titulo-slots.ts';
+import { ORDEM_LEITURA, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 
 export interface DadosFonteTitulo {
@@ -160,9 +160,16 @@ function jaContem(valor: string, agulha: string): boolean {
 // dígito e letra são ambos \w — jaContem('3,00 X 1,80m', '1,80') dava falso-negativo, e a medida
 // da fonte era cravada de novo (CRITICAL-1: "Tecido Helanca 3,00 X 1,80m 1,80m"). Aqui a fronteira
 // é "não dígito/vírgula", que tolera uma letra de unidade emendada de qualquer lado.
+//
+// N1 (achado do revisor pós-CRITICAL-1): o número cru é CEGO à unidade — "25" em "25mm" batia
+// como "já ancorado" contra a metragem "25m" só por coincidência numérica, apagando uma metragem
+// REAL ("FRANJA 5MM ... 5MT": largura 5mm e metragem 5m são medidas DIFERENTES do mesmo produto,
+// e a metragem sumia). O `(?!\s*(?:mm|cm))` recusa esse falso-positivo: só nega o match quando o
+// número é seguido de uma unidade de COMPRIMENTO CURTO diferente de metro — "1,80m" (unidade
+// própria do CRITICAL-1) continua batendo porque "m" sozinho não é "mm" nem "cm".
 function numeroAncorado(base: string, numero: string): boolean {
   const escapado = numero.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![\\d,])${escapado}(?![\\d,])`).test(base);
+  return new RegExp(`(?<![\\d,])${escapado}(?!\\s*(?:mm|cm))(?![\\d,])`, 'i').test(base);
 }
 
 // Termo cujas palavras já estão em outro slot não é recravado — duplicaria o dado no título
@@ -230,16 +237,33 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   const textoFonte = `${fonte.nomePai}\n${fonte.descricaoPai}`;
 
   // Tipo de produto (ADR-0054): nome só de marca+especificação não diz o que o produto É.
-  // "Já presente?" tem de olhar TODOS os slots preenchidos, não só `produto` (IMPORTANT-1):
-  // fonte com tipoProdutoBusca='barbante' e a IA já tendo posto 'Barbante' em `sinonimo` só
-  // checando `produto` prefixava de novo → "Barbante Euroroma 4/6 Barbante".
+  // "Já presente?" tem de olhar os slots preenchidos, não só `produto` (IMPORTANT-1): fonte com
+  // tipoProdutoBusca='barbante' e a IA já tendo posto 'Barbante' em `sinonimo` só checando
+  // `produto` prefixava de novo → "Barbante Euroroma 4/6 Barbante".
+  //
+  // N3 (achado do revisor): nem toda cobertura é DURÁVEL. Este guard roda ANTES do corte de 60
+  // chars (titulo-montar.ts) — se a única cobertura estiver num slot cortável que o corte
+  // remove, a decisão de não prefixar era otimista demais e o tipo some do título inteiro sem
+  // este guard nunca saber. `produto`/`medida` são sempre duráveis (nunca cortados). Um slot
+  // cortável só conta quando é MENOR que o prefixo que seria injetado — sinonimo='Barbante' (8
+  // chars) cobrindo tipo='barbante' (prefixo 'BARBANTE ', 9 chars) é mais barato de menter do
+  // que reprefixar, e curto o bastante pra estar entre os últimos a cair no corte; já
+  // aplicacao='Barbante para Croche' (21 chars) é a aposta oposta — o corte deita esse slot
+  // antes de qualquer coisa perto de `produto`, e contar com ele como cobertura é a falsa
+  // segurança que este achado corrigiu. Limitação conhecida, documentada e aceita: `variacao`
+  // discriminadora (ADR-0099) também é incortável na montagem final, mas sua condição depende
+  // de `fonte.cores` de um jeito que este guard — rodando antes do bloco de cor mais abaixo —
+  // não replica; tratada aqui como slot cortável comum. Nenhum caso real conhecido depende
+  // disso; documentar como follow-up se aparecer.
   const tipo = fonte.tipoProdutoBusca?.trim();
   if (tipo) {
     const palavras = normalizar(tipo).split(/\s+/).filter((w) => w.length >= 3);
-    const textoSlotsAtual = ORDEM_LEITURA.map((s) => out[s]).filter(Boolean).join(' ');
-    const presente = palavras.some((w) => jaContem(normalizar(textoSlotsAtual), w))
-      || termoColado(textoSlotsAtual, tipo);
-    if (palavras.length > 0 && !presente) out.produto = `${tipo.toUpperCase()} ${out.produto}`.trim();
+    const prefixo = `${tipo.toUpperCase()} `;
+    const duravel = (slot: SlotTitulo) => slot === 'produto' || slot === 'medida' || out[slot].length < prefixo.length;
+    const textoDuravel = ORDEM_LEITURA.filter((s) => out[s] && duravel(s)).map((s) => out[s]).join(' ');
+    const presente = palavras.some((w) => jaContem(normalizar(textoDuravel), w))
+      || termoColado(textoDuravel, tipo);
+    if (palavras.length > 0 && !presente) out.produto = `${prefixo}${out.produto}`.trim();
   }
 
   // Tipo de fio (ADR-0070): roda DEPOIS do bloco acima de propósito — o bloco de tipo de
@@ -280,14 +304,20 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     // a menção de lá, e a metragem some do título inteiro (achado do revisor).
     const metragemJaAncorada = metragem != null && numeroAncorado(baseAncorada, metragem.replace(/[a-z]+$/i, ''));
 
-    // largura: pode comparar contra o título inteiro (IMPORTANT-1) — o guard de tipo de produto
-    // acima pode já ter prefixado a mesma largura em `produto` ("FITA VELUDO 25MM" + fonte
-    // "LARGURA: 25MM" duplicava pra "Fita Veludo 25mm 25mm"). Usa o TOKEN completo ("25mm"), não
-    // o número cru: RE_METRAGEM_TOKEN (guard de limpeza abaixo) nunca intersecta mm/cm — "M"
-    // seguido de "M" mata o \b —, então uma largura remanescente num outro slot nunca é limpa de
-    // lá, e comparar por número cru arriscaria o mesmo colapso de unidades do parágrafo acima.
-    const outrosSlots = ORDEM_LEITURA.filter((s) => s !== 'medida').map((s) => out[s]).filter(Boolean).join(' ');
-    const textoLarguraAncorada = [baseAncorada, outrosSlots].filter(Boolean).join(' ');
+    // largura: compara contra `produto` além de `baseAncorada` (IMPORTANT-1) — o guard de tipo
+    // de produto acima pode já ter prefixado a mesma largura em `produto` ("FITA VELUDO 25MM" +
+    // fonte "LARGURA: 25MM" duplicava pra "Fita Veludo 25mm 25mm"). Usa o TOKEN completo
+    // ("25mm"), não o número cru: RE_METRAGEM_TOKEN (guard de limpeza abaixo) nunca intersecta
+    // mm/cm, então uma largura remanescente em `produto` nunca é limpa de lá por aquele guard.
+    //
+    // N2 (achado do revisor): RESTRITO a `produto` de propósito — não ao título inteiro. `produto`
+    // é incortável e nunca zerado por nenhum guard seguinte; `variacao`/`marca`/`sinonimo` e
+    // qualquer slot cortável NÃO são: `variacao` pode ser zerada duas dezenas de linhas abaixo
+    // (multi-cor), `marca`/`sinonimo` podem ser zerados por validarSlotsAncorados, e um slot
+    // cortável pode ser derrubado no corte de 60 chars — em qualquer um desses casos, "já
+    // coberta" era falso: o cobridor sumia e a largura, nunca cravada, sumia junto (o próprio
+    // argumento de `corJaCoberta`, mais abaixo, contra suprimir por cobertura não-durável).
+    const textoLarguraAncorada = [baseAncorada, out.produto].filter(Boolean).join(' ');
     const larguraJaAncorada = largura != null && jaContem(textoLarguraAncorada, largura);
 
     const restantes = [
