@@ -47,7 +47,7 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
 // mensagem específica não foi confirmada. Ainda assim, 1 requisição HTTP por bloco é estritamente
 // melhor que 1 por família (menos latência, menos superfície de falha), então mantém.
 // Lógica de blocos/erro em enfileirar-em-blocos.ts (testada lá; aqui só liga o QStash real).
-export async function enfileirarFamilias(jobs: ProcessFamiliaJob[]): Promise<string[]> {
+export function enfileirarFamilias(jobs: ProcessFamiliaJob[]): Promise<string[]> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/process-familia`;
   return enfileirarEmBlocos(jobs, target, (msgs) => qstashClient().batchJSON(msgs));
