@@ -6,7 +6,7 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matc
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
 import { verificarOrigemInviolavel } from './verificar-origem.ts';
-import { enfileirarFamilia } from '../_shared/queue.ts';
+import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
@@ -312,12 +312,15 @@ Deno.serve(async (req) => {
       if (varErr) throw new Error(`Insert variações: ${varErr.message}`);
     }
 
-    let temPendente = false;
-    for (const f of familiasCriadas) {
-      if (f.status !== 'pendente') continue; // CREATE + UPDATE com cor nova precisam de IA
-      temPendente = true;
-      const messageId = await enfileirarFamilia({ familia_id: f.id, lote_id: lote.id });
-      await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
+    // CREATE + UPDATE com cor nova precisam de IA. 1 batch (não 1 publish por família) —
+    // lote #44 (3299 linhas) estourou o burst rate limit do QStash num loop sequencial.
+    const pendentes = familiasCriadas.filter((f) => f.status === 'pendente');
+    const temPendente = pendentes.length > 0;
+    if (temPendente) {
+      const messageIds = await enfileirarFamilias(pendentes.map((f) => ({ familia_id: f.id, lote_id: lote.id })));
+      for (const [i, f] of pendentes.entries()) {
+        await admin.from('familias').update({ qstash_message_id: messageIds[i] }).eq('id', f.id);
+      }
     }
 
     // Sem família pendente (reposição UPDATE sem cor nova → todas já 'pronto'): vai

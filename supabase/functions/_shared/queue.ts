@@ -38,6 +38,26 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
   return messageId;
 }
 
+// Lote #44 (03/08, 3299 linhas): ingest-lote enfileirava 1 publish por família num loop
+// sequencial e estourou o burst rate limit do QStash já na 1ª chamada ("Rate limit exceeded
+// for trace ..."), derrubando o lote inteiro com 18 famílias travadas em 'pendente' sem
+// nenhuma mensagem enfileirada. Batch publish = 1 requisição HTTP por bloco (mesmo endpoint,
+// ver QstashRatelimitError no SDK), não 1 por família. ponytail: bloco de 100 sem limite
+// documentado da API — mesmo tamanho do DEFAULT_BULK_COUNT do próprio SDK; sobe se algum lote
+// legítimo passar disso.
+export async function enfileirarFamilias(jobs: ProcessFamiliaJob[]): Promise<string[]> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/process-familia`;
+  const client = qstashClient();
+  const ids: string[] = [];
+  for (let i = 0; i < jobs.length; i += 100) {
+    const bloco = jobs.slice(i, i + 100);
+    const respostas = await client.batchJSON(bloco.map((body) => ({ url: target, body, retries: 3 })));
+    ids.push(...respostas.map((r) => r.messageId));
+  }
+  return ids;
+}
+
 // Fila serial das escritas no ML por usuário (parallelism=1), ADR-0034. Publicar várias
 // famílias concorrentes faz o processamento assíncrono de foto do ML ficar muito lento
 // (foto isolada processa em segundos; em par, trava). Serializar por conta de vendedor

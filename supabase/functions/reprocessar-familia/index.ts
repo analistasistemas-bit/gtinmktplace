@@ -2,7 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { enfileirarFamilia } from '../_shared/queue.ts';
+import { enfileirarFamilias } from '../_shared/queue.ts';
 
 interface Body {
   familia_id?: string;
@@ -66,8 +66,11 @@ Deno.serve(async (req) => {
   const lotesAfetados = new Set<string>();
   let reenviadas = 0;
 
+  // Guard idempotente por família primeiro (duplo clique → 0 linhas → pula), DEPOIS 1 batch
+  // pro QStash — não 1 publish por família em loop (mesmo bug do lote #44 em ingest-lote:
+  // estourava o burst rate limit do QStash com lotes grandes).
+  const resetadas: { id: string; lote_id: string }[] = [];
   for (const f of alvos) {
-    // Guard idempotente: só reseta se AINDA está em 'erro' (duplo clique → 0 linhas → pula).
     const { data: resetada, error: upErr } = await admin
       .from('familias')
       .update({ status: 'pendente', erro_mensagem: null })
@@ -76,19 +79,24 @@ Deno.serve(async (req) => {
       .select('id')
       .maybeSingle();
     if (upErr || !resetada) continue;
+    resetadas.push(f);
+  }
 
+  if (resetadas.length > 0) {
     try {
-      const messageId = await enfileirarFamilia({ familia_id: f.id, lote_id: f.lote_id });
-      await admin.from('familias').update({ qstash_message_id: messageId }).eq('id', f.id);
-      lotesAfetados.add(f.lote_id);
-      reenviadas++;
+      const messageIds = await enfileirarFamilias(resetadas.map((f) => ({ familia_id: f.id, lote_id: f.lote_id })));
+      for (const [i, f] of resetadas.entries()) {
+        await admin.from('familias').update({ qstash_message_id: messageIds[i] }).eq('id', f.id);
+        lotesAfetados.add(f.lote_id);
+        reenviadas++;
+      }
     } catch (e) {
-      // Falha ao enfileirar: devolve a família ao estado de erro para não ficar 'pendente'
-      // órfã (ninguém processaria), com a causa registrada.
+      // Falha ao enfileirar o bloco: devolve TODAS ao estado de erro para não ficarem
+      // 'pendente' órfãs (ninguém processaria), com a causa registrada.
       await admin
         .from('familias')
         .update({ status: 'erro', erro_mensagem: `Falha ao reenfileirar: ${(e as Error).message}` })
-        .eq('id', f.id);
+        .in('id', resetadas.map((f) => f.id));
     }
   }
 
