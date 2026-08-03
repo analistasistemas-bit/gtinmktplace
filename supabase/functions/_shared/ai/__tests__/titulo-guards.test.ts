@@ -146,6 +146,46 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.quantidade).toBe('10un');
   });
 
+  // Dedup cross-slot (lote #65 metragem, lote #40 contagem): a fonte já cravou medida/
+  // quantidade acima; menção sobrevivente em QUALQUER outro slot é duplicata (quase sempre
+  // arredondada pela IA) e precisa sumir — o guard antigo (garantirMetragemTitulo) limpava a
+  // string inteira, o pipeline de slots só limpava o próprio slot `medida`/`quantidade`.
+  it('remove metragem duplicada/arredondada de `produto` quando a fonte crava medida (lote #65)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'BORDADO INGLES BUFALO T-007 13,7MT' }),
+      fonte({ nomePai: 'BORDADO INGLES BUFALO T-007 C/13,71MT' }),
+    );
+    expect(s.produto).toBe('BORDADO INGLES BUFALO T-007');
+    expect(s.medida).toBe('13,71m');
+  });
+
+  it('remove metragem duplicada de `modelo` quando a fonte crava medida (variante lote #65)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'BORDADO INGLES BUFALO TC-002', modelo: '13,7MT' }),
+      fonte({ nomePai: 'BORDADO INGLES BUFALO TC-002 C/13,71MT' }),
+    );
+    expect(s.modelo).toBe('');
+    expect(s.medida).toBe('13,71m');
+  });
+
+  it('remove contagem duplicada de `produto` quando a fonte crava quantidade (lote #40)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'SACO DE ORGANZA 10X15CM C/100UND' }),
+      fonte({ nomePai: 'SACO DE ORGANZA 10X15CM CORES', descricaoPai: 'Pacote com 100 unidades.' }),
+    );
+    expect(s.produto).not.toMatch(/100\s*UND/i);
+    expect(s.quantidade).toBe('100un');
+  });
+
+  it('NÃO mexe em slot sem metragem/contagem quando a fonte não crava nenhum dos dois (negativo)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LINHA SETTA XIK TEX 120', aplicacao: 'PARA MAQUINA DOMESTICA' }),
+      fonte({ nomePai: 'LINHA SETTA XIK 2000J' }),
+    );
+    expect(s.produto).toBe('LINHA SETTA XIK TEX 120');
+    expect(s.aplicacao).toBe('PARA MAQUINA DOMESTICA');
+  });
+
   it('crava a cor no slot variacao quando há exatamente uma', () => {
     const s = aplicarGuardsTitulo(slots({ produto: 'FITA' }), fonte({ cores: ['Branco'] }));
     expect(s.variacao).toBe('Branco');
@@ -172,13 +212,16 @@ describe('aplicarGuardsTitulo', () => {
   });
 
   // Portado de titulo-tipo-produto.test.ts (deletado nesta task): não duplica quando o tipo já
-  // está no produto.
+  // está no produto. Fixture SEM metragem de propósito — a versão original tinha "4MT" em
+  // nome_pai e produto, o que o fix de dedup cross-slot (rodada seguinte, lote #65) agora
+  // remove de `produto` por ser duplicata da `medida`; misturar as duas checagens no mesmo
+  // teste confundiria qual comportamento está sendo provado.
   it('não duplica o tipo de produto quando ele já está no produto', () => {
     const s = aplicarGuardsTitulo(
-      slots({ produto: 'BAINHA INSTANTÂNEA 4MT UND' }),
-      fonte({ nomePai: 'BAINHA INSTANTANEA 4MT', tipoProdutoBusca: 'bainha instantânea' }),
+      slots({ produto: 'BAINHA INSTANTÂNEA UND' }),
+      fonte({ nomePai: 'BAINHA INSTANTANEA', tipoProdutoBusca: 'bainha instantânea' }),
     );
-    expect(s.produto).toBe('BAINHA INSTANTÂNEA 4MT UND');
+    expect(s.produto).toBe('BAINHA INSTANTÂNEA UND');
   });
 
   // Portado de titulo-tipo-produto.test.ts: tipoProdutoBusca vazio não mexe no produto.
@@ -343,6 +386,19 @@ describe('dedup entre slots (lote #33)', () => {
     );
     expect(s.variacao).toBe('Verde 7');
   });
+
+  // Correção da rodada anterior (achado do revisor): suprimir `variacao` quando a cor está
+  // coberta por um slot CORTÁVEL (aqui `modelo`) criava uma forma nova de perder o
+  // discriminador — montarTitulo pode derrubar o slot cobridor no corte de 60 chars, e a cor
+  // some do título inteiro. `corJaCoberta` agora só olha `produto`/`medida` (os únicos
+  // INCORTÁVEIS, titulo-montar.ts), nunca `modelo` — cobertura ali não suprime.
+  it('não suprime a cor quando quem a cobre é `modelo` (slot cortável, não incortável)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'LAPIS DE ESCREVER RESINA', modelo: 'SL101066 VERDE 7' }),
+      fonte({ nomePai: 'LAPIS DE ESCREVER RESINA SL101066', cores: ['Verde 7'] }),
+    );
+    expect(s.variacao).toBe('Verde 7');
+  });
 });
 
 describe('validarSlotsAncorados', () => {
@@ -409,6 +465,16 @@ describe('validarSlotsAncorados', () => {
       fonte({ nomePai: 'FIO DE MALHA EXTRA PREMIUM 25MM', descricaoPai: '' }),
     );
     expect(s.produto).toBe('FIO PREMIUM');
+  });
+
+  // Minor da rodada anterior: remover um token de marketing do MEIO/fim de um slot pode deixar
+  // conectivo pendurado ("PARA ARTESANATO E NOVO" → remove "NOVO" → "PARA ARTESANATO E").
+  it('remove conectivo solto que a remoção do token de marketing deixou no fim do slot', () => {
+    const s = validarSlotsAncorados(
+      slots({ produto: 'FITA CETIM', medida: '10m', aplicacao: 'PARA ARTESANATO E NOVO' }),
+      fonte({ nomePai: 'FITA CETIM', descricaoPai: 'FITA PARA ARTESANATO.' }),
+    );
+    expect(s.aplicacao).toBe('PARA ARTESANATO');
   });
 
   it('não confunde NOVO com NOVELO (comparação por token, nunca substring)', () => {

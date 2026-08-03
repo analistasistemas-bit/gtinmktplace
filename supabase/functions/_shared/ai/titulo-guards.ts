@@ -1,4 +1,6 @@
-import { extrairContagem, extrairLargura, extrairMetragem } from './titulo.ts';
+import {
+  extrairContagem, extrairLargura, extrairMetragem, RE_CONTAGEM_TOKEN, RE_METRAGEM_TOKEN,
+} from './titulo.ts';
 import { LOJA_NUNCA_MARCA, marcaDoFornecedor } from './titulo-marcas.ts';
 import { ORDEM_LEITURA, type TituloSlots } from './titulo-slots.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
@@ -171,7 +173,24 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   // Contagem 1 NÃO entra, venha da fonte ou da IA: "CONTÉM: 1 UNIDADE" é boilerplate da
   // planilha (49 das 91 famílias com contagem extraível, medido em produção) e "1 unidade" é
   // a suposição padrão do comprador — ocuparia caractere do título sem informar nada.
-  out.quantidade = contagemValida(extrairContagem(textoFonte)) ?? contagemValida(out.quantidade) ?? '';
+  const contagemDaFonte = contagemValida(extrairContagem(textoFonte));
+  out.quantidade = contagemDaFonte ?? contagemValida(out.quantidade) ?? '';
+
+  // A fonte é a autoridade sobre metragem e contagem, e ela já foi cravada em `medida`/
+  // `quantidade` acima. Menção sobrevivente em QUALQUER outro slot é duplicata — quase sempre a
+  // versão arredondada que a IA inventou (lote #65: "13,71MT" real e "13,7MT" inventada no mesmo
+  // título; lote #40: "C/100UND" em `produto` duplicando a `quantidade` "100un"). O guard antigo
+  // (garantirMetragemTitulo) limpava a string inteira com RE_METRAGEM_TOKEN; aqui limpamos slot a
+  // slot. Só roda quando a fonte de fato cravou o dado — sem isso, apagaria uma metragem/
+  // contagem legítima que a IA trouxe e a fonte não tem.
+  const medidaCravadaDaFonte = Boolean(metragem || largura);
+  for (const slot of ORDEM_LEITURA) {
+    if (slot === 'medida' || slot === 'quantidade' || !out[slot]) continue;
+    let v = out[slot];
+    if (medidaCravadaDaFonte) v = v.replace(RE_METRAGEM_TOKEN, ' ');
+    if (contagemDaFonte) v = v.replace(RE_CONTAGEM_TOKEN, ' ');
+    out[slot] = v.replace(/\s{2,}/g, ' ').trim();
+  }
 
   // Cor única → discriminador da família (anti-duplicado do ML, ADR-0044). Multi-cor não entra:
   // o comprador escolhe na variação, e afirmar uma cor induziria a erro.
@@ -179,14 +198,14 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   // identificada NUNCA entram — incidente do lote #31, "OUTRA" publicado no título de um pote
   // de lápis. O guard antigo (garantirCorTitulo) tinha essa trava; ela precisa sobreviver aqui.
   const corUnica = fonte.cores.length === 1 ? fonte.cores[0] : null;
-  // Cor cujas palavras já estão em outro slot (ex.: tipo_produto_busca prefixou "Resina 7
-  // Verde" em `produto`) não é recravada em `variacao` — duplicaria o dado no título (lote
-  // #33). Alvo é o texto dos demais slots JÁ preenchidos neste ponto do pipeline, nunca o
-  // próprio `variacao`.
-  const corJaCoberta = corUnica != null && todasPalavrasCobertas(
-    ORDEM_LEITURA.filter((s) => s !== 'variacao').map((s) => out[s]).join(' '),
-    corUnica,
-  );
+  // Cor cujas palavras já estão em `produto` ou `medida` (ex.: tipo_produto_busca prefixou
+  // "Resina 7 Verde" em `produto`) não é recravada em `variacao` — duplicaria o dado no título
+  // (lote #33). RESTRITO a produto/medida de propósito: são os únicos slots INCORTÁVEIS
+  // (titulo-montar.ts, slotsIncortaveis) — cobertura num slot cortável (ex.: `modelo`) não pode
+  // suprimir a cor, senão o corte de 60 chars derruba o slot cobridor E a cor some do título
+  // inteiro, gerando duas famílias-irmãs com título idêntico (o oposto do ADR-0044). Duplicação
+  // eventual é bem menos grave que perder o discriminador.
+  const corJaCoberta = corUnica != null && todasPalavrasCobertas(`${out.produto} ${out.medida}`, corUnica);
   if (corUnica && !ehCorIndefinida(corUnica) && !corJaCoberta) out.variacao = corUnica;
   else if (fonte.cores.length !== 1 || ehCorIndefinida(corUnica) || corJaCoberta) out.variacao = '';
 
@@ -228,16 +247,27 @@ function normalizarToken(w: string): string {
   return w.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
 }
 
+// Conectivos/preposições que, sozinhos no fim do valor de um slot, denunciam frase cortada
+// pela remoção de um token de marketing (ex.: "PARA ARTESANATO E NOVO" → remove "NOVO" →
+// "PARA ARTESANATO E" pendurado). Mesma lista do antigo removerCaudaConectiva.
+const CAUDA_CONECTIVA = new Set([
+  'E', 'OU', 'DE', 'DA', 'DO', 'DAS', 'DOS', 'COM', 'SEM', 'PARA', 'POR',
+  'EM', 'NO', 'NA', 'A', 'O', 'AO', '&',
+]);
+
 function removerMarketingNaoAncorado(valor: string, tokensFonte: Set<string>): string {
-  return valor
+  const palavras = valor
     .split(/\s+/)
     .filter(Boolean)
     .filter((p) => {
       const n = normalizarToken(p);
       return !MARKETING_TERMOS.has(n) || tokensFonte.has(n);
-    })
-    .join(' ')
-    .trim();
+    });
+  // Poda o(s) conectivo(s) que sobraram soltos no fim depois da remoção acima.
+  while (palavras.length > 0 && CAUDA_CONECTIVA.has(palavras[palavras.length - 1].toUpperCase())) {
+    palavras.pop();
+  }
+  return palavras.join(' ').trim();
 }
 
 /** Passo 4: tudo que sobrevive precisa de respaldo na fonte. */

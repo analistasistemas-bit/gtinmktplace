@@ -108,4 +108,32 @@ describe('posProcessarTitulo', () => {
     );
     expect(t.toLowerCase()).not.toMatch(/pom\s*pom\s*pom/);
   });
+
+  // Achado do revisor (rodada anterior): a supressão de `variacao` quando a cor está coberta
+  // por um slot CORTÁVEL (`modelo`) deixava o discriminador sumir do título inteiro quando o
+  // corte de 60 chars derrubava esse slot — duas famílias-irmãs mono-cor gerariam título
+  // idêntico. Este teste força os dois efeitos JUNTOS (dedup + corte de 60), que nenhuma
+  // mutação anterior exercitava ao mesmo tempo. Fixture calibrada pra realmente forçar o corte:
+  // com produto curto (ex.: só "LAPIS DE ESCREVER RESINA") o título fica em 49 chars e `modelo`
+  // NUNCA é derrubado — o bug não se manifesta e o teste passaria mesmo sem o fix. Alongado o
+  // produto pra estourar 60 e derrubar `modelo` de fato: título real = "Lapis de Escrever
+  // Resina Colorida Infantil Escolar Verde 7" (58 chars), sem "sl101066" nenhum — `modelo`
+  // inteiro sumiu, e mesmo assim "Verde 7" sobrevive.
+  it('não suprime a cor quando quem a cobre é um slot cortável (o corte levaria os dois)', () => {
+    const t = posProcessarTitulo(
+      slots({
+        produto: 'LAPIS DE ESCREVER RESINA COLORIDA INFANTIL ESCOLAR',
+        marca: 'FABER CASTELL',
+        modelo: 'SL101066 VERDE 7',
+      }),
+      fonte({
+        nomePai: 'LAPIS DE ESCREVER RESINA COLORIDA INFANTIL ESCOLAR SL101066',
+        descricaoPai: 'LAPIS EM RESINA.',
+        cores: ['Verde 7'],
+      }),
+    );
+    expect(t.toLowerCase()).not.toContain('sl101066'); // prova que modelo foi de fato derrubado
+    expect(t).toContain('Verde 7');
+    expect(t.length).toBeLessThanOrEqual(60);
+  });
 });

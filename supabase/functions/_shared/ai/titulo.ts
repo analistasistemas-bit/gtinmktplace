@@ -4,6 +4,10 @@
 // uma metragem que não existe no produto (bug lote #65: "13,7MT 71MT" no título, sem "71MT"
 // em lugar nenhum da descrição).
 const RE_METRAGEM = /(\d+(?:,\d+)?)\s*(MTS|MT|METROS|METRO|M)\b/i;
+// Mesmo padrão, mas global — usada por aplicarGuardsTitulo pra limpar TODAS as menções de
+// metragem que sobrarem em slots que não são `medida` (a fonte já cravou a metragem certa lá;
+// qualquer outra é duplicata, quase sempre arredondada pela IA — lote #65).
+export const RE_METRAGEM_TOKEN = /\b\d+(?:,\d+)?\s*(?:MTS|MT|METROS|METRO|M)\b/gi;
 // A unidade canônica do padrão ML é "m" minúsculo (ADR-0099): "570m", nunca "570mt".
 // Esta função ANTES emitia 'MT'/'M' — era a origem dos 38% de títulos com "MT" medidos em
 // produção. A DETECÇÃO continua aceitando MT/MTS/METROS/M na entrada; só a EMISSÃO mudou.
@@ -40,6 +44,9 @@ export function extrairLargura(texto: string): string | null {
 }
 
 const RE_CONTAGEM = /\b(\d+)\s*(UNIDADES?|UNDS?|UND|UN|PEÇAS?|PECAS?|PÇS?|PCS?|PC)\b/i;
+// Mesmo padrão, mas global — usada por aplicarGuardsTitulo pra limpar contagem duplicada de
+// slots que não são `quantidade` (mesmo princípio de RE_METRAGEM_TOKEN, lote #40).
+export const RE_CONTAGEM_TOKEN = /\b\d+\s*(?:UNIDADES?|UNDS?|UND|UN|PEÇAS?|PECAS?|PÇS?|PCS?|PC)\b/gi;
 
 // Canônico: "10un" / "12pc" (ADR-0099). Antes emitia "10 UNIDADES", que gastava caractere e
 // destoava do padrão ML. A detecção segue aceitando UNIDADES/UND/UN/PEÇAS/PÇS/PCS/PC.
