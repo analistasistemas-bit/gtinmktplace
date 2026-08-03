@@ -102,8 +102,12 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   }
 
   // Quantidade: costuma vir só na descrição ("pacote com 10 unidades").
+  // Contagem 1 NÃO entra: "CONTÉM: 1 UNIDADE" é boilerplate da planilha (49 das 91 famílias
+  // com contagem extraível, medido em produção), e "1 unidade" é a suposição padrão do
+  // comprador — ocuparia caractere do título sem informar nada.
   const contagem = extrairContagem(textoFonte);
-  if (contagem) out.quantidade = contagem;
+  const numero = contagem ? Number(contagem.replace(/\D+/g, '')) : 0;
+  if (contagem && numero > 1) out.quantidade = contagem;
 
   // Cor única → discriminador da família (anti-duplicado do ML, ADR-0044). Multi-cor não entra:
   // o comprador escolhe na variação, e afirmar uma cor induziria a erro.

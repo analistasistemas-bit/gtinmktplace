@@ -104,6 +104,22 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.quantidade).toBe('10un');
   });
 
+  it('não crava quantidade quando a contagem é 1 — boilerplate da planilha', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FITA CETIM' }),
+      fonte({ nomePai: 'FITA CETIM BUFALO N.3 16MM CORES 10MT', descricaoPai: 'FITA DE CETIM N.3. CONTÉM: 1 UNIDADE DE PEÇA COM 10 METROS.' }),
+    );
+    expect(s.quantidade).toBe('');
+  });
+
+  it('crava quantidade quando é maior que 1', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'SACO DE ORGANZA' }),
+      fonte({ nomePai: 'SACO DE ORGANZA 10X15CM CORES C/10UND' }),
+    );
+    expect(s.quantidade).toBe('10un');
+  });
+
   it('crava a cor no slot variacao quando há exatamente uma', () => {
     const s = aplicarGuardsTitulo(slots({ produto: 'FITA' }), fonte({ cores: ['Branco'] }));
     expect(s.variacao).toBe('Branco');
