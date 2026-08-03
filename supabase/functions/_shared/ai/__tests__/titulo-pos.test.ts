@@ -136,4 +136,23 @@ describe('posProcessarTitulo', () => {
     expect(t).toContain('Verde 7');
     expect(t.length).toBeLessThanOrEqual(60);
   });
+
+  // Achado do experimento A/B contra produção: extrairLargura exige a palavra LARGURA perto do
+  // número, e "FITAS VELUDO 25MM CORES C/1MT" não tem — então largura saía null e a medida virava
+  // só "1m", derrubando o "25mm" que a IA extraiu corretamente do nome. Resultado real: FITAS
+  // VELUDO 25MM e FITAS VELUDO 20MM geravam o MESMO título ("Fita Veludo Búfalo 1m 100%
+  // Poliéster"). 20 famílias no catálogo têm esse padrão; 4 grupos de irmãs (16/20/25/50MM
+  // C/1MT) se distinguiam SÓ pela largura. As quatro têm que gerar quatro títulos distintos.
+  it('quatro fitas de veludo irmãs (16/20/25/50mm) geram quatro títulos distintos', () => {
+    const larguras = ['16mm', '20mm', '25mm', '50mm'];
+    const titulos = larguras.map((medida) => posProcessarTitulo(
+      slots({ produto: 'FITA VELUDO', marca: 'BUFALO', medida, material: '100% POLIESTER' }),
+      fonte({
+        nomePai: `FITAS VELUDO ${medida.toUpperCase()} CORES C/1MT`,
+        descricaoPai: '100% POLIESTER.',
+        fornecedor: 'BUFALO',
+      }),
+    ));
+    expect(new Set(titulos).size).toBe(4);
+  });
 });

@@ -49,6 +49,13 @@ const RUIDO = [
 // vire um "M" solto pendurado no fim da medida.
 const RE_DIMENSAO_COMPOSTA = /\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?(?:\s*[xX]\s*\d+(?:[.,]\d+)?)*(?:\s*(?:mm|cm|m)\b)?/i;
 
+// Medida simples (mm/cm/m, não composta) que a IA escreveu. Usada só pra achar candidatos a
+// "ancorados" no texto-fonte — extrairLargura/extrairMetragem não são a única forma de a fonte
+// garantir um dado (bug real: "FITAS VELUDO 25MM CORES C/1MT" não tem a palavra LARGURA perto do
+// 25MM, então extrairLargura devolve null e o 25mm que a IA extraiu corretamente era descartado
+// — 13 famílias de fitas/bordado/pompom colapsavam em 4 títulos por perder o discriminador).
+const RE_MEDIDA_SIMPLES = /\d+(?:,\d+)?\s*(?:mm|cm|m)\b/gi;
+
 /** Passo 2 do pipeline: higieniza e canonicaliza o que a IA devolveu. */
 export function normalizarSlots(slots: TituloSlots): TituloSlots {
   const out = { ...slots };
@@ -157,12 +164,23 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   if (metragem || largura) {
     const partes = [metragem, largura].filter(Boolean) as string[];
     const composta = out.medida.match(RE_DIMENSAO_COMPOSTA)?.[0]?.trim();
-    // Não repetir o que a dimensão composta já expressa: em "3,00 X 1,80 Metros" a fonte
-    // extrai "1,80m", que a composta já contém. Compara sem a unidade.
-    const restantes = composta
-      ? partes.filter((p) => !jaContem(composta, p.replace(/[a-z]+$/i, '')))
+    // Medida simples que a IA escreveu FORA da composta (não recontar "15CM" de dentro de
+    // "10X15CM") e que aparece LITERALMENTE na fonte (nome ou descrição) — só o texto ancora,
+    // não o regex de largura/metragem, que não cobre todo formato real ("25MM" sem a palavra
+    // LARGURA por perto). jaContem é por palavra inteira: não confunde "1m" ancorado com o "1M"
+    // de dentro de "13,71MT".
+    const foraDaComposta = composta ? out.medida.replace(composta, '') : out.medida;
+    const tokensAncorados = [...foraDaComposta.matchAll(RE_MEDIDA_SIMPLES)]
+      .map((m) => m[0].trim())
+      .filter((tok) => jaContem(textoFonte, tok));
+    // Não repetir o que a dimensão composta ou uma medida já ancorada da IA já expressam: em
+    // "3,00 X 1,80 Metros" a fonte extrai "1,80m", que a composta já contém. Compara sem a
+    // unidade.
+    const baseAncorada = [composta, ...tokensAncorados].filter(Boolean).join(' ');
+    const restantes = baseAncorada
+      ? partes.filter((p) => !jaContem(baseAncorada, p.replace(/[a-z]+$/i, '')))
       : partes;
-    out.medida = composta ? [composta, ...restantes].join(' ').trim() : partes.join(' ');
+    out.medida = [composta, ...tokensAncorados, ...restantes].filter(Boolean).join(' ').trim();
   }
 
   // Quantidade: costuma vir só na descrição ("pacote com 10 unidades"). A fonte vence a IA,
