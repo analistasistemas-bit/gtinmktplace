@@ -561,8 +561,12 @@ falha ao ler `organizations` não libera.
   período — 4 timeouts (546 em 30/07, 31/07 e 02/08; 504 em 30/07) e um 520 em 02/08 — todas
   salvas pelo retry do QStash. (Ciclos de 233–253s nos eventos são tentativa + retry somados, não
   uma execução única: o teto de ~150s continua valendo por execução.) O crescimento **não vem de
-  `dias`**: `buscarClaimsSeller` varre todos os claims do seller e o Passo 4 faz 1 GET por pack de
-  `ml_vendas` — ambos proporcionais ao histórico da conta, não à janela. Consequência prática:
+  `dias`**: os Passos 1 e 2 (`buscarPerguntasSeller`, `buscarClaimsSeller`) releem o histórico
+  **inteiro** do vendedor a cada execução — sem filtro de data, teto de 2000 registros cada, mais
+  1 GET de return por claim. Uma pergunta respondida ou um claim fechado há meses continua sendo
+  relido para sempre; o custo sobe a cada devolução nova e nunca desce. O Passo 4 **não** é o
+  ofensor: `listarPacksDeVendas` tem `limite = 200`, então é caro porém constante.
+  Consequência prática:
   encolher a janela (30→7 no schedule em 27/07, e no botão "Sincronizar" em 03/08 após um 546) só
   compra tempo. Correção de raiz pendente: portar `ORCAMENTO_MS` + retomabilidade do
   `reconciliar-faturamento`.
