@@ -313,13 +313,32 @@ Deno.serve(async (req) => {
     }
 
     // CREATE + UPDATE com cor nova precisam de IA. 1 batch (não 1 publish por família) —
-    // lote #44 (3299 linhas) estourou o burst rate limit do QStash num loop sequencial.
+    // lote #44 (3299 linhas) precisou de 1 requisição em vez de 18 pro enfileiramento.
     const pendentes = familiasCriadas.filter((f) => f.status === 'pendente');
     const temPendente = pendentes.length > 0;
     if (temPendente) {
-      const messageIds = await enfileirarFamilias(pendentes.map((f) => ({ familia_id: f.id, lote_id: lote.id })));
-      for (const [i, f] of pendentes.entries()) {
-        await admin.from('familias').update({ qstash_message_id: messageIds[i] }).eq('id', f.id);
+      try {
+        const messageIds = await enfileirarFamilias(pendentes.map((f) => ({ familia_id: f.id, lote_id: lote.id })));
+        for (const [i, f] of pendentes.entries()) {
+          await admin.from('familias').update({ qstash_message_id: messageIds[i] }).eq('id', f.id);
+        }
+      } catch (e) {
+        // Achado no lote #44: sem isto, a família fica 'pendente' pra sempre — nada dispara
+        // process-familia pra ela, e "Reenviar" (reprocessar-familia) só alcança família em
+        // 'erro'. Marca só quem de fato não tem mensagem viva (um bloco anterior pode já ter
+        // publicado antes deste bloco falhar — ver `enfileirados` em enfileirarFamilias).
+        const enfileiradas = new Set(
+          ((e as Error & { enfileirados?: { familia_id: string }[] }).enfileirados ?? []).map((j) => j.familia_id),
+        );
+        const orfas = pendentes.filter((f) => !enfileiradas.has(f.id));
+        if (orfas.length > 0) {
+          await admin
+            .from('familias')
+            .update({ status: 'erro', erro_mensagem: `Falha ao enfileirar: ${(e as Error).message}` })
+            .in('id', orfas.map((f) => f.id))
+            .eq('status', 'pendente');
+        }
+        throw e; // lote inteiro ainda vira 'erro' (comportamento existente, ver catch abaixo)
       }
     }
 

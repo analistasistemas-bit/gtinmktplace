@@ -91,12 +91,21 @@ Deno.serve(async (req) => {
         reenviadas++;
       }
     } catch (e) {
-      // Falha ao enfileirar o bloco: devolve TODAS ao estado de erro para não ficarem
-      // 'pendente' órfãs (ninguém processaria), com a causa registrada.
-      await admin
-        .from('familias')
-        .update({ status: 'erro', erro_mensagem: `Falha ao reenfileirar: ${(e as Error).message}` })
-        .in('id', resetadas.map((f) => f.id));
+      // Falha ao enfileirar: só as que NÃO têm mensagem viva voltam pra 'erro' (ninguém
+      // processaria essas). As de um bloco anterior já publicado ficam 'pendente' — reverter
+      // por cima delas apagaria o estado real (e poderia pisar numa família que o worker já
+      // moveu pra 'processando'/'pronto' entre o publish e este catch).
+      const enfileiradas = new Set(
+        ((e as Error & { enfileirados?: { familia_id: string }[] }).enfileirados ?? []).map((j) => j.familia_id),
+      );
+      const falharam = resetadas.filter((f) => !enfileiradas.has(f.id));
+      if (falharam.length > 0) {
+        await admin
+          .from('familias')
+          .update({ status: 'erro', erro_mensagem: `Falha ao reenfileirar: ${(e as Error).message}` })
+          .in('id', falharam.map((f) => f.id))
+          .eq('status', 'pendente');
+      }
     }
   }
 

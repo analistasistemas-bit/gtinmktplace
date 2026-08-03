@@ -1,4 +1,5 @@
 import { Client, Receiver } from 'npm:@upstash/qstash@^2';
+import { enfileirarEmBlocos } from './enfileirar-em-blocos.ts';
 
 let cachedClient: Client | null = null;
 let cachedReceiver: Receiver | null = null;
@@ -39,23 +40,17 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
 }
 
 // Lote #44 (03/08, 3299 linhas): ingest-lote enfileirava 1 publish por família num loop
-// sequencial e estourou o burst rate limit do QStash já na 1ª chamada ("Rate limit exceeded
-// for trace ..."), derrubando o lote inteiro com 18 famílias travadas em 'pendente' sem
-// nenhuma mensagem enfileirada. Batch publish = 1 requisição HTTP por bloco (mesmo endpoint,
-// ver QstashRatelimitError no SDK), não 1 por família. ponytail: bloco de 100 sem limite
-// documentado da API — mesmo tamanho do DEFAULT_BULK_COUNT do próprio SDK; sobe se algum lote
-// legítimo passar disso.
+// sequencial e o QStash devolveu "Rate limit exceeded for trace ..., Retry after 42349ms" já
+// na 1ª chamada, derrubando o lote inteiro — 18 famílias travadas em 'pendente' sem nenhuma
+// mensagem enfileirada. NÃO é o "burst rate limit" documentado da Upstash (esse não existe
+// para publish/batch, só para endpoints de gestão como queues/schedules) — a causa exata dessa
+// mensagem específica não foi confirmada. Ainda assim, 1 requisição HTTP por bloco é estritamente
+// melhor que 1 por família (menos latência, menos superfície de falha), então mantém.
+// Lógica de blocos/erro em enfileirar-em-blocos.ts (testada lá; aqui só liga o QStash real).
 export async function enfileirarFamilias(jobs: ProcessFamiliaJob[]): Promise<string[]> {
   const url = Deno.env.get('SUPABASE_URL')!;
   const target = `${url}/functions/v1/process-familia`;
-  const client = qstashClient();
-  const ids: string[] = [];
-  for (let i = 0; i < jobs.length; i += 100) {
-    const bloco = jobs.slice(i, i + 100);
-    const respostas = await client.batchJSON(bloco.map((body) => ({ url: target, body, retries: 3 })));
-    ids.push(...respostas.map((r) => r.messageId));
-  }
-  return ids;
+  return enfileirarEmBlocos(jobs, target, (msgs) => qstashClient().batchJSON(msgs));
 }
 
 // Fila serial das escritas no ML por usuário (parallelism=1), ADR-0034. Publicar várias

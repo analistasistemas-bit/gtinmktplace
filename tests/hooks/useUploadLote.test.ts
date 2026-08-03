@@ -68,9 +68,11 @@ describe('useUploadLote', () => {
   // Achado 03/08: lote #44 (falha no ingest) sumia da tela "Histórico de lotes" porque nada
   // invalidava QK.lotes — o insert é feito direto pelo cliente, fora do react-query.
   it('invalida QK.lotes ao criar o lote, para a lista aparecer sem precisar de F5', async () => {
-    let qc!: QueryClient;
+    // qc criado FORA do componente wrapper (não a cada render) — senão o spy prenderia
+    // numa instância que `iniciar` já não usaria depois de um re-render (setStatus/setProgresso
+    // disparam vários durante o upload).
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     function wrapperComQc({ children }: { children: ReactNode }) {
-      qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       return createElement(QueryClientProvider, { client: qc }, children);
     }
     const { result } = renderHook(() => useUploadLote(), { wrapper: wrapperComQc });
@@ -80,6 +82,9 @@ describe('useUploadLote', () => {
       await result.current.iniciar(new File(['x'], 'lote.xlsx'), []);
     });
 
+    // Os 3 pontos de invalidação do hook (insert, sucesso, erro) — este teste cobre o
+    // caminho de sucesso; todos chamam com a mesma chave.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: QK.lotes('u1') });
+    expect(invalidateSpy).toHaveBeenCalledTimes(2); // insert + sucesso (não passa pelo catch)
   });
 });
