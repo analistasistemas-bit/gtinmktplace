@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { posProcessarTitulo } from '../titulo-pos';
 import { type DadosFonteTitulo } from '../titulo-guards';
+import { TituloInviavelError } from '../titulo-montar';
 import { SLOTS_VAZIOS, type TituloSlots } from '../titulo-slots';
 
 const slots = (p: Partial<TituloSlots>): TituloSlots => ({ ...SLOTS_VAZIOS, ...p });
@@ -166,5 +167,135 @@ describe('posProcessarTitulo', () => {
     );
     expect(t).toContain('500m');
     expect(t).not.toMatch(/\bMetros\b/i);
+  });
+
+  // CRITICAL-1: unidade por extenso na medida composta duplicava a dimensão quando
+  // normalizarSlots já tinha colado a unidade ("1,80m") antes de aplicarGuardsTitulo rodar —
+  // os testes antigos de composta chamavam aplicarGuardsTitulo direto e nunca viram esse "m"
+  // colado, por isso a regressão (nascida no último commit da branch) passou despercebida.
+  // Os quatro casos abaixo rodam o pipeline INTEIRO (normalizarSlots + aplicarGuardsTitulo
+  // juntos), que é a lacuna que faltava cobrir.
+  describe('CRITICAL-1 — dimensão composta não duplica (pipeline completo)', () => {
+    it('unidade por extenso na medida da IA + mesma medida no nome_pai: 1,80 aparece uma vez', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Tecido Helanca', medida: '3,00 X 1,80 Metros' }),
+        fonte({ nomePai: 'TECIDO HELANCA 3,00 X 1,80 METROS' }),
+      );
+      expect(t.match(/1,80/g)).toHaveLength(1);
+    });
+
+    it('medida já canônica (sem unidade por extenso) + mesma medida no nome_pai: 1,80 uma vez', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Tecido Helanca', medida: '3,00 X 1,80' }),
+        fonte({ nomePai: 'TECIDO HELANCA 3,00 X 1,80 METROS' }),
+      );
+      expect(t.match(/1,80/g)).toHaveLength(1);
+    });
+
+    // NOTA (ver relatório final, "casos que não bateram"): o valor ditado era `contém 10X15CM`
+    // (maiúsculo). tituloCase (titulo-case.ts) só preserva caixa de tokens que batem RE_UNIDADE
+    // (número+unidade simples, ex. "25mm"); "10X15CM" não bate esse padrão e cai no capitalizar()
+    // genérico, que baixa-caixa o resto → "10x15cm". Guard-level (aplicarGuardsTitulo, testado
+    // acima em titulo-guards.test.ts) preserva "10X15CM" exatamente — o slot `medida` nunca é
+    // mutilado; é só a etapa de Title Case, alheia ao CRITICAL-1, que perde a caixa. Não é
+    // duplicação (o bug sendo corrigido aqui), por isso o teste verifica presença sem duplicar.
+    it('dimensão composta em CM sem metragem/largura extraível: aparece uma vez, sem duplicar', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Saco de Organza', medida: '10X15CM' }),
+        fonte({ nomePai: 'SACO DE ORGANZA 10X15CM CORES C/10UND' }),
+      );
+      expect(t.toLowerCase().match(/10x15cm/g)).toHaveLength(1);
+    });
+
+    // Achado do revisor (advisor) durante esta rodada: ampliar a checagem de "já presente" pra
+    // TODOS os slots, se aplicada também à metragem, apaga a metragem inteira do título. A IA
+    // escreveu a metragem em `produto` (canonicalizada por normalizarSlots pra "500m"); o bloco
+    // de dimensão veria "500" já presente em `produto` e não cravaria em `medida` — e o guard de
+    // limpeza cross-slot (linhas seguintes) então APAGA "500m" de `produto` por ser duplicata de
+    // uma `medida` que nunca foi cravada. Resultado: "500m" sumia dos dois lugares. Por isso
+    // metragem só compara contra `baseAncorada` (o que já está em `medida`), nunca contra outros
+    // slots — só largura pode olhar o título inteiro (RE_METRAGEM_TOKEN nunca limpa mm/cm).
+    it('metragem sobrevive quando a IA a escreveu em produto, não em medida', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Barbante 500 Metros' }),
+        fonte({ nomePai: 'BARBANTE BANDEIRANTE 500MT' }),
+      );
+      expect(t).toContain('500m');
+    });
+
+    // Segunda face do mesmo risco: comparar por número CRU colidiria entre unidades diferentes
+    // no MESMO produto — metragem "10m" e quantidade "10un" compartilham o número "10".
+    it('metragem não é confundida com quantidade de mesmo número cru (10m vs 10un)', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Fita', quantidade: '10un' }),
+        fonte({ nomePai: 'FITA 10MT C/10UND' }),
+      );
+      expect(t).toContain('10m');
+      expect(t).toContain('10un');
+    });
+
+    it('largura simples (mm) + metragem grounded distintas: as duas sobrevivem', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Fitas Veludo', medida: '25mm' }),
+        fonte({ nomePai: 'FITAS VELUDO 25MM CORES C/1MT' }),
+      );
+      expect(t).toContain('25mm');
+      expect(t).toContain('1m');
+    });
+  });
+
+  // CRITICAL-2: cores.length === 0 não pode zerar `variacao` — é o discriminador (tamanho,
+  // espessura) da família perante as irmãs quando não há cor nenhuma envolvida.
+  describe('CRITICAL-2 — variacao sem cor sobrevive como discriminador', () => {
+    it('família sem cor: variacao (tamanho) sobrevive no título', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Camiseta', variacao: 'Tamanho G' }),
+        fonte({ nomePai: 'CAMISETA BASICA TAMANHO G', cores: [] }),
+      );
+      expect(t).toContain('Tamanho G');
+    });
+
+    it('família multi-cor: variacao continua zerada (comprador escolhe na variação)', () => {
+      const t = posProcessarTitulo(
+        slots({ produto: 'Camiseta', variacao: 'Tamanho G' }),
+        fonte({ nomePai: 'CAMISETA BASICA TAMANHO G', cores: ['Azul', 'Preto'] }),
+      );
+      expect(t).not.toContain('Tamanho G');
+    });
+
+    // Integração: duas famílias-irmãs sem cor, diferindo só por tamanho, têm que gerar títulos
+    // DISTINTOS — é exatamente a falha que este desenho existe para impedir (ML derruba a
+    // segunda por duplicado). `produto` calibrado pra estourar 60 chars COM a variação: sem a
+    // proteção de corte (variacaoDiscrimina), o corte derrubaria `variacao` — o único slot
+    // cortável presente — e as duas famílias colapsariam no MESMO título (só `produto`).
+    it('duas famílias-irmãs sem cor, diferindo só por tamanho, geram títulos distintos', () => {
+      // Calibrado pra forçar o corte de verdade: produto+variacao+material estoura 60 (98
+      // chars), então `variacao` entra na fila de corte (ORDEM_CORTE testa `variacao` antes de
+      // `material`). Sem a proteção, `variacao` é o que sai — e como `material` é igual nas
+      // duas famílias, ambas colapsam em "Produto ... Material", o mesmo título. Protegida,
+      // `material` é quem sai (produto+variacao sozinhos já cabem em 60), e as duas distinguem.
+      const produto = 'CAMISETA BASICA ALGODAO PENTEADO GOLA REDONDA';
+      const material = '100% ALGODAO PENTEADO PREMIUM COM ELASTANO EXTRA MACIO';
+      const camisetaG = posProcessarTitulo(
+        slots({ produto, variacao: 'Tamanho G', material }),
+        fonte({ nomePai: `${produto} TAMANHO G`, descricaoPai: material, cores: [] }),
+      );
+      const camisetaM = posProcessarTitulo(
+        slots({ produto, variacao: 'Tamanho M', material }),
+        fonte({ nomePai: `${produto} TAMANHO M`, descricaoPai: material, cores: [] }),
+      );
+      expect(camisetaG).not.toBe(camisetaM);
+      expect(camisetaG).toContain('Tamanho G');
+      expect(camisetaM).toContain('Tamanho M');
+    });
+  });
+
+  // IMPORTANT-2: título vazio é inviável, nunca deve virar '' silencioso — isso vira
+  // `title: ''` no publish (_shared/ml/publicar.ts:207) e um 400 do ML longe da causa.
+  it('lança TituloInviavelError quando produto some por ser adjetivo vazio (IMPORTANT-2)', () => {
+    expect(() => posProcessarTitulo(
+      slots({ produto: 'Premium' }),
+      fonte({}),
+    )).toThrow(TituloInviavelError);
   });
 });

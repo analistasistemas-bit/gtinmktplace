@@ -2,7 +2,7 @@ import { openrouterClient } from './client.ts';
 import { MODELO_COPY } from './modelos.ts';
 import { custoCentavos } from './tokens.ts';
 import { type InputCopy, SYSTEM, montarUserPrompt, validarTipoProdutoBusca } from './copywriter-prompt.ts';
-import { ORDEM_LEITURA, SLOTS_VAZIOS, type TituloSlots } from './titulo-slots.ts';
+import { ORDEM_LEITURA, SLOTS_VAZIOS, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 
 export type { InputCopy };
 
@@ -49,6 +49,22 @@ export const SCHEMA_COPY = {
   strict: true,
 } as const;
 
+/**
+ * Coage cada slot pra string (IMPORTANT-3): o schema `json_schema strict` declara `type: string`,
+ * mas o modelo é escolhido por organização (ADR-0074) e nem todo provider honra o schema à risca
+ * — se devolver número ou null num slot, normalizarSlots chama `.trim()` e estoura "trim is not a
+ * function". gerarCopy não tem fallback resiliente (ADR-0030): esse TypeError derrubava a família
+ * inteira com stack opaco em vez de uma família com aquele slot vazio.
+ */
+export function coagirSlots(brutos: Partial<Record<SlotTitulo, unknown>> | undefined | null): TituloSlots {
+  const out = { ...SLOTS_VAZIOS };
+  for (const slot of ORDEM_LEITURA) {
+    const v = brutos?.[slot];
+    out[slot] = v == null ? '' : String(v);
+  }
+  return out;
+}
+
 /** Timeout do OpenRouter foi disparado (AbortSignal) ou o SDK abortou a chamada. */
 function foiTimeout(e: unknown): boolean {
   if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) return true;
@@ -72,7 +88,7 @@ async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy>
   );
   const conteudo = resp.choices[0]?.message?.content;
   if (!conteudo) throw new Error('resposta vazia');
-  let parsed: { titulo_slots: Partial<TituloSlots>; descricao: string; tipo_produto_busca: string };
+  let parsed: { titulo_slots: Partial<Record<SlotTitulo, unknown>>; descricao: string; tipo_produto_busca: string };
   try {
     parsed = JSON.parse(conteudo);
   } catch (e) {
@@ -80,9 +96,9 @@ async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy>
   }
   const usage = resp.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
   return {
-    // Merge com SLOTS_VAZIOS: mesmo com `required` no schema, um modelo pode devolver a chave
-    // ausente. O default garante o contrato de dez chaves para todo consumidor a jusante.
-    titulo_slots: { ...SLOTS_VAZIOS, ...parsed.titulo_slots },
+    // Coage cada slot pra string e cobre chave ausente com "" (contrato de dez chaves, mesmo
+    // que o schema `required` seja desrespeitado ou o valor venha em outro tipo — IMPORTANT-3).
+    titulo_slots: coagirSlots(parsed.titulo_slots),
     descricao: parsed.descricao,
     tipo_produto_busca: validarTipoProdutoBusca(parsed.tipo_produto_busca, input.nome, input.descricao_detalhado),
     tokens_input: usage.prompt_tokens,

@@ -155,6 +155,16 @@ function jaContem(valor: string, agulha: string): boolean {
   return new RegExp(`\\b${agulha.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(valor);
 }
 
+// Mesmo espírito de jaContem, mas para comparar um NÚMERO cru (sem letra de unidade) contra um
+// texto que pode ter a unidade colada logo depois ("1,80m"). \b falha nessa fronteira porque
+// dígito e letra são ambos \w — jaContem('3,00 X 1,80m', '1,80') dava falso-negativo, e a medida
+// da fonte era cravada de novo (CRITICAL-1: "Tecido Helanca 3,00 X 1,80m 1,80m"). Aqui a fronteira
+// é "não dígito/vírgula", que tolera uma letra de unidade emendada de qualquer lado.
+function numeroAncorado(base: string, numero: string): boolean {
+  const escapado = numero.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\d,])${escapado}(?![\\d,])`).test(base);
+}
+
 // Termo cujas palavras já estão em outro slot não é recravado — duplicaria o dado no título
 // ("Lapis de Escrever Resina 7 Verde ... Verde 7", lote #33). Não exige ordem nem adjacência:
 // "Verde 7" está coberta por "RESINA 7 VERDE".
@@ -220,11 +230,15 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   const textoFonte = `${fonte.nomePai}\n${fonte.descricaoPai}`;
 
   // Tipo de produto (ADR-0054): nome só de marca+especificação não diz o que o produto É.
+  // "Já presente?" tem de olhar TODOS os slots preenchidos, não só `produto` (IMPORTANT-1):
+  // fonte com tipoProdutoBusca='barbante' e a IA já tendo posto 'Barbante' em `sinonimo` só
+  // checando `produto` prefixava de novo → "Barbante Euroroma 4/6 Barbante".
   const tipo = fonte.tipoProdutoBusca?.trim();
   if (tipo) {
     const palavras = normalizar(tipo).split(/\s+/).filter((w) => w.length >= 3);
-    const presente = palavras.some((w) => jaContem(normalizar(out.produto), w))
-      || termoColado(out.produto, tipo);
+    const textoSlotsAtual = ORDEM_LEITURA.map((s) => out[s]).filter(Boolean).join(' ');
+    const presente = palavras.some((w) => jaContem(normalizar(textoSlotsAtual), w))
+      || termoColado(textoSlotsAtual, tipo);
     if (palavras.length > 0 && !presente) out.produto = `${tipo.toUpperCase()} ${out.produto}`.trim();
   }
 
@@ -241,7 +255,6 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   const metragem = extrairMetragem(fonte.nomePai);
   const largura = extrairLargura(textoFonte);
   if (metragem || largura) {
-    const partes = [metragem, largura].filter(Boolean) as string[];
     const composta = out.medida.match(RE_DIMENSAO_COMPOSTA)?.[0]?.trim();
     // Medida simples que a IA escreveu FORA da composta (não recontar "15CM" de dentro de
     // "10X15CM") e que aparece LITERALMENTE na fonte (nome ou descrição) — só o texto ancora,
@@ -254,11 +267,33 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
       .filter((tok) => jaContem(textoFonte, tok));
     // Não repetir o que a dimensão composta ou uma medida já ancorada da IA já expressam: em
     // "3,00 X 1,80 Metros" a fonte extrai "1,80m", que a composta já contém. Compara sem a
-    // unidade.
+    // unidade, com fronteira tolerante a ela colada (numeroAncorado, CRITICAL-1).
     const baseAncorada = [composta, ...tokensAncorados].filter(Boolean).join(' ');
-    const restantes = baseAncorada
-      ? partes.filter((p) => !jaContem(baseAncorada, p.replace(/[a-z]+$/i, '')))
-      : partes;
+
+    // metragem: só compara contra o que JÁ ESTÁ em `medida` (baseAncorada), nunca contra os
+    // outros slots. Dois motivos pra não ampliar: (1) número cru colide entre unidades
+    // diferentes — "FITA 10MT C/10UND" tem metragem "10m" e quantidade "10un", ambos "10"; um
+    // match por número em qualquer slot apagaria a metragem achando-a "já coberta" pela
+    // quantidade. (2) o guard de limpeza cross-slot logo abaixo (medidaCravadaDaFonte) só
+    // remove RE_METRAGEM_TOKEN de outros slots quando `medida` foi de fato cravada — se este
+    // bloco decidir não cravar por achar o número em outro slot, aquele guard ainda assim tira
+    // a menção de lá, e a metragem some do título inteiro (achado do revisor).
+    const metragemJaAncorada = metragem != null && numeroAncorado(baseAncorada, metragem.replace(/[a-z]+$/i, ''));
+
+    // largura: pode comparar contra o título inteiro (IMPORTANT-1) — o guard de tipo de produto
+    // acima pode já ter prefixado a mesma largura em `produto` ("FITA VELUDO 25MM" + fonte
+    // "LARGURA: 25MM" duplicava pra "Fita Veludo 25mm 25mm"). Usa o TOKEN completo ("25mm"), não
+    // o número cru: RE_METRAGEM_TOKEN (guard de limpeza abaixo) nunca intersecta mm/cm — "M"
+    // seguido de "M" mata o \b —, então uma largura remanescente num outro slot nunca é limpa de
+    // lá, e comparar por número cru arriscaria o mesmo colapso de unidades do parágrafo acima.
+    const outrosSlots = ORDEM_LEITURA.filter((s) => s !== 'medida').map((s) => out[s]).filter(Boolean).join(' ');
+    const textoLarguraAncorada = [baseAncorada, outrosSlots].filter(Boolean).join(' ');
+    const larguraJaAncorada = largura != null && jaContem(textoLarguraAncorada, largura);
+
+    const restantes = [
+      metragem != null && !metragemJaAncorada ? metragem : null,
+      largura != null && !larguraJaAncorada ? largura : null,
+    ].filter((v): v is string => v != null);
     out.medida = [composta, ...tokensAncorados, ...restantes].filter(Boolean).join(' ').trim();
   }
 
@@ -303,8 +338,17 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   // inteiro, gerando duas famílias-irmãs com título idêntico (o oposto do ADR-0044). Duplicação
   // eventual é bem menos grave que perder o discriminador.
   const corJaCoberta = corUnica != null && todasPalavrasCobertas(`${out.produto} ${out.medida}`, corUnica);
-  if (corUnica && !ehCorIndefinida(corUnica) && !corJaCoberta) out.variacao = corUnica;
-  else if (fonte.cores.length !== 1 || ehCorIndefinida(corUnica) || corJaCoberta) out.variacao = '';
+  if (corUnica && !ehCorIndefinida(corUnica) && !corJaCoberta) {
+    out.variacao = corUnica;
+  } else if (fonte.cores.length > 0) {
+    // Zera só quando HÁ cor a considerar (1 indefinida/coberta, ou >1 — comprador escolhe).
+    // cores.length === 0 fica de fora de propósito (CRITICAL-2): sem variação de cor, o que a
+    // IA pôs em `variacao` (tamanho, espessura) é o discriminador da família e não pode ser
+    // apagado só porque não existe exatamente uma cor — o garantirCorTitulo antigo nunca
+    // deletava, só substituía; devolver '' aqui funde famílias-irmãs sem cor que só diferem por
+    // tamanho no mesmo título, e o ML derruba a segunda por duplicado.
+    out.variacao = '';
+  }
 
   // Marca: o mapa só corrige a GRAFIA. A permissão vem de validarSlotsAncorados.
   const doMapa = marcaDoFornecedor(fonte.fornecedor);
@@ -393,7 +437,10 @@ export function validarSlotsAncorados(slots: TituloSlots, fonte: DadosFonteTitul
   // afirmá-la a partir do campo de fornecedor é o que o padrão do ML proíbe.
   if (out.marca) {
     const ehLoja = LOJA_NUNCA_MARCA.includes(normalizar(out.marca));
-    const ancorada = alvoFonte.includes(normalizar(out.marca));
+    // Fronteira de PALAVRA, não substring (IMPORTANT-4): fornecedor='LINHAS SETTA LTDA' dá
+    // marca 'Setta', e 'Setta' É substring de 'ROSETTA' — `includes` afirmava a marca a partir
+    // de "LINHA ROSETTA 100M", marca falsa que a moderação do ML pune.
+    const ancorada = jaContem(alvoFonte, normalizar(out.marca));
     if (ehLoja || !ancorada) out.marca = '';
   }
 

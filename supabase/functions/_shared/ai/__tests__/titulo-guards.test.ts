@@ -129,6 +129,29 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.medida).toContain('3,00 X 1,80');
   });
 
+  // IMPORTANT-1 (sintoma 1): a checagem de "já coberta" olhava só `medida`, não o título
+  // inteiro. Aqui a IA já pôs "25MM" em `produto` (via canonicalização de normalizarSlots), e a
+  // largura grounded na fonte é a MESMA medida — não pode ser cravada de novo em `medida`.
+  it('não duplica a largura quando ela já está em OUTRO slot (produto), não em medida (IMPORTANT-1)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'FITA VELUDO 25mm' }),
+      fonte({ nomePai: 'FITA VELUDO', descricaoPai: 'LARGURA: 25MM.' }),
+    );
+    expect(s.medida).toBe('');
+  });
+
+  // CRITICAL-1: `aplicarGuardsTitulo` chamado ISOLADO (sem normalizarSlots antes) nunca recebe
+  // a unidade colada na composta ("1,80m") — é exatamente por isso que a regressão sobreviveu à
+  // suíte antiga. Este teste prova que o bloco de dimensão, sozinho, já não duplica quando a
+  // composta É a mesma medida que a fonte extrai (mesmo sem o "m" colado).
+  it('não duplica a dimensão composta mesmo com a metragem extraída batendo em cheio (CRITICAL-1, guard isolado)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'TECIDO HELANCA LIGHT', medida: '3,00 X 1,80m' }),
+      fonte({ nomePai: 'Tecido Helanca Light 3,00 X 1,80 Metros' }),
+    );
+    expect(s.medida.match(/1,80/g)).toHaveLength(1);
+  });
+
   it('acrescenta a largura grounded à medida', () => {
     const s = aplicarGuardsTitulo(
       slots({ produto: 'LANTEJOULA', medida: '50m' }),
@@ -237,6 +260,15 @@ describe('aplicarGuardsTitulo', () => {
     expect(s.variacao).toBe('');
   });
 
+  // CRITICAL-2: cores.length === 0 é DIFERENTE de cores.length > 1. O código antigo zerava
+  // `variacao` sempre que `cores.length !== 1`, o que incluía zero — apagando o discriminador
+  // (tamanho, espessura) de uma família sem variação de cor nenhuma. O garantirCorTitulo antigo
+  // nunca deletava quando nCores !== 1, só substituía; essa garantia tinha que sobreviver aqui.
+  it('NÃO mexe em variacao quando não há cor nenhuma (CRITICAL-2)', () => {
+    const s = aplicarGuardsTitulo(slots({ produto: 'CAMISETA', variacao: 'Tamanho G' }), fonte({ cores: [] }));
+    expect(s.variacao).toBe('Tamanho G');
+  });
+
   it('NUNCA crava cor indefinida no título (incidente do lote #31)', () => {
     for (const cor of ['Outra', '(sem cor identificada)']) {
       const s = aplicarGuardsTitulo(slots({ produto: 'COLA LIQUIDA SILICONE' }), fonte({ cores: [cor] }));
@@ -290,6 +322,16 @@ describe('aplicarGuardsTitulo', () => {
       fonte({ nomePai: 'BUFALO 14MM C/100UND', tipoProdutoBusca: 'pompom' }),
     );
     expect(s.produto.toUpperCase().startsWith('POMPOM')).toBe(true);
+  });
+
+  // IMPORTANT-1 (sintoma 2): a checagem de "já presente" olhava só `produto`, não o título
+  // inteiro. Com o tipo já coberto por outro slot (`sinonimo`), o guard prefixava de novo.
+  it('não duplica o tipo de produto quando ele já está em OUTRO slot, não em produto (IMPORTANT-1)', () => {
+    const s = aplicarGuardsTitulo(
+      slots({ produto: 'EUROROMA 4/6', sinonimo: 'Barbante' }),
+      fonte({ nomePai: 'EUROROMA 4/6', tipoProdutoBusca: 'barbante' }),
+    );
+    expect(s.produto).toBe('EUROROMA 4/6');
   });
 
   it('usa o mapa para corrigir a grafia da marca', () => {
@@ -443,6 +485,17 @@ describe('dedup entre slots (lote #33)', () => {
 });
 
 describe('validarSlotsAncorados', () => {
+  // IMPORTANT-4: `includes` afirmava marca por SUBSTRING — 'Setta' é substring de 'ROSETTA'.
+  // O positivo (marca ancorada de verdade, ex.: BUFALO em FITA CETIM BUFALO) já está coberto
+  // por "mantém marca ancorada, ignorando acento na comparação" abaixo.
+  it('não afirma marca quando ela é só substring de outra palavra da fonte (IMPORTANT-4)', () => {
+    const s = validarSlotsAncorados(
+      slots({ produto: 'LINHA', marca: 'Setta' }),
+      fonte({ nomePai: 'LINHA ROSETTA 100M', fornecedor: 'LINHAS SETTA LTDA' }),
+    );
+    expect(s.marca).toBe('');
+  });
+
   it('remove marca que não aparece na fonte', () => {
     const s = validarSlotsAncorados(
       slots({ produto: 'FITA', marca: 'Detallia' }),

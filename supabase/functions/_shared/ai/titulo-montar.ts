@@ -20,7 +20,13 @@ export class TituloInviavelError extends Error {
     readonly slotsObrigatorios: Partial<TituloSlots>,
     readonly comprimento: number,
   ) {
-    super(`Título obrigatório excede ${TITULO_MAX} caracteres: ${comprimento}`);
+    // comprimento === 0 é o caso IMPORTANT-2: `produto` (o único slot que o contrato promete
+    // nunca vazio) chegou aqui zerado — RUIDO, ADJETIVOS_VAZIOS ou removerMarketingNaoAncorado
+    // consumiram tudo (ex.: a IA devolveu só "Premium", banido em termos absolutos). Mensagem
+    // distinta porque "excede 60 caracteres: 0" seria falsa e confusa.
+    super(comprimento === 0
+      ? 'Título ficou vazio: produto foi zerado pelos guards (adjetivo vazio/marketing/ruído sem outro dado)'
+      : `Título obrigatório excede ${TITULO_MAX} caracteres: ${comprimento}`);
     this.name = 'TituloInviavelError';
   }
 }
@@ -30,6 +36,9 @@ export class TituloInviavelError extends Error {
  * única parte testável do tratamento — as pastas de edge function não têm suíte.
  */
 export function mensagemTituloInviavel(e: TituloInviavelError): string {
+  if (e.comprimento === 0) {
+    return 'Título ficou vazio depois da limpeza de adjetivo vazio/marketing (o campo NOME provavelmente só tinha marketing sem dado de produto). Revise o NOME na planilha.';
+  }
   const campos = Object.entries(e.slotsObrigatorios).map(([k, v]) => `${k}="${v}"`).join(', ');
   return `Título obrigatório não cabe em 60 caracteres (${e.comprimento}). Encurte o nome do produto na planilha. Campos: ${campos}`;
 }
@@ -84,6 +93,14 @@ function render(slots: TituloSlots, presentes: Set<SlotTitulo>): string {
  * de corte, pulando os incortáveis; esgotado tudo, lança TituloInviavelError.
  */
 export function montarTitulo(slots: TituloSlots, ctx: ContextoCorte): string {
+  // IMPORTANT-2: `produto` é o único slot que o contrato promete nunca vazio (titulo-slots.ts).
+  // Se chegou aqui zerado, o título inteiro é inviável — devolver '' terminaria em
+  // `title: ''` no publish (_shared/ml/publicar.ts:207) e um 400 do ML longe da causa real.
+  // produto é protegido de remoção (slotsIncortaveis) e sempre entra em `presentes` quando
+  // não-vazio, então esta checagem é necessária E suficiente: nenhum outro caminho zera o
+  // render final sem também zerar `produto`.
+  if (!slots.produto?.trim()) throw new TituloInviavelError({}, 0);
+
   const protegidos = slotsIncortaveis(ctx);
   let atual: TituloSlots = { ...slots };
   const presentes = new Set<SlotTitulo>(ORDEM_LEITURA.filter((s) => slots[s]?.trim()));

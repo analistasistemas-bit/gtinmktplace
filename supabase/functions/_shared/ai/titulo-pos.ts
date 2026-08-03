@@ -34,5 +34,11 @@ export function posProcessarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo
   // distintos, então a cor é o que diferencia esta família das irmãs (ADR-0044).
   // Cor indefinida não discrimina nada — não faz sentido protegê-la do corte.
   const corUnica = fonte.cores.length === 1 ? fonte.cores[0] : null;
-  return montarTitulo(validados, { variacaoDiscrimina: !!corUnica && !ehCorIndefinida(corUnica) });
+  const corDiscrimina = !!corUnica && !ehCorIndefinida(corUnica);
+  // CRITICAL-2: sem cor nenhuma (cores.length === 0), aplicarGuardsTitulo deixa `variacao`
+  // intocada — o que sobrou ali (tamanho, espessura) é o discriminador da família perante as
+  // irmãs, mesma FUNÇÃO que a cor cumpre quando existe (ADR-0099: a regra é sobre função, não
+  // sobre tipo). Sem esta proteção o corte de 60 chars podia derrubá-la como qualquer slot comum.
+  const semCorMasComVariacao = fonte.cores.length === 0 && !!validados.variacao.trim();
+  return montarTitulo(validados, { variacaoDiscrimina: corDiscrimina || semCorMasComVariacao });
 }
