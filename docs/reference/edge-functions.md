@@ -555,14 +555,21 @@ falha ao ler `organizations` não libera.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
-  ⚠️ **Único worker de faturamento SEM guarda de orçamento** — por isso ainda é o que estoura.
-  Medido no schedule (`dias:7`, todas as orgs, ciclos sem retry): mediana **70s em 27/07 → 81s em
-  03/08**, ~+1,6s/dia, com **4 timeouts** no período (546 em 30/07, 31/07 e 02/08; 504 em 30/07),
-  todos salvos pelo retry do QStash. O crescimento **não vem de `dias`**: `buscarClaimsSeller`
-  varre todos os claims do seller e o Passo 4 faz 1 GET por pack de `ml_vendas` — ambos
-  proporcionais ao histórico da conta, não à janela. Consequência prática: encolher a janela
-  (30→7 no schedule em 27/07, e no botão "Sincronizar" em 03/08 após um 546) só compra tempo.
-  Correção de raiz pendente: portar o `ORCAMENTO_MS` + retomabilidade do `reconciliar-faturamento`.
+  ⚠️ **Não tem a guarda de orçamento que o `reconciliar-faturamento` ganhou em 31/07** — por isso
+  ainda é o worker de faturamento que estoura. Medido no schedule (`dias:7`, todas as orgs, só
+  ciclos sem retry): mediana **70s em 27/07 → 81s em 03/08**, ~+1,6s/dia, com **5 falhas** no
+  período — 4 timeouts (546 em 30/07, 31/07 e 02/08; 504 em 30/07) e um 520 em 02/08 — todas
+  salvas pelo retry do QStash. (Ciclos de 233–253s nos eventos são tentativa + retry somados, não
+  uma execução única: o teto de ~150s continua valendo por execução.) O crescimento **não vem de
+  `dias`**: `buscarClaimsSeller` varre todos os claims do seller e o Passo 4 faz 1 GET por pack de
+  `ml_vendas` — ambos proporcionais ao histórico da conta, não à janela. Consequência prática:
+  encolher a janela (30→7 no schedule em 27/07, e no botão "Sincronizar" em 03/08 após um 546) só
+  compra tempo. Correção de raiz pendente: portar `ORCAMENTO_MS` + retomabilidade do
+  `reconciliar-faturamento`.
+  Nota sobre o caminho manual: o botão é **single-org** (`scopedOrgId` pelo JWT) e as medições
+  acima são do schedule, que percorre todas as conexões — o 546 do botão em 30 dias (02/08) é
+  consistente com os 129s medidos em 27/07 mais esse crescimento, mas não há cronometragem direta
+  do caminho manual.
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
   de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`), sem limite de janela — `buscarClaimsSeller` varre TODOS os
   claims opened+closed do vendedor. Liveness (ADR-0069): só o catch

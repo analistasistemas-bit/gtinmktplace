@@ -133,8 +133,9 @@ export function mesclarVendas(atuais: Venda[], delta: Venda[]): Venda[] {
  * Os 129s deixaram de caber: o custo FIXO cresce sozinho, porque não depende de `dias` —
  * `buscarClaimsSeller` varre todos os claims do seller e o passo de mensagens faz 1 GET por pack
  * de `ml_vendas`, ambos proporcionais ao histórico da conta. Medido no schedule (`dias:7`, todas
- * as orgs): mediana 70s em 27/07 → 81s em 03/08, ~+1,6s/dia, com 4 timeouts esporádicos no
- * período (salvos pelo retry do QStash). Reduzir a janela só compra tempo — o teto volta.
+ * as orgs): mediana 70s em 27/07 → 81s em 03/08, ~+1,6s/dia, com 5 falhas esporádicas no período
+ * — 4 timeouts (546/504) e um 520, todas salvas pelo retry do QStash. Reduzir a janela só compra
+ * tempo — o teto volta.
  * Correção de raiz: guarda de orçamento + retomabilidade no backfill, como em
  * `reconciliar-faturamento` (ver `backfill-faturamento/index.ts:8-12`).
  */
