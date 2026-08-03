@@ -2,6 +2,30 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Botão "Sincronizar" dando 546 — a correção anterior era inerte (2026-08-03)
+
+- [x] **A correção de 03/08 (`a3a4f2c`) não chegava a alterar o botão.** Ela mudou o *default* de
+  `sincronizarFaturamento(dias = 30 → 7)`, mas o único chamador —
+  `src/components/faturamento/aba-vendas.tsx:247` — passa `30` explícito desde 26/07 (`42a702a`).
+  O botão continuava pedindo 30 dias e o 546 voltaria no clique seguinte. Fix: chamar sem
+  argumento, deixando a janela com uma fonte só (o default, hoje 7, igual ao schedule do QStash).
+- [x] **Devoluções não dependem da janela.** `buscarClaimsSeller` varre todos os claims
+  `opened`+`closed` do vendedor sem filtro de data — reduzir `dias` não perde nenhuma devolução no
+  backfill. Quem cobre o dinheiro (`ml_vendas.estorno`/`liquido`) de devolução em venda antiga é
+  o `reconciliar-faturamento` (claims sem limite de janela + resync de estorno via MP, de hora em
+  hora, com guarda de orçamento) e o `sync-devolucao` em tempo real, que re-busca o pedido e chama
+  `upsertVenda` em qualquer idade. O Passo 2 do backfill grava o claim mas **não** recalcula a
+  venda — não era ele que sustentava os 30 dias.
+- [x] **O problema de fundo não é a janela.** O custo do backfill cresce sem depender de `dias`
+  (claims do seller + 1 GET por pack de `ml_vendas`). Medido no schedule (`dias:7`, todas as orgs,
+  só ciclos sem retry): mediana **70s em 27/07 → 81s em 03/08** (~+1,6s/dia), com 5 falhas no
+  período (546 em 30/07, 31/07, 02/08; 504 em 30/07; 520 em 02/08), todas salvas pelo retry do
+  QStash. Encolher a janela só compra tempo. **Pendente (não feito aqui):** portar `ORCAMENTO_MS`
+  + retomabilidade do `reconciliar-faturamento` para o `backfill-faturamento`.
+- Docs: `docs/reference/edge-functions.md` (medição + nota de que o backfill não tem a guarda de
+  orçamento que o `reconciliar-faturamento` ganhou em 31/07). Sem mudança em
+  `supabase/functions/**` — nenhum deploy de edge necessário.
+
 ## Redesenho da tela de Estoque — concluído 2026-08-02
 
 - [x] **Causa raiz:** listagem, cadastro e o card de movimentos/variações usavam `<table>`

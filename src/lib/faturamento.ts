@@ -126,9 +126,18 @@ export function mesclarVendas(atuais: Venda[], delta: Venda[]): Venda[] {
 /**
  * Dispara o backfill (botão "Sincronizar") para o próprio usuário.
  *
- * `dias` default 30, não 90: medido em 2026-07-27 na conta Avil (~600 pedidos/30d), o backfill
- * custa ≈47s fixos + ~2,7s por dia de janela, contra um limite de ~150s da edge function. Com 90
- * a chamada levaria ~294s e estourava sempre — o botão nunca completou. 30 dias fecha em ~129s.
+ * `dias` default 7 (era 30 até 2026-08-03), igual ao schedule horário do QStash. Medido em
+ * 2026-07-27 na conta Avil (~600 pedidos/30d): ≈47s fixos + ~2,7s por dia de janela, contra o
+ * limite de ~150s da edge function. Com 90 seriam ~294s — nunca coube; 30 fechava em ~129s.
+ *
+ * Os 129s deixaram de caber: o custo FIXO cresce sozinho, porque não depende de `dias` —
+ * `buscarClaimsSeller` varre todos os claims do seller e o passo de mensagens faz 1 GET por pack
+ * de `ml_vendas`, ambos proporcionais ao histórico da conta. Medido no schedule (`dias:7`, todas
+ * as orgs): mediana 70s em 27/07 → 81s em 03/08, ~+1,6s/dia, com 5 falhas esporádicas no período
+ * — 4 timeouts (546/504) e um 520, todas salvas pelo retry do QStash. Reduzir a janela só compra
+ * tempo — o teto volta.
+ * Correção de raiz: guarda de orçamento + retomabilidade no backfill, como em
+ * `reconciliar-faturamento` (ver `backfill-faturamento/index.ts:8-12`).
  */
 export async function sincronizarFaturamento(dias = 7): Promise<{ sincronizados: number }> {
   const { data: { session } } = await supabase.auth.getSession();

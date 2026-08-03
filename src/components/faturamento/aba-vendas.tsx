@@ -244,7 +244,10 @@ export function AbaVendas() {
   async function sincronizar() {
     setSincronizando(true);
     try {
-      const r = await sincronizarFaturamento(30);
+      // Sem argumento de propósito: a janela é o default de `sincronizarFaturamento` (7 dias,
+      // igual ao schedule do QStash). Passar o número aqui já deixou o botão em 30 dias enquanto
+      // o default dizia 7 — a janela tem uma fonte só.
+      const r = await sincronizarFaturamento();
       toast.success(`Sincronizado: ${r.sincronizados} pedido(s).`);
       await refetch();
     } catch (e) {
