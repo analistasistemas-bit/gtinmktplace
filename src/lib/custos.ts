@@ -21,6 +21,8 @@ export interface MapasCusto {
   porItem: Map<string, ValorProduto>;
   /** GTIN normalizado → custo/peso. */
   porGtin: Map<string, ValorProduto>;
+  /** Código/SKU normalizado → custo/peso (fallback para vendas sem EAN). */
+  porCodigo: Map<string, ValorProduto>;
 }
 
 /** Monta os mapas de custo/peso a partir das linhas já lidas de `variacoes` (puro, testável).
@@ -30,6 +32,7 @@ export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCus
   const porVariacao = new Map<string, ValorProduto>();
   const porItem = new Map<string, ValorProduto>();
   const porGtin = new Map<string, ValorProduto>();
+  const porCodigo = new Map<string, ValorProduto>();
   const upsertMax = (m: Map<string, ValorProduto>, k: string, val: ValorProduto) => {
     if (val.custo > (m.get(k)?.custo ?? 0)) m.set(k, val);
   };
@@ -40,6 +43,7 @@ export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCus
     const peso = Number(v.peso_gramas ?? 0);
     const varId = v.ml_variation_id as string | null;
     const gtin = v.gtin as string | null;
+    const codigo = v.codigo as string | null;
     type FamLite = { ml_item_id: string | null; origem?: OrigemProduto };
     const fams = v.familias as FamLite | FamLite[] | null;
     const fam = Array.isArray(fams) ? fams[0] : fams;
@@ -49,8 +53,9 @@ export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCus
     if (varId != null) upsertMax(porVariacao, String(varId), val);
     if (itemId != null) upsertMax(porItem, String(itemId), val);
     if (gtin) upsertMax(porGtin, normGtin(gtin), val);
+    if (codigo) upsertMax(porCodigo, normGtin(codigo), val);
   }
-  return { porVariacao, porItem, porGtin };
+  return { porVariacao, porItem, porGtin, porCodigo };
 }
 
 /** Lê custo + peso cadastrados das variações do usuário (RLS) e monta os mapas de resolução. */
@@ -58,14 +63,14 @@ export async function buscarCustos(): Promise<MapasCusto> {
   const rows = await buscarTodasPaginas<Record<string, unknown>>((de, ate) =>
     supabase
       .from('variacoes')
-      .select('custo, peso_gramas, ml_variation_id, gtin, familias!inner(ml_item_id, origem)')
+      .select('custo, peso_gramas, ml_variation_id, gtin, codigo, familias!inner(ml_item_id, origem)')
       .not('custo', 'is', null)
       .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
   );
   return montarMapasCusto(rows);
 }
 
-/** Resolve o produto de um item de venda na cadeia variação → anúncio → GTIN. null = não casou. */
+/** Resolve o produto de um item de venda na cadeia variação → anúncio → GTIN → Código/SKU. null = não casou. */
 function resolverProduto(m: MapasCusto | undefined, item: VendaItem): ValorProduto | null {
   if (!m) return null;
   if (item.variation_id != null) {
@@ -78,6 +83,10 @@ function resolverProduto(m: MapasCusto | undefined, item: VendaItem): ValorProdu
   }
   if (item.ean) {
     const x = m.porGtin.get(normGtin(item.ean));
+    if (x != null) return x;
+  }
+  if (item.codigo) {
+    const x = m.porCodigo.get(normGtin(item.codigo));
     if (x != null) return x;
   }
   return null;

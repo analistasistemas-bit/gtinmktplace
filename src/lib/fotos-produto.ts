@@ -16,6 +16,8 @@ export interface MapasFoto {
   porItem: Map<string, string>;
   /** GTIN normalizado → imagem_path. */
   porGtin: Map<string, string>;
+  /** Código/SKU normalizado → imagem_path (fallback para vendas sem EAN). */
+  porCodigo: Map<string, string>;
 }
 
 /** Lê o imagem_path das variações do usuário (RLS) e monta os mapas de resolução.
@@ -23,26 +25,29 @@ export interface MapasFoto {
 export async function buscarFotos(): Promise<MapasFoto> {
   const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
     .from('variacoes')
-    .select('imagem_path, ml_variation_id, gtin, familias!inner(ml_item_id)')
+    .select('imagem_path, ml_variation_id, gtin, codigo, familias!inner(ml_item_id)')
     .not('imagem_path', 'is', null)
     .range(de, ate));
 
   const porVariacao = new Map<string, string>();
   const porItem = new Map<string, string>();
   const porGtin = new Map<string, string>();
+  const porCodigo = new Map<string, string>();
 
   for (const v of data) {
     const path = v.imagem_path as string | null;
     if (!path) continue;
     const varId = v.ml_variation_id as string | null;
     const gtin = v.gtin as string | null;
+    const codigo = v.codigo as string | null;
     const fams = v.familias as { ml_item_id: string | null } | { ml_item_id: string | null }[] | null;
     const itemId = (Array.isArray(fams) ? fams[0]?.ml_item_id : fams?.ml_item_id) ?? null;
     if (varId != null && !porVariacao.has(String(varId))) porVariacao.set(String(varId), path);
     if (itemId != null && !porItem.has(String(itemId))) porItem.set(String(itemId), path);
     if (gtin && !porGtin.has(normGtin(gtin))) porGtin.set(normGtin(gtin), path);
+    if (codigo && !porCodigo.has(normGtin(codigo))) porCodigo.set(normGtin(codigo), path);
   }
-  return { porVariacao, porItem, porGtin };
+  return { porVariacao, porItem, porGtin, porCodigo };
 }
 
 /** Resolver de foto (storage path) p/ o agregador. null = sem foto cadastrada. */
@@ -59,6 +64,10 @@ export function montarFotoResolver(m: MapasFoto | undefined): FotoResolver {
     }
     if (item.ean) {
       const x = m.porGtin.get(normGtin(item.ean));
+      if (x != null) return x;
+    }
+    if (item.codigo) {
+      const x = m.porCodigo.get(normGtin(item.codigo));
       if (x != null) return x;
     }
     return null;

@@ -130,7 +130,7 @@ export function mesclarVendas(atuais: Venda[], delta: Venda[]): Venda[] {
  * custa ≈47s fixos + ~2,7s por dia de janela, contra um limite de ~150s da edge function. Com 90
  * a chamada levaria ~294s e estourava sempre — o botão nunca completou. 30 dias fecha em ~129s.
  */
-export async function sincronizarFaturamento(dias = 30): Promise<{ sincronizados: number }> {
+export async function sincronizarFaturamento(dias = 7): Promise<{ sincronizados: number }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/backfill-faturamento`, {

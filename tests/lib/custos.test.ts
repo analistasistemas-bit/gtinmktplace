@@ -57,6 +57,21 @@ describe('montarCustoResolver — normalização de GTIN', () => {
   });
 });
 
+describe('montarCustoResolver — fallback por Código/SKU sem EAN', () => {
+  it('casa por código quando item não tem EAN nem variação/anúncio vinculados', () => {
+    const mapas = montarMapasCusto([linha({ codigo: '2743647', custo: 26, peso_gramas: 2200 })]);
+    const custo = montarCustoResolver(mapas);
+    const peso = montarPesoResolver(mapas);
+
+    // Venda vinda do ML com SKU '02743647' (com zero à esquerda) e ean: null
+    expect(custo(item({ codigo: '02743647', ean: null }))).toBe(26);
+    expect(peso(item({ codigo: '02743647', ean: null }))).toBe(2200);
+
+    // Venda vinda com SKU '2743647' (sem zero à esquerda)
+    expect(custo(item({ codigo: '2743647', ean: null }))).toBe(26);
+  });
+});
+
 describe('montarPesoResolver', () => {
   const mapas = montarMapasCusto([
     linha({ ml_variation_id: '1', custo: 10, peso_gramas: 250 }),
