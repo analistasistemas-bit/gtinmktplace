@@ -292,6 +292,58 @@ describe('removerPerguntasIncompletas — R6 (ADR-0098)', () => {
 });
 
 describe('posProcessarDescricao — composição única dos guards (ADR-0098)', () => {
+  it('separa cabeçalhos e blocos quando a IA devolve o template compactado', () => {
+    const descricao = [
+      '🧵 POMADA REPARADORA PARA HIDRATAÇÃO INTENSA',
+      'Primeiro parágrafo.',
+      'Segundo parágrafo.',
+      '✅ BENEFÍCIOS',
+      '✔ Benefício um',
+      '✔ Benefício dois',
+      '📌 ESPECIFICAÇÕES',
+      '• Marca: Eucerin',
+      '• Conteúdo: 2 unidades de 10 ml',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+      '▪ O kit possui duas unidades? Sim.',
+      '▪ Pode ser usado diariamente? Sim.',
+      '▪ Pode ser aplicado nos lábios? Sim.',
+      '🚚 ENVIO RÁPIDO',
+      'Produto à pronta entrega.',
+    ].join('\n');
+
+    const r = posProcessarDescricao(descricao, 'EUCERIN AQUAPHOR DUO PACK', '');
+
+    expect(r).toBe([
+      '🧵 POMADA REPARADORA PARA HIDRATAÇÃO INTENSA',
+      '',
+      'Primeiro parágrafo.',
+      '',
+      'Segundo parágrafo.',
+      '',
+      '✅ BENEFÍCIOS',
+      '',
+      '✔ Benefício um',
+      '✔ Benefício dois',
+      '',
+      '📌 ESPECIFICAÇÕES',
+      '',
+      '• Marca: Eucerin',
+      '• Conteúdo: 2 unidades de 10 ml',
+      '',
+      '❓ PERGUNTAS SOBRE ESTE PRODUTO',
+      '',
+      '▪ O kit possui duas unidades? Sim.',
+      '',
+      '▪ Pode ser usado diariamente? Sim.',
+      '',
+      '▪ Pode ser aplicado nos lábios? Sim.',
+      '',
+      '🚚 ENVIO RÁPIDO',
+      '',
+      'Produto à pronta entrega.',
+    ].join('\n'));
+  });
+
   it('aplica largura, metragem e a poda de perguntas numa passada só', () => {
     const descricao = [
       '🧵 INTRO',
