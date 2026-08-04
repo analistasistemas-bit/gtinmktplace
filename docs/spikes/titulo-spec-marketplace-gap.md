@@ -21,9 +21,13 @@ ADR-0070), e o censo do catálogo (seção própria, abaixo) **rejeitou por inex
 resto: `2x10ml` existe em 1 família de 305, `SORT`/`PAD`/`PC` em zero, e a gramatura já chega
 canônica da fonte.
 
-**Sobra um único item com valor:** `termos_com_risco`. E o censo achou de graça uma pergunta que
-ninguém tinha feito — 13 títulos em exatamente 60 caracteres, num sistema cujo único ponto de
-truncamento é o fallback do split.
+**Sobra um único item com valor:** `termos_com_risco`.
+
+O censo também produziu um susto útil: 119 títulos com separador `|` criados *depois* do merge do
+ADR-0099 pareciam indicar deploy defasado — o incidente clássico deste projeto. Não era. São
+`UPDATE`s herdando o título anterior por decisão do ADR-0016. **Dos 7 `CREATE` do período, 7
+saíram limpos.** O caminho da apuração está registrado abaixo porque a métrica ingênua ("títulos
+criados após o merge") mede o regime antigo, e qualquer auditoria futura cairá na mesma armadilha.
 
 ## Três fatos que decidem o valor de qualquer mudança aqui
 
@@ -265,16 +269,54 @@ argumento estrutural (o dedup compara contra a forma canônica já estabilizada)
 **não é zero** — é 7,2% do catálogo perdendo "Caixa com" no título. Se algum dia houver evidência
 de que a forma natural converte melhor, é aqui que se mede.
 
-### Saúde do pipeline pós-ADR-0099
+### Saúde do pipeline pós-ADR-0099 — e uma correção metodológica
 
-- **Zero `TituloInviavelError` em produção.** Das 6 famílias em erro, todas são de anúncio
-  removido/fechado no ML — nenhuma de título. A decisão de falhar alto não está custando famílias.
-- **Comprimento do título** (138 famílias): mín. 26, mediana 50, média 49,74, máx. 60. Confirma o
-  A/B do ADR-0099 (média 45,6) e a regra T6: o título não tenta ocupar os 60.
-- **13 títulos (9,4%) em exatamente 60 caracteres** — em apuração. `montarTitulo` remove slots
-  inteiros, então aterrissar no teto exato deveria ser raro; mas `titulo-particao.ts:59-66`
-  (fallback do split, ADR-0048) remove palavras até caber e, no caso degenerado, faz
-  `.slice(0, 60)`. É o único ponto do sistema que trunca. Ver seção seguinte.
+**Das 138 famílias criadas após o merge, apenas 7 são `CREATE`.** As outras 131 são `UPDATE`, e
+`ingest-lote/index.ts:205` **herda `titulo_ml` da família anterior** por decisão do ADR-0016
+(UPDATE não re-roda IA). Isso significa que a maioria dos títulos "novos" no banco são títulos
+**antigos herdados** — qualquer métrica agregada sobre as 138 mede o regime anterior, não o atual.
+
+| Operação | Famílias | Com `\|` (formato antigo) |
+|---|---|---|
+| UPDATE | 131 | 119 |
+| CREATE | **7** | **0** |
+
+**O pipeline novo está limpo em 100% dos CREATEs.** Os 7 títulos:
+
+```
+53  Agulha de Costura Singer 2020 10un Tecidos de Algodão
+51  Pomada Reparadora Eucerin Aquaphor 10ml 2un Incolor
+48  Kit Agulha 1025 18x8cm 5un Plástico Tricô Crochê
+46  Kit Agulha Índio Búfalo Tamanhos Variados 25pc
+37  Fio para Amigurumi Pingouin 100g/110m
+34  Agulha de Costura Singer 2045 10un
+34  Agulha de Costura Singer 2024 02un
+```
+
+Sem separador, sem adjetivo vazio, Title Case, unidades canônicas (`10un`, `100g/110m`, `25pc`,
+`18x8cm`). Máximo de 53 chars — nenhum encosta no teto, confirmando a regra T6.
+
+**O pico de 13 títulos em exatamente 60 caracteres não é bug do sistema atual.** Todos os 13 têm
+separador `|` — são do formato antigo, herdados via UPDATE. O clamp em 60 era comportamento do
+regime anterior (os guards antigos "clampavam o título final em 60 caracteres", ADR-0054). O
+`.slice(0, 60)` de `titulo-particao.ts:66` **não** é a causa: aquela função só roda para partições
+`>0`, cujo resultado vai para `anuncios_externos.titulo`, nunca para `familias.titulo_ml`.
+
+**Ressalva de honestidade sobre o "zero `TituloInviavelError`":** o denominador real é **7
+CREATEs**, não 138. Com essa amostra, "zero erros" é consistente com o desenho saudável, mas não é
+evidência forte. As 6 famílias em erro são todas de anúncio removido/fechado no ML — nenhuma de
+título, isso permanece verdadeiro.
+
+### Evidência direta contra o `2x10ml`
+
+A única família multipack do catálogo (Eucerin, `00000006`) passou pelo pipeline novo e saiu:
+
+```
+Pomada Reparadora Eucerin Aquaphor 10ml 2un Incolor   (51 chars, folga de 9)
+```
+
+A spec produziria `2x10ml` no lugar de `10ml 2un` — economia de 2 caracteres num título que já tem
+9 de folga. O único caso do catálogo onde a regra se aplicaria não tem problema que ela resolva.
 
 ### O que o censo NÃO respondeu
 
