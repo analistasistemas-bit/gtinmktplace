@@ -46,6 +46,7 @@ vi.mock('../../ai/copywriter.ts', () => ({
     },
     descricao: 'x',
     tipo_produto_busca: 'barbante',
+    termos_com_risco: [],
     tokens_input: 0,
     tokens_output: 0,
     custo_centavos: 0,

@@ -111,7 +111,8 @@ pressão que a exigisse.
 
 - O modelo é escolhido **por organização** (ADR-0074). O A/B cobriu um modelo; uma org com modelo
   mais fraco é exatamente onde o contrabando apareceria, e é onde a válvula pagaria.
-- O custo é desprezível: ~150 tokens no SYSTEM por chamada e um campo inerte quando vazio.
+- O custo é baixo e medido: o bloco T8 adiciona **909 caracteres** ao SYSTEM (14.673 contra 13.764),
+  algo em torno de 230 tokens por chamada de copy, mais um campo inerte quando vazio.
 - Dois casos não são evidência de ausência de efeito. O defeito que originou o ADR-0099 só apareceu
   num censo de 143 títulos — dois testes não teriam encontrado 35% de cauda vazia tampouco.
 
