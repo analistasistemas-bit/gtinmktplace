@@ -8,6 +8,26 @@ atualizado: 2026-07-31
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
+## 2026-08-04 — produto da Avil foi gravado indevidamente na DSA
+
+**Sintoma:** uma família de tecido Oxford da Avil apareceu no estoque da DSA com cinco variações
+e saldo total 1.000.
+
+**Causa raiz:** não houve leitura cruzada por RLS. Uma intervenção SQL administrativa criou uma
+segunda árvore de lote/família/variações na DSA e preencheu estoque diretamente, fora do fluxo de
+cadastro e do ledger.
+
+**Correção:** a árvore exata da DSA foi removida em transação após confirmar que não possuía
+anúncios, movimentos ou vínculos externos; o produto legítimo da Avil permaneceu intacto. A
+migration `20260804113000_guard_manual_product_direct_writes.sql` passou a validar a cadeia de
+organização, imutabilidade do lote e invariantes do cadastro manual, além de permitir mudança de
+saldo somente pelas RPCs auditadas. O token administrativo usado no incidente também foi
+rotacionado e o anterior revogado.
+
+**Lição:** `service_role`/SQL administrativo não substitui o fluxo de domínio. Toda mutação de
+tenant precisa resolver o `org_id` explicitamente, mostrar o alvo antes da autorização e terminar
+com readback cruzado comprovando que as demais organizações não mudaram.
+
 ## 2026-07-30 — Frete da Viabilidade saía R$0 sem explicação (conta ML sem Mercado Envios)
 
 **Sintoma:** Diego reportou que o "Frete (vendedor)" na Viabilidade estava R$12,35 pra um GTIN e

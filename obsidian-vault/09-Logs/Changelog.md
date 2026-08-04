@@ -9,6 +9,14 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-08-04
+
+- **Segurança: bloqueio de gravações administrativas entre organizações.** Produto indevido
+  removido da DSA sem alterar a família legítima da Avil; nova migration valida a cadeia
+  `lote → família → variação`, protege o ledger de estoque e executa as RPCs com papel interno de
+  menor privilégio. Token administrativo rotacionado e revogado após a intervenção. Ver
+  [[Incidentes]].
+
 ## 2026-07-27
 
 - **Fix: reconciliação de estornos e devoluções antigas no Faturamento/Dashboard.** Reembolso de R$ 35,76 do pedido `#2000017218710936` não aparecia no Dashboard. `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) resolve `order_id` por `shipping_id` quando `claim.resource === 'shipment'`; `reconciliar-faturamento` re-sincroniza o pagamento/estorno via Mercado Pago para pedidos com devoluções recentes de até 30 dias. Ver [[Problemas Resolvidos]].

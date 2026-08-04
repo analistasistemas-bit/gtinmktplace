@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Produto gravado na organização errada — corrigido 2026-08-04
+
+- [x] **Causa raiz confirmada:** não foi vazamento de leitura por RLS. Uma gravação SQL
+  administrativa direta criou na DSA uma segunda árvore de lote/família/variações baseada em um
+  produto da Avil, contornando o fluxo oficial e o ledger de estoque.
+- [x] **Remediação:** a árvore indevida da DSA foi removida com assertions transacionais e
+  readback cruzado; a família legítima da Avil foi preservada.
+- [x] **Prevenção:** migration `20260804113000_guard_manual_product_direct_writes.sql` torna
+  `lotes.org_id`/`origem` imutáveis, valida a cadeia de `org_id`, rejeita cadastro manual sem
+  chave/código de oito dígitos e bloqueia estoque direto fora das RPCs auditadas.
+- [x] **Menor privilégio:** as RPCs de estoque pertencem a `estoque_rpc_executor` (`NOLOGIN`, sem
+  `BYPASSRLS`), com políticas RLS explícitas; `postgres` não pode assumir nem herdar o papel.
+- [x] **Credencial administrativa:** PAT usado na intervenção foi rotacionado, substituído nas
+  três configurações locais identificadas, validado pela CLI e revogado no painel.
+- [x] **Validação:** regressão transacional, `supabase db lint`, migration remota e CI do PR #70
+  passaram.
+
 ## Enfileiramento em loop deixando famílias órfãs — 3 correções (2026-08-03)
 
 Um incidente, três lugares com o mesmo padrão: marcar N registros no banco e **depois**
