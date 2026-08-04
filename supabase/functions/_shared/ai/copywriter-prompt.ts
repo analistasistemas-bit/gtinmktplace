@@ -161,6 +161,41 @@ export function removerPerguntasIncompletas(descricao: string): string {
   return `${descricao.slice(0, ini).trimEnd()}\n\n${descricao.slice(fim)}`.trim();
 }
 
+const EMOJIS_CABECALHO = '[🧵✅📌🎯❓🎨📦🚚]';
+
+/**
+ * O schema garante texto, mas não garante que o modelo respeite as linhas em branco do
+ * template. Reconstrói apenas o espaçamento estrutural, sem reescrever a copy: seções e
+ * parágrafos ficam separados; listas continuam compactas; perguntas ganham respiro entre si.
+ */
+export function formatarDescricao(descricao: string): string {
+  const linhas = descricao
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((linha) => linha.trim())
+    .filter(Boolean);
+  const ehCabecalho = (linha: string) => new RegExp(`^${EMOJIS_CABECALHO}\\s*\\S`, 'u').test(linha);
+  const ehBullet = (linha: string) => /^[✔•▪-]\s+/.test(linha);
+  const saida: string[] = [];
+  let emPerguntas = false;
+
+  for (let i = 0; i < linhas.length; i++) {
+    const atual = linhas[i];
+    const proxima = linhas[i + 1];
+    if (ehCabecalho(atual)) emPerguntas = atual.startsWith('❓');
+    saida.push(atual);
+    if (!proxima) continue;
+
+    const separar = ehCabecalho(atual) || ehCabecalho(proxima) ||
+      (!ehBullet(atual) && !ehBullet(proxima)) ||
+      (ehBullet(atual) !== ehBullet(proxima)) ||
+      (emPerguntas && ehBullet(atual) && ehBullet(proxima));
+    if (separar) saida.push('');
+  }
+
+  return saida.join('\n');
+}
+
 /**
  * Todo o pós-processamento determinístico da descrição. Os dois call sites (process-familia e
  * regenerar-copy-familia) compunham os guards à mão e por isso divergiam a cada guard novo —
@@ -177,7 +212,11 @@ export function removerPerguntasIncompletas(descricao: string): string {
  */
 export function posProcessarDescricao(descricao: string, nomePai: string, descricaoPai: string): string {
   const podada = removerPerguntasIncompletas(descricao);
-  return garantirMetragemDescricao(garantirLarguraDescricao(podada, nomePai, descricaoPai), nomePai);
+  const ancorada = garantirMetragemDescricao(
+    garantirLarguraDescricao(podada, nomePai, descricaoPai),
+    nomePai,
+  );
+  return formatarDescricao(ancorada);
 }
 
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.
