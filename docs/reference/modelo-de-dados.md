@@ -257,6 +257,22 @@ Grupos:
   `catalog_erro`.
 - **Resultado/exclusão:** `ml_variation_id`, `excluida_da_publicacao`.
 
+#### Guardas contra gravação administrativa direta
+
+A migration `20260804113000_guard_manual_product_direct_writes.sql` reforça o isolamento do
+ADR-0027 também para sessões administrativas, que podem contornar o RLS por desenho:
+
+- `lotes.org_id` e `lotes.origem` não podem mudar depois da criação;
+- `familias` e `variacoes` devem manter o mesmo `org_id` de seus pais;
+- lote manual só aceita família com `chave_cadastro`, códigos de oito dígitos e variação com
+  estoque inicial zero;
+- alterações de saldo só passam por `registrar_entrada`, `baixar_estoque` ou
+  `estornar_estoque`, mantendo saldo e `estoque_movimentos` na mesma transação.
+
+As três RPCs pertencem ao papel interno `estoque_rpc_executor` (`NOLOGIN`, sem `BYPASSRLS`) e
+usam políticas RLS mínimas e explícitas. O papel `postgres` não recebe capacidade de `SET` nem
+herança desse executor após a migration.
+
 ### `anuncios_externos`
 Espelho multicanal normalizado. Identidade estável independente de lote/família.
 *Migrations `20260614152627_anuncios_externos.sql` (ADR-0025) + `20260705234110_e6_anuncios_externos_estado.sql` (ADR-0061).*
