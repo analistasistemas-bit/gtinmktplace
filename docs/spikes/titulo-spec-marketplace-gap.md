@@ -11,8 +11,9 @@
 
 O documento externo e o ADR-0099 são **o mesmo desenho**: extração factual em slots → montagem
 determinística por template → redução por prioridade → validação de ancoragem. O PubliAI já
-implementa ~85% dele. Restam 4 deltas reais, dos quais **1 deve ser rejeitado** por reabrir um
-defeito já medido e corrigido.
+implementa ~85% dele. Dos deltas restantes, **2 devem ser rejeitados** por reabrir defeitos já
+medidos e corrigidos em produção (`atributo_principal` → ADR-0098/0099; dicionário de sinônimos →
+ADR-0070), e só **1 tem valor claro hoje**: registrar o que os guards descartam.
 
 ## Três fatos que decidem o valor de qualquer mudança aqui
 
@@ -34,7 +35,7 @@ defeito já medido e corrigido.
 |---|---|---|
 | `produto` | `produto` | idêntico, incl. "nunca vazio" |
 | `marca` | `marca` | idêntico, incl. "razão social não é marca" |
-| `linha` | — | **coberto**: `titulo-slots.ts` documenta `modelo` como "numeração, **linha** ou referência" |
+| `linha` | `modelo` | coberto pelo **contrato**, não exercitado pelo **prompt** — diferir (ver abaixo) |
 | `modelo` | `modelo` | idêntico, incl. a proibição de código interno (`RUIDO`) |
 | `atributo_principal` | — | **delta — rejeitar** (ver abaixo) |
 | `embalagem` | `quantidade` | parcial: falta a composição `2x10ml` |
@@ -43,7 +44,7 @@ defeito já medido e corrigido.
 | `variacao` | `variacao` | PubliAI é mais forte: `variacaoDiscrimina` protege do corte |
 | `compatibilidade` | `compatibilidade` | idêntico |
 | `aplicacao` | `aplicacao` | idêntico |
-| `sinonimo` | `sinonimo` | idêntico (T7: só da fonte) |
+| `sinonimo` | `sinonimo` | slot idêntico (T7: só da fonte); o **dicionário aprovado** da §16 é proposta nova — **rejeitar** |
 | `tipo_produto` | `tipo_produto_busca` | existe, mas serve à categoria (ADR-0054), não à ordem |
 | `template_recomendado` | `ORDEM_LEITURA` única | **delta — diferir** |
 | `catalogo` | — | delta sem valor no ML (ver abaixo) |
@@ -52,7 +53,9 @@ defeito já medido e corrigido.
 Regras não-slot do documento já implementadas: §8 termos proibidos (`ADJETIVOS_VAZIOS`,
 `MARKETING_TERMOS`), §9 dialeto (`ABREVIACOES`, `RUIDO`), §10 unidades (`CONVERSOES_UNIDADE`),
 §11 dedup cross-slot (`aplicarGuardsTitulo`), §12 ordem de redução (`REDUCOES` + `ORDEM_CORTE`),
-§14 legibilidade (`tituloCase`), §20 regras do montador (`montarTitulo`).
+§14 legibilidade (`tituloCase`), §20 regras do montador (`montarTitulo`). O score 0-10 da §22 não
+tem equivalente e não precisa ter: o censo de defeitos do ADR-0099 (medido em produção, não
+auto-atribuído pelo próprio gerador) já cumpre esse papel com evidência melhor.
 
 ---
 
@@ -74,6 +77,28 @@ família Eucerin da tabela de fornecedores do ADR-0099. `Estampado Natal` perten
 **Se for adotado mesmo assim**, a única forma segura é exigir que o valor seja um trecho contíguo
 literal da fonte (padrão de `validarTextoLivre`, ADR-0052) — nunca o padrão frouxo de
 `tipo_produto_busca`.
+
+## Rejeitar: dicionário controlado de sinônimos (§16)
+
+Hoje o T7 admite **uma** fonte de sinônimo: o texto do produto. A §16 propõe uma segunda —
+um dicionário aprovado (`Tecido Helanca Light → Helanquinha`). O ADR-0070 é o argumento contra,
+e ele é empírico: em "Linha Cléa", `linha` e `fio` estavam **os dois ancorados na fonte** e o
+modelo escolheu errado assim mesmo, em produção, em 2 de 3 famílias do mesmo lote — a inconsistência
+apareceu na mesma chamada, com a mesma fonte. A correção foi *estreitar* a decisão à palavra que a
+planilha declara, não alargá-la. Um dicionário aprovado alarga exatamente o espaço de escolha que o
+ADR-0070 teve que fechar.
+
+## Diferir: `linha` como conceito (Aquaphor, EcoTank)
+
+`titulo-slots.ts` documenta `modelo` como "numeração, **linha** ou referência", mas todos os
+exemplos do prompt (`copywriter-prompt.ts:308`) são numéricos: `N.3`, `Nº 6`, `Tex 29`, `4/6`.
+Pelo próprio achado do ADR-0098 — *exemplo few-shot vence regra declarada* — uma linha comercial
+como "Aquaphor" provavelmente não cai em `modelo` hoje.
+
+Não é um slot novo, é um exemplo faltando no prompt. Mas fica em diferir por um risco específico
+deste catálogo: aqui existem produtos cujo **tipo** é literalmente a palavra "Linha" (ADR-0070).
+Ensinar `modelo` a carregar linhas comerciais convida a mesma confusão que o ADR-0070 fechou.
+Reavaliar quando entrar catálogo com linhas de marca de verdade.
 
 ## Diferir: templates por categoria (§6)
 
@@ -104,25 +129,39 @@ adicionar.
 
 ---
 
-## Adotar (custo baixo, valor real)
+## Adotar
 
-### 1. `termos_com_risco` como telemetria
+### 1. `termos_com_risco` como telemetria — o único item com valor claro
 
-`validarSlotsAncorados` já derruba o que não tem respaldo na fonte — mas **em silêncio**. Passar a
-devolver/registrar *o que* foi derrubado dá a mesma visibilidade de censo que produziu o ADR-0099,
-sem mudar nenhum título. Risco ~zero.
+`validarSlotsAncorados` (`titulo-guards.ts:445`) já derruba o que não tem respaldo na fonte — mas
+**em silêncio**: devolve `TituloSlots` e nada mais. Registrar *o que* foi derrubado dá a mesma
+visibilidade de censo que produziu o próprio ADR-0099, sem alterar título nenhum.
 
-### 2. Entradas faltantes de dialeto e unidade
+Duas formas, e a diferença de custo importa:
+
+- **`console.warn` dentro da própria função** (recomendado): zero mudança de assinatura, zero
+  ripple. Os logs de edge function já são a ferramenta de diagnóstico do projeto — foi assim que o
+  ADR-0084 achou a causa do 400.
+- **Devolver a lista** (`{ slots, descartados }`): muda a assinatura e propaga por
+  `posProcessarTitulo` e os 3 call sites. Só vale se a lista tiver que chegar à UI do operador.
+
+### 2. Dialeto e unidade — baixo custo, frequência não medida
 
 Comparação linha a linha com `ABREVIACOES`/`RUIDO`/`CONVERSOES_UNIDADE`:
 
 | Item do documento | Hoje |
 |---|---|
-| `SORT`, `VR`, `PAD` isolados | ausentes de `RUIDO` |
+| `SORT`, `VR`, `PAD` isolados | ausentes de `RUIDO` (que só cobre `VR` dentro de "TAM VR") |
 | `PC` → peças | coberto quando vem com número (`12PC` → `12pc`); `PC` isolado, não |
-| `120 G/M2 → 120g/m²` | **não coberto** — `G` de uma letra foi deliberadamente excluído de `CONVERSOES_UNIDADE` (colide com tamanho P/M/G). Gramatura é dado real num catálogo de tecidos; precisa de regra própria ancorada em `/M2`, não da entrada genérica de gramas. |
+| `120 G/M2 → 120g/m²` | não coberto — `G` de uma letra foi deliberadamente excluído de `CONVERSOES_UNIDADE` (colide com tamanho P/M/G). Exigiria regra própria ancorada em `/M2`. |
 
-Poucas linhas de array + a regra de gramatura.
+**Ressalva de evidência:** nenhum destes aparece no censo de 143 títulos do ADR-0099 (o `GR` de lá
+é grama, já coberto). São itens de um documento genérico, não medidos contra a planilha do Diego.
+E `RUIDO` é **destrutivo** — `if (RUIDO.some(...)) v = ''` zera o slot inteiro; uma entrada nova
+com falso positivo apaga dado real.
+
+Mesmo gate do `2x10ml`: contar a ocorrência no catálogo antes de escrever a regra. São poucas linhas
+de array, mas poucas linhas erradas num guard destrutivo já custaram lotes inteiros neste projeto.
 
 ---
 
