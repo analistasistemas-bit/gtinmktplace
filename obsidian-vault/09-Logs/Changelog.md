@@ -16,6 +16,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   `lote → família → variação`, protege o ledger de estoque e executa as RPCs com papel interno de
   menor privilégio. Token administrativo rotacionado e revogado após a intervenção. Ver
   [[Incidentes]].
+- **Fix: Viabilidade passa a usar o preço promocional vigente do Mercado Livre.** A concorrência
+  enriquece as ofertas do catálogo com `/items/{item_id}/sale_price` antes de calcular min/max;
+  preserva o preço padrão como fallback e invalida logicamente o cache legado com `gtin:v2:*`.
+  Caso reproduzido: GTIN `4005800220012`, R$ 65,61 → R$ 45,19.
 
 ## 2026-07-27
 

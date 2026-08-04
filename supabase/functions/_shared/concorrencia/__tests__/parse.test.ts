@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../parse';
+import { enriquecerItensComPrecosVenda, parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../parse';
 
 describe('parseProdutoBusca', () => {
   it('payload vazio/inválido → null', () => {
@@ -71,6 +71,22 @@ describe('parseItensProduto', () => {
     expect(r.total_ofertas).toBe(4);
   });
 
+  it('usa o preço promocional vigente no lugar do preço padrão do anúncio', () => {
+    const r = parseItensProduto({
+      results: [
+        { seller_id: 1, price: 65.61, sale_price: { amount: 45.19 } },
+        { seller_id: 2, price: 67.25, sale_price: null },
+      ],
+    });
+
+    expect(r.preco_min).toBe(45.19);
+    expect(r.preco_max).toBe(67.25);
+    expect(r.ofertas_detalhe).toEqual([
+      { seller_id: 1, preco: 45.19 },
+      { seller_id: 2, preco: 67.25 },
+    ]);
+  });
+
   it('vendedores distintos e seller_ids únicos', () => {
     const r = parseItensProduto(json);
     expect(r.vendedores).toBe(3);
@@ -107,5 +123,26 @@ describe('parseItensProduto', () => {
   it('ofertas_detalhe: seller_id ausente → seller_id null', () => {
     const r = parseItensProduto({ results: [{ price: 10 }] });
     expect(r.ofertas_detalhe).toEqual([{ seller_id: null, preco: 10 }]);
+  });
+});
+
+describe('enriquecerItensComPrecosVenda', () => {
+  it('consulta cada item e injeta o preço de venda vigente sem perder o fallback', async () => {
+    const json = {
+      results: [
+        { item_id: 'MLB1', seller_id: 1, price: 65.61 },
+        { item_id: 'MLB2', seller_id: 2, price: 67.25 },
+      ],
+    };
+    const precos = new Map([['MLB1', 45.19]]);
+
+    const enriquecido = await enriquecerItensComPrecosVenda(
+      json,
+      async (itemId) => precos.get(itemId) ?? null,
+    );
+
+    const r = parseItensProduto(enriquecido);
+    expect(r.preco_min).toBe(45.19);
+    expect(r.preco_max).toBe(67.25);
   });
 });

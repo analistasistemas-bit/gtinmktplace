@@ -19,6 +19,17 @@
 - [x] **Validação:** regressão transacional, `supabase db lint`, migration remota e CI do PR #70
   passaram.
 
+## Viabilidade usava preço padrão em vez da promoção vigente no ML (2026-08-04)
+
+- [x] Reproduzido com GTIN `4005800220012`: API interna mostrava R$ 65,61 enquanto a página do
+  Mercado Livre vendia por R$ 45,19.
+- [x] Causa raiz: `_shared/ml/concorrencia.ts` consumia o campo legado `price` de
+  `/products/{product_id}/items`, que pode representar o preço padrão sem a promoção ativa.
+- [x] Cada oferta passa a consultar `/items/{item_id}/sale_price?context=channel_marketplace`,
+  preservando o preço anterior como fallback; cache de GTIN versionado para `v2`.
+- [x] Regressão TDD cobre R$ 65,61 → R$ 45,19 e fallback. 28 testes focados verdes;
+  `deno check`, `deno lint` e `git diff --check` limpos.
+
 ## Enfileiramento em loop deixando famílias órfãs — 3 correções (2026-08-03)
 
 Um incidente, três lugares com o mesmo padrão: marcar N registros no banco e **depois**

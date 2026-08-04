@@ -1,7 +1,12 @@
 import { getValidAccessTokenConexao } from './token.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { gtinsValidos, type FamiliaParaBusca } from '../concorrencia/identificador.ts';
-import { parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../concorrencia/parse.ts';
+import {
+  enriquecerItensComPrecosVenda,
+  parseProdutoBusca,
+  parseNomeProdutoBusca,
+  parseItensProduto,
+} from '../concorrencia/parse.ts';
 import { classificarConcorrencia } from '../concorrencia/classificar.ts';
 import { agregarConcorrencia, type ProdutoConcorrencia } from '../concorrencia/agregar.ts';
 import { cacheConcorrenciaGet, cacheConcorrenciaSet } from '../redis/cache-concorrencia.ts';
@@ -61,7 +66,7 @@ export async function buscarConcorrencia(
     // Leituras de cache em paralelo: Redis GET não tem rate-limit/ordenação como a API do ML.
     const cacheados = await pool(10, candidatos, async (gtin) => ({
       gtin,
-      cached: await cacheConcorrenciaGet(`gtin:${gtin}`).catch(() => null),
+      cached: await cacheConcorrenciaGet(`gtin:v2:${gtin}`).catch(() => null),
     }));
     for (const { gtin, cached } of cacheados) {
       if (!cached) {
@@ -86,16 +91,24 @@ export async function buscarConcorrencia(
             );
             const productId = parseProdutoBusca(busca);
             if (!productId) {
-              await cacheConcorrenciaSet(`gtin:${gtin}`, {
+              await cacheConcorrenciaSet(`gtin:v2:${gtin}`, {
                 vendedores: 0, preco_min: null, origem: 'gtin', classe: 'sem', product_id: null, product_name: null,
               }).catch(() => {});
               return null;
             }
 
             const itensJson = await mlGet(`${API}/products/${productId}/items`, token);
-            const ofertas = parseItensProduto(itensJson);
+            const itensComPrecosVenda = await enriquecerItensComPrecosVenda(itensJson, async (itemId) => {
+              const preco = await mlGet(
+                `${API}/items/${encodeURIComponent(itemId)}/sale_price?context=channel_marketplace`,
+                token,
+              );
+              const amount = (preco as { amount?: unknown } | null)?.amount;
+              return typeof amount === 'number' && amount > 0 ? amount : null;
+            });
+            const ofertas = parseItensProduto(itensComPrecosVenda);
             const product_name = parseNomeProdutoBusca(busca);
-            await cacheConcorrenciaSet(`gtin:${gtin}`, {
+            await cacheConcorrenciaSet(`gtin:v2:${gtin}`, {
               vendedores: ofertas.vendedores,
               preco_min: ofertas.preco_min,
               origem: 'gtin',
