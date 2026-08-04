@@ -10,6 +10,7 @@ import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoU
 import { precisaItemPlano } from '../ml/erro-ml.ts';
 import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
+import { motivoAnuncioNaoAtualizavel } from '../ml/anuncio-atualizavel.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
@@ -144,6 +145,17 @@ export const mercadoLivreConnector: ChannelConnector = {
     try {
       // GET estado real → reenviar TODAS as variações (o ML deleta as omitidas).
       const atual = await buscarItemML(token, a.itemExternoId);
+      // Anúncio morto (closed/inactive/deleted) recusa qualquer PUT — e o erro cru do ML
+      // ("variations is not modifiable... Revise os atributos da categoria") aponta o operador
+      // para o lugar errado. Falha alto com a causa certa, antes de gastar a escrita. Lote #45.
+      const motivoMorto = motivoAnuncioNaoAtualizavel(atual);
+      if (motivoMorto) {
+        // 400 = definitivo: retentar não ressuscita anúncio removido (o QStash pararia de tentar
+        // só depois de 10 retries × 30s, atrasando o resto da fila serial à toa).
+        const err = new Error(motivoMorto) as Error & { status?: number };
+        err.status = 400;
+        throw err;
+      }
       // ADR-0084: item plano (categoria que exige family_name, ex. Zíperes) não tem sub-recurso
       // `variations` — o GET devolve []. montarVariacoesUpdate mapeando sobre lista vazia produz
       // um PUT `{variations: []}` que a ML aceita como no-op silencioso (confirmado empiricamente
