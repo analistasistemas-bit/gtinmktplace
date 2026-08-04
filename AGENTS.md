@@ -179,6 +179,21 @@ Keep responses technical and compact.
 
 Never trade correctness for fewer tokens.
 
+### Production tenant data
+
+- Never mutate production tenant data through Management API SQL or a
+  `service_role` client unless the user explicitly authorizes the exact rows
+  and operation after a read-only preview.
+- Product and stock changes must use the application Edge Function/RPC. Never
+  insert or update `lotes`, `familias`, `variacoes`, or `estoque_movimentos`
+  directly.
+- Never infer the target organization from the active browser session, a user
+  id, product text, SKU, or GTIN. Resolve and display the organization name and
+  `org_id` before requesting authorization.
+- Every authorized tenant mutation must include an explicit `org_id` predicate,
+  run for one organization only, and be followed by a cross-organization
+  readback proving that no other tenant changed.
+
 Never simplify:
 
 - security
