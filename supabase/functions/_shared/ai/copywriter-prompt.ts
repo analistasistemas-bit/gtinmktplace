@@ -346,15 +346,31 @@ T7 SINÔNIMO SÓ DA FONTE. Preencha "sinonimo" apenas com termo que APARECE no n
 descrição. Nunca invente sinônimo: barbante→cordão, linha→fio e tecido→malha trocam a
 identidade técnica do produto. Nunca empilhe palavra-chave.
 
+T8 TERMO PROVÁVEL VAI PARA "termos_com_risco", NUNCA PARA UM SLOT. Quando você reconhecer um
+termo comum da categoria que a fonte NÃO comprova, não o descarte nem o embuta num campo:
+coloque-o em "termos_com_risco". Esse campo não entra no título — ele existe para você não
+precisar escolher entre omitir o termo e contrabandeá-lo para dentro de outro campo.
+
+  Fonte: "Lápis de Escrever Resina N.2 Caixa com 144 Preto"
+  CORRETO: modelo="Nº 2"  ·  termos_com_risco=["HB", "Escolar"]
+  ERRADO:  modelo="HB Nº 2"          (a fonte diz N.2, não HB)
+  ERRADO:  produto="Lápis Escolar"   (nada na fonte diz que é escolar)
+
+Se todos os campos que você preencheu vierem da fonte, devolva "termos_com_risco": [] — lista
+vazia é o resultado normal e esperado. Nunca inclua aqui adjetivo promocional proibido pelo T3:
+"Premium" não é um termo com risco, é um termo banido.
+
 EXEMPLOS
 
 Fonte: Barbante · marca Bandeirante · modelo 4/6 · 570 m · 85% algodão
   produto="Barbante" marca="Bandeirante" modelo="4/6" medida="570m" material="85% Algodão"
+  termos_com_risco=[]
   CORRETO: Barbante Bandeirante 4/6 570m 85% Algodão
   ERRADO:  Barbante Bandeirante 4/6 570m 85% Algodão Resistente Premium
 
 Fonte: Agulha de crochê · marca Círculo · 3,5 mm · alumínio
   produto="Agulha de Crochê" marca="Círculo" medida="3,5mm" material="Alumínio"
+  termos_com_risco=[]
   CORRETO: Agulha de Crochê Círculo 3,5mm Alumínio
   ERRADO:  Agulha de Crochê Círculo 3,5mm Alumínio Confortável Versátil Profissional
 

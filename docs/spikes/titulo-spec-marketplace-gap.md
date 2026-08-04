@@ -21,7 +21,11 @@ ADR-0070), e o censo do catálogo (seção própria, abaixo) **rejeitou por inex
 resto: `2x10ml` existe em 1 família de 305, `SORT`/`PAD`/`PC` em zero, e a gramatura já chega
 canônica da fonte.
 
-**Sobra um único item com valor:** `termos_com_risco`.
+**Sobra um único item com valor:** `termos_com_risco` — **implementado**, ver
+[ADR-0100](../decisions/0100-termos-com-risco-valvula-de-escape.md). Com uma ressalva medida que
+vale mais que a entrega: o A/B contra a API real mostrou que o modelo padrão **já não
+contrabandeava** nos casos de pressão testados, então a válvula é trava preventiva, não correção de
+defeito observado.
 
 O censo também produziu um susto útil: 119 títulos com separador `|` criados *depois* do merge do
 ADR-0099 pareciam indicar deploy defasado — o incidente clássico deste projeto. Não era. São
