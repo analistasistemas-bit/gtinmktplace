@@ -1,5 +1,4 @@
 import type { DadosOfertas } from './tipos.ts';
-import { pool } from './pool.ts';
 
 /** Extrai o product_id (catálogo) do 1º resultado de `/products/search`. null se vazio. */
 export function parseProdutoBusca(json: unknown): string | null {
@@ -24,27 +23,27 @@ interface MLItem {
   shipping?: { free_shipping?: boolean; logistic_type?: string };
 }
 
-/** Anexa o preço efetivo de `/items/{id}/sale_price` às ofertas do catálogo. */
-export async function enriquecerItensComPrecosVenda(
-  json: unknown,
-  buscarPreco: (itemId: string) => Promise<number | null>,
-): Promise<unknown> {
+/** Aplica às ofertas o preço vigente da publicação ganhadora do catálogo. */
+export function aplicarPrecoVencedorCatalogo(json: unknown, produto: unknown): unknown {
   const results = (json as { results?: MLItem[] } | null)?.results;
   if (!Array.isArray(results) || results.length === 0) return json;
 
-  const enriquecidos = await pool(4, results, async (item) => {
-    if (typeof item.item_id !== 'string' || item.item_id.length === 0) return item;
-    try {
-      const amount = await buscarPreco(item.item_id);
-      return typeof amount === 'number' && amount > 0
-        ? { ...item, sale_price: { amount } }
-        : item;
-    } catch {
-      return item;
-    }
-  });
+  const vencedor = (produto as {
+    buy_box_winner?: { item_id?: unknown; price?: unknown } | null;
+  } | null)?.buy_box_winner;
+  if (
+    typeof vencedor?.item_id !== 'string' ||
+    typeof vencedor.price !== 'number' ||
+    vencedor.price <= 0
+  ) return json;
+  const precoVencedor = vencedor.price;
 
-  return { ...(json as object), results: enriquecidos };
+  return {
+    ...(json as object),
+    results: results.map((item) => item.item_id === vencedor.item_id
+      ? { ...item, sale_price: { amount: precoVencedor } }
+      : item),
+  };
 }
 
 /**

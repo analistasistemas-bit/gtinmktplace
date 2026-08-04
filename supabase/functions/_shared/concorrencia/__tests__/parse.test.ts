@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enriquecerItensComPrecosVenda, parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../parse';
+import { aplicarPrecoVencedorCatalogo, parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../parse';
 
 describe('parseProdutoBusca', () => {
   it('payload vazio/inválido → null', () => {
@@ -126,20 +126,17 @@ describe('parseItensProduto', () => {
   });
 });
 
-describe('enriquecerItensComPrecosVenda', () => {
-  it('consulta cada item e injeta o preço de venda vigente sem perder o fallback', async () => {
+describe('aplicarPrecoVencedorCatalogo', () => {
+  it('injeta o preço vigente do buy box no item vencedor sem perder os concorrentes', () => {
     const json = {
       results: [
         { item_id: 'MLB1', seller_id: 1, price: 65.61 },
         { item_id: 'MLB2', seller_id: 2, price: 67.25 },
       ],
     };
-    const precos = new Map([['MLB1', 45.19]]);
+    const produto = { buy_box_winner: { item_id: 'MLB1', price: 45.19 } };
 
-    const enriquecido = await enriquecerItensComPrecosVenda(
-      json,
-      async (itemId) => precos.get(itemId) ?? null,
-    );
+    const enriquecido = aplicarPrecoVencedorCatalogo(json, produto);
 
     const r = parseItensProduto(enriquecido);
     expect(r.preco_min).toBe(45.19);

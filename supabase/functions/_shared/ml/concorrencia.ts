@@ -2,7 +2,7 @@ import { getValidAccessTokenConexao } from './token.ts';
 import type { ConexaoCanal } from '../canais/conexao.ts';
 import { gtinsValidos, type FamiliaParaBusca } from '../concorrencia/identificador.ts';
 import {
-  enriquecerItensComPrecosVenda,
+  aplicarPrecoVencedorCatalogo,
   parseProdutoBusca,
   parseNomeProdutoBusca,
   parseItensProduto,
@@ -40,7 +40,8 @@ const POOL_CONCORRENCIA = 6;
  * descontinuado pelo ML (403); usamos o catálogo:
  *   1) `/products/search?product_identifier={gtin}` → product_id (lookup oficial de EAN;
  *      `q={gtin}` era busca textual frágil e falhava com EANs válidos — bug lote #27)
- *   2) `/products/{id}/items` → vendedores distintos + menor preço
+ *   2) `/products/{id}` → preço vigente da publicação vencedora do catálogo
+ *   3) `/products/{id}/items` → vendedores distintos + demais preços
  * Cada cor da família pode ser um produto de catálogo DISTINTO no ML — parar no 1º GTIN que
  * casasse reportava o preço de UMA cor como se fosse o da família (bug lote #28). Agora
  * resolvemos TODOS os GTINs válidos (cache + busca em paralelo) e agregamos com
@@ -66,7 +67,7 @@ export async function buscarConcorrencia(
     // Leituras de cache em paralelo: Redis GET não tem rate-limit/ordenação como a API do ML.
     const cacheados = await pool(10, candidatos, async (gtin) => ({
       gtin,
-      cached: await cacheConcorrenciaGet(`gtin:v2:${gtin}`).catch(() => null),
+      cached: await cacheConcorrenciaGet(`gtin:v3:${gtin}`).catch(() => null),
     }));
     for (const { gtin, cached } of cacheados) {
       if (!cached) {
@@ -91,24 +92,20 @@ export async function buscarConcorrencia(
             );
             const productId = parseProdutoBusca(busca);
             if (!productId) {
-              await cacheConcorrenciaSet(`gtin:v2:${gtin}`, {
+              await cacheConcorrenciaSet(`gtin:v3:${gtin}`, {
                 vendedores: 0, preco_min: null, origem: 'gtin', classe: 'sem', product_id: null, product_name: null,
               }).catch(() => {});
               return null;
             }
 
-            const itensJson = await mlGet(`${API}/products/${productId}/items`, token);
-            const itensComPrecosVenda = await enriquecerItensComPrecosVenda(itensJson, async (itemId) => {
-              const preco = await mlGet(
-                `${API}/items/${encodeURIComponent(itemId)}/sale_price?context=channel_marketplace`,
-                token,
-              );
-              const amount = (preco as { amount?: unknown } | null)?.amount;
-              return typeof amount === 'number' && amount > 0 ? amount : null;
-            });
+            const [produtoJson, itensJson] = await Promise.all([
+              mlGet(`${API}/products/${productId}`, token),
+              mlGet(`${API}/products/${productId}/items`, token),
+            ]);
+            const itensComPrecosVenda = aplicarPrecoVencedorCatalogo(itensJson, produtoJson);
             const ofertas = parseItensProduto(itensComPrecosVenda);
             const product_name = parseNomeProdutoBusca(busca);
-            await cacheConcorrenciaSet(`gtin:v2:${gtin}`, {
+            await cacheConcorrenciaSet(`gtin:v3:${gtin}`, {
               vendedores: ofertas.vendedores,
               preco_min: ofertas.preco_min,
               origem: 'gtin',
