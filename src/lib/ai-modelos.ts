@@ -18,4 +18,5 @@ export const MODELOS_TEXTO: OpcaoModeloIA[] = [
 // Dormente: nenhuma feature consome geração de imagem ainda (ADR-0074).
 export const MODELOS_IMAGEM: OpcaoModeloIA[] = [
   { slug: 'google/gemini-2.5-flash-image', label: 'Gemini 2.5 Flash Image (Nano Banana)', precoLabel: '$0,30 / $2,50 por 1M tokens' },
+  { slug: 'google/gemini-3.1-flash-image-preview', label: 'Gemini 3.1 Flash Image Preview', precoLabel: 'Novo (Preview)' },
 ];
