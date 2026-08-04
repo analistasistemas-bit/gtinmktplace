@@ -17,7 +17,13 @@ O documento externo e o ADR-0099 são **o mesmo desenho**: extração factual em
 determinística por template → redução por prioridade → validação de ancoragem. O PubliAI já
 implementa ~85% dele. Dos deltas restantes, **2 devem ser rejeitados** por reabrir defeitos já
 medidos e corrigidos em produção (`atributo_principal` → ADR-0098/0099; dicionário de sinônimos →
-ADR-0070), e só **1 tem valor claro hoje**: registrar o que os guards descartam.
+ADR-0070), e o censo do catálogo (seção própria, abaixo) **rejeitou por inexistência** quase todo o
+resto: `2x10ml` existe em 1 família de 305, `SORT`/`PAD`/`PC` em zero, e a gramatura já chega
+canônica da fonte.
+
+**Sobra um único item com valor:** `termos_com_risco`. E o censo achou de graça uma pergunta que
+ninguém tinha feito — 13 títulos em exatamente 60 caracteres, num sistema cujo único ponto de
+truncamento é o fallback do split.
 
 ## Três fatos que decidem o valor de qualquer mudança aqui
 
@@ -223,20 +229,59 @@ exatamente a forma das 8 travas perdidas: uma invariante que ninguém escreveu, 
 refatoração quebra em silêncio com a suíte verde. **Merece um teste que a asserte**, ou no mínimo
 um comentário em `ORDEM_CORTE` apontando para `slotsIncortaveis`.
 
-## A medição que destrava quase todos os "diferir"
+## O censo — medido, não presumido
 
-Um censo-sombra único responde a maioria das dúvidas em aberto: rodar os guards atuais sobre o
-catálogo inteiro e contar
+Rodado em 2026-08-04 contra o banco de produção (305 famílias, 138 criadas após o merge do
+ADR-0099). Script versionado em `scripts/censo-titulo/index.ts`, somente SELECT, sem chamada de IA.
 
-1. o que `validarSlotsAncorados` e `RUIDO` derrubam, e com que frequência;
-2. quantas famílias têm padrão `N×volume` (`2x10ml`), `SORT`/`PAD`/`PC` isolado, `G/M2`;
-3. quantos `TituloInviavelError` ocorreram desde 2026-08-02.
+| Padrão procurado na fonte | Famílias | % |
+|---|---|---|
+| A1a — contagem + volume unitário (`2 unidades de 10ml`) | **1** | 0,3% |
+| A1b — só `CAIXA/KIT/PACOTE COM N` | 22 | 7,2% |
+| A2 — `SORT` isolado | **0** | 0% |
+| A2 — `PAD` isolado | **0** | 0% |
+| A2 — `VR` isolado (fora de `TAM VR`, já tratado) | 1 | 0,3% |
+| A3 — gramatura (`G/M2`, `g/m²`…) | 9 | 3,0% |
+| A4 — `PC` isolado | **0** | 0% |
 
-O A/B do ADR-0099 (n=70) mediu o **formato antes do merge** — ninguém auditou os **descartes em
-produção** depois dele. Sem esse dado, cada "diferir" acima é opinião; com ele, metade vira
-"rejeitar por inexistência no catálogo" e a outra metade vira backlog com número na frente. É
-também o que decide entre `console.warn` e persistência: se o censo importa, o warn não basta por
-construção.
+### O que o censo decide
+
+**`2x10ml` → rejeitar, não diferir.** Existe **1** família no catálogo inteiro — e é a Eucerin
+Aquaphor, exatamente o produto do exemplo da spec. A spec foi escrita a partir de um catálogo que
+não é este. Construir composição de embalagem para 0,3% do catálogo é trabalho sem retorno.
+
+**`SORT`/`PAD`/`PC` → rejeitar por inexistência.** Zero ocorrências, os três. A única ocorrência de
+`VR` isolado está dentro de `AGULHA BAR-03-VR C VAR NYBC` — um código interno, classe que o `RUIDO`
+já trata. Adicionar entradas a um guard destrutivo para casos que não existem é risco puro.
+
+**Gramatura → rejeitar, e por um motivo melhor que "não medido".** As 9 ocorrências já vêm
+canônicas na fonte (`Gramatura: 145g/m²`, `120g/m²`). Não há conversão a fazer: a regra nasceria
+sem trabalho. Isso também elimina a ressalva de raio — não é preciso tocar `titulo.ts` nem arriscar
+a descrição de anúncio vivo.
+
+**`CAIXA COM N` → observação honesta, veredito mantido.** 22 famílias (7,2%) têm a forma natural na
+fonte e hoje são renderizadas como `24un`. A rejeição da forma natural continua válida pelo
+argumento estrutural (o dedup compara contra a forma canônica já estabilizada), mas o custo dela
+**não é zero** — é 7,2% do catálogo perdendo "Caixa com" no título. Se algum dia houver evidência
+de que a forma natural converte melhor, é aqui que se mede.
+
+### Saúde do pipeline pós-ADR-0099
+
+- **Zero `TituloInviavelError` em produção.** Das 6 famílias em erro, todas são de anúncio
+  removido/fechado no ML — nenhuma de título. A decisão de falhar alto não está custando famílias.
+- **Comprimento do título** (138 famílias): mín. 26, mediana 50, média 49,74, máx. 60. Confirma o
+  A/B do ADR-0099 (média 45,6) e a regra T6: o título não tenta ocupar os 60.
+- **13 títulos (9,4%) em exatamente 60 caracteres** — em apuração. `montarTitulo` remove slots
+  inteiros, então aterrissar no teto exato deveria ser raro; mas `titulo-particao.ts:59-66`
+  (fallback do split, ADR-0048) remove palavras até caber e, no caso degenerado, faz
+  `.slice(0, 60)`. É o único ponto do sistema que trunca. Ver seção seguinte.
+
+### O que o censo NÃO respondeu
+
+Não mediu **o que `validarSlotsAncorados` derruba em produção** — isso exige gerar slots via IA
+(custo real) e só se justifica se houver suspeita concreta. O A/B do ADR-0099 (n=70) mediu o
+formato antes do merge; os descartes seguem sem auditoria. É a única pergunta aberta que
+sustentaria a metade B do `termos_com_risco`.
 
 ## Se algo tocar slots: método obrigatório
 
