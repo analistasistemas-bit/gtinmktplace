@@ -4,6 +4,10 @@
 **Status:** análise, nenhuma implementação
 **Fonte:** documento externo `titulo-marketplace-agent.md` (18 slots, 10 templates por categoria, score 0-10)
 **Compara com:** [ADR-0099](../decisions/0099-titulo-padrao-mercado-livre.md) (contrato de 10 slots, em produção desde 2026-08-02)
+**Método:** duas passagens independentes sobre o mesmo código (Opus 5 e Fable 5), com a segunda
+instruída a refutar a primeira. As divergências que a segunda encontrou estão incorporadas —
+cobertura de §8/§11/§12 rebaixada de "implementada" para "parcial/diverge", premissa dos templates
+corrigida, `console.warn` desqualificado como censo, e o achado da invariante de `variacao`.
 
 ---
 
@@ -50,10 +54,19 @@ ADR-0070), e só **1 tem valor claro hoje**: registrar o que os guards descartam
 | `catalogo` | — | delta sem valor no ML (ver abaixo) |
 | `termos_com_risco` | descarte silencioso | **delta — adotar** |
 
-Regras não-slot do documento já implementadas: §8 termos proibidos (`ADJETIVOS_VAZIOS`,
-`MARKETING_TERMOS`), §9 dialeto (`ABREVIACOES`, `RUIDO`), §10 unidades (`CONVERSOES_UNIDADE`),
-§11 dedup cross-slot (`aplicarGuardsTitulo`), §12 ordem de redução (`REDUCOES` + `ORDEM_CORTE`),
-§14 legibilidade (`tituloCase`), §20 regras do montador (`montarTitulo`). O score 0-10 da §22 não
+Regras não-slot do documento, com o grau real de cobertura (corrigido na 2ª análise):
+
+| Regra | Onde vive | Cobertura |
+|---|---|---|
+| §8 termos proibidos | `ADJETIVOS_VAZIOS`, `MARKETING_TERMOS` | **parcial** — `ADJETIVOS_VAZIOS` casa o **slot inteiro** (`titulo-guards.ts:463`); "Conforto", "Exclusivo", "Profissional" sozinhos, e frete/parcelamento/garantia, não têm guard — só o prompt |
+| §9 dialeto | `ABREVIACOES`, `RUIDO` | cobre os casos medidos |
+| §10 unidades | `CONVERSOES_UNIDADE` | cobre, menos gramatura `g/m²` |
+| §11 dedup cross-slot | `aplicarGuardsTitulo` | **parcial** — dedup é *dirigido pela fonte* (metragem/contagem `:349-355`, largura `:320`, cor `:370`), não semântico genérico |
+| §12 ordem de redução | `REDUCOES` + `ORDEM_CORTE` | **diverge** — a spec corta `material` antes de `variacao` e trata `compatibilidade` como quase incortável; a `ORDEM_CORTE` faz o inverso nos dois |
+| §14 legibilidade | `tituloCase` | cobre |
+| §20 montador | `montarTitulo` | cobre, e vai além (`TituloInviavelError`) |
+
+O score 0-10 da §22 não
 tem equivalente e não precisa ter: o censo de defeitos do ADR-0099 (medido em produção, não
 auto-atribuído pelo próprio gerador) já cumpre esse papel com evidência melhor.
 
@@ -102,13 +115,16 @@ Reavaliar quando entrar catálogo com linhas de marca de verdade.
 
 ## Diferir: templates por categoria (§6)
 
-Diferença real entre as 10 ordens do documento e a `ORDEM_LEITURA` única:
+Diferença real entre as 10 ordens do documento e a `ORDEM_LEITURA` única (mapeando
+`embalagem`→`quantidade`):
 
-- `TECIDO`, `PAPELARIA_VOLUME`, `CASA_DECORACAO`, `FERRAMENTA`, `GENERICO`: mesma ordem relativa
-  dos slots que existem hoje. Zero mudança.
+- `CASA_DECORACAO`, `FERRAMENTA`, `COMPATIBILIDADE`: mesma ordem relativa. Zero mudança.
+- `PAPELARIA_VOLUME`: **diverge** — a spec põe `material` antes de `embalagem` ("Lápis Nº 2
+  **Resina Caixa com 144** Preto"); o PubliAI renderiza "Lápis N.2 **144un Resina** Preto".
+- `TECIDO` / `GENERICO`: a spec põe `embalagem` antes de `medida`; comparação parcialmente
+  ambígua porque o "Rolo de 10m" da spec cai em `medida` aqui, não em `quantidade`.
 - `MARCA_LINHA` / `COSMETICO` / `ELETRONICO`: marca antes do produto. Muda de verdade — mas neste
   catálogo a marca é ancorada em ~55% das famílias (ADR-0099), e best-effort por decisão.
-- `COMPATIBILIDADE`: `variacao` antes de `compatibilidade` — já é a ordem atual.
 
 Custo: `ORDEM_LEITURA`, `ORDEM_CORTE`, `slotsIncortaveis`, `REDUCOES`, prompt e toda a suíte.
 Benefício medido no catálogo atual: nenhum. Reavaliar quando entrar categoria com marca dominante.
@@ -121,6 +137,18 @@ Benefício medido no catálogo atual: nenhum. Reavaliar quando entrar categoria 
 - **`TITULO_MAX` configurável por canal**: real (vive em 2 arquivos), mas é trabalho do conector
   Shopee (E5), não especulação agora.
 
+## Rejeitar: `embalagem` na forma natural ("Caixa com 144 Unidades")
+
+Distinto do `2x10ml` (esse é diferir-por-medição). Aqui a spec prefere a forma extensa, comprimida
+só sob pressão de limite (§12, passo 7) — enquanto `normalizarSlots` canoniza `144 unidades →
+144un` **sempre** (`titulo-guards.ts:84`), mesmo com folga (média de 45,6 chars em 60).
+
+A canonização eager parece desperdício, mas é estrutural: os guards de dedup (`numeroAncorado`,
+`RE_CONTAGEM_TOKEN`) comparam contra a forma canônica **já estabilizada**. Adiar a compressão para
+o montador reabriria a comparação sobre texto livre — a classe de bug do lote #40/#65. Efeito
+colateral honesto: `REDUCOES.quantidade` em `titulo-montar.ts:65` é hoje quase código morto (o
+próprio comentário o chama de "rede").
+
 ## Sem valor: `catalogo: true` (§15)
 
 O PubliAI já é conservador por construção — nenhum slot aceita dado não ancorado, com ou sem
@@ -131,19 +159,23 @@ adicionar.
 
 ## Adotar
 
-### 1. `termos_com_risco` como telemetria — o único item com valor claro
+### 1. `termos_com_risco` — o único item com valor claro, em duas metades
 
 `validarSlotsAncorados` (`titulo-guards.ts:445`) já derruba o que não tem respaldo na fonte — mas
-**em silêncio**: devolve `TituloSlots` e nada mais. Registrar *o que* foi derrubado dá a mesma
-visibilidade de censo que produziu o próprio ADR-0099, sem alterar título nenhum.
+**em silêncio**: devolve `TituloSlots` e nada mais.
 
-Duas formas, e a diferença de custo importa:
+**Metade A — o campo no schema (é o mecanismo original da spec, não telemetria).** Um 11º campo
+dá ao modelo um lugar *legítimo* para depositar o termo não comprovado ("HB", "Escolar"),
+reduzindo a pressão de contrabandeá-lo para dentro de `produto`. Um campo que **nunca é
+renderizado** não reabre a Causa C — o risco da Causa C é slot que *entra* no título. Custo:
+schema + normalização + testes (com o método das 8 travas).
 
-- **`console.warn` dentro da própria função** (recomendado): zero mudança de assinatura, zero
-  ripple. Os logs de edge function já são a ferramenta de diagnóstico do projeto — foi assim que o
-  ADR-0084 achou a causa do 400.
-- **Devolver a lista** (`{ slots, descartados }`): muda a assinatura e propaga por
-  `posProcessarTitulo` e os 3 call sites. Só vale se a lista tiver que chegar à UI do operador.
+**Metade B — persistir o descarte.** `console.warn` **não** entrega o censo: o censo de 143
+títulos do ADR-0099 só foi possível porque `titulo_ml` **persiste no banco**. Log de edge function
+tem retenção curta e não é consultável em massa — serve a debug pontual (padrão ADR-0084), não a
+censo. Se o objetivo é medir, o descarte precisa persistir (coluna `jsonb` em `familias` ou tabela
+de eventos). Se `console.warn` for suficiente, então o benefício prometido é debug, não censo, e
+deve ser vendido assim.
 
 ### 2. Dialeto e unidade — baixo custo, frequência não medida
 
@@ -155,6 +187,14 @@ Comparação linha a linha com `ABREVIACOES`/`RUIDO`/`CONVERSOES_UNIDADE`:
 | `PC` → peças | coberto quando vem com número (`12PC` → `12pc`); `PC` isolado, não |
 | `120 G/M2 → 120g/m²` | não coberto — `G` de uma letra foi deliberadamente excluído de `CONVERSOES_UNIDADE` (colide com tamanho P/M/G). Exigiria regra própria ancorada em `/M2`. |
 
+**Ressalva de raio (a mais séria da lista):** uma regra de gramatura ancorada em medida iria
+naturalmente para `titulo.ts` — e `titulo.ts` **não tem raio zero**. `copywriter-prompt.ts:4`
+importa `extrairMetragem`/`extrairLargura` de lá para os guards de descrição, e o ADR-0099 já
+registra que mexer em `normalizarUnidade` mudou bullets de descrição de anúncios **já publicados**
+no UPDATE seguinte (`sincronizarDescricao`). Qualquer adoção de §9/§10 precisa declarar o
+arquivo-alvo: `titulo-guards.ts` (só título, raio zero) × `titulo.ts` (título + descrição + UPDATE
+de anúncio vivo).
+
 **Ressalva de evidência:** nenhum destes aparece no censo de 143 títulos do ADR-0099 (o `GR` de lá
 é grama, já coberto). São itens de um documento genérico, não medidos contra a planilha do Diego.
 E `RUIDO` é **destrutivo** — `if (RUIDO.some(...)) v = ''` zera o slot inteiro; uma entrada nova
@@ -164,6 +204,39 @@ Mesmo gate do `2x10ml`: contar a ocorrência no catálogo antes de escrever a re
 de array, mas poucas linhas erradas num guard destrutivo já custaram lotes inteiros neste projeto.
 
 ---
+
+## Achado colateral: `variacao` é incortável por construção, sem teste que o asserte
+
+Rastreando os quatro caminhos de `aplicarGuardsTitulo` (`titulo-guards.ts:371-381`) contra
+`titulo-pos.ts:36-43`, `variacao` **não-vazia sempre chega protegida** do corte:
+
+| Caminho | `variacao` | Proteção |
+|---|---|---|
+| cor única, válida, não coberta | `= corUnica` | `corDiscrimina = true` |
+| cor única indefinida, ou já coberta por produto/medida | `= ''` | irrelevante (vazia) |
+| múltiplas cores | `= ''` | irrelevante (vazia) |
+| `cores.length === 0` | intocada (tamanho/espessura) | `semCorMasComVariacao = true` |
+
+Logo, a posição de `variacao` em `ORDEM_CORTE` **nunca executa**. Não é bug — é o comportamento
+desejado, obtido por duas peças em arquivos diferentes que concordam por acidente de leitura. É
+exatamente a forma das 8 travas perdidas: uma invariante que ninguém escreveu, que a próxima
+refatoração quebra em silêncio com a suíte verde. **Merece um teste que a asserte**, ou no mínimo
+um comentário em `ORDEM_CORTE` apontando para `slotsIncortaveis`.
+
+## A medição que destrava quase todos os "diferir"
+
+Um censo-sombra único responde a maioria das dúvidas em aberto: rodar os guards atuais sobre o
+catálogo inteiro e contar
+
+1. o que `validarSlotsAncorados` e `RUIDO` derrubam, e com que frequência;
+2. quantas famílias têm padrão `N×volume` (`2x10ml`), `SORT`/`PAD`/`PC` isolado, `G/M2`;
+3. quantos `TituloInviavelError` ocorreram desde 2026-08-02.
+
+O A/B do ADR-0099 (n=70) mediu o **formato antes do merge** — ninguém auditou os **descartes em
+produção** depois dele. Sem esse dado, cada "diferir" acima é opinião; com ele, metade vira
+"rejeitar por inexistência no catálogo" e a outra metade vira backlog com número na frente. É
+também o que decide entre `console.warn` e persistência: se o censo importa, o warn não basta por
+construção.
 
 ## Se algo tocar slots: método obrigatório
 
