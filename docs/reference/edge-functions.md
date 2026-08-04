@@ -608,6 +608,10 @@ falha ao ler `organizations` não libera.
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
   Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);
+  o menor preço da concorrência usa o valor vigente de venda de cada publicação
+  (`GET /items/{item_id}/sale_price?context=channel_marketplace`), e não o campo legado `price`
+  de `/products/{product_id}/items`; falha nessa consulta preserva `price` como fallback. O cache
+  Redis dessa leitura usa a versão `gtin:v2:*` (TTL 6h), separada dos valores legados.
   margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055). Frete do
   vendedor (`buscarFreteVendedor`) usa a dimensão vinda do caller (planilha) quando válida; senão
   busca em `variacoes` por `org_id`+`gtin` (produto já cadastrado antes); sem nenhuma das duas, cai

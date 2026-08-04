@@ -1,4 +1,5 @@
 import type { DadosOfertas } from './tipos.ts';
+import { pool } from './pool.ts';
 
 /** Extrai o product_id (catálogo) do 1º resultado de `/products/search`. null se vazio. */
 export function parseProdutoBusca(json: unknown): string | null {
@@ -15,10 +16,35 @@ export function parseNomeProdutoBusca(json: unknown): string | null {
 }
 
 interface MLItem {
+  item_id?: string;
   seller_id?: number | string;
   price?: number;
+  sale_price?: { amount?: number } | null;
   category_id?: string;
   shipping?: { free_shipping?: boolean; logistic_type?: string };
+}
+
+/** Anexa o preço efetivo de `/items/{id}/sale_price` às ofertas do catálogo. */
+export async function enriquecerItensComPrecosVenda(
+  json: unknown,
+  buscarPreco: (itemId: string) => Promise<number | null>,
+): Promise<unknown> {
+  const results = (json as { results?: MLItem[] } | null)?.results;
+  if (!Array.isArray(results) || results.length === 0) return json;
+
+  const enriquecidos = await pool(4, results, async (item) => {
+    if (typeof item.item_id !== 'string' || item.item_id.length === 0) return item;
+    try {
+      const amount = await buscarPreco(item.item_id);
+      return typeof amount === 'number' && amount > 0
+        ? { ...item, sale_price: { amount } }
+        : item;
+    } catch {
+      return item;
+    }
+  });
+
+  return { ...(json as object), results: enriquecidos };
 }
 
 /**
@@ -34,8 +60,12 @@ export function parseItensProduto(json: unknown): DadosOfertas {
   const results = (json as { results?: MLItem[] } | null)?.results;
   if (!Array.isArray(results) || results.length === 0) return vazio;
 
-  const precos = results
-    .map((r) => r.price)
+  const precosEfetivos = results.map((r) =>
+    typeof r.sale_price?.amount === 'number' && r.sale_price.amount > 0
+      ? r.sale_price.amount
+      : r.price
+  );
+  const precos = precosEfetivos
     .filter((p): p is number => typeof p === 'number' && p > 0);
   const sellers = [
     ...new Set(
@@ -49,9 +79,9 @@ export function parseItensProduto(json: unknown): DadosOfertas {
   const category_id = results
     .map((r) => r.category_id)
     .find((c): c is string => typeof c === 'string' && c.length > 0) ?? null;
-  const ofertas_detalhe = results.map((r) => ({
+  const ofertas_detalhe = results.map((r, i) => ({
     seller_id: r.seller_id != null ? Number(r.seller_id) : null,
-    preco: typeof r.price === 'number' && r.price > 0 ? r.price : null,
+    preco: typeof precosEfetivos[i] === 'number' && precosEfetivos[i] > 0 ? precosEfetivos[i] : null,
   }));
 
   return {
