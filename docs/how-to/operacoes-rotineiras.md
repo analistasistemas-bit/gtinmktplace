@@ -32,6 +32,32 @@ Quando uma família ficou em estado inconsistente e o reprocessamento normal nã
 Contexto e armadilhas em `reference_reenfileirar_qstash_manual` (memória do projeto) e ADR-0030.
 A automação do botão "Reenviar" é a forma suportada (ADR-0030); o passo manual é exceção.
 
+### Caso concreto: famílias presas em `publicando` sem mensagem (lote #45, 03/08)
+
+Sintoma: a tela de Progresso para de avançar e o operador não tem ação — as famílias **não**
+aparecem como erro (então o "Reenviar" não as alcança, ele filtra `status='erro'`) e a fila do
+QStash está vazia. Diagnóstico em uma query: `status='publicando'` **e** `qstash_message_id is
+null` = a mensagem nunca foi enfileirada.
+
+O bug de origem foi corrigido (PR #66 — enfileiramento em lote + órfãs viram `erro`
+recuperável), mas o procedimento continua válido para qualquer resíduo:
+
+1. **Confirme que não há nada em voo** antes de reenfileirar, senão duplica trabalho:
+   `GET /v2/queues/publish-ml-{user_id}` deve vir com `lag: 0`, e a DLQ (`GET /v2/dlq`) sem
+   mensagens do worker em questão.
+2. **Mantenha o status em `publicando`** — não resete para `pendente`: o worker de UPDATE
+   (`update-familia-ml`) exige exatamente esse status no claim e faria `skip` em qualquer outro.
+3. **Enfileire em batch** (`POST /v2/batch`, um item por família) na fila serial
+   `publish-ml-{user_id}`, com `Upstash-Retries: 10` e `Upstash-Retry-Delay: 30000` — os mesmos
+   parâmetros de `enfileirarPublicacoes`. Roteie cada família para o worker certo:
+   `publicar-split-ml` quando tiver >100 cores ou preços divergentes, senão `update-familia-ml`.
+   O body é `{familia_id, lote_id, somenteEstoque}`.
+4. Reenviar é **idempotente**: o UPDATE de estoque manda o valor absoluto.
+
+Gravar o `qstash_message_id` de volta é só rastreabilidade — não afeta o processamento. Um
+`update ... case id ... end` com centenas de entradas estoura o endpoint SQL de management (403);
+faça em blocos se precisar.
+
 ## Reconectar OAuth do Mercado Livre
 
 Se a publicação falhar com "token expirado" e o refresh automático (lock Redis — ADR-0012) não

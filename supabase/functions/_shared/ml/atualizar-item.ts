@@ -9,6 +9,11 @@ export interface ItemMLAtual {
   // estoque/preço direto no corpo raiz em vez de um PUT de variations.
   price: number | null;
   availableQuantity: number | null;
+  // Estado do anúncio no ML (lote #45): sem isto o UPDATE tentava escrever em anúncio
+  // closed/deleted e o erro cru mandava "revise os atributos da categoria" — ver
+  // `anuncio-atualizavel.ts`.
+  status: string | null;
+  subStatus: string[];
 }
 
 function erroML(status: number, json: unknown): Error {
@@ -31,7 +36,8 @@ export function corDaVariacaoML(attributeCombinations: unknown): string | null {
 
 // Estado real do anúncio: ids + seller_custom_field + estoque de cada variação.
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
-  const url = `https://api.mercadolibre.com/items/${itemId}?attributes=id,variations,pictures,price,available_quantity`;
+  const url = `https://api.mercadolibre.com/items/${itemId}`
+    + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status';
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
   if (!resp.ok) throw erroML(resp.status, json);
@@ -55,6 +61,10 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     pictures,
     price: (json.price as number | null | undefined) ?? null,
     availableQuantity: (json.available_quantity as number | null | undefined) ?? null,
+    status: (json.status as string | null | undefined) ?? null,
+    subStatus: Array.isArray(json.sub_status)
+      ? (json.sub_status as unknown[]).filter((s): s is string => typeof s === 'string')
+      : [],
   };
 }
 
