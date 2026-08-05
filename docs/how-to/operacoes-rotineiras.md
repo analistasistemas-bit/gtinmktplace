@@ -108,7 +108,11 @@ Fluxo do operador de uma org com o módulo `estoque` habilitado.
    obrigatório, define a alíquota de imposto; o botão de salvar fica travado sem ela). **Sem
    campo de código** — o aviso na tela diz "Códigos gerados automaticamente ao salvar" (D-8 do
    ADR-0096). Campos obrigatórios levam `*`; o título do diálogo mostra "etapa 1 de 2".
-2. Uma linha por variação: cor/nome, GTIN, preço, custo, estoque inicial, peso e dimensões.
+2. Uma linha por variação: cor/nome, GTIN, **preço mínimo**, custo, estoque inicial, peso e
+   dimensões. O rótulo é "Preço mínimo" de propósito: é o **piso** (`variacoes.preco`), não
+   necessariamente o preço publicado — na Revisão a IA pode sugerir um preço de venda maior,
+   com base na concorrência, e mostra "sugerido pela IA" ao lado do campo quando isso acontece.
+   O valor digitado aqui não se perde: ele continua exibido logo abaixo, como "mín. líquido".
    **Sem coluna de SKU** — o GTIN continua sendo o lugar do EAN; o SKU é gerado junto com o
    código do PAI.
 3. Salvar. Se aparecer aviso de pendência (**"Reprocessar"** ou lista de SKUs sem estoque),

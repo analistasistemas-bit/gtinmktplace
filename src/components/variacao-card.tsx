@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { Sparkles } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
+import { StatusPill } from '@/components/ui/status-pill';
 import { BotaoTrocarFoto } from '@/components/botao-trocar-foto';
 import { BadgeCorOrigem } from '@/components/badge-cor-origem';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -168,6 +170,24 @@ export function VariacaoCard({
               <StatusInline status={statusPreco ?? trocaStatus} />
             </div>
           </div>
+          {/* Rotulagem só (dono do produto) — "preço não gravado" não é bug de dado: o input
+              mostra `precoPublicacao ?? preco` (motor de precificação, ADR-0020/0055/0065), e
+              o operador não tinha como saber que o número ali é uma SUGESTÃO da IA, não o que
+              ele digitou. Não mexe em `precoExterno`/`onMudarPreco`/`SemaforoPreco`, só texto.
+              StatusPill tone="info" + Sparkles: mesmo padrão do chip "Sugerida por IA" do card
+              de Categoria (card-categoria.tsx:150-153), a poucos cm daqui na mesma tela — dois
+              selos de "isto veio da IA" com estilos diferentes o operador não lia como a mesma
+              classe de informação. Texto curto ("sugerido pela IA", não "preço sugerido pela
+              IA"): a coluna é `shrink-0` de largura apertada (input de 96px) numa linha que já
+              estourou uma vez em mobile ~374px (ver comentário da linha 78 acima). */}
+          {variacao.precoPublicacao != null && variacao.precoPublicacao !== variacao.preco && (
+            <StatusPill
+              tone="info"
+              title={`Você informou ${fmtBRL(variacao.preco)} como preço mínimo; a IA sugeriu ${fmtBRL(variacao.precoPublicacao)} com base na concorrência. Edite o campo para usar outro valor.`}
+            >
+              <Sparkles className="h-3 w-3" /> sugerido pela IA
+            </StatusPill>
+          )}
           <span className="pl-0.5 text-[11px] text-muted-foreground">
             mín. líquido: <span className="font-semibold text-foreground">{fmtBRL(variacao.preco)}</span>
           </span>

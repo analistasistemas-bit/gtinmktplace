@@ -34,7 +34,7 @@ export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | n
   if (campo === 'nome' || campo === 'gtin') return null;
   const n = parseNum(valor);
   if (Number.isNaN(n)) return 'Valor inválido.';
-  if (campo === 'preco' && (n == null || n <= 0)) return 'Preço é obrigatório e deve ser maior que zero.';
+  if (campo === 'preco' && (n == null || n <= 0)) return 'Preço mínimo é obrigatório e deve ser maior que zero.';
   if (campo === 'estoqueInicial' && n != null && !Number.isInteger(n)) {
     return 'Estoque inicial deve ser um número inteiro.';
   }
@@ -46,7 +46,11 @@ export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | n
 }
 
 const NUMERICOS = [
-  { campo: 'preco', rotulo: 'Preço', prefixo: 'R$' },
+  // Rotulagem só (dono do produto): "Preço" confundia o operador — o motor de precificação
+  // (ADR-0020/0055/0065) pode sugerir um preço de venda maior na Revisão, e o valor digitado
+  // aqui continuava exibido lá, só que rotulado "mín. líquido" sem explicar a origem. Não
+  // mexe em cálculo/fluxo de dado nenhum — só no texto.
+  { campo: 'preco', rotulo: 'Preço mínimo', prefixo: 'R$' },
   { campo: 'custo', rotulo: 'Custo', prefixo: 'R$' },
   { campo: 'estoqueInicial', rotulo: 'Estoque inicial', prefixo: undefined },
 ] as const;
@@ -101,9 +105,9 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
             // Regressão (achado via snapshot de acessibilidade): o sufixo visual ("g"/"cm") é
             // decorativo — quem usa leitor de tela não o percebe. A unidade de MEDIDA FÍSICA
             // (peso/dimensão) precisa voltar pro aria-label. R$ fica de fora de propósito:
-            // "Preço"/"Custo" já são inequívocos em português, e preservar o texto exato que os
-            // testes/scripts já buscam (`getByLabelText('Preço da variação 1')`) é mais valioso
-            // aqui do que anexar "(R$)".
+            // "Preço mínimo"/"Custo" já são inequívocos em português, e preservar o texto exato
+            // que os testes/scripts já buscam (`getByLabelText('Preço mínimo da variação 1')`)
+            // é mais valioso aqui do que anexar "(R$)".
             aria-label={`${rotulo}${unidade?.sufixo ? ` (${unidade.sufixo})` : ''} da variação ${n}`}
             className={cn('h-8 text-sm', unidade?.prefixo && 'pl-8', unidade?.sufixo && 'pr-7')}
             value={linha[campo] as string}
@@ -143,6 +147,10 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
       <div className="grid gap-2 sm:grid-cols-3">
         {NUMERICOS.map((c) => campoTexto(c.campo, c.rotulo, { prefixo: c.prefixo }))}
       </div>
+      <span className="text-xs text-muted-foreground">
+        É o piso: o anúncio nunca sai abaixo disso. Na Revisão, a IA pode sugerir um preço de
+        venda maior, com base na concorrência.
+      </span>
 
       <div className="grid gap-2 sm:grid-cols-4">
         {LOGISTICA.map((c) => campoTexto(c.campo, c.rotulo, { sufixo: c.sufixo }))}

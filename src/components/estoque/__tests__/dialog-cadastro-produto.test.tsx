@@ -103,7 +103,7 @@ function renderDialogControlado() {
 async function preencherEEnviar(user: ReturnType<typeof userEvent.setup>, nome: string) {
   await user.type(screen.getByLabelText('Nome'), nome);
   await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-  await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+  await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
   await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 }
 
@@ -121,7 +121,7 @@ describe('DialogCadastroProduto — ciclo de vida da chaveCadastro', () => {
     // isso a busca é em `document`, não em `container`.
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    const precoInput = screen.getByLabelText('Preço da variação 1');
+    const precoInput = screen.getByLabelText('Preço mínimo da variação 1');
     await user.type(precoInput, '10');
 
     const botao = screen.getByRole('button', { name: 'Cadastrar' });
@@ -230,12 +230,12 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     renderDialog();
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    expect(screen.queryByText('Preço é obrigatório e deve ser maior que zero.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Preço mínimo é obrigatório e deve ser maior que zero.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
 
-    await user.click(screen.getByLabelText('Preço da variação 1'));
+    await user.click(screen.getByLabelText('Preço mínimo da variação 1'));
     await user.tab();
-    expect(screen.getByText('Preço é obrigatório e deve ser maior que zero.')).toBeInTheDocument();
+    expect(screen.getByText('Preço mínimo é obrigatório e deve ser maior que zero.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
   });
 
@@ -272,9 +272,9 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     expect(screen.getByLabelText('Altura (cm) da variação 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Largura (cm) da variação 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Comprimento (cm) da variação 1')).toBeInTheDocument();
-    // Preço/Custo: R$ é decorativo — "Preço da variação 1" já é natural em português, e é o
+    // Preço/Custo: R$ é decorativo — "Preço mínimo da variação 1" já é natural em português, e é o
     // texto que os testes/scripts existentes já buscam.
-    expect(screen.getByLabelText('Preço da variação 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Preço mínimo da variação 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Custo da variação 1')).toBeInTheDocument();
   });
 
@@ -283,7 +283,7 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     renderDialog();
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
 
     await user.type(screen.getByLabelText('Custo da variação 1'), 'abc');
@@ -348,7 +348,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     renderDialog();
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     expect(await screen.findByText(/não foi enfileirado/)).toBeInTheDocument();
@@ -368,7 +368,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     renderDialogCom({ onFechar });
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
@@ -396,7 +396,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     renderDialogCom({ onFechar });
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
@@ -418,7 +418,7 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     renderDialogCom({ onFechar });
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     await user.keyboard('{Escape}');
@@ -458,7 +458,7 @@ describe('DialogCadastroProduto — etapa 2 não pede de novo foto já enviada (
 
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
     await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
     await user.upload(screen.getByLabelText('Foto da variação 1'), new File(['a'], 'azul.png', { type: 'image/png' }));
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
@@ -506,9 +506,9 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
 
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
-    await user.type(screen.getByLabelText('Preço da variação 2'), '10');
-    await user.type(screen.getByLabelText('Preço da variação 3'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 2'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 3'), '10');
 
     const capaFile = new File(['c'], 'capa.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Capa'), capaFile);
@@ -572,7 +572,7 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
 
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
 
     const fotoAzul = new File(['a'], 'azul.png', { type: 'image/png' });
     await user.upload(screen.getByLabelText('Foto da variação 1'), fotoAzul);
@@ -606,8 +606,8 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
 
     await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
-    await user.type(screen.getByLabelText('Preço da variação 2'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 1'), '10');
+    await user.type(screen.getByLabelText('Preço mínimo da variação 2'), '10');
 
     // Capa presente neste cenário — precisa provar que a divergência de VARIAÇÃO não
     // arrasta a capa junto pro `if` de bloqueio (a capa casa por `familiaId`, não índice).
