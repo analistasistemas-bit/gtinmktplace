@@ -1,7 +1,7 @@
 # ADR-0104 — UPDATE de família migrada pelo ML para User Products (adoção por SKU + `somente estoque` nunca muda composição)
 
-**Status:** Proposto
-**Data:** 2026-08-04
+**Status:** Aceito
+**Data:** 2026-08-04 (aceite: 2026-08-04)
 **Decisores:** Diego
 **Relaciona:** completa a Fase 2 de
 [ADR-0088](0088-publicacao-user-products-multi-item.md) (publicação UP multi-item, saga e reconciliadores);

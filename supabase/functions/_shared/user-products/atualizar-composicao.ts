@@ -116,8 +116,18 @@ export async function atualizarComposicao(
   const filhos = await portas.listar();
   const naoRetirados = filhos.filter((f) => !f.retirado);
 
+  // ADR-0104 §4: em `somente estoque` a composição do anúncio é INTOCÁVEL — nenhuma cor é
+  // pausada por estar ausente da planilha, nenhuma cor nova é criada, `skus_esperados` não é
+  // reescrito e `mudando_composicao` não é ligado. O guard entra aqui (não no chamador) para
+  // cobrir qualquer caller futuro, mesma decisão do fix de rename de cor do lote #45.
+  // Sem ele, o caminho UP divergia do Legacy: `montarVariacoesUpdate` mapeia sobre as variações
+  // VIVAS do GET e reenvia a cor omitida intacta, enquanto aqui a composição vinha da planilha —
+  // uma cor fora da planilha era PAUSADA no ML durante uma reposição pura de estoque, contra o
+  // que o ADR-0089 promete ("não pausa nada automaticamente no ML").
+  const soRepor = entrada.somenteEstoque;
+
   // paraRetirar: filho não-retirado cujo SKU saiu do conjunto desejado.
-  const paraRetirar = naoRetirados.filter((f) => !desejadosSet.has(f.sku));
+  const paraRetirar = soRepor ? [] : naoRetirados.filter((f) => !desejadosSet.has(f.sku));
 
   // Estados de um filho NÃO-retirado que NÃO podem ser reativados/retomados em silêncio: são
   // terminais/administrativos, exigem intervenção manual (a saga de CRIAÇÃO já produz `erro`/
@@ -137,7 +147,7 @@ export async function atualizarComposicao(
   // paraAdicionar: SKU desejado sem um filho não-retirado JÁ ATIVO. Usar 'ativo' (não só "tem id")
   // garante retomada: uma cor deixada em 'criado'/'criacao_incerta' por crash é reprocessada.
   const jaAtivos = new Set(naoRetirados.filter((f) => f.status === 'ativo' && f.itemExternoId).map((f) => f.sku));
-  const paraAdicionar = desejados.filter((sku) => !jaAtivos.has(sku));
+  const paraAdicionar = soRepor ? [] : desejados.filter((sku) => !jaAtivos.has(sku));
 
   if (paraRetirar.length === 0 && paraAdicionar.length === 0) {
     await reposicao(portas, entrada, desejadosSet);

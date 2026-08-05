@@ -126,6 +126,70 @@ describe('atualizarComposicao — reposição pura (sem mudança de composição
   });
 });
 
+// ADR-0104 §4 — `somente estoque` NUNCA muda a composição do anúncio.
+// Antes deste invariante a composição vinha da planilha mesmo em reposição pura: uma cor
+// ausente da planilha virava `paraRetirar` e o item era PAUSADO no ML. O caminho Legacy nunca
+// fez isso (montarVariacoesUpdate mapeia sobre as variações VIVAS do GET e reenvia a cor omitida
+// intacta), e o ADR-0089 promete por escrito que zerar estoque "não pausa nada automaticamente
+// no ML". Estes testes travam a paridade Legacy↔UP.
+describe('atualizarComposicao — somenteEstoque nunca muda composição (ADR-0104 §4)', () => {
+  it('cor viva AUSENTE da planilha não é pausada nem retirada — fica intacta', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    // planilha só tem 'A'; 'B' continua publicada no ML e deve permanecer como está.
+    const r = await atualizarComposicao(
+      w.portas,
+      entrada({ skusDesejados: ['A'], estoquePorSku: { A: 5 }, somenteEstoque: true }),
+    );
+    expect(r.tipo).toBe('sem_mudanca');
+    expect(w.chamadas.pausar).toEqual([]);
+    expect(w.chamadas.iniciarComposicao).toEqual([]);
+    expect(w.raiz().skusEsperados).toBeNull();      // skus_esperados NÃO reescrito
+    expect(w.raiz().mudandoComposicao).toBe(false); // marcador NÃO ligado
+    expect(w.db.get('B')).toMatchObject({ status: 'ativo', retirado: false });
+    // 'B' não está na planilha → nenhuma reposição nela (estoque preservado no ML).
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 5 } }]);
+  });
+
+  it('cor NOVA na planilha não é criada no ML', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')] });
+    const r = await atualizarComposicao(
+      w.portas,
+      entrada({ skusDesejados: ['A', 'NOVA'], estoquePorSku: { A: 5, NOVA: 9 }, somenteEstoque: true }),
+    );
+    expect(r.tipo).toBe('sem_mudanca');
+    expect(w.chamadas.criarPlano).toEqual([]);
+    expect(w.chamadas.iniciarComposicao).toEqual([]);
+    expect(w.raiz().mudandoComposicao).toBe(false);
+    expect(w.db.has('NOVA')).toBe(false);
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 5 } }]);
+  });
+
+  it('cor retirada e cor nova na MESMA chamada: nenhuma das duas mexe no ML', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    const r = await atualizarComposicao(
+      w.portas,
+      entrada({ skusDesejados: ['A', 'NOVA'], estoquePorSku: { A: 1, NOVA: 2 }, somenteEstoque: true }),
+    );
+    expect(r.tipo).toBe('sem_mudanca');
+    expect(w.chamadas.pausar).toEqual([]);
+    expect(w.chamadas.criarPlano).toEqual([]);
+    expect(w.chamadas.iniciarComposicao).toEqual([]);
+  });
+
+  // Regressão inversa: fora de somenteEstoque a composição continua valendo (ADR-0088 intacto).
+  it('"Atualizar tudo" com a MESMA entrada continua retirando a cor ausente', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    const r = await atualizarComposicao(
+      w.portas,
+      entrada({ skusDesejados: ['A'], estoquePorSku: { A: 5 }, somenteEstoque: false }),
+    );
+    expect(r.tipo).toBe('concluido');
+    expect(w.chamadas.pausar).toEqual(['MLB2']);
+    expect(w.chamadas.iniciarComposicao).toEqual([['A']]);
+    expect(w.db.get('B')).toMatchObject({ status: 'pausado', retirado: true });
+  });
+});
+
 describe('atualizarComposicao — adicionar cor genuinamente nova', () => {
   it('skus_esperados reescrito e mudando_composicao ligado ANTES do POST; CREATE + confirma + ativa; flag limpa', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1')] });
