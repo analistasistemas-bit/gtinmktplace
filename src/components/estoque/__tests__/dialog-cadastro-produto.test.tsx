@@ -61,6 +61,25 @@ function renderDialog() {
   return renderDialogCom();
 }
 
+// Item 2 da auditoria: "Function components cannot be given refs" aparecia toda vez que o
+// Dialog (ou o AlertDialog de confirmação) abria, porque DialogOverlay/AlertDialogOverlay
+// (src/components/ui/dialog.tsx, alert-dialog.tsx) eram function components simples — o
+// Presence/Slot do Radix tenta anexar um ref a eles para observar o fim da animação.
+describe('DialogCadastroProduto — sem warning de ref do React ao abrir', () => {
+  it('abrir o diálogo não emite "Function components cannot be given refs"', async () => {
+    const erroSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderDialog();
+    // Espera o Dialog (Radix) terminar de montar/animar antes de checar os avisos — sem isto,
+    // o efeito de Presence/DismissableLayer dispara DEPOIS do teste já ter restaurado o spy.
+    await screen.findByRole('button', { name: 'Cadastrar' });
+    const avisosDeRef = erroSpy.mock.calls.filter(
+      (args) => typeof args[0] === 'string' && args[0].includes('cannot be given refs'),
+    );
+    expect(avisosDeRef).toEqual([]);
+    erroSpy.mockRestore();
+  });
+});
+
 // Controla `aberto` de fora (fechar/reabrir sem desmontar `DialogCadastroProduto`) — é o que
 // dispara o useEffect de reset que decide se `chaveCadastro` regenera ou não.
 function renderDialogControlado() {
@@ -244,6 +263,21 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     expect(screen.getByText('Valor inválido.')).toBeInTheDocument();
   });
 
+  // Regressão (achado via snapshot de acessibilidade, Playwright ao vivo): ao mover o rótulo
+  // completo pro aria-label (item 3), a unidade de MEDIDA FÍSICA (g/cm) foi perdida — sobrou
+  // só como sufixo visual decorativo, que quem usa leitor de tela não percebe.
+  it('aria-label dos campos de logística preserva a unidade física (g/cm)', () => {
+    renderDialog();
+    expect(screen.getByLabelText('Peso (g) da variação 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Altura (cm) da variação 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Largura (cm) da variação 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Comprimento (cm) da variação 1')).toBeInTheDocument();
+    // Preço/Custo: R$ é decorativo — "Preço da variação 1" já é natural em português, e é o
+    // texto que os testes/scripts existentes já buscam.
+    expect(screen.getByLabelText('Preço da variação 1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Custo da variação 1')).toBeInTheDocument();
+  });
+
   it('custo inválido em qualquer linha trava o botão, não só preço', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -283,9 +317,23 @@ describe('DialogCadastroProduto — formulário em cards', () => {
 });
 
 describe('DialogCadastroProduto — fotos e travas', () => {
+  // jsdom não implementa URL.createObjectURL/revokeObjectURL — necessário desde o item 7 da
+  // auditoria (miniatura da capa na etapa 1), que passou a chamar createObjectURL sempre que
+  // um arquivo de capa é escolhido (vários testes aqui fazem upload de capa).
+  beforeEach(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((f: File) => `blob:${f.name}`),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  });
+
   // uploadFotoProdutoMock é compartilhado com o describe seguinte (lote de fotos), que conta
   // chamadas absolutas — sem isto, os testes daqui vazam contagem para lá.
   afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
     uploadFotoProdutoMock.mockClear();
   });
 
@@ -376,6 +424,52 @@ describe('DialogCadastroProduto — fotos e travas', () => {
     await user.keyboard('{Escape}');
     expect(onFechar).not.toHaveBeenCalled();
     resolver({ loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [], variacoes: [] });
+  });
+});
+
+// Item 1 da auditoria (o mais importante): as fotos escolhidas na etapa 1 sobem com sucesso
+// dentro de subirLoteDeFotos, mas a etapa 2 voltava a mostrar inputs de arquivo VAZIOS para
+// os mesmos alvos — o operador lia isso como "perdi minha foto". A etapa 2 precisa mostrar
+// uma marca de "enviada" (com miniatura) para todo alvo que subiu com sucesso, e NÃO
+// re-exibir o input de arquivo pra ele.
+describe('DialogCadastroProduto — etapa 2 não pede de novo foto já enviada (item 1)', () => {
+  beforeEach(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((f: File) => `blob:${f.name}`),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+    uploadFotoProdutoMock.mockClear();
+  });
+
+  it('após cadastro com capa e foto de variação enviadas com sucesso, etapa 2 esconde os inputs e marca "✓ enviada"', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço da variação 1'), '10');
+    await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
+    await user.upload(screen.getByLabelText('Foto da variação 1'), new File(['a'], 'azul.png', { type: 'image/png' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(uploadFotoProdutoMock).toHaveBeenCalledTimes(2));
+
+    // Não pode voltar a pedir a foto que já subiu.
+    expect(screen.queryByLabelText('Capa')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('00000005')).not.toBeInTheDocument();
+    // E precisa deixar claro, pro operador, que a foto já está lá.
+    expect(screen.getAllByText('✓ enviada').length).toBeGreaterThanOrEqual(2);
   });
 });
 

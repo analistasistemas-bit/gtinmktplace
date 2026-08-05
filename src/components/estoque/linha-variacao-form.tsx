@@ -1,10 +1,12 @@
 // Card de variação do cadastro. Substitui a linha de 9 inputs minúsculos numa tabela com scroll
 // horizontal. Campos agrupados por natureza: identificação, comercial, logística, foto.
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CampoFoto } from '@/components/estoque/campo-foto';
 import { parseNumeroPtBr } from '@/lib/formato';
+import { cn } from '@/lib/utils';
 
 export interface LinhaVariacao {
   /** Identidade estável da linha. `key` por índice + <input type="file"> (DOM não-controlável)
@@ -44,16 +46,16 @@ export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | n
 }
 
 const NUMERICOS = [
-  { campo: 'preco', rotulo: 'Preço' },
-  { campo: 'custo', rotulo: 'Custo' },
-  { campo: 'estoqueInicial', rotulo: 'Estoque inicial' },
+  { campo: 'preco', rotulo: 'Preço', prefixo: 'R$' },
+  { campo: 'custo', rotulo: 'Custo', prefixo: 'R$' },
+  { campo: 'estoqueInicial', rotulo: 'Estoque inicial', prefixo: undefined },
 ] as const;
 
 const LOGISTICA = [
-  { campo: 'pesoGramas', rotulo: 'Peso (g)' },
-  { campo: 'alturaCm', rotulo: 'Altura (cm)' },
-  { campo: 'larguraCm', rotulo: 'Largura (cm)' },
-  { campo: 'comprimentoCm', rotulo: 'Comprimento (cm)' },
+  { campo: 'pesoGramas', rotulo: 'Peso', sufixo: 'g' },
+  { campo: 'alturaCm', rotulo: 'Altura', sufixo: 'cm' },
+  { campo: 'larguraCm', rotulo: 'Largura', sufixo: 'cm' },
+  { campo: 'comprimentoCm', rotulo: 'Comprimento', sufixo: 'cm' },
 ] as const;
 
 export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, onMudar, onRemover }: {
@@ -75,26 +77,45 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
   // primeiro blur do campo ou da primeira tentativa de salvar.
   const [tocados, setTocados] = useState<Set<string>>(new Set());
 
-  // useMemo: só cria uma blob URL nova quando o `File` muda — sem isto, qualquer tecla em
-  // qualquer campo do card re-renderiza e cria (e vaza) uma URL nova pra mesma foto.
-  const fotoUrl = useMemo(() => (linha.foto ? URL.createObjectURL(linha.foto) : null), [linha.foto]);
-  useEffect(() => () => { if (fotoUrl) URL.revokeObjectURL(fotoUrl); }, [fotoUrl]);
-
-  const campoTexto = (campo: keyof LinhaVariacao, rotulo: string) => {
+  const campoTexto = (
+    campo: keyof LinhaVariacao,
+    rotulo: string,
+    unidade?: { prefixo?: string; sufixo?: string },
+  ) => {
     const erro = erroCampo(campo, linha[campo] as string);
     const mostrarErro = !!erro && (tocados.has(campo) || tentouSalvar);
     return (
       <div key={campo} className="flex flex-col gap-1">
         <label htmlFor={id(campo)} className="text-xs text-muted-foreground">
-          {rotulo} da variação {n}
+          {rotulo}
+          {campo === 'preco' && <span className="text-destructive"> *</span>}
         </label>
-        <Input
-          id={id(campo)}
-          className="h-8 text-sm"
-          value={linha[campo] as string}
-          onChange={(e) => onMudar({ [campo]: e.target.value } as Partial<LinhaVariacao>)}
-          onBlur={() => setTocados((prev) => (prev.has(campo) ? prev : new Set(prev).add(campo)))}
-        />
+        <div className="relative">
+          {unidade?.prefixo && (
+            <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted-foreground">
+              {unidade.prefixo}
+            </span>
+          )}
+          <Input
+            id={id(campo)}
+            // Regressão (achado via snapshot de acessibilidade): o sufixo visual ("g"/"cm") é
+            // decorativo — quem usa leitor de tela não o percebe. A unidade de MEDIDA FÍSICA
+            // (peso/dimensão) precisa voltar pro aria-label. R$ fica de fora de propósito:
+            // "Preço"/"Custo" já são inequívocos em português, e preservar o texto exato que os
+            // testes/scripts já buscam (`getByLabelText('Preço da variação 1')`) é mais valioso
+            // aqui do que anexar "(R$)".
+            aria-label={`${rotulo}${unidade?.sufixo ? ` (${unidade.sufixo})` : ''} da variação ${n}`}
+            className={cn('h-8 text-sm', unidade?.prefixo && 'pl-8', unidade?.sufixo && 'pr-7')}
+            value={linha[campo] as string}
+            onChange={(e) => onMudar({ [campo]: e.target.value } as Partial<LinhaVariacao>)}
+            onBlur={() => setTocados((prev) => (prev.has(campo) ? prev : new Set(prev).add(campo)))}
+          />
+          {unidade?.sufixo && (
+            <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted-foreground">
+              {unidade.sufixo}
+            </span>
+          )}
+        </div>
         {mostrarErro && <span className="text-xs text-destructive">{erro}</span>}
       </div>
     );
@@ -120,30 +141,22 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
       </div>
 
       <div className="grid gap-2 sm:grid-cols-3">
-        {NUMERICOS.map((c) => campoTexto(c.campo, c.rotulo))}
+        {NUMERICOS.map((c) => campoTexto(c.campo, c.rotulo, { prefixo: c.prefixo }))}
       </div>
 
       <div className="grid gap-2 sm:grid-cols-4">
-        {LOGISTICA.map((c) => campoTexto(c.campo, c.rotulo))}
+        {LOGISTICA.map((c) => campoTexto(c.campo, c.rotulo, { sufixo: c.sufixo }))}
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex flex-1 flex-col gap-1">
-          <label htmlFor={id('foto')} className="text-xs text-muted-foreground">
-            Foto da variação {n}
-          </label>
-          <Input
-            id={id('foto')} type="file" accept="image/*"
-            onChange={(e) => onMudar({ foto: e.target.files?.[0] ?? null })}
-          />
-        </div>
-        {fotoUrl && (
-          <img
-            src={fotoUrl}
-            alt={`Prévia da foto da variação ${n}`}
-            className="h-16 w-16 shrink-0 rounded-md object-cover"
-          />
-        )}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-muted-foreground">Foto</span>
+        <CampoFoto
+          id={id('foto')}
+          ariaLabel={`Foto da variação ${n}`}
+          arquivo={linha.foto}
+          opcional
+          onEscolher={(f) => onMudar({ foto: f })}
+        />
       </div>
     </div>
   );

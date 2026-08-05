@@ -29,12 +29,16 @@ function DialogClose({
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
-function DialogOverlay({
-  className,
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+// forwardRef obrigatório: Presence/Slot do Radix (react-dialog) tenta anexar um ref a este
+// componente para observar o fim da animação — sem forwardRef, React avisa "Function
+// components cannot be given refs" toda vez que o Dialog abre.
+const DialogOverlay = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<typeof DialogPrimitive.Overlay>
+>(({ className, ...props }, ref) => {
   return (
     <DialogPrimitive.Overlay
+      ref={ref}
       data-slot="dialog-overlay"
       className={cn(
         "fixed inset-0 isolate z-50 bg-black/10 duration-(--motion-duration-instant) supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
@@ -43,7 +47,8 @@ function DialogOverlay({
       {...props}
     />
   )
-}
+})
+DialogOverlay.displayName = "DialogOverlay"
 
 function DialogContent({
   className,

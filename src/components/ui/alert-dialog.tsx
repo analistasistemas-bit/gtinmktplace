@@ -26,12 +26,15 @@ function AlertDialogPortal({
   )
 }
 
-function AlertDialogOverlay({
-  className,
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>) {
+// forwardRef obrigatório: mesmo motivo do DialogOverlay (dialog.tsx) — Presence/Slot do
+// Radix tenta anexar um ref a este componente para observar o fim da animação.
+const AlertDialogOverlay = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<typeof AlertDialogPrimitive.Overlay>
+>(({ className, ...props }, ref) => {
   return (
     <AlertDialogPrimitive.Overlay
+      ref={ref}
       data-slot="alert-dialog-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/10 duration-(--motion-duration-instant) supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
@@ -40,7 +43,8 @@ function AlertDialogOverlay({
       {...props}
     />
   )
-}
+})
+AlertDialogOverlay.displayName = "AlertDialogOverlay"
 
 function AlertDialogContent({
   className,

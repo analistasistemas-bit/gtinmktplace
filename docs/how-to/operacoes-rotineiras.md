@@ -107,14 +107,18 @@ Fluxo do operador de uma org com o módulo `estoque` habilitado.
 1. Dados do PAI: nome, descrição, unidade, fornecedor e **origem** (nacional/importado —
    obrigatório, define a alíquota de imposto; o botão de salvar fica travado sem ela). **Sem
    campo de código** — o aviso na tela diz "Códigos gerados automaticamente ao salvar" (D-8 do
-   ADR-0096).
+   ADR-0096). Campos obrigatórios levam `*`; o título do diálogo mostra "etapa 1 de 2".
 2. Uma linha por variação: cor/nome, GTIN, preço, custo, estoque inicial, peso e dimensões.
    **Sem coluna de SKU** — o GTIN continua sendo o lugar do EAN; o SKU é gerado junto com o
    código do PAI.
 3. Salvar. Se aparecer aviso de pendência (**"Reprocessar"** ou lista de SKUs sem estoque),
    resolva antes de seguir — o botão "Ir para a Revisão" fica travado de propósito, porque
    cadastro parcial reportado como sucesso é a pior falha possível aqui.
-4. Etapa de fotos: capa (até 3) e uma foto por variação, já pelo código **gerado**.
+4. Etapa de fotos: capa (até 3) e uma foto por variação, já pelo código **gerado**. As fotos
+   escolhidas na etapa 1 **já subiram** durante o Salvar — a etapa 2 mostra cada uma como
+   miniatura com **"✓ enviada"** e um botão "Trocar", e só apresenta campo de upload para o que
+   falta ou falhou. Ela **não** está pedindo a mesma foto de novo; é a tela de conferência e
+   retry.
 5. "Ir para a Revisão" — **o cadastro não publica nada**; publicar continua sendo ato explícito
    na Revisão, como no fluxo de planilha.
 
