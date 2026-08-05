@@ -284,6 +284,25 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   (idempotente para reexecução SEQUENCIAL, não concorrente). `family_id` divergente → cor nova em
   `erro` (cores vivas intocadas — família publicada não é derrubada). Legacy abaixo (inclui o
   item-plano-1-variação do ADR-0084, que NÃO tem linhas filhas) fica intocado.
+  **Família migrada pelo ML (ADR-0104):** o ML migra categorias para User Products sozinho, em
+  anúncios JÁ publicados — uma família publicada como Legacy não tem linhas filhas, então o atalho
+  de roteamento acima não a enxerga. O conector detecta pelo `GET` ao vivo (`variations: []` +
+  `family_name`) e devolve **`MIGRADO_PARA_UP`** tipado (com `family_id`/`family_name`/`seller_id`
+  observados) em vez de lançar — simétrico ao `FORMATO_INCOMPATIVEL` do CREATE; **zero `GET` extra**,
+  reusa o que o conector já fazia. O worker então roda `adotar-familia-migrada.ts`: busca cada SKU
+  **já publicado** por `seller_custom_field`, valida por multiget (seller, `family_id`,
+  `user_product_id`, não-Legacy, status conhecido) e exige **todos sob um único `family_id`** —
+  qualquer desvio aborta a adoção **inteira** com as contagens observadas na mensagem (400
+  definitivo). **Só leitura remota:** o contrato `PortasAdocao` não expõe escrita no ML. A gravação
+  é a RPC `adotar_familia_migrada_up` (raiz + N filhos + `ml_variation_id` nulado + `ml_item_id`
+  re-apontado, 1 transação); em seguida a família segue pela saga UP no MESMO attempt.
+  Limite conhecido: irmãos **fora da planilha** ficam sem linha filha (vendas deles não são
+  atribuídas até um lote futuro incluir a cor) — ver ADR-0104 §2.
+  **`somente estoque` nunca muda composição (ADR-0104 §4):** com `somenteEstoque`, `paraRetirar` e
+  `paraAdicionar` são sempre vazios — nenhuma cor é pausada por estar ausente da planilha, nenhuma
+  cor nova é criada, `skus_esperados` não é reescrito e `mudando_composicao` não é ligado. Antes
+  disso o caminho UP divergia do Legacy (que mapeia sobre as variações VIVAS do `GET` e preserva a
+  cor omitida) e **pausava anúncio numa reposição pura**, contra o texto do ADR-0089.
   **Sincronização de descrição (2026-07-23):** `efeitosPosComposicao` recalcula a seção "🎨 CORES
   DISPONÍVEIS" (`atualizarSecaoCores`, agora também **recria** a seção quando ausente — antes só
   sabia removê-la) e empurra pra TODOS os N itens ativos incondicionalmente (não só quando o texto

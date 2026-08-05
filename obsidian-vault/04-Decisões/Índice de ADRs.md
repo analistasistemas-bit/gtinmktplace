@@ -115,5 +115,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0101 | [O mapa de marca corrige a grafia, não troca a entidade](../../docs/decisions/0101-marca-do-mapa-nao-troca-entidade.md) |
 | 0102 | [A descrição não promete logística nem crava o conteúdo da embalagem](../../docs/decisions/0102-descricao-sem-promessa-logistica.md) |
 | 0103 | [`✅ BENEFÍCIOS` é cabeçalho, não item de lista](../../docs/decisions/0103-cabecalho-beneficios-nao-vira-bullet.md) |
+| 0104 | [UPDATE de família migrada pelo ML para User Products (adoção por SKU + `somente estoque` nunca muda composição)](../../docs/decisions/0104-update-de-familia-migrada-para-user-products.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

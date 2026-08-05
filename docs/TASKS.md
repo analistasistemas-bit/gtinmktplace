@@ -2,6 +2,30 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Preparação para a migração automática do ML para User Products — 2026-08-04 (ADR-0104)
+
+O Mercado Livre está migrando categorias para User Products de forma **automática e gradual**, em
+anúncios já publicados. Duas lacunas foram fechadas antes de a migração alcançar as famílias
+multi-cor:
+
+- [x] **`somente estoque` pausava anúncio sozinho (bug latente, já existia).** No caminho UP a
+  composição vinha da planilha: cor ausente virava "retirada" e o item era **pausado no ML** numa
+  reposição pura. O Legacy nunca fez isso (mapeia sobre as variações vivas do `GET`). Contradizia o
+  texto do ADR-0089. Guard dentro de `atualizarComposicao` — composição agora é exclusiva de
+  "Atualizar tudo".
+- [x] **UPDATE de família migrada pelo ML.** O roteamento UP lia estado **local**, que uma família
+  migrada nunca teve → caía no Legacy → erro 400 pedindo reposição manual no painel, por família, em
+  cada lote. Agora o conector devolve `MIGRADO_PARA_UP` tipado (detecção por `GET` ao vivo, zero
+  chamada extra) e o worker adota os itens irmãos por SKU (tudo-ou-nada, só leitura remota) antes de
+  entregar à saga UP.
+- [x] Migration `20260805020213_adr104_adotar_familia_migrada_up.sql` aplicada e validada
+  (`db:check` alinhado, `supabase db lint` sem erros de schema).
+- [ ] **Pendente de validação real:** nenhuma família do Diego foi migrada pelo ML ainda. A forma
+  exata da migração é hipótese validada em **runtime** — a primeira ocorrência real traz as
+  contagens observadas na mensagem de erro se não bater com o esperado.
+- [ ] **Limite conhecido (ADR-0104 §2):** irmãos fora da planilha do lote ficam sem linha filha —
+  vendas deles não são atribuídas à família até um lote futuro incluir a cor.
+
 ## Produto gravado na organização errada — corrigido 2026-08-04
 
 - [x] **Causa raiz confirmada:** não foi vazamento de leitura por RLS. Uma gravação SQL

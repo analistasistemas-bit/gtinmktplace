@@ -124,8 +124,15 @@ Isto é **exatamente o padrão já aceito no CREATE** pelo ADR-0088 §3: o conec
 nem lança; sinaliza incompatibilidade de formato como **retorno normal** e a orquestração aciona a
 saga. Aqui é o simétrico no UPDATE.
 
-**O caminho de 1 cor permanece byte-a-byte como está** (item plano do ADR-0084 continua repondo via
-`atualizarItemPlanoML`). Zero regressão: só o ramo que **hoje já falha** muda de comportamento.
+**O caminho de 1 cor sem cor nova permanece byte-a-byte como está** (item plano do ADR-0084 continua
+repondo via `atualizarItemPlanoML`). Zero regressão: só o ramo que **hoje já falha** muda de
+comportamento.
+
+Esse ramo cobre **dois** casos, e ambos têm o mesmo destino: a família migrada multi-cor, e o item
+plano de 1 cor (ADR-0084) ao qual a planilha **soma uma cor nova**. O segundo não é migração, mas
+precisa do mesmo modelo N-itens — e adotar o SKU existente resolve os dois com um caminho só. Efeito
+colateral bem-vindo: "cor nova em item plano", que o ADR-0084 deixou explicitamente fora de escopo,
+passa a funcionar.
 
 **Nenhum `GET` extra no caminho feliz.** O conector já faz o `GET` do estado real antes do PUT; a
 detecção reaproveita esse mesmo `GET`. Uma família Legacy não paga nada por esta mudança.
@@ -136,7 +143,10 @@ detecção reaproveita esse mesmo `GET`. Uma família Legacy não paga nada por 
 `_shared/user-products/adotar-familia-migrada.ts`, que **descobre a forma real da migração em
 runtime** em vez de assumi-la:
 
-1. para **cada** SKU da família (todas as `variacoes` incluídas), `buscarItemPorSku`;
+1. para cada SKU **já publicado** (as cores `casadas`, com `ml_variation_id`), `buscarItemPorSku`.
+   Cores **genuinamente novas** ficam de fora da adoção: elas ainda não existem no ML, e exigi-las
+   faria a regra tudo-ou-nada abortar sempre. Elas são criadas depois, pela mini-saga de composição
+   — ou ignoradas, se for `somente estoque` (§4);
 2. validar cada candidato por **multiget**: mesmo `seller_id` da conexão da org, `variations`
    vazio, `family_id` presente, `user_product_id` presente — as mesmas validações que o
    `reconciliar-backfill.ts` já aplica (`:59-74`), pelas mesmas razões (fail-closed);
@@ -158,6 +168,32 @@ o dado que diz qual caso foi. **A hipótese é validada em runtime, não em temp
 **Nenhum POST/PUT no ML durante a adoção** — só `GET`. A adoção não altera o anúncio; ela ensina o
 banco local a enxergar o que o ML já fez. A reposição de estoque acontece **depois**, pelo caminho
 normal da saga UP.
+
+#### Limite conhecido: irmãos fora da planilha ficam **não rastreados**
+
+A adoção captura as cores **da planilha deste lote**, não necessariamente todas as cores que a
+família tem no Mercado Livre. Se o ML migrou uma família de 9 cores e a planilha de reposição traz
+7, a adoção grava 7 filhos e `skus_esperados` com 7 SKUs. A agregação lê a partição como `ativo`
+(7 de 7 — coerente com o que foi gravado), e **os outros 2 itens continuam vivos no ML sem linha
+filha local**.
+
+Consequência concreta, pelo ADR-0088 §2: **vendas e moderação desses 2 itens não são atribuídas à
+família** — viram "vendas externas" até que um lote futuro inclua aquelas cores e a readoção as
+capture (o `on conflict do update` da RPC torna a readoção segura e idempotente).
+
+Isto é uma **regressão em relação ao Legacy**, e vale dizê-lo com todas as letras: lá
+`montarVariacoesUpdate` mapeia sobre o `GET` ao vivo, então uma cor fora da planilha continuava
+rastreada e intacta. Aqui ela some do modelo local.
+
+**Aceito conscientemente, com o alternativo registrado:** adotar por `family_id` (buscar todos os
+irmãos do grupo, não só os SKUs da planilha) capturaria a família inteira, mas exigiria um endpoint
+de listagem por `family_id` cuja existência e semântica **não estão confirmadas na doc oficial** —
+e este ADR já decidiu não construir sobre suposição a respeito da forma da migração. O caminho de
+correção quando o dado real aparecer: trocar a fonte dos SKUs da adoção de "planilha" para "grupo",
+sem mexer em nada mais do desenho.
+
+**Mitigação disponível hoje:** manter a planilha de reposição com **todas** as cores da família (o
+que já é o hábito), e usar o `reconciliar-user-products` (backfill administrativo) para conferir.
 
 ### §3 — A adoção grava três coisas, numa transação só
 
@@ -258,6 +294,9 @@ enxergar. Os dois **compartilham** a validação fail-closed e a porta de upsert
     retirar uma cor passa a exigir "Atualizar tudo". Explícito, não acidental.
   - **Re-apontar `familias.ml_item_id`** tem o blast radius que o ADR-0088 §5 já enumerou; a regra
     determinística e a transação única contêm o risco, não o eliminam.
+  - **Irmãos fora da planilha ficam não rastreados** (ver §2, "Limite conhecido") — vendas deles não
+    são atribuídas à família até um lote futuro incluir a cor. É o único ponto em que o UP fica
+    atrás do Legacy neste ADR.
 - **Como reverter:** o sinal `MIGRADO_PARA_UP` volta a ser `throw 400` (uma linha) e o invariante
   de `somenteEstoque` sai do `atualizarComposicao`. Nenhuma migration destrutiva; as linhas adotadas
   permanecem válidas e continuam roteando pelo atalho local.
@@ -307,5 +346,8 @@ enxergar. Os dois **compartilham** a validação fail-closed e a porta de upsert
   o resultado observável no ML é o mesmo nos dois formatos.
 - **Segunda atualização** da família já adotada: roteia pelo atalho local (linhas filhas existem),
   **sem** nenhuma busca por SKU.
+- **Readoção com mais cores** (limite conhecido do §2): família adotada com 7 SKUs; um lote posterior
+  traz os 9 → a readoção captura os 2 faltantes e reescreve `skus_esperados` para 9, sem duplicar
+  linha (`on conflict do update`).
 - **CI completo local antes do push**: `pnpm lint`, `deno lint`, `deno check`, `pnpm test`,
   `pnpm build`.

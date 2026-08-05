@@ -641,6 +641,16 @@ resolve ativação parcial); reconciliador de backfill; vinculação de catálog
 (hoje só funciona no caminho Legacy); mini-saga completa de remoção (hoje só a guarda mínima que
 recusa remover família UP).
 
+**Atualização 2026-08-04 — o que a [ADR-0104](0104-update-de-familia-migrada-para-user-products.md)
+fechou.** O UPDATE por item filho e a mini-saga de composição **já estão implantados**; o que faltava
+era a **ponte** para uma família que o ML migra para UP **sozinho** (publicada como Legacy, sem
+linhas filhas locais — o roteamento por estado local não a enxergava e o UPDATE falhava). A ADR-0104
+implementa a detecção por `GET` ao vivo que a seção "UPDATE permanece 100% `GET`-ao-vivo" acima já
+tinha decidido, via sinal tipado `MIGRADO_PARA_UP` + adoção por SKU tudo-ou-nada. Ela também corrige
+um comportamento desta ADR que divergia do Legacy: `somente estoque` **mudava a composição** do
+anúncio (cor ausente da planilha era pausada no ML). Continuam pendentes da Fase 2: vinculação de
+catálogo por item UP e a mini-saga completa de remoção.
+
 Critérios de aceite originais (derivados do Final Review Checklist do plano), mantidos como referência:
 
 - **1 cor**: publica em Legacy e em UP, **sem** regressão do retry do ADR-0087 (mesmo POST/retry de hoje).

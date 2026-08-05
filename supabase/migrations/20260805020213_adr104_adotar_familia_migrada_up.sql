@@ -76,10 +76,18 @@ begin
   -- variação. Deixar o id Legacy órfão faria o filtro `casadas` do caminho Legacy e o resolvedor de
   -- vendas (_shared/update/reconciliar.ts) casarem por um variation_id que não existe mais no
   -- anúncio migrado: atribuição de venda errada, em silêncio.
+  -- Escopo de org via a FAMÍLIA (não por `variacoes.org_id`): a coluna existe, mas guardar por ela
+  -- faria a RPC pular em silêncio qualquer linha antiga com org_id nulo — exatamente o tipo de
+  -- default silencioso que esta base proíbe. Ancorar em familias dá a mesma garantia multi-tenant
+  -- e deixa as duas escritas (esta e a de `familias`) consistentemente org-scoped.
   update public.variacoes
     set ml_variation_id = null
   where familia_id = p_familia_id
-    and ml_variation_id is not null;
+    and ml_variation_id is not null
+    and exists (
+      select 1 from public.familias f
+      where f.id = p_familia_id and f.org_id = p_org_id
+    );
 
   -- 4. ADR-0088 §5 / ADR-0104 §3: `familias.ml_item_id` é o representante da partição 0 e é lido
   -- por todo o frontend como "o anúncio da família". A migração pode ter dissolvido o item
