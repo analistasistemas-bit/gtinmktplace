@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ProdutoCard } from '../produto-card';
+import { ProdutoCard, CabecalhoProdutos, GRID_LINHA_PRODUTO } from '../produto-card';
 import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
 
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
@@ -45,17 +45,23 @@ function renderCard(produtoFixture = produto, onDarEntrada = vi.fn()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <ProdutoCard produto={produtoFixture} canais={[]} onDarEntrada={onDarEntrada} />
+      <ProdutoCard
+        produto={produtoFixture} canais={[]}
+        onDarEntrada={onDarEntrada}
+      />
     </QueryClientProvider>,
   );
   return onDarEntrada;
 }
 
+/** O botão de entrada é rotulado com o produto (no mobile ele é só um ícone). */
+const BOTAO_ENTRADA = /Dar entrada em Protetor Solar/;
+
 describe('ProdutoCard', () => {
   it('expande por teclado e expõe aria-expanded', async () => {
     const user = userEvent.setup();
     renderCard();
-    const botao = screen.getByRole('button', { name: /Protetor Solar/ });
+    const botao = screen.getByRole('button', { name: /^Protetor Solar/ });
     expect(botao).toHaveAttribute('aria-expanded', 'false');
     botao.focus();
     await user.keyboard('{Enter}');
@@ -65,7 +71,7 @@ describe('ProdutoCard', () => {
   it('produto monovariação pré-seleciona SKU ao dar entrada', async () => {
     const user = userEvent.setup();
     const onDarEntrada = renderCard(produtoMono);
-    await user.click(screen.getByRole('button', { name: 'Dar entrada' }));
+    await user.click(screen.getByRole('button', { name: BOTAO_ENTRADA }));
     expect(onDarEntrada).toHaveBeenCalledWith({ sku: '00000005', codigoPai: '00000004' });
   });
 
@@ -74,7 +80,7 @@ describe('ProdutoCard', () => {
     const user = userEvent.setup();
     const { container } = render(<div />);
     renderCard();
-    await user.click(screen.getByRole('button', { name: /Protetor Solar/ }));
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
     expect(document.querySelectorAll('table')).toHaveLength(0);
     expect(container).toBeDefined();
   });
@@ -82,8 +88,34 @@ describe('ProdutoCard', () => {
   it('produto multivariação não pré-seleciona SKU ao dar entrada', async () => {
     const user = userEvent.setup();
     const onDarEntrada = renderCard();
-    await user.click(screen.getByRole('button', { name: 'Dar entrada' }));
+    await user.click(screen.getByRole('button', { name: BOTAO_ENTRADA }));
     expect(onDarEntrada).toHaveBeenCalledWith({ codigoPai: '00000004' });
+  });
+
+  // Remoção deliberada: `descricao_pai` é copy de marketing do anúncio (3 linhas por produto),
+  // não informação de estoque. Era o maior bloco do painel e não respondia nenhuma pergunta
+  // que o operador faz aqui. Se voltar a ser desejada, é um link para a Revisão, não um dump.
+  it('o painel expandido não exibe a descrição de marketing do produto', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+    expect(screen.queryByText('Descrição longa.')).not.toBeInTheDocument();
+  });
+
+  // Cabeçalho e linha usam o MESMO template de grid: se um mudar sem o outro, os rótulos
+  // deixam de bater com as colunas e o alinhamento (o ponto do redesenho) se perde.
+  it('cabeçalho de colunas usa o mesmo template de grid da linha', () => {
+    const { container } = render(<CabecalhoProdutos />);
+    expect(container.firstElementChild!.className).toContain(GRID_LINHA_PRODUTO);
+  });
+
+  // `sr-only` é `position:absolute`: um item assim não ocupa track e desliza todos os rótulos
+  // seguintes uma coluna. A célula vazia da coluna de ação precisa continuar no fluxo.
+  it('nenhuma célula do cabeçalho é sr-only (sairia do fluxo do grid)', () => {
+    const { container } = render(<CabecalhoProdutos />);
+    for (const celula of Array.from(container.firstElementChild!.children)) {
+      expect(celula.className.split(/\s+/)).not.toContain('sr-only');
+    }
   });
 
   // M-3: garante que o card exibe o badge quando a prop `canais` inclui o canal — a correção

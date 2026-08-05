@@ -72,3 +72,4 @@ trigger_sync.js
 # Saída do experimento de copy (ADR-0098) — dump grande, o que vai ao repo é o resumo no ADR
 scripts/experimento-copy/resultado.md
 scripts/experimento-copy/resultado.json
+.playwright-cli/

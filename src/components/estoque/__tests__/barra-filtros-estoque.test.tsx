@@ -37,17 +37,23 @@ describe('BarraFiltrosEstoque', () => {
     expect(screen.getByRole('button', { name: 'Não publicado' })).toBeEnabled();
   });
 
-  // Botões de filtro e ordenação são toggles (um selecionado por grupo) — sem `aria-pressed`,
-  // tecnologia assistiva não tem como saber qual está ativo.
-  it('marca aria-pressed no filtro e na ordem selecionados, e não nos demais do grupo', () => {
-    render(<BarraFiltrosEstoque {...props} filtro="sem-estoque" ordem="saldo-asc" />);
+  // Os botões de filtro são toggles excludentes — sem `aria-pressed`, tecnologia assistiva não
+  // tem como saber qual está ativo.
+  it('marca aria-pressed só no filtro selecionado', () => {
+    render(<BarraFiltrosEstoque {...props} filtro="sem-estoque" />);
 
     expect(screen.getByRole('button', { name: 'Sem estoque' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: 'Não publicado' })).toHaveAttribute('aria-pressed', 'false');
+  });
 
-    expect(screen.getByRole('button', { name: 'Menor saldo' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Nome (A-Z)' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'Mais recente' })).toHaveAttribute('aria-pressed', 'false');
+  // Ordenação deixou de ser um trio de botões idênticos aos de filtro: virou um select rotulado,
+  // que precisa expor o critério em vigor sem o operador ter que abrir a lista.
+  it('a ordenação é um select rotulado que mostra o critério em vigor', () => {
+    render(<BarraFiltrosEstoque {...props} ordem="saldo-asc" />);
+    const seletor = screen.getByRole('combobox', { name: /ordenar por/i });
+    expect(seletor).toHaveTextContent('Menor saldo');
+    // Filtro e ordenação não podem voltar a ser o mesmo controle visual.
+    expect(screen.queryByRole('button', { name: 'Menor saldo' })).not.toBeInTheDocument();
   });
 });

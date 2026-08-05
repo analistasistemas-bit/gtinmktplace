@@ -46,6 +46,11 @@ const ALL_EXPECTED_KEYS = [
   // Páginas de detalhe (drill-down)
   'Líquido total (você recebe)',
   'Faturamento total',
+  // Estoque
+  'SKUs cadastrados',
+  'Unidades em estoque',
+  'SKUs sem estoque',
+  'Valor em estoque',
 ];
 
 describe('kpi-descriptions', () => {

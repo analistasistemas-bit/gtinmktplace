@@ -2,6 +2,34 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — layout de operação (nível SaaS) — 2026-08-05
+
+- [x] **Faixa de KPIs** (`src/lib/produtos-saldo-resumo.ts`, `src/components/estoque/resumo-estoque.tsx`) —
+  SKUs cadastrados, unidades em estoque, SKUs sem estoque e valor em estoque. Os agregados saem da lista
+  COMPLETA (não do resultado da busca). `valorEmEstoque` soma só SKUs com custo e expõe `skusSemCusto`,
+  porque `variacoes.custo` é nullable (ADR-0094 D-9) e a soma sozinha subnotificaria em silêncio — a UI
+  avisa "N SKUs sem custo — fora do total".
+- [x] **Lista com colunas alinhadas** (`produto-card.tsx`) — cabeçalho PRODUTO / SKUS / SALDO / SITUAÇÃO /
+  CANAIS + linhas usando o MESMO template de CSS Grid (`GRID_LINHA_PRODUTO`), com tracks numéricas de
+  largura fixa e `tabular-nums`. **Continua sem nenhuma `<table>`**: o alinhamento vem de grid com tracks
+  fixos, que não dimensiona por conteúdo — a guarda de `document.querySelectorAll('table').length === 0`
+  segue valendo.
+- [x] **Painel expandido vira lista tabulada** (`variacao-estoque-linha.tsx`, substitui
+  `variacao-estoque-card.tsx`) — SKU / GTIN / peso e dimensões / custo / preço / saldo em colunas
+  alinhadas, no lugar do bloco de 5 linhas de texto corrido. Abaixo de `lg` as colunas do meio somem e
+  custo/preço voltam como linha secundária.
+- [x] **Descrição de marketing removida do painel** — `descricao_pai` são 3 linhas de copy do anúncio por
+  produto, não informação de estoque; era o maior bloco da tela e não respondia nenhuma pergunta feita
+  aqui. Teste de regressão em `produto-card.test.tsx`.
+- [x] **Toolbar re-hierarquizada** (`barra-filtros-estoque.tsx`) — filtro virou segmented control com
+  borda (excludente, estado visível) e ordenação virou `Select` rotulado "Ordenar por": eram seis botões
+  idênticos em fila, sem como distinguir filtro de ordenação. Busca com ícone e contador de resultados.
+- [x] **Bug de alinhamento achado só no Playwright ao vivo** — a célula vazia da coluna da foto usava
+  `sr-only`, que é `position:absolute` e portanto NÃO ocupa track de grid: o cabeçalho inteiro deslizava
+  uma coluna à esquerda. Contar células não pegava; teste novo olha a classe.
+- [x] **Validado ao vivo** — 1440/768/375 com produto expandido, temas claro e escuro,
+  `scrollWidth <= clientWidth` em todas as larguras (sem overflow horizontal).
+
 ## Publicados — busca deixava linhas fantasmas na tabela — 2026-08-05
 
 - [x] **Key da linha passa a ser `mlItemId`** (`src/pages/Publicados.tsx`) — anúncios split

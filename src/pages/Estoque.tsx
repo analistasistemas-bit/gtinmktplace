@@ -11,11 +11,13 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
-import { ProdutoCard, type AlvoEntrada } from '@/components/estoque/produto-card';
+import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/estoque/produto-card';
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
+import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { filtrarProdutos, canaisEfetivos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
 import { fetchProdutosComSaldo, fetchCanaisPorProduto } from '@/lib/produtos-saldo';
+import { resumirEstoque } from '@/lib/produtos-saldo-resumo';
 
 export default function Estoque() {
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
@@ -76,6 +78,9 @@ export default function Estoque() {
     canaisPorProduto: canaisIndisponivel ? undefined : canaisPorProduto,
   });
 
+  // Os KPIs resumem o ESTOQUE, não o resultado da busca — por isso saem da lista completa.
+  const resumo = resumirEstoque(produtos ?? []);
+
   return (
     <div className="p-4 md:p-6">
       <PageHeader
@@ -96,9 +101,12 @@ export default function Estoque() {
       />
 
       {isLoading ? (
-        <div className="flex flex-col gap-2">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
-        </div>
+        <>
+          <ResumoEstoqueKpis resumo={resumo} carregando />
+          <div className="flex flex-col gap-1.5">
+            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+          </div>
+        </>
       ) : isError ? (
         <p className="text-sm text-muted-foreground">não foi possível carregar os produtos.</p>
       ) : (produtos ?? []).length === 0 ? (
@@ -110,12 +118,23 @@ export default function Estoque() {
         />
       ) : (
         <>
+          <ResumoEstoqueKpis resumo={resumo} />
           <BarraFiltrosEstoque
             termo={busca} filtro={filtro} ordem={ordem}
             canaisCarregando={canaisLoading} canaisErro={canaisErro}
             onTermo={setBusca} onFiltro={setFiltro} onOrdem={setOrdem}
           />
-          <div className="flex flex-col gap-2">
+          {lista.length > 0 && (
+            <>
+              <p aria-live="polite" className="mb-2 text-xs text-muted-foreground">
+                {lista.length === (produtos ?? []).length
+                  ? `${lista.length} ${lista.length === 1 ? 'produto' : 'produtos'}`
+                  : `${lista.length} de ${(produtos ?? []).length} produtos`}
+              </p>
+              <CabecalhoProdutos />
+            </>
+          )}
+          <div className="flex flex-col gap-1.5">
             {lista.map((p) => (
               <ProdutoCard
                 key={p.codigoPai}
@@ -125,7 +144,7 @@ export default function Estoque() {
               />
             ))}
             {lista.length === 0 && (
-              <p className="p-4 text-sm text-muted-foreground">
+              <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
                 {busca.trim() !== ''
                   ? `Nenhum produto bate com “${busca}”.`
                   : 'Nenhum produto encontrado com o filtro selecionado.'}

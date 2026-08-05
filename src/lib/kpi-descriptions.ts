@@ -92,6 +92,16 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Soma do líquido de todas as vendas listadas nesta tela — mesmo valor do card "Líquido das vendas" de Financeiro, com o detalhamento por venda logo abaixo.',
   'Faturamento total':
     'Soma do valor bruto de todas as vendas listadas nesta tela, dividido entre anúncios publicados pelo PubliAI e vendas fora do PubliAI.',
+
+  // ── Estoque ────────────────────────────────────────────────────────────
+  'SKUs cadastrados':
+    'Número de variações (SKUs) cadastradas na sua organização, somando todos os produtos. Não muda com a busca nem com o filtro da tela.',
+  'Unidades em estoque':
+    'Soma do saldo de todos os SKUs com estoque positivo. SKUs zerados não somam, e saldo negativo (inconsistência de ledger) é ignorado em vez de subtrair.',
+  'SKUs sem estoque':
+    'Quantos SKUs estão com saldo zero ou negativo — são os que precisam de entrada de mercadoria. Anúncio com saldo zero é pausado pelo próprio Mercado Livre e volta sozinho quando entra estoque.',
+  'Valor em estoque':
+    'Soma de custo × saldo de cada SKU com estoque, usando o último custo informado na entrada. SKUs com estoque e sem custo cadastrado ficam de fora do total e são avisados abaixo do valor.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada

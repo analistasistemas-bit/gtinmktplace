@@ -1,5 +1,10 @@
+// Toolbar da tela Estoque. Filtro e ordenação eram seis botões idênticos em fila, impossíveis de
+// distinguir: agora filtro é um segmented control (excludente, estado visível) e ordenação é um
+// select rotulado — dois controles de natureza diferente lidos como controles diferentes.
+import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { FiltroEstoque, OrdemEstoque } from '@/lib/produtos-saldo-filtro';
 
@@ -33,44 +38,52 @@ export function BarraFiltrosEstoque({
   return (
     <div className="mb-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-sm"
-          placeholder="Buscar por nome, código, SKU, GTIN, cor ou fornecedor…"
-          value={termo}
-          onChange={(e) => onTermo(e.target.value)}
-        />
-        <div className="flex gap-1">
+        {/* No mobile a busca ocupa a linha inteira: como `flex-1 min-w-0`, ela encolhia até ~50px
+            em vez de empurrar o segmented control para a linha de baixo. */}
+        <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-sm">
+          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8"
+            placeholder="Buscar por nome, código, SKU, GTIN, cor ou fornecedor…"
+            value={termo}
+            onChange={(e) => onTermo(e.target.value)}
+          />
+        </div>
+
+        {/* Segmented control: o contêiner com borda é o que comunica "escolha uma destas". */}
+        <div role="group" aria-label="Filtrar produtos" className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
           {FILTROS.map((f) => {
             const desabilitado = f.valor === 'nao-publicado' && canaisIndisponivel;
+            const ativo = filtro === f.valor;
             return (
               <Button
                 key={f.valor}
                 type="button"
                 size="sm"
-                variant={filtro === f.valor ? 'secondary' : 'ghost'}
-                aria-pressed={filtro === f.valor}
+                variant={ativo ? 'secondary' : 'ghost'}
+                aria-pressed={ativo}
                 disabled={desabilitado}
                 onClick={() => onFiltro(f.valor)}
+                className={cn('h-7', ativo && 'shadow-xs')}
               >
                 {f.rotulo}
               </Button>
             );
           })}
         </div>
-        <div className="flex gap-1">
-          {ORDENS.map((o) => (
-            <Button
-              key={o.valor}
-              type="button"
-              size="sm"
-              variant={ordem === o.valor ? 'secondary' : 'ghost'}
-              aria-pressed={ordem === o.valor}
-              onClick={() => onOrdem(o.valor)}
-              className={cn(ordem === o.valor && 'font-medium')}
-            >
-              {o.rotulo}
-            </Button>
-          ))}
+
+        <div className="ml-auto flex items-center gap-2">
+          <span id="rotulo-ordem" className="text-xs text-muted-foreground">Ordenar por</span>
+          <Select value={ordem} onValueChange={(v) => onOrdem(v as OrdemEstoque)}>
+            <SelectTrigger aria-labelledby="rotulo-ordem" className="h-8 w-[9.5rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ORDENS.map((o) => (
+                <SelectItem key={o.valor} value={o.valor}>{o.rotulo}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
       {canaisErro && (
