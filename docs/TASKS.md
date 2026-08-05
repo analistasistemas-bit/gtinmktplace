@@ -2,6 +2,40 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Título e descrição — specs externas avaliadas + 3 defeitos corrigidos — 2026-08-04
+
+Duas "especificações mestre" externas (título e descrição) foram avaliadas contra o pipeline atual.
+O sistema já implementava ~80-85% das duas; o valor saiu dos defeitos que a avaliação revelou.
+Análise completa em `docs/spikes/titulo-spec-marketplace-gap.md`.
+
+- [x] **Censo do catálogo de títulos** (`scripts/censo-titulo/`) — rejeitou por **inexistência**
+  quase toda a spec de título: `2x10ml` em 1 família de 305, `SORT`/`PAD`/`PC` em zero, gramatura
+  já canônica na fonte.
+- [x] **ADR-0100 — `termos_com_risco`** (PR #75): 11º campo, irmão de `titulo_slots` e nunca dentro
+  dele, para o modelo depositar termo não comprovado em vez de contrabandeá-lo num slot. O censo
+  de descartes (`scripts/censo-descartes/`) mostrou que dispara em 17/304 famílias (5,6%).
+- [x] **ADR-0101 — marca no título** (PR #76): o mapa razão social→marca sobrescrevia a marca da IA
+  sem condição, e o validador derrubava a substituta por falta de ancoragem. **52 de 304 famílias
+  ficavam sem marca** (EUROROMA→Ecofibra, Progresso→Detallia, Cléa→Círculo, Bandeirantes→Bandeirante).
+- [x] **ADR-0102 — descrição sem promessa logística** (PR #77): o template injetava "pronta entrega
+  com envio rápido e seguro para todo o Brasil" em **298 de 304 descrições, 292 publicadas**, sem
+  respaldo na fonte — enquanto o T3 já bane as mesmas palavras no título. Também trocou o
+  `CONTEÚDO DA EMBALAGEM` cravado (222 famílias, 25 sem cor nenhuma, 6 contradizendo o próprio
+  título) por derivação do dado, e limitou a abertura a uma frase de contexto.
+- [x] **ADR-0103 — cabeçalho `BENEFÍCIOS`** (PR #78): `✅` era tratado como bullet e virava
+  `- BENEFÍCIOS` no anúncio, enquanto os outros sete cabeçalhos saíam limpos.
+- [x] Deploy conferido pós-merge (11 edge functions, versões verificadas uma a uma).
+
+**Pendências registradas:**
+
+- [ ] **292 anúncios publicados ainda prometem frete.** O ADR-0102 só afeta geração nova
+  (`sincronizarDescricao` reenvia a `descricao_ml` já gravada sem re-executar IA). Limpar exige
+  reescrever `familias.descricao_ml` por migration (ADR-0043), com dry-run e **excluindo as 6
+  famílias com `descricao_editada_pelo_operador`**.
+- [ ] Diferidos da spec de descrição, com gatilho "cosmético/higiene virar volume": lista de usos
+  que exigem confirmação (bebê, pós-tatuagem, ferida, gestante), regras de cosmético e
+  `Linha` ≠ `Modelo`.
+
 ## Preparação para a migração automática do ML para User Products — 2026-08-04 (ADR-0104)
 
 O Mercado Livre está migrando categorias para User Products de forma **automática e gradual**, em
