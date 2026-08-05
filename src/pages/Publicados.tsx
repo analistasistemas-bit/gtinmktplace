@@ -150,7 +150,8 @@ function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando, isAdmin,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
-  const [aberto, setAberto] = useSessionState(`expand:publicados:${item.familiaId}`, false);
+  // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
+  const [aberto, setAberto] = useSessionState(`expand:publicados:${item.mlItemId}`, false);
   const { data: familia, isLoading: carregandoFamilia, isError: erroFamilia } = useFamilia(item.familiaId, aberto);
 
   // Toggle só faz sentido entre ativo⇄pausado (ADR-0060). Moderado/encerrado/etc. ficam desabilitados.
@@ -837,7 +838,9 @@ export default function Publicados() {
                 ) : (
                   pag.itensPagina.map((item) => (
                     <LinhaTabela
-                      key={item.familiaId}
+                      // 1 linha = 1 anúncio. familiaId repete entre anúncios split (ADR-0048),
+                      // e key duplicada deixa linhas fantasmas no DOM ao filtrar.
+                      key={item.mlItemId}
                       item={item}
                       onRemover={handleRemover}
                       removendo={removendo && removendoId === item.familiaId}
