@@ -126,7 +126,10 @@ export default function Estoque() {
           />
           {lista.length > 0 && (
             <>
-              <p aria-live="polite" className="mb-2 text-xs text-muted-foreground">
+              {/* Sem `aria-live`: a busca não tem debounce, então cada tecla reanunciaria a
+                  contagem, e a região só existe quando há resultado (live region montada junto
+                  com o conteúdo não anuncia de forma confiável). É rótulo da lista visível. */}
+              <p className="mb-2 text-xs text-muted-foreground">
                 {lista.length === (produtos ?? []).length
                   ? `${lista.length} ${lista.length === 1 ? 'produto' : 'produtos'}`
                   : `${lista.length} de ${(produtos ?? []).length} produtos`}

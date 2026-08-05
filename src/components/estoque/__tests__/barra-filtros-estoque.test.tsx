@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BarraFiltrosEstoque } from '../barra-filtros-estoque';
+
+// jsdom não implementa scrollIntoView, e o Radix Select chama ao mover o item ativo pelo
+// teclado. Stub local ao arquivo — não vale poluir o setup global por um componente.
+beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 const props = {
   termo: '', filtro: 'todos' as const, ordem: 'nome' as const,
@@ -14,7 +18,7 @@ describe('BarraFiltrosEstoque', () => {
     const onTermo = vi.fn();
     const user = userEvent.setup();
     render(<BarraFiltrosEstoque {...props} onTermo={onTermo} />);
-    await user.type(screen.getByPlaceholderText(/Buscar por nome, código, SKU, GTIN/), 'abc');
+    await user.type(screen.getByPlaceholderText(/Buscar por nome, código, SKU/), 'abc');
     expect(onTermo).toHaveBeenCalled();
   });
 
@@ -55,5 +59,24 @@ describe('BarraFiltrosEstoque', () => {
     expect(seletor).toHaveTextContent('Menor saldo');
     // Filtro e ordenação não podem voltar a ser o mesmo controle visual.
     expect(screen.queryByRole('button', { name: 'Menor saldo' })).not.toBeInTheDocument();
+  });
+
+  // O controle de ordenação foi REESCRITO (três botões → Select): sem isto, nada prova que
+  // escolher uma opção chega a `onOrdem`. Mostrar o valor certo não é o mesmo que estar ligado.
+  //
+  // Por teclado, não por clique: o Radix Select usa `hasPointerCapture`, que o jsdom não
+  // implementa — o caminho de ponteiro exigiria stub global. O teclado cobre o mesmo fio E
+  // prova que a ordenação continua operável sem mouse.
+  it('escolher uma opção do select emite a nova ordem (por teclado)', async () => {
+    const onOrdem = vi.fn();
+    const user = userEvent.setup();
+    render(<BarraFiltrosEstoque {...props} onOrdem={onOrdem} />);
+
+    screen.getByRole('combobox', { name: /ordenar por/i }).focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: 'Menor saldo' });
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(onOrdem).toHaveBeenCalledWith('saldo-asc');
   });
 });

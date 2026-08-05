@@ -42,9 +42,12 @@ export function BarraFiltrosEstoque({
             em vez de empurrar o segmented control para a linha de baixo. */}
         <div className="relative w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-sm">
           <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          {/* Placeholder curto porque o texto longo cortava no meio da palavra até em 1440.
+              A lista completa de campos buscáveis fica no rótulo acessível. */}
           <Input
             className="pl-8"
-            placeholder="Buscar por nome, código, SKU, GTIN, cor ou fornecedor…"
+            placeholder="Buscar por nome, código, SKU…"
+            aria-label="Buscar por nome, código, SKU, GTIN, cor ou fornecedor"
             value={termo}
             onChange={(e) => onTermo(e.target.value)}
           />
