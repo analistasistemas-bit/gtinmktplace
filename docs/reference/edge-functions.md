@@ -212,6 +212,12 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   legítimo em vez de ser embutido num slot; como não é slot, `posProcessarTitulo` não o alcança e
   ele **nunca chega ao título**. Coagido por `coagirTermosComRisco` (descarta não-string, dedup,
   teto de 10) e apenas logado — não é persistido, então não serve a censo, só a diagnóstico.
+  **Marca (ADR-0101):** o mapa razão social → marca (`titulo-marcas.ts`) só sobrescreve o slot
+  quando a IA não trouxe marca OU quando a forma do mapa está ancorada na fonte. O fornecedor é
+  muitas vezes o fabricante e não a marca (ECOFIBRA fabrica EUROROMA), e a substituição
+  incondicional fazia `validarSlotsAncorados` derrubar a substituta logo depois — 52 de 304
+  famílias ficavam sem marca nenhuma. A exigência de ancoragem não mudou; mudou qual grafia é
+  submetida a ela.
   `garantirLarguraDescricao`/`garantirMetragemDescricao` (`_shared/ai/copywriter-prompt.ts`)
   cravam largura (mm ou cm) e metragem (grounded em nome/descrição da planilha) na seção "📌
   ESPECIFICAÇÕES" da descrição, criando a seção se a IA a tiver pulado inteira — mesma classe de

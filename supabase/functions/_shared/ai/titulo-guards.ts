@@ -380,9 +380,22 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
     out.variacao = '';
   }
 
-  // Marca: o mapa só corrige a GRAFIA. A permissão vem de validarSlotsAncorados.
+  // Marca: o mapa só corrige a GRAFIA — nunca troca a ENTIDADE (ADR-0101).
+  //
+  // O mapa é chaveado no FORNECEDOR, que muitas vezes é o fabricante e não a marca do produto:
+  // ECOFIBRA fabrica o EUROROMA, DETALLIA distribui a PROGRESSO. Sobrescrever incondicionalmente
+  // trocava uma marca que a IA extraiu ANCORADA na fonte por uma razão social ausente dela, e
+  // validarSlotsAncorados derrubava a substituta logo depois — o título terminava sem marca
+  // nenhuma. Medido em 52 das 304 famílias (`scripts/censo-descartes/`).
+  //
+  // Por isso o mapa só vence em dois casos: quando não há marca da IA para preservar, ou quando
+  // a própria forma do mapa está ancorada na fonte — que é exatamente o caso "a fonte escreveu
+  // CIRCULO, o mapa devolve Círculo" para o qual ele foi criado. Quem decide se a marca
+  // sobrevive continua sendo validarSlotsAncorados; este guard só escolhe QUAL grafia submeter.
   const doMapa = marcaDoFornecedor(fonte.fornecedor);
-  if (doMapa) out.marca = doMapa;
+  if (doMapa && (!out.marca.trim() || jaContem(normalizar(textoFonte), normalizar(doMapa)))) {
+    out.marca = doMapa;
+  }
 
   return out;
 }

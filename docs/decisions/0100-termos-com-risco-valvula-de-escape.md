@@ -121,6 +121,93 @@ melhora nenhum dos casos medidos. É uma trava preventiva com custo baixo, não 
 defeito observado. Se a preferência for YAGNI estrito, a reversão é de uma linha e nada depende do
 campo.
 
+## Adendo (2026-08-04) — a Decisão 4 é revista: medir sem persistir
+
+A Decisão 4 adiou a metade "censo" para "quando houver demanda medida", assumindo que medir exigia
+persistir. **Isso estava errado, e o próprio censo do catálogo mostrou por quê:** houve **7 CREATEs
+em dois dias**. Uma coluna nova no banco só acumula dado em anúncio novo — levaria meses para juntar
+amostra com esse ritmo, enquanto a pergunta pode ser respondida **hoje**, sobre as 305 famílias já
+existentes, rodando o pipeline offline sobre elas.
+
+Persistência não é o caminho mais barato para a medição; é o **mais lento**. Fica descartada como
+pré-requisito. Se o resultado justificar acompanhamento contínuo, aí sim vira migration — com
+demanda de fato medida, que era o espírito da Decisão 4.
+
+O que a medição offline faz: para cada família, gera os slots com o prompt de produção e compara
+`aplicarGuardsTitulo` (antes) com `validarSlotsAncorados` (depois). O diff **é** o descarte — sem
+mudar a assinatura de nenhuma função e sem tocar em call site, porque `posProcessarTitulo` já tem
+os dois lados em mãos. Nenhuma escrita no banco.
+
+### Critério de interpretação — registrado ANTES de ver os números
+
+Para que o enquadramento não seja escolhido depois do resultado:
+
+- **Se `validarSlotsAncorados` derrubar termo em fração relevante das famílias:** o contrabando
+  existe, o T8 tem alvo real, e a persistência passa a se justificar para acompanhar a frequência.
+- **Se o descarte for próximo de zero:** o resultado é o mesmo do A/B — não há contrabando a pegar
+  com este modelo. A conclusão honesta é que **o ADR-0100 está sem exercício**, e a reversão
+  (seção "Como reverter") volta a ser opção viva, não uma nota de rodapé.
+- **Se a IA preencher `termos_com_risco` com frequência sensível** enquanto os guards derrubam
+  pouco: o T8 está funcionando como válvula — capturando na origem o que antes seria contrabandeado
+  — e essa é a evidência de efeito que o A/B de dois casos não conseguiu produzir.
+
+Zero é um resultado, não uma falha da medição.
+
+### Resultado (304 de 304 famílias elegíveis, 0 falhas de IA)
+
+Script: `scripts/censo-descartes/`. Somente SELECT, nenhuma escrita.
+
+**A — o T8 dispara:** 17/304 famílias (5,6%) vieram com `termos_com_risco` não vazio. Formato
+aceito em 304/304 (a chave veio presente e como array em todas). Termos mais frequentes:
+`escolar` 6×, `hb` 5×, `sofisticação` 3×.
+
+Isto é a evidência de efeito que o A/B de dois casos não conseguiu produzir: com fontes reais, o
+campo é usado — e `hb`/`escolar` são exatamente os termos do exemplo canônico. Pelo critério
+pré-registrado, o T8 está funcionando como válvula.
+
+**B — contrabando da IA: praticamente zero.** Nenhum descarte em `produto`, `modelo`, `medida`,
+`quantidade`, `material`, `variacao`, `compatibilidade`, `aplicacao` ou `sinonimo`. Os 125
+descartes (41,1% das famílias) estão **todos** no slot `marca`, e nenhum tem origem na IA.
+
+**Achado não previsto pelo critério — o pipeline injeta e remove a marca no mesmo ciclo.**
+`aplicarGuardsTitulo` grava `out.marca = marcaDoFornecedor(fornecedor)` (`titulo-guards.ts:384-385`)
+e `validarSlotsAncorados` derruba logo depois por falta de ancoragem. Em 73 casos isso é inócuo (a
+IA não tinha marca). Em **52 casos é perda líquida**: a IA havia extraído uma marca **ancorada na
+fonte** e o mapa a sobrescreveu por uma razão social que não está na fonte.
+
+| Ocorrências | IA extraiu | Mapa gravou | Resultado |
+|---|---|---|---|
+| 23× | `Progresso` | `Detallia` | `""` |
+| 15× | `Cléa` | `Círculo` | `""` |
+| 10× | `EUROROMA` | `Ecofibra` | `""` |
+| 4× | `Bandeirantes` | `Bandeirante` | `""` |
+
+Verificado na fonte: `02186551` tem `nome_pai = "EUROROMA 4/6 CORES 600G 610MT"` e
+`descricao_pai` com `"BARBANTE EUROROMA 4/6"`, fornecedor `ECOFIBRA INDUSTRIA TEXTIL`. A marca da
+IA estava certa e ancorada; a do mapa, não. Mesmo padrão em `00445916` (`FITAS PROGRESSO` na
+descrição), `00448583` (`LINHA CLÉA 1000`) e `01187678` (`BARBANTE BANDEIRANTES` — o `\b` de
+`jaContem` não casa `Bandeirante` dentro de `BANDEIRANTES`).
+
+O comentário do código diz que "o mapa só corrige a GRAFIA". Na prática ele **substitui a marca**,
+inclusive quando a da IA é outra e está ancorada. O ADR-0099 mediu 55,4% de marca ancorada no
+experimento; estes 52 casos são teto perdido que nenhum teste apanharia, porque cada função isolada
+faz o que promete — o defeito só existe na composição.
+
+**C — cruzamento:** ambos 9 · só A 8 · só B 116 · nenhum 171.
+**D — falhas:** 0 chamadas de IA falharam; 0 `TituloInviavelError`.
+
+### Consequência para este ADR
+
+O ADR-0100 **sai do estado "sem exercício"**: o T8 dispara em 5,6% das famílias reais. A reversão
+deixa de ser a opção indicada.
+
+A persistência (a antiga metade B) continua **não justificada**: o que ela mediria — contrabando da
+IA — é zero fora do slot `marca`, e o problema do `marca` é determinístico, mede-se rodando o
+script de novo, sem coluna nova.
+
+O bug da marca é escopo próprio e **não é corrigido aqui** — fica registrado como pendência com
+evidência, para decisão do operador.
+
 ## Como reverter
 
 Remover `termos_com_risco` de `properties` e `required` em `SCHEMA_COPY`, remover T8 do prompt e
