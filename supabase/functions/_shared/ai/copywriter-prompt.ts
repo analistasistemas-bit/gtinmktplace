@@ -384,7 +384,7 @@ Estruture EXATAMENTE nesta ordem, com os emojis indicados como cabeçalhos de se
 
 🧵 [CABEÇALHO DA SEÇÃO INTRO em CAPS — adapte ao tipo de produto]
 
-[Parágrafo 1 — abra pelo contexto real de quem usa este TIPO de produto: o que atrapalha o trabalho dele hoje. Declaração sobre a categoria, nunca promessa sobre este produto.]
+[Parágrafo 1 — no máximo UMA frase de contexto sobre quem usa este TIPO de produto (o que atrapalha o trabalho dele hoje; declaração sobre a categoria, nunca promessa sobre este produto). Em seguida, ainda no primeiro parágrafo, nomeie o produto e diga o que ele é. NÃO gaste uma segunda frase definindo a categoria — "Pomadas reparadoras são produtos usados para hidratar a pele" é definição de dicionário, não contexto de uso, e atrasa o produto.]
 
 [Parágrafo 2 — o que este produto é, com os dados da fonte já convertidos em benefício pela regra de conversão acima.]
 
@@ -438,18 +438,20 @@ PROIBIDO: "- Preto (Código: 123) - R$ 5,00" ou "- Branco - R$ 5,85"
 
 📦 CONTEÚDO DA EMBALAGEM
 
-• 1 unidade do produto na cor de sua escolha
-
-🚚 ENVIO RÁPIDO
-
-Produto à pronta entrega com envio rápido e seguro para todo o Brasil.
+[Derive do dado da fonte o que o comprador recebe: quantidade, apresentação e, quando houver, a
+cor. Caixa com 144 unidades → "• 1 caixa com 144 unidades". Rolo de 50m → "• 1 rolo com 50 metros".
+Produto de cor única sem contagem → "• 1 unidade". NUNCA escreva "na cor de sua escolha" quando o
+produto não tem variação de cor, e NUNCA escreva "1 unidade" quando a fonte declara um pacote com
+mais de uma peça.]
 
 [Frase final de 1 linha — feche pelo ganho concreto que os dados deste produto sustentam, não por urgência genérica. "Garanta já o seu" é insuficiente.]
 
 ═══════════════════════════════════════════════════════
 TOM E ESTILO
 ═══════════════════════════════════════════════════════
-Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 ❓ 🎨 📦 🚚) e nos bullets (✔ • - ▪). Evite emojis decorativos no meio dos parágrafos.`;
+Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seção (🧵 ✅ 📌 🎯 ❓ 🎨 📦) e nos bullets (✔ • - ▪). Evite emojis decorativos no meio dos parágrafos.
+
+NUNCA escreva seção sobre envio, frete, prazo, transportadora ou cobertura de entrega. Prazo, modalidade, custo e cobertura são exibidos pelo próprio Mercado Livre na página, calculados por CEP — afirmá-los aqui é promessa que o vendedor não controla. Vale para "envio rápido", "pronta entrega", "todo o Brasil" e equivalentes, exatamente como já é proibido no título.`;
 
 export function montarUserPrompt(input: InputCopy): string {
   // Só cores REAIS entram na descrição. 'Outra' (veredito do Vision) e o placeholder de cor
