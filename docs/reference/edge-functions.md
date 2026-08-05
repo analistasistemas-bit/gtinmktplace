@@ -206,6 +206,12 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   em 60 chars). Guards antigos por string (`garantirTipoFioTitulo`, `garantirLarguraTitulo`,
   `garantirMetragemTitulo`, `garantirTipoProdutoTitulo`, `garantirCorTitulo`) foram removidos
   nesta migração; suas garantias vivem agora em `_shared/ai/titulo-guards.ts`.
+  **`termos_com_risco` (ADR-0100):** `gerarCopy` devolve um 11º campo, irmão de `titulo_slots` e
+  nunca dentro dele — lista de termos comuns da categoria que o modelo julgou prováveis mas não
+  achou na fonte (`["HB", "Escolar"]` para um lápis `N.2`). Existe para o termo ter destino
+  legítimo em vez de ser embutido num slot; como não é slot, `posProcessarTitulo` não o alcança e
+  ele **nunca chega ao título**. Coagido por `coagirTermosComRisco` (descarta não-string, dedup,
+  teto de 10) e apenas logado — não é persistido, então não serve a censo, só a diagnóstico.
   `garantirLarguraDescricao`/`garantirMetragemDescricao` (`_shared/ai/copywriter-prompt.ts`)
   cravam largura (mm ou cm) e metragem (grounded em nome/descrição da planilha) na seção "📌
   ESPECIFICAÇÕES" da descrição, criando a seção se a IA a tiver pulado inteira — mesma classe de

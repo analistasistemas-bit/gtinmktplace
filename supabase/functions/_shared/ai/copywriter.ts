@@ -11,6 +11,12 @@ export interface OutputCopy {
   titulo_slots: TituloSlots;
   descricao: string;
   tipo_produto_busca: string;
+  /**
+   * Termos comuns da categoria que o modelo considerou prováveis mas NÃO achou na fonte
+   * (ADR-0100). Existe para dar a eles um destino legítimo em vez de serem contrabandeados para
+   * dentro de um slot ("HB Nº 2" em `modelo`). Nunca vai para o título — ver MAX_TERMOS_COM_RISCO.
+   */
+  termos_com_risco: string[];
   tokens_input: number;
   tokens_output: number;
   custo_centavos: number;
@@ -42,8 +48,13 @@ export const SCHEMA_COPY = {
       // Substantivo curto do tipo de produto (ex.: "barbante de crochê"), grounded contra
       // nome+descrição em validarTipoProdutoBusca (ADR-0054) — nunca confiado cru.
       tipo_produto_busca: { type: 'string' },
+      // ADR-0100 — válvula de escape. Fica AQUI, no nível raiz, e nunca dentro de titulo_slots:
+      // PROPRIEDADES_SLOTS é derivado de ORDEM_LEITURA e posProcessarTitulo só recebe
+      // TituloSlots, então um campo fora dessa estrutura é estruturalmente incapaz de chegar ao
+      // título. Movê-lo para dentro de titulo_slots o tornaria renderizável e reabriria a Causa C.
+      termos_com_risco: { type: 'array', items: { type: 'string' } },
     },
-    required: ['titulo_slots', 'descricao', 'tipo_produto_busca'],
+    required: ['titulo_slots', 'descricao', 'tipo_produto_busca', 'termos_com_risco'],
     additionalProperties: false,
   },
   strict: true,
@@ -63,6 +74,33 @@ export function coagirSlots(brutos: Partial<Record<SlotTitulo, unknown>> | undef
     out[slot] = v == null ? '' : String(v);
   }
   return out;
+}
+
+/**
+ * Teto de termos aceitos (ADR-0100). coagirSlots é limitado por construção — itera uma lista fixa
+ * de dez chaves. Um array não é: um modelo que interprete T8 mal pode devolver dezenas de termos,
+ * e a lista inteira iria para console.warn a cada família. Dez cobre com folga o caso real
+ * (o exemplo canônico da spec tem dois: "HB" e "Escolar").
+ */
+export const MAX_TERMOS_COM_RISCO = 10;
+
+/**
+ * Coage a lista de termos não comprovados (ADR-0100). Tolera qualquer formato de resposta pela
+ * mesma razão de coagirSlots (IMPORTANT-3): o modelo é escolhido por organização (ADR-0074) e nem
+ * todo provider honra o schema à risca — e gerarCopy não tem fallback resiliente (ADR-0030), então
+ * um TypeError aqui derrubaria a família inteira por causa de um campo puramente diagnóstico.
+ */
+export function coagirTermosComRisco(bruto: unknown): string[] {
+  if (!Array.isArray(bruto)) return [];
+  const vistos = new Set<string>();
+  for (const item of bruto) {
+    if (typeof item !== 'string') continue;
+    const termo = item.trim();
+    if (!termo || vistos.has(termo)) continue;
+    vistos.add(termo);
+    if (vistos.size >= MAX_TERMOS_COM_RISCO) break;
+  }
+  return [...vistos];
 }
 
 /** Timeout do OpenRouter foi disparado (AbortSignal) ou o SDK abortou a chamada. */
@@ -88,19 +126,31 @@ async function chamarCopy(input: InputCopy, modelo: string): Promise<OutputCopy>
   );
   const conteudo = resp.choices[0]?.message?.content;
   if (!conteudo) throw new Error('resposta vazia');
-  let parsed: { titulo_slots: Partial<Record<SlotTitulo, unknown>>; descricao: string; tipo_produto_busca: string };
+  let parsed: {
+    titulo_slots: Partial<Record<SlotTitulo, unknown>>;
+    descricao: string;
+    tipo_produto_busca: string;
+    termos_com_risco?: unknown;
+  };
   try {
     parsed = JSON.parse(conteudo);
   } catch (e) {
     throw new Error(`JSON inválido: ${(e as Error).message}`);
   }
   const usage = resp.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
+  const termosComRisco = coagirTermosComRisco(parsed.termos_com_risco);
+  // Diagnóstico pontual, não censo (ADR-0100, Decisão 4): log de edge function tem retenção curta
+  // e não é consultável em massa. Medir frequência exigiria persistir, e isso pede migration.
+  if (termosComRisco.length > 0) {
+    console.warn(`Copy: termos não ancorados recusados (${input.nome}): ${termosComRisco.join(', ')}`);
+  }
   return {
     // Coage cada slot pra string e cobre chave ausente com "" (contrato de dez chaves, mesmo
     // que o schema `required` seja desrespeitado ou o valor venha em outro tipo — IMPORTANT-3).
     titulo_slots: coagirSlots(parsed.titulo_slots),
     descricao: parsed.descricao,
     tipo_produto_busca: validarTipoProdutoBusca(parsed.tipo_produto_busca, input.nome, input.descricao_detalhado),
+    termos_com_risco: termosComRisco,
     tokens_input: usage.prompt_tokens,
     tokens_output: usage.completion_tokens,
     custo_centavos: custoCentavos(modelo, usage),
