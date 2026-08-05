@@ -146,4 +146,25 @@ describe('sanitizarDescricaoML', () => {
   it('texto sem emoji passa intacto', () => {
     expect(sanitizarDescricaoML('Fita 10 metros, 15 mm.')).toBe('Fita 10 metros, 15 mm.');
   });
+
+  /**
+   * ADR-0103. `✅` é cabeçalho de seção no template, não bullet — mas caía na mesma regra dos
+   * checkmarks e virava "- BENEFÍCIOS", um título de seção disfarçado de item de lista. Medido:
+   * a string `✅ BENEFÍCIOS` aparece em 295 descrições e `✅` NUNCA aparece em outra posição.
+   */
+  it('cabeçalho de seção com ✅ vira título, não bullet', () => {
+    expect(sanitizarDescricaoML('✅ BENEFÍCIOS')).toBe('BENEFÍCIOS');
+  });
+
+  it('✔ e ☑ continuam virando hífen de lista', () => {
+    expect(sanitizarDescricaoML('✔ Alta resistência')).toBe('- Alta resistência');
+    expect(sanitizarDescricaoML('☑ Item')).toBe('- Item');
+  });
+
+  it('descrição legada inteira: cabeçalhos limpos, bullets preservados', () => {
+    const legada = ['🧵 FITA DE CETIM', '', '✅ BENEFÍCIOS', '', '✔ Macia', '✔ Durável', '', '📌 ESPECIFICAÇÕES', '', '• Marca: Búfalo'].join('\n');
+    expect(sanitizarDescricaoML(legada)).toBe(
+      ['FITA DE CETIM', '', 'BENEFÍCIOS', '', '- Macia', '- Durável', '', 'ESPECIFICAÇÕES', '', '• Marca: Búfalo'].join('\n'),
+    );
+  });
 });

@@ -32,10 +32,17 @@ export async function criarItemML(accessToken: string, payload: PayloadItem): Pr
  * O ML rejeita emojis na descrição (DESCRIPTION_PLAIN_TEXT_NOT_ALLOWED). O template
  * do copywriter (M3.1) usa emojis no preview; aqui removemos só para o envio ao ML.
  * Checkmarks viram "- " (mantêm a lista); bullet "•" e acentos são aceitos.
+ *
+ * ADR-0103 — `✅` é CABEÇALHO de seção no template (`✅ BENEFÍCIOS`), não bullet. Tratá-lo como
+ * checkmark transformava o título da seção em item de lista ("- BENEFÍCIOS"), enquanto os outros
+ * sete cabeçalhos saíam limpos. Medido antes de mudar: `✅` aparece em 295 descrições e SEMPRE
+ * como `✅ BENEFÍCIOS` — nunca em posição de bullet. Os bullets do template são `✔ • - ▪`.
  */
 export function sanitizarDescricaoML(texto: string): string {
   return texto
-    .replace(/[✔✅☑]️?[ \t]*/g, '- ')
+    // Cabeçalho: sai junto com o espaço, como os demais emojis de seção.
+    .replace(/✅️?[ \t]*/g, '')
+    .replace(/[✔☑]️?[ \t]*/g, '- ')
     .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2600}-\u{26FF}\u{2B00}-\u{2BFF}️]/gu, '')
     .replace(/[ \t]+$/gm, '')
     .replace(/^[ \t]+/gm, '')
