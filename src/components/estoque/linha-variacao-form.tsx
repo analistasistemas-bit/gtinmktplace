@@ -34,7 +34,7 @@ export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | n
   if (campo === 'nome' || campo === 'gtin') return null;
   const n = parseNum(valor);
   if (Number.isNaN(n)) return 'Valor inválido.';
-  if (campo === 'preco' && (n == null || n <= 0)) return 'Preço mínimo é obrigatório e deve ser maior que zero.';
+  if (campo === 'preco' && (n == null || n <= 0)) return 'Preço mínimo (líquido) é obrigatório e deve ser maior que zero.';
   if (campo === 'estoqueInicial' && n != null && !Number.isInteger(n)) {
     return 'Estoque inicial deve ser um número inteiro.';
   }
@@ -50,7 +50,9 @@ const NUMERICOS = [
   // (ADR-0020/0055/0065) pode sugerir um preço de venda maior na Revisão, e o valor digitado
   // aqui continuava exibido lá, só que rotulado "mín. líquido" sem explicar a origem. Não
   // mexe em cálculo/fluxo de dado nenhum — só no texto.
-  { campo: 'preco', rotulo: 'Preço mínimo', prefixo: 'R$' },
+  // "(líquido)" no rótulo é a ponte com a Revisão, que exibe este mesmo valor como
+  // "mín. líquido" — sem isso o operador não reconhece o próprio número lá.
+  { campo: 'preco', rotulo: 'Preço mínimo (líquido)', prefixo: 'R$' },
   { campo: 'custo', rotulo: 'Custo', prefixo: 'R$' },
   { campo: 'estoqueInicial', rotulo: 'Estoque inicial', prefixo: undefined },
 ] as const;
@@ -147,9 +149,13 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
       <div className="grid gap-2 sm:grid-cols-3">
         {NUMERICOS.map((c) => campoTexto(c.campo, c.rotulo, { prefixo: c.prefixo }))}
       </div>
+      {/* Texto conferido contra `sugerir.ts:49` e `semaforo.ts:13`: o piso é comparado com o
+          LÍQUIDO (após comissão, frete e imposto), não com o preço de venda, e o sistema NÃO
+          bloqueia quem fica abaixo — sinaliza no semáforo ("Abaixo do mínimo"). Dizer "o
+          anúncio nunca sai abaixo disso" seria promessa que o motor não cumpre. */}
       <span className="text-xs text-muted-foreground">
-        É o piso: o anúncio nunca sai abaixo disso. Na Revisão, a IA pode sugerir um preço de
-        venda maior, com base na concorrência.
+        É quanto você quer receber por venda, já descontados comissão, frete e imposto. A Revisão
+        calcula o preço de venda a partir dele e avisa quando o líquido fica abaixo desse mínimo.
       </span>
 
       <div className="grid gap-2 sm:grid-cols-4">

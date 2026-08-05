@@ -183,7 +183,12 @@ export function VariacaoCard({
           {variacao.precoPublicacao != null && variacao.precoPublicacao !== variacao.preco && (
             <StatusPill
               tone="info"
-              title={`Você informou ${fmtBRL(variacao.preco)} como preço mínimo; a IA sugeriu ${fmtBRL(variacao.precoPublicacao)} com base na concorrência. Edite o campo para usar outro valor.`}
+              // Os dois números NÃO são a mesma grandeza e o texto precisa dizer isso: `preco` é
+              // o mínimo LÍQUIDO que o vendedor quer receber (`sugerir.ts:49` — líquido após
+              // comissão, frete e imposto ≥ piso) e `precoPublicacao` é o preço de venda bruto.
+              // Apresentá-los como "informei X, a IA subiu para Y" faria o operador ler Y como o
+              // que ele recebe.
+              title={`Preço de venda sugerido pela IA com base na concorrência: ${fmtBRL(variacao.precoPublicacao)}. Você pediu no mínimo ${fmtBRL(variacao.preco)} líquidos por venda (já descontados comissão, frete e imposto) — o semáforo abaixo avisa se este preço entrega isso. Edite o campo para usar outro valor.`}
             >
               <Sparkles className="h-3 w-3" /> sugerido pela IA
             </StatusPill>

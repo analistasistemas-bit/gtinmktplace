@@ -97,9 +97,12 @@ describe('VariacaoCard — marca de preço sugerido pela IA', () => {
     const marca = screen.getByText('sugerido pela IA');
     // data-tone="info": prova que é o StatusPill do padrão card-categoria.tsx, não um <span> solto.
     expect(marca).toHaveAttribute('data-tone', 'info');
+    // O texto distingue as duas grandezas de propósito: `preco` é o mínimo LÍQUIDO desejado
+    // (sugerir.ts:49) e `precoPublicacao` é o preço de venda bruto. A redação anterior
+    // ("informei X, a IA sugeriu Y") tratava os dois como o mesmo tipo de número.
     expect(marca).toHaveAttribute(
       'title',
-      `Você informou ${fmtBRL(100)} como preço mínimo; a IA sugeriu ${fmtBRL(135.9)} com base na concorrência. Edite o campo para usar outro valor.`,
+      `Preço de venda sugerido pela IA com base na concorrência: ${fmtBRL(135.9)}. Você pediu no mínimo ${fmtBRL(100)} líquidos por venda (já descontados comissão, frete e imposto) — o semáforo abaixo avisa se este preço entrega isso. Edite o campo para usar outro valor.`,
     );
     // Sparkles renderiza como <svg> — mesmo ícone do chip de Categoria.
     expect(marca.querySelector('svg')).toBeInTheDocument();
