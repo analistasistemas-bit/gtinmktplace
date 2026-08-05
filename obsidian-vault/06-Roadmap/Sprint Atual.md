@@ -136,6 +136,24 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
   reconciliador de convergência criado (`*/15 * * * *`). **Achado à parte, também corrigido:**
   `reconciliar-faturamento` (ADR-0037) nunca teve schedule QStash desde a criação — rodou zero
   vezes em ~1 mês; corrigido junto. Ver [[Índice de ADRs]].
+- **UPDATE de família migrada pelo ML para User Products** (ADR-0104) — em produção 2026-08-04/05.
+  O ML migra categorias para UP **sozinho**, em anúncios já publicados. Duas lacunas fechadas antes
+  de a migração alcançar as famílias multi-cor do Diego. **(1) Bug latente que já existia:** no
+  caminho UP, `somente estoque` **mudava a composição** — a composição vinha da planilha, então uma
+  cor ausente virava "retirada" e o item era **pausado no ML** numa reposição pura. O Legacy nunca
+  fez isso (`montarVariacoesUpdate` mapeia sobre as variações VIVAS do `GET` e preserva a cor
+  omitida), e contradizia o texto do ADR-0089 ("não pausa nada automaticamente no ML"). Guard dentro
+  de `atualizarComposicao`: composição virou exclusiva de "Atualizar tudo". **(2) A ponte que
+  faltava:** o roteamento UP do UPDATE lia estado **local** (linhas em `anuncios_externos_itens`),
+  que uma família migrada nunca teve → caía no Legacy → erro 400 pedindo reposição manual no painel,
+  por família, em cada lote. Agora o conector detecta pelo `GET` ao vivo e devolve `MIGRADO_PARA_UP`
+  tipado (simétrico ao `FORMATO_INCOMPATIVEL` do CREATE; **zero `GET` extra**), e o worker adota os
+  itens irmãos por SKU — tudo-ou-nada, **só leitura remota** — antes de entregar à saga UP.
+  A forma exata da migração é **hipótese validada em runtime**: se não bater, aborta sem tocar o
+  anúncio e a mensagem traz as contagens observadas. **Limite conhecido:** irmãos fora da planilha
+  do lote ficam sem vínculo local (vendas não atribuídas até um lote futuro incluir a cor).
+  2498 testes verdes, migration aplicada, 15 functions redeployadas (+1 confirmado).
+  Ver [[Índice de ADRs]].
 - **Config org-scoped + imposto LOUD + token MP por org** (ADR-0086) — em produção 2026-07-22:
   `configuracoes` virou 1 linha por org (`org_id` PK, `user_id` = auditoria); o imposto por origem
   **falha LOUD** se a org não confirmou as alíquotas (`aliquotas_confirmadas_em`) em vez de aplicar
