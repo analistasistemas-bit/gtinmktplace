@@ -121,6 +121,38 @@ melhora nenhum dos casos medidos. É uma trava preventiva com custo baixo, não 
 defeito observado. Se a preferência for YAGNI estrito, a reversão é de uma linha e nada depende do
 campo.
 
+## Adendo (2026-08-04) — a Decisão 4 é revista: medir sem persistir
+
+A Decisão 4 adiou a metade "censo" para "quando houver demanda medida", assumindo que medir exigia
+persistir. **Isso estava errado, e o próprio censo do catálogo mostrou por quê:** houve **7 CREATEs
+em dois dias**. Uma coluna nova no banco só acumula dado em anúncio novo — levaria meses para juntar
+amostra com esse ritmo, enquanto a pergunta pode ser respondida **hoje**, sobre as 305 famílias já
+existentes, rodando o pipeline offline sobre elas.
+
+Persistência não é o caminho mais barato para a medição; é o **mais lento**. Fica descartada como
+pré-requisito. Se o resultado justificar acompanhamento contínuo, aí sim vira migration — com
+demanda de fato medida, que era o espírito da Decisão 4.
+
+O que a medição offline faz: para cada família, gera os slots com o prompt de produção e compara
+`aplicarGuardsTitulo` (antes) com `validarSlotsAncorados` (depois). O diff **é** o descarte — sem
+mudar a assinatura de nenhuma função e sem tocar em call site, porque `posProcessarTitulo` já tem
+os dois lados em mãos. Nenhuma escrita no banco.
+
+### Critério de interpretação — registrado ANTES de ver os números
+
+Para que o enquadramento não seja escolhido depois do resultado:
+
+- **Se `validarSlotsAncorados` derrubar termo em fração relevante das famílias:** o contrabando
+  existe, o T8 tem alvo real, e a persistência passa a se justificar para acompanhar a frequência.
+- **Se o descarte for próximo de zero:** o resultado é o mesmo do A/B — não há contrabando a pegar
+  com este modelo. A conclusão honesta é que **o ADR-0100 está sem exercício**, e a reversão
+  (seção "Como reverter") volta a ser opção viva, não uma nota de rodapé.
+- **Se a IA preencher `termos_com_risco` com frequência sensível** enquanto os guards derrubam
+  pouco: o T8 está funcionando como válvula — capturando na origem o que antes seria contrabandeado
+  — e essa é a evidência de efeito que o A/B de dois casos não conseguiu produzir.
+
+Zero é um resultado, não uma falha da medição.
+
 ## Como reverter
 
 Remover `termos_com_risco` de `properties` e `required` em `SCHEMA_COPY`, remover T8 do prompt e
