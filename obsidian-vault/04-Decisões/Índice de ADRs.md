@@ -112,5 +112,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0098 | [Copy de anúncio ancorada na fonte e persuasiva](../../docs/decisions/0098-copy-ancorada-na-fonte-e-persuasiva.md) |
 | 0099 | [Título de anúncio no padrão Mercado Livre (contrato de slots)](../../docs/decisions/0099-titulo-padrao-mercado-livre.md) |
 | 0100 | [`termos_com_risco`: válvula de escape para termo não comprovado](../../docs/decisions/0100-termos-com-risco-valvula-de-escape.md) |
+| 0101 | [O mapa de marca corrige a grafia, não troca a entidade](../../docs/decisions/0101-marca-do-mapa-nao-troca-entidade.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
