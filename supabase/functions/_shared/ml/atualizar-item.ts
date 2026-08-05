@@ -14,6 +14,13 @@ export interface ItemMLAtual {
   // `anuncio-atualizavel.ts`.
   status: string | null;
   subStatus: string[];
+  // ADR-0104: o ML migra categorias para User Products sozinho, em anúncios já publicados.
+  // Um item que era Legacy amanhece plano (`variations: []`) com family_name/family_id na raiz.
+  // Sem estes campos o UPDATE não consegue distinguir "item plano do ADR-0084" de "família que
+  // o ML acabou de migrar" — e a detecção de UP no UPDATE é 100% GET-ao-vivo (ADR-0088).
+  familyId: string | null;
+  familyName: string | null;
+  sellerId: string | null;
 }
 
 function erroML(status: number, json: unknown): Error {
@@ -37,7 +44,8 @@ export function corDaVariacaoML(attributeCombinations: unknown): string | null {
 // Estado real do anúncio: ids + seller_custom_field + estoque de cada variação.
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
   const url = `https://api.mercadolibre.com/items/${itemId}`
-    + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status';
+    + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status'
+    + ',family_id,family_name,seller_id';
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
   if (!resp.ok) throw erroML(resp.status, json);
@@ -65,6 +73,9 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     subStatus: Array.isArray(json.sub_status)
       ? (json.sub_status as unknown[]).filter((s): s is string => typeof s === 'string')
       : [],
+    familyId: json.family_id != null ? String(json.family_id) : null,
+    familyName: (json.family_name as string | null | undefined) ?? null,
+    sellerId: json.seller_id != null ? String(json.seller_id) : null,
   };
 }
 

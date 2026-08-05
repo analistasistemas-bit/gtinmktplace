@@ -217,3 +217,81 @@ describe('processarAtualizacaoFamilia — guardas de entrada', () => {
     expect(r).toEqual({ tipo: 'skip', status: 'publicado' });
   });
 });
+
+// ── ADR-0104 — família que o Mercado Livre migrou para User Products SOZINHO ──────────────────
+// Ela foi publicada como Legacy, então NÃO tem linhas em anuncios_externos_itens e o atalho de
+// roteamento local não a enxerga. O conector detecta pelo GET ao vivo e devolve MIGRADO_PARA_UP;
+// o worker adota os irmãos por SKU e entrega à saga UP no MESMO attempt.
+const UP_OBSERVADO = { familyId: 'FAM-9', familyName: 'AGULHA MATTE', sellerId: 'seller-1' };
+
+describe('processarAtualizacaoFamilia — família migrada pelo ML para UP (ADR-0104)', () => {
+  it('MIGRADO_PARA_UP → adota as cores casadas e roteia para a saga UP, sem pedir nada ao operador', async () => {
+    // raiz existe mas SEM filhos → o atalho local não dispara; após a adoção a re-query a encontra.
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' },
+      itensUP: [],
+      variacoes: [{ ...VAR_CASADA }, { ...VAR_CASADA, codigo: 'V2', ml_variation_id: 'MLV2' }],
+    });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_OBSERVADO);
+    const adocoes: unknown[] = [];
+    const upArgs: unknown[] = [];
+    const deps = baseDeps(admin, {
+      adotarUP: async (_p, entrada) => {
+        adocoes.push(entrada);
+        return { tipo: 'adotada', filhos: [], familyId: 'FAM-9' };
+      },
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a); return { estado: 'ok', adicionadas: 0 }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+
+    expect(r).toEqual({ tipo: 'ok', itemExternoId: 'MLB-EXISTENTE', novas: 0 });
+    expect(adocoes).toHaveLength(1);
+    // Adota só as cores JÁ PUBLICADAS (casadas) — uma cor nova ainda não existe no ML.
+    expect(adocoes[0]).toMatchObject({
+      skus: ['V1', 'V2'], sellerEsperado: 'seller-1',
+      mlItemIdAtual: 'MLB-EXISTENTE', familyNameObservado: 'AGULHA MATTE',
+    });
+    expect(upArgs).toHaveLength(1);
+  });
+
+  it('adoção incompleta → erro 400 definitivo com a mensagem observada; saga UP nunca roda', async () => {
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'X', criado_em: null }, itensUP: [] });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_OBSERVADO);
+    let rodouUP = false;
+    const deps = baseDeps(admin, {
+      adotarUP: async () => ({ tipo: 'incompleta', mensagem: 'só 1 de 9 cores foram localizadas' }),
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => { rodouUP = true; return { estado: 'ok', adicionadas: 0 }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    if (r.tipo !== 'erro') return;
+    expect(r.mensagem).toContain('só 1 de 9 cores foram localizadas');
+    expect(rodouUP).toBe(false);
+  });
+
+  it('MIGRADO_PARA_UP sem family_name → 400, nunca adivinha (adoção nem é tentada)', async () => {
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'X', criado_em: null }, itensUP: [] });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, { ...UP_OBSERVADO, familyName: null });
+    let tentouAdotar = false;
+    const deps = baseDeps(admin, {
+      adotarUP: async () => { tentouAdotar = true; return { tipo: 'incompleta', mensagem: 'x' }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect(tentouAdotar).toBe(false);
+  });
+
+  it('erro de canal comum (não MIGRADO_PARA_UP) segue o caminho de erro de sempre', async () => {
+    const { admin } = fakeAdmin();
+    fakeConnector.falharProximo('ESTOQUE', false);
+    let tentouAdotar = false;
+    const deps = baseDeps(admin, {
+      adotarUP: async () => { tentouAdotar = true; return { tipo: 'incompleta', mensagem: 'x' }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    // O desfecho (erro vs retry) é a política de retry pré-existente e não muda aqui; o que este
+    // teste trava é que só MIGRADO_PARA_UP aciona a adoção.
+    expect(r.tipo).not.toBe('ok');
+    expect(tentouAdotar).toBe(false);
+  });
+});

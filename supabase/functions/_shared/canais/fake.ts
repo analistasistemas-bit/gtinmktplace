@@ -7,7 +7,12 @@ import type {
   ErroCanalCodigo, FaixaAtacado, EstoquePorSku,
 } from './contrato.ts';
 
-interface FalhaArmada { codigo: ErroCanalCodigo; retentavel: boolean }
+interface FalhaArmada {
+  codigo: ErroCanalCodigo;
+  retentavel: boolean;
+  /** ADR-0104: payload observado no GET ao vivo, só em MIGRADO_PARA_UP. */
+  up?: { familyId: string | null; familyName: string | null; sellerId: string | null };
+}
 
 class FakeConnector implements ChannelConnector {
   // `id` do contrato é CanalId ('mercado_livre'); o fake usa 'fake' via cast só em teste.
@@ -25,7 +30,9 @@ class FakeConnector implements ChannelConnector {
   /** Reseta o estado entre testes. */
   reset(): void { this.chamadas = []; this.falha = null; this.seq = 0; }
   /** Arma uma falha para o próximo criar/atualizar. */
-  falharProximo(codigo: ErroCanalCodigo, retentavel: boolean): void { this.falha = { codigo, retentavel }; }
+  falharProximo(codigo: ErroCanalCodigo, retentavel: boolean, up?: FalhaArmada['up']): void {
+    this.falha = { codigo, retentavel, up };
+  }
 
   private registrar(metodo: string, args: unknown) { this.chamadas.push({ metodo, args }); }
   private consumirFalha(): FalhaArmada | null { const f = this.falha; this.falha = null; return f; }
@@ -79,7 +86,12 @@ class FakeConnector implements ChannelConnector {
   atualizarAnuncio(_ctx: ContextoCanal, a: AtualizacaoCanonica): Promise<ResultadoCanal<ResultadoAtualizacao>> {
     this.registrar('atualizarAnuncio', a);
     const f = this.consumirFalha();
-    if (f) return Promise.resolve({ ok: false, erro: { codigo: f.codigo, mensagemOperador: `fake:${f.codigo}`, retentavel: f.retentavel } });
+    if (f) {
+      return Promise.resolve({
+        ok: false,
+        erro: { codigo: f.codigo, mensagemOperador: `fake:${f.codigo}`, retentavel: f.retentavel, up: f.up },
+      });
+    }
     return Promise.resolve({
       ok: true,
       valor: { variacoesExternas: Object.fromEntries(a.novas.map((v) => [v.sku, `FAKE-VAR-${v.sku}`])), precoVivo: null },

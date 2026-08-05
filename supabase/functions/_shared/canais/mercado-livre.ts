@@ -38,6 +38,24 @@ function formatoIncompativel(categoriaId: string | null): ResultadoCanal<RefAnun
   };
 }
 
+// ADR-0104: sinal (não erro do ML) de que o GET ao vivo encontrou a família como item User
+// Products — o ML migra categorias sozinho, em anúncios já publicados. A orquestração adota os
+// itens irmãos por SKU e roteia para a saga UP. Simétrico ao FORMATO_INCOMPATIVEL do CREATE.
+function migradoParaUP(
+  atual: { familyId: string | null; familyName: string | null; sellerId: string | null },
+): ResultadoCanal<ResultadoAtualizacao> {
+  return {
+    ok: false,
+    erro: {
+      codigo: 'MIGRADO_PARA_UP',
+      mensagemOperador: 'Anúncio no modelo User Products do Mercado Livre com mais de uma cor — '
+        + 'a atualização é feita item a item (ADR-0088/0104).',
+      retentavel: false,
+      up: { familyId: atual.familyId, familyName: atual.familyName, sellerId: atual.sellerId },
+    },
+  };
+}
+
 function descontoIncompativel(): ResultadoCanal<RefAnuncio> {
   return {
     ok: false,
@@ -160,14 +178,21 @@ export const mercadoLivreConnector: ChannelConnector = {
       // `variations` — o GET devolve []. montarVariacoesUpdate mapeando sobre lista vazia produz
       // um PUT `{variations: []}` que a ML aceita como no-op silencioso (confirmado empiricamente
       // 2026-07-20): sem erro, familia.status volta a 'publicado', mas nada muda no anúncio real.
-      // Repõe direto no corpo raiz do item em vez de variations. Mesmo escopo do CREATE: só 1
-      // variação por família nessa categoria — cor nova/múltiplas variações falha alto (o modelo
-      // N-itens-por-família compartilhando family_name é redesenho maior, fora de escopo).
+      // Repõe direto no corpo raiz do item em vez de variations. O caminho de 1 cor SEM cor nova
+      // fica aqui; multi-cor / cor nova é o modelo N-itens-por-família (ADR-0088), roteado pela
+      // orquestração via MIGRADO_PARA_UP (ADR-0104) em vez de falhar.
       if (atual.variations.length === 0 && a.existentes.length > 0) {
         if (a.existentes.length !== 1 || a.novas.length > 0) {
+          // ADR-0104: `variations: []` + family_name = item User Products. Ou o ML migrou esta
+          // família (que foi publicada como Legacy) sozinho, ou é um item plano do ADR-0084 ao
+          // qual a planilha soma uma cor. Nos dois casos o destino é o mesmo — a orquestração
+          // adota os itens irmãos por SKU e entrega à saga UP. Sinal tipado, não exceção:
+          // simétrico ao FORMATO_INCOMPATIVEL do CREATE (ADR-0088 §3).
+          if (atual.familyName) return migradoParaUP(atual);
+          // Sem family_name não sabemos o que é um item plano assim — falha alto, nunca adivinha.
           const err = new Error(
-            'Item plano (ADR-0084) com múltiplas cores ou cor nova — UPDATE não implementado para '
-            + 'esse caso. Reponha manualmente no painel do Mercado Livre.',
+            'Item plano sem family_name com múltiplas cores ou cor nova — UPDATE não implementado '
+            + 'para esse caso. Reponha manualmente no painel do Mercado Livre.',
           ) as Error & { status?: number };
           err.status = 400;
           throw err;

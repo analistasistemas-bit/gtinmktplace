@@ -50,6 +50,10 @@ export type ErroCanalCodigo =
   // ADR-0088: categoria UP (item plano/family_name) com >1 cor — o conector recusa e a
   // orquestração roteia para a saga que cria N itens separados (um por SKU). Não é erro do ML.
   | 'FORMATO_INCOMPATIVEL'
+  // ADR-0104: no UPDATE, o GET ao vivo revelou que o ML migrou uma família JÁ PUBLICADA para
+  // User Products (item plano + family_name) e ela tem mais de uma cor. Não é erro do ML nem do
+  // operador: a orquestração adota os itens irmãos por SKU e roteia para a saga UP.
+  | 'MIGRADO_PARA_UP'
   | 'DESCONTO_INCOMPATIVEL';
 
 export interface ErroCanal {
@@ -59,6 +63,10 @@ export interface ErroCanal {
   /** HTTP status nativo, quando houver — o worker decide retry (5xx/429) sem garimpar `raw`. */
   status?: number;
   raw?: unknown;
+  /** ADR-0104: só em `MIGRADO_PARA_UP` — o que o GET ao vivo observou no item migrado. A
+   *  orquestração precisa disto para buscar os irmãos (family_name é critério da busca por SKU)
+   *  e para validar o vendedor. */
+  up?: { familyId: string | null; familyName: string | null; sellerId: string | null };
 }
 
 export interface ResultadoCanal<T> {

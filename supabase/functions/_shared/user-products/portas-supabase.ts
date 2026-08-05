@@ -5,7 +5,8 @@
 // import type (erased em runtime) → sem carregar o cliente jsr; vitest importa sem tocar Deno.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { PortasSaga, FilhoRow, StatusFilho, ConfirmacaoRemota } from './publicar-grupo.ts';
-import { buscarItemPorSku, buscarItemUP, type FetchLike } from '../ml/buscar-item.ts';
+import type { PortasAdocao } from './adotar-familia-migrada.ts';
+import { buscarItemPorSku, buscarItemUP, buscarItemBackfill, type FetchLike } from '../ml/buscar-item.ts';
 import { criarItemML } from '../ml/criar-item.ts';
 import { atualizarStatusML } from '../ml/atualizar-item.ts';
 import type { PayloadItem } from '../ml/publicar.ts';
@@ -95,6 +96,62 @@ export function criarPortasSupabase(deps: PortasSupabaseDeps): PortasSaga {
 
     async mudarStatus(itemExternoId, status) {
       await atualizarStatusML(await getToken(), itemExternoId, status === 'ativo' ? 'active' : 'paused');
+    },
+  };
+}
+
+// ── ADR-0104 — portas da ADOÇÃO de família migrada pelo ML para User Products ─────────────────
+// Só leitura remota (busca por SKU + GET) e UMA escrita local transacional (RPC). Nenhum POST/PUT
+// no Mercado Livre: o contrato `PortasAdocao` deliberadamente não expõe criar/ativar/pausar/repor.
+
+export interface PortasAdocaoDeps {
+  admin: SupabaseClient;
+  getToken(): Promise<string>;
+  sellerId: string;
+  orgId: string;
+  userId: string;
+  familiaId: string;
+  codigoPai: string;
+  categoriaId: string;
+  /** family_name observado no GET ao vivo do item migrado (critério da busca por SKU). */
+  familyName: string;
+  fetchLike?: FetchLike;
+}
+
+export function criarPortasAdocao(deps: PortasAdocaoDeps): PortasAdocao {
+  const { admin, getToken, sellerId, orgId, userId, familiaId, codigoPai, categoriaId, familyName } = deps;
+  const fetchLike: FetchLike = deps.fetchLike
+    ?? ((url, init) => fetch(url, init as RequestInit) as unknown as ReturnType<FetchLike>);
+
+  return {
+    // `desdeMs: 0` — SEM janela de recência, ao contrário da saga de criação. Lá a janela existe
+    // para não adotar um item ANTIGO ao criar um NOVO; aqui os itens antigos são exatamente o
+    // alvo (a família foi publicada há muito tempo e o ML a migrou depois). A identidade já está
+    // presa por sku + family_name exato + categoria + seller.
+    buscarPorSku: (sku) => getToken().then((accessToken) =>
+      buscarItemPorSku(fetchLike, { accessToken, sellerId, categoriaId, familyName, desdeMs: 0 }, sku)),
+
+    confirmar: async (itemExternoId) =>
+      buscarItemBackfill(fetchLike, { accessToken: await getToken() }, itemExternoId),
+
+    async adotar({ filhos, familyName: nome, mlItemId }) {
+      const { error } = await admin.rpc('adotar_familia_migrada_up', {
+        p_org_id: orgId,
+        p_user_id: userId,
+        p_familia_id: familiaId,
+        p_codigo_pai: codigoPai,
+        p_family_name: nome,
+        p_ml_item_id: mlItemId,
+        p_filhos: filhos.map((f) => ({
+          sku: f.sku,
+          item_externo_id: f.itemExternoId,
+          family_id: f.familyId,
+          user_product_id: f.userProductId,
+          permalink: f.permalink,
+          status: f.status,
+        })),
+      });
+      if (error) throw new Error(`adotar_familia_migrada_up (${codigoPai}): ${error.message}`);
     },
   };
 }

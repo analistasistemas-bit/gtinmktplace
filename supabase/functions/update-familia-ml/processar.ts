@@ -16,6 +16,10 @@ import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs, type ResultadoAtualizarUP } from '../_shared/user-products/atualizar-familia-up.ts';
+import {
+  adotarFamiliaMigrada, type PortasAdocao, type EntradaAdocao, type ResultadoAdocao,
+} from '../_shared/user-products/adotar-familia-migrada.ts';
+import { criarPortasAdocao } from '../_shared/user-products/portas-supabase.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 
 const CANAL = 'mercado_livre';
@@ -34,6 +38,8 @@ export interface ProcessarDeps {
   conn: ChannelConnector;
   /** Injetáveis em teste; produção usa os reais. */
   atualizarUP?: (args: AtualizarFamiliaUPArgs) => Promise<ResultadoAtualizarUP>;
+  /** ADR-0104: adoção de família migrada pelo ML para User Products. */
+  adotarUP?: (portas: PortasAdocao, entrada: EntradaAdocao) => Promise<ResultadoAdocao>;
   finalizarLote?: (loteId: string) => Promise<void>;
 }
 export interface ProcessarOpts { tentativas: number }
@@ -41,6 +47,7 @@ export interface ProcessarOpts { tentativas: number }
 export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;
   const atualizarUP = deps.atualizarUP ?? atualizarFamiliaUP;
+  const adotar = deps.adotarUP ?? adotarFamiliaMigrada;
   const finalizarLote = deps.finalizarLote ?? ((loteId: string) => talvezFinalizarLote(admin, loteId));
   const { tentativas } = opts;
 
@@ -102,20 +109,27 @@ export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job,
     // Fail-closed: erro na query de roteamento NUNCA pode virar "não é UP" em silêncio (cairia no
     // Legacy sobre uma família UP e a corromperia). Lança → o catch retenta (mesmo fix de vinculacao.ts).
     if (raizErr) throw new Error(`roteamento UP (raiz): ${raizErr.message}`);
+
+    // Entrega a família à mini-saga de composição. Usada por DOIS caminhos: o atalho local (linhas
+    // filhas já existem) e, depois da adoção, o caminho de família migrada pelo ML (ADR-0104).
+    const rodarUP = async (raiz: { id: string; titulo: string | null }): Promise<ResultadoProcessar> => {
+      if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+      const r = await atualizarUP({
+        admin, conn, ctx, conexao, familia, raiz: raiz as never, variacoes: variacoes as never,
+        somenteEstoque: !!job.somenteEstoque, tentativas,
+      });
+      if (r.estado === 'retry') return { tipo: 'retry', mensagem: r.mensagem };
+      await finalizarLote(job.lote_id);
+      if (r.estado === 'ok') return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: r.adicionadas };
+      return { tipo: 'erro', mensagem: r.mensagem };
+    };
+
     if (raizUP) {
       const { data: itensUP, error: itensErr } = await admin.from('anuncios_externos_itens')
         .select('id').eq('anuncio_externo_id', (raizUP as { id: string }).id).limit(1);
       if (itensErr) throw new Error(`roteamento UP (itens): ${itensErr.message}`);
       if (itensUP && itensUP.length > 0) {
-        if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
-        const r = await atualizarUP({
-          admin, conn, ctx, conexao, familia, raiz: raizUP as never, variacoes: variacoes as never,
-          somenteEstoque: !!job.somenteEstoque, tentativas,
-        });
-        if (r.estado === 'retry') return { tipo: 'retry', mensagem: r.mensagem };
-        await finalizarLote(job.lote_id);
-        if (r.estado === 'ok') return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: r.adicionadas };
-        return { tipo: 'erro', mensagem: r.mensagem };
+        return await rodarUP(raizUP as { id: string; titulo: string | null });
       }
     }
 
@@ -207,6 +221,53 @@ export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job,
     });
     if (!res.ok) {
       const e = res.erro!;
+      // ── ADR-0104: o GET ao vivo revelou que o ML migrou esta família para User Products ───────
+      // Ela foi publicada como Legacy, então não tem linhas filhas locais e o atalho de roteamento
+      // lá em cima não a enxergou. Adota os itens irmãos por SKU (SÓ leitura remota) e entrega à
+      // saga UP no MESMO attempt — sem pedir nada ao operador.
+      if (e.codigo === 'MIGRADO_PARA_UP') {
+        if (!conexao?.contaExternaId) throw new Error('Organização sem conexão com o Mercado Livre');
+        const familyName = e.up?.familyName;
+        // Sem family_name a busca por SKU não tem como validar os irmãos — nunca adivinha.
+        if (!familyName) {
+          const err = new Error(
+            'Anúncio no modelo User Products sem family_name — não é possível localizar as cores '
+            + 'automaticamente. Confira o anúncio no painel do Mercado Livre. (400)',
+          ) as Error & { status?: number };
+          err.status = 400;
+          throw err;
+        }
+        const portas = criarPortasAdocao({
+          admin, getToken: ctx.getToken, sellerId: conexao.contaExternaId,
+          orgId: familia.org_id, userId: familia.user_id, familiaId: job.familia_id,
+          codigoPai: familia.codigo_pai, categoriaId: familia.categoria_ml_id ?? '', familyName,
+        });
+        // Adota só as cores JÁ PUBLICADAS (casadas): uma cor genuinamente nova ainda não existe no
+        // ML e faria a busca abortar sempre. As novas ficam para a saga de composição criar depois
+        // (em "somente estoque" são ignoradas, ADR-0104 §4).
+        const adocao = await adotar(portas, {
+          skus: casadas.map((v) => v.codigo),
+          sellerEsperado: conexao.contaExternaId,
+          mlItemIdAtual: familia.ml_item_id,
+          familyNameObservado: familyName,
+        });
+        if (adocao.tipo === 'incompleta') {
+          // 400 (definitivo): retentar não muda o estado do ML e ocuparia a fila serial
+          // (parallelism=1, ADR-0034) por 10 retries × 30s à toa.
+          const err = new Error(`${adocao.mensagem} (400)`) as Error & { status?: number };
+          err.status = 400;
+          throw err;
+        }
+        const { data: raizAdotada, error: raizAdotErr } = await admin.from('anuncios_externos')
+          .select('id, titulo, criado_em')
+          .eq('org_id', familia.org_id).eq('codigo_pai', familia.codigo_pai)
+          .eq('canal', CANAL).eq('particao', 0)
+          .maybeSingle();
+        if (raizAdotErr || !raizAdotada) {
+          throw new Error(`adoção UP: raiz não encontrada após adotar (${raizAdotErr?.message ?? 'sem linha'})`);
+        }
+        return await rodarUP(raizAdotada as { id: string; titulo: string | null });
+      }
       const err = new Error(e.mensagemOperador);
       // Repassa status + retentavel p/ o catch: 5xx/429 ou foto ainda propagando → retenta.
       (err as { status?: number }).status = e.status;

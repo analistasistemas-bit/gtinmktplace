@@ -292,3 +292,83 @@ describe('criarAnuncio: FORMATO_INCOMPATIVEL para família multi-cor em categori
     expect(posts(chamadas)).toHaveLength(1);
   });
 });
+
+// ── ADR-0104 — o ML migra famílias JÁ PUBLICADAS para User Products sozinho ───────────────────
+// O GET ao vivo passa a devolver `variations: []` + family_name numa família que foi publicada
+// como Legacy. Antes isso lançava 400 pedindo reposição manual no painel; agora vira sinal tipado
+// e a orquestração adota os irmãos por SKU (simétrico ao FORMATO_INCOMPATIVEL do CREATE).
+describe('atualizarAnuncio: família migrada pelo ML para User Products (ADR-0104)', () => {
+  const itemMigrado = (extra: Record<string, unknown> = {}) => ({
+    id: 'MLB1', variations: [], pictures: [], price: 100, available_quantity: 10,
+    family_id: 'FAM-9', family_name: 'AGULHA MATTE', seller_id: 777, ...extra,
+  });
+  const base = {
+    itemExternoId: 'MLB1',
+    capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: 'MLB419782',
+    marca: null, dimensoes: null, desconto: null, precoFamilia: 130, somenteEstoque: false,
+  };
+
+  it('multi-cor → MIGRADO_PARA_UP com o observado no GET; NENHUM PUT emitido', async () => {
+    let putChamado = false;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') putChamado = true;
+      return Promise.resolve(new Response(JSON.stringify(itemMigrado()), { status: 200 }));
+    }) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      ...base,
+      existentes: [{ sku: 'A1', estoque: 10, cor: 'Prata' }, { sku: 'A2', estoque: 3, cor: 'Rosa' }],
+      novas: [],
+    };
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).toBe('MIGRADO_PARA_UP');
+    expect(res.erro?.retentavel).toBe(false);
+    expect(res.erro?.up).toEqual({ familyId: 'FAM-9', familyName: 'AGULHA MATTE', sellerId: '777' });
+    expect(putChamado).toBe(false);
+  });
+
+  it('1 cor + cor nova → MIGRADO_PARA_UP (cor nova em item plano também é o modelo N-itens)', async () => {
+    globalThis.fetch = (() =>
+      Promise.resolve(new Response(JSON.stringify(itemMigrado()), { status: 200 }))) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      ...base,
+      existentes: [{ sku: 'A1', estoque: 10, cor: 'Prata' }],
+      novas: [{ sku: 'N1', cor: 'Rosa', estoque: 4, preco: 30, gtin: null, fotoId: 'P' }],
+    };
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(res.erro?.codigo).toBe('MIGRADO_PARA_UP');
+  });
+
+  // Regressão inversa: o caminho de 1 cor do ADR-0084 continua repondo direto, sem adoção.
+  it('1 cor SEM cor nova continua no PUT plano do ADR-0084 (não vira MIGRADO_PARA_UP)', async () => {
+    let putBody: Record<string, unknown> | null = null;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        putBody = JSON.parse(init.body as string);
+        return Promise.resolve(new Response('{}', { status: 200 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify(itemMigrado()), { status: 200 }));
+    }) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      ...base, existentes: [{ sku: 'A1', estoque: 15, cor: 'Prata' }], novas: [],
+    };
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(res.ok).toBe(true);
+    expect(putBody).toEqual({ available_quantity: 15, price: 130 });
+  });
+
+  // Fail-closed: item plano multi-cor SEM family_name não é UP reconhecível — falha alto.
+  it('multi-cor sem family_name → erro, nunca adivinha (não emite MIGRADO_PARA_UP)', async () => {
+    globalThis.fetch = (() => Promise.resolve(
+      new Response(JSON.stringify(itemMigrado({ family_name: null, family_id: null })), { status: 200 }),
+    )) as typeof fetch;
+    const atualiz: AtualizacaoCanonica = {
+      ...base,
+      existentes: [{ sku: 'A1', estoque: 10, cor: 'Prata' }, { sku: 'A2', estoque: 3, cor: 'Rosa' }],
+      novas: [],
+    };
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
+    expect(res.ok).toBe(false);
+    expect(res.erro?.codigo).not.toBe('MIGRADO_PARA_UP');
+  });
+});
