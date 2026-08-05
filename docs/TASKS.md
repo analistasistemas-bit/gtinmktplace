@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicados — busca deixava linhas fantasmas na tabela — 2026-08-05
+
+- [x] **Key da linha passa a ser `mlItemId`** (`src/pages/Publicados.tsx`) — anúncios split
+  (ADR-0048) herdam o `familiaId` da família representativa, então vários anúncios usavam a
+  mesma `key`. Ao buscar/filtrar, o React não removia as linhas antigas: a tabela mostrava
+  itens que não casavam com o termo enquanto o rodapé já contava o total correto.
+- [x] **Estado de expansão por anúncio** — `expand:publicados:${mlItemId}` (antes compartilhado
+  entre anúncios split).
+- [x] **`fetchPublicados` não repete `mlItemId`** (`src/lib/queries.ts`) + teste
+  (`src/lib/__tests__/publicados-key-unica.test.ts`).
+
 ## Título e descrição — specs externas avaliadas + 3 defeitos corrigidos — 2026-08-04
 
 Duas "especificações mestre" externas (título e descrição) foram avaliadas contra o pipeline atual.

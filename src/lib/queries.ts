@@ -847,6 +847,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
     if (!a.item_externo_id || jaListados.has(a.item_externo_id)) continue;
     const rep = repPorCodigo.get(a.codigo_pai);
     if (!rep) continue; // sem família representativa carregada — ignora
+    jaListados.add(a.item_externo_id); // mlItemId é a key da linha: nunca repetir
     extras.push({
       ...rep,
       titulo: a.titulo ?? rep.titulo,
