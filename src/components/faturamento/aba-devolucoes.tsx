@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { RotateCcw, ExternalLink, AlertTriangle } from 'lucide-react';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
-import { labelTipoDevolucao, type Devolucao } from '@/lib/devolucoes';
+import { labelTipoDevolucao, dataNoPeriodo, type Devolucao } from '@/lib/devolucoes';
 import { fmtBRL } from '@/lib/formato';
 import { fmtDataCurta } from '@/lib/ml-status';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -70,12 +70,19 @@ export function AbaDevolucoes() {
 
   const { data: devolucoes, isFetching, isError } = useDevolucoes();
   
+  // Mesma data do card do Dashboard (ADR-0106): devolução já resolvida entra pelo período do
+  // estorno (`fechado_em`), não pelo da abertura. Sem isso a lista e o card divergiam para o
+  // mesmo período — o claim 5552400113 (abriu 31/07, reembolsado 03/08) contava no card de
+  // agosto e sumia da lista de agosto. Claim ainda aberto continua entrando pelo `aberto_em`.
   const lista = useMemo(() => {
-    if (!devolucoes) return [];
-    const de = janela.desde;
-    const ate = janela.ate;
-    return devolucoes.filter((d) => {
-      if (d.aberto_em && (d.aberto_em < de || d.aberto_em > ate)) return false;
+    const de = Date.parse(janela.desde);
+    const ate = Date.parse(janela.ate);
+    return (devolucoes ?? []).filter((d) => {
+      const quando = dataNoPeriodo(d);
+      if (quando) {
+        const t = Date.parse(quando);
+        if (Number.isFinite(t) && (t < de || t > ate)) return false;
+      }
       if (tipoFiltro !== 'todos' && d.type !== tipoFiltro) return false;
       return true;
     });
@@ -167,7 +174,16 @@ export function AbaDevolucoes() {
               : `https://www.mercadolivre.com.br/vendas/reclamacoes/vendedor/${d.claim_id}`;
             return (
               <TableRow key={d.id}>
-                <TableCell className="whitespace-nowrap tabular-nums">{fmtDataCurta(d.aberto_em)}</TableCell>
+                <TableCell className="whitespace-nowrap tabular-nums">
+                  <div className="flex flex-col">
+                    <span>{fmtDataCurta(d.aberto_em)}</span>
+                    {/* A linha entra no período pela data do estorno (ADR-0106) — sem mostrá-la,
+                        uma devolução aberta em julho e reembolsada em agosto parecia fora do filtro. */}
+                    {d.fechado_em && (
+                      <span className="text-[10px] text-muted-foreground">Concluída: {fmtDataCurta(d.fechado_em)}</span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell className="tabular-nums">
                   <div className="flex flex-col">
                     <span>{d.pack_id ? `#${d.pack_id}` : (d.order_id ? `#${d.order_id}` : '—')}</span>

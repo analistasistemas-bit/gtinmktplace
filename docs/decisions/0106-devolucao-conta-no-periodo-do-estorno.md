@@ -33,13 +33,13 @@ A data é `claim.resolution.date_created`, gravada na nova coluna `ml_devolucoes
 Essa data é o mesmo instante do estorno no Mercado Pago — conferido em 5 devoluções reais contra
 `ml_vendas.raw->payments[].date_last_modified`:
 
-| claim | resolution.date_created | payment.date_last_modified |
-|---|---|---|
-| 5553795965 | 2026-08-03T17:16:36-04 | 2026-08-03T17:16:41-04 |
-| 5550524900 | 2026-07-30T10:10:00-04 | 2026-07-30T10:10:08-04 |
-| 5544792393 | 2026-07-22T12:56:00-04 | 2026-07-22T12:57:57-04 |
-| 5552400113 | 2026-08-03T15:27:00-04 | 2026-08-03T15:27:27-04 |
-| 5531142374 | 2026-06-22T14:30:00-04 | 2026-06-22T14:30:24-04 |
+| claim | resolution.date_created | payment.date_last_modified | Δ |
+|---|---|---|---|
+| 5553795965 | 2026-08-03T17:16:36-04 | 2026-08-03T17:16:41-04 | 5s |
+| 5552400113 | 2026-08-03T15:27:24-04 | 2026-08-03T15:27:27-04 | 3s |
+| 5550524900 | 2026-07-30T10:10:06-04 | 2026-07-30T10:10:08-04 | 2s |
+| 5544792393 | 2026-07-22T12:56:53-04 | 2026-07-22T12:57:57-04 | 64s |
+| 5531142374 | 2026-06-22T14:30:22-04 | 2026-06-22T14:30:24-04 | 2s |
 
 O **critério** de "concluída" não muda: `type = 'returns'` **e** `return_status_money = 'refunded'`
 (glossário, conferido 1:1 com a API do ML em 2026-07-31). Só a data de atribuição muda.
@@ -50,6 +50,11 @@ pill Aberta/Fechada da aba Devoluções.
 Ambas as regras viraram funções puras em `src/lib/devolucoes.ts`
 (`devolucoesConcluidasNoPeriodo`, `devolucoesAbertas`), testadas com os 8 claims reais como
 fixture.
+
+A **aba Devoluções usa a mesma data** (`dataNoPeriodo`, exportada do mesmo módulo). Sem isso, o
+card e a lista discordariam no mesmo período — o claim 5552400113 contaria no card de agosto e
+sumiria da lista de agosto, que é exatamente como o defeito foi percebido. A tabela passa a
+mostrar "Concluída: dd/mm" abaixo da data de abertura, para a linha não parecer fora do filtro.
 
 ## Consequências
 

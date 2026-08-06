@@ -59,6 +59,12 @@ export async function buscarDevolucoes(): Promise<Devolucao[]> {
   return devolucoes;
 }
 
+/** A data que põe a devolução num período: a do estorno quando já houve resolução, senão a da
+ *  abertura (claim em curso, ou linha antiga que o backfill não alcançou). ADR-0106 — usada
+ *  tanto pelo card do Dashboard quanto pelo filtro da aba Devoluções, para os dois não
+ *  divergirem no mesmo período. */
+export const dataNoPeriodo = (d: Devolucao): string | null => d.fechado_em ?? d.aberto_em;
+
 /** Devoluções que ainda pedem ação do vendedor — o card "Precisa de atenção" do Dashboard.
  *  Ter `acoes_pendentes` NÃO basta: o ML continua devolvendo `available_actions` (ex.:
  *  "return review ok", com prazo) em claim já **fechado e reembolsado**, e o card ficava
@@ -91,7 +97,7 @@ export function devolucoesConcluidasNoPeriodo(
   const ateMs = Date.parse(ate);
   const concluidas = devolucoes.filter((d) => {
     if (d.type !== 'returns' || d.return_status_money !== 'refunded') return false;
-    const quando = d.fechado_em ?? d.aberto_em;
+    const quando = dataNoPeriodo(d);
     if (quando == null) return false;
     const t = Date.parse(quando);
     return Number.isFinite(t) && t >= de && t <= ateMs;

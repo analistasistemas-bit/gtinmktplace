@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { devolucoesAbertas, devolucoesConcluidasNoPeriodo, type Devolucao } from '@/lib/devolucoes';
+import { devolucoesAbertas, devolucoesConcluidasNoPeriodo, dataNoPeriodo, type Devolucao } from '@/lib/devolucoes';
 
 /** Os 8 claims reais da conta do Diego (lidos do banco em 2026-08-06), que foram a base do
  *  diagnóstico. Mantidos como estão: qualquer mudança de critério passa a ser medida contra
@@ -59,6 +59,15 @@ describe('devolucoesConcluidasNoPeriodo', () => {
   it('borda: offset +00:00 do banco vs Z da janela no mesmo instante', () => {
     const naBorda = [base({ claim_id: 2, fechado_em: '2026-08-01T03:00:00+00:00', valor_estornado: 5 })];
     expect(devolucoesConcluidasNoPeriodo(naBorda, AGOSTO.desde, AGOSTO.ate).qtd).toBe(1);
+  });
+});
+
+describe('dataNoPeriodo (card e aba Devoluções usam a mesma)', () => {
+  it('resolvida entra pelo estorno; em curso, pela abertura', () => {
+    const resolvida = REAIS.find((d) => d.claim_id === 5552400113)!;
+    expect(dataNoPeriodo(resolvida)).toBe('2026-08-03T19:27:27+00:00');
+    expect(dataNoPeriodo(base({ claim_id: 4, aberto_em: '2026-08-04T01:48:00+00:00', fechado_em: null })))
+      .toBe('2026-08-04T01:48:00+00:00');
   });
 });
 
