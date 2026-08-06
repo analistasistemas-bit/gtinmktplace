@@ -305,6 +305,20 @@ export async function buscarElegibilidadeItem(token: string, itemId: string): Pr
 export interface OptinResultado { status: number; catalogListingId?: string; erro?: string; }
 
 /**
+ * Mensagem útil de um 4xx do opt-in. O `message` do ML é genérico ("Validation error") — o motivo
+ * real vive em `cause[].message` (ex.: "MLB25749603 does not belong to domain
+ * MLB-BODY_SKIN_CARE_PRODUCTS"). Sem isso, `catalog_erro` guardava um texto que não diagnostica nada.
+ */
+export function detalharErroOptin(json: unknown): string {
+  const b = json as { message?: string; cause?: Array<{ message?: string; code?: string }> } | null;
+  const causas = (b?.cause ?? [])
+    .map((c) => c?.message ?? c?.code)
+    .filter((m): m is string => !!m);
+  if (causas.length > 0) return causas.join('; ');
+  return b?.message ?? JSON.stringify(json);
+}
+
+/**
  * Opt-in no catálogo. 4xx → retorna erro (não lança); o chamador persiste sem derrubar o anúncio.
  * `variation_id` é opcional: item Legacy (com variações) sempre o envia via `montarBodyOptin`; item
  * User Products (sem variações) omite via `montarBodyOptinItem` — mesmo endpoint, mesmo tratamento.
@@ -321,8 +335,7 @@ export async function optinCatalogo(
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    const detalhe = (json as { message?: string })?.message ?? JSON.stringify(json);
-    return { status: resp.status, erro: `(${resp.status}) ${detalhe}`.slice(0, 300) };
+    return { status: resp.status, erro: `(${resp.status}) ${detalharErroOptin(json)}`.slice(0, 300) };
   }
   const id = (json as { id?: unknown })?.id;
   return { status: resp.status, catalogListingId: typeof id === 'string' ? id : undefined };

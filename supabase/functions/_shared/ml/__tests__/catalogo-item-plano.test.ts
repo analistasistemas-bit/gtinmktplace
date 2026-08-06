@@ -10,6 +10,7 @@ import {
   podeTentarOptin,
   decidirAcaoCatalogo,
   fichaEquivalente,
+  detalharErroOptin,
   vincularVariacoesCatalogo,
   type VarCatalogoRow,
 } from '../catalogo';
@@ -138,6 +139,19 @@ describe('decidirAcaoCatalogo — item plano', () => {
       { catalogListingId: null, catalogProductId: 'MLB1' },
       { id: 'MLB1', status: 'ALREADY_OPTED_IN', buy_box_eligible: false, reason: 'item_has_item_relations' },
     )).toBe('ja_vinculado');
+  });
+});
+
+describe('detalharErroOptin — o motivo real vem em cause[], não em message', () => {
+  it('extrai as causas do 400 do ML (caso real: ficha de outro domínio)', () => {
+    expect(detalharErroOptin({
+      message: 'Validation error',
+      cause: [{ code: 'catalog_product_id.invalid', message: 'Invalid catalog_product_id: MLB25749603 does not belong to domain MLB-BODY_SKIN_CARE_PRODUCTS' }],
+    })).toContain('does not belong to domain');
+  });
+
+  it('sem cause[] cai no message', () => {
+    expect(detalharErroOptin({ message: 'Validation error' })).toBe('Validation error');
   });
 });
 
