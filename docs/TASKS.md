@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Produto sem variação — publicação destravada e cadastro explicado — 2026-08-06
+
+Origem: Diego cadastrou um produto simples (Principia Gel de Limpeza 350g) com foto só na Capa
+e a Revisão o marcou "Incompleta · sem foto", travando a publicação.
+
+- [x] **`familiaExigeFotoPorVariacao()`** (`src/lib/publicavel.ts`) — produto simples (CREATE,
+  `tipoAviamento='outro'`, 1 variação incluída) **com capa** não exige mais foto por variação. Era
+  falso-positivo: o backend lidera a galeria de toda variação com a capa (`capa ?? propria`,
+  `_shared/ml/publicar.ts`) e sobe a capa ao ML no pre-publish (`_shared/anuncios/pre-subir-fotos.ts`),
+  então o anúncio já sairia com imagem. A condição compartilhada com `familiaExigeCor` saiu para
+  `familiaProdutoSimples()`. Sem capa, com 2+ cores ou no UPDATE nada muda.
+- [x] **Ligado na UI** (`familia-row.tsx`, `familia-expanded.tsx`) — mesma regra no selo de bloqueio
+  e na crítica da linha, para badge e publicabilidade não divergirem.
+- [x] **Teste através do mapeador real** (`src/lib/__tests__/queries.test.ts`) — a cadeia
+  row → `familiaFromRow` → `familiaPublicavel`, não só fixture montado à mão: o fix é client-side e só
+  vale na tela se `capa_storage_path` chegar mapeado. Verificado que falha sem o fix.
+- [x] **Dica no cadastro** (`dialog-cadastro-produto.tsx`) — "Produto sem variação? Deixe só a
+  Variação 1 e o campo Cor / nome em branco". Some ao adicionar a 2ª variação. Validada em runtime
+  (Playwright, screenshot nos dois estados).
+
 ## Estoque — layout de operação (nível SaaS) — 2026-08-05
 
 - [x] **Faixa de KPIs** (`src/lib/produtos-saldo-resumo.ts`, `src/components/estoque/resumo-estoque.tsx`) —
