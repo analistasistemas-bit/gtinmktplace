@@ -123,8 +123,18 @@ primeiro (o operador via "republique o produto") e, mesmo se não disparasse, a 
   `closed` e devolvia o erro cru do ML.
 - [ ] **Limite conhecido (ADR-0105 §6):** o push rápido de estoque **não** re-vincula sozinho —
   exige uma passada de UPDATE na família migrada.
-- [ ] Aplicar em produção: `supabase db push` + `supabase functions deploy` das funções afetadas, e
-  rodar o UPDATE do lote #45 para validar o re-vínculo ponta a ponta.
+- [x] **Aplicado em produção 2026-08-06** (main `08dbb9e4`): migration `20260806003628` via
+  `db push` (`db:check` alinhado, RPC só com a assinatura de 8 args) e `functions deploy` das **15**
+  funções do blast radius calculado por `deno info` — todas +1 de versão, `verify_jwt` preservado.
+- [x] **Validado ponta a ponta no lote #45.** O UPDATE re-vinculou sozinho: raiz partição 0 com
+  `item_externo_id = MLB7210143182`, `skus_esperados` de 17, 17 filhos `ativo` sob o único
+  `family_id 2244380420892433`, todos com `user_product_id`, nenhum `retirado`;
+  `ml_variation_id` nulado nas **duas** famílias do `codigo_pai` e `ml_item_id` re-apontado em ambas
+  (§5 confirmado na prática). Estoque conferido 1:1 contra a API do ML nos 17 SKUs — bate em todos.
+  As duas cores com estoque 0 aparecem `paused` **no ML**: é o ML que pausa item sem estoque, não o
+  PubliAI (coerente com ADR-0089).
+- [ ] **Limite observado:** a 18ª cor da família no ML (`Rosa Bebê - 510`, `MLB7218244860`) segue sem
+  linha filha — está fora da planilha do lote. É o limite conhecido do ADR-0104 §2, não um defeito.
 
 ## Produto gravado na organização errada — corrigido 2026-08-04
 
