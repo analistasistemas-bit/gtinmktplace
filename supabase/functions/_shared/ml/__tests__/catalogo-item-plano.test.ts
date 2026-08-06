@@ -117,6 +117,33 @@ describe('fichaEquivalente — kit legítimo vs. ficha-kit errada', () => {
   });
 });
 
+// Incidente 2026-08-06: a ficha do Aquaphor (MLB25749603) vive em MLB-FACIAL_SKIN_CARE_PRODUCTS e o
+// anúncio em MLB-BODY_SKIN_CARE_PRODUCTS. O opt-in é recusado (400 "does not belong to domain"), e o
+// "conserto" aparente — trocar a categoria do anúncio publicado — re-disparou a moderação do ML e
+// derrubou o anúncio por propriedade intelectual. A ficha de outro domínio tem que morrer aqui.
+describe('fichaEquivalente — domínio da ficha × domínio do anúncio', () => {
+  const ficha = (dom: string | null) => ({ id: 'MLB25749603', saleFormat: 'Kit', unitsPerPack: 2, lengthM: null, domainId: dom });
+
+  it('domínios diferentes → reprova, sem tentar o POST', () => {
+    const r = fichaEquivalente(ficha('MLB-FACIAL_SKIN_CARE_PRODUCTS'), {
+      lengthM: null, unitsPerPack: 2, saleFormat: 'Kit', domainId: 'MLB-BODY_SKIN_CARE_PRODUCTS',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toContain('dominio');
+  });
+
+  it('mesmo domínio → segue para as demais travas', () => {
+    expect(fichaEquivalente(ficha('MLB-BODY_SKIN_CARE_PRODUCTS'), {
+      lengthM: null, unitsPerPack: 2, saleFormat: 'Kit', domainId: 'MLB-BODY_SKIN_CARE_PRODUCTS',
+    }).ok).toBe(true);
+  });
+
+  it('domínio ausente de um dos lados → não bloqueia (dado ausente nunca reprova)', () => {
+    expect(fichaEquivalente(ficha(null), { lengthM: null, unitsPerPack: 2, saleFormat: 'Kit', domainId: 'MLB-X' }).ok).toBe(true);
+    expect(fichaEquivalente(ficha('MLB-X'), { lengthM: null, unitsPerPack: 2, saleFormat: 'Kit' }).ok).toBe(true);
+  });
+});
+
 describe('decidirAcaoCatalogo — item plano', () => {
   const CPN = { id: 'MLB1', status: 'CATALOG_PRODUCT_ID_NULL', buy_box_eligible: false };
 

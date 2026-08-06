@@ -37,6 +37,9 @@ export interface AtributosFicha {
   saleFormat: string | null;
   unitsPerPack: number | null;
   lengthM: number | null;
+  /** Domínio da ficha. O opt-in exige que seja o MESMO do anúncio (o ML recusa com 400
+   *  `catalog_product_id.invalid ... does not belong to domain`). */
+  domainId?: string | null;
 }
 
 /** O que esperamos do NOSSO produto, para confrontar com a ficha. */
@@ -46,6 +49,9 @@ export interface EsperadoProduto {
    *  não enviam esses atributos) → a comparação assume 1 unidade avulsa, como antes. */
   unitsPerPack?: number | null;
   saleFormat?: string | null;
+  /** Domínio do nosso item publicado; confrontado com o da ficha (o ML só aceita opt-in dentro do
+   *  mesmo domínio). Ausente → a comparação de domínio é pulada. */
+  domainId?: string | null;
 }
 
 export interface Equivalencia {
@@ -123,7 +129,7 @@ export function normalizarComprimentoMetros(valueName: string | null): number | 
 
 /** Extrai id + atributos relevantes do 1º produto de `/products/search`. null se vazio. */
 export function parseProdutoCatalogoBusca(json: unknown): AtributosFicha | null {
-  const r = (json as { results?: Array<{ id?: string; attributes?: Array<{ id?: string; value_name?: string }> }> } | null)?.results?.[0];
+  const r = (json as { results?: Array<{ id?: string; domain_id?: string; attributes?: Array<{ id?: string; value_name?: string }> }> } | null)?.results?.[0];
   if (!r?.id) return null;
   const attr = (id: string): string | null =>
     r.attributes?.find((a) => a?.id === id)?.value_name ?? null;
@@ -134,6 +140,7 @@ export function parseProdutoCatalogoBusca(json: unknown): AtributosFicha | null 
     saleFormat: attr('SALE_FORMAT'),
     unitsPerPack: units != null && Number.isFinite(units) ? units : null,
     lengthM: normalizarComprimentoMetros(attr('LENGTH')),
+    domainId: typeof r.domain_id === 'string' ? r.domain_id : null,
   };
 }
 
@@ -145,6 +152,14 @@ export function parseProdutoCatalogoBusca(json: unknown): AtributosFicha | null 
  * WIDTH não entra (largura vem suja tanto no nosso item quanto nas fichas do ML).
  */
 export function fichaEquivalente(ficha: AtributosFicha, esperado: EsperadoProduto): Equivalencia {
+  // Domínio (incidente 2026-08-06): o opt-in de ficha de outro domínio é recusado pelo ML
+  // (`400 catalog_product_id.invalid ... does not belong to domain`). Reprovar aqui evita o POST
+  // inútil e, sobretudo, evita que o "conserto" pareça ser mudar a categoria do anúncio publicado
+  // — o que re-dispara a moderação do ML e derrubou o Aquaphor por propriedade intelectual.
+  // Só reprova com os DOIS domínios conhecidos: ausência de dado nunca bloqueia.
+  if (ficha.domainId && esperado.domainId && ficha.domainId !== esperado.domainId) {
+    return { ok: false, motivo: `dominio_${ficha.domainId}_vs_${esperado.domainId}` };
+  }
   // A comparação é contra o que o NOSSO item declara; sem declaração, assume 1 unidade avulsa
   // (comportamento original — as fitas/linhas do incidente não enviam esses atributos). Isso
   // libera o kit legítimo (nosso Duo Pack 2un × ficha Kit/2un) sem afrouxar o caso do incidente.
@@ -270,7 +285,8 @@ export async function buscarProdutoCatalogoPorGtin(token: string, gtin: string |
 /** Lê o comprimento (LENGTH) do NOSSO item publicado — base de comparação da trava de metragem. */
 export async function buscarEsperadoDoItem(token: string, itemId: string): Promise<EsperadoProduto> {
   const json = await mlGet(`${API}/items/${itemId}?include_attributes=all`, token);
-  const attrs = (json as { attributes?: Array<{ id?: string; value_name?: string }> } | null)?.attributes;
+  const item = json as { domain_id?: string; attributes?: Array<{ id?: string; value_name?: string }> } | null;
+  const attrs = item?.attributes;
   const attr = (id: string) => attrs?.find((a) => a?.id === id)?.value_name ?? null;
   const units = attr('UNITS_PER_PACK');
   const unitsNum = units != null ? Number(units) : null;
@@ -278,6 +294,7 @@ export async function buscarEsperadoDoItem(token: string, itemId: string): Promi
     lengthM: normalizarComprimentoMetros(attr('LENGTH')),
     unitsPerPack: unitsNum != null && Number.isFinite(unitsNum) ? unitsNum : null,
     saleFormat: attr('SALE_FORMAT'),
+    domainId: typeof item?.domain_id === 'string' ? item.domain_id : null,
   };
 }
 

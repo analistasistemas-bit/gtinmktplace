@@ -206,6 +206,12 @@ devolve `catalog_product_id.not_modificable` (400) em item ativo com vendas; o o
    `vinculado` com o listing id lido de `GET /items/{id}?attributes=item_relations`, em vez de
    contar como `nao_elegivel` — que gerava backoff inútil e alerta de no-match falso num item que
    já está competindo.
+6. **Trava de domínio (adicionada após o incidente abaixo):** `fichaEquivalente` reprova quando o
+   `domain_id` da ficha difere do `domain_id` do nosso item, com motivo `dominio_<ficha>_vs_<item>`.
+   Ambos já vêm de graça (`/products/search` e o GET do item que a trava de metragem já faz). Só
+   reprova com os dois dados presentes. Validado contra 5 vinculações reais em produção (fitas,
+   linhas, novelos): domínio idêntico em todas — nenhuma regressão nas 211 existentes.
+
 **Limite descoberto — a ficha precisa ser do MESMO domínio do anúncio.** O Aquaphor
 (`MLB7330859238`, domínio `MLB-BODY_SKIN_CARE_PRODUCTS`) casa por GTIN com a ficha `MLB25749603`,
 que vive em `MLB-FACIAL_SKIN_CARE_PRODUCTS`. O opt-in devolve

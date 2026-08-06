@@ -26,9 +26,20 @@ recorrente** por `pending_documentation` (`MLB4982690837` em 02/08, resolvida 04
 conta. A troca de categoria muito provavelmente re-disparou a fila de moderação, que dessa vez
 voltou como `forbidden`.
 
+**Desfecho (mesmo dia):** o ML mandou dois e-mails — o anúncio de catálogo do protetor solar
+pausado pedindo NF-e (o **original seguiu ativo e vendendo**), e o **original do Aquaphor cancelado
+por propriedade intelectual** ("os dados do produto não correspondem ao produto original"): vincular
+um Aquaphor corporal à ficha de *hidratante labial* do domínio facial é exatamente a incompatibilidade
+que a política de PI pune. Estoque 12, zero vendas, `under_review`/`forbidden` — recuperável por
+contestação com NF-e, que é o caminho em curso.
+
 **Lição:** a categoria escolhida na publicação decide se o anúncio poderá competir no catálogo
 (a ficha precisa ser do mesmo domínio). Trocar categoria depois de publicado é ação de risco —
-re-modera o anúncio e pode derrubá-lo. Ver [[Índice de ADRs]] (ADR-0021, revisão 2026-08-06).
+re-modera o anúncio e pode derrubá-lo por PI. **Trava implementada no mesmo dia:**
+`fichaEquivalente` reprova ficha de domínio diferente (`dominio_<ficha>_vs_<item>`), então o
+sistema nunca mais aponta para uma ficha que só seria vinculável mudando a categoria. Validada
+contra 5 vinculações reais (domínio idêntico em todas). Ver [[Índice de ADRs]] (ADR-0021, revisão
+2026-08-06).
 
 ## 2026-08-04 — produto da Avil foi gravado indevidamente na DSA
 

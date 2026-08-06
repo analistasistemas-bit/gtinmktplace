@@ -146,7 +146,7 @@ describe('parseProdutoCatalogoBusca', () => {
       { id: 'LENGTH', value_name: '10 m' },
       { id: 'WIDTH', value_name: '1.5 cm' },
     ]));
-    expect(f).toEqual({ id: 'MLB25284234', saleFormat: 'Kit', unitsPerPack: 5, lengthM: 10 });
+    expect(f).toEqual({ id: 'MLB25284234', saleFormat: 'Kit', unitsPerPack: 5, lengthM: 10, domainId: null });
   });
 
   it('ficha de unidade sem UNITS_PER_PACK', () => {
@@ -154,7 +154,7 @@ describe('parseProdutoCatalogoBusca', () => {
       { id: 'SALE_FORMAT', value_name: 'Unidade' },
       { id: 'LENGTH', value_name: '10 m' },
     ]));
-    expect(f).toEqual({ id: 'MLB25284234', saleFormat: 'Unidade', unitsPerPack: null, lengthM: 10 });
+    expect(f).toEqual({ id: 'MLB25284234', saleFormat: 'Unidade', unitsPerPack: null, lengthM: 10, domainId: null });
   });
 
   it('resultado vazio → null', () => {
