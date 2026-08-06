@@ -147,3 +147,37 @@ apenas eventual e best-effort, apoiada na releitura do estado persistido.
 **Consequências:** estados transitórios ganham uma janela limitada para assentar, sem transformar o
 worker em retry indefinido. Ao esgotar as rodadas, o resultado é finalizado e segue para o alerta
 operacional; casos estruturais ou de conteúdo não são prolongados por backoff.
+
+## Revisão pós-incidente (2026-08-06) — item plano nunca saía de `pendente`
+
+**Incidente:** o anúncio `MLB5001755829` (lote 10 da org DSA, "Principia Gel De Limpeza Facial
+350g") ficou sem vinculação de catálogo mesmo com fichas concorrentes disponíveis. A varredura
+mostrou o padrão: **32 de 32** variações de item plano estavam `pendente`, a mais antiga havia 17
+dias (publicada em 2026-07-20). Nenhum item plano jamais chegou a `vinculado` — enquanto o Legacy
+multi-variação tinha 211 vinculados no mesmo período.
+
+**Causa raiz:** o **item plano** (ADR-0084 — categoria que exige `family_name`, 1 SKU, item sem
+sub-recurso `variations`) é publicado pela rota Legacy e grava `variacoes.ml_variation_id =
+ml_item_id` (`canais/mercado-livre.ts`). Só que `vincularVariacoesCatalogo` lia a elegibilidade por
+`indexarEligibility`, que enxerga apenas `body.variations[]`. Nesse item o array vem vazio e o
+status vive na **raiz** do JSON, então o mapa saía vazio, `decidirAcaoCatalogo` devolvia `pendente`
+("ainda computando") e o worker respondia 500 até o QStash esgotar os retries — indefinidamente, não
+por transitoriedade. Como a ficha só é buscada quando a variação está `READY_FOR_OPTIN`, o GTIN
+**nunca chegava a ser pesquisado** no catálogo (`catalog_product_id` permanecia null).
+
+**Decisão adicional:** a rota Legacy passa a cobrir os dois formatos, sem novo roteamento no worker:
+
+1. `indexarElegibilidadeAnuncio(body, itemId)` — indexa `variations[]` quando existe; se o mapa sai
+   vazio, cai em `parseElegibilidadeItem` (status na raiz) e indexa pelo **item id**, que é
+   exatamente a chave que o item plano guarda em `ml_variation_id`. `buscarElegibilidadeCatalogo`
+   passa a usá-la. `indexarEligibility` continua pura e inalterada (o discriminador é a forma da
+   resposta, não uma flag de origem).
+2. `montarBodyOptinVariacao(itemId, variationId, cpid)` — escolhe o body pelo formato do id:
+   numérico → `montarBodyOptin` (com `variation_id`); não-numérico (item plano) →
+   `montarBodyOptinItem` (sem `variation_id`). Sem isso, o opt-in de um item plano sairia com
+   `Number('MLB5001755829')` = `NaN`, serializado como `variation_id: null`.
+
+**Consequências:** item plano vinculável pela mesma rota Legacy, sem tocar no caminho UP
+(`vincularItensCatalogoUP`) nem no multi-variação. As linhas já presas em `pendente` **não se
+resolvem sozinhas** (o QStash já desistiu): exigem re-enfileiramento de `vincular-catalogo`.
+Deploy obrigatório: `vincular-catalogo` (muda `_shared/ml/catalogo.ts`).

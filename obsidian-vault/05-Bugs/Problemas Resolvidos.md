@@ -10,6 +10,21 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Item plano nunca vinculava ao catálogo do ML (2026-08-06)** — Diego reportou que o produto do
+  lote 10 da DSA (`MLB5001755829`, "Principia Gel De Limpeza Facial 350g") não se associou ao
+  catálogo mesmo com concorrentes. Causa raiz: o **item plano** (ADR-0084 — categoria que exige
+  `family_name`, 1 SKU, item sem `variations[]`) é publicado pela rota Legacy e grava
+  `variacoes.ml_variation_id = ml_item_id`, mas `vincularVariacoesCatalogo` lia a elegibilidade só
+  de `body.variations[]` — vazio nesse item, com o status na **raiz** do JSON. O mapa saía vazio,
+  a decisão virava `pendente` ("ainda computando") e o worker respondia 500 até o QStash desistir;
+  o GTIN nunca chegava a ser pesquisado no catálogo. **32 de 32** variações de item plano estavam
+  presas assim, a mais antiga desde 20/07 (17 dias), contra 211 vinculados no Legacy
+  multi-variação. **Fix:** `indexarElegibilidadeAnuncio` (raiz → indexa pelo item id, com
+  `indexarEligibility` intacta) + `montarBodyOptinVariacao` (opt-in sem `variation_id` quando o id
+  não é numérico, senão `Number('MLB…')` = `NaN`). As linhas já presas não se resolvem sozinhas —
+  exigem re-enfileiramento do `vincular-catalogo`. Ver [[Índice de ADRs]] (ADR-0021, revisão
+  2026-08-06), [[Edge Functions]].
+
 - **Viabilidade ignorava promoção vigente do Mercado Livre (2026-08-04)** — para o GTIN
   `4005800220012`, a tela mostrava R$ 65,61 embora o anúncio estivesse por R$ 45,19. A busca de
   concorrência lia o campo legado `price` da lista de itens do produto, que pode refletir o preço

@@ -156,6 +156,36 @@ export function montarBodyOptinItem(
   return { item_id: itemId, catalog_product_id: catalogProductId };
 }
 
+/**
+ * Body do opt-in de uma linha de `variacoes`, escolhido pelo formato do `ml_variation_id`:
+ * variação Legacy real tem id numérico; item PLANO (ADR-0084) guarda ali o próprio ml_item_id.
+ * Sem essa distinção o item plano viraria `Number('MLB5001755829')` = NaN → `variation_id: null`.
+ */
+export function montarBodyOptinVariacao(
+  itemId: string,
+  variationId: string | number,
+  catalogProductId: string,
+): { item_id: string; variation_id?: number; catalog_product_id: string } {
+  return /^\d+$/.test(String(variationId))
+    ? montarBodyOptin(itemId, variationId, catalogProductId)
+    : montarBodyOptinItem(itemId, catalogProductId);
+}
+
+/**
+ * Elegibilidade de um anúncio Legacy indexada pela chave que `variacoes.ml_variation_id` guarda.
+ * Item com `variations[]` → indexa por variation_id. Item PLANO (ADR-0084: categoria que exige
+ * `family_name`, 1 SKU, sem sub-recurso `variations`) → o status vem na RAIZ do JSON e a variação
+ * local guarda o próprio ml_item_id, então indexa por itemId. Sem isso, todo item plano caía em
+ * `pendente` eterno: o mapa vinha vazio e `decidirAcaoCatalogo` lia "ainda computando" para sempre.
+ */
+export function indexarElegibilidadeAnuncio(body: unknown, itemId: string): Map<string, EligVar> {
+  const m = indexarEligibility(body);
+  if (m.size > 0) return m;
+  const raiz = parseElegibilidadeItem(body, itemId);
+  if (raiz) m.set(itemId, raiz);
+  return m;
+}
+
 /** Indexa a resposta de `/catalog_listing_eligibility` por variation_id (string). */
 export function indexarEligibility(body: unknown): Map<string, EligVar> {
   const vars = (body as { variations?: EligVar[] } | null)?.variations;
@@ -215,7 +245,7 @@ export async function buscarEsperadoDoItem(token: string, itemId: string): Promi
 
 export async function buscarElegibilidadeCatalogo(token: string, itemId: string): Promise<Map<string, EligVar>> {
   const json = await mlGet(`${API}/items/${itemId}/catalog_listing_eligibility`, token);
-  return indexarEligibility(json);
+  return indexarElegibilidadeAnuncio(json, itemId);
 }
 
 /** Elegibilidade de UM item UP (sem variações): mesmo GET, lido da raiz (ver parseElegibilidadeItem). */
@@ -377,7 +407,7 @@ export async function vincularVariacoesCatalogo(
 
       const acao = decidirAcaoCatalogo({ catalogListingId: v.catalog_listing_id, catalogProductId: cpid }, e, equivalencia);
       if (acao === 'optin') {
-        const r = await optinCatalogo(token, montarBodyOptin(itemId, v.ml_variation_id, cpid!));
+        const r = await optinCatalogo(token, montarBodyOptinVariacao(itemId, v.ml_variation_id, cpid!));
         if (r.erro) {
           resumo.erro++;
           await setVar(v.id, { catalog_status: 'erro', catalog_erro: r.erro });

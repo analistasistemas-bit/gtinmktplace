@@ -410,6 +410,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   escreve hoje). No caso UP, elegibilidade/opt-in rodam por item (não por variação indexada) e o
   espelho `variacoes_externas` é pulado (o estado já vive granular em `anuncios_externos_itens.
   catalog_*`); o alerta de no-match é mantido, com as cores derivadas via join item→sku→`variacoes`.
+  **Item plano (ADR-0021 rev. 2026-08-06):** a rota Legacy também cobre o item sem `variations[]`
+  (ADR-0084) — `indexarElegibilidadeAnuncio` lê o status da raiz e indexa pelo item id, e
+  `montarBodyOptinVariacao` faz o opt-in sem `variation_id`. Antes disso todo item plano ficava
+  `pendente` para sempre.
 
 ### Remoção / reprocessamento
 - **remover-publicado** — remove todas as linhas publicadas de um mesmo `codigo_pai` (global
