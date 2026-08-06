@@ -50,7 +50,9 @@ tendo concorrentes. Diagnóstico: **32 de 32** variações de item plano estavam
   descrições e `UNIT_VOLUME`). O produto é 18 g = 2 bisnagas de 9 g. Corrigidos `nome_pai`,
   `titulo_ml`, `descricao_ml`/`descricao_pai` e atributos (`UNIT_WEIGHT = 9 g` + `UNITS_PER_PACK
   = 2`, `SALE_FORMAT = Kit`), com os campos marcados como editados pelo operador. Republicado como
-  `MLB7345071684`. **Falta corrigir a planilha de origem**, senão o re-ingest reintroduz "10 ml".
+  `MLB7345071684`. Não há planilha a corrigir: o lote é `origem: manual` (`planilha_path` nulo),
+  cadastrado pela tela — a fonte do "10 ml" era o próprio cadastro, e uma varredura de todos os
+  campos de `familias`/`variacoes` confirmou que não sobrou resíduo de "10 ml"/"20 ml".
 - [x] **Descrição saía "tudo junto" no ML** — o gerador separa as seções só pelo emoji do cabeçalho
   e `sanitizarDescricaoML` remove esses emojis antes do envio (o ML os rejeita), deixando o texto
   sem separador nenhum (medido: 31 quebras de linha, zero linhas em branco). A sanitização passa a

@@ -53,7 +53,10 @@ varejistas; a ficha do catálogo do ML também está errada, dizendo 10 ml). Cor
 cadastro: título `Pomada Reparadora Eucerin Aquaphor Duo Pack 18g 2x9g`, `UNIT_VOLUME` → `UNIT_WEIGHT
 = 9 g` com `UNITS_PER_PACK = 2`, descrições reescritas, campos marcados como editados pelo operador
 para um reprocesso não trazer o erro de volta. Republicado como `MLB7345071684` (ativo).
-**A planilha de origem ainda tem "10 ml" — corrigir lá, senão um re-ingest reintroduz o erro.**
+**Não há planilha a corrigir:** o lote é `origem: manual` (`planilha_path` nulo) — o produto foi
+cadastrado pela tela, então a fonte do "10 ml" era o próprio cadastro no banco, já corrigido. Uma
+varredura de todos os campos de `familias`/`variacoes` da família confirmou zero resíduo de
+"10 ml"/"20 ml". Para lotes vindos de planilha, aí sim o arquivo de origem precisaria ser corrigido.
 O "10 ml" também estava **dentro de uma das fotos**: o card "Informações do produto"
 (`985349-MLB115653216497_082026`) diz *"10 ml cada / Conteúdo total: 20 ml"*. Ao restaurar as fotos
 do anúncio antigo em `MLB7345071684`, essa ficou de fora — imagem também é dado do produto para a
