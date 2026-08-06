@@ -10,6 +10,17 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Pergunta respondida no ML continuava "Pendente" no PubliAI (2026-08-06)** — o ML notifica o
+  tópico `questions` na criação **e** na resposta, sempre com o mesmo `resource`
+  (`/questions/{id}`). O dedup por `(topic, resource)` do `ml-webhook` classificava a 2ª
+  notificação como duplicado e a descartava, então a resposta só voltava na reconciliação
+  (`:00`/`:30`) — medido em produção: resposta 14:13, app atualizado 14:30. **Fix:**
+  `classificarDedupWebhook` passa a devolver `enfileirar` para `questions` e `claims` (mesmo
+  problema: `opened → in_mediation → closed`) mesmo em conflito 23505; worker é idempotente e o
+  throttle já cobre flood. Também não existia o "sync de 3 em 3 min" que o operador supunha: a aba
+  só recarregava ao trocar de foco — `usePerguntas` ganhou `refetchInterval` de 60s. Ver
+  [[Faturamento]].
+
 - **Descrição publicada saía "tudo junto" no ML (2026-08-06)** — Diego relatou a descrição do
   anúncio ilegível, com os títulos de seção colados no parágrafo anterior. Causa raiz no nosso
   lado: o gerador de copy separa as seções **apenas pelo emoji** do cabeçalho (`📌 ESPECIFICAÇÕES`),

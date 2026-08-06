@@ -40,9 +40,14 @@ describe('classificarDedupWebhook', () => {
     expect(classificarDedupWebhook({}, 'orders_v2')).toBe('enfileirar');
   });
 
-  it('duplicado real (23505) de topic ≠ messages: ignorar', () => {
+  it('duplicado real (23505) de topic com resource estável (vendas/envios): ignorar', () => {
     expect(classificarDedupWebhook({ code: '23505' }, 'orders_v2')).toBe('ignorar');
-    expect(classificarDedupWebhook({ code: '23505' }, 'questions')).toBe('ignorar');
+    expect(classificarDedupWebhook({ code: '23505' }, 'shipments')).toBe('ignorar');
+  });
+
+  it('duplicado real (23505) de questions/claims: enfileirar — 2º evento é mudança de estado', () => {
+    expect(classificarDedupWebhook({ code: '23505' }, 'questions')).toBe('enfileirar');
+    expect(classificarDedupWebhook({ code: '23505' }, 'claims')).toBe('enfileirar');
   });
 
   it('duplicado real (23505) de messages: checar-messages (decisão temporal fica com deveReenfileirarMensagens)', () => {

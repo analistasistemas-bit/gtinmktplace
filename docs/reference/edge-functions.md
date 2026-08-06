@@ -543,6 +543,15 @@ falha ao ler `organizations` não libera.
   dedup ao terminar de processar, reabrindo para o próximo evento; se a conversa travar (linha
   antiga e nunca processada, >2min — job perdido), o webhook reenfileira mesmo em conflito de
   dedup (`deveReenfileirarMensagens`, plan 035).
+  **Transições de estado em `questions`/`claims` (2026-08-06):** o resource desses tópicos também é
+  estável por recurso (`/questions/{id}` na criação **e** na resposta; `/claims/{id}` em
+  `opened → in_mediation → closed`), então o dedup por `(topic, resource)` descartava a 2ª
+  notificação — pergunta respondida direto no ML continuava "Pendente" no app até a próxima
+  reconciliação (`:00` do `reconciliar-faturamento` / `:30` do `backfill-faturamento`). Agora
+  `classificarDedupWebhook` devolve `enfileirar` para esses dois tópicos mesmo em conflito 23505
+  (worker idempotente; o throttle de 200/janela cobre flood forjado; o alerta não duplica porque
+  `novaNaoRespondida` exige pergunta desconhecida). `orders_v2`/`shipments` seguem ignorando o
+  duplicado — resource por evento e backstop de 72h.
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
   upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. **Comprador da pergunta
   (2026-08-06):** a API v4 devolve `from: { id }` **sem `nickname`** (tanto em `/questions/{id}`

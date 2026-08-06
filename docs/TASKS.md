@@ -2,6 +2,28 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento › Perguntas — resposta dada no ML não voltava para o app — 2026-08-06
+
+Origem: Diego respondeu a pergunta 13635743825 direto no ML às 14:13 UTC e o PubliAI continuou
+mostrando "Pendente". Diagnóstico contra o banco de produção (só SELECT): `ml_webhook_eventos` tem
+**uma única** linha `/questions/13635743825` (recebida 14:03, processada 14:04 — a criação);
+`ml_perguntas.atualizado_em` só virou `ANSWERED` às 14:30, ou seja pelo `backfill-faturamento`
+(`30 * * * *`), não por webhook.
+
+- [x] **Causa** — o ML notifica o tópico `questions` na criação **e** na resposta, com o mesmo
+  `resource`. O dedup `(topic, resource)` do `ml-webhook` batia 23505 e `classificarDedupWebhook`
+  devolvia `ignorar` → o job nunca era enfileirado. O mesmo vale para `claims`
+  (`opened → in_mediation → closed`).
+- [x] **Fix** — `classificarDedupWebhook` devolve `enfileirar` para `questions`/`claims` mesmo em
+  duplicado real (worker idempotente; throttle de 200/janela cobre flood; alerta não duplica porque
+  `novaNaoRespondida` exige pergunta desconhecida). `orders_v2`/`shipments` seguem ignorando.
+  TDD (RED → GREEN em `reenfileirar-mensagens.test.ts`), 2590 testes verdes.
+- [x] **Tela parada** — não existe sync "de 3 em 3 min": `usePerguntas` tinha `staleTime` 60s e
+  **nenhum** `refetchInterval`, então a aba aberta só recarregava ao trocar de foco. Adicionado
+  `refetchInterval: 60_000` na lista e no badge.
+- [ ] **Validar em produção** — responder uma pergunta no ML e conferir `ml_perguntas.atualizado_em`
+  mexendo em segundos (não na virada da hora).
+
 ## Faturamento › Perguntas — atalho certo e nome de quem perguntou — 2026-08-06
 
 Origem: Diego apontou dois problemas na aba Perguntas. Diagnóstico confirmado contra a API do ML

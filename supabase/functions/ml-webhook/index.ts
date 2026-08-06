@@ -83,9 +83,9 @@ Deno.serve(async (req) => {
       .select('recebido_em, processado_em').eq('topic', 'messages').eq('resource', ev.resource)
       .eq('user_id', userId).maybeSingle();
     if (!deveReenfileirarMensagens(existente, Date.now())) return ok();
-  } else if (dupErr) {
-    // 'enfileirar' com erro presente = erro não-23505 (RLS/timeout/pool): NÃO engole o evento
-    // (perguntas/devoluções não têm backstop). Loga e segue p/ enfileirar — o worker é idempotente.
+  } else if (dupErr && (dupErr as { code?: string }).code !== '23505') {
+    // 'enfileirar' com erro não-23505 (RLS/timeout/pool): NÃO engole o evento (perguntas/devoluções
+    // não têm backstop). Loga e segue p/ enfileirar — o worker é idempotente.
     console.error('ml-webhook: erro não-duplicado ao inserir dedup, prossegue p/ enfileirar:', (dupErr as { message?: string }).message ?? (dupErr as { code?: string }).code);
   }
 

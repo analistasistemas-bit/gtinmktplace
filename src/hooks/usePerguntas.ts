@@ -8,6 +8,9 @@ export function useListaPerguntas() {
     queryKey: ['perguntas'],
     queryFn: buscarPerguntas,
     staleTime: 60_000,
+    // Pergunta respondida direto no ML chega por webhook em segundos; sem polling a tela aberta
+    // continuaria mostrando "Pendente" até o operador trocar de aba. Só roda com a aba em foco.
+    refetchInterval: 60_000,
   });
 }
 
@@ -28,6 +31,7 @@ export function usePerguntasNaoRespondidas(): { count: number; isError: boolean 
     queryKey: ['perguntasNaoRespondidas'],
     queryFn: contarPerguntasNaoRespondidas,
     staleTime: 60_000,
+    refetchInterval: 60_000,
     retry: 1,
   });
   return { count: q.data ?? 0, isError: q.isError };
