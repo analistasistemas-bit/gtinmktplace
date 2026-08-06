@@ -149,11 +149,28 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
   por família, em cada lote. Agora o conector detecta pelo `GET` ao vivo e devolve `MIGRADO_PARA_UP`
   tipado (simétrico ao `FORMATO_INCOMPATIVEL` do CREATE; **zero `GET` extra**), e o worker adota os
   itens irmãos por SKU — tudo-ou-nada, **só leitura remota** — antes de entregar à saga UP.
-  A forma exata da migração é **hipótese validada em runtime**: se não bater, aborta sem tocar o
-  anúncio e a mensagem traz as contagens observadas. **Limite conhecido:** irmãos fora da planilha
-  do lote ficam sem vínculo local (vendas não atribuídas até um lote futuro incluir a cor).
+  A forma exata da migração era **hipótese validada em runtime** — e **a hipótese estava errada**;
+  ver ADR-0105 logo abaixo. **Limite conhecido:** irmãos fora da planilha do lote ficam sem vínculo
+  local (vendas não atribuídas até um lote futuro incluir a cor).
   2498 testes verdes, migration aplicada, 15 functions redeployadas (+1 confirmado).
   Ver [[Índice de ADRs]].
+- **Re-vínculo de família DISSOLVIDA pelo ML em User Products** (ADR-0105) — em produção 2026-08-06.
+  A primeira migração real chegou (lote #45, `PAI 02186551`) e o ML **não converte** o item: ele
+  **fecha** o anúncio Legacy (`status: closed`, `sub_status: []` vazio, sem
+  `family_id`/`family_name`/`parent_item_id`) e cria N itens novos sob um `family_id`, **todos sem
+  `seller_custom_field`** — e **nada** liga o velho ao novo. Logo, o guard de anúncio morto disparava
+  antes de qualquer detecção de UP ("republique o produto") e a busca por SKU do ADR-0104 acharia
+  0 de 17. **Correção:** `status` terminal **sem** `sub_status` de remoção vira `MIGRADO_PARA_UP`
+  (com título, categoria e o mapa `SKU → COR` do item morto); `descobrirFamiliaUP` acha a família por
+  `?q=<título>` (fail-closed: um único `family_id`) e a enumera por `?family_id=`; o casamento é por
+  **`COLOR.value_name`**, com os dois lados vindos do próprio ML — `variacoes.cor` do nosso banco
+  **nunca** entra. A adoção do ADR-0104 é reusada inteira; só a porta `buscarPorSku` muda. A RPC
+  re-aponta `ml_item_id` **e `ml_permalink`** em todas as famílias do `codigo_pai` (§5.1 — todo link
+  "ver anúncio" da UI sai desses campos; sem isso o operador ia parar no anúncio finalizado).
+  **Validado ponta a ponta:** 17 filhos, estoque batendo 1:1 com a API do ML.
+  **Limites:** o push rápido de estoque não re-vincula sozinho (§6) e família **dividida** (split,
+  ADR-0048) também não — falha com a causa certa, porque a forma que o ML dá a um produto dividido
+  ao dissolvê-lo é desconhecida e este ADR decidiu não supor (§7). Ver [[Índice de ADRs]].
 - **Config org-scoped + imposto LOUD + token MP por org** (ADR-0086) — em produção 2026-07-22:
   `configuracoes` virou 1 linha por org (`org_id` PK, `user_id` = auditoria); o imposto por origem
   **falha LOUD** se a org não confirmou as alíquotas (`aliquotas_confirmadas_em`) em vez de aplicar
