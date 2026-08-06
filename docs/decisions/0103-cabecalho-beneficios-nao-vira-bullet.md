@@ -89,3 +89,23 @@ os emojis ainda presentes).
 
 Voltar as duas linhas para `.replace(/[✔✅☑]️?[ \t]*/g, '- ')`. Os dois testes novos falham, que é o
 comportamento esperado da reversão.
+
+## Revisão (2026-08-06) — o cabeçalho precisa de respiro, não só de limpeza
+
+**Sintoma (relatado pelo operador):** a descrição publicada sai "tudo junto, tudo muito confuso".
+Medido no `MLB7345071684`: 31 quebras de linha e **zero** linhas em branco, com cada título de
+seção colado no parágrafo anterior.
+
+**Causa raiz:** o emoji era o **único** separador visual entre as seções — o gerador de copy não
+emite linha em branco entre elas, e é justamente esta função que remove o emoji antes de enviar ao
+ML. Limpar o marcador sem reconstruir a hierarquia deixa o texto sem nenhuma pista de estrutura.
+
+**Decisão:** `sanitizarDescricaoML` passa a processar **linha a linha**. Linha iniciada por emoji
+(exceto os bullets `✔`/`☑`) é tratada como cabeçalho de seção e recebe uma linha em branco antes e
+outra depois; o resto do texto segue como estava. Idempotente — sanitizar duas vezes dá o mesmo
+resultado, o que mantém `resolverDescricaoUpdate` estável.
+
+**Consequência:** no próximo UPDATE de cada família, `resolverDescricaoUpdate` detecta o diff e
+empurra a descrição reformatada — os anúncios antigos se corrigem sozinhos, sem migração.
+Deploy: `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`, `publicar-anuncio`,
+`reconciliar-convergencia-up`.

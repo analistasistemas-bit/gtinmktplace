@@ -161,6 +161,26 @@ describe('sanitizarDescricaoML', () => {
     expect(sanitizarDescricaoML('☑ Item')).toBe('- Item');
   });
 
+  /**
+   * O gerador de copy separa as seções só pelo emoji do cabeçalho, sem linha em branco — e é a
+   * sanitização que remove esse emoji antes de mandar ao ML. Resultado no anúncio publicado
+   * (MLB7345071684, relatado pelo operador em 2026-08-06): 31 quebras de linha e ZERO linhas em
+   * branco, com os títulos de seção colados no parágrafo anterior. O respiro tem que ser
+   * reconstruído aqui, que é onde o marcador visual é perdido.
+   */
+  it('cabeçalho sem linha em branco ao redor ganha respiro', () => {
+    const colada = ['🧵 POMADA REPARADORA', 'Texto de abertura.', '✅ BENEFÍCIOS', '✔ Um', '✔ Dois', '📌 ESPECIFICAÇÕES', '• Marca: Eucerin'].join('\n');
+    expect(sanitizarDescricaoML(colada)).toBe([
+      'POMADA REPARADORA', '', 'Texto de abertura.', '', 'BENEFÍCIOS', '', '- Um', '- Dois', '', 'ESPECIFICAÇÕES', '', '• Marca: Eucerin',
+    ].join('\n'));
+  });
+
+  it('é idempotente: sanitizar duas vezes não muda o espaçamento', () => {
+    const colada = ['🧵 TÍTULO', 'Abertura.', '✅ BENEFÍCIOS', '✔ Um'].join('\n');
+    const uma = sanitizarDescricaoML(colada);
+    expect(sanitizarDescricaoML(uma)).toBe(uma);
+  });
+
   it('descrição legada inteira: cabeçalhos limpos, bullets preservados', () => {
     const legada = ['🧵 FITA DE CETIM', '', '✅ BENEFÍCIOS', '', '✔ Macia', '✔ Durável', '', '📌 ESPECIFICAÇÕES', '', '• Marca: Búfalo'].join('\n');
     expect(sanitizarDescricaoML(legada)).toBe(

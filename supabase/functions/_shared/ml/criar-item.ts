@@ -37,18 +37,40 @@ export async function criarItemML(accessToken: string, payload: PayloadItem): Pr
  * checkmark transformava o título da seção em item de lista ("- BENEFÍCIOS"), enquanto os outros
  * sete cabeçalhos saíam limpos. Medido antes de mudar: `✅` aparece em 295 descrições e SEMPRE
  * como `✅ BENEFÍCIOS` — nunca em posição de bullet. Os bullets do template são `✔ • - ▪`.
+ *
+ * 2026-08-06 — o emoji era o ÚNICO separador visual das seções: o gerador não emite linha em
+ * branco entre elas, e é aqui que o marcador some. No anúncio publicado isso virava um bloco só
+ * (medido no MLB7345071684: 31 quebras de linha, ZERO linhas em branco, títulos colados no
+ * parágrafo anterior). Por isso a sanitização passou a processar linha a linha e reconstruir o
+ * respiro em volta de cada cabeçalho, em vez de só apagar caracteres. Idempotente.
  */
+const RE_BULLET_CHECK = /^[✔☑]️?[ \t]*/;
+const RE_EMOJI = /[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2600}-\u{26FF}\u{2B00}-\u{2BFF}️]/gu;
+
 export function sanitizarDescricaoML(texto: string): string {
-  return texto
-    // Cabeçalho: sai junto com o espaço, como os demais emojis de seção.
-    .replace(/✅️?[ \t]*/g, '')
-    .replace(/[✔☑]️?[ \t]*/g, '- ')
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2600}-\u{26FF}\u{2B00}-\u{2BFF}️]/gu, '')
-    .replace(/[ \t]+$/gm, '')
-    .replace(/^[ \t]+/gm, '')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  const linhas = texto.replace(/\r\n/g, '\n').split('\n');
+  const saida: string[] = [];
+
+  for (const bruta of linhas) {
+    const linha = bruta.trim();
+    const ehBullet = RE_BULLET_CHECK.test(linha);
+    // Emoji no início da linha marca CABEÇALHO de seção no template (🧵 ✅ 📌 🎯 ❓ 🎨 📦 🚚);
+    // os bullets ✔/☑ saem no ramo acima e não contam como título.
+    const ehCabecalho = !ehBullet && RE_EMOJI.test(linha.slice(0, 3)) && linha.length > 0;
+    RE_EMOJI.lastIndex = 0; // regex global: sem isso o teste seguinte começa do índice errado
+
+    const conteudo = (ehBullet ? linha.replace(RE_BULLET_CHECK, '- ') : linha)
+      .replace(RE_EMOJI, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+
+    if (!conteudo) { saida.push(''); continue; }
+    if (ehCabecalho && saida.length > 0 && saida[saida.length - 1] !== '') saida.push('');
+    saida.push(conteudo);
+    if (ehCabecalho) saida.push('');
+  }
+
+  return saida.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /**
