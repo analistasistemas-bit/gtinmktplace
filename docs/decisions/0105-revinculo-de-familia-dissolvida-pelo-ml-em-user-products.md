@@ -188,6 +188,20 @@ rápido roteia pelos filhos UP normalmente. Fica registrado como limite conhecid
   do ADR-0104 §2, inalterado.
 - **CREATE**: nada muda (ADR-0088 §3 já cobre).
 - **Reconciliador administrativo** (`reconciliar-user-products`): segue como está.
+- **Família dividida em vários anúncios (split, ADR-0048)** — o re-vínculo **não** a cobre, e isso é
+  deliberado. Uma família com mais de uma partição roteia para `publicar-split-ml`
+  (`decidir-split.ts:10`), que usa o **mesmo conector** e portanto recebe o mesmo sinal
+  `MIGRADO_PARA_UP` — mas não sabe adotar. Não sabemos que forma o ML dá a um produto dividido ao
+  dissolvê-lo (uma família UP por partição? uma só, fundindo tudo? partições parciais?), e este ADR
+  já decidiu não construir sobre suposição a respeito da forma da migração.
+
+  O que **é** garantido: o split falha com a **mensagem original** do guard de anúncio morto, mais a
+  ressalva de por que não re-vinculou sozinho (`mensagemDissolvidoSemRevinculo` em
+  `_shared/canais/dissolvido-sem-revinculo.ts`). Sem esse guard o operador leria "verificando se foi
+  migrado" — uma verificação que naquele caminho **não acontece** —, o que seria **pior** que o
+  comportamento anterior a este ADR. Quando a primeira família dividida for dissolvida de verdade, a
+  forma real aparece e vira ADR próprio; até lá o caminho é refazer a publicação do produto.
+  Em produção hoje: 3 famílias divididas (`02841240` com 3 partições, `02835002` e `02841290` com 2).
 
 ## Alternativas consideradas
 

@@ -26,6 +26,7 @@ import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { precosDivergentes, precoCentavos } from '../_shared/preco/grupos.ts';
 import { resolverConfigGrupo, agregarAtacadoStatus } from '../_shared/preco/config-grupo.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
+import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem-revinculo.ts';
 
 interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
@@ -351,9 +352,14 @@ Deno.serve(async (req) => {
         });
         if (!res.ok) {
           const e = res.erro!;
-          const err = new Error(e.mensagemOperador) as Error & { status?: number; retentavel?: boolean };
-          err.status = e.status;
-          err.retentavel = e.retentavel;
+          // ADR-0105 §7: o conector é compartilhado e sinaliza anúncio dissolvido pelo ML, mas só o
+          // `update-familia-ml` sabe re-vincular — e para partição única. Aqui o sinal viraria uma
+          // mensagem prometendo verificação que não acontece; devolve a causa real, com a ressalva.
+          const semRevinculo = mensagemDissolvidoSemRevinculo(e);
+          const err = new Error(semRevinculo ?? e.mensagemOperador) as Error & { status?: number; retentavel?: boolean };
+          // 400 definitivo: retentar não ressuscita anúncio dissolvido (ocuparia a fila serial à toa).
+          err.status = semRevinculo ? 400 : e.status;
+          err.retentavel = semRevinculo ? false : e.retentavel;
           throw err;
         }
         const persistidas = new Set<string>();

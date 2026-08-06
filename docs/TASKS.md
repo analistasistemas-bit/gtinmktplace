@@ -138,6 +138,13 @@ primeiro (o operador via "republique o produto") e, mesmo se não disparasse, a 
   e a adoção re-apontava só o `ml_item_id`. A RPC passa a derivar o permalink do filho representante
   e propagá-lo no mesmo escopo; migration `20260806010922` inclui backfill genérico e idempotente do
   que já havia sido adotado. Links de Faturamento não eram afetados (usam o `item_id` do evento).
+- [x] **Split (ADR-0048) não re-vincula — e agora diz isso.** O conector é compartilhado, então
+  `publicar-split-ml` também recebia o sinal `MIGRADO_PARA_UP`, mas não sabe adotar: o operador leria
+  "verificando se foi migrado", verificação que aquele caminho não faz. `mensagemDissolvidoSemRevinculo`
+  devolve a mensagem original do guard + o motivo. Em produção: 3 famílias divididas (`02841240`,
+  `02835002`, `02841290`).
+- [ ] **Quando a 1ª família DIVIDIDA for dissolvida pelo ML:** apurar a forma real (uma família UP por
+  partição? uma só? parcial?) e decidir em ADR próprio. Não construir por suposição.
 - [ ] **Limite observado:** a 18ª cor da família no ML (`Rosa Bebê - 510`, `MLB7218244860`) segue sem
   linha filha — está fora da planilha do lote. É o limite conhecido do ADR-0104 §2, não um defeito.
 
