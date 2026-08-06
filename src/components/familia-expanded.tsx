@@ -33,7 +33,7 @@ import {
 } from '@/hooks/useFamiliaMutations';
 import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Familia, subirCapa3Familia, removerCapa3Familia } from '@/lib/upload-imagens';
 import { setVariacaoExcluida } from '@/lib/publicar';
-import { criticasVariacao, familiaExigeCor } from '@/lib/publicavel';
+import { criticasVariacao, familiaExigeCor, familiaExigeFotoPorVariacao } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
 import { alvosAplicarPreco, exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
@@ -122,6 +122,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [trocandoCapa3, setTrocandoCapa3] = useState(false);
   const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
   const exigeCor = familiaExigeCor(familia);
+  const exigeFoto = familiaExigeFotoPorVariacao(familia);
   // Imposto por origem (ADR-0055): mesma alíquota do card "Análise para publicação"
   // (painel-analise.tsx), para o semáforo por variação não divergir do badge do topo.
   const { data: aliquotas } = useAliquotas();
@@ -386,7 +387,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     // para o operador prepará-la (cor/preço/foto) antes de incluir — não esmaece.
     const corNova = familia.operacao === 'UPDATE' && !v.mlVariationId;
     // Cores com pendência (sem foto/cor/preço) ganham faixa âmbar p/ achar rápido.
-    const criticas = criticasVariacao(v, familia.operacao, { exigeCor });
+    const criticas = criticasVariacao(v, familia.operacao, { exigeCor, exigeFoto });
     return (
       <div
         key={v.codigo}

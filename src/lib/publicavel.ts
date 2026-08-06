@@ -19,19 +19,35 @@ export function casadaNoMl(v: Variacao): boolean {
 // regra para os dois não divergirem.
 function flagsCritica(
   v: Variacao,
-  opts: { exigeCor?: boolean } = {},
+  opts: { exigeCor?: boolean; exigeFoto?: boolean } = {},
 ): { semCor: boolean; semFoto: boolean; semPreco: boolean } {
   const exigeCor = opts.exigeCor ?? true;
+  const exigeFoto = opts.exigeFoto ?? true;
   return {
     semCor: exigeCor && !v.cor,
-    semFoto: !v.fotoPath,
+    semFoto: exigeFoto && !v.fotoPath,
     semPreco: !v.precoPublicacao || v.precoPublicacao <= 0,
   };
 }
 
-export function familiaExigeCor(familia: Familia): boolean {
+// "Produto simples": CREATE de uma variação só, fora do domínio de aviamentos — não há cores
+// para diferenciar, a variação É o produto.
+function familiaProdutoSimples(familia: Familia): boolean {
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
-  return !(familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && incluidas.length === 1);
+  return familia.operacao === 'CREATE' && familia.tipoAviamento === 'outro' && incluidas.length === 1;
+}
+
+export function familiaExigeCor(familia: Familia): boolean {
+  return !familiaProdutoSimples(familia);
+}
+
+// A capa da família lidera a galeria de toda variação na publicação (`capa ?? propria`,
+// _shared/ml/publicar.ts) e é subida ao ML antes do publish (_shared/anuncios/pre-subir-fotos.ts),
+// então produto simples COM capa já sai com foto — exigir foto na variação seria falso-positivo
+// travando a publicação. Sem capa a exigência continua: aí a foto da variação é a única imagem.
+// Com 2+ cores também continua: cada cor precisa da sua, senão todas exibiriam a mesma imagem.
+export function familiaExigeFotoPorVariacao(familia: Familia): boolean {
+  return !(familiaProdutoSimples(familia) && !!familia.capaStoragePath);
 }
 
 // ADR-0078 F2: preços divergentes entre as cores incluídas. Não bloqueia mais — chaveia a UI
@@ -55,7 +71,7 @@ export function familiaPrecosDivergentes(familia: {
 export function criticasVariacao(
   v: Variacao,
   operacao: OperacaoML,
-  opts: { exigeCor?: boolean } = {},
+  opts: { exigeCor?: boolean; exigeFoto?: boolean } = {},
 ): string[] {
   // Estoque 0 fica fora da publicação (dorme até repor) → não exige cor/foto/preço.
   // A cor nova zerada nasce desmarcada (ingest) e só precisa estar completa quando
@@ -111,12 +127,13 @@ export function familiaPublicavel(familia: Familia): ResultadoPublicavel {
   if (!familia.categoriaMlId) motivos.push('Categoria indefinida');
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   const exigeCor = familiaExigeCor(familia);
+  const exigeFoto = familiaExigeFotoPorVariacao(familia);
   if (incluidas.length === 0) {
     motivos.push('Nenhuma cor incluída (ao menos 1 obrigatória)');
   }
   // Estoque 0 fica fora (dorme até repor) → não exige cor/foto/preço por cor.
   for (const v of incluidas.filter((v) => v.estoque > 0)) {
-    const f = flagsCritica(v, { exigeCor });
+    const f = flagsCritica(v, { exigeCor, exigeFoto });
     if (f.semCor) motivos.push(`Cor ${v.codigo} sem cor definida`);
     if (f.semFoto) motivos.push(`Cor ${v.cor || v.codigo} sem foto`);
     if (f.semPreco) motivos.push(`Cor ${v.cor || v.codigo} sem preço de publicação`);

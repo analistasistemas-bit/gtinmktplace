@@ -35,9 +35,17 @@ O domínio central: **Lote → Família (= 1 anúncio) → Variação (= 1 SKU/c
 
 ## Regras de publicabilidade
 
-`src/lib/publicavel.ts` — `familiaPublicavel()`, `criticasVariacao()`, `familiaExigeCor()`.
+`src/lib/publicavel.ts` — `familiaPublicavel()`, `criticasVariacao()`, `familiaExigeCor()`,
+`familiaExigeFotoPorVariacao()`.
 Checagens que liberam/bloqueiam a publicação (foto, cor, preço, categoria). Ver
 [[Publicação Mercado Livre]].
+
+**Produto simples** (CREATE, `tipoAviamento='outro'`, 1 variação incluída): a variação É o
+produto, então não exige cor — e, quando a família tem capa, também não exige foto por
+variação. A capa lidera a galeria de toda variação na publicação
+(`capa ?? propria`, `_shared/ml/publicar.ts`) e é subida ao ML no pre-publish
+(`_shared/anuncios/pre-subir-fotos.ts`), então o anúncio sai com imagem. Sem capa, ou com 2+
+cores, a foto por variação volta a ser obrigatória.
 
 ## Hooks de dados
 
