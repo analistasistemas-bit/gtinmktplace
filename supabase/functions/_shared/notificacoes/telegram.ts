@@ -99,7 +99,6 @@ export interface NovaPerguntaAlerta {
   question_id: number;
   texto: string;
   item_titulo: string | null;
-  item_id: string | null;
 }
 
 export function montarMensagemNovaPergunta(p: NovaPerguntaAlerta): string {
@@ -108,7 +107,9 @@ export function montarMensagemNovaPergunta(p: NovaPerguntaAlerta): string {
     `❓ Nova pergunta${sobre}:`,
     `"${p.texto}"`,
     `Responda pelo PubliAI (menu Faturamento › Perguntas).`,
-    p.item_id ? `https://produto.mercadolivre.com.br/${p.item_id.replace(/^MLB/, 'MLB-')}` : null,
+    // A API do ML não expõe permalink por pergunta, então o link é a caixa do vendedor
+    // (mesma URL do atalho da aba Perguntas). O link do anúncio não ajuda a responder.
+    `https://www.mercadolivre.com.br/perguntas/vendedor`,
   ].filter(Boolean).join('\n');
 }
 

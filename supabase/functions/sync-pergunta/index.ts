@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
 
   if (novaNaoRespondida && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'pergunta_nova', String(row.question_id))) {
     await notificarCategoria(admin, orgId, 'perguntas', montarMensagemNovaPergunta({
-      question_id: row.question_id, texto: row.texto, item_titulo: titulo, item_id: pergunta.item_id ?? null,
+      question_id: row.question_id, texto: row.texto, item_titulo: titulo,
     }));
   }
   await admin.from('ml_webhook_eventos').update({ processado_em: new Date().toISOString() })

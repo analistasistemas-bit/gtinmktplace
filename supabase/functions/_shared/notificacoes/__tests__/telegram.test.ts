@@ -53,12 +53,9 @@ describe('montarMensagemNovaVenda (link ML)', () => {
 });
 
 describe('montarMensagemNovaPergunta (link ML)', () => {
-  it('linka o anúncio quando há item_id', () => {
-    const msg = montarMensagemNovaPergunta({ question_id: 1, texto: 'oi', item_titulo: 'Prod', item_id: 'MLB123' });
-    expect(msg).toContain('https://produto.mercadolivre.com.br/MLB-123');
-  });
-  it('sem item_id não gera link', () => {
-    const msg = montarMensagemNovaPergunta({ question_id: 1, texto: 'oi', item_titulo: 'Prod', item_id: null });
+  it('linka a caixa de perguntas do vendedor, não o anúncio', () => {
+    const msg = montarMensagemNovaPergunta({ question_id: 1, texto: 'oi', item_titulo: 'Prod' });
+    expect(msg).toContain('https://www.mercadolivre.com.br/perguntas/vendedor');
     expect(msg).not.toContain('produto.mercadolivre.com.br');
   });
 });

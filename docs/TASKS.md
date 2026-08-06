@@ -18,6 +18,9 @@ linhas. O ML só entrega o apelido anonimizado (`OLCA4176283`), não o nome civi
   `comprador_id`/`comprador_nick` já salvo.
 - [x] Linhas antigas só ganham o nick no próximo `reconciliar-faturamento`/backfill (o upsert
   repopula), não há migration de backfill.
+- [x] **Notificação do Telegram/sino** — `montarMensagemNovaPergunta` também apontava para o
+  anúncio; passa a linkar a mesma caixa de perguntas. `NovaPerguntaAlerta.item_id` virou órfão e
+  saiu (junto com o campo no caller `sync-pergunta`).
 
 ## Catálogo do ML — item plano destravado e os 3 anúncios da DSA vinculados — 2026-08-06
 

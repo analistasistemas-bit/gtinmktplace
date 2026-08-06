@@ -572,8 +572,8 @@ falha ao ler `organizations` não libera.
   mantém `naoEncontrado`/`naoEncontrada` (200); qualquer outro erro é `transiente` (502, QStash
   re-tenta). Sucesso grava `ultima_sincronizacao_ok_em` e reseta `auth_alerta_em`
   (`registrarSyncOk`/`registrarFalhaAuth` em `_shared/ml/liveness.ts`). As mensagens de venda/
-  pergunta/devolução embutem a URL específica no ML (pedido, anúncio ou reclamação) como última
-  linha do texto — o sino in-app (`notificacoes-bell.tsx`) já faz `linkify()` de qualquer URL
+  pergunta/devolução embutem a URL específica no ML (pedido, caixa de perguntas ou reclamação)
+  como última linha do texto — o sino in-app (`notificacoes-bell.tsx`) já faz `linkify()` de qualquer URL
   crua no texto, então não precisou de coluna estruturada nem mudança de frontend. O refresh de token
   (`POST /oauth/token`, ADR-0012) também é coberto: o ML responde **400** (não 401) quando o
   `refresh_token` foi revogado/expirado; `postToken` (`_shared/ml/token.ts`) faz parse best-effort
