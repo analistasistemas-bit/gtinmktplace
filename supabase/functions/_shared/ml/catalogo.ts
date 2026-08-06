@@ -16,7 +16,8 @@ const API = 'https://api.mercadolibre.com';
 const TIMEOUT_MS = 15000;
 
 export type AcaoCatalogo =
-  | 'optin' | 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente' | 'pula' | 'ficha_divergente';
+  | 'optin' | 'sem_produto' | 'family_diff' | 'nao_elegivel' | 'pendente' | 'pula' | 'ficha_divergente'
+  | 'ja_vinculado';
 
 export interface EligVar {
   id: string | number;
@@ -41,6 +42,10 @@ export interface AtributosFicha {
 /** O que esperamos do NOSSO produto, para confrontar com a ficha. */
 export interface EsperadoProduto {
   lengthM: number | null;
+  /** `UNITS_PER_PACK`/`SALE_FORMAT` declarados pelo nosso item no ML. Ausentes (fitas/linhas, que
+   *  não enviam esses atributos) → a comparação assume 1 unidade avulsa, como antes. */
+  unitsPerPack?: number | null;
+  saleFormat?: string | null;
 }
 
 export interface Equivalencia {
@@ -65,6 +70,25 @@ const RAZAO_MAX = 1.25;
  * RETENTÁVEL — o job de catálogo roda com delay/retry até o ML computar. Distinguir isso de
  * `nao_elegivel` (status explícito do ML) é o que evita marcar opt-in possível como impossível.
  */
+/**
+ * Status de elegibilidade que aceitam o `POST /items/catalog_listings`.
+ *
+ * `CATALOG_PRODUCT_ID_NULL` (+ `buy_box_eligible:false`) é o estado normal de um item plano
+ * recém-publicado: o ML só está dizendo que o item ainda **não tem ficha associada** — que é
+ * exatamente o que o opt-in resolve. Validado com token real em 2026-08-06 (`MLB5001755829` →
+ * ficha `MLB36209242`): o POST foi aceito nesse status e criou o anúncio de catálogo
+ * `MLB7343600804`. Tratar como não-elegível deixava todo item plano fora do catálogo.
+ * A trava `fichaEquivalente` (ADR-0021 pós-incidente) continua valendo antes do POST.
+ */
+export function podeTentarOptin(elig: EligVar | undefined): boolean {
+  if (!elig?.status) return false;
+  if (elig.status === 'READY_FOR_OPTIN') return elig.buy_box_eligible === true;
+  // `PRODUCT_INACTIVE` (reason `parent_product_v0_domain`) idem: validado com token real
+  // (`MLB4982690837` → `MLB7343614472`). Os demais status seguem bloqueados — `FAMILY_DIFF` e
+  // `NOT_ELIGIBLE` são recusas de negócio, não "falta associar a ficha".
+  return elig.status === 'CATALOG_PRODUCT_ID_NULL' || elig.status === 'PRODUCT_INACTIVE';
+}
+
 export function decidirAcaoCatalogo(
   estado: EstadoVariacaoCatalogo,
   elig: EligVar | undefined,
@@ -72,7 +96,10 @@ export function decidirAcaoCatalogo(
 ): AcaoCatalogo {
   if (estado.catalogListingId) return 'pula';
   if (!elig || !elig.status) return 'pendente'; // sem entrada/sem status = ainda computando
-  if (elig.status === 'READY_FOR_OPTIN' && elig.buy_box_eligible === true) {
+  // Já competindo no catálogo (opt-in anterior, nosso ou manual do operador): não é falha de
+  // elegibilidade — só falta o listing id local, resolvido via item_relations pelo orquestrador.
+  if (elig.status === 'ALREADY_OPTED_IN') return 'ja_vinculado';
+  if (podeTentarOptin(elig)) {
     if (!estado.catalogProductId) return 'sem_produto';
     // Trava de equivalência (ADR-0021 pós-incidente): só vincula a ficha equivalente. Quando a
     // avaliação não foi feita (undefined), preserva o comportamento anterior (optin).
@@ -118,11 +145,16 @@ export function parseProdutoCatalogoBusca(json: unknown): AtributosFicha | null 
  * WIDTH não entra (largura vem suja tanto no nosso item quanto nas fichas do ML).
  */
 export function fichaEquivalente(ficha: AtributosFicha, esperado: EsperadoProduto): Equivalencia {
-  if (ficha.unitsPerPack != null && ficha.unitsPerPack > 1) {
-    return { ok: false, motivo: `ficha_kit_${ficha.unitsPerPack}un` };
+  // A comparação é contra o que o NOSSO item declara; sem declaração, assume 1 unidade avulsa
+  // (comportamento original — as fitas/linhas do incidente não enviam esses atributos). Isso
+  // libera o kit legítimo (nosso Duo Pack 2un × ficha Kit/2un) sem afrouxar o caso do incidente.
+  const unidadesNossas = esperado.unitsPerPack ?? 1;
+  if (ficha.unitsPerPack != null && ficha.unitsPerPack > 1 && ficha.unitsPerPack !== unidadesNossas) {
+    return { ok: false, motivo: `ficha_kit_${ficha.unitsPerPack}un_vs_${unidadesNossas}un` };
   }
   const fmt = ficha.saleFormat?.trim().toLowerCase();
-  if (fmt && fmt !== 'unidade') {
+  const fmtNosso = esperado.saleFormat?.trim().toLowerCase() ?? 'unidade';
+  if (fmt && fmt !== 'unidade' && fmt !== fmtNosso) {
     return { ok: false, motivo: `ficha_formato_${fmt}` };
   }
   const a = ficha.lengthM;
@@ -239,8 +271,24 @@ export async function buscarProdutoCatalogoPorGtin(token: string, gtin: string |
 export async function buscarEsperadoDoItem(token: string, itemId: string): Promise<EsperadoProduto> {
   const json = await mlGet(`${API}/items/${itemId}?include_attributes=all`, token);
   const attrs = (json as { attributes?: Array<{ id?: string; value_name?: string }> } | null)?.attributes;
-  const length = attrs?.find((a) => a?.id === 'LENGTH')?.value_name ?? null;
-  return { lengthM: normalizarComprimentoMetros(length) };
+  const attr = (id: string) => attrs?.find((a) => a?.id === id)?.value_name ?? null;
+  const units = attr('UNITS_PER_PACK');
+  const unitsNum = units != null ? Number(units) : null;
+  return {
+    lengthM: normalizarComprimentoMetros(attr('LENGTH')),
+    unitsPerPack: unitsNum != null && Number.isFinite(unitsNum) ? unitsNum : null,
+    saleFormat: attr('SALE_FORMAT'),
+  };
+}
+
+/**
+ * Anúncio de catálogo já relacionado a este item (`item_relations`), usado quando a elegibilidade
+ * volta `ALREADY_OPTED_IN` e o listing id não está persistido localmente. null se não houver.
+ */
+export async function buscarCatalogListingRelacionado(token: string, itemId: string): Promise<string | null> {
+  const json = await mlGet(`${API}/items/${itemId}?attributes=id,item_relations`, token);
+  const rel = (json as { item_relations?: Array<{ id?: string }> } | null)?.item_relations?.[0]?.id;
+  return typeof rel === 'string' ? rel : null;
 }
 
 export async function buscarElegibilidadeCatalogo(token: string, itemId: string): Promise<Map<string, EligVar>> {
@@ -391,7 +439,7 @@ export async function vincularVariacoesCatalogo(
       if (!v.ml_variation_id) { resumo.sem_variation_id++; await setVar(v.id, { catalog_status: 'nao_elegivel' }); continue; }
 
       const e = elig.get(String(v.ml_variation_id));
-      const ready = e?.status === 'READY_FOR_OPTIN' && e?.buy_box_eligible === true;
+      const ready = podeTentarOptin(e);
 
       // Re-busca a ficha por GTIN quando elegível para ter os atributos atuais (kit/metragem) —
       // o opt-in não pode confiar só no catalog_product_id salvo, que pode ser de uma ficha-kit.
@@ -415,6 +463,13 @@ export async function vincularVariacoesCatalogo(
           resumo.vinculado++;
           await setVar(v.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
         }
+      } else if (acao === 'ja_vinculado') {
+        resumo.vinculado++;
+        await setVar(v.id, {
+          catalog_status: 'vinculado',
+          catalog_listing_id: await buscarCatalogListingRelacionado(token, itemId),
+          catalog_erro: null,
+        });
       } else if (acao === 'ficha_divergente') {
         resumo.ficha_divergente++;
         await setVar(v.id, { catalog_status: 'ficha_divergente', catalog_erro: (equivalencia?.motivo ?? 'ficha nao equivalente').slice(0, 300) });
@@ -478,7 +533,7 @@ export async function vincularItensCatalogoUP(
       if (!f.item_externo_id) { resumo.pendente++; continue; }
 
       const elig = await buscarElegibilidadeItem(token, f.item_externo_id);
-      const ready = elig?.status === 'READY_FOR_OPTIN' && elig?.buy_box_eligible === true;
+      const ready = podeTentarOptin(elig);
 
       let cpid = f.catalog_product_id;
       let equivalencia: Equivalencia | undefined;
@@ -507,6 +562,13 @@ export async function vincularItensCatalogoUP(
           await setItem(f.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
           resumo.vinculado++;
         }
+      } else if (acao === 'ja_vinculado') {
+        await setItem(f.id, {
+          catalog_status: 'vinculado',
+          catalog_listing_id: await buscarCatalogListingRelacionado(token, f.item_externo_id),
+          catalog_erro: null,
+        });
+        resumo.vinculado++;
       } else if (acao === 'ficha_divergente') {
         await setItem(f.id, { catalog_status: 'ficha_divergente', catalog_erro: (equivalencia?.motivo ?? 'ficha nao equivalente').slice(0, 300) });
         resumo.ficha_divergente++;

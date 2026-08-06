@@ -181,3 +181,34 @@ por transitoriedade. Como a ficha só é buscada quando a variação está `READ
 (`vincularItensCatalogoUP`) nem no multi-variação. As linhas já presas em `pendente` **não se
 resolvem sozinhas** (o QStash já desistiu): exigem re-enfileiramento de `vincular-catalogo`.
 Deploy obrigatório: `vincular-catalogo` (muda `_shared/ml/catalogo.ts`).
+
+### Validação com token real (2026-08-06, conta $ANALISTA$ / org DSA) — a trava de elegibilidade era conservadora demais
+
+Destravado o parse, os 3 anúncios da DSA revelaram que **`READY_FOR_OPTIN` não é o único status que
+aceita o opt-in**. Medido item a item, com a resposta do ML:
+
+| Item | `status` da elegibilidade | `POST /items/catalog_listings` |
+|---|---|---|
+| `MLB5001755829` (Principia) | `CATALOG_PRODUCT_ID_NULL` / `item_catalog_product_id_null` | **aceito** → `MLB7343600804` |
+| `MLB4982690837` (Eucerin Sun) | `PRODUCT_INACTIVE` / `parent_product_v0_domain` | **aceito** → `MLB7343614472` |
+
+`buy_box_eligible` vinha `false` nos dois: esse campo responde "já ganharia a buy box?", não "pode
+competir?". Também foi descartado o caminho alternativo — `PUT /items/{id}` com `catalog_product_id`
+devolve `catalog_product_id.not_modificable` (400) em item ativo com vendas; o opt-in é a única via.
+
+**Decisão adicional:**
+
+3. `podeTentarOptin(elig)` concentra a regra: `READY_FOR_OPTIN` (exigindo `buy_box_eligible`),
+   `CATALOG_PRODUCT_ID_NULL` e `PRODUCT_INACTIVE` liberam o POST. `FAMILY_DIFF` e `NOT_ELIGIBLE`
+   continuam bloqueados — são recusas de negócio, não "falta associar a ficha". A proteção real
+   contra vincular à ficha errada continua sendo `fichaEquivalente`, avaliada antes de todo POST.
+4. `ALREADY_OPTED_IN` (reason `item_has_item_relations`) vira a ação `ja_vinculado`: persiste
+   `vinculado` com o listing id lido de `GET /items/{id}?attributes=item_relations`, em vez de
+   contar como `nao_elegivel` — que gerava backoff inútil e alerta de no-match falso num item que
+   já está competindo.
+5. **Trava anti-kit passa a comparar com o nosso item, não com "1 unidade" fixo.** O
+   "Aquaphor Duo Pack 2 Unidades" (GTIN `4005800220012`) tem ficha `SALE_FORMAT=Kit`/
+   `UNITS_PER_PACK=2` — idêntica ao item, que declara Kit/2 — e era reprovada como se fosse a
+   ficha-kit errada do incidente de 2026-06-15. `buscarEsperadoDoItem` passa a ler `UNITS_PER_PACK`
+   e `SALE_FORMAT` do nosso item; a ficha só reprova quando **diverge** do declarado. Item sem esses
+   atributos (as fitas/linhas do incidente) mantém o comportamento antigo: qualquer ficha-kit reprova.
