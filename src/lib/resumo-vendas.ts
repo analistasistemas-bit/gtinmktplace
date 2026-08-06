@@ -2,6 +2,7 @@
 // `buscarVendas`. Os três menus — Publicados, Faturamento e Financeiro — derivam seus KPIs daqui,
 // então mostram exatamente o mesmo número para o mesmo período. Pura e testável (sem rede).
 import type { Venda, VendaItem } from './faturamento';
+import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import { round2 } from './formato';
 
 /**
@@ -135,6 +136,7 @@ function descricaoVenda(v: Venda): string | null {
 export function calcularResumo(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
   agoraMs: number = Date.now(), aliquotaResolver?: AliquotaResolver,
+  canonico?: MapaCanonico,
 ): ResumoVendas {
   const liqRateado = ratearLiquidoPorFrete(vendas, pesoResolver);
   let bruto = 0, liquido = 0, estornos = 0, unidades = 0;
@@ -164,10 +166,13 @@ export function calcularResumo(
     for (const it of v.itens) {
       unidades += it.quantity;
       if (it.ml_item_id) {
-        const acc = porItem[it.ml_item_id] ?? { unidades: 0, valor: 0 };
+        // Venda por catálogo chega com o MLB do anúncio de catálogo: soma na linha do anúncio
+        // dono, senão some da tela Publicados (que lista só o MLB próprio). Ver anuncio-canonico.ts.
+        const chave = canonizarItem(it.ml_item_id, canonico);
+        const acc = porItem[chave] ?? { unidades: 0, valor: 0 };
         acc.unidades += it.quantity;
         acc.valor += it.unit_price * it.quantity;
-        porItem[it.ml_item_id] = acc;
+        porItem[chave] = acc;
       }
     }
 

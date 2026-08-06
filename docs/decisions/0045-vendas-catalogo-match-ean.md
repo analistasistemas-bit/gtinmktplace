@@ -43,6 +43,26 @@ GTIN é semanticamente correto e não gera falso positivo entre produtos diferen
   atribuição cruzada entre produtos diferentes. Códigos placeholder `3000…` (não-EAN) não
   aparecem em itens de catálogo do ML e, portanto, jamais geram falso match.
 
+## Extensão client-side (2026-08-06)
+
+A reclassificação acima roda no `metricas-vendas` e resolve o balde "app vs. externo". Ela **não**
+alcança os agregadores que o frontend monta direto de `ml_vendas` — `topProdutos` (ranking do
+Dashboard), `calcularResumo.porItem` (vendas por anúncio em Publicados) e `montarDetalheVendas`
+(Faturamento › Detalhe). Esses agrupam por `ml_item_id` cru, então a venda que entra pelo anúncio
+de catálogo (MLB próprio, criado pela vinculação do ADR-0021) vira uma **segunda linha, com o
+título padronizado do ML** — "outro produto" no ranking — e some da linha do anúncio original em
+Publicados, que lista só o MLB próprio.
+
+`src/lib/anuncio-canonico.ts` fecha isso com o mesmo semântico, mas por **vínculo explícito** em
+vez de GTIN: `variacoes.catalog_listing_id` → `familias.ml_item_id` (modelo legado) e
+`anuncios_externos_itens.catalog_listing_id` → `item_externo_id` (User Products, ADR-0088). Os três
+agregadores canonizam a chave antes de somar; o título exibido é sempre o do anúncio dono. Sem
+mapa (carga inicial ou erro na leitura) o comportamento é o anterior — degradação segura.
+
+Por que o vínculo e não o GTIN aqui: código/GTIN também são compartilhados por anúncios
+legitimamente distintos — split por faixa de preço (ADR-0078/0048) e kit x unidade (ADR-0071) —
+e fundi-los seria errado. O `catalog_listing_id` só existe para o anúncio de catálogo.
+
 ## Alternativas descartadas
 
 - **Match por `seller_custom_field`/`seller_sku`**: nem sempre presente em venda de catálogo;

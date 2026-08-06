@@ -27,6 +27,23 @@ describe('topProdutos', () => {
     expect(top.map((p) => p.mlItemId)).toEqual(['N', 'M']);
     expect(top[1]).toMatchObject({ titulo: 'Linha', unidades: 2, valor: 20 });
   });
+
+  it('funde a venda do anúncio de catálogo no anúncio dono, com o título do original', () => {
+    const top = topProdutos([
+      venda({ itens: [item({ ml_item_id: 'MEU', titulo: 'Protetor Eucerin', quantity: 3, unit_price: 100 })] }),
+      venda({ itens: [item({ ml_item_id: 'CAT', titulo: 'Eucerin (título do catálogo)', quantity: 2, unit_price: 100 })] }),
+    ], 5, { CAT: 'MEU' });
+    expect(top).toHaveLength(1);
+    expect(top[0]).toMatchObject({ mlItemId: 'MEU', titulo: 'Protetor Eucerin', unidades: 5, valor: 500 });
+  });
+
+  it('sem mapa, mantém as duas linhas separadas (comportamento anterior)', () => {
+    const top = topProdutos([
+      venda({ itens: [item({ ml_item_id: 'MEU', quantity: 3, unit_price: 100 })] }),
+      venda({ itens: [item({ ml_item_id: 'CAT', quantity: 2, unit_price: 100 })] }),
+    ]);
+    expect(top).toHaveLength(2);
+  });
 });
 
 describe('vendasPorUf', () => {

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useVendas } from './useVendas';
 import { useCustos } from './useCustos';
+import { useAnuncioCanonico } from './useAnuncioCanonico';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { calcularResumo, type ResumoVendas } from '@/lib/resumo-vendas';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
@@ -21,6 +22,9 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
   const vendasQ = useVendas(janela, 'todos', canal);
   const custosQ = useCustos();
   const aliquotasQ = useAliquotas();
+  // Vendas por catálogo somam no anúncio dono (ADR-0021/0045): sem o mapa, as unidades vendidas
+  // pelo anúncio de catálogo somem da linha do produto em Publicados.
+  const canonicoQ = useAnuncioCanonico();
   // Default 8/16 só cobre o loading inicial (data ainda undefined, sem erro). Em erro real de
   // aliquotasQ, `data` fica undefined (1ª carga) ou mantém o último valor bom (TanStack Query não
   // limpa data em refetch com erro) — nos dois casos NÃO aproximamos com 8/16: sem config
@@ -37,8 +41,9 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
       montarPesoResolver(custosQ.data),
       undefined,
       montarAliquotaResolver(custosQ.data, aliquotas),
+      canonicoQ.data,
     ),
-    [vendasQ.data, custosQ.data, aliquotas],
+    [vendasQ.data, custosQ.data, aliquotas, canonicoQ.data],
   );
   return {
     resumo,

@@ -1,5 +1,6 @@
 import type { Venda } from './faturamento';
 import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
+import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import { round2 } from './formato';
 
 export interface LinhaVenda {
@@ -62,6 +63,8 @@ interface Grupo {
   custo: number;
   temCusto: boolean;
   titulo: string | null;
+  /** Título do anúncio dono (o original), preferido quando a linha funde vendas de catálogo. */
+  tituloDono: string | null;
   codigo: string | null;
   ean: string | null;
   publiai: boolean;
@@ -129,7 +132,7 @@ function secao(grupos: Grupo[], linhas: LinhaVenda[], total: number): SecaoVenda
  */
 export function montarDetalheVendas(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
-  aliquotaResolver?: AliquotaResolver,
+  aliquotaResolver?: AliquotaResolver, canonico?: MapaCanonico,
 ): DetalheVendas {
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
   const liquidoPedido = (v: Venda) => rateio.get(v.id)?.liquido ?? v.liquido ?? 0;
@@ -160,9 +163,11 @@ export function montarDetalheVendas(
     const liqPack = round2(liquidoPorPack.get(pk) ?? 0);
     const valorPack = valorItensPorPack.get(pk) ?? 0;
     for (const it of v.itens) {
-      const key = it.ml_item_id ?? it.id;
+      // Venda por catálogo entra com o MLB do anúncio de catálogo: funde na linha do anúncio dono
+      // para o produto não aparecer duas vezes no detalhe (ver anuncio-canonico.ts).
+      const key = it.ml_item_id ? canonizarItem(it.ml_item_id, canonico) : it.id;
       const g = grupos.get(key)
-        ?? { unidades: 0, valor: 0, liquido: 0, comissao: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, codigo: null, ean: null, publiai: it.is_publiai };
+        ?? { unidades: 0, valor: 0, liquido: 0, comissao: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, tituloDono: null, codigo: null, ean: null, publiai: it.is_publiai };
       const valorItem = it.unit_price * it.quantity;
       g.unidades += it.quantity;
       g.valor += valorItem;
@@ -175,6 +180,7 @@ export function montarDetalheVendas(
       const custoUnit = custoResolver?.(it) ?? null;
       if (custoUnit != null && custoUnit > 0) { g.custo += custoUnit * it.quantity; g.temCusto = true; }
       g.titulo ??= it.titulo;
+      if (it.ml_item_id === key) g.tituloDono ??= it.titulo;
       g.codigo ??= it.codigo;
       g.ean ??= it.ean;
       grupos.set(key, g);
@@ -191,7 +197,7 @@ export function montarDetalheVendas(
     const { lucro, markup } = lucroMarkup(g.liquido, g.imposto, g.custo, g.temCusto);
     const linha: LinhaVenda = {
       id,
-      titulo: g.titulo ?? id,
+      titulo: g.tituloDono ?? g.titulo ?? id,
       // Itens fora do PubliAI não têm código/EAN do catálogo do app.
       codigo: g.publiai ? g.codigo : null,
       ean: g.publiai ? g.ean : null,

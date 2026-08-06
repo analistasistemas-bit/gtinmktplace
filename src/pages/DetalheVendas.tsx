@@ -17,6 +17,7 @@ import { periodoFromParams, resolverJanela, periodoToParams, type Periodo } from
 import { montarDetalheVendas, type LinhaVenda, type SecaoVendas, type Taxas } from '@/lib/detalhe-vendas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
+import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useSessionState } from '@/hooks/useSessionState';
 import { urlAnuncioML } from '@/lib/ml-status';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
@@ -306,14 +307,16 @@ export default function DetalheVendas() {
   const { data: vendas = [], isFetching, refetch, isError } = useVendas(janela, 'todos');
   const { data: custos } = useCustos();
   const { data: aliquotas } = useAliquotas();
+  const { data: canonico } = useAnuncioCanonico();
   const detalhe = useMemo(
     () => montarDetalheVendas(
       vendas,
       montarCustoResolver(custos),
       montarPesoResolver(custos),
       montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      canonico,
     ),
-    [vendas, custos, aliquotas],
+    [vendas, custos, aliquotas, canonico],
   );
 
   return (

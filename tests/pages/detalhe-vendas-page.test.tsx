@@ -28,6 +28,10 @@ vi.mock('@/hooks/useCustos', () => ({
   useCustos: () => ({ data: undefined }),
 }));
 
+vi.mock('@/hooks/useAnuncioCanonico', () => ({
+  useAnuncioCanonico: () => ({ data: undefined }),
+}));
+
 // A página lê alíquotas p/ descontar imposto no markup/lucro (ADR-0055) — mock com o default.
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 8, importado: 16 } }),

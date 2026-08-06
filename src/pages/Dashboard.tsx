@@ -26,6 +26,7 @@ import { CanalBadge } from '@/components/canal-badge';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import type { CanalAtivo } from '@/lib/canal-ativo';
 import { useCustos } from '@/hooks/useCustos';
+import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useLotes } from '@/hooks/useLotes';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
@@ -108,6 +109,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const vendasRawAnt = useVendas(janelaAnt, 'todos', canalAtivo); // idem (já buscado pelo rAnt) → delta por pacote
   const { data: custos } = useCustos();
   const { data: aliquotas } = useAliquotas();
+  const { data: canonico } = useAnuncioCanonico(); // mesma chave do useResumoVendas → sem request extra
   const { data: mostrarLucro } = useMostrarLucroDashboard();
   const carregando = vendasRaw.isPending;
 
@@ -176,7 +178,7 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
     )),
     [vendasRawAnt.data, custos, aliquotas],
   );
-  const top = useMemo(() => topProdutos(vendasRaw.data ?? [], 5), [vendasRaw.data]);
+  const top = useMemo(() => topProdutos(vendasRaw.data ?? [], 5, canonico), [vendasRaw.data, canonico]);
   // Mesma agregação por UF do menu Faturamento › Geografia (pedidos + valor no nível de pacote).
   const geoUf = useMemo(() => agruparPorGeografia(pedidos), [pedidos]);
   const uf = useMemo(

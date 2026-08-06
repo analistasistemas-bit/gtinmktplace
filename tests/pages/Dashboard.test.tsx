@@ -75,6 +75,9 @@ vi.mock('@/hooks/useCustos', () => ({
     },
   }),
 }));
+vi.mock('@/hooks/useAnuncioCanonico', () => ({
+  useAnuncioCanonico: () => ({ data: undefined }),
+}));
 const useMostrarLucroDashboardMock = vi.fn();
 
 vi.mock('@/hooks/useConfiguracoes', () => ({

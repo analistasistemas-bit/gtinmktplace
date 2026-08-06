@@ -5,6 +5,7 @@
 import type { Venda } from './faturamento';
 import type { VendaResumo } from './resumo-vendas';
 import { ehFaturavel } from './resumo-vendas';
+import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import { round2 } from './formato';
 
 export interface ProdutoTop {
@@ -14,22 +15,26 @@ export interface ProdutoTop {
   valor: number;
 }
 
-/** Top N anúncios por valor vendido (bruto) no período, das vendas faturáveis. */
-export function topProdutos(vendas: Venda[], n = 5): ProdutoTop[] {
-  const m = new Map<string, { titulo: string; unidades: number; valor: number }>();
+/** Top N anúncios por valor vendido (bruto) no período, das vendas faturáveis.
+ *  `canonico` funde a venda que entrou pelo anúncio de catálogo no anúncio dono (ver
+ *  `anuncio-canonico.ts`) — o título exibido é sempre o do anúncio original. */
+export function topProdutos(vendas: Venda[], n = 5, canonico?: MapaCanonico): ProdutoTop[] {
+  const m = new Map<string, { titulo: string; tituloDono: string | null; unidades: number; valor: number }>();
   for (const v of vendas) {
     if (!ehFaturavel(v.status)) continue;
     for (const it of v.itens) {
       if (!it.ml_item_id) continue;
-      const acc = m.get(it.ml_item_id) ?? { titulo: it.titulo ?? it.ml_item_id, unidades: 0, valor: 0 };
-      if ((!acc.titulo || acc.titulo === it.ml_item_id) && it.titulo) acc.titulo = it.titulo;
+      const chave = canonizarItem(it.ml_item_id, canonico);
+      const acc = m.get(chave) ?? { titulo: it.titulo ?? chave, tituloDono: null, unidades: 0, valor: 0 };
+      if ((!acc.titulo || acc.titulo === chave) && it.titulo) acc.titulo = it.titulo;
+      if (it.ml_item_id === chave && it.titulo) acc.tituloDono ??= it.titulo;
       acc.unidades += it.quantity;
       acc.valor += it.unit_price * it.quantity;
-      m.set(it.ml_item_id, acc);
+      m.set(chave, acc);
     }
   }
   return [...m.entries()]
-    .map(([mlItemId, a]) => ({ mlItemId, titulo: a.titulo, unidades: a.unidades, valor: round2(a.valor) }))
+    .map(([mlItemId, a]) => ({ mlItemId, titulo: a.tituloDono ?? a.titulo, unidades: a.unidades, valor: round2(a.valor) }))
     .sort((a, b) => b.valor - a.valor)
     .slice(0, n);
 }
