@@ -51,6 +51,13 @@ tendo concorrentes. Diagnóstico: **32 de 32** variações de item plano estavam
   `titulo_ml`, `descricao_ml`/`descricao_pai` e atributos (`UNIT_WEIGHT = 9 g` + `UNITS_PER_PACK
   = 2`, `SALE_FORMAT = Kit`), com os campos marcados como editados pelo operador. Republicado como
   `MLB7345071684`. **Falta corrigir a planilha de origem**, senão o re-ingest reintroduz "10 ml".
+- [x] **Descrição saía "tudo junto" no ML** — o gerador separa as seções só pelo emoji do cabeçalho
+  e `sanitizarDescricaoML` remove esses emojis antes do envio (o ML os rejeita), deixando o texto
+  sem separador nenhum (medido: 31 quebras de linha, zero linhas em branco). A sanitização passa a
+  reconstruir a linha em branco em volta de cada cabeçalho, de forma idempotente — os anúncios
+  antigos se corrigem no próximo UPDATE, sem migração. ADR-0103 (revisão 2026-08-06). Deploy:
+  `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml`, `publicar-anuncio`,
+  `reconciliar-convergencia-up`.
 - [ ] **Pendente com o ML (ação humana):** apresentar a NF-e em `MLB7345071684` e `MLB7343614472`
   (`pending_documentation` — exigência de marca recorrente da Eucerin nesta conta, registrada em
   `ml_moderacao` desde 02/08, antes de qualquer mexida). Agora a nota corresponde ao anúncio.

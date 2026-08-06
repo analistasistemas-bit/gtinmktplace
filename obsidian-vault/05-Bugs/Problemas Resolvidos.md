@@ -10,6 +10,18 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Descrição publicada saía "tudo junto" no ML (2026-08-06)** — Diego relatou a descrição do
+  anúncio ilegível, com os títulos de seção colados no parágrafo anterior. Causa raiz no nosso
+  lado: o gerador de copy separa as seções **apenas pelo emoji** do cabeçalho (`📌 ESPECIFICAÇÕES`),
+  sem linha em branco, e `sanitizarDescricaoML` (`_shared/ml/criar-item.ts`) remove esses emojis
+  antes do envio porque o ML os rejeita — sobrava texto sem separador algum (medido no
+  `MLB7345071684`: 31 quebras de linha e **zero** linhas em branco). **Fix:** a sanitização passou a
+  processar linha a linha e reconstruir uma linha em branco antes e depois de cada cabeçalho
+  (linha iniciada por emoji que não seja bullet `✔`/`☑`), de forma idempotente. Como
+  `resolverDescricaoUpdate` compara o texto sanitizado com o publicado, **os anúncios antigos se
+  corrigem sozinhos no próximo UPDATE**, sem migração. 2.585 testes verdes. Ver [[Índice de ADRs]]
+  (ADR-0103, revisão 2026-08-06), [[Edge Functions]].
+
 - **Item plano nunca vinculava ao catálogo do ML (2026-08-06)** — Diego reportou que o produto do
   lote 10 da DSA (`MLB5001755829`, "Principia Gel De Limpeza Facial 350g") não se associou ao
   catálogo mesmo com concorrentes. Causa raiz: o **item plano** (ADR-0084 — categoria que exige
