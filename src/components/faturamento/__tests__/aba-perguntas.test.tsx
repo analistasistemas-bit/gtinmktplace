@@ -16,10 +16,16 @@ vi.mock('@/hooks/usePerguntas', () => ({
 vi.mock('@/components/export/botao-exportar', () => ({ BotaoExportar: () => null }));
 
 describe('AbaPerguntas', () => {
-  it('expõe o link do anúncio com nome acessível', () => {
+  it('aponta o atalho para as perguntas no ML, não para o anúncio', () => {
     render(<QueryClientProvider client={new QueryClient()}><AbaPerguntas /></QueryClientProvider>);
 
-    expect(screen.getByRole('link', { name: 'Abrir anúncio no Mercado Livre' }))
-      .toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-123');
+    expect(screen.getByRole('link', { name: 'Abrir perguntas no Mercado Livre' }))
+      .toHaveAttribute('href', 'https://www.mercadolivre.com.br/perguntas/vendedor');
+  });
+
+  it('mostra o nick de quem perguntou', () => {
+    render(<QueryClientProvider client={new QueryClient()}><AbaPerguntas /></QueryClientProvider>);
+
+    expect(screen.getByText('· MARIA_01')).toBeInTheDocument();
   });
 });

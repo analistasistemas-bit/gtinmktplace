@@ -544,7 +544,13 @@ falha ao ler `organizations` não libera.
   antiga e nunca processada, >2min — job perdido), o webhook reenfileira mesmo em conflito de
   dedup (`deveReenfileirarMensagens`, plan 035).
 - **sync-venda / sync-pergunta / sync-devolucao** *(workers)* — buscam o recurso no ML e fazem
-  upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. `sync-venda` também
+  upsert em `ml_vendas`/`ml_perguntas`/`ml_devolucoes`; alertam Telegram. **Comprador da pergunta
+  (2026-08-06):** a API v4 devolve `from: { id }` **sem `nickname`** (tanto em `/questions/{id}`
+  quanto em `/questions/search`; o campo `from` some por completo se o token não for o do vendedor
+  dono). `upsertPergunta` recebe o token e resolve o nome via `GET /users/{id}`
+  (`buscarNickname`, cache por invocação); `preservarComprador` é a rede defensiva para um payload
+  sem `from` não apagar o comprador já gravado. O ML devolve o apelido anonimizado (`OLCA4176283`),
+  não o nome civil — pergunta não tem pedido associado. `sync-venda` também
   envia mensagem automática ao comprador na primeira transição para `paid` (ML Messages API).
   **Baixa de estoque (ADR-0094, Bloco A):** sempre que `pedido.status === 'paid'` (nunca o gancho
   one-shot `novaPaga` — a idempotência vem do ledger, então o retry do QStash retoma uma baixa que

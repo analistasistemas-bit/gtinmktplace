@@ -1,6 +1,6 @@
 // IO de perguntas (ADR-0037): chamadas à API do ML e persistência. Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPergunta, type PerguntaML } from './pergunta.ts';
+import { mapearPergunta, preservarComprador, type PerguntaML } from './pergunta.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -59,16 +59,39 @@ export async function responderAnswer(token: string, questionId: number, text: s
   if (!resp.ok) throw new Error(`ML /answers ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
 }
 
+/**
+ * Nickname de quem perguntou. O ML v4 parou de mandar `from.nickname` (só o `id`), então o nome
+ * só sai de `GET /users/{id}`. Cache por invocação: o mesmo comprador repete entre perguntas.
+ */
+const nicksCache = new Map<number, string | null>();
+
+export async function buscarNickname(token: string, userId: number): Promise<string | null> {
+  const emCache = nicksCache.get(userId);
+  if (emCache !== undefined) return emCache;
+  let nick: string | null = null;
+  try {
+    const resp = await fetch(`${API}/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (resp.ok) nick = (await resp.json())?.nickname?.trim() || null;
+  } catch { /* nome é enfeite: pergunta sem nick continua utilizável */ }
+  nicksCache.set(userId, nick);
+  return nick;
+}
+
 /** Upsert de uma pergunta. Retorna se virou "nova não respondida" (para alerta). */
 export async function upsertPergunta(
   admin: SupabaseClient, userId: string, orgId: string | null, q: PerguntaML, itemTitulo: string | null,
+  token?: string,
 ): Promise<{ novaNaoRespondida: boolean; row: ReturnType<typeof mapearPergunta> }> {
   const row = mapearPergunta(q);
   const { data: anterior } = await admin.from('ml_perguntas')
-    .select('status').eq('user_id', userId).eq('question_id', row.question_id).maybeSingle();
+    .select('status, comprador_id, comprador_nick').eq('user_id', userId).eq('question_id', row.question_id).maybeSingle();
   const eraConhecida = !!anterior;
+  const comprador = preservarComprador(row, anterior);
+  if (!comprador.comprador_nick && comprador.comprador_id && token) {
+    comprador.comprador_nick = await buscarNickname(token, comprador.comprador_id);
+  }
   await admin.from('ml_perguntas').upsert({
-    user_id: userId, org_id: orgId, ...row, item_titulo: itemTitulo,
+    user_id: userId, org_id: orgId, ...row, ...comprador, item_titulo: itemTitulo,
     raw: q as unknown as Record<string, unknown>, atualizado_em: new Date().toISOString(),
   }, { onConflict: 'user_id,question_id' });
   const novaNaoRespondida = !eraConhecida && row.status === 'UNANSWERED';

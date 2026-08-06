@@ -4,7 +4,7 @@ import { Sparkles, Send, MessageCircleQuestion, ExternalLink } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { useListaPerguntas } from '@/hooks/usePerguntas';
 import { responderPergunta, sugerirResposta, type Pergunta } from '@/lib/perguntas';
-import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
+import { fmtDataCurta, URL_PERGUNTAS_ML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -43,15 +43,13 @@ function CardPergunta({ p }: { p: Pergunta }) {
     } finally { setEnviando(false); }
   }
 
-  const urlItem = p.item_id ? urlAnuncioML(p.item_id) : null;
-
   return (
     <div className={cn('rounded-lg border bg-card p-4', !respondida && 'border-warning/40')}>
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="truncate">{p.item_titulo ?? p.item_id ?? '—'}</span>
-            {urlItem && <a href={urlItem} target="_blank" rel="noreferrer" aria-label="Abrir anúncio no Mercado Livre" className="text-info hover:underline"><ExternalLink className="h-3 w-3" /></a>}
+            <a href={URL_PERGUNTAS_ML} target="_blank" rel="noreferrer" aria-label="Abrir perguntas no Mercado Livre" className="text-info hover:underline"><ExternalLink className="h-3 w-3" /></a>
             <span>· {p.comprador_nick?.trim() || 'Comprador'}</span>
             <span>· {fmtDataCurta(p.criada_em)}</span>
           </div>

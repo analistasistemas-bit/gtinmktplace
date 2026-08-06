@@ -43,6 +43,21 @@ export function mapearPergunta(q: PerguntaML): PerguntaRow {
   };
 }
 
+/**
+ * O ML v4 devolve `from: { id }` sem `nickname` (verificado em 2026-08-06 com o token do vendedor
+ * dono, em `/questions/{id}` e `/questions/search`) — e o campo some quando quem consulta não é o
+ * vendedor. Rede defensiva: payload sem `from` não pode apagar o comprador já gravado.
+ */
+export function preservarComprador(
+  row: Pick<PerguntaRow, 'comprador_id' | 'comprador_nick'>,
+  anterior: { comprador_id?: number | null; comprador_nick?: string | null } | null | undefined,
+): { comprador_id: number | null; comprador_nick: string | null } {
+  return {
+    comprador_id: row.comprador_id ?? anterior?.comprador_id ?? null,
+    comprador_nick: row.comprador_nick ?? anterior?.comprador_nick ?? null,
+  };
+}
+
 /** true quando a pergunta está sem resposta (gera badge/alerta). */
 export function naoRespondida(status: string | null | undefined): boolean {
   return status === 'UNANSWERED';

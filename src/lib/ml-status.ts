@@ -61,3 +61,9 @@ export function fmtDataCurta(iso: string | null | undefined): string {
 export function urlAnuncioML(mlItemId: string): string {
   return `https://produto.mercadolivre.com.br/${mlItemId.replace(/^MLB/, 'MLB-')}`;
 }
+
+/**
+ * Caixa de perguntas do vendedor no ML. A API não devolve permalink por pergunta
+ * (`/questions/{id}` v4 não tem esse campo), então o atalho abre a lista logada.
+ */
+export const URL_PERGUNTAS_ML = 'https://www.mercadolivre.com.br/perguntas/vendedor';

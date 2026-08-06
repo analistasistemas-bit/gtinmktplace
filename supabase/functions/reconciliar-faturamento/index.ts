@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
         await Promise.all(lote.map(async (q) => {
           try {
             const itemId = q.item_id ?? null;
-            await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
+            await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null, token);
           } catch { /* segue */ }
         }));
       }

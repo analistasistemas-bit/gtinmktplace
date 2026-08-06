@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapearPergunta, naoRespondida } from '../pergunta';
+import { mapearPergunta, naoRespondida, preservarComprador } from '../pergunta';
 
 describe('mapearPergunta', () => {
   it('mapeia pergunta não respondida', () => {
@@ -28,6 +28,21 @@ describe('mapearPergunta', () => {
       question_id: 7, item_id: null, texto: '', status: 'UNKNOWN',
       resposta: null, respondida_em: null, comprador_id: null, comprador_nick: null, criada_em: null,
     });
+  });
+});
+
+describe('preservarComprador', () => {
+  it('payload sem `from` mantém o comprador já salvo', () => {
+    expect(preservarComprador({ comprador_id: null, comprador_nick: null }, { comprador_id: 42, comprador_nick: 'MARIA_01' }))
+      .toEqual({ comprador_id: 42, comprador_nick: 'MARIA_01' });
+  });
+  it('id novo do ML tem precedência sobre o salvo', () => {
+    expect(preservarComprador({ comprador_id: 9, comprador_nick: null }, { comprador_id: 42, comprador_nick: 'MARIA_01' }))
+      .toEqual({ comprador_id: 9, comprador_nick: 'MARIA_01' });
+  });
+  it('linha nova sem `from` fica null (nick resolvido depois via /users)', () => {
+    expect(preservarComprador({ comprador_id: null, comprador_nick: null }, null))
+      .toEqual({ comprador_id: null, comprador_nick: null });
   });
 });
 

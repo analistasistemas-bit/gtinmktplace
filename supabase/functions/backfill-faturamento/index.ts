@@ -79,7 +79,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           // upsert inteiro nesse caso; preserva-se o mesmo efeito. Título que veio null de verdade
           // (item sem título) segue sendo gravado.
           if (itemId && tituloFalhou.has(itemId)) return;
-          await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null);
+          await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null, token);
         } catch { /* segue */ }
       }));
     }

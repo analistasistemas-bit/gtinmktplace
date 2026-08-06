@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento › Perguntas — atalho certo e nome de quem perguntou — 2026-08-06
+
+Origem: Diego apontou dois problemas na aba Perguntas. Diagnóstico confirmado contra a API do ML
+(token de produção da AVILBV, só GET): o ícone abria o anúncio, e o comprador vinha vazio porque a
+v4 devolve `from: { id }` **sem `nickname`** — `raw->'from'` no banco é `{"id": …}` em 100% das
+linhas. O ML só entrega o apelido anonimizado (`OLCA4176283`), não o nome civil.
+
+- [x] **Atalho** — aponta para a caixa de perguntas do vendedor
+  (`URL_PERGUNTAS_ML`, `www.mercadolivre.com.br/perguntas/vendedor`). A API não expõe permalink
+  por pergunta, então não há deep link por `question_id`.
+- [x] **Nick do comprador** — `upsertPergunta` recebe o token e resolve o nome via
+  `GET /users/{id}` (`buscarNickname`, cache por invocação); os 4 callers passam o token.
+- [x] **`preservarComprador`** — rede defensiva: payload sem `from` não apaga mais o
+  `comprador_id`/`comprador_nick` já salvo.
+- [x] Linhas antigas só ganham o nick no próximo `reconciliar-faturamento`/backfill (o upsert
+  repopula), não há migration de backfill.
+
 ## Catálogo do ML — item plano destravado e os 3 anúncios da DSA vinculados — 2026-08-06
 
 Origem: Diego perguntou por que o produto do lote 10 (Principia) não se associou ao catálogo mesmo

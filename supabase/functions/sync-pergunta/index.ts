@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
   }
 
   const titulo = await buscarTituloItem(token, pergunta.item_id ?? null);
-  const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo);
+  const { novaNaoRespondida, row } = await upsertPergunta(admin, job.user_id, orgId, pergunta, titulo, token);
 
   if (novaNaoRespondida && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'pergunta_nova', String(row.question_id))) {
     await notificarCategoria(admin, orgId, 'perguntas', montarMensagemNovaPergunta({

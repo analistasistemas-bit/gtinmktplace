@@ -66,7 +66,7 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
     const atualizada = await buscarPergunta(token, String(body.question_id));
     if (donoPergunta) {
       const titulo = await buscarTituloItem(token, atualizada.item_id ?? null);
-      await upsertPergunta(admin, donoPergunta, orgId, atualizada, titulo);
+      await upsertPergunta(admin, donoPergunta, orgId, atualizada, titulo, token);
     }
   } catch { /* re-fetch de cache é best-effort; a resposta ao comprador já foi enviada com sucesso. */ }
 
