@@ -147,6 +147,28 @@ A RPC passa a receber **`p_ml_item_id_antigo`** e a aplicar as duas escritas a t
 `(org_id, codigo_pai)` **cujo `ml_item_id` é o antigo**. O filtro pelo id antigo é deliberado: uma
 família do mesmo pai que aponte para outro anúncio (split, ADR-0048) **não** é tocada.
 
+### §5.1 — Adendo (2026-08-06, pós-produção): o **permalink** anda junto com o `ml_item_id`
+
+O primeiro re-vínculo real funcionou, mas o link **"ver anúncio"** das telas continuou abrindo o
+anúncio **finalizado**. Causa: **todo** link de família no frontend sai de `familias.ml_permalink`
+ou de `anuncios_externos.permalink` — nenhum monta a URL a partir do `ml_item_id`
+(`familia-row.tsx:314`, `familia-expanded.tsx:521`, `Publicados.tsx:219`, `Relatorio.tsx:138-143`).
+Re-apontar só o id deixava o operador sendo levado ao item dissolvido.
+
+O dado certo já estava gravado: cada `anuncios_externos_itens.permalink` guarda o permalink
+observado no `GET` do irmão. A RPC passa a **derivar** o permalink do filho representante — do mesmo
+`p_filhos`, pelo mesmo critério que já elege o `p_ml_item_id`, e não como parâmetro novo, para ser
+impossível o chamador mandar um permalink que não seja o do item eleito — e a propagar para a raiz e
+para as famílias, no mesmo escopo do `ml_item_id`. Permalink ausente **preserva** o valor atual
+(`coalesce`) em vez de apagar o link.
+
+Um backfill idempotente na mesma migration conserta o que já havia sido adotado. Ele é **genérico**:
+casa família/raiz com o filho cujo `item_externo_id` é o item apontado, então só toca linha
+incoerente — quem já está certo, ou não é UP, não é alcançado.
+
+Os links de **Faturamento** (`urlAnuncioML` em mensagens/perguntas/detalhe de vendas) **não** são
+afetados: recebem o `item_id` do próprio evento do ML, não o da família.
+
 ### §6 — `atualizarEstoque` (push rápido, ADR-0094) ganha o guard, não a adoção
 
 `mercado-livre.ts:atualizarEstoque` faz `GET` → `PUT` **sem nenhum guard**: num anúncio dissolvido

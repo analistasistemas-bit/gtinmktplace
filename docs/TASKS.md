@@ -133,6 +133,11 @@ primeiro (o operador via "republique o produto") e, mesmo se não disparasse, a 
   (§5 confirmado na prática). Estoque conferido 1:1 contra a API do ML nos 17 SKUs — bate em todos.
   As duas cores com estoque 0 aparecem `paused` **no ML**: é o ML que pausa item sem estoque, não o
   PubliAI (coerente com ADR-0089).
+- [x] **Achado pós-produção (ADR-0105 §5.1):** o link "ver anúncio" continuava abrindo o anúncio
+  finalizado — todo link de família na UI sai de `familias.ml_permalink`/`anuncios_externos.permalink`,
+  e a adoção re-apontava só o `ml_item_id`. A RPC passa a derivar o permalink do filho representante
+  e propagá-lo no mesmo escopo; migration `20260806010922` inclui backfill genérico e idempotente do
+  que já havia sido adotado. Links de Faturamento não eram afetados (usam o `item_id` do evento).
 - [ ] **Limite observado:** a 18ª cor da família no ML (`Rosa Bebê - 510`, `MLB7218244860`) segue sem
   linha filha — está fora da planilha do lote. É o limite conhecido do ADR-0104 §2, não um defeito.
 
