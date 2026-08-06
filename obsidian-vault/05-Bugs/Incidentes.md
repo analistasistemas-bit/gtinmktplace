@@ -44,6 +44,17 @@ no mesmo dia; reativa sozinho quando a nota é apresentada. As 6 fotos que o ope
 adicionado à mão no painel não voltam pelo app (ele só conhece capa + foto da variação) e
 `pictures` não é editável sob revisão — restaurar só depois da reativação.
 
+**Causa real do "a nota não corresponde ao produto" (2026-08-06):** a NF-e 000005064 (Drogaria
+Moraes → CPF do titular da conta, EAN `4005800220012`, 12 un) descreve **"EUCERIN DUO-PACK AQUAPHOR
+18G"**, enquanto o anúncio dizia **"10 ml 2 un"** — e o "10 ml" vinha do **cadastro da planilha**
+(`descricao_pai`), de onde se espalhou para `nome_pai`, `titulo_ml`, `descricao_ml` e os atributos
+(`UNIT_VOLUME = 10 mL`). O produto real é 18 g = **2 bisnagas de 9 g** (Ultrafarma e outros
+varejistas; a ficha do catálogo do ML também está errada, dizendo 10 ml). Corrigido em todo o
+cadastro: título `Pomada Reparadora Eucerin Aquaphor Duo Pack 18g 2x9g`, `UNIT_VOLUME` → `UNIT_WEIGHT
+= 9 g` com `UNITS_PER_PACK = 2`, descrições reescritas, campos marcados como editados pelo operador
+para um reprocesso não trazer o erro de volta. Republicado como `MLB7345071684` (ativo).
+**A planilha de origem ainda tem "10 ml" — corrigir lá, senão um re-ingest reintroduz o erro.**
+
 **Lição:** a categoria escolhida na publicação decide se o anúncio poderá competir no catálogo
 (a ficha precisa ser do mesmo domínio). Trocar categoria depois de publicado é ação de risco —
 re-modera o anúncio e pode derrubá-lo por PI. **Trava implementada no mesmo dia:**

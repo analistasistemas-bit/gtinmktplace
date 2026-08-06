@@ -28,9 +28,15 @@ tendo concorrentes. Diagnóstico: **32 de 32** variações de item plano estavam
   Republicado pelo fluxo do app como `MLB5004717379`, nos moldes originais (categoria `MLB1262`,
   título completo, R$ 54,90, 12 un, Clássico, `me2`, sem catálogo). O worker de catálogo rodou e
   não vinculou — a trava de domínio segurou.
-- [ ] **Pendente com o ML (ação humana):** NF-e da Eucerin para `MLB5004717379`
-  (`pending_documentation`, mesma exigência de marca que o produto já teve em 05/08) e para
-  `MLB7343614472`. Reativam automaticamente após o aceite.
+- [x] **Cadastro do Aquaphor corrigido para bater com a NF-e** — a nota descreve "EUCERIN DUO-PACK
+  AQUAPHOR 18G" e o anúncio dizia "10 ml 2 un" (erro vindo da planilha, propagado a título,
+  descrições e `UNIT_VOLUME`). O produto é 18 g = 2 bisnagas de 9 g. Corrigidos `nome_pai`,
+  `titulo_ml`, `descricao_ml`/`descricao_pai` e atributos (`UNIT_WEIGHT = 9 g` + `UNITS_PER_PACK
+  = 2`, `SALE_FORMAT = Kit`), com os campos marcados como editados pelo operador. Republicado como
+  `MLB7345071684`. **Falta corrigir a planilha de origem**, senão o re-ingest reintroduz "10 ml".
+- [ ] **Pendente com o ML (ação humana):** apresentar a NF-e em `MLB7345071684` e `MLB7343614472`
+  (`pending_documentation` — exigência de marca recorrente da Eucerin nesta conta, registrada em
+  `ml_moderacao` desde 02/08, antes de qualquer mexida). Agora a nota corresponde ao anúncio.
 - [ ] **Restaurar 6 fotos** do Aquaphor adicionadas à mão no painel (o app só conhece capa + foto
   da variação); `pictures` não é editável sob revisão — só depois da reativação.
 - [ ] **29 itens planos restantes** (org AVIL) seguem `pendente`: o QStash já desistiu deles;
