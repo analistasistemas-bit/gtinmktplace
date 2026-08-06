@@ -54,6 +54,10 @@ cadastro: título `Pomada Reparadora Eucerin Aquaphor Duo Pack 18g 2x9g`, `UNIT_
 = 9 g` com `UNITS_PER_PACK = 2`, descrições reescritas, campos marcados como editados pelo operador
 para um reprocesso não trazer o erro de volta. Republicado como `MLB7345071684` (ativo).
 **A planilha de origem ainda tem "10 ml" — corrigir lá, senão um re-ingest reintroduz o erro.**
+O "10 ml" também estava **dentro de uma das fotos**: o card "Informações do produto"
+(`985349-MLB115653216497_082026`) diz *"10 ml cada / Conteúdo total: 20 ml"*. Ao restaurar as fotos
+do anúncio antigo em `MLB7345071684`, essa ficou de fora — imagem também é dado do produto para a
+moderação do ML, e recolocá-la reporia a contradição com a NF-e.
 
 **Lição:** a categoria escolhida na publicação decide se o anúncio poderá competir no catálogo
 (a ficha precisa ser do mesmo domínio). Trocar categoria depois de publicado é ação de risco —

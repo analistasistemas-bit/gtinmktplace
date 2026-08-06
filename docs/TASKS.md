@@ -37,8 +37,11 @@ tendo concorrentes. Diagnóstico: **32 de 32** variações de item plano estavam
 - [ ] **Pendente com o ML (ação humana):** apresentar a NF-e em `MLB7345071684` e `MLB7343614472`
   (`pending_documentation` — exigência de marca recorrente da Eucerin nesta conta, registrada em
   `ml_moderacao` desde 02/08, antes de qualquer mexida). Agora a nota corresponde ao anúncio.
-- [ ] **Restaurar 6 fotos** do Aquaphor adicionadas à mão no painel (o app só conhece capa + foto
-  da variação); `pictures` não é editável sob revisão — só depois da reativação.
+- [x] **Fotos do Aquaphor restauradas** em `MLB7345071684` (7 no total, na ordem original). **Uma
+  das 6 do anúncio antigo ficou de fora de propósito** — o card "Informações do produto"
+  (`985349-MLB115653216497_082026`) afirma *"10 ml cada / Conteúdo total: 20 ml"*, contradizendo a
+  NF-e (18 g) e o cadastro corrigido; recolocá-la reintroduziria a divergência que derrubou o
+  anúncio. Precisa ser refeita com "9 g cada / 18 g no total" antes de voltar.
 - [ ] **29 itens planos restantes** (org AVIL) seguem `pendente`: o QStash já desistiu deles;
   precisam de re-enfileiramento de `vincular-catalogo` — não executado sem ordem do operador.
 
