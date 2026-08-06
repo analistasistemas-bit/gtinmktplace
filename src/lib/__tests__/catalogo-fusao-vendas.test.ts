@@ -47,4 +47,10 @@ describe('montarDetalheVendas', () => {
     expect(d.app.linhas).toHaveLength(1);
     expect(d.app.linhas[0]).toMatchObject({ id: 'MEU', titulo: 'Protetor Eucerin', unidades: 5, valor: 500 });
   });
+
+  it('sem mapa, mantém as duas linhas e o título de cada anúncio (comportamento anterior)', () => {
+    const d = montarDetalheVendas(vendas);
+    expect(d.app.linhas.map((l) => l.id).sort()).toEqual(['CAT', 'MEU']);
+    expect(d.app.linhas.find((l) => l.id === 'CAT')?.titulo).toBe('Título do catálogo');
+  });
 });
