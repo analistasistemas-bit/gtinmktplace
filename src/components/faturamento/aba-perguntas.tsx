@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useListaPerguntas } from '@/hooks/usePerguntas';
 import { responderPergunta, sugerirResposta, type Pergunta } from '@/lib/perguntas';
 import { fmtDataCurta, URL_PERGUNTAS_ML } from '@/lib/ml-status';
+import { nomeCurtoComprador } from '@/lib/pedidos-faturamento';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -50,7 +51,9 @@ function CardPergunta({ p }: { p: Pergunta }) {
           <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span className="truncate">{p.item_titulo ?? p.item_id ?? '—'}</span>
             <a href={URL_PERGUNTAS_ML} target="_blank" rel="noreferrer" aria-label="Abrir perguntas no Mercado Livre" className="text-info hover:underline"><ExternalLink className="h-3 w-3" /></a>
-            <span>· {p.comprador_nick?.trim() || 'Comprador'}</span>
+            <span title={p.comprador_nome ?? p.comprador_nick ?? undefined}>
+              · {nomeCurtoComprador(p.comprador_nome) ?? (p.comprador_nick?.trim() || 'Comprador')}
+            </span>
             <span>· {fmtDataCurta(p.criada_em)}</span>
           </div>
           <p className="text-sm font-medium">{p.texto}</p>

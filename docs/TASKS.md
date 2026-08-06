@@ -21,6 +21,11 @@ linhas. O ML só entrega o apelido anonimizado (`OLCA4176283`), não o nome civi
 - [x] **Notificação do Telegram/sino** — `montarMensagemNovaPergunta` também apontava para o
   anúncio; passa a linkar a mesma caixa de perguntas. `NovaPerguntaAlerta.item_id` virou órfão e
   saiu (junto com o campo no caller `sync-pergunta`).
+- [x] **Nome civil em vez do apelido** — Diego pediu o mesmo formato da aba Vendas ("Carla
+  Fabiana"). `GET /users/{id}` devolve `first_name`/`last_name` **null** para o vendedor; o nome só
+  existe em pedido. `buscarPerguntas` cruza `comprador_id` com `ml_vendas.comprador_nome` (1 query
+  extra, sem chamada ao ML) e a UI reusa `nomeCurtoComprador`. Quem nunca comprou continua no
+  apelido — o ML não tem outro dado. Hoje: 11 de 69 perguntas têm venda associada.
 
 ## Catálogo do ML — item plano destravado e os 3 anúncios da DSA vinculados — 2026-08-06
 

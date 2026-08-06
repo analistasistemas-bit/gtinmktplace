@@ -5,7 +5,10 @@ export interface Pergunta {
   question_id: number;
   item_id: string | null;
   item_titulo: string | null;
+  comprador_id: number | null;
   comprador_nick: string | null;
+  /** Nome civil, quando o comprador já comprou (vem de `ml_vendas`, não da API de perguntas). */
+  comprador_nome: string | null;
   texto: string;
   status: string;
   resposta: string | null;
@@ -13,16 +16,37 @@ export interface Pergunta {
   criada_em: string | null;
 }
 
+/**
+ * Nome de quem perguntou. A API de perguntas do ML só devolve o apelido (`OLCA4176283`) — o nome
+ * civil só existe em pedido, então sai de `ml_vendas` quando esse comprador já comprou.
+ */
+async function nomesPorComprador(ids: number[]): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map();
+  const { data } = await supabase
+    .from('ml_vendas')
+    .select('comprador_id, comprador_nome')
+    .in('comprador_id', ids)
+    .not('comprador_nome', 'is', null);
+  const mapa = new Map<number, string>();
+  for (const v of data ?? []) {
+    if (v.comprador_id != null && v.comprador_nome) mapa.set(Number(v.comprador_id), v.comprador_nome);
+  }
+  return mapa;
+}
+
 /** Lê as perguntas (não respondidas primeiro). RLS por user. */
 export async function buscarPerguntas(): Promise<Pergunta[]> {
   const { data, error } = await supabase
     .from('ml_perguntas')
-    .select('id, question_id, item_id, item_titulo, comprador_nick, texto, status, resposta, respondida_em, criada_em')
+    .select('id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em')
     .order('criada_em', { ascending: false });
   if (error) throw new Error(error.message);
   const lista = (data ?? []) as Pergunta[];
+  const nomes = await nomesPorComprador([...new Set(lista.map((p) => p.comprador_id).filter((i): i is number => i != null))]);
   // Não respondidas no topo.
-  return lista.sort((a, b) => Number(b.status === 'UNANSWERED') - Number(a.status === 'UNANSWERED'));
+  return lista
+    .map((p) => ({ ...p, comprador_nome: (p.comprador_id != null ? nomes.get(p.comprador_id) : null) ?? null }))
+    .sort((a, b) => Number(b.status === 'UNANSWERED') - Number(a.status === 'UNANSWERED'));
 }
 
 async function postEdge<T>(fn: string, body: unknown): Promise<T> {
