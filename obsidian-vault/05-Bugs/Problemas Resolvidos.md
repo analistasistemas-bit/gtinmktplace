@@ -20,6 +20,31 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   throttle já cobre flood. Também não existia o "sync de 3 em 3 min" que o operador supunha: a aba
   só recarregava ao trocar de foco — `usePerguntas` ganhou `refetchInterval` de 60s. Ver
   [[Faturamento]].
+- **Card de devoluções do Dashboard: uma finalizada contada como aberta, outra no mês errado
+  (2026-08-06)** — Diego comparou com o painel do ML. Dois defeitos independentes, ambos medidos
+  contra os 8 claims reais da AVIL no banco de produção. (1) "1 devolução aberta" em Precisa de
+  atenção contava `acoes_pendentes.length > 0` sem olhar o status — o ML segue devolvendo
+  `available_actions` ("return review ok", prazo 06/08) em claim **fechado e reembolsado**
+  (5550524900, que no ML já era "Devolução finalizada"). Agora exige `status === 'opened'`.
+  (2) "1 devolução · R$ 56,16" no Mês atual filtrava por `aberto_em`: o claim 5552400113 abriu
+  31/07 e só foi reembolsado (R$ 70,50) em 03/08, então agosto — o mês que perdeu o dinheiro —
+  não o via. Nova coluna `ml_devolucoes.fechado_em` (`resolution.date_created`), que é o mesmo
+  instante do estorno no MP (conferido contra `payments[].date_last_modified` em 5 casos);
+  agosto passa a **2 devoluções · R$ 126,66**. O número segue divergindo do painel do ML de
+  propósito: aquela tela lista pela **chegada do pacote**, evento posterior ao estorno — e, como
+  o glossário já registrava, não mostra claim resolvido por mediador. Ver [[Índice de ADRs]]
+  (ADR-0106).
+
+- **"vs. anterior" do filtro "Hoje" parecia número errado — era só o rótulo (2026-08-06)** — Diego
+  viu, às 11h37, "Faturamento bruto R$ 1.158,21 · +27% vs. anterior" enquanto ontem fechado deu
+  R$ 2.962,70, e leu como regressão do fix de 2026-07-06 (abaixo). **Não era bug de cálculo**: a
+  janela anterior de 'hoje' é ontem 00:00 → ontem 11h37 (~R$ 912 / 10 pedidos), e os três cards
+  fechavam entre si (+40% pedidos, −9% ticket). O problema é semântico — "vs. anterior" é lido
+  como "ontem fechado", ainda mais depois que **Mês atual** passou a comparar dias inteiros
+  (commit `316c45ce`, 2026-08-02). Manter a matemática: "Hoje" é 100% dia parcial, comparar
+  contra ontem fechado mostraria −60% toda manhã. **Fix:** `rotuloAnterior(periodo)` em
+  `src/lib/metricas.ts` — o card de "Hoje" (Dashboard e Financeiro) agora diz
+  **"vs. ontem até agora"**; os demais períodos seguem "vs. anterior".
 
 - **Descrição publicada saía "tudo junto" no ML (2026-08-06)** — Diego relatou a descrição do
   anúncio ilegível, com os títulos de seção colados no parágrafo anterior. Causa raiz no nosso

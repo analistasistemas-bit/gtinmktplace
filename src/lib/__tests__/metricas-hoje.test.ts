@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolverJanela, periodoToParams, periodoFromParams, type Periodo } from '../metricas';
+import { resolverJanela, periodoToParams, periodoFromParams, rotuloAnterior, type Periodo } from '../metricas';
 
 const get = (params: Record<string, string>) => (k: string) => params[k] ?? null;
 
@@ -19,6 +19,13 @@ describe('período "hoje"', () => {
 
   it('periodoFromParams lê ?periodo=hoje', () => {
     expect(periodoFromParams(get({ periodo: 'hoje' }))).toEqual<Periodo>({ tipo: 'hoje' });
+  });
+
+  it('rotuloAnterior diz que a comparação é com ontem até a mesma hora', () => {
+    expect(rotuloAnterior({ tipo: 'hoje' })).toBe('vs. ontem até agora');
+    expect(rotuloAnterior({ tipo: 'mes_atual' })).toBe('vs. anterior');
+    expect(rotuloAnterior({ tipo: 'preset', dias: 30 })).toBe('vs. anterior');
+    expect(rotuloAnterior()).toBe('vs. anterior');
   });
 
   it('periodoFromParams sem periodo cai no default (30 dias)', () => {

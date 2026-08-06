@@ -15,6 +15,10 @@ export interface DevolucaoRow {
   return_status_money: string | null;
   acoes_pendentes: AcaoPendente[] | null;
   aberto_em: string | null;
+  /** `resolution.date_created` — quando o ML resolveu o claim, que é o mesmo instante do estorno
+   *  no MP. O Dashboard usa essa data (não a de abertura) para pôr a devolução no período certo.
+   *  Null enquanto o claim está aberto. */
+  fechado_em: string | null;
 }
 
 /** Recorte de /post-purchase/v1/claims/{id}. */
@@ -27,6 +31,7 @@ export interface ClaimML {
   resource?: string | null;
   resource_id?: number | string | null;
   date_created?: string | null;
+  resolution?: { reason?: string | null; date_created?: string | null; closed_by?: string | null } | null;
   players?: Array<{ available_actions?: Array<{ action?: string; due_date?: string | null; mandatory?: boolean }> | null }> | null;
 }
 
@@ -77,5 +82,6 @@ export function mapearDevolucao(claim: ClaimML, ret?: ReturnML | null): Devoluca
     return_status_money: ret?.status_money ?? null,
     acoes_pendentes: acoes.length > 0 ? acoes : null,
     aberto_em: claim.date_created ?? null,
+    fechado_em: claim.resolution?.date_created ?? null,
   };
 }

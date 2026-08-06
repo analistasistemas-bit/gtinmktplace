@@ -23,6 +23,33 @@ mostrando "Pendente". Diagnóstico contra o banco de produção (só SELECT): `m
   `refetchInterval: 60_000` na lista e no badge.
 - [ ] **Validar em produção** — responder uma pergunta no ML e conferir `ml_perguntas.atualizado_em`
   mexendo em segundos (não na virada da hora).
+## Dashboard › card de devoluções e rótulo do comparativo — 2026-08-06
+
+Origem: Diego reportou dois números do Dashboard. Diagnóstico contra o banco de produção (8 claims
+reais da AVIL, service_role, só leitura) e contra o painel nativo do ML.
+
+- [x] **"+27% vs. anterior" no filtro Hoje não era erro de cálculo** — a janela anterior de 'hoje'
+  é ontem 00:00→mesma hora (fix `6e77a491`), então às 11h37 comparava com ~R$ 912 de ontem, não
+  com os R$ 2.962,70 do dia fechado. O rótulo é que induzia ao erro: `rotuloAnterior(periodo)` em
+  `src/lib/metricas.ts` faz o card de Hoje dizer **"vs. ontem até agora"** (Dashboard e
+  Financeiro; o PDF do Dashboard herda o texto). Matemática inalterada.
+- [x] **"1 devolução aberta" (Precisa de atenção) contava devolução já finalizada** — o critério
+  era só `acoes_pendentes.length > 0`, e o ML segue devolvendo `available_actions` ("return review
+  ok", com prazo) em claim **fechado e reembolsado** (claim 5550524900). Agora exige
+  `status === 'opened'`, o mesmo da pill da aba Devoluções.
+- [x] **"1 devolução · R$ 56,16" (Mês atual) atribuía o estorno ao mês errado** — o filtro usava
+  `aberto_em`. Nova coluna `ml_devolucoes.fechado_em` (`claim.resolution.date_created`, migration
+  `20260806151323`, backfill pelo `raw`), que é o **mesmo instante** do estorno no MP — conferido
+  contra `payments[].date_last_modified` em 5 devoluções. Mês atual passa a mostrar
+  **2 devoluções · R$ 126,66** (claims 5552400113 e 5553795965, ambos reembolsados em 03/08).
+  Critério de "concluída" inalterado (`returns` + `refunded`). ADR-0106.
+- [x] Regras viraram funções puras em `src/lib/devolucoes.ts` (`devolucoesAbertas`,
+  `devolucoesConcluidasNoPeriodo`), testadas com os 8 claims reais como fixture.
+- [x] Migration aplicada em produção e edge functions deployadas (`reconciliar-faturamento`,
+  `backfill-faturamento`, `sync-devolucao` — todas usam `mapearDevolucao`).
+- Docs: `docs/decisions/0106-devolucao-conta-no-periodo-do-estorno.md`,
+  `docs/reference/glossario.md` ("Devolução (concluída)"), `docs/reference/modelo-de-dados.md`
+  (`ml_devolucoes.fechado_em`), `obsidian-vault/05-Bugs/Problemas Resolvidos.md`.
 
 ## Faturamento › Perguntas — atalho certo e nome de quem perguntou — 2026-08-06
 

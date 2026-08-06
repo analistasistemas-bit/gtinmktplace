@@ -16,7 +16,7 @@ import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildDashboardReport } from '@/lib/export/adapters';
-import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
+import { resolverJanela, janelaAnterior, rotuloAnterior, type Periodo } from '@/lib/metricas';
 import { agruparPorPeriodo, ehFaturavel, formatProximaLiberacao, ratearLiquidoPorFrete } from '@/lib/resumo-vendas';
 import { liquidoPorCanal } from '@/lib/resumo-por-canal';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
@@ -31,6 +31,7 @@ import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 import { useDevolucoes } from '@/hooks/useDevolucoes';
+import { devolucoesAbertas, devolucoesConcluidasNoPeriodo } from '@/lib/devolucoes';
 import { useAliquotas, useMostrarLucroDashboard } from '@/hooks/useConfiguracoes';
 import { calcularKpisDashboard } from '@/lib/dashboard-kpis';
 import { montarPendencias } from '@/lib/pendencias';
@@ -40,11 +41,11 @@ import { agruparPorGeografia } from '@/lib/geografia-vendas';
 import { montarAliquotaResolver, montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 
 type Trend = 'up' | 'down' | 'neutral';
-function delta(atual: number, anterior: number): { texto: string; trend: Trend } {
+function deltaCom(atual: number, anterior: number, rotulo: string): { texto: string; trend: Trend } {
   if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
   const p = ((atual - anterior) / Math.abs(anterior)) * 100;
   const trend: Trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
-  return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% vs. anterior`, trend };
+  return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% ${rotulo}`, trend };
 }
 
 function fmtDia(iso: string): string {
@@ -99,6 +100,7 @@ export default function Dashboard() {
 const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturamento');
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
+  const delta = (atual: number, anterior: number) => deltaCom(atual, anterior, rotuloAnterior(periodo));
 
   const { resumo: r, isFetching, error } = useResumoVendas(janela, canalAtivo);
   const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);
@@ -120,7 +122,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
   const semStatus = statusData?.semCredencialML ?? false;
   const kpis = calcularKpisDashboard(lotes, publicados, statusItens);
   const errosDestino = montarPendencias(kpis.comProblema, lotes).find((p) => p.chave === 'erro')?.destino ?? '/publicados';
-  const devolucoesAbertas = (devolucoesQ.data ?? []).filter((d) => (d.acoes_pendentes?.length ?? 0) > 0).length;
+  const abertas = devolucoesAbertas(devolucoesQ.data ?? []);
   const atencao = montarAtencao({
     aRevisar: kpis.aRevisar,
     comProblema: semStatus ? 0 : kpis.comProblema,
@@ -128,7 +130,7 @@ const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturame
     erros: kpis.erros,
     errosDestino,
     perguntas: perguntasQ.count,
-    devolucoes: devolucoesAbertas,
+    devolucoes: abertas,
   });
 
   // Gráfico: granularidade segue o período (dia até ~31d; senão semana). Espelha o Financeiro.
@@ -158,25 +160,12 @@ const metricaGrafico: MetricaGrafico = metrica === 'pedidos' ? 'pedidos' : 'liqu
     [vendasRaw.data, custos, aliquotas],
   );
   const kpisPedidos = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
-  // Devoluções concluídas no período, para o discreto do card de Faturamento Bruto. Critério:
-  // ml_devolucoes com type='returns' (devolução de verdade) e return_status_money='refunded'
-  // (o mesmo "Devolução finalizada com reembolso para o comprador" do painel nativo do ML) —
-  // conferido caso a caso contra o ML. status!=='opened' sozinho é raso demais: inclui claim
-  // fechado sem reembolso (ex.: devolução cancelada/rejeitada com dinheiro retido) e, em pelo
-  // menos 1 caso encontrado, uma devolução que o ML ainda mostra em andamento. Antes disso usava
-  // pedido com estorno > 0 no MP, que conta qualquer reembolso parcial/negociado sem devolução.
-  const devolucoesPeriodo = useMemo(() => {
-    const de = janela.desde;
-    const ate = janela.ate;
-    const concluidas = (devolucoesQ.data ?? []).filter((d) =>
-      d.type === 'returns'
-      && d.return_status_money === 'refunded'
-      && d.aberto_em != null && d.aberto_em >= de && d.aberto_em <= ate);
-    return {
-      qtd: concluidas.length,
-      valor: concluidas.reduce((s, d) => s + (d.valor_estornado ?? 0), 0),
-    };
-  }, [devolucoesQ.data, janela]);
+  // Devoluções concluídas no período, para o discreto do card de Faturamento Bruto.
+  // Critério e escolha da data em `devolucoesConcluidasNoPeriodo` (src/lib/devolucoes.ts).
+  const devolucoesPeriodo = useMemo(
+    () => devolucoesConcluidasNoPeriodo(devolucoesQ.data ?? [], janela.desde, janela.ate),
+    [devolucoesQ.data, janela],
+  );
   const kpisPedidosAnt = useMemo(
     () => calcularKpisPedidos(agruparPorPedido(
       vendasRawAnt.data ?? [],

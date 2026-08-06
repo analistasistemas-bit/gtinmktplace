@@ -81,6 +81,15 @@ export function janelaAnterior(j: Janela, p?: Periodo): Janela {
   return { desde: new Date(desdeMs - dur).toISOString(), ate: new Date(desdeMs).toISOString() };
 }
 
+/** Texto do comparativo dos KPIs. Em 'hoje' a janela anterior é ONTEM ATÉ A MESMA HORA do
+ *  relógio (ver `janelaAnterior`), e o rótulo genérico "vs. anterior" era lido como "ontem
+ *  fechado": às 11h, +27% sobre as vendas de ontem até as 11h parecia erro de cálculo diante de
+ *  um ontem que fechou 3x maior. Os demais períodos comparam blocos equivalentes e seguem
+ *  genéricos. */
+export function rotuloAnterior(p?: Periodo): string {
+  return p?.tipo === 'hoje' ? 'vs. ontem até agora' : 'vs. anterior';
+}
+
 /** Serializa o período para query string (?periodo=hoje, ?dias=30 ou ?de=…&ate=…). */
 export function periodoToParams(p: Periodo): Record<string, string> {
   if (p.tipo === 'hoje') return { periodo: 'hoje' };

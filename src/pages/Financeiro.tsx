@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { AoVivo } from '@/components/ui/ao-vivo';
-import { periodoToParams, resolverJanela, janelaAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
+import { periodoToParams, resolverJanela, janelaAnterior, rotuloAnterior, type Periodo, type PeriodoDias } from '@/lib/metricas';
 import { agruparPorPeriodo, formatProximaLiberacao } from '@/lib/resumo-vendas';
 import { GraficoEvolucao } from '@/components/financeiro/grafico-evolucao';
 import { BotaoExportar } from '@/components/export/botao-exportar';
@@ -29,7 +29,7 @@ export default function Financeiro() {
     if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
     const p = ((atual - anterior) / Math.abs(anterior)) * 100;
     const trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
-    return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% vs. anterior`, trend };
+    return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% ${rotuloAnterior(periodo)}`, trend };
   };
   const horaAtualizacao = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })

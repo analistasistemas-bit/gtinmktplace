@@ -117,5 +117,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0103 | [`✅ BENEFÍCIOS` é cabeçalho, não item de lista](../../docs/decisions/0103-cabecalho-beneficios-nao-vira-bullet.md) |
 | 0104 | [UPDATE de família migrada pelo ML para User Products (adoção por SKU + `somente estoque` nunca muda composição)](../../docs/decisions/0104-update-de-familia-migrada-para-user-products.md) |
 | 0105 | [Re-vínculo de família dissolvida pelo ML em User Products (item Legacy fechado + irmãos sem SKU, casamento por COR)](../../docs/decisions/0105-revinculo-de-familia-dissolvida-pelo-ml-em-user-products.md) |
+| 0106 | [Devolução conta no período em que o dinheiro saiu (`fechado_em`), não no da abertura do claim](../../docs/decisions/0106-devolucao-conta-no-periodo-do-estorno.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

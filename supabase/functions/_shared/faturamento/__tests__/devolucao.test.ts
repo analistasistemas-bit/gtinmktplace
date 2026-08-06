@@ -41,4 +41,25 @@ describe('mapearDevolucao', () => {
     expect(r.order_id).toBeNull();
     expect(r.acoes_pendentes).toBeNull();
   });
+
+  it('fechado_em vem de resolution.date_created (o instante do estorno), com o offset do ML', () => {
+    // Payload real do claim 5553795965: abriu 03/08 15:32 (-04) e foi resolvido 17:16 do mesmo
+    // dia — o pagamento 169615860668 foi estornado 17:16:41. O Dashboard atribui a devolução ao
+    // período por essa data, não por date_created.
+    const r = mapearDevolucao({
+      id: 5553795965,
+      type: 'returns',
+      resource: 'order',
+      resource_id: 2000017533182114,
+      date_created: '2026-08-03T15:32:38.000-04:00',
+      resolution: { reason: 'item_returned', date_created: '2026-08-03T17:16:36.000-04:00', closed_by: 'mediator' },
+    });
+    expect(r.aberto_em).toBe('2026-08-03T15:32:38.000-04:00');
+    expect(r.fechado_em).toBe('2026-08-03T17:16:36.000-04:00');
+  });
+
+  it('claim ainda aberto (sem resolution) → fechado_em null', () => {
+    const r = mapearDevolucao({ id: 5554029722, type: 'returns', status: 'opened', stage: 'dispute' });
+    expect(r.fechado_em).toBeNull();
+  });
 });
