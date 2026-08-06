@@ -429,6 +429,16 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
               <span className="text-xs text-muted-foreground">
                 Códigos gerados automaticamente ao salvar.
               </span>
+              {/* A dúvida recorrente do operador é o produto SEM variação — a tela só mostra
+                  "Variação 1" e nada diz que deixá-la sem cor é o caminho certo. Some quando ele
+                  adiciona a 2ª linha: aí o produto tem variação de fato e a dica viraria ruído. */}
+              {linhas.length === 1 && (
+                <span className="text-xs text-muted-foreground">
+                  <strong className="font-medium text-foreground">Produto sem variação?</strong>{' '}
+                  Deixe só a Variação 1 e o campo <em>Cor / nome</em> em branco — sai um anúncio
+                  simples, sem seletor de cor. A foto pode ficar só na Capa.
+                </span>
+              )}
               <div className="flex flex-col gap-3">
                 {linhas.map((l, i) => (
                   <LinhaVariacaoForm

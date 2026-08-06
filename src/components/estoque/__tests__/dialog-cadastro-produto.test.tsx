@@ -206,6 +206,17 @@ describe('DialogCadastroProduto — formulário em cards', () => {
     Reflect.deleteProperty(URL, 'revokeObjectURL');
   });
 
+  // Produto sem variação era a dúvida recorrente: a tela só mostra "Variação 1" e nada dizia que
+  // deixá-la sem cor é o caminho certo. A dica sai de cena na 2ª linha (aí há variação de fato).
+  it('dica de produto sem variação aparece com 1 linha e some ao adicionar a 2ª', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    expect(screen.getByText(/Produto sem variação\?/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Adicionar variação/ }));
+    expect(screen.queryByText(/Produto sem variação\?/)).not.toBeInTheDocument();
+  });
+
   it('remover a variação do meio preserva os dados das outras', async () => {
     const user = userEvent.setup();
     renderDialog();
