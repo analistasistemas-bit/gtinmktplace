@@ -8,6 +8,28 @@ atualizado: 2026-08-02
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
+## 2026-08-06 — troca de categoria para competir no catálogo re-moderou o anúncio (Aquaphor, DSA)
+
+Durante o destrave da vinculação de catálogo dos 3 anúncios da DSA, o Aquaphor Duo Pack
+(`MLB7330859238`) casava por GTIN com a ficha `MLB25749603`, que vive no domínio
+`MLB-FACIAL_SKIN_CARE_PRODUCTS` enquanto o anúncio estava em `MLB-BODY_SKIN_CARE_PRODUCTS`. O
+opt-in devolvia `400 catalog_product_id.invalid ... does not belong to domain`. A categoria foi
+trocada por `PUT /items/{id}` (aceito: item `active`, `sold_quantity: 0`, categoria alinhada à dos
+3 concorrentes da ficha, `MLB264874`), o opt-in passou e criou `MLB7343603036` — e **~9 segundos
+depois o ML re-moderou o par**: original e anúncio de catálogo em `under_review`/`forbidden`.
+Nesse estado o item não é editável (`item.category_id.not_modifiable`), então a categoria não pôde
+ser revertida; a contestação só existe no painel do ML.
+
+Contexto que pesa no diagnóstico: `ml_moderacao` mostra que esses Eucerin **já tinham moderação
+recorrente** por `pending_documentation` (`MLB4982690837` em 02/08, resolvida 04/08;
+`MLB7330859238` em 05/08, resolvida no mesmo dia) — marca regulada, exigência de documentação na
+conta. A troca de categoria muito provavelmente re-disparou a fila de moderação, que dessa vez
+voltou como `forbidden`.
+
+**Lição:** a categoria escolhida na publicação decide se o anúncio poderá competir no catálogo
+(a ficha precisa ser do mesmo domínio). Trocar categoria depois de publicado é ação de risco —
+re-modera o anúncio e pode derrubá-lo. Ver [[Índice de ADRs]] (ADR-0021, revisão 2026-08-06).
+
 ## 2026-08-04 — produto da Avil foi gravado indevidamente na DSA
 
 **Sintoma:** uma família de tecido Oxford da Avil apareceu no estoque da DSA com cinco variações

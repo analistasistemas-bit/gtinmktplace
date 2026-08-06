@@ -2,6 +2,30 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Catálogo do ML — item plano destravado e os 3 anúncios da DSA vinculados — 2026-08-06
+
+Origem: Diego perguntou por que o produto do lote 10 (Principia) não se associou ao catálogo mesmo
+tendo concorrentes. Diagnóstico: **32 de 32** variações de item plano estavam `pendente` desde
+20/07 — a rota Legacy lia a elegibilidade só de `variations[]`, vazio nesse formato.
+
+- [x] **`indexarElegibilidadeAnuncio`** — item plano (sem `variations[]`) passa a ser lido pela
+  raiz do JSON e indexado pelo item id; `indexarEligibility` segue intacta.
+- [x] **`montarBodyOptinVariacao`** — opt-in sem `variation_id` quando o id não é numérico
+  (`Number('MLB…')` seria `NaN`).
+- [x] **`podeTentarOptin`** — `CATALOG_PRODUCT_ID_NULL` e `PRODUCT_INACTIVE` também aceitam o POST
+  (medido com token real); `FAMILY_DIFF`/`NOT_ELIGIBLE` seguem bloqueados.
+- [x] **`ALREADY_OPTED_IN` → `ja_vinculado`** — persiste `vinculado` com o listing id de
+  `item_relations`, em vez de backoff + alerta de no-match falso.
+- [x] **Trava anti-kit compara com o nosso item** — Duo Pack 2un × ficha Kit/2un é equivalente;
+  item sem `UNITS_PER_PACK` (fitas/linhas) segue reprovando qualquer ficha-kit.
+- [x] **`catalog_erro` guarda a causa real** do 400 (`cause[]`), não o "Validation error" genérico.
+- [x] Os 3 anúncios da DSA vinculados: Principia → `MLB7343600804` (ativo, competindo);
+  Eucerin Sun → `MLB7343614472`; Aquaphor → `MLB7343603036` (feito pelo próprio worker).
+- [ ] **Pendente com o ML (ação humana):** `MLB7343614472` em `pending_documentation` (documentação
+  da marca) e o par do Aquaphor em `forbidden` após a troca de categoria — contestar no painel.
+- [ ] **29 itens planos restantes** (org AVIL) seguem `pendente`: o QStash já desistiu deles;
+  precisam de re-enfileiramento de `vincular-catalogo` — não executado sem ordem do operador.
+
 ## Produto sem variação — publicação destravada e cadastro explicado — 2026-08-06
 
 Origem: Diego cadastrou um produto simples (Principia Gel de Limpeza 350g) com foto só na Capa

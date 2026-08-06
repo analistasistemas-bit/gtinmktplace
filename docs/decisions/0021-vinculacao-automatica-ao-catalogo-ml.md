@@ -206,6 +206,16 @@ devolve `catalog_product_id.not_modificable` (400) em item ativo com vendas; o o
    `vinculado` com o listing id lido de `GET /items/{id}?attributes=item_relations`, em vez de
    contar como `nao_elegivel` — que gerava backoff inútil e alerta de no-match falso num item que
    já está competindo.
+**Limite descoberto — a ficha precisa ser do MESMO domínio do anúncio.** O Aquaphor
+(`MLB7330859238`, domínio `MLB-BODY_SKIN_CARE_PRODUCTS`) casa por GTIN com a ficha `MLB25749603`,
+que vive em `MLB-FACIAL_SKIN_CARE_PRODUCTS`. O opt-in devolve
+`400 catalog_product_id.invalid: does not belong to domain ...`. Não há como corrigir pelo opt-in:
+ou o anúncio nasce na categoria do domínio da ficha, ou não compete. `PUT /items/{id}` com
+`category_id` só é aceito enquanto o item está `active` e sem vendas — e **re-dispara a moderação
+do ML**, o que aconteceu neste caso (ver a nota de risco no `project-history`). Consequência
+prática para o produto: a escolha de categoria na publicação decide se o anúncio poderá competir
+no catálogo; mudar depois é caro e arriscado.
+
 5. **Trava anti-kit passa a comparar com o nosso item, não com "1 unidade" fixo.** O
    "Aquaphor Duo Pack 2 Unidades" (GTIN `4005800220012`) tem ficha `SALE_FORMAT=Kit`/
    `UNITS_PER_PACK=2` — idêntica ao item, que declara Kit/2 — e era reprovada como se fosse a
