@@ -172,26 +172,26 @@ describe('produto simples com capa não exige foto por variação', () => {
     mkFam({ operacao: 'CREATE', tipoAviamento: 'outro', capaStoragePath: 'user/capas/x.jpg', ...over });
 
   test('CREATE 1 variação sem cor e sem foto, com capa: publicável', () => {
-    const v = mkVar({ cor: null, fotoPath: null });
+    const v = mkVar({ cor: '', fotoPath: undefined });
     expect(familiaPublicavel(simples({ variacoes: [v] }))).toEqual({ ok: true, motivos: [] });
   });
 
   test('mesma família: a variação não acusa "sem foto"', () => {
-    const f = simples({ variacoes: [mkVar({ cor: null, fotoPath: null })] });
+    const f = simples({ variacoes: [mkVar({ cor: '', fotoPath: undefined })] });
     expect(criticasVariacao(f.variacoes[0], 'CREATE', {
       exigeCor: familiaExigeCor(f), exigeFoto: familiaExigeFotoPorVariacao(f),
     })).toEqual([]);
   });
 
   test('sem capa: volta a exigir foto por variação (anúncio ficaria sem imagem)', () => {
-    const f = simples({ capaStoragePath: null, variacoes: [mkVar({ cor: null, fotoPath: null })] });
+    const f = simples({ capaStoragePath: null, variacoes: [mkVar({ cor: '', fotoPath: undefined })] });
     expect(familiaExigeFotoPorVariacao(f)).toBe(true);
     expect(familiaPublicavel(f).motivos).toContainEqual(expect.stringContaining('sem foto'));
   });
 
   test('2 variações com capa: cada cor segue exigindo foto própria', () => {
     const f = simples({
-      variacoes: [mkVar({ codigo: '001', fotoPath: null }), mkVar({ codigo: '002', fotoPath: 'f2.jpg' })],
+      variacoes: [mkVar({ codigo: '001', fotoPath: undefined }), mkVar({ codigo: '002', fotoPath: 'f2.jpg' })],
     });
     expect(familiaExigeFotoPorVariacao(f)).toBe(true);
     expect(familiaPublicavel(f).motivos).toContainEqual(expect.stringContaining('sem foto'));
@@ -200,7 +200,7 @@ describe('produto simples com capa não exige foto por variação', () => {
   test('UPDATE de 1 cor nova sem foto, com capa: segue exigindo foto (regra do UPDATE intocada)', () => {
     const f = mkFam({
       operacao: 'UPDATE', capaStoragePath: 'user/capas/x.jpg',
-      variacoes: [mkVar({ cor: null, fotoPath: null, mlVariationId: null })],
+      variacoes: [mkVar({ cor: '', fotoPath: undefined, mlVariationId: null })],
     });
     expect(familiaPublicavel(f).motivos).toContainEqual(expect.stringContaining('sem foto'));
   });
