@@ -16,7 +16,7 @@ import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
 import { GraficoCockpit, type MetricaGrafico } from '@/components/dashboard/grafico-cockpit';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildDashboardReport } from '@/lib/export/adapters';
-import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
+import { resolverJanela, janelaAnterior, rotuloAnterior, type Periodo } from '@/lib/metricas';
 import { agruparPorPeriodo, ehFaturavel, formatProximaLiberacao, ratearLiquidoPorFrete } from '@/lib/resumo-vendas';
 import { liquidoPorCanal } from '@/lib/resumo-por-canal';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
@@ -40,11 +40,11 @@ import { agruparPorGeografia } from '@/lib/geografia-vendas';
 import { montarAliquotaResolver, montarCustoResolver, montarPesoResolver } from '@/lib/custos';
 
 type Trend = 'up' | 'down' | 'neutral';
-function delta(atual: number, anterior: number): { texto: string; trend: Trend } {
+function deltaCom(atual: number, anterior: number, rotulo: string): { texto: string; trend: Trend } {
   if (anterior === 0) return { texto: atual > 0 ? 'novo' : '—', trend: atual > 0 ? 'up' : 'neutral' };
   const p = ((atual - anterior) / Math.abs(anterior)) * 100;
   const trend: Trend = p > 0.5 ? 'up' : p < -0.5 ? 'down' : 'neutral';
-  return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% vs. anterior`, trend };
+  return { texto: `${p >= 0 ? '+' : ''}${Math.round(p)}% ${rotulo}`, trend };
 }
 
 function fmtDia(iso: string): string {
@@ -99,6 +99,7 @@ export default function Dashboard() {
 const [metrica, setMetrica] = useState<'faturamento' | MetricaGrafico>('faturamento');
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const janelaAnt = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
+  const delta = (atual: number, anterior: number) => deltaCom(atual, anterior, rotuloAnterior(periodo));
 
   const { resumo: r, isFetching, error } = useResumoVendas(janela, canalAtivo);
   const { resumo: rAnt } = useResumoVendas(janelaAnt, canalAtivo);

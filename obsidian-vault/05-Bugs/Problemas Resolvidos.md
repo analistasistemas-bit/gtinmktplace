@@ -10,6 +10,17 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **"vs. anterior" do filtro "Hoje" parecia número errado — era só o rótulo (2026-08-06)** — Diego
+  viu, às 11h37, "Faturamento bruto R$ 1.158,21 · +27% vs. anterior" enquanto ontem fechado deu
+  R$ 2.962,70, e leu como regressão do fix de 2026-07-06 (abaixo). **Não era bug de cálculo**: a
+  janela anterior de 'hoje' é ontem 00:00 → ontem 11h37 (~R$ 912 / 10 pedidos), e os três cards
+  fechavam entre si (+40% pedidos, −9% ticket). O problema é semântico — "vs. anterior" é lido
+  como "ontem fechado", ainda mais depois que **Mês atual** passou a comparar dias inteiros
+  (commit `316c45ce`, 2026-08-02). Manter a matemática: "Hoje" é 100% dia parcial, comparar
+  contra ontem fechado mostraria −60% toda manhã. **Fix:** `rotuloAnterior(periodo)` em
+  `src/lib/metricas.ts` — o card de "Hoje" (Dashboard e Financeiro) agora diz
+  **"vs. ontem até agora"**; os demais períodos seguem "vs. anterior".
+
 - **Descrição publicada saía "tudo junto" no ML (2026-08-06)** — Diego relatou a descrição do
   anúncio ilegível, com os títulos de seção colados no parágrafo anterior. Causa raiz no nosso
   lado: o gerador de copy separa as seções **apenas pelo emoji** do cabeçalho (`📌 ESPECIFICAÇÕES`),
