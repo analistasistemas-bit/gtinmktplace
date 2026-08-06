@@ -295,3 +295,127 @@ describe('processarAtualizacaoFamilia — família migrada pelo ML para UP (ADR-
     expect(tentouAdotar).toBe(false);
   });
 });
+
+// ADR-0105 — o ML DISSOLVEU a família: fechou o item Legacy e criou N itens novos, SEM SKU e sem
+// nenhum ponteiro do velho para o novo. O conector sinaliza `dissolvido`; o worker descobre a
+// família sucessora pelo título e casa cada SKU pela COR observada no item morto.
+describe('processarAtualizacaoFamilia — família DISSOLVIDA pelo ML (ADR-0105)', () => {
+  const DISSOLVIDO = {
+    titulo: 'AGULHA MATTE',
+    categoriaId: 'MLB419782',
+    corPorSku: { V1: 'Azul ML', V2: 'Rosa ML' },
+    motivoFallback: 'Anúncio closed no Mercado Livre. Estoque e preço não podem ser atualizados — republique o produto para voltar a vender.',
+  };
+  const UP_DISSOLVIDO = { familyId: null, familyName: null, sellerId: 'seller-1', dissolvido: DISSOLVIDO };
+  const duasCasadas = [{ ...VAR_CASADA }, { ...VAR_CASADA, codigo: 'V2', ml_variation_id: 'MLV2' }];
+
+  const achada = {
+    tipo: 'achada' as const,
+    familia: {
+      familyId: 'FAM-NOVA',
+      familyName: 'AGULHA MATTE',
+      itemPorCor: new Map([['Azul ML', 'MLB-A'], ['Rosa ML', 'MLB-B']]),
+      coresAmbiguas: [],
+    },
+  };
+
+  it('descobre a família nova, casa SKU→COR→irmão e entrega à saga UP no mesmo attempt', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: null },
+      itensUP: [],
+      variacoes: duasCasadas,
+    });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_DISSOLVIDO);
+    const criterios: unknown[] = [];
+    const adocoes: unknown[] = [];
+    let portasUsadas: { buscarPorSku(sku: string): Promise<unknown> } | null = null;
+    let rodouUP = false;
+    const deps = baseDeps(admin, {
+      descobrirUP: async (_f, crit) => { criterios.push(crit); return achada; },
+      adotarUP: async (p, entrada) => {
+        portasUsadas = p as never;
+        adocoes.push(entrada);
+        return { tipo: 'adotada', filhos: [], familyId: 'FAM-NOVA' };
+      },
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => { rodouUP = true; return { estado: 'ok', adicionadas: 0 }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+
+    expect(r.tipo).toBe('ok');
+    expect(rodouUP).toBe(true);
+    // A busca da família ancora no título e na categoria do item morto, excluindo o próprio morto.
+    expect(criterios[0]).toMatchObject({
+      sellerId: 'seller-1', titulo: 'AGULHA MATTE', categoriaId: 'MLB419782', itemMortoId: 'MLB-EXISTENTE',
+    });
+    // O family_name da raiz vem dos IRMÃOS (o item morto não tem nenhum para dar).
+    expect(adocoes[0]).toMatchObject({
+      skus: ['V1', 'V2'], sellerEsperado: 'seller-1',
+      mlItemIdAtual: 'MLB-EXISTENTE', familyNameObservado: 'AGULHA MATTE',
+    });
+    // O casamento por cor resolve cada SKU para o irmão certo, sem nenhuma busca remota por SKU.
+    expect(await portasUsadas!.buscarPorSku('V1')).toEqual({ tipo: 'um', itemExternoId: 'MLB-A' });
+    expect(await portasUsadas!.buscarPorSku('V2')).toEqual({ tipo: 'um', itemExternoId: 'MLB-B' });
+  });
+
+  it('cor sem irmão correspondente → aquele SKU não resolve (a regra tudo-ou-nada aborta a adoção)', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [], variacoes: duasCasadas,
+    });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_DISSOLVIDO);
+    let portasUsadas: { buscarPorSku(sku: string): Promise<unknown> } | null = null;
+    const deps = baseDeps(admin, {
+      descobrirUP: async () => ({
+        ...achada,
+        familia: { ...achada.familia, itemPorCor: new Map([['Azul ML', 'MLB-A']]) },
+      }),
+      adotarUP: async (p) => { portasUsadas = p as never; return { tipo: 'incompleta', mensagem: '1 de 2 cores' }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(await portasUsadas!.buscarPorSku('V2')).toEqual({ tipo: 'nenhum' });
+    expect(r.tipo).toBe('erro');
+  });
+
+  it('nenhuma família sucessora → lança a mensagem ORIGINAL do guard (anúncio de fato encerrado)', async () => {
+    const { admin } = fakeAdmin({ raizUP: null, itensUP: [], variacoes: duasCasadas });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_DISSOLVIDO);
+    let tentouAdotar = false;
+    const deps = baseDeps(admin, {
+      descobrirUP: async () => ({ tipo: 'nenhuma' }),
+      adotarUP: async () => { tentouAdotar = true; return { tipo: 'incompleta', mensagem: 'x' }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    if (r.tipo !== 'erro') return;
+    expect(r.mensagem).toBe(DISSOLVIDO.motivoFallback);
+    expect(tentouAdotar).toBe(false);
+  });
+
+  it('mais de uma família candidata → erro com os family_id observados, sem adotar nada', async () => {
+    const { admin } = fakeAdmin({ raizUP: null, itensUP: [], variacoes: duasCasadas });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_DISSOLVIDO);
+    let tentouAdotar = false;
+    const deps = baseDeps(admin, {
+      descobrirUP: async () => ({ tipo: 'ambigua', familyIds: ['FAM-1', 'FAM-2'] }),
+      adotarUP: async () => { tentouAdotar = true; return { tipo: 'incompleta', mensagem: 'x' }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    if (r.tipo !== 'erro') return;
+    expect(r.mensagem).toContain('FAM-1, FAM-2');
+    expect(tentouAdotar).toBe(false);
+  });
+
+  it('REGRESSÃO ADR-0104: MIGRADO_PARA_UP sem `dissolvido` continua adotando por SKU, sem descobrir nada', async () => {
+    const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'X', criado_em: null }, itensUP: [] });
+    fakeConnector.falharProximo('MIGRADO_PARA_UP', false, UP_OBSERVADO);
+    let descobriu = false;
+    const deps = baseDeps(admin, {
+      descobrirUP: async () => { descobriu = true; return { tipo: 'nenhuma' }; },
+      adotarUP: async () => ({ tipo: 'adotada', filhos: [], familyId: 'FAM-9' }),
+      atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }),
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(descobriu).toBe(false);
+    expect(r.tipo).toBe('ok');
+  });
+});

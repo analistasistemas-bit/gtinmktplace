@@ -21,6 +21,11 @@ export interface ItemMLAtual {
   familyId: string | null;
   familyName: string | null;
   sellerId: string | null;
+  // ADR-0105: quando o ML DISSOLVE a família (fecha o item Legacy e cria N itens novos), o item
+  // morto não guarda family_id/family_name nem ponteiro nenhum para o sucessor. O título é a única
+  // âncora de busca que sobra (`?q=`), e a categoria filtra os candidatos.
+  titulo: string | null;
+  categoriaId: string | null;
 }
 
 function erroML(status: number, json: unknown): Error {
@@ -45,7 +50,7 @@ export function corDaVariacaoML(attributeCombinations: unknown): string | null {
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
   const url = `https://api.mercadolibre.com/items/${itemId}`
     + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status'
-    + ',family_id,family_name,seller_id';
+    + ',family_id,family_name,seller_id,title,category_id';
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
   if (!resp.ok) throw erroML(resp.status, json);
@@ -76,6 +81,8 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     familyId: json.family_id != null ? String(json.family_id) : null,
     familyName: (json.family_name as string | null | undefined) ?? null,
     sellerId: json.seller_id != null ? String(json.seller_id) : null,
+    titulo: (json.title as string | null | undefined) ?? null,
+    categoriaId: (json.category_id as string | null | undefined) ?? null,
   };
 }
 

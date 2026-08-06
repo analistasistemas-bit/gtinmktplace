@@ -25,6 +25,18 @@ export interface EstadoAnuncioML {
 }
 
 /**
+ * ADR-0105: sub_status que prova anúncio REMOVIDO/bloqueado (não migrado), ou `null`.
+ *
+ * O `status` terminal sozinho é ambíguo — `closed` é também o estado em que o ML deixa o item
+ * Legacy quando DISSOLVE a família em User Products (lote #45: `closed` com `sub_status: []`, e
+ * 17 itens novos sob um `family_id`). Só o sub_status distingue "morreu" de "virou outra coisa".
+ */
+export function subStatusMorto(item: EstadoAnuncioML): string | null {
+  const sub = (item.subStatus ?? []).filter((s): s is string => typeof s === 'string');
+  return sub.find((s) => SUB_STATUS_MORTO.has(s)) ?? null;
+}
+
+/**
  * Motivo pelo qual o anúncio NÃO pode ser atualizado, ou `null` se pode.
  *
  * Fail-open em status desconhecido: bloqueia SÓ o que sabemos ser terminal. Um status novo (ou
@@ -33,8 +45,7 @@ export interface EstadoAnuncioML {
  * silêncio atualizações que teriam funcionado, trocando um erro confuso por um bug pior.
  */
 export function motivoAnuncioNaoAtualizavel(item: EstadoAnuncioML): string | null {
-  const sub = (item.subStatus ?? []).filter((s): s is string => typeof s === 'string');
-  const morto = sub.find((s) => SUB_STATUS_MORTO.has(s));
+  const morto = subStatusMorto(item);
   if (morto) {
     return `Anúncio removido no Mercado Livre (${morto}). Estoque e preço não podem ser atualizados — `
       + 'republique o produto para voltar a vender.';

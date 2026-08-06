@@ -115,7 +115,39 @@ export interface PortasAdocaoDeps {
   categoriaId: string;
   /** family_name observado no GET ao vivo do item migrado (critério da busca por SKU). */
   familyName: string;
+  /** ADR-0105: `familias.ml_item_id` que a migração dissolveu — a RPC re-aponta TODAS as famílias
+   *  do mesmo `codigo_pai` que apontavam para ele (há uma família por lote). Uma família do mesmo
+   *  pai apontando para outro anúncio (split, ADR-0048) fica intocada. */
+  mlItemIdAntigo: string;
   fetchLike?: FetchLike;
+}
+
+/** Escrita local da adoção — idêntica nos dois caminhos (busca por SKU, ADR-0104; casamento por
+ *  cor, ADR-0105). Só muda como os filhos foram descobertos. */
+function adotarViaRpc(
+  admin: SupabaseClient,
+  ctx: { orgId: string; userId: string; familiaId: string; codigoPai: string; mlItemIdAntigo: string },
+): PortasAdocao['adotar'] {
+  return async ({ filhos, familyName, mlItemId }) => {
+    const { error } = await admin.rpc('adotar_familia_migrada_up', {
+      p_org_id: ctx.orgId,
+      p_user_id: ctx.userId,
+      p_familia_id: ctx.familiaId,
+      p_codigo_pai: ctx.codigoPai,
+      p_family_name: familyName,
+      p_ml_item_id: mlItemId,
+      p_ml_item_id_antigo: ctx.mlItemIdAntigo,
+      p_filhos: filhos.map((f) => ({
+        sku: f.sku,
+        item_externo_id: f.itemExternoId,
+        family_id: f.familyId,
+        user_product_id: f.userProductId,
+        permalink: f.permalink,
+        status: f.status,
+      })),
+    });
+    if (error) throw new Error(`adotar_familia_migrada_up (${ctx.codigoPai}): ${error.message}`);
+  };
 }
 
 export function criarPortasAdocao(deps: PortasAdocaoDeps): PortasAdocao {
@@ -134,24 +166,46 @@ export function criarPortasAdocao(deps: PortasAdocaoDeps): PortasAdocao {
     confirmar: async (itemExternoId) =>
       buscarItemBackfill(fetchLike, { accessToken: await getToken() }, itemExternoId),
 
-    async adotar({ filhos, familyName: nome, mlItemId }) {
-      const { error } = await admin.rpc('adotar_familia_migrada_up', {
-        p_org_id: orgId,
-        p_user_id: userId,
-        p_familia_id: familiaId,
-        p_codigo_pai: codigoPai,
-        p_family_name: nome,
-        p_ml_item_id: mlItemId,
-        p_filhos: filhos.map((f) => ({
-          sku: f.sku,
-          item_externo_id: f.itemExternoId,
-          family_id: f.familyId,
-          user_product_id: f.userProductId,
-          permalink: f.permalink,
-          status: f.status,
-        })),
-      });
-      if (error) throw new Error(`adotar_familia_migrada_up (${codigoPai}): ${error.message}`);
+    adotar: adotarViaRpc(admin, { orgId, userId, familiaId, codigoPai, mlItemIdAntigo: deps.mlItemIdAntigo }),
+  };
+}
+
+// ── ADR-0105 — portas do RE-VÍNCULO de família DISSOLVIDA (item Legacy fechado, irmãos sem SKU) ──
+// A adoção (`adotarFamiliaMigrada`) é a mesma, com as mesmas validações e a mesma regra
+// tudo-ou-nada: o que muda é só de onde sai o item de cada SKU. Aqui não há busca remota por SKU —
+// os irmãos não têm `seller_custom_field` —, e sim o mapa já resolvido por COR na descoberta.
+
+export interface PortasRevinculoDeps {
+  admin: SupabaseClient;
+  getToken(): Promise<string>;
+  orgId: string;
+  userId: string;
+  familiaId: string;
+  codigoPai: string;
+  mlItemIdAntigo: string;
+  /** sku → id do item irmão, resolvido por COLOR.value_name (ADR-0105 §2). */
+  itemPorSku: Map<string, string>;
+  fetchLike?: FetchLike;
+}
+
+export function criarPortasRevinculo(deps: PortasRevinculoDeps): PortasAdocao {
+  const { admin, getToken, orgId, userId, familiaId, codigoPai, mlItemIdAntigo, itemPorSku } = deps;
+  const fetchLike: FetchLike = deps.fetchLike
+    ?? ((url, init) => fetch(url, init as RequestInit) as unknown as ReturnType<FetchLike>);
+
+  return {
+    // Resolução local: 'nenhum' quando a cor daquele SKU não achou irmão (ou achou mais de um) —
+    // e a regra tudo-ou-nada do chamador aborta o re-vínculo inteiro, como deve.
+    buscarPorSku: (sku) => {
+      const itemExternoId = itemPorSku.get(sku);
+      return Promise.resolve(itemExternoId ? { tipo: 'um' as const, itemExternoId } : { tipo: 'nenhum' as const });
     },
+
+    // Revalidação remota INTACTA (ADR-0104): seller, variations vazio, family_id, user_product_id
+    // e status remoto conhecido. O mapa por cor decide QUEM confirmar, nunca dispensa a confirmação.
+    confirmar: async (itemExternoId) =>
+      buscarItemBackfill(fetchLike, { accessToken: await getToken() }, itemExternoId),
+
+    adotar: adotarViaRpc(admin, { orgId, userId, familiaId, codigoPai, mlItemIdAntigo }),
   };
 }

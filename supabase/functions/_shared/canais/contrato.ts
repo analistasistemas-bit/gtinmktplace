@@ -66,7 +66,22 @@ export interface ErroCanal {
   /** ADR-0104: só em `MIGRADO_PARA_UP` — o que o GET ao vivo observou no item migrado. A
    *  orquestração precisa disto para buscar os irmãos (family_name é critério da busca por SKU)
    *  e para validar o vendedor. */
-  up?: { familyId: string | null; familyName: string | null; sellerId: string | null };
+  up?: {
+    familyId: string | null;
+    familyName: string | null;
+    sellerId: string | null;
+    /** ADR-0105: presente quando o item Legacy foi DISSOLVIDO (fechado) em vez de convertido. Não
+     *  há family_id/family_name no item morto — a orquestração descobre a família nova pelo título
+     *  e casa as cores. `motivoFallback` é a mensagem original do guard de anúncio morto, lançada
+     *  intacta se a descoberta não achar nada (anúncio de fato encerrado). */
+    dissolvido?: {
+      titulo: string | null;
+      categoriaId: string | null;
+      /** sku (seller_custom_field) → COLOR.value_name, lidos das variações do item morto. */
+      corPorSku: Record<string, string>;
+      motivoFallback: string;
+    };
+  };
 }
 
 export interface ResultadoCanal<T> {

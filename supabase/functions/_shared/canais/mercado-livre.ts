@@ -10,7 +10,7 @@ import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoU
 import { precisaItemPlano } from '../ml/erro-ml.ts';
 import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
-import { motivoAnuncioNaoAtualizavel } from '../ml/anuncio-atualizavel.ts';
+import { motivoAnuncioNaoAtualizavel, subStatusMorto } from '../ml/anuncio-atualizavel.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
@@ -52,6 +52,36 @@ function migradoParaUP(
         + 'a atualização é feita item a item (ADR-0088/0104).',
       retentavel: false,
       up: { familyId: atual.familyId, familyName: atual.familyName, sellerId: atual.sellerId },
+    },
+  };
+}
+
+// ADR-0105: o ML DISSOLVEU a família — fechou o item Legacy e criou N itens novos sob um family_id.
+// O item morto não guarda family_id/family_name/parent_item_id: nada aponta para o sucessor. O que
+// dá para levar daqui é o título (âncora da busca), a categoria (filtro), e o mapa sku→cor lido das
+// variações do item morto — a ÚNICA fonte em que o ML escreveu SKU e cor lado a lado.
+function dissolvidoParaUP(
+  atual: { titulo: string | null; categoriaId: string | null; sellerId: string | null;
+    variations: Array<{ seller_custom_field?: string | null; cor?: string | null }> },
+  motivoFallback: string,
+): ResultadoCanal<ResultadoAtualizacao> {
+  const corPorSku: Record<string, string> = {};
+  for (const v of atual.variations) {
+    if (v.seller_custom_field && v.cor) corPorSku[v.seller_custom_field] = v.cor;
+  }
+  return {
+    ok: false,
+    erro: {
+      codigo: 'MIGRADO_PARA_UP',
+      mensagemOperador: 'Anúncio encerrado no Mercado Livre — verificando se foi migrado para o '
+        + 'modelo User Products (ADR-0105).',
+      retentavel: false,
+      up: {
+        familyId: null,
+        familyName: null,
+        sellerId: atual.sellerId,
+        dissolvido: { titulo: atual.titulo, categoriaId: atual.categoriaId, corPorSku, motivoFallback },
+      },
     },
   };
 }
@@ -168,6 +198,14 @@ export const mercadoLivreConnector: ChannelConnector = {
       // para o lugar errado. Falha alto com a causa certa, antes de gastar a escrita. Lote #45.
       const motivoMorto = motivoAnuncioNaoAtualizavel(atual);
       if (motivoMorto) {
+        // ADR-0105: `status` terminal SEM sub_status de remoção é ambíguo — é também o estado em
+        // que o ML deixa o item Legacy ao dissolver a família em User Products. Sinaliza tipado
+        // (a orquestração procura a família sucessora); se não achar, ela lança `motivoMorto`
+        // intacto. `deleted`/`forbidden` provam remoção e continuam falhando aqui, sem gastar
+        // busca nenhuma na fila serial (parallelism=1, ADR-0034).
+        if (!subStatusMorto(atual) && a.existentes.length > 0) {
+          return dissolvidoParaUP(atual, motivoMorto);
+        }
         // 400 = definitivo: retentar não ressuscita anúncio removido (o QStash pararia de tentar
         // só depois de 10 retries × 30s, atrasando o resto da fila serial à toa).
         const err = new Error(motivoMorto) as Error & { status?: number };
@@ -281,6 +319,18 @@ export const mercadoLivreConnector: ChannelConnector = {
     const token = await ctx.getToken();
     try {
       const atual = await buscarItemML(token, itemExternoId);
+
+      // ADR-0105 §6: o push rápido fazia GET→PUT sem guard nenhum — num anúncio morto (ou numa
+      // família que o ML dissolveu) escrevia num item `closed` e devolvia o erro cru do ML. Mesmo
+      // guard do UPDATE, mesma causa certa. O re-vínculo automático NÃO mora aqui: uma passada de
+      // UPDATE adota a família e daí em diante este caminho roteia pelos filhos UP.
+      const motivoMorto = motivoAnuncioNaoAtualizavel(atual);
+      if (motivoMorto) {
+        return {
+          ok: false,
+          erro: { codigo: 'ESTOQUE', mensagemOperador: motivoMorto, retentavel: false, status: 400 },
+        };
+      }
 
       // Item plano (ADR-0084/0088): sem sub-recurso `variations`. Repõe na raiz do item.
       // Um item plano corresponde a exatamente 1 SKU; mais que isso é alvo mal resolvido.

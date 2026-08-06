@@ -19,7 +19,11 @@ import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs, type ResultadoAtualiza
 import {
   adotarFamiliaMigrada, type PortasAdocao, type EntradaAdocao, type ResultadoAdocao,
 } from '../_shared/user-products/adotar-familia-migrada.ts';
-import { criarPortasAdocao } from '../_shared/user-products/portas-supabase.ts';
+import { criarPortasAdocao, criarPortasRevinculo } from '../_shared/user-products/portas-supabase.ts';
+import {
+  descobrirFamiliaUP, type CriteriosDescoberta, type ResultadoDescoberta,
+} from '../_shared/ml/descobrir-familia-up.ts';
+import type { FetchLike } from '../_shared/ml/buscar-item.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 
 const CANAL = 'mercado_livre';
@@ -40,6 +44,8 @@ export interface ProcessarDeps {
   atualizarUP?: (args: AtualizarFamiliaUPArgs) => Promise<ResultadoAtualizarUP>;
   /** ADR-0104: adoção de família migrada pelo ML para User Products. */
   adotarUP?: (portas: PortasAdocao, entrada: EntradaAdocao) => Promise<ResultadoAdocao>;
+  /** ADR-0105: descoberta da família UP que substituiu um anúncio Legacy dissolvido. */
+  descobrirUP?: (fetchLike: FetchLike, crit: CriteriosDescoberta) => Promise<ResultadoDescoberta>;
   finalizarLote?: (loteId: string) => Promise<void>;
 }
 export interface ProcessarOpts { tentativas: number }
@@ -48,6 +54,7 @@ export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job,
   const { admin, conn } = deps;
   const atualizarUP = deps.atualizarUP ?? atualizarFamiliaUP;
   const adotar = deps.adotarUP ?? adotarFamiliaMigrada;
+  const descobrir = deps.descobrirUP ?? descobrirFamiliaUP;
   const finalizarLote = deps.finalizarLote ?? ((loteId: string) => talvezFinalizarLote(admin, loteId));
   const { tentativas } = opts;
 
@@ -227,21 +234,74 @@ export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job,
       // saga UP no MESMO attempt — sem pedir nada ao operador.
       if (e.codigo === 'MIGRADO_PARA_UP') {
         if (!conexao?.contaExternaId) throw new Error('Organização sem conexão com o Mercado Livre');
-        const familyName = e.up?.familyName;
-        // Sem family_name a busca por SKU não tem como validar os irmãos — nunca adivinha.
-        if (!familyName) {
-          const err = new Error(
-            'Anúncio no modelo User Products sem family_name — não é possível localizar as cores '
-            + 'automaticamente. Confira o anúncio no painel do Mercado Livre. (400)',
-          ) as Error & { status?: number };
-          err.status = 400;
-          throw err;
+        // ── ADR-0105: o ML DISSOLVEU a família (fechou o item Legacy e criou N itens novos) ──────
+        // Não há family_id/family_name no item morto e os irmãos não têm SKU: descobre a família
+        // pelo título e casa cada SKU pela COR (dados autorais do ML dos dois lados). A adoção em
+        // si — validações, tudo-ou-nada, RPC — é a mesma do ADR-0104.
+        const dissolvido = e.up?.dissolvido;
+        const comum = {
+          admin, getToken: ctx.getToken, orgId: familia.org_id, userId: familia.user_id,
+          familiaId: job.familia_id, codigoPai: familia.codigo_pai,
+          mlItemIdAntigo: familia.ml_item_id as string,
+        };
+
+        let portas: PortasAdocao;
+        let familyName: string;
+
+        if (dissolvido) {
+          const descoberta = await descobrir(
+            (url, init) => fetch(url, init as RequestInit) as unknown as ReturnType<FetchLike>,
+            {
+              getToken: ctx.getToken,
+              sellerId: conexao.contaExternaId,
+              titulo: dissolvido.titulo ?? '',
+              categoriaId: dissolvido.categoriaId ?? '',
+              itemMortoId: familia.ml_item_id,
+            },
+          );
+          // Nenhuma família sucessora → o anúncio foi mesmo encerrado. Lança a mensagem ORIGINAL
+          // do guard de anúncio morto (lote #45), palavra por palavra: nada mudou para esse caso.
+          if (descoberta.tipo === 'nenhuma') {
+            const err = new Error(dissolvido.motivoFallback) as Error & { status?: number };
+            err.status = 400;
+            throw err;
+          }
+          if (descoberta.tipo === 'ambigua') {
+            const err = new Error(
+              `Anúncio encerrado e mais de uma família User Products candidata no Mercado Livre `
+              + `(family_id ${descoberta.familyIds.join(', ')}) — não dá para escolher sem adivinhar. `
+              + 'Nada foi alterado. Confira no painel do Mercado Livre. (400)',
+            ) as Error & { status?: number };
+            err.status = 400;
+            throw err;
+          }
+          // SKU → COR (variações do item morto) → irmão. Os dois lados do casamento são dados
+          // autorais do ML; `variacoes.cor` do nosso banco NUNCA entra aqui (ADR-0105 §2).
+          const itemPorSku = new Map<string, string>();
+          for (const [sku, cor] of Object.entries(dissolvido.corPorSku)) {
+            const item = descoberta.familia.itemPorCor.get(cor);
+            if (item) itemPorSku.set(sku, item);
+          }
+          familyName = descoberta.familia.familyName;
+          portas = criarPortasRevinculo({ ...comum, itemPorSku });
+        } else {
+          const nome = e.up?.familyName;
+          // Sem family_name a busca por SKU não tem como validar os irmãos — nunca adivinha.
+          if (!nome) {
+            const err = new Error(
+              'Anúncio no modelo User Products sem family_name — não é possível localizar as cores '
+              + 'automaticamente. Confira o anúncio no painel do Mercado Livre. (400)',
+            ) as Error & { status?: number };
+            err.status = 400;
+            throw err;
+          }
+          familyName = nome;
+          portas = criarPortasAdocao({
+            ...comum, sellerId: conexao.contaExternaId,
+            categoriaId: familia.categoria_ml_id ?? '', familyName,
+          });
         }
-        const portas = criarPortasAdocao({
-          admin, getToken: ctx.getToken, sellerId: conexao.contaExternaId,
-          orgId: familia.org_id, userId: familia.user_id, familiaId: job.familia_id,
-          codigoPai: familia.codigo_pai, categoriaId: familia.categoria_ml_id ?? '', familyName,
-        });
+
         // Adota só as cores JÁ PUBLICADAS (casadas): uma cor genuinamente nova ainda não existe no
         // ML e faria a busca abortar sempre. As novas ficam para a saga de composição criar depois
         // (em "somente estoque" são ignoradas, ADR-0104 §4).

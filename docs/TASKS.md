@@ -93,11 +93,38 @@ multi-cor:
   entregar à saga UP.
 - [x] Migration `20260805020213_adr104_adotar_familia_migrada_up.sql` aplicada e validada
   (`db:check` alinhado, `supabase db lint` sem erros de schema).
-- [ ] **Pendente de validação real:** nenhuma família do Diego foi migrada pelo ML ainda. A forma
-  exata da migração é hipótese validada em **runtime** — a primeira ocorrência real traz as
-  contagens observadas na mensagem de erro se não bater com o esperado.
+- [x] **Validado na realidade — e a hipótese estava errada.** Ver a seção do ADR-0105 abaixo.
 - [ ] **Limite conhecido (ADR-0104 §2):** irmãos fora da planilha do lote ficam sem linha filha —
   vendas deles não são atribuídas à família até um lote futuro incluir a cor.
+
+## Família DISSOLVIDA pelo ML em User Products — 2026-08-06 (ADR-0105)
+
+A primeira migração real chegou (lote #45, `PAI 02186551`) e a forma **não** é a que o ADR-0104
+supôs: o ML **não converte** o item — ele **fecha** o anúncio Legacy (`status: closed`,
+`sub_status: []`, sem `family_id`/`family_name`/`parent_item_id`) e cria N itens novos sob um
+`family_id`, **todos sem `seller_custom_field`**. Consequência: o guard de anúncio morto disparava
+primeiro (o operador via "republique o produto") e, mesmo se não disparasse, a busca por SKU acharia
+0 de 17.
+
+- [x] **Gatilho novo:** `status` terminal **sem** `sub_status` de remoção vira `MIGRADO_PARA_UP`
+  tipado, carregando título, categoria e o mapa `SKU → COR` das variações do item morto. `deleted`/
+  `forbidden` continuam falhando na hora, sem gastar busca.
+- [x] **Descoberta** (`_shared/ml/descobrir-familia-up.ts`): localiza a família por `?q=<título>`
+  (fail-closed: um único `family_id` entre candidatos do mesmo seller/categoria, sem `variations`) e
+  a enumera pela fonte autoritativa `?family_id=`.
+- [x] **Casamento por `COLOR.value_name`**, com os dois lados vindo de dados autorais do ML.
+  `variacoes.cor` do nosso banco **nunca** entra (ADR-0105 §2).
+- [x] **Adoção reusada inteira** do ADR-0104 — tudo-ou-nada, validações, RPC. Só a porta
+  `buscarPorSku` muda (resolve pelo mapa de cor em vez de bater na API).
+- [x] **RPC re-aponta todas as famílias do `codigo_pai`** que apontavam para o item dissolvido
+  (`p_ml_item_id_antigo`) — há uma `familias` por lote; a irmã ficava com `ml_item_id` morto e
+  `ml_variation_id` órfão.
+- [x] **`atualizarEstoque` (push rápido) ganhou o guard de anúncio morto** — escrevia em item
+  `closed` e devolvia o erro cru do ML.
+- [ ] **Limite conhecido (ADR-0105 §6):** o push rápido de estoque **não** re-vincula sozinho —
+  exige uma passada de UPDATE na família migrada.
+- [ ] Aplicar em produção: `supabase db push` + `supabase functions deploy` das funções afetadas, e
+  rodar o UPDATE do lote #45 para validar o re-vínculo ponta a ponta.
 
 ## Produto gravado na organização errada — corrigido 2026-08-04
 
