@@ -33,6 +33,17 @@ um Aquaphor corporal à ficha de *hidratante labial* do domínio facial é exata
 que a política de PI pune. Estoque 12, zero vendas, `under_review`/`forbidden` — recuperável por
 contestação com NF-e, que é o caminho em curso.
 
+**Recuperação (2026-08-06):** não havia contestação possível — o ML deu o anúncio como "Finalizado".
+Republicado pelo fluxo normal do app (reset da família + `publish-familia-ml`), nos moldes originais:
+`MLB5004717379`, categoria `MLB1262` (Cuidado do Corpo), título completo restaurado ("...Sem
+Fragrância", que o vínculo tinha truncado), R$ 54,90, 12 un, Clássico, `me2` sem frete grátis, sem
+vínculo de catálogo. O worker de catálogo rodou e **não** vinculou (a trava de domínio segura a
+ficha facial). O anúncio novo entrou em `pending_documentation` ~40s após a criação — a mesma
+exigência de NF-e da marca Eucerin que este produto já tinha sofrido em 05/08 e que foi resolvida
+no mesmo dia; reativa sozinho quando a nota é apresentada. As 6 fotos que o operador havia
+adicionado à mão no painel não voltam pelo app (ele só conhece capa + foto da variação) e
+`pictures` não é editável sob revisão — restaurar só depois da reativação.
+
 **Lição:** a categoria escolhida na publicação decide se o anúncio poderá competir no catálogo
 (a ficha precisa ser do mesmo domínio). Trocar categoria depois de publicado é ação de risco —
 re-modera o anúncio e pode derrubá-lo por PI. **Trava implementada no mesmo dia:**

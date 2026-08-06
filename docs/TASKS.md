@@ -21,8 +21,18 @@ tendo concorrentes. Diagnóstico: **32 de 32** variações de item plano estavam
 - [x] **`catalog_erro` guarda a causa real** do 400 (`cause[]`), não o "Validation error" genérico.
 - [x] Os 3 anúncios da DSA vinculados: Principia → `MLB7343600804` (ativo, competindo);
   Eucerin Sun → `MLB7343614472`; Aquaphor → `MLB7343603036` (feito pelo próprio worker).
-- [ ] **Pendente com o ML (ação humana):** `MLB7343614472` em `pending_documentation` (documentação
-  da marca) e o par do Aquaphor em `forbidden` após a troca de categoria — contestar no painel.
+- [x] **Trava de domínio** — `fichaEquivalente` reprova ficha de domínio diferente do anúncio
+  (`dominio_<ficha>_vs_<item>`), a raiz do incidente do Aquaphor. Validada contra 5 vinculações
+  reais (domínio idêntico em todas): sem regressão nas 211 existentes.
+- [x] **Aquaphor republicado** — o ML finalizou `MLB7330859238` por PI (sem contestação possível).
+  Republicado pelo fluxo do app como `MLB5004717379`, nos moldes originais (categoria `MLB1262`,
+  título completo, R$ 54,90, 12 un, Clássico, `me2`, sem catálogo). O worker de catálogo rodou e
+  não vinculou — a trava de domínio segurou.
+- [ ] **Pendente com o ML (ação humana):** NF-e da Eucerin para `MLB5004717379`
+  (`pending_documentation`, mesma exigência de marca que o produto já teve em 05/08) e para
+  `MLB7343614472`. Reativam automaticamente após o aceite.
+- [ ] **Restaurar 6 fotos** do Aquaphor adicionadas à mão no painel (o app só conhece capa + foto
+  da variação); `pictures` não é editável sob revisão — só depois da reativação.
 - [ ] **29 itens planos restantes** (org AVIL) seguem `pendente`: o QStash já desistiu deles;
   precisam de re-enfileiramento de `vincular-catalogo` — não executado sem ordem do operador.
 
