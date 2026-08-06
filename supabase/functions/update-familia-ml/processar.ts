@@ -266,6 +266,15 @@ export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job,
             err.status = 400;
             throw err;
           }
+          if (descoberta.tipo === 'truncada') {
+            const err = new Error(
+              `Anúncio encerrado e a busca no Mercado Livre não cobriu todos os anúncios `
+              + `(${descoberta.observados} de ${descoberta.total}) — um conjunto parcial poderia `
+              + 'apontar para a família errada. Nada foi alterado. (400)',
+            ) as Error & { status?: number };
+            err.status = 400;
+            throw err;
+          }
           if (descoberta.tipo === 'ambigua') {
             const err = new Error(
               `Anúncio encerrado e mais de uma família User Products candidata no Mercado Livre `

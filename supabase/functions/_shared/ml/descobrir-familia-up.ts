@@ -44,7 +44,12 @@ export interface FamiliaUPDescoberta {
 export type ResultadoDescoberta =
   | { tipo: 'achada'; familia: FamiliaUPDescoberta }
   | { tipo: 'nenhuma' }
-  | { tipo: 'ambigua'; familyIds: string[] };
+  | { tipo: 'ambigua'; familyIds: string[] }
+  // Não cobrimos toda a paginação: o conjunto observado NÃO é o conjunto real. Um `?q=` truncado
+  // pode esconder um segundo family_id e transformar o que deveria ser `ambigua` num `achada`
+  // confiante e errado; um `?family_id=` truncado esconde irmãos. Nunca seguir — mesma razão do
+  // `{tipo:'truncado'}` de `buscarItemPorSku`.
+  | { tipo: 'truncada'; observados: number; total: number };
 
 export interface CriteriosDescoberta {
   /** Lazy de propósito: o token só é resolvido se a descoberta realmente rodar. */
@@ -86,11 +91,19 @@ export function corDoItemUP(attributes: ItemBruto['attributes']): string | null 
   return null;
 }
 
+/**
+ * Pagina `GET /users/{seller}/items/search`. `query` já traz o path do seller E a query string com
+ * o `?` (ex.: `1003820507/items/search?q=...`) porque o filtro varia entre as duas chamadas — o
+ * `&limit=/&offset=` daqui é apenso a ele.
+ *
+ * Devolve `truncado` quando não cobrimos `paging.total`: o chamador NUNCA pode tratar um conjunto
+ * parcial como completo.
+ */
 async function paginarBusca(
   fetchLike: FetchLike,
   headers: Record<string, string>,
   query: string,
-): Promise<string[]> {
+): Promise<{ ids: string[]; total: number; truncado: boolean }> {
   const ids: string[] = [];
   let total = 0;
   for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
@@ -103,7 +116,7 @@ async function paginarBusca(
     ids.push(...results);
     if (ids.length >= total || results.length === 0) break;
   }
-  return ids;
+  return { ids, total, truncado: ids.length < total };
 }
 
 async function multiget(
@@ -141,14 +154,17 @@ export async function descobrirFamiliaUP(
 ): Promise<ResultadoDescoberta> {
   const headers = { Authorization: `Bearer ${await crit.getToken()}` };
 
-  const idsPorTitulo = await paginarBusca(
+  const porTitulo = await paginarBusca(
     fetchLike,
     headers,
     `${encodeURIComponent(crit.sellerId)}/items/search?q=${encodeURIComponent(crit.titulo)}`,
   );
-  if (idsPorTitulo.length === 0) return { tipo: 'nenhuma' };
+  if (porTitulo.truncado) {
+    return { tipo: 'truncada', observados: porTitulo.ids.length, total: porTitulo.total };
+  }
+  if (porTitulo.ids.length === 0) return { tipo: 'nenhuma' };
 
-  const candidatos = (await multiget(fetchLike, headers, idsPorTitulo)).filter((b) =>
+  const candidatos = (await multiget(fetchLike, headers, porTitulo.ids)).filter((b) =>
     b.id !== crit.itemMortoId
     && b.seller_id != null && String(b.seller_id) === crit.sellerId
     && b.category_id === crit.categoriaId
@@ -162,12 +178,15 @@ export async function descobrirFamiliaUP(
   const [familyId] = familyIds;
 
   // Fonte autoritativa: a busca por título pode ter deixado irmãos de fora.
-  const idsDaFamilia = await paginarBusca(
+  const daFamilia = await paginarBusca(
     fetchLike,
     headers,
     `${encodeURIComponent(crit.sellerId)}/items/search?family_id=${encodeURIComponent(familyId)}`,
   );
-  const irmaos = (await multiget(fetchLike, headers, idsDaFamilia)).filter((b) =>
+  if (daFamilia.truncado) {
+    return { tipo: 'truncada', observados: daFamilia.ids.length, total: daFamilia.total };
+  }
+  const irmaos = (await multiget(fetchLike, headers, daFamilia.ids)).filter((b) =>
     b.id !== crit.itemMortoId
     && b.seller_id != null && String(b.seller_id) === crit.sellerId
     && String(b.family_id) === familyId

@@ -23,6 +23,8 @@ function stub(opts: {
   porTitulo: string[];
   porFamilia?: string[];
   itens: Record<string, unknown>;
+  /** `paging.total` maior do que os `results` devolvidos = paginação não coberta. */
+  totalInflado?: number;
 }): { fetchLike: FetchLike; chamadas: string[] } {
   const chamadas: string[] = [];
   const fetchLike: FetchLike = (url) => {
@@ -39,7 +41,7 @@ function stub(opts: {
     const results = url.includes('family_id=')
       ? (opts.porFamilia ?? opts.porTitulo)
       : opts.porTitulo;
-    return responder({ results, paging: { total: results.length } });
+    return responder({ results, paging: { total: opts.totalInflado ?? results.length } });
   };
   return { fetchLike, chamadas };
 }
@@ -130,6 +132,20 @@ describe('descobrirFamiliaUP (ADR-0105)', () => {
       itens: { MLB1: irmao('MLB1', 'Cru 100', over) },
     });
     expect((await descobrirFamiliaUP(fetchLike, CRIT)).tipo).toBe('nenhuma');
+  });
+
+  it('paginação não coberta → truncada, nunca trata conjunto parcial como completo', async () => {
+    // Um `?q=` truncado pode esconder um segundo family_id e virar um `achada` confiante e errado.
+    const { fetchLike, chamadas } = stub({
+      porTitulo: ['MLB1'],
+      itens: { MLB1: irmao('MLB1', 'Cru 100') },
+      totalInflado: 900,
+    });
+    const r = await descobrirFamiliaUP(fetchLike, CRIT);
+    expect(r.tipo).toBe('truncada');
+    if (r.tipo !== 'truncada') return;
+    expect(r.total).toBe(900);
+    expect(chamadas.some((u) => u.includes('family_id='))).toBe(false);
   });
 
   it('busca por título sem nenhum resultado → nenhuma, sem enumerar família', async () => {
