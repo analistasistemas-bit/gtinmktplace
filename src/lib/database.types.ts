@@ -749,6 +749,7 @@ export type Database = {
           atualizado_em: string
           claim_id: number
           criado_em: string
+          fechado_em: string | null
           id: string
           order_id: number | null
           org_id: string
@@ -769,6 +770,7 @@ export type Database = {
           atualizado_em?: string
           claim_id: number
           criado_em?: string
+          fechado_em?: string | null
           id?: string
           order_id?: number | null
           org_id: string
@@ -789,6 +791,7 @@ export type Database = {
           atualizado_em?: string
           claim_id?: number
           criado_em?: string
+          fechado_em?: string | null
           id?: string
           order_id?: number | null
           org_id?: string
