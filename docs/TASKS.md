@@ -29,8 +29,21 @@
 - [ ] **Deploy (`_shared/types.ts` mudou):** `supabase functions deploy ingest-lote` e
   `analisar-viabilidade` — são as duas únicas que alcançam `parser.ts`/`types.ts`
   (`analisar-viabilidade` via `_shared/analise/extrair-itens.ts`). Conferir versão pós-deploy.
-- [ ] **Planilhas do operador:** arquivos sem a coluna `ORIGEM` param de subir. `Oxford_4825-Natal.xlsx`
-  precisa de `IMPORTADO` na linha PAI, senão o próximo re-ingest reverte a correção manual.
+- [x] **Planilhas no Storage corrigidas (2026-08-07):** as 9 planilhas dos lotes de tecido (48,
+  52, 53, 55, 56, 60, 62, 71, 72) **não tinham a coluna ORIGEM** — nem a do lote 72, de 29/07,
+  posterior ao fix. Ganharam `ORIGEM` com `IMPORTADO` na linha PAI. Isso importa além de não
+  reverter a correção: o `ingest-lote` lê a planilha do **Storage**, então depois do deploy um
+  reprocesso desses lotes abortaria por falta da coluna. Escritas com SheetJS (a mesma lib que o
+  ingest usa para ler) preservando as duas abas e a ordem; verificado re-baixando do Storage e
+  rodando `validarColunas` + `exigirOrigemExplicita` + `agruparPorPai` + `verificarOrigemInviolavel`
+  contra os arquivos em produção (9/9, origem `importado`, valores originais e anomalias idênticos).
+  Originais em `~/Desktop/backup-planilhas-origem-2026-08-07/`.
+- [ ] **Planilhas do operador (fonte):** os arquivos são export de ferramenta SQL — a query que os
+  gera continua sem `ORIGEM`. Depois do deploy, um export novo é **rejeitado no cabeçalho** (é o
+  comportamento desejado, mas vai parecer regressão). Ajustar a query de export.
+- [ ] **Erro de dados no lote 71:** o código `18760903` aparece 2× na planilha (como "Vermelho" e
+  como "Rosa Pink"). O parser dedupe por CODIGO (ADR-0013) e descartou o Rosa Pink — por isso a
+  família `26705343` tem 9 cores em vez de 10. Corrigir o código do Rosa Pink na origem.
 - [ ] **Re-preço (decisão de negócio, herdada de 14/07):** o gross-up das 9 famílias foi feito a
   8%; corrigir a origem não recalcula preço publicado (ADR-0016).
 
