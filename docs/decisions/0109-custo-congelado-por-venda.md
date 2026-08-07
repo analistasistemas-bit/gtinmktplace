@@ -55,8 +55,13 @@ O custo do produto é **congelado no instante da venda** e não muda mais.
    padrão de `tests/lib/paridade-preco-fe-be.test.ts`.
 
 5. **Backfill** das vendas existentes pelo custo da variação cujo **lote é o mais recente anterior
-   à data da venda**, marcado com `fonte = 'backfill'`. Cobertura medida: 1163 dos 1164 itens com
-   código (99,9%).
+   à data da venda**, marcado com `fonte = 'backfill'`.
+
+   Cobertura: **todos os itens com código, menos os que não têm nenhum lote anterior à venda**.
+   Medições sucessivas em 2026-08-07: 1163/1164 às 18h, 1166/1167 às 21h — a base é viva (vendas
+   sincronizam o tempo todo), então o critério é a **razão**, não o número absoluto: no máximo
+   1 item com código pode ficar sem custo, e ele é o mesmo desde a primeira medição (venda
+   anterior ao primeiro lote do catálogo).
 
 O item "custo vigente é o da última importação, cadastro ou recebimento" não exigiu trabalho
 próprio: os três caminhos escrevem em `variacoes.custo` (`ingest-lote` direto, `registrar_entrada`

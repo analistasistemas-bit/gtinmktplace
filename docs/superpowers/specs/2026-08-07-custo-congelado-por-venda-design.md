@@ -161,7 +161,9 @@ entre o lote e a venda. A coluna `fonte` deixa isso explícito no dado.
 
 1. `pnpm test` verde, incluindo os testes acima.
 2. `UPDATE venda_item_custo SET custo_unitario = 1` **falha** com o erro do trigger.
-3. Backfill insere 1163 linhas; segunda execução insere 0.
+3. Backfill: **no máximo 1 item com código fica sem custo** (o único sem lote anterior); segunda
+   execução insere 0. Número absoluto não serve de critério — a base é viva: 1163/1164 às 18h e
+   1166/1167 às 21h do mesmo dia.
 4. Na venda `2000017810823298` (COLA, 07/08), o custo congelado é `15,8558`.
 5. Numa venda de junho do mesmo produto, o custo congelado é `17,1224` — valores diferentes para
    o mesmo SKU, provando que o histórico é fiel.
