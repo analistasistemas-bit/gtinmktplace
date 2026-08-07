@@ -3,6 +3,7 @@
 // com service_role (D-15), e a escrita direta em `variacoes.estoque` é bloqueada
 // por trigger (D-20). Este módulo é só leitura.
 import { supabase } from './supabase';
+import type { Janela } from './metricas';
 
 /** Espelha o check-constraint `estoque_movimentos_motivo_check` da migration. */
 export const MOTIVOS_MOVIMENTO = [
@@ -57,16 +58,78 @@ export function movimentoInformativo(m: MovimentoEstoque): boolean {
   return m.quantidade === 0;
 }
 
-/** Últimos movimentos do produto. A RLS por org já filtra o tenant. */
+/** Recortes que a UI oferece. Os 7 motivos do ledger são detalhe de auditoria: para quem filtra,
+ *  `venda_sku_nao_encontrado` e `venda_cancelada_antes` são venda. O motivo exato continua escrito
+ *  em cada linha, então agrupar aqui não esconde informação — só tira ruído do filtro. */
+export const GRUPOS_MOTIVO = ['entradas', 'vendas', 'estornos'] as const;
+
+export type GrupoMotivo = (typeof GRUPOS_MOTIVO)[number];
+
+export const ROTULO_GRUPO: Record<GrupoMotivo, string> = {
+  entradas: 'Entradas',
+  vendas: 'Vendas',
+  estornos: 'Estornos',
+};
+
+const MOTIVOS_POR_GRUPO: Record<GrupoMotivo, MotivoMovimento[]> = {
+  entradas: ['entrada'],
+  vendas: ['venda', 'venda_sku_nao_encontrado', 'venda_cancelada_antes'],
+  estornos: ['estorno_venda', 'estorno_sku_nao_encontrado', 'cancelamento_sem_baixa'],
+};
+
+/** Motivos cobertos pelos grupos escolhidos. Lista vazia = "Todos", que é AUSÊNCIA de recorte, não
+ *  a união dos grupos: um motivo novo no ledger aparece em Todos mesmo antes de ser classificado. */
+export function motivosDosGrupos(grupos: GrupoMotivo[]): MotivoMovimento[] {
+  return grupos.flatMap((g) => MOTIVOS_POR_GRUPO[g]);
+}
+
+export interface FiltroMovimentos {
+  /** Vazio = sem recorte por motivo. */
+  grupos?: GrupoMotivo[];
+  /** null = todo o período (default da tela). */
+  janela?: Janela | null;
+  /** SKU da variação. null = todas. */
+  codigo?: string | null;
+  ordem?: 'recentes' | 'antigos';
+}
+
+export interface PaginaMovimentos {
+  itens: MovimentoEstoque[];
+  /** Total que casa com os filtros — não o tamanho da página. É o que a tela mostra ao operador. */
+  total: number;
+}
+
+const COLUNAS =
+  'id, criado_em, codigo, quantidade, quantidade_pedida, motivo, canal_origem, documento, estoque_anterior, estoque_resultante';
+
+/**
+ * Uma página do ledger do produto. A RLS por org já filtra o tenant.
+ * O `count: 'exact'` vem no mesmo round-trip: o total nunca fica defasado em relação às linhas
+ * exibidas, que é o que permite dizer "1–20 de 956" com honestidade.
+ */
 export async function fetchMovimentosEstoque(
-  codigoPai: string, limite = 20,
-): Promise<MovimentoEstoque[]> {
-  const { data, error } = await supabase
+  codigoPai: string,
+  pagina = 1,
+  tamanho = 20,
+  filtro: FiltroMovimentos = {},
+): Promise<PaginaMovimentos> {
+  const de = (Math.max(1, Math.floor(pagina) || 1) - 1) * tamanho;
+  let q = supabase
     .from('estoque_movimentos')
-    .select('id, criado_em, codigo, quantidade, quantidade_pedida, motivo, canal_origem, documento, estoque_anterior, estoque_resultante')
-    .eq('codigo_pai', codigoPai)
-    .order('criado_em', { ascending: false })
-    .limit(limite);
+    .select(COLUNAS, { count: 'exact' })
+    .eq('codigo_pai', codigoPai);
+
+  const motivos = motivosDosGrupos(filtro.grupos ?? []);
+  if (motivos.length > 0) q = q.in('motivo', motivos);
+  if (filtro.janela) {
+    q = q.gte('criado_em', filtro.janela.desde).lte('criado_em', filtro.janela.ate);
+  }
+  if (filtro.codigo) q = q.eq('codigo', filtro.codigo);
+
+  const { data, error, count } = await q
+    .order('criado_em', { ascending: filtro.ordem === 'antigos' })
+    .range(de, de + tamanho - 1);
+
   if (error) throw error;
-  return (data ?? []) as unknown as MovimentoEstoque[];
+  return { itens: (data ?? []) as unknown as MovimentoEstoque[], total: count ?? 0 };
 }
