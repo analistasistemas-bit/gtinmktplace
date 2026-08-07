@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Custo inflado por variação duplicada (ADR-0108) — 2026-08-07
+
+- [x] Diego reportou: venda de 2 un. da COLA EM BASTÃO (`02841037`) exibindo custo R$ 34,24 com
+  custo cadastrado de R$ 15,86 (esperado R$ 31,71). **Causa:** a variação existe em 3 famílias
+  (lotes 26, 39 e 78) com **todas as chaves idênticas** — mesmo `ml_variation_id`, `ml_item_id`,
+  `gtin` e `codigo`. Duas têm o custo antigo `17,1224`, a mais nova tem `15,8558`, e o tie-break
+  de `montarMapasCusto` era **maior custo** → `17,1224 × 2 = 34,24`.
+- [x] **Não veio da mudança de ORIGEM do mesmo dia:** aquele update tocou 19 variações de Helanca
+  às 17:49; a cola mudou às 17:33, por outro caminho. O `upsertMax` existe desde 2026-06-23
+  (`59f7f6aa`), sem ADR.
+- [x] **Alcance medido:** 309 códigos da org estavam com custo inflado pelo mesmo motivo
+  (diferença média R$ 0,17/un, máxima R$ 1,89) — markup subestimado em todos.
+- [x] **Fix (ADR-0108):** tie-break passa a ser a linha mais recente (`atualizado_em`), que entrou
+  no `select` de `buscarCustos`. Data ausente/inválida = `-Infinity` e a troca exige data
+  estritamente maior, então nada fica não-determinístico. 5 testes novos, incluindo o caso real da
+  cola pelas 4 chaves. Suíte: 2657 verdes.
+- [ ] **Raiz não resolvida:** a duplicação de `familias` no re-ingest continua (mesma coisa vista
+  nos tecidos: 3 famílias com o mesmo `ml_item_id`). Enquanto existir, toda resolução por chave
+  depende de tie-break. Deduplicar é trabalho à parte — mexe em famílias publicadas e no vínculo
+  com o ML.
+
 ## ORIGEM obrigatória na planilha — imposto nunca presumido (ADR-0107) — 2026-08-07
 
 - [x] Diego reportou: venda do Oxford 10m com imposto R$ 4,49 sobre R$ 56,16 = **8% (nacional)**

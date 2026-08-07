@@ -91,15 +91,58 @@ describe('montarPesoResolver', () => {
   });
 });
 
-describe('montarMapasCusto — tie-break por maior custo', () => {
-  it('mesma chave em linhas distintas mantém a de maior custo, peso acompanha', () => {
+describe('montarMapasCusto — tie-break pela linha mais recente (ADR-0108)', () => {
+  it('mesma chave em linhas distintas mantém a mais recente, peso acompanha', () => {
     const mapas = montarMapasCusto([
-      linha({ ml_variation_id: '7', custo: 30, peso_gramas: 300 }),
-      linha({ ml_variation_id: '7', custo: 50, peso_gramas: 500 }),
-      linha({ ml_variation_id: '7', custo: 20, peso_gramas: 200 }),
+      linha({ ml_variation_id: '7', custo: 30, peso_gramas: 300, atualizado_em: '2026-06-01T00:00:00Z' }),
+      linha({ ml_variation_id: '7', custo: 50, peso_gramas: 500, atualizado_em: '2026-07-01T00:00:00Z' }),
+      linha({ ml_variation_id: '7', custo: 20, peso_gramas: 200, atualizado_em: '2026-08-01T00:00:00Z' }),
     ]);
-    expect(montarCustoResolver(mapas)(item({ variation_id: 7 }))).toBe(50);
-    expect(montarPesoResolver(mapas)(item({ variation_id: 7 }))).toBe(500);
+    expect(montarCustoResolver(mapas)(item({ variation_id: 7 }))).toBe(20);
+    expect(montarPesoResolver(mapas)(item({ variation_id: 7 }))).toBe(200);
+  });
+
+  // O caso que motivou a mudança: COLA EM BASTÃO 02841037 existia em 3 famílias (lotes 26, 39 e
+  // 78) com TODAS as chaves iguais — ml_item_id, ml_variation_id, gtin e codigo. O custo caiu de
+  // 17,1224 para 15,8558, mas o tie-break por maior custo segurava o valor antigo: a venda de
+  // 2 unidades exibia R$ 34,24 em vez de R$ 31,71.
+  it('custo que CAIU passa a valer — era o bug do "maior custo"', () => {
+    const antiga = { gtin: '7453000325513', codigo: '02841037', familias: { ml_item_id: 'MLB6943015034' } };
+    const mapas = montarMapasCusto([
+      linha({ ...antiga, ml_variation_id: '203734189745', custo: 17.1224, atualizado_em: '2026-07-05T18:08:06Z' }),
+      linha({ ...antiga, ml_variation_id: '203734189745', custo: 17.1224, atualizado_em: '2026-07-05T18:08:06Z' }),
+      linha({ ...antiga, ml_variation_id: '203734189745', custo: 15.8558, atualizado_em: '2026-08-07T17:33:17Z' }),
+    ]);
+    const custo = montarCustoResolver(mapas);
+    // Resolve igual por qualquer chave da cadeia — nenhuma delas desambigua sozinha.
+    expect(custo(item({ variation_id: 203734189745 }))).toBe(15.8558);
+    expect(custo(item({ ml_item_id: 'MLB6943015034' }))).toBe(15.8558);
+    expect(custo(item({ ean: '7453000325513' }))).toBe(15.8558);
+    expect(custo(item({ codigo: '02841037' }))).toBe(15.8558);
+  });
+
+  it('custo que SUBIU também passa a valer (o tie-break não tem lado)', () => {
+    const mapas = montarMapasCusto([
+      linha({ ml_variation_id: '9', custo: 10, atualizado_em: '2026-06-01T00:00:00Z' }),
+      linha({ ml_variation_id: '9', custo: 25, atualizado_em: '2026-08-01T00:00:00Z' }),
+    ]);
+    expect(montarCustoResolver(mapas)(item({ variation_id: 9 }))).toBe(25);
+  });
+
+  it('sem atualizado_em (ou empatado) a primeira linha prevalece, sem quebrar', () => {
+    const mapas = montarMapasCusto([
+      linha({ ml_variation_id: '10', custo: 11 }),
+      linha({ ml_variation_id: '10', custo: 22 }),
+    ]);
+    expect(montarCustoResolver(mapas)(item({ variation_id: 10 }))).toBe(11);
+  });
+
+  it('linha mais recente com data inválida não derruba a válida', () => {
+    const mapas = montarMapasCusto([
+      linha({ ml_variation_id: '11', custo: 33, atualizado_em: '2026-08-01T00:00:00Z' }),
+      linha({ ml_variation_id: '11', custo: 44, atualizado_em: 'lixo' }),
+    ]);
+    expect(montarCustoResolver(mapas)(item({ variation_id: 11 }))).toBe(33);
   });
 
   it('linha com custo ≤ 0 ou null é ignorada', () => {

@@ -119,5 +119,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0105 | [Re-vínculo de família dissolvida pelo ML em User Products (item Legacy fechado + irmãos sem SKU, casamento por COR)](../../docs/decisions/0105-revinculo-de-familia-dissolvida-pelo-ml-em-user-products.md) |
 | 0106 | [Devolução conta no período em que o dinheiro saiu (`fechado_em`), não no da abertura do claim](../../docs/decisions/0106-devolucao-conta-no-periodo-do-estorno.md) |
 | 0107 | [ORIGEM é obrigatória e explícita na planilha (imposto nunca presumido; refina ADR-0055)](../../docs/decisions/0107-origem-obrigatoria-na-planilha.md) |
+| 0108 | [Com variação duplicada, vence o custo mais recente (não o maior)](../../docs/decisions/0108-custo-duplicado-vence-o-mais-recente.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

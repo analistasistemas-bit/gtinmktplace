@@ -14,6 +14,14 @@ export type OrigemProduto = 'nacional' | 'importado' | null;
 /** Custo unitário (R$) + peso unitário (g) + origem (imposto) de um produto. */
 export interface ValorProduto { custo: number; peso: number; origem: OrigemProduto }
 
+/** `atualizado_em` da linha como número comparável. Ausente/inválido → -Infinity, para nunca
+ *  derrubar uma linha datada (o `>` do tie-break só troca com data estritamente maior). */
+function instante(v: unknown): number {
+  if (v == null) return -Infinity;
+  const t = new Date(String(v)).getTime();
+  return Number.isFinite(t) ? t : -Infinity;
+}
+
 export interface MapasCusto {
   /** ml_variation_id → custo/peso. */
   porVariacao: Map<string, ValorProduto>;
@@ -26,20 +34,27 @@ export interface MapasCusto {
 }
 
 /** Monta os mapas de custo/peso a partir das linhas já lidas de `variacoes` (puro, testável).
- *  Mantém a entrada de maior custo por chave (robusto a linhas duplicadas por re-importação);
- *  o peso correspondente acompanha o custo escolhido. Linha com custo ≤ 0 é descartada. */
+ *  Com linhas duplicadas por re-importação, mantém a **mais recente** (`atualizado_em`), não a de
+ *  maior custo (ADR-0108): as duplicatas costumam ter TODAS as chaves iguais — mesmo
+ *  ml_variation_id, ml_item_id, gtin e codigo —, então nenhuma delas desambigua e o tie-break é a
+ *  única coisa que decide. Pelo maior custo, uma redução de custo nunca aparecia enquanto a linha
+ *  antiga existisse. O peso e a origem acompanham a linha escolhida. Custo ≤ 0 é descartado. */
 export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCusto {
   const porVariacao = new Map<string, ValorProduto>();
   const porItem = new Map<string, ValorProduto>();
   const porGtin = new Map<string, ValorProduto>();
   const porCodigo = new Map<string, ValorProduto>();
-  const upsertMax = (m: Map<string, ValorProduto>, k: string, val: ValorProduto) => {
-    if (val.custo > (m.get(k)?.custo ?? 0)) m.set(k, val);
+  const quando = new Map<Map<string, ValorProduto>, Map<string, number>>();
+  const upsertRecente = (m: Map<string, ValorProduto>, k: string, val: ValorProduto, em: number) => {
+    let datas = quando.get(m);
+    if (!datas) { datas = new Map(); quando.set(m, datas); }
+    if (!m.has(k) || em > (datas.get(k) ?? -Infinity)) { m.set(k, val); datas.set(k, em); }
   };
 
   for (const v of rows) {
     const custo = Number(v.custo ?? 0);
     if (custo <= 0) continue;
+    const em = instante(v.atualizado_em);
     const peso = Number(v.peso_gramas ?? 0);
     const varId = v.ml_variation_id as string | null;
     const gtin = v.gtin as string | null;
@@ -50,10 +65,10 @@ export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCus
     const itemId = fam?.ml_item_id ?? null;
     const origem = (fam?.origem as OrigemProduto) ?? null;
     const val: ValorProduto = { custo, peso, origem };
-    if (varId != null) upsertMax(porVariacao, String(varId), val);
-    if (itemId != null) upsertMax(porItem, String(itemId), val);
-    if (gtin) upsertMax(porGtin, normGtin(gtin), val);
-    if (codigo) upsertMax(porCodigo, normGtin(codigo), val);
+    if (varId != null) upsertRecente(porVariacao, String(varId), val, em);
+    if (itemId != null) upsertRecente(porItem, String(itemId), val, em);
+    if (gtin) upsertRecente(porGtin, normGtin(gtin), val, em);
+    if (codigo) upsertRecente(porCodigo, normGtin(codigo), val, em);
   }
   return { porVariacao, porItem, porGtin, porCodigo };
 }
@@ -63,7 +78,9 @@ export async function buscarCustos(): Promise<MapasCusto> {
   const rows = await buscarTodasPaginas<Record<string, unknown>>((de, ate) =>
     supabase
       .from('variacoes')
-      .select('custo, peso_gramas, ml_variation_id, gtin, codigo, familias!inner(ml_item_id, origem)')
+      // `atualizado_em` é o tie-break das duplicatas de re-importação (ADR-0108) — sem ele no
+      // select, toda linha vira -Infinity e a primeira da página venceria por acaso.
+      .select('custo, peso_gramas, ml_variation_id, gtin, codigo, atualizado_em, familias!inner(ml_item_id, origem)')
       .not('custo', 'is', null)
       .range(de, ate) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: { message: string } | null }>,
   );
