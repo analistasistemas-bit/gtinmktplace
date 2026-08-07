@@ -64,12 +64,18 @@ silêncio.
 | `congelado_em` | timestamptz | quando foi gravado |
 | `fonte` | text `'sync'` \| `'backfill'` | distingue capturado ao vivo de reconstruído |
 
-**Unicidade:** índice único em `(venda_id, ml_item_id, COALESCE(variation_id, -1))`.
+**Unicidade:** `unique nulls not distinct (venda_id, ml_item_id, variation_id)`.
 
-O `COALESCE` não é enfeite: no Postgres, `NULL` é distinto de `NULL` num índice único, então
-`(venda, item, NULL)` duplicaria à vontade — e itens sem variação são o caso comum (a venda da
-COLA que originou tudo isto tem `variation_id = null`). Sem o `COALESCE`, "insert-once" não
-valeria justamente para eles.
+No Postgres, `NULL` é distinto de `NULL` num índice único, então `(venda, item, NULL)` duplicaria
+à vontade — e item sem variação é o caso comum (a venda da COLA que originou tudo isto tem
+`variation_id = null`). Sem tratar isso, "insert-once" não valeria justamente para eles.
+
+> **Corrigido na revisão (2026-08-07).** A primeira versão deste design usava
+> `COALESCE(variation_id, -1)` num índice de expressão. Não funcionaria: supabase-js/PostgREST só
+> inferem o arbiter de `ON CONFLICT` por **lista de colunas**, então o insert-once falharia na
+> prática. `nulls not distinct` (PG15+) resolve, cobre também `ml_item_id` nulo — que a primeira
+> versão ignorou — e é **o mesmo padrão que `ml_vendas_itens` já usa**
+> (`20260627095025_add_ml_vendas_itens_unique.sql`).
 
 **RLS:** por `org_id`, no mesmo padrão das outras tabelas de domínio.
 
@@ -79,15 +85,29 @@ valeria justamente para eles.
 congelado — quem tentar descongelar recebe erro, não sucesso silencioso. `DELETE` continua
 permitido (o cascade da venda depende dele).
 
-### 3. Gravação (`sync-venda`)
+### 3. Gravação (dentro de `upsertVenda`, não no `sync-venda`)
 
-Depois de gravar os itens em `io.ts`:
+Depois de gravar os itens, no próprio `io.ts`:
 
 1. Para cada item, resolver o **custo vigente** em `variacoes`.
 2. `INSERT ... ON CONFLICT DO NOTHING`.
 
 O `ON CONFLICT DO NOTHING` é o coração do insert-once: o primeiro sync grava, todos os seguintes
 não fazem nada. Combinado com o trigger, não existe caminho que altere o valor.
+
+> **Corrigido na revisão (2026-08-07).** A primeira versão mandava congelar "no `sync-venda`", e
+> isso deixaria **três caminhos sem congelamento**: `ml_vendas_itens` é escrito por um único
+> writer (`upsertVenda`), mas ele é chamado por **quatro** functions — `sync-venda`,
+> `sync-devolucao`, `backfill-faturamento` (que é quem *descobre* vendas novas no schedule
+> horário) e `reconciliar-faturamento` (dois call sites). Verificado por grep no repositório.
+>
+> O congelamento vai para dentro de `upsertVenda`, e o resolver de custo entra como campo
+> **obrigatório** de `opts`: o TypeScript quebra a compilação de qualquer caller que esqueça. É
+> trava em tempo de build, não convenção — no mesmo espírito de "caminho financeiro falha, não
+> passa em silêncio".
+>
+> Verificado também que `ml-webhook` apenas enfileira (não escreve itens) e que
+> `usuarios/index.ts` só deleta, o que o trigger permite via cascade.
 
 **Resolução do custo vigente** — nova função `_shared/faturamento/custo-vigente.ts`, espelhando a
 cadeia que o frontend já usa (`src/lib/custos.ts`): `variation_id → ml_item_id → gtin → codigo`,
@@ -108,6 +128,11 @@ item, o custo da variação cujo **lote é o mais recente anterior à data da ve
 
 Cobertura medida: **1163 dos 1164 itens (99,9%)**; 1 item sem lote anterior fica sem custo. Em
 **307 itens** o valor difere do custo de hoje — são exatamente os markups hoje errados.
+
+O casamento normaliza o código (`ltrim(codigo, '0')`) dos dois lados, para acompanhar o
+`normGtin` que o frontend já usa. Medido: com e sem normalização a cobertura é a mesma (1163) —
+os códigos atuais já estão padronizados em 8 dígitos —, então a normalização não muda o resultado
+hoje e protege contra divergência de zeros à esquerda depois.
 
 É aproximação assumida: usa a data do lote, então não capta uma mudança de custo por recebimento
 entre o lote e a venda. A coluna `fonte` deixa isso explícito no dado.
