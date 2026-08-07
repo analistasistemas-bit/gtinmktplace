@@ -38,9 +38,12 @@
   rodando `validarColunas` + `exigirOrigemExplicita` + `agruparPorPai` + `verificarOrigemInviolavel`
   contra os arquivos em produção (9/9, origem `importado`, valores originais e anomalias idênticos).
   Originais em `~/Desktop/backup-planilhas-origem-2026-08-07/`.
-- [ ] **Planilhas do operador (fonte):** os arquivos são export de ferramenta SQL — a query que os
-  gera continua sem `ORIGEM`. Depois do deploy, um export novo é **rejeitado no cabeçalho** (é o
-  comportamento desejado, mas vai parecer regressão). Ajustar a query de export.
+- [x] **Planilhas do operador (fonte):** os arquivos são export de uma query Oracle sobre
+  `A_CADCITEM` (a própria planilha guarda a query na aba `SQL Statement`). Diego ajustou a query
+  em 2026-08-07 — os próximos exports já saem com a coluna `ORIGEM`, então o deploy da trava não
+  quebra o fluxo. **Falta conferir**, no primeiro lote novo, que a query não usa
+  `NVL(..., 'NACIONAL')`: um default silencioso na fonte reintroduz o bug sem disparar a trava
+  (o cabeçalho existiria e o valor seria válido, só que errado).
 - [ ] **Erro de dados no lote 71:** o código `18760903` aparece 2× na planilha (como "Vermelho" e
   como "Rosa Pink"). O parser dedupe por CODIGO (ADR-0013) e descartou o Rosa Pink — por isso a
   família `26705343` tem 9 cores em vez de 10. Corrigir o código do Rosa Pink na origem.
