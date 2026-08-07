@@ -1,12 +1,25 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-08-02
+atualizado: 2026-08-07
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## 2026-08-07 — Publicados mostrava menos unidades vendidas que o Faturamento (protetor solar, DSA)
+
+O protetor solar (`00000004`) aparecia com **38** unidades vendidas em Publicados e **59** no
+Faturamento. O produto vende por dois MLB: o anúncio próprio (`MLB4982690837`) e o de catálogo
+(`MLB7343614472`), vinculados por `variacoes.catalog_listing_id`. `Publicados.tsx` chamava
+`calcularResumo` sem o mapa canônico (`anuncio-canonico.ts`), então as 21 unidades vendidas pelo
+anúncio de catálogo ficavam num MLB que a tela não lista. Dashboard, Financeiro e Detalhe de vendas
+já passavam o mapa — só o call site de Publicados divergia.
+
+Fix: Publicados passou a consumir `useResumoVendas`, eliminando o call site duplicado. Lição: quando
+um hook existe justamente para montar as dependências de um cálculo, chamar o cálculo direto na
+página recria o bug que o hook previne. Ver [[Índice de ADRs]] (ADR-0021, ADR-0038, ADR-0055).
 
 ## 2026-08-06 — troca de categoria para competir no catálogo re-moderou o anúncio (Aquaphor, DSA)
 

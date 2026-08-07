@@ -54,11 +54,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useFamilia } from '@/hooks/useFamilia';
 import { usePublicados } from '@/hooks/usePublicados';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
-import { useVendas } from '@/hooks/useVendas';
-import { useCustos } from '@/hooks/useCustos';
-import { useAliquotas } from '@/hooks/useConfiguracoes';
-import { calcularResumo } from '@/lib/resumo-vendas';
-import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
 import { useProfile } from '@/hooks/useProfile';
@@ -422,19 +418,9 @@ export default function Publicados() {
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
-  const { data: vendas, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useVendas(janela, 'todos', canalAtivo);
-  const { data: custos } = useCustos();
-  const { data: aliquotas } = useAliquotas();
-  const resumo = useMemo(
-    () => calcularResumo(
-      vendas ?? [],
-      montarCustoResolver(custos),
-      montarPesoResolver(custos),
-      undefined,
-      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
-    ),
-    [vendas, custos, aliquotas],
-  );
+  // Via useResumoVendas (não calcularResumo direto): é ele que passa o mapa canônico, sem o qual as
+  // vendas do anúncio de catálogo somem da linha do anúncio dono (ver anuncio-canonico.ts).
+  const { resumo, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useResumoVendas(janela, canalAtivo);
   const markupPct = resumo.markup;
 
   // Estado da tela (filtro/ordenação/página/tamanho) vive na URL: ao abrir um

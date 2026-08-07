@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicados — "Unid. vendidas" menor que o Faturamento — 2026-08-07
+
+Origem: o protetor solar (`00000004`) mostrava **38** unidades em Publicados e **59** no Faturamento.
+
+- [x] **Causa** — o produto tem dois MLB: o próprio (`MLB4982690837`, 38 un. faturáveis) e o de
+  catálogo (`MLB7343614472`, 21 un.), vinculados em `variacoes.catalog_listing_id`. `Publicados.tsx`
+  chamava `calcularResumo` direto **sem** o 6º argumento (o mapa canônico), então as vendas do
+  anúncio de catálogo ficavam presas num MLB que a tela não lista. Confirmado no banco: 59 un. `paid`
+  + 1 `cancelled` somando os dois MLB. Dashboard, Financeiro e Detalhe de vendas já passavam o mapa.
+- [x] **Fix** — a tela passou a consumir `useResumoVendas(janela, canalAtivo)` (que já monta o mapa),
+  em vez de duplicar a montagem do resumo. Some o call site que podia divergir de novo, e a tela
+  herda a guarda do ADR-0055 (sem default silencioso de alíquota em erro de configuração).
+  TDD (RED → GREEN em `tests/pages/Publicados.test.tsx`), 2613 testes verdes.
+- [ ] **Aberto (decisão do Diego)** — período default divergente entre menus: Dashboard e Faturamento
+  abrem em "Mês atual"; Publicados e Financeiro abrem em "30 dias". Números batem quando a janela é a
+  mesma, mas o default diferente faz duas telas mostrarem valores distintos ao abrir.
+
 ## Faturamento › Perguntas — resposta dada no ML não voltava para o app — 2026-08-06
 
 Origem: Diego respondeu a pergunta 13635743825 direto no ML às 14:13 UTC e o PubliAI continuou

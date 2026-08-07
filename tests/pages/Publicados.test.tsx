@@ -16,6 +16,7 @@ const useResumoFinanceiroMock = vi.fn();
 const useVendasMock = vi.fn();
 const useCustosMock = vi.fn();
 const useCanaisHabilitadosMock = vi.fn();
+const useAnuncioCanonicoMock = vi.fn();
 const useFamiliaMock = vi.fn();
 const fetchMovimentosEstoqueMock = vi.fn();
 
@@ -29,6 +30,11 @@ vi.mock('@/hooks/useVendas', () => ({
 
 vi.mock('@/hooks/useCustos', () => ({
   useCustos: () => useCustosMock(),
+}));
+
+// Mapa listing de catálogo → anúncio dono (ADR-0021). Sem mock, useResumoVendas bateria no supabase.
+vi.mock('@/hooks/useAnuncioCanonico', () => ({
+  useAnuncioCanonico: () => useAnuncioCanonicoMock(),
 }));
 
 // CanalTabs (D2/D3): sem QueryClient no teste, mockamos o hook de canais habilitados.
@@ -134,6 +140,7 @@ function mockHooksPadrao() {
   });
   useCustosMock.mockReturnValue({ data: undefined });
   useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
+  useAnuncioCanonicoMock.mockReturnValue({ data: {} });
   useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   fetchMovimentosEstoqueMock.mockResolvedValue([]);
 }
@@ -176,6 +183,36 @@ describe('Publicados', () => {
     const ponte = screen.getByRole('link', { name: /Líquido das vendas/i });
     expect(ponte).toHaveAttribute('href', '/financeiro');
     expect(ponte).toHaveTextContent('R$ 364,46');
+  });
+
+  // Regressão (incidente 2026-08-07): o protetor solar mostrava 38 unidades aqui e 59 no
+  // Faturamento. Causa: a tela chamava calcularResumo direto, sem o mapa canônico — as vendas que
+  // entram pelo anúncio de CATÁLOGO (MLB próprio, ADR-0021) ficavam presas naquele MLB, que
+  // Publicados não lista. Ver src/lib/anuncio-canonico.ts.
+  it('soma na linha do anúncio dono as vendas que entraram pelo anúncio de catálogo', () => {
+    const item = (mlItemId: string, quantity: number) => ({
+      id: `i-${mlItemId}`, ml_item_id: mlItemId, variation_id: null, titulo: 'COLA LIQUIDA SILICONE 250ML',
+      codigo: '01829149', cor: null, ean: null, quantity, unit_price: 24.1, sale_fee: 0, is_publiai: true,
+    });
+    useVendasMock.mockReturnValue({
+      data: [
+        { id: 'v1', order_id: 1, status: 'paid', total_amount: 916.7, liquido: 916.7, estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [item('MLB1', 38)] },
+        { id: 'v2', order_id: 2, status: 'paid', total_amount: 506.1, liquido: 506.1, estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [item('MLB-CATALOGO', 21)] },
+      ],
+      isFetching: false, error: null, refetch: vi.fn(),
+    });
+    useAnuncioCanonicoMock.mockReturnValue({ data: { 'MLB-CATALOGO': 'MLB1' } });
+
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
+      .map((el) => el.closest('tr'))
+      .find((tr): tr is HTMLTableRowElement => tr != null)!;
+    expect(linha).toHaveTextContent('59');
   });
 
   it('exibe o selo do modo (Premium) vindo do status ao vivo', () => {
