@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
   if (row.order_id != null) {
     try {
       const pedido = await buscarPedido(token, String(row.order_id));
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, job.user_id);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, job.user_id);
       const shippingId = pedido.shipping?.id ?? null;
       const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
         buscarFreteVendedor(token, shippingId),
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
         carregarGtinsFallback(token, [pedido], idsPubliai),
       ]);
       await upsertVenda(admin, job.user_id, orgId, pedido, {
-        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
         liquidoPorPayment: liquidoPorPayment ?? undefined,
       });
       // Leitura do MP falhou justamente no worker que existe para capturar o estorno. O claim e a

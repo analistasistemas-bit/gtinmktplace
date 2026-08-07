@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     } catch { /* segue */ }
 
     try {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
       const claims = await buscarClaimsSeller(token);
       for (const lote of chunk(claims, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
               carregarGtinsFallback(token, [pedido], idsPubliai),
             ]);
             await upsertVenda(admin, userId, orgId, pedido, {
-              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
               liquidoPorPayment: liquidoPorPayment ?? undefined,
             });
           } catch { /* segue */ }
@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
     const { userId, orgId, token } = e;
     try {
       const pedidos = await buscarPedidosPeriodo(token, intervalo);
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
         carregarLiquidoMP(token, Number(e.cx.contaExternaId)),
         carregarGtinsFallback(token, pedidos, idsPubliai),
@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
               buscarShipment(token, shippingId),
             ]);
             await upsertVenda(admin, userId, orgId, pedido, {
-              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
               liquidoPorPayment: liquidoPorPayment ?? undefined,
             });
             total++;

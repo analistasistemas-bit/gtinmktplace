@@ -6,6 +6,7 @@ import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escol
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
+import { montarMapasCustoVigente, resolverCustoVigente, type LinhaCusto, type ItemParaCusto } from './custo-vigente.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -33,6 +34,8 @@ export interface Catalogo {
   eanResolver: (itemId: string | null, varId: number | null) => string | null;
   /** normGtin → {codigo, ean} do catálogo — casa vendas de catálogo por GTIN. */
   infoPorGtin: Map<string, { codigo: string | null; ean: string | null }>;
+  /** ADR-0109 — custo vigente do item, para congelar na venda. null = não casou no catálogo. */
+  custoVigenteResolver: (item: ItemParaCusto) => number | null;
 }
 
 /** Lê todas as páginas de uma query, evitando o teto padrão (~1000 linhas) do PostgREST —
@@ -64,10 +67,22 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     famPorId.set(f.id as string, { mlItemId: f.ml_item_id as string, codigoPai: f.codigo_pai as string | null });
     idsPubliai.add(f.ml_item_id as string);
   }
-  const variacoes = await paginarTudo<{ familia_id: string; codigo: string | null; gtin: string | null; ml_variation_id: string | null }>(
+  const variacoes = await paginarTudo<{ familia_id: string; codigo: string | null; gtin: string | null; ml_variation_id: string | null; custo: unknown; atualizado_em: unknown }>(
     (de, ate) => admin.from('variacoes')
-      .select('familia_id, codigo, gtin, ml_variation_id').eq('user_id', userId).range(de, ate),
+      // custo/atualizado_em: insumo do congelamento (ADR-0109) — atualizado_em é o tie-break
+      // entre variações duplicadas por re-ingest (ADR-0108).
+      .select('familia_id, codigo, gtin, ml_variation_id, custo, atualizado_em').eq('user_id', userId).range(de, ate),
   );
+  // Linhas de custo montadas ANTES do filtro de família publicada abaixo: uma variação de família
+  // ainda não publicada não tem ml_item_id, mas seu código/GTIN continuam válidos para casar a
+  // venda — descartá-la aqui divergiria do frontend, que não filtra por publicação.
+  const linhasCusto: LinhaCusto[] = variacoes.map((v) => ({
+    custo: v.custo, atualizado_em: v.atualizado_em,
+    ml_variation_id: v.ml_variation_id,
+    ml_item_id: famPorId.get(v.familia_id as string)?.mlItemId ?? null,
+    gtin: v.gtin, codigo: v.codigo,
+  }));
+  const mapasCusto = montarMapasCustoVigente(linhasCusto);
   // chave "itemId:varId" → valor da variação; fallback "itemId" → primeiro valor da família.
   const codPorVar = new Map<string, string>(), codPorItem = new Map<string, string>();
   const eanPorVar = new Map<string, string>(), eanPorItem = new Map<string, string>();
@@ -109,7 +124,10 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
       if (varId != null) { const x = porVar.get(`${itemId}:${varId}`); if (x) return x; }
       return porItem.get(itemId) ?? null;
     };
-  return { idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem), infoPorGtin };
+  return {
+    idsPubliai, codigoResolver: mk(codPorVar, codPorItem), eanResolver: mk(eanPorVar, eanPorItem), infoPorGtin,
+    custoVigenteResolver: (item: ItemParaCusto) => resolverCustoVigente(mapasCusto, item),
+  };
 }
 
 /** GET /orders/{id}. Lança MLApiError(status) em erro (caller classifica via classificarErroML). */
@@ -213,7 +231,11 @@ export async function upsertVenda(
           shipment?: { status: string | null; substatus: string | null; tracking: string | null; logistic: string | null; cidade: string | null; uf: string | null; receiverNome: string | null } | null;
           infoPorGtin?: Map<string, { codigo: string | null; ean: string | null }>;
           gtinPorItem?: Map<string, string>;
-          liquidoPorPayment?: Map<string, DadosPagamentoMP> },
+          liquidoPorPayment?: Map<string, DadosPagamentoMP>;
+          /** ADR-0109 — custo vigente do item, congelado na venda. OBRIGATÓRIO de propósito: são
+           *  4 callers (sync-venda, sync-devolucao, backfill-faturamento, reconciliar-faturamento)
+           *  e o TS quebra a build de quem esquecer, em vez de a venda nascer sem custo. */
+          custoVigenteResolver: (item: ItemParaCusto) => number | null },
 ): Promise<{ vendaId: string; novaPaga: boolean; itens: VendaItemRow[]; compradorNome: string | null }> {
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
@@ -264,6 +286,32 @@ export async function upsertVenda(
       { onConflict: 'venda_id,ml_item_id,variation_id' },
     );
     if (itensErr) throw new Error(`upsert ml_vendas_itens: ${itensErr.message}`);
+  }
+
+  // ADR-0109 — congela o custo do produto no instante da venda. Fica FORA do delete/upsert acima
+  // de propósito: `venda_item_custo` é outra tabela justamente para o DELETE dos itens não a
+  // alcançar. `ignoreDuplicates` (ON CONFLICT DO NOTHING) é o insert-once — o primeiro sync grava,
+  // os seguintes não tocam no valor; o trigger no banco garante o resto.
+  const custosCongelar = itens
+    .map((i: VendaItemRow) => ({
+      i,
+      custo: opts.custoVigenteResolver({
+        variation_id: i.variation_id, ml_item_id: i.ml_item_id, ean: i.ean, codigo: i.codigo,
+      }),
+    }))
+    .filter((x): x is { i: VendaItemRow; custo: number } => x.custo != null && x.custo > 0)
+    .map(({ i, custo }) => ({
+      user_id: userId, org_id: orgId, venda_id: vendaId,
+      ml_item_id: i.ml_item_id, variation_id: i.variation_id, codigo: i.codigo,
+      custo_unitario: custo, fonte: 'sync',
+    }));
+  if (custosCongelar.length > 0) {
+    const { error: custoErr } = await admin.from('venda_item_custo').upsert(
+      custosCongelar,
+      { onConflict: 'venda_id,ml_item_id,variation_id', ignoreDuplicates: true },
+    );
+    // LOUD: caminho financeiro. Falhar aqui é melhor que a venda ficar sem custo em silêncio.
+    if (custoErr) throw new Error(`congelar custo da venda: ${custoErr.message}`);
   }
 
   const eraPaga = anterior?.status === 'paid';

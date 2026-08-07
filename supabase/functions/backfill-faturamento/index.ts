@@ -108,7 +108,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
     console.warn(`backfill: erro lendo pedidos da org ${orgId}: ${(e as Error).message}`);
     return 0;
   }
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin } = await carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
   const [liquidoPorPayment, gtinPorItem] = await Promise.all([
     carregarLiquidoMP(token, Number(cx.contaExternaId)),
     carregarGtinsFallback(token, pedidos, idsPubliai),
@@ -130,7 +130,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           buscarShipment(token, shippingId),
         ]);
         await upsertVenda(admin, userId, orgId, pedido, {
-          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem,
+          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
           liquidoPorPayment: liquidoPorPayment ?? undefined,
         });
         n++;
