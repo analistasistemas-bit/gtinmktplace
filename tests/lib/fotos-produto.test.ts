@@ -9,17 +9,46 @@ function item(over: Partial<VendaItem> = {}): VendaItem {
   };
 }
 
+function mapas(over: Partial<MapasFoto> = {}): MapasFoto {
+  return {
+    porVariacao: new Map(),
+    porItem: new Map(),
+    porGtin: new Map(),
+    porCodigo: new Map(),
+    porItemCapa: new Map(),
+    ...over,
+  };
+}
+
 describe('montarFotoResolver — fallback por Código/SKU sem EAN', () => {
   it('resolve imagem por codigo com normalização de zeros à esquerda', () => {
-    const mapas: MapasFoto = {
-      porVariacao: new Map(),
-      porItem: new Map(),
-      porGtin: new Map(),
-      porCodigo: new Map([['2743647', 'produtos/oxford-natal.jpg']]),
-    };
-    const resolver = montarFotoResolver(mapas);
+    const resolver = montarFotoResolver(
+      mapas({ porCodigo: new Map([['2743647', 'produtos/oxford-natal.jpg']]) }),
+    );
 
     expect(resolver(item({ codigo: '02743647', ean: null }))).toBe('produtos/oxford-natal.jpg');
     expect(resolver(item({ codigo: '2743647', ean: null }))).toBe('produtos/oxford-natal.jpg');
+  });
+});
+
+describe('montarFotoResolver — capa da família como último fallback', () => {
+  it('variação sem imagem_path usa a capa da família (produto do cadastro avulso)', () => {
+    const resolver = montarFotoResolver(mapas({ porItemCapa: new Map([['MLB1', 'org/lote/fam-capa.png']]) }));
+
+    expect(resolver(item({ ml_item_id: 'MLB1', codigo: '00000023', ean: '609963220755' })))
+      .toBe('org/lote/fam-capa.png');
+  });
+
+  it('foto da própria variação vence a capa (não estraga anúncio com cores)', () => {
+    const resolver = montarFotoResolver(mapas({
+      porItem: new Map([['MLB1', 'org/lote/variacao.JPG']]),
+      porItemCapa: new Map([['MLB1', 'org/lote/fam-capa.png']]),
+    }));
+
+    expect(resolver(item({ ml_item_id: 'MLB1' }))).toBe('org/lote/variacao.JPG');
+  });
+
+  it('sem foto nenhuma continua null (ícone de pacote)', () => {
+    expect(montarFotoResolver(mapas())(item({ ml_item_id: 'MLB1' }))).toBeNull();
   });
 });

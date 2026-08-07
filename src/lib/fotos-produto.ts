@@ -18,21 +18,41 @@ export interface MapasFoto {
   porGtin: Map<string, string>;
   /** Código/SKU normalizado → imagem_path (fallback para vendas sem EAN). */
   porCodigo: Map<string, string>;
+  /** ml_item_id → capa da família. Último fallback: o cadastro de produto avulso grava a foto
+   *  só em `familias.capa_storage_path`, e a variação fica sem `imagem_path`. */
+  porItemCapa: Map<string, string>;
 }
 
 /** Lê o imagem_path das variações do usuário (RLS) e monta os mapas de resolução.
  *  Pagina (`.range`) para não truncar no teto padrão (~1000 linhas) do PostgREST. */
 export async function buscarFotos(): Promise<MapasFoto> {
-  const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
-    .from('variacoes')
-    .select('imagem_path, ml_variation_id, gtin, codigo, familias!inner(ml_item_id)')
-    .not('imagem_path', 'is', null)
-    .range(de, ate));
+  // A 2ª query é separada porque a 1ª filtra `imagem_path not null` — uma variação sem foto
+  // própria nunca chegaria pelo select das variações.
+  const [data, capas] = await Promise.all([
+    buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
+      .from('variacoes')
+      .select('imagem_path, ml_variation_id, gtin, codigo, familias!inner(ml_item_id)')
+      .not('imagem_path', 'is', null)
+      .range(de, ate)),
+    buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
+      .from('familias')
+      .select('ml_item_id, capa_storage_path')
+      .not('ml_item_id', 'is', null)
+      .not('capa_storage_path', 'is', null)
+      .range(de, ate)),
+  ]);
 
   const porVariacao = new Map<string, string>();
   const porItem = new Map<string, string>();
   const porGtin = new Map<string, string>();
   const porCodigo = new Map<string, string>();
+  const porItemCapa = new Map<string, string>();
+
+  for (const f of capas) {
+    const itemId = f.ml_item_id as string | null;
+    const capa = f.capa_storage_path as string | null;
+    if (itemId && capa && !porItemCapa.has(String(itemId))) porItemCapa.set(String(itemId), capa);
+  }
 
   for (const v of data) {
     const path = v.imagem_path as string | null;
@@ -47,7 +67,7 @@ export async function buscarFotos(): Promise<MapasFoto> {
     if (gtin && !porGtin.has(normGtin(gtin))) porGtin.set(normGtin(gtin), path);
     if (codigo && !porCodigo.has(normGtin(codigo))) porCodigo.set(normGtin(codigo), path);
   }
-  return { porVariacao, porItem, porGtin, porCodigo };
+  return { porVariacao, porItem, porGtin, porCodigo, porItemCapa };
 }
 
 /** Resolver de foto (storage path) p/ o agregador. null = sem foto cadastrada. */
@@ -68,6 +88,12 @@ export function montarFotoResolver(m: MapasFoto | undefined): FotoResolver {
     }
     if (item.codigo) {
       const x = m.porCodigo.get(normGtin(item.codigo));
+      if (x != null) return x;
+    }
+    // Por último: a capa da família. Antes disso estragaria a miniatura de anúncio com variações
+    // por cor (mostraria a capa genérica no lugar da foto da cor vendida).
+    if (item.ml_item_id) {
+      const x = m.porItemCapa.get(item.ml_item_id);
       if (x != null) return x;
     }
     return null;
