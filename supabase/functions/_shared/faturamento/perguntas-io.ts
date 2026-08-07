@@ -61,7 +61,10 @@ export async function responderAnswer(token: string, questionId: number, text: s
 
 /**
  * Nickname de quem perguntou. O ML v4 parou de mandar `from.nickname` (só o `id`), então o nome
- * só sai de `GET /users/{id}`. Cache por invocação: o mesmo comprador repete entre perguntas.
+ * só sai de `GET /users/{id}`. O mesmo comprador repete entre perguntas, daí o cache.
+ *
+ * Escopo de MÓDULO: em edge function isso vale por **isolate**, não por invocação — o Map
+ * sobrevive entre execuções enquanto o isolate estiver quente.
  */
 const nicksCache = new Map<number, string | null>();
 
@@ -69,11 +72,16 @@ export async function buscarNickname(token: string, userId: number): Promise<str
   const emCache = nicksCache.get(userId);
   if (emCache !== undefined) return emCache;
   let nick: string | null = null;
+  let falhou = false;
   try {
     const resp = await fetch(`${API}/users/${userId}`, { headers: { Authorization: `Bearer ${token}` } });
     if (resp.ok) nick = (await resp.json())?.nickname?.trim() || null;
-  } catch { /* nome é enfeite: pergunta sem nick continua utilizável */ }
-  nicksCache.set(userId, nick);
+    else falhou = true;
+  } catch { falhou = true; /* nome é enfeite: pergunta sem nick continua utilizável */ }
+  // Só cacheia RESPOSTA, nunca falha: como o cache é por isolate, guardar o erro de uma queda
+  // momentânea do ML fixaria "sem nickname" para aquele comprador até o isolate reciclar, e
+  // nenhum retry recuperaria. Resposta ok com nickname vazio É informação — essa entra no cache.
+  if (!falhou) nicksCache.set(userId, nick);
   return nick;
 }
 
