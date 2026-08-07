@@ -10,10 +10,15 @@
   o backfill de 14/07 só cobriu os lotes 61/63/64. Mas o **Oxford Natal (lote 72, 29/07) é
   pós-fix** e também estava nacional: a planilha não trazia a coluna, então a trava
   `verificarOrigemInviolavel` aprovou (crua e montada concordavam em `nacional`).
-- [x] **Correção de dados (produção):** 7 famílias → `importado`. Oxford 10m (`02989182`, lotes
-  48/53/55), Oxford 5m (`29891825`, lotes 52/56), Oxford Natal (`02710170`, lote 72), Helanca
-  Light 10 Metros (`26705341`, lote 62). Imposto é calculado em tempo de leitura → vendas
-  passadas corrigidas sozinhas.
+- [x] **Correção de dados (produção):** 9 famílias → `importado`, confirmadas pelo Diego. Oxford
+  10m (`02989182`, lotes 48/53/55), Oxford 5m (`29891825`, lotes 52/56), Oxford Natal
+  (`02710170`, lote 72), Helanca Light 10 Metros (`26705341`, lote 62), Helanca Light 3,00×1,80
+  (`02670534`, lote 60), Helanquinha Forro Decoração 10m (`26705343`, lote 71). Verificado
+  depois: **nenhuma família de Oxford/Helanca ficou `nacional`**. Imposto é calculado em tempo de
+  leitura → vendas passadas corrigidas sozinhas.
+- [x] **Auditoria dos demais candidatos:** o que restou `nacional` nos lotes 48–62 é toda a linha
+  de fios e barbantes (Euroroma, Barroco MaxColor, Anne, Amigurumi, Encanto, Fio Náutico, Charme,
+  Bainha, Remendo) — nacional de verdade. Os importados eram os tecidos.
 - [x] **Fix estrutural (ADR-0107):** `ORIGEM` entra em `COLUNAS_OBRIGATORIAS` + nova
   `exigirOrigemExplicita` exige `NACIONAL`/`IMPORTADO` em toda linha PAI, abortando o lote com a
   lista dos códigos. Mais dois buracos fechados na revisão: `lerOrigemCrua` acha a coluna
@@ -26,10 +31,7 @@
   (`analisar-viabilidade` via `_shared/analise/extrair-itens.ts`). Conferir versão pós-deploy.
 - [ ] **Planilhas do operador:** arquivos sem a coluna `ORIGEM` param de subir. `Oxford_4825-Natal.xlsx`
   precisa de `IMPORTADO` na linha PAI, senão o próximo re-ingest reverte a correção manual.
-- [ ] **Auditar candidatos restantes:** 19 famílias nacional nos lotes 51–60 e 62 (janela do bug,
-  nunca cobertos pelo backfill): Barbante Euroroma, Barbante Barroco, linha Anne, Encanto,
-  Helanca Light 3,00×1,80 (lote 60) e Helanquinha Forro Decoração 10m (lote 71, pós-fix).
-- [ ] **Re-preço (decisão de negócio, herdada de 14/07):** o gross-up dos 7 anúncios foi feito a
+- [ ] **Re-preço (decisão de negócio, herdada de 14/07):** o gross-up das 9 famílias foi feito a
   8%; corrigir a origem não recalcula preço publicado (ADR-0016).
 
 ## Estoque › Movimentos — entradas não apareciam na lista — 2026-08-07
