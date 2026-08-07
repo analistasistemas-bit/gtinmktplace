@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Publicados from '@/pages/Publicados';
@@ -212,7 +212,9 @@ describe('Publicados', () => {
     const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
       .map((el) => el.closest('tr'))
       .find((tr): tr is HTMLTableRowElement => tr != null)!;
-    expect(linha).toHaveTextContent('59');
+    // getByText (não toHaveTextContent): a célula tem que ser exatamente 59, senão qualquer valor
+    // da linha que contenha "59" — um R$ 1.590,00 futuro — passaria por acidente.
+    expect(within(linha).getByText('59')).toBeInTheDocument();
   });
 
   it('exibe o selo do modo (Premium) vindo do status ao vivo', () => {
