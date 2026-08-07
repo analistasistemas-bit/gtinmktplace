@@ -70,6 +70,7 @@ export function FiltrosMovimentos({
             periodo={periodo ?? { tipo: 'preset', dias: 30 }}
             onPeriodo={onPeriodo}
             rotulo="Movimentos nos últimos"
+            semSelecao={periodo === null}
           />
         </div>
       </div>

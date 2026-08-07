@@ -12,6 +12,8 @@ interface Props {
   /** Legenda antes dos presets. O default fala de vendas porque foi o primeiro uso; telas de
    *  outro domínio (ledger de estoque) passam o seu, senão o seletor mente sobre o que filtra. */
   rotulo?: string;
+  /** Nenhum preset destacado — para quando outro controle da tela é que detém o recorte ativo. */
+  semSelecao?: boolean;
 }
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
@@ -35,13 +37,16 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
  * rascunho do modo custom é local — digitar datas NÃO refaz a busca; só ao clicar OK aplicamos
  * via `onPeriodo`. Usado na lista Publicados e no Detalhe de vendas (o Faturamento tem o seu).
  */
-export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, carregando, rotulo = 'Vendas nos últimos' }: Props) {
+export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, carregando, rotulo = 'Vendas nos últimos', semSelecao = false }: Props) {
   const [modoCustom, setModoCustom] = useState(periodo.tipo === 'range');
   const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
 
-  const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
-  const ehHoje = !modoCustom && periodo.tipo === 'hoje';
-  const ehMesAtual = !modoCustom && periodo.tipo === 'mes_atual';
+  // Em `semSelecao` nenhum botão fica destacado: quem manda no recorte é um controle de fora (o
+  // "Todo o período" do ledger). Sem isso o seletor destacaria o `periodo` de fallback e a tela
+  // mostraria dois filtros acesos ao mesmo tempo, sugerindo um recorte que não está aplicado.
+  const presetAtivo = !semSelecao && !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
+  const ehHoje = !semSelecao && !modoCustom && periodo.tipo === 'hoje';
+  const ehMesAtual = !semSelecao && !modoCustom && periodo.tipo === 'mes_atual';
 
   const escolherPreset = (dias: PeriodoDias) => {
     setModoCustom(false);
