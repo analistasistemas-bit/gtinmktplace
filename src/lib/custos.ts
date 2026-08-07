@@ -53,7 +53,10 @@ export function montarMapasCusto(rows: Array<Record<string, unknown>>): MapasCus
 
   for (const v of rows) {
     const custo = Number(v.custo ?? 0);
-    if (custo <= 0) continue;
+    // isFinite antes do > 0: `Number('abc')` é NaN e `NaN <= 0` é false, então sem esta guarda um
+    // custo não numérico entrava no mapa e virava markup NaN na tela. Achado pelo teste de
+    // paridade com o backend (ADR-0109), que devolvia null para o mesmo dado.
+    if (!Number.isFinite(custo) || custo <= 0) continue;
     const em = instante(v.atualizado_em);
     const peso = Number(v.peso_gramas ?? 0);
     const varId = v.ml_variation_id as string | null;

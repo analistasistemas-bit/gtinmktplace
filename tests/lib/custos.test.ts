@@ -145,6 +145,13 @@ describe('montarMapasCusto — tie-break pela linha mais recente (ADR-0108)', ()
     expect(montarCustoResolver(mapas)(item({ variation_id: 11 }))).toBe(33);
   });
 
+  // `Number('abc')` é NaN, e `NaN <= 0` é false: sem a guarda de isFinite, a linha entrava no mapa
+  // e o markup virava NaN na tela. Achado pelo teste de paridade com o backend (ADR-0109).
+  it('linha com custo não numérico é ignorada (não vira NaN)', () => {
+    const mapas = montarMapasCusto([linha({ ml_variation_id: '77', custo: 'abc' })]);
+    expect(montarCustoResolver(mapas)(item({ variation_id: 77 }))).toBeNull();
+  });
+
   it('linha com custo ≤ 0 ou null é ignorada', () => {
     const mapas = montarMapasCusto([
       linha({ ml_variation_id: '8', custo: 0 }),
