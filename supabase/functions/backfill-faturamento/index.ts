@@ -80,7 +80,11 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           // (item sem título) segue sendo gravado.
           if (itemId && tituloFalhou.has(itemId)) return;
           await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null, token);
-        } catch { /* segue */ }
+        } catch (e) {
+          // Isola a falha do item — uma pergunta ruim não derruba o chunk —, mas NÃO em silêncio:
+          // falha determinística (payload novo, permissão negada) sumiria do histórico sem rastro.
+          console.warn(`backfill: pergunta ${q?.id} de ${userId} falhou: ${(e as Error).message}`);
+        }
       }));
     }
   } catch (e) {
@@ -95,7 +99,9 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
         try {
           const ret = await buscarReturn(token, String(claim.id));
           await upsertDevolucao(admin, userId, orgId, claim, ret);
-        } catch { /* segue */ }
+        } catch (e) {
+          console.warn(`backfill: claim ${claim?.id} de ${userId} falhou: ${(e as Error).message}`);
+        }
       }));
     }
   } catch (e) {
@@ -151,7 +157,9 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           try {
             const msgs = await buscarMensagensPack(token, p.packId, contaExternaId);
             if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs);
-          } catch { /* segue */ }
+          } catch (e) {
+            console.warn(`backfill: mensagens do pack ${p?.packId} de ${userId} falharam: ${(e as Error).message}`);
+          }
         }));
       }
     } catch (e) {
