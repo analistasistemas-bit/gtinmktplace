@@ -16,6 +16,11 @@ inicial nem a reposição.
   `movimentosEstoquePagina`; o prefixo `movimentosEstoque` segue valendo para a invalidação do
   `dialog-entrada` alcançar todas as páginas. TDD (RED → GREEN em
   `tests/components/movimentos-estoque.test.tsx`), 2615 testes verdes.
+- [x] **Evolução (mesmo dia)** — "Carregar mais" virou paginação server-side com filtros de tipo,
+  período e SKU (spec `2026-08-07-paginacao-movimentos-estoque-design.md`, plano
+  `2026-08-07-paginacao-movimentos-estoque.md`). O total do rodapé é a trava permanente contra
+  truncagem silenciosa; o default é "tudo, sem filtro de data" porque um default de 30 dias
+  recriaria o defeito num produto parado. Sem migration: os índices já existiam. 2640 testes verdes.
 
 ## Publicados — "Unid. vendidas" menor que o Faturamento — 2026-08-07
 

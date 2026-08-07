@@ -353,7 +353,11 @@ function LinhaTabela({
                 precoOverride={item.precoAtual ?? item.precoPublicacao}
                 listingTypeReal={item.listingType ?? null}
               />
-              <MovimentosEstoque codigoPai={item.codigoPai} ativo={aberto} />
+              <MovimentosEstoque
+                codigoPai={item.codigoPai}
+                ativo={aberto}
+                variacoes={familia.variacoes.map((v) => ({ codigo: v.codigo, cor: v.cor }))}
+              />
             </div>
           )}
         </TableCell>

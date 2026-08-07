@@ -21,6 +21,16 @@ Fix: Publicados passou a consumir `useResumoVendas`, eliminando o call site dupl
 um hook existe justamente para montar as dependências de um cálculo, chamar o cálculo direto na
 página recria o bug que o hook previne. Ver [[Índice de ADRs]] (ADR-0021, ADR-0038, ADR-0055).
 
+**Segundo defeito do mesmo dia — as entradas sumiam da aba Movimentos.** No card do mesmo produto, a
+lista mostrava só vendas. `fetchMovimentosEstoque` tinha `limite = 20` e o componente nunca passava
+outro valor; o produto tem 56 movimentos e as duas entradas caíam nas posições 37 e 56. Nada na tela
+dizia que a lista estava cortada — a mesma classe de falha do caso acima: **truncagem silenciosa
+parece um resultado completo**. Corrigido em duas etapas no mesmo dia: primeiro página de 100 com
+aviso, depois paginação server-side com filtros de tipo, período e SKU (spec
+`2026-08-07-paginacao-movimentos-estoque-design.md`). O default é "tudo, sem filtro de data" — um
+default de 30 dias recriaria o defeito num produto parado. A regra que fica: **toda lista cortada
+mostra o total**, senão ninguém descobre o que não está vendo.
+
 ## 2026-08-06 — troca de categoria para competir no catálogo re-moderou o anúncio (Aquaphor, DSA)
 
 Durante o destrave da vinculação de catálogo dos 3 anúncios da DSA, o Aquaphor Duo Pack

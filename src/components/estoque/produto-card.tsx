@@ -155,7 +155,11 @@ export function ProdutoCard({ produto, canais, onDarEntrada }: {
               </div>
             </TabsContent>
             <TabsContent value="movimentos">
-              <MovimentosEstoque codigoPai={produto.codigoPai} ativo={aberto} />
+              <MovimentosEstoque
+                codigoPai={produto.codigoPai}
+                ativo={aberto}
+                variacoes={produto.variacoes.map((v) => ({ codigo: v.codigo, cor: v.cor }))}
+              />
             </TabsContent>
           </Tabs>
         </div>
