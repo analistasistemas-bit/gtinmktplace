@@ -101,6 +101,31 @@ investigação achou que a informação estava na planilha, mas era descartada p
    palavra estando literalmente no texto — provavelmente já causava perda silenciosa antes deste
    adendo, não só nos casos novos que ele destrava.
 
+### Adendo (2026-08-07) — `NAME` obrigatório: fallback determinístico (lote #11, Cuidado Facial MLB264874)
+
+Lote #11 (Gel de Limpeza Facial) travou na Revisão com "Atributos obrigatórios faltando: Nome".
+Causa: `MLB264874` marca `NAME` ("Nome") como `required`, `value_type=string`. Nada o preenchia —
+`montarAtributosBase` cobre só `BRAND`/`MANUFACTURER`/`MODEL`, e a IA, sob a regra de ouro deste ADR,
+só aceita texto-livre que conste **literalmente** no nome/descrição. No ML o "Nome" é o nome da
+*linha* do produto (as sugestões da categoria são "Effaclar K+", "Clarité"), que a planilha
+raramente traz isolado → a IA corretamente omitia e sobrava trabalho manual em todo lote de cosmético.
+
+**Decisão:** `preencherNomeObrigatorio` (`_shared/categoria/atributos.ts`) preenche `NAME` com o
+**nome do produto da planilha** quando a categoria o marca obrigatório e ele está vazio. Não viola a
+regra de ouro: o valor é a própria fonte (mesma origem do `MODEL`), não inferência da IA.
+
+- Roda **depois** da IA (mesmo ponto de `preencherUnitsPerPack`), nos dois ramos — genérico
+  (`resolver-atributos-genericos.ts`, também usado pelo seletor manual de categoria, ADR-0057) e
+  aviamento (`process-familia`). Se a IA inferir a linha do texto, o valor dela vence.
+- Só quando **obrigatório** (`required`/`conditional_required`): `NAME` opcional não vale o ruído no
+  casamento de catálogo do ML.
+- Levantamento na API do ML (2026-08-07, 8 categorias amostradas): os únicos texto-livre marcados
+  `required` são `BRAND`, `MANUFACTURER`, `MODEL` e `NAME`. Com este, **nenhum obrigatório de texto
+  fica sem preenchimento automático** — o editor manual da Revisão passa a ser exceção real
+  (numérico/closed-set sem lastro no texto, campo regulatório), não rotina.
+- Fora do escopo de propósito: campo regulatório/certificação obrigatório (ANVISA, INMETRO…) continua
+  travando na Revisão — inventar número de registro é risco de compliance, não usabilidade.
+
 ### Adendo (2026-07-10) — mesmo bug no fallback manual (`faltantes-editaveis.ts`)
 
 02954524 (fallback manual, citado acima) expôs a mesma classificação errada num segundo lugar: `tipoDe`

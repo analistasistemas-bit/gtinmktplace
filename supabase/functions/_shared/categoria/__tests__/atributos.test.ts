@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack } from '../atributos';
+import { categoriaParaTipo, tipoParaCategoria, montarAtributosML, montarAtributosBase, atributosFaltantes, ehDuplaFace, categoriaAceitaEmptyGtinReason, extrairUnitsPerPack, preencherUnitsPerPack, preencherNomeObrigatorio } from '../atributos';
 import type { AtributoSchema } from '../schema';
 
 describe('categoriaParaTipo (IDs reais validados na API ML)', () => {
@@ -277,5 +277,41 @@ describe('montarAtributosBase (MANUFACTURER = fornecedor)', () => {
   it('marcaPadrao customizada (E7): usa a marca da org quando o produto não tem marca própria', () => {
     const out = montarAtributosBase([attr('BRAND')], 'Tecido X', undefined, 'MarcaOrgX');
     expect(out).toEqual([{ id: 'BRAND', value_name: 'MarcaOrgX' }]);
+  });
+});
+
+describe('preencherNomeObrigatorio (NAME — lote #11, Cuidado Facial MLB264874)', () => {
+  const NAME = (o: Partial<AtributoSchema> = {}): AtributoSchema =>
+    ({ id: 'NAME', nome: 'Nome', required: true, conditionalRequired: false, valueType: 'string',
+       valores: [{ id: '6127976', nome: 'Clarité' }], allowedUnits: [], tags: [], ...o });
+
+  it('preenche NAME com o nome do produto quando é obrigatório e está vazio', () => {
+    const out = preencherNomeObrigatorio([NAME()], [{ id: 'BRAND', value_name: 'Principia' }], 'Gel de Limpeza Facial Principia 350g');
+    expect(out).toContainEqual({ id: 'NAME', value_name: 'Gel de Limpeza Facial Principia 350g' });
+  });
+
+  it('não sobrescreve o NAME que a IA já inferiu do texto', () => {
+    const out = preencherNomeObrigatorio([NAME()], [{ id: 'NAME', value_name: 'Principia' }], 'Gel de Limpeza Facial Principia 350g');
+    expect(out.filter((a) => a.id === 'NAME')).toEqual([{ id: 'NAME', value_name: 'Principia' }]);
+  });
+
+  it('não preenche quando NAME é opcional na categoria (não trava a publicação)', () => {
+    const out = preencherNomeObrigatorio([NAME({ required: false })], [], 'Produto X');
+    expect(out.some((a) => a.id === 'NAME')).toBe(false);
+  });
+
+  it('conditional_required também conta (mesmo gate dos faltantes)', () => {
+    const out = preencherNomeObrigatorio([NAME({ required: false, conditionalRequired: true })], [], 'Produto X');
+    expect(out).toContainEqual({ id: 'NAME', value_name: 'Produto X' });
+  });
+
+  it('categoria que não expõe NAME fica intocada', () => {
+    const base = [{ id: 'BRAND', value_name: 'Avil' }];
+    const brand = { ...NAME(), id: 'BRAND', nome: 'Marca' };
+    expect(preencherNomeObrigatorio([brand], base, 'Produto X')).toEqual(base);
+  });
+
+  it('nome vazio não vira atributo em branco (fica faltante p/ o operador)', () => {
+    expect(preencherNomeObrigatorio([NAME()], [], '   ').some((a) => a.id === 'NAME')).toBe(false);
   });
 });

@@ -21,7 +21,7 @@ import { preSubirFotosFamilia } from '../_shared/anuncios/pre-subir-fotos.ts';
 import { decidirRetryPorErro } from '../_shared/publicacao/retry.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
-import { montarAtributosML, preencherUnitsPerPack, categoriaParaTipo, tipoParaCategoria, type AtributoML } from '../_shared/categoria/atributos.ts';
+import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, categoriaParaTipo, tipoParaCategoria, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria, ehCategoriaGenerica } from '../_shared/categoria/resolver.ts';
 import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
@@ -287,6 +287,7 @@ Deno.serve(async (req) => {
             (input, alvos) => desempatarAtributosLLM(input, alvos, modeloTexto, acumularDesempate),
           );
           atributosMl = preencherUnitsPerPack(schema, atributosMl, claimed.nome_pai, claimed.descricao_pai ?? undefined);
+          atributosMl = preencherNomeObrigatorio(schema, atributosMl, claimed.nome_pai);
         } catch (e) { console.error('enriquecimento de atributos (regex) falhou:', e); }
       }
     } else if (categoriaMlId) {

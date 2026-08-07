@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Atributo `NAME` obrigatório preenchido sozinho (adendo ADR-0052) — 2026-08-07
+
+Lote #11 (Gel de Limpeza Facial, MLB264874) travou pedindo "Nome" ao operador — obrigatório
+texto-livre que nem a base determinística nem a IA (regra anti-invenção) preenchiam.
+
+- [x] `preencherNomeObrigatorio` em `_shared/categoria/atributos.ts`: `NAME` obrigatório e vazio →
+  nome do produto da planilha (mesma fonte do `MODEL`), rodando **depois** da IA.
+- [x] Aplicado nos dois ramos: genérico (`resolver-atributos-genericos.ts`, cobre também o seletor
+  manual de categoria) e aviamento (`process-familia`).
+- [x] Testes (6 unitários + 1 de integração) e adendo no ADR-0052.
+- [ ] **Deploy** de `process-familia`, `definir-categoria-familia`, `atributos-familia` e
+  `publicar-split-ml` (mudança em `_shared/`) + **Reprocessar** o lote #11 na Revisão.
+
 ## Custo congelado no instante da venda (ADR-0109) — 2026-08-07
 
 Markup histórico fiel: o ADR-0108 deixou isto registrado como decisão não tomada; Diego pediu.

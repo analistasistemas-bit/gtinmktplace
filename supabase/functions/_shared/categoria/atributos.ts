@@ -224,6 +224,31 @@ export function preencherUnitsPerPack(
   return forcarSaleFormatKit(schema, comUnits);
 }
 
+/**
+ * Fallback determinístico do NAME ("Nome"), obrigatório em categorias de consumo (ex.: Cuidado
+ * Facial MLB264874 — lote #11). É o 4º e último texto-livre que o ML marca como required em
+ * categoria genérica (os outros três — BRAND, MANUFACTURER, MODEL — já saem de
+ * montarAtributosBase), então com ele nenhum obrigatório de texto fica sem preenchimento
+ * automático: a família publica sem o operador digitar nada.
+ *
+ * Por que a IA não resolvia: NAME é texto-livre e a regra de ouro do ADR-0052 só aceita valor que
+ * conste LITERALMENTE no nome/descrição. No ML o "Nome" é o nome da linha do produto ("Effaclar
+ * K+"), que a planilha raramente traz isolado → a IA (corretamente) omitia e a família travava na
+ * Revisão. Aqui não há invenção: usa o próprio nome do produto da planilha, mesma fonte do MODEL.
+ *
+ * Roda DEPOIS da IA de propósito — se ela conseguir inferir a linha do texto, o valor dela vence.
+ * Só age quando o atributo é obrigatório: NAME opcional não vale o ruído no catálogo do ML.
+ */
+export function preencherNomeObrigatorio(
+  schema: AtributoSchema[], atributos: AtributoML[], nome: string,
+): AtributoML[] {
+  const alvo = schema.find((a) => a.id === 'NAME' && (a.required || a.conditionalRequired));
+  const jaTem = atributos.some((a) => a.id === 'NAME' && (a.value_name || a.value_id));
+  const valor = (nome ?? '').trim();
+  if (!alvo || jaTem || !valor) return atributos;
+  return [...atributos, { id: 'NAME', value_name: valor }];
+}
+
 /** Sobrescreve SALE_FORMAT para o value_id de "Kit" do schema da categoria, se exposto. */
 function forcarSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
   const kit = schema.find((a) => a.id === 'SALE_FORMAT')?.valores.find((v) => normalizar(v.nome) === 'kit');

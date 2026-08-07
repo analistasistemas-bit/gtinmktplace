@@ -3,6 +3,7 @@ import {
   montarAtributosBase,
   atributosFaltantesGenerico,
   preencherUnitsPerPack,
+  preencherNomeObrigatorio,
   FALTANTE_ATRIBUTOS_NAO_VALIDADOS,
   type AtributoML,
 } from './atributos.ts';
@@ -44,6 +45,7 @@ export async function resolverAtributosGenericos(
       schema, base, { nome: input.nome, descricao: input.descricao }, deps.llm,
     );
     atributosMl = preencherUnitsPerPack(schema, atributosMl, input.nome, input.descricao);
+    atributosMl = preencherNomeObrigatorio(schema, atributosMl, input.nome);
     const faltantes = atributosFaltantesGenerico(atributosMl, schema);
     return { atributosMl, faltantes };
   } catch (e) {

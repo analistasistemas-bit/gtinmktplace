@@ -27,6 +27,25 @@ describe('resolverAtributosGenericos', () => {
     expect(r.faltantes).toEqual([]);
   });
 
+  it('categoria com NAME obrigatório (Cuidado Facial MLB264874, lote #11) publica sem intervenção', async () => {
+    // NAME é texto-livre: a IA omite quando o nome da linha não consta literalmente no texto
+    // (regra de ouro ADR-0052) e a família travava na Revisão pedindo "Nome" ao operador.
+    const schemaCosmetico: AtributoSchema[] = [
+      A({ id: 'BRAND', nome: 'Marca', required: true }),
+      A({ id: 'NAME', nome: 'Nome', required: true, valores: [{ id: '6127976', nome: 'Clarité' }] }),
+    ];
+    const r = await resolverAtributosGenericos(
+      'MLB264874',
+      { nome: 'Gel de Limpeza Facial Principia 350g', fornecedor: 'Principia' },
+      { lerSchema: async () => schemaCosmetico, llm: async () => ({}) },
+    );
+    expect(r.atributosMl).toEqual(expect.arrayContaining([
+      { id: 'BRAND', value_name: 'Principia' },
+      { id: 'NAME', value_name: 'Gel de Limpeza Facial Principia 350g' },
+    ]));
+    expect(r.faltantes).toEqual([]);
+  });
+
   it('schema vazio → faltante-sentinela (bloqueio seguro, ADR-0051)', async () => {
     const r = await resolverAtributosGenericos(
       'MLB000000',
