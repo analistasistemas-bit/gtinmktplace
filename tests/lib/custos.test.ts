@@ -91,6 +91,33 @@ describe('montarPesoResolver', () => {
   });
 });
 
+// ADR-0109 — quando a venda tem custo congelado, ele MANDA. É o número gravado no instante da
+// venda; o catálogo de hoje não pode sobrescrevê-lo, nem quando difere.
+describe('montarCustoResolver — custo congelado tem precedência (ADR-0109)', () => {
+  const mapas = montarMapasCusto([linha({ ml_variation_id: '5', custo: 99, atualizado_em: '2026-08-01T00:00:00Z' })]);
+
+  it('usa o congelado mesmo com o catálogo dizendo outro valor', () => {
+    const congelado = { ...item({ variation_id: 5 }), custo_congelado: 15.8558 };
+    expect(montarCustoResolver(mapas)(congelado)).toBe(15.8558);
+  });
+
+  it('sem congelado, cai na resolução dinâmica de sempre', () => {
+    expect(montarCustoResolver(mapas)({ ...item({ variation_id: 5 }), custo_congelado: null })).toBe(99);
+    expect(montarCustoResolver(mapas)(item({ variation_id: 5 }))).toBe(99);
+  });
+
+  it('congelado vale mesmo quando o produto sumiu do catálogo', () => {
+    const orfao = { ...item({ variation_id: 404 }), custo_congelado: 7.5 };
+    expect(montarCustoResolver(mapas)(orfao)).toBe(7.5);
+  });
+
+  // O peso segue dinâmico de propósito: só o custo é congelado (ADR-0109, fora de escopo).
+  it('não afeta o resolver de peso', () => {
+    const congelado = { ...item({ variation_id: 5 }), custo_congelado: 1 };
+    expect(montarPesoResolver(mapas)(congelado)).toBe(100);
+  });
+});
+
 describe('montarMapasCusto — tie-break pela linha mais recente (ADR-0108)', () => {
   it('mesma chave em linhas distintas mantém a mais recente, peso acompanha', () => {
     const mapas = montarMapasCusto([

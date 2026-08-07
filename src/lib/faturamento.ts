@@ -20,6 +20,10 @@ export interface VendaItem {
   unit_price: number;
   sale_fee: number;
   is_publiai: boolean;
+  /** ADR-0109 — custo unitário congelado no instante da venda. Tem precedência sobre o catálogo.
+   *  null = venda sem congelamento (anterior ao backfill, ou item que não casou) → resolução
+   *  dinâmica, como antes. */
+  custo_congelado?: number | null;
 }
 
 export interface Venda {
@@ -69,6 +73,27 @@ export interface Venda {
   canal?: string;
 }
 
+/** Linha crua de `venda_item_custo` como vem do embed. */
+interface CustoCongeladoRow { ml_item_id: string | null; variation_id: number | null; custo_unitario: unknown }
+
+/** Chave do casamento item ↔ custo congelado. Os dois lados usam `null` quando o campo é nulo,
+ *  então a string bate — é o mesmo par (ml_item_id, variation_id) da unicidade no banco. */
+const chaveCusto = (mlItemId: string | null, variationId: number | null) => `${mlItemId}|${variationId}`;
+
+/** Cola o custo congelado (ADR-0109) em cada item da venda. `numeric` do Postgres chega como
+ *  string pelo PostgREST, daí o Number(); valor não numérico vira null em vez de NaN. */
+function comCustoCongelado(v: Venda & { custos?: CustoCongeladoRow[] | null }): VendaItem[] {
+  const porChave = new Map<string, number>();
+  for (const c of v.custos ?? []) {
+    const n = Number(c.custo_unitario);
+    if (Number.isFinite(n) && n > 0) porChave.set(chaveCusto(c.ml_item_id, c.variation_id), n);
+  }
+  return (v.itens ?? []).map((i) => ({
+    ...i,
+    custo_congelado: porChave.get(chaveCusto(i.ml_item_id, i.variation_id)) ?? null,
+  }));
+}
+
 /** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens.
  *  Pagina (`.range`) para não truncar em ~1000 linhas (teto padrão do PostgREST).
  *  `atualizadoDesde`: marca d'água do poll incremental (ADR-0082) — quando presente, filtra
@@ -78,7 +103,7 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
   const vendas = await buscarTodasPaginas<Venda>((de, ate) => {
     let q = supabase
       .from('ml_vendas')
-      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai)')
+      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)')
       .gte('date_closed', janela.desde)
       .lte('date_closed', janela.ate)
       .order('date_closed', { ascending: false })
@@ -91,7 +116,7 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
   });
   // 'canal' ainda não está no select (coluna só existe em produção após a migration da Task 4);
   // fallback para 'mercado_livre' preserva o comportamento atual até a Task 9 ligar o filtro real.
-  return vendas.map((v) => ({ ...v, canal: v.canal ?? 'mercado_livre' }));
+  return vendas.map((v) => ({ ...v, canal: v.canal ?? 'mercado_livre', itens: comCustoCongelado(v) }));
 }
 
 /** Folga da marca d'água. `atualizado_em = now()` no Postgres é o timestamp do INÍCIO da

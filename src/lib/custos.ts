@@ -112,9 +112,14 @@ function resolverProduto(m: MapasCusto | undefined, item: VendaItem): ValorProdu
   return null;
 }
 
-/** Resolver de custo unitário (R$) p/ o agregador. null = sem custo cadastrado. */
+/** Resolver de custo unitário (R$) p/ o agregador. null = sem custo cadastrado.
+ *
+ *  O custo CONGELADO na venda (ADR-0109) tem precedência sobre o catálogo: é o valor que valia no
+ *  instante da venda, e o catálogo de hoje não pode reescrevê-lo — nem quando o produto some do
+ *  catálogo. Sem congelado (venda anterior ao backfill, ou item que não casou), cai na resolução
+ *  dinâmica de sempre. */
 export function montarCustoResolver(m: MapasCusto | undefined): CustoResolver {
-  return (item) => resolverProduto(m, item)?.custo ?? null;
+  return (item) => item.custo_congelado ?? resolverProduto(m, item)?.custo ?? null;
 }
 
 /** Resolver de peso unitário (g) p/ o rateio de frete. null = sem peso cadastrado. */
