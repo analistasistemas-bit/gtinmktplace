@@ -73,6 +73,12 @@ para cadastro e recebimento), então congelar esse valor no instante da venda j�
 - **Não há como descongelar pela interface** (decisão explícita). Custo gravado errado se corrige
   no banco, e o trigger obriga um `disable trigger` explícito para isso — a correção é possível,
   mas nunca acidental.
+- **A garantia é "o custo não muda por `UPDATE`", não "a linha é imutável".** O `DELETE` segue
+  livre porque o cascade da venda depende dele, então `DELETE` + `INSERT` com outro valor contorna
+  o trigger. Aceito de propósito: nenhum caminho de aplicação apaga linha avulsa (só o cascade
+  apaga, junto com a venda inteira), e restringir o `DELETE` custaria mais do que protege. Fica
+  registrado para ninguém confiar na trava como imutabilidade absoluta — achado M3 do
+  `code-review-v6`.
 - O backfill é **aproximação**: usa a data do lote, então não capta uma mudança de custo por
   recebimento ocorrida entre o lote e a venda. A coluna `fonte` distingue o reconstruído do
   capturado ao vivo.

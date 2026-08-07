@@ -74,15 +74,20 @@ export interface Venda {
 }
 
 /** Linha crua de `venda_item_custo` como vem do embed. */
-interface CustoCongeladoRow { ml_item_id: string | null; variation_id: number | null; custo_unitario: unknown }
+export interface CustoCongeladoRow { ml_item_id: string | null; variation_id: number | null; custo_unitario: unknown }
 
 /** Chave do casamento item ↔ custo congelado. Os dois lados usam `null` quando o campo é nulo,
  *  então a string bate — é o mesmo par (ml_item_id, variation_id) da unicidade no banco. */
 const chaveCusto = (mlItemId: string | null, variationId: number | null) => `${mlItemId}|${variationId}`;
 
 /** Cola o custo congelado (ADR-0109) em cada item da venda. `numeric` do Postgres chega como
- *  string pelo PostgREST, daí o Number(); valor não numérico vira null em vez de NaN. */
-function comCustoCongelado(v: Venda & { custos?: CustoCongeladoRow[] | null }): VendaItem[] {
+ *  string pelo PostgREST, daí o Number(); valor não numérico vira null em vez de NaN.
+ *
+ *  Exportada para teste: se a chave dos dois lados divergir (ex.: bigint serializado como number
+ *  de um lado e string do outro), o custo congelado é ignorado EM SILÊNCIO e a tela volta ao custo
+ *  dinâmico sem erro nenhum — por isso o casamento é coberto por
+ *  `tests/lib/faturamento-custo-congelado.test.ts`. */
+export function comCustoCongelado(v: Venda & { custos?: CustoCongeladoRow[] | null }): VendaItem[] {
   const porChave = new Map<string, number>();
   for (const c of v.custos ?? []) {
     const n = Number(c.custo_unitario);
@@ -116,7 +121,12 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
   });
   // 'canal' ainda não está no select (coluna só existe em produção após a migration da Task 4);
   // fallback para 'mercado_livre' preserva o comportamento atual até a Task 9 ligar o filtro real.
-  return vendas.map((v) => ({ ...v, canal: v.canal ?? 'mercado_livre', itens: comCustoCongelado(v) }));
+  // `custos` sai do objeto: é insumo do embed, já consumido por `comCustoCongelado`. Sem isto ele
+  // viajaria para os consumidores como campo não declarado em `Venda`.
+  return vendas.map((v) => {
+    const { custos: _custos, ...resto } = v as Venda & { custos?: CustoCongeladoRow[] | null };
+    return { ...resto, canal: v.canal ?? 'mercado_livre', itens: comCustoCongelado(v) };
+  });
 }
 
 /** Folga da marca d'água. `atualizado_em = now()` no Postgres é o timestamp do INÍCIO da
