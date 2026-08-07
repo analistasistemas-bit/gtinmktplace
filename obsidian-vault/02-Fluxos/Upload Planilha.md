@@ -11,12 +11,14 @@ Primeira etapa do [[Fluxo Completo]]. Edge function `ingest-lote`
 ## Colunas obrigatórias
 
 `CODIGO`, `PAI`, `NOME`, `UNIDADE`, `GTIN`, `CUSTO`, `PRECO`, `ESTOQUE`,
-`DESCRICAO_DETALHADO`, `PESO_GRAMAS`, `ALTURA_CM`, `LARGURA_CM`, `COMPRIMENTO_CM`, `FORNECEDOR`.
-
-## Colunas opcionais
+`DESCRICAO_DETALHADO`, `PESO_GRAMAS`, `ALTURA_CM`, `LARGURA_CM`, `COMPRIMENTO_CM`, `FORNECEDOR`,
+`ORIGEM`.
 
 - **ORIGEM** — `NACIONAL`/`IMPORTADO`, lida só da linha PAI (como `FORNECEDOR`). Base do
-  imposto sobre a venda (ADR-0055). Ausente/vazio/inválido → `nacional`.
+  imposto sobre a venda (ADR-0055). **Obrigatória e explícita desde o ADR-0107**: coluna ausente
+  é barrada por `validarColunas`; célula vazia ou valor inválido em qualquer PAI aborta o lote
+  (`exigirOrigemExplicita`), listando todos os códigos a corrigir. Era opcional com default
+  `nacional` até 2026-08-07 — o default silencioso cobrava 8% em produto importado (16%).
 
 ## O que a função faz (`_shared/parser.ts`)
 

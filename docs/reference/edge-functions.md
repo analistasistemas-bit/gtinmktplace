@@ -152,8 +152,13 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 ### Ingest de planilha
 - **ingest-lote** — valida colunas, agrupa variações por PAI, casa fotos, detecta CREATE vs
   UPDATE, cria `familias`+`variacoes` e enfileira as pendentes (`enfileirarFamilia`). Edge
-  cases em ADR-0013. Grava `familias.origem` a partir da coluna opcional `ORIGEM` da linha PAI
-  (ausente/vazio/inválido → `nacional`, ADR-0055). Escopo da operação (ADR-0056): casa anteriores
+  cases em ADR-0013. Grava `familias.origem` a partir da coluna `ORIGEM` da linha PAI, que é
+  **obrigatória e explícita** (ADR-0107): a coluna está em `COLUNAS_OBRIGATORIAS` e
+  `exigirOrigemExplicita` aborta o lote se qualquer PAI vier vazio ou com valor fora de
+  `NACIONAL`/`IMPORTADO`, listando todos os códigos de uma vez — o default silencioso em
+  `nacional` cobrava 8% em importado (16%). `verificarOrigemInviolavel` (ADR-0055) continua
+  guardando o outro flanco: a origem persistida tem que bater com a coluna crua da planilha.
+  Escopo da operação (ADR-0056): casa anteriores
   por `codigo_pai` em toda a operação (evita duplicar anúncio de outro membro) e grava
   `familias/variacoes.user_id` com o dono da conta ML da operação (o operador fica em `lotes.user_id`).
   No re-ingest UPDATE herda o `*_ml_picture_id`/`ml_picture_id` só quando NÃO veio foto nova no lote

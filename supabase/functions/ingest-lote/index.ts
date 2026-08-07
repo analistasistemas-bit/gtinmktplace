@@ -5,7 +5,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matchCapa3, normalizarCodigo } from '../_shared/parser.ts';
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
-import { verificarOrigemInviolavel } from './verificar-origem.ts';
+import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-origem.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
@@ -92,6 +92,8 @@ Deno.serve(async (req) => {
     if (rowsRaw.length === 0) throw new Error('Planilha vazia');
 
     validarColunas(Object.keys(rowsRaw[0]));
+    // ORIGEM explícita em todo PAI (ADR-0107): falha antes de qualquer trabalho, nada é persistido.
+    exigirOrigemExplicita(rowsRaw);
 
     const rows: PlanilhaRow[] = rowsRaw.map(mapearLinha);
 

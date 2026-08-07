@@ -8,12 +8,18 @@ import {
 
 describe('validarColunas', () => {
   it('aceita quando todas as colunas obrigatórias estão presentes', () => {
-    const cols = ['CODIGO','PAI','NOME','UNIDADE','GTIN','CUSTO','PRECO','ESTOQUE','DESCRICAO_DETALHADO','PESO_GRAMAS','ALTURA_CM','LARGURA_CM','COMPRIMENTO_CM','FORNECEDOR'];
+    const cols = ['CODIGO','PAI','NOME','UNIDADE','GTIN','CUSTO','PRECO','ESTOQUE','DESCRICAO_DETALHADO','PESO_GRAMAS','ALTURA_CM','LARGURA_CM','COMPRIMENTO_CM','FORNECEDOR','ORIGEM'];
     expect(() => validarColunas(cols)).not.toThrow();
   });
   it('lança quando falta coluna', () => {
     const cols = ['CODIGO','PAI','NOME'];
     expect(() => validarColunas(cols)).toThrow(/UNIDADE|GTIN|PRECO/);
+  });
+  // ADR-0107: planilha sem ORIGEM não sobe — sem a coluna, todo produto virava nacional (8%) em
+  // silêncio, cobrando 8% em importado (16%).
+  it('lança quando falta ORIGEM, mesmo com todas as outras', () => {
+    const cols = ['CODIGO','PAI','NOME','UNIDADE','GTIN','CUSTO','PRECO','ESTOQUE','DESCRICAO_DETALHADO','PESO_GRAMAS','ALTURA_CM','LARGURA_CM','COMPRIMENTO_CM','FORNECEDOR'];
+    expect(() => validarColunas(cols)).toThrow(/ORIGEM/);
   });
 });
 

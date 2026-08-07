@@ -99,7 +99,9 @@ Prioridade MCP: supabase-mcp-server, upstash, render, shadcn, context7.
 
 # Planilha
 
-Campos obrigatórios: `CODIGO, PAI, NOME, UNIDADE, GTIN, CUSTO, PRECO, ESTOQUE, DESCRICAO_DETALHADO, PESO_GRAMAS, ALTURA_CM, LARGURA_CM, COMPRIMENTO_CM, FORNECEDOR`
+Campos obrigatórios: `CODIGO, PAI, NOME, UNIDADE, GTIN, CUSTO, PRECO, ESTOQUE, DESCRICAO_DETALHADO, PESO_GRAMAS, ALTURA_CM, LARGURA_CM, COMPRIMENTO_CM, FORNECEDOR, ORIGEM`
+
+`ORIGEM` só vale na linha PAI e exige `NACIONAL` ou `IMPORTADO` explícito — vazio ou typo aborta o lote (ADR-0107). Define a alíquota de imposto (8% / 16%), nunca presumida.
 
 ---
 

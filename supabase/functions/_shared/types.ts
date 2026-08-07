@@ -42,4 +42,7 @@ export const COLUNAS_OBRIGATORIAS = [
   'CODIGO', 'PAI', 'NOME', 'UNIDADE', 'GTIN', 'CUSTO', 'PRECO', 'ESTOQUE',
   'DESCRICAO_DETALHADO', 'PESO_GRAMAS', 'ALTURA_CM', 'LARGURA_CM', 'COMPRIMENTO_CM',
   'FORNECEDOR',
+  // ORIGEM define a alíquota de imposto (8% nacional / 16% importado). Obrigatória desde o
+  // ADR-0107: sem a coluna, o lote inteiro caía em 'nacional' em silêncio.
+  'ORIGEM',
 ] as const;
