@@ -48,11 +48,15 @@
   mudar. Ressalva conhecida: `dba_git_estado` nulo cai em `NACIONAL` sem disparar a trava (a
   trava só pega coluna ausente ou valor inválido — um `NACIONAL` errado passa). Um
   `WHEN i.dba_git_estado IS NULL THEN 'REVISAR'` fecharia isso.
-- [ ] **Erro de dados no lote 71:** o código `18760903` aparece 2× na planilha (como "Vermelho" e
-  como "Rosa Pink"). O parser dedupe por CODIGO (ADR-0013) e descartou o Rosa Pink — por isso a
-  família `26705343` tem 9 cores em vez de 10. Corrigir o código do Rosa Pink na origem.
-- [ ] **Re-preço (decisão de negócio, herdada de 14/07):** o gross-up das 9 famílias foi feito a
-  8%; corrigir a origem não recalcula preço publicado (ADR-0016).
+- [~] **Erro de dados no lote 71 — NÃO SERÁ CORRIGIDO (decisão do Diego, 2026-08-07).** O código
+  `18760903` aparece 2× na planilha (como "Vermelho" e como "Rosa Pink"). O parser dedupe por
+  CODIGO (ADR-0013) e descartou o Rosa Pink — por isso a família `26705343` tem 9 cores em vez de
+  10. É comportamento conhecido e aceito, não um bug a caçar.
+- [~] **Re-preço — NÃO SERÁ FEITO (decisão do Diego, 2026-08-07).** O gross-up das 9 famílias de
+  tecido foi calculado com 8% e os anúncios seguem no ar com esse preço; corrigir a origem não
+  recalcula preço publicado (ADR-0016). O markup real dessas famílias é menor que o do momento da
+  publicação — é conhecido e aceito, **não reprocessar "para consertar"**. Fecha também a mesma
+  pendência aberta em 2026-07-14, que ficou sem resposta desde então.
 
 ## Estoque › Movimentos — entradas não apareciam na lista — 2026-08-07
 
