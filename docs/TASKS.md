@@ -41,9 +41,13 @@
 - [x] **Planilhas do operador (fonte):** os arquivos são export de uma query Oracle sobre
   `A_CADCITEM` (a própria planilha guarda a query na aba `SQL Statement`). Diego ajustou a query
   em 2026-08-07 — os próximos exports já saem com a coluna `ORIGEM`, então o deploy da trava não
-  quebra o fluxo. **Falta conferir**, no primeiro lote novo, que a query não usa
-  `NVL(..., 'NACIONAL')`: um default silencioso na fonte reintroduz o bug sem disparar a trava
-  (o cabeçalho existiria e o valor seria válido, só que errado).
+  quebra o fluxo. Regra:
+  `CASE WHEN i.dba_git_estado = 'EX' THEN 'IMPORTADO' ELSE 'NACIONAL' END`.
+  **Validada contra os 6 pais corrigidos à mão** (`2989182`, `29891825`, `2710170`, `26705341`,
+  `26705343`, `2670534`): os 6 saem `IMPORTADO`. Use esses 6 como caso de regressão se a regra
+  mudar. Ressalva conhecida: `dba_git_estado` nulo cai em `NACIONAL` sem disparar a trava (a
+  trava só pega coluna ausente ou valor inválido — um `NACIONAL` errado passa). Um
+  `WHEN i.dba_git_estado IS NULL THEN 'REVISAR'` fecharia isso.
 - [ ] **Erro de dados no lote 71:** o código `18760903` aparece 2× na planilha (como "Vermelho" e
   como "Rosa Pink"). O parser dedupe por CODIGO (ADR-0013) e descartou o Rosa Pink — por isso a
   família `26705343` tem 9 cores em vez de 10. Corrigir o código do Rosa Pink na origem.
