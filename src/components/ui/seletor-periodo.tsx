@@ -9,6 +9,9 @@ interface Props {
   mostrarMesAtual?: boolean;
   /** Mostra "atualizando…" ao lado do seletor enquanto a query refaz. */
   carregando?: boolean;
+  /** Legenda antes dos presets. O default fala de vendas porque foi o primeiro uso; telas de
+   *  outro domínio (ledger de estoque) passam o seu, senão o seletor mente sobre o que filtra. */
+  rotulo?: string;
 }
 
 const PERIODOS: { dias: PeriodoDias; label: string }[] = [
@@ -32,7 +35,7 @@ function rascunhoDe(p: Periodo): { desde: string; ate: string } {
  * rascunho do modo custom é local — digitar datas NÃO refaz a busca; só ao clicar OK aplicamos
  * via `onPeriodo`. Usado na lista Publicados e no Detalhe de vendas (o Faturamento tem o seu).
  */
-export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, carregando }: Props) {
+export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, carregando, rotulo = 'Vendas nos últimos' }: Props) {
   const [modoCustom, setModoCustom] = useState(periodo.tipo === 'range');
   const [rascunho, setRascunho] = useState(() => rascunhoDe(periodo));
 
@@ -68,7 +71,7 @@ export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, ca
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-muted-foreground">Vendas nos últimos</span>
+      <span className="text-xs text-muted-foreground">{rotulo}</span>
       <div className="flex gap-1">
         <Button
           size="sm"

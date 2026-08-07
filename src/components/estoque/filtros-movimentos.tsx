@@ -69,6 +69,7 @@ export function FiltrosMovimentos({
           <SeletorPeriodo
             periodo={periodo ?? { tipo: 'preset', dias: 30 }}
             onPeriodo={onPeriodo}
+            rotulo="Movimentos nos últimos"
           />
         </div>
       </div>
