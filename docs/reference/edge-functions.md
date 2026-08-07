@@ -834,6 +834,28 @@ confirmado com `curl` sem `Authorization` → `401`. Caso inverso do incidente a
 foi adicionada onde NÃO deveria. Lição: `verify_jwt` é por função no `config.toml` — nunca reusar
 a flag de linha de comando de um deploy anterior sem reconferir a função específica.
 
+## Congelamento do custo na venda (ADR-0109)
+
+`upsertVenda` (`_shared/faturamento/io.ts`), depois de gravar os itens, congela o custo do produto
+em `venda_item_custo` — `ignoreDuplicates` (ON CONFLICT DO NOTHING), então o primeiro sync grava e
+os seguintes não tocam no valor. Erro ao congelar **lança**: é caminho financeiro, não pode ficar
+em silêncio.
+
+O congelamento mora dentro do `upsertVenda`, e não nos callers, porque `ml_vendas_itens` tem um
+writer só mas **quatro** chamadores: `sync-venda`, `sync-devolucao`, `backfill-faturamento` (que é
+quem *descobre* vendas novas no schedule horário) e `reconciliar-faturamento` (dois call sites).
+`opts.custoVigenteResolver` é **obrigatório** — quem esquecer não compila (`deno check` do CI).
+
+O resolver sai de `carregarCatalogo`, que passou a ler `custo, atualizado_em` de `variacoes` e
+monta os mapas de `_shared/faturamento/custo-vigente.ts` — espelho servidor de `src/lib/custos.ts`
+(cadeia variação → anúncio → GTIN → código, tie-break na linha mais recente, ADR-0108). As duas
+cópias são amarradas por `tests/lib/paridade-custo-fe-be.test.ts`.
+
+**Redeploy ao mexer em `io.ts`/`custo-vigente.ts`** — as 10 functions que o importam (não só as 4
+que chamam `upsertVenda`): `sync-venda`, `sync-devolucao`, `sync-pergunta`, `sync-mensagem`,
+`backfill-faturamento`, `reconciliar-faturamento`, `ml-webhook`, `responder-pergunta`,
+`responder-mensagem`, `usuarios`.
+
 ## Histórico — catálogo truncado em 1000 linhas quebrava casamento por GTIN (corrigida)
 
 `carregarCatalogo` (`_shared/faturamento/io.ts`) lia `variacoes`/`familias` sem paginação

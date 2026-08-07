@@ -2,6 +2,32 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Custo congelado no instante da venda (ADR-0109) — 2026-08-07
+
+Markup histórico fiel: o ADR-0108 deixou isto registrado como decisão não tomada; Diego pediu.
+
+- [x] **T0 ADR-0109** + índice de ADRs.
+- [x] **T1 migration** `venda_item_custo`: satélite insert-once, `unique nulls not distinct`,
+  trigger que faz `UPDATE` do custo falhar, RLS select por org + grant.
+- [x] **T2 `custo-vigente.ts`** (espelho servidor de `src/lib/custos.ts`) + **teste de paridade
+  FE↔BE**. O teste já valeu o preço: pegou que o FE deixava `NaN` passar (`Number('abc')` é NaN e
+  `NaN <= 0` é false) enquanto o BE devolvia null — guarda de `isFinite` aplicada nos dois lados.
+- [x] **T3 congelamento dentro do `upsertVenda`**, não nos callers: são 4 (`sync-venda`,
+  `sync-devolucao`, `backfill-faturamento`, `reconciliar-faturamento`×2). `custoVigenteResolver`
+  é campo obrigatório — quem esquecer não compila (verificado com o `deno check` do CI).
+- [x] **T4 backfill** por lote vigente na data, idempotente, `fonte='backfill'`. Simulado contra
+  produção antes de aplicar: 1166 linhas.
+- [x] **T5 frontend**: embed de `venda_item_custo` em `buscarVendas`; `montarCustoResolver` prefere
+  o congelado e cai no dinâmico sem ele. Nenhuma mudança visual.
+- [x] **T6 docs**: modelo-de-dados, edge-functions, este arquivo, índice de ADRs.
+- [ ] **T7 deploy + verificação — BLOQUEADO:** `supabase db push` exige a senha do Postgres, que
+  não está no `.env.local` (só o `SUPABASE_ACCESS_TOKEN`, que serve à API e não à conexão direta).
+  Ordem obrigatória: **`db push` primeiro, deploy depois** — vendas sincronizadas na janela entre
+  os dois ficam sem custo e se curam no backfill horário seguinte.
+  Redeploy das **10** functions que importam `io.ts` (não só as 4 que chamam `upsertVenda`):
+  `sync-venda`, `sync-devolucao`, `sync-pergunta`, `sync-mensagem`, `backfill-faturamento`,
+  `reconciliar-faturamento`, `ml-webhook`, `responder-pergunta`, `responder-mensagem`, `usuarios`.
+
 ## Custo inflado por variação duplicada (ADR-0108) — 2026-08-07
 
 - [x] Diego reportou: venda de 2 un. da COLA EM BASTÃO (`02841037`) exibindo custo R$ 34,24 com

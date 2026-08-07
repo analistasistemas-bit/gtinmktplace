@@ -469,6 +469,28 @@ Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (uniq
 `sale_fee` é a tarifa do ML **por unidade**; a comissão do pedido (`ml_vendas.sale_fee_total`)
 é `Σ(sale_fee × quantity)` — sem `× quantity` o líquido de pedidos com qtd>1 fica inflado.
 
+### `venda_item_custo`
+Custo do produto **congelado no instante da venda**. *Migration `20260807210100_venda_item_custo.sql`
+(ADR-0109); backfill em `20260807211252_backfill_venda_item_custo.sql`.*
+`venda_id` (FK→ml_vendas, cascade), `ml_item_id`, `variation_id`, `codigo`, `custo_unitario`,
+`congelado_em`, `fonte` (`sync` | `backfill`).
+
+Tabela **satélite** e não uma coluna em `ml_vendas_itens` porque `upsertVenda` apaga e reinsere
+todos os itens a cada sync do pedido (pago → enviado → entregue) — uma coluna seria descongelada a
+cada notificação. Aqui o `DELETE` dos itens não alcança.
+
+Unicidade `(venda_id, ml_item_id, variation_id)` com **`nulls not distinct`**: item sem variação é
+o caso comum, e no Postgres `NULL` não colide com `NULL` num índice único. Índice de expressão
+(`COALESCE`) não serve — o `ON CONFLICT` do supabase-js só infere arbiter por lista de colunas.
+
+**Insert-once:** gravação com `ignoreDuplicates` (ON CONFLICT DO NOTHING) + trigger
+`venda_item_custo_bloquear_update`, que faz qualquer `UPDATE` de `custo_unitario` **falhar**.
+Corrigir um custo congelado exige `alter table ... disable trigger` explícito. `DELETE` segue
+livre (o cascade da venda depende dele).
+
+`fonte = 'backfill'` marca o que foi reconstruído pelo lote vigente na data da venda —
+aproximação, não captura ao vivo.
+
 ### `ml_devolucoes`
 Claims/devoluções. *Migration `20260622193401_faturamento_devolucoes.sql` (ADR-0037).*
 `claim_id` (único com user), `order_id`, `stage`, `status`, `type`, `reason_id/texto`,
