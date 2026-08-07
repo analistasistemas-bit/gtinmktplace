@@ -18,6 +18,14 @@
   no `select` de `buscarCustos`. Data ausente/inválida = `-Infinity` e a troca exige data
   estritamente maior, então nada fica não-determinístico. 5 testes novos, incluindo o caso real da
   cola pelas 4 chaves. Suíte: 2657 verdes.
+- [x] **Risco do critério medido:** `atualizado_em` também muda por baixa de estoque (o timestamp
+  de 17:33 da cola era a venda, não o custo). Se uma baixa tocasse uma linha antiga, o custo velho
+  voltaria a vencer. Medido nos 1683 códigos duplicados da org: **em 100% a linha mais recente é a
+  do lote mais novo, zero divergências**. A query de verificação está no ADR-0108 — rodar de novo
+  se custo antigo voltar a aparecer.
+- [x] **Achado:** o re-ingest sobrescreve `custo` com o valor da planilha sempre (`preco_publicacao`
+  é preservado, ADR-0016). Não existe modo "somente estoque" — uma planilha de atualizar estoque
+  com custo defasado do ERP substitui o custo bom sem avisar.
 - [ ] **Raiz não resolvida:** a duplicação de `familias` no re-ingest continua (mesma coisa vista
   nos tecidos: 3 famílias com o mesmo `ml_item_id`). Enquanto existir, toda resolução por chave
   depende de tie-break. Deduplicar é trabalho à parte — mexe em famílias publicadas e no vínculo
