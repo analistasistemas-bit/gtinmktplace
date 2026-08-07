@@ -1,4 +1,5 @@
 import type { PlanilhaRow } from '../_shared/types.ts';
+import { lerOrigemCrua } from '../_shared/parser.ts';
 
 /**
  * Converte uma linha crua da planilha (chaves = cabeçalhos) num `PlanilhaRow` tipado.
@@ -22,6 +23,7 @@ export function mapearLinha(r: Record<string, unknown>): PlanilhaRow {
     LARGURA_CM: Number(r.LARGURA_CM ?? 0),
     COMPRIMENTO_CM: Number(r.COMPRIMENTO_CM ?? 0),
     FORNECEDOR: String(r.FORNECEDOR ?? ''),
-    ORIGEM: r.ORIGEM != null ? String(r.ORIGEM) : undefined,
+    // Case-insensitive: `validarColunas` aceita `Origem` no cabeçalho, o map tem que achar igual.
+    ORIGEM: lerOrigemCrua(r),
   };
 }

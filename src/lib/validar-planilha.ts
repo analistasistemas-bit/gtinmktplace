@@ -4,7 +4,9 @@ import * as XLSX from 'xlsx';
 export const COLUNAS_OBRIGATORIAS_PLANILHA = [
   'CODIGO', 'PAI', 'NOME', 'UNIDADE', 'GTIN', 'CUSTO', 'PRECO', 'ESTOQUE',
   'DESCRICAO_DETALHADO', 'PESO_GRAMAS', 'ALTURA_CM', 'LARGURA_CM', 'COMPRIMENTO_CM',
-  'FORNECEDOR',
+  // ORIGEM define a alíquota de imposto e é obrigatória desde o ADR-0107. Sem ela aqui, o
+  // operador subiria a planilha inteira só pra levar erro na edge function.
+  'FORNECEDOR', 'ORIGEM',
 ] as const;
 
 /** Colunas obrigatórias ausentes no cabeçalho (case-insensitive, ignora espaços). */

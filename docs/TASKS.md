@@ -16,9 +16,14 @@
   passadas corrigidas sozinhas.
 - [x] **Fix estrutural (ADR-0107):** `ORIGEM` entra em `COLUNAS_OBRIGATORIAS` + nova
   `exigirOrigemExplicita` exige `NACIONAL`/`IMPORTADO` em toda linha PAI, abortando o lote com a
-  lista dos códigos. 7 testes novos + 1 de `validarColunas`. Suíte: 2650 verdes.
-- [ ] **Deploy:** `supabase functions deploy` de `ingest-lote` **e de todas as functions que
-  importam `_shared/types.ts`** (COLUNAS_OBRIGATORIAS mudou) — pendente do merge.
+  lista dos códigos. Mais dois buracos fechados na revisão: `lerOrigemCrua` acha a coluna
+  case-insensitive nos três pontos do caminho (header `Origem` passava em `validarColunas` e
+  chegava `undefined` no map — o bug de 8% de volta), e `src/lib/validar-planilha.ts` (checagem
+  do cabeçalho no cliente, antes do upload) ganhou `ORIGEM` com teste comparando-a à lista do
+  backend. Suíte: 2653 verdes.
+- [ ] **Deploy (`_shared/types.ts` mudou):** `supabase functions deploy ingest-lote` e
+  `analisar-viabilidade` — são as duas únicas que alcançam `parser.ts`/`types.ts`
+  (`analisar-viabilidade` via `_shared/analise/extrair-itens.ts`). Conferir versão pós-deploy.
 - [ ] **Planilhas do operador:** arquivos sem a coluna `ORIGEM` param de subir. `Oxford_4825-Natal.xlsx`
   precisa de `IMPORTADO` na linha PAI, senão o próximo re-ingest reverte a correção manual.
 - [ ] **Auditar candidatos restantes:** 19 famílias nacional nos lotes 51–60 e 62 (janela do bug,

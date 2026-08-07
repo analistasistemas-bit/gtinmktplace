@@ -1,4 +1,4 @@
-import { normalizarCodigo, normalizarOrigem } from '../_shared/parser.ts';
+import { normalizarCodigo, normalizarOrigem, lerOrigemCrua } from '../_shared/parser.ts';
 
 const VALIDAS = ['NACIONAL', 'IMPORTADO'];
 
@@ -19,7 +19,7 @@ export function exigirOrigemExplicita(rowsRaw: Record<string, unknown>[]): void 
     const cod = normalizarCodigo(String(r.CODIGO ?? ''));
     if (vistos.has(cod)) continue;
     vistos.add(cod);
-    const bruto = r.ORIGEM != null ? String(r.ORIGEM) : '';
+    const bruto = lerOrigemCrua(r) ?? '';
     if (!VALIDAS.includes(bruto.toUpperCase().trim())) {
       problemas.push(`${cod} (ORIGEM = ${bruto.trim() === '' ? 'vazio' : `"${bruto.trim()}"`})`);
     }
@@ -50,7 +50,7 @@ export function verificarOrigemInviolavel(
     const paiCampo = String(r.PAI ?? '').trim();
     if (paiCampo === '0' || paiCampo === '') {
       const cod = normalizarCodigo(String(r.CODIGO ?? ''));
-      if (!cruaPorPai.has(cod)) cruaPorPai.set(cod, r.ORIGEM != null ? String(r.ORIGEM) : undefined);
+      if (!cruaPorPai.has(cod)) cruaPorPai.set(cod, lerOrigemCrua(r));
     }
   }
   for (const g of grupos) {

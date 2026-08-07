@@ -39,12 +39,27 @@ Oxford Natal, Helanca Light 10 Metros).
    par — `IMPORTADA`, `EXTERIOR`, qualquer typo — aborta o lote inteiro, antes de qualquer
    persistência, com a lista completa dos códigos problemáticos numa mensagem só.
 
+3. **Caixa do cabeçalho:** `lerOrigemCrua` (`_shared/parser.ts`) acha a coluna case-insensitive e
+   é usada pelos três pontos do caminho (`mapearLinha`, `exigirOrigemExplicita`,
+   `verificarOrigemInviolavel`). `validarColunas` sempre aceitou o cabeçalho em qualquer caixa,
+   mas o resto lia `row.ORIGEM` na unha: um header `Origem` passava na validação e chegava
+   `undefined` no map — o bug de 8% em silêncio de volta, com a trava do ADR-0055 aprovando
+   (crua e montada concordariam em `nacional`).
+4. **Espelho no cliente:** `src/lib/validar-planilha.ts` valida o cabeçalho antes do upload e
+   ganha `ORIGEM`. Um teste compara a lista do cliente com `COLUNAS_OBRIGATORIAS` do backend,
+   para a dessincronização não voltar — sem isso o operador subiria a planilha inteira com o
+   check verde e só levaria o erro na edge function.
+
 A `origem` continua sendo da família, lida da linha PAI; a coluna nas linhas filhas segue
 ignorada (ADR-0055). `normalizarOrigem` permanece tolerante para o **preview** de análise
 (`_shared/analise/extrair-itens.ts`), que aceita planilha enxuta e não persiste nada.
 
 Isto é uma exceção deliberada ao ADR-0013 (anomalias de planilha são não-bloqueantes e a linha é
-só descartada): descartar a linha aqui significaria gravar imposto presumido.
+só descartada): descartar a linha aqui significaria gravar imposto presumido. Um caso concreto da
+exceção: uma linha PAI órfã (sem filhos) seria descartada por `agruparPorPai` como
+`familias_sem_filho` e nunca viraria família — mas `exigirOrigemExplicita` roda **antes** do
+agrupamento, então ela sem ORIGEM aborta o lote inteiro. É intencional: "todo PAI precisa
+declarar a origem" é regra do cabeçalho da planilha, não do que sobrevive ao agrupamento.
 
 ## Consequências
 

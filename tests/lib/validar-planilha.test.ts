@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { colunasFaltando, COLUNAS_OBRIGATORIAS_PLANILHA } from '@/lib/validar-planilha';
+import { COLUNAS_OBRIGATORIAS } from '../../supabase/functions/_shared/types';
 
 const TODAS = [...COLUNAS_OBRIGATORIAS_PLANILHA];
 
@@ -29,9 +30,15 @@ describe('colunasFaltando', () => {
     expect(colunasFaltando([])).toEqual(TODAS);
   });
 
-  it('exige as 14 colunas do backend', () => {
-    expect(COLUNAS_OBRIGATORIAS_PLANILHA).toHaveLength(14);
-    expect(COLUNAS_OBRIGATORIAS_PLANILHA).toContain('PESO_GRAMAS');
-    expect(COLUNAS_OBRIGATORIAS_PLANILHA).toContain('DESCRICAO_DETALHADO');
+  // A lista do cliente é um espelho da do backend. Se ela ficar para trás, o operador sobe a
+  // planilha inteira com o check verde e só leva o erro na edge function — foi o que aconteceria
+  // com ORIGEM (ADR-0107). Comparar com a fonte trava a dessincronização de vez.
+  it('espelha exatamente COLUNAS_OBRIGATORIAS do backend', () => {
+    expect([...COLUNAS_OBRIGATORIAS_PLANILHA]).toEqual([...COLUNAS_OBRIGATORIAS]);
+  });
+
+  it('inclui ORIGEM (imposto por origem, ADR-0107)', () => {
+    expect(COLUNAS_OBRIGATORIAS_PLANILHA).toContain('ORIGEM');
+    expect(colunasFaltando(TODAS.filter((c) => c !== 'ORIGEM'))).toEqual(['ORIGEM']);
   });
 });

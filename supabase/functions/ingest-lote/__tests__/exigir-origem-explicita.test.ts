@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { exigirOrigemExplicita } from '../verificar-origem.ts';
+import { exigirOrigemExplicita, verificarOrigemInviolavel } from '../verificar-origem.ts';
+import { mapearLinha } from '../mapear-linha.ts';
+import { agruparPorPai } from '../../_shared/parser.ts';
 
 const pai = (codigo: string, origem: unknown) => ({ CODIGO: codigo, PAI: '0', NOME: 'FITAS (P)', ORIGEM: origem });
 const filho = (codigo: string, codigoPai: string, origem: unknown) => ({ CODIGO: codigo, PAI: codigoPai, NOME: 'FITA LARANJA', ORIGEM: origem });
@@ -43,5 +45,24 @@ describe('exigirOrigemExplicita (ADR-0107)', () => {
 
   it('trata PAI vazio como agrupador, igual à trava de origem', () => {
     expect(() => exigirOrigemExplicita([{ CODIGO: '2841240', PAI: '', NOME: 'X', ORIGEM: null }])).toThrow(/02841240/);
+  });
+
+  // `validarColunas` normaliza o cabeçalho (toUpperCase().trim()), então uma planilha com header
+  // `Origem` passa na validação. Ler `row.ORIGEM` na unha faria o valor chegar undefined em todo
+  // o pipeline — 8% em silêncio de novo, com a trava do ADR-0055 aprovando (crua e montada
+  // concordariam em 'nacional'). O caminho inteiro tem que enxergar a coluna.
+  it('enxerga o cabeçalho em qualquer caixa (Origem, origem) ponta a ponta', () => {
+    const rowsRaw = [
+      { CODIGO: '2841240', PAI: '0', NOME: 'FITAS (P)', Origem: 'IMPORTADO' },
+      { CODIGO: '2903261', PAI: '2841240', NOME: 'FITA LARANJA', Origem: 'IMPORTADO' },
+    ];
+    expect(() => exigirOrigemExplicita(rowsRaw)).not.toThrow();
+    const { grupos } = agruparPorPai(rowsRaw.map(mapearLinha));
+    expect(grupos[0].origem).toBe('importado');
+    expect(() => verificarOrigemInviolavel(rowsRaw, grupos)).not.toThrow();
+  });
+
+  it('header em outra caixa com valor inválido também aborta', () => {
+    expect(() => exigirOrigemExplicita([{ CODIGO: '2841240', PAI: '0', origem: 'IMPORTADA' }])).toThrow(/IMPORTADA/);
   });
 });

@@ -22,6 +22,18 @@ export function limparNomeProduto(nome: string): string {
 }
 
 // ORIGEM é coluna opcional (só a linha PAI conta); ausente/vazio/inválido → 'nacional'.
+/**
+ * Valor cru da coluna ORIGEM de uma linha, achando a chave case-insensitive (`Origem`, `origem`).
+ * `validarColunas` aceita o cabeçalho em qualquer caixa, então ler `row.ORIGEM` na unha faria um
+ * header `Origem` passar na validação e chegar `undefined` no map — de novo o imposto a 8% em
+ * silêncio (ADR-0107). Só a ORIGEM tem esse cuidado: é a única coluna que decide alíquota.
+ */
+export function lerOrigemCrua(row: Record<string, unknown>): string | undefined {
+  if (row.ORIGEM != null) return String(row.ORIGEM);
+  const chave = Object.keys(row).find((k) => k.toUpperCase().trim() === 'ORIGEM');
+  return chave != null && row[chave] != null ? String(row[chave]) : undefined;
+}
+
 export function normalizarOrigem(valor?: string): 'nacional' | 'importado' {
   return String(valor).toUpperCase().trim() === 'IMPORTADO' ? 'importado' : 'nacional';
 }
