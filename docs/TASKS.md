@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque › Movimentos — entradas não apareciam na lista — 2026-08-07
+
+Origem: no card do protetor solar (`00000004`), a aba Movimentos mostrava só vendas — nem a entrada
+inicial nem a reposição.
+
+- [x] **Causa** — `fetchMovimentosEstoque` tem `limite = 20` e o componente nunca passava outro
+  valor. O produto tem **56 movimentos**: 54 vendas (03/08→07/08) e 2 entradas (+20 em 01/08, +40 em
+  05/08). As entradas estão nas posições 37 e 56 da ordem por data, então caíam fora da janela — e
+  nada na tela dizia que a lista estava cortada. Não era decisão do ADR-0094: o 20 é do código.
+- [x] **Fix** — página de 100 (busca `limite + 1` para detectar resto, sem `count` extra), rodapé
+  "Mostrando os N movimentos mais recentes" e botão **Carregar mais** quando há mais. `QK` ganhou
+  `movimentosEstoquePagina`; o prefixo `movimentosEstoque` segue valendo para a invalidação do
+  `dialog-entrada` alcançar todas as páginas. TDD (RED → GREEN em
+  `tests/components/movimentos-estoque.test.tsx`), 2615 testes verdes.
+
 ## Publicados — "Unid. vendidas" menor que o Faturamento — 2026-08-07
 
 Origem: o protetor solar (`00000004`) mostrava **38** unidades em Publicados e **59** no Faturamento.
