@@ -34,9 +34,10 @@ export const QK = {
   modulosHabilitados: ['modulos-habilitados'] as const,
   // Prefixo: invalida todas as páginas do produto de uma vez (ex.: após registrar uma entrada).
   movimentosEstoque: (codigoPai: string) => ['movimentos-estoque', codigoPai] as const,
-  /** Página concreta da lista. Estende o prefixo acima — invalidar o prefixo alcança todas. */
-  movimentosEstoquePagina: (codigoPai: string, limite: number) =>
-    ['movimentos-estoque', codigoPai, limite] as const,
+  /** Página concreta. Estende o prefixo acima — invalidar o prefixo alcança todas as páginas. */
+  movimentosEstoquePagina: (
+    codigoPai: string, pagina: number, tamanho: number, filtro: unknown,
+  ) => ['movimentos-estoque', codigoPai, pagina, tamanho, filtro] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];

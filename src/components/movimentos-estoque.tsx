@@ -1,13 +1,18 @@
-// E6b (ADR-0094): trilha de auditoria do estoque no expandir de Publicados.
+// E6b (ADR-0094): trilha de auditoria do estoque no card de Estoque e no expandir de Publicados.
 // Lazy: só busca quando o painel abre, mesmo padrão do `useFamilia` ao lado.
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+// Paginado no servidor: o ledger cresce para sempre e não cabe no cliente.
+import { useMemo, useState } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { QK } from '@/lib/queries';
+import { Button } from '@/components/ui/button';
+import { Pagination } from '@/components/ui/pagination';
+import { FiltrosMovimentos, type VariacaoFiltro } from '@/components/estoque/filtros-movimentos';
+import { resolverJanela, type Periodo } from '@/lib/metricas';
 import {
   fetchMovimentosEstoque, rotuloMotivo, movimentoInformativo,
-  type MovimentoEstoque,
+  type MovimentoEstoque, type GrupoMotivo, type FiltroMovimentos,
 } from '@/lib/movimentos-estoque';
 
 function fmtDataHora(iso: string): string {
@@ -30,39 +35,83 @@ function Delta({ m }: { m: MovimentoEstoque }) {
   );
 }
 
-/** Movimentos por página. 100 cobre semanas de venda de um produto girando forte, então a entrada
- *  que originou o saldo continua à vista — com 20, um produto vendendo 15/dia escondia as entradas
- *  em dois dias (incidente 2026-08-07: 56 movimentos, as duas entradas fora da janela). */
-const PASSO = 100;
+export function MovimentosEstoque({
+  codigoPai, ativo, variacoes = [],
+}: { codigoPai: string; ativo: boolean; variacoes?: VariacaoFiltro[] }) {
+  const [pagina, setPagina] = useState(1);
+  const [tamanho, setTamanho] = useState(20);
+  const [grupos, setGrupos] = useState<GrupoMotivo[]>([]);
+  const [periodo, setPeriodo] = useState<Periodo | null>(null);
+  const [codigo, setCodigo] = useState<string | null>(null);
+  const [ordem, setOrdem] = useState<'recentes' | 'antigos'>('recentes');
 
-export function MovimentosEstoque({ codigoPai, ativo }: { codigoPai: string; ativo: boolean }) {
-  const [limite, setLimite] = useState(PASSO);
-  // Busca 1 a mais que o limite só para saber se sobrou algo — evita um count extra no banco.
+  const filtro: FiltroMovimentos = useMemo(() => ({
+    grupos,
+    janela: periodo ? resolverJanela(periodo) : null,
+    codigo,
+    ordem,
+  }), [grupos, periodo, codigo, ordem]);
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: QK.movimentosEstoquePagina(codigoPai, limite),
-    queryFn: () => fetchMovimentosEstoque(codigoPai, limite + 1),
+    queryKey: QK.movimentosEstoquePagina(codigoPai, pagina, tamanho, filtro),
+    queryFn: () => fetchMovimentosEstoque(codigoPai, pagina, tamanho, filtro),
     enabled: ativo,
     staleTime: 60_000,
+    // Mantém a página anterior enquanto a próxima carrega: sem isso a lista pisca em branco a
+    // cada clique de paginação, e o operador perde a referência visual de onde estava.
+    placeholderData: keepPreviousData,
   });
-  const temMais = (data?.length ?? 0) > limite;
-  const visiveis = temMais ? data!.slice(0, limite) : data;
+
+  // Trocar qualquer filtro reinicia a paginação: manter a página 5 ao recortar para 2 resultados
+  // mostraria uma lista vazia que parece "não tem nada", quando na verdade tem.
+  const comReset = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPagina(1); };
+
+  const itens = data?.itens ?? [];
+  const total = data?.total ?? 0;
+  const temFiltro = grupos.length > 0 || periodo !== null || codigo !== null;
+  const inicio = total === 0 ? 0 : (pagina - 1) * tamanho + 1;
 
   return (
     <div className="flex w-full flex-col gap-2 rounded-lg border bg-background p-3 shadow-sm">
-      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Movimentos de estoque
-      </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Movimentos de estoque
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs"
+          onClick={() => comReset(setOrdem)(ordem === 'recentes' ? 'antigos' : 'recentes')}
+        >
+          Data
+          {ordem === 'recentes' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" />}
+        </Button>
+      </div>
+
+      <FiltrosMovimentos
+        grupos={grupos}
+        onGrupos={comReset(setGrupos)}
+        periodo={periodo}
+        onPeriodo={comReset(setPeriodo)}
+        codigo={codigo}
+        onCodigo={comReset(setCodigo)}
+        variacoes={variacoes}
+      />
 
       {isLoading ? (
         <p className="text-xs text-muted-foreground">carregando movimentos…</p>
       ) : isError ? (
         <p className="text-xs text-muted-foreground">não foi possível carregar os movimentos deste produto.</p>
-      ) : !visiveis || visiveis.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nenhum movimento registrado para este produto.</p>
+      ) : itens.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {temFiltro
+            ? 'Nenhum movimento com esses filtros.'
+            : 'Nenhum movimento registrado para este produto.'}
+        </p>
       ) : (
-        <>
         <ul className="flex flex-col gap-1.5">
-          {visiveis.map((m) => (
+          {itens.map((m) => (
             <li
               key={m.id}
               className="flex flex-col gap-1 border-t border-border/50 py-1.5 text-xs sm:flex-row sm:items-baseline sm:justify-between sm:gap-3"
@@ -89,19 +138,23 @@ export function MovimentosEstoque({ codigoPai, ativo }: { codigoPai: string; ati
             </li>
           ))}
         </ul>
-        {/* Lista cortada nunca fica silenciosa: sem este aviso, "só vendas" parece o histórico
-            inteiro do produto — foi assim que as entradas sumiram da tela sem ninguém notar. */}
-        {temMais && (
-          <div className="flex items-center gap-2 border-t border-border/50 pt-2">
-            <span className="text-xs text-muted-foreground">
-              Mostrando os {limite} movimentos mais recentes.
-            </span>
-            <Button variant="outline" size="sm" onClick={() => setLimite((l) => l + PASSO)}>
-              Carregar mais
-            </Button>
-          </div>
-        )}
-        </>
+      )}
+
+      {/* Renderizado mesmo quando cabe numa página: o total é o que denuncia um histórico maior
+          do que a tela mostra — foi a falta dele que escondeu as entradas do protetor solar. */}
+      {total > 0 && (
+        <Pagination
+          paginaAtual={pagina}
+          totalPaginas={Math.max(1, Math.ceil(total / tamanho))}
+          inicio={inicio}
+          fim={inicio === 0 ? 0 : inicio + itens.length - 1}
+          total={total}
+          tamanho={tamanho}
+          onIrPara={setPagina}
+          onTamanho={(n) => { setTamanho(n); setPagina(1); }}
+          rotuloItem="movimento"
+          className="border-t border-border/50 pt-2"
+        />
       )}
     </div>
   );

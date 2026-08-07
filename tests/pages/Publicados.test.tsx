@@ -142,7 +142,7 @@ function mockHooksPadrao() {
   useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
   useAnuncioCanonicoMock.mockReturnValue({ data: {} });
   useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
-  fetchMovimentosEstoqueMock.mockResolvedValue([]);
+  fetchMovimentosEstoqueMock.mockResolvedValue({ itens: [], total: 0 });
 }
 
 describe('Publicados', () => {
@@ -328,7 +328,7 @@ describe('Publicados — trilha de movimentos no painel expandido', () => {
     // para deixá-los num estado utilizável (a suíte deve passar mesmo isolada com `-t`).
     mockHooksPadrao();
     useFamiliaMock.mockReturnValue({ data: familiaCarregada(), isLoading: false, isError: false });
-    fetchMovimentosEstoqueMock.mockResolvedValue([movimentoBase()]);
+    fetchMovimentosEstoqueMock.mockResolvedValue({ itens: [movimentoBase()], total: 1 });
   });
 
   function renderPublicados() {

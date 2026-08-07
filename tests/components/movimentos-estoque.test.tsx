@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { QK } from '@/lib/queries';
-import type { MovimentoEstoque } from '@/lib/movimentos-estoque';
+import type { MovimentoEstoque, PaginaMovimentos } from '@/lib/movimentos-estoque';
 
 const fetchMock = vi.fn();
 
@@ -17,7 +17,6 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
   };
 });
 
-// O ledger é sempre lido do mais novo para o mais antigo; `i` cresce = movimento mais antigo.
 function mov(i: number, over: Partial<MovimentoEstoque> = {}): MovimentoEstoque {
   return {
     id: `m${i}`,
@@ -34,11 +33,15 @@ function mov(i: number, over: Partial<MovimentoEstoque> = {}): MovimentoEstoque 
   };
 }
 
-function renderLista() {
+function pagina(itens: MovimentoEstoque[], total: number): PaginaMovimentos {
+  return { itens, total };
+}
+
+function renderLista(variacoes: { codigo: string; cor: string | null }[] = []) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <MovimentosEstoque codigoPai="00000004" ativo />
+      <MovimentosEstoque codigoPai="00000004" ativo variacoes={variacoes} />
     </QueryClientProvider>,
   );
   return qc;
@@ -47,53 +50,93 @@ function renderLista() {
 describe('MovimentosEstoque', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    fetchMock.mockResolvedValue(pagina([mov(0)], 1));
   });
 
-  // Regressão (incidente 2026-08-07): o protetor solar tinha 56 movimentos e a lista buscava só
-  // os 20 mais recentes — todos vendas. As duas entradas (a inicial, a mais antiga do ledger, e a
-  // reposição de 05/08) ficavam fora, e nada na tela dizia que a lista estava cortada.
-  it('mostra as entradas antigas de um produto com dezenas de vendas recentes', async () => {
-    const movimentos = [
-      ...Array.from({ length: 36 }, (_, i) => mov(i)),
-      mov(36, { motivo: 'entrada', quantidade: 40, documento: 'reposição' }),
-      ...Array.from({ length: 18 }, (_, i) => mov(37 + i)),
-      mov(55, { motivo: 'entrada', quantidade: 20, documento: 'entrada inicial' }),
-    ];
-    // Fatia como o banco fatiaria: o limite pedido é o que decide o que chega na tela. Sem limite
-    // explícito vale o default da lib (20) — que era exatamente o que escondia as entradas.
-    fetchMock.mockImplementation((_codigo: string, limite?: number) =>
-      Promise.resolve(movimentos.slice(0, limite ?? 20)));
-
+  it('abre sem filtro de data e na primeira página', async () => {
     renderLista();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [codigoPai, pag, tam, filtro] = fetchMock.mock.calls[0];
+    expect(codigoPai).toBe('00000004');
+    expect(pag).toBe(1);
+    expect(tam).toBe(20);
+    expect(filtro.janela ?? null).toBeNull();
+    expect(filtro.grupos ?? []).toEqual([]);
+  });
 
-    await waitFor(() => expect(screen.getAllByText('Entrada')).toHaveLength(2));
+  // A trava contra o defeito de origem: lista cortada em silêncio parece o histórico inteiro.
+  it('mostra o total mesmo quando a página é menor que ele', async () => {
+    fetchMock.mockResolvedValue(pagina(Array.from({ length: 20 }, (_, i) => mov(i)), 956));
+    renderLista();
+    expect(await screen.findByText(/de 956 movimentos/i)).toBeInTheDocument();
+  });
+
+  it('filtrar por Entradas recorta a busca e volta para a página 1', async () => {
+    fetchMock.mockResolvedValue(pagina(Array.from({ length: 20 }, (_, i) => mov(i)), 956));
+    renderLista();
+    await screen.findByText(/de 956 movimentos/i);
+
+    // Com 48 páginas, a janela de `<Pagination>` a partir da página 1 mostra 1, 2, …, 48 — a 3 só
+    // aparece perto da atual. "Página 2" é a próxima visível e já serve para sair da página 1.
+    await userEvent.click(await screen.findByRole('button', { name: 'Página 2' }));
+    await waitFor(() => expect(fetchMock.mock.calls.at(-1)![1]).toBe(2));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entradas' }));
+    await waitFor(() => {
+      const [, pag, , filtro] = fetchMock.mock.calls.at(-1)!;
+      expect(pag).toBe(1);
+      expect(filtro.grupos).toEqual(['entradas']);
+    });
+  });
+
+  it('a entrada antiga aparece ao filtrar, num produto cheio de vendas recentes', async () => {
+    fetchMock.mockImplementation((_c: string, _p: number, _t: number, f: { grupos?: string[] }) =>
+      Promise.resolve(
+        f?.grupos?.[0] === 'entradas'
+          ? pagina([mov(55, { motivo: 'entrada', quantidade: 20, documento: 'entrada inicial' })], 1)
+          : pagina(Array.from({ length: 20 }, (_, i) => mov(i)), 956),
+      ));
+    renderLista();
+    await screen.findByText(/de 956 movimentos/i);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Entradas' }));
+
+    expect(await screen.findByText('Entrada')).toBeInTheDocument();
     expect(screen.getByText(/entrada inicial/)).toBeInTheDocument();
   });
 
-  it('avisa que a lista está cortada e carrega mais sob demanda', async () => {
-    // A busca pede um a mais que o limite justamente para saber que há resto.
-    fetchMock.mockResolvedValue(Array.from({ length: 101 }, (_, i) => mov(i)));
-
+  it('inverter a ordem pela coluna Data refaz a busca', async () => {
     renderLista();
-
-    const botao = await screen.findByRole('button', { name: /carregar mais/i });
-    expect(screen.getAllByText('Venda')).toHaveLength(100);
-
-    await userEvent.click(botao);
-
-    await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('00000004', 201));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await userEvent.click(screen.getByRole('button', { name: /data/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.at(-1)![3].ordem).toBe('antigos'));
   });
 
-  // A lista virou paginada (chave `[..., codigoPai, limite]`), mas o dialog de entrada invalida pela
-  // chave-prefixo `[..., codigoPai]`. Se as duas deixarem de casar, registrar uma entrada não
-  // atualiza a lista e o operador vê saldo velho sem nenhum sinal de que está velho.
-  it('recarrega quando a entrada invalida a query pela chave-prefixo', async () => {
-    fetchMock.mockResolvedValue([mov(0)]);
+  it('filtro sem resultado avisa que é dos filtros, não do produto', async () => {
+    fetchMock.mockResolvedValue(pagina([], 0));
+    renderLista();
+    await userEvent.click(await screen.findByRole('button', { name: 'Estornos' }));
+    expect(await screen.findByText(/nenhum movimento com esses filtros/i)).toBeInTheDocument();
+  });
+
+  it('produto sem movimento nenhum tem mensagem própria', async () => {
+    fetchMock.mockResolvedValue(pagina([], 0));
+    renderLista();
+    expect(await screen.findByText(/nenhum movimento registrado/i)).toBeInTheDocument();
+  });
+
+  it('o filtro de SKU só existe com mais de uma variação', async () => {
+    renderLista([{ codigo: '00000005', cor: null }]);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByLabelText('Variação')).not.toBeInTheDocument();
+  });
+
+  // Regressão: o dialog de entrada invalida pela chave-prefixo. Se ela deixar de casar com as
+  // páginas, registrar uma entrada não atualiza a lista e o operador vê saldo velho.
+  it('recarrega quando a entrada invalida pela chave-prefixo', async () => {
     const qc = renderLista();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-
     await qc.invalidateQueries({ queryKey: QK.movimentosEstoque('00000004') });
-
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 });
