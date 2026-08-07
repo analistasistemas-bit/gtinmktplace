@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
+import { QK } from '@/lib/queries';
 import type { MovimentoEstoque } from '@/lib/movimentos-estoque';
 
 const fetchMock = vi.fn();
@@ -40,6 +41,7 @@ function renderLista() {
       <MovimentosEstoque codigoPai="00000004" ativo />
     </QueryClientProvider>,
   );
+  return qc;
 }
 
 describe('MovimentosEstoque', () => {
@@ -80,5 +82,18 @@ describe('MovimentosEstoque', () => {
     await userEvent.click(botao);
 
     await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('00000004', 201));
+  });
+
+  // A lista virou paginada (chave `[..., codigoPai, limite]`), mas o dialog de entrada invalida pela
+  // chave-prefixo `[..., codigoPai]`. Se as duas deixarem de casar, registrar uma entrada não
+  // atualiza a lista e o operador vê saldo velho sem nenhum sinal de que está velho.
+  it('recarrega quando a entrada invalida a query pela chave-prefixo', async () => {
+    fetchMock.mockResolvedValue([mov(0)]);
+    const qc = renderLista();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await qc.invalidateQueries({ queryKey: QK.movimentosEstoque('00000004') });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 });
