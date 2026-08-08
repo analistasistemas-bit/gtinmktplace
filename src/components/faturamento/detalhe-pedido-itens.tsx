@@ -43,7 +43,8 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
         <div>
           Imposto <span className="whitespace-nowrap font-medium text-foreground tabular-nums">
             {fmtBRL(p.imposto)}
-            {aliquotaPct != null && <span className="font-normal text-muted-foreground"> ({PCT.format(aliquotaPct)}%)</span>}
+            {/* Só no desktop: no mobile este bloco divide 2 colunas estreitas e o % vira ruído. */}
+            {aliquotaPct != null && <span className="hidden font-normal text-muted-foreground sm:inline"> ({PCT.format(aliquotaPct)}%)</span>}
           </span>
         </div>
         <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>

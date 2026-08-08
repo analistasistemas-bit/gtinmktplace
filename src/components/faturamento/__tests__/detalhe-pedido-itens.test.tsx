@@ -44,6 +44,17 @@ describe('DetalhePedidoItens', () => {
     expect(screen.getByText('(8%)')).toBeInTheDocument();
   });
 
+  // O jsdom não aplica Tailwind: sem este assert, remover o `hidden` passaria despercebido e o %
+  // voltaria a aparecer no mobile, onde o bloco divide 2 colunas estreitas (pedido do Diego).
+  it('esconde o percentual no mobile, mostrando só a partir do breakpoint sm', () => {
+    const p = pedido({
+      imposto: 6.78,
+      itens: [item({ unit_price: 84.75, quantity: 1, imposto: 6.78, aliquotaPct: 8 })],
+    });
+    renderComProvider(p);
+    expect(screen.getByText('(8%)')).toHaveClass('hidden', 'sm:inline');
+  });
+
   // Regressão: derivar o % de `imposto ÷ valor` dava 7,99% aqui (44,55 × 8% = 3,564, gravado 3,56).
   it('mostra a alíquota crua, sem o erro do imposto arredondado a centavos', () => {
     const p = pedido({
