@@ -1,9 +1,12 @@
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtMarkup, round2 } from '@/lib/formato';
+import { fmtBRL, fmtMarkup } from '@/lib/formato';
 import type { Pedido } from '@/lib/pedidos-faturamento';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { ThumbProduto } from './pilha-thumbs';
+
+/** Alíquota em pt-BR: inteira no caso normal ("8"), com 1 decimal só quando o pedido mistura origens. */
+const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
 /**
  * Conteúdo expansível de um pedido (linha aberta): meta (pedido/pack, comissão, frete, rastreio),
@@ -19,9 +22,14 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
   const urlVenda = p.isPack
     ? `https://www.mercadolivre.com.br/vendas/pacote/${p.chave}/detalhe`
     : `https://www.mercadolivre.com.br/vendas/${p.orderIds[0]}/detalhe`;
-  // % efetivo (ponderado): cobre pedido com itens de origens/alíquotas diferentes (ADR-0055/ADR-0107).
-  const baseImposto = p.itens.reduce((s, it) => s + (it.imposto > 0 ? it.unit_price * it.quantity : 0), 0);
-  const aliquotaPct = baseImposto > 0 ? round2((p.imposto / baseImposto) * 100) : 0;
+  // Alíquota exibida vem de `it.aliquotaPct` (o valor cru do resolver — 8/16, ADR-0055), NUNCA
+  // reconstruída de `imposto ÷ valor`: o imposto é arredondado a centavos e a divisão de volta erra
+  // a alíquota (R$ 44,55 a 8% → 7,99%). Média ponderada pelo valor cobre pedido com origens mistas.
+  const tributados = p.itens.filter((it) => it.imposto > 0 && it.aliquotaPct != null);
+  const baseTributada = tributados.reduce((s, it) => s + it.unit_price * it.quantity, 0);
+  const aliquotaPct = baseTributada > 0
+    ? tributados.reduce((s, it) => s + (it.aliquotaPct ?? 0) * it.unit_price * it.quantity, 0) / baseTributada
+    : null;
   return (
     <div className="px-10 py-3">
       <div className="mb-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
@@ -33,8 +41,10 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
         <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.comissao)}</span></div>
         <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{p.frete != null ? fmtBRL(p.frete) : '—'}</span></div>
         <div>
-          Imposto <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.imposto)}</span>
-          {p.imposto > 0 && <span className="tabular-nums"> ({aliquotaPct}%)</span>}
+          Imposto <span className="whitespace-nowrap font-medium text-foreground tabular-nums">
+            {fmtBRL(p.imposto)}
+            {aliquotaPct != null && <span className="font-normal text-muted-foreground"> ({PCT.format(aliquotaPct)}%)</span>}
+          </span>
         </div>
         <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>
       </div>
