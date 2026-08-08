@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-08-04
+atualizado: 2026-08-07
 ---
 
 # Problemas Resolvidos
@@ -9,6 +9,18 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 [[Incidentes]] (com contexto completo de ADR), [[Bugs Conhecidos]] (o que falta).
 
 ## Correções recentes (commits mais recentes na `main`)
+
+- **Lote #11 travado na Revisão pedindo o atributo "Nome" (2026-08-07)** — categoria Cuidado Facial
+  (`MLB264874`) marca `NAME` como `required` e `value_type=string`. Nada o preenchia:
+  `montarAtributosBase` cobre só `BRAND`/`MANUFACTURER`/`MODEL`, e a IA, sob a regra anti-invenção
+  do ADR-0052, só aceita texto-livre que conste **literalmente** no nome/descrição — no ML o "Nome"
+  é o nome da *linha* ("Effaclar K+"), que a planilha não traz isolado, então ela corretamente
+  omitia. **Fix:** `preencherNomeObrigatorio` (`_shared/categoria/atributos.ts`) grava `NAME` = nome
+  do produto da planilha (mesma fonte do `MODEL`, sem inventar dado) quando a categoria o exige e
+  ele está vazio, **depois** da IA (se ela inferir a linha, o valor dela vence). Levantamento na API
+  do ML: os únicos texto-livre `required` são `BRAND`, `MANUFACTURER`, `MODEL` e `NAME` — com este,
+  nenhum obrigatório de texto sobra para o operador. Ver [[Índice de ADRs]] (ADR-0052, adendo
+  2026-08-07).
 
 - **Pergunta respondida no ML continuava "Pendente" no PubliAI (2026-08-06)** — o ML notifica o
   tópico `questions` na criação **e** na resposta, sempre com o mesmo `resource`

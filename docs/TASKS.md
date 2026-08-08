@@ -12,8 +12,14 @@ texto-livre que nem a base determinística nem a IA (regra anti-invenção) pree
 - [x] Aplicado nos dois ramos: genérico (`resolver-atributos-genericos.ts`, cobre também o seletor
   manual de categoria) e aviamento (`process-familia`).
 - [x] Testes (6 unitários + 1 de integração) e adendo no ADR-0052.
-- [ ] **Deploy** de `process-familia`, `definir-categoria-familia`, `atributos-familia` e
-  `publicar-split-ml` (mudança em `_shared/`) + **Reprocessar** o lote #11 na Revisão.
+- [x] **Deploy** de `process-familia` (v147), `definir-categoria-familia` (v41),
+  `atributos-familia` (v29) e `publicar-split-ml` (v70) — mudança em `_shared/`.
+- [x] Lote #11 destravado: `NAME` gravado com o mesmo valor determinístico que o código novo
+  produz + `atributos_faltantes` zerado. Correção pontual de dado em vez de reprocesso completo —
+  reprocessar regeneraria título/copy/preço por IA sem necessidade. A UI não oferecia botão: o
+  "Reenviar" da Revisão só cobre família em status `erro`, e esta estava em `pronto`.
+- Confirmado no dado real: a IA rodou nessa família (`LINE`, `SKIN_TYPE`, `APPLICATION_MOMENT`,
+  `UNIT_WEIGHT`, `PRODUCT_FORMAT`… preenchidos) — só o `NAME` escapava, sem falha silenciosa de LLM.
 
 ## Custo congelado no instante da venda (ADR-0109) — 2026-08-07
 

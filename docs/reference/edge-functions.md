@@ -397,7 +397,9 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   ADR-0057): `{familia_id, categoria_ml_id, categoria_nome}` (substitui o contrato antigo de 4
   tipos fixos, ADR-0009/0022). Categoria conhecida (linha/fita/botao/cola/cursor, ADR-0083) → caminho curado
   (`montarAtributosML`); categoria livre/genérica → `resolverAtributosGenericos` (mesmo fluxo
-  schema+IA do process-familia, reusado).
+  schema+IA do process-familia, reusado). Depois da IA, dois preenchimentos determinísticos fecham
+  obrigatórios que ela não cobre: `preencherUnitsPerPack` (kit) e `preencherNomeObrigatorio`
+  (`NAME` = nome do produto quando a categoria o exige — adendo ADR-0052, lote #11).
 - **atributos-familia** *(JWT)* — fallback da Camada 2B (ADR-0052): `action:'faltantes'` lista os
   obrigatórios não preenchidos COM schema (tipo/valores) e `action:'salvar'` valida um valor
   server-side, faz merge em `atributos_ml`, marca `atributos_editados_pelo_operador` e recalcula
