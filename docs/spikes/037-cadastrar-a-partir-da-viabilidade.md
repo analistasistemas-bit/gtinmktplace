@@ -142,9 +142,11 @@ GTIN colado já assumem 8% para todo mundo. Produto importado aparece com viabil
 
 ### 3.4 Gate de módulo (MÉDIO, mecânico)
 
-O cadastro manual é opt-in por org (`modulos_habilitados`, ADR-0094 D-13). A Viabilidade não é.
-O botão precisa de `useModulosHabilitados`; a edge `cadastrar-produto` já tem o gate próprio
-(D-15), então esconder o botão é só navegação, não fronteira.
+O cadastro manual é opt-in por org (ADR-0094 D-13). O nome do módulo é **`'estoque'`** —
+verificado: `cadastrar-produto/index.ts:66` faz `exigirModulo(admin, orgId, 'estoque')` e responde
+**403** sem ele; no front o hook é `useModulosHabilitados` (RPC `modulos_habilitados_da_org`),
+usado por `menu-guard.tsx` e `sidebar.tsx`. A Viabilidade **não** é gated. O botão precisa do
+hook; a edge já tem o gate próprio, então esconder o botão é navegação, não fronteira (ADR-0047).
 
 ### 3.5 Duplicata — oportunidade, não só risco (BAIXO)
 
@@ -265,8 +267,91 @@ Registrado por ser escolha, não consequência.
 - `origem` nunca pré-preenchida (§3.3). Não negociável.
 - Botão só no modo "Colar GTINs" (`editavel === true`) — no modo planilha o produto já vai subir
   como lote.
-- Botão gated pelo módulo `cadastro_manual`.
+- Botão gated pelo módulo `'estoque'` (§3.4 — nome verificado no código).
 - Cadastro continua **não publicando** nada; a publicação segue sendo ato explícito na Revisão.
+
+---
+
+## 6.1 Fluxo completo, do clique até o anúncio no ar
+
+Traçado no código, não no ADR. Os passos 3 em diante já existem hoje — o botão só encurta a
+entrada.
+
+### Passo 1 — busca por EAN (INALTERADA)
+
+Viabilidade → aba "Colar GTINs" → bipa/cola → **Pesquisar** → `POST analisar-viabilidade` →
+tabela. Nada muda aqui.
+
+### Passo 2 — o botão aparece na linha
+
+Condições (todas): `existeNoML` **e** modo GTIN (`editavel`) **e** módulo `'estoque'` habilitado
+**e** `!jaCadastrado`. Com `jaCadastrado`, o botão vira **"Dar entrada"** e leva para Estoque —
+o produto já existe, o que falta é saldo, não cadastro.
+
+### Passo 3 — clique abre o diálogo pré-preenchido
+
+**Nada é gravado.** `DialogCadastroProduto` abre com os 9 campos de §5.1. O operador completa o
+que o ML não sabe: **origem** (trava o salvar), **estoque inicial**, **fornecedor**.
+
+### Passo 4 — "Cadastrar" → `POST cadastrar-produto`
+
+Ordem real do handler (`cadastrar-produto/index.ts`):
+
+1. `requireUserOrg(req, { access: 'write' })`
+2. `exigirModulo(admin, orgId, 'estoque')` → **403** sem o módulo (L66)
+3. `validarProdutoNovo` → **400**; `origem` ausente/inválida morre aqui, LOUD
+4. **Idempotência** (L85): procura família por `chave_cadastro`. Achou → devolve a original em vez
+   de criar a segunda. Duplo clique e retry de rede são seguros.
+5. **Guards de duplicata**: `codigo_pai` já na org → **409** "use Entrada de estoque"; SKU repetido
+   entre produtos → **409** com a lista
+6. **Lote** (L184): reusa o lote manual aberto da org, ou cria um `origem='manual'` (D-1.1)
+7. `insert familias` (operação CREATE) + `insert variacoes` com **`estoque = 0`** (L242)
+8. Estoque inicial > 0 → RPC **`registrar_entrada`** (L284): grava o ledger, sobe o saldo e
+   sobrescreve `variacoes.custo` (D-9)
+9. Só **depois** do insert o lote vai para `status='processando'` (L264 — ordem deliberada, evita
+   que um worker feche o lote antes da família existir)
+10. **`enfileirarFamilia`** no QStash (L304) e grava `qstash_message_id`
+11. Responde `{ loteId, familiaId, filaOk, falhasEstoque }`
+
+### Passo 5 — volta no navegador, ainda dentro do `salvar()`
+
+Invalida `['produtos-saldo']` → sobe as fotos escolhidas (nenhuma, no nosso caso) → invalida de
+novo → o diálogo troca para a **etapa 2** (progresso + upload manual de correção) com o botão
+**"Ir para a Revisão"**.
+
+**Para cadastrar o próximo GTIN:** fechar o diálogo, não navegar. A tabela da análise continua
+na tela e o próximo cadastro cai **no mesmo lote manual** (passo 6, D-1.1).
+
+### Passo 6 — `process-familia` roda sozinho (QStash)
+
+Assíncrono, é o mesmo worker da planilha:
+
+1. **`gerarCopy`** (`index.ts:201`) — recebe `nome_pai` + `descricao_pai` e **reescreve** título e
+   descrição. *É aqui que o texto do ML deixa de ser o texto do ML.*
+2. `buscarConcorrencia` (ADR-0014)
+3. `resolverCategoria` + atributos por IA (ADR-0026/0052)
+4. Preço: gross-up com frete e imposto por origem (ADR-0055) — é onde a origem do passo 3 vale
+5. Cor por Vision. **Limitação conhecida** (documentada no topo de `dialog-cadastro-produto.tsx`):
+   a foto escolhida no cadastro não chega a tempo do enfileiramento, então a cor por Vision se
+   resolve na Revisão
+6. Família → `status='pronto'`
+
+### Passo 7 — Revisão (humano)
+
+O operador confere título, descrição, categoria, atributos e preço **gerados** e ajusta. O
+cadastro **não publica nada**.
+
+### Passo 8 — publicação
+
+Ato explícito na Revisão → `publish-familia-ml` → anúncio no ML. A partir daí o estoque propaga
+por venda/entrada/estorno (ADR-0094, bloco A).
+
+### Detalhe de UI a resolver na implementação
+
+`jaCadastrado` vem da resposta da análise e **não se atualiza sozinho** depois de um cadastro.
+Sem estado local marcando a linha como feita, o botão continuaria dizendo "Cadastrar" para um
+produto que acabou de ser criado — e o segundo clique só descobriria isso no **409** do passo 4.5.
+Barato de resolver, fácil de esquecer.
 
 ---
 
