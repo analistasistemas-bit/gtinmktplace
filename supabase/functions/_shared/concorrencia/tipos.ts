@@ -9,6 +9,8 @@ export interface ResultadoConcorrencia {
   product_id?: string | null;
   /** Nome do produto de catálogo do ML (de /products/search). */
   product_name?: string | null;
+  /** short_description.content da ficha de catálogo (GET /products/{id}), insumo p/ pré-preencher o cadastro (spike 037, V-1b). */
+  descricao_catalogo?: string | null;
   ofertas?: DadosOfertas;
 }
 

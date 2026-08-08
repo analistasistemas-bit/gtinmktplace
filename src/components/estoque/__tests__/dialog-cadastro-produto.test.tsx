@@ -7,7 +7,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { DialogCadastroProduto } from '../dialog-cadastro-produto';
+import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
 
 const cadastrarProdutoMock = vi.fn().mockRejectedValue(new Error('falhou'));
@@ -46,12 +46,19 @@ vi.mock('@/hooks/useUploadLote', () => ({
   storageOwnerForUpload: () => 'owner-1',
 }));
 
-function renderDialogCom(props: Partial<{ onFechar: () => void }> = {}) {
+function renderDialogCom(
+  props: Partial<{ onFechar: () => void; inicial: CadastroInicial; onCadastrado: () => void }> = {},
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <DialogCadastroProduto aberto onFechar={props.onFechar ?? (() => {})} />
+        <DialogCadastroProduto
+          aberto
+          onFechar={props.onFechar ?? (() => {})}
+          inicial={props.inicial}
+          onCadastrado={props.onCadastrado}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -84,11 +91,11 @@ describe('DialogCadastroProduto — sem warning de ref do React ao abrir', () =>
 // dispara o useEffect de reset que decide se `chaveCadastro` regenera ou não.
 function renderDialogControlado() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  function Wrapper({ aberto }: { aberto: boolean }) {
+  function Wrapper({ aberto, inicial }: { aberto: boolean; inicial?: CadastroInicial }) {
     return (
       <QueryClientProvider client={qc}>
         <MemoryRouter>
-          <DialogCadastroProduto aberto={aberto} onFechar={() => {}} />
+          <DialogCadastroProduto aberto={aberto} onFechar={() => {}} inicial={inicial} />
         </MemoryRouter>
       </QueryClientProvider>
     );
@@ -96,7 +103,7 @@ function renderDialogControlado() {
   const utils = render(<Wrapper aberto />);
   return {
     fechar: () => utils.rerender(<Wrapper aberto={false} />),
-    reabrir: () => utils.rerender(<Wrapper aberto />),
+    reabrir: (inicial?: CadastroInicial) => utils.rerender(<Wrapper aberto inicial={inicial} />),
   };
 }
 
@@ -647,5 +654,87 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     );
     // Só a capa foi chamada — prova que a capa é a ÚNICA coisa que subiu.
     expect(uploadFotoProdutoMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// T5 (plano 2026-08-08, botão Cadastrar na Viabilidade): a Viabilidade pré-preenche o diálogo
+// com o que já sabe sobre o produto. `origem` NUNCA entra — é a trava mais importante (V-3,
+// ADR-0055/0107): campo nem existe no tipo `CadastroInicial`, e o teste abaixo prova em runtime
+// que o rádio continua sem seleção e o botão continua travado mesmo com `inicial` completo.
+describe('DialogCadastroProduto — prop inicial (pré-preenchimento da Viabilidade)', () => {
+  const INICIAL_COMPLETO: CadastroInicial = {
+    nomePai: 'Cicaplast Baume B5+',
+    descricaoPai: 'REPARAÇÃO INTENSIVA DE TRIPLA AÇÃO',
+    variacao: {
+      gtin: '7908615000244',
+      preco: '70',
+      custo: '67,57',
+      pesoGramas: '300',
+      alturaCm: '6',
+      larguraCm: '11',
+      comprimentoCm: '16',
+    },
+  };
+
+  it('aplica inicial ao abrir: nome, descrição e campos da variação preenchidos', () => {
+    renderDialogCom({ inicial: INICIAL_COMPLETO });
+
+    expect(screen.getByLabelText('Nome')).toHaveValue('Cicaplast Baume B5+');
+    expect(screen.getByLabelText('Descrição')).toHaveValue('REPARAÇÃO INTENSIVA DE TRIPLA AÇÃO');
+    expect(screen.getByLabelText('GTIN da variação 1')).toHaveValue('7908615000244');
+    expect(screen.getByLabelText('Preço mínimo (líquido) da variação 1')).toHaveValue('70');
+    expect(screen.getByLabelText('Custo da variação 1')).toHaveValue('67,57');
+    expect(screen.getByLabelText('Peso (g) da variação 1')).toHaveValue('300');
+    expect(screen.getByLabelText('Altura (cm) da variação 1')).toHaveValue('6');
+    expect(screen.getByLabelText('Largura (cm) da variação 1')).toHaveValue('11');
+    expect(screen.getByLabelText('Comprimento (cm) da variação 1')).toHaveValue('16');
+  });
+
+  // Teste-trava da V-3: mesmo com `inicial` completo (que inclui preço, campo obrigatório para
+  // destravar o botão), `origem` continua sem seleção e "Cadastrar" continua desabilitado.
+  it('inicial NÃO seleciona origem: rádios desmarcados e "Cadastrar" desabilitado', () => {
+    renderDialogCom({ inicial: INICIAL_COMPLETO });
+
+    expect(screen.getByRole('radio', { name: 'Nacional' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Importado' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+  });
+
+  it('sem inicial, o formulário abre como hoje (Estoque intacto)', () => {
+    renderDialog();
+
+    expect(screen.getByLabelText('Nome')).toHaveValue('');
+    expect(screen.getByLabelText('Descrição')).toHaveValue('');
+    expect(screen.getByLabelText('GTIN da variação 1')).toHaveValue('');
+    expect(screen.getByLabelText('Preço mínimo (líquido) da variação 1')).toHaveValue('');
+    expect(screen.getByLabelText('Custo da variação 1')).toHaveValue('');
+    expect(screen.getByLabelText('Unidade')).toHaveValue('UN');
+  });
+
+  it('fechar e reabrir com inicial novo reaplica o snapshot novo', () => {
+    const { fechar, reabrir } = renderDialogControlado();
+    reabrir({ nomePai: 'Produto A', variacao: { gtin: '111' } });
+    expect(screen.getByLabelText('Nome')).toHaveValue('Produto A');
+    expect(screen.getByLabelText('GTIN da variação 1')).toHaveValue('111');
+
+    fechar();
+    reabrir({ nomePai: 'Produto B', variacao: { gtin: '222' } });
+
+    expect(screen.getByLabelText('Nome')).toHaveValue('Produto B');
+    expect(screen.getByLabelText('GTIN da variação 1')).toHaveValue('222');
+  });
+
+  it('onCadastrado é chamado uma vez após sucesso do cadastro', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    const onCadastrado = vi.fn();
+    const user = userEvent.setup();
+    renderDialogCom({ onCadastrado });
+
+    await preencherEEnviar(user, 'Produto Teste');
+
+    await waitFor(() => expect(onCadastrado).toHaveBeenCalledTimes(1));
   });
 });

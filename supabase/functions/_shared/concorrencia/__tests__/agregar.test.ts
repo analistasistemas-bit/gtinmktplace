@@ -150,6 +150,28 @@ describe('agregarConcorrencia', () => {
     expect(r.ofertas?.category_id).toBe('MLB255054');
   });
 
+  it('devolve a descricao_catalogo do produto representativo (menor preco_min)', () => {
+    const a = produto({
+      product_id: 'MLB1',
+      descricao_catalogo: 'descrição da fita azul',
+      ofertas: ofertas({ preco_min: 15 }),
+    });
+    const b = produto({
+      product_id: 'MLB2',
+      descricao_catalogo: 'descrição da fita vermelha',
+      ofertas: ofertas({ preco_min: 8 }),
+    });
+    const r = agregarConcorrencia([a, b]);
+    expect(r.descricao_catalogo).toBe('descrição da fita vermelha');
+  });
+
+  it('descricao_catalogo null quando o representativo não tem (cache legado)', () => {
+    const legado = produto({ product_id: 'MLB1', ofertas: ofertas({ preco_min: 10 }) });
+    delete (legado as unknown as Record<string, unknown>).descricao_catalogo;
+    const r = agregarConcorrencia([legado]);
+    expect(r.descricao_catalogo).toBeNull();
+  });
+
   it('empate de preco_min entre dois produtos → representativo é o 1º da lista (ordem)', () => {
     const a = produto({ product_id: 'MLB1', product_name: 'Fita A', ofertas: ofertas({ preco_min: 10 }) });
     const b = produto({ product_id: 'MLB2', product_name: 'Fita B', ofertas: ofertas({ preco_min: 10 }) });

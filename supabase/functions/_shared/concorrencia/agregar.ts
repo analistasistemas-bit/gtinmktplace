@@ -5,6 +5,8 @@ import { classificarConcorrencia } from './classificar.ts';
 export interface ProdutoConcorrencia {
   product_id: string;
   product_name: string | null;
+  /** short_description.content da ficha (GET /products/{id}); `?? null` no montante — cache legado não tem o campo. */
+  descricao_catalogo?: string | null;
   ofertas: DadosOfertas;
 }
 
@@ -71,6 +73,7 @@ export function agregarConcorrencia(produtos: ProdutoConcorrencia[]): ResultadoC
     classe: classificarConcorrencia(vendedores),
     product_id: representativo.product_id,
     product_name: representativo.product_name,
+    descricao_catalogo: representativo.descricao_catalogo ?? null,
     ofertas,
   };
 }

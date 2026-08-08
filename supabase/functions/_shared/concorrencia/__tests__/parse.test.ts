@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aplicarPrecoVencedorCatalogo, parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto } from '../parse';
+import { aplicarPrecoVencedorCatalogo, parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto, parseDescricaoCatalogo } from '../parse';
 
 describe('parseProdutoBusca', () => {
   it('payload vazio/inválido → null', () => {
@@ -123,6 +123,22 @@ describe('parseItensProduto', () => {
   it('ofertas_detalhe: seller_id ausente → seller_id null', () => {
     const r = parseItensProduto({ results: [{ price: 10 }] });
     expect(r.ofertas_detalhe).toEqual([{ seller_id: null, preco: 10 }]);
+  });
+});
+
+describe('parseDescricaoCatalogo', () => {
+  it('extrai short_description.content do payload de /products/{id}', () => {
+    const json = {
+      short_description: { type: 'plaintext', content: 'REPARAÇÃO INTENSIVA…' },
+    };
+    expect(parseDescricaoCatalogo(json)).toBe('REPARAÇÃO INTENSIVA…');
+  });
+
+  it('content ausente/vazio, short_description ausente ou payload null → null', () => {
+    expect(parseDescricaoCatalogo({ short_description: { content: '' } })).toBeNull();
+    expect(parseDescricaoCatalogo({ short_description: {} })).toBeNull();
+    expect(parseDescricaoCatalogo({})).toBeNull();
+    expect(parseDescricaoCatalogo(null)).toBeNull();
   });
 });
 

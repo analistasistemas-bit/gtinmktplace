@@ -53,6 +53,17 @@ function numOuNull(v: string): number | null {
   return typeof n === 'number' && !Number.isNaN(n) ? n : null;
 }
 
+// Prefill vindo da Viabilidade (T5, plano 2026-08-08). `origem` de propósito NÃO tem campo
+// aqui — nem em tempo de compilação: é a trava da V-3 (ADR-0055/0107), rádio sem seleção e
+// botão de salvar travado, mesmo com todo o resto preenchido. Não adicionar `origem` a este
+// tipo.
+export interface CadastroInicial {
+  nomePai?: string;
+  descricaoPai?: string;
+  variacao?: Partial<Pick<LinhaVariacao,
+    'gtin' | 'preco' | 'custo' | 'pesoGramas' | 'alturaCm' | 'larguraCm' | 'comprimentoCm'>>;
+}
+
 function montarPayload(
   pai: { nomePai: string; descricaoPai: string; unidade: string; fornecedor: string; origem: 'nacional' | 'importado' },
   linhas: LinhaVariacao[],
@@ -80,7 +91,18 @@ function montarPayload(
   };
 }
 
-export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
+export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado }: {
+  aberto: boolean;
+  onFechar: () => void;
+  /** Snapshot de pré-preenchimento vindo da Viabilidade (T5). Precisa ser um snapshot ESTÁVEL
+   *  enquanto o diálogo está aberto — o chamador guarda em `useState` no clique. Se a
+   *  identidade mudar a cada render do pai, o efeito de abertura reaplica o prefill por cima
+   *  do que o operador já digitou. */
+  inicial?: CadastroInicial;
+  /** Chamado em `salvar()` logo após o sucesso do cadastro — permite ao chamador (ex.: a linha
+   *  da Viabilidade) marcar o item como já cadastrado sem esperar nova análise. */
+  onCadastrado?: () => void;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -149,6 +171,16 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
     setTentouSalvar(false);
   }, [aberto, resultadoAmbiguo]);
 
+  // Efeito de ABERTURA (T5) — separado do reset acima, que roda ao FECHAR e fica intocado.
+  // `origem` nunca é tocada aqui (V-3): CadastroInicial nem tem o campo. Sem `inicial`
+  // (uso atual do Estoque.tsx) é no-op — comportamento byte a byte igual ao de hoje.
+  useEffect(() => {
+    if (!aberto || !inicial) return;
+    setNomePai(inicial.nomePai ?? '');
+    setDescricaoPai(inicial.descricaoPai ?? '');
+    setLinhas([{ ...novaLinha(), ...inicial.variacao }]);
+  }, [aberto, inicial]);
+
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
 
@@ -172,6 +204,7 @@ export function DialogCadastroProduto({ aberto, onFechar }: { aberto: boolean; o
         { nomePai, descricaoPai, unidade, fornecedor, origem }, linhas, chaveCadastro,
       ));
       setResultado(r);
+      onCadastrado?.();
       setChaveCadastro(crypto.randomUUID());
       // Primeira invalidação: o produto já aparece na listagem, sem esperar as fotos.
       qc.invalidateQueries({ queryKey: ['produtos-saldo'] });

@@ -5,11 +5,13 @@ import {
   aplicarPrecoVencedorCatalogo,
   parseProdutoBusca,
   parseNomeProdutoBusca,
+  parseDescricaoCatalogo,
   parseItensProduto,
 } from '../concorrencia/parse.ts';
 import { classificarConcorrencia } from '../concorrencia/classificar.ts';
 import { agregarConcorrencia, type ProdutoConcorrencia } from '../concorrencia/agregar.ts';
 import { cacheConcorrenciaGet, cacheConcorrenciaSet } from '../redis/cache-concorrencia.ts';
+import { chaveCacheGtin } from '../concorrencia/cache-chave.ts';
 import { pool } from '../concorrencia/pool.ts';
 import type { ResultadoConcorrencia } from '../concorrencia/tipos.ts';
 
@@ -67,7 +69,7 @@ export async function buscarConcorrencia(
     // Leituras de cache em paralelo: Redis GET não tem rate-limit/ordenação como a API do ML.
     const cacheados = await pool(10, candidatos, async (gtin) => ({
       gtin,
-      cached: await cacheConcorrenciaGet(`gtin:v3:${gtin}`).catch(() => null),
+      cached: await cacheConcorrenciaGet(chaveCacheGtin(gtin)).catch(() => null),
     }));
     for (const { gtin, cached } of cacheados) {
       if (!cached) {
@@ -76,7 +78,12 @@ export async function buscarConcorrencia(
       }
       if (cached.product_id === null) continue; // tombstone: GTIN sem produto de catálogo, não rebusca
       if (cached.product_id && cached.ofertas) {
-        hits.push({ product_id: cached.product_id, product_name: cached.product_name ?? null, ofertas: cached.ofertas });
+        hits.push({
+          product_id: cached.product_id,
+          product_name: cached.product_name ?? null,
+          descricao_catalogo: cached.descricao_catalogo ?? null,
+          ofertas: cached.ofertas,
+        });
       }
     }
 
@@ -92,8 +99,8 @@ export async function buscarConcorrencia(
             );
             const productId = parseProdutoBusca(busca);
             if (!productId) {
-              await cacheConcorrenciaSet(`gtin:v3:${gtin}`, {
-                vendedores: 0, preco_min: null, origem: 'gtin', classe: 'sem', product_id: null, product_name: null,
+              await cacheConcorrenciaSet(chaveCacheGtin(gtin), {
+                vendedores: 0, preco_min: null, origem: 'gtin', classe: 'sem', product_id: null, product_name: null, descricao_catalogo: null,
               }).catch(() => {});
               return null;
             }
@@ -105,16 +112,18 @@ export async function buscarConcorrencia(
             const itensComPrecosVenda = aplicarPrecoVencedorCatalogo(itensJson, produtoJson);
             const ofertas = parseItensProduto(itensComPrecosVenda);
             const product_name = parseNomeProdutoBusca(busca);
-            await cacheConcorrenciaSet(`gtin:v3:${gtin}`, {
+            const descricao_catalogo = parseDescricaoCatalogo(produtoJson);
+            await cacheConcorrenciaSet(chaveCacheGtin(gtin), {
               vendedores: ofertas.vendedores,
               preco_min: ofertas.preco_min,
               origem: 'gtin',
               classe: classificarConcorrencia(ofertas.vendedores),
               product_id: productId,
               product_name,
+              descricao_catalogo,
               ofertas,
             }).catch(() => {});
-            return { product_id: productId, product_name, ofertas } as ProdutoConcorrencia;
+            return { product_id: productId, product_name, descricao_catalogo, ofertas } as ProdutoConcorrencia;
           } catch (werr) {
             // Erro transitório (ex.: timeout do mlGet): não grava tombstone, re-tenta na próxima execução.
             console.warn(`buscarConcorrencia: worker falhou p/ gtin ${gtin}: ${(werr as Error).message}`);

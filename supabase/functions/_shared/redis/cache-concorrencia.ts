@@ -10,6 +10,7 @@ export interface CacheConcorrenciaEntrada {
   classe: ClasseConcorrencia;
   product_id?: string | null;
   product_name?: string | null;
+  descricao_catalogo?: string | null;
   ofertas?: DadosOfertas;
   criado_em: string;
 }

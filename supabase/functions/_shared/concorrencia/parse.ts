@@ -14,6 +14,17 @@ export function parseNomeProdutoBusca(json: unknown): string | null {
   return typeof nome === 'string' && nome.length > 0 ? nome : null;
 }
 
+/**
+ * Extrai `short_description.content` do payload de `GET /products/{id}` (spike 037, §7.1).
+ * Defensivo: ficha antiga/incompleta não pode derrubar a análise de viabilidade — ausência,
+ * `null`, tipo inesperado ou string vazia sempre viram `null`, nunca lançam.
+ */
+export function parseDescricaoCatalogo(json: unknown): string | null {
+  const content = (json as { short_description?: { content?: unknown } } | null)
+    ?.short_description?.content;
+  return typeof content === 'string' && content.length > 0 ? content : null;
+}
+
 interface MLItem {
   item_id?: string;
   seller_id?: number | string;
