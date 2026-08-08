@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AbaMensagens } from '../aba-mensagens';
 
@@ -18,9 +19,17 @@ vi.mock('@/hooks/useMensagens', () => ({
   }),
 }));
 
+function renderAba() {
+  render(<QueryClientProvider client={new QueryClient()}><AbaMensagens /></QueryClientProvider>);
+}
+
 describe('AbaMensagens', () => {
-  it('usa nickname, expõe o anúncio e bloqueia todos os controles de pedido cancelado', () => {
-    render(<QueryClientProvider client={new QueryClient()}><AbaMensagens /></QueryClientProvider>);
+  it('abre na aba Aguardando; a conversa cancelada (não aguardando) fica fora até trocar para Todas', async () => {
+    renderAba();
+    expect(screen.getByText('Nenhuma conversa aguardando resposta.')).toBeInTheDocument();
+    expect(screen.queryByText(/MARIA_01/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
 
     expect(screen.getByText(/MARIA_01/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Abrir anúncio no Mercado Livre' }))
@@ -29,5 +38,11 @@ describe('AbaMensagens', () => {
     expect(screen.getByRole('button', { name: /sugerir resposta/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /responder/i })).toBeDisabled();
     expect(screen.getByText('Pedido cancelado')).toBeInTheDocument();
+  });
+
+  it('mostra o total no rodapé de paginação', async () => {
+    renderAba();
+    await userEvent.click(screen.getByRole('tab', { name: 'Todas' }));
+    expect(screen.getByText(/de 1 conversa/i)).toBeInTheDocument();
   });
 });
