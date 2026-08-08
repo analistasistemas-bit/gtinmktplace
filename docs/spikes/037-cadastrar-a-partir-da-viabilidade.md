@@ -70,8 +70,8 @@ Campos da tela de cadastro (`dialog-cadastro-produto.tsx` + `linha-variacao-form
 | `nomePai` (título) | `item.nome` — `product_name` do catálogo ML | **zero** | Já está na resposta (`ItemAnalisado.nome`). |
 | `gtin` (variação) | `item.gtin` | **zero** | Já está na tela. |
 | `custo` | input "Custo" da linha | **zero** | O operador já digitou para ver o semáforo. |
-| `preco` | `etiquetaParaMinimo(minimo, ...)` | **zero** | Cálculo já roda na linha. Valor que só a Viabilidade sabe produzir. |
-| `pesoGramas` | `FormDimensoes` / `buscarDimensoesSalvas` | **zero** | **Não vem do ML.** |
+| `preco` | input "Seu mínimo" da linha, **cru** | **zero** | Mesmo conceito nos dois lados (líquido mínimo). **Não** é a etiqueta — ver V-2-bug. |
+| `pesoGramas` | `FormDimensoes` | **zero** | **Não vem do ML.** |
 | `alturaCm` / `larguraCm` / `comprimentoCm` | idem | **zero** | idem |
 | `descricaoPai` | `short_description.content` de `/products/{id}` | **baixo** | **Confirmado no payload real (§7.1).** O `GET` já é feito hoje e o campo é descartado — custa um parse + bump da chave de cache `gtin:v3`→`v4`. Zero rede nova. |
 | foto capa | `pictures[0].url` de `/products/{id}` | **cortado** | Existe no payload (§7.1), mas fica de fora: é o único campo que iria **verbatim** para o anúncio (§3.1). |
@@ -174,8 +174,8 @@ ViabilidadeLinha
             descricaoPai   = item.descricaoCatalogo         (campo novo na resposta, V-1b)
             gtin           = item.gtin
             custo          = custo (state da linha)
-            preco          = etiquetaParaMinimo(minimo,…)
-            peso/alt/larg/comp = dimensões do FormDimensoes ou do item
+            preco          = minimo (state da linha, CRU — V-2/V-2-bug)
+            peso/alt/larg/comp = o que o operador digitou no FormDimensoes
             origem         = null  ← SEMPRE
        └─ [Salvar] → edge cadastrar-produto (INTACTA) → lote manual reusado (D-1.1)
        └─ redireciona para /revisao/{loteId}  ← fluxo existente
@@ -208,7 +208,8 @@ redeploy** (mapear com `deno info`, não com grep, conforme o incidente registra
 |---|---|---|
 | **V-1** | **Foto NÃO é pré-preenchida a partir do ML.** | Elimina §3.1: nenhuma imagem de terceiro entra no nosso anúncio, nenhum egress de imagem. Onde a foto do catálogo é legítima, o caminho já existe e é outro: vincular ao catálogo (ADR-0021). |
 | **V-1b** | **Descrição ENTRA**: `descricaoPai` recebe `short_description.content` da ficha. | Reaberta por Diego e resolvida no mesmo dia — spike executado (§7.1, campo confirmado no payload) e razão verificada no código (§7.2): a IA reescreve título e descrição no caminho para a Revisão, então o texto do ML é insumo, não publicação. |
-| **V-2** | **`preco` é pré-preenchido com `etiquetaParaMinimo(minimo, …)`**, editável — **e só quando `minimo != null`**. Sem mínimo digitado, o campo entra **vazio**; nunca cai para `item.mercado.menor`. | É o resultado que a Viabilidade existe para produzir — o preço de etiqueta que devolve o mínimo líquido depois de comissão, imposto (ADR-0055) e frete do vendedor (ADR-0050/0076). O cadastro não sabe calcular isso. Fica editável porque é sugestão, não trava. **A condição é obrigatória:** no modo GTIN colado `minimo` nasce `null` (`index.ts:140` só o preenche se o caller mandar número, e a UI nunca manda), e `etiquetaParaMinimo` devolve `null` nesse caso — quem implementar vai encontrar o `null` e ficar tentado a usar o menor preço do mercado como fallback. Esse é o preço **do concorrente**, não um preço que devolve o seu mínimo: entraria num campo financeiro com cara de valor calculado. Campo vazio é o comportamento correto. |
+| **V-2 (CORRIGIDA em 2026-08-08 — ver V-2-bug)** | **`preco` recebe `minimo` — o valor cru do input "Seu mínimo" da linha.** Só quando `minimo != null`; senão entra **vazio**. Nunca `etiquetaParaMinimo`, nunca `item.mercado.menor`. | Os dois campos são **o mesmo conceito**: "Seu mínimo" na Viabilidade e "Preço mínimo (líquido)" no cadastro (`linha-variacao-form.tsx:55`) são ambos o líquido que o operador aceita receber. O mapeamento é identidade, sem cálculo. **Campo vazio quando não há mínimo** é obrigatório: `item.mercado.menor` é o preço do concorrente e entraria num campo financeiro com cara de valor calculado. |
+| **V-2-bug** | **A versão original de V-2 (`etiquetaParaMinimo`) estava ERRADA e teria causado gross-up duplo.** Registrada para não ser "recorrigida" de volta. | `variacoes.preco` é o **líquido mínimo** (ADR-0020, que inverteu a semântica do ADR-0008), e `process-familia/index.ts:419` chama `grossUp(Number(v.preco), …)` **em cima dele** para achar o preço de venda. `etiquetaParaMinimo` (`src/lib/viabilidade.ts:45`) **já é** um gross-up — mesma inversão de comissão, mais imposto e frete. Gravar a etiqueta no campo do líquido faria o pipeline aplicar gross-up sobre um valor já grossado. Ordem de grandeza: mínimo R$ 70 num item de comissão ~14% + 8% de imposto vira etiqueta ~R$ 103; regrossado, o anúncio sairia ~R$ 152. Classe do incidente ORIGEM (memória de regras financeiras): valor plausível, silencioso, e alimentando preço publicado. |
 | **V-3** | **`origem` nunca é pré-preenchida.** Rádio sem seleção, botão de salvar travado. | §3.3. `analisar-viabilidade/index.ts:142` hardcoda `'nacional'` no modo GTIN; carregar esse valor reproduziria o incidente ORIGEM de 2026-07-14. Não negociável. |
 | **V-4** | Botão só quando `existeNoML && editavel && módulo habilitado && !jaCadastrado`. | Modo planilha já vira lote; produto sem ficha no ML não tem título para herdar; módulo é opt-in (D-13); duplicata vira "Dar entrada" antes de virar 409 (§3.5). |
 | **V-5** | Multi-GTIN = N cliques, mesmo lote manual. Sem "cadastrar todos" na v1. | ADR-0094 D-1.1 já reusa a sessão. YAGNI até alguém pedir. |
@@ -240,10 +241,10 @@ print do Diego (Cicaplast Baume B5+ La Roche-Posay 40ml, GTIN 7908615000244, men
 |---|---|---|---|
 | `gtin` | **sim** | `7908615000244` | O GTIN que você bipou/colou. |
 | `nome` | não | vazio | É o nome da **variação** (cor/tamanho). Uma consulta de EAN é um SKU só; não há o que herdar. |
-| `preco` | **condicional** | vazio no seu print | V-2: só preenche se você tiver digitado "Seu mínimo". Com mínimo digitado, recebe **o mesmo número que a linha já exibe em "Pra receber seu mínimo, anuncie a"** do bloco **Clássico**. |
+| `preco` ("Preço mínimo (líquido)") | **condicional** | vazio no seu print | V-2: recebe o valor **cru** do input "Seu mínimo" da linha, sem cálculo. Vazio se você não digitou. **Não** recebe a etiqueta calculada — ver V-2-bug. |
 | `custo` | **sim, se digitado** | o que você pôs no campo Custo da linha | Você já digita isso para ver o semáforo. |
 | `estoqueInicial` | não | vazio | O ML não sabe seu estoque. |
-| `pesoGramas` | **sim, se conhecido** | — | Duas fontes locais: o que você digitou no `FormDimensoes` para recalcular o frete, ou o que a edge já achou em `variacoes` (`buscarDimensoesSalvas`). **Nunca do ML** (§1). |
+| `pesoGramas` | **sim, se digitado** | — | O que você digitou no `FormDimensoes` para recalcular o frete. **Nunca do ML** (§1/§7.1). |
 | `alturaCm` | idem | — | idem |
 | `larguraCm` | idem | — | idem |
 | `comprimentoCm` | idem | — | idem |
@@ -257,9 +258,11 @@ com **9**.
 **O que sobra para o operador digitar, sempre:** origem (obrigatório, trava o salvar), estoque
 inicial e fornecedor. Nada mais.
 
-**Ponto em aberto, pequeno:** `etiquetaParaMinimo` produz um valor por tipo de anúncio
-(Clássico e Premium, os dois blocos da linha expandida). O pré-preenchimento usa o **Clássico**.
-Registrado por ser escolha, não consequência.
+**Achado da revisão do plano (Fable, 2026-08-08):** `buscarDimensoesSalvas` **nunca** alimenta o
+pré-preenchimento na prática. Ela só acha dimensões se existir variação com aquele GTIN na org —
+e nesse caso `jaCadastrado` é verdadeiro e o botão nem aparece (vira "Dar entrada"). Logo a única
+fonte viva de dimensão é o lift do `FormDimensoes`, e **nenhum valor de dimensão precisa trafegar
+pela edge**. Simplifica o diff.
 
 ## 6. Assumido sem perguntar
 
@@ -400,7 +403,8 @@ IS_OIL_FREE, WITH_COLOR, IS_CRUELTY_FREE, IS_SUITABLE_FOR_EYE_CONTOUR, IS_COMEDO
 
 **Nenhum `PACKAGE_*`, nenhum `WEIGHT`, nenhum `HEIGHT`/`WIDTH`/`LENGTH` de embalagem.** O §1
 deixa de ser inferência a partir de `pacote.ts` e passa a ser fato medido: **as dimensões não
-existem na ficha de catálogo.** Continuam vindo do `FormDimensoes` / `buscarDimensoesSalvas`.
+existem na ficha de catálogo.** Continuam vindo do `FormDimensoes` (ver §5.1 — `buscarDimensoesSalvas`
+não é caminho vivo para o pré-preenchimento).
 
 ### 7.2 Decisão (Diego, 2026-08-08)
 
