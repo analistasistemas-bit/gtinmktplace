@@ -49,6 +49,14 @@ export interface ItemAnalisado {
   frete?: number;
   /** false = frete calculado com pacote genérico (16x11x6cm/300g) por falta de dimensão real. */
   dimensoesEncontradas?: boolean;
+  /** short_description da ficha de catálogo; insumo p/ pré-preencher o cadastro (spike 037, V-1b). */
+  descricaoCatalogo?: string | null;
+  /**
+   * Heurística por (org_id, gtin) em `variacoes` — usada só p/ trocar "Cadastrar" por
+   * "Dar entrada" na Viabilidade. NÃO substitui o guard: o 409 de `cadastrar-produto` por
+   * `codigo_pai` continua autoritativo (spike 037 §3.5).
+   */
+  jaCadastrado?: boolean;
   /** true quando a busca/comissão falhou para este item (os demais seguem). */
   erro?: boolean;
 }

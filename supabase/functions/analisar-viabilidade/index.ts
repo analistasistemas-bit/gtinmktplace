@@ -11,28 +11,26 @@ import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts'
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { dimensoesValidas, type DimensoesPacote } from '../_shared/ml/pacote.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
+import { resumirVariacoesSalvas, type VariacaoSalvaResumo } from '../_shared/analise/variacao-salva.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
 
 const LOTE = 5; // concorrência limitada p/ não estourar a API do ML
 
-/** Dimensões já cadastradas (produto já publicado antes) para o GTIN, dentro da org. Best-effort. */
-async function buscarDimensoesSalvas(
+/**
+ * Variação já cadastrada (produto já publicado antes) para o GTIN, dentro da org. Best-effort.
+ * Select mais largo e SEMPRE chamado no ramo existeNoML (T4): além das dimensões, devolve se já
+ * existe variação com esse GTIN na org — mesmo round-trip de antes, só deixou de ser condicional.
+ */
+async function buscarVariacaoSalva(
   db: SupabaseClient, orgId: string, gtin: string,
-): Promise<DimensoesPacote | null> {
+): Promise<VariacaoSalvaResumo> {
   const { data } = await db
     .from('variacoes')
-    .select('peso_gramas, altura_cm, largura_cm, comprimento_cm')
+    .select('id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
     .eq('org_id', orgId)
     .eq('gtin', gtin)
     .limit(5);
-  for (const row of data ?? []) {
-    const d: DimensoesPacote = {
-      peso_gramas: row.peso_gramas, altura_cm: row.altura_cm,
-      largura_cm: row.largura_cm, comprimento_cm: row.comprimento_cm,
-    };
-    if (dimensoesValidas(d)) return d;
-  }
-  return null;
+  return resumirVariacoesSalvas(data ?? []);
 }
 
 async function analisarItem(
@@ -57,12 +55,13 @@ async function analisarItem(
     const token = await getValidAccessTokenConexao(conexao);
     const mlUserId = conexao.contaExternaId || 'me';
 
-    // Sem dimensão vinda do caller (modo GTIN colado): tenta achar no produto já cadastrado
-    // antes de cair no pacote genérico (16x11x6cm/300g) do frete.ts.
+    // Select sempre chamado (T4): jaCadastrado precisa dele mesmo quando o caller já informou
+    // dimensões (senão o recálculo do FormDimensoes apagaria o sinal). Dimensão informada pelo
+    // caller (modo GTIN colado, recálculo) tem precedência sobre a salva; sem ela, tenta achar no
+    // produto já cadastrado antes de cair no pacote genérico (16x11x6cm/300g) do frete.ts.
     const dimensoesInformadas = item.dimensoes && dimensoesValidas(item.dimensoes);
-    const dimensoes = dimensoesInformadas
-      ? item.dimensoes!
-      : await buscarDimensoesSalvas(db, orgId, item.gtin);
+    const salva = await buscarVariacaoSalva(db, orgId, item.gtin);
+    const dimensoes = dimensoesInformadas ? item.dimensoes! : salva.dimensoes;
 
     const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, menor, categoria, 'gold_special'),
@@ -86,6 +85,9 @@ async function analisarItem(
       premium: { saleFeeAmount: premiumML.sale_fee_amount ?? 0, ...comissaoDe(premiumML) },
       frete,
       dimensoesEncontradas: dimensoes != null,
+      descricaoCatalogo: conc.descricao_catalogo ?? null,
+      // Heurística de UX (casa por GTIN) — não é o guard; o 409 de cadastrar-produto continua autoritativo.
+      jaCadastrado: salva.jaCadastrado,
     };
   } catch (e) {
     console.warn(`analisarItem ${item.gtin} falhou: ${(e as Error).message}`);

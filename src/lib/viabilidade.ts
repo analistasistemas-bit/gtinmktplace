@@ -19,6 +19,14 @@ export interface ItemAnalisado {
   existeNoML: boolean; mercado?: Mercado;
   classico?: ComissaoTipo; premium?: ComissaoTipo;
   frete?: number; dimensoesEncontradas?: boolean; erro?: boolean;
+  /** short_description da ficha de catálogo; insumo p/ pré-preencher o cadastro (spike 037, V-1b). */
+  descricaoCatalogo?: string | null;
+  /**
+   * Heurística por (org_id, gtin) em `variacoes` — usada só p/ trocar "Cadastrar" por
+   * "Dar entrada" na Viabilidade. NÃO substitui o guard: o 409 de `cadastrar-produto` por
+   * `codigo_pai` continua autoritativo (spike 037 §3.5).
+   */
+  jaCadastrado?: boolean;
 }
 export interface RespostaAnalise {
   itens: ItemAnalisado[]; ignorados: number;
