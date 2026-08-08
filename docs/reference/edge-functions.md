@@ -668,7 +668,11 @@ falha ao ler `organizations` não libera.
   o menor preço da concorrência usa o valor vigente de venda de cada publicação
   (`GET /items/{item_id}/sale_price?context=channel_marketplace`), e não o campo legado `price`
   de `/products/{product_id}/items`; falha nessa consulta preserva `price` como fallback. O cache
-  Redis dessa leitura usa a versão `gtin:v2:*` (TTL 6h), separada dos valores legados.
+  Redis dessa leitura usa a versão **`gtin:v4:*`** (TTL 6h), separada dos valores legados; a chave
+  é montada **só** por `chaveCacheGtin()` (`_shared/concorrencia/cache-chave.ts`) — o literal já
+  apareceu em 3 call sites e um bump parcial deixaria leitura e escrita em versões diferentes.
+  Todo bump invalida a concorrência de todas as orgs (sem perda de dado; a primeira análise
+  seguinte remonta o cache).
   margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055). Frete do
   vendedor (`buscarFreteVendedor`) usa a dimensão vinda do caller (planilha) quando válida; senão
   busca em `variacoes` por `org_id`+`gtin` (produto já cadastrado antes); sem nenhuma das duas, cai
@@ -677,6 +681,16 @@ falha ao ler `organizations` não libera.
   também traz `me2Habilitado` (lido de `marketplace_connections.me2_habilitado`) — quando `false`,
   o front avisa que o frete de todos os itens saiu 0 por falta de adesão ao Mercado Envios, não
   porque o frete real é zero.
+  **Botão "Cadastrar" (spike 037, 2026-08-08):** cada item traz `descricaoCatalogo`
+  (`short_description.content` de `GET /products/{id}` — payload que a função já buscava e
+  descartava, zero rede nova) e `jaCadastrado` (existe variação com esse GTIN na org). O select de
+  `variacoes` virou **incondicional** no ramo `existeNoML`: é o mesmo round-trip, mas se
+  continuasse condicional o recálculo de frete com dimensões informadas apagaria o sinal.
+  `jaCadastrado` é **heurística de UX** por GTIN — o guard autoritativo de duplicata continua
+  sendo o 409 de `cadastrar-produto` por `codigo_pai` (ADR-0094 D-4). **Dimensões não vêm da
+  ficha de catálogo** — medido no spike: os atributos do produto são de especificação
+  (`BRAND`, `SALE_FORMAT`, `UNITS_PER_PACK`…), e peso/medidas são `SELLER_PACKAGE_*`, atributo
+  do anúncio de cada vendedor.
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
 
 ### Acesso / usuários
