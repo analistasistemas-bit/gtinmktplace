@@ -1,7 +1,8 @@
 # Spike 037 — Botão "Cadastrar" na Análise de viabilidade
 
 **Data:** 2026-08-08
-**Status:** Viável. Escopo travado por Diego em 2026-08-08 (§5). Pronto para plano de implementação.
+**Status:** Viável. Escopo travado por Diego em 2026-08-08 (§5), spike do payload executado (§7).
+Pronto para plano de implementação.
 **Origem:** pedido do Diego (grill-with-docs + superpowers-sentinel, fase 1 Define)
 
 ## Pedido original
@@ -12,11 +13,14 @@
 
 ## Veredito em uma linha
 
-**Viável, e mais barato do que parece — mas metade do que foi pedido não vem do ML.**
-Título, GTIN, custo, mínimo/preço sugerido e as 4 dimensões já estão **em mãos no navegador**,
-sem tocar em nenhuma API. **Foto e descrição** são a parte cara: exigem novo parse do payload do
-ML, download+upload de imagem, e carregam o risco de propriedade intelectual que já cancelou um
-anúncio nosso.
+**Viável. Quase tudo que foi pedido é entregável; só a foto fica de fora.**
+Título, GTIN, custo, preço sugerido e as 4 dimensões já estão **em mãos no navegador**, sem tocar
+em API nenhuma. A **descrição** foi confirmada por spike no payload real (§7) e entra — porque a
+IA reescreve título e descrição antes de publicar, então nada do ML sai verbatim. A **foto** fica
+de fora justamente porque é o único artefato que **iria verbatim** para o anúncio.
+
+**As dimensões não vêm do ML** — nem estão na ficha de catálogo (medido, §7.1). Vêm do que a
+própria tela de Viabilidade já coleta.
 
 ---
 
@@ -69,16 +73,16 @@ Campos da tela de cadastro (`dialog-cadastro-produto.tsx` + `linha-variacao-form
 | `preco` | `etiquetaParaMinimo(minimo, ...)` | **zero** | Cálculo já roda na linha. Valor que só a Viabilidade sabe produzir. |
 | `pesoGramas` | `FormDimensoes` / `buscarDimensoesSalvas` | **zero** | **Não vem do ML.** |
 | `alturaCm` / `larguraCm` / `comprimentoCm` | idem | **zero** | idem |
-| `descricaoPai` | `short_description` de `/products/{id}` | **médio + risco** | Ver §3. Payload já baixado, mas descartado. |
-| foto capa | `pictures[0]` de `/products/{id}` | **alto + risco** | Ver §3. Exige download + upload no storage. |
+| `descricaoPai` | `short_description.content` de `/products/{id}` | **baixo** | **Confirmado no payload real (§7.1).** O `GET` já é feito hoje e o campo é descartado — custa um parse + bump da chave de cache `gtin:v3`→`v4`. Zero rede nova. |
+| foto capa | `pictures[0].url` de `/products/{id}` | **cortado** | Existe no payload (§7.1), mas fica de fora: é o único campo que iria **verbatim** para o anúncio (§3.1). |
 | `unidade` | — | — | Já tem default `'UN'`. |
 | `fornecedor` | — | — | ML não sabe quem é o seu fornecedor. |
 | **`origem`** | — | — | **Proibido pré-preencher.** Ver §3.3. |
 | `estoqueInicial` | — | — | ML não sabe seu estoque. |
 | `codigo_pai` | automático | — | ADR-0096. |
 
-**Resultado: 8 dos 13 campos saem de graça, sem tocar em API nenhuma.**
-Os 2 que exigem trabalho novo (foto, descrição) são exatamente os 2 que carregam risco jurídico.
+**Resultado: 8 dos 13 campos saem de graça, sem tocar em API nenhuma; a descrição é o 9º e custa
+um parse.** Único campo pedido que fica de fora é a foto — o único que iria verbatim ao anúncio.
 
 ---
 
@@ -165,6 +169,7 @@ ViabilidadeLinha
   └─ [Cadastrar]  (só quando: existeNoML && editavel && módulo habilitado && !jaCadastrado)
        └─ abre <DialogCadastroProduto inicial={...} />   ← única mudança no cadastro:
             nomePai        = item.nome                     aceitar valores iniciais opcionais
+            descricaoPai   = item.descricaoCatalogo         (campo novo na resposta, V-1b)
             gtin           = item.gtin
             custo          = custo (state da linha)
             preco          = etiquetaParaMinimo(minimo,…)
@@ -177,18 +182,21 @@ ViabilidadeLinha
 **Multi-GTIN:** nada especial. N cliques = N famílias no **mesmo** lote manual aberto, porque o
 D-1.1 já reusa a sessão. Não precisa de "cadastrar todos" para a v1.
 
-**Diff estimado (só se a Fase 1 for aprovada sem foto/descrição):** 3 arquivos —
-`dialog-cadastro-produto.tsx` (aceitar `inicial`), `viabilidade-linha.tsx` (botão + estado),
-`analisar-viabilidade/index.ts` (+`jaCadastrado`). Nenhum arquivo do caminho que publica anúncio
-real é tocado.
+**Diff estimado:** 6 arquivos, nenhum no caminho que publica anúncio real.
 
-### Se foto/descrição entrarem (fase 2)
+| Arquivo | Mudança |
+|---|---|
+| `src/components/estoque/dialog-cadastro-produto.tsx` | aceitar prop `inicial` opcional |
+| `src/components/viabilidade-linha.tsx` | botão + estado + montagem do `inicial` |
+| `src/lib/viabilidade.ts` | 2 campos novos em `ItemAnalisado` |
+| `supabase/functions/analisar-viabilidade/index.ts` | propagar `descricaoCatalogo` + `jaCadastrado` |
+| `supabase/functions/_shared/concorrencia/parse.ts` | ler `short_description.content` do payload que já chega |
+| `supabase/functions/_shared/ml/concorrencia.ts` | carregar o campo novo + bump `gtin:v3` → `v4` |
 
-Um passo obrigatório antes: **spike de 15 min** — logar o payload cru de `/products/{id}` (a
-chamada já existe em `concorrencia.ts:102`) e confirmar se `pictures` e `short_description` estão
-lá. Sem esse payload não dá para estimar honestamente. Depois: parse novo + bump da chave de cache
-`gtin:v3` → `v4` + download da imagem na edge + upload no storage (atenção ao ADR-0081, corte de
-egress).
+**Atenção no bump de cache:** `gtin:v3` → `v4` invalida a concorrência inteira de todas as orgs.
+Não é perda de dado, mas a primeira análise pós-deploy sai mais lenta e bate mais na API do ML.
+Os dois últimos arquivos são de `_shared/` — **todas as funções que dependem deles precisam de
+redeploy** (mapear com `deno info`, não com grep, conforme o incidente registrado no ADR-0087).
 
 ---
 
@@ -197,7 +205,7 @@ egress).
 | # | Decisão | Racional |
 |---|---|---|
 | **V-1** | **Foto NÃO é pré-preenchida a partir do ML.** | Elimina §3.1: nenhuma imagem de terceiro entra no nosso anúncio, nenhum egress de imagem. Onde a foto do catálogo é legítima, o caminho já existe e é outro: vincular ao catálogo (ADR-0021). |
-| **V-1b** | **Descrição: reaberta por Diego em 2026-08-08, decisão pendente.** Ver §3.2 e §7. | O corte original veio agrupado com a foto na mesma opção. Reaberta isolada, com um bloqueio técnico e uma decisão de desenho na frente — nenhum dos dois resolvido ainda. |
+| **V-1b** | **Descrição ENTRA**: `descricaoPai` recebe `short_description.content` da ficha. | Reaberta por Diego e resolvida no mesmo dia — spike executado (§7.1, campo confirmado no payload) e razão verificada no código (§7.2): a IA reescreve título e descrição no caminho para a Revisão, então o texto do ML é insumo, não publicação. |
 | **V-2** | **`preco` é pré-preenchido com `etiquetaParaMinimo(minimo, …)`**, editável — **e só quando `minimo != null`**. Sem mínimo digitado, o campo entra **vazio**; nunca cai para `item.mercado.menor`. | É o resultado que a Viabilidade existe para produzir — o preço de etiqueta que devolve o mínimo líquido depois de comissão, imposto (ADR-0055) e frete do vendedor (ADR-0050/0076). O cadastro não sabe calcular isso. Fica editável porque é sugestão, não trava. **A condição é obrigatória:** no modo GTIN colado `minimo` nasce `null` (`index.ts:140` só o preenche se o caller mandar número, e a UI nunca manda), e `etiquetaParaMinimo` devolve `null` nesse caso — quem implementar vai encontrar o `null` e ficar tentado a usar o menor preço do mercado como fallback. Esse é o preço **do concorrente**, não um preço que devolve o seu mínimo: entraria num campo financeiro com cara de valor calculado. Campo vazio é o comportamento correto. |
 | **V-3** | **`origem` nunca é pré-preenchida.** Rádio sem seleção, botão de salvar travado. | §3.3. `analisar-viabilidade/index.ts:142` hardcoda `'nacional'` no modo GTIN; carregar esse valor reproduziria o incidente ORIGEM de 2026-07-14. Não negociável. |
 | **V-4** | Botão só quando `existeNoML && editavel && módulo habilitado && !jaCadastrado`. | Modo planilha já vira lote; produto sem ficha no ML não tem título para herdar; módulo é opt-in (D-13); duplicata vira "Dar entrada" antes de virar 409 (§3.5). |
@@ -218,7 +226,7 @@ print do Diego (Cicaplast Baume B5+ La Roche-Posay 40ml, GTIN 7908615000244, men
 | Campo | Vem preenchido? | Valor | De onde |
 |---|---|---|---|
 | `nomePai` | **sim** | `Creme Multirreparador Calmante, Cicaplast Baume B5+ La Roche-Posay, 40ml` | `item.nome` — é o `product_name` da ficha de catálogo, já na resposta da análise. É literalmente o texto que a tabela mostra na coluna Produto. |
-| `descricaoPai` | **pendente** | — | §7. Bloqueado por spike + decisão. |
+| `descricaoPai` | **sim** | `REPARAÇÃO INTENSIVA DE TRIPLA AÇÃO PARA PELE SENSIBILIZADA, CORPO, ROSTO E LÁBIOS! / O Cicaplast Baume B5+ La Roche-Posay é um creme multirreparador calmante de tripla ação: repara, acalma e protege… Livre de fragrâncias, hipoalergênico e dermatologicamente testado. A nova fórmula conta com o complexo prebiótico exclusivo TRIBIOMA…` | `short_description.content` da ficha (V-1b). Confirmado no payload real, §7.1. Insumo da IA — é reescrito antes de publicar. |
 | `unidade` | não (default) | `UN` | Default que o formulário já tem hoje. O ML não diz sua unidade de venda. |
 | `fornecedor` | não | vazio | O ML não sabe de quem você compra. |
 | `origem` | **NUNCA** | sem seleção, salvar travado | V-3. Inegociável. |
@@ -240,8 +248,12 @@ print do Diego (Cicaplast Baume B5+ La Roche-Posay 40ml, GTIN 7908615000244, men
 | `foto` (por variação) | não | vazio | V-1. |
 
 **No print específico do Diego** (sem mínimo, sem custo, sem dimensões digitadas) o formulário
-abriria com **2 campos preenchidos**: `nomePai` e `gtin`. Com o mínimo, o custo e as 4 dimensões
-digitados na própria linha da Viabilidade — que é o uso normal da tela — abriria com **8**.
+abriria com **3 campos preenchidos**: `nomePai`, `descricaoPai` e `gtin`. Com o mínimo, o custo e
+as 4 dimensões digitados na própria linha da Viabilidade — que é o uso normal da tela — abriria
+com **9**.
+
+**O que sobra para o operador digitar, sempre:** origem (obrigatório, trava o salvar), estoque
+inicial e fornecedor. Nada mais.
 
 **Ponto em aberto, pequeno:** `etiquetaParaMinimo` produz um valor por tipo de anúncio
 (Clássico e Premium, os dois blocos da linha expandida). O pré-preenchimento usa o **Clássico**.
@@ -258,39 +270,85 @@ Registrado por ser escolha, não consequência.
 
 ---
 
-## 7. Descrição — o que falta para decidir
+## 7. Spike do payload — EXECUTADO em 2026-08-08
 
-Reaberta em 2026-08-08. Dois bloqueios independentes, nesta ordem:
+**Método:** `console.log` temporário do payload cru de `GET /products/{id}` dentro de
+`analisar-viabilidade/index.ts` (deliberadamente **fora** de `_shared/`, para deployar 1 função e
+não a cascata), deploy, uma consulta do GTIN `7908615000244` pela conta de validação, leitura via
+Management API (`analytics/endpoints/logs.all`), **reversão do log e redeploy limpo**. Nenhuma
+escrita no ML ou no banco. Verificado antes: `/products/…` sem token = 403 `PolicyAgent`, e o ML
+rejeita `grant_type=client_credentials` (`unsupported_grant_type`) — só token OAuth real serve.
 
-### 7.1 Bloqueio técnico: ninguém nunca olhou o payload
+### 7.1 O que `GET /products/{id}` devolve (payload real)
 
-`GET /products/{id}` é chamado em `concorrencia.ts:102` e só o `buy_box_winner` é lido
-(`parse.ts:32`). **Não existe evidência no repositório de que `short_description` venha nesse
-payload** — nem a favor, nem contra.
+Chaves do topo:
 
-Tentei confirmar com chamada real e não consegui, por dois motivos, ambos registrados:
+```
+id, catalog_product_id, status, pdp_types, domain_id, permalink, name, family_name, type,
+buy_box_winner, pickers, pictures, description_pictures, main_features, disclaimers,
+attributes, short_description, parent_id, children_ids, settings, quality_type, release_info,
+presale_info, enhanced_content, tags, date_created, authorized_stores, last_updated,
+grouper_id, experiments
+```
 
-- `GET /products/…` sem token devolve **403** (`PolicyAgent`) — verificado.
-- `grant_type=client_credentials` é **rejeitado pelo ML** (`unsupported_grant_type`, HTTP 400) —
-  verificado. O ML só emite token por `authorization_code`/`refresh_token`, ou seja, exige a
-  conexão OAuth real da org.
-- Ler o token da conexão exige service_role no banco de produção — **negado pelo sandbox**, e
-  corretamente. Não foi contornado.
+**`short_description` existe** e vem estruturada e substancial:
 
-Caminho limpo para desbloquear: um `console.log` do `produtoJson` dentro de
-`concorrencia.ts:102`, deploy da `analisar-viabilidade`, uma consulta de GTIN pela tela e leitura
-do log. ~15 min, sem escrita em nada.
+```json
+{"type":"plaintext","content":"REPARAÇÃO INTENSIVA DE TRIPLA AÇÃO PARA PELE SENSIBILIZADA…
+O Cicaplast Baume B5+ La Roche-Posay é um creme multirreparador calmante de tripla ação:
+repara, acalma e protege a pele sensibilizada. […] Livre de fragrâncias, hipoalergênico e
+dermatologicamente testado. A nova fórmula conta com o complexo prebiótico exclusivo TRIBIOMA…"}
+```
 
-### 7.2 Decisão de desenho: o que a descrição do ML passa a autorizar
+**`pictures` existe**, com `id` + `url` no CDN do ML:
+`https://http2.mlstatic.com/D_NQ_NP_630919-MLA114210163571_072026-F.jpg` (+ `max_width`,
+`max_height`, `tags`).
 
-Independente do payload existir, colar a descrição do catálogo em `descricaoPai` muda a **fonte
-da permissão** dos guards de título (§3.2) — a marca, entre outras coisas, passa a poder entrar no
-título por aparecer num texto do ML, não num texto que o operador declarou.
+**`attributes` — e é aqui que a confirmação importa.** Os IDs devolvidos para este produto:
 
-Três saídas, em ordem de risco:
+```
+MANUFACTURER, BRAND, LINE, NAME, SKIN_TYPE, APPLICATION_MOMENT, SALE_FORMAT, UNIT_VOLUME,
+UNITS_PER_PACK, FUNCTIONS, IS_HYPOALLERGENIC_PRODUCT, WITH_SUN_PROTECTION, PRODUCT_FORMAT,
+IS_PARABENS_FREE, IS_DERMATOLOGICALLY_TESTED, SPF, WITH_EXPIRATION_DATE, IS_FRAGRANCE_FREE,
+IS_OIL_FREE, WITH_COLOR, IS_CRUELTY_FREE, IS_SUITABLE_FOR_EYE_CONTOUR, IS_COMEDOGENIC, IS_VEGAN
+```
 
-| Opção | O que acontece |
-|---|---|
-| **A — não pré-preencher** | Estado atual. Operador escreve. Guards seguem ancorados no que é dele. |
-| **B — pré-preencher em campo separado, só leitura** | A descrição do ML aparece ao lado como referência para o operador copiar/reescrever, mas **não** entra em `descricaoPai`. Guards intocados. Entrega a conveniência sem mexer na base de evidência. |
-| **C — pré-preencher `descricaoPai` direto** | O pedido literal. Máxima conveniência; muda o que os guards de título aceitam como prova. Exigiria decisão registrada (ADR ou adendo ao 0099/0101). |
+**Nenhum `PACKAGE_*`, nenhum `WEIGHT`, nenhum `HEIGHT`/`WIDTH`/`LENGTH` de embalagem.** O §1
+deixa de ser inferência a partir de `pacote.ts` e passa a ser fato medido: **as dimensões não
+existem na ficha de catálogo.** Continuam vindo do `FormDimensoes` / `buscarDimensoesSalvas`.
+
+### 7.2 Decisão (Diego, 2026-08-08)
+
+> "título e descrição entram como estão, pois quando eu cadastrar o item, quando ele vai pra
+> revisão o título e descrição são refeitas pela IA"
+
+**Verificado e correto.** `process-familia/index.ts:201` chama
+`gerarCopy({ nome: claimed.nome_pai, descricao_detalhado: claimed.descricao_pai ?? '', … })`, e o
+cadastro manual passa por esse mesmo caminho (ADR-0094: `enfileirarFamilia` → IA intacta). Logo
+`nome_pai`/`descricao_pai` são **insumo**; nada do texto do ML chega verbatim ao anúncio
+publicado. O risco de plágio de copy — que era o medo original — **não se aplica**.
+
+| # | Decisão | Racional |
+|---|---|---|
+| **V-1b (final)** | **`descricaoPai` é pré-preenchido com `short_description.content` da ficha.** `nomePai` idem, com `name`. | A IA reescreve os dois antes da publicação (verificado acima). O texto do ML nunca é publicado como está — ele serve de insumo, exatamente como a coluna `DESCRICAO_DETALHADO` da planilha serve hoje. |
+| **V-1 (mantida)** | **Foto continua NÃO pré-preenchida.** | Não foi reaberta. E a assimetria é real: a descrição é reescrita pela IA antes de ir ao ar; a **foto vai verbatim**. É o único campo em que o artefato de terceiro chegaria intacto ao anúncio — a classe do incidente Aquaphor (§3.1). |
+
+**Resíduo aceito, registrado:** `validarSlotsAncorados` (`titulo-guards.ts:460`) usa
+`nomePai + descricaoPai` como base de evidência para liberar termos no título, marca inclusive
+(`titulo-marcas.ts:9-12`). Com V-1b, essa permissão passa a vir de texto do ML em vez de texto do
+operador. Mitigante real: o casamento é por EAN no lookup oficial
+(`/products/search?product_identifier=`), então a marca da ficha é a marca do produto. Fica como
+consequência conhecida, não como surpresa.
+
+### 7.3 Achados extras do payload (fora do escopo desta feature)
+
+Registrados porque o payload agora é conhecido e ninguém precisa re-descobrir:
+
+- **`BRAND` e `MANUFACTURER` vêm como atributo da ficha.** Hoje a marca sai do mapa curado
+  razão-social→marca em `titulo-marcas.ts` (ADR-0099). A ficha entrega a marca direto, casada
+  por EAN. Pode simplificar aquele mapa um dia — não é escopo aqui.
+- **`permalink`** — link direto da página do produto no ML. Barato e útil na própria tela de
+  Viabilidade.
+- **`main_features`** e **`description_pictures`** existem e não foram inspecionados.
+- `SALE_FORMAT` e `UNITS_PER_PACK` confirmados no payload — são os que `fichaEquivalente` já usa
+  na trava de kit (ADR-0071).
