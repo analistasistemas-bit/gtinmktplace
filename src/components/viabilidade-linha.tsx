@@ -1,10 +1,16 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { fmtBRL } from '@/lib/formato';
 import { calcularMarkup } from '@/lib/markup';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import {
+  DialogCadastroProduto, type CadastroInicial,
+} from '@/components/estoque/dialog-cadastro-produto';
 import {
   liquidoNoMercado, etiquetaParaMinimo, semaforoTipo, analisarComDimensoes,
   type ItemAnalisado, type ComissaoTipo, type DimensoesPacote,
@@ -60,7 +66,12 @@ function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct, frete }: {
   );
 }
 
-function FormDimensoes({ gtin, onAtualizado }: { gtin: string; onAtualizado: (item: ItemAnalisado) => void }) {
+// `onAtualizado` devolve TAMBÉM as dimensões digitadas (lift, plano 2026-08-08 §2 nota N1):
+// elas são a única fonte viva de dimensão para o pré-preenchimento do cadastro — as salvas em
+// `variacoes` só existem quando o produto já está cadastrado, e aí o botão nem é "Cadastrar".
+function FormDimensoes({ gtin, onAtualizado }: {
+  gtin: string; onAtualizado: (item: ItemAnalisado, dimensoes: DimensoesPacote) => void;
+}) {
   const [dim, setDim] = useState({ altura_cm: '', largura_cm: '', comprimento_cm: '', peso_gramas: '' });
   const [recalculando, setRecalculando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -74,7 +85,7 @@ function FormDimensoes({ gtin, onAtualizado }: { gtin: string; onAtualizado: (it
     setRecalculando(true);
     setErro(null);
     try {
-      onAtualizado(await analisarComDimensoes(gtin, dimensoes));
+      onAtualizado(await analisarComDimensoes(gtin, dimensoes), dimensoes);
     } catch (e) {
       setErro((e as Error).message);
     } finally {
@@ -115,14 +126,55 @@ function FormDimensoes({ gtin, onAtualizado }: { gtin: string; onAtualizado: (it
   );
 }
 
+/** Número → texto do input do cadastro (que usa vírgula decimal, lida por `parseNumeroPtBr`). */
+function numParaInput(n: number | null | undefined): string {
+  return n != null ? String(n).replace('.', ',') : '';
+}
+
 export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAnalisado; editavel: boolean }) {
   const [aberto, setAberto] = useState(false);
   const [override, setOverride] = useState<ItemAnalisado | null>(null);
   const item = override ?? itemInicial;
   const [minimo, setMinimo] = useState<number | null>(item.minimo);
   const [custo, setCusto] = useState<number | null>(item.custo);
+  const [dimensoesInformadas, setDimensoesInformadas] = useState<DimensoesPacote | null>(null);
+  // Vira true no sucesso do cadastro feito aqui mesmo: o botão passa a "Dar entrada" na hora,
+  // sem esperar uma nova análise (e o 2º clique não morre no 409 da edge).
+  const [cadastradoLocal, setCadastradoLocal] = useState(false);
+  const [cadastroAberto, setCadastroAberto] = useState(false);
+  // Snapshot ESTÁVEL do pré-preenchimento (contrato da prop `inicial`): montado no clique e
+  // guardado em state — se mudasse de identidade a cada render, o efeito de abertura do diálogo
+  // reaplicaria o prefill por cima do que o operador está digitando.
+  const [inicial, setInicial] = useState<CadastroInicial | null>(null);
   const { data: aliquotas } = useAliquotas();
+  const { data: modulos } = useModulosHabilitados();
+  const navigate = useNavigate();
   const aliquotaPct = item.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
+  const jaCadastrado = item.jaCadastrado === true || cadastradoLocal;
+  // Gates da V-4. `jaCadastrado` NÃO é gate de visibilidade — só troca o rótulo/ação.
+  const mostraBotao = item.existeNoML && editavel && (modulos ?? []).includes('estoque');
+
+  function montarInicial(): CadastroInicial {
+    const d = dimensoesInformadas;
+    return {
+      nomePai: item.nome,
+      descricaoPai: item.descricaoCatalogo ?? '',
+      variacao: {
+        gtin: item.gtin,
+        ...(custo != null ? { custo: numParaInput(custo) } : {}),
+        // preco = mínimo CRU, não a etiqueta: variacoes.preco é o líquido mínimo (ADR-0020) e
+        // process-familia aplica grossUp em cima dele — etiquetaParaMinimo já é gross-up, gravá-la
+        // publicaria preço regrossado (spike 037, V-2-bug). Não "corrigir" para a etiqueta.
+        ...(minimo != null ? { preco: numParaInput(minimo) } : {}),
+        ...(d != null ? {
+          pesoGramas: numParaInput(d.peso_gramas),
+          alturaCm: numParaInput(d.altura_cm),
+          larguraCm: numParaInput(d.largura_cm),
+          comprimentoCm: numParaInput(d.comprimento_cm),
+        } : {}),
+      },
+    };
+  }
 
   if (!item.existeNoML) {
     return (
@@ -164,13 +216,35 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
         <td className="px-3 py-2">{item.mercado!.vendedores}</td>
         <td className="px-3 py-2">{minimo != null ? fmtBRL(minimo) : '—'}</td>
         <td className="px-3 py-2">{liquido != null ? fmtBRL(liquido) : '—'}</td>
-        <td className="px-3 py-2"><StatusPill tone={TOM[semaforo]}>{ROTULO[semaforo]}</StatusPill></td>
+        <td className="px-3 py-2">
+          <span className="flex items-center gap-2">
+            <StatusPill tone={TOM[semaforo]}>{ROTULO[semaforo]}</StatusPill>
+            {mostraBotao && (
+              <Button
+                size="sm" variant="outline"
+                // stopPropagation: a <tr> inteira alterna o detalhe — sem isto, abrir o cadastro
+                // também expandiria/colapsaria a linha.
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (jaCadastrado) { navigate('/estoque'); return; }
+                  setInicial(montarInicial());
+                  setCadastroAberto(true);
+                }}
+              >
+                {jaCadastrado ? 'Dar entrada' : 'Cadastrar'}
+              </Button>
+            )}
+          </span>
+        </td>
       </tr>
       {aberto && (
         <tr className="border-t border-border bg-muted/30">
           <td colSpan={6} className="px-3 py-3 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">
             {editavel && item.dimensoesEncontradas === false && (
-              <FormDimensoes gtin={item.gtin} onAtualizado={setOverride} />
+              <FormDimensoes
+                gtin={item.gtin}
+                onAtualizado={(it, dim) => { setOverride(it); setDimensoesInformadas(dim); }}
+              />
             )}
             <div className="mb-3 flex flex-wrap items-center gap-4 text-sm">
               <label htmlFor={`minimo-${item.gtin}`} className="flex items-center gap-2">Seu mínimo
@@ -197,6 +271,17 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
             </p>
           </td>
         </tr>
+      )}
+      {/* Lazy e PERMANENTE: monta no 1º clique e não desmonta ao fechar — desmontar zeraria a
+          `chaveCadastro`/`resultadoAmbiguo` do diálogo e o retry deixaria de ser idempotente.
+          Renderiza só portal (Radix), então não suja o DOM do <tbody>. */}
+      {inicial && (
+        <DialogCadastroProduto
+          aberto={cadastroAberto}
+          inicial={inicial}
+          onFechar={() => setCadastroAberto(false)}
+          onCadastrado={() => setCadastradoLocal(true)}
+        />
       )}
     </>
   );
