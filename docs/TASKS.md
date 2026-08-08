@@ -2,6 +2,16 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento — paginação de Perguntas e Mensagens — 2026-08-08
+
+- [x] **Faturamento — paginação de Perguntas e Mensagens** — as duas abas despejavam a lista
+  inteira numa página só, sem divisão (spec `2026-08-08-paginacao-perguntas-mensagens-design.md`).
+  Perguntas ganhou busca paginada server-side (mesmo padrão de Movimentos de estoque); Mensagens
+  pagina no cliente sobre as conversas já agrupadas (db-side fica para quando o volume pedir —
+  exigiria view/RPC nova). As duas ganharam abas de status (Pendentes/Respondidas/Todas e
+  Aguardando/Todas) no lugar da ordenação implícita "pendente primeiro", que não sobrevive a
+  paginação sem virar filtro explícito.
+
 ## Atributo `NAME` obrigatório preenchido sozinho (adendo ADR-0052) — 2026-08-07
 
 Lote #11 (Gel de Limpeza Facial, MLB264874) travou pedindo "Nome" ao operador — obrigatório
