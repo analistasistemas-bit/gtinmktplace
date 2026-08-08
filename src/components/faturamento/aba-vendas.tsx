@@ -10,6 +10,7 @@ import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
+import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
@@ -168,6 +169,7 @@ export function AbaVendas() {
   const { data: vendas, isFetching, refetch } = useVendas(janela, origem);
   const { data: custos } = useCustos();
   const { data: fotos } = useFotosProduto();
+  const { data: canonico } = useAnuncioCanonico();
   const { data: aliquotas } = useAliquotas();
 
   // Agrupa por pack/order_id → pedidos; calcula KPIs novos
@@ -176,10 +178,10 @@ export function AbaVendas() {
       vendas ?? [],
       montarCustoResolver(custos),
       montarPesoResolver(custos),
-      montarFotoResolver(fotos),
+      montarFotoResolver(fotos, canonico),
       montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
     ),
-    [vendas, custos, fotos, aliquotas],
+    [vendas, custos, fotos, canonico, aliquotas],
   );
   const kpis = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
 

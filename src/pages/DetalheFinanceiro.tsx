@@ -28,6 +28,7 @@ import { useCustos } from '@/hooks/useCustos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
+import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
 import { AoVivo } from '@/components/ui/ao-vivo';
@@ -195,6 +196,7 @@ export default function DetalheFinanceiro() {
   const vendasQ = useVendas(janela, 'todos');
   const custosQ = useCustos();
   const fotosQ = useFotosProduto();
+  const canonicoQ = useAnuncioCanonico();
   const aliquotasQ = useAliquotas();
   const isFetching = vendasQ.isFetching;
   const error = vendasQ.isError;
@@ -216,10 +218,10 @@ export default function DetalheFinanceiro() {
       vendasQ.data ?? [],
       montarCustoResolver(custosQ.data),
       montarPesoResolver(custosQ.data),
-      montarFotoResolver(fotosQ.data),
+      montarFotoResolver(fotosQ.data, canonicoQ.data),
       montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
     ),
-    [vendasQ.data, custosQ.data, fotosQ.data, aliquotasQ.data],
+    [vendasQ.data, custosQ.data, fotosQ.data, canonicoQ.data, aliquotasQ.data],
   );
 
   const bruto = r.bruto;

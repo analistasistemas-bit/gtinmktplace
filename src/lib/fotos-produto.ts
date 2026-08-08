@@ -4,6 +4,7 @@
 import { supabase } from './supabase';
 import { normGtin } from './gtin';
 import { buscarTodasPaginas } from './paginacao-supabase';
+import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import type { VendaItem } from './faturamento';
 
 /** Resolve o storage path da foto de um item de venda. null = sem foto cadastrada. */
@@ -70,16 +71,19 @@ export async function buscarFotos(): Promise<MapasFoto> {
   return { porVariacao, porItem, porGtin, porCodigo, porItemCapa };
 }
 
-/** Resolver de foto (storage path) p/ o agregador. null = sem foto cadastrada. */
-export function montarFotoResolver(m: MapasFoto | undefined): FotoResolver {
+/** Resolver de foto (storage path) p/ o agregador. null = sem foto cadastrada.
+ *  `canonico` (ADR-0045) resolve o MLB de catálogo pro MLB do anúncio dono antes de bater em
+ *  `porItem`/`porItemCapa` — venda por catálogo chega com o MLB do anúncio âncora, não o nosso. */
+export function montarFotoResolver(m: MapasFoto | undefined, canonico?: MapaCanonico): FotoResolver {
   return (item) => {
     if (!m) return null;
     if (item.variation_id != null) {
       const x = m.porVariacao.get(String(item.variation_id));
       if (x != null) return x;
     }
-    if (item.ml_item_id) {
-      const x = m.porItem.get(item.ml_item_id);
+    const itemId = item.ml_item_id ? canonizarItem(item.ml_item_id, canonico) : null;
+    if (itemId) {
+      const x = m.porItem.get(itemId);
       if (x != null) return x;
     }
     if (item.ean) {
@@ -92,8 +96,8 @@ export function montarFotoResolver(m: MapasFoto | undefined): FotoResolver {
     }
     // Por último: a capa da família. Antes disso estragaria a miniatura de anúncio com variações
     // por cor (mostraria a capa genérica no lugar da foto da cor vendida).
-    if (item.ml_item_id) {
-      const x = m.porItemCapa.get(item.ml_item_id);
+    if (itemId) {
+      const x = m.porItemCapa.get(itemId);
       if (x != null) return x;
     }
     return null;
