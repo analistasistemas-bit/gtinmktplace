@@ -125,9 +125,14 @@ O botão precisa de `useModulosHabilitados`; a edge `cadastrar-produto` já tem 
 ### 3.5 Duplicata — oportunidade, não só risco (BAIXO)
 
 D-4 rejeita `codigo_pai` já existente na org com 409. Hoje a edge de viabilidade **já sabe** se o
-produto existe: `buscarDimensoesSalvas` só encontra algo se houver variação com aquele GTIN na
-org. Vale devolver um `jaCadastrado: boolean` explícito (1 query) e o botão virar
-**"Dar entrada"** em vez de "Cadastrar" — resolve o 409 antes de ele acontecer.
+produto existe: `buscarDimensoesSalvas` consulta `variacoes` por `(org_id, gtin)`, então o sinal de
+existência é a **mesma query** — `jaCadastrado: boolean` é um `select` mais largo, não uma ida a
+mais no banco. Com ele o botão vira **"Dar entrada"** em vez de "Cadastrar".
+
+**Isso é pré-empção de UX, não substituição do guard.** A chave que o D-4 checa é `codigo_pai`, e
+`codigo_pai` é gerado automaticamente (ADR-0096) — casar por GTIN é **heurística** para "já
+cadastrado", não a mesma chave. A trava autoritativa continua sendo o 409 da edge
+`cadastrar-produto`, e a UI continua tendo que tratá-lo.
 
 ---
 
@@ -172,7 +177,7 @@ egress).
 | # | Decisão | Racional |
 |---|---|---|
 | **V-1** | **Foto e descrição NÃO são pré-preenchidas a partir do ML.** O escopo é título, GTIN, custo, preço e as 4 dimensões. | Elimina §3.1 e §3.2 por inteiro: nenhuma imagem de terceiro entra no nosso anúncio e a `descricaoPai` continua sendo a fonte que o operador escreve, não texto de outra pessoa ancorando a copy da IA (ADR-0098/0102/0103). Bônus: nenhuma chamada nova ao ML, nenhum parse novo, nenhum bump de cache, nenhum egress de imagem. Onde a foto do catálogo é legítima, o caminho já existe e é outro: vincular ao catálogo (ADR-0021). |
-| **V-2** | **`preco` é pré-preenchido com `etiquetaParaMinimo(minimo, …)`**, editável. | É o resultado que a Viabilidade existe para produzir — o preço de etiqueta que devolve o mínimo líquido depois de comissão, imposto (ADR-0055) e frete do vendedor (ADR-0050/0076). O cadastro não sabe calcular isso. Fica editável porque é sugestão, não trava. |
+| **V-2** | **`preco` é pré-preenchido com `etiquetaParaMinimo(minimo, …)`**, editável — **e só quando `minimo != null`**. Sem mínimo digitado, o campo entra **vazio**; nunca cai para `item.mercado.menor`. | É o resultado que a Viabilidade existe para produzir — o preço de etiqueta que devolve o mínimo líquido depois de comissão, imposto (ADR-0055) e frete do vendedor (ADR-0050/0076). O cadastro não sabe calcular isso. Fica editável porque é sugestão, não trava. **A condição é obrigatória:** no modo GTIN colado `minimo` nasce `null` (`index.ts:140` só o preenche se o caller mandar número, e a UI nunca manda), e `etiquetaParaMinimo` devolve `null` nesse caso — quem implementar vai encontrar o `null` e ficar tentado a usar o menor preço do mercado como fallback. Esse é o preço **do concorrente**, não um preço que devolve o seu mínimo: entraria num campo financeiro com cara de valor calculado. Campo vazio é o comportamento correto. |
 | **V-3** | **`origem` nunca é pré-preenchida.** Rádio sem seleção, botão de salvar travado. | §3.3. `analisar-viabilidade/index.ts:142` hardcoda `'nacional'` no modo GTIN; carregar esse valor reproduziria o incidente ORIGEM de 2026-07-14. Não negociável. |
 | **V-4** | Botão só quando `existeNoML && editavel && módulo habilitado && !jaCadastrado`. | Modo planilha já vira lote; produto sem ficha no ML não tem título para herdar; módulo é opt-in (D-13); duplicata vira "Dar entrada" antes de virar 409 (§3.5). |
 | **V-5** | Multi-GTIN = N cliques, mesmo lote manual. Sem "cadastrar todos" na v1. | ADR-0094 D-1.1 já reusa a sessão. YAGNI até alguém pedir. |
