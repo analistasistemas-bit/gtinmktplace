@@ -1,18 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { buscarPerguntas, type Pergunta } from '@/lib/perguntas';
-
-/** Lista de perguntas (não respondidas no topo). */
-export function useListaPerguntas() {
-  return useQuery<Pergunta[]>({
-    queryKey: ['perguntas'],
-    queryFn: buscarPerguntas,
-    staleTime: 60_000,
-    // Pergunta respondida direto no ML chega por webhook em segundos; sem polling a tela aberta
-    // continuaria mostrando "Pendente" até o operador trocar de aba. Só roda com a aba em foco.
-    refetchInterval: 60_000,
-  });
-}
 
 /** Conta perguntas não respondidas. Lança em erro (o hook expõe `isError`). */
 export async function contarPerguntasNaoRespondidas(): Promise<number> {
