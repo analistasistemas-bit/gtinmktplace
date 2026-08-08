@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Investigar: "unidades vendidas" lento no Publicados — causa real ainda não confirmada — 2026-08-08
+## "Unidades vendidas" lento no Publicados — causa medida, fix pendente de decisão — 2026-08-08
 
 Diego reportou demora para carregar "unidades vendidas" no menu Publicados.
 
@@ -17,21 +17,45 @@ seq scan nesse tamanho é milissegundos, não a causa de lentidão perceptível.
 `(org_id)` puro redundante — candidato a drop futuro, sem urgência) mas é **placebo**: não resolve
 o sintoma relatado. Ver correção em `docs/reference/modelo-de-dados.md`.
 
-**Suspeitos reais, ainda não medidos:**
-- `Publicados.tsx` usa janela `{ tipo: 'preset', dias: 30 }`. Comentário em `src/hooks/useVendas.ts`
-  confirma que janelas `preset` têm `desde` móvel → a chave de cache (`chaveJanela`) muda a cada
-  montagem da tela → `buscarVendas` refaz o fetch completo (paginado, com embeds `itens` +
-  `custos` aninhados) toda vez que o Publicados é aberto, em vez de reusar cache/delta incremental
-  (ADR-0082).
-- `useStatusPublicados` chama a edge function `status-publicados`, que consulta a API do ML ao
-  vivo (`conn.lerStatus`) — pode ser o gargalo real ou concorrente.
+**Medição feita (2026-08-08, org Avil em produção — `pg_stat_statements` + tamanho real de payload
+via Management API read-only). Volumes Avil: 5380 variações, 862 vendas em 30d, 297 famílias
+publicadas.**
 
-**Próximo passo:** medir o waterfall de rede real do Publicados (Playwright/browser-use, timing
-das requests `vendas` vs `status-publicados`) antes de propor qualquer fix novo.
+| Camada | Medido | Veredito |
+|---|---|---|
+| DB — query de vendas (PostgREST, 2 embeds) | 20–35 ms média, máx 220 ms | rápido |
+| DB — query de custos (`variacoes`) | ~23 ms/página, máx 319 ms | rápido |
+| ML API — `status-publicados` / `lerStatus` | chunks de 20 em `Promise.all` (~15 paralelos) | ok, O(1) |
+| **Rede — payload de vendas (30d)** | **1155 kB por carga** | **gargalo** |
+| **Rede — payload de custos** | **1301 kB em 6 round trips SEQUENCIAIS** | **gargalo (1ª carga)** |
+
+O banco não é o gargalo em nenhuma camada — o índice da Tentativa 1 está definitivamente descartado
+como solução.
+
+**Causa raiz (confirmada, não mais hipótese):** `Publicados.tsx:422` usa
+`{ tipo: 'preset', dias: 30 }`; `resolverJanela` (`src/lib/metricas.ts`) calcula
+`desde = new Date() − 30d` — timestamp com milissegundos que muda a cada montagem.
+`chaveJanela` (`src/hooks/useVendas.ts:37`) trunca só o `ate`, **nunca** o `desde` (deliberado,
+por correção financeira — ver comentário no próprio arquivo). Logo a `queryKey` do React Query é
+**nova a cada abertura da tela** → nunca há cache hit → baixa os 1155 kB inteiros toda vez, e o
+poll incremental do ADR-0082 nunca entra em ação (ele exige cache prévio para calcular o delta).
+Custos têm chave estável (`['custos']`, staleTime 30 min) → pesam só na 1ª carga da sessão.
+
+**Custo por visita: 1ª abertura ≈ 2,4 MB; cada reabertura ≈ 1,1 MB, sempre do zero.**
+
+**Opções de fix levantadas (Diego optou por não implementar agora — 2026-08-08):**
+1. *Alinhar a janela `preset` ao dia* — `resolverJanela` começar às 00:00 de N dias atrás em vez de
+   "agora − N dias". A chave vira estável por construção → cache + delta do ADR-0082 voltam a
+   funcionar. **Muda ligeiramente os KPIs de "últimos 30 dias" em Publicados, Faturamento,
+   Dashboard e Financeiro** (passam a cobrir dias inteiros) → exige ADR/adendo ao 0082.
+2. *Só cortar payload, sem tocar na janela* — paralelizar a paginação de `buscarCustos`
+   (`src/lib/paginacao-supabase.ts`, hoje `await` em loop) e enxugar colunas do select de vendas.
+   Não altera nenhum KPI, mas o refetch de 1,1 MB por reabertura permanece.
+
 - [x] Migration `20260808102551_ml_vendas_org_index.sql` aplicada (não reverter — inofensiva, só
   não é a solução).
-- [ ] Medir gargalo real.
-- [ ] Corrigir com base na medição.
+- [x] Medir gargalo real.
+- [ ] Corrigir com base na medição — **decisão de Diego pendente** (opção 1 exige ADR).
 
 ## Alíquota do imposto ao lado do valor no Faturamento — 2026-08-08
 
