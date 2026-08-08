@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix: índice ausente em `ml_vendas.org_id` — "unidades vendidas" lento no Publicados — 2026-08-08
+
+Diego reportou demora para carregar "unidades vendidas" no menu Publicados.
+
+- Causa: a RLS de `ml_vendas` virou `org_id = current_org_id()` em 05/07 (ADR-0027, E7,
+  `20260705165828_e7_rls_org.sql`), mas nenhum índice em `org_id` foi criado. O único índice
+  existente (`user_id, date_closed`) não serve o predicado de RLS — toda consulta de
+  `buscarVendas`/`useVendas` (Publicados, Faturamento, Dashboard) caía em varredura sequencial da
+  tabela inteira, piorando conforme o volume de vendas cresce.
+- [x] Migration `20260808102551_ml_vendas_org_index.sql`: `create index ... on ml_vendas (org_id,
+  date_closed desc)`. Índice antigo mantido (workers/service_role ainda fazem lookup por `user_id`).
+- [x] `supabase db push --linked` + `npm run db:check` (histórico alinhado).
+- [x] `docs/reference/modelo-de-dados.md` atualizado.
+
 ## Atributo `NAME` obrigatório preenchido sozinho (adendo ADR-0052) — 2026-08-07
 
 Lote #11 (Gel de Limpeza Facial, MLB264874) travou pedindo "Nome" ao operador — obrigatório

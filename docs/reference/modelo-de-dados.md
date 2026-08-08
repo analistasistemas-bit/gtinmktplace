@@ -453,7 +453,12 @@ também bumpam `atualizado_em`, contrato exigido pelo poll incremental de `useVe
 que altera coluna exibida na UI de vendas precisa bumpar `atualizado_em`, senão a mudança fica
 cega ao delta até o próximo fetch completo.
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
-Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)`.
+Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)` (lookups pontuais de workers,
+service_role, sem RLS). Índice `(org_id, date_closed DESC)` (*migration
+`20260808102551_ml_vendas_org_index.sql`*): a RLS de leitura do app filtra por `org_id` desde o
+ADR-0027 (E7, `20260705165828_e7_rls_org.sql`), mas nenhum índice cobria esse predicado — toda
+consulta de `buscarVendas`/`useVendas` (Publicados, Faturamento, Dashboard) caía em varredura
+sequencial da tabela inteira, piorando conforme o volume de vendas cresce.
 
 **`canal` text** (default `'mercado_livre'`, migration `20260715014055_menus_multicanal.sql`, **em
 produção desde 2026-07-15**): dimensão canal preparatória — coluna simples (não o enum
