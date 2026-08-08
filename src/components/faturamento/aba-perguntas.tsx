@@ -1,14 +1,19 @@
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Sparkles, Send, MessageCircleQuestion, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useListaPerguntas } from '@/hooks/usePerguntas';
-import { responderPergunta, sugerirResposta, type Pergunta } from '@/lib/perguntas';
+import { QK } from '@/lib/queries';
+import {
+  fetchPerguntasPagina, buscarPerguntas, pergCasaStatus, responderPergunta, sugerirResposta,
+  type Pergunta, type FiltroStatusPergunta,
+} from '@/lib/perguntas';
 import { fmtDataCurta, URL_PERGUNTAS_ML } from '@/lib/ml-status';
 import { nomeCurtoComprador } from '@/lib/pedidos-faturamento';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Pagination } from '@/components/ui/pagination';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildPerguntasReport } from '@/lib/export/adapters';
 import { toast } from 'sonner';
@@ -90,28 +95,101 @@ function CardPergunta({ p }: { p: Pergunta }) {
   );
 }
 
-export function AbaPerguntas() {
-  const { data: perguntas, isFetching } = useListaPerguntas();
-  const lista = perguntas ?? [];
+const ABAS_STATUS: { valor: FiltroStatusPergunta; rotulo: string }[] = [
+  { valor: 'pendentes', rotulo: 'Pendentes' },
+  { valor: 'respondidas', rotulo: 'Respondidas' },
+  { valor: 'todas', rotulo: 'Todas' },
+];
 
-  if (!isFetching && lista.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
-        <MessageCircleQuestion className="h-6 w-6" />
-        Nenhuma pergunta. Use "Sincronizar" na aba Vendas para importar do Mercado Livre.
-      </div>
-    );
+export function AbaPerguntas() {
+  const [pagina, setPagina] = useState(1);
+  const [tamanho, setTamanho] = useState(20);
+  const [statusFiltro, setStatusFiltro] = useState<FiltroStatusPergunta>('pendentes');
+
+  const { data, isFetching, isError } = useQuery({
+    queryKey: QK.perguntasPagina(pagina, tamanho, { status: statusFiltro }),
+    queryFn: () => fetchPerguntasPagina(pagina, tamanho, { status: statusFiltro }),
+    staleTime: 60_000,
+    // Pergunta respondida direto no ML chega por webhook em segundos; sem polling a tela aberta
+    // continuaria mostrando "Pendente" até o operador trocar de aba. Só roda com a aba em foco.
+    refetchInterval: 60_000,
+    // Mantém a página anterior enquanto a próxima carrega: sem isso a lista pisca em branco a
+    // cada troca de aba/página.
+    placeholderData: keepPreviousData,
+  });
+
+  const itens = data?.itens ?? [];
+  const total = data?.total ?? 0;
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
+  // A última pendente da página some (respondida aqui ou detectada pelo polling) e a página
+  // deixa de existir: sem isto a busca fica presa num range vazio e a tela mostra "nenhuma
+  // pergunta" com a fila cheia. Clamp durante o render (não em efeito) — React reexecuta antes
+  // de pintar, então a query já refaz para a última página válida sem piscar o estado vazio.
+  if (data && pagina > totalPaginas) setPagina(totalPaginas);
+
+  const inicio = total === 0 ? 0 : (pagina - 1) * tamanho + 1;
+  // Deriva do total, não de itens.length: evita "41–20 de 40" durante o instante em que a
+  // página acabou de ser clampada e a busca da nova página ainda está em voo.
+  const fim = total === 0 ? 0 : Math.min(pagina * tamanho, total);
+
+  function mudarAba(v: string) {
+    setStatusFiltro(v as FiltroStatusPergunta);
+    setPagina(1);
+  }
+
+  // Exportar sempre lê a lista inteira, filtrada pela aba ativa — não só a página visível
+  // (a tela mostra 20 por vez, o relatório é "os dados desta aba", não "esta tela").
+  async function montarReport() {
+    const todas = await buscarPerguntas();
+    return buildPerguntasReport(todas.filter((p) => pergCasaStatus(p.status, statusFiltro)));
   }
 
   return (
     <div className="space-y-3">
-      {lista.length > 0 && (
-        <div className="flex justify-end">
-          <BotaoExportar montarReport={() => buildPerguntasReport(lista)} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Tabs value={statusFiltro} onValueChange={mudarAba}>
+          <TabsList>
+            {ABAS_STATUS.map((a) => (
+              <TabsTrigger key={a.valor} value={a.valor}>{a.rotulo}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        {total > 0 && <BotaoExportar montarReport={montarReport} />}
+      </div>
+
+      {isFetching && itens.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
+          <MessageCircleQuestion className="h-6 w-6" />
+          Não foi possível carregar as perguntas.
+        </div>
+      ) : itens.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
+          <MessageCircleQuestion className="h-6 w-6" />
+          {statusFiltro === 'todas'
+            ? 'Nenhuma pergunta. Use "Sincronizar" na aba Vendas para importar do Mercado Livre.'
+            : statusFiltro === 'pendentes' ? 'Nenhuma pergunta pendente.' : 'Nenhuma pergunta respondida.'}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {itens.map((p) => <CardPergunta key={p.id} p={p} />)}
         </div>
       )}
-      {isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
-      {lista.map((p) => <CardPergunta key={p.id} p={p} />)}
+
+      {total > 0 && (
+        <Pagination
+          paginaAtual={pagina}
+          totalPaginas={totalPaginas}
+          inicio={inicio}
+          fim={fim}
+          total={total}
+          tamanho={tamanho}
+          onIrPara={setPagina}
+          onTamanho={(n) => { setTamanho(n); setPagina(1); }}
+          rotuloItem="pergunta"
+        />
+      )}
     </div>
   );
 }

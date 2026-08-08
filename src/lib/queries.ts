@@ -38,6 +38,11 @@ export const QK = {
   movimentosEstoquePagina: (
     codigoPai: string, pagina: number, tamanho: number, filtro: unknown,
   ) => ['movimentos-estoque', codigoPai, pagina, tamanho, filtro] as const,
+  /** Página concreta de perguntas. `['perguntas']` sozinho (usado em invalidateQueries) já é
+   *  prefixo desta chave — invalidar o prefixo alcança todas as páginas/abas. */
+  perguntasPagina: (
+    pagina: number, tamanho: number, filtro: unknown,
+  ) => ['perguntas', pagina, tamanho, filtro] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];

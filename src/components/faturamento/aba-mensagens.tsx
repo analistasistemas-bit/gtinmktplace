@@ -8,6 +8,8 @@ import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Pagination } from '@/components/ui/pagination';
 import { toast } from 'sonner';
 
 function CardConversa({ c }: { c: Conversa }) {
@@ -112,9 +114,20 @@ function CardConversa({ c }: { c: Conversa }) {
   );
 }
 
+type FiltroStatusMensagem = 'aguardando' | 'todas';
+
+const ABAS_STATUS: { valor: FiltroStatusMensagem; rotulo: string }[] = [
+  { valor: 'aguardando', rotulo: 'Aguardando' },
+  { valor: 'todas', rotulo: 'Todas' },
+];
+
 export function AbaMensagens() {
   const { data: conversas, isFetching } = useListaMensagens();
   const lista = conversas ?? [];
+
+  const [pagina, setPagina] = useState(1);
+  const [tamanho, setTamanho] = useState(20);
+  const [statusFiltro, setStatusFiltro] = useState<FiltroStatusMensagem>('aguardando');
 
   if (!isFetching && lista.length === 0) {
     return (
@@ -125,10 +138,59 @@ export function AbaMensagens() {
     );
   }
 
+  // Paginado no cliente: conversa é um agrupamento por pack_id feito aqui, não uma linha de
+  // tabela — paginar isso no banco exigiria uma view/RPC nova (fora de escopo, ver spec D-2).
+  const filtradas = statusFiltro === 'aguardando' ? lista.filter((c) => c.aguardando) : lista;
+  const total = filtradas.length;
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
+  // Responder a última conversa "aguardando" de uma página tira ela da lista filtrada e a
+  // página pode deixar de existir — clampa contra o total (mesma lógica de aba-perguntas.tsx).
+  const paginaEfetiva = Math.min(pagina, totalPaginas);
+  const inicio = total === 0 ? 0 : (paginaEfetiva - 1) * tamanho + 1;
+  const offset = (paginaEfetiva - 1) * tamanho;
+  const itens = filtradas.slice(offset, offset + tamanho);
+
+  function mudarAba(v: string) {
+    setStatusFiltro(v as FiltroStatusMensagem);
+    setPagina(1);
+  }
+
   return (
     <div className="space-y-3">
-      {isFetching && lista.length === 0 && <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>}
-      {lista.map((c) => <CardConversa key={c.pack_id} c={c} />)}
+      <Tabs value={statusFiltro} onValueChange={mudarAba}>
+        <TabsList>
+          {ABAS_STATUS.map((a) => (
+            <TabsTrigger key={a.valor} value={a.valor}>{a.rotulo}</TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {isFetching && lista.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+      ) : itens.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
+          <MessagesSquare className="h-6 w-6" />
+          {statusFiltro === 'aguardando' ? 'Nenhuma conversa aguardando resposta.' : 'Nenhuma conversa nesta página.'}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {itens.map((c) => <CardConversa key={c.pack_id} c={c} />)}
+        </div>
+      )}
+
+      {total > 0 && (
+        <Pagination
+          paginaAtual={paginaEfetiva}
+          totalPaginas={totalPaginas}
+          inicio={inicio}
+          fim={inicio === 0 ? 0 : inicio + itens.length - 1}
+          total={total}
+          tamanho={tamanho}
+          onIrPara={setPagina}
+          onTamanho={(n) => { setTamanho(n); setPagina(1); }}
+          rotuloItem="conversa"
+        />
+      )}
     </div>
   );
 }
