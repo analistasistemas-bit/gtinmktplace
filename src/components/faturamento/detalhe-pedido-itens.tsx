@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtMarkup } from '@/lib/formato';
+import { fmtBRL, fmtMarkup, round2 } from '@/lib/formato';
 import type { Pedido } from '@/lib/pedidos-faturamento';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { ThumbProduto } from './pilha-thumbs';
@@ -19,6 +19,9 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
   const urlVenda = p.isPack
     ? `https://www.mercadolivre.com.br/vendas/pacote/${p.chave}/detalhe`
     : `https://www.mercadolivre.com.br/vendas/${p.orderIds[0]}/detalhe`;
+  // % efetivo (ponderado): cobre pedido com itens de origens/alíquotas diferentes (ADR-0055/ADR-0107).
+  const baseImposto = p.itens.reduce((s, it) => s + (it.imposto > 0 ? it.unit_price * it.quantity : 0), 0);
+  const aliquotaPct = baseImposto > 0 ? round2((p.imposto / baseImposto) * 100) : 0;
   return (
     <div className="px-10 py-3">
       <div className="mb-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
@@ -29,7 +32,10 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
         </div>
         <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.comissao)}</span></div>
         <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{p.frete != null ? fmtBRL(p.frete) : '—'}</span></div>
-        <div>Imposto <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.imposto)}</span></div>
+        <div>
+          Imposto <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.imposto)}</span>
+          {p.imposto > 0 && <span className="tabular-nums"> ({aliquotaPct}%)</span>}
+        </div>
         <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>
       </div>
       <Table className="text-xs">
