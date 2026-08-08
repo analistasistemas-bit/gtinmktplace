@@ -106,7 +106,7 @@ export function AbaPerguntas() {
   const [tamanho, setTamanho] = useState(20);
   const [statusFiltro, setStatusFiltro] = useState<FiltroStatusPergunta>('pendentes');
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError } = useQuery({
     queryKey: QK.perguntasPagina(pagina, tamanho, { status: statusFiltro }),
     queryFn: () => fetchPerguntasPagina(pagina, tamanho, { status: statusFiltro }),
     staleTime: 60_000,
@@ -120,7 +120,17 @@ export function AbaPerguntas() {
 
   const itens = data?.itens ?? [];
   const total = data?.total ?? 0;
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
+  // A última pendente da página some (respondida aqui ou detectada pelo polling) e a página
+  // deixa de existir: sem isto a busca fica presa num range vazio e a tela mostra "nenhuma
+  // pergunta" com a fila cheia. Clamp durante o render (não em efeito) — React reexecuta antes
+  // de pintar, então a query já refaz para a última página válida sem piscar o estado vazio.
+  if (data && pagina > totalPaginas) setPagina(totalPaginas);
+
   const inicio = total === 0 ? 0 : (pagina - 1) * tamanho + 1;
+  // Deriva do total, não de itens.length: evita "41–20 de 40" durante o instante em que a
+  // página acabou de ser clampada e a busca da nova página ainda está em voo.
+  const fim = total === 0 ? 0 : Math.min(pagina * tamanho, total);
 
   function mudarAba(v: string) {
     setStatusFiltro(v as FiltroStatusPergunta);
@@ -149,6 +159,11 @@ export function AbaPerguntas() {
 
       {isFetching && itens.length === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-muted-foreground">Carregando…</div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
+          <MessageCircleQuestion className="h-6 w-6" />
+          Não foi possível carregar as perguntas.
+        </div>
       ) : itens.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 rounded-lg border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
           <MessageCircleQuestion className="h-6 w-6" />
@@ -165,9 +180,9 @@ export function AbaPerguntas() {
       {total > 0 && (
         <Pagination
           paginaAtual={pagina}
-          totalPaginas={Math.max(1, Math.ceil(total / tamanho))}
+          totalPaginas={totalPaginas}
           inicio={inicio}
-          fim={inicio === 0 ? 0 : inicio + itens.length - 1}
+          fim={fim}
           total={total}
           tamanho={tamanho}
           onIrPara={setPagina}

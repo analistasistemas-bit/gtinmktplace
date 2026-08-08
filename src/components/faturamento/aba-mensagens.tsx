@@ -142,8 +142,12 @@ export function AbaMensagens() {
   // tabela — paginar isso no banco exigiria uma view/RPC nova (fora de escopo, ver spec D-2).
   const filtradas = statusFiltro === 'aguardando' ? lista.filter((c) => c.aguardando) : lista;
   const total = filtradas.length;
-  const inicio = total === 0 ? 0 : (pagina - 1) * tamanho + 1;
-  const offset = (pagina - 1) * tamanho;
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanho));
+  // Responder a última conversa "aguardando" de uma página tira ela da lista filtrada e a
+  // página pode deixar de existir — clampa contra o total (mesma lógica de aba-perguntas.tsx).
+  const paginaEfetiva = Math.min(pagina, totalPaginas);
+  const inicio = total === 0 ? 0 : (paginaEfetiva - 1) * tamanho + 1;
+  const offset = (paginaEfetiva - 1) * tamanho;
   const itens = filtradas.slice(offset, offset + tamanho);
 
   function mudarAba(v: string) {
@@ -176,8 +180,8 @@ export function AbaMensagens() {
 
       {total > 0 && (
         <Pagination
-          paginaAtual={pagina}
-          totalPaginas={Math.max(1, Math.ceil(total / tamanho))}
+          paginaAtual={paginaEfetiva}
+          totalPaginas={totalPaginas}
           inicio={inicio}
           fim={inicio === 0 ? 0 : inicio + itens.length - 1}
           total={total}

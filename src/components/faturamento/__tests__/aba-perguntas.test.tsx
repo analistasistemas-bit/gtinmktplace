@@ -42,6 +42,7 @@ function pagina(itens: Pergunta[], total: number): PaginaPerguntas {
 function renderAba() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={qc}><AbaPerguntas /></QueryClientProvider>);
+  return qc;
 }
 
 describe('AbaPerguntas', () => {
@@ -104,6 +105,34 @@ describe('AbaPerguntas', () => {
     fetchMock.mockResolvedValue(pagina([], 0));
     renderAba();
     expect(await screen.findByText('Nenhuma pergunta pendente.')).toBeInTheDocument();
+  });
+
+  it('página deixa de existir (total encolheu) e a busca refaz para a última página válida', async () => {
+    fetchMock.mockResolvedValue(pagina(Array.from({ length: 20 }, (_, i) => PERGUNTAS[i % 2]), 47));
+    const qc = renderAba();
+    await screen.findByText(/de 47 perguntas/i);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Página 3' }));
+    await waitFor(() => expect(fetchMock.mock.calls.at(-1)![0]).toBe(3));
+
+    // As 7 últimas pendentes da página 3 somem (respondidas aqui ou no ML) — total cai para 40,
+    // que só tem 2 páginas: a 3 volta vazia, a 2 continua com itens de verdade.
+    // invalidateQueries simula o refetch (polling/resposta) que a página 3 vazia dispararia em
+    // produção.
+    fetchMock.mockImplementation((pag: number) => Promise.resolve(
+      pag === 3 ? pagina([], 40) : pagina(Array.from({ length: 20 }, (_, i) => PERGUNTAS[i % 2]), 40),
+    ));
+    await qc.invalidateQueries({ queryKey: ['perguntas'] });
+    await waitFor(() => expect(fetchMock.mock.calls.at(-1)![0]).toBe(2));
+    expect(screen.queryByText('Nenhuma pergunta pendente.')).not.toBeInTheDocument();
+  });
+
+  it('falha na busca mostra erro específico, não "nenhuma pergunta pendente"', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockRejectedValue(new Error('rls'));
+    renderAba();
+    expect(await screen.findByText('Não foi possível carregar as perguntas.')).toBeInTheDocument();
+    expect(screen.queryByText('Nenhuma pergunta pendente.')).not.toBeInTheDocument();
   });
 
   it('exportar puxa a lista inteira filtrada pela aba ativa, não só a página visível', async () => {
