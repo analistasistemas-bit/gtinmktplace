@@ -67,6 +67,34 @@ Custos têm chave estável (`['custos']`, staleTime 30 min) → pesam só na 1ª
 - [x] Medir gargalo real.
 - [ ] Corrigir com base na medição — **decisão de Diego pendente** (opção 1 exige ADR).
 
+### Faceta 2: o dois-passos da linha (org DSA, produto Eucerin) — corrigido 2026-08-08
+
+Relato: "a coluna de unidades vendidas do PROTETOR SOLAR EUCERIN demora só na 1ª carga; os outros
+produtos aparecem instantâneo". Medido na org DSA (81 vendas em 30d, 100 kB): a query de vendas
+leva 0,7–1,2 s e a do mapa canônico 0,5 s — nenhuma das duas é lenta, e **não existe caminho de
+código por produto** (`resumo.porItem` tem um único consumidor, `Publicados.tsx:513`).
+
+O que é específico daquele produto: 37 das suas 82 unidades entram pelo anúncio de **catálogo**
+(`MLB7343614472` → dono `MLB4982690837`), e essa fatia só migra para a linha quando a **segunda**
+query (`useAnuncioCanonico`) resolve. A linha ia de `—` → 45 → 82 enquanto as outras resolviam num
+passo. Ele nota nesse produto porque são 73 dos 81 pedidos da org no período — os demais mostram 1
+ou 3 unidades, onde o salto é invisível.
+
+Descartados por medição: `date_closed` nulo (0), `canal` nulo (0), teto de paginação (81 « 1000),
+RLS multi-org (`current_org_id()` devolve uma org por vez).
+
+- [x] `useResumoVendas` expõe `canonicoPronto` (`isSuccess || isError` — erro degrada para o
+  comportamento sem mapa, nunca deixa a coluna presa em `—`).
+- [x] `Publicados.tsx` só preenche `unidadesVendidas`/`valorVendido` com o mapa assentado.
+- [x] **Não gatear o resumo inteiro no hook** (proposta descartada em revisão): `Dashboard.tsx:114`
+  tira o loading de `vendasRaw.isPending`, não do `isFetching` deste hook — zerar o resumo pintaria
+  R$ 0,00 nos cards financeiros. O mapa canônico não altera nenhum KPI agregado (bruto, líquido,
+  unidades, pedidos), só em que chave as unidades caem.
+- [x] Testes: 3 no hook (flag pendente/sucesso/erro + KPIs não segurados) e 1 na tela (mapa
+  pendente → sem parcial, ponte de líquido intacta).
+- Escopo: elimina o salto, **não reduz** o tempo até o número final aparecer — isso depende da
+  decisão pendente acima (chave de cache instável + payload).
+
 ## Alíquota do imposto ao lado do valor no Faturamento — 2026-08-08
 
 No detalhe de cada pedido (Faturamento e Detalhe do líquido), a linha "Imposto" passa a mostrar a

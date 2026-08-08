@@ -140,7 +140,9 @@ function mockHooksPadrao() {
   });
   useCustosMock.mockReturnValue({ data: undefined });
   useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
-  useAnuncioCanonicoMock.mockReturnValue({ data: {} });
+  // isSuccess importa: as colunas de venda por anúncio só preenchem com o mapa assentado
+  // (useResumoVendas.canonicoPronto) — senão a linha mostraria a fatia própria e depois saltaria.
+  useAnuncioCanonicoMock.mockReturnValue({ data: {}, isSuccess: true, isError: false });
   useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   fetchMovimentosEstoqueMock.mockResolvedValue({ itens: [], total: 0 });
 }
@@ -201,7 +203,7 @@ describe('Publicados', () => {
       ],
       isFetching: false, error: null, refetch: vi.fn(),
     });
-    useAnuncioCanonicoMock.mockReturnValue({ data: { 'MLB-CATALOGO': 'MLB1' } });
+    useAnuncioCanonicoMock.mockReturnValue({ data: { 'MLB-CATALOGO': 'MLB1' }, isSuccess: true, isError: false });
 
     render(
       <MemoryRouter>
@@ -215,6 +217,37 @@ describe('Publicados', () => {
     // getByText (não toHaveTextContent): a célula tem que ser exatamente 59, senão qualquer valor
     // da linha que contenha "59" — um R$ 1.590,00 futuro — passaria por acidente.
     expect(within(linha).getByText('59')).toBeInTheDocument();
+  });
+
+  // O mapa canônico chega numa query separada das vendas. Se a coluna renderizar antes dele, mostra
+  // a fatia própria (38) e depois salta para 59 — foi o que o operador viu como "a coluna demora só
+  // nesse produto". Enquanto o mapa não assenta, a linha fica em "—" e vai direto ao número final.
+  it('mapa canônico ainda carregando: não mostra o parcial na coluna de vendas', () => {
+    const item = (mlItemId: string, quantity: number) => ({
+      id: `i-${mlItemId}`, ml_item_id: mlItemId, variation_id: null, titulo: 'COLA LIQUIDA SILICONE 250ML',
+      codigo: '01829149', cor: null, ean: null, quantity, unit_price: 24.1, sale_fee: 0, is_publiai: true,
+    });
+    useVendasMock.mockReturnValue({
+      data: [
+        { id: 'v1', order_id: 1, status: 'paid', total_amount: 916.7, liquido: 916.7, estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [item('MLB1', 38)] },
+        { id: 'v2', order_id: 2, status: 'paid', total_amount: 506.1, liquido: 506.1, estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [item('MLB-CATALOGO', 21)] },
+      ],
+      isFetching: false, error: null, refetch: vi.fn(),
+    });
+    useAnuncioCanonicoMock.mockReturnValue({ data: undefined, isSuccess: false, isError: false });
+
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
+      .map((el) => el.closest('tr'))
+      .find((tr): tr is HTMLTableRowElement => tr != null)!;
+    expect(within(linha).queryByText('38')).not.toBeInTheDocument();
+    // A ponte de líquido no topo (KPI agregado) NÃO depende do mapa: segue exibindo.
+    expect(screen.getByRole('link', { name: /Líquido das vendas/i })).toHaveTextContent('R$ 1.422,80');
   });
 
   it('exibe o selo do modo (Premium) vindo do status ao vivo', () => {

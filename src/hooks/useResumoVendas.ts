@@ -18,6 +18,13 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
   refetch: () => void;
   error: boolean;
   dataUpdatedAt: number;
+  /** O mapa canônico já assentou (sucesso ou erro)? Só `resumo.porItem` depende dele — enquanto
+   *  for false, as vendas do anúncio de catálogo ainda estão na chave do MLB de catálogo, não na
+   *  do anúncio dono. Quem exibe vendas POR ANÚNCIO deve segurar até aqui virar true, senão a
+   *  linha mostra um parcial e depois salta (ver Publicados.tsx). Os KPIs agregados (bruto,
+   *  líquido, unidades, pedidos) NÃO dependem do mapa — a canonização só muda em que chave as
+   *  unidades caem — então não devem ser segurados por isto. */
+  canonicoPronto: boolean;
 } {
   const vendasQ = useVendas(janela, 'todos', canal);
   const custosQ = useCustos();
@@ -51,5 +58,8 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
     refetch: () => { vendasQ.refetch(); },
     error: vendasQ.isError || custosQ.isError || aliquotasQ.isError,
     dataUpdatedAt: vendasQ.dataUpdatedAt,
+    // isError conta como assentado: sem o mapa, `porItem` volta ao comportamento de antes (vendas
+    // de catálogo na chave do MLB de catálogo) em vez de a coluna ficar "—" para sempre.
+    canonicoPronto: canonicoQ.isSuccess || canonicoQ.isError,
   };
 }

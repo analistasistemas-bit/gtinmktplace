@@ -424,7 +424,7 @@ export default function Publicados() {
   // Fonte única dos KPIs: tabela ml_vendas (ADR-0038) — mesmo número que Faturamento e Financeiro.
   // Via useResumoVendas (não calcularResumo direto): é ele que passa o mapa canônico, sem o qual as
   // vendas do anúncio de catálogo somem da linha do anúncio dono (ver anuncio-canonico.ts).
-  const { resumo, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas } = useResumoVendas(janela, canalAtivo);
+  const { resumo, isFetching: fetchingMetricas, error: erroVendas, refetch: refetchMetricas, canonicoPronto } = useResumoVendas(janela, canalAtivo);
   const markupPct = resumo.markup;
 
   // Estado da tela (filtro/ordenação/página/tamanho) vive na URL: ao abrir um
@@ -514,15 +514,18 @@ export default function Publicados() {
     return publicados.map((item) => {
       const s = statusMap.get(item.mlItemId);
       const v = vendasPorItem[item.mlItemId];
-      const comVendas = {
-        unidadesVendidas: v?.unidades ?? null,
-        valorVendido: v?.valor ?? null,
-      };
+      // Sem o mapa canônico assentado, as vendas do anúncio de catálogo ainda estão na chave do
+      // MLB de catálogo: a linha do anúncio dono mostraria só a fatia própria e depois saltaria
+      // (ex.: 45 → 82 unid). Segura em "—" até o mapa resolver — vale só para as colunas por
+      // anúncio; os KPIs do topo não dependem do mapa e seguem aparecendo.
+      const comVendas = canonicoPronto
+        ? { unidadesVendidas: v?.unidades ?? null, valorVendido: v?.valor ?? null }
+        : { unidadesVendidas: null, valorVendido: null };
       return s
         ? { ...item, canal: s.canal ?? 'mercado_livre', status: s.status, estoque: s.estoque, precoAtual: s.preco, motivo: s.motivo, listingType: s.listingType ?? null, ...comVendas }
         : { ...item, status: 'indisponivel' as StatusPublicado, ...comVendas };
     });
-  }, [publicados, statusData, resumo]);
+  }, [publicados, statusData, resumo, canonicoPronto]);
 
   // Recorte da tela pelo canal global (D2/D3). Contadores por canal para as tabs.
   const contadoresCanal = useMemo(() => {
