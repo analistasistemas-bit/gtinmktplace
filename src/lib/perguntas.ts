@@ -49,6 +49,56 @@ export async function buscarPerguntas(): Promise<Pergunta[]> {
     .sort((a, b) => Number(b.status === 'UNANSWERED') - Number(a.status === 'UNANSWERED'));
 }
 
+export type FiltroStatusPergunta = 'pendentes' | 'respondidas' | 'todas';
+
+export interface FiltroPerguntas {
+  status?: FiltroStatusPergunta;
+}
+
+export interface PaginaPerguntas {
+  itens: Pergunta[];
+  total: number;
+}
+
+/** Mesmo recorte do filtro server-side, mas em memória — usado por Exportar, que sempre lê a
+ *  lista inteira via buscarPerguntas(), independente da página/aba aberta na tela. */
+export function pergCasaStatus(status: string, filtro: FiltroStatusPergunta): boolean {
+  if (filtro === 'pendentes') return status === 'UNANSWERED';
+  if (filtro === 'respondidas') return status !== 'UNANSWERED';
+  return true;
+}
+
+const COLUNAS_PERGUNTA =
+  'id, question_id, item_id, item_titulo, comprador_id, comprador_nick, texto, status, resposta, respondida_em, criada_em';
+
+/** Uma página de perguntas. A separação por status virou aba (ver AbaPerguntas) — aqui a ordem é
+ *  sempre por data, mais recente primeiro. RLS por user. */
+export async function fetchPerguntasPagina(
+  pagina = 1,
+  tamanho = 20,
+  filtro: FiltroPerguntas = {},
+): Promise<PaginaPerguntas> {
+  const de = (Math.max(1, Math.floor(pagina) || 1) - 1) * tamanho;
+  let q = supabase.from('ml_perguntas').select(COLUNAS_PERGUNTA, { count: 'exact' });
+  if (filtro.status === 'pendentes') q = q.eq('status', 'UNANSWERED');
+  else if (filtro.status === 'respondidas') q = q.neq('status', 'UNANSWERED');
+
+  const { data, error, count } = await q
+    .order('criada_em', { ascending: false })
+    .range(de, de + tamanho - 1);
+  if (error) throw new Error(error.message);
+
+  const lista = (data ?? []) as Pergunta[];
+  const nomes = await nomesPorComprador(
+    [...new Set(lista.map((p) => p.comprador_id).filter((i): i is number => i != null))],
+  );
+  const itens = lista.map((p) => ({
+    ...p,
+    comprador_nome: (p.comprador_id != null ? nomes.get(p.comprador_id) : null) ?? null,
+  }));
+  return { itens, total: count ?? 0 };
+}
+
 async function postEdge<T>(fn: string, body: unknown): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
