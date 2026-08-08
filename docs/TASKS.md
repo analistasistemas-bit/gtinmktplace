@@ -79,6 +79,10 @@ alíquota entre parênteses: `Imposto R$ 3,56 (8%)`.
   volta erra a alíquota (R$ 44,55 a 8% → 7,99%; R$ 45,07 → 8,01%, ambos em linhas reais). Pego na
   revisão antes do merge; 10 testes travam o comportamento, incluindo a regressão do R$ 44,55.
 - [x] Validado ao vivo com dado de produção em 1280px e 375px.
+- [x] **Só no desktop** (pedido do Diego, 08/08): o `%` fica `hidden sm:inline` — no mobile o bloco
+  divide 2 colunas estreitas e o percentual vira ruído. O valor em R$ continua nos dois tamanhos.
+  O teste assere a classe porque o jsdom não aplica Tailwind: sem isso, remover o `hidden` passaria
+  despercebido.
 - Achado pré-existente, **não corrigido** (fora do escopo): no mobile, "Comissão ML" e "Imposto"
   ficam na 2ª coluna do grid de meta e só aparecem rolando a tabela de itens para a direita.
 
