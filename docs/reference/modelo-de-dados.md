@@ -454,11 +454,17 @@ que altera coluna exibida na UI de vendas precisa bumpar `atualizado_em`, senão
 cega ao delta até o próximo fetch completo.
 Classificação: `is_publiai` (match GTIN/família — ADR-0045), `tem_devolucao`. `raw jsonb`.
 Único `(user_id, order_id)`; índice `(user_id, date_closed DESC)` (lookups pontuais de workers,
-service_role, sem RLS). Índice `(org_id, date_closed DESC)` (*migration
-`20260808102551_ml_vendas_org_index.sql`*): a RLS de leitura do app filtra por `org_id` desde o
-ADR-0027 (E7, `20260705165828_e7_rls_org.sql`), mas nenhum índice cobria esse predicado — toda
-consulta de `buscarVendas`/`useVendas` (Publicados, Faturamento, Dashboard) caía em varredura
-sequencial da tabela inteira, piorando conforme o volume de vendas cresce.
+service_role, sem RLS); índice `(org_id)` (*migration `20260705165131_e7_org_id_dominio.sql`*,
+mesma fase E7, cobre a RLS `org_id = current_org_id()`); índice `(org_id, date_closed DESC)`
+(*migration `20260808102551_ml_vendas_org_index.sql`*) — composto que serve o mesmo predicado de
+RLS junto do range/ordenação de `buscarVendas`, tornando o índice `(org_id)` puro redundante
+(candidato a drop futuro, sem urgência, ~40 kB). **Correção 2026-08-08:** a migration nasceu de um
+diagnóstico errado ("nenhum índice em `org_id` existia") — auditoria (Opus) achou o índice
+`(org_id)` já ativo desde 05/07 e a tabela com só ~4,4 MB, tamanho onde seq scan não é lento. O
+índice novo não é nocivo mas não resolve a lentidão de "unidades vendidas" relatada no Publicados;
+suspeito real ainda não medido: janela `preset` de `useVendas` refaz o fetch completo (paginado,
+com embeds) a cada montagem da tela (comentário em `src/hooks/useVendas.ts`), e/ou a chamada ao
+vivo à API do ML em `status-publicados`. Ver `docs/TASKS.md`.
 
 **`canal` text** (default `'mercado_livre'`, migration `20260715014055_menus_multicanal.sql`, **em
 produção desde 2026-07-15**): dimensão canal preparatória — coluna simples (não o enum

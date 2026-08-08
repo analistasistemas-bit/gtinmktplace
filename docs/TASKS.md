@@ -2,19 +2,36 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Fix: índice ausente em `ml_vendas.org_id` — "unidades vendidas" lento no Publicados — 2026-08-08
+## Investigar: "unidades vendidas" lento no Publicados — causa real ainda não confirmada — 2026-08-08
 
 Diego reportou demora para carregar "unidades vendidas" no menu Publicados.
 
-- Causa: a RLS de `ml_vendas` virou `org_id = current_org_id()` em 05/07 (ADR-0027, E7,
-  `20260705165828_e7_rls_org.sql`), mas nenhum índice em `org_id` foi criado. O único índice
-  existente (`user_id, date_closed`) não serve o predicado de RLS — toda consulta de
-  `buscarVendas`/`useVendas` (Publicados, Faturamento, Dashboard) caía em varredura sequencial da
-  tabela inteira, piorando conforme o volume de vendas cresce.
-- [x] Migration `20260808102551_ml_vendas_org_index.sql`: `create index ... on ml_vendas (org_id,
-  date_closed desc)`. Índice antigo mantido (workers/service_role ainda fazem lookup por `user_id`).
-- [x] `supabase db push --linked` + `npm run db:check` (histórico alinhado).
-- [x] `docs/reference/modelo-de-dados.md` atualizado.
+**Tentativa 1 (rejeitada por auditoria) — não repetir:** o agente diagnosticou "nenhum índice em
+`org_id` existe em `ml_vendas`" e criou a migration `20260808102551_ml_vendas_org_index.sql`
+(`(org_id, date_closed desc)`), aplicada em produção e mergeada. **Diagnóstico errado, achado por
+auditoria com Opus no mesmo dia:** já existia índice `(org_id)` desde 05/07
+(`20260705165131_e7_org_id_dominio.sql`, mesma fase E7, confirmado vivo em produção com 903 index
+scans) — o agente não viu essa migration. Além disso `ml_vendas` tem só ~4,4 MB (~1226 linhas);
+seq scan nesse tamanho é milissegundos, não a causa de lentidão perceptível. Nenhuma medição
+(EXPLAIN, cronometragem) foi feita antes de aplicar o fix. O índice novo não é nocivo (torna o
+`(org_id)` puro redundante — candidato a drop futuro, sem urgência) mas é **placebo**: não resolve
+o sintoma relatado. Ver correção em `docs/reference/modelo-de-dados.md`.
+
+**Suspeitos reais, ainda não medidos:**
+- `Publicados.tsx` usa janela `{ tipo: 'preset', dias: 30 }`. Comentário em `src/hooks/useVendas.ts`
+  confirma que janelas `preset` têm `desde` móvel → a chave de cache (`chaveJanela`) muda a cada
+  montagem da tela → `buscarVendas` refaz o fetch completo (paginado, com embeds `itens` +
+  `custos` aninhados) toda vez que o Publicados é aberto, em vez de reusar cache/delta incremental
+  (ADR-0082).
+- `useStatusPublicados` chama a edge function `status-publicados`, que consulta a API do ML ao
+  vivo (`conn.lerStatus`) — pode ser o gargalo real ou concorrente.
+
+**Próximo passo:** medir o waterfall de rede real do Publicados (Playwright/browser-use, timing
+das requests `vendas` vs `status-publicados`) antes de propor qualquer fix novo.
+- [x] Migration `20260808102551_ml_vendas_org_index.sql` aplicada (não reverter — inofensiva, só
+  não é a solução).
+- [ ] Medir gargalo real.
+- [ ] Corrigir com base na medição.
 
 ## Atributo `NAME` obrigatório preenchido sozinho (adendo ADR-0052) — 2026-08-07
 
