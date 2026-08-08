@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-08-07
+atualizado: 2026-08-08
 ---
 
 # Problemas Resolvidos
@@ -9,6 +9,23 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 [[Incidentes]] (com contexto completo de ADR), [[Bugs Conhecidos]] (o que falta).
 
 ## Correções recentes (commits mais recentes na `main`)
+
+- **"Unid. vendidas" do Eucerin aparecia em duas etapas no Publicados (2026-08-08)** — a coluna vem
+  de `resumo.porItem`, que depende de **duas** queries: `useVendas` (as vendas da janela) e
+  `useAnuncioCanonico` (o mapa listing de catálogo → anúncio dono, ADR-0021/0045). As vendas
+  entradas pelo anúncio de **catálogo** só migram para a linha do dono quando a segunda resolve,
+  então a linha ia de `—` → 45 → 82 unidades. Não é lentidão do produto: medido em produção na org
+  DSA, vendas 0,7–1,2 s / 100 kB e mapa 0,5 s, e **não existe caminho de código por produto**
+  (`resumo.porItem` tem um único consumidor). O operador só nota nesse item porque 37 das 82
+  unidades vêm do catálogo e ele é 73 dos 81 pedidos da org no período — nos outros o salto é de 1
+  ou 3. **Fix:** `useResumoVendas` expõe `canonicoPronto` (`isSuccess || isError` — erro degrada
+  para o comportamento sem mapa, nunca prende a coluna em `—`) e `Publicados.tsx` só preenche as
+  colunas de venda com o mapa assentado. **Descartado em revisão:** gatear o resumo inteiro no
+  hook — o Dashboard tira o loading de `vendasRaw.isPending`, não do `isFetching` do hook, e zerar
+  o resumo pintaria R$ 0,00 nos cards financeiros; o mapa não altera KPI agregado nenhum, só em que
+  chave as unidades caem. **Não confundir com a latência da tela** (payload baixado inteiro a cada
+  abertura, por `queryKey` instável da janela `preset`): medida no mesmo dia, fix adiado por
+  decisão do Diego — ver `docs/TASKS.md`.
 
 - **Lote #11 travado na Revisão pedindo o atributo "Nome" (2026-08-07)** — categoria Cuidado Facial
   (`MLB264874`) marca `NAME` como `required` e `value_type=string`. Nada o preenchia:
