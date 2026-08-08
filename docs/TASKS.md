@@ -33,6 +33,21 @@ das requests `vendas` vs `status-publicados`) antes de propor qualquer fix novo.
 - [ ] Medir gargalo real.
 - [ ] Corrigir com base na medição.
 
+## Alíquota do imposto ao lado do valor no Faturamento — 2026-08-08
+
+No detalhe de cada pedido (Faturamento e Detalhe do líquido), a linha "Imposto" passa a mostrar a
+alíquota entre parênteses: `Imposto R$ 3,56 (8%)`.
+
+- [x] `ItemPedido.aliquotaPct` carrega o valor cru do `AliquotaResolver` (8/16 — ADR-0055).
+- [x] `detalhe-pedido-itens.tsx` exibe o %, formatado em pt-BR, com média ponderada pelo valor
+  quando o pedido mistura origens.
+- [x] **Nunca derivar o % de `imposto ÷ valor`**: o imposto é arredondado a centavos e a divisão de
+  volta erra a alíquota (R$ 44,55 a 8% → 7,99%; R$ 45,07 → 8,01%, ambos em linhas reais). Pego na
+  revisão antes do merge; 10 testes travam o comportamento, incluindo a regressão do R$ 44,55.
+- [x] Validado ao vivo com dado de produção em 1280px e 375px.
+- Achado pré-existente, **não corrigido** (fora do escopo): no mobile, "Comissão ML" e "Imposto"
+  ficam na 2ª coluna do grid de meta e só aparecem rolando a tabela de itens para a direita.
+
 ## Atributo `NAME` obrigatório preenchido sozinho (adendo ADR-0052) — 2026-08-07
 
 Lote #11 (Gel de Limpeza Facial, MLB264874) travou pedindo "Nome" ao operador — obrigatório
