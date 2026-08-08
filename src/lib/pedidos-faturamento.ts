@@ -25,6 +25,9 @@ export interface ItemPedido {
   liquido: number;
   /** Imposto do item = valor de venda × alíquota(origem). 0 sem origem/alíquota (ADR-0055). */
   imposto: number;
+  /** Alíquota (%) que gerou o imposto, direto do resolver (8/16 — ADR-0055). null sem origem/alíquota.
+   *  Existe para a UI exibir o % SEM reconstruí-lo de `imposto`, que é arredondado a centavos. */
+  aliquotaPct: number | null;
   /** (líquido − custo) ÷ custo, com líquido já líquido do imposto. null sem custo. */
   markup: number | null;
 }
@@ -137,6 +140,7 @@ export function agruparPorPedido(
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
       const imposto = faturavel ? impostoDoItem(it, aliquotaResolver) : 0;
+      const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it) ?? null : null;
       impostoTotal += imposto;
       const valorItem = it.unit_price * it.quantity;
       const liqItem = faturavel && valorItensFaturaveis > 0
@@ -150,7 +154,7 @@ export function agruparPorPedido(
         id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
         cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
-        custo, liquido: liqItemComImposto, imposto, markup,
+        custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;
