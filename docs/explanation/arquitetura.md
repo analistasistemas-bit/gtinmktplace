@@ -310,7 +310,12 @@ recusam org sem o módulo com **403** — é ali que está a fronteira de segura
   conexão `mercado_livre` da org (mesma conta, ADR-0093), alimentando só `estorno` e
   `money_release_date` em `ml_vendas`.
 - **Monitoramento** (ADR-0035): varredura de anúncios moderados + alertas Telegram.
-- **Viabilidade** (ADR-0014/0015): análise de concorrência e margem antes de cadastrar.
+- **Viabilidade** (ADR-0014/0015): análise de concorrência e margem antes de cadastrar. Desde
+  2026-08-08 também é **porta de entrada do pipeline**: o botão "Cadastrar" na linha do resultado
+  abre o cadastro manual pré-preenchido com o que a análise já sabe (nome e descrição da ficha de
+  catálogo do ML, GTIN, custo, mínimo, dimensões), caindo no lote manual da sessão (ADR-0094 D-1.1)
+  e seguindo pelo fluxo normal — IA, Revisão, publicação. `origem` e foto nunca são
+  pré-preenchidas. Ver `docs/spikes/037-cadastrar-a-partir-da-viabilidade.md`.
 
 ## Mapa do código
 
