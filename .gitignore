@@ -73,3 +73,7 @@ trigger_sync.js
 scripts/experimento-copy/resultado.md
 scripts/experimento-copy/resultado.json
 .playwright-cli/
+
+# Documentação INPI (contém minutas e dados parametrizados de registro)
+RegistroINPI/
+
