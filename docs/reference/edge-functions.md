@@ -895,8 +895,22 @@ o custo congelado das 15 vendas de filho UP já estava correto (cores da mesma f
 custo). O erro era só de rastreabilidade.
 
 Redeploy: `sync-venda` (v61), `reconciliar-faturamento` (v61), `backfill-faturamento` (v64),
-`sync-devolucao` (v41) — todas importam `carregarCatalogo`. As 4 linhas históricas foram
-re-sincronizadas. Detalhe em `obsidian-vault/09-Logs/Changelog.md` (2026-08-11).
+`sync-devolucao` (v41) — todas importam `carregarCatalogo`.
+
+**Como as 4 linhas históricas foram corrigidas (e o tropeço no caminho):** o `backfill-faturamento`
+exige JWT de sessão, indisponível na sessão do agente, então as linhas foram atualizadas por
+`UPDATE` derivado de `anuncios_externos_itens.sku` — a mesma fonte que o código deployado usa. A
+query de apoio, porém, escolhia a variação com `order by atualizado_em desc limit 1`, e o código
+`26705421` existe em **duas famílias** com GTINs diferentes (`4753000051` e `4753000053`) e
+`atualizado_em` **idêntico** — o desempate caiu na família errada e gravou o GTIN errado em 3 das 4
+linhas. O sync seguinte (14:01) regravou o valor correto sozinho, justamente por causa do fix acima.
+Conferido depois com a chave certa (variação da **família do anúncio vendido**): 0 código errado,
+0 EAN errado, 0 divergência em `venda_item_custo`.
+
+Lição para quem for repetir: código de variação **não** é chave única entre famílias (ADR-0108).
+Desempatar por `atualizado_em` não funciona quando o re-ingest grava o mesmo instante nas duplicatas
+— resolva sempre pela família do anúncio vendido. Detalhe em `obsidian-vault/09-Logs/Changelog.md`
+(2026-08-11) e em `obsidian-vault/05-Bugs/Problemas Resolvidos.md`.
 
 ## Histórico — catálogo truncado em 1000 linhas quebrava casamento por GTIN (corrigida)
 
