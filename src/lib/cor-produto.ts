@@ -21,6 +21,9 @@ export interface MapasCor {
   porGtin: Map<string, string>;
   /** Código/SKU normalizado → cor. */
   porCodigo: Map<string, string>;
+  /** Anúncios conhecidos com MAIS DE UMA cor possível — distingue "não conheço" de "conheço e é
+   *  ambíguo". Sem isso o fallback por ean/código devolveria a cor de uma variação arbitrária. */
+  itensAmbiguos: Set<string>;
 }
 
 export interface LinhaVariacaoCor {
@@ -36,11 +39,14 @@ export interface LinhaItemUPCor {
   sku: string | null;
 }
 
-/** Grava `chave → cor`, mas ANULA a chave quando duas cores diferentes disputam — mostrar a cor de
- *  outra variação é inventar dado de produto. `null` marca a chave como ambígua. */
+/** Grava `chave → cor`, mas ANULA a chave (`null`) quando duas cores diferentes disputam — mostrar
+ *  a cor de outra variação é inventar dado de produto. Compara normalizado: "Azul" e "azul " são a
+ *  mesma cor com grafias de re-ingest diferentes, e anular por isso esconderia cor real. */
 function definir(mapa: Map<string, string | null>, chave: string, cor: string) {
-  if (!mapa.has(chave)) { mapa.set(chave, cor); return; }
-  if (mapa.get(chave) !== cor) mapa.set(chave, null);
+  const atual = mapa.get(chave);
+  if (atual === undefined) { mapa.set(chave, cor); return; }
+  if (atual === null) return;
+  if (atual.trim().toLowerCase() !== cor.trim().toLowerCase()) mapa.set(chave, null);
 }
 
 const limpar = (m: Map<string, string | null>): Map<string, string> =>
@@ -68,15 +74,20 @@ export function montarMapasCor(variacoes: LinhaVariacaoCor[], itensUP: LinhaItem
   }
 
   // Filho User Products: item_externo_id → sku é 1:1 exato, então sobrepõe a chave por família
-  // (ambígua quando a família tem N cores).
+  // (ambígua quando a família tem N cores). SKU ambíguo anula a chave em vez de deixar a família
+  // decidir — o palpite da família não é melhor que o do SKU só porque o SKU falhou.
   for (const i of itensUP) {
-    const cor = i.sku ? corPorSku.get(i.sku) ?? null : null;
-    if (i.item_externo_id && cor) porItem.set(i.item_externo_id, cor);
+    if (!i.item_externo_id || !i.sku) continue;
+    const cor = corPorSku.get(i.sku);
+    if (cor !== undefined) porItem.set(i.item_externo_id, cor);
   }
 
   return {
     porVariacao: limpar(porVariacao), porItem: limpar(porItem),
     porGtin: limpar(porGtin), porCodigo: limpar(porCodigo),
+    // Anúncios de cor ambígua: o resolver precisa saber a diferença entre "não conheço este
+    // anúncio" e "conheço, e ele tem N cores" — ver montarCorResolver.
+    itensAmbiguos: new Set([...porItem].filter(([, c]) => c === null).map(([k]) => k)),
   };
 }
 
@@ -106,8 +117,14 @@ export function montarCorResolver(m: MapasCor | undefined, canonico?: MapaCanoni
       if (x != null) return x;
     }
     if (item.ml_item_id) {
-      const x = m.porItem.get(canonizarItem(item.ml_item_id, canonico));
+      const anuncio = canonizarItem(item.ml_item_id, canonico);
+      const x = m.porItem.get(anuncio);
       if (x != null) return x;
+      // Anúncio de N cores + venda sem variação: PARA aqui. `ean`/`codigo` desta linha não
+      // identificam a cor vendida — o sync os gravou pelo mapa por anúncio, semeado com a
+      // primeira variação da família em ordem arbitrária (io.ts:96-98). Cair no fallback
+      // devolveria a cor dessa variação arbitrária, que é inventar dado de produto.
+      if (item.variation_id == null && m.itensAmbiguos.has(anuncio)) return null;
     }
     if (item.ean) {
       const x = m.porGtin.get(normGtin(item.ean));
