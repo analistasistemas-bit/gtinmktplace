@@ -6,19 +6,19 @@ import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
 
 const variacao = (codigo: string, cor: string) => ({
   codigo, nome: null, cor, gtin: null, estoque: 5, custo: null, preco: 10,
-  pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null,
+  pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null, mlPictureId: null,
 });
 
 const produtos: ProdutoComSaldo[] = [
   {
     codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
-    capaStoragePath: null, fornecedor: null, unidade: null, origem: 'nacional',
+    capaStoragePath: null, capaMlPictureId: null, fornecedor: null, unidade: null, origem: 'nacional',
     mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 10,
     variacoes: [variacao('00000005', 'incolor'), variacao('00000006', 'bege')],
   },
   {
     codigoPai: '00000009', nomePai: 'Outro Produto', descricaoPai: null,
-    capaStoragePath: null, fornecedor: null, unidade: null, origem: 'nacional',
+    capaStoragePath: null, capaMlPictureId: null, fornecedor: null, unidade: null, origem: 'nacional',
     mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 5,
     variacoes: [variacao('00000010', 'única')],
   },

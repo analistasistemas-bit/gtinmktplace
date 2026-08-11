@@ -13,12 +13,12 @@ type FiltrarProdutosFn = (typeof import('@/lib/produtos-saldo-filtro'))['filtrar
 
 const produto: ProdutoComSaldo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
-  capaStoragePath: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
+  capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20,
   variacoes: [{
     codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901', estoque: 20,
     custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-    comprimentoCm: null, imagemPath: null,
+    comprimentoCm: null, imagemPath: null, mlPictureId: null,
   }],
 };
 

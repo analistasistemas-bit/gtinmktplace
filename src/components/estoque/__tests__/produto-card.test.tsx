@@ -12,31 +12,31 @@ vi.mock('@/components/movimentos-estoque', () => ({
 
 const produtoMono: ProdutoComSaldo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: 'Descrição longa.',
-  capaStoragePath: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
+  capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20,
   variacoes: [
     {
       codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901', estoque: 20,
       custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-      comprimentoCm: null, imagemPath: null,
+      comprimentoCm: null, imagemPath: null, mlPictureId: null,
     },
   ],
 };
 
 const produto: ProdutoComSaldo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: 'Descrição longa.',
-  capaStoragePath: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
+  capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 40,
   variacoes: [
     {
       codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901', estoque: 20,
       custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-      comprimentoCm: null, imagemPath: null,
+      comprimentoCm: null, imagemPath: null, mlPictureId: null,
     },
     {
       codigo: '00000006', nome: null, cor: 'branco', gtin: '4005800241902', estoque: 20,
       custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-      comprimentoCm: null, imagemPath: null,
+      comprimentoCm: null, imagemPath: null, mlPictureId: null,
     },
   ],
 };

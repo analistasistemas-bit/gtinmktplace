@@ -5,7 +5,7 @@ import type { ProdutoComSaldo, VariacaoComSaldo } from '../produtos-saldo';
 function v(over: Partial<VariacaoComSaldo> = {}): VariacaoComSaldo {
   return {
     codigo: '1', nome: null, cor: null, gtin: null, estoque: 10, custo: 5, preco: 20,
-    pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null,
+    pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null, mlPictureId: null,
     ...over,
   };
 }
@@ -14,7 +14,7 @@ function p(variacoes: VariacaoComSaldo[], codigoPai = 'A'): ProdutoComSaldo {
   return {
     codigoPai, nomePai: 'Produto', descricaoPai: null, variacoes,
     saldoTotal: variacoes.reduce((s, x) => s + x.estoque, 0),
-    capaStoragePath: null, fornecedor: null, unidade: null, origem: 'nacional',
+    capaStoragePath: null, capaMlPictureId: null, fornecedor: null, unidade: null, origem: 'nacional',
     mlItemId: null, criadoEm: '2026-01-01T00:00:00Z',
   };
 }

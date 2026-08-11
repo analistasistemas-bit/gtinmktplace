@@ -9,7 +9,7 @@ function variacao(over: Partial<VariacaoComSaldo> = {}): VariacaoComSaldo {
   return {
     codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901',
     estoque: 20, custo: 12, preco: 89.9, pesoGramas: 200,
-    alturaCm: 10, larguraCm: 20, comprimentoCm: 30, imagemPath: null, ...over,
+    alturaCm: 10, larguraCm: 20, comprimentoCm: 30, imagemPath: null, mlPictureId: null, ...over,
   };
 }
 
