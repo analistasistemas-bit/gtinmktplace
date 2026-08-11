@@ -889,9 +889,9 @@ cópias são amarradas por `tests/lib/paridade-custo-fe-be.test.ts`.
 
 **Redeploy ao mexer em `io.ts`/`custo-vigente.ts`** — as 7 functions que importam **este arquivo**
 (não só as 4 que chamam `upsertVenda`): `sync-venda`, `sync-devolucao`, `backfill-faturamento`,
-`reconciliar-faturamento`, `ml-webhook`, `sync-pergunta`, `sync-mensagem`. Outras três
-(`responder-pergunta`, `responder-mensagem`, `usuarios`) importam outros módulos de
-`_shared/faturamento/` — mexeu em `mensagens-io.ts`/`perguntas-io.ts`, redeploy delas também.
+`reconciliar-faturamento`, `ml-webhook`, `sync-pergunta`, `sync-mensagem`. `responder-mensagem` e
+`responder-pergunta` importam **outros** módulos da pasta (`mensagens-io.ts`, `perguntas-io.ts`) —
+mexeu neles, redeploy dessas duas também. `usuarios` não importa nada de `_shared/faturamento/`.
 
 ## Anúncio de catálogo no catálogo do faturamento (ADR-0021)
 

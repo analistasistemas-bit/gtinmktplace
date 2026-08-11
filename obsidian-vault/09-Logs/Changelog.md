@@ -21,11 +21,17 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   `familias.ml_item_id` ou com item filho UP. Deploy das 7 functions que importam `io.ts`
   (`sync-venda v63`, `reconciliar-faturamento v63`, `backfill-faturamento v66`,
   `sync-devolucao v43`, `ml-webhook v40`, `sync-pergunta v40`, `sync-mensagem v27`).
-- **Apuração: 7 de 147 produtos sem foto no Estoque são ausência de dado, não bug de tela.** Nenhum
-  deles tem foto em lugar nenhum (variação, família ou Storage). 6 nunca foram publicados, e
-  `ml_picture_id` só nasce quando o app sobe a foto para o ML na publicação. O 7º
-  (`EXT-MLB6901126538`) é publicado e tem foto no ML, mas `capa_ml_picture_id` nulo — linha criada
-  fora do fluxo em 09/07 (o prefixo `EXT-` não é gerado por nenhum código do repositório).
+- **Apuração: 7 de 147 produtos sem foto no Estoque — re-ingest sem imagens não herda
+  `imagem_path`.** O lote #45 (`Atualizar_estoque_-_03082026.xlsx`, 03/08) subiu sem nenhuma imagem
+  e recriou 135 famílias; como a tela adota a família mais recente de cada `codigo_pai` (ADR-0025),
+  elas viraram as canônicas. Em `ingest-lote`, `imagem_path` vem só de `matchImagem` sobre o lote
+  atual — **nunca é herdado da família anterior**; só o `ml_picture_id` é (`herdarPictureId`). Por
+  isso 128 escaparam (publicados, herdaram o id do ML) e os 7 em branco são os **não publicados**.
+  Dois deles ainda têm o arquivo no Storage do lote #33: `03149730` (28 de 28 variações) e
+  `02960150`. O 7º (`EXT-MLB6901126538`) é publicado, tem foto no ML e `capa_ml_picture_id` nulo —
+  linha criada fora do fluxo em 09/07 (o prefixo `EXT-` não sai de nenhum código do repositório).
+  Fix não é trivial: herdar `imagem_path` faria `herdarPictureId` zerar o id do ML de produto
+  publicado. Opções em [[TASKS]].
 - **Fix: coluna "Cor" vazia e miniatura da cor errada no Faturamento.** Item **plano** — filho
   User Products (ADR-0088: 1 item ML por cor) ou família de 1 variação — vende sem variação, e
   o Mercado Livre só manda a cor em `variation_attributes`. Resultado: `ml_vendas_itens.cor` nula

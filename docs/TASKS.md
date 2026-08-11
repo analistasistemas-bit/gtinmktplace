@@ -14,15 +14,30 @@
   A única fora é o pedido `2000017642757888` (do próprio dia 29/07, 1 unidade do `03059251`).
 - [x] Vale para syncs futuros; `ml_vendas` já gravadas mantêm o código até re-sincronizar.
 
-## Estoque — 7 de 147 produtos sem foto: é ausência de dado, não bug de tela — 2026-08-11
+## Estoque — 7 de 147 produtos sem foto: re-ingest sem imagens não herda `imagem_path` — 2026-08-11
 
-- [x] **Conferido:** os 7 não têm foto em lugar nenhum — sem `imagem_path`/`ml_picture_id` nas
-  variações, sem `capa_storage_path`/`capa_ml_picture_id` na família e sem arquivo no Storage.
-- [x] 6 deles nunca foram publicados (`ml_item_id` nulo). `ml_picture_id` só nasce quando o app
-  sobe a foto para o ML na publicação — produto de planilha sem imagem no lote não tem o que exibir.
+- [x] **Conferido:** nos 7, nem a família nem nenhuma variação têm `imagem_path`/`ml_picture_id`.
+  A tela lê essas colunas, então não há o que renderizar — o fallback de foto do ML funciona
+  (os outros 140 mostram miniatura).
+- [x] **Causa:** o lote #45 (`Atualizar_estoque_-_03082026.xlsx`, 03/08, ainda em `revisao`) subiu
+  **sem nenhuma imagem** e recriou **135 famílias**. Como a tela adota a família **mais recente**
+  de cada `codigo_pai` (âncora ADR-0025), essas passaram a ser as canônicas. Em `ingest-lote`,
+  `imagem_path` vem só de `matchImagem(CODIGO, lote.imagens_paths)` — o lote atual. **Nunca é
+  herdado da família anterior**; só o `ml_picture_id` é (`herdarPictureId`).
+- [x] Por isso 128 dos 135 escaparam: são publicados e herdaram o `ml_picture_id`. Os que ficaram
+  em branco são justamente os **não publicados**, que não tinham id de foto do ML para herdar.
+- [x] **2 dos 7 têm o arquivo no Storage**, do lote #33 (13/07): `03149730` (VELLUT AMIGURUMI,
+  28 de 28 variações) e `02960150` (KIT AGULHA 25, 1 de 1). O arquivo sobreviveu, o vínculo não.
+- [x] Os outros 4 (`00300705`, `00440663` — o do print, `00440680`, `03031799`) não têm arquivo
+  nenhum no Storage: nunca tiveram foto.
 - [x] O 7º é `EXT-MLB6901126538` (publicado, importado): a foto existe no anúncio do ML, mas
   `capa_ml_picture_id` está nulo. Prefixo `EXT-` não é gerado por nenhum código do repositório —
-  linha criada fora do fluxo em 2026-07-09. Caso único; preencher é decisão do Diego.
+  linha criada fora do fluxo em 2026-07-09.
+- [ ] **Decisão pendente do Diego.** Herdar `imagem_path` no re-ingest não é trocar uma linha:
+  `herdarPictureId(base.imagem_path, herdado)` zera o id do ML quando enxerga imagem nova, então
+  passar o caminho herdado ali derrubaria a foto de produto **publicado**. Alternativas: (a) religar
+  só as 29 variações dos 2 produtos por SQL; (b) reenviar as fotos no lote #45; (c) herdar
+  `imagem_path` com uma flag que não invalide o `ml_picture_id`.
 
 ## Faturamento/Estoque — venda não baixava estoque de produto de outro membro da org — 2026-08-11
 
