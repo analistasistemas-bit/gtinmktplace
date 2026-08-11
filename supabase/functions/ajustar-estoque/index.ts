@@ -46,7 +46,12 @@ Deno.serve(async (req) => {
 
   const r = await processarAjuste(
     {
-      rpc: (nome, args) => admin.rpc(nome, args).then((res) => ({ data: res.data, error: res.error })),
+      // `async` de propósito: o builder do supabase-js devolve PromiseLike, e o contrato de
+      // DepsAjuste pede Promise (deno check reprova a atribuição direta).
+      rpc: async (nome, args) => {
+        const res = await admin.rpc(nome, args);
+        return { data: res.data, error: res.error };
+      },
       lerMovimento: async (org, refItem) => {
         const { data } = await admin.from('estoque_movimentos')
           .select('codigo_pai, estoque_resultante')
