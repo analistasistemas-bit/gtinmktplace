@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento — miniatura mostrava a foto de outra cor — 2026-08-11
+
+- [x] **A venda de "Amarelo Canário" aparecia com a foto do Vermelho.** Mesmo landmine dos itens
+  abaixo, agora em `src/lib/fotos-produto.ts`: o mapa por anúncio era first-wins, então um anúncio
+  com N cores guardava a foto da PRIMEIRA variação da lista e todas as cores herdavam. Atinge os
+  mesmos 8 anúncios em que o `item_externo_id` do filho UP é também o `familias.ml_item_id`
+  (as demais cores caem no fallback por GTIN, que é exato — por isso a foto do Branco já estava
+  certa). Corrigido com a mesma disciplina de `cor-produto.ts`: chave disputada por fotos
+  diferentes é anulada, e o `sku` do filho UP sobrepõe. Sem chute: a cadeia segue para GTIN/código
+  (exatos) e, no pior caso, para a capa da família — genérica, nunca de outra cor.
+  Simulado contra produção: 424 itens sem variação, 4 mudam de foto e os 4 vão de errada para
+  certa (314 → 318 batendo com o código vendido), nenhuma regressão e nenhum item perde foto.
+
 ## Faturamento — coluna "Cor" vazia em item plano — 2026-08-11
 
 - [x] **Cor do produto não aparecia em 184 de 1350 itens vendidos** (Faturamento e Detalhe do
