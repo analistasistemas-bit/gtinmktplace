@@ -2,6 +2,28 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento — MLB do anúncio de catálogo entra no catálogo (ADR-0021) — 2026-08-11
+
+- [x] **Lacuna:** `carregarCatalogo` só conhecia `familias.ml_item_id`. O vínculo de catálogo cria
+  um anúncio **separado** (`variacoes.catalog_listing_id`), então a venda dele só era reconhecida
+  pelo fallback de GTIN — produto sem EAN ficaria sem código, e sem código não há baixa de estoque.
+- [x] `catalog_listing_id` registrado em `idsPubliai`/`codPorItem`/`eanPorItem`. 5 testes novos
+  (`catalogo-anuncio-catalogo.test.ts`), RED confirmado antes do fix.
+- [x] **Sem dado errado hoje:** nenhum SKU vinculado está sem GTIN (288 Avil, 4 DSA). Vendas de
+  catálogo já baixavam estoque — Avil 86/87 e DSA 55/55 desde 2026-07-29, quando a baixa entrou.
+  A única fora é o pedido `2000017642757888` (do próprio dia 29/07, 1 unidade do `03059251`).
+- [x] Vale para syncs futuros; `ml_vendas` já gravadas mantêm o código até re-sincronizar.
+
+## Estoque — 7 de 147 produtos sem foto: é ausência de dado, não bug de tela — 2026-08-11
+
+- [x] **Conferido:** os 7 não têm foto em lugar nenhum — sem `imagem_path`/`ml_picture_id` nas
+  variações, sem `capa_storage_path`/`capa_ml_picture_id` na família e sem arquivo no Storage.
+- [x] 6 deles nunca foram publicados (`ml_item_id` nulo). `ml_picture_id` só nasce quando o app
+  sobe a foto para o ML na publicação — produto de planilha sem imagem no lote não tem o que exibir.
+- [x] O 7º é `EXT-MLB6901126538` (publicado, importado): a foto existe no anúncio do ML, mas
+  `capa_ml_picture_id` está nulo. Prefixo `EXT-` não é gerado por nenhum código do repositório —
+  linha criada fora do fluxo em 2026-07-09. Caso único; preencher é decisão do Diego.
+
 ## Faturamento/Estoque — venda não baixava estoque de produto de outro membro da org — 2026-08-11
 
 - [x] **Sintoma:** 12 unidades do NIVEA (org DSA) venderam em 10 pedidos pagos e o saldo continuou
