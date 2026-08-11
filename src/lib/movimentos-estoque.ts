@@ -14,6 +14,8 @@ export const MOTIVOS_MOVIMENTO = [
   'estorno_sku_nao_encontrado',
   'cancelamento_sem_baixa',
   'venda_cancelada_antes',
+  // ADR-0110: redução manual de saldo (venda física, perda, fim de estoque).
+  'ajuste',
 ] as const;
 
 export type MotivoMovimento = (typeof MOTIVOS_MOVIMENTO)[number];
@@ -41,6 +43,7 @@ const ROTULO_MOTIVO: Record<MotivoMovimento, string> = {
   estorno_sku_nao_encontrado: 'Estorno de SKU não cadastrado',
   cancelamento_sem_baixa: 'Cancelamento sem baixa',
   venda_cancelada_antes: 'Venda cancelada antes da baixa',
+  ajuste: 'Ajuste manual',
 };
 
 /** Motivo → texto do operador. Motivo desconhecido devolve o próprio identificador
@@ -61,7 +64,7 @@ export function movimentoInformativo(m: MovimentoEstoque): boolean {
 /** Recortes que a UI oferece. Os 7 motivos do ledger são detalhe de auditoria: para quem filtra,
  *  `venda_sku_nao_encontrado` e `venda_cancelada_antes` são venda. O motivo exato continua escrito
  *  em cada linha, então agrupar aqui não esconde informação — só tira ruído do filtro. */
-export const GRUPOS_MOTIVO = ['entradas', 'vendas', 'estornos'] as const;
+export const GRUPOS_MOTIVO = ['entradas', 'vendas', 'estornos', 'ajustes'] as const;
 
 export type GrupoMotivo = (typeof GRUPOS_MOTIVO)[number];
 
@@ -69,12 +72,14 @@ export const ROTULO_GRUPO: Record<GrupoMotivo, string> = {
   entradas: 'Entradas',
   vendas: 'Vendas',
   estornos: 'Estornos',
+  ajustes: 'Ajustes',
 };
 
 const MOTIVOS_POR_GRUPO: Record<GrupoMotivo, MotivoMovimento[]> = {
   entradas: ['entrada'],
   vendas: ['venda', 'venda_sku_nao_encontrado', 'venda_cancelada_antes'],
   estornos: ['estorno_venda', 'estorno_sku_nao_encontrado', 'cancelamento_sem_baixa'],
+  ajustes: ['ajuste'],
 };
 
 /** Motivos cobertos pelos grupos escolhidos. Lista vazia = "Todos", que é AUSÊNCIA de recorte, não

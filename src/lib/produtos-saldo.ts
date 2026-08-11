@@ -113,6 +113,37 @@ export async function registrarEntrada(p: {
   return { estoque: r.estoque, duplicada: r.duplicada === true, pushOk: r.pushOk !== false };
 }
 
+export interface ResultadoAjusteItem {
+  codigo: string;
+  estoque: number | null;
+  duplicada: boolean;
+  erro?: string;
+}
+
+export interface ResultadoAjuste {
+  resultados: ResultadoAjusteItem[];
+  /** false = saldo gravado, mas a propagação para os marketplaces falhou. NUNCA descartar. */
+  pushOk: boolean;
+}
+
+/**
+ * Reduz ou zera saldo (ADR-0110). Aumentar é Entrada de mercadoria — a edge recusa, porque
+ * entrada exige custo e é ele que alimenta markup e preço (ADR-0055).
+ */
+export async function ajustarEstoque(p: {
+  ajustes: { codigo: string; novoSaldo: number }[];
+  observacao?: string | null;
+  /** uuid gerado UMA vez por submissão — não regenerar no retry, senão reaplica. */
+  ref: string;
+}): Promise<ResultadoAjuste> {
+  const { data, error } = await supabase.functions.invoke('ajustar-estoque', {
+    body: { ajustes: p.ajustes, observacao: p.observacao ?? null, ref: p.ref },
+  });
+  if (error) throw await erroDaEdge(error);
+  const r = data as { resultados?: ResultadoAjusteItem[]; pushOk?: boolean };
+  return { resultados: r.resultados ?? [], pushOk: r.pushOk !== false };
+}
+
 /** Produto já cadastrado: carrega os ids para a tela oferecer "abrir o produto". */
 export class ProdutoJaExisteError extends Error {
   constructor(mensagem: string, readonly familiaId: string, readonly loteId: string) {

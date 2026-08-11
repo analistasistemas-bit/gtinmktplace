@@ -38,12 +38,14 @@ describe('lib/movimentos-estoque', () => {
     expect(motivosDosGrupos(['estornos'])).toEqual([
       'estorno_venda', 'estorno_sku_nao_encontrado', 'cancelamento_sem_baixa',
     ]);
+    // ADR-0110: ajuste manual não é venda, entrada nem estorno — grupo próprio.
+    expect(motivosDosGrupos(['ajustes'])).toEqual(['ajuste']);
   });
 
   it('sem grupo escolhido não recorta motivo nenhum', () => {
     expect(motivosDosGrupos([])).toEqual([]);
-    // Todos os grupos juntos cobrem os 7 motivos — nenhum fica órfão de classificação.
-    expect(motivosDosGrupos([...GRUPOS_MOTIVO])).toHaveLength(7);
+    // Todos os grupos juntos cobrem os 8 motivos — nenhum fica órfão de classificação.
+    expect(motivosDosGrupos([...GRUPOS_MOTIVO])).toHaveLength(8);
   });
 
   it('pede o range da página pedida e devolve o total', async () => {

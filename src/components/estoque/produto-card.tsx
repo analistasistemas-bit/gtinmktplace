@@ -3,7 +3,7 @@
 // página. O alinhamento de colunas vem de CSS Grid com tracks FIXOS — grid não dimensiona track
 // por conteúdo do jeito que a tabela dimensiona, então GTIN/nome longo não empurra nada.
 import { useId, useState } from 'react';
-import { ChevronRight, PackagePlus } from 'lucide-react';
+import { ChevronRight, PackageMinus, PackagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalBadge } from '@/components/canal-badge';
@@ -73,10 +73,12 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
   );
 }
 
-export function ProdutoCard({ produto, canais, onDarEntrada }: {
+export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar }: {
   produto: ProdutoComSaldo;
   canais: string[];
   onDarEntrada: (alvo: AlvoEntrada) => void;
+  /** ADR-0110: ajuste/zeragem é admin-only — a página só passa isto para admin. */
+  onAjustar?: (produto: ProdutoComSaldo) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
@@ -129,16 +131,30 @@ export function ProdutoCard({ produto, canais, onDarEntrada }: {
           )}
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 w-full md:h-7"
-          aria-label={`Dar entrada em ${produto.nomePai}`}
-          onClick={() => onDarEntrada(alvo)}
-        >
-          <PackagePlus className="h-3.5 w-3.5" />
-          <span className="hidden md:inline">Entrada</span>
-        </Button>
+        <div className="flex w-full gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 w-full md:h-7"
+            aria-label={`Dar entrada em ${produto.nomePai}`}
+            onClick={() => onDarEntrada(alvo)}
+          >
+            <PackagePlus className="h-3.5 w-3.5" />
+            <span className="hidden md:inline">Entrada</span>
+          </Button>
+          {onAjustar && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 w-full md:h-7"
+              aria-label={`Ajustar estoque de ${produto.nomePai}`}
+              onClick={() => onAjustar(produto)}
+            >
+              <PackageMinus className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">Ajustar</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {aberto && (

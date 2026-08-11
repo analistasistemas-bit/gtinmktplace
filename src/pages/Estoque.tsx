@@ -10,13 +10,15 @@ import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
+import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
 import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/estoque/produto-card';
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { filtrarProdutos, canaisEfetivos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
-import { fetchProdutosComSaldo, fetchCanaisPorProduto } from '@/lib/produtos-saldo';
+import { fetchProdutosComSaldo, fetchCanaisPorProduto, type ProdutoComSaldo } from '@/lib/produtos-saldo';
+import { useProfile } from '@/hooks/useProfile';
 import { resumirEstoque } from '@/lib/produtos-saldo-resumo';
 
 export default function Estoque() {
@@ -27,6 +29,9 @@ export default function Estoque() {
   const [entradaAberta, setEntradaAberta] = useState(false);
   const [alvoEntrada, setAlvoEntrada] = useState<AlvoEntrada | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
+  // ADR-0110: ajustar/zerar tira o produto de venda — mesmo peso comercial de pausar (ADR-0060).
+  const { isAdmin } = useProfile();
+  const [produtoAjuste, setProdutoAjuste] = useState<ProdutoComSaldo | null>(null);
 
   const { data: produtos, isLoading, isError } = useQuery({
     queryKey: ['produtos-saldo'],
@@ -144,6 +149,7 @@ export default function Estoque() {
                 produto={p}
                 canais={canaisEfetivos(p, canaisPorProduto)}
                 onDarEntrada={(alvo) => { setAlvoEntrada(alvo); setEntradaAberta(true); }}
+                onAjustar={isAdmin ? setProdutoAjuste : undefined}
               />
             ))}
             {lista.length === 0 && (
@@ -163,6 +169,11 @@ export default function Estoque() {
         onFechar={() => setEntradaAberta(false)}
         skuInicial={alvoEntrada?.sku}
         filtroInicial={alvoEntrada?.codigoPai}
+      />
+      <DialogAjuste
+        produto={produtoAjuste}
+        aberto={produtoAjuste != null}
+        onFechar={() => setProdutoAjuste(null)}
       />
       <DialogCadastroProduto
         aberto={cadastroAberto}
