@@ -2,6 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — repor estoque reativa o anúncio pausado (ADR-0111) — 2026-08-11
+
+- [x] **Motivo:** o ML só desfaz sozinho a pausa que ele mesmo aplicou por falta de estoque. Pausa
+  do vendedor fica de pé mesmo com o saldo já no canal — `MLB5040504553` ficou `paused` com as 70
+  unidades corretas, e o operador não tinha como saber por quê.
+- [x] `sincronizar-estoque`: com `reativar` no job e saldo > 0, lê o status ao vivo depois do push e
+  devolve `pausado` → `ativo`. Já ativo não recebe PUT (o job é reentregue). `moderado`,
+  `encerrado`, `inativo` e `indisponivel` intocados.
+- [x] A flag é ligada por quem **repõe**: `entrada-estoque` direto, e o outbox pelo **sinal da
+  quantidade** (`quantidade > 0` → entrada e estorno; venda e ajuste ficam fora). `reposicao` entrou
+  na chave de agrupamento de `despacharPushPendente` — sem isso a entrada seria despachada com a
+  intenção da venda.
+- [x] Reconciliação diária **não** reativa: ela re-empurra saldo de produto com movimento recente, e
+  reativar ali traria de volta um anúncio pausado à mão sem reposição nenhuma.
+- [x] 10 testes novos (7 no worker + 3 no despacho, que não tinha cobertura), RED confirmado.
+
 ## Faturamento — MLB do anúncio de catálogo entra no catálogo (ADR-0021) — 2026-08-11
 
 - [x] **Lacuna:** `carregarCatalogo` só conhecia `familias.ml_item_id`. O vínculo de catálogo cria

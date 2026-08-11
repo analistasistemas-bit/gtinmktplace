@@ -207,3 +207,84 @@ describe('processarSincronizacao', () => {
     expect(chamadasDeEstoque()).toHaveLength(0);
   });
 });
+
+/**
+ * ADR-0111 — repor estoque reativa o anúncio pausado. O ML só desfaz sozinho a pausa que ele
+ * mesmo aplicou por falta de estoque; pausa do vendedor fica de pé mesmo com o saldo já no canal
+ * (produção 2026-08-11: MLB5040504553 com 70 unidades e ainda `paused`).
+ */
+describe('processarSincronizacao — reativação ao repor estoque (ADR-0111)', () => {
+  beforeEach(() => fakeConnector.reset());
+
+  const chamadasDeStatus = () =>
+    fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarStatus')
+      .map((c) => c.args as { itemExternoId: string; status: string });
+
+  const umAnuncio = (estoque: number): DB => ({
+    familia: { id: 'f1' },
+    variacoes: [{ codigo: 'A1', estoque }],
+    anuncios: [{ id: 'x', canal: 'fake', item_externo_id: 'FK1', variacoes_externas: { A1: {} } }],
+    itensUP: [],
+  });
+
+  it('anúncio pausado + saldo > 0 → reativa', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const r = await processarSincronizacao(deps(umAnuncio(7)), { ...JOB, reativar: true });
+    expect(r.status).toBe(200);
+    expect(chamadasDeStatus()).toEqual([{ itemExternoId: 'FK1', status: 'ativo' }]);
+  });
+
+  // Idempotência: o QStash reentrega o job e a reconciliação repete o push.
+  it('anúncio já ativo → nenhum PUT de status', async () => {
+    fakeConnector.statusVivo = 'ativo';
+    await processarSincronizacao(deps(umAnuncio(7)), { ...JOB, reativar: true });
+    expect(chamadasDeStatus()).toEqual([]);
+  });
+
+  // A reconciliação diária re-empurra saldo de produto com movimento recente. Sem esta guarda,
+  // um anúncio pausado de propósito voltaria ao ar sem ninguém ter reposto nada.
+  it('push sem a flag (reconciliação) → não reativa, nem lê status', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    await processarSincronizacao(deps(umAnuncio(7)), JOB);
+    expect(chamadasDeStatus()).toEqual([]);
+    expect(fakeConnector.chamadas.some((c) => c.metodo === 'lerStatus')).toBe(false);
+  });
+
+  it('saldo zero no alvo → não reativa', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    await processarSincronizacao(deps(umAnuncio(0)), { ...JOB, reativar: true });
+    expect(chamadasDeStatus()).toEqual([]);
+  });
+
+  // Forçar `active` num anúncio moderado é a escrita que cancelou um anúncio em 2026-08-06.
+  it.each(['moderado', 'encerrado', 'inativo', 'indisponivel'] as const)(
+    'anúncio %s → intocado', async (status) => {
+      fakeConnector.statusVivo = status;
+      await processarSincronizacao(deps(umAnuncio(7)), { ...JOB, reativar: true });
+      expect(chamadasDeStatus()).toEqual([]);
+    },
+  );
+
+  it('push de estoque falhou → não reativa (canal ficaria publicado e defasado)', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    fakeConnector.falharProximo('ESTOQUE', true);
+    const r = await processarSincronizacao(deps(umAnuncio(7)), { ...JOB, reativar: true });
+    expect(r.status).toBe(500);
+    expect(chamadasDeStatus()).toEqual([]);
+  });
+
+  it('user products: reativa cada item filho que tem saldo', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const db: DB = {
+      familia: { id: 'f1' },
+      variacoes: [{ codigo: 'A1', estoque: 5 }, { codigo: 'A3', estoque: 0 }],
+      anuncios: [{ id: 'p0', canal: 'fake', item_externo_id: null, variacoes_externas: { A1: {}, A3: {} } }],
+      itensUP: [
+        { anuncio_externo_id: 'p0', sku: 'A1', item_externo_id: 'FK-A1', retirado: false, status: 'ativo' },
+        { anuncio_externo_id: 'p0', sku: 'A3', item_externo_id: 'FK-A3', retirado: false, status: 'ativo' },
+      ],
+    };
+    await processarSincronizacao(deps(db), { ...JOB, reativar: true });
+    expect(chamadasDeStatus()).toEqual([{ itemExternoId: 'FK-A1', status: 'ativo' }]);
+  });
+});

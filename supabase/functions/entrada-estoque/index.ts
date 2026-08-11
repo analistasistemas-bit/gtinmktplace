@@ -71,7 +71,9 @@ Deno.serve(async (req) => {
   if (mov?.codigo_pai) {
     try {
       await enfileirarSincronizacaoEstoque(
-        { org_id: orgId, codigo_pai: mov.codigo_pai as string, canal_origem: null }, orgId,
+        // reativar: entrada de mercadoria é reposição — anúncio pausado com saldo volta ao ar
+        // (ADR-0111). O worker confere o status ao vivo antes de escrever.
+        { org_id: orgId, codigo_pai: mov.codigo_pai as string, canal_origem: null, reativar: true }, orgId,
       );
     } catch (e) {
       // A entrada já foi gravada e é a verdade; o push é recuperável pela reconciliação diária.

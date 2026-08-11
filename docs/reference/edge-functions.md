@@ -472,6 +472,15 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   planos user products (ADR-0088). Token por canal via `fabricarTokenPadrao` (hoje só ML; Shopee
   entra no E5). Falha de um canal nunca afeta outro (try/catch por alvo); exceção inesperada é
   tratada como retentável — devolve 500 para o QStash re-tentar (push absoluto é idempotente).
+  **Reativação ao repor (ADR-0111):** com `reativar` no job e saldo > 0 no alvo, depois do push OK
+  o worker lê o status ao vivo e devolve o anúncio de `pausado` para `ativo`. Lê antes de escrever
+  (o job é reentregue): já ativo não recebe PUT. `moderado`/`encerrado`/`inativo`/`indisponivel`
+  são intocados. Erro retentável na reativação entra na mesma lista do 500; definitivo é logado
+  (`estoque_reativar_definitivo`) e o push segue como sucesso — o saldo já chegou.
+  Quem liga a flag: `entrada-estoque` (direto) e o outbox, por **sinal da quantidade**
+  (`lerPushPendente` marca `reposicao` quando `quantidade > 0`, então entrada e estorno entram e
+  venda/ajuste não). O agrupamento de `despacharPushPendente` inclui `reposicao` na chave — sem
+  isso a entrada seria despachada com a intenção da venda.
 - **reconciliar-estoque** *(schedule QStash)* — rede de segurança do **push**, não do webhook
   (D-12): só re-empurra produtos que **têm movimento no ledger** (outbox pendente, drenado pelo
   mesmo `despacharPushPendente` do `sync-venda`, ou movimento nas últimas 24h já despachado mas cujo
@@ -479,7 +488,9 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   venda perdido significa que o saldo local está **alto demais**, e reempurrar restauraria unidades
   já vendidas. Paginado (`paginarTudo`, teto de 5 páginas × 200 por org por execução). Schedule
   criado em produção: **`30 12 * * *`**, 3 retries, body `{}`
-  (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`).
+  (`scd_5WETvRdUHQr7pzKqgv4Pg4QrFNgA`). O re-push do passo 2 vai **sem** `reativar` de propósito:
+  ele alcança produto com movimento recente, e reativar ali traria de volta um anúncio pausado à
+  mão sem ninguém ter reposto nada (ADR-0111).
 
 ### Estoque (ADR-0094, Bloco B — módulo pago `estoque`, EM PRODUÇÃO 2026-07-29)
 

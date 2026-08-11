@@ -177,6 +177,13 @@ export interface SincronizarEstoqueJob {
   codigo_pai: string;
   /** null = push para TODOS os canais (entrada, estorno, reconciliação). */
   canal_origem: string | null;
+  /**
+   * ADR-0111 — este push nasceu de uma REPOSIÇÃO (movimento que aumenta saldo: entrada de
+   * mercadoria, estorno de venda cancelada). Anúncio pausado com saldo > 0 volta a `ativo`.
+   * Ausente na reconciliação diária de propósito: ela re-empurra saldo de produto com movimento
+   * recente, e reativar ali traria de volta um anúncio pausado à mão sem ninguém ter reposto nada.
+   */
+  reativar?: boolean;
 }
 
 /** Fila serial de estoque por org: pushes absolutos precisam chegar em ordem. */

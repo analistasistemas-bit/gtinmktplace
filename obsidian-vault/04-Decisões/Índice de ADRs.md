@@ -122,5 +122,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0108 | [Com variação duplicada, vence o custo mais recente (não o maior)](../../docs/decisions/0108-custo-duplicado-vence-o-mais-recente.md) |
 | 0109 | [Custo congelado no instante da venda (markup histórico fiel; tabela satélite insert-once)](../../docs/decisions/0109-custo-congelado-por-venda.md) |
 | 0110 | [Ajuste de estoque no PubliAI: só reduz, e é admin](../../docs/decisions/0110-ajuste-de-estoque-so-reduz.md) |
+| 0111 | [Repor estoque reativa o anúncio pausado (qualquer pausa; reconciliação não reativa)](../../docs/decisions/0111-reativacao-automatica-ao-repor-estoque.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

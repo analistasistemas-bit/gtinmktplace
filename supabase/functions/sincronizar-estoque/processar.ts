@@ -11,6 +11,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
 import { resolverAlvosPush } from '../_shared/estoque/alvos.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
+import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
 
 /**
  * Obtenção de token POR CANAL. Hoje só o ML existe; a Shopee entra aqui no E5.
@@ -35,6 +36,34 @@ export interface DepsSincronizacao {
 }
 
 export interface RespostaSincronizacao { status: number; body: Record<string, unknown> }
+
+/**
+ * ADR-0111 — devolve o anúncio de `pausado` para `ativo` depois de uma reposição.
+ *
+ * O status é LIDO antes de escrever, por dois motivos. Idempotência: o QStash reentrega o job e a
+ * reconciliação repete o push, então agir às cegas viraria N escritas para o mesmo fim. E porque
+ * só `pausado` é reversível sem decisão humana — `moderado`, `encerrado`, `inativo` e
+ * `indisponivel` ficam intocados (forçar `active` num anúncio moderado é a escrita que fez o ML
+ * cancelar um anúncio em 2026-08-06).
+ *
+ * 'retentavel' = quem chama devolve 500 e o QStash tenta de novo. Erro definitivo é só logado: o
+ * saldo já chegou ao canal e é a verdade; a reativação tenta de novo na próxima reposição.
+ */
+async function reativarSePausado(
+  conn: ChannelConnector, ctx: ContextoCanal, canal: string, itemExternoId: string,
+): Promise<'ok' | 'retentavel'> {
+  const vivo = await conn.lerStatus(ctx, [itemExternoId]);
+  if (vivo[itemExternoId]?.status !== 'pausado') return 'ok';
+
+  const r = await conn.atualizarStatus(ctx, itemExternoId, 'ativo');
+  if (r.ok) {
+    console.log('estoque_reativou_anuncio', canal, itemExternoId);
+    return 'ok';
+  }
+  if (r.erro?.retentavel) return 'retentavel';
+  console.error('estoque_reativar_definitivo', canal, itemExternoId, r.erro);
+  return 'ok';
+}
 
 export async function processarSincronizacao(
   deps: DepsSincronizacao, job: SincronizarEstoqueJob,
@@ -102,6 +131,12 @@ export async function processarSincronizacao(
       if (!r.ok && r.erro?.retentavel) retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}`);
       if (!r.ok && !r.erro?.retentavel) {
         console.error('estoque_push_definitivo', alvo.canal, alvo.itemExternoId, r.erro);
+      }
+      // ADR-0111 — reposição reativa o anúncio pausado. Só depois do push OK: publicar com o
+      // canal defasado seria pior que continuar pausado. Saldo zero não reativa nada.
+      if (r.ok && job.reativar && alvo.estoques.some((e) => e.estoque > 0)) {
+        const reativacao = await reativarSePausado(conn, { getToken }, alvo.canal, alvo.itemExternoId);
+        if (reativacao === 'retentavel') retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}:status`);
       }
     } catch (e) {
       // Exceção inesperada é tratada como RETENTÁVEL: melhor o QStash tentar de novo

@@ -11,6 +11,15 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-08-11
 
+- **Feature: repor estoque reativa o anúncio pausado (ADR-0111).** O ML só desfaz sozinho a pausa
+  que ele mesmo aplicou por falta de estoque; pausa do vendedor fica de pé mesmo com o saldo já no
+  canal. Agora `sincronizar-estoque`, num push de **reposição** com saldo > 0, lê o status ao vivo e
+  devolve `pausado` → `ativo`. Lê antes de escrever (job reentregue não gera PUT repetido) e nunca
+  toca `moderado`/`encerrado`/`inativo`/`indisponivel`. A intenção vem do **sinal da quantidade** no
+  ledger (entrada e estorno somam; venda e ajuste não), e a reconciliação diária não reativa — senão
+  um anúncio pausado à mão voltaria ao ar sem reposição. Decisão explícita do Diego: reativa
+  **qualquer** pausa, inclusive a que ele fez de propósito.
+
 - **Robustez: o MLB do anúncio de catálogo entra no catálogo do faturamento.** Vincular ao catálogo
   do ML (ADR-0021) cria um anúncio **separado**, com MLB próprio em `variacoes.catalog_listing_id` —
   diferente de `familias.ml_item_id`. `carregarCatalogo` só conhecia o segundo, então a venda de

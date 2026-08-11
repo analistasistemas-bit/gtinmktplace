@@ -24,11 +24,13 @@ class FakeConnector implements ChannelConnector {
   };
 
   chamadas: Array<{ metodo: string; args: unknown }> = [];
+  /** Status que `lerStatus` devolve para qualquer id. Ajustável pelo teste (ADR-0111). */
+  statusVivo: StatusCanal['status'] = 'ativo';
   private falha: FalhaArmada | null = null;
   private seq = 0;
 
   /** Reseta o estado entre testes. */
-  reset(): void { this.chamadas = []; this.falha = null; this.seq = 0; }
+  reset(): void { this.chamadas = []; this.falha = null; this.seq = 0; this.statusVivo = 'ativo'; }
   /** Arma uma falha para o próximo criar/atualizar. */
   falharProximo(codigo: ErroCanalCodigo, retentavel: boolean, up?: FalhaArmada['up']): void {
     this.falha = { codigo, retentavel, up };
@@ -106,7 +108,7 @@ class FakeConnector implements ChannelConnector {
   lerStatus(_ctx: ContextoCanal, itemExternoIds: string[]): Promise<Record<string, StatusCanal>> {
     this.registrar('lerStatus', { itemExternoIds });
     const out: Record<string, StatusCanal> = {};
-    for (const id of itemExternoIds) out[id] = { status: 'ativo', motivo: null, estoque: 10, preco: 9.9, listingType: 'classico' };
+    for (const id of itemExternoIds) out[id] = { status: this.statusVivo, motivo: null, estoque: 10, preco: 9.9, listingType: 'classico' };
     return Promise.resolve(out);
   }
 
