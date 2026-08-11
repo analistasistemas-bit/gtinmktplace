@@ -2,7 +2,12 @@
 // A venda é sagrada — nada aqui pode derrubar o sync-venda; o chamador envolve em try/catch.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
-export interface ItemVendaBaixa { codigo: string | null; quantity: number }
+export interface ItemVendaBaixa {
+  codigo: string | null;
+  quantity: number;
+  ml_item_id?: string | null;
+  titulo?: string | null;
+}
 export interface BaixaSelecionada { codigo: string; quantity: number }
 
 /** Filtra itens sem SKU ou sem quantidade e agrega o mesmo SKU repetido no pedido. */
@@ -13,6 +18,23 @@ export function selecionarBaixas(itens: ItemVendaBaixa[]): BaixaSelecionada[] {
     porCodigo.set(i.codigo, (porCodigo.get(i.codigo) ?? 0) + i.quantity);
   }
   return [...porCodigo].map(([codigo, quantity]) => ({ codigo, quantity }));
+}
+
+/**
+ * Itens de venda paga que NÃO dá para baixar por falta de SKU resolvido.
+ *
+ * Incidente 2026-08-11: 12 unidades do NIVEA venderam na org DSA sem baixar nada, e sem deixar
+ * rastro — `selecionarBaixas` descartava o item calado e nem o motivo de diagnóstico
+ * `venda_sku_nao_encontrado` (que já existia no ledger, com 0 linhas em todo o banco) era
+ * gravado. Um saldo que não desce é indistinguível de um produto que não vendeu.
+ */
+export function selecionarSemSku(itens: ItemVendaBaixa[]): ItemVendaBaixa[] {
+  return itens.filter((i) => !i.codigo && i.quantity > 0);
+}
+
+/** Referência de idempotência do diagnóstico. Um por (pedido, item externo). */
+export function refSemSku(canal: string, orderId: string | number, mlItemId: string | null): string {
+  return `venda_sem_sku:${canal}:${orderId}:${mlItemId ?? 'sem-item'}`;
 }
 
 /** Referência de idempotência da baixa. Canal-agnóstica por construção. */
@@ -35,14 +57,20 @@ export interface ResultadoBaixaVenda {
   semSaldo: Array<{ codigo: string; pedido: number }>;
   /** RPCs que erraram. Nunca vazio em silêncio: o chamador notifica. */
   falhas: Array<{ codigo: string; mensagem: string }>;
+  /** Itens da venda paga que ficaram SEM baixa por não ter SKU resolvido. */
+  semSku: Array<{ titulo: string | null; mlItemId: string | null; quantidade: number }>;
 }
 
 export async function registrarBaixaVenda(
   admin: SupabaseClient,
   p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
 ): Promise<ResultadoBaixaVenda> {
+  // O diagnóstico do que NÃO dá para baixar vem primeiro e roda mesmo quando não há nenhuma
+  // baixa possível — era exatamente esse o caminho que saía calado.
+  const semSku = await registrarVendaSemSku(admin, p);
+
   const baixas = selecionarBaixas(p.itens);
-  if (baixas.length === 0) return { pendentesDePush: [], semSaldo: [], falhas: [] };
+  if (baixas.length === 0) return { pendentesDePush: [], semSaldo: [], falhas: [], semSku };
 
   const semSaldo: Array<{ codigo: string; pedido: number }> = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
@@ -74,7 +102,47 @@ export async function registrarBaixaVenda(
   // movimento com push ainda não entregue. É o que fecha o buraco em que a RPC
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), semSaldo, falhas };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), semSaldo, falhas, semSku };
+}
+
+/**
+ * Grava no ledger, com `quantidade = 0`, o item de venda paga que não pôde ser baixado por
+ * falta de SKU. Movimento informativo (o saldo não mudou), mas VISÍVEL: é a diferença entre
+ * "esse produto não vendeu" e "vendeu e ninguém baixou".
+ *
+ * `codigo_pai` fica vazio de propósito — sem produto resolvido não há para onde empurrar
+ * estoque, e o índice de outbox exige `codigo_pai <> ''`, então isto nunca vira push.
+ */
+async function registrarVendaSemSku(
+  admin: SupabaseClient,
+  p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
+): Promise<ResultadoBaixaVenda['semSku']> {
+  const itens = selecionarSemSku(p.itens);
+  const registrados: ResultadoBaixaVenda['semSku'] = [];
+
+  for (const i of itens) {
+    const mlItemId = i.ml_item_id ?? null;
+    const { error } = await admin.from('estoque_movimentos').insert({
+      org_id: p.orgId,
+      codigo: '',
+      codigo_pai: '',
+      quantidade: 0,
+      quantidade_pedida: i.quantity,
+      motivo: 'venda_sku_nao_encontrado',
+      canal_origem: p.canal,
+      referencia_externa: refSemSku(p.canal, p.orderId, mlItemId),
+      observacao: `Venda sem SKU resolvido${i.titulo ? `: ${i.titulo}` : ''}${mlItemId ? ` (${mlItemId})` : ''}`,
+      push_enfileirado_em: new Date().toISOString(),
+    });
+    // 23505 = já registrado numa execução anterior deste mesmo pedido. O sync roda várias vezes
+    // (webhook de order + de shipment), então duplicata aqui é o caminho normal, não erro.
+    if (error && error.code !== '23505') {
+      console.error('registrar_venda_sem_sku_falhou', { orderId: p.orderId, mlItemId, erro: error.message });
+      continue;
+    }
+    registrados.push({ titulo: i.titulo ?? null, mlItemId, quantidade: i.quantity });
+  }
+  return registrados;
 }
 
 /**

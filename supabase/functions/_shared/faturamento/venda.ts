@@ -123,6 +123,9 @@ export interface PedidoML {
     item?: {
       id?: string | null; title?: string | null; variation_id?: number | string | null;
       variation_attributes?: Array<{ id?: string | null; name?: string | null; value_name?: string | null }> | null;
+      /** SKU do vendedor no anúncio. O ML manda um dos dois — `seller_sku` é o campo novo. */
+      seller_custom_field?: string | null;
+      seller_sku?: string | null;
     } | null;
     quantity?: number | null;
     unit_price?: number | null;
@@ -250,6 +253,18 @@ export function mapearPedidoParaVenda(
       if (info) { itemPubliai = true; codigo = info.codigo; ean = info.ean ?? gtin; }
     }
     if (!ean && gtin) ean = gtin; // mostra o EAN mesmo p/ itens fora do catálogo
+
+    // 3) Último recurso: o SKU que o PRÓPRIO ML carrega no pedido (`seller_custom_field`, ou
+    //    `seller_sku` quando o vendedor usa o campo novo). Cobre o anúncio publicado fora do
+    //    app e o catálogo desatualizado — no incidente de 2026-08-11 o SKU vinha aqui,
+    //    preenchido e correto, enquanto o item era descartado por "não ter código".
+    //    NÃO marca `itemPubliai`: esse campo significa "anúncio gerenciado por nós" e o
+    //    vendedor pode preencher o custom_field em qualquer anúncio dele. Serve para exibir o
+    //    código na tela e para a baixa de estoque, que valida o SKU contra `variacoes`.
+    if (!codigo) {
+      const skuDoPedido = (oi?.item?.seller_custom_field ?? oi?.item?.seller_sku ?? '').trim();
+      if (skuDoPedido) codigo = skuDoPedido;
+    }
 
     if (itemPubliai) isPubliai = true;
     return {

@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
   // devolve `aplicado=false` e não é reaplicado.
   if (pedido.status === 'paid' && orgId) {
     try {
-      const { pendentesDePush, semSaldo, falhas } = await registrarBaixaVenda(admin, {
+      const { pendentesDePush, semSaldo, falhas, semSku } = await registrarBaixaVenda(admin, {
         orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
       });
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
@@ -155,6 +155,21 @@ Deno.serve(async (req) => {
           admin, orgId, 'vendas',
           `⚠️ Venda sem saldo suficiente (pedido ${pedido.id})\n\n${linhas}\n\n`
           + 'O estoque foi zerado e o anúncio pode ter vendido mais do que você tem.',
+        );
+      }
+      // Venda paga que não achou SKU: o saldo NÃO desceu e antes isso não deixava rastro
+      // nenhum (incidente de 2026-08-11, 12 unidades). Agora vira movimento informativo no
+      // ledger + alerta, porque só o operador sabe qual produto é.
+      if (semSku.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_venda_sem_sku', String(pedido.id))) {
+        const linhas = semSku
+          .map((s) => `• ${s.titulo ?? s.mlItemId ?? 'item sem título'} — ${s.quantidade} un.`)
+          .join('\n');
+        await notificarCategoria(
+          admin, orgId, 'vendas',
+          `⚠️ Venda sem SKU reconhecido (pedido ${pedido.id})\n\n${linhas}\n\n`
+          + 'O estoque NÃO foi baixado desses itens porque o anúncio não está vinculado a um '
+          + 'produto do PubliAI. Confira o saldo em Estoque → Ajustar.',
         );
       }
       // Falha de RPC é irrecuperável sozinha: o operador PRECISA saber para ajustar.

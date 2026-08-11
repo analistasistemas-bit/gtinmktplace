@@ -55,11 +55,27 @@ async function paginarTudo<T>(
   return todas;
 }
 
-/** Resolvedores (código/EAN) por (ml_item_id, variation_id) + conjunto de ids do PubliAI. */
+/**
+ * Resolvedores (código/EAN) por (ml_item_id, variation_id) + conjunto de ids do PubliAI.
+ *
+ * ESCOPO É A ORGANIZAÇÃO, não o usuário. O `userId` recebido é o `criado_por` da conexão do
+ * canal, e filtrar o catálogo por ele deixava de fora todo produto cadastrado por OUTRO membro
+ * da mesma org — o dado é org-scoped desde o E7/ADR-0027. Incidente 2026-08-11: o NIVEA da org
+ * DSA foi cadastrado por um usuário e a conexão do ML pertence a outro; as vendas vinham com
+ * `is_publiai = false` e SEM código, então 12 unidades venderam sem baixar estoque.
+ * Só cai de volta para o `user_id` quando não há conexão para resolver a org.
+ */
 export async function carregarCatalogo(admin: SupabaseClient, userId: string): Promise<Catalogo> {
+  const orgId = await resolverOrgPorUserId(admin, userId);
+  // Coluna+valor em variável, e não um helper genérico envolvendo o builder: o genérico faz o
+  // supabase-js estourar a inferência (`TS2589: type instantiation excessively deep`).
+  const colEscopo = orgId ? 'org_id' : 'user_id';
+  const valEscopo = orgId ?? userId;
+
   const familias = await paginarTudo<{ id: string; ml_item_id: string | null; codigo_pai: string | null }>(
     (de, ate) => admin.from('familias')
-      .select('id, ml_item_id, codigo_pai').eq('user_id', userId).not('ml_item_id', 'is', null).range(de, ate),
+      .select('id, ml_item_id, codigo_pai').eq(colEscopo, valEscopo)
+      .not('ml_item_id', 'is', null).range(de, ate),
   );
   const famPorId = new Map<string, { mlItemId: string; codigoPai: string | null }>();
   const idsPubliai = new Set<string>();
@@ -71,7 +87,8 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     (de, ate) => admin.from('variacoes')
       // custo/atualizado_em: insumo do congelamento (ADR-0109) — atualizado_em é o tie-break
       // entre variações duplicadas por re-ingest (ADR-0108).
-      .select('familia_id, codigo, gtin, ml_variation_id, custo, atualizado_em').eq('user_id', userId).range(de, ate),
+      .select('familia_id, codigo, gtin, ml_variation_id, custo, atualizado_em')
+      .eq(colEscopo, valEscopo).range(de, ate),
   );
   // Linhas de custo montadas ANTES do filtro de família publicada abaixo: uma variação de família
   // ainda não publicada não tem ml_item_id, mas seu código/GTIN continuam válidos para casar a
@@ -106,7 +123,6 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
   // ADR-0088 §2: itens filhos User Products (cores 2..N, 1 item ML por SKU) — sem essa fusão, a
   // venda de uma cor 2..N não é reconhecida como PubliAI (fica de fora de idsPubliai/codPorItem).
   // Escopo por org_id direto (não pelo user_id da raiz anuncios_externos, que a saga UP não seta).
-  const orgId = await resolverOrgPorUserId(admin, userId);
   if (orgId) {
     const itensUP = await paginarTudo<{ item_externo_id: string | null; sku: string }>(
       (de, ate) => admin.from('anuncios_externos_itens')

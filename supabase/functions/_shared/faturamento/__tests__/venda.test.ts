@@ -357,3 +357,83 @@ describe('mapearPedidoParaVenda', () => {
     expect(venda.money_release_date).toBeNull();
   });
 });
+
+// Incidente 2026-08-11 (org DSA): o anúncio não estava em idsPubliai (catálogo filtrado por
+// user_id) e o item vinha sem código, então a baixa de estoque descartava a venda em silêncio.
+// O ML mandava o SKU em `seller_custom_field` o tempo todo.
+describe('mapearPedidoParaVenda — SKU que vem no próprio pedido', () => {
+  const pedido = {
+    id: 2000017881118216,
+    status: 'paid',
+    date_created: '2026-08-11T18:37:00.000-03:00',
+    buyer: { id: 555, nickname: 'COMPRADOR1' },
+    total_amount: 28.99,
+    order_items: [{
+      item: {
+        id: 'MLB7389260688',
+        title: 'Nivea Sabonete Líquido Óleo De Banho 200ml',
+        seller_custom_field: '00000029',
+      },
+      quantity: 1,
+      unit_price: 28.99,
+      sale_fee: 4.06,
+    }],
+  };
+
+  it('usa o seller_custom_field quando o catálogo não resolve o código', () => {
+    const { itens } = mapearPedidoParaVenda(pedido as never, {
+      idsPubliai: new Set<string>(),
+      codigoResolver: () => null,
+    });
+    expect(itens[0].codigo).toBe('00000029');
+  });
+
+  // `is_publiai` significa "anúncio gerenciado por nós". O vendedor pode preencher o
+  // custom_field em qualquer anúncio dele, inclusive os que não passam pelo app.
+  it('não promove o item a PubliAI só por ter SKU no pedido', () => {
+    const { venda, itens } = mapearPedidoParaVenda(pedido as never, {
+      idsPubliai: new Set<string>(),
+      codigoResolver: () => null,
+    });
+    expect(itens[0].is_publiai).toBe(false);
+    expect(venda.is_publiai).toBe(false);
+  });
+
+  it('o catálogo continua tendo precedência sobre o campo do pedido', () => {
+    const { itens } = mapearPedidoParaVenda(pedido as never, {
+      idsPubliai: new Set(['MLB7389260688']),
+      codigoResolver: () => 'CODIGO-DO-CATALOGO',
+    });
+    expect(itens[0].codigo).toBe('CODIGO-DO-CATALOGO');
+  });
+
+  it('aceita seller_sku (campo novo do ML) quando o custom_field não vem', () => {
+    const semCustom = {
+      ...pedido,
+      order_items: [{
+        ...pedido.order_items[0],
+        item: { id: 'MLB7389260688', title: 'X', seller_sku: 'SKU-NOVO' },
+      }],
+    };
+    const { itens } = mapearPedidoParaVenda(semCustom as never, {
+      idsPubliai: new Set<string>(),
+      codigoResolver: () => null,
+    });
+    expect(itens[0].codigo).toBe('SKU-NOVO');
+  });
+
+  it('campo em branco não vira código', () => {
+    const branco = {
+      ...pedido,
+      order_items: [{
+        ...pedido.order_items[0],
+        item: { id: 'MLB1', title: 'X', seller_custom_field: '   ' },
+      }],
+    };
+    const { itens } = mapearPedidoParaVenda(branco as never, {
+      idsPubliai: new Set<string>(),
+      codigoResolver: () => null,
+    });
+    expect(itens[0].codigo).toBeNull();
+  });
+});
