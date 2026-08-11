@@ -180,6 +180,14 @@ que alimenta markup e preço. Se um pedido for cancelado depois de você zerar, 
 saldo (a mercadoria voltou fisicamente) e a cor pode voltar a vender; para tirar de venda de vez,
 use **Pausar** em Publicados.
 
+Dois comportamentos do ML medidos em 2026-08-11, que valem para qualquer reposição:
+
+- **Repor estoque reativa o anúncio pausado.** Item `paused` com quantidade 0 que recebe estoque
+  volta a `active` sozinho, sem ninguém mandar reativar.
+- **Anúncio moderado (`forbidden`) recusa o push** com 400 — o saldo cai aqui e o canal fica para
+  trás até a republicação. E atenção: `sincronizar-estoque` devolve 200 mesmo nesse caso, então
+  fila entregue **não** é prova de canal atualizado; confira o número na tela Publicados.
+
 ## Excluir ou alterar um produto cadastrado manualmente
 
 A tela `/estoque` não tem botão de excluir/editar — só "Dar entrada". Os caminhos reais:

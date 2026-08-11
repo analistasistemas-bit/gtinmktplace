@@ -66,6 +66,19 @@ comandos viram **no-op com WARNING, não erro** — foi assim que a função fic
 Como toda RPC daqui é `security definer` e recebe `p_org` por parâmetro, esse no-op silencioso
 equivale a expor escrita de estoque de qualquer organização a qualquer usuário autenticado.
 
+## Comportamento do ML observado na validação (2026-08-11)
+
+- **Repor estoque REATIVA o anúncio pausado.** Um item `paused` com `available_quantity = 0` que
+  recebe um push com quantidade > 0 volta para `active` sozinho, sem nenhum PUT de status. Medido
+  em produção com o item `MLB5040504553`. É o que torna o aviso do diálogo literal: um estorno
+  posterior repõe saldo e a cor **volta a vender**.
+- **Anúncio moderado (`sub_status = forbidden`) recusa o push** com 400 e mensagem "Anúncio
+  removido no Mercado Livre — republique o produto para voltar a vender". O ajuste local é
+  aplicado do mesmo jeito; o canal é que fica para trás até a republicação.
+- **`sincronizar-estoque` devolve 200 mesmo quando o push falha em definitivo** (loga
+  `estoque_push_definitivo` e segue). Portanto `DELIVERED 200` no QStash **não** é prova de que o
+  canal foi atualizado — para conferir, ler o estoque vivo (tela Publicados / `lerStatus`).
+
 ## Consequências
 
 - Existe um caminho correto para "acabou essa cor", e ele se propaga para todos os canais

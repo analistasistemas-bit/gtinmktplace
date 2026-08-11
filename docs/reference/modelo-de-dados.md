@@ -415,9 +415,13 @@ que mude `variacoes.estoque` de fato (`is distinct from`, então reenviar o mesm
 sempre que `current_user` **não** for `estoque_rpc_executor` — role sem login criado pela migration
 `20260804113000_guard_manual_product_direct_writes.sql` (incidente 2026-08-03: produto inserido
 direto com `service_role`, contornando RLS e ledger). As RPCs de estoque **pertencem** a esse role;
-nem `service_role`, nem o SQL do dashboard, nem a Management API gravam saldo sem antes mudar o
-schema de segurança de propósito. **Uma RPC de estoque nova precisa do `alter function … owner to
-estoque_rpc_executor`** ou falha com `42501` na primeira escrita real. É trigger e não
+`service_role`, `authenticated` e `anon` **não** conseguem assumi-lo, então nenhuma via da
+aplicação grava saldo sem passar por uma RPC. **Exceção conhecida desde 2026-08-11:** `postgres`
+voltou a ser membro do role (efeito do `grant` exigido pelo `alter owner` da migration
+`20260811201026`, gravado com `grantor = supabase_admin` e por isso não revogável por `postgres`),
+de modo que quem usa essa credencial — SQL do dashboard, Management API — pode `set role` e
+escrever saldo direto; ver a pendência em `docs/TASKS.md`. **Uma RPC de estoque nova precisa do
+`alter function … owner to estoque_rpc_executor`** ou falha com `42501` na primeira escrita real. É trigger e não
 `revoke update (estoque)` porque privilégios de coluna são **cumulativos** em Postgres: como
 `authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. Toda mudança
 de saldo passa por entrada, baixa, estorno ou **ajuste** (ADR-0110) — nunca por `UPDATE` do app.

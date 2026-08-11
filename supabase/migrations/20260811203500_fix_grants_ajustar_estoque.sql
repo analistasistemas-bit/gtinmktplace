@@ -14,17 +14,23 @@
 -- têm só `estoque_rpc_executor` e `service_role`; esta migration devolve a paridade.
 --
 -- LIÇÃO para a próxima RPC de estoque: os grants vêm ANTES da troca de dono, ou rodam com
--- `set local role estoque_rpc_executor` dentro de uma transação, como aqui.
-
--- BEGIN/COMMIT explícitos: o `supabase db push` NÃO envolve a migration em transação, e sem
--- isso o `set local role` falha com "SET LOCAL can only be used in transaction blocks" — foi
--- exatamente assim que a primeira tentativa desta correção não pegou.
-begin;
+-- `set role estoque_rpc_executor`, como aqui.
+--
+-- HISTÓRICO DESTE ARQUIVO: aplicado em produção em 2026-08-11 e registrado com
+-- `supabase migration repair --status applied 20260811203500`. A primeira versão usava
+-- `begin;`/`commit;` explícitos com `set local role`; o `begin` fechava a transação do próprio
+-- CLI no meio do arquivo, e o `INSERT` do CLI em `supabase_migrations.schema_migrations` morria
+-- com "permission denied". Esta versão usa `SET ROLE` de sessão — válido dentro e fora de
+-- transação —, então roda pelo caminho normal do `db push`. Todos os comandos são idempotentes,
+-- então o arquivo é seguro para replay; contra a produção atual ele não será reexecutado
+-- (já consta como aplicado), e essa reexecução não pôde ser verificada aqui.
 
 grant estoque_rpc_executor to postgres;   -- pré-requisito do SET ROLE abaixo
 
 -- Executa como o PRÓPRIO dono: só ele é grantor válido dos privilégios da função.
-set local role estoque_rpc_executor;
+-- SET ROLE (sem LOCAL) de propósito: o `supabase db push` não envolve a migration em
+-- transação, e `SET LOCAL` fora de transação é ignorado com aviso.
+set role estoque_rpc_executor;
 
 revoke execute on function public.ajustar_estoque(uuid, text, integer, text, uuid, text)
   from public, anon, authenticated;
@@ -33,13 +39,11 @@ grant execute on function public.ajustar_estoque(uuid, text, integer, text, uuid
 
 reset role;
 
-commit;
-
--- Devolve o guard de 2026-08-04: `postgres` não deve permanecer membro de
--- `estoque_rpc_executor`, senão quem tiver essa credencial pode `set role` e escrever saldo
--- direto, contornando o trigger. Tolerante de propósito: a membership pode ter sido gravada
--- com `grantor = supabase_admin`, e aí só ele consegue revogá-la — nesse caso o aviso fica no
--- log do deploy em vez de derrubar uma migration cuja parte essencial (a ACL) já commitou.
+-- Devolveria o guard de 2026-08-04 (`postgres` não deve permanecer membro de
+-- `estoque_rpc_executor`), mas a membership acima costuma ser gravada com
+-- `grantor = supabase_admin`, e aí só ele consegue revogá-la — `no possible grantors`.
+-- Tolerante de propósito: o aviso fica no log do deploy em vez de derrubar a migration cuja
+-- parte essencial (a ACL) já rodou. Pendência registrada em docs/TASKS.md.
 do $$
 begin
   revoke estoque_rpc_executor from postgres;

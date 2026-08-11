@@ -39,9 +39,18 @@
   (verificado por `pg_has_role`), então nenhuma via da aplicação escreve saldo direto. O que mudou
   é que quem tem a credencial `postgres` pode `set role` — e essa credencial já podia alterar o
   trigger de qualquer forma. Resolver exige uma sessão com `supabase_admin` (suporte Supabase).
-- [x] Validado em produção: RPC exercitada com `begin/rollback` (6 casos), ajuste real 12→11 na
-  org DSA com push entregue no QStash (200) e revertido por Entrada, e a UI conferida no dev local
-  — inclusive o "Zerar tudo" com 3 cores (−5871 em 3 variações).
+- [x] Validado em produção: RPC exercitada com `begin/rollback` (6 casos), ajuste real na org DSA
+  e reversão por Entrada, e a UI conferida no dev local — inclusive o "Zerar tudo" com 3 cores
+  (−5871 em 3 variações).
+- [x] **Propagação ao ML provada de ponta a ponta.** A primeira tentativa (SKU `00000027`) mostrou
+  `DELIVERED 200` no QStash mas o ML continuou em 12: o anúncio está **moderado/forbidden** e o ML
+  recusou o PUT com 400 (`estoque_push_definitivo` no log da função). `sincronizar-estoque`
+  devolve 200 mesmo em falha definitiva, então **fila entregue não é prova de canal atualizado**.
+  Repetido no `00000029` (item `MLB5040504553`, saudável): estoque no ML foi de **0 → 11**, lido
+  pelo mesmo caminho da tela Publicados (`lerStatus`). Estado devolvido ao original em seguida.
+- [x] **Achado do ML:** repor estoque **reativa** anúncio pausado (o `MLB5040504553` voltou de
+  `paused` para `active` sozinho ao receber 11, sem nenhum PUT de status; foi re-pausado depois).
+  Registrado no ADR-0110 e em `operacoes-rotineiras.md`.
 
 ## Faturamento — miniatura mostrava a foto de outra cor — 2026-08-11
 
