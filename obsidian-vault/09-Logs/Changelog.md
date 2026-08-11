@@ -11,6 +11,21 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-08-11
 
+- **Robustez: o MLB do anúncio de catálogo entra no catálogo do faturamento.** Vincular ao catálogo
+  do ML (ADR-0021) cria um anúncio **separado**, com MLB próprio em `variacoes.catalog_listing_id` —
+  diferente de `familias.ml_item_id`. `carregarCatalogo` só conhecia o segundo, então a venda de
+  catálogo era reconhecida apenas pelo fallback de GTIN: produto sem EAN cadastrado ficaria sem
+  código, e **sem código não há baixa de estoque**. Hoje nenhum dos 292 SKUs vinculados está sem
+  GTIN, e as vendas de catálogo já baixavam estoque (Avil 86/87, DSA 55/55 desde 29/07) — é rede de
+  segurança, não correção de dado. Conferido em produção: 0 colisão do `catalog_listing_id` com
+  `familias.ml_item_id` ou com item filho UP. Deploy das 7 functions que importam `io.ts`
+  (`sync-venda v63`, `reconciliar-faturamento v63`, `backfill-faturamento v66`,
+  `sync-devolucao v43`, `ml-webhook v40`, `sync-pergunta v40`, `sync-mensagem v27`).
+- **Apuração: 7 de 147 produtos sem foto no Estoque são ausência de dado, não bug de tela.** Nenhum
+  deles tem foto em lugar nenhum (variação, família ou Storage). 6 nunca foram publicados, e
+  `ml_picture_id` só nasce quando o app sobe a foto para o ML na publicação. O 7º
+  (`EXT-MLB6901126538`) é publicado e tem foto no ML, mas `capa_ml_picture_id` nulo — linha criada
+  fora do fluxo em 09/07 (o prefixo `EXT-` não é gerado por nenhum código do repositório).
 - **Fix: coluna "Cor" vazia e miniatura da cor errada no Faturamento.** Item **plano** — filho
   User Products (ADR-0088: 1 item ML por cor) ou família de 1 variação — vende sem variação, e
   o Mercado Livre só manda a cor em `variation_attributes`. Resultado: `ml_vendas_itens.cor` nula
