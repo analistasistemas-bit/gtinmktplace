@@ -22,12 +22,14 @@ import { calcularResumo } from '@/lib/resumo-vendas';
 import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, retidoDoPedido, type Pedido } from '@/lib/pedidos-faturamento';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
+import { montarCorResolver } from '@/lib/cor-produto';
 import { labelStatusLiberacao, statusLiberacao, type StatusLiberacao } from '@/lib/status-liberacao';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
+import { useCoresProduto } from '@/hooks/useCoresProduto';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
@@ -196,6 +198,7 @@ export default function DetalheFinanceiro() {
   const vendasQ = useVendas(janela, 'todos');
   const custosQ = useCustos();
   const fotosQ = useFotosProduto();
+  const coresQ = useCoresProduto();
   const canonicoQ = useAnuncioCanonico();
   const aliquotasQ = useAliquotas();
   const isFetching = vendasQ.isFetching;
@@ -220,8 +223,9 @@ export default function DetalheFinanceiro() {
       montarPesoResolver(custosQ.data),
       montarFotoResolver(fotosQ.data, canonicoQ.data),
       montarAliquotaResolver(custosQ.data, aliquotasQ.data ?? { nacional: 8, importado: 16 }),
+      montarCorResolver(coresQ.data, canonicoQ.data),
     ),
-    [vendasQ.data, custosQ.data, fotosQ.data, canonicoQ.data, aliquotasQ.data],
+    [vendasQ.data, custosQ.data, fotosQ.data, canonicoQ.data, aliquotasQ.data, coresQ.data],
   );
 
   const bruto = r.bruto;

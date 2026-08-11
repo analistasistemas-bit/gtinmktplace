@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento — coluna "Cor" vazia em item plano — 2026-08-11
+
+- [x] **Cor do produto não aparecia em 184 de 1350 itens vendidos** (Faturamento e Detalhe do
+  líquido). O sync grava `ml_vendas_itens.cor` a partir de `order_items[].item.variation_attributes`
+  (`_shared/faturamento/venda.ts`), que o ML só manda quando a venda tem variação. Item **plano** —
+  filho User Products (ADR-0088, 1 item ML por cor) ou família de 1 variação — vende sem variação:
+  183 das 184 linhas têm `variation_id` nulo. Corrigido na **leitura** (`src/lib/cor-produto.ts`,
+  espelhando `fotos-produto.ts`), o que conserta as vendas já sincronizadas sem re-sync nem deploy
+  de Edge Function. A resolução por anúncio só vale quando o anúncio tem uma cor única, e o SKU do
+  filho UP sobrepõe o chute da família — chave ambígua devolve "—" em vez de inventar cor.
+  Simulado contra produção: 144 resolvidas (as outras 40 não têm cor em lugar nenhum), todas
+  batendo com o título do anúncio.
+
 ## Faturamento — paginação de Perguntas e Mensagens — 2026-08-08
 
 - [x] **Faturamento — paginação de Perguntas e Mensagens** — as duas abas despejavam a lista

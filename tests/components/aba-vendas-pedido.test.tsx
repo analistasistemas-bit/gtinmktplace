@@ -63,6 +63,9 @@ vi.mock('@/hooks/useConfiguracoes', () => ({
 vi.mock('@/hooks/useFotosProduto', () => ({
   useFotosProduto: () => ({ data: undefined }),
 }));
+vi.mock('@/hooks/useCoresProduto', () => ({
+  useCoresProduto: () => ({ data: undefined }),
+}));
 vi.mock('@/hooks/useAnuncioCanonico', () => ({
   useAnuncioCanonico: () => ({ data: undefined }),
 }));
