@@ -20,6 +20,17 @@ change its branch or files without this session initiating the change.
 Run all subsequent commands and file operations from the session's dedicated
 worktree.
 
+## Local Development Environment
+
+Git worktrees do not receive ignored `.env.local` files. Before starting Vite
+from a worktree, ensure `.env.local` exists there and provides
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (a symlink to the primary
+checkout's local file is acceptable). Never print these values.
+
+If the page is blank, inspect the browser console before changing application
+code. `VITE_SUPABASE_URL não definida` or `VITE_SUPABASE_ANON_KEY não definida`
+means the local environment is missing; fix it and restart Vite.
+
 Priorities:
 
 1. Correctness

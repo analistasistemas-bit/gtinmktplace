@@ -105,7 +105,8 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
+        {/* Mantém o conteúdo contido no grid do DialogContent em viewports estreitas. */}
+        <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="entrada-busca" className="text-sm font-medium">SKU</label>
             <Input
