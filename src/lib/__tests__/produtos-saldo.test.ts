@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agruparProdutosComSaldo } from '../produtos-saldo';
+import { agruparProdutosComSaldo, urlFotoMl } from '../produtos-saldo';
 
 const linhas = [
   { codigo: 'A1', nome: 'Azul', cor: 'Azul', gtin: '789', estoque: 5, custo: 10, preco: 30,
@@ -93,5 +93,72 @@ describe('agruparProdutosComSaldo', () => {
     expect(p.mlItemId).toBe('MLB123');
     expect(p.criadoEm).toBe('2026-08-01T10:00:00Z');
     expect(p.variacoes[0].imagemPath).toBe('org/lote/00000002.jpg');
+  });
+});
+
+// Produto de planilha quase nunca tem capa própria: na org da AVIL, 1 de 147 famílias tinha.
+// A foto que existe é a do anúncio no ML, guardada em `variacoes.ml_picture_id`.
+describe('agruparProdutosComSaldo — foto do produto pai', () => {
+  function linha(codigo: string, over: Record<string, unknown> = {}, fam: Record<string, unknown> = {}) {
+    return {
+      codigo, nome: null, cor: null, gtin: null, estoque: 1, custo: null, preco: 10,
+      peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+      imagem_path: null, ml_picture_id: null, ...over,
+      familias: {
+        codigo_pai: 'P1', nome_pai: 'Produto', descricao_pai: null,
+        criado_em: '2026-08-01T10:00:00Z', capa_storage_path: null, capa_ml_picture_id: null,
+        variacao_principal_codigo: null, fornecedor: null, unidade: 'UN', origem: 'nacional',
+        ml_item_id: null, ...fam,
+      },
+    };
+  }
+
+  it('herda o ml_picture_id da primeira variação que tiver foto', () => {
+    const [p] = agruparProdutosComSaldo([
+      linha('A'),
+      linha('B', { ml_picture_id: 'PIC-B' }),
+    ] as never);
+    expect(p.capaMlPictureId).toBe('PIC-B');
+  });
+
+  it('prefere a variação principal, mesmo quando ela vem depois', () => {
+    const [p] = agruparProdutosComSaldo([
+      linha('A', { ml_picture_id: 'PIC-A' }, { variacao_principal_codigo: 'B' }),
+      linha('B', { ml_picture_id: 'PIC-B' }, { variacao_principal_codigo: 'B' }),
+    ] as never);
+    expect(p.capaMlPictureId).toBe('PIC-B');
+  });
+
+  it('capa própria da família vence a foto da variação', () => {
+    const [p] = agruparProdutosComSaldo([
+      linha('A', { ml_picture_id: 'PIC-A' }, { capa_ml_picture_id: 'PIC-CAPA' }),
+    ] as never);
+    expect(p.capaMlPictureId).toBe('PIC-CAPA');
+  });
+
+  it('sem foto em lugar nenhum devolve null, não undefined', () => {
+    const [p] = agruparProdutosComSaldo([linha('A')] as never);
+    expect(p.capaMlPictureId).toBeNull();
+    expect(p.capaStoragePath).toBeNull();
+  });
+
+  it('herda também o imagem_path do Storage quando a família não tem capa', () => {
+    const [p] = agruparProdutosComSaldo([
+      linha('A', { imagem_path: 'org/lote/A.jpg' }),
+    ] as never);
+    expect(p.capaStoragePath).toBe('org/lote/A.jpg');
+  });
+});
+
+describe('urlFotoMl', () => {
+  it('monta a miniatura pública do ML', () => {
+    expect(urlFotoMl('867646-MLB112367549742_062026'))
+      .toBe('https://http2.mlstatic.com/D_867646-MLB112367549742_062026-V.jpg');
+  });
+
+  it('sem picture id devolve null — o componente cai no placeholder', () => {
+    expect(urlFotoMl(null)).toBeNull();
+    expect(urlFotoMl(undefined)).toBeNull();
+    expect(urlFotoMl('')).toBeNull();
   });
 });

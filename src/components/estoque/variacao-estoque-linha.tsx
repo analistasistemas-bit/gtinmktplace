@@ -6,7 +6,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import type { VariacaoComSaldo } from '@/lib/produtos-saldo';
+import { urlFotoMl, type VariacaoComSaldo } from '@/lib/produtos-saldo';
 
 /** "200g · 10×20×30cm", só as partes informadas. "—" se nada foi preenchido. */
 function rotuloDimensoes(v: VariacaoComSaldo): string {
@@ -57,12 +57,14 @@ export function CabecalhoVariacoes() {
 
 export function VariacaoEstoqueLinha({ variacao: v }: { variacao: VariacaoComSaldo }) {
   const { data: url } = useImageUrl(v.imagemPath);
+  // Mesma cadeia do card do produto: Storage primeiro, foto do anúncio no ML depois.
+  const foto = url ?? urlFotoMl(v.mlPictureId);
   const custo = v.custo != null ? fmtBRL(Number(v.custo)) : '—';
   const preco = fmtBRL(Number(v.preco));
 
   return (
     <div className={cn(GRID_LINHA_VARIACAO, 'border-b px-3 py-2 last:border-b-0 hover:bg-muted/40')}>
-      <FotoCapaFamilia capaUrl={url ?? null} tamanho="small" />
+      <FotoCapaFamilia capaUrl={foto} tamanho="small" />
 
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">

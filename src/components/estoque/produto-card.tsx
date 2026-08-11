@@ -12,7 +12,7 @@ import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { VariacaoEstoqueLinha, CabecalhoVariacoes, PillSaldo } from '@/components/estoque/variacao-estoque-linha';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { cn } from '@/lib/utils';
-import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
+import { urlFotoMl, type ProdutoComSaldo } from '@/lib/produtos-saldo';
 
 export interface AlvoEntrada {
   /** Só preenchido quando o produto tem UMA variação — com várias, a escolha é do operador. */
@@ -28,8 +28,10 @@ export interface AlvoEntrada {
  * Ordem no DOM: produto · SKUs · saldo · situação · canais · ação.
  * Abaixo de `md` as células 2/4/5 ficam `hidden`, sobrando exatamente 3 itens para 3 tracks.
  */
+// A última coluna é a das ações e cabe DUAS (Entrada + Ajustar, ADR-0110). Dimensionada para
+// uma só, o segundo botão vazava para fora da viewport — a linha não tem overflow que o segure.
 export const GRID_LINHA_PRODUTO =
-  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_2.75rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_6.5rem]';
+  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_12.5rem]';
 
 const CELULA_MD = 'hidden md:block';
 
@@ -83,6 +85,9 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar }: {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
   const { data: capaUrl } = useImageUrl(produto.capaStoragePath);
+  // Storage primeiro; na falta dele, a foto do próprio anúncio no ML (a maioria dos produtos
+  // de planilha não tem imagem no Storage, só `ml_picture_id`).
+  const capa = capaUrl ?? urlFotoMl(produto.capaMlPictureId);
 
   const alvo: AlvoEntrada = produto.variacoes.length === 1
     ? { sku: produto.variacoes[0].codigo, codigoPai: produto.codigoPai }
@@ -103,7 +108,7 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar }: {
           className="flex min-w-0 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', aberto && 'rotate-90')} />
-          <FotoCapaFamilia capaUrl={capaUrl ?? null} tamanho="small" />
+          <FotoCapaFamilia capaUrl={capa} tamanho="small" />
           <div className="min-w-0">
             <div className="truncate text-sm font-medium leading-tight">{produto.nomePai}</div>
             <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
@@ -131,27 +136,29 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar }: {
           )}
         </div>
 
-        <div className="flex w-full gap-1.5">
+        {/* `flex-1 min-w-0`, nunca `w-full`: dois filhos com w-full pedem 100% CADA um da
+            coluna e o segundo vaza para fora da tela. */}
+        <div className="flex min-w-0 gap-1.5">
           <Button
             variant="outline"
             size="sm"
-            className="h-9 w-full md:h-7"
+            className="h-9 min-w-0 flex-1 px-2 md:h-7"
             aria-label={`Dar entrada em ${produto.nomePai}`}
             onClick={() => onDarEntrada(alvo)}
           >
-            <PackagePlus className="h-3.5 w-3.5" />
-            <span className="hidden md:inline">Entrada</span>
+            <PackagePlus className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden truncate md:inline">Entrada</span>
           </Button>
           {onAjustar && (
             <Button
               variant="outline"
               size="sm"
-              className="h-9 w-full md:h-7"
+              className="h-9 min-w-0 flex-1 px-2 md:h-7"
               aria-label={`Ajustar estoque de ${produto.nomePai}`}
               onClick={() => onAjustar(produto)}
             >
-              <PackageMinus className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">Ajustar</span>
+              <PackageMinus className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden truncate md:inline">Ajustar</span>
             </Button>
           )}
         </div>

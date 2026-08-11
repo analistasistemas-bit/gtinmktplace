@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — botão "Ajustar" cortado e foto do produto pai — 2026-08-11
+
+- [x] **O botão "Ajustar" vazava para fora da tela.** A última coluna do `GRID_LINHA_PRODUTO`
+  media `6.5rem` (uma ação só) e os dois botões usavam `w-full` — dois filhos pedindo 100% CADA
+  um da coluna. A linha não tem overflow que segure, então o segundo saía da viewport. Coluna
+  passou para `12.5rem` (`5.5rem` no mobile) e os botões para `flex-1 min-w-0`.
+- [x] **Produto pai aparecia sem foto.** Produto de planilha nasce sem capa própria — na AVIL,
+  **1 de 147** famílias tinha `capa_storage_path`, e só 11 tinham `imagem_path` em alguma
+  variação. A foto real vive no anúncio: **140 de 147** têm `ml_picture_id`. A tela agora cai
+  para a foto do ML (`urlFotoMl` → `https://http2.mlstatic.com/D_{id}-V.jpg`, a variante
+  reduzida), preferindo a capa da família, depois a variação principal, depois a primeira
+  variação com foto. Mesma cadeia na linha de variação do painel expandido. Sem nenhuma foto,
+  continua o placeholder.
+
 ## Estoque — ajustar/zerar pelo PubliAI (ADR-0110) — 2026-08-11
 
 - [x] **Diagnóstico: cor zerada no ML voltava sozinha.** O push é absoluto e o cron

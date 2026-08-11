@@ -9,12 +9,23 @@ export interface LinhaVariacaoCrua {
   codigo: string; nome: string | null; cor: string | null; gtin: string | null;
   estoque: number; custo: number | null; preco: number;
   peso_gramas: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null;
-  imagem_path: string | null;
+  imagem_path: string | null; ml_picture_id: string | null;
   familias: {
     codigo_pai: string; nome_pai: string; descricao_pai: string | null; criado_em: string;
-    capa_storage_path: string | null; fornecedor: string | null;
+    capa_storage_path: string | null; capa_ml_picture_id: string | null;
+    variacao_principal_codigo: string | null; fornecedor: string | null;
     unidade: string | null; origem: string; ml_item_id: string | null;
   } | null;
+}
+
+/**
+ * Miniatura pública de uma foto do Mercado Livre. Quase nenhum produto de planilha tem capa no
+ * Storage (1 de 147 na org da AVIL em 2026-08-11) — a foto real vive no anúncio, e o que temos
+ * aqui é o `ml_picture_id`. `-V` é a variante reduzida (~30 KB); `-O` é a original e pesa o
+ * dobro sem ganho nenhum num thumb de 40px.
+ */
+export function urlFotoMl(pictureId: string | null | undefined): string | null {
+  return pictureId ? `https://http2.mlstatic.com/D_${pictureId}-V.jpg` : null;
 }
 
 export interface VariacaoComSaldo {
@@ -22,6 +33,8 @@ export interface VariacaoComSaldo {
   estoque: number; custo: number | null; preco: number;
   pesoGramas: number | null; alturaCm: number | null; larguraCm: number | null; comprimentoCm: number | null;
   imagemPath: string | null;
+  /** Foto no ML. Usada quando a variação não tem imagem no Storage — ver `urlFotoMl`. */
+  mlPictureId: string | null;
 }
 
 export interface ProdutoComSaldo {
@@ -31,6 +44,8 @@ export interface ProdutoComSaldo {
   variacoes: VariacaoComSaldo[];
   saldoTotal: number;
   capaStoragePath: string | null;
+  /** Capa da família no ML. Fallback quando não há capa no Storage — ver `urlFotoMl`. */
+  capaMlPictureId: string | null;
   fornecedor: string | null;
   unidade: string | null;
   origem: string;
@@ -55,6 +70,7 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
   }
 
   const porPai = new Map<string, ProdutoComSaldo>();
+  const principalPorPai = new Map<string, string>();
   for (const l of linhas) {
     const f = l.familias;
     if (!f?.codigo_pai) continue;
@@ -64,7 +80,8 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
       porPai.set(pai, {
         codigoPai: pai, nomePai: f.nome_pai, descricaoPai: f.descricao_pai,
         variacoes: [], saldoTotal: 0,
-        capaStoragePath: f.capa_storage_path, fornecedor: f.fornecedor,
+        capaStoragePath: f.capa_storage_path, capaMlPictureId: f.capa_ml_picture_id,
+        fornecedor: f.fornecedor,
         unidade: f.unidade, origem: f.origem, mlItemId: f.ml_item_id,
         criadoEm: f.criado_em,
       });
@@ -73,9 +90,22 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
     p.variacoes.push({
       codigo: l.codigo, nome: l.nome, cor: l.cor, gtin: l.gtin, estoque: l.estoque, custo: l.custo, preco: l.preco,
       pesoGramas: l.peso_gramas, alturaCm: l.altura_cm, larguraCm: l.largura_cm, comprimentoCm: l.comprimento_cm,
-      imagemPath: l.imagem_path,
+      imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id,
     });
     p.saldoTotal += l.estoque;
+    if (f.variacao_principal_codigo) principalPorPai.set(pai, f.variacao_principal_codigo);
+  }
+
+  // Capa herdada da variação. Produto de planilha nasce sem capa própria (1 de 147 tinha, na
+  // AVIL em 2026-08-11), então o pai adota a foto da variação PRINCIPAL e, na falta dela, a da
+  // primeira variação que tiver foto. Resolvido DEPOIS do loop porque a variação principal pode
+  // aparecer em qualquer posição. Capa própria da família sempre vence.
+  for (const p of porPai.values()) {
+    const principal = p.variacoes.find((v) => v.codigo === principalPorPai.get(p.codigoPai));
+    p.capaStoragePath ??= principal?.imagemPath
+      ?? p.variacoes.find((v) => v.imagemPath)?.imagemPath ?? null;
+    p.capaMlPictureId ??= principal?.mlPictureId
+      ?? p.variacoes.find((v) => v.mlPictureId)?.mlPictureId ?? null;
   }
   return [...porPai.values()].sort((a, b) => a.nomePai.localeCompare(b.nomePai, 'pt-BR'));
 }
@@ -89,7 +119,7 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
 export async function fetchProdutosComSaldo(): Promise<ProdutoComSaldo[]> {
   const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
     .from('variacoes')
-    .select('codigo, nome, cor, gtin, estoque, custo, preco, peso_gramas, altura_cm, largura_cm, comprimento_cm, imagem_path, familias!inner(codigo_pai, nome_pai, descricao_pai, criado_em, capa_storage_path, fornecedor, unidade, origem, ml_item_id)')
+    .select('codigo, nome, cor, gtin, estoque, custo, preco, peso_gramas, altura_cm, largura_cm, comprimento_cm, imagem_path, ml_picture_id, familias!inner(codigo_pai, nome_pai, descricao_pai, criado_em, capa_storage_path, capa_ml_picture_id, variacao_principal_codigo, fornecedor, unidade, origem, ml_item_id)')
     .range(de, ate));
   return agruparProdutosComSaldo(data as unknown as LinhaVariacaoCrua[]);
 }
