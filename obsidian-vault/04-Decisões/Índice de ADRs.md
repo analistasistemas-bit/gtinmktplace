@@ -121,5 +121,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0107 | [ORIGEM é obrigatória e explícita na planilha (imposto nunca presumido; refina ADR-0055)](../../docs/decisions/0107-origem-obrigatoria-na-planilha.md) |
 | 0108 | [Com variação duplicada, vence o custo mais recente (não o maior)](../../docs/decisions/0108-custo-duplicado-vence-o-mais-recente.md) |
 | 0109 | [Custo congelado no instante da venda (markup histórico fiel; tabela satélite insert-once)](../../docs/decisions/0109-custo-congelado-por-venda.md) |
+| 0110 | [Ajuste de estoque no PubliAI: só reduz, e é admin](../../docs/decisions/0110-ajuste-de-estoque-so-reduz.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

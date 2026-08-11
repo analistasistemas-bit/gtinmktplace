@@ -160,6 +160,26 @@ Publicados. A tabela de variações expandida também mostra GTIN, dimensões (p
 comprimento) e a descrição do produto — dados capturados no cadastro que antes só eram visíveis
 na Revisão.
 
+## Reduzir ou zerar o estoque de um produto (ADR-0110)
+
+**Nunca edite o estoque direto no Mercado Livre.** O PubliAI faz push **absoluto** do saldo local
+para o canal, e o cron `reconciliar-estoque` (09:30 BRT) re-empurra todo produto que teve movimento
+nas últimas 24h — o número que você digitou lá volta ao valor daqui em até um dia. Foi exatamente
+isso que aconteceu com a cor Vermelho do Helanca Light em agosto de 2026.
+
+O caminho certo é `/estoque` → botão **Ajustar** no produto (visível só para admin):
+
+1. O diálogo lista todas as variações com o saldo atual já preenchido.
+2. Digite o novo saldo da cor, ou clique **Zerar** na linha. **Zerar tudo** zera todas de uma vez.
+3. Opcionalmente escreva a observação (ela vai para o histórico de movimentos: "venda no balcão",
+   "perda", "acerto de inventário").
+4. Confirme. O saldo cai aqui e o push leva o número novo para todos os canais publicados.
+
+O ajuste **só reduz**. Para aumentar, use **Entrada** de mercadoria — ela exige custo, e é o custo
+que alimenta markup e preço. Se um pedido for cancelado depois de você zerar, o estorno **repõe** o
+saldo (a mercadoria voltou fisicamente) e a cor pode voltar a vender; para tirar de venda de vez,
+use **Pausar** em Publicados.
+
 ## Excluir ou alterar um produto cadastrado manualmente
 
 A tela `/estoque` não tem botão de excluir/editar — só "Dar entrada". Os caminhos reais:

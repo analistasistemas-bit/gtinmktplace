@@ -371,7 +371,9 @@ pedido: com saldo 2 e venda de 5, `greatest(0,…)` só remove 2, então `quanti
 gravar `-5` faria o estorno devolver 5 e criar 3 unidades do nada), **`quantidade_pedida`** (o que o
 pedido pediu, auditoria/alerta de venda-sem-saldo), `motivo` (check: `venda`, `entrada`,
 `estorno_venda`, `venda_sku_nao_encontrado`, `estorno_sku_nao_encontrado`, `cancelamento_sem_baixa`
-— tombstone de cancelamento que chegou antes da baixa existir —, `venda_cancelada_antes`),
+— tombstone de cancelamento que chegou antes da baixa existir —, `venda_cancelada_antes`,
+`ajuste` — redução manual, ADR-0110; `quantidade` sempre `<= 0`, e `0` quando o operador conferiu
+sem mudar nada),
 `canal_origem`, `referencia_externa` (idempotência), `custo_unitario numeric(12,2)` (só em
 `entrada`), `documento` (NF do fornecedor), `observacao`, `estoque_anterior`, `estoque_resultante`,
 **`push_enfileirado_em`** (outbox no próprio ledger: marca quando o push foi de fato aceito pelo
@@ -404,16 +406,21 @@ concedidas só a `service_role` (as RPCs nunca são chamadas pelo browser — se
 | `baixar_estoque(p_org uuid, p_codigo text, p_qtd integer, p_canal text, p_ref text) returns jsonb` | Baixa atômica e idempotente (D-8). Advisory lock por `(org, ref)` compartilhado com o estorno; consulta o tombstone de cancelamento antes de aplicar; resolve a variação canônica (família mais recente do `(org_id, codigo)`); `estoque = greatest(0, estoque - qtd)`, nunca negativo. |
 | `estornar_estoque(p_org uuid, p_canal text, p_ref_venda text, p_codigo text) returns jsonb` | Repõe só o que foi **de fato** baixado — lê `abs(quantidade)` do movimento `'venda'` original (D-7). Sem venda registrada, grava o tombstone `cancelamento_sem_baixa` na referência `estorno:<ref_venda>`, para a execução `paid` posterior recusar a baixa. |
 | `registrar_entrada(p_org uuid, p_codigo text, p_qtd integer, p_custo numeric, p_doc text, p_obs text, p_criado_por uuid, p_ref text) returns integer` | Entrada de mercadoria (D-9). Soma `estoque`; sobrescreve `variacoes.custo` só quando `p_custo` é informado **e** `> 0` — custo `<= 0` levanta exceção (nunca vira default silencioso, é caminho financeiro ADR-0055); `p_ref` obrigatório (idempotência). |
+| `ajustar_estoque(p_org uuid, p_codigo text, p_novo_saldo integer, p_obs text, p_criado_por uuid, p_ref text) returns integer` *(ADR-0110, migration `20260811201026`)* | Ajuste manual: grava `variacoes.estoque = p_novo_saldo` e um movimento `'ajuste'` com o **delta** (`novo - anterior`, sempre `<= 0`). **Só reduz** — `p_novo_saldo > saldo atual` levanta exceção apontando para a Entrada, porque entrada exige custo e é ele que alimenta markup (ADR-0055). Faixa `0..99999` (teto do ML, ADR-0048). `insert`-first como `baixar_estoque`: a idempotência (`p_ref`, obrigatória) vem antes do `for update`, para um retry duplicado não segurar a linha de `variacoes` à toa. Devolve o novo saldo, ou `null` quando a referência já tinha sido aplicada. Pertence ao role `estoque_rpc_executor` (ver trigger abaixo). |
 | `limpar_movimentos_orfaos(p_org uuid) returns integer` *(ADR-0097, migrations `20260801091410` + `20260801092323`)* | Apaga os movimentos da org cujo `codigo` não existe mais em nenhuma `variacoes` viva; devolve quantos removeu. **Nunca toca `cancelamento_sem_baixa` (tombstone do D-19 — guarda funcional lida por `baixar_estoque`), `venda_sku_nao_encontrado`, `estorno_sku_nao_encontrado` nem `venda_cancelada_antes`**: os quatro nascem sem variação por construção e não pertencem a produto nenhum. Chamada por `excluir-lote` e `remover-publicado` **depois** do delete das famílias commitar — antes, o cascade das variações ainda não rodou e o conjunto sairia vazio. É **anti-join**, não "os códigos recém-apagados": `excluir-lote` preserva famílias publicadas (ADR-0019 D-1) e o mesmo `codigo_pai` tem várias famílias após ciclos de UPDATE, então um SKU vivo em outra linha mantém o histórico dele. Auto-curativa: absorve órfão antigo sem script avulso. |
 
 **Trigger `variacoes_bloquear_escrita_direta_estoque`** (`before update of estoque on
 public.variacoes`, executa `bloquear_escrita_direta_estoque()`, D-20): bloqueia qualquer `UPDATE`
-que mude `variacoes.estoque` de fato (`is distinct from`, então reenviar o mesmo valor passa) quando
-`auth.uid()` não é nulo — preserva `service_role` (usado pelas 3 RPCs acima). É trigger e não
+que mude `variacoes.estoque` de fato (`is distinct from`, então reenviar o mesmo valor passa)
+sempre que `current_user` **não** for `estoque_rpc_executor` — role sem login criado pela migration
+`20260804113000_guard_manual_product_direct_writes.sql` (incidente 2026-08-03: produto inserido
+direto com `service_role`, contornando RLS e ledger). As RPCs de estoque **pertencem** a esse role;
+nem `service_role`, nem o SQL do dashboard, nem a Management API gravam saldo sem antes mudar o
+schema de segurança de propósito. **Uma RPC de estoque nova precisa do `alter function … owner to
+estoque_rpc_executor`** ou falha com `42501` na primeira escrita real. É trigger e não
 `revoke update (estoque)` porque privilégios de coluna são **cumulativos** em Postgres: como
-`authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. **Não existe
-mais "ajuste manual de estoque pelo app"** como consequência direta desta trigger — toda mudança de
-saldo passa por entrada, baixa ou estorno.
+`authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. Toda mudança
+de saldo passa por entrada, baixa, estorno ou **ajuste** (ADR-0110) — nunca por `UPDATE` do app.
 
 ---
 

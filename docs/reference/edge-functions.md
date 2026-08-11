@@ -49,6 +49,7 @@
 | **Estoque (ADR-0094, Bloco B — módulo pago)** ||||
 | cadastrar-produto | **true** | HTTP (frontend) | sim (guard 409 + ref no estoque inicial) |
 | entrada-estoque | **true** | HTTP (frontend) | sim (`ref` de idempotência obrigatória) |
+| ajustar-estoque | **true** | HTTP (frontend, **admin**) | sim (`ref` por item: `ajuste:{ref}:{codigo}`) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -539,6 +540,18 @@ falha ao ler `organizations` não libera.
   cairia em `duplicada` e o push nunca aconteceria; push absoluto é idempotente, então
   re-enfileirar é mais barato que perder a propagação. `pushOk: false` **não** é erro de entrada:
   o saldo já é verdade e a reconciliação diária recupera o push.
+- **ajustar-estoque** (ADR-0110) — reduz ou zera saldo. **Admin-only** (`requireUserOrg` devolve
+  `isAdmin`; paridade com pausar/reativar, ADR-0060) e restrita ao módulo `estoque`. Body é uma
+  **lista**: `{ ajustes: [{codigo, novoSaldo}], observacao?, ref }` — 1 item ajusta uma variação,
+  N itens zeram o produto inteiro. **`ref` por item** (`ajuste:{ref}:{codigo}`, montada em
+  `validar.ts`): o índice de idempotência é `(org_id, referencia_externa)`, então uma `ref`
+  compartilhada faria o 2º item colidir e voltar como "duplicada" — o "Zerar tudo" aplicaria só a
+  primeira cor e devolveria sucesso. Pelo mesmo motivo, **SKU repetido na lista é 400**, nunca
+  dedupe silencioso. Resultado vem **por item** (`{codigo, estoque, duplicada, erro?}`): um item
+  que falha não impede os seguintes, e a tela mostra o que não entrou. O push (`canal_origem:
+  null`) sai **uma vez por `codigo_pai`** e **sempre** — inclusive quando tudo veio duplicado ou
+  com delta 0, mesmo contrato da entrada. **Só reduz**: aumento é recusado pela RPC apontando para
+  a Entrada, que exige custo (ADR-0055).
 
 ### Faturamento
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,

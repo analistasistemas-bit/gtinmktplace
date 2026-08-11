@@ -2,6 +2,28 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — ajustar/zerar pelo PubliAI (ADR-0110) — 2026-08-11
+
+- [x] **Diagnóstico: cor zerada no ML voltava sozinha.** O push é absoluto e o cron
+  `reconciliar-estoque` (`30 12 * * *`) re-empurra todo produto com movimento nas últimas 24h com
+  `canal_origem: null` fixo (`reconciliar-estoque/index.ts:93`), descartando o `push_canal_origem`
+  que o `sync-venda` grava justamente para não ecoar ao ML. Confirmado em produção: 13 pushes
+  criados às 12:30 UTC de 11/08 e saldo local do Vermelho intacto (2000/1990/2000) nos três
+  anúncios Helanca Light.
+- [x] **Migration `20260811201026`:** motivo `ajuste` no ledger + RPC `ajustar_estoque`. A RPC
+  precisa pertencer ao role `estoque_rpc_executor` — o trigger de bloqueio só libera esse
+  `current_user` desde o guard de 2026-08-04. Sem isso, `42501` na primeira escrita real; pego
+  testando contra produção dentro de `begin/rollback`.
+- [x] **Edge `ajustar-estoque`:** admin-only, módulo `estoque`, lista de ajustes com **`ref` por
+  item** (`ajuste:{ref}:{codigo}`) — ref compartilhada faria o 2º item colidir na unique e o
+  "Zerar tudo" aplicaria só a primeira cor devolvendo sucesso. SKU repetido é 400.
+- [x] **UI:** botão "Ajustar" no card do produto (só admin), diálogo com campo por variação,
+  "Zerar" por linha e "Zerar tudo", trava de aumento apontando para a Entrada, aviso de que
+  estorno posterior repõe o saldo. Motivo `ajuste` ganhou rótulo e grupo no histórico.
+- [x] Docs: ADR-0110, spec, plano, `edge-functions.md`, `modelo-de-dados.md` (inclusive a
+  descrição desatualizada do trigger, que ainda dizia `auth.uid()`), `operacoes-rotineiras.md`
+  com a regra **nunca editar estoque direto no ML**.
+
 ## Faturamento — miniatura mostrava a foto de outra cor — 2026-08-11
 
 - [x] **A venda de "Amarelo Canário" aparecia com a foto do Vermelho.** Mesmo landmine dos itens
