@@ -887,10 +887,30 @@ monta os mapas de `_shared/faturamento/custo-vigente.ts` — espelho servidor de
 (cadeia variação → anúncio → GTIN → código, tie-break na linha mais recente, ADR-0108). As duas
 cópias são amarradas por `tests/lib/paridade-custo-fe-be.test.ts`.
 
-**Redeploy ao mexer em `io.ts`/`custo-vigente.ts`** — as 10 functions que o importam (não só as 4
-que chamam `upsertVenda`): `sync-venda`, `sync-devolucao`, `sync-pergunta`, `sync-mensagem`,
-`backfill-faturamento`, `reconciliar-faturamento`, `ml-webhook`, `responder-pergunta`,
-`responder-mensagem`, `usuarios`.
+**Redeploy ao mexer em `io.ts`/`custo-vigente.ts`** — as 7 functions que importam **este arquivo**
+(não só as 4 que chamam `upsertVenda`): `sync-venda`, `sync-devolucao`, `backfill-faturamento`,
+`reconciliar-faturamento`, `ml-webhook`, `sync-pergunta`, `sync-mensagem`. Outras três
+(`responder-pergunta`, `responder-mensagem`, `usuarios`) importam outros módulos de
+`_shared/faturamento/` — mexeu em `mensagens-io.ts`/`perguntas-io.ts`, redeploy delas também.
+
+## Anúncio de catálogo no catálogo do faturamento (ADR-0021)
+
+Vincular um produto ao catálogo do ML cria um anúncio **separado**, com MLB próprio
+(`variacoes.catalog_listing_id`), que não é o `familias.ml_item_id`. A venda dele chega com
+`item.id` = MLB de catálogo e sem `variation_id`.
+
+`carregarCatalogo` registra esse MLB em `idsPubliai`/`codPorItem`/`eanPorItem` (`set` direto: o
+vínculo é 1:1 com a variação, sem a ambiguidade de "primeira variação da família" que obriga o
+guard nas chaves da família). Antes, a venda de catálogo era reconhecida só pelo **fallback de
+GTIN** (`venda.ts` §2): produto sem EAN cadastrado ficava sem código — e sem código não há baixa de
+estoque. Hoje nenhum SKU vinculado está sem GTIN (288 na Avil, 4 na DSA, conferido em 2026-08-11),
+então a mudança é robustez, não correção de dado existente.
+
+Não afeta `is_publiai` no caso comum: o fallback de GTIN já promovia. Só passa a promover o caso
+sem EAN, e corretamente — o anúncio de catálogo é nosso, criado pelo `vincular-catalogo`.
+
+Vale só para syncs **futuros**: linhas de `ml_vendas` já gravadas mantêm o código persistido até
+serem re-sincronizadas.
 
 ## Histórico — filho User Products herdava código/EAN de outra cor (corrigida)
 

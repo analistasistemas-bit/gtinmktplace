@@ -83,11 +83,12 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     famPorId.set(f.id as string, { mlItemId: f.ml_item_id as string, codigoPai: f.codigo_pai as string | null });
     idsPubliai.add(f.ml_item_id as string);
   }
-  const variacoes = await paginarTudo<{ familia_id: string; codigo: string | null; gtin: string | null; ml_variation_id: string | null; custo: unknown; atualizado_em: unknown }>(
+  const variacoes = await paginarTudo<{ familia_id: string; codigo: string | null; gtin: string | null; ml_variation_id: string | null; catalog_listing_id: string | null; custo: unknown; atualizado_em: unknown }>(
     (de, ate) => admin.from('variacoes')
       // custo/atualizado_em: insumo do congelamento (ADR-0109) — atualizado_em é o tie-break
       // entre variações duplicadas por re-ingest (ADR-0108).
-      .select('familia_id, codigo, gtin, ml_variation_id, custo, atualizado_em')
+      // catalog_listing_id: o MLB do anúncio de catálogo (ADR-0021) — ver o bloco no loop abaixo.
+      .select('familia_id, codigo, gtin, ml_variation_id, catalog_listing_id, custo, atualizado_em')
       .eq(colEscopo, valEscopo).range(de, ate),
   );
   // Linhas de custo montadas ANTES do filtro de família publicada abaixo: uma variação de família
@@ -115,6 +116,18 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     if (ean && !eanPorItem.has(fam.mlItemId)) eanPorItem.set(fam.mlItemId, ean);
     if (ean && !infoPorGtin.has(normGtin(ean))) infoPorGtin.set(normGtin(ean), { codigo: cod, ean });
     if (cod && ean) eanPorCodigo.set(cod, ean);
+    // ADR-0021 — vincular ao catálogo cria um anúncio SEPARADO, com MLB próprio
+    // (`catalog_listing_id`), que NÃO é `familias.ml_item_id`. Sem esta linha a venda de catálogo
+    // só é reconhecida pelo fallback de GTIN (venda.ts §2) — quem não tem EAN cadastrado fica sem
+    // código e sem baixa de estoque. O anúncio é nosso, então entra em `idsPubliai` como qualquer
+    // outro. É 1:1 com a variação (o item de catálogo não tem variação), então `set` direto: não
+    // há a ambiguidade de "primeira variação da família" que obriga o guard nas linhas acima.
+    const catId = v.catalog_listing_id as string | null;
+    if (catId) {
+      idsPubliai.add(catId);
+      if (cod) codPorItem.set(catId, cod);
+      if (ean) eanPorItem.set(catId, ean);
+    }
   }
   for (const [, fam] of famPorId) {
     if (fam.codigoPai && !codPorItem.has(fam.mlItemId)) codPorItem.set(fam.mlItemId, fam.codigoPai);
