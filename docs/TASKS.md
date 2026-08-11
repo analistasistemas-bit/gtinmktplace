@@ -15,6 +15,24 @@
   Simulado contra produção: 144 resolvidas (as outras 40 não têm cor em lugar nenhum), todas
   batendo com o título do anúncio.
 
+- [x] **Código/EAN da venda apontavam para outra cor em filho User Products.** Achado ao investigar
+  o item acima. Quando o `item_externo_id` do filho UP é também o `familias.ml_item_id` (cor 1 da
+  família migrada, 8 dos 53 filhos), `carregarCatalogo` já semeou `codPorItem`/`eanPorItem` com a
+  primeira variação da família em ordem arbitrária (`io.ts:96-98`) ou com `codigo_pai`
+  (`io.ts:103`), e `fundirItensUP` se recusava a sobrescrever. Em produção: 4 vendas com código
+  errado, 6 com EAN errado (ex.: `MLB4959919693`, Amarelo Canário, exibia código `18760903`, de
+  Vermelho). Corrigido em `catalogo-up.ts`: o par `item_externo_id → sku` é 1:1 exato (ADR-0088
+  "Ancoragem") e agora sobrescreve. Anúncio com variações reais não é afetado — a venda traz
+  `variation_id` e o resolver acha por `codPorVar` antes do mapa por item.
+  **Custo e markup NÃO foram afetados:** `venda_item_custo` (ADR-0109) é chaveado por
+  `(venda_id, ml_item_id, variation_id)`, não por código, e é insert-once — verificado em produção,
+  o custo congelado das 15 vendas de filho UP está correto (cores da mesma família compartilham
+  custo). O erro era só de rastreabilidade.
+  **Exige deploy + re-sync:** `supabase functions deploy` de `sync-venda`, `reconciliar-faturamento`,
+  `backfill-faturamento` e `sync-devolucao` (todas chamam `carregarCatalogo`). A reconciliação
+  horária cobre 72h e conserta 3 das 4 vendas sozinha; a de 05/08 precisa de `backfill-faturamento`
+  com `{desde, ate}`.
+
 ## Faturamento — paginação de Perguntas e Mensagens — 2026-08-08
 
 - [x] **Faturamento — paginação de Perguntas e Mensagens** — as duas abas despejavam a lista
