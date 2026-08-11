@@ -23,6 +23,25 @@
 - [x] Docs: ADR-0110, spec, plano, `edge-functions.md`, `modelo-de-dados.md` (inclusive a
   descrição desatualizada do trigger, que ainda dizia `auth.uid()`), `operacoes-rotineiras.md`
   com a regra **nunca editar estoque direto no ML**.
+- [x] **Falha de segurança encontrada e fechada no deploy (migration `20260811203500`).** O
+  `revoke`/`grant` da migration original rodava DEPOIS do `alter owner`, então o executor não era
+  grantor válido e os dois viraram no-op — com WARNING, não com erro. A função ficou com o default
+  do Postgres (EXECUTE para PUBLIC) mais `anon` e `authenticated`; como é `security definer` e
+  recebe `p_org` por parâmetro, qualquer usuário autenticado poderia chamá-la via PostgREST e
+  zerar estoque de **qualquer organização**. Corrigido com `set local role estoque_rpc_executor`
+  dentro de `begin/commit` explícito (o `db push` não abre transação). Verificado depois:
+  `POST /rest/v1/rpc/ajustar_estoque` com JWT de usuário devolve `42501 permission denied`.
+- [ ] **Pendência (baixa severidade): `postgres` ficou membro de `estoque_rpc_executor`.** O
+  `grant` necessário ao `alter owner` foi gravado com `grantor = supabase_admin`, e nem a
+  Management API nem o `db push` (ambos rodam como `postgres`, que não é superuser nem membro de
+  `supabase_admin`) conseguem revogá-lo — `no possible grantors`. **O guard essencial segue
+  intacto:** `service_role`, `authenticated` e `anon` continuam sem poder assumir o role
+  (verificado por `pg_has_role`), então nenhuma via da aplicação escreve saldo direto. O que mudou
+  é que quem tem a credencial `postgres` pode `set role` — e essa credencial já podia alterar o
+  trigger de qualquer forma. Resolver exige uma sessão com `supabase_admin` (suporte Supabase).
+- [x] Validado em produção: RPC exercitada com `begin/rollback` (6 casos), ajuste real 12→11 na
+  org DSA com push entregue no QStash (200) e revertido por Entrada, e a UI conferida no dev local
+  — inclusive o "Zerar tudo" com 3 cores (−5871 em 3 variações).
 
 ## Faturamento — miniatura mostrava a foto de outra cor — 2026-08-11
 

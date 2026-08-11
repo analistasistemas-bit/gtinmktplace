@@ -52,6 +52,20 @@ Isso fica como está: cancelamento significa mercadoria que voltou fisicamente, 
 faria o saldo divergir do físico real — o oposto do que o ledger existe para garantir. A interface
 avisa, e quem quer tirar de venda de vez usa Pausar.
 
+## Armadilha de implementação (vale para a próxima RPC de estoque)
+
+A RPC precisa **pertencer ao role `estoque_rpc_executor`** — o trigger `bloquear_escrita_direta_
+estoque` (guard de 2026-08-04) só libera `UPDATE` de `variacoes.estoque` para esse `current_user`.
+Sem o `alter function … owner to`, a função falha com `42501` na primeira escrita real.
+
+E os `revoke`/`grant` da função precisam vir **antes** da troca de dono, ou rodar com
+`set local role estoque_rpc_executor` dentro de `begin/commit` explícito (o `supabase db push`
+**não** envolve a migration em transação). Fora disso o executor não é grantor válido e os
+comandos viram **no-op com WARNING, não erro** — foi assim que a função ficou publicada com
+`EXECUTE` para `PUBLIC`, `anon` e `authenticated` até a migration `20260811203500` corrigir.
+Como toda RPC daqui é `security definer` e recebe `p_org` por parâmetro, esse no-op silencioso
+equivale a expor escrita de estoque de qualquer organização a qualquer usuário autenticado.
+
 ## Consequências
 
 - Existe um caminho correto para "acabou essa cor", e ele se propaga para todos os canais
