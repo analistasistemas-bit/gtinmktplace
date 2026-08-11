@@ -4,6 +4,7 @@
 import type { Venda, VendaItem } from './faturamento';
 import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
 import type { FotoResolver } from './fotos-produto';
+import type { CorResolver } from './cor-produto';
 import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
 import { round2, fmtBRLSemSimbolo } from './formato';
@@ -99,6 +100,7 @@ function custoDoItem(it: VendaItem, resolver?: CustoResolver): number | null {
 export function agruparPorPedido(
   vendas: Venda[], custoResolver?: CustoResolver, pesoResolver?: PesoResolver,
   fotoResolver?: FotoResolver, aliquotaResolver?: AliquotaResolver,
+  corResolver?: CorResolver,
 ): Pedido[] {
   const rateio = ratearLiquidoPorFrete(vendas, pesoResolver);
   // Venda cancelada não gera líquido (ADR-0038: só faturável entra nos KPIs monetários). Sem essa
@@ -152,7 +154,10 @@ export function agruparPorPedido(
         : null;
       return {
         id: it.id, ml_item_id: it.ml_item_id, titulo: it.titulo, codigo: it.codigo,
-        cor: it.cor, ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
+        // Item plano (filho User Products, família de 1 variação) vende sem variação, então o ML
+        // não manda `variation_attributes` e `it.cor` vem nula — resolve pelo catálogo.
+        cor: it.cor ?? corResolver?.(it) ?? null,
+        ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
         custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup,
       };

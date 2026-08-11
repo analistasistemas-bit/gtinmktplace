@@ -10,11 +10,13 @@ import { resolverJanela, type PeriodoDias, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
+import { useCoresProduto } from '@/hooks/useCoresProduto';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
+import { montarCorResolver } from '@/lib/cor-produto';
 import { sincronizarFaturamento, type OrigemVenda } from '@/lib/faturamento';
 import { agruparPorPedido, calcularKpisPedidos, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca, type Pedido } from '@/lib/pedidos-faturamento';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
@@ -169,6 +171,7 @@ export function AbaVendas() {
   const { data: vendas, isFetching, refetch } = useVendas(janela, origem);
   const { data: custos } = useCustos();
   const { data: fotos } = useFotosProduto();
+  const { data: cores } = useCoresProduto();
   const { data: canonico } = useAnuncioCanonico();
   const { data: aliquotas } = useAliquotas();
 
@@ -180,8 +183,9 @@ export function AbaVendas() {
       montarPesoResolver(custos),
       montarFotoResolver(fotos, canonico),
       montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+      montarCorResolver(cores, canonico),
     ),
-    [vendas, custos, fotos, canonico, aliquotas],
+    [vendas, custos, fotos, canonico, aliquotas, cores],
   );
   const kpis = useMemo(() => calcularKpisPedidos(pedidos), [pedidos]);
 

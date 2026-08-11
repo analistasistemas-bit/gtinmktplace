@@ -2,6 +2,51 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento — miniatura mostrava a foto de outra cor — 2026-08-11
+
+- [x] **A venda de "Amarelo Canário" aparecia com a foto do Vermelho.** Mesmo landmine dos itens
+  abaixo, agora em `src/lib/fotos-produto.ts`: o mapa por anúncio era first-wins, então um anúncio
+  com N cores guardava a foto da PRIMEIRA variação da lista e todas as cores herdavam. Atinge os
+  mesmos 8 anúncios em que o `item_externo_id` do filho UP é também o `familias.ml_item_id`
+  (as demais cores caem no fallback por GTIN, que é exato — por isso a foto do Branco já estava
+  certa). Corrigido com a mesma disciplina de `cor-produto.ts`: chave disputada por fotos
+  diferentes é anulada, e o `sku` do filho UP sobrepõe. Sem chute: a cadeia segue para GTIN/código
+  (exatos) e, no pior caso, para a capa da família — genérica, nunca de outra cor.
+  Simulado contra produção: 424 itens sem variação, 4 mudam de foto e os 4 vão de errada para
+  certa (314 → 318 batendo com o código vendido), nenhuma regressão e nenhum item perde foto.
+
+## Faturamento — coluna "Cor" vazia em item plano — 2026-08-11
+
+- [x] **Cor do produto não aparecia em 184 de 1350 itens vendidos** (Faturamento e Detalhe do
+  líquido). O sync grava `ml_vendas_itens.cor` a partir de `order_items[].item.variation_attributes`
+  (`_shared/faturamento/venda.ts`), que o ML só manda quando a venda tem variação. Item **plano** —
+  filho User Products (ADR-0088, 1 item ML por cor) ou família de 1 variação — vende sem variação:
+  183 das 184 linhas têm `variation_id` nulo. Corrigido na **leitura** (`src/lib/cor-produto.ts`,
+  espelhando `fotos-produto.ts`), o que conserta as vendas já sincronizadas sem re-sync nem deploy
+  de Edge Function. A resolução por anúncio só vale quando o anúncio tem uma cor única, e o SKU do
+  filho UP sobrepõe o chute da família — chave ambígua devolve "—" em vez de inventar cor.
+  Simulado contra produção: 144 resolvidas (as outras 40 não têm cor em lugar nenhum), todas
+  batendo com o título do anúncio.
+
+- [x] **Código/EAN da venda apontavam para outra cor em filho User Products.** Achado ao investigar
+  o item acima. Quando o `item_externo_id` do filho UP é também o `familias.ml_item_id` (cor 1 da
+  família migrada, 8 dos 53 filhos), `carregarCatalogo` já semeou `codPorItem`/`eanPorItem` com a
+  primeira variação da família em ordem arbitrária (`io.ts:96-98`) ou com `codigo_pai`
+  (`io.ts:103`), e `fundirItensUP` se recusava a sobrescrever. Em produção: 4 vendas com código
+  errado, 3 delas também com EAN errado (ex.: `MLB4959919693`, Amarelo Canário, exibia código `18760903`, de
+  Vermelho). Corrigido em `catalogo-up.ts`: o par `item_externo_id → sku` é 1:1 exato (ADR-0088
+  "Ancoragem") e agora sobrescreve. Anúncio com variações reais não é afetado — a venda traz
+  `variation_id` e o resolver acha por `codPorVar` antes do mapa por item.
+  **Custo e markup NÃO foram afetados:** `venda_item_custo` (ADR-0109) é chaveado por
+  `(venda_id, ml_item_id, variation_id)`, não por código, e é insert-once — verificado em produção,
+  o custo congelado das 15 vendas de filho UP está correto (cores da mesma família compartilham
+  custo). O erro era só de rastreabilidade.
+  **Entregue em produção (2026-08-11):** deploy de `sync-venda` (v61), `reconciliar-faturamento`
+  (v61), `backfill-faturamento` (v64) e `sync-devolucao` (v41) — todas importam `carregarCatalogo`.
+  As 4 linhas históricas foram corrigidas por UPDATE derivado de `anuncios_externos_itens.sku`
+  (mesma fonte que o código deployado usa), já que o backfill exige JWT de sessão. Conferido
+  depois: 0 códigos errados, 0 EANs errados, 0 divergências em `venda_item_custo`.
+
 ## Faturamento — paginação de Perguntas e Mensagens — 2026-08-08
 
 - [x] **Faturamento — paginação de Perguntas e Mensagens** — as duas abas despejavam a lista

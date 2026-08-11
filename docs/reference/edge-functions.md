@@ -872,6 +872,46 @@ que chamam `upsertVenda`): `sync-venda`, `sync-devolucao`, `sync-pergunta`, `syn
 `backfill-faturamento`, `reconciliar-faturamento`, `ml-webhook`, `responder-pergunta`,
 `responder-mensagem`, `usuarios`.
 
+## Histórico — filho User Products herdava código/EAN de outra cor (corrigida)
+
+`fundirItensUP` (`_shared/faturamento/catalogo-up.ts`) não sobrescrevia uma entrada já existente em
+`codPorItem`/`eanPorItem`. Quando o `item_externo_id` do filho UP é **também** o
+`familias.ml_item_id` (a cor 1 de uma família migrada para o modelo User Products, ADR-0088 — 8 dos
+53 filhos em produção), `carregarCatalogo` já havia semeado a chave: com a **primeira variação da
+família em ordem arbitrária** (`io.ts:96-98`) ou com `familias.codigo_pai` (`io.ts:103`, que é o
+agrupador e não o produto vendido). Resultado: a venda gravava código/EAN de outra cor — 4 vendas
+com código errado, 3 delas também com EAN errado. Exemplo: `MLB4959919693` (Amarelo Canário,
+sku `26705421`) gravava o código `18760903`, que é do Vermelho.
+
+Corrigido invertendo a regra: o par `item_externo_id → sku` é 1:1 exato (ADR-0088 "Ancoragem") e
+**sobrescreve** qualquer valor derivado da família. Anúncio com variações reais não é afetado — a
+venda traz `variation_id` e o resolver acha por `codPorVar` antes de consultar o mapa por item.
+`infoPorGtin` segue first-wins: a chave é o próprio GTIN, então uma entrada existente já é do mesmo
+produto.
+
+**Custo e markup não foram afetados:** `venda_item_custo` (ADR-0109) é chaveado por
+`(venda_id, ml_item_id, variation_id)`, não por código, e é insert-once — verificado em produção,
+o custo congelado das 15 vendas de filho UP já estava correto (cores da mesma família compartilham
+custo). O erro era só de rastreabilidade.
+
+Redeploy: `sync-venda` (v61), `reconciliar-faturamento` (v61), `backfill-faturamento` (v64),
+`sync-devolucao` (v41) — todas importam `carregarCatalogo`.
+
+**Como as 4 linhas históricas foram corrigidas (e o tropeço no caminho):** o `backfill-faturamento`
+exige JWT de sessão, indisponível na sessão do agente, então as linhas foram atualizadas por
+`UPDATE` derivado de `anuncios_externos_itens.sku` — a mesma fonte que o código deployado usa. A
+query de apoio, porém, escolhia a variação com `order by atualizado_em desc limit 1`, e o código
+`26705421` existe em **duas famílias** com GTINs diferentes (`4753000051` e `4753000053`) e
+`atualizado_em` **idêntico** — o desempate caiu na família errada e gravou o GTIN errado em 3 das 4
+linhas. O sync seguinte (14:01) regravou o valor correto sozinho, justamente por causa do fix acima.
+Conferido depois com a chave certa (variação da **família do anúncio vendido**): 0 código errado,
+0 EAN errado, 0 divergência em `venda_item_custo`.
+
+Lição para quem for repetir: código de variação **não** é chave única entre famílias (ADR-0108).
+Desempatar por `atualizado_em` não funciona quando o re-ingest grava o mesmo instante nas duplicatas
+— resolva sempre pela família do anúncio vendido. Detalhe em `obsidian-vault/09-Logs/Changelog.md`
+(2026-08-11) e em `obsidian-vault/05-Bugs/Problemas Resolvidos.md`.
+
 ## Histórico — catálogo truncado em 1000 linhas quebrava casamento por GTIN (corrigida)
 
 `carregarCatalogo` (`_shared/faturamento/io.ts`) lia `variacoes`/`familias` sem paginação

@@ -37,12 +37,25 @@ describe('fundirItensUP', () => {
     expect(base.eanPorItem.has('MLB2')).toBe(false);
   });
 
-  it('NÃO sobrescreve uma entrada já existente (cor 1 já resolvida pela família legada)', () => {
+  // Antes preservava a entrada da família. Errado: quando o item_externo_id do filho é também o
+  // familias.ml_item_id, io.ts semeia a chave com a PRIMEIRA variação da família em ordem
+  // arbitrária (:96-98) ou com codigo_pai (:103) — nenhum dos dois é o produto vendido.
+  // Em produção isso gravou 4 vendas com código errado e 6 com EAN errado.
+  it('SOBRESCREVE a entrada semeada pela família — o sku do filho é 1:1 com a cor vendida', () => {
     const base = baseVazia();
     base.idsPubliai.add('MLB1');
-    base.codPorItem.set('MLB1', 'CODIGO_PAI'); // já resolvido pelo fallback de familia.codigo_pai
-    fundirItensUP(base, [{ itemExternoId: 'MLB1', sku: 'V1', gtin: null }]);
-    expect(base.codPorItem.get('MLB1')).toBe('CODIGO_PAI'); // preservado, não virou 'V1'
+    base.codPorItem.set('MLB1', 'CODIGO_PAI'); // fallback de familia.codigo_pai (io.ts:103)
+    base.eanPorItem.set('MLB1', '07890000000017');
+    fundirItensUP(base, [{ itemExternoId: 'MLB1', sku: 'V1', gtin: '07890000000024' }]);
+    expect(base.codPorItem.get('MLB1')).toBe('V1');
+    expect(base.eanPorItem.get('MLB1')).toBe('07890000000024');
+  });
+
+  it('caso real MLB4959919693: a família semeou a cor errada, o filho UP corrige', () => {
+    const base = baseVazia();
+    base.codPorItem.set('MLB4959919693', '18760903'); // 1ª variação da família (cor Vermelho)
+    fundirItensUP(base, [{ itemExternoId: 'MLB4959919693', sku: '26705421', gtin: null }]);
+    expect(base.codPorItem.get('MLB4959919693')).toBe('26705421'); // Amarelo Canário, a cor vendida
   });
 
   it('lista vazia (sem itens UP) → mapas inalterados', () => {
