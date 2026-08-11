@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-08-08
+atualizado: 2026-08-11
 ---
 
 # Problemas Resolvidos
@@ -9,6 +9,32 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 [[Incidentes]] (com contexto completo de ADR), [[Bugs Conhecidos]] (o que falta).
 
 ## Correções recentes (commits mais recentes na `main`)
+
+- **Cor vazia, foto de outra cor e código/EAN trocados no Faturamento (2026-08-11)** — três
+  sintomas, **uma raiz**: o sistema resolvia "qual variação foi vendida?" pegando a **primeira da
+  lista** quando não sabia. (1) *Cor* — o ML só manda `variation_attributes` em venda com variação;
+  item plano (filho User Products, ADR-0088, ou família de 1 variação) chega sem, e 184 de 1350
+  itens ficavam com `ml_vendas_itens.cor` nula, 183 deles com `variation_id` nulo. (2) *Foto* —
+  `fotos-produto.ts` mapeava anúncio → foto da primeira variação, então as 9 cores de um anúncio
+  herdavam a mesma imagem: a venda de "Amarelo Canário" aparecia vermelha. (3) *Código/EAN* —
+  `fundirItensUP` preservava a entrada semeada pela família em vez do `sku` exato do filho
+  (4 vendas com código errado, 3 com EAN errado).
+  **Fix:** cor e foto resolvidas na **leitura** (`src/lib/cor-produto.ts`, `fotos-produto.ts`), o
+  que conserta o histórico sem re-sync; código/EAN no sync (`catalogo-up.ts`, redeploy das 4
+  functions que importam `carregarCatalogo`). Regra comum: **chave disputada por valores diferentes
+  é anulada, não chutada** — cor ambígua vira "—", foto ambígua cai na capa da família, e o `sku`
+  do filho UP (1:1 exato) sobrepõe qualquer palpite. **Custo e markup intactos**
+  (`venda_item_custo`, ADR-0109, é chaveado por `(venda_id, ml_item_id, variation_id)` e é
+  insert-once — conferido em produção).
+  **Achado por revisão adversarial:** o guard inicial anulava a chave por anúncio mas ainda caía no
+  fallback por `ean`/`codigo` — campos que o **próprio sync** havia gravado a partir da primeira
+  variação arbitrária. O dado envenenado entrava pela linha da venda, não pelo mapa. Com
+  `variation_id` nulo e anúncio ambíguo, o resolver agora para em `null`.
+  **Lição operacional:** ao corrigir as 4 linhas históricas à mão, a query de apoio desempatou
+  variações duplicadas (ADR-0108) por `atualizado_em` — que estava **idêntico** — e gravou o
+  GTIN da família errada em 3 delas. O sync seguinte corrigiu sozinho. Código duplicado entre
+  famílias só é desempatável pela **família do anúncio vendido**, nunca pelo código solto.
+  Ver [[Índice de ADRs]] (ADR-0088, ADR-0108, ADR-0109) e [[Faturamento]].
 
 - **"Unid. vendidas" do Eucerin aparecia em duas etapas no Publicados (2026-08-08)** — a coluna vem
   de `resumo.porItem`, que depende de **duas** queries: `useVendas` (as vendas da janela) e

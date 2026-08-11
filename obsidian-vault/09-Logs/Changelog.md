@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-07-12
+atualizado: 2026-08-11
 ---
 
 # Changelog
@@ -8,6 +8,28 @@ atualizado: 2026-07-12
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-08-11
+
+- **Fix: coluna "Cor" vazia e miniatura da cor errada no Faturamento.** Item **plano** — filho
+  User Products (ADR-0088: 1 item ML por cor) ou família de 1 variação — vende sem variação, e
+  o Mercado Livre só manda a cor em `variation_attributes`. Resultado: `ml_vendas_itens.cor` nula
+  em 184 de 1350 itens (183 com `variation_id` nulo). Resolvido na **leitura**
+  (`src/lib/cor-produto.ts`, espelhando `fotos-produto.ts`), o que conserta as vendas já
+  sincronizadas sem re-sync nem deploy de Edge Function: 144 recuperadas, as outras 40 não têm cor
+  no catálogo e seguem "—". Mesmo landmine na miniatura (`fotos-produto.ts`): o mapa por anúncio
+  era first-wins, então um anúncio de 9 cores servia a foto da primeira variação a todas — a venda
+  de "Amarelo Canário" aparecia vermelha. Ver [[Problemas Resolvidos]].
+- **Fix: filho User Products gravava código/EAN de outra cor.** Achado ao investigar o item acima.
+  `fundirItensUP` (`_shared/faturamento/catalogo-up.ts`) preservava a entrada semeada pela família
+  (primeira variação em ordem arbitrária, ou `codigo_pai`) em vez do `sku` exato do filho. Atingia
+  os 8 filhos cujo `item_externo_id` é também o `familias.ml_item_id`: 4 vendas com código errado,
+  3 com EAN errado. **Custo e markup intactos** — `venda_item_custo` (ADR-0109) é chaveado por
+  `(venda_id, ml_item_id, variation_id)` e é insert-once; conferido em produção. Deploy
+  `sync-venda v61`, `reconciliar-faturamento v61`, `backfill-faturamento v64`, `sync-devolucao v41`.
+- **Método:** as três correções compartilham a mesma regra — chave disputada por valores diferentes
+  é **anulada** em vez de chutada, e o `sku` do filho UP (1:1 exato) sobrepõe qualquer palpite
+  derivado da família. Nunca inventar dado de produto vale também para o que é só exibido.
 
 ## 2026-08-04
 
