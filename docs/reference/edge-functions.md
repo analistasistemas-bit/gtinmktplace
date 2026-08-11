@@ -119,7 +119,7 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 | `ai/*` | OpenRouter: copywriter, vision (cor), título, resposta a pergunta, categoria/atributos por LLM; `modelos.ts` → `resolverModeloTexto(admin, orgId)` (ADR-0074) lê `configuracoes.ai_model_texto` da org e cai no fallback `MODELO_COPY`/env em `null`/erro (nunca propaga) |
 | `canais/*` | Conector multicanal: `getConnector(canal)` + contrato + `MercadoLivreConnector`; `conexao.ts` → `resolverConexao(admin, orgId, canal)` resolve a `marketplace_connections` da org (ADR-0027); **E6 (ADR-0061):** `estado.ts` → máquina de estado por canal (`garantirAnuncioExterno`, `claimAnuncioExterno`, `decidirOperacaoCanal`); `registry.ts` suporta conectores injetáveis em teste (`registrarConectorParaTeste`); `fake.ts` conector de teste |
 | `redis/*` | Client Redis + caches (cor, concorrência, tarifa) |
-| `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027) |
+| `faturamento/*` | I/O de vendas/perguntas/devoluções + enriquecimento (líquido, EAN); `resolverIdentidade`/`resolverOrgPorUserId` (`io.ts`) resolvem `{userId, orgId}` via `marketplace_connections` (ADR-0027). **`carregarCatalogo` tem escopo de ORG** (2026-08-11): recebe o `userId` do `criado_por` da conexão mas filtra `familias`/`variacoes` por `org_id` — filtrar por `user_id` deixava de fora todo produto cadastrado por outro membro, e a venda vinha com `is_publiai = false` e sem código, sem baixar estoque. Só cai para `user_id` quando não há conexão para resolver a org. O código do item ainda tem um 3º fallback: `seller_custom_field`/`seller_sku` do próprio pedido, que **não** promove o item a `is_publiai` |
 | `mercadopago/*` | Leitura de pagamentos MP com o token da conexão `mercado_livre` da org (ADR-0093). `buscarPagamentoMP` (1 id) nos workers de evento; `buscarPagamentosMP` (varredura por período) nos de lote |
 | `categoria/*`, `cor/*`, `preco/*` | Detecção de categoria, extração de cor, lógica de preço/desconto |
 | `estoque/*` (ADR-0094) | `baixa.ts` → `registrarBaixaVenda`/`estornarVendaCancelada` (chamam as RPCs `baixar_estoque`/`estornar_estoque`), `lerPushPendente`/`despacharPushPendente` (drena o outbox do ledger); `alvos.ts` → `resolverAlvosPush` (resolve qual item externo recebe qual SKU: variações num item, split em N partições, ou N itens planos user products) |
@@ -595,6 +595,13 @@ falha ao ler `organizations` não libera.
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
+  **Venda sem SKU resolvido (2026-08-11):** item de venda paga sem `codigo` era descartado por
+  `selecionarBaixas` em silêncio — 12 unidades venderam na org DSA sem baixar e sem deixar rastro.
+  Agora `registrarBaixaVenda` grava um movimento `venda_sku_nao_encontrado` (`quantidade = 0`,
+  `codigo_pai` vazio para nunca entrar no outbox de push, referência
+  `venda_sem_sku:{canal}:{pedido}:{item}`) e o `sync-venda` notifica a categoria `vendas`. Um
+  saldo que não desce é indistinguível de um produto que não vendeu; o movimento informativo é a
+  diferença.
   Liveness da integração (ADR-0069): erro no token ou no fetch do recurso é classificado via
   `classificarErroML` — 401/403 (`permanente-auth`) grava `marketplace_connections.auth_alerta_em`
   e alerta `notificarCategoria(..., 'integracao', ...)` só na 1ª falha (200, sem retry); 404

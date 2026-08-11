@@ -2,6 +2,34 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento/Estoque — venda não baixava estoque de produto de outro membro da org — 2026-08-11
+
+- [x] **Sintoma:** 12 unidades do NIVEA (org DSA) venderam em 10 pedidos pagos e o saldo continuou
+  12. Na tela de Faturamento o item aparecia com **Código `—`**.
+- [x] **Causa raiz:** `carregarCatalogo` (`_shared/faturamento/io.ts`) filtrava `familias` e
+  `variacoes` por **`user_id`** — o `criado_por` da conexão do canal. O NIVEA foi cadastrado por
+  outro membro da mesma org, então ficava fora do catálogo: `is_publiai = false` e código não
+  resolvido. Resíduo pré-multi-tenancy; o dado é org-scoped desde o E7/ADR-0027 (o próprio
+  `backfill-faturamento:56` já chamava isso de "proxy legado"). Agora filtra por `org_id`, com
+  fallback para `user_id` só quando não há conexão para resolver a org.
+- [x] **Por que ninguém viu:** `selecionarBaixas` descartava item sem código **em silêncio** — nem
+  o motivo `venda_sku_nao_encontrado`, que já existia no ledger, era gravado (0 linhas em todo o
+  banco). Agora venda paga sem SKU vira movimento informativo (`quantidade = 0`, `codigo_pai`
+  vazio para nunca virar push) mais notificação na categoria `vendas`.
+- [x] **Rede de segurança:** o ML manda o SKU em `seller_custom_field` (vinha preenchido com
+  `00000029` o tempo todo). Passa a ser o último recurso para resolver o código — **sem** promover
+  o item a `is_publiai`, que significa "anúncio gerenciado por nós" e o vendedor pode preencher
+  esse campo em qualquer anúncio dele.
+- [x] **Alcance medido:** Avil **0 de 297** famílias afetadas; DSA **2 de 6** (as cadastradas pelo
+  outro membro). 22 das 124 vendas da DSA estavam com `is_publiai = false`.
+- [x] **Correção do saldo:** os 10 pedidos foram re-enfileirados no `sync-venda` depois do deploy.
+  A baixa rodou de verdade (10 movimentos `venda`, −12 no total), o saldo foi de 12 para **0** e o
+  push levou 0 ao ML, que pausou o anúncio sozinho. Nenhum ajuste manual foi usado — o histórico
+  ficou com a causa certa.
+- [x] Redeploy das 8 funções que dependem do `_shared` alterado: `sync-venda`, `sync-devolucao`,
+  `reconciliar-faturamento`, `backfill-faturamento`, `ml-webhook`, `reconciliar-estoque`,
+  `sync-mensagem`, `sync-pergunta`.
+
 ## Estoque — botão "Ajustar" cortado e foto do produto pai — 2026-08-11
 
 - [x] **O botão "Ajustar" vazava para fora da tela.** A última coluna do `GRID_LINHA_PRODUTO`
