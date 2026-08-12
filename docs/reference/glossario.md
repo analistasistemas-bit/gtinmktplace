@@ -129,7 +129,7 @@
 | **Sessão de suporte** | Entrada temporária, explícita, autorizada e auditável de um administrador da plataforma no contexto operacional de uma organização cliente. Pode ter escopo somente leitura ou acesso total; ambos valem por até 2 horas e exigem nova aprovação para renovar. Não equivale a associação permanente nem transforma o administrador em membro do cliente. Expiração, saída ou revogação encerram todo o acesso. ADR-0092 (em discussão). |
 | **Acesso total de suporte** | Escopo de sessão que permite mutações. Exige solicitação e aprovação explícitas, vale por até 2 horas e pode ser renovado em blocos de 2 horas, sempre com nova aprovação. Sem autorização vigente, o backend bloqueia leitura e escrita da operação. ADR-0092 (em discussão). |
 
-## Nota fiscal (ADR-0114 — design fechado, implementação pendente)
+## Nota fiscal (ADR-0114 — **EM REVISÃO**, três decisões abertas bloqueiam a implementação)
 
 | Termo | Definição |
 |---|---|
@@ -140,7 +140,8 @@
 | **Config fiscal da org** | CNPJ, Inscrição Estadual, regime tributário, endereço do emitente, **série** e o **par de CFOP** (dentro da UF / fora da UF). Escolher entre os dois é mecânico (compara UF do emitente com `ml_vendas.uf`); **quais** são os dois é decisão do contador. |
 | **Série do PubliAI** | Série de numeração da NF-e **exclusiva** do PubliAI dentro do CNPJ do cliente. Séries têm contadores independentes, então o cliente segue emitindo normalmente em outras séries fora do PubliAI. O que quebra é o inverso: emissão avulsa **na** série do PubliAI defasa o contador do provider e a próxima nota rejeita por duplicidade. Sem série definida, o módulo não liga. |
 | **Ambiente fiscal** | `homologacao` ou `producao`, por org. **Nasce em `homologacao`**: certificado real, notas marcadas "SEM VALOR FISCAL", zero obrigação fiscal. Só o super-admin promove para produção. |
-| **`invoice_pending`** | Sub-status do envio no ML, dentro de `ready_to_ship`, que significa "a NF-e ainda não foi importada". É o **gatilho** da emissão — e enquanto ele existe, **o despacho fica travado**. |
+| **`invoice_pending`** | Sub-status do envio no ML, dentro de `ready_to_ship`, que significa "a NF-e ainda não foi importada". É o **gatilho** da emissão — e enquanto ele existe, **o despacho fica travado**. ⚠️ Aplica-se a `drop_off`, `xd_drop_off`, `cross_docking` e `xd_same_day`; **Flex, Turbo e ME1 seguem outro fluxo**. |
+| **Importar × anexar nota (ML)** | Dois recursos distintos. **Importar** (`POST /shipments/{id}/invoice_data`) é o que **destrava `invoice_pending` e libera a etiqueta**. **Anexar** (`POST /packs/{id}/fiscal_documents`) só disponibiliza o documento ao comprador e **não** destrava nada. Confundir os dois deixa o pedido parado com a nota já autorizada. |
 | **Rejeição transitória / definitiva** | Transitória (SEFAZ fora do ar, timeout) → retry com backoff, silencioso. Definitiva (`NCM inválido`, `CPF do destinatário inválido`) → para, mostra a **mensagem crua da SEFAZ** e notifica **o cliente**, não a Daludi. O PubliAI não tenta consertar. Mesma distinção que `classificarErroML` já faz para o ML. |
 | **Passthrough de certificado** | O `.pfx` e a senha atravessam a edge a caminho do provider e **não são persistidos** — nem Storage, nem coluna, nem log. Guarda-se só CNPJ, **validade** e data de envio; a validade alimenta alerta de vencimento em 30/15/7 dias (ADR-0085). |
 | **Histórico de suporte** | Trilha de auditoria que registra sessões, motivos, autorizações e ações mutáveis realizadas pelo suporte, sem copiar segredos ou payloads integrais. Admins do cliente enxergam apenas o histórico da própria organização. Retenção normal de 1 ano, salvo bloqueio por investigação em andamento. ADR-0092 (em discussão). |
