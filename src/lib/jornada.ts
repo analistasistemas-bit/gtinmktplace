@@ -28,6 +28,17 @@ export interface ResultadoPublicacao {
   erros: number;
 }
 
+/** Conta o desfecho a partir das famílias do lote. Existe para que toda tela com stepper leia
+ *  o mesmo número: Revisão, Relatório e Progresso exibem o mesmo lote em momentos diferentes,
+ *  e cada uma que calculasse por conta própria seria uma chance nova de dizer "Publicado" num
+ *  lote que não publicou. */
+export function resultadoPublicacao(familias: { status: string }[]): ResultadoPublicacao {
+  return {
+    publicadas: familias.filter((f) => f.status === 'publicado').length,
+    erros: familias.filter((f) => f.status === 'erro').length,
+  };
+}
+
 /** Lote que fechou sem publicar nada, tendo tentado e falhado.
  *
  *  `concluido` significa "o lote terminou de rodar", não "publicou": um lote cujas famílias foram

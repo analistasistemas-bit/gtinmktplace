@@ -13,8 +13,13 @@
   (algumas publicaram) segue concluída — publicou de fato, e o resumo mostra os erros.
 - [x] A etapa ganhou `labelErro` — mostra **"Não publicado"**, porque "Publicado" em vermelho
   continua lendo como publicado.
-- [x] Só o Relatório passa `resultado` (é quem tem os contadores por família). Revisão,
-  Progresso e o "Continuar de onde parei" seguem pelo status: nenhum deles exibe lote concluído.
+- [x] **Corrigido em TODAS as telas com stepper, não só no Relatório.** A premissa "só o Relatório
+  exibe lote concluído" era falsa: "Editar e tentar de novo" leva o operador de volta à **Revisão**
+  com o lote já fechado, e lá o stepper seguia verde logo acima do botão "Reenviar 1 com erro"
+  (reportado no lote #46 depois do primeiro fix). Agora `resultado` é **prop obrigatória** de
+  `JornadaLote` — o compilador cobra de toda tela nova — e o cálculo virou a função pura
+  `resultadoPublicacao(familias)`, usada por Revisão, Relatório, Progresso e o card
+  "Continuar de onde parei" (este via `totalPublicadas`/`totalErros` do lote).
 - [x] **Badge do card do Dashboard idem** — exibia "Concluído" verde ao lado de
   "0 publicadas · 1 erro". A regra virou o predicado `loteFalhouNaPublicacao` em `lib/jornada.ts`,
   fonte única de stepper e badge; o card passa `{ publicadas: totalPublicadas, erros: totalErros }`.

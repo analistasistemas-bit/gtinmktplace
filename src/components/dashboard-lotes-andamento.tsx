@@ -28,7 +28,10 @@ export function LotesEmAndamento({ lotes }: { lotes: Lote[] }) {
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5">
               <span className="whitespace-nowrap font-semibold">Lote #{lote.numero}</span>
-              <JornadaLote status={lote.status} />
+              <JornadaLote
+                status={lote.status}
+                resultado={{ publicadas: lote.totalPublicadas, erros: lote.totalErros }}
+              />
             </div>
             <Button asChild size="sm" className="self-start sm:self-auto">
               <Link to={destinoDoLote(lote.status, lote.id)}>

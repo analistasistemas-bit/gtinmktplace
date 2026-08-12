@@ -284,6 +284,10 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   vermelha e lê **"Não publicado"**. Publicação parcial segue concluída. O badge do card no
   Dashboard tinha o mesmo problema ("Concluído" verde ao lado de "0 publicadas · 1 erro") e lê a
   mesma regra — o predicado `loteFalhouNaPublicacao` em `lib/jornada.ts` é fonte única dos dois.
+  **Lição:** corrigir só a tela do print não bastou. "Editar e tentar de novo" devolve o operador à
+  **Revisão** com o lote concluído, onde o stepper continuava verde. O `resultado` virou prop
+  obrigatória de `JornadaLote` (o compilador cobra de qualquer tela nova) e o cálculo virou a função
+  `resultadoPublicacao(familias)` — Revisão, Relatório, Progresso e o card do Dashboard leem dela.
 - **GTIN de comprimento inválido tratado como ausente** — GTIN com tamanho fora do padrão
   passou a ser rejeitado como se não existisse, em vez de propagar um valor inválido.
 - **GTIN com dígito verificador errado derrubava a publicação (2026-08-12, ADR-0116)** — lote #46,

@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Progress } from '@/components/ui/progress';
 import { JornadaLote } from '@/components/jornada-lote';
+import { resultadoPublicacao } from '@/lib/jornada';
 
 export default function Relatorio() {
   const { loteId } = useParams<{ loteId: string }>();
@@ -62,7 +63,7 @@ export default function Relatorio() {
       <div className="mb-6">
         {/* Contadores das famílias (não os do lote): é a mesma fonte dos cartões logo abaixo,
             então o stepper nunca diz "Publicado" ao lado de "0 publicada(s) · 1 com erro". */}
-        <JornadaLote status={lote.status} resultado={{ publicadas, erros: comErro }} />
+        <JornadaLote status={lote.status} resultado={resultadoPublicacao(familias)} />
       </div>
       {(zerados.variacoes.length > 0 || zerados.familias.length > 0) && (
         <div className="mb-6 space-y-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">

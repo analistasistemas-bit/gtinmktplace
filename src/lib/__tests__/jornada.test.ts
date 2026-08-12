@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { ETAPAS_JORNADA, jornadaDoLote, destinoDoLote, loteFalhouNaPublicacao } from '../jornada';
+import {
+  ETAPAS_JORNADA,
+  jornadaDoLote,
+  destinoDoLote,
+  loteFalhouNaPublicacao,
+  resultadoPublicacao,
+} from '../jornada';
+
+describe('resultadoPublicacao', () => {
+  it('conta publicadas e erros, ignorando os demais status', () => {
+    expect(
+      resultadoPublicacao([
+        { status: 'publicado' },
+        { status: 'erro' },
+        { status: 'publicando' },
+        { status: 'pendente' },
+      ]),
+    ).toEqual({ publicadas: 1, erros: 1 });
+  });
+
+  it('lote #46 — uma família recusada pelo ML: falhou na publicação', () => {
+    const r = resultadoPublicacao([{ status: 'erro' }]);
+    expect(r).toEqual({ publicadas: 0, erros: 1 });
+    expect(loteFalhouNaPublicacao('concluido', r)).toBe(true);
+  });
+
+  it('lote sem famílias não é falha', () => {
+    expect(loteFalhouNaPublicacao('concluido', resultadoPublicacao([]))).toBe(false);
+  });
+});
 
 describe('loteFalhouNaPublicacao', () => {
   it('só é verdade em lote concluído que tentou publicar e não publicou nada', () => {

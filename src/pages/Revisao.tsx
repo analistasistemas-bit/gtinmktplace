@@ -18,6 +18,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { JornadaLote } from '@/components/jornada-lote';
+import { resultadoPublicacao } from '@/lib/jornada';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
 import { useFamilias } from '@/hooks/useFamilias';
 import { useLote } from '@/hooks/useLotes';
@@ -127,6 +128,7 @@ export default function Revisao() {
   // — bloqueia a ativação em lote nesse caso.
   const familiasDivergentes = useMemo(() => familias.filter(familiaPrecosDivergentes), [familias]);
   const qtdErros = useMemo(() => familias.filter((f) => f.status === 'erro').length, [familias]);
+  const resultadoLote = useMemo(() => resultadoPublicacao(familias), [familias]);
 
   // O lote volta para 'revisao' quando ainda restam famílias publicáveis, escondendo
   // o relatório da última publicação (acessível via card do Dashboard só em 'concluido').
@@ -423,7 +425,10 @@ export default function Revisao() {
         />
         {lote && (
           <div className="mb-3">
-            <JornadaLote status={lote.status} />
+            {/* A Revisão TAMBÉM exibe lote concluído: "Editar e tentar de novo" traz o operador
+                de volta para cá com o lote já fechado (lote #46). Sem o resultado, o stepper
+                acendia "Publicado" logo acima do botão "Reenviar 1 com erro". */}
+            <JornadaLote status={lote.status} resultado={resultadoLote} />
           </div>
         )}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-3">

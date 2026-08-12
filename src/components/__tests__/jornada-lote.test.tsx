@@ -22,8 +22,14 @@ describe('JornadaLote', () => {
     expect(screen.queryByText('Não publicado')).not.toBeInTheDocument();
   });
 
-  it('sem resultado informado o stepper segue só o status (Revisão, Progresso, Dashboard)', () => {
-    render(<JornadaLote status="concluido" />);
+  it('lote sem famílias publicadas nem em erro segue o status (nada foi selecionado)', () => {
+    render(<JornadaLote status="concluido" resultado={{ publicadas: 0, erros: 0 }} />);
     expect(screen.getByText('Publicado')).toBeInTheDocument();
+  });
+
+  it('etapas anteriores não são afetadas pelo resultado', () => {
+    render(<JornadaLote status="revisao" resultado={{ publicadas: 0, erros: 1 }} />);
+    expect(screen.getByText('Publicado')).toBeInTheDocument();
+    expect(screen.queryByText('Não publicado')).not.toBeInTheDocument();
   });
 });

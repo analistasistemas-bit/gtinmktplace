@@ -5,9 +5,11 @@ import type { LoteStatus } from '@/lib/tipos-dominio';
 
 interface Props {
   status: LoteStatus;
-  /** Desfecho da publicação, quando a tela souber: lote fechado sem nenhuma família
-   *  publicada não acende "Publicado" em verde. */
-  resultado?: ResultadoPublicacao;
+  /** Desfecho da publicação. **Obrigatório de propósito**: o status do lote sozinho não sabe se
+   *  publicou (`concluido` = "terminou de rodar"), e cada tela que esquecia de informar acendia
+   *  "Publicado" em verde num lote recusado pelo ML — aconteceu na Revisão depois de corrigido no
+   *  Relatório. Com a prop obrigatória o compilador cobra de toda tela nova. */
+  resultado: ResultadoPublicacao;
   /** Versão reduzida (sem rótulos), para o card do Dashboard. */
   compact?: boolean;
   className?: string;

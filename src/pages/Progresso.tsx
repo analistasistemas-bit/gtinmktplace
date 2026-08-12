@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { JornadaLote } from '@/components/jornada-lote';
+import { resultadoPublicacao } from '@/lib/jornada';
 import { totalAnomalias } from '@/lib/tipos-dominio';
 import { familiasElegiveisEstoqueRapido, deveExibirGateEstoqueRapido } from '@/lib/estoque-rapido';
 import { publicarFamilias } from '@/lib/publicar';
@@ -120,7 +121,7 @@ export default function Progresso() {
         }
       />
       <div className="mb-6">
-        <JornadaLote status={lote.status} />
+        <JornadaLote status={lote.status} resultado={resultadoPublicacao(familias)} />
       </div>
       {mostrarGateEstoqueRapido && (
         <div className="mb-4 space-y-3 rounded-lg border border-info/30 bg-info/5 px-4 py-3">
