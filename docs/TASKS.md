@@ -18,8 +18,8 @@
   intacta — medido em 375px, um 3º botão derrubava o nome do produto para 49px de texto.
 - [x] Testes: 6 do `processar` (recusa publicado/em voo sem apagar nada, ordem da varredura, guard
   de posse de Storage, fail-closed), 2 do diálogo, 2 do card.
-- [ ] **Deploy pendente:** `supabase functions deploy excluir-produto` (o merge na main não deploya
-  Edge Functions).
+- [x] Deploy: `supabase functions deploy excluir-produto` em 2026-08-12 (v1, ACTIVE,
+  `verify_jwt=true`). O merge na main **não** deploya Edge Functions — é etapa separada.
 
 ## Imposto — alíquota interna por UF da empresa (ADR-0112) — 2026-08-11
 
