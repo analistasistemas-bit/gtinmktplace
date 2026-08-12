@@ -91,8 +91,11 @@ desabilitado por `produto.mlItemId`, a fonte canônica que já vem com a lista; 
   (inexistente), 409 (publicado / em voo), 403 (não-admin ou módulo desabilitado). A auditoria de
   suporte grava `target_type = 'produto'` (não `familia`): o alvo é um `codigo_pai`, e as outras
   portas gravam UUID de família no mesmo campo `text`.
-- A coluna de ações da linha de produto passa a ter um menu `⋮` (12.5rem → 15rem no desktop,
-  5.5rem → 7.5rem no mobile).
+- A coluna de ações da linha de produto passa a ter um menu `⋮` **a partir de `md`** (12.5rem →
+  15rem). A track mobile fica intacta: medido em 375px, abrir espaço para um terceiro botão
+  derrubava o texto do nome do produto de 81px para 49px ("Crem…"). Excluir é ação rara, admin e
+  destrutiva — o desktop é onde a operação acontece, e o custo no celular seria pago por todo
+  produto em toda linha, o tempo inteiro.
 - A exclusão leva o histórico de movimentos do produto junto, pela varredura do ADR-0097. Como só
   alcança produto nunca publicado, esse histórico é de entrada/ajuste manual — não de venda.
 - O ML nunca é tocado, em nenhum caminho desta porta.

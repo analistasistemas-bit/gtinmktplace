@@ -31,11 +31,14 @@ export interface AlvoEntrada {
  * Ordem no DOM: produto · SKUs · saldo · situação · canais · ação.
  * Abaixo de `md` as células 2/4/5 ficam `hidden`, sobrando exatamente 3 itens para 3 tracks.
  */
-// A última coluna é a das ações e cabe DUAS (Entrada + Ajustar, ADR-0110) mais o menu ⋮
-// (ADR-0113). Dimensionada para menos, o último botão vazava para fora da viewport — a linha
-// não tem overflow que o segure. O menu é largura fixa (2.25rem), fora do `flex-1` dos dois.
+// A última coluna é a das ações e cabe DUAS (Entrada + Ajustar, ADR-0110). Dimensionada para
+// uma só, o segundo botão vazava para fora da viewport — a linha não tem overflow que o segure.
+// A partir de `md` cabe também o menu ⋮ (ADR-0113): 12.5rem → 15rem, largura fixa de 2.25rem
+// fora do `flex-1` dos outros dois. A track MOBILE fica intacta de propósito — medido em 375px,
+// abrir espaço para um terceiro botão derrubava o nome do produto de 81px para 49px de texto
+// ("Crem…"). Por isso o menu não é renderizado abaixo de `md`.
 export const GRID_LINHA_PRODUTO =
-  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_7.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_15rem]';
+  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_15rem]';
 
 const CELULA_MD = 'hidden md:block';
 
@@ -173,13 +176,15 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-9 w-9 shrink-0 px-0 md:h-7 md:w-7"
+                  className="hidden shrink-0 px-0 md:flex md:h-7 md:w-7"
                   aria-label={`Mais ações para ${produto.nomePai}`}
                 >
                   <MoreVertical className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              {/* Largura explícita: sem ela o menu herda o `min-w` do trigger (um botão de ícone)
+                  e "Excluir produto" quebra em duas linhas. */}
+              <DropdownMenuContent align="end" className="w-52">
                 {/* `mlItemId` é a fonte canônica de publicado (a lista de canais é espelho e pode
                     estar furada). Aqui é só para não gastar a ida — quem recusa de fato é a edge,
                     que varre TODAS as irmãs do codigo_pai, não só a linha mais recente. */}

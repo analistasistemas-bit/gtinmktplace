@@ -13,8 +13,9 @@
   código inteiro porque a tela só mostra a família mais recente — irmã publicada é invisível ali.
 - [x] Delete leva todas as famílias do `codigo_pai`; varredura de órfãos **depois** do delete
   (ADR-0097 D-2); fotos só sob o prefixo do dono de cada família.
-- [x] UI: menu `⋮` na linha do produto (só admin), diálogo com saldo + confirmação digitada do
-  código. Coluna de ações 12.5rem → 15rem (desktop) e 5.5rem → 7.5rem (mobile).
+- [x] UI: menu `⋮` na linha do produto (só admin, só a partir de `md`), diálogo com saldo +
+  confirmação digitada do código. Coluna de ações 12.5rem → 15rem no desktop; track mobile
+  intacta — medido em 375px, um 3º botão derrubava o nome do produto para 49px de texto.
 - [x] Testes: 6 do `processar` (recusa publicado/em voo sem apagar nada, ordem da varredura, guard
   de posse de Storage, fail-closed), 2 do diálogo, 2 do card.
 - [ ] **Deploy pendente:** `supabase functions deploy excluir-produto` (o merge na main não deploya

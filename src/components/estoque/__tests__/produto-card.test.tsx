@@ -164,6 +164,22 @@ describe('ProdutoCard', () => {
     expect(onExcluir).toHaveBeenCalledWith(produto);
   });
 
+  // Medido em 375px: abrir espaço para um 3º botão derruba o texto do nome de 81px para 49px
+  // ("Crem…"). O menu só existe de `md` para cima, e a track MOBILE do grid fica em 5.5rem.
+  // jsdom não aplica media query — sem estas asserções a regra volta a quebrar em silêncio.
+  it('menu de ações não aparece no mobile e a track mobile não cresce', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onExcluir={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const classes = screen.getByLabelText(/Mais ações/).className.split(/\s+/);
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('md:flex');
+    expect(GRID_LINHA_PRODUTO).toContain('grid-cols-[minmax(0,1fr)_3.25rem_5.5rem]');
+  });
+
   it('produto publicado tem o item de excluir desabilitado', async () => {
     const publicado = { ...produto, mlItemId: 'MLB123' };
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
