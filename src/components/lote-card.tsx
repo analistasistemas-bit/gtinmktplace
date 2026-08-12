@@ -71,7 +71,10 @@ export function LoteCard({ lote }: { lote: Lote }) {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold">Lote #{lote.numero}</h3>
-                <StatusBadge status={lote.status} />
+                <StatusBadge
+                  status={lote.status}
+                  resultado={{ publicadas: lote.totalPublicadas, erros: lote.totalErros }}
+                />
                 {/* E6b: numa org que usa os dois fluxos, "Lote #12" sozinho não diz de onde veio. */}
                 <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
                   {lote.origem === 'manual' ? 'Cadastro manual' : 'Planilha'}

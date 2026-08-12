@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { ETAPAS_JORNADA, jornadaDoLote, destinoDoLote } from '../jornada';
+import { ETAPAS_JORNADA, jornadaDoLote, destinoDoLote, loteFalhouNaPublicacao } from '../jornada';
+
+describe('loteFalhouNaPublicacao', () => {
+  it('só é verdade em lote concluído que tentou publicar e não publicou nada', () => {
+    expect(loteFalhouNaPublicacao('concluido', { publicadas: 0, erros: 1 })).toBe(true);
+    expect(loteFalhouNaPublicacao('concluido', { publicadas: 2, erros: 1 })).toBe(false);
+    expect(loteFalhouNaPublicacao('concluido', { publicadas: 0, erros: 0 })).toBe(false);
+    expect(loteFalhouNaPublicacao('concluido')).toBe(false);
+    expect(loteFalhouNaPublicacao('publicando', { publicadas: 0, erros: 1 })).toBe(false);
+  });
+});
 
 describe('jornadaDoLote', () => {
   it('mapeia cada status técnico para a etapa visível', () => {

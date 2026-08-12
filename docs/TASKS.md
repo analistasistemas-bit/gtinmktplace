@@ -14,8 +14,12 @@
 - [x] A etapa ganhou `labelErro` — mostra **"Não publicado"**, porque "Publicado" em vermelho
   continua lendo como publicado.
 - [x] Só o Relatório passa `resultado` (é quem tem os contadores por família). Revisão,
-  Progresso e Dashboard seguem pelo status: nenhum deles exibe lote concluído.
-- [x] Testes: 6 em `lib/__tests__/jornada.test.ts`, 3 em `components/__tests__/jornada-lote.test.tsx`.
+  Progresso e o "Continuar de onde parei" seguem pelo status: nenhum deles exibe lote concluído.
+- [x] **Badge do card do Dashboard idem** — exibia "Concluído" verde ao lado de
+  "0 publicadas · 1 erro". A regra virou o predicado `loteFalhouNaPublicacao` em `lib/jornada.ts`,
+  fonte única de stepper e badge; o card passa `{ publicadas: totalPublicadas, erros: totalErros }`.
+- [x] Testes: 7 em `lib/__tests__/jornada.test.ts`, 3 em `components/__tests__/jornada-lote.test.tsx`,
+  4 em `components/__tests__/status-badge.test.tsx`.
 
 ## GTIN inválido derrubava o lote (ADR-0116) — 2026-08-12
 

@@ -281,7 +281,9 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   `lote.status`, e `concluido` quer dizer "terminou de rodar", não "publicou" — lote com todas as
   famílias recusadas pelo ML fecha concluído do mesmo jeito. A função passou a aceitar o desfecho
   (`{ publicadas, erros }`) e o Relatório o informa: sem nenhuma publicada, a etapa final fica
-  vermelha e lê **"Não publicado"**. Publicação parcial segue concluída.
+  vermelha e lê **"Não publicado"**. Publicação parcial segue concluída. O badge do card no
+  Dashboard tinha o mesmo problema ("Concluído" verde ao lado de "0 publicadas · 1 erro") e lê a
+  mesma regra — o predicado `loteFalhouNaPublicacao` em `lib/jornada.ts` é fonte única dos dois.
 - **GTIN de comprimento inválido tratado como ausente** — GTIN com tamanho fora do padrão
   passou a ser rejeitado como se não existisse, em vez de propagar um valor inválido.
 - **GTIN com dígito verificador errado derrubava a publicação (2026-08-12, ADR-0116)** — lote #46,

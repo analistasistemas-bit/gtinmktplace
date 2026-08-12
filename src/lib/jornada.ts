@@ -28,14 +28,20 @@ export interface ResultadoPublicacao {
   erros: number;
 }
 
-/** Mapeia o status técnico do lote para a posição na jornada visível.
+/** Lote que fechou sem publicar nada, tendo tentado e falhado.
  *
- *  `concluido` significa "o lote terminou de rodar", não "publicou": um lote cujas famílias
- *  foram todas recusadas pelo ML fecha como concluído do mesmo jeito. Com `resultado` em mão,
- *  esse caso para na etapa Publicado em estado de erro — antes o stepper acendia as 4 etapas em
- *  verde na mesma tela que dizia "0 publicada(s) · 1 com erro" (lote #46). */
+ *  `concluido` significa "o lote terminou de rodar", não "publicou": um lote cujas famílias foram
+ *  todas recusadas pelo ML fecha como concluído do mesmo jeito. Sem esta distinção o stepper
+ *  acendia "Publicado" em verde e o card do Dashboard exibia "Concluído" na mesma tela que dizia
+ *  "0 publicada(s) · 1 com erro" (lote #46). Publicação parcial NÃO conta: publicou de fato, e o
+ *  resumo ao lado mostra os erros. Fonte única — stepper e badge leem daqui. */
+export function loteFalhouNaPublicacao(status: LoteStatus, resultado?: ResultadoPublicacao): boolean {
+  return status === 'concluido' && !!resultado && resultado.publicadas === 0 && resultado.erros > 0;
+}
+
+/** Mapeia o status técnico do lote para a posição na jornada visível. */
 export function jornadaDoLote(status: LoteStatus, resultado?: ResultadoPublicacao): EstadoJornada {
-  if (status === 'concluido' && resultado && resultado.publicadas === 0 && resultado.erros > 0) {
+  if (loteFalhouNaPublicacao(status, resultado)) {
     return { indiceAtual: ETAPAS_JORNADA.length - 1, erro: true };
   }
   switch (status) {
