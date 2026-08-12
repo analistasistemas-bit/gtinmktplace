@@ -218,6 +218,7 @@ export type Database = {
           ai_model_imagem: string | null
           ai_model_texto: string | null
           aliquota_importado_pct: number
+          aliquota_interna_pct: number | null
           aliquota_nacional_pct: number
           aliquotas_confirmadas_em: string | null
           atualizado_em: string
@@ -230,12 +231,14 @@ export type Database = {
           telegram_ativo: boolean
           telegram_bot_token: string | null
           telegram_chat_id: string | null
+          uf_empresa: string | null
           user_id: string | null
         }
         Insert: {
           ai_model_imagem?: string | null
           ai_model_texto?: string | null
           aliquota_importado_pct?: number
+          aliquota_interna_pct?: number | null
           aliquota_nacional_pct?: number
           aliquotas_confirmadas_em?: string | null
           atualizado_em?: string
@@ -248,12 +251,14 @@ export type Database = {
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
+          uf_empresa?: string | null
           user_id?: string | null
         }
         Update: {
           ai_model_imagem?: string | null
           ai_model_texto?: string | null
           aliquota_importado_pct?: number
+          aliquota_interna_pct?: number | null
           aliquota_nacional_pct?: number
           aliquotas_confirmadas_em?: string | null
           atualizado_em?: string
@@ -266,6 +271,7 @@ export type Database = {
           telegram_ativo?: boolean
           telegram_bot_token?: string | null
           telegram_chat_id?: string | null
+          uf_empresa?: string | null
           user_id?: string | null
         }
         Relationships: [
