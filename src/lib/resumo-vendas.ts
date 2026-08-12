@@ -70,6 +70,9 @@ export interface ResumoVendas {
   liberado: number;
   /** Σ líquido das vendas ainda a liberar (money_release_date no futuro). */
   aLiberar: number;
+  /** Σ líquido já liberado que ainda NÃO foi marcado como sacado — o saldo que dá para tirar hoje.
+   *  `liberado` inclui o que já foi sacado (é o histórico do período); este é o acionável. */
+  aSacar: number;
   /** Menor money_release_date futuro (ISO), ou null se nada a liberar. */
   proximaLiberacao: string | null;
   /** Σ comissão do ML (sale_fee_total) das faturáveis. */
@@ -151,19 +154,23 @@ export function calcularResumo(
   // Faturamento, fonte da verdade). Um pack conta se tiver QUALQUER item com custo, e entra com o
   // líquido inteiro do pack — assim markup/lucro/"c/ custo" batem entre todas as telas.
   const custoPorPack = new Map<string, { liquido: number; custo: number; imposto: number; temCusto: boolean }>();
-  let liberado = 0, aLiberar = 0, comissao = 0, vendasComCusto = 0;
+  let liberado = 0, aLiberar = 0, aSacar = 0, comissao = 0, vendasComCusto = 0;
   let proximaLiberacaoMs: number | null = null;
   let proximaLiberacao: string | null = null;
   const porItem: Record<string, { unidades: number; valor: number }> = {};
   const vendasResumo: VendaResumo[] = [];
 
   for (const v of vendas) {
+    const est = v.estorno ?? 0;
+    // Estorno é dinheiro que voltou ao comprador e conta SEMPRE — inclusive em pedido `cancelled`,
+    // que é como o ML fecha uma devolução concluída. Enquanto esta linha ficou depois do `continue`
+    // abaixo, o card mostrava R$ 12,55 de R$ 3.394,20 reais (30 dias, medido em 2026-08-12).
+    // Os demais KPIs seguem restritos a vendas faturáveis (ADR-0038).
+    estornos += est;
     if (!ehFaturavel(v.status)) continue;
     const liq = liqRateado.get(v.id)?.liquido ?? v.liquido ?? 0;
-    const est = v.estorno ?? 0;
     bruto += v.total_amount;
     liquido += liq;
-    estornos += est;
     packsFaturaveis.add(String(v.pack_id ?? v.order_id));
 
     for (const it of v.itens) {
@@ -194,6 +201,9 @@ export function calcularResumo(
       const ms = Date.parse(v.money_release_date);
       if (ms <= agoraMs) {
         liberado += liq;
+        // Liberado e ainda não marcado como sacado: é o que dá para tirar do saldo hoje — a
+        // pergunta que o menu Financeiro existe para responder.
+        if (v.sacado_em == null) aSacar += liq;
       } else {
         aLiberar += liq;
         if (proximaLiberacaoMs == null || ms < proximaLiberacaoMs) {
@@ -253,6 +263,7 @@ export function calcularResumo(
     lucro: round2(liqComCusto - custoTotal),
     liberado: round2(liberado),
     aLiberar: round2(aLiberar),
+    aSacar: round2(aSacar),
     proximaLiberacao,
     comissao: comissaoTotal,
     frete: round2(Math.max(0, descontos - comissaoTotal)),

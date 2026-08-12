@@ -40,7 +40,7 @@ function fixtureArgs({
   return {
     resumo: {
       bruto: 0, liquido: 0, descontos: 0, estornos: 0, pedidos: 0, unidades: 0,
-      ticket: 0, markup: null, lucro: 0, liberado: 0, aLiberar: 319.55,
+      ticket: 0, markup: null, lucro: 0, liberado: 0, aLiberar: 319.55, aSacar: 0,
       proximaLiberacao: null, comissao: 0, frete: 0, imposto: 0,
       vendasComCusto: 0, totalVendas: 0, margem: null, porItem: {}, vendas: [],
     },

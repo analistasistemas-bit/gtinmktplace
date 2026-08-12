@@ -22,6 +22,7 @@ const resumo = {
   lucro: 111,
   liberado: 0,
   aLiberar: 0,
+  aSacar: 0,
   proximaLiberacao: null,
   comissao: 5,
   frete: 5,
