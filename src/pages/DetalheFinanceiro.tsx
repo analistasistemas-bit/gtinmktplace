@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowUp, ArrowDown, ChevronsUpDown, ChevronDown, ChevronRight, RefreshCw, Layers, CheckCircle2, RotateCcw } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
 import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { KpiInfoButton } from '@/components/ui/kpi-card';
@@ -18,7 +19,7 @@ import {
 import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularResumo } from '@/lib/resumo-vendas';
-import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, retidoDoPedido, rotuloNaoFaturavel, totaisFinanceiro, type Pedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, filtrarPedidosFinanceiro, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca, retidoDoPedido, rotuloNaoFaturavel, totaisFinanceiro, type FiltroFinanceiro, type Pedido } from '@/lib/pedidos-faturamento';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
@@ -247,24 +248,14 @@ export default function DetalheFinanceiro() {
   const retido = r.descontos;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
 
-  type FiltroLib = 'todos' | 'liberado' | 'aliberar' | 'sacado';
-  const [filtroLib, setFiltroLib] = useState<FiltroLib>('todos');
+  const [filtroLib, setFiltroLib] = useState<FiltroFinanceiro>('todos');
+  const [busca, setBusca] = useSessionState('busca:detalhe-financeiro', '');
   const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
 
-  const pedidosFiltrados = useMemo(() => {
-    const now = Date.now();
-    return pedidos.filter((p) => {
-      const status = statusLiberacao({
-        money_release_date: p.money_release_date,
-        sacado_em: p.sacado_em,
-        temMembrosSemDataLiberacao: p.temMembrosSemDataLiberacao,
-      }, now);
-      if (filtroLib === 'liberado') return status === 'liberado';
-      if (filtroLib === 'aliberar') return status === 'aliberar';
-      if (filtroLib === 'sacado') return status === 'sacado';
-      return true;
-    });
-  }, [pedidos, filtroLib]);
+  const pedidosFiltrados = useMemo(
+    () => filtrarPedidosFinanceiro(pedidos, filtroLib).filter((p) => pedidoCasaBusca(p, busca)),
+    [pedidos, filtroLib, busca],
+  );
 
   // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
   const [sort, setSort] = useSessionState<Sort | null>('sort:detalhe-financeiro', null);
@@ -317,9 +308,25 @@ export default function DetalheFinanceiro() {
     });
   }, [pedidosFiltrados, sort]);
 
-  const idsVisiveis = useMemo(() => new Set(pedidosOrdenados.map((p) => p.chave)), [pedidosOrdenados]);
-  const selecionadosVisiveis = pedidosOrdenados.filter((p) => selecionados.has(p.chave));
-  const todosVisiveisSelecionados = pedidosOrdenados.length > 0 && pedidosOrdenados.every((p) => selecionados.has(p.chave));
+  // Paginação client-side: os dados já estão todos em memória (a query não muda). Sem isto a
+  // tabela renderiza a base inteira do período — 985 pedidos em 30 dias, medido em 2026-08-12.
+  const POR_PAGINA = 50;
+  const [pagina, setPagina] = useState(1);
+  const totalPaginas = Math.max(1, Math.ceil(pedidosOrdenados.length / POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const pedidosPagina = useMemo(
+    () => pedidosOrdenados.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA),
+    [pedidosOrdenados, paginaAtual],
+  );
+  // Mudou o recorte, volta para a primeira página — senão o operador busca algo e cai numa página
+  // vazia por estar na página 7 do resultado anterior.
+  useEffect(() => { setPagina(1); }, [busca, filtroLib]);
+
+  // "Visíveis" com paginação é a PÁGINA, não o filtro inteiro: o checkbox do cabeçalho não pode
+  // marcar 985 pedidos que o operador não está vendo.
+  const idsVisiveis = useMemo(() => new Set(pedidosPagina.map((p) => p.chave)), [pedidosPagina]);
+  const selecionadosVisiveis = pedidosPagina.filter((p) => selecionados.has(p.chave));
+  const todosVisiveisSelecionados = pedidosPagina.length > 0 && pedidosPagina.every((p) => selecionados.has(p.chave));
 
   function setSelecionado(chave: string, checked: boolean) {
     setSelecionados((prev) => {
@@ -466,16 +473,24 @@ export default function DetalheFinanceiro() {
       </div>
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           {([
             ['todos', 'Todos'],
             ['liberado', 'Liberados'],
             ['aliberar', 'A liberar'],
             ['sacado', 'Sacados'],
+            ['devolvidos', 'Devolvidos'],
           ] as const).map(([k, lbl]) => (
             <Button key={k} size="sm" variant={filtroLib === k ? 'default' : 'outline'}
               className="h-7 px-2.5 text-xs" onClick={() => setFiltroLib(k)}>{lbl}</Button>
           ))}
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar comprador, nº do pedido, produto, código ou valor"
+            className="ml-2 h-7 w-72 text-xs"
+            aria-label="Buscar pedido"
+          />
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{selecionadosVisiveis.length} selecionado(s)</span>
@@ -521,7 +536,7 @@ export default function DetalheFinanceiro() {
                 </TableCell>
               </TableRow>
             ) : (
-              pedidosOrdenados.map((p) => (
+              pedidosPagina.map((p) => (
                 <LinhaDetalhe
                   key={p.chave}
                   p={p}
@@ -550,6 +565,27 @@ export default function DetalheFinanceiro() {
           )}
         </Table>
       </div>
+
+      {totalPaginas > 1 && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {fmtInt(pedidosOrdenados.length)} pedido(s) — mostrando {fmtInt(pedidosPagina.length)} nesta página
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs"
+              onClick={() => setPagina((n) => Math.max(1, n - 1))} disabled={paginaAtual <= 1}>
+              Anterior
+            </Button>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              página {paginaAtual} de {totalPaginas}
+            </span>
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs"
+              onClick={() => setPagina((n) => Math.min(totalPaginas, n + 1))} disabled={paginaAtual >= totalPaginas}>
+              Próxima
+            </Button>
+          </div>
+        </div>
+      )}
 
       <p className="mt-4 text-xs text-muted-foreground">
         Cada linha é um pedido do período (carrinho do cliente; packs agrupados, igual ao Faturamento);

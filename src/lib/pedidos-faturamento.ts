@@ -7,6 +7,7 @@ import type { FotoResolver } from './fotos-produto';
 import type { CorResolver } from './cor-produto';
 import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
+import { statusLiberacao } from './status-liberacao';
 import { round2, fmtBRLSemSimbolo } from './formato';
 
 export interface ItemPedido {
@@ -240,6 +241,30 @@ export function retidoDoPedido(p: Pick<Pedido, 'brutoFaturavel' | 'liquido' | 'i
 export function rotuloNaoFaturavel(p: Pick<Pedido, 'faturavel' | 'tem_devolucao'>): string | null {
   if (p.faturavel) return null;
   return p.tem_devolucao ? 'devolvido' : 'cancelado';
+}
+
+export type FiltroFinanceiro = 'todos' | 'liberado' | 'aliberar' | 'sacado' | 'devolvidos';
+
+/**
+ * Pedidos visíveis no Detalhe do líquido. Esta tela é de RECEBIMENTO: pedido sem dinheiro a
+ * receber (cancelado/devolvido) fica fora por padrão e só aparece no filtro `devolvidos` — o que
+ * não está na lista não pode ser selecionado nem marcado como sacado (ADR-0038).
+ *
+ * Pack misto conta como faturável: ainda há a parte paga para receber.
+ */
+export function filtrarPedidosFinanceiro(
+  pedidos: Pedido[], filtro: FiltroFinanceiro, agoraMs: number = Date.now(),
+): Pedido[] {
+  return pedidos.filter((p) => {
+    if (filtro === 'devolvidos') return !p.faturavel;
+    if (!p.faturavel) return false;
+    if (filtro === 'todos') return true;
+    return statusLiberacao({
+      money_release_date: p.money_release_date,
+      sacado_em: p.sacado_em,
+      temMembrosSemDataLiberacao: p.temMembrosSemDataLiberacao,
+    }, agoraMs) === filtro;
+  });
 }
 
 export interface TotaisFinanceiro {
