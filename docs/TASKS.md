@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Stepper do Relatório dizia "Publicado" em lote que falhou — 2026-08-12
+
+- [x] **Motivo:** Relatório do lote #46 acendia as 4 etapas em verde (Enviado → Processando →
+  Revisão → **Publicado**) na mesma tela que mostrava `0 publicada(s)` e `1 com erro`.
+  `jornadaDoLote` só olhava `lote.status`, e `concluido` significa "o lote terminou de rodar",
+  não "publicou" — um lote com todas as famílias recusadas pelo ML fecha como concluído igual.
+- [x] `jornadaDoLote(status, resultado?)` aceita `{ publicadas, erros }`: concluído com
+  `publicadas === 0 && erros > 0` para na etapa Publicado em estado de erro. Publicação parcial
+  (algumas publicaram) segue concluída — publicou de fato, e o resumo mostra os erros.
+- [x] A etapa ganhou `labelErro` — mostra **"Não publicado"**, porque "Publicado" em vermelho
+  continua lendo como publicado.
+- [x] Só o Relatório passa `resultado` (é quem tem os contadores por família). Revisão,
+  Progresso e Dashboard seguem pelo status: nenhum deles exibe lote concluído.
+- [x] Testes: 6 em `lib/__tests__/jornada.test.ts`, 3 em `components/__tests__/jornada-lote.test.tsx`.
+
 ## GTIN inválido derrubava o lote (ADR-0116) — 2026-08-12
 
 - [x] **Motivo:** lote #46, família `92710170` (Tecido Oxford Natal, importado) — CREATE recusado

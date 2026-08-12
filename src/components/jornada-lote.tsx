@@ -1,18 +1,21 @@
 import { Check, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ETAPAS_JORNADA, jornadaDoLote } from '@/lib/jornada';
+import { ETAPAS_JORNADA, jornadaDoLote, type ResultadoPublicacao } from '@/lib/jornada';
 import type { LoteStatus } from '@/lib/tipos-dominio';
 
 interface Props {
   status: LoteStatus;
+  /** Desfecho da publicação, quando a tela souber: lote fechado sem nenhuma família
+   *  publicada não acende "Publicado" em verde. */
+  resultado?: ResultadoPublicacao;
   /** Versão reduzida (sem rótulos), para o card do Dashboard. */
   compact?: boolean;
   className?: string;
 }
 
 /** Stepper horizontal "você está aqui" da jornada do lote. */
-export function JornadaLote({ status, compact = false, className }: Props) {
-  const { indiceAtual, erro } = jornadaDoLote(status);
+export function JornadaLote({ status, resultado, compact = false, className }: Props) {
+  const { indiceAtual, erro } = jornadaDoLote(status, resultado);
   const iconeSize = compact ? 'h-3 w-3' : 'h-4 w-4';
   return (
     <ol className={cn('flex items-center overflow-x-auto no-scrollbar py-1 shrink-0 w-full gap-2', className)} aria-label="Progresso do lote">
@@ -55,7 +58,7 @@ export function JornadaLote({ status, compact = false, className }: Props) {
                           : 'text-muted-foreground',
                   )}
                 >
-                  {etapa.label}
+                  {comErro ? (etapa.labelErro ?? etapa.label) : etapa.label}
                 </span>
               )}
             </div>

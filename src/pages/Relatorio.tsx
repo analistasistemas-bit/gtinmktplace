@@ -60,7 +60,9 @@ export default function Relatorio() {
       <Breadcrumbs items={[{ label: 'Dashboard', to: '/' }, { label: `Lote #${lote.numero}` }]} />
       <PageHeader title={`Relatório · Lote #${lote.numero}`} />
       <div className="mb-6">
-        <JornadaLote status={lote.status} />
+        {/* Contadores das famílias (não os do lote): é a mesma fonte dos cartões logo abaixo,
+            então o stepper nunca diz "Publicado" ao lado de "0 publicada(s) · 1 com erro". */}
+        <JornadaLote status={lote.status} resultado={{ publicadas, erros: comErro }} />
       </div>
       {(zerados.variacoes.length > 0 || zerados.familias.length > 0) && (
         <div className="mb-6 space-y-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">

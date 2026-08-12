@@ -276,6 +276,12 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   o líquido mínimo (PRECO da planilha). O semáforo do item passou a considerar as dimensões
   e concorda com o da família. No competitivo o preço segue puro mercado por design (o
   semáforo avisa). Lote #49: R$19,80 → R$27,45 (ADR-0050).
+- **Relatório dizia "Publicado" em lote que não publicou nada (2026-08-12)** — lote #46: stepper
+  com as 4 etapas verdes ao lado de "0 publicada(s) · 1 com erro". `jornadaDoLote` lia só
+  `lote.status`, e `concluido` quer dizer "terminou de rodar", não "publicou" — lote com todas as
+  famílias recusadas pelo ML fecha concluído do mesmo jeito. A função passou a aceitar o desfecho
+  (`{ publicadas, erros }`) e o Relatório o informa: sem nenhuma publicada, a etapa final fica
+  vermelha e lê **"Não publicado"**. Publicação parcial segue concluída.
 - **GTIN de comprimento inválido tratado como ausente** — GTIN com tamanho fora do padrão
   passou a ser rejeitado como se não existisse, em vez de propagar um valor inválido.
 - **GTIN com dígito verificador errado derrubava a publicação (2026-08-12, ADR-0116)** — lote #46,
