@@ -18,8 +18,9 @@ const venda = (over: Partial<Venda>): Venda => ({
   uf: null, cidade: null, itens: [], atualizado_em: '2026-06-20T00:00:00Z', ...over,
 });
 
-// Nacional 8% / importado 16% (ADR-0055). Y é importado.
-const aliquotas: AliquotaResolver = (it) => (it.ml_item_id === 'Y' ? 16 : 8);
+// Nacional 8% / importado 16% (ADR-0055), com 1% dentro de PE (ADR-0112). Y é importado.
+const aliquotas: AliquotaResolver = (it, uf) =>
+  (uf?.toUpperCase() === 'PE' ? 1 : it.ml_item_id === 'Y' ? 16 : 8);
 
 describe('agruparPorPedido — alíquota por item (ADR-0055)', () => {
   it('carrega a alíquota crua do resolver, não a reconstrói do imposto arredondado', () => {
@@ -49,5 +50,14 @@ describe('agruparPorPedido — alíquota por item (ADR-0055)', () => {
     );
     expect(p.itens[0].imposto).toBe(0);
     expect(p.itens[0].aliquotaPct).toBeNull();
+  });
+
+  it('usa a alíquota interna no pedido entregue na UF da empresa (ADR-0112)', () => {
+    // 44,55 × 1% = 0,4455 → 0,45 (em vez de 3,56 pela origem nacional).
+    const [p] = agruparPorPedido(
+      [venda({ uf: 'PE', itens: [item({})] })], undefined, undefined, undefined, aliquotas,
+    );
+    expect(p.itens[0].imposto).toBe(0.45);
+    expect(p.itens[0].aliquotaPct).toBe(1);
   });
 });

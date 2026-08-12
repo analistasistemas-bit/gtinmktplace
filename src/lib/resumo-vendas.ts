@@ -22,8 +22,10 @@ export type CustoResolver = (item: VendaItem) => number | null;
 /** Resolve o peso unitário (g) de um item vendido, ou null se não houver peso cadastrado. */
 export type PesoResolver = (item: VendaItem) => number | null;
 
-/** Resolve a alíquota de imposto (%) de um item pela origem da família, ou null se não mapeada. */
-export type AliquotaResolver = (item: VendaItem) => number | null;
+/** Resolve a alíquota de imposto (%) de um item vendido, ou null se não mapeada. Recebe a UF de
+ *  entrega do pedido (ADR-0112) — parâmetro obrigatório de propósito: opcional, um call site
+ *  esquecido devolveria a alíquota por origem, um número plausível e errado num caminho financeiro. */
+export type AliquotaResolver = (item: VendaItem, uf: string | null) => number | null;
 
 /** Uma venda resumida para a tabela do detalhe financeiro (e afins). */
 export interface VendaResumo {
@@ -104,16 +106,17 @@ function custoDaVenda(v: Venda, resolver?: CustoResolver): number | null {
   return achou ? round2(total) : null;
 }
 
-/** Imposto (R$) de um item (ADR-0055): valor de venda (unit × qtd) × alíquota(origem)/100. 0 sem alíquota. */
-export function impostoDoItem(it: VendaItem, resolver?: AliquotaResolver): number {
-  const pct = resolver?.(it) ?? null;
+/** Imposto (R$) de um item (ADR-0055/0112): valor de venda (unit × qtd) × alíquota/100, onde a
+ *  alíquota depende da origem e da UF de entrega do pedido. 0 sem alíquota. */
+export function impostoDoItem(it: VendaItem, resolver: AliquotaResolver | undefined, uf: string | null): number {
+  const pct = resolver?.(it, uf) ?? null;
   return pct != null && pct > 0 ? round2((it.unit_price * it.quantity * pct) / 100) : 0;
 }
 
 /** Imposto total (R$) de uma venda: soma do imposto dos itens. */
 function impostoDaVenda(v: Venda, resolver?: AliquotaResolver): number {
   let total = 0;
-  for (const it of v.itens) total += impostoDoItem(it, resolver);
+  for (const it of v.itens) total += impostoDoItem(it, resolver, v.uf);
   return round2(total);
 }
 

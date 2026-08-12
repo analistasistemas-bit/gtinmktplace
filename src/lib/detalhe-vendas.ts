@@ -176,7 +176,7 @@ export function montarDetalheVendas(
       // com o mesmo round2 por item para o markup por produto bater 1:1 com o Detalhe do pedido).
       g.liquido += valorPack > 0 ? round2((liqPack * valorItem) / valorPack) : 0;
       // Imposto por item (ADR-0055): reduz o líquido no markup/lucro, igual ao Faturamento/KPIs.
-      g.imposto += impostoDoItem(it, aliquotaResolver);
+      g.imposto += impostoDoItem(it, aliquotaResolver, v.uf);
       const custoUnit = custoResolver?.(it) ?? null;
       if (custoUnit != null && custoUnit > 0) { g.custo += custoUnit * it.quantity; g.temCusto = true; }
       g.titulo ??= it.titulo;

@@ -130,15 +130,23 @@ export function montarPesoResolver(m: MapasCusto | undefined): PesoResolver {
   };
 }
 
-/** Resolver de alíquota de imposto (%) p/ o markup: origem da família → alíquota global do usuário.
- *  null = origem não mapeada (item sem custo/família casada), OU alíquota ainda não resolvida
- *  (config não carregou) → sem imposto em vez de um número possivelmente errado (ADR-0055: imposto
- *  por origem nunca defaulta em silêncio). */
+/** Resolver de alíquota de imposto (%) p/ o markup. Ordem: alíquota interna por UF (ADR-0112) →
+ *  origem da família (ADR-0055). null = origem não mapeada (item sem custo/família casada), OU
+ *  alíquota ainda não resolvida (config não carregou) → sem imposto em vez de um número
+ *  possivelmente errado (imposto nunca defaulta em silêncio). */
 export function montarAliquotaResolver(
-  m: MapasCusto | undefined, aliquotas: { nacional: number; importado: number } | null,
+  m: MapasCusto | undefined,
+  aliquotas: { nacional: number; importado: number; ufEmpresa?: string | null; internaPct?: number | null } | null,
 ): AliquotaResolver {
-  return (item) => {
+  return (item, uf) => {
     if (!aliquotas) return null;
+    // Venda dentro do estado da empresa: a alíquota interna sobrepõe nacional E importado.
+    const ufEmpresa = aliquotas.ufEmpresa ?? null;
+    const internaPct = aliquotas.internaPct ?? null;
+    if (ufEmpresa != null && internaPct != null && uf != null
+        && uf.trim().toUpperCase() === ufEmpresa.trim().toUpperCase()) {
+      return internaPct;
+    }
     const origem = resolverProduto(m, item)?.origem;
     if (origem === 'importado') return aliquotas.importado;
     if (origem === 'nacional') return aliquotas.nacional;

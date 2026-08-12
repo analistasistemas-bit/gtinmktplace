@@ -126,7 +126,9 @@ export function agruparPorPedido(
 
     const itensFlat = membros.flatMap((v) => {
       const faturavel = ehFaturavel(v.status);
-      return v.itens.map((it) => ({ it, faturavel }));
+      // A UF vem da venda, não do pedido: um pack pode agrupar order_ids, e o imposto é resolvido
+      // por venda (ADR-0112).
+      return v.itens.map((it) => ({ it, faturavel, uf: v.uf }));
     });
     const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
     // Base do rateio: só o valor dos itens faturáveis — um item cancelado não "rouba" fatia do
@@ -138,11 +140,11 @@ export function agruparPorPedido(
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel }) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf }) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
-      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver) : 0;
-      const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it) ?? null : null;
+      const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
+      const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it, uf) ?? null : null;
       impostoTotal += imposto;
       const valorItem = it.unit_price * it.quantity;
       const liqItem = faturavel && valorItensFaturaveis > 0
