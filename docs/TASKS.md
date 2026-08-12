@@ -72,8 +72,13 @@
   ausência. Gatilho para reavaliar: ~50 famílias pós-slots, e aí o censo sai de `titulo_descartes`
   em vez de regex sobre o texto final.
 - [x] Testes: 8 novos. Suíte verde: 346 arquivos / 3003 testes; `pnpm lint` 0 erros.
-- [ ] Deploy: `supabase db push` (migration) **antes** do deploy das functions que escrevem a
-  coluna — `process-familia` e `regenerar-copy-familia`. Validar com `npm run db:check`.
+- [x] Deploy 2026-08-12, nesta ordem: migration via `supabase db push --linked` (dry-run antes),
+  `npm run db:check` → "Migrations alinhadas (local = remoto)", coluna conferida no
+  `information_schema` (`titulo_descartes jsonb`, nullable), **e só então** as functions.
+  Fan-out por `deno info` sobre `titulo-pos.ts`/`titulo-montar.ts` → 3: `process-familia` v151,
+  `publicar-split-ml` v73, `regenerar-copy-familia` v50, todas ACTIVE.
+  A ordem importa: as functions escrevem a coluna, então deployá-las antes da migration derrubaria
+  toda família processada no intervalo.
 
 ## Copy: o eixo de variação nem sempre é cor (ADR-0115) — 2026-08-12
 
