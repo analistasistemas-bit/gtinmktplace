@@ -43,7 +43,7 @@ docs/
 ├── ROADMAP.md                     ← visão estratégica das fases (vivo)
 ├── Roadmap-Estrategico-PubliAI-v2.md ← revisão de CTO do roadmap (8 fases, 2026-07-12)
 ├── TASKS.md                       ← checklist operacional do dia a dia (vivo)
-├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 70 arquivos, 0001-0070
+├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 112 ADRs, 0001-0112 (2026-08-11)
 │   └── README.md                  ← como ler e escrever ADRs
 ├── reference/                     ← schema, edge functions, glossário, permissões ML
 ├── explanation/                   ← arquitetura ponta a ponta

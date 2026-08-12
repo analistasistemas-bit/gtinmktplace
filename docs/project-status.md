@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-08-02
+**Ultima atualizacao:** 2026-08-11
 
 ## Snapshot
 
@@ -10,6 +10,9 @@
 - Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Blocos A e B)
 - **`E6b` Bloco A (estoque único cross-canal) EM PRODUÇÃO (2026-07-29)** — ver seção dedicada abaixo. **Bloco B (cadastro manual de produto + entrada de mercadoria pela UI, gated por módulo) EM PRODUÇÃO (2026-07-29)**, **redesenho da tela `/estoque` EM PRODUÇÃO (2026-08-02)** — nenhuma org enxerga o módulo até o super-admin ligar em `/admin` (`modulos_habilitados` nasce vazio). Spec: `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md` (Bloco B), `docs/superpowers/specs/2026-08-01-estoque-redesign-design.md` (redesenho). ADR: [0094](decisions/0094-estoque-unico-cadastro-manual.md). **Descartado na mesma sessão de design:** módulo de emissão de NF-e (commodity, passivo fiscal, manutenção perpétua da reforma tributária — racional na seção 11 da spec)
 - Depois do E6b: `E5` Shopee (o worker genérico `publicar-anuncio` do E6 espera só o conector)
+- **Agosto de 2026 (04 a 11/08), fora de épico numerado:** consolidação da apuração financeira e do
+  módulo de estoque — **7 ADRs aceitos (0106 a 0112), todos em produção**. Um por linha na seção
+  "Entregas de agosto de 2026" abaixo. Detalhe operacional em `TASKS.md` (seções por data)
 
 ### E6 — Orquestracao multicanal EM PRODUCAO (2026-07-06)
 
@@ -126,6 +129,139 @@ antigas + docs de referencia completas (modelo-de-dados, edge-functions, arquite
   `src/components/variacao-card.tsx` (`/publicados`), fora do escopo desta entrega. 10/10
   checagens reais de scroll horizontal via Playwright. Ver `docs/TASKS.md`.
 
+## Entregas de agosto de 2026 (04 a 11/08) — todas em produção
+
+Sem épico numerado: correções e decisões que consolidaram a apuração financeira e tornaram o
+módulo de estoque operável. Ordem cronológica.
+
+- **Produto gravado na organização errada — corrigido e blindado (2026-08-04).** Não foi vazamento
+  de leitura por RLS: uma **gravação SQL administrativa direta** criou na DSA uma segunda árvore de
+  lote/família/variações baseada num produto da Avil, contornando o fluxo oficial e o ledger. A
+  árvore indevida foi removida com assertions transacionais e readback cruzado (a família legítima
+  da Avil preservada), o PAT usado na intervenção foi rotacionado e revogado, e a migration
+  `20260804113000_guard_manual_product_direct_writes.sql` passou a tornar `lotes.org_id`/`origem`
+  imutáveis, validar a cadeia de `org_id`, recusar cadastro manual sem código de 8 dígitos e
+  bloquear escrita de estoque fora das RPCs auditadas (que pertencem ao role `estoque_rpc_executor`,
+  `NOLOGIN`, sem `BYPASSRLS`).
+- **Viabilidade usava preço padrão em vez da promoção vigente (2026-08-04).** Reproduzido com o GTIN
+  `4005800220012`: a API interna mostrava R$ 65,61 enquanto o ML vendia por R$ 45,19.
+  `_shared/ml/concorrencia.ts` consumia o campo legado `price` de `/products/{id}/items`; cada
+  oferta passa a consultar `/items/{id}/sale_price?context=channel_marketplace`, com o preço
+  anterior como fallback e cache de GTIN versionado para `v2`.
+- **Devolução conta no período em que o dinheiro saiu** (ADR-0106, 2026-08-06). O filtro usava
+  `aberto_em` (abertura do claim): o claim 5552400113 abriu em 31/07 e só foi reembolsado em 03/08,
+  então contava em julho e agosto — o mês que perdeu o dinheiro — não via nada. Passa a usar
+  `claim.resolution.date_created`, na coluna nova `ml_devolucoes.fechado_em` (migration
+  `20260806151323`, com backfill a partir do `raw` já guardado), conferida contra
+  `ml_vendas.raw->payments[].date_last_modified` em 5 devoluções reais (Δ de 2 a 64 segundos).
+  Junto: devolução **fechada** deixou de ser contada como aberta no card "Precisa de atenção" — o ML
+  continua devolvendo `available_actions` em claim já finalizado e reembolsado. O critério de
+  "concluída" (`type = 'returns'` **e** `return_status_money = 'refunded'`) não mudou.
+- **Catálogo do ML: item plano destravado, e um anúncio cancelado por moderação (2026-08-06).**
+  Item plano nunca vinculava ao catálogo (pendente eterno); a causa real do 400 do opt-in passou a
+  ser registrada em `catalog_erro`, e `CATALOG_PRODUCT_ID_NULL`/`PRODUCT_INACTIVE` e kit legítimo
+  passaram a ser aceitos. **Incidente na mesma frente:** mirar a ficha de outro domínio levou o ML a
+  re-moderar e **cancelar o anúncio do Aquaphor por propriedade intelectual** — o guard agora nunca
+  mira ficha de outro domínio. Reforça a regra: nenhuma escrita direta em anúncio publicado fora do
+  fluxo do app, nem em diagnóstico.
+- **Perguntas e Dashboard (2026-08-06).** Resposta dada no ML volta para o app por **webhook**, não
+  só na reconciliação; a notificação do Telegram passou a linkar a caixa de perguntas (não o
+  anúncio) e a mostrar quem perguntou; o rótulo do comparativo "Hoje" virou "vs. ontem até agora"; e
+  o cabeçalho de seção da descrição ganhou linha em branco no envio ao ML (saía "tudo junto").
+- **`ORIGEM` obrigatória e explícita na planilha** (ADR-0107, 2026-08-07). Parâmetro fiscal nunca
+  defaulta em silêncio: vazio ou typo **aborta o lote**. Case-insensitive no caminho todo, com
+  espelho no cliente; as 9 famílias com origem errada foram corrigidas e a query de export ajustada
+  para os próximos lotes.
+- **Com variação duplicada, vence o custo mais recente** (ADR-0108, 2026-08-07). O desempate era
+  pelo **maior** custo desde 2026-06-23 (sem ADR), então uma redução de custo nunca aparecia
+  enquanto a linha antiga existisse. Caso real: COLA EM BASTÃO (`02841037`) existia em 3 famílias
+  com **todas as chaves idênticas**, exibindo R$ 34,24 no lugar de R$ 31,71. Passa a vencer a linha
+  mais recente por `atualizado_em`. Varredura na org: **309 códigos** com custo inflado, todos com
+  markup subestimado.
+- **Custo congelado no instante da venda** (ADR-0109, 2026-08-07). O markup de uma venda passada
+  mudava sozinho — 307 dos 1164 itens vendidos exibiam custo diferente do que vigorava na data da
+  própria venda. O custo passa a ser copiado para a satélite `venda_item_custo` no primeiro sync
+  (insert-once, `unique nulls not distinct`), com trigger `BEFORE UPDATE` que faz qualquer alteração
+  de `custo_unitario` **falhar**. Satélite e não coluna porque `_shared/faturamento/io.ts` **apaga e
+  reinsere** os itens a cada sync do pedido. O congelamento mora dentro de `upsertVenda`, com o
+  resolver como campo **obrigatório** de `opts` — o TypeScript quebra a compilação de qualquer um
+  dos 4 callers que esqueça. Backfill pelo lote mais recente anterior à venda (`fonte = 'backfill'`,
+  aproximação assumida). **Comissão, frete e imposto continuam dinâmicos.**
+- **Faturamento — paginação, alíquota exibida e Viabilidade acionável (2026-08-08).** Perguntas e
+  Mensagens ganharam abas de status e busca paginada (paginação clampada, erro tratado); o
+  percentual do imposto passou a aparecer ao lado do valor no detalhe do pedido (só no desktop) e vem
+  do **resolver**, não do imposto arredondado; e a tela de Viabilidade ganhou botão **Cadastrar** na
+  linha, com o cadastro pré-preenchido pela descrição do catálogo do ML — a foto fica de fora e o
+  preço **não** é pré-preenchido (causaria gross-up duplo). A Viabilidade vira porta de entrada do
+  pipeline.
+- **Ajustar/zerar estoque pelo PubliAI** (ADR-0110, 2026-08-11). Não existia como reduzir saldo fora
+  de uma venda, e o operador zerava a cor direto no ML — onde não funciona: o push é absoluto e
+  `reconciliar-estoque` (`30 12 * * *`) restaura o número local em até 24h (confirmado com três
+  anúncios Helanca Light voltando a vender). Motivo `ajuste` no ledger (migration `20260811201026`),
+  RPC `ajustar_estoque` e edge `ajustar-estoque` **admin-only**, com `ref` por item
+  (`ajuste:{ref}:{codigo}` — ref compartilhada faria o "Zerar tudo" aplicar só a primeira cor
+  devolvendo sucesso). **Só reduz ou zera:** aumentar continua sendo Entrada, que exige custo e
+  alimenta markup/preço. Vira regra operacional: **nunca editar estoque direto no canal**.
+  - **Falha de segurança encontrada e fechada no próprio deploy (migration `20260811203500`).** O
+    `revoke`/`grant` rodava **depois** do `alter owner`, então o executor não era grantor válido e
+    ambos viraram **no-op com WARNING, não erro** (o `db push` não abre transação). A função ficou
+    com `EXECUTE` para `PUBLIC`, `anon` e `authenticated`; como é `security definer` e recebe
+    `p_org` por parâmetro, qualquer usuário autenticado poderia zerar estoque de **qualquer
+    organização** via PostgREST. Verificado após o fix: `POST /rest/v1/rpc/ajustar_estoque` com JWT
+    de usuário devolve `42501 permission denied`.
+  - **Propagação ao ML provada ponta a ponta**, e com uma lição: a primeira tentativa deu
+    `DELIVERED 200` no QStash sem o ML mudar — o anúncio estava moderado/forbidden e recusou o PUT
+    com 400. `sincronizar-estoque` devolve 200 mesmo em falha definitiva, então **fila entregue não
+    é prova de canal atualizado**. Repetido no `MLB5040504553` (saudável): 0 → 11 no ML.
+- **Repor estoque reativa o anúncio pausado** (ADR-0111, 2026-08-11). O ML só desfaz sozinho a pausa
+  que **ele mesmo** aplicou por falta de estoque; pausa do vendedor fica de pé mesmo com o saldo já
+  no canal. Um push de **reposição** com saldo > 0 passa a ler o status ao vivo depois do push e
+  devolver `pausado` → `ativo`. A intenção vem do **sinal da quantidade** no ledger (entrada e
+  estorno reativam; venda e ajuste não), a reconciliação diária **não** reativa (senão um anúncio
+  pausado à mão voltaria ao ar sem reposição), e `moderado`/`encerrado`/`inativo`/`indisponivel` são
+  intocados. Idempotente por leitura. 10 testes novos, RED confirmado.
+- **Alíquota interna por UF da empresa** (ADR-0112, 2026-08-11). A AVIL é de PE e paga **1%** ao
+  vender para cliente do próprio estado; com só as alíquotas por origem (8%/16%), toda venda
+  intraestadual saía com imposto 8×/16× maior, derrubando líquido, lucro e markup.
+  `configuracoes.uf_empresa` + `aliquota_interna_pct` (migration `20260812004735`, nullable, sem
+  default, CHECK de coerência), com **trava LOUD de meia-configuração** e `AliquotaResolver`
+  recebendo a UF em parâmetro **obrigatório** (opcional deixaria um call site esquecido devolvendo a
+  alíquota por origem em silêncio, num caminho financeiro). Recálculo retroativo sai de graça —
+  imposto e markup são derivados na leitura, não persistidos; só **1 pedido em 1389** está sem
+  `ml_vendas.uf`. Validado no pedido `2000017819569754` (entrega em PE): imposto R$ 0,85 e markup
+  +40%, contra R$ 6,78 e +26% com o parâmetro desligado. Ligado na org **Avil** (72 pedidos
+  históricos em PE); DSA segue sem o parâmetro. **Escopo: só apuração pós-venda** — preço sugerido e
+  gross-up continuam na origem, porque o anúncio tem preço único para o país.
+- **Venda não baixava estoque de produto cadastrado por outro membro da org (2026-08-11).**
+  12 unidades do NIVEA (org DSA) venderam em 10 pedidos pagos e o saldo continuou 12.
+  `carregarCatalogo` filtrava `familias`/`variacoes` por **`user_id`** — o `criado_por` da conexão
+  do canal, resíduo pré-multi-tenancy —, então o produto ficava fora do catálogo com
+  `is_publiai = false` e sem código; e `selecionarBaixas` descartava item sem código **em silêncio**
+  (o motivo `venda_sku_nao_encontrado` já existia no ledger e tinha **0 linhas em todo o banco** — a
+  tabela vazia era o sintoma). Agora filtra por `org_id` (com fallback para `user_id` só sem conexão
+  para resolver a org), venda paga sem SKU vira movimento informativo mais notificação, e o
+  `seller_custom_field` entra como último recurso — **sem** promover o item a `is_publiai`. Alcance
+  medido: Avil **0 de 297** famílias, DSA **2 de 6**. Os 10 pedidos foram re-enfileirados e a baixa
+  rodou de verdade (12 → 0, o ML pausou o anúncio sozinho): nenhum ajuste manual, histórico com a
+  causa certa. 8 functions redeployadas.
+- **Cor, foto e código do item vendido (2026-08-11).** Três correções do mesmo padrão — chave
+  disputada por valores diferentes é **anulada** em vez de chutar: a coluna "Cor" estava vazia em
+  184 de 1350 itens (item plano vende sem variação, e o ML só manda `variation_attributes` quando há
+  variação — corrigido na **leitura**, sem re-sync); a miniatura mostrava a foto de outra cor (mapa
+  por anúncio era first-wins); e o filho User Products gravava código/EAN de outra cor. O SKU do
+  filho UP sobrepõe o chute da família nos três casos.
+- **MLB do anúncio de catálogo entra no catálogo do faturamento** (ADR-0021, 2026-08-11).
+  `carregarCatalogo` só conhecia `familias.ml_item_id`, mas o vínculo de catálogo cria um anúncio
+  **separado** (`variacoes.catalog_listing_id`): a venda dele só era reconhecida pelo fallback de
+  GTIN, e produto sem EAN ficaria sem código — logo, sem baixa de estoque. Sem dado errado hoje
+  (nenhum SKU vinculado está sem GTIN: 288 na Avil, 4 na DSA).
+- **Estoque — lista de movimentos e tela (2026-08-05 a 2026-08-11).** Ledger paginado com filtros
+  (tipo, período, SKU) — antes mostrava só as vendas recentes, não as entradas; layout de operação
+  revisado; botão "Ajustar" deixou de vazar para fora da tela (a coluna media `6.5rem` e os dois
+  botões pediam `w-full` cada um); e o produto pai passou a exibir a foto do anúncio no ML quando
+  não tem capa própria — na AVIL só **1 de 147** famílias tem `capa_storage_path`, mas **140 de
+  147** têm `ml_picture_id`.
+
 ## Trilho de UX/design (2026-06-21, em producao)
 
 Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.
@@ -170,13 +306,44 @@ Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem
 
 ## Riscos e ressalvas abertas
 
+- **7 de 147 produtos sem foto na tela Estoque — decisão pendente do Diego (2026-08-11).** O lote
+  #45 subiu **sem nenhuma imagem** e recriou 135 famílias; como a tela adota a família mais recente
+  de cada `codigo_pai` (âncora ADR-0025), essas viraram as canônicas. Em `ingest-lote`,
+  `imagem_path` vem só do lote atual e **nunca é herdado** da família anterior (só o
+  `ml_picture_id` é), então escaparam justamente os 128 publicados. Dos 7, **2 têm o arquivo no
+  Storage** (lote #33). Não é fix de uma linha: `herdarPictureId` zera o id do ML ao enxergar
+  imagem nova, então passar o caminho herdado ali **derrubaria a foto de produto publicado**.
+  Alternativas: (a) religar por SQL as 29 variações dos 2 produtos; (b) reenviar as fotos no lote
+  #45; (c) herdar `imagem_path` com flag que não invalide o `ml_picture_id`
+- **Parsing de milhar pt-BR ainda aberto em `/publicados`.** `src/components/variacao-card.tsx` tem
+  o mesmo bug corrigido em `src/lib/formato.ts` (`parseNumeroPtBr`): `"1.234"` grava `R$ 1,23`.
+  Ficou explicitamente fora do escopo do PR #56
+- **`postgres` ficou membro de `estoque_rpc_executor` (baixa severidade, 2026-08-11).** O `grant`
+  exigido pelo `alter owner` foi gravado com `grantor = supabase_admin`, e nem a Management API nem
+  o `db push` (ambos rodam como `postgres`) conseguem revogá-lo — `no possible grantors`. **O guard
+  essencial segue intacto:** `service_role`, `authenticated` e `anon` continuam sem poder assumir o
+  role (verificado por `pg_has_role`), então nenhuma via da aplicação escreve saldo direto. Resolver
+  exige sessão com `supabase_admin` (suporte Supabase)
+- **"Unidades vendidas" lento no Publicados — causa medida, fix adiado por decisão (2026-08-08).**
+  O banco **não** é o gargalo (query de vendas 20–35 ms; `ml_vendas` tem ~4,4 MB): `Publicados.tsx`
+  usa janela `preset` de 30 dias resolvida como "agora − 30d", timestamp com milissegundos que muda
+  a cada montagem, então a `queryKey` do React Query é nova a cada abertura — nunca há cache hit,
+  baixa 1155 kB inteiros toda vez e o poll incremental do ADR-0082 nunca entra em ação. Custo por
+  visita: 1ª abertura ≈ 2,4 MB, cada reabertura ≈ 1,1 MB. Diego optou por não implementar agora; as
+  opções (alinhar a janela ao dia, exigindo adendo ao ADR-0082, ou só cortar payload) estão em
+  `TASKS.md`. **Registro de método:** a primeira tentativa criou um índice em `org_id` com
+  diagnóstico errado (já existia um desde 05/07) e sem nenhuma medição prévia — o índice é placebo,
+  não nocivo, e candidato a drop futuro
 - Retry de foto transiente no `CREATE` foi reforçado e validado; o mesmo padrão ainda merece extensão consistente no `UPDATE` quando houver necessidade operacional
 - **E4 — publicação real de vertical nova (furadeira) ainda não comprovada ponta a ponta no ML.** Foi validada até Revisão/banco (categoria `MLB189007` + `VOLTAGE` closed-set + publicabilidade); o único CREATE real de prova da reauditoria foi com a família de fita. Decisão (2026-06-15): não forçar um publish sintético; fechar esse fluxo quando uma furadeira real entrar num lote de produção normal.
 - `ROADMAP.md` ficou para contexto estratégico; o estado operativo confiável está neste arquivo e em `TASKS.md`
 
 ## Proximo foco
 
-`E6` — orquestracao multicanal (agora nasce tenant-aware, sobre o E7 ja em producao). `E5` (Shopee) depois; validacao real do E6 depende do E5.
+**`E5` — Shopee.** O `E6` (orquestração multicanal) e o `E6b` (estoque) já estão em produção, e a
+UI multi-marketplace também (2026-07-15, ADR-0077): o worker genérico `publicar-anuncio`, o registry
+de canais e o rollout por org já existem, então o E5 é hoje **"preencher o conector"**. A validação
+real do E6 ("ML + Shopee simultâneos", D-E6.7) fecha junto com ele.
 
 - [Plano E7](superpowers/plans/2026-07-02-e7-multi-tenancy-org-id.md) — **CONCLUIDO em producao (2026-07-05)**; falta so a Task 17 (limpeza diferida: drop `ml_credentials` + docs de referencia + Graphify) apos ~1 semana estavel
 - [Plano E6](superpowers/plans/2026-07-02-e6-orquestracao-multicanal.md) — worker generico `publicar-anuncio`, estado por canal em `anuncios_externos`, caminho ML intocado

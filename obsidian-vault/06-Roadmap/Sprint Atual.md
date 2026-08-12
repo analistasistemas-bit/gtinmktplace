@@ -5,12 +5,9 @@ atualizado: 2026-08-11
 
 # Sprint Atual
 
-Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo).
-Ver [[Próximas Features]], [[Backlog]].
-
-> **Atenção à fonte:** `docs/project-status.md` está parado em **2026-08-02** e não cobre nada de
-> 2026-08-04 em diante (ADR-0106 a ADR-0112, ajuste de estoque, alíquota interna). Enquanto ele
-> não for atualizado, o retrato corrente é o `docs/TASKS.md`.
+Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
+`docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
+agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
 ## 📍 Passo atual (2026-08-11)
 
@@ -164,7 +161,8 @@ Ver [[Próximas Features]], [[Backlog]].
 
 ## Entregas mais recentes já em produção
 
-> Até 2026-08-02, fonte `docs/project-status.md`; de 2026-08-04 em diante, `docs/TASKS.md`.
+> Fonte: `docs/project-status.md` (seção "Entregas de agosto de 2026" para 04–11/08) e
+> `docs/TASKS.md`.
 
 - **Custo congelado no instante da venda** (ADR-0109) — em produção 2026-08-07: o markup de uma
   venda passada parava de ser reproduzível, porque o custo usado era o **cadastrado hoje** —
