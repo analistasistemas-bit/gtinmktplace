@@ -526,29 +526,27 @@ const COLS_FIN_SERIE: Coluna[] = [
 
 interface FinanceiroArgs {
   r: ResumoVendas;
-  ticketLiquido: number;
   serie: PontoSerie[];
   periodo: Periodo;
   config: ExportConfig;
 }
 
 export function buildFinanceiroReport(args: FinanceiroArgs): ReportData {
-  const { r, ticketLiquido, serie, periodo, config } = args;
+  const { r, serie, periodo, config } = args;
   return {
     titulo: 'Financeiro',
     periodo: rotuloPeriodo(periodo),
     kpis: config.incluirKpis
       ? [
+          // Espelha a tela: o menu Financeiro controla liberação e saque; lucratividade vive no
+          // Faturamento e no Dashboard (code-review-v11).
           { label: 'Líquido das vendas', valor: fmtBRL(r.liquido) },
           { label: 'Faturamento bruto', valor: fmtBRL(r.bruto) },
           { label: 'Taxas e frete (ML)', valor: fmtBRL(r.descontos) },
           { label: 'Estornos', valor: fmtBRL(r.estornos) },
-          { label: 'Ticket médio líquido', valor: fmtBRL(ticketLiquido) },
-          { label: 'Já liberado', valor: fmtBRL(r.liberado) },
+          { label: 'Liberado a sacar', valor: fmtBRL(r.aSacar) },
           { label: 'A liberar', valor: fmtBRL(r.aLiberar) },
-          { label: 'Vendas no período', valor: fmtInt(r.pedidos) },
-          { label: 'Markup no período', valor: r.markup != null ? fmtMarkup(r.markup) : '—' },
-          { label: 'Lucro líquido no período', valor: r.margem != null ? fmtBRL(r.lucro) : '—' },
+          { label: 'Já sacado no período', valor: fmtBRL(Math.max(0, r.liberado - r.aSacar)) },
         ]
       : undefined,
     colunas: COLS_FIN_SERIE,

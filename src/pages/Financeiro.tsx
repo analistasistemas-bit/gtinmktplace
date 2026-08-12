@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, ShoppingBag, Target, TrendingUp, Coins, ChevronRight, CalendarClock, ArrowUp, ArrowDown } from 'lucide-react';
+import { Wallet, RefreshCw, Receipt, Percent, RotateCcw, CheckCircle2, ChevronRight, CalendarClock, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
@@ -36,7 +36,6 @@ export default function Financeiro() {
     : null;
 
   const pctRetido = r.bruto > 0 ? (r.descontos / r.bruto) * 100 : 0;
-  const ticketLiquido = r.pedidos > 0 ? r.liquido / r.pedidos : 0;
   const queryDetalhe = new URLSearchParams(periodoToParams(periodo)).toString();
   const podeDetalhar = r.pedidos > 0;
 
@@ -55,13 +54,6 @@ export default function Financeiro() {
       : 'semana';
   const serie = useMemo(() => agruparPorPeriodo(r.vendas, passo), [r.vendas, passo]);
 
-  // Markup agregado do período: (líquido − custo) ÷ custo, só sobre as vendas com custo
-  // cadastrado (as demais não entram na base, senão distorceria). null = nenhuma com custo.
-  // `n` usa r.vendasComCusto (nº de PACKS com custo) — mesma base do card Lucro, senão divergia.
-  const markup = r.markup != null
-    ? { pct: r.markup, lucro: r.lucro, n: r.vendasComCusto }
-    : null;
-
   return (
     <div className="p-4 sm:p-6">
       <PageHeader
@@ -73,7 +65,7 @@ export default function Financeiro() {
             <BotaoExportar
               temKpis
               montarReport={(config) =>
-                buildFinanceiroReport({ r, ticketLiquido, serie, periodo, config })
+                buildFinanceiroReport({ r, serie, periodo, config })
               }
             />
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
@@ -187,23 +179,22 @@ export default function Financeiro() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 lg:col-span-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-2">
           <KpiCard size="compact" icon={Receipt} label="Faturamento bruto" value={fmtBRL(r?.bruto ?? 0)} delta={delta(r.bruto, rAnt.bruto).texto} deltaTrend={delta(r.bruto, rAnt.bruto).trend} />
           <KpiCard size="compact" icon={Percent} label="Taxas e frete (ML)" value={fmtBRL(r?.descontos ?? 0)} tom="warning" hint={`comissão ${fmtBRL(r?.comissao ?? 0)} · frete ${fmtBRL(r?.frete ?? 0)}`} />
-          <KpiCard size="compact" icon={RotateCcw} label="Estornos" value={fmtBRL(r?.estornos ?? 0)} tom="danger" />
-          <KpiCard size="compact" icon={Target} label="Ticket médio líquido" value={fmtBRL(ticketLiquido)} />
+          <KpiCard size="compact" icon={RotateCcw} label="Estornos" value={fmtBRL(r?.estornos ?? 0)} tom="danger" hint="devoluções e reembolsos do período" />
         </div>
       </div>
 
       {/* Caixa: liberação dos recebimentos destas vendas (NÃO é o "A receber" do MP) */}
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiCard
           size="compact"
           icon={Wallet}
-          label="Já liberado"
-          value={fmtBRL(r?.liberado ?? 0)}
+          label="Liberado a sacar"
+          value={fmtBRL(r?.aSacar ?? 0)}
           tom="success"
-          hint="recebimentos destas vendas já no saldo"
+          hint="já no saldo do ML e ainda não marcado como sacado"
         />
         <KpiCard
           size="compact"
@@ -215,42 +206,12 @@ export default function Financeiro() {
             ? formatProximaLiberacao(r.proximaLiberacao)
             : 'nada pendente de liberação'}
         />
-      </div>
-
-      {/* Quantidade de vendas + markup do período */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <KpiCard
           size="compact"
-          icon={ShoppingBag}
-          label="Vendas no período"
-          value={fmtInt(r.pedidos)}
-          tom="info"
-          delta={delta(r.pedidos, rAnt.pedidos).texto}
-          deltaTrend={delta(r.pedidos, rAnt.pedidos).trend}
-        />
-        <KpiCard
-          size="compact"
-          icon={TrendingUp}
-          label="Markup no período"
-          value={markup ? `${markup.pct >= 0 ? '+' : ''}${Math.round(markup.pct * 100)}%` : '—'}
-          valueClassName={markup ? (markup.pct >= 0 ? 'text-success' : 'text-destructive') : undefined}
-          tom={markup && markup.pct < 0 ? 'danger' : 'success'}
-          hint={markup
-            ? `lucro ${fmtBRL(markup.lucro)} · ${markup.n} venda(s) c/ custo`
-            : 'sem custo cadastrado nas vendas'}
-        />
-        <KpiCard
-          size="compact"
-          icon={Coins}
-          label="Lucro líquido no período"
-          value={r.margem != null ? fmtBRL(r.lucro) : '—'}
-          valueClassName={r.margem != null ? (r.lucro >= 0 ? 'text-success' : 'text-destructive') : undefined}
-          tom={r.margem != null && r.lucro < 0 ? 'danger' : 'success'}
-          delta={delta(r.lucro, rAnt.lucro).texto}
-          deltaTrend={delta(r.lucro, rAnt.lucro).trend}
-          hint={r.margem != null
-            ? `margem ${Math.round(r.margem * 100)}%${r.imposto > 0 ? ` · imposto ${fmtBRL(r.imposto)}` : ''} · sobre ${r.vendasComCusto}/${r.totalVendas} venda(s) c/ custo`
-            : 'sem custo cadastrado nas vendas'}
+          icon={CheckCircle2}
+          label="Já sacado no período"
+          value={fmtBRL(Math.max(0, (r?.liberado ?? 0) - (r?.aSacar ?? 0)))}
+          hint="marcado como sacado no Detalhe do líquido"
         />
       </div>
 

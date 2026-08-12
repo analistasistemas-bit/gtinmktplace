@@ -8,6 +8,7 @@ import {
   buildPublicadosReport,
   rotuloPeriodo,
 } from '@/lib/export/adapters';
+import { fmtBRL } from '@/lib/formato';
 import type { ExportConfig } from '@/lib/export/tipos';
 import type { Pedido, KpisPedidos } from '@/lib/pedidos-faturamento';
 import type { PublicadoItem } from '@/lib/publicados';
@@ -256,16 +257,27 @@ describe('buildVendasReport — KPIs completos', () => {
 });
 
 describe('buildFinanceiroReport — KPIs completos', () => {
-  it('inclui Vendas no período e rótulos da tela', () => {
+  // O export espelha a tela: desde o code-review-v11 o menu Financeiro controla liberação e saque,
+  // e lucratividade (markup, lucro, ticket, nº de vendas) vive no Faturamento e no Dashboard.
+  it('traz os 7 KPIs da tela, sem os de lucratividade', () => {
     const r = buildFinanceiroReport({
-      r: { liquido: 100, bruto: 200, descontos: 100, estornos: 0, pedidos: 5, markup: 0.5, margem: 0.3, lucro: 30, liberado: 60, aLiberar: 40, vendas: [] } as never,
-      ticketLiquido: 20, serie: [], periodo: { tipo: 'preset', dias: 30 }, config: cfg(),
+      r: { liquido: 100, bruto: 200, descontos: 100, estornos: 0, pedidos: 5, markup: 0.5, margem: 0.3, lucro: 30, liberado: 60, aLiberar: 40, aSacar: 25, vendas: [] } as never,
+      serie: [], periodo: { tipo: 'preset', dias: 30 }, config: cfg(),
     });
     expect(labels(r)).toEqual([
       'Líquido das vendas', 'Faturamento bruto', 'Taxas e frete (ML)', 'Estornos',
-      'Ticket médio líquido', 'Já liberado', 'A liberar', 'Vendas no período',
-      'Markup no período', 'Lucro líquido no período',
+      'Liberado a sacar', 'A liberar', 'Já sacado no período',
     ]);
+  });
+
+  it('"já sacado" é o liberado menos o que ainda dá para sacar', () => {
+    const r = buildFinanceiroReport({
+      r: { liquido: 100, bruto: 200, descontos: 100, estornos: 0, pedidos: 5, markup: null, margem: null, lucro: 0, liberado: 60, aLiberar: 40, aSacar: 25, vendas: [] } as never,
+      serie: [], periodo: { tipo: 'preset', dias: 30 }, config: cfg(),
+    });
+    const porLabel = Object.fromEntries((r.kpis ?? []).map((k) => [k.label, k.valor]));
+    expect(porLabel['Liberado a sacar']).toBe(fmtBRL(25));
+    expect(porLabel['Já sacado no período']).toBe(fmtBRL(35));
   });
 });
 
