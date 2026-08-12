@@ -329,12 +329,22 @@ SEFAZ**: enquanto a org estiver em `homologacao`, o XML não sobe, `invoice_pend
 etiqueta não libera — o cliente ficaria com pedidos reais parados e sem outro emissor. Logo:
 
 - A homologação roda com **emissões sintéticas** (payload de venda de teste, disparado por ação
-  explícita, **fora do fluxo do webhook**). Não espera venda real acontecer.
-- **Venda real que chega com a org em `homologacao` não é emitida**: fica pendente com o motivo
-  explícito ("org ainda em homologação") e notifica. Nunca tenta e falha em silêncio.
-- Só faz sentido habilitar o módulo para uma org que já tem como emitir enquanto homologa, ou
-  aceitar que a promoção aconteça antes da primeira venda. **A trava de habilitação é o lugar de
-  dizer isso ao operador.**
+  explícita do super-admin, **fora do fluxo do webhook**). Não espera venda real acontecer.
+- **O módulo `fiscal` só liga com `ambiente = producao`.** Esta é a trava que fecha a janela ruim:
+  sem ela, uma org habilitada em homologação receberia venda real coberta, o XML não subiria,
+  `invoice_pending` não sairia e **o despacho travaria** — num cliente que, por definição, não tem
+  outro emissor. O PubliAI não trava nada; quem trava é o ML, e por isso não basta avisar: tem que
+  ser impossível.
+- **Onboarding fiscal e habilitação do módulo são coisas separadas.** A aba de config fiscal
+  aparece assim que o super-admin inicia o onboarding fiscal da org (`nfe_ambiente` preenchido,
+  nascendo em `homologacao`); é onde o cliente sobe o certificado e o contador preenche os dados.
+  O módulo em `modulos_habilitados` significa **emissão automática ligada** e só é permitido depois
+  da promoção.
+- Sequência única possível: onboarding → config + certificado → emissões sintéticas em homologação
+  → contador aprova → **promoção a `producao`** → **só então** o módulo liga.
+- Rede de segurança, caso a ordem seja subvertida por dado inconsistente: venda real com a org em
+  `homologacao` **não é emitida**, fica pendente com o motivo explícito e notifica. Nunca tenta e
+  falha em silêncio.
 
 ### D-14 — v1 é **Simples Nacional apenas**
 
@@ -401,8 +411,8 @@ certificado · painel de rejeições em `/admin` · emissão sintética de homol
    ambas autorizadas)
 8. Família sem `ncm` falha LOUD com o campo faltando nomeado
 9. Org sem o módulo: tela some **e** a edge devolve 403
-10. Org em `homologacao`: emissão sintética autoriza na SEFAZ; venda real **não** é emitida e
-    notifica o motivo
+10. **Não é possível ligar o módulo com a org em `homologacao`** — e a emissão sintética autoriza
+    na SEFAZ de homologação sem o módulo ligado
 11. Certificado vencendo em 30 dias dispara notificação
 12. Cancelamento pré-despacho cancela a nota; fora da janela marca "cancelamento extemporâneo ou
     devolução"; cancelamento parcial segue a regra do D-12

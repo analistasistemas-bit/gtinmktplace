@@ -13,13 +13,19 @@ construir sobre o endpoint errado — que é exatamente o erro que a revisão ad
 
 | # | Provar | Como | Se falhar |
 |---|---|---|---|
-| 0.1 | `POST /shipments/{id}/invoice_data` destrava `invoice_pending` e libera a etiqueta | conta real do cliente, 1 pedido `drop_off`, XML de teste | replaneja o D-4 inteiro |
+| 0.1 | `POST /shipments/{id}/invoice_data` destrava `invoice_pending` e libera a etiqueta | conta real do cliente, 1 pedido `drop_off`, **XML autorizado em produção** | replaneja o D-4 inteiro |
 | 0.2 | anexo em `/packs/{id}/fiscal_documents` **não** destrava | mesmo pedido, ordem invertida | o D-4 simplifica |
 | 0.3 | lista de logísticas com `invoice_pending` | 1 pedido de cada tipo que a org usa | muda o D-15 |
 | 0.4 | Focus reaproveita número após rejeição definitiva | sandbox Focus + rejeição forçada (NCM inválido) | entra inutilização no escopo |
 
 Extra barato: `GET /orders/billing-info/{site_id}/{id}` num pedido real, para ver a forma do
 retorno e o estado `PROCESSING` de perto.
+
+⚠️ **O 0.1 tem um pré-requisito que não é software.** O ML recusa XML de homologação (D-4), então
+provar que o endpoint destrava exige **uma nota real, autorizada em produção, no CNPJ do cliente** —
+emitida por fora do PubliAI (contador, portal, emissor avulso), sobre um pedido real dele. Combinar
+isso com o cliente **antes** de agendar a Fase 0; é a única dependência externa do plano inteiro e
+descobri-la no meio do caminho para o projeto.
 
 **Saída da fase:** um documento curto com print de cada resposta. Sem ele, não começa a Fase 1.
 
@@ -37,7 +43,7 @@ alter table public.configuracoes
   add column if not exists nfe_cnpj              text,
   add column if not exists nfe_ie                text,
   add column if not exists nfe_regime            text,      -- v1: só 'simples_nacional'
-  add column if not exists nfe_serie             smallint,  -- check 1..889
+  add column if not exists nfe_serie             smallint,  -- check 1..889 (ver nota abaixo)
   add column if not exists nfe_cfop_interno      text,      -- ex.: 5102
   add column if not exists nfe_cfop_interestadual text,     -- ex.: 6108 (NÃO 6102)
   add column if not exists nfe_cfop_contribuinte text,      -- opcional, ex.: 6102
@@ -75,6 +81,10 @@ create table public.notas_fiscais (
 create unique index notas_fiscais_org_shipment_uniq on public.notas_fiscais (org_id, shipment_id);
 ```
 
+⚠️ **O `check` de 1..889 vive nas duas colunas** (`configuracoes.nfe_serie` e
+`notas_fiscais.serie`). Só na config, dá para cadastrar válido e persistir inválido se alguma
+escrita futura não passar pela tela.
+
 RLS `org_id = (select current_org_id())`, igual às demais tabelas de domínio (ADR-0027).
 Bucket novo `notas-fiscais` no Storage, RLS por org — hoje só existe `imagens`.
 
@@ -86,13 +96,23 @@ Bucket novo `notas-fiscais` no Storage, RLS por org — hoje só existe `imagens
 O gate já existe: `exigirModulo(admin, orgId, 'fiscal')` em `_shared/produto/modulo.ts` — e **fecha
 por padrão** em erro de leitura. Reusar, não reescrever.
 
-O que é novo é a **pré-checagem antes de ligar** o módulo em `/admin`, que mostra ao super-admin:
+O que é novo é a **pré-checagem antes de ligar** o módulo em `/admin`, que bloqueia ou avisa:
 
-1. regime da org — **Regime Normal bloqueia** (D-14), com o motivo escrito
-2. série definida e dentro de 1–889 — sem ela, não liga (D-8)
-3. **quantas vendas dos últimos 90 dias ficariam sem nota** por logística fora do escopo (D-15)
+1. **`ambiente = producao`** — em `homologacao` o módulo **não liga** (D-13). Sem esta trava, venda
+   real chega, o XML de homologação é recusado pelo ML, `invoice_pending` não sai e **o despacho
+   trava** num cliente que não tem outro emissor.
+2. regime da org — **Regime Normal bloqueia** (D-14), com o motivo escrito
+3. série definida e dentro de 1–889 — sem ela, não liga (D-8)
+4. **quantas vendas dos últimos 90 dias ficariam sem nota** por logística fora do escopo (D-15) —
+   este é aviso, não bloqueio: o operador vê o número e decide
 
-Nada disso é validação de runtime: é o momento em que o operador vê a verdade antes de decidir.
+Os três primeiros são bloqueio real, não texto de alerta.
+
+**Onboarding fiscal ≠ módulo ligado.** A aba de config fiscal aparece quando o super-admin inicia o
+onboarding (`nfe_ambiente` preenchido, nascendo em `homologacao`) — é onde o certificado sobe e o
+contador preenche. O módulo em `modulos_habilitados` significa **emissão automática ligada**, e só
+depois da promoção. Sequência única: onboarding → config → sintéticas → contador aprova → promoção
+→ módulo.
 
 ### 1.3 UI de config fiscal
 
@@ -102,8 +122,9 @@ data de envio.
 
 ⚠️ O `.pfx` e a senha **não podem aparecer em log**. Vale um teste que falha se aparecerem.
 
-**Testes da fase:** série fora de 1–889 recusada · Regime Normal não liga · org sem módulo recebe
-403 na edge · certificado não persistido em lugar nenhum.
+**Testes da fase:** série fora de 1–889 recusada **nas duas colunas** · Regime Normal não liga ·
+**org em `homologacao` não liga** · org sem módulo recebe 403 na edge · certificado e senha não
+persistidos nem logados em lugar nenhum.
 
 ---
 
@@ -207,10 +228,14 @@ sem passar pelo webhook. É o que torna a Fase 6 possível.
 
 ## Fase 6 — Homologação e promoção
 
+**O módulo ainda está desligado durante toda esta fase** (D-13). É o que garante que nenhuma venda
+real fique parada esperando promoção.
+
 1. Emissões sintéticas até autorizar na SEFAZ de homologação com o certificado real
 2. Contador do cliente confere uma nota completa (DANFE + XML)
 3. Super-admin promove a org para `producao`
-4. Primeira venda real: acompanhar até **a etiqueta liberar** — não até o HTTP 200
+4. **Só então** liga o módulo `fiscal`
+5. Primeira venda real: acompanhar até **a etiqueta liberar** — não até o HTTP 200
 
 ---
 
