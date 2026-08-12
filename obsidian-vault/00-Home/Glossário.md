@@ -1,6 +1,6 @@
 ---
 tags: [home, glossario]
-atualizado: 2026-07-24
+atualizado: 2026-08-11
 ---
 
 # Glossário
@@ -29,6 +29,32 @@ primeiro). Aqui os termos ganham links internos do vault.
 | **Revisão humana** | Etapa obrigatória entre processamento e publicação. Regra inegociável do projeto. |
 | **Reprocessar** | Re-enfileira uma família travada em `erro`, resetando para `pendente`. |
 | **Publicável / viabilidade** | Checagens (foto, cor, preço, categoria) que liberam/bloqueiam a publicação (`src/lib/publicavel.ts`). |
+
+## Estoque
+
+| Termo | Definição |
+|---|---|
+| **Estoque canônico** | O saldo de verdade de um SKU na org: `variacoes.estoque` da família **mais recente** do `(org_id, codigo)` — mesma âncora do dedupe de Publicados (ADR-0025). Não há tabela de saldo separada. Ver [[Estoque]]. |
+| **Movimento de estoque** | Registro imutável de toda alteração de saldo (`estoque_movimentos`), idempotente por `(org_id, referencia_externa)`. Trilha de auditoria. |
+| **Entrada de mercadoria** | Movimento positivo com quantidade + custo + documento (RPC `registrar_entrada`, edge `entrada-estoque`). Único caminho para **aumentar** saldo. |
+| **Baixa de estoque** | Movimento negativo automático em todo pedido **pago**. Nunca deixa saldo negativo, nunca faz a venda falhar. |
+| **Estorno de venda** | Movimento positivo em cancelamento **pré-despacho**. Devolução não é tocada. |
+| **Ajuste (zeragem)** | Movimento que **só reduz ou zera**, admin-only (ADR-0110). Aumentar exige Entrada. É o caminho correto para "acabou essa cor" — nunca zerar direto no canal. |
+| **Push de estoque** | Propagação do saldo por **valor absoluto** (nunca delta), em fila serial `estoque-{orgId}`. Venda não ecoa para o canal de origem. |
+| **Reconciliação de estoque** | Job diário (`30 12 * * *`), rede de segurança do **push**: só re-empurra produto com movimento no ledger. |
+| **Reativação por reposição** | Push de reposição com saldo > 0 devolve o anúncio de `pausado` para `ativo` (ADR-0111). Nunca toca `moderado`/`encerrado`/`inativo`/`indisponivel`. |
+| **Módulo** | Funcionalidade **paga** por org (`organizations.modulos_habilitados`). Gate duplo: esconde o menu **e** a edge recusa com 403. |
+| **Cadastro manual** | Criar produto pela UI, sem planilha (`lotes.origem='manual'`), caindo na mesma Revisão. |
+
+## Financeiro e imposto
+
+| Termo | Definição |
+|---|---|
+| **Custo congelado** | O custo do item é copiado para `venda_item_custo` no primeiro sync da venda e não muda mais (insert-once + trigger que faz `UPDATE` falhar, ADR-0109). Planilha nova só afeta vendas posteriores. Ver [[Faturamento]]. |
+| **Custo vigente** | Resolvido pela cadeia `variação → anúncio → GTIN → código`, com desempate pela linha **mais recente** (`atualizado_em`, ADR-0108) — não pela de maior custo. |
+| **Alíquota por origem** | 8% nacional / 16% importado, por org, exigindo confirmação explícita (ADR-0055/0086). Nunca defaulta em silêncio. |
+| **Alíquota interna** | Alíquota de venda **dentro da UF da empresa** (`uf_empresa` + `aliquota_interna_pct`, ADR-0112). **Sobrepõe a origem** e vale só na apuração pós-venda — preço sugerido e gross-up seguem na origem. Ver [[Configurações]]. |
+| **Devolução (concluída)** | `type = 'returns'` **e** `return_status_money = 'refunded'`. Conta no período em que o **estorno saiu** (`fechado_em`), não no da abertura do claim (ADR-0106). |
 
 ## Multicanal
 

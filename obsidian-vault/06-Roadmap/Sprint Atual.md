@@ -1,14 +1,71 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-08-02
+atualizado: 2026-08-11
 ---
 
 # Sprint Atual
 
-Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
-`docs/project-status.md`. Ver [[Próximas Features]], [[Backlog]].
+Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo).
+Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-07-29)
+> **Atenção à fonte:** `docs/project-status.md` está parado em **2026-08-02** e não cobre nada de
+> 2026-08-04 em diante (ADR-0106 a ADR-0112, ajuste de estoque, alíquota interna). Enquanto ele
+> não for atualizado, o retrato corrente é o `docs/TASKS.md`.
+
+## 📍 Passo atual (2026-08-11)
+
+> **✅ Ajuste/zeragem de estoque pelo PubliAI EM PRODUÇÃO (ADR-0110).** Motivo `ajuste` no ledger,
+> RPC `ajustar_estoque` e edge `ajustar-estoque` (admin-only), diálogo por produto e variação na
+> tela `/estoque`. **Só reduz ou zera** — aumentar continua sendo Entrada (que exige custo e
+> alimenta markup/preço). Diagnóstico que originou tudo: cor zerada direto no ML voltava sozinha,
+> porque `reconciliar-estoque` (`30 12 * * *`) re-empurra o saldo local com `canal_origem: null`.
+> Vira regra operacional: **nunca editar estoque direto no canal** ([[Estoque]]).
+>
+> **Achado de segurança no próprio deploy:** os `grant`/`revoke` da RPC vieram **depois** do
+> `alter function … owner to`, e o `supabase db push` não roda a migration em transação — os
+> comandos viraram **no-op com WARNING, não erro**, e a função ficou publicada com `EXECUTE` para
+> `PUBLIC`/`anon`/`authenticated`. Corrigido pela migration `20260811203500`.
+>
+> **✅ Repor estoque reativa o anúncio pausado EM PRODUÇÃO (ADR-0111).** O ML só desfaz sozinho a
+> pausa que ele mesmo aplicou por falta de estoque (medido no `MLB5040504553`); pausa do vendedor
+> fica de pé mesmo com o saldo já no canal. Agora um push de **reposição** com saldo > 0 lê o
+> status ao vivo e devolve `pausado` → `ativo`. A intenção vem do **sinal da quantidade** no
+> ledger (entrada e estorno reativam; venda e ajuste não), a reconciliação diária **não** reativa,
+> e `moderado`/`encerrado`/`inativo`/`indisponivel` são intocados. 10 testes novos, RED confirmado.
+>
+> **✅ Alíquota interna por UF da empresa EM PRODUÇÃO (ADR-0112).** A AVIL é de PE e paga **1%**
+> vendendo para cliente do próprio estado — com só as alíquotas por origem, toda venda
+> intraestadual saía com imposto 8×/16× maior. `configuracoes.uf_empresa` +
+> `aliquota_interna_pct` (migration `20260812004735`, nullable, sem default, CHECK de coerência),
+> `AliquotaResolver` recebendo a UF em parâmetro **obrigatório** (opcional deixaria call site
+> esquecido devolvendo número plausível e errado). Recálculo retroativo sai de graça — imposto e
+> markup são derivados na leitura. Validado no pedido `2000017819569754` (entrega em PE): imposto
+> R$ 0,85 (1%) contra R$ 6,78 (8%), markup +40% contra +26%. Configurado na org **Avil**
+> (72 pedidos históricos em PE); DSA segue sem o parâmetro. **Escopo: só apuração pós-venda** —
+> preço sugerido e gross-up continuam na origem.
+>
+> **🐞 Incidente fechado: venda não baixava estoque de produto cadastrado por outro membro da org.**
+> 12 unidades do NIVEA (org DSA) venderam em 10 pedidos pagos e o saldo continuou 12.
+> `carregarCatalogo` filtrava `familias`/`variacoes` por **`user_id`** (o `criado_por` da conexão),
+> resíduo pré-multi-tenancy — agora filtra por `org_id`. E `selecionarBaixas` descartava item sem
+> código **em silêncio**: o motivo `venda_sku_nao_encontrado` existia no ledger com 0 linhas em
+> todo o banco. Agora vira movimento informativo + notificação. Alcance medido: Avil 0/297
+> famílias, DSA 2/6. Os 10 pedidos foram re-enfileirados, o saldo foi a 0 e o ML pausou o anúncio
+> sozinho — **sem nenhum ajuste manual**, o histórico ficou com a causa certa. 8 functions
+> redeployadas.
+>
+> **✅ MLB do anúncio de catálogo entra no catálogo do faturamento (ADR-0021).**
+> `carregarCatalogo` só conhecia `familias.ml_item_id`, mas o vínculo de catálogo cria um anúncio
+> **separado** (`variacoes.catalog_listing_id`) — a venda dele só era reconhecida pelo fallback de
+> GTIN, e produto sem EAN ficaria sem código (logo, sem baixa de estoque). Sem dado errado hoje:
+> nenhum SKU vinculado está sem GTIN (288 Avil, 4 DSA).
+>
+> **⏸️ Pendente de decisão do Diego:** 7 de 147 produtos sem foto na tela Estoque
+> ([[Bugs Conhecidos]]).
+>
+> **Depois: E5 Shopee.**
+
+## Passo anterior (2026-07-29 → 2026-08-02)
 
 > **✅ E6b BLOCO A EM PRODUÇÃO (2026-07-29).** Ledger `estoque_movimentos`, baixa automática na
 > venda paga, estorno no cancelamento pré-despacho, push absoluto cross-canal e reconciliação
@@ -105,8 +162,35 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 > Os planos passaram por 1 revisão do Fable + 7 rodadas adversariais com o Codex (`gpt-5.6-sol`),
 > convergindo em APPROVED; 9 bloqueadores corrigidos. Log em `PLAN-REVIEW-LOG-E6B.md`.
 
-## Entregas mais recentes já em produção (fonte: `docs/project-status.md`)
+## Entregas mais recentes já em produção
 
+> Até 2026-08-02, fonte `docs/project-status.md`; de 2026-08-04 em diante, `docs/TASKS.md`.
+
+- **Custo congelado no instante da venda** (ADR-0109) — em produção 2026-08-07: o markup de uma
+  venda passada parava de ser reproduzível, porque o custo usado era o **cadastrado hoje** —
+  medido: 307 dos 1164 itens vendidos exibiam custo diferente do que vigorava na data da venda.
+  Agora o custo é copiado para a tabela satélite `venda_item_custo` (`unique nulls not distinct`),
+  **insert-once** com trigger que faz qualquer `UPDATE` de `custo_unitario` falhar. Satélite e não
+  coluna porque `_shared/faturamento/io.ts` apaga e reinsere os itens a cada sync do pedido. O
+  congelamento mora **dentro** de `upsertVenda`, com o resolver como campo obrigatório de `opts` —
+  o compilador quebra qualquer um dos 4 callers que esqueça. Backfill pelo lote mais recente
+  anterior à venda (`fonte = 'backfill'`, aproximação assumida). Comissão, frete e imposto
+  continuam **dinâmicos**. Ver [[Índice de ADRs]].
+- **Com variação duplicada, vence o custo mais recente** (ADR-0108) — em produção 2026-08-07:
+  o desempate era pelo **maior custo** (desde 2026-06-23, sem ADR), então uma redução de custo
+  nunca aparecia enquanto a linha antiga existisse. Caso real: COLA EM BASTÃO (`02841037`) em
+  3 famílias com **todas as chaves idênticas**, exibindo R$ 34,24 no lugar de R$ 31,71. Passa a
+  vencer a linha mais recente por `atualizado_em` (que precisou entrar no `select` de
+  `buscarCustos`). Varredura: **309 códigos** com custo inflado, todos com markup subestimado.
+- **ORIGEM obrigatória e explícita na planilha** (ADR-0107) — em produção 2026-08-07: parâmetro
+  fiscal nunca defaulta em silêncio; vazio ou typo **aborta o lote**. Ver [[Upload Planilha]].
+- **Devolução conta no período em que o dinheiro saiu** (ADR-0106) — em produção 2026-08-06: o
+  filtro usava `aberto_em` (abertura do claim), então um claim aberto em 31/07 e reembolsado em
+  03/08 contava em julho e agosto não via nada. Passa a usar `claim.resolution.date_created`
+  (coluna nova `ml_devolucoes.fechado_em`, migration `20260806151323` com backfill do `raw`) —
+  conferida contra o estorno no Mercado Pago em 5 devoluções reais (Δ de 2 a 64 segundos). Junto:
+  devolução **fechada** deixou de ser contada como aberta no card "Precisa de atenção" (o ML segue
+  devolvendo `available_actions` em claim já finalizado). O critério de "concluída" não mudou.
 - **Atualização rápida de estoque** (ADR-0089) — em produção 2026-07-24: atalho de 1-clique em
   `Progresso.tsx` que publica automaticamente o estoque de famílias `UPDATE` sem nenhuma
   pendência (nunca `CREATE`, nunca cor nova mesmo completa, preço sempre ignorado) — elimina a
@@ -226,5 +310,6 @@ Fonte de verdade viva: `docs/TASKS.md` (marcador "📍 Passo atual" no topo) e
 
 ## Ver também
 
+- [[Estoque]] — o módulo que o E6b entregou (ledger, ajuste, push cross-canal)
 - [[Backlog]] — os épicos da evolução SaaS (agora com E6b)
 - [[Publicação Shopee]] — pesquisa do épico `E5`, agora antecipado (roadmap v2, 2026-07-12)

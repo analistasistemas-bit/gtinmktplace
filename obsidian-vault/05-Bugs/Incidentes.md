@@ -1,12 +1,53 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-08-07
+atualizado: 2026-08-11
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## 2026-08-11 — 12 unidades venderam sem baixar estoque (org DSA)
+
+O NIVEA vendeu 12 unidades em 10 pedidos pagos e o saldo continuou 12. Na tela de Faturamento o
+item aparecia com Código `—`.
+
+**Causa raiz:** `carregarCatalogo` (`_shared/faturamento/io.ts`) filtrava `familias` e `variacoes`
+por **`user_id`** — o `criado_por` da conexão do canal. O produto foi cadastrado por **outro
+membro da mesma org**, então ficava fora do catálogo: `is_publiai = false`, código não resolvido e,
+sem código, nenhuma baixa. Resíduo pré-multi-tenancy: o dado é org-scoped desde o E7 (ADR-0027), e
+o próprio `backfill-faturamento` já chamava esse filtro de "proxy legado".
+
+**Por que ninguém viu:** `selecionarBaixas` descartava item sem código **em silêncio**. O motivo
+`venda_sku_nao_encontrado` já existia no ledger e tinha **0 linhas em todo o banco** — uma tabela
+de diagnóstico vazia era, na verdade, o sintoma.
+
+**Correção:** filtro por `org_id` (com fallback para `user_id` só quando não há conexão para
+resolver a org); venda paga sem SKU vira movimento informativo (`quantidade = 0`) mais notificação;
+e o `seller_custom_field` do ML entra como último recurso para resolver o código — **sem** promover
+o item a `is_publiai`, que significa "anúncio gerenciado por nós". Alcance medido: Avil **0 de 297**
+famílias, DSA **2 de 6**. Os 10 pedidos foram re-enfileirados e a baixa rodou de verdade (saldo 12
+→ 0, o ML pausou o anúncio sozinho): nenhum ajuste manual foi usado, o histórico ficou com a causa
+certa. 8 functions redeployadas.
+
+**Lições:** (1) filtro por `user_id` em código org-scoped é bug latente em qualquer org com mais de
+um membro; (2) tabela de diagnóstico com 0 linhas merece desconfiança, não conforto.
+
+## 2026-08-11 — RPC de estoque publicada com `EXECUTE` para `PUBLIC`/`anon`/`authenticated`
+
+Na entrega do ajuste de estoque (ADR-0110), os `revoke`/`grant` da função `ajustar_estoque` vieram
+**depois** do `alter function … owner to estoque_rpc_executor`. Como o `supabase db push` **não**
+envolve a migration em transação, o executor não era grantor válido e os comandos viraram **no-op
+com WARNING, não erro** — a migration "passou" e a função ficou aberta.
+
+Como toda RPC de estoque é `security definer` e recebe `p_org` por parâmetro, isso equivalia a
+expor escrita de estoque de **qualquer organização** a qualquer usuário autenticado. Corrigido pela
+migration `20260811203500`.
+
+**Regra que fica:** grants **antes** do `alter owner`, ou `set local role` dentro de
+`begin/commit` explícito — e conferir o resultado, porque a ausência de erro não prova nada aqui.
+Ver [[Estoque]].
 
 ## 2026-08-07 — Publicados mostrava menos unidades vendidas que o Faturamento (protetor solar, DSA)
 

@@ -11,6 +11,37 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-08-11
 
+- **Feature: alíquota interna por UF da empresa (ADR-0112).** A AVIL é de PE e paga 1% vendendo
+  para cliente do próprio estado; com só as alíquotas por origem (8%/16%), toda venda
+  intraestadual saía com imposto 8×/16× maior, derrubando líquido, lucro e markup.
+  `configuracoes.uf_empresa` + `aliquota_interna_pct` (migration `20260812004735`, nullable, sem
+  default, CHECK de coerência e trava LOUD de meia-configuração na UI). `AliquotaResolver` passou
+  a receber a UF de entrega em parâmetro **obrigatório** — opcional, um call site esquecido
+  devolveria a alíquota por origem em silêncio, num caminho financeiro. Imposto e markup são
+  derivados na leitura, então ligar o parâmetro recalcula todo o histórico exibido sem backfill
+  (só 1 pedido em 1389 está sem `ml_vendas.uf`). Validado no pedido `2000017819569754` (entrega em
+  PE): R$ 0,85 de imposto e markup +40%, contra R$ 6,78 e +26% com o parâmetro desligado. Escopo:
+  **só apuração pós-venda** — preço sugerido e gross-up continuam na origem, porque o anúncio tem
+  preço único para o país. Ver [[Configurações]].
+- **Feature: ajustar/zerar estoque pelo PubliAI (ADR-0110).** Não existia como reduzir saldo fora
+  de uma venda, e o operador zerava a cor direto no ML — onde não funciona: o push é absoluto e o
+  cron `reconciliar-estoque` restaura o número local em até 24h (confirmado em produção com três
+  anúncios Helanca Light voltando a vender). Motivo `ajuste` no ledger, RPC `ajustar_estoque` e
+  edge `ajustar-estoque`, **admin-only** e **só para reduzir ou zerar** (aumentar continua sendo
+  Entrada, que exige custo). **Achado de segurança no deploy:** os `grant`/`revoke` vieram depois
+  do `alter … owner to` e o `db push` não usa transação, então viraram no-op com WARNING — a
+  função ficou com `EXECUTE` para `PUBLIC`/`anon`/`authenticated` até a migration
+  `20260811203500`. Ver [[Estoque]].
+- **Fix: venda não baixava estoque de produto cadastrado por outro membro da org.** 12 unidades do
+  NIVEA (org DSA) venderam em 10 pedidos pagos e o saldo continuou 12. `carregarCatalogo` filtrava
+  `familias`/`variacoes` por `user_id` (o `criado_por` da conexão) — resíduo pré-multi-tenancy —,
+  então o produto ficava fora do catálogo com `is_publiai = false` e sem código; e
+  `selecionarBaixas` descartava item sem código **em silêncio** (o motivo
+  `venda_sku_nao_encontrado` existia no ledger com 0 linhas em todo o banco). Agora filtra por
+  `org_id`, a venda sem SKU vira movimento informativo + notificação, e o `seller_custom_field` do
+  ML entra como último recurso para resolver o código. Alcance medido: Avil 0/297 famílias,
+  DSA 2/6. Os 10 pedidos foram re-enfileirados e o saldo caiu para 0 pelo caminho normal, sem
+  ajuste manual. 8 functions redeployadas. Ver [[Faturamento]].
 - **Feature: repor estoque reativa o anúncio pausado (ADR-0111).** O ML só desfaz sozinho a pausa
   que ele mesmo aplicou por falta de estoque; pausa do vendedor fica de pé mesmo com o saldo já no
   canal. Agora `sincronizar-estoque`, num push de **reposição** com saldo > 0, lê o status ao vivo e
@@ -40,7 +71,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
   `02960150`. O 7º (`EXT-MLB6901126538`) é publicado, tem foto no ML e `capa_ml_picture_id` nulo —
   linha criada fora do fluxo em 09/07 (o prefixo `EXT-` não sai de nenhum código do repositório).
   Fix não é trivial: herdar `imagem_path` faria `herdarPictureId` zerar o id do ML de produto
-  publicado. Opções em [[TASKS]].
+  publicado. Opções em [[Bugs Conhecidos]].
 - **Fix: coluna "Cor" vazia e miniatura da cor errada no Faturamento.** Item **plano** — filho
   User Products (ADR-0088: 1 item ML por cor) ou família de 1 variação — vende sem variação, e
   o Mercado Livre só manda a cor em `variation_attributes`. Resultado: `ml_vendas_itens.cor` nula
@@ -60,6 +91,67 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 - **Método:** as três correções compartilham a mesma regra — chave disputada por valores diferentes
   é **anulada** em vez de chutada, e o `sku` do filho UP (1:1 exato) sobrepõe qualquer palpite
   derivado da família. Nunca inventar dado de produto vale também para o que é só exibido.
+
+## 2026-08-08
+
+- **Feature: paginação e abas de status em Perguntas e Mensagens (Faturamento).** Busca paginada
+  com filtro de status nas duas abas; paginação clampada e erro tratado. Saiu junto a remoção da
+  `useListaPerguntas` órfã, substituída por `fetchPerguntasPagina`.
+- **Perf: índice em `org_id` do `ml_vendas`** — "unidades vendidas" deixava o Publicados lento
+  (gargalo medido na org Avil, em produção). Um diagnóstico anterior sobre esse índice estava
+  errado e foi corrigido na documentação.
+- **Feature: botão "Cadastrar" na tela de Viabilidade**, com o cadastro pré-preenchido pela
+  descrição do catálogo do ML (`descricaoCatalogo`/`jaCadastrado` expostos pela edge). O spike
+  registrou o que entra e o que não entra no prefill — a foto fica de fora, e o preço **não** é
+  pré-preenchido porque causaria gross-up duplo. A Viabilidade passa a ser porta de entrada do
+  pipeline.
+- **Feature: percentual do imposto ao lado do valor no detalhe do pedido** (só no desktop), vindo
+  do resolver e não do imposto arredondado.
+- **Fix: coluna de vendas no Publicados** segurada até o mapa canônico assentar (dois passos).
+
+## 2026-08-07
+
+- **Feature: custo congelado no instante da venda (ADR-0109).** O markup de uma venda passada
+  mudava sozinho, porque o custo usado era o cadastrado hoje — 307 dos 1164 itens vendidos exibiam
+  custo diferente do que vigorava na data da própria venda. Agora o custo vai para a satélite
+  `venda_item_custo` no primeiro sync (insert-once, `unique nulls not distinct`) e um trigger faz
+  qualquer `UPDATE` de `custo_unitario` falhar. Satélite e não coluna porque o sync **apaga e
+  reinsere** os itens do pedido a cada notificação. O congelamento mora dentro de `upsertVenda`,
+  com o resolver como campo obrigatório de `opts` — o compilador cobra os 4 callers. Backfill pelo
+  lote mais recente anterior à venda (`fonte = 'backfill'`). Comissão, frete e imposto continuam
+  dinâmicos. Ver [[Faturamento]].
+- **Fix: com variação duplicada, vence o custo mais recente (ADR-0108).** O desempate era pelo
+  **maior** custo desde 2026-06-23, então redução de custo nunca aparecia enquanto a linha antiga
+  existisse. Caso real: COLA EM BASTÃO (`02841037`) em 3 famílias com todas as chaves idênticas,
+  exibindo R$ 34,24 no lugar de R$ 31,71. Varredura: 309 códigos com custo inflado (markup
+  subestimado em todos).
+- **Feature: ORIGEM obrigatória e explícita na planilha (ADR-0107).** Vazio ou typo aborta o lote;
+  case-insensitive no caminho todo, com espelho no cliente. As 9 famílias com origem errada foram
+  corrigidas e a query de export ajustada para os próximos lotes. Ver [[Upload Planilha]].
+- **Feature: lista de movimentos de estoque paginada, com filtros de tipo, período e SKU.**
+  Corrigido junto: a lista mostrava só as vendas recentes, não as entradas.
+- **Fix: atributo NAME obrigatório preenchido sozinho** (adendo determinístico ao ADR-0052) — o
+  lote #11 travava na Revisão pedindo "Nome".
+- **Fix: miniatura da venda usa a capa da família quando a variação não tem foto.**
+
+## 2026-08-06
+
+- **Fix: devolução conta no período em que o dinheiro saiu (ADR-0106).** O card do Dashboard
+  filtrava por `aberto_em`, a data em que o comprador abriu a reclamação: um claim aberto em 31/07
+  e reembolsado em 03/08 contava em julho, e agosto — o mês que perdeu o dinheiro — não via nada.
+  Passa a usar `claim.resolution.date_created` (coluna `ml_devolucoes.fechado_em`, migration
+  `20260806151323` com backfill do `raw`), conferida contra o estorno no Mercado Pago em 5
+  devoluções reais. Junto: devolução **fechada** deixou de contar como aberta — o ML segue
+  devolvendo `available_actions` em claim já finalizado.
+- **Fix: item plano nunca vinculava ao catálogo do ML** (pendente eterno), com a causa real do 400
+  do opt-in registrada em `catalog_erro`. **Incidente na mesma frente:** mirar a ficha de outro
+  domínio levou o ML a re-moderar e cancelar o anúncio do Aquaphor por propriedade intelectual —
+  o guard agora nunca mira ficha de outro domínio. Ver [[Incidentes]].
+- **Fix: venda por catálogo acumula no anúncio original**, em vez de virar "outro produto".
+- **Fix: pergunta respondida no ML volta pro app por webhook**, não só na reconciliação; a
+  notificação do Telegram passa a linkar a caixa de perguntas e a mostrar quem perguntou.
+- **Fix: cabeçalho de seção da descrição ganha linha em branco no envio ao ML** — a descrição saía
+  "tudo junto".
 
 ## 2026-08-04
 

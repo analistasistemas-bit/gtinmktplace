@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, banco-de-dados]
-atualizado: 2026-07-24
+atualizado: 2026-08-11
 ---
 
 # Banco de Dados
@@ -44,7 +44,12 @@ erDiagram
 | `ml_perguntas` | Perguntas de compradores |
 | `ml_webhook_eventos` | Dedup de webhooks `(topic, resource)` |
 | `ml_moderacao` | Anúncios moderados/pausados |
-| `configuracoes` | Settings por organização (desconto, Telegram, Mercado Pago) |
+| `ml_mensagens` | Mensagens pós-venda |
+| `estoque_movimentos` | Ledger imutável de estoque (venda, entrada, estorno, ajuste) — ver [[Estoque]] |
+| `venda_item_custo` | Custo congelado por item vendido, insert-once (ADR-0109) |
+| `notificacoes` | Espelho in-app dos alertas do Telegram (ADR-0085) |
+| `configuracoes` | Settings por organização (desconto, Telegram, alíquotas — ver [[Configurações]]) |
+| `organizations` | Tenant; `canais_habilitados` e `modulos_habilitados` |
 | `profiles` | Espelho de `auth.users` — `is_admin`, `allowed_menus` (ver [[Usuários]]) |
 
 ## Funções SQL (`security definer`)
@@ -56,6 +61,7 @@ erDiagram
 | `get_ml_tokens(user_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `is_admin()` / `current_org_id()` | Helpers de RLS/RBAC — ver [[Segurança]] |
 | `telegram_config_status()` | Retorna status sem expor o token |
+| `baixar_estoque` / `estornar_estoque` / `registrar_entrada` / `ajustar_estoque` | Únicas escritas permitidas em `variacoes.estoque` — precisam pertencer ao role `estoque_rpc_executor` (ver [[Estoque]]) |
 
 ## O que não existe (YAGNI consciente)
 

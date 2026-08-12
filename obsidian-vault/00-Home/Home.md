@@ -41,6 +41,7 @@ Este vault referencia esses documentos, não os substitui.
 
 - [[Dashboard]]
 - [[Produtos]]
+- [[Estoque]] *(módulo pago, ligado por org)*
 - [[Marketplace]]
 - [[IA]]
 - [[Configurações]]

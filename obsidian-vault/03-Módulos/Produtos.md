@@ -1,12 +1,15 @@
 ---
 tags: [modulo, produtos]
-atualizado: 2026-07-24
+atualizado: 2026-08-11
 ---
 
 # Produtos
 
 O domínio central: **Lote → Família (= 1 anúncio) → Variação (= 1 SKU/cor)**. Ver [[Glossário]],
 [[Banco de Dados]].
+
+O saldo dessas variações é governado pelo módulo [[Estoque]] — `variacoes.estoque` só muda por RPC
+do ledger (entrada, venda, estorno, ajuste), nunca por escrita direta.
 
 ## Telas
 
