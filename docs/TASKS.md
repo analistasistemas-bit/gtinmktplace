@@ -31,8 +31,13 @@
 - [x] **Plano de implementação** em
   [superpowers/plans/2026-08-12-nfe-simples-nacional-plan.md](superpowers/plans/2026-08-12-nfe-simples-nacional-plan.md)
   — 7 fases, ~2 a 3 semanas. A **Fase 0** prova as premissas em conta real antes de qualquer código.
-- [ ] **Implementação — não iniciada.** Aguardando decisão do Diego sobre quando entra na fila
-  (hoje o próximo é `E5` Shopee).
+- [ ] **PAUSADO (2026-08-12) — dependência externa, não é fila.** O cliente que motivou o ADR é da
+  org **DSA** (não a AVIL, que já emite nota pelo ERP dela) e **ainda está abrindo a empresa**. Sem
+  CNPJ → sem IE → sem credenciamento na SEFAZ → sem certificado A1 → não emite. Nem implementar nem
+  validar é possível. **Duas perguntas destravam** (seção "Ao retomar" do ADR-0114): quando a
+  empresa abre — o que decide se a v1 Simples-only ainda vale, porque o **IBS/CBS alcança o Simples
+  em 04/01/2027** — e se o cliente usa a org DSA ou vira org nova. Próximo da fila segue sendo o
+  `E5` Shopee.
 
 ## Estoque — excluir produto (ADR-0113) — 2026-08-12
 

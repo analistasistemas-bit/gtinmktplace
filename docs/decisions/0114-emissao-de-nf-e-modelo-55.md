@@ -1,11 +1,20 @@
 # ADR-0114 — Emissão de NF-e modelo 55 no PubliAI
 
 **Data:** 2026-08-12
-**Status:** aceito — **implementação pendente**. Design fechado em sessão de grilling, submetido a
-revisão adversarial (15 achados, dois deles quebravam o pipeline), corrigido, e as três decisões
-que restavam abertas foram fechadas pelo Diego em 2026-08-12: **v1 é Simples Nacional apenas**, e
-**só as logísticas com `invoice_pending`** entram. Ver "A verificar antes de codar" — 4 pontos que
-exigem pedido real e não bloqueiam o começo da implementação.
+**Status:** aceito — **implementação PAUSADA por dependência externa** (2026-08-12).
+
+Design fechado em sessão de grilling, submetido a revisão adversarial (15 achados, dois deles
+quebravam o pipeline), corrigido, e as três decisões que restavam abertas foram fechadas: **v1 é
+Simples Nacional apenas**, **só as logísticas com `invoice_pending`**.
+
+**Por que está pausado:** o cliente que motivou o ADR — da org **DSA**, não a AVIL (que já emite
+nota pelo ERP dela) — **ainda está abrindo a empresa**. Sem CNPJ não há Inscrição Estadual, sem IE
+não há credenciamento na SEFAZ, sem credenciamento não há certificado A1 e sem certificado não se
+emite nada. Nem a implementação nem a validação têm como acontecer.
+
+**Duas perguntas destravam a retomada** (ver "Ao retomar"). Enquanto elas não forem respondidas,
+não implementar: o desenho depende delas e o domínio muda de baixo dos pés (a NT 2025.002 trocou de
+versão várias vezes em 2026).
 **Revoga parcialmente:** o descarte de NF-e da seção 11 da spec
 `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`, citado no
 [ADR-0094](0094-estoque-unico-cadastro-manual.md) como alternativa rejeitada.
@@ -439,6 +448,44 @@ semana de vida deste ADR.** A NT 2025.002 mudou de versão várias vezes em 2026
 desativando rejeições de IBS/CBS, e a obrigação alcança o Simples em 04/01/2027. Escolher a Focus
 transfere o *layout*; não transfere o *dado* nem o *prazo*. Isso não invalida a decisão — invalida
 tratá-la como entrega que acaba.
+
+## Ao retomar
+
+**Responder estas duas antes de qualquer código.** Nenhuma tem default seguro.
+
+### 1. Quando a empresa do cliente abre? — decide se a v1 ainda vale
+
+Em **04/01/2027 o IBS/CBS alcança o Simples Nacional**, e a v1 inteira foi desenhada em cima de o
+Simples ainda estar fora disso (D-14). A janela encolhe sozinha:
+
+| Empresa abre em | v1 estreia | Vida útil antes do IBS/CBS |
+|---|---|---|
+| Setembro/2026 | Outubro | ~3 meses |
+| Outubro/2026 | Novembro | ~2 meses |
+| Novembro ou depois | Dezembro | ~1 mês ou menos |
+
+**De outubro em diante, construir a v1 Simples-only é desperdício** — entrega e já refaz. Nesse
+cenário, pular a v1 e construir uma vez só, já com os grupos de IBS/CBS.
+
+⚠️ **Conferir o enquadramento com o contador na abertura, não depois:** se for **MEI**, o volume
+projetado (500 notas/mês) estoura o teto com folga. Isso muda a abertura da empresa, não o sistema.
+
+### 2. O cliente usa a org DSA existente ou vira org nova?
+
+O CNPJ emitente é **por org** (D-10), e a DSA já tem vendas reais no ML. Se o cliente entrar na
+DSA, a config fiscal da DSA passa a ser o CNPJ dele — e é preciso saber de quem são as vendas que
+já estão lá antes de apontar um CNPJ para elas.
+
+### Sobre a Fase 0, ao retomar
+
+A Fase 0 (provar que `POST /shipments/{id}/invoice_data` destrava a etiqueta) **não depende do
+cliente novo** — depende de qualquer CNPJ que já emita NF-e e venda com Mercado Envios. A **AVIL**
+é a única candidata que existe hoje, mas **emite pelo ERP dela**, que provavelmente já importa a
+nota no ML: o teste exige **1 pedido combinado**, com o ERP segurando a importação daquele pedido.
+
+Parte é segura e pode ser feita sozinha a qualquer momento: um `GET` nos shipments da AVIL mostra
+quais logísticas ela usa e se o `invoice_pending` aparece como a documentação descreve (item 0.3),
+**sem escrever nada**.
 
 ## A verificar antes de codar
 
