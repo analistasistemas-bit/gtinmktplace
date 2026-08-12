@@ -141,4 +141,40 @@ describe('ProdutoCard', () => {
       expect(el.className.split(/\s+/)).not.toContain('hidden');
     }
   });
+
+  // ADR-0113: excluir é admin-only. A página não passa `onExcluir` para não-admin, e sem ele o
+  // menu ⋮ não existe — é a única ação que mora lá dentro.
+  it('menu de mais ações só aparece com onExcluir', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByLabelText(/Mais ações/)).not.toBeInTheDocument();
+
+    const onExcluir = vi.fn();
+    rerender(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onExcluir={onExcluir} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByLabelText(/Mais ações/));
+    await userEvent.click(await screen.findByText('Excluir produto'));
+    expect(onExcluir).toHaveBeenCalledWith(produto);
+  });
+
+  it('produto publicado tem o item de excluir desabilitado', async () => {
+    const publicado = { ...produto, mlItemId: 'MLB123' };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onExcluir = vi.fn();
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={publicado} canais={['mercado_livre']} onDarEntrada={vi.fn()} onExcluir={onExcluir} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByLabelText(/Mais ações/));
+    expect(await screen.findByText('Excluir produto')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText(/remova pela tela Publicados/i)).toBeInTheDocument();
+  });
 });

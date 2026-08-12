@@ -32,5 +32,13 @@ export const prepararRepublicacao = (familiaId: string) =>
     { familia_id: familiaId, preservar_familia: true },
   );
 
+// ADR-0113: exclusão pelo módulo Estoque — só produto NÃO publicado. A edge recusa (409) o que
+// tem anúncio; a checagem no front é só para não gastar a ida.
+export const excluirProduto = (codigoPai: string) =>
+  chamarEdge<{ ok: true; familias_removidas: number; lotes_removidos: number; movimentos_removidos: number }>(
+    'excluir-produto',
+    { codigo_pai: codigoPai },
+  );
+
 export const pausarReativarPublicado = (mlItemId: string, status: 'ativo' | 'pausado') =>
   chamarEdge<{ ok: true }>('atualizar-status-publicado', { ml_item_id: mlItemId, status });

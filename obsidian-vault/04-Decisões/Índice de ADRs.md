@@ -124,5 +124,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0110 | [Ajuste de estoque no PubliAI: só reduz, e é admin](../../docs/decisions/0110-ajuste-de-estoque-so-reduz.md) |
 | 0111 | [Repor estoque reativa o anúncio pausado (qualquer pausa; reconciliação não reativa)](../../docs/decisions/0111-reativacao-automatica-ao-repor-estoque.md) |
 | 0112 | [Alíquota interna por UF da empresa (venda dentro do estado)](../../docs/decisions/0112-aliquota-interna-por-uf-da-empresa.md) |
+| 0113 | [Exclusão de produto pelo Estoque: só o que não está publicado](../../docs/decisions/0113-exclusao-de-produto-no-estoque.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

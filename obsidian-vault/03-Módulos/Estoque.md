@@ -87,6 +87,25 @@ Bloco B do E6b (ADR-0094): produto entra **sem planilha**. Edges `cadastrar-prod
 (chip Planilha/Cadastro manual no LoteCard) — `lote_id` é `NOT NULL` e sustenta `process-familia`,
 `finalizarLote` e a unique `(lote_id, codigo_pai)`.
 
+## Exclusão de produto (ADR-0113)
+
+Menu `⋮` na linha do produto → **Excluir produto**. Edge `excluir-produto` (`verify_jwt=true`),
+admin-only como o ajuste, body `{ codigo_pai }`.
+
+**Só alcança produto não publicado em canal nenhum.** Apagar família com `ml_item_id` cortaria o
+vínculo de UPDATE do `ingest-lote` e a próxima planilha do mesmo código viraria **anúncio
+duplicado** no ML — a restrição do [[Exclusão de lote|ADR-0019]]. Publicado sai por
+`remover-publicado` (tela Publicados → Remover), que pausa no ML antes.
+
+A trava olha **todas** as famílias do `codigo_pai`, não a linha que a tela mostra: a lista exibe só
+a mais recente, e uma irmã publicada é invisível ali. Pela mesma razão o delete leva todas — deixar
+irmã viva faria o produto reaparecer logo após a exclusão.
+
+Saldo em estoque **não** bloqueia (produto de teste nasce com entrada); o freio é digitar o código
+no diálogo. O histórico de movimentos vai junto, pela varredura do ADR-0097 — como só alcança
+produto nunca publicado, esse histórico é de entrada/ajuste manual, não de venda. O ML nunca é
+tocado por esta porta.
+
 ## Tela
 
 Redesenhada em 2026-08-02 (PR #56): listagem e cadastro viraram **cards**, sem nenhuma `<table>`

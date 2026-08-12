@@ -3,8 +3,11 @@
 // página. O alinhamento de colunas vem de CSS Grid com tracks FIXOS — grid não dimensiona track
 // por conteúdo do jeito que a tabela dimensiona, então GTIN/nome longo não empurra nada.
 import { useId, useState } from 'react';
-import { ChevronRight, PackageMinus, PackagePlus } from 'lucide-react';
+import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalBadge } from '@/components/canal-badge';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
@@ -28,10 +31,11 @@ export interface AlvoEntrada {
  * Ordem no DOM: produto · SKUs · saldo · situação · canais · ação.
  * Abaixo de `md` as células 2/4/5 ficam `hidden`, sobrando exatamente 3 itens para 3 tracks.
  */
-// A última coluna é a das ações e cabe DUAS (Entrada + Ajustar, ADR-0110). Dimensionada para
-// uma só, o segundo botão vazava para fora da viewport — a linha não tem overflow que o segure.
+// A última coluna é a das ações e cabe DUAS (Entrada + Ajustar, ADR-0110) mais o menu ⋮
+// (ADR-0113). Dimensionada para menos, o último botão vazava para fora da viewport — a linha
+// não tem overflow que o segure. O menu é largura fixa (2.25rem), fora do `flex-1` dos dois.
 export const GRID_LINHA_PRODUTO =
-  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_12.5rem]';
+  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_7.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_15rem]';
 
 const CELULA_MD = 'hidden md:block';
 
@@ -75,12 +79,14 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
   );
 }
 
-export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar }: {
+export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExcluir }: {
   produto: ProdutoComSaldo;
   canais: string[];
   onDarEntrada: (alvo: AlvoEntrada) => void;
   /** ADR-0110: ajuste/zeragem é admin-only — a página só passa isto para admin. */
   onAjustar?: (produto: ProdutoComSaldo) => void;
+  /** ADR-0113: exclusão é admin-only, mesma regra do ajuste. */
+  onExcluir?: (produto: ProdutoComSaldo) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
@@ -160,6 +166,38 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar }: {
               <PackageMinus className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden truncate md:inline">Ajustar</span>
             </Button>
+          )}
+          {onExcluir && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 w-9 shrink-0 px-0 md:h-7 md:w-7"
+                  aria-label={`Mais ações para ${produto.nomePai}`}
+                >
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {/* `mlItemId` é a fonte canônica de publicado (a lista de canais é espelho e pode
+                    estar furada). Aqui é só para não gastar a ida — quem recusa de fato é a edge,
+                    que varre TODAS as irmãs do codigo_pai, não só a linha mais recente. */}
+                <DropdownMenuItem
+                  disabled={produto.mlItemId != null}
+                  onSelect={() => onExcluir(produto)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Excluir produto
+                </DropdownMenuItem>
+                {produto.mlItemId != null && (
+                  <p className="px-2 pb-1.5 pt-0.5 text-xs text-muted-foreground">
+                    Publicado — remova pela tela Publicados primeiro.
+                  </p>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>

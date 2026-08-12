@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — excluir produto (ADR-0113) — 2026-08-12
+
+- [x] **Motivo:** o ADR-0094 deu ao Estoque a porta de entrada (cadastro manual) sem a de saída.
+  Produto criado errado ou de teste ficava para sempre na lista, inflando os KPIs da tela.
+- [x] Edge `excluir-produto` (`verify_jwt=true`, admin-only, módulo `estoque`), body
+  `{ codigo_pai }`. Reusa `pathsDaFamilia`/`filtrarPathsDeDonos`, `recontarOuRemoverLote` e
+  `limparMovimentosOrfaos` de `_shared` — não duplica a saga de ML de `remover-publicado`.
+- [x] Trava ADR-0019: 409 se **qualquer** família do `codigo_pai` tiver `ml_item_id`. Varre o
+  código inteiro porque a tela só mostra a família mais recente — irmã publicada é invisível ali.
+- [x] Delete leva todas as famílias do `codigo_pai`; varredura de órfãos **depois** do delete
+  (ADR-0097 D-2); fotos só sob o prefixo do dono de cada família.
+- [x] UI: menu `⋮` na linha do produto (só admin), diálogo com saldo + confirmação digitada do
+  código. Coluna de ações 12.5rem → 15rem (desktop) e 5.5rem → 7.5rem (mobile).
+- [x] Testes: 6 do `processar` (recusa publicado/em voo sem apagar nada, ordem da varredura, guard
+  de posse de Storage, fail-closed), 2 do diálogo, 2 do card.
+- [ ] **Deploy pendente:** `supabase functions deploy excluir-produto` (o merge na main não deploya
+  Edge Functions).
+
 ## Imposto — alíquota interna por UF da empresa (ADR-0112) — 2026-08-11
 
 - [x] **Motivo:** a AVIL é de PE e paga 1% ao vender para cliente do próprio estado. Com só as

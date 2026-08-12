@@ -50,6 +50,7 @@
 | cadastrar-produto | **true** | HTTP (frontend) | sim (guard 409 + ref no estoque inicial) |
 | entrada-estoque | **true** | HTTP (frontend) | sim (`ref` de idempotência obrigatória) |
 | ajustar-estoque | **true** | HTTP (frontend, **admin**) | sim (`ref` por item: `ajuste:{ref}:{codigo}`) |
+| excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -563,6 +564,15 @@ falha ao ler `organizations` não libera.
   null`) sai **uma vez por `codigo_pai`** e **sempre** — inclusive quando tudo veio duplicado ou
   com delta 0, mesmo contrato da entrada. **Só reduz**: aumento é recusado pela RPC apontando para
   a Entrada, que exige custo (ADR-0055).
+- **excluir-produto** (ADR-0113) — apaga produto do Estoque. **Admin-only** e restrita ao módulo
+  `estoque`, como o ajuste. Body `{ codigo_pai }` — a exclusão é por código, não por família: o
+  delete leva **todas** as famílias daquele `codigo_pai` na org (ciclos de UPDATE deixam várias, e
+  deixar irmãs vivas faria o produto reaparecer na lista). **Recusa com 409 se qualquer uma delas
+  tiver `ml_item_id`**: apagar família publicada cortaria o vínculo de UPDATE do `ingest-lote` e a
+  próxima planilha viraria anúncio duplicado (ADR-0019) — publicado sai por `remover-publicado`.
+  Também 409 com família em `publicando`/`processando`. Apaga as fotos do Storage sob o prefixo do
+  **dono** de cada família (mesmo guard de posse de `remover-publicado`), e roda
+  `limparMovimentosOrfaos` **depois** do delete (ADR-0097 D-2). Nunca toca o ML.
 
 ### Faturamento
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,

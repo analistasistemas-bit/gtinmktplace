@@ -47,6 +47,9 @@ verify_jwt = true
 # ADR-0110: ajuste/zeragem de saldo. Chamada pelo APP com o JWT do admin.
 [functions.ajustar-estoque]
 verify_jwt = true
+# ADR-0113: exclusão de produto não publicado. Chamada pelo APP com o JWT do admin.
+[functions.excluir-produto]
+verify_jwt = true
 [functions.reprocessar-familia]
 verify_jwt = false
 [functions.monitorar-moderados]

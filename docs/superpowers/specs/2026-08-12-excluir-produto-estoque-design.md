@@ -62,8 +62,10 @@ o caso normal.
 
 **D-8. O botão nunca é gateado pelo estado da query de canais.** `fetchCanaisPorProduto` é uma
 query separada que falha **aberta** (`Estoque.tsx` documenta: quando os canais não carregam, o
-produto é assumido publicado). Gatear o clique nela esconderia o botão numa falha transitória.
-O item abre o diálogo; quem recusa é a edge, com 409 legível.
+produto é assumido publicado). Gatear o clique nela esconderia o botão numa falha transitória. O
+item é desabilitado por `produto.mlItemId` — a fonte canônica, que já vem com a própria lista de
+produtos — e mesmo isso é só para poupar a ida: quem recusa de fato é a edge, com 409 legível,
+porque ela enxerga as irmãs do `codigo_pai` que a tela não mostra.
 
 ## Arquitetura
 
@@ -72,22 +74,24 @@ O item abre o diálogo; quem recusa é a edge, com 409 legível.
 `index.ts` (gate + tradução de resultado → HTTP) e `processar.ts` (lógica pura, testável),
 seguindo o desenho de `remover-publicado`.
 
-Entrada: `{ familia_id: string }`.
+Entrada: `{ codigo_pai: string }` — a exclusão opera sobre o código inteiro (D-4), então receber
+`familia_id` só para resolvê-lo de volta ao código seria indireção sem função. `ProdutoComSaldo`
+também não carrega `familia_id`, e adicioná-lo seria campo novo a serviço da indireção.
 
 ```
 requireUserOrg(req, { access: 'write' })        → 401/403
 isAdmin                                          → 403 "Somente administradores…"
 exigirModulo(admin, orgId, 'estoque')            → 403
 
-1. familias.select(id, lote_id, codigo_pai, org_id, user_id) por id+org   → nao_encontrada (404)
-2. familias por (codigo_pai, org) com ml_item_id not null, limit 1        → publicado (409)
-3. familias por (codigo_pai, org) com status in (publicando, processando) → em_voo (409)
-4. familias por (codigo_pai, org): capas + variacoes(imagem_path)
+1. familias por (codigo_pai, org) com ml_item_id not null, limit 1        → publicado (409)
+2. familias por (codigo_pai, org) com status in (publicando, processando) → em_voo (409)
+3. familias por (codigo_pai, org): capas + variacoes(imagem_path)
+   → lista vazia                                                          → nao_encontrada (404)
    → pathsDaFamilia + filtrarPathsDeDonos → storage.remove (erro só warn, segue)
-5. familias.delete().in(id, alvos)                                        → cascade em variacoes
-6. limparMovimentosOrfaos(admin, orgId)
-7. recontarOuRemoverLote(loteId, false) por lote afetado
-8. auditarOperacaoSuporte(...)
+4. familias.delete().in(id, alvos)                                        → cascade em variacoes
+5. limparMovimentosOrfaos(admin, orgId)
+6. recontarOuRemoverLote(loteId, false) por lote afetado
+7. auditarOperacaoSuporte(...)
 → { ok: true, familias_removidas, lotes_removidos, movimentos_removidos }
 ```
 

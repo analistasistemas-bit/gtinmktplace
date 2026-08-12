@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
+import { DialogExcluirProduto } from '@/components/estoque/dialog-excluir-produto';
 import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/estoque/produto-card';
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
@@ -32,6 +33,8 @@ export default function Estoque() {
   // ADR-0110: ajustar/zerar tira o produto de venda — mesmo peso comercial de pausar (ADR-0060).
   const { isAdmin } = useProfile();
   const [produtoAjuste, setProdutoAjuste] = useState<ProdutoComSaldo | null>(null);
+  // ADR-0113: excluir é admin pela mesma razão do ajuste — e mais pesado que ele.
+  const [produtoExcluir, setProdutoExcluir] = useState<ProdutoComSaldo | null>(null);
 
   const { data: produtos, isLoading, isError } = useQuery({
     queryKey: ['produtos-saldo'],
@@ -150,6 +153,7 @@ export default function Estoque() {
                 canais={canaisEfetivos(p, canaisPorProduto)}
                 onDarEntrada={(alvo) => { setAlvoEntrada(alvo); setEntradaAberta(true); }}
                 onAjustar={isAdmin ? setProdutoAjuste : undefined}
+                onExcluir={isAdmin ? setProdutoExcluir : undefined}
               />
             ))}
             {lista.length === 0 && (
@@ -174,6 +178,11 @@ export default function Estoque() {
         produto={produtoAjuste}
         aberto={produtoAjuste != null}
         onFechar={() => setProdutoAjuste(null)}
+      />
+      <DialogExcluirProduto
+        produto={produtoExcluir}
+        aberto={produtoExcluir != null}
+        onFechar={() => setProdutoExcluir(null)}
       />
       <DialogCadastroProduto
         aberto={cadastroAberto}
