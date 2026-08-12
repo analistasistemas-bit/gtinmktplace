@@ -275,6 +275,9 @@ teste real de OAuth/publicação.
 > **Motivo:** hoje um produto só entra por planilha, o que exige que o cliente **já tenha um ERP**
 > para poder usar o PubliAI — o funil está restrito exatamente ao público que menos precisa do
 > produto. O cadastro manual destrava um público que hoje não é atendível.
+> ⚠️ **Reaberto em 2026-08-12** com escopo restrito — [ADR-0114](decisions/0114-emissao-de-nf-e-modelo-55.md),
+> design fechado, implementação pendente. O descarte abaixo continua valendo na sua premissa (o
+> PubliAI não vira motor fiscal); o que mudou é a demanda de cliente **sem ERP**, 500 notas/mês.
 > **Descartado na mesma sessão:** módulo de **emissão de NF-e**. É commodity (6 providers entregam
 > igual), é passivo e não ativo (nota errada vira suporte contábil), é manutenção fiscal perpétua
 > (reforma tributária em transição) e não multiplica nada do que o PubliAI já construiu.

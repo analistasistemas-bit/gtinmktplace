@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Emissão de NF-e — design (ADR-0114) — 2026-08-12
+
+- [x] **Design fechado** em sessão de grilling com o Diego. D-1 a D-13 em
+  [ADR-0114](decisions/0114-emissao-de-nf-e-modelo-55.md). Reabre com escopo restrito o descarte
+  de NF-e da seção 11 da spec de 2026-07-28 (citado no ADR-0094). Gatilho: cliente sem ERP,
+  500 notas/mês.
+- [x] **UniNFe descartado** (era o ponto de partida da discussão): aplicativo Windows, não roda no
+  Render (Linux). A biblioteca `Unimake.DFe` é que é multiplataforma — e nela nós montaríamos o
+  layout NF-e 4.00 campo a campo e acompanharíamos cada Nota Técnica. Só empata perto de 4.000
+  notas/mês.
+- [x] **Nuvem Fiscal encerrou em 31/07/2026** — a spec de julho a indicava como a mais forte em
+  multi-empresa. Não é mais alternativa. Escolhido: **Focus NFe** atrás da porta
+  `TransmissorFiscal` (padrão ADR-0024).
+- [x] Glossário ganhou seção fiscal, incluindo a colisão `familias.origem` (ADR-0055/0107) × campo
+  `orig` da NF-e (0 a 8).
+- [ ] **Implementação — não iniciada.** Bloco A (emitir) + Bloco B (operar) e critério de saída no
+  ADR. Aguardando decisão do Diego sobre quando entra na fila (hoje o próximo é `E5` Shopee).
+
 ## Estoque — excluir produto (ADR-0113) — 2026-08-12
 
 - [x] **Motivo:** o ADR-0094 deu ao Estoque a porta de entrada (cadastro manual) sem a de saída.

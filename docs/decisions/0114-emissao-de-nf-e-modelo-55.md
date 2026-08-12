@@ -91,6 +91,9 @@ cancelamento (24h na regra geral), obrigando nota de devolução.
 Faturador, e emitir junto gera **nota duplicada**. Em **ME1** o envio do XML ao ML é opcional;
 **Flex, Turbo e Drop Off** exigem.
 
+O sinal de push já existe: `ml-webhook` já assina o tópico **`shipments`** e o roteia para
+`sync-venda` com `shipping_id` (`ml-webhook/index.ts:16`). Nenhuma assinatura nova de webhook.
+
 Emissão assíncrona (QStash). **Falha de emissão nunca falha a venda** — mesma regra da baixa de
 estoque (ADR-0094, critério 6). Botão manual "emitir agora" existe só como retentativa.
 
@@ -119,15 +122,24 @@ Alternativa rejeitada: guardar o `.pfx`. Vazamento permitiria emitir nota no CNP
 O A1 vale 1 ano; vencido, para de emitir e ninguém percebe até uma venda travar. A validade
 alimenta alerta em **30/15/7 dias** pelo `notificarCategoria` existente (ADR-0085).
 
-### D-7 — Nunca duas notas para a mesma venda
+### D-7 — A unidade da nota é o **pack**, não o pedido
 
-Três camadas:
+Um carrinho com N itens do mesmo vendedor gera **N pedidos → 1 pack → 1 envio**, e o ML aceita
+uma nota cobrindo mais de um número de venda. Chavear a nota no pedido emitiria **N notas para um
+único envio**, e o upload do XML no ML é por **pack** — não haveria onde pendurar as outras.
 
-1. **Reserva no banco antes da chamada** — `unique (org_id, venda_id)` em `notas_fiscais`, linha
+A unidade é o pack, com fallback para o pedido quando não há pack. O padrão
+`pedido.pack_id ?? pedido.id` **já existe no código** (`_shared/faturamento/io.ts:302`, rateio de
+frete) e `ml_vendas.pack_id` já é persistido (`sync-venda/index.ts:111`) — mesma âncora, domínio
+novo. Os itens da nota são a **união dos itens de todos os pedidos do pack**.
+
+Três camadas contra nota duplicada:
+
+1. **Reserva no banco antes da chamada** — `unique (org_id, pack_ref)` em `notas_fiscais`, linha
    inserida *antes* de falar com o provider. Mesmo padrão da saga de User Products (ADR-0088).
-   Retentativa do QStash bate no índice e para.
-2. **`ref` idempotente no provider** — `publiai-{org}-{ml_order_id}`, estável e reconstruível. A
-   Focus dedupe por `ref`.
+   Retentativa do QStash bate no índice e para. Esta camada sozinha já garante a unicidade.
+2. **`ref` idempotente no provider** — `publiai-{org}-{pack_id ?? ml_order_id}`, estável e
+   reconstruível sem consultar nada. Reforço, não a garantia.
 3. **Série dedicada** — ver D-8.
 
 ### D-8 — Série dedicada ao PubliAI, obrigatória
@@ -141,6 +153,12 @@ provider e a próxima nota rejeita por duplicidade.
 
 Qual número usar é decisão do contador (há faixas reservadas na legislação); o PubliAI só recebe e
 usa. **Sem série definida, o módulo não liga** — trava LOUD.
+
+**Quem conta:** a Focus mantém o contador quando o campo `numero` vai em branco no payload. O
+PubliAI envia a **série** explicitamente (a dedicada) e **omite o número** — assim a série é nossa
+por decisão e a sequência é do provider por operação. Consequência: o PubliAI não precisa de
+contador próprio, nem de reserva de número, nem de inutilização de número não usado após rejeição
+definitiva.
 
 Efeito colateral bem-vindo: como cancelamento e buraco de sequência são apurados por série, a
 série do PubliAI vira trilha limpa e auditável de tudo que foi vendido pelo marketplace.
@@ -232,13 +250,14 @@ certificado · painel de rejeições em `/admin`.
 1. Venda real: `invoice_pending` → nota autorizada → XML no ML → `invoice_pending` some → etiqueta
    libera
 2. Replay do webhook pelo QStash **não** emite segunda nota
-3. Pedido Full não gera nota nenhuma
-4. Família sem `ncm` falha LOUD com o campo faltando nomeado
-5. Org sem o módulo: tela some **e** a edge devolve 403
-6. Certificado vencendo em 30 dias dispara notificação
-7. Cancelamento pré-despacho cancela a nota; pós-despacho apenas marca e notifica
-8. Nenhuma coluna com CPF, nome ou endereço de comprador em nenhuma tabela
-9. Gate padrão: `pnpm test` + `npx tsc --noEmit` + `deno check` + `pnpm lint` + `pnpm build`
+3. **Carrinho com N itens (1 pack, N pedidos) gera 1 nota com N itens**, não N notas
+4. Pedido Full não gera nota nenhuma
+5. Família sem `ncm` falha LOUD com o campo faltando nomeado
+6. Org sem o módulo: tela some **e** a edge devolve 403
+7. Certificado vencendo em 30 dias dispara notificação
+8. Cancelamento pré-despacho cancela a nota; pós-despacho apenas marca e notifica
+9. Nenhuma coluna com CPF, nome ou endereço de comprador em nenhuma tabela
+10. Gate padrão: `pnpm test` + `npx tsc --noEmit` + `deno check` + `pnpm lint` + `pnpm build`
    verdes; `docs/` e `obsidian-vault/` atualizados no mesmo commit; Graphify re-ingerido
 
 ## Consequências
