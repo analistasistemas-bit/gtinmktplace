@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Financeiro — venda devolvida aparecia como retida pelo ML (ADR-0038) — 2026-08-12
+
+- [x] **Motivo:** no Detalhe Financeiro, vários recebimentos saíam com Líquido `R$ 0,00`, markup `—`
+  e **Retido (ML) igual ao Bruto**. Todas as linhas eram vendas `cancelled` com `tem_devolucao` e
+  estorno de 100% — devoluções reais. `ehFaturavel` já zerava líquido/imposto/custo (ADR-0038), mas
+  `retidoDoPedido` fazia `bruto − 0 − 0` e a tela dizia que o ML ficou com tudo; o dinheiro tinha
+  voltado ao comprador.
+- [x] A tabela e o rodapé filtravam só por `statusLiberacao`, nunca por faturável: o rodapé somava o
+  bruto das devoluções e divergia do banner de KPIs da **mesma tela** — R$ 2.666,20 em julho/2026
+  (33 pedidos), R$ 1.354,93 em agosto.
+- [x] Segundo canal de divergência, achado ao verificar o número: `Pedido.status` é o do membro de
+  **menor `order_id`**, e `Pedido.bruto` somava membros não faturáveis. Num pack misto (existe 1 na
+  base, jun/2026, com a order mais antiga cancelada) filtrar por status descartaria a venda paga
+  junto. Pedido ganhou `brutoFaturavel` + `faturavel`; `calcularKpisPedidos` (menu Faturamento) usa
+  os dois no lugar do status representativo.
+- [x] `totaisFinanceiro(pedidos)` virou o caminho único dos totais (tela + PDF) e
+  `rotuloNaoFaturavel(p)` marca a linha como **devolvido/cancelado** — na tela (bruto riscado,
+  retido/líquido "—") e no PDF exportado, que antes não carregava sinal nenhum de devolução.
+- [x] Testes: 6 em `tests/lib/financeiro-cancelado.test.ts`, um deles provando que o rodapé
+  (`totaisFinanceiro`, por pack) fecha com o banner (`calcularResumo`, por venda) em bruto, retido e
+  líquido. Validado na tela com dados injetados: rodapé R$ 116,15 / R$ 30,95 / R$ 85,20 == banner.
+- [x] Adendo no ADR-0038 com o caso real (sem ADR nova: é conformidade com a decisão existente).
+
 ## Stepper do Relatório dizia "Publicado" em lote que falhou — 2026-08-12
 
 - [x] **Motivo:** Relatório do lote #46 acendia as 4 etapas em verde (Enviado → Processando →
