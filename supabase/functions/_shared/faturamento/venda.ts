@@ -54,6 +54,24 @@ export function parseWebhookNotification(raw: unknown): WebhookEvento | null {
   return { topic, resource, resourceId, mlUserId };
 }
 
+/**
+ * O pedido pertence à conta conectada como VENDEDOR? `false` = é uma COMPRA da empresa e não pode
+ * virar linha de venda — o webhook `orders_v2` notifica os dois casos. Mesmo papel do filtro
+ * `collector_id` no caminho do Mercado Pago (ADR-0031).
+ *
+ * Sem `contaExternaId` conhecido não há como decidir: aceita (comportamento anterior) em vez de
+ * descartar venda legítima. Pedido sem `seller` com conta conhecida é recusado — o `/orders` do ML
+ * sempre traz o vendedor, então a ausência indica payload inesperado, e numa base financeira o
+ * silêncio custa mais que a linha perdida (reprocessável pelo backfill, que busca por `seller=`).
+ */
+export function ehVendaDaConta(
+  pedido: Pick<PedidoML, 'seller'>, contaExternaId: string | null | undefined,
+): boolean {
+  if (!contaExternaId) return true;
+  const seller = pedido.seller?.id != null ? String(pedido.seller.id) : null;
+  return seller === String(contaExternaId);
+}
+
 /** Líquido estimado: total − comissão ML − frete do vendedor (frete null = 0). 2 casas. */
 export function calcularLiquido(total: number, saleFee: number, frete: number | null): number {
   return round2(total - saleFee - (frete ?? 0));
@@ -118,6 +136,9 @@ export interface PedidoML {
   total_amount?: number | null;
   paid_amount?: number | null;
   buyer?: { id?: number | string | null; nickname?: string | null; first_name?: string | null; last_name?: string | null } | null;
+  /** Vendedor do pedido. O webhook `orders_v2` notifica pedidos em que a conta é comprador OU
+   *  vendedor — é este campo que distingue os dois casos. Ver `ehVendaDaConta`. */
+  seller?: { id?: number | string | null; nickname?: string | null } | null;
   shipping?: { id?: number | string | null } | null;
   order_items?: Array<{
     item?: {

@@ -12,6 +12,7 @@ import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts
 import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
+import { ehVendaDaConta } from '../_shared/faturamento/venda.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -82,6 +83,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: false, naoEncontrado: true }), { status: 200, headers: corsHeaders });
     }
     return await tratarFalha(admin, conexao, orgId, e);
+  }
+
+  // O webhook `orders_v2` também notifica pedidos em que a conta é COMPRADORA. Sem esta guarda,
+  // cada compra da empresa entrava em ml_vendas como venda e inflava o faturamento (23 linhas,
+  // R$ 8.810,50 em `paid`, medido em 2026-08-12). 200 e não erro: ignorar é o resultado correto,
+  // não uma falha — 4xx/5xx faria o QStash re-tentar para sempre.
+  if (!ehVendaDaConta(pedido, conexao.contaExternaId)) {
+    return new Response(
+      JSON.stringify({ ok: true, ignorado: 'compra-da-conta', order_id: String(pedido.id) }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
 
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
