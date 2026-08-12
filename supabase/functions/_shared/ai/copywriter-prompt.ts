@@ -1,8 +1,13 @@
 import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { rotuloQuantidade } from './unidade.ts';
-import { contemMetragem, extrairLargura, extrairMetragem } from './titulo.ts';
-import { ROTULO_COR, resolverEixoVariacao } from './eixo-variacao.ts';
+import { contemMetragem, extrairContagem, extrairLargura, extrairMetragem } from './titulo.ts';
+import {
+  ROTULO_COR,
+  ROTULO_ESTAMPA,
+  ROTULO_GENERICO,
+  resolverEixoVariacao,
+} from './eixo-variacao.ts';
 
 export interface InputCopy {
   nome: string;
@@ -247,6 +252,87 @@ export function garantirPerguntas(descricao: string): string {
   );
 }
 
+const SECAO_CONTEUDO = '📦 O QUE VOCÊ RECEBE';
+
+// Palavra que nomeia uma opção do eixo, para o bullet "Estampa escolhida no anúncio".
+const SUBSTANTIVO_DO_EIXO: Record<string, string> = {
+  [ROTULO_ESTAMPA]: 'Estampa',
+  [ROTULO_COR]: 'Cor',
+  [ROTULO_GENERICO]: 'Variação',
+};
+
+/**
+ * Garante a seção de conteúdo da embalagem (ADR-0115).
+ *
+ * É a única seção que o operador declara OBRIGATÓRIA — o comprador precisa saber exatamente o
+ * que recebe — e era a única obrigatória sem rede: o template autoriza a IA a pular qualquer
+ * seção por falta de dado, e duas execuções contra a mesma fonte divergiram em número de bullets,
+ * o que mostra que presença por instrução é sorteio de temperatura.
+ *
+ * Tudo aqui é derivado: contagem e metragem saem da fonte pelos mesmos extratores dos guards de
+ * título; o bullet da opção só existe quando há eixo de variação. Sem nenhum dado derivável, a
+ * seção NÃO é criada — "1 unidade" sem respaldo é afirmação sobre a embalagem, não omissão.
+ */
+export function garantirConteudoEmbalagem(
+  descricao: string,
+  nomePai: string,
+  descricaoPai: string,
+  rotuloEixo: string | null,
+): string {
+  if (descricao.includes(SECAO_CONTEUDO)) return descricao;
+
+  const textoFonte = `${nomePai}\n${descricaoPai}`;
+  const contagem = extrairContagem(textoFonte);
+  const metragem = extrairMetragem(nomePai);
+  const substantivo = rotuloEixo ? SUBSTANTIVO_DO_EIXO[rotuloEixo] : undefined;
+
+  const bullets: string[] = [];
+  if (contagem) {
+    // "144un" → "144 unidades"; "12pc" → "12 peças". A forma canônica serve ao título, não à
+    // frase que o comprador lê aqui.
+    const [, numero, sufixo] = contagem.match(/^(\d+)(un|pc)$/i) ?? [];
+    const peca = sufixo === 'pc' ? 'peça' : 'unidade';
+    if (numero) bullets.push(`• ${numero} ${numero === '1' ? peca : `${peca}s`}`);
+  } else if (metragem) {
+    bullets.push(`• 1 unidade com ${metragem}`);
+  }
+  if (substantivo) bullets.push(`• ${substantivo} escolhida no anúncio`);
+  if (bullets.length === 0) return descricao;
+
+  // A seção é a última do template, então vai para o fim. Quando a IA escreveu a frase de
+  // fechamento, ela fica acima da seção injetada — aceito: seção presente no lugar errado é
+  // melhor que ausente, e o caso só ocorre quando a IA já falhou em seguir o template.
+  return `${descricao.trimEnd()}\n\n${SECAO_CONTEUDO}\n\n${bullets.join('\n')}`;
+}
+
+// Fato sobre a exibição, não sobre o produto: nenhuma tela reproduz cor com fidelidade. Texto
+// FIXO e determinístico, por isso não é invenção — e é a classe de observação que mais evita
+// devolução em família com variação visual.
+const DISCLAIMER_TONALIDADE =
+  'A tonalidade pode variar conforme a tela do dispositivo.';
+
+/**
+ * Acrescenta o disclaimer ao fim da lista da seção de variação (ADR-0115).
+ *
+ * Fica DENTRO da seção 🎨, não numa seção própria: é uma ressalva sobre aquelas opções, e uma
+ * seção nova exigiria um oitavo emoji na whitelist e nas duas listas de fronteira — custo
+ * estrutural desproporcional a uma linha de texto. `atualizarSecaoCores` continua funcionando:
+ * ela varre apenas as linhas iniciadas por "- " e preserva o que vier depois.
+ */
+export function garantirDisclaimerTonalidade(descricao: string): string {
+  const idx = descricao.indexOf('🎨');
+  if (idx === -1 || descricao.includes(DISCLAIMER_TONALIDADE)) return descricao;
+
+  const linhas = descricao.split('\n');
+  const iCabecalho = linhas.findIndex((l) => l.includes('🎨'));
+  let fim = iCabecalho + 1;
+  while (fim < linhas.length && (linhas[fim].trim() === '' || /^\s*-\s+/.test(linhas[fim]))) fim++;
+  // Nenhum item listado → seção vazia ou malformada; não pendura ressalva em lista inexistente.
+  if (!linhas.slice(iCabecalho + 1, fim).some((l) => /^\s*-\s+/.test(l))) return descricao;
+
+  return [...linhas.slice(0, fim), '', DISCLAIMER_TONALIDADE, ...linhas.slice(fim)].join('\n');
+}
+
 const EMOJIS_CABECALHO = '[🧵✅📌🎯❓🎨📦🚚]';
 
 /**
@@ -296,18 +382,38 @@ export function formatarDescricao(descricao: string): string {
  * lugar onde o dado aparecia e a descrição terminaria SEM a largura — perda silenciosa, não
  * só bullet ausente. Podando primeiro, os guards enxergam o texto final e injetam o que falta.
  */
-export function posProcessarDescricao(descricao: string, nomePai: string, descricaoPai: string): string {
+export function posProcessarDescricao(
+  descricao: string,
+  nomePai: string,
+  descricaoPai: string,
+  /**
+   * As mesmas variações passadas a `gerarCopy`. Opcional para não quebrar call site que não as
+   * tem: sem elas, os guards de conteúdo da embalagem e de tonalidade que dependem do eixo
+   * simplesmente não disparam — degradar é preferível a exigir o argumento em toda chamada.
+   */
+  variacoes: InputCopy['variacoes'] = [],
+): string {
   const podada = removerPerguntasIncompletas(descricao);
   const ancorada = garantirMetragemDescricao(
     garantirLarguraDescricao(podada, nomePai, descricaoPai),
     nomePai,
   );
-  // Por último entre os guards de conteúdo (ADR-0115): garantirPerguntas lê os bullets de
-  // ESPECIFICAÇÕES, e largura/metragem podem ter acabado de injetar os que faltavam. Rodar
-  // antes deles perderia essas duas perguntas. Depois da poda, também de propósito: a poda
-  // remove a seção curta que o modelo escreveu, e é essa remoção que abre espaço para a
-  // reconstrução completa aqui — invertido, a seção de duas perguntas sobreviveria.
-  return formatarDescricao(garantirPerguntas(ancorada));
+  // garantirPerguntas depois de largura/metragem (ADR-0115): ele lê os bullets de
+  // ESPECIFICAÇÕES, e esses dois guards podem ter acabado de injetar os que faltavam. Rodar
+  // antes deles perderia essas perguntas. Depois da poda, também de propósito: a poda remove a
+  // seção curta que o modelo escreveu, e é essa remoção que abre espaço para a reconstrução
+  // completa aqui — invertido, a seção de duas perguntas sobreviveria.
+  const comPerguntas = garantirPerguntas(ancorada);
+
+  // Eixo recalculado aqui, e não recebido pronto: `montarUserPrompt` já o derivou para o prompt,
+  // mas os dois pontos não se comunicam (um monta a entrada da IA, o outro trata a saída).
+  // resolverEixoVariacao é puro e determinístico — chamá-lo duas vezes dá o mesmo resultado e
+  // custa menos que atravessar o eixo por dentro de gerarCopy só para reusá-lo.
+  const rotuloEixo = resolverEixoVariacao(variacoes, nomePai, descricaoPai)?.rotulo
+    ?? (variacoes.some((v) => !ehCorIndefinida(v.cor)) ? ROTULO_COR : null);
+
+  const completa = garantirConteudoEmbalagem(comPerguntas, nomePai, descricaoPai, rotuloEixo);
+  return formatarDescricao(garantirDisclaimerTonalidade(completa));
 }
 
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.

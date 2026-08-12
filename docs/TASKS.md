@@ -25,8 +25,21 @@
   passam a casar pelo **emoji**, não pelo texto do cabeçalho.
 - [x] `atualizarSecaoCores` reconhece os 3 rótulos e preserva o existente — sem isso, família
   estampada ganhava uma 2ª seção `CORES DISPONÍVEIS` no fim a cada reposição.
-- [x] Testes: 35 novos (15 eixo, 9 perguntas, 7 tema, 2 seção de variação no UPDATE, 2 prompt).
-  Suíte verde: 339 arquivos / 2950 testes; `pnpm lint` 0 erros.
+- [x] **Revisão da spec do operador (Fable, 2026-08-12):** sistema entrega ~70% da spec de
+  descrição e ~80% da de título; quase toda ausência é rejeição já medida (spike 04/08, ADR-0102),
+  não esquecimento. Achado que dissolve o pedido "sem emojis": `sanitizarDescricaoML` já os remove
+  antes do envio — o ML rejeita (`DESCRIPTION_PLAIN_TEXT_NOT_ALLOWED`); no prompt eles são
+  fronteira determinística de 4 guards. Rejeitados com motivo: prioridade atribuída pela IA
+  (é a Causa C por outro canal), ordem dinâmica por categoria (benefício zero medido),
+  "Como usar" (8 fontes em 305), Compatibilidade (campo inexistente na planilha).
+- [x] `garantirConteudoEmbalagem`: a única seção que o operador chama de obrigatória era a única
+  obrigatória sem rede. Bullets derivados de `extrairContagem`/`extrairMetragem` + substantivo do
+  eixo ("Estampa escolhida no anúncio"). Sem dado derivável, **não** cria a seção.
+- [x] `garantirDisclaimerTonalidade`: texto fixo ao fim da lista de variação, só quando há lista.
+  Dentro da seção `🎨` — seção própria exigiria um 8º emoji na whitelist e nas duas listas de
+  fronteira, custo desproporcional a uma linha.
+- [x] Testes: 49 novos (15 eixo, 9 perguntas, 7 tema, 14 embalagem/tonalidade, 2 UPDATE, 2 prompt).
+  Suíte verde: 340 arquivos / 2964 testes; `pnpm lint` 0 erros.
 - [ ] **NÃO entregue — `🎯 INDICAÇÕES DE USO` de 4-6 para 4-12 bullets é prompt-only e não pegou.**
   Duas execuções reais contra a mesma fonte deram 4 e 3 bullets; a segunda ficou abaixo até do
   piso antigo. Mesmo modo de falha já medido para o tema. Fica pendente decidir se vira guard

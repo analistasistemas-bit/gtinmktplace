@@ -139,6 +139,30 @@ de `garantirLarguraDescricao` e `garantirMetragemDescricao`.
 Roda **depois** dos guards de largura/metragem, para aproveitar os bullets que eles injetam, e
 depois da poda, preservando a ordem que o ADR-0098 estabeleceu (podar antes de ancorar).
 
+### 3b. Conteúdo da embalagem e ressalva de tonalidade
+
+Duas lacunas apontadas na revisão da especificação do operador (2026-08-12), ambas resolvidas por
+guard porque ambas são derivação pura, sem invenção.
+
+`garantirConteudoEmbalagem` — a seção que o operador declara **obrigatória** era a única
+obrigatória sem rede: o template autoriza a IA a pular qualquer seção por falta de dado, e duas
+execuções contra a mesma fonte divergiram em número de bullets, o que mostra que presença por
+instrução é sorteio de temperatura. Os bullets saem de `extrairContagem`/`extrairMetragem` (os
+mesmos extratores dos guards de título) e do eixo, que fornece o substantivo — "Estampa escolhida
+no anúncio", não "Cor". **Sem nenhum dado derivável a seção não é criada**: "1 unidade" sem
+respaldo é afirmação sobre a embalagem, não omissão.
+
+`garantirDisclaimerTonalidade` — texto fixo ao fim da lista de variação, e só quando há lista.
+Nenhuma tela reproduz cor com fidelidade; é fato sobre a exibição, não sobre o produto, e é a
+classe de observação que mais evita devolução em família com variação visual. Fica **dentro** da
+seção `🎨` em vez de ganhar seção própria: um oitavo emoji exigiria entrada na whitelist do SYSTEM
+e nas duas listas de fronteira, custo estrutural desproporcional a uma linha. `atualizarSecaoCores`
+continua íntegro — varre só as linhas iniciadas por `- ` e preserva o que vier depois.
+
+`posProcessarDescricao` recalcula o eixo em vez de recebê-lo pronto de `montarUserPrompt`: os dois
+pontos não se comunicam (um monta a entrada da IA, o outro trata a saída) e `resolverEixoVariacao`
+é puro — chamá-lo duas vezes custa menos que atravessar o eixo por dentro de `gerarCopy`.
+
 ### 4. Seções nomeadas pelo que o comprador procura
 
 | Antes | Depois |

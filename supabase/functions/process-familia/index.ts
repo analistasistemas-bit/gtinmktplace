@@ -198,19 +198,21 @@ Deno.serve(async (req) => {
     }
 
     // 5. Copywriter (1 chamada por família)
+    // Eixo de variação (ADR-0115): o sufixo de `nome` em relação ao nome_pai é o que discrimina
+    // de verdade a variação. Sem ele a copy só enxerga `cor` e descreve uma família de estampas
+    // como se fosse de cores. A MESMA lista vai para gerarCopy e para posProcessarDescricao — se
+    // divergissem, o prompt e os guards resolveriam eixos diferentes para a mesma família.
+    const variacoesCopy = resolvidas.map((v) => ({
+      codigo: v.codigo,
+      cor: v.cor,
+      preco: Number(v.preco),
+      nome: v.nome,
+    }));
     const copy = await gerarCopy({
       nome: claimed.nome_pai,
       descricao_detalhado: claimed.descricao_pai ?? '',
       unidade: (claimed.unidade as string | null) ?? null,
-      variacoes: resolvidas.map((v) => ({
-        codigo: v.codigo,
-        cor: v.cor,
-        preco: Number(v.preco),
-        // Eixo de variação (ADR-0115): o sufixo deste nome em relação ao nome_pai é o que
-        // discrimina de verdade a variação. Sem ele a copy só enxerga `cor` e descreve uma
-        // família de estampas como se fosse de cores.
-        nome: v.nome,
-      })),
+      variacoes: variacoesCopy,
     }, modeloTexto);
 
     // 5b. Busca de concorrência (1x por família) — ADR-0014. Resiliente: erro → "nenhuma".
@@ -481,7 +483,7 @@ Deno.serve(async (req) => {
     }
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: tituloFinal,
-      descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? ''),
+      descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? '', variacoesCopy),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,
       custo_centavos: copy.custo_centavos + custoDesempateLLM,
