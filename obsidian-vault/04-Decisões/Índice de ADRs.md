@@ -125,5 +125,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0111 | [Repor estoque reativa o anúncio pausado (qualquer pausa; reconciliação não reativa)](../../docs/decisions/0111-reativacao-automatica-ao-repor-estoque.md) |
 | 0112 | [Alíquota interna por UF da empresa (venda dentro do estado)](../../docs/decisions/0112-aliquota-interna-por-uf-da-empresa.md) |
 | 0113 | [Exclusão de produto pelo Estoque: só o que não está publicado](../../docs/decisions/0113-exclusao-de-produto-no-estoque.md) |
+| 0114 | [Emissão de NF-e modelo 55 (PubliAI transmite, não calcula; Focus NFe atrás de porta; UniNFe descartado)](../../docs/decisions/0114-emissao-de-nf-e-modelo-55.md) — *design fechado, implementação pendente* |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
