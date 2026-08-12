@@ -16,8 +16,13 @@
   e importado); senão, origem. UF do pedido nula ou parâmetro desligado → origem.
 - [x] Campos "Venda dentro do estado" em Configurações (admin), com recusa de meia-configuração.
 - [x] Recálculo retroativo sai de graça: imposto e markup não são persistidos, são derivados na
-  leitura. **Limite:** pedidos sem `ml_vendas.uf` (fechados antes de 2026-06-23 ou sem envio
-  registrado) continuam na regra por origem.
+  leitura. **Limite medido:** só 1 pedido em 1389 está sem `ml_vendas.uf` — continua na regra por
+  origem, sem necessidade de backfill.
+- [x] Validado no runtime (pedido `2000017819569754`, entrega em PE): com o parâmetro ligado,
+  imposto R$ 0,85 (1%), líquido R$ 59,69, markup +40%; desligado, R$ 6,78 (8%), líquido R$ 53,76,
+  markup +26%.
+- [x] Configurado em produção: org **Avil** com `uf_empresa = PE` e `aliquota_interna_pct = 1`
+  (72 pedidos entregues em PE no histórico). Org DSA segue sem o parâmetro.
 - [x] Escopo: só apuração pós-venda. Preço sugerido/gross-up seguem na origem — o anúncio tem preço
   único para o país e a UF do comprador só existe depois do pedido.
 

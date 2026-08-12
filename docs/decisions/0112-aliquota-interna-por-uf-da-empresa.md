@@ -66,8 +66,11 @@ O dado necessário já existe: `ml_vendas.uf` guarda a UF de entrega do pedido
 - Imposto e markup não são persistidos — são derivados na leitura (`impostoDoItem`). Configurar
   o parâmetro **recalcula automaticamente** todo o histórico exibido em Faturamento, Financeiro,
   Dashboard, Publicados, Detalhe de vendas e exports. Não há backfill nem migração de dados.
-- Pedidos com `uf` nula continuam na regra por origem. Atinge vendas fechadas antes de
-  2026-06-23 (quando a coluna nasceu) e pedidos sem envio registrado.
+- Pedidos com `uf` nula continuam na regra por origem — em 2026-08-11, **1 pedido em 1389**
+  (medido em `ml_vendas`), então o limite é teórico e não justifica backfill.
+- A alíquota interna é decidida **antes** da origem: um item entregue na UF da empresa paga a
+  alíquota interna mesmo sem família casada no catálogo (onde a regra por origem não devolvia
+  alíquota nenhuma). Intencional — o parâmetro é da UF, não do produto.
 - "Cliente do estado" = pedido com **UF de entrega** igual à da empresa, sem distinguir
   consumidor final de revenda. Simplificação aceita: o canal é B2C.
 - O gate de confirmação de alíquotas (ADR-0086) não muda: as colunas novas são nullable e
