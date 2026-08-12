@@ -6,7 +6,7 @@ import { pool } from '../_shared/concorrencia/pool.ts';
 import { cacheCorGet, cacheCorSet, type OrigemCor } from '../_shared/redis/cache-cor.ts';
 import { extrairCorPorVision } from '../_shared/ai/vision.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
+import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
@@ -460,14 +460,18 @@ Deno.serve(async (req) => {
     // A família falha de propósito (nunca truncar nem fundir produtos), mas o operador precisa
     // saber O QUE encurtar na planilha — daí nomear os slots em vez de deixar subir cru.
     let tituloFinal: string;
+    // ADR-0116 — o que o pipeline alterou/descartou. Diagnóstico puro: só é persistido.
+    let tituloDescartes: DescarteTitulo[] = [];
     try {
-      tituloFinal = posProcessarTitulo(copy.titulo_slots, {
+      const diagnostico = diagnosticarTitulo(copy.titulo_slots, {
         nomePai: claimed.nome_pai,
         descricaoPai: claimed.descricao_pai ?? '',
         tipoProdutoBusca: copy.tipo_produto_busca,
         cores: coresUnicas,
         fornecedor: claimed.fornecedor ?? null,
       });
+      tituloFinal = diagnostico.titulo;
+      tituloDescartes = diagnostico.descartes;
     } catch (e) {
       if (e instanceof TituloInviavelError) {
         // Determinístico: a mesma família vai gerar o mesmo título curto demais toda vez.
@@ -483,6 +487,7 @@ Deno.serve(async (req) => {
     }
     const { error: persistErr } = await admin.from('familias').update({
       titulo_ml: tituloFinal,
+      titulo_descartes: tituloDescartes,
       descricao_ml: posProcessarDescricao(copy.descricao, claimed.nome_pai, claimed.descricao_pai ?? '', variacoesCopy),
       tokens_input: copy.tokens_input,
       tokens_output: copy.tokens_output,

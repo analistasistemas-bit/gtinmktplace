@@ -50,6 +50,31 @@
   `sincronizar-estoque`, `status-publicados`, `update-familia-ml`, `vincular-catalogo`.
   `verify_jwt` conferido pós-deploy: workers seguem `false`.
 
+## Visibilidade dos descartes do título (ADR-0116) — 2026-08-12
+
+- [x] **Motivo:** investigando o sumiço de "Natal" num título, dois obstáculos apareceram fora do
+  código de título. (a) `editado_em` nunca era gravado — as famílias de 29/07 e 12/08 apareciam
+  ambas com `te=true, editado_em=null` e não dava para separar "a IA gerou assim" de "o operador
+  reescreveu". (b) Ninguém sabe o que o pipeline descarta; o spike de 04/08 chamou isso de "a
+  única pergunta aberta", e ela bloqueia qualquer decisão sobre prioridade de termos.
+- [x] `updateFamiliaTitulo`/`updateFamiliaDescricao` (`src/lib/queries.ts`) gravam `editado_em`.
+- [x] `diagnosticarTitulo` (`_shared/ai/titulo-pos.ts`): mesmo pipeline, devolvendo
+  `{slot, etapa, de, para}` por etapa. `posProcessarTitulo` virou wrapper de uma linha — sem
+  segundo pipeline para divergir. `corte` compara por PRESENÇA (nova `montarTituloDetalhado`),
+  não por diff, porque remove o slot inteiro em vez de reescrever.
+- [x] Migration `20260812182613_adr116_titulo_descartes.sql`: `familias.titulo_descartes jsonb`,
+  anulável e sem default — `NULL` = família anterior ao diagnóstico, `[]` = nada descartado.
+- [x] **Censo rejeitou o guard de termos promocionais isolados** (lacuna 3a do Fable): `qualidade`
+  6 ocorrências, `profissional` 1, todas ancoradas na fonte e **todas com `|` no título** — ou
+  seja, formato pré-ADR-0099, nenhuma saída do pipeline de slots. `top`/`super`/`excelente`/
+  `oferta`/`promocao`/`imperdivel`/`original`/`exclusivo`: zero. Ressalva que impede a conclusão
+  oposta: 304 famílias pré-slots contra **6 pós-slots** (4 não editadas) — zero em 4 não prova
+  ausência. Gatilho para reavaliar: ~50 famílias pós-slots, e aí o censo sai de `titulo_descartes`
+  em vez de regex sobre o texto final.
+- [x] Testes: 8 novos. Suíte verde: 346 arquivos / 3003 testes; `pnpm lint` 0 erros.
+- [ ] Deploy: `supabase db push` (migration) **antes** do deploy das functions que escrevem a
+  coluna — `process-familia` e `regenerar-copy-familia`. Validar com `npm run db:check`.
+
 ## Copy: o eixo de variação nem sempre é cor (ADR-0115) — 2026-08-12
 
 - [x] **Motivo:** família de tecido Oxford com 7 estampas de Natal saiu com a descrição

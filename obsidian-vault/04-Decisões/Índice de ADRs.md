@@ -126,6 +126,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0112 | [Alíquota interna por UF da empresa (venda dentro do estado)](../../docs/decisions/0112-aliquota-interna-por-uf-da-empresa.md) |
 | 0113 | [Exclusão de produto pelo Estoque: só o que não está publicado](../../docs/decisions/0113-exclusao-de-produto-no-estoque.md) |
 | 0115 | [O eixo de variação nem sempre é cor](../../docs/decisions/0115-eixo-de-variacao-nao-e-sempre-cor.md) |
+| 0116 | [Visibilidade do que o pipeline de título descarta](../../docs/decisions/0116-visibilidade-dos-descartes-do-titulo.md) |
 | 0116 | [GTIN com dígito verificador errado é ausência de código (e o campo virou editável na Revisão)](../../docs/decisions/0116-gtin-invalido-e-ausencia-de-codigo.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

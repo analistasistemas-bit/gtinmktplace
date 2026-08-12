@@ -92,7 +92,18 @@ function render(slots: TituloSlots, presentes: Set<SlotTitulo>): string {
  * Estratégia: renderiza; se estourar, aplica reduções; se ainda estourar, remove slots na ordem
  * de corte, pulando os incortáveis; esgotado tudo, lança TituloInviavelError.
  */
+export interface TituloMontado {
+  titulo: string;
+  /** Slots que sobreviveram ao corte — a lista que o diagnóstico compara (ADR-0116). */
+  presentes: SlotTitulo[];
+}
+
+/** `montarTitulo` sem perder a informação de QUAIS slots entraram no texto final. */
 export function montarTitulo(slots: TituloSlots, ctx: ContextoCorte): string {
+  return montarTituloDetalhado(slots, ctx).titulo;
+}
+
+export function montarTituloDetalhado(slots: TituloSlots, ctx: ContextoCorte): TituloMontado {
   // IMPORTANT-2: `produto` é o único slot que o contrato promete nunca vazio (titulo-slots.ts).
   // Se chegou aqui zerado, o título inteiro é inviável — devolver '' terminaria em
   // `title: ''` no publish (_shared/ml/publicar.ts:207) e um 400 do ML longe da causa real.
@@ -105,7 +116,9 @@ export function montarTitulo(slots: TituloSlots, ctx: ContextoCorte): string {
   let atual: TituloSlots = { ...slots };
   const presentes = new Set<SlotTitulo>(ORDEM_LEITURA.filter((s) => slots[s]?.trim()));
 
-  if (render(atual, presentes).length <= TITULO_MAX) return render(atual, presentes);
+  const saida = (): TituloMontado => ({ titulo: render(atual, presentes), presentes: [...presentes] });
+
+  if (render(atual, presentes).length <= TITULO_MAX) return saida();
 
   // 1. Reduções — preservam a informação, só encurtam a forma.
   for (const [slot, reduzir] of Object.entries(REDUCOES) as Array<[SlotTitulo, (v: string) => string]>) {
@@ -113,14 +126,14 @@ export function montarTitulo(slots: TituloSlots, ctx: ContextoCorte): string {
     const novo = reduzir(atual[slot]);
     if (!novo.trim()) continue; // redução que zera o slot é pior que não reduzir: o dado sumiria sem remoção e sem erro
     atual = { ...atual, [slot]: novo };
-    if (render(atual, presentes).length <= TITULO_MAX) return render(atual, presentes);
+    if (render(atual, presentes).length <= TITULO_MAX) return saida();
   }
 
   // 2. Remoção de slots inteiros, do menos prioritário ao mais. Nunca corta token.
   for (const slot of ORDEM_CORTE) {
     if (protegidos.has(slot) || !presentes.has(slot)) continue;
     presentes.delete(slot);
-    if (render(atual, presentes).length <= TITULO_MAX) return render(atual, presentes);
+    if (render(atual, presentes).length <= TITULO_MAX) return saida();
   }
 
   // 3. Só restaram incortáveis e ainda não cabe.

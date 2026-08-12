@@ -225,6 +225,13 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   incondicional fazia `validarSlotsAncorados` derrubar a substituta logo depois — 52 de 304
   famílias ficavam sem marca nenhuma. A exigência de ancoragem não mudou; mudou qual grafia é
   submetida a ela.
+  **Diagnóstico (ADR-0116):** `diagnosticarTitulo` roda esse mesmo pipeline e devolve, junto com
+  o título, o que cada etapa alterou ou removeu (`{slot, etapa, de, para}`, etapas
+  `normalizacao|guards|ancoragem|corte`), persistido em `familias.titulo_descartes`.
+  `posProcessarTitulo` virou um wrapper de uma linha sobre ele — não há segundo pipeline para
+  divergir do primeiro. O `corte` é comparado por PRESENÇA (`montarTituloDetalhado` devolve os
+  slots sobreviventes), não por diff de valores, porque ele remove o slot inteiro em vez de
+  reescrevê-lo. Puramente diagnóstico: nenhuma decisão do pipeline lê a coluna.
   **Tema comemorativo (ADR-0115):** `cravarTema`, dentro de `aplicarGuardsTitulo`, injeta o tema
   (lista fechada: Natal, Páscoa, Halloween, Festa Junina, Dia das Mães…) no slot `produto`, que é
   incortável, quando a fonte o declara e a IA o descartou. Prefixa `Estampa` só quando a fonte

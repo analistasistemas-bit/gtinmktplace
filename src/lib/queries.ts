@@ -316,6 +316,15 @@ export async function updateVariacaoPreco(
   if (error) throw error;
 }
 
+/**
+ * `editado_em` é gravado junto com a flag, e não só a flag (ADR-0116).
+ *
+ * A coluna existia e nunca era preenchida por estes dois pontos — as duas únicas escritas de
+ * edição manual do sistema. Consequência medida em 2026-08-12: investigando por que "Natal" havia
+ * sumido de um título, as famílias de 29/07 e de 12/08 apareciam ambas com
+ * `titulo_editado_pelo_operador = true, editado_em = null`, e não havia como distinguir "a IA
+ * gerou assim" de "o operador reescreveu". A causa raiz teve de ser inferida por pistas indiretas.
+ */
 export async function updateFamiliaTitulo(
   familiaId: string,
   novoTitulo: string
@@ -325,6 +334,7 @@ export async function updateFamiliaTitulo(
     .update({
       titulo_ml: novoTitulo,
       titulo_editado_pelo_operador: true,
+      editado_em: new Date().toISOString(),
     })
     .eq('id', familiaId);
   if (error) throw error;
@@ -339,6 +349,7 @@ export async function updateFamiliaDescricao(
     .update({
       descricao_ml: novaDescricao,
       descricao_editada_pelo_operador: true,
+      editado_em: new Date().toISOString(),
     })
     .eq('id', familiaId);
   if (error) throw error;

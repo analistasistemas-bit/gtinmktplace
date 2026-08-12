@@ -210,7 +210,11 @@ Grupos de colunas:
 - **Origem/imposto (ADR-0055):** `origem` (enum `origem_produto` `nacional`/`importado`,
   default `nacional`), lida da coluna opcional `ORIGEM` da planilha (linha PAI).
   *Migration `20260703113001_imposto_origem_e_aliquotas.sql`.*
-- **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`.
+- **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`,
+  `titulo_descartes jsonb` (ADR-0116 — diagnóstico: lista de `{slot, etapa, de, para}` com o que
+  cada etapa do pipeline de título alterou ou removeu; `para=""` é descarte, outro valor é
+  reescrita; `NULL` = família anterior ao diagnóstico, `[]` = nada descartado. Nenhum código de
+  produção decide com base nela).
 - **Concorrência/mercado:** `analise_mercado jsonb`, `concorrencia_*`.
 - **Preço:** `estrategia_preco`, `estrategia_motivo`, `custo_centavos` (ADR-0020/0042),
   `exibir_com_desconto`, `desconto_pct`, `preco_reancorado_lider` (bool, default false,

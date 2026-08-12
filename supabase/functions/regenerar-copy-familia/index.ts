@@ -4,7 +4,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { gerarCopy } from '../_shared/ai/copywriter.ts';
-import { posProcessarTitulo } from '../_shared/ai/titulo-pos.ts';
+import { diagnosticarTitulo, type DescarteTitulo } from '../_shared/ai/titulo-pos.ts';
 import { TituloInviavelError, mensagemTituloInviavel } from '../_shared/ai/titulo-montar.ts';
 import { posProcessarDescricao } from '../_shared/ai/copywriter-prompt.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
@@ -75,14 +75,20 @@ Deno.serve(async (req) => {
     // TituloInviavelError significa que produto+medida+cor obrigatórios não cabem em 60 chars.
     // Aqui há resposta HTTP direta ao operador, então devolve 422 acionável em vez de 500 cru.
     let tituloFinal: string;
+    // ADR-0116 — mesmo diagnóstico do process-familia. A regeneração é justamente onde o
+    // operador testa alternativas de copy, então é onde saber o que o pipeline descartou mais
+    // ajuda a explicar um resultado inesperado.
+    let tituloDescartes: DescarteTitulo[] = [];
     try {
-      tituloFinal = posProcessarTitulo(result.titulo_slots, {
+      const diagnostico = diagnosticarTitulo(result.titulo_slots, {
         nomePai: familia.nome_pai,
         descricaoPai: familia.descricao_pai ?? '',
         tipoProdutoBusca: result.tipo_produto_busca,
         cores: coresUnicas,
         fornecedor: (familia.fornecedor as string | null) ?? null,
       });
+      tituloFinal = diagnostico.titulo;
+      tituloDescartes = diagnostico.descartes;
     } catch (e) {
       if (e instanceof TituloInviavelError) {
         return new Response(mensagemTituloInviavel(e), { status: 422, headers: corsHeaders });
@@ -95,6 +101,7 @@ Deno.serve(async (req) => {
       .from('familias')
       .update({
         titulo_ml: tituloFinal,
+        titulo_descartes: tituloDescartes,
         descricao_ml: descricaoFinal,
         tokens_input: result.tokens_input,
         tokens_output: result.tokens_output,
