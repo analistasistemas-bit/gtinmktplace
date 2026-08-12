@@ -293,11 +293,12 @@ Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem
 - Espelho em `anuncios_externos` validado e cleanup confirmado
 - `remover-publicado` ajustado para limpar tambem o espelho multicanal
 
-## Deploys operacionais mais recentes
+## Versoes das edge functions
 
-- `process-familia` (re-ancora no piso-lider, ADR-0065, 2026-07-08; inclui `_shared/preco/sugerir.ts` e `_shared/preco/piso-lider.ts`) — versao pos-deploy (confirmar)
-- `publish-familia-ml` v31
-- `remover-publicado` v7
+Nao sao rastreadas aqui: mudam a cada deploy e este arquivo envelhecia sozinho (a lista antiga
+dizia `publish-familia-ml` v31 enquanto o proprio E6b ja registrava v82). A verdade viva esta em
+`supabase functions list`; o inventario por funcao fica em
+[reference/edge-functions.md](reference/edge-functions.md).
 
 ## Revisão pós-auditoria (2026-06-15)
 
