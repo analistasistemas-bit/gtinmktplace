@@ -35,7 +35,9 @@ Deno.serve(async (req) => {
   if (!codigoPai) return json({ erro: 'codigo_pai obrigatório' }, 400);
 
   const r = await excluirProduto(admin, { codigoPai, orgId });
-  const target = { type: 'familia', id: codigoPai };
+  // `produto`, não `familia`: o alvo é o codigo_pai (D-4), e as outras portas gravam um UUID de
+  // família em `target_id` — reusar o mesmo type com um código faria a auditoria mentir.
+  const target = { type: 'produto', id: codigoPai };
 
   switch (r.tipo) {
     case 'nao_encontrada':

@@ -95,6 +95,19 @@ describe('excluirProduto — só produto não publicado (ADR-0113 D-1)', () => {
     expect(removidos).toEqual([]);
   });
 
+  it('recusa quando há espelho em anuncios_externos, mesmo sem ml_item_id', async () => {
+    // Janela `criacao_incerta` (ADR-0088): o POST já saiu para o ML e o id ainda não voltou para a
+    // família. `ml_item_id` nulo aqui, anúncio vivo lá fora.
+    const { admin, deletes, removidos } = fakeAdmin({
+      familias: [[], []],
+      anuncios_externos: [[{ id: 'ext-1' }]],
+    });
+    const r = await excluirProduto(admin, { codigoPai: CODIGO, orgId: ORG });
+    expect(r).toEqual({ tipo: 'publicado' });
+    expect(deletes).toEqual([]);
+    expect(removidos).toEqual([]);
+  });
+
   it('apaga todas as famílias do codigo_pai, as fotos do dono e varre os órfãos DEPOIS', async () => {
     const { admin, deletes, removidos, rpcs } = fakeAdmin({
       familias: [

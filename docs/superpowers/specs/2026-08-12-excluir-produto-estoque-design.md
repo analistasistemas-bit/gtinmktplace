@@ -42,6 +42,11 @@ Ciclos de UPDATE deixam várias famílias com o mesmo `codigo_pai` (ADR-0019, ad
 outra linha — cortando o vínculo pela porta dos fundos. A trava recusa se **qualquer** família
 do `codigo_pai` na org tiver `ml_item_id != null`.
 
+**D-3.1. Qualquer linha em `anuncios_externos` para o `codigo_pai` também recusa.** `ml_item_id is
+null` não prova "nunca foi ao ar": na janela `criacao_incerta` (ADR-0088) o POST já saiu para o ML
+e o id ainda não voltou para a família, e o status pode ter caído em `erro` — que o guard de em-voo
+não pega. A presença da linha-espelho é sinal confiável de que o código já teve vida em canal.
+
 **D-4. O delete apaga todas as famílias do `codigo_pai` na org.** Mesma razão simétrica: deixar
 irmãs vivas faria o produto reaparecer na lista do Estoque logo após a exclusão. As `variacoes`
 somem por cascade.
@@ -85,6 +90,7 @@ exigirModulo(admin, orgId, 'estoque')            → 403
 
 1. familias por (codigo_pai, org) com ml_item_id not null, limit 1        → publicado (409)
 2. familias por (codigo_pai, org) com status in (publicando, processando) → em_voo (409)
+2b. anuncios_externos por (org, codigo_pai), limit 1                      → publicado (409)
 3. familias por (codigo_pai, org): capas + variacoes(imagem_path)
    → lista vazia                                                          → nao_encontrada (404)
    → pathsDaFamilia + filtrarPathsDeDonos → storage.remove (erro só warn, segue)

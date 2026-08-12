@@ -570,7 +570,9 @@ falha ao ler `organizations` não libera.
   deixar irmãs vivas faria o produto reaparecer na lista). **Recusa com 409 se qualquer uma delas
   tiver `ml_item_id`**: apagar família publicada cortaria o vínculo de UPDATE do `ingest-lote` e a
   próxima planilha viraria anúncio duplicado (ADR-0019) — publicado sai por `remover-publicado`.
-  Também 409 com família em `publicando`/`processando`. Apaga as fotos do Storage sob o prefixo do
+  Também 409 com família em `publicando`/`processando`, **e com qualquer linha em
+  `anuncios_externos` para o código**: na janela `criacao_incerta` (ADR-0088) o POST já saiu para o
+  ML sem o id ter voltado, então `ml_item_id is null` não prova "nunca foi ao ar". Apaga as fotos do Storage sob o prefixo do
   **dono** de cada família (mesmo guard de posse de `remover-publicado`), e roda
   `limparMovimentosOrfaos` **depois** do delete (ADR-0097 D-2). Nunca toca o ML.
 

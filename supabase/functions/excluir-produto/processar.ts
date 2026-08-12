@@ -46,6 +46,15 @@ export async function excluirProduto(
   if (emVooErr) throw new Error(`excluir-produto: consultar em_voo falhou: ${emVooErr.message}`);
   if (emVoo && emVoo.length > 0) return { tipo: 'em_voo' };
 
+  // Não basta `ml_item_id is null`: existe a janela `criacao_incerta` do ADR-0088 em que o POST já
+  // saiu para o ML e o id ainda não voltou para a família — ali o produto tem anúncio vivo lá fora
+  // com `ml_item_id` nulo aqui, e o status pode ter caído em 'erro' (que o guard acima não pega).
+  // Qualquer linha em anuncios_externos é sinal de que este código já teve vida em canal.
+  const { data: externos, error: externosErr } = await admin.from('anuncios_externos')
+    .select('id').eq('org_id', orgId).eq('codigo_pai', codigoPai).limit(1);
+  if (externosErr) throw new Error(`excluir-produto: consultar anuncios_externos falhou: ${externosErr.message}`);
+  if (externos && externos.length > 0) return { tipo: 'publicado' };
+
   const { data: familias, error: familiasErr } = await admin.from('familias')
     .select('id, lote_id, user_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
     .eq('codigo_pai', codigoPai).eq('org_id', orgId);
