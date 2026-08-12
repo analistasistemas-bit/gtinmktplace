@@ -51,14 +51,29 @@ O predicado é `ml_item_id not null`, não `publicado_em not null` (o sinal que 
 usa): aqui o que importa é exatamente o que o `ingest-lote` consulta para decidir UPDATE — inclusive
 a linha de reposição que herdou o id sem publicar nada.
 
-**D-3.1. Qualquer linha em `anuncios_externos` para o `codigo_pai` também recusa.**
+**D-3.1. `anuncios_externos` também trava — mas por evidência de item remoto, não por presença de
+linha.**
 
-`ml_item_id is null` sozinho não prova "nunca foi ao ar": na janela `criacao_incerta` do ADR-0088 o
-POST já saiu para o ML e o id ainda não voltou para a família — anúncio vivo lá fora, coluna nula
-aqui, e o status pode ter caído em `erro` (que o guard de em-voo, restrito a
-`publicando`/`processando`, não pega). O espelho `anuncios_externos` é best-effort para dizer "está
-publicado", mas a **presença** de uma linha é sinal confiável de que este código já teve vida em
-canal. Fail-closed: uma query a mais troca uma suposição por uma checagem.
+`ml_item_id is null` na família não prova "nunca foi ao ar": na janela `criacao_incerta` do
+ADR-0088 o POST já saiu para o ML e o id ainda não voltou — anúncio vivo lá fora, coluna nula aqui,
+e o status da família pode ter caído em `erro`, que o guard de em-voo (restrito a
+`publicando`/`processando`) não pega.
+
+A trava óbvia — "existe linha em `anuncios_externos` → recusa" — está **errada**, e por um motivo
+que só aparece somando as duas portas. O fan-out multicanal (ADR-0061) cria a linha em `pendente`
+**antes** de publicar, e um publish que falha de vez para em `erro` sem `item_externo_id`. Recusar
+por linha nua tornaria esse produto **indeletável pelas duas portas**: 409 aqui e 400
+`nao_publicada` em `remover-publicado`. E um publish que falhou é justamente o produto que o
+operador mais quer apagar.
+
+O predicado é, então:
+
+| Estado da linha | Resultado |
+|---|---|
+| `item_externo_id` preenchido | `publicado` (409) — há item remoto |
+| `status = 'publicado'` sem id | `publicado` (409) — estado inconsistente, fail-closed |
+| `status in ('pendente','publicando')` | `em_voo` (409) — o worker ainda pode criar o anúncio |
+| `status = 'erro'` sem id | **segue** — nada foi criado lá fora |
 
 **D-4. O delete apaga todas as famílias do `codigo_pai` na org.** Simétrico ao D-3: deixar irmãs
 vivas faria o produto reaparecer na lista logo após a exclusão. As `variacoes` somem por cascade.

@@ -42,10 +42,13 @@ Ciclos de UPDATE deixam várias famílias com o mesmo `codigo_pai` (ADR-0019, ad
 outra linha — cortando o vínculo pela porta dos fundos. A trava recusa se **qualquer** família
 do `codigo_pai` na org tiver `ml_item_id != null`.
 
-**D-3.1. Qualquer linha em `anuncios_externos` para o `codigo_pai` também recusa.** `ml_item_id is
-null` não prova "nunca foi ao ar": na janela `criacao_incerta` (ADR-0088) o POST já saiu para o ML
-e o id ainda não voltou para a família, e o status pode ter caído em `erro` — que o guard de em-voo
-não pega. A presença da linha-espelho é sinal confiável de que o código já teve vida em canal.
+**D-3.1. `anuncios_externos` trava por evidência de item remoto, não por presença de linha.**
+`ml_item_id is null` não prova "nunca foi ao ar": na janela `criacao_incerta` (ADR-0088) o POST já
+saiu para o ML e o id ainda não voltou. Mas travar em qualquer linha seria pior: o fan-out cria a
+linha em `pendente` antes de publicar e um publish que falha para em `erro` sem `item_externo_id` —
+recusar ali tornaria o produto indeletável pelas duas portas (409 aqui, 400 `nao_publicada` lá).
+Recusa com `item_externo_id` ou `status='publicado'`; `pendente`/`publicando` viram `em_voo`;
+`erro` sem id segue deletável.
 
 **D-4. O delete apaga todas as famílias do `codigo_pai` na org.** Mesma razão simétrica: deixar
 irmãs vivas faria o produto reaparecer na lista do Estoque logo após a exclusão. As `variacoes`

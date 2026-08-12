@@ -46,14 +46,24 @@ export async function excluirProduto(
   if (emVooErr) throw new Error(`excluir-produto: consultar em_voo falhou: ${emVooErr.message}`);
   if (emVoo && emVoo.length > 0) return { tipo: 'em_voo' };
 
-  // Não basta `ml_item_id is null`: existe a janela `criacao_incerta` do ADR-0088 em que o POST já
-  // saiu para o ML e o id ainda não voltou para a família — ali o produto tem anúncio vivo lá fora
-  // com `ml_item_id` nulo aqui, e o status pode ter caído em 'erro' (que o guard acima não pega).
-  // Qualquer linha em anuncios_externos é sinal de que este código já teve vida em canal.
+  // `ml_item_id is null` na família não basta: existe a janela `criacao_incerta` do ADR-0088 em que
+  // o POST já saiu para o ML e o id ainda não voltou — anúncio vivo lá fora, coluna nula aqui.
+  //
+  // Mas "existe linha em anuncios_externos" também não serve como trava: o fan-out multicanal
+  // (ADR-0061) cria a linha em `pendente` ANTES de publicar, e um publish que falha de vez para em
+  // `erro` sem `item_externo_id`. Recusar por linha nua deixaria o produto INDELETÁVEL pelas duas
+  // portas — aqui por 409, e em `remover-publicado` por 400 `nao_publicada` — e um publish que
+  // falhou é justamente o produto que mais se quer apagar.
+  //
+  // A trava é a evidência de item remoto (`item_externo_id`) ou de publicação ainda viva.
   const { data: externos, error: externosErr } = await admin.from('anuncios_externos')
-    .select('id').eq('org_id', orgId).eq('codigo_pai', codigoPai).limit(1);
+    .select('status, item_externo_id').eq('org_id', orgId).eq('codigo_pai', codigoPai);
   if (externosErr) throw new Error(`excluir-produto: consultar anuncios_externos falhou: ${externosErr.message}`);
-  if (externos && externos.length > 0) return { tipo: 'publicado' };
+  const linhas = (externos ?? []) as { status: string | null; item_externo_id: string | null }[];
+  // `publicado` sem id é estado inconsistente: fail-closed, trata como item remoto.
+  if (linhas.some((e) => e.item_externo_id != null || e.status === 'publicado')) return { tipo: 'publicado' };
+  // `pendente`/`publicando`: o worker do fan-out ainda pode criar o anúncio depois do delete.
+  if (linhas.some((e) => e.status === 'pendente' || e.status === 'publicando')) return { tipo: 'em_voo' };
 
   const { data: familias, error: familiasErr } = await admin.from('familias')
     .select('id, lote_id, user_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')

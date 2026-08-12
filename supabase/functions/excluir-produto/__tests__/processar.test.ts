@@ -95,17 +95,40 @@ describe('excluirProduto — só produto não publicado (ADR-0113 D-1)', () => {
     expect(removidos).toEqual([]);
   });
 
-  it('recusa quando há espelho em anuncios_externos, mesmo sem ml_item_id', async () => {
+  it('recusa com item_externo_id em anuncios_externos, mesmo sem ml_item_id na família', async () => {
     // Janela `criacao_incerta` (ADR-0088): o POST já saiu para o ML e o id ainda não voltou para a
     // família. `ml_item_id` nulo aqui, anúncio vivo lá fora.
     const { admin, deletes, removidos } = fakeAdmin({
       familias: [[], []],
-      anuncios_externos: [[{ id: 'ext-1' }]],
+      anuncios_externos: [[{ status: 'erro', item_externo_id: 'MLB9' }]],
     });
     const r = await excluirProduto(admin, { codigoPai: CODIGO, orgId: ORG });
     expect(r).toEqual({ tipo: 'publicado' });
     expect(deletes).toEqual([]);
     expect(removidos).toEqual([]);
+  });
+
+  it('trata espelho pendente/publicando como em voo — o fan-out ainda pode criar o anúncio', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [[], []],
+      anuncios_externos: [[{ status: 'pendente', item_externo_id: null }]],
+    });
+    const r = await excluirProduto(admin, { codigoPai: CODIGO, orgId: ORG });
+    expect(r).toEqual({ tipo: 'em_voo' });
+    expect(deletes).toEqual([]);
+  });
+
+  it('publish que falhou de vez (erro sem item_externo_id) continua deletável', async () => {
+    // Recusar por linha nua deixaria o produto indeletável pelas DUAS portas: 409 aqui e 400
+    // `nao_publicada` em remover-publicado. E é justamente o produto que mais se quer apagar.
+    const { admin, deletes, rpcs } = fakeAdmin({
+      familias: [[], [], [familiaCompleta('fam-1', 'lote-9')], []],
+      anuncios_externos: [[{ status: 'erro', item_externo_id: null }]],
+    });
+    const r = await excluirProduto(admin, { codigoPai: CODIGO, orgId: ORG });
+    expect(r).toEqual({ tipo: 'ok', familiasRemovidas: 1, lotesRemovidos: 1, movimentosRemovidos: 3 });
+    expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'lotes']);
+    expect(rpcs).toHaveLength(1);
   });
 
   it('apaga todas as famílias do codigo_pai, as fotos do dono e varre os órfãos DEPOIS', async () => {
