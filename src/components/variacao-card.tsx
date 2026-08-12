@@ -162,9 +162,13 @@ export function VariacaoCard({
             <StatusInline status={statusGtin} />
           </div>
           {gtinRuim && (
-            <span className="col-span-2 pl-0.5 text-[11px] text-destructive">
-              EAN inválido (dígito verificador não confere) — o ML recusa. Apague o campo para
-              publicar como &quot;sem código universal&quot;.
+            // Texto curto de propósito: a coluna tem piso de 150px (ver comentário da linha 78) e
+            // um parágrafo aqui empurraria a altura de todo card com EAN ruim. Detalhe no title.
+            <span
+              className="col-span-2 pl-0.5 text-[11px] text-destructive"
+              title="O dígito verificador GS1 não confere — o ML recusa a publicação inteira. Corrija o número ou apague o campo para publicar como 'sem código universal'."
+            >
+              EAN inválido — o ML recusa. Apague para publicar sem código.
             </span>
           )}
         </div>

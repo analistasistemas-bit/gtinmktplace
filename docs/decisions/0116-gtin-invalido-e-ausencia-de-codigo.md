@@ -47,12 +47,20 @@ o número publica o GTIN. Sem re-ingest, sem SQL.
 
 - **Publicação:** GTIN inválido deixa de derrubar o CREATE/UPDATE; o anúncio sai sem código.
 - **Catálogo (ADR-0021):** `buscarProdutoCatalogoPorGtin` compartilha `gtinAusente`, então
-  variação com GTIN inválido deixa de ser pesquisada no catálogo do ML. Não há perda: o ML
-  valida o verificador ao criar ficha, então nenhuma ficha legítima casaria com esse número —
-  a chamada era garantidamente vazia.
-- **UPDATE de anúncio já publicado:** variação no ar cujo GTIN não fecha o verificador troca o
-  atributo `GTIN` por `EMPTY_GTIN_REASON` no próximo UPDATE. É correção de dado falso, mas é
-  alteração em anúncio vivo — vale conferir o resultado no primeiro UPDATE após esta mudança.
+  variação com GTIN inválido deixa de ser pesquisada no catálogo do ML. Sem efeito observável:
+  o ML valida o verificador ao criar ficha, então a busca já voltava vazia — os dois caminhos
+  (`catalogo.ts:479` e `:571`) tratam `ficha = null` como "sem ficha", exatamente como antes.
+  Muda só que a chamada HTTP deixa de ser feita.
+- **UPDATE de anúncio já publicado:** nenhum anúncio vivo carrega GTIN de verificador inválido —
+  o ML recusa o formato no CREATE (é o erro do lote #46), então esses itens ou nunca publicaram
+  ou publicaram sem código. O efeito real é o inverso do temido: UPDATE que falhava com o mesmo
+  400 passa a completar, mandando `EMPTY_GTIN_REASON` no lugar do número recusado. Ainda assim,
+  vale conferir o primeiro UPDATE após esta mudança — a premissa "o ML valida em todos os
+  comprimentos" foi observada em GTIN de 8 dígitos, não testada nos quatro.
+- **Categoria sem `EMPTY_GTIN_REASON`:** o atributo é omitido (caminho que já existia para o
+  botão, `MLB270272`) — GTIN é `conditional_required`, então o anúncio publica sem ele. No
+  caminho User Products a lista hard-coded nem decide: `aceitaEmptyGtin` vem do schema real da
+  API (`publish-familia-ml/processar.ts:127-131`).
 - **Vendas por EAN (ADR-0045):** não afetado — o match usa `variacoes.gtin` cru, que continua
   guardando o que a planilha trouxe.
 - **Não unificado:** `concorrencia/gtin.ts` mantém sua própria `gtinValido` (só comprimento).
