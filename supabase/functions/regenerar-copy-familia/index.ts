@@ -41,7 +41,9 @@ Deno.serve(async (req) => {
     // fornecedor entra só para o mapa de marcas corrigir a grafia (ADR-0099) — sem ele a
     // regeneração perde em silêncio a correção que a publicação original tinha (ex.: "Bufalo" no
     // lugar de "Búfalo").
-    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, cor, preco)')
+    // `variacoes.nome` alimenta o eixo de variação (ADR-0115). Sem ele a regeneração cairia no
+    // caminho de cor e desfaria, em silêncio, a lista de estampas que a publicação original tinha.
+    .select('id, org_id, nome_pai, descricao_pai, unidade, fornecedor, variacoes(codigo, nome, cor, preco)')
     .eq('id', body.familia_id)
     .eq('org_id', context.orgId)
     .maybeSingle();
@@ -56,6 +58,7 @@ Deno.serve(async (req) => {
       codigo: String(v.codigo ?? ''),
       cor: typeof v.cor === 'string' ? v.cor : null,
       preco: Number(v.preco ?? 0),
+      nome: typeof v.nome === 'string' ? v.nome : null,
     }));
 
     const result = await gerarCopy({

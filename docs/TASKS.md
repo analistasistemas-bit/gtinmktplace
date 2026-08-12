@@ -2,6 +2,34 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Copy: o eixo de variação nem sempre é cor (ADR-0115) — 2026-08-12
+
+- [x] **Motivo:** família de tecido Oxford com 7 estampas de Natal saiu com a descrição
+  anunciando `🎨 CORES DISPONÍVEIS: Verde Musgo, Vermelho` — as duas cores que o Vision leu nas
+  fotos. O anúncio oferece 7 estampas; a descrição declarava 2 cores. O título perdeu o tema.
+- [x] **Regressão confirmada com o mesmo produto:** lote de 29/07 (pré-slots) publicou
+  `TECIDO OXFORD LISO 10M | ESTAMPAS EXCLUSIVAS NATAL | PREMIUM` (`MLB7282797698`); o de 12/08,
+  pós-ADR-0099, perdeu o tema. Mesma planilha, mesmo eixo `Est-N`, 14 dias.
+- [x] `_shared/ai/eixo-variacao.ts`: o eixo sai do **sufixo do nome da variação** em relação ao
+  `nome_pai` (dado da planilha), não da cor. Rótulo vem da palavra da fonte —
+  `ESTAMPAS DISPONÍVEIS` / `VARIAÇÕES DISPONÍVEIS` / `CORES DISPONÍVEIS`. `Est.6`/`Est-6`/`EST 6`
+  → `Estampa 6`; ordem numérica (6 antes de 18). Sem sufixo discriminante, nada muda.
+- [x] `cravarTema` em `aplicarGuardsTitulo`: lista fechada de temas comemorativos cravada em
+  `produto` (incortável). **A instrução no prompt sozinha não bastou** — medido: o modelo
+  devolveu `produto="Tecido Oxford Liso"` com 23 chars sobrando. Teto de 40 chars em `produto`
+  evita transformar título viável em `TituloInviavelError`.
+- [x] `garantirPerguntas`: a seção `❓` sumia inteira com dado para 4 perguntas
+  (`descricao_status`/`descricao_erro` nulos — a IA só não escreveu). Agora é reconstruída a
+  partir dos bullets de `📌 ESPECIFICAÇÕES`, depois dos guards de largura/metragem.
+- [x] Seções renomeadas: `✅ POR QUE ESCOLHER`, `📦 O QUE VOCÊ RECEBE`. `🎯 INDICAÇÕES DE USO`
+  de 4-6 para 4-12 bullets. `CABECALHOS_APOS_*` passam a casar pelo **emoji**, não pelo texto.
+- [x] `atualizarSecaoCores` reconhece os 3 rótulos e preserva o existente — sem isso, família
+  estampada ganhava uma 2ª seção `CORES DISPONÍVEIS` no fim a cada reposição.
+- [x] Testes: 34 novos (14 eixo, 9 perguntas, 7 tema, 2 seção de variação no UPDATE, 2 prompt).
+  Suíte verde: 339 arquivos / 2949 testes; `pnpm lint` 0 erros.
+- [ ] Deploy: `process-familia` e `regenerar-copy-familia` (mudança em `_shared/ai` e
+  `_shared/ml`) — o merge na main **não** deploya Edge Functions.
+
 ## Estoque — excluir produto (ADR-0113) — 2026-08-12
 
 - [x] **Motivo:** o ADR-0094 deu ao Estoque a porta de entrada (cadastro manual) sem a de saída.

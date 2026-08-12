@@ -206,6 +206,10 @@ Deno.serve(async (req) => {
         codigo: v.codigo,
         cor: v.cor,
         preco: Number(v.preco),
+        // Eixo de variação (ADR-0115): o sufixo deste nome em relação ao nome_pai é o que
+        // discrimina de verdade a variação. Sem ele a copy só enxerga `cor` e descreve uma
+        // família de estampas como se fosse de cores.
+        nome: v.nome,
       })),
     }, modeloTexto);
 

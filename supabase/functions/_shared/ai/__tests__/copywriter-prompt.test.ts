@@ -34,23 +34,54 @@ describe('montarUserPrompt — rótulo de quantidade pela unidade', () => {
     const p = montarUserPrompt({ ...base, variacoes: [{ codigo: '1', cor: 'Outra', preco: 10 }] });
     expect(p).not.toMatch(/-\s*Outra\b/);
     expect(p).not.toContain('(sem cor identificada)');
-    expect(p).not.toContain('Cores disponíveis');
-    expect(p).toContain('NÃO tem variação de cor');
+    expect(p).not.toContain('CORES DISPONÍVEIS');
+    expect(p).toContain('NÃO tem variação');
   });
 
   it('variação sem cor (null) também omite a seção de cores', () => {
     const p = montarUserPrompt({ ...base, variacoes: [{ codigo: '1', cor: null, preco: 10 }] });
-    expect(p).not.toContain('Cores disponíveis');
-    expect(p).toContain('NÃO tem variação de cor');
+    expect(p).not.toContain('CORES DISPONÍVEIS');
+    expect(p).toContain('NÃO tem variação');
   });
 
   it('lista cores reais normalmente', () => {
     const p = montarUserPrompt({ ...base, variacoes: [
       { codigo: '1', cor: 'Azul', preco: 10 }, { codigo: '2', cor: 'Vermelho', preco: 10 },
     ] });
-    expect(p).toContain('Cores disponíveis:');
+    expect(p).toContain('CORES DISPONÍVEIS');
     expect(p).toContain('- Azul');
     expect(p).toContain('- Vermelho');
+  });
+
+  // ADR-0115 — o eixo vem do sufixo do nome da variação, não da cor lida na foto.
+  it('família com sufixo discriminante + "estampa" na fonte → eixo é ESTAMPAS, não a cor do Vision', () => {
+    const p = montarUserPrompt({
+      nome: 'Tecido Oxford Liso de 10m Estampas Exclusivas de Natal Premium',
+      descricao_detalhado: 'Tecido Oxford de 10 metros com estampas de Natal.',
+      variacoes: [
+        { codigo: '1', cor: 'Verde Musgo', preco: 48, nome: 'Tecido Oxford Liso de 10m Estampas Exclusivas de Natal Premium Est.6' },
+        { codigo: '2', cor: 'Vermelho', preco: 48, nome: 'Tecido Oxford Liso de 10m Estampas Exclusivas de Natal Premium Est.31' },
+      ],
+    });
+    expect(p).toContain('ESTAMPAS DISPONÍVEIS');
+    expect(p).toContain('- Estampa 6');
+    expect(p).toContain('- Estampa 31');
+    // O que o Vision leu na foto não pode virar a lista de opções do anúncio.
+    expect(p).not.toContain('Verde Musgo');
+    expect(p).not.toContain('CORES DISPONÍVEIS');
+  });
+
+  it('sem sufixo discriminante → segue no caminho de cor (comportamento anterior preservado)', () => {
+    const p = montarUserPrompt({
+      nome: 'LINHA BUFALO 10000M',
+      descricao_detalhado: 'Cone com 10000 metros.',
+      variacoes: [
+        { codigo: '1', cor: 'Azul', preco: 10, nome: 'LINHA BUFALO 10000M' },
+        { codigo: '2', cor: 'Preto', preco: 10, nome: 'LINHA BUFALO 10000M' },
+      ],
+    });
+    expect(p).toContain('CORES DISPONÍVEIS');
+    expect(p).toContain('- Azul');
   });
 
   it('mistura cor real + "Outra" — lista só a cor real', () => {

@@ -81,9 +81,15 @@ export function sanitizarDescricaoML(texto: string): string {
  * se não existir mas há cor real, recria a seção ao final (simétrico à remoção abaixo).
  * A lista é sempre escrita em ordem alfabética (pedido do operador 2026-06-09).
  */
+// O rótulo da seção de variação passou a depender do eixo da família (ADR-0115): pode ser
+// CORES, ESTAMPAS ou VARIAÇÕES. Casar só "CORES" faria esta função não achar o cabeçalho de uma
+// família estampada e RECRIAR uma segunda seção "🎨 CORES DISPONÍVEIS" no fim da descrição a
+// cada reposição de variação — duas listas concorrentes no mesmo anúncio.
+const RE_HEADER_VARIACAO = /(CORES|ESTAMPAS|VARIA[ÇC][ÕO]ES) DISPON[IÍ]VEIS/i;
+
 export function atualizarSecaoCores(descricao: string, cores: string[]): string {
   const linhas = descricao.split('\n');
-  const headerIdx = linhas.findIndex((l) => /CORES DISPON[IÍ]VEIS/i.test(l));
+  const headerIdx = linhas.findIndex((l) => RE_HEADER_VARIACAO.test(l));
   if (headerIdx === -1) {
     if (cores.length === 0) return descricao;
     // Cabeçalho ausente (removido antes por lista vazia — ver ramo abaixo — ou nunca existiu)

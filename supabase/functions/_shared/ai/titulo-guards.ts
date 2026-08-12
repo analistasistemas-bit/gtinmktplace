@@ -228,6 +228,63 @@ function contagemValida(valor: string | null): string | null {
 }
 
 /**
+ * Temas comemorativos (ADR-0115). Lista FECHADA, no mesmo espírito de ADJETIVOS_VAZIOS: o tema
+ * só entra no título se a fonte o contiver, e só se estiver aqui. Um extrator genérico
+ * ("a palavra depois de ESTAMPAS DE") arrastaria qualquer substantivo para dentro do `produto`,
+ * que é o slot incortável — errar ali é caro.
+ *
+ * A grafia da direita é a que vai para o título; a comparação usa a forma normalizada da chave.
+ */
+const TEMAS: Array<[string, string]> = [
+  ['natal', 'Natal'],
+  ['natalino', 'Natal'],
+  ['natalina', 'Natal'],
+  ['pascoa', 'Páscoa'],
+  ['halloween', 'Halloween'],
+  ['carnaval', 'Carnaval'],
+  ['festa junina', 'Festa Junina'],
+  ['sao joao', 'Festa Junina'],
+  ['dia das maes', 'Dia das Mães'],
+  ['dia dos pais', 'Dia dos Pais'],
+  ['dia dos namorados', 'Dia dos Namorados'],
+  ['ano novo', 'Ano Novo'],
+  ['reveillon', 'Réveillon'],
+];
+
+// Injetar no `produto` (incortável) é o que garante que o tema sobreviva ao corte de 60 chars —
+// mas por isso mesmo pode tornar inviável um título que cabia. O teto protege o caso extremo:
+// `produto` e `medida` são os dois slots que nunca saem, então deixar 20 chars para `medida`
+// mantém o par dentro do limite. Estourando, o tema é abandonado — título sem tema é pior que
+// título nenhum, que é o que TituloInviavelError produziria.
+const MAX_PRODUTO_COM_TEMA = 40;
+
+/**
+ * Crava o tema comemorativo no slot `produto` quando a fonte o declara e a IA o descartou.
+ *
+ * Medido em 12/08/2026 com a instrução já no prompt: a fonte "Tecido Oxford Liso de 10m Estampas
+ * Exclusivas de Natal Premium" produziu `produto = "Tecido Oxford Liso"` e um título de 37 chars
+ * — sobrava espaço e o tema saiu mesmo assim. É a mesma lição do ADR-0099 (prompt não garante),
+ * agora medida para tema.
+ */
+function cravarTema(produto: string, textoFonte: string): string {
+  if (!produto.trim()) return produto;
+  const fonte = normalizar(textoFonte);
+  const achado = TEMAS.find(([chave]) => jaContem(fonte, chave));
+  if (!achado) return produto;
+
+  const [, grafia] = achado;
+  // Já coberto pela IA (ex.: produto = "Tecido Oxford Natal") → não duplica.
+  if (todasPalavrasCobertas(produto, grafia)) return produto;
+
+  // "Estampa Natal" quando a fonte fala de estampa; só "Natal" quando é o produto que é temático
+  // (ex.: "Bola de Natal"). Prefixar "Estampa" sem respaldo inventaria um atributo.
+  // `normalizar` devolve MAIÚSCULAS sem acento — o teste precisa casar nessa forma.
+  const sufixo = /\bESTAMP/.test(fonte) ? `Estampa ${grafia}` : grafia;
+  const novo = `${produto} ${sufixo}`;
+  return novo.length <= MAX_PRODUTO_COM_TEMA ? novo : produto;
+}
+
+/**
  * Passo 3: crava os dados que a fonte garante e a IA costuma descartar sob o teto de 60 chars.
  * Opera sobre SLOTS, nunca sobre a string final — é o que impede injeção e corte de disputarem
  * a mesma ponta do texto.
@@ -270,6 +327,10 @@ export function aplicarGuardsTitulo(slots: TituloSlots, fonte: DadosFonteTitulo)
   // produto pode ter acabado de prefixar um sinônimo (ex.: "FIO DE CROCHÊ"), e é esse prefixo
   // que precisa ser corrigido também, não só o que a IA escreveu originalmente.
   out.produto = corrigirTipoFio(out.produto, fonte.nomePai);
+
+  // Tema comemorativo (ADR-0115). Roda depois dos dois blocos acima porque opera sobre o
+  // `produto` já definitivo — prefixar antes faria corrigirTipoFio reescrever o tema junto.
+  out.produto = cravarTema(out.produto, textoFonte);
 
   // Dimensão composta (10X15CM, 3,00 X 1,80) não é capturada por extrairMetragem nem por
   // extrairLargura, e às vezes é o ÚNICO dado que distingue famílias irmãs — as quatro

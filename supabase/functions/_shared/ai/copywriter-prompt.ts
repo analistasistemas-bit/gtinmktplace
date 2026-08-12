@@ -2,11 +2,17 @@ import { ordenarCoresAlfabetica } from '../cor/ordenar.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { rotuloQuantidade } from './unidade.ts';
 import { contemMetragem, extrairLargura, extrairMetragem } from './titulo.ts';
+import { ROTULO_COR, resolverEixoVariacao } from './eixo-variacao.ts';
 
 export interface InputCopy {
   nome: string;
   descricao_detalhado: string;
-  variacoes: Array<{ codigo: string; cor: string | null; preco: number }>;
+  /**
+   * `nome` alimenta o eixo de variação (ADR-0115) — sem ele a família cai no caminho de cor,
+   * que é o comportamento anterior. Opcional de propósito: `titulo-particao.ts` monta variações
+   * sintéticas que não têm nome de planilha.
+   */
+  variacoes: Array<{ codigo: string; cor: string | null; preco: number; nome?: string | null }>;
   unidade?: string | null;
   categoria_hint?: 'linhas' | 'botoes' | 'fitas';
 }
@@ -70,19 +76,20 @@ const SECAO_ESPECIFICACOES = '📌 ESPECIFICAÇÕES';
 // Ordem do template (SYSTEM acima) a partir de ESPECIFICAÇÕES — usada só para achar onde a
 // seção termina, caso ela exista, ou onde inserir uma nova, caso a IA tenha pulado a seção
 // inteira (bug real: produto 02994771 saiu sem "📌 ESPECIFICAÇÕES" nenhuma).
-const CABECALHOS_APOS_ESPECIFICACOES = [
-  '🎯 INDICAÇÕES DE USO',
-  // Seção nova do ADR-0098. O emoji também entra na whitelist do SYSTEM (bloco TOM E
-  // ESTILO): sem ele o modelo suprime o símbolo do cabeçalho, a string deixa de casar
-  // aqui, e o bullet injetado pelos guards vai parar depois da seção de perguntas.
-  '❓ PERGUNTAS SOBRE ESTE PRODUTO',
-  '🎨 CORES DISPONÍVEIS',
-  '📦 CONTEÚDO DA EMBALAGEM',
-  '🚚 ENVIO RÁPIDO',
-];
+// Casam pelo EMOJI, não pelo texto do cabeçalho (ADR-0115). O texto passou a variar — o rótulo
+// da seção de variação depende do eixo da família, e BENEFÍCIOS/CONTEÚDO foram renomeados —, e
+// casar por texto tornaria toda renomeação futura uma quebra silenciosa: o guard não acharia a
+// fronteira da seção e injetaria o bullet depois do lugar certo. O emoji é a parte estável.
+// Ele também está na whitelist do SYSTEM (bloco TOM E ESTILO): sem isso o modelo suprime o
+// símbolo e nada mais casa aqui.
+const CABECALHOS_APOS_ESPECIFICACOES = ['🎯', '❓', '🎨', '📦', '🚚'];
 
-function inserirAntesDoProximoCabecalho(descricao: string, bloco: string): string {
-  const posicoes = CABECALHOS_APOS_ESPECIFICACOES
+function inserirAntesDoProximoCabecalho(
+  descricao: string,
+  bloco: string,
+  cabecalhos: string[] = CABECALHOS_APOS_ESPECIFICACOES,
+): string {
+  const posicoes = cabecalhos
     .map((h) => descricao.indexOf(h))
     .filter((i) => i > -1);
   const idx = posicoes.length > 0 ? Math.min(...posicoes) : descricao.length;
@@ -133,7 +140,8 @@ export function garantirMetragemDescricao(descricao: string, nomePai: string): s
 }
 
 const SECAO_PERGUNTAS = '❓ PERGUNTAS SOBRE ESTE PRODUTO';
-const CABECALHOS_APOS_PERGUNTAS = ['🎨 CORES DISPONÍVEIS', '📦 CONTEÚDO DA EMBALAGEM', '🚚 ENVIO RÁPIDO'];
+// Mesmo motivo de CABECALHOS_APOS_ESPECIFICACOES: emoji, não texto (ADR-0115).
+const CABECALHOS_APOS_PERGUNTAS = ['🎨', '📦', '🚚'];
 const MIN_PERGUNTAS = 3;
 
 /**
@@ -159,6 +167,77 @@ export function removerPerguntasIncompletas(descricao: string): string {
   if (quantas >= MIN_PERGUNTAS) return descricao;
 
   return `${descricao.slice(0, ini).trimEnd()}\n\n${descricao.slice(fim)}`.trim();
+}
+
+/**
+ * Rótulo de ESPECIFICAÇÕES → pergunta que ele responde (ADR-0115). Lista fechada: só entra
+ * rótulo cuja pergunta é respondida INTEIRAMENTE pelo valor do bullet. "Marca: Círculo" responde
+ * "Qual a marca?" e nada mais — é essa correspondência 1:1 que torna a geração determinística
+ * legítima aqui, e não invenção.
+ */
+const PERGUNTA_POR_ROTULO: Array<[RegExp, string]> = [
+  [/^composi[çc][ãa]o$/i, 'Qual a composição?'],
+  [/^gramatura$/i, 'Qual a gramatura?'],
+  [/^largura$/i, 'Qual a largura?'],
+  [/^(comprimento|metragem)$/i, 'Quantos metros possui?'],
+  [/^peso$/i, 'Qual o peso?'],
+  [/^volume$/i, 'Qual o volume?'],
+  [/^conte[úu]do$/i, 'O que acompanha o produto?'],
+  [/^marca$/i, 'Qual a marca?'],
+  [/^modelo$/i, 'Qual o modelo?'],
+  [/^di[âa]metro$/i, 'Qual o diâmetro?'],
+  [/^jardas$/i, 'Quantas jardas possui?'],
+  [/^voltagem$/i, 'Qual a voltagem?'],
+  [/^capacidade$/i, 'Qual a capacidade?'],
+];
+
+// "• Composição: 100% Poliéster" → rótulo e valor.
+const RE_BULLET_ESPECIFICACAO = /^\s*•\s*([^:]+?)\s*:\s*(.+?)\s*$/;
+
+/**
+ * Recria a seção de perguntas a partir dos bullets de ESPECIFICAÇÕES quando a IA a omitiu
+ * tendo dados para ela (ADR-0115).
+ *
+ * `removerPerguntasIncompletas` sabia podar a seção curta, mas nada a recriava: na família
+ * `92710170` (12/08/2026) a seção sumiu inteira com quatro dados disponíveis, e
+ * `descricao_status`/`descricao_erro` nulos — não houve falha, o modelo só não escreveu.
+ *
+ * Pergunta E resposta saem do MESMO bullet, que já passou por todos os guards anteriores. É o
+ * espírito de garantirLargura/MetragemDescricao: dado da fonte cravado deterministicamente,
+ * porque o prompt pede mas não garante.
+ */
+export function garantirPerguntas(descricao: string): string {
+  if (descricao.includes(SECAO_PERGUNTAS)) return descricao;
+
+  const idxSecao = descricao.indexOf(SECAO_ESPECIFICACOES);
+  if (idxSecao === -1) return descricao;
+
+  // Só os bullets DESTA seção: para no próximo cabeçalho, senão varre o resto do texto.
+  const posteriores = CABECALHOS_APOS_ESPECIFICACOES
+    .map((h) => descricao.indexOf(h, idxSecao))
+    .filter((i) => i > -1);
+  const fim = posteriores.length > 0 ? Math.min(...posteriores) : descricao.length;
+
+  const perguntas: string[] = [];
+  const vistas = new Set<string>();
+  for (const linha of descricao.slice(idxSecao, fim).split('\n')) {
+    const m = linha.match(RE_BULLET_ESPECIFICACAO);
+    if (!m) continue;
+    const par = PERGUNTA_POR_ROTULO.find(([re]) => re.test(m[1]));
+    if (!par || vistas.has(par[1])) continue;
+    vistas.add(par[1]);
+    // Ponto final só quando o valor não traz o seu — "145g/m²" fica "145g/m²." e "1,50 m." não
+    // vira "1,50 m..".
+    const valor = /[.!?]$/.test(m[2]) ? m[2] : `${m[2]}.`;
+    perguntas.push(`▪ ${par[1]} ${valor}`);
+  }
+  if (perguntas.length < MIN_PERGUNTAS) return descricao;
+
+  return inserirAntesDoProximoCabecalho(
+    descricao,
+    `${SECAO_PERGUNTAS}\n\n${perguntas.join('\n')}`,
+    CABECALHOS_APOS_PERGUNTAS,
+  );
 }
 
 const EMOJIS_CABECALHO = '[🧵✅📌🎯❓🎨📦🚚]';
@@ -216,7 +295,12 @@ export function posProcessarDescricao(descricao: string, nomePai: string, descri
     garantirLarguraDescricao(podada, nomePai, descricaoPai),
     nomePai,
   );
-  return formatarDescricao(ancorada);
+  // Por último entre os guards de conteúdo (ADR-0115): garantirPerguntas lê os bullets de
+  // ESPECIFICAÇÕES, e largura/metragem podem ter acabado de injetar os que faltavam. Rodar
+  // antes deles perderia essas duas perguntas. Depois da poda, também de propósito: a poda
+  // remove a seção curta que o modelo escreveu, e é essa remoção que abre espaço para a
+  // reconstrução completa aqui — invertido, a seção de duas perguntas sobreviveria.
+  return formatarDescricao(garantirPerguntas(ancorada));
 }
 
 export const SYSTEM = `Você é um copywriter de e-commerce que escreve anúncios no Mercado Livre Brasil para QUALQUER tipo de produto (aviamentos, ferramentas, papelaria, decoração, adesivos, utilidades etc.). Adapte o vocabulário ao produto real informado no input — não assuma que é aviamento ou que é vendido por metro. Gere TÍTULO e DESCRIÇÃO para UM anúncio agrupado que contém várias variações de cor do mesmo produto.
@@ -304,6 +388,11 @@ Todos os dez são obrigatórios no JSON; devolva "" (string vazia) para o que n�
 não está na fonte. Slot vazio é normal e esperado.
 
 produto        — o que o item É, no termo que o comprador digita na busca. NUNCA "".
+                 Havendo TEMA ou COLEÇÃO na fonte (Natal, Páscoa, Festa Junina, Copa), ele
+                 entra AQUI, como trecho literal contíguo da fonte: "Tecido Oxford Estampa
+                 Natal". Tema é o que o comprador busca em produto sazonal, e nenhum outro
+                 campo o comporta — "variacao" é cor/tamanho e sai do título quando a família
+                 tem mais de uma opção. Não invente tema: sem a palavra na fonte, não existe.
 marca          — só se a marca aparecer no nome ou na descrição. Nome de loja não é marca.
 modelo         — numeração/linha que o CONSUMIDOR usa para escolher: N.3, Nº 6, Tex 29, 4/6.
 medida         — comprimento, largura, peso, volume: 570m, 6mm, 500g, 2l.
@@ -388,11 +477,11 @@ Estruture EXATAMENTE nesta ordem, com os emojis indicados como cabeçalhos de se
 
 [Parágrafo 2 — o que este produto é, com os dados da fonte já convertidos em benefício pela regra de conversão acima.]
 
-✅ BENEFÍCIOS
+✅ POR QUE ESCOLHER
 
-✔ [benefício 1]
-✔ [benefício 2]
-✔ [benefício 3]
+✔ [motivo 1]
+✔ [motivo 2]
+✔ [motivo 3]
 ✔ [...]
 (4 a 7 bullets. CADA bullet nasce de um dado concreto da fonte, convertido pela regra de conversão. Um bullet que serviria igual para qualquer produto concorrente é um bullet inútil — reescreva-o ancorado no dado ou remova-o.)
 
@@ -414,7 +503,8 @@ OMITA o bullet inteiro se o dado não vier. Nada de "Não informado".
 ✔ [uso 2]
 ✔ [uso 3]
 ✔ [...]
-(4 a 6 bullets. Se a fonte listar aplicações, use-as diretamente. Se não listar, escreva as aplicações típicas da CATEGORIA na forma de declaração sobre a categoria, conforme a regra CATEGORIA versus PRODUTO. Não invente nicho específico.)
+(4 a 12 bullets. Se a fonte listar aplicações, use-as diretamente. Se não listar, escreva as aplicações típicas da CATEGORIA na forma de declaração sobre a categoria, conforme a regra CATEGORIA versus PRODUTO. Não invente nicho específico.
+O teto alto existe porque muitos tipos de produto têm de fato muitas aplicações reais — um tecido decorativo serve para toalha, trilho, jogo americano, sousplat, painel, almofada, embalagem. Liste as que a categoria sustenta e pare; encher até 12 com variações da mesma aplicação é pior que entregar 5.)
 
 ❓ PERGUNTAS SOBRE ESTE PRODUTO
 
@@ -426,23 +516,24 @@ REGRA INEGOCIÁVEL: o DADO gera a pergunta, nunca o contrário. Só escreva uma 
 Exemplos do mecanismo, em segmentos diferentes: composição → "Qual a composição?"; comprimento → "Quantos metros possui?"; voltagem → "Qual a voltagem?"; capacidade → "Quantos litros comporta?"; conteúdo da embalagem → "O que acompanha o produto?".
 Não havendo dados para ao menos TRÊS perguntas, OMITA a seção inteira.
 
-🎨 CORES DISPONÍVEIS
+🎨 [CABEÇALHO DA SEÇÃO DE VARIAÇÃO — copie EXATAMENTE o rótulo que vier no input. Nem toda família varia por cor: pode variar por estampa, tamanho ou modelo, e chamar de cor o que a planilha chamou de estampa descreve errado o próprio anúncio.]
 
-- [cor 1]
-- [cor 2]
+- [opção 1]
+- [opção 2]
 - [...]
 
-REGRA INEGOCIÁVEL: liste APENAS os nomes das cores. NUNCA inclua códigos de produto, preços, estoques ou números ao lado.
-CORRETO: "- Preto" / "- Branco"
+REGRA INEGOCIÁVEL: liste APENAS os nomes das opções, exatamente como vierem no input. NUNCA inclua códigos de produto, preços, estoques ou números ao lado, e NUNCA troque uma opção por uma cor que você deduziu.
+CORRETO: "- Preto" / "- Branco" / "- Estampa 6"
 PROIBIDO: "- Preto (Código: 123) - R$ 5,00" ou "- Branco - R$ 5,85"
 
-📦 CONTEÚDO DA EMBALAGEM
+📦 O QUE VOCÊ RECEBE
 
 [Derive do dado da fonte o que o comprador recebe: quantidade, apresentação e, quando houver, a
-cor. Caixa com 144 unidades → "• 1 caixa com 144 unidades". Rolo de 50m → "• 1 rolo com 50 metros".
-Produto de cor única sem contagem → "• 1 unidade". NUNCA escreva "na cor de sua escolha" quando o
-produto não tem variação de cor, e NUNCA escreva "1 unidade" quando a fonte declara um pacote com
-mais de uma peça.]
+opção de variação. Caixa com 144 unidades → "• 1 caixa com 144 unidades". Rolo de 50m → "• 1 rolo
+com 50 metros". Sem variação e sem contagem → "• 1 unidade". Havendo variação, um bullet a nomeia
+pelo eixo do input ("• Estampa escolhida no anúncio", "• Cor escolhida no anúncio"). NUNCA escreva
+"na cor de sua escolha" quando o produto não tem variação de cor, e NUNCA escreva "1 unidade"
+quando a fonte declara um pacote com mais de uma peça.]
 
 [Frase final de 1 linha — feche pelo ganho concreto que os dados deste produto sustentam, não por urgência genérica. "Garanta já o seu" é insuficiente.]
 
@@ -454,12 +545,18 @@ Profissional, direto, focado em utilidade. Emojis APENAS nos cabeçalhos de seç
 NUNCA escreva seção sobre envio, frete, prazo, transportadora ou cobertura de entrega. Prazo, modalidade, custo e cobertura são exibidos pelo próprio Mercado Livre na página, calculados por CEP — afirmá-los aqui é promessa que o vendedor não controla. Vale para "envio rápido", "pronta entrega", "todo o Brasil" e equivalentes, exatamente como já é proibido no título.`;
 
 export function montarUserPrompt(input: InputCopy): string {
+  // Eixo de variação primeiro (ADR-0115): o sufixo do nome da variação é dado da PLANILHA e
+  // vence a cor, que na melhor hipótese é dicionário e na pior é o Vision adivinhando pela foto
+  // — foi assim que uma família de 7 estampas de Natal foi anunciada como "Verde Musgo" e
+  // "Vermelho". Sem eixo derivável, tudo segue pelo caminho de cor de sempre.
+  const eixo = resolverEixoVariacao(input.variacoes, input.nome, input.descricao_detalhado);
   // Só cores REAIS entram na descrição. 'Outra' (veredito do Vision) e o placeholder de cor
   // não-identificada são descartados — não viram item da lista nem placeholder. Sem nenhuma cor
-  // real (produto sem cor, como o pote de lápis do lote #31), a seção 🎨 CORES é omitida.
+  // real (produto sem cor, como o pote de lápis do lote #31), a seção 🎨 é omitida.
   const coresReais = ordenarCoresAlfabetica(Array.from(
     new Set(input.variacoes.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c)))
   ));
+  const opcoes = eixo ?? (coresReais.length > 0 ? { rotulo: ROTULO_COR, valores: coresReais } : null);
   const unidade = input.unidade?.trim();
   const rotulo = rotuloQuantidade(input.unidade ?? null);
   return [
@@ -467,9 +564,11 @@ export function montarUserPrompt(input: InputCopy): string {
     `Descrição detalhada (fonte de verdade):`,
     input.descricao_detalhado,
     ``,
-    coresReais.length > 0
-      ? `Cores disponíveis:\n${coresReais.map((c) => `- ${c}`).join('\n')}`
-      : `Este produto NÃO tem variação de cor. NÃO escreva a seção "🎨 CORES DISPONÍVEIS" nem cite cores.`,
+    opcoes
+      ? `Seção de variação — use EXATAMENTE este cabeçalho: "🎨 ${opcoes.rotulo}"\n` +
+        `Opções (copie literalmente, não deduza cor a partir delas):\n` +
+        opcoes.valores.map((v) => `- ${v}`).join('\n')
+      : `Este produto NÃO tem variação. NÃO escreva a seção "🎨" nem cite cores.`,
     unidade ? `Unidade de venda: ${unidade}` : '',
     rotulo ? `Rótulo sugerido para a quantidade: "${rotulo}"` : '',
     input.categoria_hint ? `Categoria sugerida: ${input.categoria_hint}` : '',

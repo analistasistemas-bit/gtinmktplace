@@ -82,6 +82,26 @@ describe('atualizarSecaoCores', () => {
     expect(out).toContain('- Azul\n\n📦 CONTEÚDO DA EMBALAGEM');
   });
 
+  // ADR-0115 — o rótulo da seção passou a variar com o eixo da família.
+  it('reconhece ESTAMPAS DISPONÍVEIS e reescreve a lista NO LUGAR, sem criar uma segunda seção', () => {
+    const estampada = '🧵 TECIDO\n\n🎨 ESTAMPAS DISPONÍVEIS\n\n- Estampa 6\n\n📦 O QUE VOCÊ RECEBE\n\n• 1 unidade';
+    const out = atualizarSecaoCores(estampada, ['Estampa 6', 'Estampa 31']);
+    expect(out).toContain('🎨 ESTAMPAS DISPONÍVEIS');
+    // Antes do ADR-0115 o cabeçalho não casava e a função recriava "CORES DISPONÍVEIS" no fim:
+    // duas listas concorrentes no mesmo anúncio a cada reposição de variação.
+    expect(out).not.toContain('CORES DISPONÍVEIS');
+    expect(out.match(/DISPON[IÍ]VEIS/g)).toHaveLength(1);
+    expect(out).toContain('- Estampa 31');
+    expect(out).toContain('📦 O QUE VOCÊ RECEBE');
+  });
+
+  it('reconhece VARIAÇÕES DISPONÍVEIS pelo mesmo caminho', () => {
+    const out = atualizarSecaoCores('🎨 VARIAÇÕES DISPONÍVEIS\n\n- Tam.P', ['Tam.P', 'Tam.G']);
+    expect(out).toContain('🎨 VARIAÇÕES DISPONÍVEIS');
+    expect(out).not.toContain('CORES DISPONÍVEIS');
+    expect(out).toContain('- Tam.G');
+  });
+
   it('guard de retry: quando a descrição já foi atualizada, recalcular com as mesmas cores retorna string idêntica', () => {
     // Simula o run 2 do QStash: familia.descricao_ml já foi persistida com as cores corretas.
     // atualizarSecaoCores é recalculada com as mesmas cores → resultado === familia.descricao_ml

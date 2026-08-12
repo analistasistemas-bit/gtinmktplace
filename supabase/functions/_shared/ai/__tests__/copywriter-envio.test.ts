@@ -34,7 +34,8 @@ describe('template da descrição: sem promessa logística (ADR-0102)', () => {
   });
 
   it('manda derivar o conteúdo da embalagem do dado da fonte', () => {
-    expect(SYSTEM).toMatch(/CONTEÚDO DA EMBALAGEM/);
+    // Renomeada para "O QUE VOCÊ RECEBE" no ADR-0115; o emoji é a parte estável do cabeçalho.
+    expect(SYSTEM).toMatch(/📦 O QUE VOCÊ RECEBE/);
     expect(SYSTEM.toLowerCase()).toMatch(/derive|derivad|a partir d/);
   });
 });
