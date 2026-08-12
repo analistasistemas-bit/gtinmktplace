@@ -143,7 +143,13 @@ function LinhaDetalhe({
             <Checkbox
               checked={selecionado}
               onCheckedChange={(checked) => onSelecionar(checked === true)}
-              aria-label={`Selecionar pedido ${p.chave}`}
+              // Não há o que sacar num pedido devolvido: o dinheiro voltou ao comprador. A RPC já
+              // recusa, mas sem isto o operador seleciona, clica e recebe um "0 registro(s)
+              // marcado(s)" sem explicação — no filtro Devolvidos essas linhas ficam visíveis.
+              disabled={!p.faturavel}
+              aria-label={p.faturavel
+                ? `Selecionar pedido ${p.chave}`
+                : `Pedido ${p.chave} devolvido — sem valor a sacar`}
             />
             {aberto ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
           </div>
@@ -381,6 +387,8 @@ export default function DetalheFinanceiro() {
     const ids: string[] = [];
     let ignoradosCliente = 0;
     for (const pedido of selecionadosVisiveis) {
+      // Trava final antes da RPC: pedido devolvido/cancelado não tem valor a sacar (ADR-0038).
+      if (!pedido.faturavel) { ignoradosCliente += pedido.vendaIds.length; continue; }
       const status = statusLiberacao({
         money_release_date: pedido.money_release_date,
         sacado_em: pedido.sacado_em,
