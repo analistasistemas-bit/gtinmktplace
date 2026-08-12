@@ -19,8 +19,12 @@
   `7891234567895` em `publicar.test.ts`, `atualizar.test.ts` e `ml/catalogo-up.test.ts`.
 - [x] Testes: 4 em `variacao-card-gtin.test.tsx`, 7 em `lib/__tests__/gtin.test.ts`, 2 novos em
   `publicar.test.ts` (EAN-8 válido vs. lote #46). Suíte completa verde.
-- [ ] **Deploy pendente:** o fix vive em `supabase/functions/**` — exige
-  `supabase functions deploy` das funções de publicação/atualização antes de o Reenviar resolver.
+- [x] **Deployado em produção (2026-08-12):** 13 functions que alcançam `_shared/ml/publicar.ts`
+  pelo fecho transitivo de imports — `atualizar-status-publicado`, `metricas-vendas`,
+  `monitorar-moderados`, `process-familia`, `publicar-anuncio`, `publicar-split-ml`,
+  `publish-familia-ml`, `reconciliar-convergencia-up`, `remover-publicado`,
+  `sincronizar-estoque`, `status-publicados`, `update-familia-ml`, `vincular-catalogo`.
+  `verify_jwt` conferido pós-deploy: workers seguem `false`.
 
 ## Copy: o eixo de variação nem sempre é cor (ADR-0115) — 2026-08-12
 
