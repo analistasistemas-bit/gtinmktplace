@@ -17,8 +17,22 @@
   `TransmissorFiscal` (padrão ADR-0024).
 - [x] Glossário ganhou seção fiscal, incluindo a colisão `familias.origem` (ADR-0055/0107) × campo
   `orig` da NF-e (0 a 8).
-- [ ] **Implementação — não iniciada.** Bloco A (emitir) + Bloco B (operar) e critério de saída no
-  ADR. Aguardando decisão do Diego sobre quando entra na fila (hoje o próximo é `E5` Shopee).
+- [x] **Revisão adversarial (2026-08-12): 15 achados, 2 quebravam o pipeline.** (1) `POST` no pack
+  **anexa** a nota mas **não destrava** `invoice_pending` — quem libera a etiqueta é
+  `POST /shipments/{id}/invoice_data`; o ciclo do D-4 estava errado. (2) IBS/CBS **já rejeita**
+  Regime Normal desde 03/08/2026. Mais: retry que "para no índice" deixava nota órfã sem alertar;
+  CFOP 6102 é venda a contribuinte (B2C é **6108**); o ML recusa XML de homologação; faltava o
+  grupo de pagamento/intermediador (NT 2025.001), sem o qual 100% das notas do ML rejeitam;
+  `billing_info` depreciado; cancelamento extemporâneo existe. Duas âncoras de código do ADR
+  apontavam para as linhas erradas.
+- [x] **Decisões fechadas pelo Diego:** v1 é **Simples Nacional apenas** (D-14; Simples só entra no
+  IBS/CBS em 04/01/2027) e cobre **só logísticas com `invoice_pending`** (D-15). O cliente não usa
+  Full, o que dissolveu a questão do opt-in do Faturador.
+- [x] **Plano de implementação** em
+  [superpowers/plans/2026-08-12-nfe-simples-nacional-plan.md](superpowers/plans/2026-08-12-nfe-simples-nacional-plan.md)
+  — 7 fases, ~2 a 3 semanas. A **Fase 0** prova as premissas em conta real antes de qualquer código.
+- [ ] **Implementação — não iniciada.** Aguardando decisão do Diego sobre quando entra na fila
+  (hoje o próximo é `E5` Shopee).
 
 ## Estoque — excluir produto (ADR-0113) — 2026-08-12
 

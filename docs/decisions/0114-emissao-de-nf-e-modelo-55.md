@@ -1,10 +1,11 @@
 # ADR-0114 — Emissão de NF-e modelo 55 no PubliAI
 
 **Data:** 2026-08-12
-**Status:** **EM REVISÃO** — design fechado em sessão de grilling com o Diego e depois submetido a
-revisão adversarial, que encontrou erros de fato e lacunas. As correções factuais estão aplicadas;
-**três decisões continuam abertas** (ver seção "Decisões abertas") e **bloqueiam a implementação**.
-Não planejar nem codar sobre este ADR até elas fecharem.
+**Status:** aceito — **implementação pendente**. Design fechado em sessão de grilling, submetido a
+revisão adversarial (15 achados, dois deles quebravam o pipeline), corrigido, e as três decisões
+que restavam abertas foram fechadas pelo Diego em 2026-08-12: **v1 é Simples Nacional apenas**, e
+**só as logísticas com `invoice_pending`** entram. Ver "A verificar antes de codar" — 4 pontos que
+exigem pedido real e não bloqueiam o começo da implementação.
 **Revoga parcialmente:** o descarte de NF-e da seção 11 da spec
 `docs/superpowers/specs/2026-07-28-cadastro-manual-e-estoque-design.md`, citado no
 [ADR-0094](0094-estoque-unico-cadastro-manual.md) como alternativa rejeitada.
@@ -105,12 +106,13 @@ cancelamento, obrigando cancelamento extemporâneo ou devolução (ver D-12).
 ⚠️ **`invoice_pending` não cobre todas as logísticas.** A documentação lista `drop_off`,
 `xd_drop_off`, `cross_docking` e `xd_same_day`. **Flex (`self_service`), Turbo e ME1 seguem outro
 fluxo** — e a obrigação fiscal de emitir não depende da logística. Um gatilho único deixaria o
-cliente sem nota justamente nessas vendas. Ver **Decisão aberta 2**.
+cliente sem nota justamente nessas vendas, por isso o D-15 as tira do escopo **explicitamente**, com
+trava na habilitação — em vez de deixá-las falhando em silêncio.
 
-⚠️ **Full não é skip automático.** A adesão ao Faturador do ML é **opt-in** do vendedor; sem ela, o
-ML não emite e um skip por `logistic.type` deixaria o cliente com **zero notas** — exatamente o
-perfil "sem ERP" que motiva este ADR. O critério de saída não pode consagrar isso como correto.
-Ver **Decisão aberta 1**.
+⚠️ **Full é fora do escopo da v1 (D-15), não "skip porque o ML emite".** A adesão ao Faturador é
+**opt-in** do vendedor: um skip por `logistic.type` deixaria org não-aderente com **zero notas** —
+exatamente o perfil "sem ERP" que motiva este ADR. O primeiro cliente não usa Full, então a v1 não
+decide isso; quando entrar org com Full, a pergunta "aderiu ao Faturador?" é decisão nova.
 
 O sinal de push já existe: `ml-webhook` já assina o tópico **`shipments`** e o roteia para
 `sync-venda` com `shipping_id` (`ml-webhook/index.ts:16`). Nenhuma assinatura nova de webhook.
@@ -168,7 +170,7 @@ envio**.
 A âncora é o **shipment**, não o pack: é nele que a nota é importada
 (`POST /shipments/{id}/invoice_data`, D-4) e é ele que carrega o `logistic_type` que decide o
 roteamento. Pack e envio são 1↔0..1 na prática, então o resultado costuma coincidir — mas quando
-divergirem (ver Decisão aberta 3), quem manda é o envio. Os itens da nota são a **união dos itens
+divergirem (ver "A verificar antes de codar", item 3), quem manda é o envio. Os itens da nota são a **união dos itens
 dos pedidos daquele envio**.
 
 O padrão `pedido.pack_id ?? pedido.id` **já existe no código**
@@ -245,22 +247,23 @@ não contribuinte**, que é **6108**. Com ST, `5405`/`6404`. E o par não basta 
 emitente pode precisar de 6108 (PF) e 6102 (PJ com IE) na mesma UF, então existe um **terceiro
 slot opcional** para interestadual a contribuinte, escolhido quando o destinatário tem IE.
 
-**Por família** (produto): `ncm` · `cst_csosn` · `orig_nfe` (0 a 8) · `cest` (opcional, só com ST) ·
-**CST de PIS** · **CST de COFINS** (campos próprios, distintos do CST de ICMS) · **natureza da
-operação**. Para o Simples Nacional a carga é pequena (CSOSN 102 + PIS/COFINS 49/99); para Regime
-Normal faltariam ainda alíquotas de ICMS e o grupo `ICMSUFDest` do DIFAL — motivo pelo qual a
-**Decisão aberta 1** propõe restringir a v1 ao Simples.
+**Por família** (produto), na v1 Simples Nacional: `ncm` · `csosn` · `orig_nfe` (0 a 8) · `cest`
+(opcional, só com ST). Três obrigatórios, um opcional.
 
-**Regime tributário não é imutável.** Org que migra de Simples para Regime Normal (ou o inverso)
-invalida o `cst_csosn` de **todas** as suas famílias de uma vez. A troca de regime na config
-**invalida os códigos e exige recadastro**, com as famílias afetadas listadas — nunca converte
-sozinha.
+**CST de PIS e de COFINS e natureza da operação ficam na org**, não na família: no Simples são
+praticamente constantes (PIS/COFINS `49` ou `99`) e repetí-los por produto seria N chances de
+divergir sem nenhum ganho. Se um dia um produto precisar divergir, aí se cria o override.
+
+**Regime tributário não é imutável.** Org que migra de Simples para Regime Normal invalida o
+`csosn` de **todas** as suas famílias de uma vez — e, na v1, sai do escopo do módulo (D-14). A troca
+de regime na config **desabilita a emissão e exige recadastro**, listando as famílias afetadas;
+nunca converte sozinha e nunca continua emitindo com código do regime antigo.
 
 Família e não variação: variações se distinguem por **cor**, e cor não muda NCM nem CST. Em
 variação seria o mesmo dado N vezes, com N chances de divergir. Override por variação só se um dia
 aparecer família de NCM misto — não antes.
 
-**Família sem `ncm`, `cst_csosn` ou `orig_nfe` não emite**: falha LOUD com o campo faltando
+**Família sem `ncm`, `csosn` ou `orig_nfe` não emite**: falha LOUD com o campo faltando
 nomeado, exibida como pendência na Revisão junto das que já existem.
 
 ### D-11 — Dados do comprador: buscados sob demanda, nunca persistidos em coluna
@@ -333,55 +336,55 @@ etiqueta não libera — o cliente ficaria com pedidos reais parados e sem outro
   aceitar que a promoção aconteça antes da primeira venda. **A trava de habilitação é o lugar de
   dizer isso ao operador.**
 
-## Decisões abertas — bloqueiam a implementação
+### D-14 — v1 é **Simples Nacional apenas**
 
-Levantadas em revisão adversarial do design fechado. Cada uma muda o escopo ou o schema; nenhuma
-pode ser resolvida por default.
+A NT 2025.002 tornou os grupos **IBS/CBS obrigatórios sob pena de rejeição desde 03/08/2026** para
+Lucro Presumido e Lucro Real. Este ADR é de 2026-08-12: já está valendo. **Simples Nacional e MEI
+só entram em 04/01/2027.**
 
-### Aberta 1 — a v1 é só Simples Nacional?
+O dado (CST de IBS/CBS + `cClassTrib` por item) é etapa A — decisão do contador, não cálculo nosso.
+Desenhá-lo agora, para um cliente que é Simples, seria construir contra um alvo em movimento (a NT
+já ativou e desativou rejeições várias vezes em 2026).
 
-A NT 2025.002 tornou os grupos **IBS/CBS obrigatórios sob pena de rejeição desde 03/08/2026 para
-Lucro Presumido e Lucro Real**. Hoje é 2026-08-12: já está valendo. **Simples Nacional e MEI só
-entram em 04/01/2027.**
+**Org de Regime Normal não liga o módulo** — trava na habilitação, com o motivo escrito. Ganhos:
 
-O dado (CST de IBS/CBS + `cClassTrib` por item) é etapa A — decisão do contador, não cálculo nosso —
-e não existe no D-10. Cliente de Regime Normal teria a primeira nota rejeitada no dia 1.
+- Some o **DIFAL**, que para o Simples é **inexigível** (ADI 5469 / Tema 1093)
+- Some a alíquota de ICMS e o grupo `ICMSUFDest` do payload
+- A carga fiscal por família cai para `ncm` + `csosn` + `orig_nfe` (+ `cest` com ST)
 
-**Recomendado: v1 restrita ao Simples Nacional**, declarada no ADR, com trava na habilitação
-(org de Regime Normal não liga o módulo). Ganha ~5 meses de folga, reduz o D-10 à carga que o
-Simples exige (CSOSN 102 + PIS/COFINS 49/99, sem alíquotas de ICMS nem `ICMSUFDest`) e evita
-desenhar o DIFAL — que para o Simples é **inexigível** (ADI 5469/Tema 1093). O prazo de 04/01/2027
-entra como data no roadmap, não como surpresa.
+**04/01/2027 é data de roadmap, não surpresa:** antes dela, o Simples também precisará de IBS/CBS.
+Está registrado aqui para que a v1 seja planejada sabendo que tem prazo de validade.
 
-### Aberta 2 — Flex, Turbo e ME1 entram na v1?
+### D-15 — v1 cobre **só as logísticas com `invoice_pending`**
 
-`invoice_pending` cobre `drop_off`, `xd_drop_off`, `cross_docking` e `xd_same_day`. Flex, Turbo e
-ME1 seguem outro fluxo — mas a obrigação de emitir não muda. Com um gatilho só, essas vendas
-**nunca disparam o worker**.
+Entram: `drop_off`, `xd_drop_off`, `cross_docking`, `xd_same_day`.
 
-**Recomendado: v1 cobre só as logísticas com `invoice_pending`**, com **trava LOUD na habilitação**
-(org que usa Flex/Turbo/ME1 vê a lista do que ficará sem nota antes de ligar o módulo). Segundo
-gatilho entra depois, medido. O que não pode existir é org habilitada achando que está coberta.
+Ficam de fora: **Flex (`self_service`), Turbo, ME1 e Full**. Nenhuma delas dispara `invoice_pending`
+— com o gatilho único do D-4, uma venda dessas simplesmente nunca chamaria o worker.
 
-### Aberta 3 — como o Full é tratado, já que o Faturador é opt-in?
+O primeiro cliente **não usa Full**, o que dissolve a questão da adesão ao Faturador: em vez de
+duas regras (uma por logística, outra por opt-in), existe **uma só** — a lista de logísticas
+cobertas. Se um dia entrar org com Full, a pergunta "aderiu ao Faturador?" volta como decisão nova.
 
-Skip por `logistic.type` deixa zero nota para quem não aderiu. Emitir sempre gera duplicata para
-quem aderiu.
-
-**Recomendado: perguntar no onboarding** ("esta org aderiu ao Faturador do ML?") e gravar na config
-fiscal. Aderiu → skip no Full. Não aderiu → emite também no Full. **Nunca decidir por
-`logistic_type` sozinho.** Se der para confirmar a adesão pela API do ML, melhor — vira verificação
-em vez de declaração.
+**A trava é na habilitação, não no runtime.** Antes de ligar o módulo, o super-admin vê quais
+logísticas a org usa hoje e **quantas vendas ficariam sem nota**. Org habilitada nunca fica achando
+que está coberta; venda de logística não coberta aparece marcada "fora do escopo do módulo", nunca
+some em silêncio.
 
 ## Escopo da v1
 
-**Bloco A — emitir:** config fiscal por org + certificado passthrough + série · campos fiscais por
-família na Revisão e no cadastro · porta `TransmissorFiscal` + adaptador Focus · worker
-`emitir-nfe` no webhook `ready_to_ship`/`invoice_pending` com skip de Full · POST do XML no pack
-do ML · `notas_fiscais` + XML no Storage + badge de pendência na tela de vendas.
+**Recorte:** Simples Nacional (D-14) · logísticas com `invoice_pending` (D-15) · NF-e 55 de venda
+(D-1). Fora: Regime Normal, Full/Flex/Turbo/ME1, NFS-e, nota de devolução, CC-e, NF-e de remessa.
+
+**Bloco A — emitir:** config fiscal por org (com trava de regime e de logística na habilitação) +
+certificado passthrough + série · campos fiscais por família na Revisão e no cadastro · porta
+`TransmissorFiscal` + adaptador Focus · worker `emitir-nfe` no webhook
+`ready_to_ship`/`invoice_pending`, incluindo o grupo de pagamento/intermediador ·
+`POST /shipments/{id}/invoice_data` · `notas_fiscais` + XML no Storage + badge de pendência na tela
+de vendas.
 
 **Bloco B — operar (entra junto):** cancelamento automático pré-despacho · alerta de vencimento de
-certificado · painel de rejeições em `/admin`.
+certificado · painel de rejeições em `/admin` · emissão sintética de homologação.
 
 ## Critério de saída
 
@@ -391,9 +394,9 @@ certificado · painel de rejeições em `/admin`.
 3. Worker morto entre o `INSERT` e a resposta da Focus: a retentativa **retoma e conclui** —
    nenhum pedido fica travado em `invoice_pending` sem ninguém ser avisado
 4. **Carrinho com N itens (1 envio, N pedidos) gera 1 nota com N itens**, não N notas
-5. Pedido Full: emite ou não conforme a adesão ao Faturador declarada na org (Aberta 3) — e o
-   comportamento é verificado nos **dois** estados
-6. Venda de logística não coberta não some em silêncio: aparece como "fora do escopo do módulo"
+5. Org de **Regime Normal não consegue ligar o módulo**, e a mensagem diz por quê (D-14)
+6. Venda de logística fora do escopo (Full, Flex, Turbo, ME1) **não some em silêncio**: aparece
+   marcada "fora do escopo do módulo", e a habilitação já tinha mostrado quantas seriam
 7. Grupo de pagamento/intermediador presente no XML (nota de venda paga por cartão e por PIX,
    ambas autorizadas)
 8. Família sem `ncm` falha LOUD com o campo faltando nomeado
@@ -433,8 +436,8 @@ Levantado na revisão adversarial, sem fonte que feche:
 
 1. **Confirmar em conta real** que `POST /shipments/{id}/invoice_data` destrava `invoice_pending` e
    que o anexo por pack **não** destrava. Toda a v1 depende disso.
-2. **Confirmar a lista de logísticas** com `invoice_pending` (Aberta 2) contra um pedido real de
-   cada tipo.
+2. **Confirmar a lista de logísticas** com `invoice_pending` (D-15) contra um pedido real de cada
+   tipo que a org usa.
 3. **Pack misto Full + não-Full**: existe? Se um `pack_id` puder juntar item do CD com item do
    vendedor, a regra "itens do envio" (D-7) precisa ser testada nesse caso. Só um pedido real tira
    a dúvida.
