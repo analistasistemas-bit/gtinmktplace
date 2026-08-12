@@ -93,7 +93,7 @@ const FICHA_KIT = { id: 'MLB-PROD-KIT', attributes: [{ id: 'UNITS_PER_PACK', val
 
 function filho(over: Partial<ItemCatalogoRow> = {}): ItemCatalogoRow {
   return {
-    id: 'item-1', item_externo_id: 'MLB-ITEM-1', gtin: '7891234567890',
+    id: 'item-1', item_externo_id: 'MLB-ITEM-1', gtin: '7891234567895',
     catalog_product_id: null, catalog_listing_id: null, ...over,
   };
 }

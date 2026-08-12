@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## GTIN inválido derrubava o lote (ADR-0116) — 2026-08-12
+
+- [x] **Motivo:** lote #46, família `92710170` (Tecido Oxford Natal, importado) — CREATE recusado
+  com `Product Identifier [GTIN] contains values with invalid format: [48251671]`. O número tem
+  8 dígitos (comprimento de EAN-8), mas o verificador GS1 deveria ser `9`: é código de fornecedor
+  na coluna GTIN, padrão de planilha de importado. Descartada corrupção por zeros à esquerda —
+  lido como GTIN-8/12/13/14 o verificador dá `9` nos quatro casos.
+- [x] `gtinAusente` (`_shared/ml/publicar.ts`) valida o mod-10 GS1 além do comprimento →
+  variação cai em `EMPTY_GTIN_REASON` em vez de derrubar a publicação. Mesmo predicado guarda a
+  busca de catálogo (`catalogo.ts:277`), que com GTIN inválido nunca acharia ficha legítima.
+- [x] GTIN passou a ser **editável na Revisão** (`variacao-card.tsx`), com aviso inline quando o
+  verificador não fecha; campo vazio publica como "sem código universal". A mutation
+  `updateVariacaoGtin` existia órfã em `queries.ts` desde sempre — ganhou hook e UI.
+- [x] Fixtures de teste com EAN de verificador errado (`7891234567890`) trocados por
+  `7891234567895` em `publicar.test.ts`, `atualizar.test.ts` e `ml/catalogo-up.test.ts`.
+- [x] Testes: 4 em `variacao-card-gtin.test.tsx`, 7 em `lib/__tests__/gtin.test.ts`, 2 novos em
+  `publicar.test.ts` (EAN-8 válido vs. lote #46). Suíte completa verde.
+- [ ] **Deploy pendente:** o fix vive em `supabase/functions/**` — exige
+  `supabase functions deploy` das funções de publicação/atualização antes de o Reenviar resolver.
+
 ## Copy: o eixo de variação nem sempre é cor (ADR-0115) — 2026-08-12
 
 - [x] **Motivo:** família de tecido Oxford com 7 estampas de Natal saiu com a descrição

@@ -28,6 +28,7 @@ vi.mock('@/components/foto-capa-familia', () => ({ FotoCapaFamilia: () => null }
 vi.mock('@/hooks/useFamiliaMutations', () => ({
   useUpdateVariacaoPreco: () => ({ mutateAsync: vi.fn() }),
   useUpdateVariacaoCor: () => ({ mutateAsync: vi.fn() }),
+  useUpdateVariacaoGtin: () => ({ mutateAsync: vi.fn() }),
   useUpdateFamiliaTitulo: () => ({ mutateAsync: vi.fn() }),
   useUpdateFamiliaDescricao: () => ({ mutateAsync: vi.fn() }),
   useRegenerarCopy: () => ({ mutate: vi.fn(), isPending: false }),

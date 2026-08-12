@@ -26,6 +26,7 @@ import { CardCategoria } from '@/components/card-categoria';
 import {
   useUpdateVariacaoPreco,
   useUpdateVariacaoCor,
+  useUpdateVariacaoGtin,
   useUpdateFamiliaTitulo,
   useUpdateFamiliaDescricao,
   useRegenerarCopy,
@@ -103,6 +104,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [descricaoStatus, setDescricaoStatus] = useState<SaveStatus>(undefined);
   const [precoStatuses, setPrecoStatuses] = useState<Record<string, SaveStatus>>({});
   const [corStatuses, setCorStatuses] = useState<Record<string, SaveStatus>>({});
+  const [gtinStatuses, setGtinStatuses] = useState<Record<string, SaveStatus>>({});
   // Abre/fecha cada seção da Revisão (Cores novas / Reposição). Ausente = aberta.
   const [secoesAbertas, setSecoesAbertas] = useState<Record<string, boolean>>({});
   // ADR-0078 F2: edição de preço pergunta "aplicar às demais?" em vez de replicar no automático.
@@ -140,6 +142,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const updateDescricao = useUpdateFamiliaDescricao(familia.loteId);
   const updatePreco = useUpdateVariacaoPreco(familia.loteId);
   const updateCor = useUpdateVariacaoCor(familia.loteId);
+  const updateGtin = useUpdateVariacaoGtin(familia.loteId);
   const regenerar = useRegenerarCopy(familia.loteId);
 
   // Foco numa variação (vindo do selo de pendência do pai): rola até ela e a realça.
@@ -274,6 +277,27 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
       flashCor(codigo, 'salvo');
     } catch {
       flashCor(codigo, 'erro');
+    }
+  }
+
+  async function salvarGtin(codigo: string, gtin: string | null) {
+    const v = variacoes.find((x) => x.codigo === codigo);
+    const original = familia.variacoes.find((x) => x.codigo === codigo);
+    if (!v?.id || !original || gtin === (original.gtin ?? null)) return;
+    setGtinStatuses((s) => ({ ...s, [codigo]: 'salvando' }));
+    try {
+      await updateGtin.mutateAsync({ id: v.id, gtin });
+      setVariacoes((vs) => vs.map((x) => (x.codigo === codigo ? { ...x, gtin } : x)));
+      setGtinStatuses((s) => ({ ...s, [codigo]: 'salvo' }));
+      setTimeout(() => {
+        setGtinStatuses((s) => {
+          const copy = { ...s };
+          delete copy[codigo];
+          return copy;
+        });
+      }, FLASH_MS);
+    } catch {
+      setGtinStatuses((s) => ({ ...s, [codigo]: 'erro' }));
     }
   }
 
@@ -453,10 +477,12 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               loteId={familia.loteId}
               statusPreco={precoStatuses[v.codigo]}
               statusCor={corStatuses[v.codigo]}
+              statusGtin={gtinStatuses[v.codigo]}
               onMudarPreco={mudarPreco}
               onMudarCor={mudarCor}
               onSalvarPreco={salvarPreco}
               onSalvarCor={salvarCor}
+              onSalvarGtin={salvarGtin}
               categoriaMlId={familia.categoriaMlId}
               aliquotaPct={aliquotaPct}
               criticas={criticas}

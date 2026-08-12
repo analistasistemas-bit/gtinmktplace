@@ -177,7 +177,7 @@ describe('montarVariacoesUpdate', () => {
 
 const corNova = {
   codigo: '00000777', cor: 'Vermelho', estoque: 9,
-  preco_publicacao: 12.5, gtin: '7891234567890', ml_picture_id: 'PICNOVA',
+  preco_publicacao: 12.5, gtin: '7891234567895', ml_picture_id: 'PICNOVA',
 };
 
 describe('montarVariacaoNova', () => {
@@ -196,7 +196,7 @@ describe('montarVariacaoNova', () => {
   });
   it('GTIN EAN válido vira atributo GTIN', () => {
     const v = montarVariacaoNova(corNova, null, null, null, 'MLB270273');
-    expect(v.attributes).toEqual([{ id: 'GTIN', value_name: '7891234567890' }]);
+    expect(v.attributes).toEqual([{ id: 'GTIN', value_name: '7891234567895' }]);
   });
   it('sem GTIN em categoria que aceita → EMPTY_GTIN_REASON', () => {
     const v = montarVariacaoNova({ ...corNova, gtin: null }, null, null, null, 'MLB270273');

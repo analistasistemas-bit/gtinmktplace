@@ -76,15 +76,31 @@ function atributoVariacaoPlano(valor: string): AtributoItem {
 }
 
 // Ausência legítima de código universal: nulo/vazio, código interno 3000* (não-EAN GS1),
-// ou comprimento inválido (GTIN válido = 8, 12, 13 ou 14 dígitos). Códigos de 9 dígitos
-// são IDs internos de fornecedor, não GTINs reais — tratamos como ausentes para evitar
-// rejeição silenciosa pelo ML (ex.: lote #48 com gtin="533100017").
+// comprimento inválido (GTIN válido = 8, 12, 13 ou 14 dígitos) ou dígito verificador GS1
+// errado. Códigos de 9 dígitos são IDs internos de fornecedor, não GTINs reais — tratamos
+// como ausentes para evitar rejeição silenciosa pelo ML (ex.: lote #48 com gtin="533100017").
+// O check GS1 estende a mesma regra de proveniência: um número que não fecha o mod-10 não é
+// GTIN de ninguém (planilha de importado costuma trazer o código do fornecedor na coluna),
+// e mandá-lo ao ML só produz "Product Identifier [GTIN] contains values with invalid format"
+// na publicação inteira (lote #46, gtin="48251671": o verificador seria 9).
 const GTIN_COMPRIMENTOS_VALIDOS = new Set([8, 12, 13, 14]);
+/** Dígito verificador GS1 (mod-10): pesos 3/1 da direita para a esquerda, exceto o próprio dígito. */
+function checksumGs1Ok(digits: string): boolean {
+  const corpo = digits.slice(0, -1);
+  const verificador = Number(digits.slice(-1));
+  let soma = 0;
+  for (let i = 0; i < corpo.length; i++) {
+    // Da direita para a esquerda o 1º dígito do corpo pesa 3, depois alterna.
+    soma += Number(corpo[corpo.length - 1 - i]) * (i % 2 === 0 ? 3 : 1);
+  }
+  return (10 - (soma % 10)) % 10 === verificador;
+}
 export function gtinAusente(gtin: string | null): boolean {
   if (!gtin || gtin.trim() === '') return true;
   const digits = gtin.trim().replace(/\D/g, '');
   if (/^3000/.test(digits)) return true;
-  return !GTIN_COMPRIMENTOS_VALIDOS.has(digits.length);
+  if (!GTIN_COMPRIMENTOS_VALIDOS.has(digits.length)) return true;
+  return !checksumGs1Ok(digits);
 }
 
 /** Ordena as fotos de uma variação. O ML usa a 1ª picture_id como capa da galeria
@@ -193,8 +209,7 @@ export function montarPayloadItem(
         variation.attributes = [{ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO }];
       }
     } else {
-      // GTIN preenchido: válido (ML aceita) ou malformado (ML rejeita e expõe o erro ao
-      // operador). Nunca declarar "sem código" para um valor preenchido — seria dado falso.
+      // GTIN preenchido e válido (comprimento + dígito verificador GS1): vai literal.
       variation.attributes = [{ id: 'GTIN', value_name: v.gtin! }];
     }
     return variation;

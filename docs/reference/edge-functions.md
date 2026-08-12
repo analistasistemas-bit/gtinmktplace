@@ -279,6 +279,12 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   segue como seed direto no `Set` (`categoriaExigeFamilyName`), mas categorias novas não precisam mais
   entrar nesse `Set` manualmente: `criarAnuncio` detecta a assinatura exata do 400
   (`precisaItemPlano`, `cause_id` 369+374) reativamente e refaz o `POST` uma vez em formato plano.
+  **GTIN (ADR-0116):** `gtinAusente` (`_shared/ml/publicar.ts`) decide entre mandar o atributo
+  `GTIN` e mandar `EMPTY_GTIN_REASON`. Conta como ausência: vazio, código interno `3000*`,
+  comprimento fora de 8/12/13/14 **e dígito verificador GS1 errado** — este último desde o lote
+  #46 (`48251671`, importado), cujo CREATE inteiro caía com "Product Identifier [GTIN] contains
+  values with invalid format". O mesmo predicado guarda a busca de catálogo
+  (`buscarProdutoCatalogoPorGtin`). O operador corrige ou apaga o GTIN direto na Revisão.
   **User Products / multi-cor (ADR-0088):** categoria UP com >1 variação (`criarAnuncio` devolve
   `FORMATO_INCOMPATIVEL`) roteia pra saga `_shared/user-products/publicar-grupo.ts`
   (`publicar-familia-up.ts` orquestra): cria N itens técnicos separados (1 por SKU/cor) linkados pelo

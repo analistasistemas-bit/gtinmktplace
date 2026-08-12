@@ -11,6 +11,7 @@ import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { uploadImagensLote } from '@/lib/upload-imagens';
 import { QK } from '@/lib/queries';
 import { fmtBRL } from '@/lib/formato';
+import { gtinInvalido } from '@/lib/gtin';
 import type { Variacao } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
 
@@ -19,10 +20,13 @@ interface VariacaoCardProps {
   loteId: string;
   statusPreco?: SaveStatus;
   statusCor?: SaveStatus;
+  statusGtin?: SaveStatus;
   onMudarPreco: (codigo: string, novoPreco: number) => void;
   onMudarCor: (codigo: string, novaCor: string) => void;
   onSalvarPreco?: (codigo: string) => void;
   onSalvarCor?: (codigo: string) => void;
+  /** Salva no blur; null = campo vazio (publica como "sem código universal"). */
+  onSalvarGtin?: (codigo: string, gtin: string | null) => void;
   categoriaMlId: string | null;
   /** Alíquota de imposto por origem (ADR-0055) — mesma usada no card "Análise para publicação",
    *  para o semáforo desta linha não divergir do badge do topo. */
@@ -37,10 +41,12 @@ export function VariacaoCard({
   loteId,
   statusPreco,
   statusCor,
+  statusGtin,
   onMudarPreco,
   onMudarCor,
   onSalvarPreco,
   onSalvarCor,
+  onSalvarGtin,
   categoriaMlId,
   aliquotaPct,
   criticas = [],
@@ -57,6 +63,12 @@ export function VariacaoCard({
   useEffect(() => {
     setValorStr(precoExterno.toString().replace('.', ','));
   }, [precoExterno]);
+
+  const [gtinStr, setGtinStr] = useState(variacao.gtin ?? '');
+  useEffect(() => {
+    setGtinStr(variacao.gtin ?? '');
+  }, [variacao.gtin]);
+  const gtinRuim = gtinInvalido(gtinStr);
 
   async function lidarTrocaFoto(arquivo: File) {
     const ext = arquivo.name.split('.').pop()?.toLowerCase() ?? 'jpeg';
@@ -130,11 +142,31 @@ export function VariacaoCard({
             )}
             <StatusInline status={statusCor} />
           </div>
-          {/* EAN/GTIN é só exibição (vem da planilha; não editável na Revisão) */}
-          <span className="truncate pl-0.5 text-xs text-muted-foreground">
-            EAN: <span className="font-medium tabular-nums text-foreground">{variacao.gtin ?? 'não informado'}</span>
-          </span>
-          <span />
+          {/* EAN/GTIN vem da planilha, mas é editável aqui: importado costuma trazer código do
+              fornecedor na coluna GTIN, e o ML recusa a publicação inteira ("Product Identifier
+              [GTIN] contains values with invalid format", lote #46). Apagar o campo publica como
+              "sem código universal" — não precisa mexer na planilha nem re-ingerir. */}
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 pl-0.5 text-xs text-muted-foreground">EAN</span>
+            <Input
+              value={gtinStr}
+              onChange={(e) => setGtinStr(e.target.value)}
+              onBlur={() => onSalvarGtin?.(variacao.codigo, gtinStr.trim() || null)}
+              placeholder="sem código"
+              aria-label={`GTIN da variação ${variacao.cor || variacao.codigo}`}
+              aria-invalid={gtinRuim}
+              className={`h-6 flex-1 text-xs tabular-nums ${gtinRuim ? 'border-destructive' : ''}`}
+            />
+          </div>
+          <div className="flex items-center gap-1 whitespace-nowrap">
+            <StatusInline status={statusGtin} />
+          </div>
+          {gtinRuim && (
+            <span className="col-span-2 pl-0.5 text-[11px] text-destructive">
+              EAN inválido (dígito verificador não confere) — o ML recusa. Apague o campo para
+              publicar como &quot;sem código universal&quot;.
+            </span>
+          )}
         </div>
         {/* preço + "mín. líquido" logo abaixo */}
         <div className="flex shrink-0 flex-col gap-0.5 pt-0.5">

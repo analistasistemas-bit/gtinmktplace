@@ -8,7 +8,8 @@ const familia = {
   atributos_ml: [{ id: 'BRAND', value_name: 'Avil' }, { id: 'MODEL', value_name: 'XIK 120' }],
 };
 const variacoes = [
-  { codigo: '00000101', cor: 'Azul', estoque: 5, preco_publicacao: 9.9, gtin: '7891234567890', ml_picture_id: 'PIC1' },
+  // EAN-13 com dígito verificador correto (…95): fixture precisa passar na validação GS1.
+  { codigo: '00000101', cor: 'Azul', estoque: 5, preco_publicacao: 9.9, gtin: '7891234567895', ml_picture_id: 'PIC1' },
   { codigo: '00000102', cor: 'Verde', estoque: 0, preco_publicacao: 9.9, gtin: null, ml_picture_id: 'PIC2' },
 ];
 const capaPictureId = 'CAPA1';
@@ -55,7 +56,11 @@ describe('montarPayloadItem', () => {
   });
   it('cor com GTIN EAN válido envia atributo GTIN com value_name', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
-    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '7891234567890' }]);
+    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '7891234567895' }]);
+  });
+  it('EAN-8 com dígito verificador correto vai como GTIN literal', () => {
+    const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '96385074' }], capaPictureId);
+    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '96385074' }]);
   });
   it('cor sem GTIN em categoria que aceita (linha) envia EMPTY_GTIN_REASON "sem código cadastrado"', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
@@ -73,9 +78,13 @@ describe('montarPayloadItem', () => {
     const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '533100017' }], capaPictureId);
     expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
   });
-  it('GTIN com 13 dígitos (EAN-13 possivelmente com checksum errado) vai como GTIN literal → ML valida', () => {
+  it('GTIN de 13 dígitos com dígito verificador errado é tratado como ausente → EMPTY_GTIN_REASON', () => {
     const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '1234567890123' }], capaPictureId);
-    expect(p.variations[0].attributes).toEqual([{ id: 'GTIN', value_name: '1234567890123' }]);
+    expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
+  });
+  it('EAN-8 com dígito verificador errado (lote #46, importado) → EMPTY_GTIN_REASON', () => {
+    const p = montarPayloadItem(familia, [{ ...variacoes[0], gtin: '48251671' }], capaPictureId);
+    expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
   });
   it('cor sem GTIN em categoria sem suporte (botão MLB270272) não envia GTIN nem EMPTY_GTIN_REASON', () => {
     const botao = { ...familia, categoria_ml_id: 'MLB270272' };

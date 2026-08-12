@@ -278,6 +278,13 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   semáforo avisa). Lote #49: R$19,80 → R$27,45 (ADR-0050).
 - **GTIN de comprimento inválido tratado como ausente** — GTIN com tamanho fora do padrão
   passou a ser rejeitado como se não existisse, em vez de propagar um valor inválido.
+- **GTIN com dígito verificador errado derrubava a publicação (2026-08-12, ADR-0116)** — lote #46,
+  tecido Oxford Natal importado: o CREATE inteiro voltava com `Product Identifier [GTIN] contains
+  values with invalid format: [48251671]`. Comprimento de EAN-8 certo, verificador GS1 errado
+  (deveria ser `9`) — código do fornecedor na coluna GTIN, o de sempre em planilha de importado.
+  `gtinAusente` passou a checar o mod-10, então a variação sai como `EMPTY_GTIN_REASON` em vez de
+  derrubar o anúncio. O GTIN também virou **editável na Revisão**, com aviso inline: antes o
+  operador via o erro e não tinha o que fazer a não ser corrigir a planilha e re-ingerir o lote.
 - **Fabricante (MANUFACTURER) preenchido na categoria genérica** — atributo estava faltando na
   publicação (lote #48).
 - **Cor + metragem separada** — planilha com "10 mt" no nome estava virando cor errada (lote #48).
