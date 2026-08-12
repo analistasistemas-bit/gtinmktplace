@@ -27,9 +27,10 @@ const kpisVendas: KpisPedidos = {
 
 const pedido = (chave: string, over: Partial<Pedido> = {}): Pedido => ({
   chave, isPack: false, orderIds: [Number(chave)], data: '2026-06-10T00:00:00Z',
-  comprador_id: 1, comprador_nick: 'fulano', comprador_nome: null, status: 'paid', statusDetail: null,
+  comprador_id: 1, comprador_nick: 'fulano', comprador_nome: null, status: 'paid', faturavel: true,
+  statusDetail: null,
   shipping_status: 'shipped', shipping_substatus: null, uf: 'SP', cidade: 'São Paulo',
-  unidades: 2, bruto: 150, frete: null, liquido: 120, money_release_date: null, estorno: 0,
+  unidades: 2, bruto: 150, brutoFaturavel: 150, frete: null, liquido: 120, money_release_date: null, estorno: 0,
   custo: 80, imposto: 12, markup: 0.5, comissao: 20, rastreio: null, is_publiai: true, tem_devolucao: false,
   itens: [
     { id: 'i1', ml_item_id: 'MLB1', titulo: 'Fita', codigo: 'C1', cor: 'azul', ean: '789',

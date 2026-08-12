@@ -45,8 +45,11 @@ export interface Pedido {
   comprador_id: number | null;
   comprador_nick: string | null;
   comprador_nome: string | null;
-  /** Status de pagamento representativo do grupo (do membro mais antigo). */
+  /** Status de pagamento representativo do grupo (do membro mais antigo). Num pack misto ele NÃO
+   *  decide se o pedido conta: use `faturavel`. */
   status: string;
+  /** Algum membro é faturável (ADR-0038). false = pedido totalmente cancelado/devolvido. */
+  faturavel: boolean;
   statusDetail: string | null;
   shipping_status: string | null;
   /** Substatus do envio (desmembra ready_to_ship: aguardando NF / a caminho). */
@@ -57,8 +60,12 @@ export interface Pedido {
   cidade: string | null;
   /** Soma das quantidades dos itens. */
   unidades: number;
-  /** Valor do checkout: soma de total_amount dos orders do pedido. */
+  /** Valor do checkout: soma de total_amount dos orders do pedido, faturáveis ou não. */
   bruto: number;
+  /** Bruto que conta como faturamento (ADR-0038): só os membros `paid/partially_refunded/refunded`.
+   *  Difere de `bruto` quando o pack mistura orders canceladas com pagas, e é 0 no pedido totalmente
+   *  cancelado/devolvido — é ele, não `bruto`, que fecha com o líquido e com os KPIs. */
+  brutoFaturavel: number;
   /** Frete do envio (uma vez por pack). null = sem frete. */
   frete: number | null;
   /** Líquido do pedido (soma do líquido rateado dos membros), já líquido do imposto — mesma base do markup (ADR-0055). Use `retidoDoPedido` para o retido real do ML (sem imposto). */
@@ -119,6 +126,9 @@ export function agruparPorPedido(
   for (const [chave, membros] of grupos) {
     membros.sort((a, b) => a.order_id - b.order_id);
     const bruto = round2(membros.reduce((s, v) => s + v.total_amount, 0));
+    const brutoFaturavel = round2(
+      membros.reduce((s, v) => s + (ehFaturavel(v.status) ? v.total_amount : 0), 0),
+    );
     const liquido = round2(membros.reduce((s, v) => s + liquidoMembro(v), 0));
     const freteMax = Math.max(0, ...membros.map((v) => v.frete_vendedor ?? 0));
     const frete = freteMax > 0 ? round2(freteMax) : null;
@@ -194,6 +204,7 @@ export function agruparPorPedido(
       comprador_nick: primeiro.comprador_nick,
       comprador_nome: primeiro.comprador_nome ?? null,
       status: primeiro.status,
+      faturavel: membros.some((v) => ehFaturavel(v.status)),
       statusDetail: primeiro.status_detail,
       shipping_status: primeiro.shipping_status,
       shipping_substatus: primeiro.shipping_substatus,
@@ -202,7 +213,7 @@ export function agruparPorPedido(
       sacado_em,
       sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
-      unidades, bruto, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
+      unidades, bruto, brutoFaturavel, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
       rastreio: primeiro.tracking_number,
       uf: primeiro.uf ?? null,
       cidade: primeiro.cidade ?? null,
@@ -215,20 +226,19 @@ export function agruparPorPedido(
   return pedidos;
 }
 
-/** Retido real do ML (comissão + frete) de um pedido: bruto − líquido − imposto — já que `liquido`
- *  aqui é líquido do imposto (ADR-0055), diferente do dinheiro que efetivamente sai na venda.
- *  Pedido não faturável (cancelado/devolvido) retém **nada**: o líquido é 0 por ADR-0038, então a
- *  conta crua devolveria o bruto inteiro e a tela diria que o ML ficou com 100% — mas o dinheiro
- *  voltou ao comprador (estorno). */
-export function retidoDoPedido(p: Pick<Pedido, 'bruto' | 'liquido' | 'imposto' | 'status'>): number {
-  if (!ehFaturavel(p.status)) return 0;
-  return round2(p.bruto - p.liquido - p.imposto);
+/** Retido real do ML (comissão + frete) de um pedido: bruto faturável − líquido − imposto — já que
+ *  `liquido` aqui é líquido do imposto (ADR-0055), diferente do dinheiro que efetivamente sai na
+ *  venda. A base é `brutoFaturavel` e não `bruto` porque o líquido só soma membros faturáveis: com o
+ *  bruto cheio, um pedido devolvido apareceria com o ML retendo 100% — mas o dinheiro voltou ao
+ *  comprador (estorno), e a conta dá 0 naturalmente. */
+export function retidoDoPedido(p: Pick<Pedido, 'brutoFaturavel' | 'liquido' | 'imposto'>): number {
+  return round2(p.brutoFaturavel - p.liquido - p.imposto);
 }
 
 /** Motivo de o pedido ficar fora dos totais monetários, para a tela e o PDF marcarem a linha.
- *  null = pedido normal (faturável). */
-export function rotuloNaoFaturavel(p: Pick<Pedido, 'status' | 'tem_devolucao'>): string | null {
-  if (ehFaturavel(p.status)) return null;
+ *  null = pedido com alguma venda faturável (inclusive pack misto, que conta a parte paga). */
+export function rotuloNaoFaturavel(p: Pick<Pedido, 'faturavel' | 'tem_devolucao'>): string | null {
+  if (p.faturavel) return null;
   return p.tem_devolucao ? 'devolvido' : 'cancelado';
 }
 
@@ -241,14 +251,15 @@ export interface TotaisFinanceiro {
   markup: number | null;
 }
 
-/** Totais do rodapé do Detalhe Financeiro sobre os pedidos visíveis. Só conta faturáveis (ADR-0038),
- *  igual ao banner de KPIs — sem isso uma devolução somava o bruto dela no rodapé e os dois números
- *  da mesma tela divergiam. */
+/** Totais do rodapé do Detalhe Financeiro sobre os pedidos visíveis. Conta só o que é faturável
+ *  (ADR-0038), igual ao banner de KPIs — sem isso uma devolução somava o bruto dela no rodapé e os
+ *  dois números da mesma tela divergiam. Não precisa descartar o pedido: as parcelas não faturáveis
+ *  já entram zeradas (`brutoFaturavel`/`liquido`/`custo`), então o pack misto contribui com a parte
+ *  paga em vez de sumir inteiro. */
 export function totaisFinanceiro(pedidos: Pedido[]): TotaisFinanceiro {
   let bruto = 0, retido = 0, liquido = 0, liqMk = 0, cstMk = 0;
   for (const p of pedidos) {
-    if (!ehFaturavel(p.status)) continue;
-    bruto += p.bruto;
+    bruto += p.brutoFaturavel;
     retido += retidoDoPedido(p);
     liquido += p.liquido + p.imposto;
     if (p.custo != null && p.custo > 0) { liqMk += p.liquido; cstMk += p.custo; }
@@ -291,9 +302,11 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
   for (const p of pedidos) {
     const st = labelStatusEnvio(p.shipping_status, p.shipping_substatus).label;
     porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
-    if (!ehFaturavel(p.status)) continue;
+    // `p.faturavel` e não `ehFaturavel(p.status)`: o status é o do membro mais antigo, então um pack
+    // com a order mais antiga cancelada e outra paga sumiria dos KPIs junto com a venda boa.
+    if (!p.faturavel) continue;
     faturaveis += 1;
-    bruto += p.bruto;
+    bruto += p.brutoFaturavel;
     liquido += p.liquido;
     unidades += p.unidades;
     if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
