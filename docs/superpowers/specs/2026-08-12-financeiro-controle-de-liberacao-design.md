@@ -56,9 +56,10 @@ Uma migration, quatro operações:
 | 1 | `delete from ml_vendas` onde `comprador_id` = `ml_user_id` da própria credencial | 23 linhas |
 | 2 | `update ml_vendas set sacado_em = null, sacado_por = null` onde status não faturável | 46 linhas |
 | 3 | `registrar_saque_ml_vendas`: `+ and status in ('paid','partially_refunded','refunded')` | trava |
-| 4 | Ambas as RPCs de saque: exigir admin (mesmo predicado do ADR-0060) | trava |
 
 Verificar a FK de `ml_vendas_itens` antes do delete (cascade esperado). Aplicação por `supabase migration new` + `db push --linked` + `npm run db:check`, nunca pelo painel (ADR-0043).
+
+**Questão em aberto — exigir admin no saque.** O relatório aponta (achado A6) que qualquer membro ativo da organização pode registrar/desfazer saque, enquanto o ADR-0060 restringiu pausar anúncio a admin. Isso **não** entra na migration da Fase 1 porque depende de uma resposta que o Diego ainda não deu: algum operador não-admin registra saque na rotina? Se não, é uma linha a mais nas duas RPCs; se sim, fica como está e se registra o porquê.
 
 ### 3. Agregador — `src/lib/resumo-vendas.ts`
 
@@ -106,7 +107,7 @@ Os 8 casos listados na seção "Testes faltantes" do relatório, com destaque pa
 
 ## Ordem de execução
 
-1. **Fase 1 — parar a sangria** (migration + trava na ingestão + deploy de `sync-venda`). Ordem obrigatória: migration → `db:check` → deploy da function.
+1. **Fase 1 — parar a sangria.** Ordem obrigatória: **deploy de `sync-venda` primeiro, migration depois**. É o inverso da regra usual do projeto (migration antes do código), e de propósito: aqui o código novo não depende de coluna nova — é só um filtro. Se as 23 linhas forem apagadas enquanto o worker antigo ainda está no ar, qualquer webhook `orders_v2` daqueles pedidos as reinsere. Sequência: `supabase functions deploy sync-venda` → `supabase migration new` → `db push --linked` → `npm run db:check`.
 2. **Fase 2 — KPIs corretos** (`estornos`, `aSacar`, novo layout do Financeiro).
 3. **Fase 3 — usabilidade do Detalhe** (filtro faturável, busca, paginação, confirmação, `sacado_por`).
 
