@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildFinanceiroDetalheReport } from '@/lib/export/adapters';
-import { fmtBRL, fmtInt, fmtMarkup, round2 } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
@@ -17,9 +17,8 @@ import {
 } from '@/components/ui/table';
 import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
-import { calcularMarkup } from '@/lib/markup';
 import { calcularResumo } from '@/lib/resumo-vendas';
-import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, retidoDoPedido, type Pedido } from '@/lib/pedidos-faturamento';
+import { agruparPorPedido, nomeCurtoComprador, nomeExibicaoComprador, retidoDoPedido, rotuloNaoFaturavel, totaisFinanceiro, type Pedido } from '@/lib/pedidos-faturamento';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
@@ -125,6 +124,9 @@ function LinhaDetalhe({
   // Pedido no prejuízo: o líquido recebido ficou abaixo do custo (markup negativo).
   const prejuizo = p.custo != null && p.custo > 0 && p.liquido < p.custo;
   const retido = retidoDoPedido(p);
+  // Devolvido/cancelado: fora dos totais (ADR-0038). Sem a marca, a linha mostrava bruto cheio e
+  // líquido zerado como se o ML tivesse retido tudo — na verdade o dinheiro voltou ao comprador.
+  const naoFaturavel = rotuloNaoFaturavel(p);
   return (
     <>
       <TableRow
@@ -154,6 +156,9 @@ function LinhaDetalhe({
             {p.isPack && <Layers className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pack" />}
             {nomeCurtoComprador(p.comprador_nome) ?? nomeExibicaoComprador(p)}
           </span>
+          {naoFaturavel && (
+            <span className="block text-xs font-medium uppercase text-destructive">{naoFaturavel}</span>
+          )}
           {p.estorno > 0 && (
             <span className="text-xs text-destructive">estornado {fmtBRL(p.estorno)}</span>
           )}
@@ -165,12 +170,21 @@ function LinhaDetalhe({
           sacadoEm={p.sacado_em}
           temMembrosSemDataLiberacao={p.temMembrosSemDataLiberacao}
         />
-        <TableCell className="align-top text-right text-sm tabular-nums">{fmtBRL(p.bruto)}</TableCell>
-        <TableCell className={cn('align-top text-right text-sm tabular-nums', retido < 0 ? 'text-success' : 'text-warning')}>
-          {retido < 0 ? `+${fmtBRL(-retido)}` : fmtBRL(retido)}
-          {retido < 0 && <span className="block text-xs text-muted-foreground">crédito</span>}
+        <TableCell className={cn(
+          'align-top text-right text-sm tabular-nums',
+          naoFaturavel && 'text-muted-foreground line-through',
+        )}>{fmtBRL(p.bruto)}</TableCell>
+        <TableCell className={cn(
+          'align-top text-right text-sm tabular-nums',
+          naoFaturavel ? 'text-muted-foreground' : retido < 0 ? 'text-success' : 'text-warning',
+        )}>
+          {naoFaturavel ? '—' : retido < 0 ? `+${fmtBRL(-retido)}` : fmtBRL(retido)}
+          {!naoFaturavel && retido < 0 && <span className="block text-xs text-muted-foreground">crédito</span>}
         </TableCell>
-        <TableCell className="align-top text-right text-sm tabular-nums text-success">{fmtBRL(p.liquido + p.imposto)}</TableCell>
+        <TableCell className={cn(
+          'align-top text-right text-sm tabular-nums',
+          naoFaturavel ? 'text-muted-foreground' : 'text-success',
+        )}>{naoFaturavel ? '—' : fmtBRL(p.liquido + p.imposto)}</TableCell>
         <TableCell className={cn(
           'align-top text-right text-sm font-medium tabular-nums',
           p.markup == null ? 'text-muted-foreground' : p.markup >= 0 ? 'text-success' : 'text-destructive',
@@ -392,28 +406,9 @@ export default function DetalheFinanceiro() {
     mutationDesfazer.mutate({ ids, ignoradosCliente });
   }
 
-  // Totais e markup agregado sobre os pedidos FILTRADOS (coerente com o que está visível).
-  const totaisFiltrados = useMemo(() => {
-    let brutoF = 0;
-    let retidoF = 0;
-    let liquidoF = 0;
-    let liqMk = 0;
-    let cstMk = 0;
-    for (const p of pedidosFiltrados) {
-      brutoF += p.bruto;
-      retidoF += retidoDoPedido(p);
-      // Total exibido bate com o Mercado Pago: não desconta imposto (ver comentário no header).
-      liquidoF += p.liquido + p.imposto;
-      // Markup continua líquido de imposto (ADR-0055), independente do que "Líquido" exibe.
-      if (p.custo != null && p.custo > 0) { liqMk += p.liquido; cstMk += p.custo; }
-    }
-    return {
-      bruto: round2(brutoF),
-      retido: round2(retidoF),
-      liquido: round2(liquidoF),
-      markup: cstMk > 0 ? calcularMarkup(liqMk, cstMk).markup : null,
-    };
-  }, [pedidosFiltrados]);
+  // Totais e markup agregado sobre os pedidos FILTRADOS (coerente com o que está visível), contando
+  // só faturáveis — igual ao banner de KPIs (ADR-0038).
+  const totaisFiltrados = useMemo(() => totaisFinanceiro(pedidosFiltrados), [pedidosFiltrados]);
 
   const markupTotal = totaisFiltrados.markup;
 

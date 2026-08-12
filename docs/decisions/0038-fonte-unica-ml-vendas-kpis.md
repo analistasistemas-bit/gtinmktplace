@@ -54,3 +54,23 @@ Causas-raiz confirmadas com dados reais:
 3. Rodar o backfill/reconciliação para popular `estorno` + `money_release_date` nas linhas existentes.
 
 Antes do passo 3, o bruto/líquido/unidades já batem com o ML; "Estornos" e "Liberação" aparecem zerados/“—” até o re-backfill.
+
+## Adendo 2026-08-12 — a tabela do Detalhe Financeiro não seguia a decisão
+
+O banner de KPIs do `DetalheFinanceiro` contava só faturáveis (correto), mas a **tabela e o rodapé**
+filtravam apenas por `statusLiberacao` — nunca por `ehFaturavel`. Consequências, com os dados reais da
+conta AVIL:
+
+- Um pedido `cancelled` (devolução com estorno de 100%) somava `p.bruto` e `retidoDoPedido(p)` no
+  rodapé, que então divergia do banner da mesma tela: **R$ 2.666,20 em julho/2026** (33 pedidos) e
+  R$ 1.354,93 em agosto.
+- Na linha, `retidoDoPedido` devolvia o **bruto inteiro** (bruto − 0 − 0, já que líquido e imposto são
+  zerados para não faturável) e a célula "Retido (ML)" pintava em `text-warning` como se o ML tivesse
+  ficado com tudo. O dinheiro tinha voltado ao comprador.
+- O PDF (`buildFinanceiroDetalheReport`) não carregava `estorno` nem `tem_devolucao`, então a linha
+  saía sem nenhum sinal de devolução — só "Líquido R$ 0,00" e markup "—", sem explicação.
+
+Correção (sem mudar a decisão): `retidoDoPedido` devolve 0 para pedido não faturável; novo
+`totaisFinanceiro(pedidos)` (único caminho dos totais da tela e do PDF) ignora não faturáveis; novo
+`rotuloNaoFaturavel(p)` marca a linha como **devolvido**/**cancelado** na tela (bruto riscado,
+retido/líquido "—") e no PDF (sufixo no comprador). Testes em `tests/lib/financeiro-cancelado.test.ts`.

@@ -216,9 +216,49 @@ export function agruparPorPedido(
 }
 
 /** Retido real do ML (comissão + frete) de um pedido: bruto − líquido − imposto — já que `liquido`
- *  aqui é líquido do imposto (ADR-0055), diferente do dinheiro que efetivamente sai na venda. */
-export function retidoDoPedido(p: Pick<Pedido, 'bruto' | 'liquido' | 'imposto'>): number {
+ *  aqui é líquido do imposto (ADR-0055), diferente do dinheiro que efetivamente sai na venda.
+ *  Pedido não faturável (cancelado/devolvido) retém **nada**: o líquido é 0 por ADR-0038, então a
+ *  conta crua devolveria o bruto inteiro e a tela diria que o ML ficou com 100% — mas o dinheiro
+ *  voltou ao comprador (estorno). */
+export function retidoDoPedido(p: Pick<Pedido, 'bruto' | 'liquido' | 'imposto' | 'status'>): number {
+  if (!ehFaturavel(p.status)) return 0;
   return round2(p.bruto - p.liquido - p.imposto);
+}
+
+/** Motivo de o pedido ficar fora dos totais monetários, para a tela e o PDF marcarem a linha.
+ *  null = pedido normal (faturável). */
+export function rotuloNaoFaturavel(p: Pick<Pedido, 'status' | 'tem_devolucao'>): string | null {
+  if (ehFaturavel(p.status)) return null;
+  return p.tem_devolucao ? 'devolvido' : 'cancelado';
+}
+
+export interface TotaisFinanceiro {
+  bruto: number;
+  retido: number;
+  /** Líquido SEM descontar imposto (bate com o Mercado Pago), como a tela exibe. */
+  liquido: number;
+  /** Markup líquido de imposto (ADR-0055). null sem custo. */
+  markup: number | null;
+}
+
+/** Totais do rodapé do Detalhe Financeiro sobre os pedidos visíveis. Só conta faturáveis (ADR-0038),
+ *  igual ao banner de KPIs — sem isso uma devolução somava o bruto dela no rodapé e os dois números
+ *  da mesma tela divergiam. */
+export function totaisFinanceiro(pedidos: Pedido[]): TotaisFinanceiro {
+  let bruto = 0, retido = 0, liquido = 0, liqMk = 0, cstMk = 0;
+  for (const p of pedidos) {
+    if (!ehFaturavel(p.status)) continue;
+    bruto += p.bruto;
+    retido += retidoDoPedido(p);
+    liquido += p.liquido + p.imposto;
+    if (p.custo != null && p.custo > 0) { liqMk += p.liquido; cstMk += p.custo; }
+  }
+  return {
+    bruto: round2(bruto),
+    retido: round2(retido),
+    liquido: round2(liquido),
+    markup: cstMk > 0 ? calcularMarkup(liqMk, cstMk).markup : null,
+  };
 }
 
 export interface KpisPedidos {

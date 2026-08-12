@@ -4,7 +4,7 @@ import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/pub
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
 import type { Periodo } from '@/lib/metricas';
 import type { ResumoViabilidade } from '@/lib/analise-viabilidade';
-import { nomeExibicaoComprador, retidoDoPedido, type Pedido, type KpisPedidos } from '@/lib/pedidos-faturamento';
+import { nomeExibicaoComprador, retidoDoPedido, rotuloNaoFaturavel, type Pedido, type KpisPedidos } from '@/lib/pedidos-faturamento';
 import type { Devolucao } from '@/lib/devolucoes';
 import { labelTipoDevolucao } from '@/lib/devolucoes';
 import { labelStatusLiberacao, statusLiberacao } from '@/lib/status-liberacao';
@@ -605,7 +605,10 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
     linhas: pedidos.map((p) => ({
       celulas: {
         data: fmtData(p.data),
-        comprador: nomeExibicaoComprador(p),
+        comprador: (() => {
+          const motivo = rotuloNaoFaturavel(p);
+          return motivo ? `${nomeExibicaoComprador(p)} (${motivo})` : nomeExibicaoComprador(p);
+        })(),
         produtos: p.itens.map((it) => it.codigo ?? it.titulo ?? '?').join(', '),
         unidades: fmtInt(p.unidades),
         liberacao: (() => {
@@ -620,9 +623,11 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
             : labelStatusLiberacao(status);
         })(),
         bruto: fmtBRL(p.bruto),
-        retido: fmtBRL(retidoDoPedido(p)),
+        // Devolvido/cancelado não teve retenção nem líquido — imprimir "R$ 0,00" faria a linha
+        // parecer uma venda que rendeu zero, em vez de dinheiro que voltou ao comprador.
+        retido: rotuloNaoFaturavel(p) ? '—' : fmtBRL(retidoDoPedido(p)),
         // Bate com o Mercado Pago: não desconta imposto (ver DetalheFinanceiro.tsx).
-        liquido: fmtBRL(p.liquido + p.imposto),
+        liquido: rotuloNaoFaturavel(p) ? '—' : fmtBRL(p.liquido + p.imposto),
         markup: fmtMarkup(p.markup),
       },
       sublinhas: config.expandido
