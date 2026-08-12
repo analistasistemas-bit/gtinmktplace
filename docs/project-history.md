@@ -116,6 +116,24 @@
 
 ## 2026-07-20 a 2026-07-26
 
+- Corte de egress (2026-07-20): URL assinada persistida e poll de vendas em 3 minutos
+  ([ADR-0081](decisions/0081-corte-de-egress-url-assinada-persistida.md)), com o poll passando a
+  ser incremental por marca d'água `atualizado_em`
+  ([ADR-0082](decisions/0082-poll-incremental-de-vendas-por-marca-dagua.md))
+- Cursor (deslizador de zíper) virou o 5º tipo de aviamento determinístico
+  ([ADR-0083](decisions/0083-cursor-de-zíper-tipo-aviamento-determinístico.md)) e `family_name`
+  entrou no payload da categoria Zíperes
+  ([ADR-0084](decisions/0084-family-name-categoria-zipper.md)) — generalizado dois dias depois em
+  detecção reativa das categorias que exigem item plano, sem lista mantida à mão
+  ([ADR-0087](decisions/0087-family-name-deteccao-reativa.md))
+- Configuração org-scoped: leitura fechada por organização e imposto LOUD
+  ([ADR-0086](decisions/0086-configuracao-org-scoped.md), 2026-07-21)
+- Hardening de identidade e acesso (2026-07-25): escrita em `profiles` trancada — privilégio não
+  se auto-concede ([ADR-0090](decisions/0090-lockdown-da-escrita-em-profiles.md)); a conexão do ML
+  passa a ser gravada na org da **sessão**, não na do `state`
+  ([ADR-0091](decisions/0091-conexao-ml-confirmada-pela-sessao.md)); identidade da plataforma
+  separada das organizações clientes
+  ([ADR-0092](decisions/0092-identidade-da-plataforma-e-acesso-super-admin.md))
 - Notificação in-app espelhando todo alerta que já saía por Telegram, escrita pelo mesmo ponto
   único, sino no topbar (2026-07-21) ([ADR-0085](decisions/0085-notificacao-in-app.md))
 - Publicação em User Products com N itens por família (2026-07-22/23): categorias que exigem
@@ -140,16 +158,34 @@
 - `E6b` Bloco B — cadastro manual de produto e entrada de mercadoria pela UI (2026-07-29),
   como módulo pago ligado por org pelo super-admin; nenhuma org enxerga até ser habilitada.
   Módulo de emissão de NF-e foi descartado na mesma sessão de design (commodity, passivo fiscal)
+- Mercado Envios (me2) passou a ser detectado por `shipping_preferences`, não por
+  `status.mercadoenvios`
+  ([ADR-0095](decisions/0095-mercado-envios-via-shipping-preferences.md), 2026-07-31)
+- Cadastro manual ganhou código de produto automático
+  ([ADR-0096](decisions/0096-codigo-produto-automatico.md), 2026-07-31) e a exclusão de
+  produto/lote passou a limpar os movimentos de estoque órfãos
+  ([ADR-0097](decisions/0097-exclusao-limpa-movimentos-orfaos.md), 2026-08-01)
 - Redesenho da tela `/estoque` (2026-08-02): listagem e cadastro viraram cards, eliminando o
   scroll horizontal estrutural de `<table>` aninhada; corrigiu de quebra um bug financeiro real
   de parsing de milhar pt-BR (`"1.234"` gravava `R$ 1,23`)
+- Reforma da copy do anúncio: copy ancorada na fonte e persuasiva
+  ([ADR-0098](decisions/0098-copy-ancorada-na-fonte-e-persuasiva.md), 2026-08-02) e título no
+  padrão do Mercado Livre como contrato de slots
+  ([ADR-0099](decisions/0099-titulo-padrao-mercado-livre.md), 2026-08-03)
 
 ## 2026-08-04 a 2026-08-12
 
-Sem épico numerado. Consolidação da apuração financeira e do módulo de estoque — 9 ADRs aceitos
-(0104 a 0112), todos em produção. Detalhe por data em [TASKS.md](TASKS.md) e no
+Sem épico numerado. Consolidação da apuração financeira e do módulo de estoque — ADRs 0100 a
+0112, todos em produção. Detalhe por data em [TASKS.md](TASKS.md) e no
 [project-status.md](project-status.md).
 
+- Fechamento da reforma da copy (2026-08-04): `termos_com_risco` como válvula de escape para termo
+  não comprovado ([ADR-0100](decisions/0100-termos-com-risco-valvula-de-escape.md)); o mapa de
+  marca corrige a grafia e não troca a entidade
+  ([ADR-0101](decisions/0101-marca-do-mapa-nao-troca-entidade.md)); a descrição não promete
+  logística nem crava o conteúdo da embalagem
+  ([ADR-0102](decisions/0102-descricao-sem-promessa-logistica.md)); `✅ BENEFÍCIOS` é cabeçalho, não
+  item de lista ([ADR-0103](decisions/0103-cabecalho-beneficios-nao-vira-bullet.md))
 - Produto gravado na organização errada (2026-08-04): não foi vazamento de RLS, e sim uma
   gravação SQL administrativa direta contornando o fluxo oficial. Árvore indevida removida, PAT
   rotacionado e migration de guard tornando a cadeia de `org_id` imutável e a escrita de estoque

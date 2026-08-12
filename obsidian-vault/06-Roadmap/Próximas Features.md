@@ -19,8 +19,9 @@ real") e o maior multiplicador de valuation, e já está desbloqueado tecnicamen
 
 - **`E5` — conector Shopee** — auth OAuth + HMAC, item/variações, mídia, estoque/preço, status.
   Pesquisa registrada: ver [[Publicação Shopee]].
-- **`E6b` — Estoque único cross-canal com ledger** (Fase 3 do roadmap v2) — venda paga em
-  qualquer canal baixa o estoque canônico e propaga aos demais; sem isso, multicanal é demo.
+- ~~**`E6b` — Estoque único cross-canal com ledger**~~ — **entregue em 2026-07-29** (ADR-0094,
+  Blocos A e B): venda paga baixa o estoque canônico e propaga aos demais canais, e o cadastro
+  manual de produto dispensa a planilha. Ver [[Estoque]] e [[Sprint Atual]].
 
 ## Fase 0 — Fundação técnica (em andamento em paralelo)
 
