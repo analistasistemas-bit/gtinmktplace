@@ -40,7 +40,15 @@ Protocolo de investigação (antes de qualquer `grep`/`rg`):
 2. Busca global só se as fontes acima não bastarem, e sempre com escopo (`src/`, `supabase/functions/`, `docs/`). Proibido `grep -R` / `rg termo .` sem escopo.
 3. Ao investigar problema, responder primeiro com: hipótese inicial, módulos prováveis, arquivos candidatos, plano de investigação.
 
-Após mudança estrutural relevante, atualizar o Graphify.
+Após mudança estrutural relevante, atualizar o Graphify. O grafo canônico é `graphify-out/` na
+**raiz** (~10 mil nós, cobre `docs/`, `supabase/`, `src/`, `obsidian-vault/`); cópia em qualquer
+outro diretório é resíduo, não usar. `.graphifyignore` já exclui o SheetJS vendorizado.
+
+Todo update termina com **`python3 scripts/graphify-podar-falsos.py --aplicar`** e a
+reclusterização. O extrator casa chamadas por nome, sem escopo, e inventa arestas entre `src/` e
+`supabase/functions/` (runtimes que nunca se importam) e de produção para arquivos de teste — elas
+aparecem como achado em "Surprising Connections". O script reverifica as duas premissas antes de
+apagar e aborta se alguma deixar de valer.
 
 ---
 
