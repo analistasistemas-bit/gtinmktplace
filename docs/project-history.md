@@ -100,6 +100,12 @@
 
 ## 2026-07-13 a 2026-07-19
 
+- Menus multi-marketplace entraram em produção (2026-07-15): registry único no frontend +
+  habilitação por org, canal ativo global, tela `/canais`. Com 1 canal nenhum número muda
+  ([ADR-0077](decisions/0077-registry-hibrido-menus-multicanal.md))
+- Preço por variação e split por faixa de preço (2026-07-17), depois de o ML passar a rejeitar
+  família com preço divergente entre variações — incidente real com 2 famílias em produção
+  ([ADR-0078](decisions/0078-preco-por-variacao-split-por-faixa-e-controle-de-preco-no-update.md))
 - Documentação visual de arquitetura via Archify entrou em `docs/architecture/`: 8 diagramas
   fixos (visão geral, arquitetura geral, fluxo de publicação, sync de marketplace, modelo de
   dados simplificado, multi-tenant, infraestrutura, TO-BE), gerados a partir das fontes de
@@ -107,6 +113,76 @@
   final independente via Opus antes da entrega
 - `obsidian-vault/` (Visão Geral, Arquitetura Geral) corrigido de uma nota desatualizada que
   ainda dizia "sem `org_id`" — multi-tenancy está em produção desde o E7 (2026-07-05)
+
+## 2026-07-20 a 2026-07-26
+
+- Notificação in-app espelhando todo alerta que já saía por Telegram, escrita pelo mesmo ponto
+  único, sino no topbar (2026-07-21) ([ADR-0085](decisions/0085-notificacao-in-app.md))
+- Publicação em User Products com N itens por família (2026-07-22/23): categorias que exigem
+  "item plano" e têm mais de uma cor não aceitam `variations` — cada cor vira um item técnico
+  linkado por `family_id`. Validado com família real de 9 cores; 5 pendências (reconciliadores
+  de convergência e de backfill, descrição no UPDATE, guarda de remoção, realtime da Revisão)
+  fechadas em 2026-07-24 ([ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)).
+  Achado a parte: `reconciliar-faturamento` nunca tivera schedule QStash desde a criação
+- Atualização rápida de estoque (2026-07-24): atalho de 1 clique para reposição pura em famílias
+  `UPDATE` sem pendência ([ADR-0089](decisions/0089-atualizacao-rapida-de-estoque.md))
+- Financeiro do Mercado Pago passou a usar a conexão OAuth do ML (2026-07-26), derrubando a
+  premissa sem spike do ADR-0031 e matando o fallback global `MP_ACCESS_TOKEN` que estava a um
+  `if` de vazar a conta da Avil entre tenants; 2 bugs financeiros silenciosos corrigidos junto
+  ([ADR-0093](decisions/0093-financeiro-mp-pela-conexao-ml.md))
+
+## 2026-07-27 a 2026-08-03
+
+- `E6b` Bloco A — estoque único cross-canal em produção (2026-07-29): ledger imutável e
+  idempotente `estoque_movimentos` + RPCs `security definer`, venda paga baixa o saldo e
+  enfileira push absoluto para os demais canais, reconciliação diária como rede de segurança
+  ([ADR-0094](decisions/0094-estoque-unico-cadastro-manual.md))
+- `E6b` Bloco B — cadastro manual de produto e entrada de mercadoria pela UI (2026-07-29),
+  como módulo pago ligado por org pelo super-admin; nenhuma org enxerga até ser habilitada.
+  Módulo de emissão de NF-e foi descartado na mesma sessão de design (commodity, passivo fiscal)
+- Redesenho da tela `/estoque` (2026-08-02): listagem e cadastro viraram cards, eliminando o
+  scroll horizontal estrutural de `<table>` aninhada; corrigiu de quebra um bug financeiro real
+  de parsing de milhar pt-BR (`"1.234"` gravava `R$ 1,23`)
+
+## 2026-08-04 a 2026-08-12
+
+Sem épico numerado. Consolidação da apuração financeira e do módulo de estoque — 9 ADRs aceitos
+(0104 a 0112), todos em produção. Detalhe por data em [TASKS.md](TASKS.md) e no
+[project-status.md](project-status.md).
+
+- Produto gravado na organização errada (2026-08-04): não foi vazamento de RLS, e sim uma
+  gravação SQL administrativa direta contornando o fluxo oficial. Árvore indevida removida, PAT
+  rotacionado e migration de guard tornando a cadeia de `org_id` imutável e a escrita de estoque
+  restrita às RPCs auditadas
+- Família migrada pelo ML para User Products: UPDATE passou a detectar a migração pelo `GET` ao
+  vivo e adotar a família ([ADR-0104](decisions/0104-update-de-familia-migrada-para-user-products.md),
+  2026-08-04/05). A forma suposta estava **errada** — a primeira migração real (2026-08-06)
+  mostrou que o ML **fecha** o anúncio Legacy e cria N itens novos sem nenhum ponteiro ligando os
+  dois; re-vínculo por título e `COLOR.value_name`
+  ([ADR-0105](decisions/0105-revinculo-de-familia-dissolvida-pelo-ml-em-user-products.md))
+- Apuração financeira: devolução conta no período do estorno
+  ([ADR-0106](decisions/0106-devolucao-conta-no-periodo-do-estorno.md)); `ORIGEM` obrigatória e
+  explícita na planilha, vazio ou typo aborta o lote
+  ([ADR-0107](decisions/0107-origem-obrigatoria-na-planilha.md)); variação duplicada passa a
+  vencer pelo custo mais recente — 309 códigos estavam com custo inflado
+  ([ADR-0108](decisions/0108-custo-duplicado-vence-o-mais-recente.md)); custo congelado no
+  instante da venda ([ADR-0109](decisions/0109-custo-congelado-por-venda.md)); alíquota interna
+  por UF da empresa, com trava LOUD de meia-configuração
+  ([ADR-0112](decisions/0112-aliquota-interna-por-uf-da-empresa.md))
+- Estoque operável: ajustar/zerar pelo PubliAI, admin-only e só para reduzir
+  ([ADR-0110](decisions/0110-ajuste-de-estoque-so-reduz.md)) — editar estoque direto no canal
+  virou proibido, porque o push é absoluto e a reconciliação restaura o número em até 24h; e
+  reposição com saldo > 0 reativa o anúncio pausado
+  ([ADR-0111](decisions/0111-reativacao-automatica-ao-repor-estoque.md)). Nesse deploy, um
+  `revoke`/`grant` rodando **depois** do `alter owner` virou no-op com WARNING e deixou a RPC de
+  ajuste exposta a qualquer usuário autenticado — encontrado e fechado no próprio deploy
+- Incidente de moderação (2026-08-06): mirar ficha de catálogo de outro domínio levou o ML a
+  re-moderar e **cancelar** o anúncio do Aquaphor por propriedade intelectual. Regra reforçada:
+  nenhuma escrita direta em anúncio publicado fora do fluxo do app, nem em diagnóstico
+- Venda não baixava estoque de produto cadastrado por outro membro da org (2026-08-11): resíduo
+  pré-multi-tenancy filtrando `familias`/`variacoes` por `user_id`; 12 unidades venderam sem
+  baixa e o motivo `venda_sku_nao_encontrado` tinha 0 linhas em todo o banco — a tabela vazia era
+  o sintoma. Passou a filtrar por `org_id`, com notificação para venda paga sem SKU
 
 ## Onde aprofundar
 

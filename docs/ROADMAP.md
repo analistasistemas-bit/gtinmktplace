@@ -8,8 +8,8 @@
 
 > Documento vivo. Reflete a visão estratégica das fases do projeto. Para checklist operacional do dia a dia, ver [TASKS.md](TASKS.md).
 
-**Última atualização:** 2026-07-12 (tabela da Evolução v2 sincronizada com E6/E7 em produção)
-**Estado geral:** 🟢 M0-M4 (MVP ML) concluídos; Evolução v2 em execução — E1-E4, E6, E7 em
+**Última atualização:** 2026-08-12 (E6b em produção; checklist de abertura da conta Shopee linkado)
+**Estado geral:** 🟢 M0-M4 (MVP ML) concluídos; Evolução v2 em execução — E1-E4, E6, E6b, E7 em
 produção; E5 (Shopee) é o próximo épico. Snapshot completo sempre em `project-status.md`.
 
 ---
@@ -259,11 +259,15 @@ Sistema em uso recorrente; operador é autônomo no fluxo principal.
 
 ## 🚀 Evolução v2 — SaaS multicanal (pós-MVP)
 
-**Status:** 🟢 Em execução — E1-E4, E6 e E7 **já em produção** (2026-07-05/06); E5/E6b/E8/E9 pendentes.
+**Status:** 🟢 Em execução — E1-E4, E6, E6b e E7 **já em produção** (2026-07-05/06 e 2026-07-29); E5/E8/E9 pendentes.
 **Documento:** [superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md](superpowers/specs/2026-06-13-evolucao-saas-multicanal-design.md)
 **Priorização atual:** ver [Roadmap-Estrategico-PubliAI-v2.md](Roadmap-Estrategico-PubliAI-v2.md)
 (revisão de CTO, 2026-07-12, 8 fases de construção da empresa) — supersede a ordem abaixo;
 principal mudança: Shopee (E5) antecipado, roda em paralelo à fundação comercial, não "depois".
+**Pré-requisito operacional do E5** (manual, fora do ambiente de dev, ainda ⬜ não iniciado):
+[shopee-open-platform-setup.md](shopee-open-platform-setup.md) — abertura da conta/app na Shopee
+Open Platform. Não bloqueia design, ADR, spec nem o código do conector com mocks; bloqueia só o
+teste real de OAuth/publicação.
 
 > **⚠️ Decisão do Diego (2026-07-28) — E6b ampliado e antecipado na frente do E5.**
 > O **E6b** deixa de ser só "estoque único cross-canal" e passa a incluir **cadastro manual de
@@ -286,7 +290,7 @@ multi-tenant, multi-marketplace, para qualquer produto** — comercializável. A
 |---|---|---|---|
 | **0 — Fundação** | E1 Camada de abstração de canais · E2 Modelo de dados multicanal (`anuncios_externos`) | ML atrás de uma interface; catálogo agnóstico (sem mudança visível) | ✅ Em produção |
 | **1 — Qualquer produto** | E3 Taxonomia canônica + categoria por IA · E4 Atributos por IA (closed-set) | Sai do regex por nicho; aceita qualquer segmento | ✅ Em produção |
-| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · **E6b Cadastro manual + entrada + estoque único cross-canal** | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada — e aceita produto cadastrado direto na UI, sem exigir ERP do cliente | ✅ E6 em produção (2026-07-06); 🔜 **E6b é o próximo** (ampliado e antecipado, 2026-07-28); 📋 E5 depois |
+| **2 — 2º canal** | E5 Conector **Shopee** · E6 Orquestração multicanal · **E6b Cadastro manual + entrada + estoque único cross-canal** | Publica em ML + Shopee de uma fonte única, com baixa de estoque sincronizada — e aceita produto cadastrado direto na UI, sem exigir ERP do cliente | ✅ E6 em produção (2026-07-06); ✅ **E6b em produção** (Blocos A e B, 2026-07-29); 🔜 E5 é o próximo |
 | **3 — Virar SaaS** | E7 Multi-tenancy · E8 Billing (Asaas) + LGPD · E9 Operação SaaS | Multi-cliente, cobrável, escalável | ✅ E7 em produção (2026-07-05/06); 📋 E8/E9 pendentes (billing mínimo viável, roadmap v2) |
 
 **Decisões-chave:** strangler in-place (D1) · Shopee como 2º canal (D2) · assinatura por planos + metering
