@@ -47,12 +47,13 @@
 - [ ] **Limitação em produção hoje:** as 7 variações da família `92710170` têm `variacoes.cor`
   preenchida à mão como `Est-1`…`Est-33`. O CREATE escreve `- Estampa 6`, mas um UPDATE nessa
   família republica `- Est-6` sob o mesmo cabeçalho (ver Consequências do ADR-0115).
-- [ ] Deploy: mudança em `_shared/ai` e `_shared/ml/criar-item.ts` → **12 functions** pelo grafo
-  de imports (`deno info`): `atualizar-status-publicado`, `metricas-vendas`, `monitorar-moderados`,
-  `process-familia`, `publicar-anuncio`, `publicar-split-ml`, `publish-familia-ml`,
-  `reconciliar-convergencia-up`, `regenerar-copy-familia`, `sincronizar-estoque`,
-  `status-publicados`, `update-familia-ml`. Conferir versão pós-deploy. O merge na main **não**
-  deploya Edge Functions.
+- [x] Deploy 2026-08-12: mudança em `_shared/ai` e `_shared/ml/criar-item.ts` → **12 functions**
+  pelo grafo de imports (`deno info`), todas ACTIVE e conferidas pós-deploy:
+  `atualizar-status-publicado` v33, `metricas-vendas` v42, `monitorar-moderados` v48,
+  `process-familia` v149, `publicar-anuncio` v39, `publicar-split-ml` v71,
+  `publish-familia-ml` v97, `reconciliar-convergencia-up` v21, `regenerar-copy-familia` v49,
+  `sincronizar-estoque` v15, `status-publicados` v45, `update-familia-ml` v84.
+  O merge na main **não** deploya Edge Functions — foi etapa separada via CLI.
 
 ## Estoque — excluir produto (ADR-0113) — 2026-08-12
 
