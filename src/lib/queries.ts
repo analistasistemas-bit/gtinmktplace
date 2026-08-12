@@ -552,29 +552,65 @@ export async function upsertDescontoPct(pct: number): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchAliquotas(): Promise<{ nacional: number; importado: number; confirmada: boolean }> {
+/** Normaliza o par (UF da empresa, alíquota interna) do ADR-0112. Os dois preenchidos ou os dois
+ *  vazios — meia-configuração aplicaria imposto parcial em silêncio num caminho financeiro. */
+export function normalizarAliquotaInterna(
+  uf: string | null | undefined, pct: number | null | undefined,
+): { ufEmpresa: string | null; internaPct: number | null } {
+  const u = (uf ?? '').trim().toUpperCase();
+  const temUf = u !== '';
+  const temPct = pct != null && Number.isFinite(pct);
+  if (!temUf && !temPct) return { ufEmpresa: null, internaPct: null };
+  if (temUf !== temPct) throw new Error('alíquota interna exige UF e percentual juntos');
+  if (!/^[A-Z]{2}$/.test(u)) throw new Error('UF da empresa deve ter 2 letras (ex.: PE)');
+  if (pct! < 0 || pct! > 100) throw new Error('percentual da alíquota interna deve ficar entre 0 e 100');
+  return { ufEmpresa: u, internaPct: pct! };
+}
+
+export async function fetchAliquotas(): Promise<{
+  nacional: number; importado: number; confirmada: boolean;
+  ufEmpresa: string | null; internaPct: number | null;
+}> {
   const orgId = effectiveOrgId();
-  if (!orgId) return { nacional: 8, importado: 16, confirmada: false };
+  if (!orgId) return { nacional: 8, importado: 16, confirmada: false, ufEmpresa: null, internaPct: null };
   const { data } = await supabase.from('configuracoes')
-    .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em').eq('org_id', orgId).maybeSingle();
+    .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em, uf_empresa, aliquota_interna_pct')
+    .eq('org_id', orgId).maybeSingle();
+  // ADR-0112: a alíquota interna só existe com os DOIS campos preenchidos — meio parâmetro é
+  // tratado como parâmetro ausente (cai na regra por origem), nunca como percentual presumido.
+  const ufEmpresa = data?.uf_empresa ?? null;
+  const internaPct = data?.aliquota_interna_pct != null ? Number(data.aliquota_interna_pct) : null;
+  const internaOk = ufEmpresa != null && internaPct != null;
   return {
     nacional: data?.aliquota_nacional_pct != null ? Number(data.aliquota_nacional_pct) : 8,
     importado: data?.aliquota_importado_pct != null ? Number(data.aliquota_importado_pct) : 16,
     // ADR-0086: só é "confirmada" com a flag setada (salvar em Configurações). Sem ela, o
     // process-familia bloqueia a publicação (LOUD) em vez de usar 8/16 em silêncio.
     confirmada: data?.aliquotas_confirmadas_em != null,
+    ufEmpresa: internaOk ? ufEmpresa : null,
+    internaPct: internaOk ? internaPct : null,
   };
 }
 
-export async function upsertAliquotas(a: { nacional: number; importado: number }): Promise<void> {
+export async function upsertAliquotas(a: {
+  nacional: number; importado: number;
+  ufEmpresa?: string | null; internaPct?: number | null;
+}): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   const orgId = effectiveOrgId();
   if (!user || !orgId) throw new Error('sem sessão');
+  // Lança antes de gravar se vier meia-configuração (ADR-0112).
+  const interna = normalizarAliquotaInterna(a.ufEmpresa, a.internaPct);
   const agora = new Date().toISOString();
   // Salvar as alíquotas = confirmá-las (ADR-0086): destrava o LOUD do process-familia, que exige
   // confirmação explícita antes de publicar (não precificar com o default 8/16 em silêncio).
   const { error } = await supabase.from('configuracoes')
-    .upsert({ org_id: orgId, user_id: user.id, aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado, aliquotas_confirmadas_em: agora, atualizado_em: agora }, { onConflict: 'org_id' });
+    .upsert({
+      org_id: orgId, user_id: user.id,
+      aliquota_nacional_pct: a.nacional, aliquota_importado_pct: a.importado,
+      uf_empresa: interna.ufEmpresa, aliquota_interna_pct: interna.internaPct,
+      aliquotas_confirmadas_em: agora, atualizado_em: agora,
+    }, { onConflict: 'org_id' });
   if (error) throw error;
 }
 

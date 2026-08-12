@@ -38,7 +38,7 @@ export function useAliquotas() {
 export function useSalvarAliquotas() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (a: { nacional: number; importado: number }) => upsertAliquotas(a),
+    mutationFn: (a: { nacional: number; importado: number; ufEmpresa?: string | null; internaPct?: number | null }) => upsertAliquotas(a),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'aliquotas'] }),
   });
 }
