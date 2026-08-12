@@ -1,0 +1,10 @@
+# Caminhos que o Graphify não deve indexar. Sintaxe de .gitignore.
+
+# SheetJS vendorizado: 1.150 nós e 3.233 arestas internas de biblioteca de terceiro
+# (10% do grafo), contra apenas 6 arestas cruzando para o nosso código — e 5 dessas 6
+# eram colisão de nome curto, não relação real. `new_buf()` do xlsx era o god node nº 1,
+# o que fazia a métrica de centralidade responder errado sobre a arquitetura do PubliAI.
+# Quem usa o xlsx (ingest-lote e analisar-viabilidade) nunca chegou a virar aresta no
+# grafo, então excluir não perde informação nenhuma. Código congelado: não há atualização
+# futura a capturar. Podado em 2026-08-12.
+supabase/functions/_shared/vendor/
