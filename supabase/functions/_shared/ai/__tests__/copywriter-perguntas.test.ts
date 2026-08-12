@@ -74,6 +74,26 @@ describe('posProcessarDescricao — ordem dos guards (ADR-0115)', () => {
     expect(out).toContain('Quantos metros possui?');
   });
 
+  // A fonte REAL do Oxford escreve "Largura de 1,50 metros" — RE_LARGURA exige MM|CM, então
+  // extrairLargura devolve null; contemMetragem já vê "10 metros" na prosa e garantirMetragem
+  // também não injeta. Nesta família os dois guards não contribuem NADA, e a seção depende só
+  // do que o modelo escreveu. É o caso que fez a execução real cair para exatamente 3 perguntas.
+  it('fonte em metros (não mm/cm): guards não injetam, e a seção vive dos rótulos do modelo', () => {
+    const daIA = [
+      '📌 ESPECIFICAÇÕES', '', '• Composição: 100% Poliéster', '• Gramatura: 145g/m²',
+      '• Medida: 10 metros de comprimento por 1,50 metros de largura',
+    ].join('\n');
+    const out = posProcessarDescricao(
+      daIA,
+      'Tecido Oxford Liso de 10m Estampas Exclusivas de Natal Premium',
+      'Tecido Oxford Liso de 10 metros Contínuo estampas de Natal, Largura de 1,50 metros, composição: 100% Poliester, Gramatura: 145g/m²',
+    );
+    expect(out).toContain('❓ PERGUNTAS SOBRE ESTE PRODUTO');
+    // "Medida" é o rótulo que o modelo realmente usou; sem ele no mapa a seção morreria em 2.
+    expect(out).toContain('Quais as medidas?');
+    expect((out.match(/^▪/gm) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
   it('a poda roda antes: seção de 2 perguntas é removida e reconstruída completa', () => {
     const daIA = [
       '📌 ESPECIFICAÇÕES', '', '• Composição: 100% Poliéster', '• Gramatura: 145g/m²',

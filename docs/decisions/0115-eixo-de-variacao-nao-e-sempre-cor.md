@@ -147,8 +147,16 @@ depois da poda, preservando a ordem que o ADR-0098 estabeleceu (podar antes de a
 | `📦 CONTEÚDO DA EMBALAGEM` | `📦 O QUE VOCÊ RECEBE` |
 | `🎨 CORES DISPONÍVEIS` | rótulo do eixo (item 1) |
 
-`🎯 INDICAÇÕES DE USO` passa de 4-6 para 4-12 bullets. Aplicação típica da categoria já é
-permitida pela regra CATEGORIA versus PRODUTO — o teto baixo é que era arbitrário.
+`🎯 INDICAÇÕES DE USO` passa de 4-6 para 4-12 bullets no prompt. Aplicação típica da categoria já
+é permitida pela regra CATEGORIA versus PRODUTO — o teto baixo é que era arbitrário.
+
+**Medido e NÃO entregue.** Duas execuções contra a mesma fonte devolveram 4 e 3 bullets — a
+segunda abaixo até do piso antigo. É o mesmo modo de falha do tema, e aqui não há guard: gerar
+aplicação deterministicamente exigiria uma tabela categoria → aplicações, que é conhecimento de
+domínio inventado fora da fonte, exatamente o que o ADR-0098 proíbe. Fica registrado como não
+resolvido, e não como comportamento novo. Alternativa a avaliar num próximo caso: derivar as
+aplicações do `tipo_produto_busca` com curadoria humana por categoria, o que é uma decisão de
+produto, não de prompt.
 
 As listas `CABECALHOS_APOS_ESPECIFICACOES` e `CABECALHOS_APOS_PERGUNTAS` passam a casar **pelo
 emoji**, não pelo texto do cabeçalho. Casar por texto tornaria toda renomeação futura uma

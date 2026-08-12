@@ -180,6 +180,13 @@ const PERGUNTA_POR_ROTULO: Array<[RegExp, string]> = [
   [/^gramatura$/i, 'Qual a gramatura?'],
   [/^largura$/i, 'Qual a largura?'],
   [/^(comprimento|metragem)$/i, 'Quantos metros possui?'],
+  // "Medida"/"Dimensões" aparecem quando o modelo funde comprimento e largura num bullet só
+  // ("• Medida: 10 metros de comprimento por 1,50 metros de largura", medido em execução real).
+  // Sem eles, esse bullet não vira pergunta e a seção fica em 2 — abaixo do mínimo — pelo mesmo
+  // dado que, escrito em dois bullets, geraria duas perguntas.
+  [/^medidas?$/i, 'Quais as medidas?'],
+  [/^dimens[õo]es$/i, 'Quais as dimensões?'],
+  [/^tamanho$/i, 'Qual o tamanho?'],
   [/^peso$/i, 'Qual o peso?'],
   [/^volume$/i, 'Qual o volume?'],
   [/^conte[úu]do$/i, 'O que acompanha o produto?'],

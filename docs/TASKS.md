@@ -21,14 +21,25 @@
 - [x] `garantirPerguntas`: a seção `❓` sumia inteira com dado para 4 perguntas
   (`descricao_status`/`descricao_erro` nulos — a IA só não escreveu). Agora é reconstruída a
   partir dos bullets de `📌 ESPECIFICAÇÕES`, depois dos guards de largura/metragem.
-- [x] Seções renomeadas: `✅ POR QUE ESCOLHER`, `📦 O QUE VOCÊ RECEBE`. `🎯 INDICAÇÕES DE USO`
-  de 4-6 para 4-12 bullets. `CABECALHOS_APOS_*` passam a casar pelo **emoji**, não pelo texto.
+- [x] Seções renomeadas: `✅ POR QUE ESCOLHER`, `📦 O QUE VOCÊ RECEBE`. `CABECALHOS_APOS_*`
+  passam a casar pelo **emoji**, não pelo texto do cabeçalho.
 - [x] `atualizarSecaoCores` reconhece os 3 rótulos e preserva o existente — sem isso, família
   estampada ganhava uma 2ª seção `CORES DISPONÍVEIS` no fim a cada reposição.
-- [x] Testes: 34 novos (14 eixo, 9 perguntas, 7 tema, 2 seção de variação no UPDATE, 2 prompt).
-  Suíte verde: 339 arquivos / 2949 testes; `pnpm lint` 0 erros.
-- [ ] Deploy: `process-familia` e `regenerar-copy-familia` (mudança em `_shared/ai` e
-  `_shared/ml`) — o merge na main **não** deploya Edge Functions.
+- [x] Testes: 35 novos (15 eixo, 9 perguntas, 7 tema, 2 seção de variação no UPDATE, 2 prompt).
+  Suíte verde: 339 arquivos / 2950 testes; `pnpm lint` 0 erros.
+- [ ] **NÃO entregue — `🎯 INDICAÇÕES DE USO` de 4-6 para 4-12 bullets é prompt-only e não pegou.**
+  Duas execuções reais contra a mesma fonte deram 4 e 3 bullets; a segunda ficou abaixo até do
+  piso antigo. Mesmo modo de falha já medido para o tema. Fica pendente decidir se vira guard
+  determinístico — é o item que mais separa a saída atual das 15 aplicações que o operador quer.
+- [ ] **Limitação em produção hoje:** as 7 variações da família `92710170` têm `variacoes.cor`
+  preenchida à mão como `Est-1`…`Est-33`. O CREATE escreve `- Estampa 6`, mas um UPDATE nessa
+  família republica `- Est-6` sob o mesmo cabeçalho (ver Consequências do ADR-0115).
+- [ ] Deploy: mudança em `_shared/ai` e `_shared/ml/criar-item.ts` → **12 functions** pelo grafo
+  de imports (`deno info`): `atualizar-status-publicado`, `metricas-vendas`, `monitorar-moderados`,
+  `process-familia`, `publicar-anuncio`, `publicar-split-ml`, `publish-familia-ml`,
+  `reconciliar-convergencia-up`, `regenerar-copy-familia`, `sincronizar-estoque`,
+  `status-publicados`, `update-familia-ml`. Conferir versão pós-deploy. O merge na main **não**
+  deploya Edge Functions.
 
 ## Estoque — excluir produto (ADR-0113) — 2026-08-12
 

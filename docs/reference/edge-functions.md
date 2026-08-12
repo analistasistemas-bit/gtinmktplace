@@ -225,6 +225,20 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   incondicional fazia `validarSlotsAncorados` derrubar a substituta logo depois — 52 de 304
   famílias ficavam sem marca nenhuma. A exigência de ancoragem não mudou; mudou qual grafia é
   submetida a ela.
+  **Tema comemorativo (ADR-0115):** `cravarTema`, dentro de `aplicarGuardsTitulo`, injeta o tema
+  (lista fechada: Natal, Páscoa, Halloween, Festa Junina, Dia das Mães…) no slot `produto`, que é
+  incortável, quando a fonte o declara e a IA o descartou. Prefixa `Estampa` só quando a fonte
+  fala de estampa. Teto de 40 chars em `produto`: estourando, o tema é abandonado, porque cravar
+  em slot incortável transformaria um título viável em `TituloInviavelError`. Existe porque a
+  instrução equivalente no prompt foi medida e falhou — o modelo devolveu `produto="Tecido Oxford
+  Liso"` com 23 caracteres sobrando.
+  **Eixo de variação (ADR-0115):** `_shared/ai/eixo-variacao.ts` deriva o eixo da família do
+  SUFIXO do nome de cada variação em relação ao `nome_pai` (`… Est.6` → `Estampa 6`), não da cor.
+  O rótulo da seção da descrição vem da palavra da fonte: `🎨 ESTAMPAS DISPONÍVEIS`,
+  `🎨 VARIAÇÕES DISPONÍVEIS` ou, sem sufixo discriminante, o `🎨 CORES DISPONÍVEIS` de sempre.
+  Corrige uma família de 7 estampas de Natal anunciada como "Verde Musgo / Vermelho" — as cores
+  que o Vision leu nas fotos. `atualizarSecaoCores` (`_shared/ml/criar-item.ts`) reconhece os três
+  rótulos e preserva o existente ao reescrever a lista no UPDATE.
   `garantirLarguraDescricao`/`garantirMetragemDescricao` (`_shared/ai/copywriter-prompt.ts`)
   cravam largura (mm ou cm) e metragem (grounded em nome/descrição da planilha) na seção "📌
   ESPECIFICAÇÕES" da descrição, criando a seção se a IA a tiver pulado inteira — mesma classe de
