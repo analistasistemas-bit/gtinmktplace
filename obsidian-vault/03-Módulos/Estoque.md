@@ -90,7 +90,9 @@ Bloco B do E6b (ADR-0094): produto entra **sem planilha**. Edges `cadastrar-prod
 ## Exclusão de produto (ADR-0113)
 
 Menu `⋮` na linha do produto → **Excluir produto**. Edge `excluir-produto` (`verify_jwt=true`),
-admin-only como o ajuste, body `{ codigo_pai }`.
+admin-only como o ajuste, body `{ codigo_pai }`. O menu só é renderizado a partir de `md`: medido
+em 375px, um terceiro botão na coluna de ações derrubava o texto do nome do produto de 81px para
+49px ("Crem…").
 
 **Só alcança produto não publicado em canal nenhum.** Apagar família com `ml_item_id` cortaria o
 vínculo de UPDATE do `ingest-lote` e a próxima planilha do mesmo código viraria **anúncio

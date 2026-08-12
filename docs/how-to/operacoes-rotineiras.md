@@ -190,23 +190,35 @@ Dois comportamentos do ML medidos em 2026-08-11, que valem para qualquer reposi�
 
 ## Excluir ou alterar um produto cadastrado manualmente
 
-A tela `/estoque` não tem botão de excluir/editar — só "Dar entrada". Os caminhos reais:
+A tela `/estoque` tem **Dar entrada**, **Ajustar** (ADR-0110) e, no menu `⋮` da linha,
+**Excluir produto** (ADR-0113) — os dois últimos só para admin, e o menu só aparece de tablet
+para cima. Os caminhos:
 
 - **Alterar** (título, descrição, preço, categoria, atributos) — só funciona **antes de
   publicar** (`status='pronto'`/`'revisao'`): editar em **Revisão**, os mesmos campos do fluxo de
   planilha. Depois de publicado não existe edição "ao vivo" para um produto cadastrado manualmente
   — as únicas rotas de atualização (nova planilha com o mesmo código, ou Publicados → Remover →
   Republicar) exigem despublicar e recriar o anúncio.
-- **Excluir** — tela **Lotes**, achar o lote com o chip "Cadastro manual" → lixeira no card →
-  confirmar. Roda a edge `excluir-lote`: remove a família e a variação (`ON DELETE CASCADE` de
-  `variacoes.familia_id`), e a tela `/estoque` some sozinha (ela lê ao vivo de `variacoes`+
-  `familias`, não tem tabela própria). Se o produto já estava **publicado**, a exclusão é
-  **parcial** — só as famílias não-publicadas saem, a publicada é preservada.
-  **O `estoque_movimentos` (ledger) não é apagado** — é auditoria imutável (D-15), guarda
-  `codigo`/`codigo_pai` como texto solto, sem FK para `variacoes`/`familias`. Se o produto excluído
-  nunca foi publicado, esse histórico fica **órfão**: sem UI que o mostre isoladamente (só aparece
-  dentro do expandir de `/estoque` ou `/publicados`, que exigem o produto vivo/publicado) —
-  só uma consulta direta no banco.
+- **Excluir produto não publicado** — `/estoque` → menu `⋮` da linha → **Excluir produto** →
+  digitar o código para confirmar. Roda a edge `excluir-produto`: apaga **todas** as famílias
+  daquele `codigo_pai` na org (as variações caem por `ON DELETE CASCADE`), as fotos do Storage e
+  os movimentos órfãos. Saldo em estoque **não** bloqueia — o freio é a confirmação digitada.
+- **Se o produto está publicado**, o item do menu vem desabilitado e a edge recusa com 409. É
+  deliberado (ADR-0113 D-1): apagar família com `ml_item_id` cortaria o vínculo de UPDATE do
+  `ingest-lote` e a próxima planilha do mesmo código viraria **anúncio duplicado** no ML. O
+  caminho é **Publicados → Remover**, que pausa no ML antes de apagar.
+- **Excluir o lote inteiro** — tela **Lotes**, achar o lote com o chip "Cadastro manual" →
+  lixeira no card → confirmar. Roda `excluir-lote`, que é **parcial** quando há publicados: só as
+  famílias não-publicadas saem, a publicada é preservada (ADR-0019).
+
+> **O ledger `estoque_movimentos` É apagado na exclusão, desde o ADR-0097** (2026-08-01) — a
+> versão anterior desta página dizia o contrário, o que valeu até o E6b. As três portas
+> (`excluir-lote`, `remover-publicado`, `excluir-produto`) chamam `limpar_movimentos_orfaos`
+> depois do delete: uma varredura por anti-join que apaga os movimentos da org cujo `codigo` não
+> corresponde a nenhuma variação viva. Sobrevivem quatro motivos que nascem sem variação por
+> construção (ADR-0097 D-1.1) — `cancelamento_sem_baixa`, `venda_sku_nao_encontrado`,
+> `estorno_sku_nao_encontrado`, `venda_cancelada_antes`. O primeiro é **guarda funcional**, não
+> histórico: é o tombstone que faz `baixar_estoque` recusar um pedido já cancelado.
 
 ## Monitorar anúncios moderados
 
