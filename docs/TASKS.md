@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Imposto — alíquota interna por UF da empresa (ADR-0112) — 2026-08-11
+
+- [x] **Motivo:** a AVIL é de PE e paga 1% ao vender para cliente do próprio estado. Com só as
+  alíquotas por origem (8% nacional / 16% importado), toda venda intraestadual saía com imposto
+  8×/16× maior que o real, derrubando líquido, lucro e markup nas telas de apuração.
+- [x] Migration `20260812004735`: `configuracoes.uf_empresa` + `configuracoes.aliquota_interna_pct`,
+  nullable e sem default (nulos = parâmetro desligado = regra por origem), com CHECK de coerência
+  (os dois ou nenhum), formato de UF e faixa 0–100.
+- [x] `AliquotaResolver` passa a receber a UF de entrega do pedido em parâmetro **obrigatório** —
+  opcional, um call site esquecido devolveria a alíquota por origem em silêncio.
+- [x] `montarAliquotaResolver`: UF do pedido = UF da empresa → alíquota interna (sobrepõe nacional
+  e importado); senão, origem. UF do pedido nula ou parâmetro desligado → origem.
+- [x] Campos "Venda dentro do estado" em Configurações (admin), com recusa de meia-configuração.
+- [x] Recálculo retroativo sai de graça: imposto e markup não são persistidos, são derivados na
+  leitura. **Limite:** pedidos sem `ml_vendas.uf` (fechados antes de 2026-06-23 ou sem envio
+  registrado) continuam na regra por origem.
+- [x] Escopo: só apuração pós-venda. Preço sugerido/gross-up seguem na origem — o anúncio tem preço
+  único para o país e a UF do comprador só existe depois do pedido.
+
 ## Estoque — repor estoque reativa o anúncio pausado (ADR-0111) — 2026-08-11
 
 - [x] **Motivo:** o ML só desfaz sozinho a pausa que ele mesmo aplicou por falta de estoque. Pausa

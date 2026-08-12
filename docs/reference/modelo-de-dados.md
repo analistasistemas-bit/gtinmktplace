@@ -577,7 +577,12 @@ Settings por **organização** desde o E7 (era por usuário). *Migrations `20260
 org), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token` (sensível —
 nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`),
 `aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16) — alíquotas por org,
-sem override por família (ADR-0055) —, `desconto_concorrencia_pct` (default 5) — percentual
+sem override por família (ADR-0055) —, **`uf_empresa`** (text, nullable) e
+**`aliquota_interna_pct`** (numeric, nullable) — UF de origem da empresa e alíquota das vendas
+entregues nessa UF (ADR-0112, migration `20260812004735_adr112_aliquota_interna_uf.sql`);
+CHECK garante os dois preenchidos ou os dois nulos, UF em 2 letras maiúsculas e percentual em
+0–100. Nulos = parâmetro desligado → vale a alíquota por origem. Só a apuração pós-venda usa
+esse par; o preço sugerido continua na origem —, `desconto_concorrencia_pct` (default 5) — percentual
 abaixo do menor concorrente aplicado por `sugerirPrecoVenda` (ADR-0059, antes fixo em 5%) —,
 `reancora_lider_ativa` (default false, migration `20260708144126`, ADR-0065) — liga a re-âncora
 do preço no menor preço entre concorrentes MercadoLíder quando o preço competitivo dá prejuízo —,

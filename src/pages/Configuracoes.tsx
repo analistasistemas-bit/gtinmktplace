@@ -54,11 +54,16 @@ export default function Configuracoes() {
   const salvarAliquotas = useSalvarAliquotas();
   const [nacionalInput, setNacionalInput] = useState('8');
   const [importadoInput, setImportadoInput] = useState('16');
+  const [ufEmpresaInput, setUfEmpresaInput] = useState('');
+  const [internaInput, setInternaInput] = useState('');
+  const [erroInterna, setErroInterna] = useState<string | null>(null);
 
   useEffect(() => {
     if (aliquotas != null) {
       setNacionalInput(String(aliquotas.nacional));
       setImportadoInput(String(aliquotas.importado));
+      setUfEmpresaInput(aliquotas.ufEmpresa ?? '');
+      setInternaInput(aliquotas.internaPct != null ? String(aliquotas.internaPct) : '');
     }
   }, [aliquotas]);
 
@@ -69,6 +74,30 @@ export default function Configuracoes() {
     if (t === '') return null;
     const n = Number(t);
     return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+  };
+
+  // ADR-0112: UF e percentual andam juntos. Meia-configuração não salva e mostra o motivo —
+  // gravar só um dos dois aplicaria imposto parcial em silêncio.
+  const salvarInterna = (uf: string, pctRaw: string) => {
+    const u = uf.trim().toUpperCase();
+    const p = pctRaw.trim() === '' ? null : pctValido(pctRaw);
+    if (u === '' && p === null) {
+      setErroInterna(null);
+    } else if (u === '' || p === null) {
+      setErroInterna('Preencha a UF e o percentual — ou deixe os dois em branco.');
+      return;
+    } else if (!/^[A-Z]{2}$/.test(u)) {
+      setErroInterna('UF inválida (use a sigla de 2 letras, ex.: PE).');
+      return;
+    } else {
+      setErroInterna(null);
+    }
+    salvarAliquotas.mutate({
+      nacional: pctValido(nacionalInput) ?? aliquotas?.nacional ?? 8,
+      importado: pctValido(importadoInput) ?? aliquotas?.importado ?? 16,
+      ufEmpresa: u === '' ? null : u,
+      internaPct: u === '' ? null : p,
+    });
   };
 
   // OAuth do ML retorna para /configuracoes (URL fixa na edge) — o card agora mora em /canais.
@@ -292,6 +321,9 @@ export default function Configuracoes() {
                   onClick={() => salvarAliquotas.mutate({
                     nacional: pctValido(nacionalInput) ?? aliquotas.nacional,
                     importado: pctValido(importadoInput) ?? aliquotas.importado,
+                    // Sem repassar, o upsert gravaria null e apagaria a alíquota interna (ADR-0112).
+                    ufEmpresa: aliquotas.ufEmpresa,
+                    internaPct: aliquotas.internaPct,
                   })}
                 >
                   Confirmar alíquotas
@@ -317,7 +349,10 @@ export default function Configuracoes() {
                   const n = pctValido(nacionalInput);
                   if (n === null) { setNacionalInput(String(aliquotas?.nacional ?? 8)); return; }
                   const importado = pctValido(importadoInput) ?? aliquotas?.importado ?? 16;
-                  salvarAliquotas.mutate({ nacional: n, importado });
+                  salvarAliquotas.mutate({
+                    nacional: n, importado,
+                    ufEmpresa: aliquotas?.ufEmpresa ?? null, internaPct: aliquotas?.internaPct ?? null,
+                  });
                 }}
               />
               <span className="text-sm">%</span>
@@ -337,7 +372,10 @@ export default function Configuracoes() {
                   const n = pctValido(importadoInput);
                   if (n === null) { setImportadoInput(String(aliquotas?.importado ?? 16)); return; }
                   const nacional = pctValido(nacionalInput) ?? aliquotas?.nacional ?? 8;
-                  salvarAliquotas.mutate({ nacional, importado: n });
+                  salvarAliquotas.mutate({
+                    nacional, importado: n,
+                    ufEmpresa: aliquotas?.ufEmpresa ?? null, internaPct: aliquotas?.internaPct ?? null,
+                  });
                 }}
               />
               <span className="text-sm">%</span>
@@ -346,6 +384,47 @@ export default function Configuracoes() {
             {salvarAliquotas.isSuccess && !salvarAliquotas.isPending && (
               <span className="text-xs text-success">✓ Salvo</span>
             )}
+          </div>
+
+          <div className="mt-4 border-t pt-3">
+            <h3 className="text-sm font-medium">Venda dentro do estado</h3>
+            <p className="mb-2 text-xs text-muted-foreground">
+              Pedidos entregues nesta UF usam esta alíquota, no lugar de nacional/importado.
+              Em branco, vale sempre a alíquota por origem.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">UF da empresa</span>
+                <Input
+                  className="h-8 w-20 text-sm uppercase"
+                  maxLength={2}
+                  placeholder="PE"
+                  value={ufEmpresaInput}
+                  disabled={!isAdmin}
+                  onChange={(e) => setUfEmpresaInput(e.target.value.toUpperCase())}
+                  onBlur={() => salvarInterna(ufEmpresaInput, internaInput)}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Alíquota</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  className="h-8 w-20 text-sm"
+                  value={internaInput}
+                  disabled={!isAdmin}
+                  onChange={(e) => setInternaInput(e.target.value)}
+                  onBlur={() => salvarInterna(ufEmpresaInput, internaInput)}
+                />
+                <span className="text-sm">%</span>
+              </div>
+              {salvarAliquotas.isSuccess && !salvarAliquotas.isPending && !erroInterna && (
+                <span className="text-xs text-success">✓ Salvo</span>
+              )}
+            </div>
+            {erroInterna && <p className="mt-2 text-xs text-destructive">{erroInterna}</p>}
           </div>
         </Card>
       </div>
