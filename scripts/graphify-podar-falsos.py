@@ -23,21 +23,37 @@ B. Nada de produção importa de arquivo de teste. Testes importam produção, n
    Uma aresta de chamada cujo ALVO está em `__tests__/`/`*.test.*` e cuja ORIGEM não está é
    impossível.
 
-Só relações de CHAMADA entram (`calls`, `indirect_call`, `dyn_call`, `method`). `references` e
-`imports` ficam de fora de propósito: há vários comentários "espelha
-supabase/functions/..." que são referência textual legítima entre os dois runtimes.
+C. Referência fantasma: uma aresta `references` entre arquivos diferentes só é crível se o
+   identificador do alvo aparecer, com a CAIXA EXATA, no arquivo de origem. Não aparecendo, foi
+   fabricada. Esta regra se autoverifica: lê o arquivo de origem a cada execução.
+   Colisões reais que ela pegou: `JSON.parse` (global do JS) casado com o *tipo* `Json` de
+   `database.types.ts` (73 arestas, e `Json` era o god node nº 2); `new Map()` casado com a
+   constante `MAP` de `_shared/ml/status.ts` (25); `ResumoViabilidade` casado com
+   `resumoViabilidade`.
+
+Regras A e B só valem para relações de CHAMADA (`calls`, `indirect_call`, `dyn_call`, `method`).
+`imports` nunca entra em nenhuma regra: é a relação mais confiável do extrator.
 
 ## Trava
 
-Aresta `EXTRACTED` (evidência explícita no código) nunca é removida — se aparecer alguma nas
-regras, o script aborta e pede análise humana. Hoje as 61 encontradas são todas `INFERRED`.
+Em A e B, o argumento vem da estrutura do repositório, então uma aresta `EXTRACTED` caindo na
+regra é sinal de que a premissa mudou: o script **aborta** e pede análise humana. Hoje as 61 de
+A+B são todas `INFERRED`.
+
+Em C a trava não se aplica, porque a prova é o próprio texto do arquivo de origem — e ser
+`EXTRACTED` é justamente o achado: o extrator afirmou evidência explícita para um identificador
+que não está no arquivo. As 100 encontradas por C são todas `EXTRACTED`.
 
 Uso:
     python3 scripts/graphify-podar-falsos.py [--aplicar]
 
 Sem `--aplicar` só relata. Idempotente: rodar duas vezes não muda nada na segunda.
 """
+# O python3 do macOS é 3.9; sem isto, `str | None` numa anotação estoura em runtime.
+from __future__ import annotations
+
 import json
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -45,6 +61,26 @@ from pathlib import Path
 
 GRAFO = Path('graphify-out/graph.json')
 CHAMADA = {'calls', 'indirect_call', 'dyn_call', 'method'}
+CODIGO = ('.ts', '.tsx', '.mjs', '.js')
+_texto: dict[str, str] = {}
+
+
+def conteudo(sf: str) -> str | None:
+    """Fonte do arquivo, em cache. None quando ilegível (apagado, binário)."""
+    if sf not in _texto:
+        try:
+            _texto[sf] = Path(sf).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            _texto[sf] = ''
+    return _texto[sf] or None
+
+
+def identificador(label: str) -> str | None:
+    """'buscarX()' -> 'buscarX'; '.buscar()' -> 'buscar'. None se não for identificador."""
+    if not label:
+        return None
+    s = label.strip().lstrip('.').removesuffix('()')
+    return s if re.fullmatch(r'[A-Za-z_$][A-Za-z0-9_$]*', s) else None
 
 
 def eh_teste(sf: str) -> bool:
@@ -89,7 +125,8 @@ def classificar(links, por):
     """Devolve (falsas, motivo_por_indice)."""
     falsas, motivos = [], {}
     for i, e in enumerate(links):
-        if e.get('relation') not in CHAMADA:
+        rel = e.get('relation')
+        if rel not in CHAMADA and rel != 'references':
             continue
         ns, nt = por.get(e.get('source')), por.get(e.get('target'))
         if not ns or not nt:
@@ -97,10 +134,17 @@ def classificar(links, por):
         sf_s = ns.get('source_file') or ''
         sf_t = nt.get('source_file') or ''
         motivo = None
-        if {area(sf_s), area(sf_t)} == {'app', 'deno'}:
-            motivo = 'A: app <-> deno'
-        elif eh_teste(sf_t) and not eh_teste(sf_s):
-            motivo = 'B: producao -> teste'
+        if rel in CHAMADA:
+            if {area(sf_s), area(sf_t)} == {'app', 'deno'}:
+                motivo = 'A: app <-> deno'
+            elif eh_teste(sf_t) and not eh_teste(sf_s):
+                motivo = 'B: producao -> teste'
+        elif sf_s != sf_t and sf_s.endswith(CODIGO):
+            alvo = identificador(nt.get('label') or '')
+            fonte = conteudo(sf_s)
+            # Sem identificador limpo ou sem fonte legivel: nao da pra provar nada, mantem.
+            if alvo and fonte is not None and not re.search(rf'\b{re.escape(alvo)}\b', fonte):
+                motivo = 'C: referencia fantasma'
         if motivo:
             falsas.append(i)
             motivos[i] = (motivo, e, ns, nt, sf_s, sf_t)
@@ -122,9 +166,15 @@ def main() -> int:
         print('Nenhuma aresta falsa encontrada. Nada a fazer.')
         return 0
 
-    extraidas = [i for i in falsas if motivos[i][1].get('confidence') == 'EXTRACTED']
+    # Trava so para A e B: la o argumento vem da ESTRUTURA do repositorio, entao uma aresta
+    # EXTRACTED contradizendo a regra merece olho humano. Em C nao: a prova e o proprio texto
+    # do arquivo de origem, e ser EXTRACTED e justamente o achado — o extrator afirmou
+    # evidencia explicita para um identificador que nao esta la.
+    extraidas = [i for i in falsas
+                 if motivos[i][1].get('confidence') == 'EXTRACTED'
+                 and not motivos[i][0].startswith('C')]
     if extraidas:
-        print('ABORTADO: aresta EXTRACTED caiu nas regras — evidencia explicita nao se apaga '
+        print('ABORTADO: aresta EXTRACTED caiu nas regras A/B — evidencia explicita nao se apaga '
               'sem analise humana:')
         for i in extraidas[:10]:
             _, e, ns, nt, sf_s, sf_t = motivos[i]
@@ -132,8 +182,7 @@ def main() -> int:
             print(f'    {sf_s} -> {sf_t}')
         return 1
 
-    print(f'arestas de chamada falsas: {len(falsas)} de {len(links)} '
-          f'({len(falsas)/len(links):.2%})')
+    print(f'arestas falsas: {len(falsas)} de {len(links)} ({len(falsas)/len(links):.2%})')
     print('por regra:', dict(Counter(motivos[i][0] for i in falsas)))
     print('alvos mais frequentes:',
           Counter(motivos[i][3].get('label') for i in falsas).most_common(8))
