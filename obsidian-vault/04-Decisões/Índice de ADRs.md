@@ -128,5 +128,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0115 | [O eixo de variação nem sempre é cor](../../docs/decisions/0115-eixo-de-variacao-nao-e-sempre-cor.md) |
 | 0116 | [Visibilidade do que o pipeline de título descarta](../../docs/decisions/0116-visibilidade-dos-descartes-do-titulo.md) |
 | 0116 | [GTIN com dígito verificador errado é ausência de código (e o campo virou editável na Revisão)](../../docs/decisions/0116-gtin-invalido-e-ausencia-de-codigo.md) |
+| 0117 | [Menu Financeiro controla liberação e saque; compra não é venda](../../docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

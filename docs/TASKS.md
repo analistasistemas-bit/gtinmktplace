@@ -2,6 +2,32 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Financeiro — compra virava venda e saque em devolvido (ADR-0117) — 2026-08-12
+
+- [x] **Revisão completa do menu** (`.code-review-fable5/code-review-v11.md`): 42/100, BLOQUEAR.
+  2 críticos, 6 altos, 4 médios. Escopo redesenhado com o Diego: o menu responde uma pergunta —
+  quanto o ML liberou, quanto falta, o que já foi sacado.
+- [x] **C1 — compras da própria conta em `ml_vendas`.** O webhook `orders_v2` notifica pedidos em
+  que a conta é COMPRADORA e `sync-venda` gravava todos: 23 linhas (R$ 37.118,27), 7 em `paid`
+  contando como faturamento (R$ 8.810,50). `ehVendaDaConta` recusa na ingestão (sync-venda v65,
+  deployado ANTES da migration — com o worker antigo no ar, o próximo webhook reinseriria).
+- [x] **C2 — saque em pedido devolvido.** A RPC nunca olhava `status`: 46 devoluções marcadas como
+  sacadas (R$ 2.849,54). Travado em três camadas — ingestão, RPC e interface (checkbox desabilitada).
+- [x] **A6 — saque exige admin** (`is_admin()`, mesmo predicado do ADR-0060).
+- [x] **A1 — card "Estornos"** mostrava R$ 12,55 de R$ 3.394,20 reais (30d): devolução vira
+  `cancelled` e sumia do KPI. Agora o estorno conta sempre.
+- [x] **A2 — novo `aSacar`**: "Já liberado" misturava sacado e não sacado (R$ 11.436,85 = 10.893,29
+  + 543,56). O card principal passou a ser o acionável.
+- [x] **A3/A4/A5 — Detalhe do líquido:** lista só venda faturável (filtro `Devolvidos` para
+  conferir), busca geral (`pedidoCasaBusca`) e paginação de 50 (a tela renderizava 985 pedidos).
+  Totais do rodapé continuam somando o filtro inteiro, não a página.
+- [x] Tela enxuta: 11 KPIs → 6. Saíram markup, lucro líquido, ticket médio e nº de vendas (vivem no
+  Faturamento e no Dashboard).
+- [x] Migration aplicada e verificada em produção: 0 compras, 0 saques indevidos, 695→649 sacadas,
+  `db:check` alinhado. 3.026 testes verdes; validado em runtime com dados injetados (screenshots).
+- [ ] **Pendente (fora do escopo desta rodada):** `upsertDevolucao` também não valida se a order é
+  uma venda — um claim sobre compra pode recriar linha em `ml_devolucoes`.
+
 ## Financeiro — venda devolvida aparecia como retida pelo ML (ADR-0038) — 2026-08-12
 
 - [x] **Motivo:** no Detalhe Financeiro, vários recebimentos saíam com Líquido `R$ 0,00`, markup `—`

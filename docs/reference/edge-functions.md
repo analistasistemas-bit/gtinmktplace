@@ -606,6 +606,11 @@ falha ao ler `organizations` não libera.
   `limparMovimentosOrfaos` **depois** do delete (ADR-0097 D-2). Nunca toca o ML.
 
 ### Faturamento
+- **sync-venda** — antes de qualquer escrita, recusa pedido cujo `seller.id` não seja a conta
+  conectada (`ehVendaDaConta`, ADR-0117): o webhook `orders_v2` notifica também pedidos em que a
+  conta é COMPRADORA, e sem a guarda cada compra da empresa virava linha de venda (23 na base,
+  R$ 8.810,50 em `paid`). Responde 200 `{ignorado:'compra-da-conta'}` — 4xx/5xx faria o QStash
+  re-tentar para sempre.
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,
   roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions), `sync-devolucao`
   (claims) ou `sync-mensagem` (messages). Nunca confia no corpo — o worker re-busca autenticado

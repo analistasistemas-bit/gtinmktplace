@@ -462,7 +462,9 @@ Financeiro: `money_release_date`, `liberacao_notificada_em` (ADR-0040),
 `sacado_em`/`sacado_por` (*migration `20260702162832_ml_vendas_saque.sql`*) — marca manual de
 saque no Financeiro > Detalhe do líquido, escrita só via RPCs `security definer`
 `registrar_saque_ml_vendas(uuid[])` / `desfazer_saque_ml_vendas(uuid[])`
-(exigem `is_membro_operacao()`; `registrar` só marca linhas com `money_release_date` já liberado).
+(exigem `current_org_id()` **e `is_admin()`** desde *migration `20260812232901_financeiro_saque_e_compras.sql`*,
+ADR-0117; `registrar` só marca linhas com `money_release_date` já liberado **e `status` faturável** —
+pedido devolvido teve o valor estornado ao comprador, marcar saque nele quebra a conciliação com o MP).
 Desde *migration `20260720013021_ml_vendas_saque_touch_atualizado_em.sql`* (ADR-0082) as duas RPCs
 também bumpam `atualizado_em`, contrato exigido pelo poll incremental de `useVendas`: todo writer
 que altera coluna exibida na UI de vendas precisa bumpar `atualizado_em`, senão a mudança fica
