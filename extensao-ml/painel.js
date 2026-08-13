@@ -11,9 +11,20 @@ async function lerCtxDaAba(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     world: 'MAIN',
+    // Onde o estado SSR vive, verificado ao vivo em 2026-08-13 (MLB7066697288): a variável
+    // global é `_n.ctx.r` — `window.__NORDIC_RENDERING_CTX__` NÃO existe como variável, é o
+    // id do <script> que carrega `_n.ctx.r={...}`. Os três caminhos ficam por robustez:
+    // variável (o que funciona hoje), global alternativa e, por último, parse do script.
     func: () => {
-      const ctx = window.__NORDIC_RENDERING_CTX__ ?? null;
-      try { return JSON.parse(JSON.stringify(ctx)); } catch { return null; }
+      const doScript = () => {
+        const el = document.getElementById('__NORDIC_RENDERING_CTX__');
+        const txt = el?.textContent ?? '';
+        const i = txt.indexOf('_n.ctx.r=');
+        if (i < 0) return null;
+        try { return JSON.parse(txt.slice(i + '_n.ctx.r='.length)); } catch { return null; }
+      };
+      const ctx = window._n?.ctx?.r ?? window.__NORDIC_RENDERING_CTX__ ?? doScript();
+      try { return ctx ? JSON.parse(JSON.stringify(ctx)) : null; } catch { return null; }
     },
   });
   return result;
