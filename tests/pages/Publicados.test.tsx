@@ -49,6 +49,12 @@ vi.mock('@/hooks/useStatusPublicados', () => ({
   useStatusPublicados: () => useStatusPublicadosMock(),
 }));
 
+// Card "Catálogo em risco" (spec 2026-08-12): a página consulta o hook de verdade, que usaria
+// useQuery sem QueryClientProvider neste harness. Lista vazia = card não renderiza.
+vi.mock('@/hooks/useCatalogoEmRisco', () => ({
+  useCatalogoEmRisco: () => ({ data: [] }),
+}));
+
 vi.mock('@/hooks/useRemoverPublicado', () => ({
   useRemoverPublicado: () => useRemoverPublicadoMock(),
   usePrepararRepublicacao: () => usePrepararRepublicacaoMock(),

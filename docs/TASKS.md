@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Catálogo em risco — anúncios pausando sem aviso — 2026-08-13
+
+Spec: `docs/superpowers/specs/2026-08-12-catalogo-em-risco-design.md` ·
+Plano: `docs/superpowers/plans/2026-08-12-catalogo-em-risco-plan.md`
+
+- [x] **Diagnóstico.** O ML sinalizava 3 anúncios como "Próximos a serem pausados" e o PubliAI não
+  avisava nada. Causa: `pendente` devolvia 500 e vivia só do retry curto do QStash (minutos),
+  enquanto a elegibilidade do ML leva horas ou dias — o retry esgotava e a família congelava. Como
+  `deveAlertarCatalogoNoMatch` exigia `pendente === 0`, o alerta do ADR-0036 também nunca saía.
+  Medido: **93 famílias / 296 variações** publicadas congeladas.
+- [x] **Backend.** `pendente` e `nao_elegivel` passam a dividir o backoff longo; falha de leitura da
+  elegibilidade propaga em vez de finalizar a rodada zerada (Legacy e User Products); alerta cobre
+  `pendente` residual com motivo `elegibilidade_nao_resolvida`; worker honra `alertar: false` no
+  body do job para o backfill rodar em silêncio. Sem migration.
+- [x] **Tela.** Card "Catálogo em risco" em Publicados, com contagem, motivo predominante e link
+  direto para o catálogo do ML por anúncio.
+- [x] **Script de backfill.** `scripts/backfill-catalogo-pendente.ts` (dry-run por padrão).
+- [ ] **Deploy** das 8 funções afetadas (`vincular-catalogo` + os 7 importadores de `telegram.ts`).
+- [ ] **Executar o backfill** das 93 famílias — depois do deploy, com aprovação do Diego.
+- [ ] **Fase 3 — extensão de navegador** para o "Não encontro minha variação" em massa. Fora desta
+  entrega: depende de confirmar o formato do `productId` no PATCH interno do ML. Não há caminho
+  OAuth (reverificado 2026-08-12: `403 EBADCSRFTOKEN` com Bearer válido).
+
 ## Estoque — variação órfã no ML vendia sem baixar — 2026-08-13
 
 - [x] **Diagnóstico.** Venda pelo anúncio de catálogo `MLB7010890734` (cor Azul da linha Xik) não

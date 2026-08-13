@@ -228,3 +228,33 @@ no catálogo; mudar depois é caro e arriscado.
    ficha-kit errada do incidente de 2026-06-15. `buscarEsperadoDoItem` passa a ler `UNITS_PER_PACK`
    e `SALE_FORMAT` do nosso item; a ficha só reprova quando **diverge** do declarado. Item sem esses
    atributos (as fitas/linhas do incidente) mantém o comportamento antigo: qualquer ficha-kit reprova.
+
+---
+
+## Revisão (2026-08-12) — `pendente` entra no backoff longo
+
+**Revoga** o trecho da revisão de 2026-07-15 que dizia: "`pendente` continua usando o retry técnico
+do QStash e tem precedência sobre o backoff de negócio."
+
+Essa precedência era exatamente o defeito. `pendente` devolvia HTTP 500 e dependia só do retry do
+QStash — cinco tentativas ao longo de minutos. Como a elegibilidade do ML costuma levar horas ou
+dias, o retry esgotava antes da resposta chegar e ninguém perguntava de novo. **Nunca.**
+
+Medido em produção (2026-08-12): **93 famílias / 296 variações** publicadas congeladas em
+`pendente`. Prova de que o dado existia e só faltava reler: em `MLB6928315454`, as 74 variações
+presas tinham status `FAMILY_DIFF` na elegibilidade no momento da medição.
+
+**Decisão:** `pendente` e `nao_elegivel` compartilham o mesmo orçamento de tentativas do backoff
+longo (`CATALOGO_BACKOFF_SEGUNDOS`, 1h/6h/24h/48h). Na última tentativa a rodada finaliza e reporta
+o que sobrou **como está** — sem reetiquetar para outro `catalog_status`, sem migration.
+
+**Guard associado:** falha de *leitura* da elegibilidade deixa de virar resumo zerado (que cairia em
+`finalizar` sem ter perguntado nada) e propaga, para o worker devolver 500 e o QStash retentar. No
+caminho User Products o análogo persistia `catalog_status='erro'` — estado final para falha
+transitória de rede — e passou a contar como `pendente`, sem persistir nada.
+
+**Efeito colateral aceito:** publicação nova cuja elegibilidade não computou aos 10 minutos do
+primeiro job espera +1h (antes: retries em minutos). Decisão explícita do operador, não descuido — a
+vinculação é best-effort e não bloqueia a publicação.
+
+Spec: `docs/superpowers/specs/2026-08-12-catalogo-em-risco-design.md`.

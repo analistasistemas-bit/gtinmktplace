@@ -30,6 +30,35 @@ No worker `vincular-catalogo` (que roda minutos após o CREATE, quando a elegibi
 - **Follow-up:** investigar se a API pública de **User Products** (OAuth) expõe um equivalente ao no-match; se sim, trocar o alerta por automação real.
 - Deploy: `vincular-catalogo`.
 
+## Nota de revisão (2026-08-12) — o gate `pendente === 0` sai
+
+O alerta desenhado aqui **nunca disparava** nos casos que mais importavam. `deveAlertarCatalogoNoMatch`
+exigia `pendente === 0`, e a rodada com `pendente > 0` devolvia 500 para o retry curto do QStash;
+esgotado o retry, a família ficava congelada em `pendente` e o estado final nunca chegava. Silêncio
+duplo: nem vinculava, nem avisava. Foi assim que os anúncios apareceram no painel do ML como
+"Próximos a serem pausados" sem nenhum aviso do PubliAI (93 famílias / 296 variações, 2026-08-12).
+
+**Mudanças:**
+- `deveAlertarCatalogoNoMatch` deixa de exigir `pendente === 0` e passa a contar `pendente` residual.
+- A garantia de "1 alerta por publicação" **não some** — ela deixa de morar nessa função e passa a
+  ser o gate de finalização no worker: o alerta só é avaliado quando a rodada finaliza, e rodadas
+  intermediárias reagendam sem alertar. O que mudou foi o critério de finalizar (ADR-0021, revisão
+  2026-08-12), não a regra de alertar uma vez.
+- Novo motivo `elegibilidade_nao_resolvida` em `decidirMotivoAlertaCatalogo` e em
+  `montarMensagemCatalogoNoMatch`, para o caso de `pendente` sobreviver até a última tentativa.
+- `pendente` entra nos filtros de cores do worker (Legacy e UP) — sem isso o alerta novo sairia com
+  a lista de cores vazia.
+- O worker passa a honrar `alertar: false` no body do job, para o backfill das famílias congeladas
+  rodar sem disparar dezenas de mensagens. O campo é propagado nos reagendamentos e morre com a
+  cadeia — sem estado em tabela e sem flag para esquecer ligada.
+
+Segue valendo o essencial: não há endpoint OAuth para o "Não encontro minha variação"
+(reverificado em 2026-08-12 — o PATCH interno responde `403 EBADCSRFTOKEN` mesmo com Bearer válido),
+então o alerta continua sendo semi-automático por necessidade técnica. O follow-up de trocar o
+alerta por automação real virou a Fase 3 da spec (extensão de navegador).
+
+Spec: `docs/superpowers/specs/2026-08-12-catalogo-em-risco-design.md`.
+
 ## Nota de revisão (2026-07-15)
 
 O alerta também cobre `nao_elegivel` esgotado e `sem_variation_id`. Para `nao_elegivel`, ele só

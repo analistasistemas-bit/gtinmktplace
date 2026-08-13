@@ -437,9 +437,19 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   sugestão não-vinculante da categoria do concorrente (`concorrencia_categoria_id` →
   `buscarNomeCategoria`), sem exigir categoria já definida.
 - **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; uma decisão unificada
-  por rodada aguarda elegibilidade pendente, reagenda `nao_elegivel` com backoff limitado
+  por rodada reagenda `pendente` **e** `nao_elegivel` pelo mesmo backoff limitado
   (1h/6h/24h/48h; janela total de ~3,3 dias) ou finaliza e alerta via Telegram em
-  no-match/ficha divergente/elegibilidade esgotada (ADR-0021/0036). **ADR-0088 Fase 2:** roteia por
+  no-match/ficha divergente/elegibilidade esgotada/elegibilidade não resolvida (ADR-0021/0036).
+  **Revisão 2026-08-12 (spec `catalogo-em-risco`):** `pendente` dividia antes só o retry curto do
+  QStash (minutos) — como a elegibilidade do ML leva horas ou dias, o retry esgotava e a família
+  congelava para sempre (93 famílias / 296 variações em produção). O HTTP 500 ficou reservado para
+  falha real: token, rede ou leitura da elegibilidade — esta última passou a **propagar** em vez de
+  devolver resumo zerado, que finalizaria a rodada sem ter perguntado nada (mesmo guard aplicado ao
+  caminho UP, onde a falha de leitura persistia `catalog_status='erro'` definitivo).
+  O worker aceita `alertar: false` no **body do job**: suprime só o envio do Telegram e é propagado
+  nos reagendamentos, para o backfill rodar sem enxurrada de mensagens. Job sem o campo (todas as
+  publicações normais) alerta como sempre; `queue.ts` não conhece o campo de propósito, para não
+  arrastar a frota QStash inteira no deploy. **ADR-0088 Fase 2:** roteia por
   família Legacy (1 item, N variações — `vincularVariacoesCatalogo`) ou User Products (N itens
   filhos, cada cor seu próprio item ML sem `variations[]` — `vincularItensCatalogoUP`), detectado
   pela presença de linhas em `anuncios_externos_itens` (trava em `particao=0`, a única que a saga UP

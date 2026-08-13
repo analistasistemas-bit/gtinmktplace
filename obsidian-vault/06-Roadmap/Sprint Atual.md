@@ -9,7 +9,25 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-08-11)
+## 📍 Passo atual (2026-08-13)
+
+> **🚧 Catálogo em risco — código pronto, aguardando deploy e backfill.** O ML marcava anúncios como
+> "Próximos a serem pausados" e o PubliAI não avisava nada. Causa: `pendente` devolvia 500 e vivia
+> só do retry curto do QStash (minutos), enquanto a elegibilidade do ML leva horas ou dias — o retry
+> esgotava e a família congelava; e o alerta do ADR-0036 exigia `pendente === 0`, então também nunca
+> saía. **93 famílias / 296 variações** congeladas.
+>
+> Entregue na branch `worktree-catalogo-em-risco`: `pendente` entra no backoff longo, falha de
+> leitura da elegibilidade propaga em vez de finalizar a rodada zerada (Legacy **e** User Products),
+> alerta cobre `pendente` residual, e o card **"Catálogo em risco"** aparece em Publicados com link
+> direto por anúncio. Sem migration.
+>
+> **Não automatizável pela API:** o "Não encontro minha variação" é endpoint interno do site do ML
+> (`403 EBADCSRFTOKEN` mesmo com Bearer OAuth válido, reverificado 2026-08-12). A resolução em massa
+> vira a **Fase 3** (extensão de navegador, sem credencial armazenada). Ver ADR-0021 e ADR-0036
+> (revisões de 2026-08-12).
+
+## 📍 Passo anterior (2026-08-11)
 
 > **✅ Ajuste/zeragem de estoque pelo PubliAI EM PRODUÇÃO (ADR-0110).** Motivo `ajuste` no ledger,
 > RPC `ajustar_estoque` e edge `ajustar-estoque` (admin-only), diálogo por produto e variação na

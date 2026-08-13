@@ -231,6 +231,69 @@ Resumo: configurar Telegram em Configurações, deployar `monitorar-moderados`, 
 > `config.toml` (ver [edge-functions.md](../reference/edge-functions.md)). Prefira manter o
 > valor no `config.toml` a passar a flag no deploy.
 
+## Catálogo em risco: backfill das famílias congeladas em `pendente`
+
+Quando famílias ficam presas em `catalog_status='pendente'` (o worker parou de perguntar a
+elegibilidade ao ML antes de ela ficar pronta), o backfill re-enfileira `vincular-catalogo` para
+elas. O script **não escreve no ML nem no banco** — só publica jobs QStash para o worker existente,
+então todo opt-in resultante passa pelas travas do ADR-0021.
+
+**Pré-requisito absoluto:** o worker corrigido precisa estar deployado (`supabase functions list`
+para conferir a versão). Worker antigo ignora o campo `alertar` e dispara uma mensagem de Telegram
+por família.
+
+1. **Gerar a lista** (SQL somente leitura). Salvar como `familias.txt`, um uuid por linha, **fora do
+   repositório** (dado de produção):
+
+```sql
+select distinct v.familia_id
+from variacoes v join familias f on f.id = v.familia_id
+where v.catalog_status = 'pendente'
+  and v.ml_variation_id is not null
+  and f.ml_item_id is not null;
+```
+
+O filtro `ml_variation_id is not null` é obrigatório: sem ele entram milhares de linhas nunca
+publicadas, que carregam o valor *default* da coluna e não representam problema nenhum.
+
+2. **Dry-run** (não enfileira nada):
+
+```bash
+deno run --allow-net --allow-env --allow-read \
+  scripts/backfill-catalogo-pendente.ts familias.txt
+```
+
+3. **Executar** e **guardar a saída** — os `messageId` são o mecanismo de reversão:
+
+```bash
+deno run --allow-net --allow-env --allow-read \
+  scripts/backfill-catalogo-pendente.ts familias.txt --executar | tee backfill-$(date +%Y%m%d-%H%M).log
+```
+
+Os jobs vão com `alertar: false`: a operação roda em silêncio, sem Telegram, inclusive nos
+reagendamentos. Publicações novas continuam alertando normalmente.
+
+4. **Reverter** (só antes da entrega — a janela é o delay de cada mensagem):
+
+```bash
+curl -X DELETE "https://qstash.upstash.io/v2/messages/<messageId>" -H "Authorization: Bearer $QSTASH_TOKEN"
+```
+
+Depois da entrega não há rollback, nem é necessário: o worker é idempotente e o pior resultado é o
+`catalog_status` passar a refletir a verdade atual do ML.
+
+5. **Conferir** algumas horas depois e no dia seguinte — QStash 200 não prova resultado:
+
+```sql
+select v.catalog_status, count(*) as variacoes, count(distinct v.familia_id) as familias
+from variacoes v join familias f on f.id = v.familia_id
+where v.ml_variation_id is not null and f.ml_item_id is not null
+group by 1 order by 2 desc;
+```
+
+O card "Catálogo em risco" na tela Publicados deve encolher junto. Logs:
+`supabase functions logs vincular-catalogo`.
+
 ## Faturamento: backfill e reconciliação
 
 - **Backfill retroativo** (um período): tela de Faturamento dispara `backfill-faturamento` com
