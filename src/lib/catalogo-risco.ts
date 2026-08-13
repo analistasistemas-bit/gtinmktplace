@@ -16,7 +16,11 @@ export interface FamiliaRiscoRow {
   ml_item_id: string | null;
   titulo_ml: string | null;
   nome_pai: string | null;
-  variacoes: Array<{ catalog_status: string | null; ml_variation_id: string | null }>;
+  variacoes: Array<{
+    catalog_status: string | null;
+    ml_variation_id: string | null;
+    catalog_product_id: string | null;
+  }>;
 }
 
 export interface AnuncioEmRisco {
@@ -25,6 +29,12 @@ export interface AnuncioEmRisco {
   qtdSemFicha: number;
   motivoPredominante: StatusRisco;
   url: string;
+  /** ml_variation_id publicados em status de risco — a extensão manda null para eles. */
+  variacoesRisco: string[];
+  /** ml_variation_id -> catalog_product_id das variações 'vinculado' — a extensão preserva exatamente estes. */
+  vinculos: Record<string, string>;
+  /** ml_variation_id === ml_item_id (ADR-0084): fluxo individual no ML, fora do lote da extensão. */
+  itemPlano: boolean;
 }
 
 const ehRisco = (s: string | null): s is StatusRisco => (STATUS_RISCO as readonly string[]).includes(s ?? '');
@@ -32,7 +42,12 @@ const ehRisco = (s: string | null): s is StatusRisco => (STATUS_RISCO as readonl
 export function agruparCatalogoRisco(rows: FamiliaRiscoRow[]): AnuncioEmRisco[] {
   // Agrega por ml_item_id: várias famílias compartilham o mesmo anúncio após ciclos de UPDATE
   // (mesmo dedupe de fetchPublicados).
-  const porItem = new Map<string, { titulo: string; contagem: Map<StatusRisco, number> }>();
+  const porItem = new Map<string, {
+    titulo: string;
+    contagem: Map<StatusRisco, number>;
+    variacoesRisco: string[];
+    itemPlano: boolean;
+  }>();
   for (const f of rows) {
     if (!f.ml_item_id) continue;
     const emRisco = f.variacoes.filter((v) => v.ml_variation_id != null && ehRisco(v.catalog_status));
@@ -40,15 +55,34 @@ export function agruparCatalogoRisco(rows: FamiliaRiscoRow[]): AnuncioEmRisco[] 
     const atual = porItem.get(f.ml_item_id) ?? {
       titulo: f.titulo_ml ?? f.nome_pai ?? f.ml_item_id,
       contagem: new Map<StatusRisco, number>(),
+      variacoesRisco: [],
+      itemPlano: false,
     };
     if (atual.titulo === f.ml_item_id && (f.titulo_ml ?? f.nome_pai)) atual.titulo = f.titulo_ml ?? f.nome_pai!;
     for (const v of emRisco) {
       const s = v.catalog_status as StatusRisco;
       atual.contagem.set(s, (atual.contagem.get(s) ?? 0) + 1);
+      atual.variacoesRisco.push(v.ml_variation_id!);
+      if (v.ml_variation_id === f.ml_item_id) atual.itemPlano = true;
     }
     porItem.set(f.ml_item_id, atual);
   }
-  return [...porItem.entries()].map(([mlItemId, { titulo, contagem }]) => {
+
+  // Segunda passada: agrega vínculos confirmados de TODAS as rows (inclusive famílias
+  // só-vinculado, que não geram entrada em porItem por não terem variação de risco).
+  const vinculosPorItem = new Map<string, Record<string, string>>();
+  for (const f of rows) {
+    if (!f.ml_item_id || !porItem.has(f.ml_item_id)) continue;
+    const alvo = vinculosPorItem.get(f.ml_item_id) ?? {};
+    for (const v of f.variacoes) {
+      if (v.catalog_status === 'vinculado' && v.ml_variation_id != null && v.catalog_product_id != null) {
+        alvo[v.ml_variation_id] = v.catalog_product_id;
+      }
+    }
+    vinculosPorItem.set(f.ml_item_id, alvo);
+  }
+
+  return [...porItem.entries()].map(([mlItemId, { titulo, contagem, variacoesRisco, itemPlano }]) => {
     let motivoPredominante: StatusRisco = STATUS_RISCO[0];
     let max = -1;
     for (const s of STATUS_RISCO) {
@@ -59,6 +93,9 @@ export function agruparCatalogoRisco(rows: FamiliaRiscoRow[]): AnuncioEmRisco[] 
     return {
       mlItemId, titulo, qtdSemFicha, motivoPredominante,
       url: `https://www.mercadolivre.com.br/produzir/catalogo/${mlItemId}`,
+      variacoesRisco,
+      vinculos: vinculosPorItem.get(mlItemId) ?? {},
+      itemPlano,
     };
   });
 }

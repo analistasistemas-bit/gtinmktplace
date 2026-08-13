@@ -5,7 +5,8 @@ import type { AnuncioEmRisco } from '@/lib/catalogo-risco';
 
 const item = (over: Partial<AnuncioEmRisco> = {}): AnuncioEmRisco => ({
   mlItemId: 'MLB100', titulo: 'Fita Cetim N.3', qtdSemFicha: 4,
-  motivoPredominante: 'pendente', url: 'https://www.mercadolivre.com.br/produzir/catalogo/MLB100', ...over,
+  motivoPredominante: 'pendente', url: 'https://www.mercadolivre.com.br/produzir/catalogo/MLB100',
+  variacoesRisco: [], vinculos: {}, itemPlano: false, ...over,
 });
 
 describe('CatalogoEmRisco', () => {

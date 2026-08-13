@@ -6,7 +6,7 @@ const fam = (over: Partial<FamiliaRiscoRow> = {}): FamiliaRiscoRow => ({
   variacoes: [], ...over,
 });
 const v = (catalog_status: string | null, ml_variation_id: string | null = '111') =>
-  ({ catalog_status, ml_variation_id });
+  ({ catalog_status, ml_variation_id, catalog_product_id: null });
 
 describe('agruparCatalogoRisco', () => {
   it('agrega os quatro status de risco e conta por anúncio', () => {
@@ -53,5 +53,65 @@ describe('agruparCatalogoRisco', () => {
 
   it('rótulos pt-BR cobrem todos os status', () => {
     for (const s of STATUS_RISCO) expect(ROTULO_RISCO[s]).toBeTruthy();
+  });
+});
+
+describe('agruparCatalogoRisco — dados para a extensão (Fase 3)', () => {
+  const fam = (over: Partial<FamiliaRiscoRow>): FamiliaRiscoRow => ({
+    id: 'f1', ml_item_id: 'MLB1', titulo_ml: 'Anúncio', nome_pai: null, variacoes: [], ...over,
+  });
+
+  it('coleta variacoesRisco (só as publicadas em status de risco)', () => {
+    const r = agruparCatalogoRisco([fam({
+      variacoes: [
+        { catalog_status: 'sem_produto', ml_variation_id: '111', catalog_product_id: null },
+        { catalog_status: 'pendente', ml_variation_id: '222', catalog_product_id: null },
+        { catalog_status: 'pendente', ml_variation_id: null, catalog_product_id: null }, // nunca publicada
+      ],
+    })]);
+    expect(r[0].variacoesRisco).toEqual(['111', '222']);
+  });
+
+  it('coleta vinculos das variações vinculado do MESMO anúncio', () => {
+    const r = agruparCatalogoRisco([fam({
+      variacoes: [
+        { catalog_status: 'sem_produto', ml_variation_id: '111', catalog_product_id: null },
+        { catalog_status: 'vinculado', ml_variation_id: '333', catalog_product_id: 'MLB999' },
+      ],
+    })]);
+    expect(r[0].vinculos).toEqual({ '333': 'MLB999' });
+  });
+
+  it('vinculado sem catalog_product_id não entra em vinculos', () => {
+    const r = agruparCatalogoRisco([fam({
+      variacoes: [
+        { catalog_status: 'sem_produto', ml_variation_id: '111', catalog_product_id: null },
+        { catalog_status: 'vinculado', ml_variation_id: '333', catalog_product_id: null },
+      ],
+    })]);
+    expect(r[0].vinculos).toEqual({});
+  });
+
+  it('família só com vinculado não vira anúncio em risco, mas seus vinculos agregam no mesmo ml_item_id', () => {
+    const r = agruparCatalogoRisco([
+      fam({ id: 'f1', variacoes: [{ catalog_status: 'sem_produto', ml_variation_id: '111', catalog_product_id: null }] }),
+      fam({ id: 'f2', variacoes: [{ catalog_status: 'vinculado', ml_variation_id: '444', catalog_product_id: 'MLB777' }] }),
+    ]);
+    expect(r).toHaveLength(1);
+    expect(r[0].vinculos).toEqual({ '444': 'MLB777' });
+  });
+
+  it('marca itemPlano quando ml_variation_id === ml_item_id', () => {
+    const r = agruparCatalogoRisco([fam({
+      variacoes: [{ catalog_status: 'pendente', ml_variation_id: 'MLB1', catalog_product_id: null }],
+    })]);
+    expect(r[0].itemPlano).toBe(true);
+  });
+
+  it('multivariação normal tem itemPlano false', () => {
+    const r = agruparCatalogoRisco([fam({
+      variacoes: [{ catalog_status: 'pendente', ml_variation_id: '555', catalog_product_id: null }],
+    })]);
+    expect(r[0].itemPlano).toBe(false);
   });
 });
