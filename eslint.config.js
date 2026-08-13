@@ -36,7 +36,7 @@ export default tseslint.config(
   },
   // Mocks de teste usam `as any` em respostas do Supabase; montar o tipo completo não agrega.
   {
-    files: ['tests/**', 'src/**/*.{test,spec}.{ts,tsx}'],
+    files: ['tests/**', 'src/**/*.{test,spec}.{ts,tsx}', 'extensao-ml/__tests__/**/*.{test,spec}.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
     },

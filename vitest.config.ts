@@ -17,6 +17,7 @@ export default mergeConfig(
         './tests/**/*.test.{ts,tsx}',
         './src/**/__tests__/**/*.test.{ts,tsx}',
         './supabase/functions/**/__tests__/**/*.test.ts',
+        './extensao-ml/__tests__/**/*.test.{ts,js}',
       ],
     },
   })

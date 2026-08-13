@@ -1,0 +1,91 @@
+// Contrato do matcher confirm do ML, extraído do bundle optin-user-products (2026-08-13).
+// REPLICA getMappedGroups literalmente: variations.filter(e => !e.status), entity_id sem
+// conversão de tipo, match?.product?.id || null. Ver spec 2026-08-12, seção "Contrato".
+// Puro: sem chrome.*, sem DOM — testado por vitest, importado pelo painel via ESM.
+
+export function extrairEstadoOptin(ctx) {
+  // Busca estrutural pelo initialOptinData ({step, step_data, ...contexto}) no JSON SSR da
+  // página — o invólucro exato do __NORDIC_RENDERING_CTX__ não é documentado, a forma interna é.
+  const visto = new Set();
+  const fila = [ctx];
+  while (fila.length) {
+    const atual = fila.shift();
+    if (!atual || typeof atual !== 'object' || visto.has(atual)) continue;
+    visto.add(atual);
+    if ('step' in atual && 'step_data' in atual) {
+      const { step, step_data: stepData, ...contextData } = atual;
+      return { step, stepData, contextData };
+    }
+    for (const v of Object.values(atual)) fila.push(v);
+  }
+  return null;
+}
+
+export function montarPlanoAnuncio(estado, variacoesRisco, vinculos) {
+  if (!estado) return { tipo: 'manual', motivo: 'estado_nao_encontrado' };
+  const groups = estado.stepData?.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return { tipo: 'manual', motivo: 'sem_groups_no_estado' };
+  const productId = estado.stepData?.parent_catalog_product?.id
+    ?? estado.contextData?.original_catalog_product_id ?? null;
+  if (!productId) return { tipo: 'manual', motivo: 'sem_parent_product_id' };
+  const flow = estado.contextData?.flow ?? estado.contextData?.flow_type ?? null;
+  if (!flow) return { tipo: 'manual', motivo: 'sem_flow' };
+
+  const risco = new Set(variacoesRisco.map(String));
+  const confirmedProductMatches = [];
+  const resumo = { null_enviados: [], preservados: [], excluidos_por_status: [], risco_ausente: [] };
+
+  for (const g of groups) {
+    const todas = Array.isArray(g?.variations) ? g.variations : [];
+    const matches = [];
+    for (const v of todas) {
+      if (v?.status) { resumo.excluidos_por_status.push(String(v.id)); continue; } // filtro do ML
+      if (v?.id == null) return { tipo: 'manual', motivo: 'variacao_sem_id' };
+      const id = String(v.id);
+      if (risco.has(id)) {
+        matches.push({ entity_id: v.id, catalog_product_id: null }); // "Não encontro minha variação"
+        resumo.null_enviados.push(id);
+        continue;
+      }
+      const naPagina = v?.match?.product?.id ?? null;
+      if (!naPagina) return { tipo: 'manual', motivo: `variacao_sem_decisao:${id}` };
+      const confirmado = vinculos[id];
+      if (!confirmado) return { tipo: 'manual', motivo: `match_nao_confirmado:${id}` };
+      if (confirmado !== naPagina) return { tipo: 'manual', motivo: `vinculo_divergente:${id}` };
+      matches.push({ entity_id: v.id, catalog_product_id: naPagina }); // preserva
+      resumo.preservados.push(id);
+    }
+    confirmedProductMatches.push({
+      group_attributes: (g?.match_product?.attributes ?? []).map(
+        ({ id, name, value_id, value_name }) => ({ id, name, value_id, value_name }),
+      ),
+      matches,
+    });
+  }
+
+  for (const id of risco) if (!resumo.null_enviados.includes(id)) resumo.risco_ausente.push(id);
+  if (resumo.null_enviados.length === 0) return { tipo: 'manual', motivo: 'nenhuma_variacao_risco_no_matcher', resumo };
+  return { tipo: 'ok', productId, flow, confirmedProductMatches, resumo };
+}
+
+export function montarUrlOptinUp(basePath, itemId, recurso) {
+  return `${String(basePath).replace(/\/+$/, '')}/api/optin-up/${itemId}/${recurso}`;
+}
+
+export function interpretarRespostaMatcher(corpo, plano) {
+  const sd = corpo?.step_data;
+  if (!sd || !Array.isArray(sd.product_associations)) return { acao: 'manual', motivo: 'resposta_sem_product_associations' };
+  if (sd.add_invoice) return { acao: 'manual', motivo: 'exige_invoice' };
+  if (sd.anatel_data) return { acao: 'manual', motivo: 'exige_anatel' };
+  const parentProductId = sd.parent_catalog_product?.id;
+  if (!parentProductId) return { acao: 'manual', motivo: 'resposta_sem_parent_product' };
+  // Guard de eco: o conjunto de entity_ids que o servidor computou como null tem que ser
+  // exatamente o que o plano mandou como null. Divergiu → o servidor entendeu outra coisa; parar.
+  const nullServidor = sd.product_associations
+    .filter((a) => !a?.catalog_product_id).map((a) => String(a.entity_id)).sort();
+  const nullPlano = [...(plano?.resumo?.null_enviados ?? [])].sort();
+  if (JSON.stringify(nullServidor) !== JSON.stringify(nullPlano)) {
+    return { acao: 'manual', motivo: 'eco_divergente' };
+  }
+  return { acao: 'summary', parentProductId, productAssociations: sd.product_associations };
+}
