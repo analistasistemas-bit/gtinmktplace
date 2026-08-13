@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — variação órfã no ML vendia sem baixar — 2026-08-13
+
+- [x] **Diagnóstico.** Venda pelo anúncio de catálogo `MLB7010890734` (cor Azul da linha Xik) não
+  baixou estoque. Causa: o anúncio `MLB6901096672` tem **3** variações no ML (Branco, Preto, Azul
+  `203375281741` / SKU `00220809`) e o PubliAI só conhecia 2 — a Azul não existia em `variacoes`.
+  Com isso os três caminhos de resolução de SKU falham (item id fora de `idsPubliai`, GTIN
+  `7894659007861` ausente do catálogo, anúncio de catálogo não carrega `seller_custom_field`).
+  2 unidades vendidas sem baixa (pedidos `2000017520752664` e `2000017906471986`).
+- [x] **Dado corrigido.** Variação Azul reinserida com os vínculos vivos (`ml_variation_id`,
+  `catalog_listing_id=MLB7010890734`, `catalog_product_id=MLB74323526`), estoque 100 e custo 3,51
+  (mesmo do Branco, definido pelo Diego). Varredura dos 142 anúncios da conta (1.241 variações
+  vivas no ML) confirma: era a **única** órfã.
+- [x] **Guard anti-órfão em `excluir-lote`.** `particionarExclusao` preserva a família não
+  publicada cujo `ml_item_id|ml_variation_id` não sobrevive em nenhuma outra família da org.
+  Fail-closed quando a consulta de vínculos falha.
+- [x] **Alerta de SKU fora do catálogo em `sync-venda`.** `sku_nao_encontrado` da RPC deixou de
+  ser descartado em silêncio: volta em `skuDesconhecido` e vira notificação em `vendas`.
+- [ ] **Pendente:** nome interno da variação Azul gravado como `LINHA P/COST.XIK 120 2000J AZUL`
+  (a planilha usa sufixo de cor, ex.: "10 BCA"); e o ML segue com 1.205 até o próximo push.
+
 ## Financeiro — compra virava venda e saque em devolvido (ADR-0117) — 2026-08-12
 
 - [x] **Revisão completa do menu** (`.code-review-fable5/code-review-v11.md`): 42/100, BLOQUEAR.

@@ -468,6 +468,16 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   inicial e o delete). Todas as queries agora falham alto em erro (antes, várias liam `{error}` e
   seguiam como se tivesse dado certo).
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
+  **Guard anti-órfão (2026-08-13):** `publicado_em` sozinho não basta — o UPDATE pode ter criado a
+  cor no ML e **não** marcar a família como publicada (guard de `update-familia-ml`: cor nova sem
+  `seller_custom_field` devolvido). Apagar a última família que representa aquele
+  `ml_variation_id` deixava a variação viva no anúncio sem nenhuma linha no banco: vendia e não
+  baixava estoque (incidente da cor Azul da linha Xik, 2 unidades). `particionarExclusao` agora
+  também preserva a família não publicada cujo vínculo `ml_item_id|ml_variation_id` não sobrevive
+  em nenhuma outra família da org (`vinculosVivosFora`, lido por `lerVinculosVivosFora`).
+  Reposição em revisão continua excluível: os vínculos que ela herda seguem vivos na família de
+  origem. Consulta indisponível → **fail-closed** (preserva), porque preservar demais é
+  reversível e a órfã só reaparece numa venda perdida.
 - **Varredura de movimentos órfãos (ADR-0097, 2026-08-01)** — as **duas** funções acima chamam
   `limpar_movimentos_orfaos(org)` depois do delete das famílias commitar: `estoque_movimentos` não
   tem FK para `variacoes`, então o cascade não alcança o ledger e a exclusão deixava movimento de
@@ -659,6 +669,13 @@ falha ao ler `organizations` não libera.
   `venda_sem_sku:{canal}:{pedido}:{item}`) e o `sync-venda` notifica a categoria `vendas`. Um
   saldo que não desce é indistinguível de um produto que não vendeu; o movimento informativo é a
   diferença.
+  **Venda de SKU fora do catálogo (2026-08-13):** o caso irmão — o item TEM `codigo` (veio do
+  `seller_custom_field` do pedido) mas ele não existe em `variacoes`, então a RPC devolve
+  `aplicado: false, motivo: 'sku_nao_encontrado'` e o laço de `registrarBaixaVenda` seguia calado:
+  o alerta acima só cobre item **sem** código. Agora esses SKUs voltam em
+  `ResultadoBaixaVenda.skuDesconhecido` e o `sync-venda` alerta em `vendas`
+  (`reservarNotificacao('estoque_sku_desconhecido', pedido)`). Origem típica: a variação foi
+  apagada do PubliAI enquanto seguia viva no anúncio (ver o guard anti-órfão de `excluir-lote`).
   Liveness da integração (ADR-0069): erro no token ou no fetch do recurso é classificado via
   `classificarErroML` — 401/403 (`permanente-auth`) grava `marketplace_connections.auth_alerta_em`
   e alerta `notificarCategoria(..., 'integracao', ...)` só na 1ª falha (200, sem retry); 404

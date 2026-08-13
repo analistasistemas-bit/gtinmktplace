@@ -1,4 +1,8 @@
-export interface VariacaoExclusao { imagem_path: string | null; }
+export interface VariacaoExclusao {
+  imagem_path: string | null;
+  /** Vínculo com a variação viva no ML. Ausente/null = nada existe lá para ficar órfão. */
+  ml_variation_id?: string | null;
+}
 export interface FamiliaExclusao {
   id: string;
   ml_item_id: string | null;
@@ -17,6 +21,11 @@ export interface EntradaExclusao {
    * Em excluir-lote é `lote.user_id` (que a própria edge já confirmou ser o chamador).
    */
   donoUserId: string;
+  /**
+   * Vínculos `ml_item_id|ml_variation_id` que sobrevivem FORA deste lote (`chaveVinculo`).
+   * Ausente = desconhecido, e o guard anti-órfão trava fechado (ver `particionarExclusao`).
+   */
+  vinculosVivosFora?: ReadonlySet<string>;
 }
 export interface ResultadoExclusao {
   paraExcluir: FamiliaExclusao[];
@@ -57,13 +66,45 @@ export function filtrarPathsDeDonos(paths: string[], donos: ReadonlySet<string>)
   });
 }
 
+/** Chave de um vínculo com o ML. Só existe quando os dois lados estão preenchidos. */
+export function chaveVinculo(mlItemId: string | null, variationId: string | null | undefined): string | null {
+  return mlItemId && variationId ? `${mlItemId}|${variationId}` : null;
+}
+
+function vinculosDaFamilia(f: FamiliaExclusao): string[] {
+  return f.variacoes
+    .map((v) => chaveVinculo(f.ml_item_id, v.ml_variation_id))
+    .filter((k): k is string => k !== null);
+}
+
 export function particionarExclusao(e: EntradaExclusao): ResultadoExclusao {
   // Preserva só famílias REALMENTE publicadas (publicado_em != null). Reposição UPDATE
   // herda ml_item_id do anúncio existente sem publicar nada — usar ml_item_id como
   // sinal preservava lotes de reposição em revisão, que então viravam "concluído" em
   // vez de serem excluídos (ambos os workers setam publicado_em ao publicar).
-  const preservadas = e.familias.filter((f) => f.publicado_em != null);
-  const paraExcluir = e.familias.filter((f) => f.publicado_em == null);
+  const publicadas = e.familias.filter((f) => f.publicado_em != null);
+  const naoPublicadas = e.familias.filter((f) => f.publicado_em == null);
+
+  // Guard anti-órfão (incidente 2026-08-13, linha Xik cor Azul): `publicado_em` sozinho não
+  // basta. O UPDATE pode ter CRIADO a variação no ML e mesmo assim não marcar a família como
+  // publicada (guard de update-familia-ml, cor nova sem vínculo devolvido). Apagando aqui a
+  // última família que representa esse `ml_variation_id`, a variação continua viva no anúncio
+  // e nada no banco a representa: vende e não baixa estoque, sem alerta.
+  //
+  // Cobertos = vínculos que sobrevivem fora do lote + os das publicadas deste lote. Um vínculo
+  // fora dessa lista não tem outro dono, então a família fica.
+  // `vinculosVivosFora` ausente = não deu para consultar: trava fechado (preserva), porque
+  // preservar demais é reversível e a órfã só reaparece numa venda perdida.
+  const conhece = e.vinculosVivosFora !== undefined;
+  const cobertos = new Set([
+    ...(e.vinculosVivosFora ?? []),
+    ...publicadas.flatMap(vinculosDaFamilia),
+  ]);
+  const criaOrfa = (f: FamiliaExclusao) =>
+    vinculosDaFamilia(f).some((k) => !conhece || !cobertos.has(k));
+
+  const preservadas = [...publicadas, ...naoPublicadas.filter(criaOrfa)];
+  const paraExcluir = naoPublicadas.filter((f) => !criaOrfa(f));
   const pathsPreservar = [...new Set(preservadas.flatMap(pathsDaFamilia))];
   const preservarSet = new Set(pathsPreservar);
   const candidatos = [

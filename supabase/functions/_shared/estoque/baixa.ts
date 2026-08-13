@@ -61,6 +61,8 @@ export interface ResultadoBaixaVenda {
   falhas: Array<{ codigo: string; mensagem: string }>;
   /** Itens da venda paga que ficaram SEM baixa por não ter SKU resolvido. */
   semSku: Array<{ titulo: string | null; mlItemId: string | null; quantidade: number }>;
+  /** SKUs que vieram no pedido mas não existem no catálogo — a RPC recusa e nada é baixado. */
+  skuDesconhecido: Array<{ codigo: string; quantidade: number }>;
 }
 
 export async function registrarBaixaVenda(
@@ -72,10 +74,13 @@ export async function registrarBaixaVenda(
   const semSku = await registrarVendaSemSku(admin, p);
 
   const baixas = selecionarBaixas(p.itens);
-  if (baixas.length === 0) return { pendentesDePush: [], semSaldo: [], falhas: [], semSku };
+  if (baixas.length === 0) {
+    return { pendentesDePush: [], semSaldo: [], falhas: [], semSku, skuDesconhecido: [] };
+  }
 
   const semSaldo: Array<{ codigo: string; pedido: number }> = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
+  const skuDesconhecido: Array<{ codigo: string; quantidade: number }> = [];
 
   for (const b of baixas) {
     const ref = refBaixa(p.canal, p.orderId, b.codigo);
@@ -93,7 +98,13 @@ export async function registrarBaixaVenda(
       aplicado: boolean; motivo: string; codigo_pai?: string;
       estoque_anterior?: number; quantidade_pedida?: number;
     };
-    if (!r.aplicado) continue;
+    if (!r.aplicado) {
+      // SKU que o catálogo não conhece (incidente 2026-08-13): o pedido TROUXE o código, então
+      // isto não é "venda sem SKU" e passava calado — `duplicata` e `cancelada_antes_da_baixa`
+      // são caminhos normais, este não. O saldo não desceu e só o operador pode agir.
+      if (r.motivo === 'sku_nao_encontrado') skuDesconhecido.push({ codigo: b.codigo, quantidade: b.quantity });
+      continue;
+    }
     // "Vendeu sem saldo": o pedido foi maior que o saldo que existia antes da baixa.
     if (r.estoque_anterior !== undefined && r.estoque_anterior < b.quantity) {
       semSaldo.push({ codigo: b.codigo, pedido: b.quantity });
@@ -104,7 +115,7 @@ export async function registrarBaixaVenda(
   // movimento com push ainda não entregue. É o que fecha o buraco em que a RPC
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), semSaldo, falhas, semSku };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), semSaldo, falhas, semSku, skuDesconhecido };
 }
 
 /**

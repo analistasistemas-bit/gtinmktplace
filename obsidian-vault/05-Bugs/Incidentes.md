@@ -1,12 +1,33 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-08-11
+atualizado: 2026-08-13
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## 2026-08-13 — variação viva no ML, inexistente no PubliAI (linha Xik, cor Azul)
+
+Uma venda pelo anúncio de catálogo `MLB7010890734` não baixou estoque e caiu no alerta "venda sem
+SKU reconhecido". O anúncio `MLB6901096672` tem **3** variações no ML — Branco, Preto e Azul
+(`203375281741`, SKU `00220809`, GTIN `7894659007861`) — e o banco só tinha 2. O `seller_custom_field`
+preenchido prova que a Azul foi publicada pelo próprio app.
+
+**Causa raiz:** o UPDATE que cria cor nova pode criá-la no ML e **não** marcar `publicado_em`
+(guard de `update-familia-ml/processar.ts`, quando o ML não devolve o vínculo da cor). Depois,
+`excluir-lote` apaga toda família sem `publicado_em` (`_shared/lote/exclusao.ts`), levando junto a
+variação. A cor continua viva no anúncio e nada no banco a representa. O silêncio veio de brinde:
+com o SKU presente no pedido, a RPC devolvia `sku_nao_encontrado` e `registrarBaixaVenda` seguia
+sem alertar — o alerta de 2026-08-11 só cobre item **sem** código.
+
+**Impacto:** 2 unidades (21/07 e 13/08). Varredura dos 142 anúncios da conta AVIL (1.241
+variações vivas no ML) confirmou que era a única órfã.
+
+**Correção:** variação reinserida já reconciliada com os vínculos do ML (sem escrever no anúncio);
+guard anti-órfão em `particionarExclusao`; alerta `estoque_sku_desconhecido` no `sync-venda`.
+Ver [[Edge Functions]], `docs/TASKS.md`.
 
 ## 2026-08-11 — 12 unidades venderam sem baixar estoque (org DSA)
 

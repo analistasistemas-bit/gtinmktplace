@@ -113,6 +113,92 @@ describe('particionarExclusao', () => {
   });
 });
 
+// Incidente 2026-08-13 (linha Xik, cor Azul): o UPDATE criou a cor no ML, não marcou
+// `publicado_em` (guard de update-familia-ml), e a exclusão do lote levou a família junto.
+// A variação continuou viva no anúncio, vendendo sem baixar estoque — porque nenhuma linha de
+// `variacoes` no banco a representava. Apagar a última família que aponta para um
+// `ml_variation_id` VIVO é o que cria a órfã.
+describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () => {
+  const comVinculos = (
+    id: string,
+    publicadoEm: string | null,
+    mlItemId: string | null,
+    variationIds: (string | null)[],
+  ): FamiliaExclusao => ({
+    id, ml_item_id: mlItemId, publicado_em: publicadoEm,
+    capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null,
+    variacoes: variationIds.map((v) => ({ imagem_path: `u/${id}-${v}.jpg`, ml_variation_id: v })),
+  });
+
+  it('preserva a família não publicada cujo vínculo no ML ficaria sem dono', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [comVinculos('a', null, 'MLB1', ['203375281741'])],
+      planilhaPath: null, imagensPaths: null,
+      vinculosVivosFora: new Set(),
+    });
+    expect(r.preservadas.map((f) => f.id)).toEqual(['a']);
+    expect(r.paraExcluir).toEqual([]);
+  });
+
+  it('exclui quando outra família viva FORA do lote já representa o mesmo vínculo', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [comVinculos('a', null, 'MLB1', ['203313876609'])],
+      planilhaPath: null, imagensPaths: null,
+      vinculosVivosFora: new Set(['MLB1|203313876609']),
+    });
+    expect(r.paraExcluir.map((f) => f.id)).toEqual(['a']);
+  });
+
+  it('vínculo coberto por uma publicada do próprio lote não impede a exclusão', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [
+        comVinculos('a', null, 'MLB1', ['203313876609']),
+        comVinculos('b', '2026-07-06T00:00:00Z', 'MLB1', ['203313876609']),
+      ],
+      planilhaPath: null, imagensPaths: null,
+      vinculosVivosFora: new Set(),
+    });
+    expect(r.paraExcluir.map((f) => f.id)).toEqual(['a']);
+    expect(r.preservadas.map((f) => f.id)).toEqual(['b']);
+  });
+
+  it('variação sem ml_variation_id não segura a exclusão (nada existe no ML)', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [comVinculos('a', null, 'MLB1', [null, null])],
+      planilhaPath: null, imagensPaths: null,
+      vinculosVivosFora: new Set(),
+    });
+    expect(r.paraExcluir.map((f) => f.id)).toEqual(['a']);
+  });
+
+  it('família preservada pelo guard tem os arquivos preservados também', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [comVinculos('a', null, 'MLB1', ['203375281741'])],
+      planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/a-203375281741.jpg'],
+      vinculosVivosFora: new Set(),
+    });
+    expect(r.pathsRemover).not.toContain('u/a-203375281741.jpg');
+    expect(r.pathsPreservar).toContain('u/a-203375281741.jpg');
+    expect(r.loteVazio).toBe(false);
+  });
+
+  // Fail-closed: sem saber quais vínculos sobrevivem, apagar pode criar a órfã. Preservar
+  // demais é reversível (o operador exclui de novo); a órfã só aparece numa venda perdida.
+  it('sem o conjunto de vínculos, a família com vínculo vivo é preservada', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [comVinculos('a', null, 'MLB1', ['203375281741'])],
+      planilhaPath: null, imagensPaths: null,
+    });
+    expect(r.preservadas.map((f) => f.id)).toEqual(['a']);
+  });
+});
+
 describe('filtrarPathsDeDonos', () => {
   it('mantém só paths cujo primeiro segmento está no conjunto de donos', () => {
     const donos = new Set(['user-a', 'user-b']);

@@ -3,11 +3,43 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { podeExcluirLote } from '../_shared/support-state.ts';
-import { particionarExclusao, type FamiliaExclusao } from '../_shared/lote/exclusao.ts';
+import { particionarExclusao, chaveVinculo, type FamiliaExclusao } from '../_shared/lote/exclusao.ts';
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 import { limparMovimentosOrfaos } from '../_shared/estoque/limpeza.ts';
 
 const BLOQUEADOS = ['processando', 'publicando'];
+
+/**
+ * Vínculos `ml_item_id|ml_variation_id` que continuam representados por famílias FORA deste
+ * lote — insumo do guard anti-órfão de `particionarExclusao`. `undefined` quando a consulta
+ * falha: o guard trava fechado e preserva, em vez de apagar a última linha que representa
+ * uma variação viva no ML.
+ */
+async function lerVinculosVivosFora(
+  admin: SupabaseClient,
+  orgId: string,
+  loteId: string,
+  familiasDoLote: Array<{ ml_item_id: string | null }>,
+): Promise<ReadonlySet<string> | undefined> {
+  const itemIds = [...new Set(familiasDoLote.map((f) => f.ml_item_id).filter((id): id is string => !!id))];
+  if (itemIds.length === 0) return new Set();
+  const { data, error } = await admin.from('familias')
+    .select('ml_item_id, variacoes(ml_variation_id)')
+    .eq('org_id', orgId).in('ml_item_id', itemIds).neq('lote_id', loteId);
+  if (error) {
+    console.warn('excluir-lote: vínculos vivos indisponíveis (preserva por precaução):', error.message);
+    return undefined;
+  }
+  const vivos = new Set<string>();
+  for (const f of data ?? []) {
+    for (const v of (f.variacoes ?? []) as Array<{ ml_variation_id: string | null }>) {
+      const k = chaveVinculo(f.ml_item_id as string | null, v.ml_variation_id);
+      if (k) vivos.add(k);
+    }
+  }
+  return vivos;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -30,7 +62,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: familias } = await admin.from('familias')
-    .select('id, ml_item_id, publicado_em, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
+    .select('id, ml_item_id, publicado_em, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path, ml_variation_id)')
     .eq('lote_id', lote_id);
 
   const part = particionarExclusao({
@@ -39,6 +71,7 @@ Deno.serve(async (req) => {
     // lote.user_id === user.id (checado acima). Trava os paths no prefixo do próprio dono:
     // as colunas de path são escritas pelo cliente, e este delete roda com service_role.
     donoUserId: lote.user_id,
+    vinculosVivosFora: await lerVinculosVivosFora(admin, user.orgId, lote_id, familias ?? []),
   });
 
   if (part.pathsRemover.length > 0) {

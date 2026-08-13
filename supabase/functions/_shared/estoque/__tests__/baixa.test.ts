@@ -82,7 +82,10 @@ describe('refSemSku', () => {
 });
 
 describe('registrarBaixaVenda — venda sem SKU', () => {
-  function adminFake(over: { insertErro?: { code: string; message: string } } = {}) {
+  function adminFake(over: {
+    insertErro?: { code: string; message: string };
+    rpc?: { aplicado: boolean; motivo: string };
+  } = {}) {
     const inserts: Record<string, unknown>[] = [];
     return {
       inserts,
@@ -100,7 +103,10 @@ describe('registrarBaixaVenda — venda sem SKU', () => {
         }),
       }),
       // A RPC real sempre devolve jsonb; `aplicado: false` = já baixado antes (idempotência).
-      rpc: () => Promise.resolve({ data: { aplicado: false, motivo: 'duplicata' }, error: null }),
+      rpc: () => Promise.resolve({
+        data: over.rpc ?? { aplicado: false, motivo: 'duplicata' },
+        error: null,
+      }),
     };
   }
 
@@ -151,5 +157,50 @@ describe('registrarBaixaVenda — venda sem SKU', () => {
       ...pedido, itens: [{ codigo: 'A1', quantity: 1 }],
     });
     expect(admin.inserts).toHaveLength(0);
+  });
+});
+
+// Incidente 2026-08-13 (linha Xik, cor Azul): a variação sumiu do banco mas seguiu vendendo no
+// ML. O pedido trazia o SKU (seller_custom_field), então o item NÃO era "sem SKU" — a RPC
+// devolvia `sku_nao_encontrado` e o laço seguia calado. Um SKU que o catálogo não conhece é
+// exatamente o caso em que só o operador pode agir.
+describe('registrarBaixaVenda — SKU desconhecido pelo catálogo', () => {
+  function adminFake(rpc: { aplicado: boolean; motivo: string }) {
+    return {
+      from: () => ({
+        insert: () => Promise.resolve({ error: null }),
+        select: () => ({
+          eq: () => ({
+            is: () => ({
+              neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+            }),
+          }),
+        }),
+      }),
+      rpc: () => Promise.resolve({ data: rpc, error: null }),
+    };
+  }
+
+  const pedido = {
+    orgId: 'org1', canal: 'mercado_livre', orderId: 999,
+    itens: [{ codigo: '00220809', quantity: 2, ml_item_id: 'MLB7010890734', titulo: 'Linha Azul' }],
+  };
+
+  it('reporta o SKU que a RPC não achou no catálogo', async () => {
+    const admin = adminFake({ aplicado: false, motivo: 'sku_nao_encontrado' });
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(r.skuDesconhecido).toEqual([{ codigo: '00220809', quantidade: 2 }]);
+  });
+
+  it('duplicata (já baixado antes) não vira alerta de SKU desconhecido', async () => {
+    const admin = adminFake({ aplicado: false, motivo: 'duplicata' });
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(r.skuDesconhecido).toEqual([]);
+  });
+
+  it('baixa aplicada não vira alerta', async () => {
+    const admin = adminFake({ aplicado: true, motivo: 'venda' });
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(r.skuDesconhecido).toEqual([]);
   });
 });

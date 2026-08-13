@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
   // devolve `aplicado=false` e não é reaplicado.
   if (pedido.status === 'paid' && orgId) {
     try {
-      const { pendentesDePush, semSaldo, falhas, semSku } = await registrarBaixaVenda(admin, {
+      const { pendentesDePush, semSaldo, falhas, semSku, skuDesconhecido } = await registrarBaixaVenda(admin, {
         orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
       });
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
@@ -182,6 +182,19 @@ Deno.serve(async (req) => {
           `⚠️ Venda sem SKU reconhecido (pedido ${pedido.id})\n\n${linhas}\n\n`
           + 'O estoque NÃO foi baixado desses itens porque o anúncio não está vinculado a um '
           + 'produto do PubliAI. Confira o saldo em Estoque → Ajustar.',
+        );
+      }
+      // SKU que veio no pedido mas não existe no catálogo (incidente 2026-08-13, cor Azul da
+      // linha Xik): o item TEM código, então não entra em `semSku` e o alerta acima não cobre.
+      // A RPC recusa e o saldo não desce — sem este alerta, some igual ao caso de 2026-08-11.
+      if (skuDesconhecido.length > 0
+        && await reservarNotificacao(admin, orgId, userId, 'estoque_sku_desconhecido', String(pedido.id))) {
+        const linhas = skuDesconhecido.map((s) => `• ${s.codigo} — ${s.quantidade} un.`).join('\n');
+        await notificarCategoria(
+          admin, orgId, 'vendas',
+          `⚠️ Venda de SKU fora do catálogo (pedido ${pedido.id})\n\n${linhas}\n\n`
+          + 'O estoque NÃO foi baixado: esse código não existe nos seus produtos. Confira se a '
+          + 'variação foi removida do PubliAI enquanto o anúncio seguia no ar.',
         );
       }
       // Falha de RPC é irrecuperável sozinha: o operador PRECISA saber para ajustar.
