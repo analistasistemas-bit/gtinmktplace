@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   // "sem return ainda" é estado de negócio válido, não indica token morto).
   const ret = await buscarReturn(token, job.claim_id);
 
-  const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret);
+  const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId);
 
   if (nova && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
     await notificarCategoria(admin, orgId, 'pos_venda', montarMensagemNovaDevolucao({
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
         carregarGtinsFallback(token, [pedido], idsPubliai),
       ]);
       await upsertVenda(admin, job.user_id, orgId, pedido, {
-        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
+        freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: conexao.contaExternaId,
         liquidoPorPayment: liquidoPorPayment ?? undefined,
       });
       // Leitura do MP falhou justamente no worker que existe para capturar o estorno. O claim e a

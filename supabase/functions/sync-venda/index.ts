@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
   ]);
 
   const { novaPaga, itens, compradorNome } = await upsertVenda(admin, userId, orgId, pedido, {
-    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
+    freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: conexao.contaExternaId,
     liquidoPorPayment: liquidoPorPayment ?? undefined,
   });
 

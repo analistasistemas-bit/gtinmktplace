@@ -48,6 +48,7 @@ const pedido: PedidoML = {
   status: 'paid',
   total_amount: 100,
   payments: [{ id: 1 }],
+  seller: { id: 1003820507 },
   order_items: [{ item: { id: 'MLB1' }, quantity: 1, unit_price: 100, sale_fee: 10 }],
 };
 
@@ -55,7 +56,35 @@ const opts = {
   idsPubliai: new Set<string>(), codigoResolver: () => null, freteVendedor: 5,
   // Obrigatório (ADR-0109): o TS quebra a build de qualquer caller que esqueça.
   custoVigenteResolver: () => null as number | null,
+  // Obrigatório pelo mesmo motivo: separa venda de COMPRA da empresa (ADR-0117).
+  contaExternaId: '1003820507',
 };
+
+describe('upsertVenda — compra da empresa', () => {
+  // O webhook e os claims do ML trazem pedidos em que a conta é COMPRADORA. A guarda vive aqui,
+  // e não em cada worker: travar só o sync-venda não impediu o sync-devolucao de recriar as 23
+  // compras ao reprocessar o pedido de cada claim (2026-08-13).
+  it('não grava pedido cujo vendedor é outra conta', async () => {
+    const { admin, upsertVendas } = criarAdminFake();
+    const compra = { ...pedido, seller: { id: 999999 } };
+
+    const r = await upsertVenda(admin, 'user-1', 'org-1', compra, opts);
+
+    expect(upsertVendas).not.toHaveBeenCalled();
+    expect(r.vendaId).toBeNull();
+    expect(r.novaPaga).toBe(false);
+    expect(r.itens).toEqual([]);
+  });
+
+  it('grava normalmente quando a conta é o vendedor', async () => {
+    const { admin, upsertVendas } = criarAdminFake();
+
+    const r = await upsertVenda(admin, 'user-1', 'org-1', pedido, opts);
+
+    expect(upsertVendas).toHaveBeenCalled();
+    expect(r.vendaId).not.toBeNull();
+  });
+});
 
 describe('upsertVenda', () => {
   // O bug que o ADR-0093 fecha: o upsert regrava a linha inteira, então um sync em que a leitura

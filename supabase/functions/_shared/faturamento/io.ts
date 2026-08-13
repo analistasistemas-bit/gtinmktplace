@@ -2,7 +2,7 @@
 // Usa Deno/supabase-js; a lógica pura fica em venda.ts. Só `upsertVenda` tem teste de vitest
 // (io.test.ts, com um fake do client) — é o caminho que grava estorno/liberação.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { ehVendaDaConta, mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
@@ -264,8 +264,19 @@ export async function upsertVenda(
           /** ADR-0109 — custo vigente do item, congelado na venda. OBRIGATÓRIO de propósito: são
            *  4 callers (sync-venda, sync-devolucao, backfill-faturamento, reconciliar-faturamento)
            *  e o TS quebra a build de quem esquecer, em vez de a venda nascer sem custo. */
-          custoVigenteResolver: (item: ItemParaCusto) => number | null },
-): Promise<{ vendaId: string; novaPaga: boolean; itens: VendaItemRow[]; compradorNome: string | null }> {
+          custoVigenteResolver: (item: ItemParaCusto) => number | null;
+          /** Conta ML conectada (`conexao.contaExternaId`). OBRIGATÓRIO de propósito, como o
+           *  `custoVigenteResolver` acima: é o que separa venda de COMPRA da empresa, e são os
+           *  mesmos 4 callers. Sem a trava aqui, travar só um deles não resolve — a guarda do
+           *  `sync-venda` (ADR-0117) não impediu o `sync-devolucao` de recriar as 23 compras ao
+           *  reprocessar o pedido de cada claim. */
+          contaExternaId: string | null },
+): Promise<{ vendaId: string | null; novaPaga: boolean; itens: VendaItemRow[]; compradorNome: string | null }> {
+  // Compra da empresa não é venda: não grava e não devolve itens, então nenhum caller dispara
+  // baixa de estoque, alerta de venda nova ou custo congelado.
+  if (!ehVendaDaConta(pedido, opts.contaExternaId)) {
+    return { vendaId: null, novaPaga: false, itens: [], compradorNome: null };
+  }
   const { venda, itens } = mapearPedidoParaVenda(pedido, {
     idsPubliai: opts.idsPubliai, codigoResolver: opts.codigoResolver, eanResolver: opts.eanResolver,
     infoPorGtin: opts.infoPorGtin, gtinPorItem: opts.gtinPorItem, liquidoPorPayment: opts.liquidoPorPayment,

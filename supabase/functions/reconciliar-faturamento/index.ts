@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
         await Promise.all(lote.map(async (claim) => {
           try {
             const ret = await buscarReturn(token, String(claim.id));
-            const { row } = await upsertDevolucao(admin, userId, orgId, claim, ret);
+            const { row } = await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
             if (row.order_id == null) return;
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
               carregarGtinsFallback(token, [pedido], idsPubliai),
             ]);
             await upsertVenda(admin, userId, orgId, pedido, {
-              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
               liquidoPorPayment: liquidoPorPayment ?? undefined,
             });
           } catch { /* segue */ }
@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
               buscarShipment(token, shippingId),
             ]);
             await upsertVenda(admin, userId, orgId, pedido, {
-              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: e.cx.contaExternaId,
               liquidoPorPayment: liquidoPorPayment ?? undefined,
             });
             total++;

@@ -98,7 +98,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
       await Promise.all(lote.map(async (claim) => {
         try {
           const ret = await buscarReturn(token, String(claim.id));
-          await upsertDevolucao(admin, userId, orgId, claim, ret);
+          await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
         } catch (e) {
           console.warn(`backfill: claim ${claim?.id} de ${userId} falhou: ${(e as Error).message}`);
         }
@@ -136,7 +136,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           buscarShipment(token, shippingId),
         ]);
         await upsertVenda(admin, userId, orgId, pedido, {
-          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver,
+          freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
           liquidoPorPayment: liquidoPorPayment ?? undefined,
         });
         n++;

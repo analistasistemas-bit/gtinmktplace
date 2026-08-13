@@ -32,7 +32,36 @@ export interface ClaimML {
   resource_id?: number | string | null;
   date_created?: string | null;
   resolution?: { reason?: string | null; date_created?: string | null; closed_by?: string | null } | null;
-  players?: Array<{ available_actions?: Array<{ action?: string; due_date?: string | null; mandatory?: boolean }> | null }> | null;
+  players?: Array<{
+    role?: string | null;
+    /** `buyer`/`seller` dizem o lado comercial; `sender`/`receiver` são logísticos e SE INVERTEM
+     *  na devolução (o vendedor recebe o produto de volta), então não servem para decidir de quem
+     *  é a venda; `internal` é o próprio ML. */
+    type?: string | null;
+    user_id?: number | string | null;
+    available_actions?: Array<{ action?: string; due_date?: string | null; mandatory?: boolean }> | null;
+  }> | null;
+}
+
+/**
+ * O claim é sobre uma COMPRA da empresa (a conta é o comprador), e não sobre uma venda dela?
+ *
+ * O ML devolve nos claims da conta tanto os que ela abriu como compradora quanto os que recebeu
+ * como vendedora. Sem separar, a compra vira "devolução de venda" — e o `sync-devolucao`, que
+ * reprocessa o pedido do claim pelo pipeline de `upsertVenda`, recria a linha de venda que a
+ * limpeza tinha apagado (foi o que reinseriu as 23 compras em 2026-08-13).
+ *
+ * Decide só com evidência positiva: sem `buyer`/`seller` nos players — 60% dos claims reais —
+ * responde `false`, preservando o comportamento anterior em vez de descartar devolução legítima.
+ */
+export function ehClaimDeCompra(
+  claim: Pick<ClaimML, 'players'>, contaExternaId: string | null | undefined,
+): boolean {
+  if (!contaExternaId) return false;
+  const conta = String(contaExternaId);
+  const meus = (claim.players ?? []).filter((p) => p?.user_id != null && String(p.user_id) === conta);
+  if (meus.some((p) => p.type === 'seller')) return false;
+  return meus.some((p) => p.type === 'buyer');
 }
 
 export interface ReturnML {

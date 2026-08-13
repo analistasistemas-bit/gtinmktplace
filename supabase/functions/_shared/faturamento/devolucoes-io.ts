@@ -1,6 +1,6 @@
 // IO de devoluções/claims (ADR-0037, post-purchase). Não testado por vitest.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { mapearDevolucao, type ClaimML, type ReturnML } from './devolucao.ts';
+import { ehClaimDeCompra, mapearDevolucao, type ClaimML, type ReturnML } from './devolucao.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -62,8 +62,15 @@ export async function buscarClaimsSeller(token: string): Promise<ClaimML[]> {
 /** Upsert de um claim. Retorna se é novo (para alerta) e marca a venda com tem_devolucao. */
 export async function upsertDevolucao(
   admin: SupabaseClient, userId: string, orgId: string | null, claim: ClaimML, ret: ReturnML | null,
-): Promise<{ nova: boolean; row: ReturnType<typeof mapearDevolucao> }> {
+  /** Conta ML conectada. Claim em que ela é a COMPRADORA não é devolução de venda — ver
+   *  `ehClaimDeCompra`. Opcional para não quebrar chamadas antigas; sem ele, grava como antes. */
+  contaExternaId?: string | null,
+): Promise<{ nova: boolean; row: ReturnType<typeof mapearDevolucao>; ignorado?: boolean }> {
   const row = mapearDevolucao(claim, ret);
+
+  if (ehClaimDeCompra(claim, contaExternaId)) {
+    return { nova: false, row, ignorado: true };
+  }
 
   // Se order_id é nulo mas o claim é sobre envio (resource = shipment), resolve order_id em ml_vendas
   if (row.order_id === null && claim.resource === 'shipment' && claim.resource_id != null) {
