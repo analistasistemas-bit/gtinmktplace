@@ -108,7 +108,7 @@ class FakeConnector implements ChannelConnector {
   lerStatus(_ctx: ContextoCanal, itemExternoIds: string[]): Promise<Record<string, StatusCanal>> {
     this.registrar('lerStatus', { itemExternoIds });
     const out: Record<string, StatusCanal> = {};
-    for (const id of itemExternoIds) out[id] = { status: this.statusVivo, motivo: null, estoque: 10, preco: 9.9, listingType: 'classico' };
+    for (const id of itemExternoIds) out[id] = { status: this.statusVivo, motivo: null, estoque: 10, preco: 9.9, listingType: 'classico', catalogForewarning: false };
     return Promise.resolve(out);
   }
 

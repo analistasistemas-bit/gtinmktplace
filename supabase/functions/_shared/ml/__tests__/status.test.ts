@@ -41,4 +41,21 @@ describe('parseStatusML', () => {
   it('item null → listingType null', () => {
     expect(parseStatusML(null).listingType).toBeNull();
   });
+
+  // Fase 3 (2026-08-13): catalog_forewarning é a tag que o ML expõe para "próximo a ser
+  // pausado" — fonte real, substitui a inferência local por catalog_status.
+  it('tag catalog_forewarning presente → catalogForewarning true', () => {
+    const r = parseStatusML({ id: 'MLB1', status: 'active', tags: ['catalog_listing_eligible', 'catalog_forewarning'] });
+    expect(r.catalogForewarning).toBe(true);
+  });
+  it('sem a tag → catalogForewarning false', () => {
+    const r = parseStatusML({ id: 'MLB1', status: 'active', tags: ['catalog_listing_eligible'] });
+    expect(r.catalogForewarning).toBe(false);
+  });
+  it('sem tags no payload → catalogForewarning false', () => {
+    expect(parseStatusML({ id: 'MLB1', status: 'active' }).catalogForewarning).toBe(false);
+  });
+  it('item null → catalogForewarning false', () => {
+    expect(parseStatusML(null).catalogForewarning).toBe(false);
+  });
 });

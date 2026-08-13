@@ -947,6 +947,8 @@ export interface StatusPublicadoItem {
   estoque: number | null;
   preco: number | null;
   listingType?: 'classico' | 'premium' | null;
+  /** Tag `catalog_forewarning` do ML — "prestes a ser pausado" por catálogo (Fase 3, 2026-08-13). */
+  catalogForewarning?: boolean;
 }
 
 export interface ResultadoStatusPublicados {

@@ -137,6 +137,10 @@ export interface StatusCanal {
   preco: number | null;
   /** Modo de exposição do anúncio no canal (ML: gold_special/gold_pro). null se indisponível. */
   listingType: 'classico' | 'premium' | null;
+  /** ML: tag `catalog_forewarning` no item — o próprio canal sinaliza "prestes a ser pausado"
+   *  por falta de ficha de catálogo (fonte real, substitui a inferência local). Canal sem essa
+   *  noção → false. */
+  catalogForewarning: boolean;
 }
 
 /** Atualização de um anúncio já publicado (UPDATE), no modelo canônico. */

@@ -99,3 +99,17 @@ export function agruparCatalogoRisco(rows: FamiliaRiscoRow[]): AnuncioEmRisco[] 
     };
   });
 }
+
+/**
+ * Decisão do Diego (2026-08-13): o card passa a listar SÓ os anúncios que o ML sinaliza com a
+ * tag `catalog_forewarning` (StatusCanal.catalogForewarning, lido ao vivo por useStatusPublicados)
+ * — a fonte real de "próximo a ser pausado". A inferência local por `catalog_status` acima
+ * continua sendo a base de dados (variações/vínculos para a extensão), mas os demais anúncios
+ * inferidos somem da tela, sem virar seção secundária.
+ */
+export function filtrarCatalogForewarning(
+  itens: AnuncioEmRisco[],
+  comForewarning: ReadonlySet<string>,
+): AnuncioEmRisco[] {
+  return itens.filter((i) => comForewarning.has(i.mlItemId));
+}

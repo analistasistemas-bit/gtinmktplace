@@ -3,10 +3,12 @@ import { ROTULO_RISCO, type AnuncioEmRisco } from '@/lib/catalogo-risco';
 import { useExtensaoCatalogo } from '@/hooks/useExtensaoCatalogo';
 
 /**
- * Card "Catálogo em risco" (spec 2026-08-12): anúncios com variações publicadas sem ficha de
- * catálogo — o ML pode pausar o anúncio inteiro. Mesmo padrão visual do banner de moderados.
- * O botão "Resolver todos no ML" (Fase 3, extensão) só aparece com a extensão detectada; sem
- * ela, degrada para o link por anúncio (mesma URL que o alerta de Telegram monta).
+ * Card "Catálogo em risco" (spec 2026-08-12, escopo restrito 2026-08-13): recebe só os anúncios
+ * que o ML sinaliza com a tag `catalog_forewarning` — filtro aplicado em Publicados.tsx via
+ * filtrarCatalogForewarning, este componente é agnóstico à origem de `itens`. Mesmo padrão
+ * visual do banner de moderados. O botão "Resolver todos no ML" (Fase 3, extensão) só aparece
+ * com a extensão detectada; sem ela, degrada para o link por anúncio (mesma URL que o alerta de
+ * Telegram monta).
  */
 export function CatalogoEmRisco({ itens }: { itens: AnuncioEmRisco[] }) {
   const temExtensao = useExtensaoCatalogo();

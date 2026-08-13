@@ -7,6 +7,8 @@ export interface ItemMLStatus {
   available_quantity?: number;
   price?: number;
   listing_type_id?: string;
+  /** Tags do item. `catalog_forewarning` = o ML sinaliza "prestes a ser pausado" por catálogo. */
+  tags?: string[];
 }
 
 export type ListingTypeCanal = 'classico' | 'premium' | null;
@@ -17,6 +19,8 @@ export interface StatusParsed {
   estoque: number | null;
   preco: number | null;
   listingType: ListingTypeCanal;
+  /** Tag `catalog_forewarning` do item — ver StatusCanal em contrato.ts. */
+  catalogForewarning: boolean;
 }
 
 // gold_special = Clássico, gold_pro = Premium. Demais tipos (free, etc.) → null.
@@ -39,7 +43,7 @@ const MODERACAO_SUBS = ['forbidden', 'waiting_for_patch', 'poor_quality_thumbnai
 
 export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
   if (!item || !item.status) {
-    return { status: 'indisponivel', motivo: null, estoque: null, preco: null, listingType: null };
+    return { status: 'indisponivel', motivo: null, estoque: null, preco: null, listingType: null, catalogForewarning: false };
   }
   const sub = item.sub_status ?? [];
   // O ML move um item moderado de `under_review` para `inactive` (+ `deleted`) em horas, então
@@ -52,5 +56,6 @@ export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
     estoque: item.available_quantity ?? null,
     preco: item.price ?? null,
     listingType: mapListingType(item.listing_type_id),
+    catalogForewarning: (item.tags ?? []).includes('catalog_forewarning'),
   };
 }

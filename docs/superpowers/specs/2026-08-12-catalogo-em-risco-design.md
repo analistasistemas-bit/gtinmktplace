@@ -210,6 +210,37 @@ finalização.
 Sem a extensão instalada, o botão fica indisponível e o link por anúncio continua servindo — a tela
 tem valor isolado.
 
+### Mudança de escopo (2026-08-13): fonte passa a ser a tag `catalog_forewarning`
+
+Decisão do Diego. O ML sabe exatamente quais anúncios estão prestes a ser pausados e expõe isso
+numa tag do item — não é preciso inferir pelo `catalog_status` local.
+
+Verificado ao vivo em 2026-08-13 (leitura, token AVILBV):
+
+```
+GET /items/MLB7066697288?attributes=id,status,sub_status,tags
+→ tags: ["catalog_listing_eligible","catalog_forewarning","good_quality_thumbnail", ...]
+
+GET /users/{seller}/items/search?tags=catalog_forewarning
+→ results: ["MLB7066697288","MLB7159179348","MLB4888109497"], total: 3
+```
+
+Esses 3 são exatamente os que o painel do ML mostra em "Próximos a serem pausados" — contra os 130
+que a heurística por `catalog_status` (acima) inferia. **O card passa a listar SOMENTE os anúncios
+com a tag `catalog_forewarning`.** Os demais somem da tela, não viram seção secundária.
+
+Implementação: `StatusCanal.catalogForewarning` (novo campo em
+`_shared/canais/contrato.ts`) — `mercadoLivreConnector.lerStatus` passa a pedir `tags` no
+`attributes=` do lote e `parseStatusML` (`_shared/ml/status.ts`) preenche o campo a partir de
+`tags.includes('catalog_forewarning')`. Canal sem essa noção → `false`. No front,
+`useStatusPublicados()` (já consumido por `Publicados.tsx`) já traz o status ao vivo por
+`ml_item_id`; `filtrarCatalogForewarning` (`src/lib/catalogo-risco.ts`) cruza isso com a lista
+agregada por `agruparCatalogoRisco` antes de passar para o card — sem query nova.
+
+A agregação por `catalog_status` (Parte 1, acima) continua sendo a base de dados que fornece
+`variacoesRisco`/`vinculos`/`itemPlano` por anúncio (a extensão da Parte 3 precisa disso); o que
+mudou é o filtro final de QUAIS anúncios aparecem na tela e viram alvo da extensão.
+
 ---
 
 ## Parte 3 — Extensão de navegador

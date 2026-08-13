@@ -35,7 +35,22 @@
 7. **CSRF:** o cliente HTTP do ML (`frontend-restclient`) lê `<meta name="csrf-token">` da página e manda no header `x-csrf-token`. Cookie vai sozinho (fetch same-origin). É exatamente o que um `fetch` executado na página consegue reproduzir.
 8. **`basePath` não é hardcodável:** o literal `"/seller_central/catalog/optin_buybox/"` do bundle é sobrescrito pelo spread dos dados SSR (`{basePath:"...", ...t}`), e a captura de junho (ADR-0036) mostrou `/produzir/catalogo/api/optin-up/...`. Ler do estado da página; fallback: derivar de `location.pathname`.
 
-**Confirmado no banco (read-only, 2026-08-13):** 130 anúncios em risco no total — **114 multivariação** (1.642 variações) + **16 item plano** (fora do escopo). **21 dos 114** têm no mesmo anúncio variações `vinculado`/`family_diff` — o cenário "preservar matches" é real e mensurável.
+**Confirmado no banco (read-only, 2026-08-13):** 130 anúncios em risco no total pela heurística de
+`catalog_status` — **114 multivariação** (1.642 variações) + **16 item plano** (fora do escopo).
+**21 dos 114** têm no mesmo anúncio variações `vinculado`/`family_diff` — o cenário "preservar
+matches" é real e mensurável.
+
+**Correção de escopo (mesmo dia, decisão do Diego):** esses 130/114 são a base de dados usada para
+montar `variacoesRisco`/`vinculos`/`itemPlano` por anúncio (o que a extensão consome), mas deixam
+de ser a lista que aparece na tela e vira alvo do lote. O card e a extensão passam a operar SÓ nos
+anúncios que o ML sinaliza com a tag `catalog_forewarning` (verificado ao vivo:
+`GET /users/{seller}/items/search?tags=catalog_forewarning` → 3 hoje, `MLB7066697288`,
+`MLB7159179348`, `MLB4888109497` — os mesmos que o painel "Próximos a serem pausados" do ML
+mostra). Ver spec 2026-08-12, seção "Mudança de escopo (2026-08-13)", e
+`src/lib/catalogo-risco.ts:filtrarCatalogForewarning`. As Tasks abaixo continuam válidas como
+descritas (a extensão recebe o mesmo `AnuncioEmRisco[]`, só que agora pré-filtrado); os números
+114/130/21 citados nesta análise são o universo da heurística local, não mais o tamanho real do
+lote em produção.
 
 **Suposições (declaradas, não inventadas):**
 

@@ -40,7 +40,7 @@ import { CanalTabs } from '@/components/canal-tabs';
 import { CanalBadge } from '@/components/canal-badge';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
-import { agruparCatalogoRisco } from '@/lib/catalogo-risco';
+import { agruparCatalogoRisco, filtrarCatalogForewarning } from '@/lib/catalogo-risco';
 import { useCatalogoEmRisco } from '@/hooks/useCatalogoEmRisco';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
@@ -417,7 +417,16 @@ export default function Publicados() {
   const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { data: familiasRisco } = useCatalogoEmRisco();
-  const itensRisco = useMemo(() => agruparCatalogoRisco(familiasRisco ?? []), [familiasRisco]);
+  // Fase 3 (2026-08-13): só os anúncios com a tag catalog_forewarning do ML entram no card — o
+  // status ao vivo já chega por useStatusPublicados, sem query nova.
+  const comForewarning = useMemo(
+    () => new Set((statusData?.itens ?? []).filter((s) => s.catalogForewarning).map((s) => s.ml_item_id)),
+    [statusData],
+  );
+  const itensRisco = useMemo(
+    () => filtrarCatalogForewarning(agruparCatalogoRisco(familiasRisco ?? []), comForewarning),
+    [familiasRisco, comForewarning],
+  );
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
   const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();

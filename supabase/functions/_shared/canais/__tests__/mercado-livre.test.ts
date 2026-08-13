@@ -372,3 +372,22 @@ describe('atualizarAnuncio: família migrada pelo ML para User Products (ADR-010
     expect(res.erro?.codigo).not.toBe('MIGRADO_PARA_UP');
   });
 });
+
+// Fase 3 (2026-08-13): a tag catalog_forewarning do ML é a fonte real de "próximo a ser
+// pausado" — lerStatus passa a pedir `tags` no lote e propagar para StatusCanal.
+describe('lerStatus — catalogForewarning (E5 fase3)', () => {
+  it('pede tags no attributes= da URL e preenche catalogForewarning a partir da tag catalog_forewarning', async () => {
+    let urlChamada = '';
+    globalThis.fetch = ((url: string) => {
+      urlChamada = url;
+      return Promise.resolve(new Response(JSON.stringify([
+        { code: 200, body: { id: 'MLB1', status: 'active', tags: ['catalog_forewarning'] } },
+        { code: 200, body: { id: 'MLB2', status: 'active', tags: ['good_quality_thumbnail'] } },
+      ]), { status: 200 }));
+    }) as typeof fetch;
+    const out = await mercadoLivreConnector.lerStatus(ctxFake, ['MLB1', 'MLB2']);
+    expect(urlChamada).toContain('tags');
+    expect(out.MLB1.catalogForewarning).toBe(true);
+    expect(out.MLB2.catalogForewarning).toBe(false);
+  });
+});

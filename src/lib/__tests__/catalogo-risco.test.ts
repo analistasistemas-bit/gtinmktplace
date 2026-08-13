@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { agruparCatalogoRisco, ROTULO_RISCO, STATUS_RISCO, type FamiliaRiscoRow } from '../catalogo-risco';
+import { agruparCatalogoRisco, filtrarCatalogForewarning, ROTULO_RISCO, STATUS_RISCO, type FamiliaRiscoRow, type AnuncioEmRisco } from '../catalogo-risco';
 
 const fam = (over: Partial<FamiliaRiscoRow> = {}): FamiliaRiscoRow => ({
   id: 'f1', ml_item_id: 'MLB100', titulo_ml: 'Fita Cetim N.3', nome_pai: 'FITA CETIM',
@@ -113,5 +113,36 @@ describe('agruparCatalogoRisco — dados para a extensão (Fase 3)', () => {
       variacoes: [{ catalog_status: 'pendente', ml_variation_id: '555', catalog_product_id: null }],
     })]);
     expect(r[0].itemPlano).toBe(false);
+  });
+});
+
+describe('filtrarCatalogForewarning — só a tag do ML decide (mudança de escopo 2026-08-13)', () => {
+  const item = (over: Partial<AnuncioEmRisco> = {}): AnuncioEmRisco => ({
+    mlItemId: 'MLB1', titulo: 'Anúncio', qtdSemFicha: 1, motivoPredominante: 'pendente',
+    url: 'https://www.mercadolivre.com.br/produzir/catalogo/MLB1',
+    variacoesRisco: [], vinculos: {}, itemPlano: false, ...over,
+  });
+
+  it('anúncio com a tag aparece', () => {
+    const r = filtrarCatalogForewarning([item({ mlItemId: 'MLB1' })], new Set(['MLB1']));
+    expect(r).toEqual([item({ mlItemId: 'MLB1' })]);
+  });
+
+  it('anúncio sem a tag não aparece', () => {
+    const r = filtrarCatalogForewarning([item({ mlItemId: 'MLB1' })], new Set(['MLB2']));
+    expect(r).toEqual([]);
+  });
+
+  it('conjunto de tags vazio → lista vazia', () => {
+    const r = filtrarCatalogForewarning([item({ mlItemId: 'MLB1' }), item({ mlItemId: 'MLB2' })], new Set());
+    expect(r).toEqual([]);
+  });
+
+  it('mistura: só os sinalizados sobrevivem, preservando os demais campos', () => {
+    const r = filtrarCatalogForewarning(
+      [item({ mlItemId: 'MLB1' }), item({ mlItemId: 'MLB2' }), item({ mlItemId: 'MLB3' })],
+      new Set(['MLB2']),
+    );
+    expect(r).toEqual([item({ mlItemId: 'MLB2' })]);
   });
 });
