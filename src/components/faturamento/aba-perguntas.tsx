@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
 import {
   fetchPerguntasPagina, buscarPerguntas, pergCasaStatus, responderPergunta, sugerirResposta,
-  type Pergunta, type FiltroStatusPergunta,
+  agruparPerguntas, type GrupoPerguntas, type FiltroStatusPergunta,
 } from '@/lib/perguntas';
 import { fmtDataCurta, URL_PERGUNTAS_ML } from '@/lib/ml-status';
 import { nomeCurtoComprador } from '@/lib/pedidos-faturamento';
@@ -18,8 +18,12 @@ import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildPerguntasReport } from '@/lib/export/adapters';
 import { toast } from 'sonner';
 
-function CardPergunta({ p }: { p: Pergunta }) {
+function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
   const qc = useQueryClient();
+  const p = grupo.principal;
+  const repetidas = grupo.perguntas.length;
+  // Perguntas ≠ anúncios: o mesmo comprador chega a perguntar duas vezes no mesmo item.
+  const anuncios = [...new Map(grupo.perguntas.map((q) => [q.item_id ?? q.id, q])).values()];
   const respondida = p.status !== 'UNANSWERED';
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
@@ -35,13 +39,22 @@ function CardPergunta({ p }: { p: Pergunta }) {
     } finally { setSugerindo(false); }
   }
 
+  // Uma resposta para o grupo inteiro: cada anúncio tem sua pergunta no ML e precisa da sua
+  // chamada. Falha parcial não é silenciada — o operador precisa saber quais sobraram.
   async function responder() {
     const t = texto.trim();
     if (!t) return;
     setEnviando(true);
     try {
-      await responderPergunta(p.question_id, t);
-      toast.success('Resposta enviada.');
+      const falhas: string[] = [];
+      for (const q of grupo.perguntas) {
+        try { await responderPergunta(q.question_id, t); }
+        catch (e) { falhas.push((e as Error).message); }
+      }
+      const enviadas = repetidas - falhas.length;
+      if (falhas.length === 0) toast.success(repetidas > 1 ? `Resposta enviada às ${repetidas} perguntas.` : 'Resposta enviada.');
+      else if (enviadas > 0) toast.warning(`${enviadas} de ${repetidas} respondidas. Falha: ${falhas[0]}`);
+      else toast.error(`Falha ao responder: ${falhas[0]}`);
       await qc.invalidateQueries({ queryKey: ['perguntas'] });
       await qc.invalidateQueries({ queryKey: ['perguntasNaoRespondidas'] });
     } catch (e) {
@@ -54,7 +67,11 @@ function CardPergunta({ p }: { p: Pergunta }) {
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="truncate">{p.item_titulo ?? p.item_id ?? '—'}</span>
+            <span className="truncate">
+              {repetidas > 1
+                ? `${repetidas} perguntas · ${anuncios.length} ${anuncios.length > 1 ? 'anúncios' : 'anúncio'}`
+                : p.item_titulo ?? p.item_id ?? '—'}
+            </span>
             <a href={URL_PERGUNTAS_ML} target="_blank" rel="noreferrer" aria-label="Abrir perguntas no Mercado Livre" className="text-info hover:underline"><ExternalLink className="h-3 w-3" /></a>
             <span title={p.comprador_nome ?? p.comprador_nick ?? undefined}>
               · {nomeCurtoComprador(p.comprador_nome) ?? (p.comprador_nick?.trim() || 'Comprador')}
@@ -62,6 +79,13 @@ function CardPergunta({ p }: { p: Pergunta }) {
             <span>· {fmtDataCurta(p.criada_em)}</span>
           </div>
           <p className="text-sm font-medium">{p.texto}</p>
+          {repetidas > 1 && (
+            <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+              {anuncios.map((q) => (
+                <li key={q.id} className="truncate">· {q.item_titulo ?? q.item_id ?? '—'}</li>
+              ))}
+            </ul>
+          )}
         </div>
         <StatusPill tone={respondida ? 'success' : 'warning'}>{respondida ? 'Respondida' : 'Pendente'}</StatusPill>
       </div>
@@ -86,7 +110,7 @@ function CardPergunta({ p }: { p: Pergunta }) {
             </Button>
             <Button size="sm" onClick={responder} disabled={enviando || !texto.trim()}>
               <Send className="mr-1.5 h-4 w-4" />
-              {enviando ? 'Enviando…' : 'Responder'}
+              {enviando ? 'Enviando…' : repetidas > 1 ? `Responder as ${repetidas}` : 'Responder'}
             </Button>
           </div>
         </div>
@@ -173,7 +197,7 @@ export function AbaPerguntas() {
         </div>
       ) : (
         <div className="space-y-3">
-          {itens.map((p) => <CardPergunta key={p.id} p={p} />)}
+          {agruparPerguntas(itens).map((g) => <CardPergunta key={g.chave} grupo={g} />)}
         </div>
       )}
 

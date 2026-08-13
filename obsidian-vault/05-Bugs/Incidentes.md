@@ -8,6 +8,26 @@ atualizado: 2026-08-13
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
+## 2026-08-13 — "perguntas quadriplicadas" na fila: não era duplicação
+
+Reportado como bug de sync: a mesma pergunta ("Possui a Cor 2931 Nautico") aparecia 4–5 vezes em
+Faturamento → Perguntas. **Não havia duplicação.** O `raw` das 5 linhas traz 5 `id` distintos do
+próprio ML, com `date_created` distintos (15:46–15:48), mesmo comprador (`1560405494`), em 4
+anúncios — dois deles no mesmo item. O comprador disparou o mesmo texto em cada anúncio de cor da
+linha Charme. `pendentes` no banco = 5, contador do ML = 5.
+
+**Causa da percepção:** o ML colapsa perguntas por anúncio/comprador; a nossa fila listava uma
+linha por `question_id`.
+
+**Correção (UI):** `agruparPerguntas()` em `src/lib/perguntas.ts` junta pendentes com mesmo
+comprador + mesmo texto normalizado num card só. O card mostra "N perguntas · M anúncios" (M conta
+`item_id` distinto — duas perguntas no mesmo item não viram dois anúncios), lista os anúncios sem
+repetir e envia a resposta para todos os `question_id` do grupo ("Responder as N"), com aviso de
+falha parcial. Respondidas não agrupam — a resposta é parte do card.
+
+**Lição:** conferir `raw->>'id'` antes de tratar repetição visual como duplicação de dados; contar
+"N no app = N no ML" não discrimina sozinho.
+
 ## 2026-08-13 — variação viva no ML, inexistente no PubliAI (linha Xik, cor Azul)
 
 Uma venda pelo anúncio de catálogo `MLB7010890734` não baixou estoque e caiu no alerta "venda sem
