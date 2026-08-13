@@ -445,6 +445,9 @@ type DbLike = {
  * execução. Erros por variação não lançam — o chamador roda isto após o item já estar
  * persistido, então um retry posterior reentra só no que falta. Não busca produto por GTIN
  * para variações não elegíveis (evita chamadas inúteis em anúncios FAMILY_DIFF inteiros).
+ *
+ * Exceção deliberada: a falha do GET de elegibilidade (pré-loop) LANÇA, porque "não perguntei"
+ * não é um estado do anúncio — engolir a exceção finalizaria a rodada em silêncio.
  */
 export async function vincularVariacoesCatalogo(
   token: string,
@@ -456,13 +459,10 @@ export async function vincularVariacoesCatalogo(
   const setVar = (id: string, values: Record<string, unknown>) =>
     admin.from('variacoes').update(values).eq('id', id);
 
-  let elig: Map<string, EligVar>;
-  try {
-    elig = await buscarElegibilidadeCatalogo(token, itemId);
-  } catch (e) {
-    console.warn(`elegibilidade de catálogo falhou (${itemId}): ${(e as Error).message}`);
-    return resumo; // sem elegibilidade não dá para decidir; deixa para um retry futuro
-  }
+  // Falha de LEITURA da elegibilidade propaga (spec 2026-08-12 §1.2): "não perguntei" não pode
+  // virar rodada finalizada — o resumo zerado cairia em `finalizar` sem alerta. O worker devolve
+  // 500 e o QStash retenta.
+  const elig = await buscarElegibilidadeCatalogo(token, itemId);
 
   // Base de comparação da trava de metragem (1 leitura por item). Se falhar, degrada para só
   // a trava anti-kit (esperado.lengthM = null → metragem não é avaliada).
@@ -569,7 +569,16 @@ export async function vincularItensCatalogoUP(
       // falava em "identificador de variação", que não existe nesse modelo).
       if (!f.item_externo_id) { resumo.pendente++; continue; }
 
-      const elig = await buscarElegibilidadeItem(token, f.item_externo_id);
+      // Falha de LEITURA não é estado do item (spec 2026-08-12 §1.2, análogo UP): conta como
+      // pendente (retentável pelo backoff) sem persistir 'erro' — "não perguntei" ≠ recusa do ML.
+      let elig: EligVar | undefined;
+      try {
+        elig = await buscarElegibilidadeItem(token, f.item_externo_id);
+      } catch (e) {
+        console.warn(`elegibilidade do item ${f.item_externo_id} falhou: ${(e as Error).message}`);
+        resumo.pendente++;
+        continue;
+      }
       const ready = podeTentarOptin(elig);
 
       let cpid = f.catalog_product_id;

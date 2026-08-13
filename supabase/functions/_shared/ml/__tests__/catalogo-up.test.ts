@@ -122,6 +122,18 @@ describe('vincularItensCatalogoUP — vinculação por item (não por variação
     expect(writes.find((w) => w.id === 'item-1' && 'catalog_status' in w.values)?.values.catalog_status).toBe('ficha_divergente');
   });
 
+  it('falha de LEITURA da elegibilidade → pendente (retentável), NÃO persiste erro', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      if (String(input).includes('/catalog_listing_eligibility')) throw new Error('timeout');
+      return new Response('{}', { status: 200 });
+    }));
+    const { admin, writes } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.pendente).toBe(1);
+    expect(resumo.erro).toBe(0);
+    expect(writes.length).toBe(0); // "não perguntei" não é estado do item — nada a persistir
+  });
+
   it('filho já com catalog_listing_id → pula, ZERO chamada de rede', async () => {
     const calls = stubFetch({ elig: READY, ficha: FICHA_UNIDADE });
     const { admin, writes } = fakeAdmin();
