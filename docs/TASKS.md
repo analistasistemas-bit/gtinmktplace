@@ -25,6 +25,11 @@
   Faturamento e no Dashboard).
 - [x] Migration aplicada e verificada em produção: 0 compras, 0 saques indevidos, 695→649 sacadas,
   `db:check` alinhado. 3.026 testes verdes; validado em runtime com dados injetados (screenshots).
+- [x] **Baixos fechados (13/08):** `sacado_por` passou a aparecer na coluna Liberação ("por Fulano",
+  via `useNomesUsuarios` — a RLS de `profiles` entrega os perfis da org ao admin, e saque é
+  admin-only); autor invisível cai em fallback silencioso, nunca UUID cru. Nota de rodapé do
+  Financeiro reescrita para o escopo atual (6 linhas → 4). Com isso o code-review-v11 fica sem
+  itens abertos.
 - [x] **Médios fechados (mesma data):** `statusLiberacao` ganhou `sem_direito` (a aba Devolvidos
   mostrava "liberado" numa linha devolvida); confirmação no saque acima de 20 pedidos com
   quantidade e valor; aviso de volume no export acima de 200 linhas. O 4º médio (KPIs duplicados)

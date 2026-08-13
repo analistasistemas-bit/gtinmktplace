@@ -35,6 +35,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
 import { useCoresProduto } from '@/hooks/useCoresProduto';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
+import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import { PilhaThumbs } from '@/components/faturamento/pilha-thumbs';
 import { DetalhePedidoItens } from '@/components/faturamento/detalhe-pedido-itens';
 import { AoVivo } from '@/components/ui/ao-vivo';
@@ -49,12 +50,14 @@ function fmtData(iso: string | null): string {
 }
 
 function CelulaLiberacao({
-  iso, sacadoEm, temMembrosSemDataLiberacao, faturavel,
+  iso, sacadoEm, temMembrosSemDataLiberacao, faturavel, sacadoPorNome,
 }: {
   iso: string | null;
   sacadoEm: string | null;
   temMembrosSemDataLiberacao: boolean;
   faturavel: boolean;
+  /** Nome de quem marcou o saque. null quando não é saque ou o perfil não é visível. */
+  sacadoPorNome: string | null;
 }) {
   const status = statusLiberacao({
     money_release_date: iso,
@@ -84,6 +87,11 @@ function CelulaLiberacao({
       )}>
         {labelStatusLiberacao(status)}
       </span>
+      {/* Trilha da única ação de escrita do menu: o banco já gravava `sacado_por` e a tela nunca
+          mostrava. Numa org com mais de um admin, é o que responde "quem marcou isso?". */}
+      {status === 'sacado' && sacadoPorNome && (
+        <span className="block text-xs text-muted-foreground">por {sacadoPorNome}</span>
+      )}
     </TableCell>
   );
 }
@@ -131,10 +139,12 @@ function LinhaDetalhe({
   p,
   selecionado,
   onSelecionar,
+  sacadoPorNome,
 }: {
   p: Pedido;
   selecionado: boolean;
   onSelecionar: (checked: boolean) => void;
+  sacadoPorNome: string | null;
 }) {
   // Expansão persistida (sobrevive a sair/voltar do detalhe e ao refetch), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:detalhe-financeiro:${p.chave}`, false);
@@ -193,6 +203,7 @@ function LinhaDetalhe({
           sacadoEm={p.sacado_em}
           temMembrosSemDataLiberacao={p.temMembrosSemDataLiberacao}
           faturavel={p.faturavel}
+          sacadoPorNome={sacadoPorNome}
         />
         <TableCell className={cn(
           'align-top text-right text-sm tabular-nums',
@@ -237,6 +248,7 @@ export default function DetalheFinanceiro() {
   const custosQ = useCustos();
   const fotosQ = useFotosProduto();
   const coresQ = useCoresProduto();
+  const { data: nomesUsuarios } = useNomesUsuarios();
   const canonicoQ = useAnuncioCanonico();
   const aliquotasQ = useAliquotas();
   const isFetching = vendasQ.isFetching;
@@ -585,6 +597,7 @@ export default function DetalheFinanceiro() {
                   p={p}
                   selecionado={selecionados.has(p.chave)}
                   onSelecionar={(checked) => setSelecionado(p.chave, checked)}
+                  sacadoPorNome={p.sacado_por ? nomesUsuarios?.get(p.sacado_por) ?? null : null}
                 />
               ))
             )}

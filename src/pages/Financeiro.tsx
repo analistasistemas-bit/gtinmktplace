@@ -221,12 +221,10 @@ export default function Financeiro() {
       </div>
 
       <p className="mt-6 text-xs text-muted-foreground">
-        Vendas do período (fonte: pedidos do Mercado Livre — mesma base de Publicados e Faturamento).
-        O bruto segue o "Vendas brutas" do ML (inclui vendas reembolsadas). O "líquido" é o que o
-        vendedor recebe após taxas do ML/Mercado Pago e frete. "Já liberado / a liberar" mostra
-        quando o líquido <em>destas vendas</em> cai no saldo (por data de liberação do recebimento).
-        Já o saldo "a receber / lançamentos futuros" consolidado do Mercado Pago — que inclui
-        reservas e retenções — não é exposto de forma confiável pela API e fica no app do MP.
+        O "líquido" é o que sobra da venda depois das taxas do ML/Mercado Pago e do frete; "liberado
+        a sacar" é a parte dele que já caiu no saldo e você ainda não marcou como sacada.
+        O saldo consolidado do Mercado Pago, com reservas e retenções, fica no app do MP — a API não
+        o expõe de forma confiável.
       </p>
     </div>
   );
