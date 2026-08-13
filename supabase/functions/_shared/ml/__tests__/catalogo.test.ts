@@ -74,9 +74,19 @@ describe('decidirAcaoCatalogo — trava de equivalência (ADR-0021 pós-incident
 describe('decidirResultadoRodadaCatalogo', () => {
   const base: ResumoCatalogo = { vinculado: 0, sem_produto: 0, family_diff: 0, nao_elegivel: 0, pendente: 0, erro: 0, pulou: 0, ficha_divergente: 0, sem_variation_id: 0 };
 
-  it('pendente>0 SEMPRE vence, mesmo com nao_elegivel misturado (bug real encontrado na revisão)', () => {
-    const r = decidirResultadoRodadaCatalogo({ ...base, pendente: 2, nao_elegivel: 3 }, 1);
-    expect(r.acao).toBe('aguardar_elegibilidade');
+  it('pendente>0 reagenda pelo backoff longo (não é mais 500/retry curto do QStash)', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, pendente: 2 }, 1);
+    expect(r).toEqual({ acao: 'reagendar', delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[0], proximaTentativa: 2 });
+  });
+
+  it('pendente e nao_elegivel misturados compartilham o MESMO orçamento de tentativas', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, pendente: 2, nao_elegivel: 3 }, 3);
+    expect(r).toEqual({ acao: 'reagendar', delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[2], proximaTentativa: 4 });
+  });
+
+  it('pendente na ÚLTIMA tentativa finaliza (com alerta), em vez de esperar para sempre', () => {
+    const r = decidirResultadoRodadaCatalogo({ ...base, pendente: 2 }, CATALOGO_MAX_TENTATIVAS);
+    expect(r).toEqual({ acao: 'finalizar', deveAlertar: true });
   });
 
   it('reagenda quando sobrou nao_elegivel, pendente=0, e ainda há tentativa', () => {

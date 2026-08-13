@@ -376,21 +376,24 @@ export interface ResumoCatalogo {
 
 /**
  * Decide se deve alertar o operador sobre variações sem ficha de catálogo equivalente (ADR-0036).
- * Só quando a elegibilidade já foi computada (`pendente === 0`, estado final) e sobrou variação
- * sem ficha ou elegibilidade esgotada — essas não competem e fazem o ML pausar o anúncio depois.
- * Esperar `pendente === 0` evita alerta prematuro/repetido durante os retries do worker.
+ * Alerta quando sobrou variação sem ficha, com elegibilidade esgotada ou ainda sem resposta do ML —
+ * nenhuma delas compete, e o ML pausa o anúncio depois.
+ *
+ * A garantia de "1 alerta por publicação" (ADR-0036) NÃO mora aqui: ela vive no gate do worker,
+ * que só avalia esta função quando a rodada finaliza. Rodadas intermediárias reagendam e nunca
+ * chegam a alertar. Por isso `pendente` residual passou a contar — antes, exigir `pendente === 0`
+ * fazia a família congelada nunca alertar (93 famílias em produção, spec 2026-08-12).
  */
 export function deveAlertarCatalogoNoMatch(resumo: ResumoCatalogo): boolean {
-  return resumo.pendente === 0 && (
-    resumo.ficha_divergente > 0 || resumo.sem_produto > 0 ||
-    resumo.nao_elegivel > 0 || resumo.sem_variation_id > 0
-  );
+  return resumo.ficha_divergente > 0 || resumo.sem_produto > 0 ||
+    resumo.nao_elegivel > 0 || resumo.sem_variation_id > 0 || resumo.pendente > 0;
 }
 
 export function decidirMotivoAlertaCatalogo(
   resumo: ResumoCatalogo,
-): 'elegibilidade_esgotada' | 'sem_variation_id' | undefined {
+): 'elegibilidade_esgotada' | 'sem_variation_id' | 'elegibilidade_nao_resolvida' | undefined {
   if (resumo.ficha_divergente > 0 || resumo.sem_produto > 0) return undefined;
+  if (resumo.pendente > 0) return 'elegibilidade_nao_resolvida';
   if (resumo.sem_variation_id > 0 && resumo.nao_elegivel === 0) return 'sem_variation_id';
   if (resumo.nao_elegivel + resumo.sem_variation_id > 0) return 'elegibilidade_esgotada';
   return undefined;
@@ -408,18 +411,22 @@ export function normalizarTentativaCatalogo(tentativa: number): number {
 }
 
 export type ResultadoRodadaCatalogo =
-  | { acao: 'aguardar_elegibilidade' }
   | { acao: 'reagendar'; delaySegundos: number; proximaTentativa: number }
   | { acao: 'finalizar'; deveAlertar: boolean };
 
-/** Decide uma única ação por rodada; pendências sempre precedem o backoff de negócio. */
+/**
+ * Decide uma única ação por rodada. `pendente` (elegibilidade ainda não computada) e
+ * `nao_elegivel` (transitório do ML) compartilham o MESMO orçamento de tentativas do backoff
+ * longo (1h/6h/24h/48h). Antes, `pendente` dependia só do retry curto do QStash (minutos) e
+ * congelava para sempre ao esgotar — 93 famílias em produção (spec 2026-08-12). Na última
+ * tentativa, finaliza e reporta o que sobrou como está (sem reetiquetar).
+ */
 export function decidirResultadoRodadaCatalogo(
   resumo: ResumoCatalogo,
   tentativaAtual: number,
 ): ResultadoRodadaCatalogo {
   tentativaAtual = normalizarTentativaCatalogo(tentativaAtual);
-  if (resumo.pendente > 0) return { acao: 'aguardar_elegibilidade' };
-  if (resumo.nao_elegivel > 0 && tentativaAtual < CATALOGO_MAX_TENTATIVAS) {
+  if ((resumo.pendente > 0 || resumo.nao_elegivel > 0) && tentativaAtual < CATALOGO_MAX_TENTATIVAS) {
     const idx = tentativaAtual - 1;
     return { acao: 'reagendar', delaySegundos: CATALOGO_BACKOFF_SEGUNDOS[idx], proximaTentativa: tentativaAtual + 1 };
   }
