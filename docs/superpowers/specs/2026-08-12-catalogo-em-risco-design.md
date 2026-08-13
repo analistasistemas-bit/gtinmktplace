@@ -267,15 +267,56 @@ tratamento atual — entra na tela como informação, não como pendência acion
 
 ---
 
-## Incógnita conhecida
+## Contrato do matcher confirm — RESOLVIDO (2026-08-13)
 
-O formato exato do `productId` no payload do PATCH não está documentado no ADR-0036. Hipótese: é o
-`user_product_id` que a elegibilidade já devolve por variação (ex.: `MLBU4312335854`).
+A incógnita do `productId` está fechada. **A hipótese anterior estava errada:** não é o
+`user_product_id` (`MLBU…`) devolvido pela elegibilidade.
 
-Se a hipótese estiver correta, nada mais é necessário. Se não, resolve-se com uma captura de
-requisição no DevTools durante uma execução manual — trabalho do operador, poucos minutos.
+Método: leitura do bundle público do app do ML (`syp-optin-frontend`,
+`optin-user-products.8cf6b4f2.js`) e do estado renderizado da página do matcher, com o Chrome do
+operador anexado por CDP em modo leitura. **Nenhum anúncio foi tocado** — nenhum clique de
+confirmação, nenhuma escrita.
 
-**As Partes 1 e 2 não dependem dessa incógnita.** Apenas a Parte 3 depende.
+### Contrato (extraído do código do próprio ML)
+
+```
+PATCH {basePath}/api/optin-up/{ITEM_ID}/multivariation_matcher_confirm
+{
+  productId,                        // = parentCatalogProductId
+  confirmedProductMatches: [{
+    group_attributes: [{ id, name, value_id, value_name }],
+    matches: [{ entity_id, catalog_product_id }]
+  }],
+  flow: "REPRODUCTIZE"
+}
+```
+
+Mapeamento, conforme `getMappedGroups` e `onCardConfirm` do bundle:
+
+- **`productId`** = `parentCatalogProductId`. Vem pronto no estado da página como
+  `original_catalog_product_id` (no `MLB4888109497` inspecionado: `MLB28848109`), repetido em todas
+  as variações do grupo.
+- **`group_attributes`** = `match_product.attributes` mapeado para `{id, name, value_id, value_name}`.
+- **`matches[].entity_id`** = `variation.id` (o `variation_id` do estado, ex.: `205157946311`) —
+  **não** o item id.
+- **`matches[].catalog_product_id`** = `variation.match?.product?.id || null`. **O `|| null` é
+  literalmente o "Não encontro minha variação"** — confirmado no código do ML, não mais hipótese.
+- Variações com `status` já definido são **filtradas para fora** (`filter(e => !e.status)`).
+
+### Endpoints vizinhos do mesmo módulo (contexto, não usados nesta fase)
+
+`matcher_confirm` (variação única: `{productId, matches, flow}`), `product_search_confirm`,
+`comparation_confirm`, `invalidate_summary_confirm`, e `massive_summary_confirm`
+(`{parentProductId, productAssociations, flow, invoice}`) — este último é a etapa de **resumo final**
+do fluxo de um anúncio multivariação (`experience: "MASSIVE"` refere-se a múltiplas variações do
+mesmo anúncio, **não** a vários anúncios de uma vez). Continua valendo: **uma chamada por anúncio**.
+
+### O que ainda não foi observado
+
+O `basePath` real e os headers exatos (cookie de sessão + `x-csrf-token`) não foram capturados de uma
+requisição viva, porque isso exigiria disparar uma confirmação real. Executando **dentro da página**
+(extensão/content script), os dois são resolvidos pelo próprio navegador — é o motivo adicional de a
+extensão rodar na origem do ML em vez de o backend replicar a chamada.
 
 ---
 
