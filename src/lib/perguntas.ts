@@ -49,6 +49,41 @@ export async function buscarPerguntas(): Promise<Pergunta[]> {
     .sort((a, b) => Number(b.status === 'UNANSWERED') - Number(a.status === 'UNANSWERED'));
 }
 
+export interface GrupoPerguntas {
+  chave: string;
+  /** A primeira da lista — dita texto, comprador e data mostrados no card. */
+  principal: Pergunta;
+  perguntas: Pergunta[];
+}
+
+const normalizarTexto = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/**
+ * O mesmo comprador dispara a mesma pergunta em vários anúncios (13/08: 5 question_id reais do ML,
+ * texto idêntico, dois deles no mesmo item) — o ML colapsa isso numa linha só e a nossa fila
+ * mostrava 5 cards iguais. Agrupa por comprador + texto, só entre pendentes: em respondida a
+ * resposta é parte do card e pode diferir entre elas.
+ *
+ * ponytail: agrupa dentro da página carregada (20). Perguntas repetidas chegam em sequência e a
+ * ordem é por data, então caem juntas; grupo partido entre páginas é aceitável.
+ */
+export function agruparPerguntas(itens: Pergunta[]): GrupoPerguntas[] {
+  const grupos: GrupoPerguntas[] = [];
+  const indice = new Map<string, GrupoPerguntas>();
+  for (const [i, p] of itens.entries()) {
+    const texto = normalizarTexto(p.texto);
+    const agrupavel = p.status === 'UNANSWERED' && p.comprador_id != null && texto !== '';
+    // Não-agrupável usa a posição, não o id: chave por id junta linhas repetidas na lista.
+    const chave = agrupavel ? `${p.comprador_id}|${texto}` : `solo:${i}:${p.id}`;
+    const existente = indice.get(chave);
+    if (existente) { existente.perguntas.push(p); continue; }
+    const grupo: GrupoPerguntas = { chave, principal: p, perguntas: [p] };
+    indice.set(chave, grupo);
+    grupos.push(grupo);
+  }
+  return grupos;
+}
+
 export type FiltroStatusPergunta = 'pendentes' | 'respondidas' | 'todas';
 
 export interface FiltroPerguntas {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fetchPerguntasPagina, pergCasaStatus } from '@/lib/perguntas';
+import { agruparPerguntas, fetchPerguntasPagina, pergCasaStatus, type Pergunta } from '@/lib/perguntas';
 import { supabase } from '@/lib/supabase';
 
 // Duas tabelas envolvidas: ml_perguntas (busca paginada) e ml_vendas (nome civil do comprador,
@@ -111,6 +111,73 @@ describe('lib/perguntas — fetchPerguntasPagina', () => {
   it('usa o cliente supabase do projeto na tabela certa', async () => {
     await fetchPerguntasPagina(1, 20);
     expect(supabase.from).toHaveBeenCalledWith('ml_perguntas');
+  });
+});
+
+describe('lib/perguntas — agruparPerguntas', () => {
+  // Caso real (13/08): o comprador 1560405494 disparou "Possui a Cor 2931 Nautico" em 5 anúncios
+  // (dois no mesmo item). São 5 question_id de verdade no ML — a fila mostrava 5 cards idênticos.
+  function perg(over: Partial<Pergunta>): Pergunta {
+    return {
+      id: 'x', question_id: 1, item_id: 'MLB1', item_titulo: 'Produto', comprador_id: 99,
+      comprador_nick: 'nick', comprador_nome: null, texto: 'Possui a cor 2931?',
+      status: 'UNANSWERED', resposta: null, respondida_em: null, criada_em: null, ...over,
+    };
+  }
+
+  it('junta perguntas iguais do mesmo comprador em um grupo só', () => {
+    const grupos = agruparPerguntas([
+      perg({ id: 'a', question_id: 1, item_id: 'MLB1' }),
+      perg({ id: 'b', question_id: 2, item_id: 'MLB2' }),
+      perg({ id: 'c', question_id: 3, item_id: 'MLB1' }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].perguntas.map((p) => p.question_id)).toEqual([1, 2, 3]);
+    expect(grupos[0].principal.id).toBe('a');
+  });
+
+  it('ignora diferença de espaço e caixa no texto', () => {
+    const grupos = agruparPerguntas([
+      perg({ id: 'a', texto: 'Possui a cor 2931?' }),
+      perg({ id: 'b', texto: '  POSSUI  A COR 2931? ' }),
+    ]);
+    expect(grupos).toHaveLength(1);
+  });
+
+  it('não junta compradores diferentes nem textos diferentes', () => {
+    const grupos = agruparPerguntas([
+      perg({ id: 'a', comprador_id: 1 }),
+      perg({ id: 'b', comprador_id: 2 }),
+      perg({ id: 'c', comprador_id: 1, texto: 'Outra coisa' }),
+    ]);
+    expect(grupos).toHaveLength(3);
+  });
+
+  it('não junta respondidas — a resposta é parte do card', () => {
+    const grupos = agruparPerguntas([
+      perg({ id: 'a', status: 'ANSWERED', resposta: 'Sim' }),
+      perg({ id: 'b', status: 'ANSWERED', resposta: 'Não' }),
+    ]);
+    expect(grupos).toHaveLength(2);
+  });
+
+  it('não junta perguntas sem texto (BANNED vem com texto vazio) nem sem comprador', () => {
+    const grupos = agruparPerguntas([
+      perg({ id: 'a', texto: '' }),
+      perg({ id: 'b', texto: '' }),
+      perg({ id: 'c', comprador_id: null }),
+      perg({ id: 'd', comprador_id: null }),
+    ]);
+    expect(grupos).toHaveLength(4);
+  });
+
+  it('preserva a ordem de chegada da lista', () => {
+    const grupos = agruparPerguntas([
+      perg({ id: 'a', texto: 'primeira' }),
+      perg({ id: 'b', texto: 'segunda' }),
+      perg({ id: 'c', texto: 'primeira' }),
+    ]);
+    expect(grupos.map((g) => g.principal.id)).toEqual(['a', 'b']);
   });
 });
 

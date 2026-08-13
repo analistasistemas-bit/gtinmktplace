@@ -8,6 +8,7 @@ import type { Pergunta, PaginaPerguntas } from '@/lib/perguntas';
 const fetchMock = vi.fn();
 const exportarMock = vi.fn();
 const montarReportSpy = vi.fn();
+const responderMock = vi.fn();
 
 vi.mock('@/lib/perguntas', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/perguntas')>();
@@ -15,6 +16,7 @@ vi.mock('@/lib/perguntas', async (importOriginal) => {
     ...actual,
     fetchPerguntasPagina: (...args: Parameters<typeof actual.fetchPerguntasPagina>) => fetchMock(...args),
     buscarPerguntas: () => exportarMock(),
+    responderPergunta: (...args: Parameters<typeof actual.responderPergunta>) => responderMock(...args),
   };
 });
 
@@ -50,6 +52,8 @@ describe('AbaPerguntas', () => {
     fetchMock.mockReset();
     exportarMock.mockReset();
     montarReportSpy.mockReset();
+    responderMock.mockReset();
+    responderMock.mockResolvedValue({ ok: true });
     fetchMock.mockResolvedValue(pagina(PERGUNTAS, 2));
   });
 
@@ -133,6 +137,54 @@ describe('AbaPerguntas', () => {
     renderAba();
     expect(await screen.findByText('Não foi possível carregar as perguntas.')).toBeInTheDocument();
     expect(screen.queryByText('Nenhuma pergunta pendente.')).not.toBeInTheDocument();
+  });
+
+  // Caso real (13/08): mesmo comprador, mesmo texto, 5 anúncios — a fila mostrava 5 cards iguais.
+  it('junta a mesma pergunta repetida em vários anúncios num card só e responde todas de uma vez', async () => {
+    const repetida = {
+      ...base, status: 'UNANSWERED', resposta: null, texto: 'Possui a cor 2931 Nautico?',
+      comprador_id: 55, comprador_nick: 'COMPRADOR_55', comprador_nome: null,
+    };
+    fetchMock.mockResolvedValue(pagina([
+      { ...repetida, id: 'r-1', question_id: 101, item_id: 'MLB1', item_titulo: 'Fio Porcelana' },
+      { ...repetida, id: 'r-2', question_id: 102, item_id: 'MLB2', item_titulo: 'Fio Camafeu' },
+      { ...repetida, id: 'r-3', question_id: 103, item_id: 'MLB3', item_titulo: 'Fio Branco' },
+    ] as Pergunta[], 3));
+    renderAba();
+
+    expect(await screen.findAllByText('Possui a cor 2931 Nautico?')).toHaveLength(1);
+    expect(screen.getByText('3 perguntas · 3 anúncios')).toBeInTheDocument();
+    expect(screen.getByText('· Fio Camafeu')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole('textbox'), 'Temos sim.');
+    await userEvent.click(screen.getByRole('button', { name: /Responder as 3/ }));
+
+    await waitFor(() => expect(responderMock).toHaveBeenCalledTimes(3));
+    expect(responderMock.mock.calls.map((c) => c[0])).toEqual([101, 102, 103]);
+    expect(responderMock.mock.calls.every((c) => c[1] === 'Temos sim.')).toBe(true);
+  });
+
+  // No caso real duas das cinco perguntas caíram no MESMO anúncio: o card conta perguntas e
+  // anúncios separado, e não repete o título na lista.
+  it('perguntas repetidas no mesmo anúncio contam uma vez na lista de anúncios', async () => {
+    const repetida = {
+      ...base, status: 'UNANSWERED', resposta: null, texto: 'Possui a cor 2931 Nautico?',
+      comprador_id: 55, comprador_nick: 'COMPRADOR_55', comprador_nome: null,
+    };
+    fetchMock.mockResolvedValue(pagina([
+      { ...repetida, id: 'r-1', question_id: 101, item_id: 'MLB1', item_titulo: 'Fio Porcelana' },
+      { ...repetida, id: 'r-2', question_id: 102, item_id: 'MLB1', item_titulo: 'Fio Porcelana' },
+      { ...repetida, id: 'r-3', question_id: 103, item_id: 'MLB2', item_titulo: 'Fio Camafeu' },
+    ] as Pergunta[], 3));
+    renderAba();
+
+    expect(await screen.findByText('3 perguntas · 2 anúncios')).toBeInTheDocument();
+    expect(screen.getAllByText('· Fio Porcelana')).toHaveLength(1);
+
+    // A resposta continua indo para as 3 perguntas — cada question_id precisa da sua no ML.
+    await userEvent.type(screen.getByRole('textbox'), 'Temos sim.');
+    await userEvent.click(screen.getByRole('button', { name: /Responder as 3/ }));
+    await waitFor(() => expect(responderMock).toHaveBeenCalledTimes(3));
   });
 
   it('exportar puxa a lista inteira filtrada pela aba ativa, não só a página visível', async () => {
