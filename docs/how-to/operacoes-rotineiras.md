@@ -259,16 +259,20 @@ publicadas, que carregam o valor *default* da coluna e não representam problema
 2. **Dry-run** (não enfileira nada):
 
 ```bash
-deno run --allow-net --allow-env --allow-read \
+deno run --node-modules-dir=none --allow-net --allow-env --allow-read \
   scripts/backfill-catalogo-pendente.ts familias.txt
 ```
 
 3. **Executar** e **guardar a saída** — os `messageId` são o mecanismo de reversão:
 
 ```bash
-deno run --allow-net --allow-env --allow-read \
+deno run --node-modules-dir=none --allow-net --allow-env --allow-read \
   scripts/backfill-catalogo-pendente.ts familias.txt --executar | tee backfill-$(date +%Y%m%d-%H%M).log
 ```
+
+> `--node-modules-dir=none` é obrigatório nos dois comandos. Sem ele o Deno resolve o
+> `node_modules` do pnpm que existe no repo e quebra em `jose`
+> (`does not provide an export named 'encode'`).
 
 Os jobs vão com `alertar: false`: a operação roda em silêncio, sem Telegram, inclusive nos
 reagendamentos. Publicações novas continuam alertando normalmente.

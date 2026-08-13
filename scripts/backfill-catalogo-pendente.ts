@@ -8,8 +8,12 @@
 //
 // Uso (na raiz do repo, env de PRODUÇÃO):
 //   SUPABASE_URL=https://<ref>.supabase.co QSTASH_TOKEN=... \
-//     deno run --allow-net --allow-env --allow-read \
+//     deno run --node-modules-dir=none --allow-net --allow-env --allow-read \
 //     scripts/backfill-catalogo-pendente.ts familias.txt [--executar]
+//
+// `--node-modules-dir=none` é OBRIGATÓRIO: sem ele o Deno resolve o node_modules do pnpm que
+// existe no repo e quebra em `jose` ("does not provide an export named 'encode'"), porque a
+// cadeia @upstash/qstash → jose vem instalada para o bundler do frontend, não para o Deno.
 //
 // familias.txt: um familia_id (uuid) por linha. Sem --executar: dry-run (só imprime).
 // A saída da execução real (familia_id<TAB>messageId<TAB>delay) DEVE ser salva — os
