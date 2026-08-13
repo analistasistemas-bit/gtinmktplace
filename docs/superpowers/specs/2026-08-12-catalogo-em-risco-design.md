@@ -145,6 +145,12 @@ resumo, ou exceção propagada), e o worker devolve **500 para retry** nesse cas
 
 Esta é a única forma de "não perguntei" e precisa ser distinguível de "perguntei e não havia dado".
 
+**O guard vale para os dois caminhos.** No User Products (ADR-0088, `vincularItensCatalogoUP`), a
+elegibilidade é lida por item, e hoje uma falha desse GET cai no catch por item e persiste
+`catalog_status='erro'` — falha transitória de rede virando estado final. Passa a contar como
+`pendente` (retentável pelo mesmo backoff), sem persistir nada: "não perguntei" não é estado do
+item em nenhuma das rotas.
+
 ### 1.3 Alerta
 
 `deveAlertarCatalogoNoMatch` deixa de exigir `pendente === 0` e passa a contar `pendente` residual
@@ -170,6 +176,14 @@ Disparo por script de manutenção reutilizando `enfileirarVinculacaoCatalogo`. 
 serializada neste caminho** — `enfileirarVinculacaoCatalogo` publica direto no QStash (a
 `garantirFilaSerial` é do `publicar-familias`, outro fluxo). O script escalona os disparos por
 delay crescente para não saturar a API do ML.
+
+**O backfill é silencioso** (decisão 2026-08-13): re-vincular 93 famílias de uma vez dispararia
+dezenas de alertas de Telegram; o resultado deve aparecer na tela da Parte 2, de uma vez, não no
+celular. Mecanismo: `VincularCatalogoJob` ganha o campo opcional `alertar`; o script envia
+`alertar: false`, o worker propaga o campo nos reagendamentos da mesma cadeia e, na finalização,
+suprime só o Telegram (persistência e espelhamento seguem normais). Job sem o campo alerta como
+sempre — publicações novas não mudam. A janela de silêncio morre com a cadeia: nenhum estado novo
+em tabela, nenhuma migration, nada para lembrar de desligar depois.
 
 ---
 
@@ -300,4 +314,6 @@ Estimativa: Fase 1 meio dia; Fase 2 um dia.
 - Nenhuma migration: `catalog_status` continua com os sete valores atuais.
 - Fica uma dependência de endpoint interno do ML na Parte 3: se o ML mudar o fluxo, a extensão
   quebra e o operador volta ao processo manual. A Parte 1 continua funcionando.
-- Deploy: `vincular-catalogo` e as demais funções que importam `_shared/ml/catalogo.ts`.
+- Deploy: `vincular-catalogo` e as demais funções que importam `_shared/ml/catalogo.ts`. O campo
+  `alertar` muda `_shared/queue.ts` de forma compatível (job antigo sem o campo alerta normalmente;
+  o payload dos produtores existentes não muda) — só `vincular-catalogo` muda de comportamento.

@@ -15,6 +15,12 @@
 - **Fase 3 (extensão de navegador)** fica fora: depende da incógnita do formato do `productId` no PATCH interno do ML (seção "Incógnita conhecida" da spec). As Partes 1 e 2 não dependem dela. Por consequência, o botão "Resolver todos no ML" **não entra** nesta fase — a tela entrega lista + link por anúncio, que a spec declara ter valor isolado.
 - Nenhuma migration, nenhum `catalog_status` novo (decisão explícita da spec).
 
+## Decisões do Diego (2026-08-13)
+
+1. **Correção do caminho UP: INCLUÍDA** (Task 4). A spec §1.2 foi atualizada para deixar explícito que o guard vale para Legacy e UP.
+2. **Backfill silencioso:** o backfill NÃO dispara Telegram — o resultado aparece na tela (Task 8), de uma vez. Mecanismo escolhido: campo opcional `alertar` em `VincularCatalogoJob`, enviado como `false` só pelo script de backfill e propagado pelo worker nos reagendamentos da mesma cadeia (Tasks 5 e 10). Alternativas descartadas: env var/config de janela de silêncio (resíduo — alguém esquece ligado, exatamente o que Diego vetou) e coluna/flag em tabela (migration + estado permanente, proibidos pela spec). O campo no job morre com a cadeia: silêncio com prazo de validade estrutural. Compatibilidade: job antigo sem o campo alerta normalmente; o payload dos produtores existentes não muda (o campo só entra no body quando `false`).
+3. **Latência de +1h em publicação nova: ACEITA como está**, sem tentativa rápida antes do backoff (registrado na Task 1 — não foi descuido).
+
 ## Global Constraints
 
 - A trava `fichaEquivalente` (ADR-0021 pós-incidente do kit) permanece intacta — nenhuma tarefa a toca.
@@ -35,7 +41,7 @@
 6. **Testes que quebram com a mudança** (atualizados nas tasks): `catalogo.test.ts:77` ("pendente>0 SEMPRE vence... → aguardar_elegibilidade") e `catalogo-alerta.test.ts:28` ("NÃO alerta enquanto pendente>0"). Nenhum outro teste referencia `aguardar_elegibilidade`.
 7. **Imprecisões menores da spec** (não invalidam o plano): (a) `enfileirarVinculacaoCatalogo` usa `publishJSON`, não fila serializada por usuário — a "serialização por usuário já existente" citada na seção 1.4 não existe nesse caminho; o script escalona os delays para compensar. (b) A consequência do alerta exige também nova causa em `montarMensagemCatalogoNoMatch` (telegram.ts) e a inclusão de `pendente` nos filtros de cores do worker — sem isso o alerta de `elegibilidade_nao_resolvida` sairia sem cores.
 8. **Números confirmados no banco (2026-08-13, read-only):** 93 famílias / 296 variações `pendente` com `ml_variation_id` e `ml_item_id` não nulos — idêntico à spec.
-9. **Deploy:** o ÚNICO importador de `_shared/ml/catalogo.ts` é `vincular-catalogo` (index.ts e vinculacao.ts — verificado por grep). Mas a Task 2 muda `_shared/notificacoes/telegram.ts`, importado por 8 funções — pela regra do CLAUDE.md (mudança em `_shared/` → redeploy de todas as afetadas), todas entram na lista da Task 9.
+9. **Deploy:** o ÚNICO importador de `_shared/ml/catalogo.ts` é `vincular-catalogo` (index.ts e vinculacao.ts — verificado por grep). Mas a Task 2 muda `_shared/notificacoes/telegram.ts` (8 importadores) e a Task 5 muda `_shared/queue.ts` (importado pela frota QStash — 24 funções, comportamento alterado só em `vincular-catalogo`) — pela regra do CLAUDE.md (mudança em `_shared/` → redeploy de todas as afetadas), todas entram na lista da Task 9.
 
 ---
 
@@ -105,7 +111,7 @@ export function decidirResultadoRodadaCatalogo(
 }
 ```
 
-Efeito colateral aceito (intenção da spec): publicação nova cuja elegibilidade ainda não computou aos 10 min do primeiro job espera +1h (antes: retries do QStash em minutos). A maioria assenta antes da primeira rodada, então o impacto é raro e limitado.
+Efeito colateral aceito **explicitamente por Diego (2026-08-13)**, sem tentativa rápida antes do backoff: publicação nova cuja elegibilidade ainda não computou aos 10 min do primeiro job espera +1h (antes: retries do QStash em minutos). A maioria assenta antes da primeira rodada, então o impacto é raro e limitado. Não é descuido — foi decisão.
 
 - [ ] **Step 4: Rodar os testes**
 
@@ -383,18 +389,49 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 5: worker `vincular-catalogo` — remover branch morto e incluir `pendente` nas cores do alerta
+### Task 5: worker `vincular-catalogo` — branch morto, cores do alerta e silêncio do backfill
 
 **Files:**
-- Modify: `supabase/functions/vincular-catalogo/index.ts:17` (set `NO_MATCH`), `:74-76` (branch `aguardar_elegibilidade`), `:102-105` (filtro de cores Legacy)
+- Modify: `supabase/functions/_shared/queue.ts:213-238` (`VincularCatalogoJob` + `enfileirarVinculacaoCatalogo`)
+- Modify: `supabase/functions/vincular-catalogo/index.ts:17` (set `NO_MATCH`), `:74-76` (branch `aguardar_elegibilidade`), `:78` (propagação no reagendar), `:102-105` (filtro de cores Legacy), `:110` (gate do alerta)
 
 **Interfaces:**
 - Consumes: `ResultadoRodadaCatalogo` reduzido da Task 1 (`reagendar` | `finalizar`).
-- Produces: nada novo — glue do worker.
+- Produces: `VincularCatalogoJob` ganha `alertar?: boolean`; `enfileirarVinculacaoCatalogo` ganha 5º parâmetro `alertar = true`. A Task 10 (backfill) chama com `false`. **Compatibilidade obrigatória:** job sem o campo alerta normalmente, e o campo só entra no body quando `false` — o payload dos produtores existentes fica byte-idêntico. Produtores verificados (todos chamam sem o 5º argumento → comportamento inalterado): `publish-familia-ml/processar.ts:230`, `update-familia-ml/processar.ts:437`, `publicar-split-ml/index.ts:451`, `_shared/user-products/publicar-familia-up.ts:167`, `_shared/user-products/atualizar-familia-up.ts:225` e o próprio worker (reagendar).
 
-Sem teste unitário próprio (o worker Deno.serve não tem harness no projeto; toda a lógica decidida vive nas puras já testadas). Verificação: lint + suíte completa.
+Sem teste unitário próprio (o worker Deno.serve não tem harness no projeto; toda a lógica decidida vive nas puras já testadas). Verificação: lint + suíte completa + dry-run do backfill (Task 10).
 
-- [ ] **Step 1: Remover o branch morto**
+- [ ] **Step 1: Campo `alertar` no job (queue.ts)**
+
+Em `_shared/queue.ts`:
+
+```ts
+export interface VincularCatalogoJob { familia_id: string; tentativa?: number; alertar?: boolean; }
+```
+
+E em `enfileirarVinculacaoCatalogo`, novo parâmetro e body condicional (docstring ganha uma linha: "`alertar=false` (backfill, spec §1.4) suprime o Telegram na finalização; o campo só entra no body quando falso, preservando o payload dos produtores existentes"):
+
+```ts
+export async function enfileirarVinculacaoCatalogo(
+  familiaId: string,
+  delaySeconds = 600,
+  tentativa = 1,
+  retries = 5,
+  alertar = true,
+): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/vincular-catalogo`;
+  const { messageId } = await qstashClient().publishJSON({
+    url: target,
+    body: { familia_id: familiaId, tentativa, ...(alertar ? {} : { alertar: false }) } satisfies VincularCatalogoJob,
+    delay: delaySeconds,
+    retries,
+  });
+  return messageId;
+}
+```
+
+- [ ] **Step 2: Remover o branch morto**
 
 Deletar as linhas 74-76:
 
@@ -406,7 +443,32 @@ Deletar as linhas 74-76:
 
 (Após a Task 1 esse membro não existe mais na união — o TypeScript/lint acusaria a comparação impossível.) Atualizar o comentário do topo do arquivo (linhas 32-34): trocar "enquanto a elegibilidade não estiver computada (variações `pendente`), devolve 500" por "variações `pendente` reagendam pelo mesmo backoff longo de `nao_elegivel` (1h/6h/24h/48h); 500 fica só para falha real (token/rede/leitura de elegibilidade)".
 
-- [ ] **Step 2: Incluir `pendente` nos filtros de cores do alerta**
+- [ ] **Step 3: Propagar o silêncio na cadeia e suprimir o Telegram na finalização**
+
+No início do handler (logo após o parse do job):
+
+```ts
+  // Backfill silencioso (spec §1.4): alertar=false suprime SÓ o Telegram desta cadeia; job sem o
+  // campo (todas as publicações normais) alerta como sempre. O campo é propagado no reagendar,
+  // então o silêncio morre quando a cadeia termina — sem estado em tabela, sem flag para desligar.
+  const silencioso = job.alertar === false;
+```
+
+No branch `reagendar` (linha ~78), propagar:
+
+```ts
+      await enfileirarVinculacaoCatalogo(job.familia_id, resultado.delaySegundos, resultado.proximaTentativa, 2, !silencioso);
+```
+
+No gate do alerta (linha ~110):
+
+```ts
+    if (resultado.deveAlertar && !silencioso) {
+```
+
+Persistência, espelhamento (`espelharAnuncioExterno`) e o cálculo de `cores` NÃO são condicionados — só o envio do Telegram.
+
+- [ ] **Step 4: Incluir `pendente` nos filtros de cores do alerta**
 
 Linha 17 (UP):
 
@@ -425,16 +487,20 @@ Linhas 102-105 (Legacy):
 
 Sem isso, o alerta `elegibilidade_nao_resolvida` (família 100% `pendente`) sairia com lista de cores vazia.
 
-- [ ] **Step 3: Verificar**
+- [ ] **Step 5: Verificar**
 
 Run: `pnpm lint && pnpm test`
 Expected: ambos PASS, zero referência restante a `aguardar_elegibilidade` no repo (`grep -rn aguardar_elegibilidade supabase/ src/` vazio).
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/functions/vincular-catalogo/index.ts
-git commit -m "chore(vincular-catalogo): remove branch aguardar_elegibilidade e inclui pendente nas cores do alerta
+git add supabase/functions/_shared/queue.ts supabase/functions/vincular-catalogo/index.ts
+git commit -m "feat(vincular-catalogo): backoff para pendente, cores no alerta e silencio opcional do backfill
+
+Remove o branch aguardar_elegibilidade (morto apos a mudanca de decidirResultadoRodadaCatalogo),
+inclui pendente nas cores do alerta e adiciona o campo alertar ao VincularCatalogoJob para o
+backfill rodar sem disparar Telegram (job antigo sem o campo alerta normalmente).
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
@@ -842,10 +908,11 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:** nenhum — operação de deploy.
 
-Funções a deployar e por quê (regra do CLAUDE.md: mudança em `_shared/` → redeploy de todas as afetadas):
+Funções a deployar e por quê (regra do CLAUDE.md: mudança em `_shared/` → redeploy de todas as afetadas). Três arquivos `_shared/` mudam: `ml/catalogo.ts` (único importador: `vincular-catalogo`), `notificacoes/telegram.ts` (8 importadores) e `queue.ts` (Task 5 — importado pela frota QStash inteira, 24 funções; o comportamento só muda em `vincular-catalogo`, pois o campo `alertar` só entra no body quando `false` e nenhum produtor o usa, mas o redeploy dos importadores é no-op seguro e mantém os bundles em dia com a regra do projeto):
 
-- `vincular-catalogo` — único importador de `_shared/ml/catalogo.ts` (verificado por grep) e importador de `telegram.ts`. **Obrigatória.**
-- Importadores de `_shared/notificacoes/telegram.ts` (mudou na Task 2): `monitorar-moderados`, `sync-venda`, `sync-pergunta`, `sync-mensagem`, `sync-devolucao`, `notificar-liberacao`, `reconciliar-faturamento`.
+- **Obrigatória (muda de comportamento):** `vincular-catalogo`. Sem ela o backfill reproduz o bug antigo e o silêncio não funciona.
+- **Importadores de `telegram.ts`:** `monitorar-moderados`, `sync-venda`, `sync-pergunta`, `sync-mensagem`, `sync-devolucao`, `notificar-liberacao`, `reconciliar-faturamento`.
+- **Demais importadores de `queue.ts`:** `ajustar-estoque`, `backfill-faturamento`, `cadastrar-produto`, `entrada-estoque`, `ingest-lote`, `ml-webhook`, `process-familia`, `publicar-anuncio`, `publicar-familias`, `publicar-split-ml`, `publish-familia-ml`, `reconciliar-convergencia-up`, `reconciliar-estoque`, `reprocessar-familia`, `sincronizar-estoque`, `update-familia-ml`.
 
 - [ ] **Step 1: Linkar o projeto (worktree nova nunca vem linkada)**
 
@@ -854,7 +921,12 @@ Run: `supabase link --project-ref <ref do projeto>` (ref em `reference_ops`/`.en
 - [ ] **Step 2: Deploy**
 
 ```bash
-supabase functions deploy vincular-catalogo monitorar-moderados sync-venda sync-pergunta sync-mensagem sync-devolucao notificar-liberacao reconciliar-faturamento
+supabase functions deploy \
+  vincular-catalogo \
+  monitorar-moderados sync-venda sync-pergunta sync-mensagem sync-devolucao notificar-liberacao reconciliar-faturamento \
+  ajustar-estoque backfill-faturamento cadastrar-produto entrada-estoque ingest-lote ml-webhook process-familia \
+  publicar-anuncio publicar-familias publicar-split-ml publish-familia-ml reconciliar-convergencia-up \
+  reconciliar-estoque reprocessar-familia sincronizar-estoque update-familia-ml
 ```
 
 - [ ] **Step 3: Conferir versão pós-deploy**
@@ -872,12 +944,12 @@ Nota de ordem: o deploy acontece quando a branch for mergeada na main (fluxo do 
 - Create: `scripts/backfill-catalogo-pendente.ts` (Deno — precisa ser Deno porque importa `_shared/queue.ts`, que usa `npm:@upstash/qstash` e `Deno.env`)
 
 **Interfaces:**
-- Consumes: `enfileirarVinculacaoCatalogo(familiaId, delaySeconds, tentativa, retries)` de `supabase/functions/_shared/queue.ts`.
+- Consumes: `enfileirarVinculacaoCatalogo(familiaId, delaySeconds, tentativa, retries, alertar)` de `supabase/functions/_shared/queue.ts` (5º parâmetro `alertar=false` — Task 5).
 
 **Cuidados de produção (ler antes de executar):**
-- **Pré-requisito absoluto:** Task 9 concluída (worker corrigido em produção). Conferir versão via `supabase functions list`.
+- **Pré-requisito absoluto:** Task 9 concluída (worker corrigido em produção). Conferir versão via `supabase functions list`. Worker antigo ignoraria `alertar: false` (campo desconhecido) e dispararia a enxurrada de Telegram que a decisão de 2026-08-13 veta — mais um motivo para o deploy vir antes.
 - O script NÃO escreve no ML nem no banco: só publica jobs QStash para o worker existente. Todo opt-in que resultar passa pelas travas do ADR-0021 (`fichaEquivalente`, `podeTentarOptin`) — é o fluxo sancionado, não edição manual de anúncio.
-- **Efeito colateral esperado:** famílias que finalizarem com no-match disparam alerta de Telegram — potencialmente dezenas ao longo de horas/dias (1 por família, na finalização). A spec trata isso como "trabalho visível". Avisar Diego antes de executar.
+- **Silencioso por decisão (2026-08-13):** os jobs vão com `alertar: false` — nenhuma mensagem de Telegram nesta operação, nem nos reagendamentos da cadeia. O resultado é conferido pela tela da Task 8 e pelo SQL do Step 6. Publicações novas continuam alertando normalmente (job sem o campo).
 - Dry-run é o default; a execução real exige `--executar`.
 - Delays escalonados (60s + 30s por família ≈ janela de 47 min) — `enfileirarVinculacaoCatalogo` usa `publishJSON` (SEM fila serializada por usuário, apesar do que a spec diz), então o escalonamento é o que evita martelar a API do ML.
 
@@ -886,6 +958,8 @@ Nota de ordem: o deploy acontece quando a branch for mergeada na main (fluxo do 
 ```ts
 // Backfill das famílias congeladas em catalog_status='pendente' (spec 2026-08-12 §1.4).
 // Re-enfileira vincular-catalogo com tentativa=1 via QStash — NÃO toca ML nem banco.
+// SILENCIOSO (decisão 2026-08-13): alertar=false suprime o Telegram desta cadeia; o
+// resultado é conferido pela tela "Catálogo em risco" e pelo SQL de conferência.
 //
 // Uso (na raiz do repo, env de PRODUÇÃO):
 //   SUPABASE_URL=https://<ref>.supabase.co QSTASH_TOKEN=... \
@@ -910,7 +984,7 @@ if (flag !== '--executar') {
 
 for (const [i, id] of ids.entries()) {
   const delay = 60 + i * 30; // escalona p/ não martelar a API do ML (publishJSON não serializa)
-  const messageId = await enfileirarVinculacaoCatalogo(id, delay, 1, 5);
+  const messageId = await enfileirarVinculacaoCatalogo(id, delay, 1, 5, false); // alertar=false
   console.log(`${id}\t${messageId}\tdelay=${delay}s`);
 }
 console.error('concluído — salve esta saída (messageIds = reversão).');
@@ -959,7 +1033,7 @@ where v.ml_variation_id is not null and f.ml_item_id is not null
 group by 1 order by 2 desc;
 ```
 
-Expected: `pendente` cai de 296/93 para perto de zero na primeira rodada (a evidência da spec — MLB6928315454 com 74/74 já respondidos — indica que a elegibilidade já está madura; ex.: os 74 devem virar `family_diff`). O que sobrar em `pendente` entra no backoff e resolve/alerta em até ~79h. Conferir também os logs do worker (`supabase functions logs vincular-catalogo`) e a tela da Task 8 (deve encolher).
+Expected: `pendente` cai de 296/93 para perto de zero na primeira rodada (a evidência da spec — MLB6928315454 com 74/74 já respondidos — indica que a elegibilidade já está madura; ex.: os 74 devem virar `family_diff`). O que sobrar em `pendente` entra no backoff e resolve em até ~79h — **sem Telegram** (cadeia silenciosa): a conferência é ESTE SQL + a tela da Task 8 (deve encolher). Conferir também os logs do worker (`supabase functions logs vincular-catalogo`).
 
 - [ ] **Step 7: Commit do script**
 
@@ -975,7 +1049,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ### Task 11: documentação e Graphify
 
 **Files:**
-- Modify: `docs/reference/edge-functions.md` — comportamento novo de `vincular-catalogo` (pendente → backoff longo; 500 só para falha real; alerta cobre `elegibilidade_nao_resolvida`).
+- Modify: `docs/reference/edge-functions.md` — comportamento novo de `vincular-catalogo` (pendente → backoff longo; 500 só para falha real; alerta cobre `elegibilidade_nao_resolvida`; campo `alertar` no job para cadeias silenciosas de backfill).
 - Modify: `docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md` — nota de revisão (2026-08): revoga o trecho da revisão 2026-07-15 que dizia "`pendente` continua usando o retry técnico do QStash e tem precedência sobre o backoff de negócio"; `pendente` passa a compartilhar o backoff. Referenciar a spec.
 - Modify: `docs/decisions/0036-alerta-catalogo-no-match.md` — nota de revisão: o gate `pendente === 0` sai de `deveAlertarCatalogoNoMatch`; a garantia de 1 alerta por publicação passa a ser o gate de finalização no worker; novo motivo `elegibilidade_nao_resolvida`.
 - Modify: `docs/how-to/operacoes-rotineiras.md` — procedimento do backfill (gerar lista → dry-run → executar → conferir → reverter), apontando para o script.
