@@ -39,6 +39,9 @@ import { filtrarPublicados, ordenarPublicados, rotuloTipo } from '@/lib/publicad
 import { CanalTabs } from '@/components/canal-tabs';
 import { CanalBadge } from '@/components/canal-badge';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
+import { CatalogoEmRisco } from '@/components/catalogo-em-risco';
+import { agruparCatalogoRisco } from '@/lib/catalogo-risco';
+import { useCatalogoEmRisco } from '@/hooks/useCatalogoEmRisco';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { traduzirMotivoModeracao } from '@/lib/moderacao';
 import type { PublicadoItem, StatusPublicado, FiltroPublicados, ColunaOrdenavel, OrdenacaoPublicados } from '@/lib/publicados';
@@ -413,6 +416,8 @@ export default function Publicados() {
   const navigate = useNavigate();
   const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
+  const { data: familiasRisco } = useCatalogoEmRisco();
+  const itensRisco = useMemo(() => agruparCatalogoRisco(familiasRisco ?? []), [familiasRisco]);
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
   const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
@@ -680,6 +685,9 @@ export default function Publicados() {
           {filtro.status === 'moderado' && <span className="font-medium">• filtrando</span>}
         </button>
       )}
+
+      {/* Catálogo em risco (spec 2026-08-12): variações publicadas sem ficha — ML pode pausar */}
+      <CatalogoEmRisco itens={itensRisco} />
 
       {/* Erro de remoção */}
       {erroRemover && (
