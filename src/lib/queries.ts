@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { signedUrl } from './storage';
 import { effectiveOrgId } from '@/stores/support-store';
+import { STATUS_RISCO, type FamiliaRiscoRow } from '@/lib/catalogo-risco';
 import type { Database } from './database.types';
 import type {
   Lote,
@@ -29,6 +30,7 @@ export const QK = {
   familia: (familiaId: string) => ['familia', familiaId] as const,
   publicados: ['publicados'] as const,
   statusPublicados: ['statusPublicados'] as const,
+  catalogoRisco: ['catalogo-risco'] as const,
   conexoes: ['conexoes'] as const,
   canaisHabilitados: ['canais-habilitados'] as const,
   modulosHabilitados: ['modulos-habilitados'] as const,
@@ -862,6 +864,22 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): 
     mlPermalink: r.ml_permalink ?? null,
     publicadoEm: r.publicado_em ?? null,
   };
+}
+
+/**
+ * Famílias publicadas com variação PUBLICADA em status de risco de catálogo (spec 2026-08-12).
+ * O `!inner` + filtros garantem no servidor a regra "ml_variation_id is not null" — sem ela a
+ * tela mostraria 2.234 variações nunca publicadas (default 'pendente' da coluna).
+ */
+export async function fetchCatalogoEmRisco(): Promise<FamiliaRiscoRow[]> {
+  const { data, error } = await supabase
+    .from('familias')
+    .select('id, ml_item_id, titulo_ml, nome_pai, variacoes!inner(catalog_status, ml_variation_id)')
+    .not('ml_item_id', 'is', null)
+    .not('variacoes.ml_variation_id', 'is', null)
+    .in('variacoes.catalog_status', [...STATUS_RISCO]);
+  if (error) throw error;
+  return (data ?? []) as FamiliaRiscoRow[];
 }
 
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
