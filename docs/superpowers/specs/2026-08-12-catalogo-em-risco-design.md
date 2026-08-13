@@ -172,18 +172,22 @@ e a evidência mostra que já está, então tendem a resolver na primeira rodada
 A rodada executa o opt-in normal antes de decidir: famílias cuja elegibilidade amadureceu vinculam
 sozinhas no caminho.
 
-Disparo por script de manutenção reutilizando `enfileirarVinculacaoCatalogo`. **Não há fila
-serializada neste caminho** — `enfileirarVinculacaoCatalogo` publica direto no QStash (a
-`garantirFilaSerial` é do `publicar-familias`, outro fluxo). O script escalona os disparos por
-delay crescente para não saturar a API do ML.
+Disparo por script de manutenção que publica no QStash o mesmo job do worker (via
+`qstashClient()`, mesmo destino/formato de `enfileirarVinculacaoCatalogo`). **Não há fila
+serializada neste caminho** — o publish é direto (a `garantirFilaSerial` é do
+`publicar-familias`, outro fluxo). O script escalona os disparos por delay crescente para não
+saturar a API do ML.
 
 **O backfill é silencioso** (decisão 2026-08-13): re-vincular 93 famílias de uma vez dispararia
 dezenas de alertas de Telegram; o resultado deve aparecer na tela da Parte 2, de uma vez, não no
-celular. Mecanismo: `VincularCatalogoJob` ganha o campo opcional `alertar`; o script envia
-`alertar: false`, o worker propaga o campo nos reagendamentos da mesma cadeia e, na finalização,
-suprime só o Telegram (persistência e espelhamento seguem normais). Job sem o campo alerta como
-sempre — publicações novas não mudam. A janela de silêncio morre com a cadeia: nenhum estado novo
-em tabela, nenhuma migration, nada para lembrar de desligar depois.
+celular. Mecanismo: o job carrega o campo opcional `alertar` **no body** — o script publica direto
+no QStash (mesmo destino/formato de `enfileirarVinculacaoCatalogo`) com `alertar: false`; o worker
+lê o campo do body parseado (tipo estendido localmente, sem tocar `queue.ts`), propaga-o nos
+reagendamentos da mesma cadeia e, na finalização, suprime só o Telegram (persistência e
+espelhamento seguem normais). Job sem o campo alerta como sempre — publicações novas não mudam, e
+`enfileirarVinculacaoCatalogo`/`queue.ts` ficam intocados (revisão 2026-08-13: mudar `queue.ts`
+arrastaria a frota QStash inteira, 24 funções, para o redeploy). A janela de silêncio morre com a
+cadeia: nenhum estado novo em tabela, nenhuma migration, nada para lembrar de desligar depois.
 
 ---
 
@@ -315,5 +319,5 @@ Estimativa: Fase 1 meio dia; Fase 2 um dia.
 - Fica uma dependência de endpoint interno do ML na Parte 3: se o ML mudar o fluxo, a extensão
   quebra e o operador volta ao processo manual. A Parte 1 continua funcionando.
 - Deploy: `vincular-catalogo` e as demais funções que importam `_shared/ml/catalogo.ts`. O campo
-  `alertar` muda `_shared/queue.ts` de forma compatível (job antigo sem o campo alerta normalmente;
-  o payload dos produtores existentes não muda) — só `vincular-catalogo` muda de comportamento.
+  `alertar` vive só no body do job e no worker — `_shared/queue.ts` não muda, e a frota QStash
+  fica fora do deploy; job antigo sem o campo alerta normalmente.
