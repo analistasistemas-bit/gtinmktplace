@@ -1,8 +1,11 @@
-import { extrairEstadoOptin, montarPlanoAnuncio, montarUrlOptinUp, interpretarRespostaMatcher } from './lib/payload.js';
+import {
+  extrairEstadoOptin, montarPlanoAnuncio, montarUrlOptinUp, interpretarRespostaMatcher,
+} from './lib/payload.js';
 
 const ESPERA_ENTRE_ANUNCIOS_MS = 3000; // não martelar o ML
 
 const resultados = []; // guardarResultado() empilha aqui; usado pelo rodapé e pelo "copiar relatório"
+const resultadosEnvio = []; // resultado de cada enviarAnuncio(), também vai no "copiar relatório"
 
 async function lerCtxDaAba(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
@@ -55,6 +58,71 @@ function estadoBasePath(estado, urlAnuncio) {
   return estado?.contextData?.basePath ?? new URL(urlAnuncio).pathname.replace(/\/MLB\d+.*/, '');
 }
 
+// --- Envio real (só sob confirmação explícita) --------------------------
+
+// Injetada via executeScript — roda na página do ML, onde o navegador anexa cookies e o CSRF
+// está na meta tag. NUNCA chamada sem confirmação explícita do operador.
+function enviarNaPagina(url, metodo, body) {
+  const token = document.querySelector('meta[name=csrf-token]')?.content ?? '';
+  return fetch(url, {
+    method: metodo,
+    headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+    body: JSON.stringify(body),
+  }).then(async (r) => ({ status: r.status, corpo: await r.json().catch(() => null) }));
+}
+
+async function executarEnvio(tabId, url, metodo, body) {
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId }, world: 'MAIN', func: enviarNaPagina, args: [url, metodo, body],
+  });
+  return result;
+}
+
+async function enviarAnuncio(anuncio) {
+  // Reabre e RELÊ: o estado do dry-run pode ter envelhecido.
+  const { plano, basePath, tabId } = await dryRunAnuncio(anuncio);
+  try {
+    if (plano.tipo !== 'ok') return { anuncio, ok: false, etapa: 'releitura', motivo: plano.motivo };
+
+    // Chamada 1: multivariation_matcher_confirm (PATCH)
+    const urlMatcher = montarUrlOptinUp(basePath, anuncio.mlItemId, 'multivariation_matcher_confirm');
+    const r1 = await executarEnvio(tabId, urlMatcher, 'PATCH', {
+      productId: plano.productId,
+      confirmedProductMatches: plano.confirmedProductMatches,
+      flow: plano.flow,
+    });
+    if (r1.status === 403) return { anuncio, ok: false, etapa: 'matcher', status: 403, motivo: 'sessao_ml_caida_ou_csrf', corpo: r1.corpo };
+    if (r1.status < 200 || r1.status >= 300) return { anuncio, ok: false, etapa: 'matcher', status: r1.status, corpo: r1.corpo };
+
+    // Guard de eco + gates (invoice/anatel)
+    const seguinte = interpretarRespostaMatcher(r1.corpo, plano);
+    if (seguinte.acao !== 'summary') {
+      return {
+        anuncio, ok: false, etapa: 'pos-matcher', motivo: seguinte.motivo, corpo: r1.corpo,
+        aviso: 'Wizard iniciado no servidor; terminar este anúncio MANUALMENTE na página do ML.',
+      };
+    }
+
+    // Chamada 2: massive_summary_confirm (POST) — payload ECOADO da resposta 1
+    const urlSummary = montarUrlOptinUp(basePath, anuncio.mlItemId, 'massive_summary_confirm');
+    const r2 = await executarEnvio(tabId, urlSummary, 'POST', {
+      parentProductId: seguinte.parentProductId,
+      productAssociations: seguinte.productAssociations,
+      flow: plano.flow,
+      invoice: null,
+    });
+    if (r2.status < 200 || r2.status >= 300) {
+      return {
+        anuncio, ok: false, etapa: 'summary', status: r2.status, corpo: r2.corpo,
+        aviso: 'Matcher confirmado mas summary falhou; terminar este anúncio MANUALMENTE na página do ML.',
+      };
+    }
+    return { anuncio, ok: true, etapa: 'summary', status: r2.status, corpo: r2.corpo };
+  } finally {
+    if (tabId) await chrome.tabs.remove(tabId).catch(() => {});
+  }
+}
+
 // --- Render DOM puro ---------------------------------------------------
 
 function els() {
@@ -88,6 +156,7 @@ function renderLote(lote) {
       <td><span class="tag tag-pendente">pendente</span></td>
       <td>—</td>
       <td>—</td>
+      <td>—</td>
     `;
     corpo.appendChild(tr);
   }
@@ -97,7 +166,7 @@ function renderResultado(resultado) {
   const { corpo } = els();
   const tr = corpo.querySelector(`tr[data-ml-item-id="${cssEscape(resultado.anuncio.mlItemId)}"]`);
   if (!tr) return;
-  const [, tdEstado, tdResumo, tdPayload] = tr.children;
+  const [, tdEstado, tdResumo, tdPayload, tdAcao] = tr.children;
   const ok = resultado.plano.tipo === 'ok';
   tdEstado.innerHTML = `<span class="tag ${ok ? 'tag-ok' : 'tag-manual'}">${ok ? 'ok' : 'manual'}</span>`
     + (ok ? '' : `<br><small>${escapeHtml(resultado.plano.motivo)}</small>`)
@@ -112,6 +181,31 @@ function renderResultado(resultado) {
   detalhes.innerHTML = `<summary>payload</summary><pre>${escapeHtml(JSON.stringify(resultado.plano, null, 2))}</pre>`;
   tdPayload.innerHTML = '';
   tdPayload.appendChild(detalhes);
+
+  tdAcao.innerHTML = '';
+  if (ok) {
+    const botao = document.createElement('button');
+    botao.textContent = 'Enviar este';
+    botao.className = 'secundario';
+    botao.addEventListener('click', () => enviarComConfirmacao([resultado.anuncio]));
+    tdAcao.appendChild(botao);
+  } else {
+    tdAcao.textContent = '—';
+  }
+}
+
+function renderResultadoEnvio(resultadoEnvio) {
+  const { corpo } = els();
+  const tr = corpo.querySelector(`tr[data-ml-item-id="${cssEscape(resultadoEnvio.anuncio.mlItemId)}"]`);
+  if (!tr) return;
+  const [, tdEstado, , , tdAcao] = tr.children;
+  const tag = resultadoEnvio.ok ? 'tag-ok' : 'tag-manual';
+  const rotulo = resultadoEnvio.ok ? 'enviado' : `erro (${escapeHtml(resultadoEnvio.etapa)})`;
+  tdEstado.innerHTML = `<span class="tag ${tag}">${rotulo}</span>`
+    + (resultadoEnvio.motivo ? `<br><small>${escapeHtml(resultadoEnvio.motivo)}</small>` : '')
+    + (resultadoEnvio.aviso ? `<br><small><strong>${escapeHtml(resultadoEnvio.aviso)}</strong></small>` : '');
+  tdAcao.innerHTML = '';
+  tdAcao.textContent = resultadoEnvio.ok ? 'concluído' : '—';
 }
 
 function renderRodape() {
@@ -120,10 +214,51 @@ function renderRodape() {
   const manual = resultados.length - ok;
   rodape.hidden = false;
   rodape.textContent = `Dry-run concluído: ${ok} ok, ${manual} manual. NADA foi enviado ainda.`;
+  const { enviarTodos } = els();
+  enviarTodos.hidden = false;
+  enviarTodos.disabled = ok === 0;
 }
 
 function guardarResultado(resultado) {
   resultados.push(resultado);
+}
+
+function mostrarInstrucaoFinal() {
+  const { rodape } = els();
+  rodape.hidden = false;
+  rodape.textContent += ' No PubliAI, re-enfileire vincular-catalogo para as famílias deste lote '
+    + '(scripts/backfill-catalogo-pendente.ts) — a tela Catálogo em risco só reflete o novo estado depois disso.';
+}
+
+// Só os anúncios com dry-run 'ok' desta sessão do painel — nunca envia sem dry-run prévio.
+function candidatosOk(anuncios) {
+  return anuncios
+    .map((a) => resultados.find((r) => r.anuncio.mlItemId === a.mlItemId))
+    .filter((r) => r && r.plano.tipo === 'ok');
+}
+
+async function enviarComConfirmacao(anuncios) {
+  const candidatos = candidatosOk(anuncios);
+  if (candidatos.length === 0) return;
+  const totalNull = candidatos.reduce((s, r) => s + r.plano.resumo.null_enviados.length, 0);
+  const totalPreservados = candidatos.reduce((s, r) => s + r.plano.resumo.preservados.length, 0);
+  const confirmado = window.confirm(
+    `${candidatos.length} anúncio(s), ${totalNull} variações vão receber "não encontro", `
+    + `${totalPreservados} vínculos preservados. Enviar?`,
+  );
+  if (!confirmado) return;
+
+  for (const r of candidatos) {
+    const resultadoEnvio = await enviarAnuncio(r.anuncio);
+    renderResultadoEnvio(resultadoEnvio);
+    resultadosEnvio.push(resultadoEnvio);
+    if (resultadoEnvio.motivo === 'sessao_ml_caida_ou_csrf') {
+      window.alert('Sessão do ML caiu ou CSRF inválido. Faça login em mercadolivre.com.br e rode o dry-run de novo.');
+      break; // interrompe o lote inteiro — não insistir em erro de sessão
+    }
+    await new Promise((res) => setTimeout(res, ESPERA_ENTRE_ANUNCIOS_MS));
+  }
+  mostrarInstrucaoFinal();
 }
 
 function escapeHtml(s) {
@@ -140,18 +275,20 @@ async function main() {
   renderLote(lote); // tabela inicial, tudo "pendente"
 
   document.querySelector('#copiar-relatorio').addEventListener('click', () => {
-    navigator.clipboard.writeText(JSON.stringify(resultados, null, 2));
+    navigator.clipboard.writeText(JSON.stringify({ dryRun: resultados, envios: resultadosEnvio }, null, 2));
   });
+
+  document.querySelector('#enviar-todos-ok').addEventListener('click', () => enviarComConfirmacao(lote));
 
   document.querySelector('#rodar-dry-run').addEventListener('click', async () => {
     for (const anuncio of lote) {
       const resultado = await dryRunAnuncio(anuncio);
       renderResultado(resultado); // payload em <details>, contagens, motivo se manual
       if (resultado.tabId) await chrome.tabs.remove(resultado.tabId).catch(() => {});
-      guardarResultado(resultado); // em memória, para a Task 4 usar no envio
+      guardarResultado(resultado); // em memória, usado pelo envio (Task 4) e pelo relatório
       await new Promise((r) => setTimeout(r, ESPERA_ENTRE_ANUNCIOS_MS));
     }
-    renderRodape(); // total ok / manual, aviso de que NADA foi enviado
+    renderRodape(); // total ok / manual, aviso de que NADA foi enviado; habilita "Enviar todos os OK"
   });
 }
 
