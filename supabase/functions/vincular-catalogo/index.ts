@@ -1,6 +1,6 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarVinculacaoCatalogo, type VincularCatalogoJob } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarVinculacaoCatalogo, qstashClient, type VincularCatalogoJob } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { decidirResultadoRodadaCatalogo, decidirMotivoAlertaCatalogo, normalizarTentativaCatalogo } from '../_shared/ml/catalogo.ts';
@@ -9,12 +9,14 @@ import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { rodarVinculacaoCatalogo, type FilhoCatalogoUP } from './vinculacao.ts';
 
-type Job = VincularCatalogoJob;
+// `alertar` vive só no body do job (spec §1.4): estendido aqui por interseção para não tocar
+// queue.ts — mudar o arquivo compartilhado arrastaria a frota QStash inteira para o redeploy.
+type Job = VincularCatalogoJob & { alertar?: boolean };
 const CANAL = 'mercado_livre';
 
 // Cores das cores (itens) UP sem ficha equivalente, para o alerta no-match (ADR-0036). Re-lê o
 // catalog_status persistido pela vinculação e mapeia sku→cor a partir dos filhos já carregados.
-const NO_MATCH = new Set(['ficha_divergente', 'sem_produto', 'nao_elegivel']);
+const NO_MATCH = new Set(['ficha_divergente', 'sem_produto', 'nao_elegivel', 'pendente']);
 async function coresNoMatchUP(admin: ReturnType<typeof adminClient>, familia: { org_id: string; codigo_pai: string }, filhos: FilhoCatalogoUP[]): Promise<string[]> {
   const { data: raizes } = await admin.from('anuncios_externos')
     .select('id').eq('org_id', familia.org_id).eq('codigo_pai', familia.codigo_pai).eq('canal', CANAL);
@@ -30,8 +32,9 @@ async function coresNoMatchUP(admin: ReturnType<typeof adminClient>, familia: { 
 }
 
 // Worker do opt-in de catálogo (ADR-0021), deferido via QStash. A elegibilidade de catálogo do
-// ML só fica pronta minutos após o CREATE; este job roda com delay e, enquanto a elegibilidade
-// não estiver computada (variações `pendente`), devolve 500 para o QStash retentar.
+// ML só fica pronta minutos (às vezes dias) após o CREATE; este job roda com delay e as variações
+// `pendente` reagendam pelo mesmo backoff longo de `nao_elegivel` (1h/6h/24h/48h). O 500 fica só
+// para falha real (token/rede/leitura de elegibilidade).
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -44,6 +47,11 @@ Deno.serve(async (req) => {
   let job: Job;
   try { job = JSON.parse(body); }
   catch { return new Response('Body inválido', { status: 400, headers: corsHeaders }); }
+
+  // Backfill silencioso (spec §1.4): alertar=false suprime SÓ o Telegram desta cadeia; job sem o
+  // campo (todas as publicações normais) alerta como sempre. O campo é propagado no reagendar,
+  // então o silêncio morre quando a cadeia termina — sem estado em tabela, sem flag para desligar.
+  const silencioso = job.alertar === false;
 
   const admin = adminClient();
   const { data: familia } = await admin.from('familias')
@@ -71,12 +79,20 @@ Deno.serve(async (req) => {
     const tentativaAtual = normalizarTentativaCatalogo(job.tentativa as number);
     const resultado = decidirResultadoRodadaCatalogo(resumo, tentativaAtual);
 
-    if (resultado.acao === 'aguardar_elegibilidade') {
-      return new Response(`elegibilidade ainda não computada (${resumo.pendente} pendentes)`, { status: 500, headers: corsHeaders });
-    }
     if (resultado.acao === 'reagendar') {
-      await enfileirarVinculacaoCatalogo(job.familia_id, resultado.delaySegundos, resultado.proximaTentativa, 2);
-      console.log(`catálogo (job) ${familia.ml_item_id}: nao_elegivel na tentativa ${tentativaAtual}, reagendado p/ tentativa ${resultado.proximaTentativa} em +${resultado.delaySegundos}s`);
+      if (silencioso) {
+        // Publica direto para preservar `alertar: false` — enfileirarVinculacaoCatalogo não
+        // conhece o campo de propósito (queue.ts intocado = deploy de 8 funções, não 24).
+        await qstashClient().publishJSON({
+          url: `${Deno.env.get('SUPABASE_URL')!}/functions/v1/vincular-catalogo`,
+          body: { familia_id: job.familia_id, tentativa: resultado.proximaTentativa, alertar: false } satisfies Job,
+          delay: resultado.delaySegundos,
+          retries: 2,
+        });
+      } else {
+        await enfileirarVinculacaoCatalogo(job.familia_id, resultado.delaySegundos, resultado.proximaTentativa, 2);
+      }
+      console.log(`catálogo (job) ${familia.ml_item_id}: espera na tentativa ${tentativaAtual}, reagendado p/ tentativa ${resultado.proximaTentativa} em +${resultado.delaySegundos}s`);
       return new Response(JSON.stringify({ reagendado: true, proximaTentativa: resultado.proximaTentativa }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -100,14 +116,14 @@ Deno.serve(async (req) => {
         publicado_em: familia.publicado_em ?? null,
       }, varsEspelho ?? []);
       cores = [...new Set((varsEspelho ?? [])
-        .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto' || v.catalog_status === 'nao_elegivel')
+        .filter((v) => v.catalog_status === 'ficha_divergente' || v.catalog_status === 'sem_produto' || v.catalog_status === 'nao_elegivel' || v.catalog_status === 'pendente')
         .map((v) => (v as { cor?: string | null }).cor)
         .filter((c): c is string => !!c))];
     } else {
       cores = await coresNoMatchUP(admin, familia, vinc.filhos);
     }
 
-    if (resultado.deveAlertar) {
+    if (resultado.deveAlertar && !silencioso) {
       try {
         // ml_item_id = 1º item da partição 0 no UP (representante §5); serve de âncora do alerta.
         await notificarCategoria(admin, familia.org_id, 'moderacao',
