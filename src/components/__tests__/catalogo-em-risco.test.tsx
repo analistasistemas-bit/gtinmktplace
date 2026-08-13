@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CatalogoEmRisco } from '../catalogo-em-risco';
 import type { AnuncioEmRisco } from '@/lib/catalogo-risco';
@@ -37,6 +37,10 @@ describe('CatalogoEmRisco', () => {
 });
 
 describe('CatalogoEmRisco — botão da extensão (Fase 3)', () => {
+  afterEach(() => {
+    vi.mocked(useExtensaoCatalogo).mockReset();
+  });
+
   const anuncio = (over: Partial<AnuncioEmRisco>): AnuncioEmRisco => ({
     mlItemId: 'MLB1', titulo: 'Linha Xik', qtdSemFicha: 2, motivoPredominante: 'sem_produto',
     url: 'https://www.mercadolivre.com.br/produzir/catalogo/MLB1',
