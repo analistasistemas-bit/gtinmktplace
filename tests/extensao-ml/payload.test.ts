@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   extrairEstadoOptin, montarPlanoAnuncio, montarUrlOptinUp, interpretarRespostaMatcher,
-} from '../lib/payload.js';
+} from '../../extensao-ml/lib/payload.js';
 
 const attrs = [
   { id: 'COLOR', name: 'Cor', value_id: '52049', value_name: 'Preto', extra_chave: 'DEVE_SUMIR' },

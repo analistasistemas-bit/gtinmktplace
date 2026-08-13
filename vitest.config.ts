@@ -17,7 +17,9 @@ export default mergeConfig(
         './tests/**/*.test.{ts,tsx}',
         './src/**/__tests__/**/*.test.{ts,tsx}',
         './supabase/functions/**/__tests__/**/*.test.ts',
-        './extensao-ml/__tests__/**/*.test.{ts,js}',
+        // Os testes da extensão ficam FORA de extensao-ml/: o Chrome recusa carregar uma
+        // extensão que contenha pasta iniciada por "_" (nomes reservados), e __tests__ quebrava
+        // o "Carregar sem compactação". A pasta da extensão só contém o que vai para o browser.
       ],
     },
   })
