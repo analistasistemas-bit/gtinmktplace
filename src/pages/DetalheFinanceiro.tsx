@@ -10,6 +10,9 @@ import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { KpiInfoButton } from '@/components/ui/kpi-card';
@@ -17,6 +20,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
+import { resumoSelecaoSaque } from '@/lib/saque-selecao';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { agruparPorPedido, filtrarPedidosFinanceiro, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca, retidoDoPedido, rotuloNaoFaturavel, totaisFinanceiro, type FiltroFinanceiro, type Pedido } from '@/lib/pedidos-faturamento';
@@ -45,19 +49,31 @@ function fmtData(iso: string | null): string {
 }
 
 function CelulaLiberacao({
-  iso, sacadoEm, temMembrosSemDataLiberacao,
+  iso, sacadoEm, temMembrosSemDataLiberacao, faturavel,
 }: {
   iso: string | null;
   sacadoEm: string | null;
   temMembrosSemDataLiberacao: boolean;
+  faturavel: boolean;
 }) {
   const status = statusLiberacao({
     money_release_date: iso,
     sacado_em: sacadoEm,
     temMembrosSemDataLiberacao,
+    faturavel,
   });
   if (status === 'sem_data') {
     return <TableCell className="align-top whitespace-nowrap text-sm tabular-nums text-muted-foreground">—</TableCell>;
+  }
+  // Devolvido: a data que o ML gravou antes da devolução continua lá, mas não significa mais nada —
+  // mostrar "10/08 liberado" numa linha devolvida é anunciar dinheiro que voltou ao comprador.
+  if (status === 'sem_direito') {
+    return (
+      <TableCell className="align-top whitespace-nowrap text-sm tabular-nums text-muted-foreground">
+        <span className="block">—</span>
+        <span className="text-xs">{labelStatusLiberacao(status)}</span>
+      </TableCell>
+    );
   }
   return (
     <TableCell className="align-top whitespace-nowrap text-sm tabular-nums">
@@ -176,6 +192,7 @@ function LinhaDetalhe({
           iso={p.money_release_date}
           sacadoEm={p.sacado_em}
           temMembrosSemDataLiberacao={p.temMembrosSemDataLiberacao}
+          faturavel={p.faturavel}
         />
         <TableCell className={cn(
           'align-top text-right text-sm tabular-nums',
@@ -393,6 +410,7 @@ export default function DetalheFinanceiro() {
         money_release_date: pedido.money_release_date,
         sacado_em: pedido.sacado_em,
         temMembrosSemDataLiberacao: pedido.temMembrosSemDataLiberacao,
+        faturavel: pedido.faturavel,
       }, now);
       if (status === statusEsperado) {
         ids.push(...pedido.vendaIds);
@@ -403,10 +421,21 @@ export default function DetalheFinanceiro() {
     return { ids, ignoradosCliente };
   }
 
+  // Confirmação de saque em massa: guarda os dados da operação já validada até o operador
+  // confirmar. null = nada pendente.
+  const [confirmarSaque, setConfirmarSaque] = useState<SaqueMutationVars | null>(null);
+
   function onRegistrarSaque() {
     const { ids, ignoradosCliente } = vendaIdsPorStatus('liberado');
     if (ids.length === 0) {
       toast.error('Selecione pedido(s) liberado(s).');
+      return;
+    }
+    // Acima do limite, confirma antes: "selecionar todos" marca a página inteira, e o operador
+    // pode não ter percebido o tamanho da seleção.
+    const elegiveis = selecionadosVisiveis.filter((p) => p.faturavel && p.sacado_em == null);
+    if (resumoSelecaoSaque(elegiveis).precisaConfirmar) {
+      setConfirmarSaque({ ids, ignoradosCliente });
       return;
     }
     mutationRegistrar.mutate({ ids, ignoradosCliente });
@@ -425,6 +454,11 @@ export default function DetalheFinanceiro() {
   // só faturáveis — igual ao banner de KPIs (ADR-0038).
   const totaisFiltrados = useMemo(() => totaisFinanceiro(pedidosFiltrados), [pedidosFiltrados]);
 
+  // Números do diálogo de confirmação: mesma base elegível que o handler usou para decidir.
+  const resumoConfirmacao = resumoSelecaoSaque(
+    selecionadosVisiveis.filter((p) => p.faturavel && p.sacado_em == null),
+  );
+
   const markupTotal = totaisFiltrados.markup;
 
   return (
@@ -439,6 +473,7 @@ export default function DetalheFinanceiro() {
             <BotaoExportar
               temExpansao
               temKpis
+              totalLinhas={pedidosOrdenados.length}
               montarReport={(config) =>
                 buildFinanceiroDetalheReport({
                   pedidos: pedidosOrdenados,
@@ -594,6 +629,29 @@ export default function DetalheFinanceiro() {
           </div>
         </div>
       )}
+
+      <Dialog open={confirmarSaque != null} onOpenChange={(o) => !o && setConfirmarSaque(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Registrar saque de {fmtInt(resumoConfirmacao.quantidade)} pedidos?</DialogTitle>
+            <DialogDescription>
+              Marca {fmtBRL(resumoConfirmacao.valor)} como já sacado. Não movimenta dinheiro no
+              Mercado Livre — é o seu controle de conciliação, e dá para desfazer.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmarSaque(null)}>Cancelar</Button>
+            <Button
+              onClick={() => {
+                if (confirmarSaque) mutationRegistrar.mutate(confirmarSaque);
+                setConfirmarSaque(null);
+              }}
+            >
+              <CheckCircle2 className="mr-1.5 h-4 w-4" />Registrar saque
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <p className="mt-4 text-xs text-muted-foreground">
         Cada linha é um pedido do período (carrinho do cliente; packs agrupados, igual ao Faturamento);

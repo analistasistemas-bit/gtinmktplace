@@ -28,6 +28,9 @@ interface BotaoExportarProps {
   temKpis?: boolean;
   /** PDF visual sempre inclui todos os indicadores. */
   pdfSempreCompleto?: boolean;
+  /** Nº de linhas que o export vai conter. Quando alto, o diálogo avisa antes de gerar — um PDF de
+   *  centenas de páginas costuma ser engano de filtro, não intenção. */
+  totalLinhas?: number;
   /** Tamanho do botão (default 'sm'). */
   size?: 'sm' | 'default';
   className?: string;
@@ -45,6 +48,7 @@ export function BotaoExportar({
   temExpansao = false,
   temKpis = false,
   pdfSempreCompleto = false,
+  totalLinhas,
   size = 'sm',
   className,
 }: BotaoExportarProps) {
@@ -53,7 +57,10 @@ export function BotaoExportar({
   const [incluirKpis, setIncluirKpis] = useState(true);
   const [gerando, setGerando] = useState(false);
 
-  const precisaPerguntar = temExpansao || temKpis;
+  const AVISO_VOLUME = 200;
+  const volumoso = totalLinhas != null && totalLinhas > AVISO_VOLUME;
+  // Com volume alto, abre o diálogo mesmo sem opções a perguntar — o aviso é a razão de abrir.
+  const precisaPerguntar = temExpansao || temKpis || volumoso;
   const mostrarOpcaoKpis = temKpis && !(pdfSempreCompleto && formato === 'pdf');
 
   async function disparar(config: ExportConfig) {
@@ -80,6 +87,14 @@ export function BotaoExportar({
     await disparar({ formato, expandido, incluirKpis: incluirKpisEfetivo });
     setFormato(null);
   }
+
+  const volumeAlto = volumoso ? (
+    <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-sm text-warning">
+      Este export terá <strong>{totalLinhas!.toLocaleString('pt-BR')} linhas</strong>
+      {expandido ? ' (mais o detalhe de cada item)' : ''}. Se não era essa a intenção, feche e
+      refine o filtro ou a busca da tela antes de gerar.
+    </div>
+  ) : null;
 
   return (
     <>
@@ -112,6 +127,8 @@ export function BotaoExportar({
             <DialogTitle>Opções de exportação{formato ? ` · ${ROTULO_FORMATO[formato]}` : ''}</DialogTitle>
             <DialogDescription>Exporta os dados conforme os filtros aplicados na tela.</DialogDescription>
           </DialogHeader>
+
+          {volumeAlto}
 
           <div className="space-y-5 py-1">
             {temExpansao && (

@@ -614,8 +614,12 @@ export function buildFinanceiroDetalheReport(args: FinanceiroDetalheArgs): Repor
             money_release_date: p.money_release_date,
             sacado_em: p.sacado_em,
             temMembrosSemDataLiberacao: p.temMembrosSemDataLiberacao,
+            faturavel: p.faturavel,
           });
           if (status === 'sem_data') return '—';
+          // 'sem_direito' (devolvido): a data do ML continua gravada mas não vale mais — imprimi-la
+          // ao lado do rótulo sugeriria um recebimento que não existe.
+          if (status === 'sem_direito') return labelStatusLiberacao(status);
           return p.money_release_date
             ? `${fmtData(p.money_release_date)} · ${labelStatusLiberacao(status)}`
             : labelStatusLiberacao(status);
