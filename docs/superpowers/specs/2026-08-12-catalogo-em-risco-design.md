@@ -166,8 +166,10 @@ e a evidência mostra que já está, então tendem a resolver na primeira rodada
 A rodada executa o opt-in normal antes de decidir: famílias cuja elegibilidade amadureceu vinculam
 sozinhas no caminho.
 
-Disparo por script de manutenção reutilizando `enfileirarVinculacaoCatalogo`, respeitando a
-serialização por usuário já existente.
+Disparo por script de manutenção reutilizando `enfileirarVinculacaoCatalogo`. **Não há fila
+serializada neste caminho** — `enfileirarVinculacaoCatalogo` publica direto no QStash (a
+`garantirFilaSerial` é do `publicar-familias`, outro fluxo). O script escalona os disparos por
+delay crescente para não saturar a API do ML.
 
 ---
 
