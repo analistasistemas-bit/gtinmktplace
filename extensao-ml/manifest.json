@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "PubliAI — Resolver catálogo no ML",
+  "version": "0.1.0",
+  "description": "Aplica 'Não encontro minha variação' em massa, na sessão logada do operador. Dry-run por padrão.",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": [
+    "*://*.mercadolivre.com.br/*",
+    "https://publiai.daludi.com.br/*",
+    "https://ean2marketplace-frontend.onrender.com/*"
+  ],
+  "background": { "service_worker": "sw.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://publiai.daludi.com.br/*", "https://ean2marketplace-frontend.onrender.com/*"],
+      "js": ["content-publiai.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

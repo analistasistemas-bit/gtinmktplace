@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>PubliAI — Resolver catálogo no ML</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 1.5rem; background: #f7f7f8; color: #1a1a1a; }
+    h1 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+    .aviso { background: #fff3cd; border: 1px solid #e6c260; border-radius: 6px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #ddd; border-radius: 6px; overflow: hidden; }
+    th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid #eee; font-size: 0.85rem; vertical-align: top; }
+    th { background: #f0f0f2; }
+    .tag { display: inline-block; border-radius: 4px; padding: 0.1rem 0.4rem; font-size: 0.75rem; font-weight: 600; }
+    .tag-ok { background: #d4edda; color: #1e7e34; }
+    .tag-manual { background: #f8d7da; color: #a02834; }
+    .tag-pendente { background: #eee; color: #555; }
+    button { cursor: pointer; border: 1px solid #333; background: #1a1a1a; color: #fff; border-radius: 5px; padding: 0.45rem 0.9rem; font-size: 0.85rem; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.secundario { background: #fff; color: #1a1a1a; }
+    .acoes { display: flex; gap: 0.6rem; margin: 1rem 0; }
+    details { margin-top: 0.25rem; }
+    pre { max-width: 40rem; overflow: auto; background: #f4f4f5; padding: 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+    #vazio { color: #666; }
+    #rodape { margin-top: 1rem; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>PubliAI — Resolver catálogo no ML</h1>
+  <p class="aviso" id="aviso-dry-run">DRY-RUN — nada foi enviado ainda.</p>
+  <p id="vazio" hidden>Nenhum lote encontrado. Abra "Resolver todos no ML" no PubliAI.</p>
+
+  <table id="tabela-lote" hidden>
+    <thead>
+      <tr>
+        <th>Anúncio</th>
+        <th>Estado</th>
+        <th>Resumo</th>
+        <th>Payload</th>
+      </tr>
+    </thead>
+    <tbody id="corpo-tabela"></tbody>
+  </table>
+
+  <div class="acoes">
+    <button id="rodar-dry-run" hidden>Rodar dry-run</button>
+    <button id="enviar-todos-ok" class="secundario" disabled hidden>Enviar todos os OK</button>
+    <button id="copiar-relatorio" class="secundario" disabled hidden>Copiar relatório JSON</button>
+  </div>
+
+  <p id="rodape" hidden></p>
+
+  <script type="module" src="painel.js"></script>
+</body>
+</html>
