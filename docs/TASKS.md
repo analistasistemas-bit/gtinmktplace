@@ -25,6 +25,11 @@
   Faturamento e no Dashboard).
 - [x] Migration aplicada e verificada em produção: 0 compras, 0 saques indevidos, 695→649 sacadas,
   `db:check` alinhado. 3.026 testes verdes; validado em runtime com dados injetados (screenshots).
+- [x] **Médios fechados (mesma data):** `statusLiberacao` ganhou `sem_direito` (a aba Devolvidos
+  mostrava "liberado" numa linha devolvida); confirmação no saque acima de 20 pedidos com
+  quantidade e valor; aviso de volume no export acima de 200 linhas. O 4º médio (KPIs duplicados)
+  já tinha caído com a tela enxuta. Validados em runtime: 49 pedidos/R$ 763,84 no diálogo,
+  252 linhas no aviso de export.
 - [ ] **Pendente (fora do escopo desta rodada):** `upsertDevolucao` também não valida se a order é
   uma venda — um claim sobre compra pode recriar linha em `ml_devolucoes`.
 

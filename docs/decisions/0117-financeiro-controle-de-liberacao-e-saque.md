@@ -46,6 +46,25 @@ Estorno é dinheiro que saiu, e a maior fonte dele são justamente as devoluçõ
 - **Filtrar compras só na leitura.** Deixaria o dado sujo no banco e não protegeria nenhum consumidor novo.
 - **Manter cancelados na lista, apenas bloqueando o saque.** Foi o estado intermediário (commit `82acc061`). Insuficiente: a tela de recebimento continuaria listando o que não tem dinheiro a receber, e a proteção dependeria de o operador não clicar.
 
+## Adendo 2026-08-12 — os 3 médios
+
+Fechados na mesma data, a pedido do Diego:
+
+- **`statusLiberacao` ganhou o estado `sem_direito`.** A régua decidia só por data, e a devolução
+  mantém a `money_release_date` gravada quando a venda ainda valia — então a aba `Devolvidos`
+  anunciava "10/08/2026 liberado" para dinheiro que voltou ao comprador. `faturavel: false` agora
+  vence a régua; tela e PDF omitem a data. O campo é opcional na entrada (quem não tem a
+  informação preserva o comportamento anterior), mas todos os consumidores do Financeiro passam.
+- **Confirmação no saque em massa** acima de 20 pedidos (`resumoSelecaoSaque`, função pura), com
+  quantidade e soma em R$ na mesma base da coluna "Líquido" — e deixando claro que a marca é
+  conciliação local, não movimentação no ML.
+- **Aviso de volume na exportação:** `BotaoExportar` recebe `totalLinhas` opcional e, acima de 200,
+  avisa antes de gerar (abrindo o diálogo mesmo quando não há outra opção a perguntar). Não corta
+  dado — exportar meia lista seria pior que o problema.
+
+O quarto médio (KPIs de lucratividade duplicando o Faturamento) já havia sido resolvido pela
+decisão 1 deste ADR.
+
 ## Fora de escopo
 
 `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) também não valida se a order é uma venda, então um claim sobre compra pode recriar linha em `ml_devolucoes`. Não corrigido aqui: é o menu Faturamento, e a trava óbvia (exigir venda existente) arriscaria descartar devolução legítima cuja venda ainda não sincronizou. Registrado para a próxima rodada.
