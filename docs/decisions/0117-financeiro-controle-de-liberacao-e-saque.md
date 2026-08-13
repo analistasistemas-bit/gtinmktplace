@@ -65,6 +65,30 @@ Fechados na mesma data, a pedido do Diego:
 O quarto médio (KPIs de lucratividade duplicando o Faturamento) já havia sido resolvido pela
 decisão 1 deste ADR.
 
+## Adendo 2026-08-13 — a trava tinha que estar em `upsertVenda`, não no worker
+
+A decisão 2 acima (trava na ingestão) foi implementada no `sync-venda`, e isso **não bastou**:
+`upsertVenda` tem quatro chamadores, e o `sync-devolucao` reprocessa o pedido de cada claim pelo
+mesmo pipeline para recalcular líquido/estorno (ADR-0093). Como os claims do ML incluem os que a
+conta abriu como compradora, ele recriou as 23 compras **27 minutos depois** da migration de
+limpeza — descoberto ao investigar o item seguinte da lista, não por alerta.
+
+Correção: a guarda vive dentro de `upsertVenda`, com `contaExternaId` **obrigatório** em `opts` —
+o mesmo recurso que o ADR-0109 usa no `custoVigenteResolver` para o compilador cobrar de todo
+caller, presente e futuro. A guarda do `sync-venda` continua, agora como otimização (evita buscar
+catálogo e Mercado Pago antes de descobrir que é compra), não como a proteção.
+
+Junto, `upsertDevolucao` passou a recusar claim sobre compra (`ehClaimDeCompra`), decidindo pelos
+players `buyer`/`seller`. **`sender`/`receiver` não servem**: são papéis logísticos e se invertem na
+devolução — o vendedor é quem *recebe* o produto de volta — então usá-los classificaria toda
+devolução de venda como compra. Sem `buyer`/`seller` nos players (60% dos claims reais), grava como
+antes: só descarta com evidência positiva.
+
+**Lição que vale além deste caso:** ao travar uma regra numa função compartilhada, a pergunta não é
+"onde o defeito apareceu" e sim "quantos caminhos chegam aqui". `grep` nos callers antes de
+escolher a camada; se são vários, a trava desce para o ponto por onde todos passam — e vira
+parâmetro obrigatório, para o compilador guardar a regra no lugar da disciplina.
+
 ## Fora de escopo
 
 `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) também não valida se a order é uma venda, então um claim sobre compra pode recriar linha em `ml_devolucoes`. Não corrigido aqui: é o menu Faturamento, e a trava óbvia (exigir venda existente) arriscaria descartar devolução legítima cuja venda ainda não sincronizou. Registrado para a próxima rodada.

@@ -30,8 +30,11 @@
   quantidade e valor; aviso de volume no export acima de 200 linhas. O 4º médio (KPIs duplicados)
   já tinha caído com a tela enxuta. Validados em runtime: 49 pedidos/R$ 763,84 no diálogo,
   252 linhas no aviso de export.
-- [ ] **Pendente (fora do escopo desta rodada):** `upsertDevolucao` também não valida se a order é
-  uma venda — um claim sobre compra pode recriar linha em `ml_devolucoes`.
+- [x] **Regressão corrigida (13/08):** as 23 compras VOLTARAM 27 min após a primeira migration — a
+  guarda ficou no `sync-venda`, mas `upsertVenda` tem 4 chamadores e o `sync-devolucao` reprocessa
+  o pedido de cada claim. Trava movida para dentro do `upsertVenda` (`contaExternaId` obrigatório);
+  `upsertDevolucao` recusa claim de compra via `ehClaimDeCompra`. 4 functions redeployadas ANTES da
+  limpeza; segunda migration apagou 23 compras + 25 claims de compra.
 
 ## Financeiro — venda devolvida aparecia como retida pelo ML (ADR-0038) — 2026-08-12
 
