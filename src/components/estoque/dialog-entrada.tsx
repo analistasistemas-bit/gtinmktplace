@@ -87,10 +87,10 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, filtroInicial }: {
       } else {
         toast.success(`✓ Entrada registrada. Saldo de ${codigo}: ${r.estoque}`);
       }
-      qc.invalidateQueries({ queryKey: ['produtos-estoque-resumo'] });
+      qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       qc.invalidateQueries({ queryKey: ['skus-estoque-org'] });
       if (selecionada) {
-        qc.invalidateQueries({ queryKey: ['variacoes-estoque', selecionada.codigoPai] });
+        qc.invalidateQueries({ queryKey: QK.variacoesEstoque(selecionada.codigoPai) });
         qc.invalidateQueries({ queryKey: QK.movimentosEstoque(selecionada.codigoPai) });
       }
       onFechar();

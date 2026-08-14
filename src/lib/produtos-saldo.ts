@@ -58,6 +58,8 @@ export interface ProdutoEstoqueResumo {
   codigos: string[];
   /** Cores das variações canônicas — filtro client-side de busca. */
   cores: string[];
+  /** Nomes das variações canônicas — filtro client-side de busca. */
+  nomes: string[];
   /** Preenchido quando qtdSkus === 1 — pré-seleção no DialogEntrada. */
   skuUnico: string | null;
 }
@@ -125,6 +127,7 @@ interface ProdutoResumoRpc {
   gtins: string[];
   codigos: string[];
   cores: string[];
+  nomes: string[];
   sku_unico: string | null;
 }
 
@@ -179,6 +182,7 @@ export function mapResumoEstoqueRpc(raw: ResumoRpcRaw): ResumoEstoqueRpc {
       gtins: p.gtins ?? [],
       codigos: p.codigos ?? [],
       cores: p.cores ?? [],
+      nomes: p.nomes ?? [],
       skuUnico: p.sku_unico,
     })),
   };

@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
+import { QK } from '@/lib/queries';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
 
 const cadastrarProdutoMock = vi.fn().mockRejectedValue(new Error('falhou'));
@@ -558,20 +559,20 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
   });
 
   // Achado (revisão de baixas): o comentário em `salvar()` chama a 2ª invalidação de
-  // ['produtos-saldo'] de "OBRIGATÓRIA" — a 1ª roda antes dos uploads, e `imagem_path` /
+  // `QK.produtosEstoqueResumo` de "OBRIGATÓRIA" — a 1ª roda antes dos uploads, e `imagem_path` /
   // `capa_storage_path` só são gravados dentro de `uploadFotoProduto`, chamado pelo lote
   // automático. Sem um teste pinando essa chamada, um refactor futuro podia removê-la
   // (parecendo redundante) e o card voltaria a ficar com placeholder mesmo com a foto já
   // enviada, sem nenhum teste acusando.
   //
-  // `uploadFotoProdutoMock` REJEITA de propósito: `subirFoto` só invalida `produtos-saldo` no
+  // `uploadFotoProdutoMock` REJEITA de propósito: `subirFoto` só invalida o resumo no
   // caminho de SUCESSO (antes do `toast.success`), então com sucesso ela mascararia a remoção
   // da 2ª invalidação de `salvar()` — o total continuaria >= 2 mesmo sem a linha "OBRIGATÓRIA"
   // (1ª do cadastro + a de `subirFoto`). Forçando a falha, a invalidação de `subirFoto` não
   // dispara, e o total só bate 2 se a 2ª chamada de `salvar()` (incondicional, roda depois de
   // `subirLoteDeFotos` mesmo com falha) ainda existir — é essa, especificamente, que este
   // teste prova.
-  it('lote automático de fotos invalida produtos-saldo pelo menos duas vezes mesmo quando o upload da foto falha', async () => {
+  it('lote automático de fotos invalida resumo estoque pelo menos duas vezes mesmo quando o upload da foto falha', async () => {
     cadastrarProdutoMock.mockResolvedValueOnce({
       loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
       variacoes: [{ id: 'v1', codigo: '00000005' }],
@@ -601,10 +602,10 @@ describe('DialogCadastroProduto — lote de fotos (casamento posicional)', () =>
     // invalidação em si.
     expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
 
-    const chamadasProdutosSaldo = invalidateSpy.mock.calls.filter(
-      ([arg]) => (arg as { queryKey?: unknown[] } | undefined)?.queryKey?.[0] === 'produtos-saldo',
+    const chamadasResumo = invalidateSpy.mock.calls.filter(
+      ([arg]) => (arg as { queryKey?: unknown[] } | undefined)?.queryKey?.[0] === QK.produtosEstoqueResumo[0],
     );
-    expect(chamadasProdutosSaldo.length).toBeGreaterThanOrEqual(2);
+    expect(chamadasResumo.length).toBeGreaterThanOrEqual(2);
   });
 
   // Achado real: retry idempotente pode devolver o cadastro ORIGINAL da edge, com uma

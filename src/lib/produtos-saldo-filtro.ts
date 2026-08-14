@@ -44,7 +44,7 @@ export function canaisEfetivos(p: ProdutoEstoqueResumo, canais: Map<string, stri
 }
 
 function casaTermo(p: ProdutoEstoqueResumo, termo: string): boolean {
-  const alvos = [p.nomePai, p.codigoPai, p.fornecedor ?? '', ...p.gtins, ...p.codigos, ...p.cores];
+  const alvos = [p.nomePai, p.codigoPai, p.fornecedor ?? '', ...p.gtins, ...p.codigos, ...p.cores, ...p.nomes];
   return alvos.some((a) => normalizar(a).includes(termo));
 }
 

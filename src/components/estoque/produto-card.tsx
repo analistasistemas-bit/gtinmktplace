@@ -17,6 +17,7 @@ import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { VariacaoEstoqueLinha, CabecalhoVariacoes, PillSaldo } from '@/components/estoque/variacao-estoque-linha';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { cn } from '@/lib/utils';
+import { QK } from '@/lib/queries';
 import {
   fetchVariacoesProduto, mergeProdutoComVariacoes,
   urlFotoMl, type ProdutoComSaldo, type ProdutoEstoqueResumo,
@@ -84,7 +85,7 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
   const capa = capaUrl ?? urlFotoMl(produto.capaMlPictureId);
 
   const { data: variacoes, isLoading: variacoesLoading } = useQuery({
-    queryKey: ['variacoes-estoque', produto.codigoPai],
+    queryKey: QK.variacoesEstoque(produto.codigoPai),
     queryFn: () => fetchVariacoesProduto(produto.codigoPai),
     enabled: aberto,
     staleTime: 30_000,

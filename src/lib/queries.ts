@@ -39,6 +39,9 @@ export const QK = {
   conexoes: ['conexoes'] as const,
   canaisHabilitados: ['canais-habilitados'] as const,
   modulosHabilitados: ['modulos-habilitados'] as const,
+  produtosEstoqueResumo: ['produtos-estoque-resumo'] as const,
+  canaisPorProduto: ['canais-por-produto'] as const,
+  variacoesEstoque: (codigoPai: string) => ['variacoes-estoque', codigoPai] as const,
   // Prefixo: invalida todas as páginas do produto de uma vez (ex.: após registrar uma entrada).
   movimentosEstoque: (codigoPai: string) => ['movimentos-estoque', codigoPai] as const,
   /** Página concreta. Estende o prefixo acima — invalidar o prefixo alcança todas as páginas. */

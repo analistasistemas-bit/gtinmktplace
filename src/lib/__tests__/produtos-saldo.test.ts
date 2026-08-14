@@ -177,7 +177,7 @@ describe('mapResumoEstoqueRpc', () => {
         capa_storage_path: null, capa_ml_picture_id: 'PIC1',
         fornecedor: 'X', unidade: 'UN', origem: 'nacional',
         ml_item_id: null, criado_em: '2026-08-01T10:00:00Z',
-        gtins: ['789'], codigos: ['A1', 'A2'], cores: ['Azul'], sku_unico: null,
+        gtins: ['789'], codigos: ['A1', 'A2'], cores: ['Azul'], nomes: ['Camiseta P'], sku_unico: null,
       }],
     });
     expect(r.kpis.skusSemEstoque).toBe(1);
@@ -185,5 +185,6 @@ describe('mapResumoEstoqueRpc', () => {
     expect(r.produtos[0].codigoPai).toBe('P1');
     expect(r.produtos[0].gtins).toEqual(['789']);
     expect(r.produtos[0].cores).toEqual(['Azul']);
+    expect(r.produtos[0].nomes).toEqual(['Camiseta P']);
   });
 });

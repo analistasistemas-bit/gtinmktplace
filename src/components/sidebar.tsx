@@ -6,6 +6,7 @@ import { useProfile } from '@/hooks/useProfile';
 import { visibleMenus, type MenuKey } from '@/lib/menus';
 import { menusDeModulosDesabilitados } from '@/lib/modulos';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { usePrefetchEstoque } from '@/hooks/usePrefetchEstoque';
 import { useSupportStore } from '@/stores/support-store';
 
 export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboard; end: boolean; key: MenuKey }[] = [
@@ -30,18 +31,21 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { profile } = useProfile();
   const context = useSupportStore((state) => state.context);
   const { data: modulos } = useModulosHabilitados();
+  const { prefetchEstoque } = usePrefetchEstoque();
   const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context));
   // Módulo desligado (ou ainda carregando) → menu some. Falha fechada: mostrar e sumir
   // é pior que aparecer um instante depois.
   for (const m of menusDeModulosDesabilitados(modulos ?? [])) allowed.delete(m);
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
-      {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end }) => (
+      {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end, key }) => (
         <NavLink
           key={to}
           to={to}
           end={end}
           onClick={onNavigate}
+          onMouseEnter={key === 'estoque' ? prefetchEstoque : undefined}
+          onFocus={key === 'estoque' ? prefetchEstoque : undefined}
           className={({ isActive }) =>
             cn(
               'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50',

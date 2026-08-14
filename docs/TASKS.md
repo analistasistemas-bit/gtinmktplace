@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — P2 busca + prefetch — 2026-08-14
+
+- [x] **P2.1 — Busca por nome de variação.** Migration `20260814184715_estoque_p2_nomes_busca.sql`:
+  `produtos_estoque_resumo()` agrega array `nomes` das variações canônicas; `casaTermo()` inclui
+  `...p.nomes` nos alvos de busca client-side.
+- [x] **P2.2 — Prefetch + cache.** Chaves centralizadas em `QK` (`produtosEstoqueResumo`,
+  `canaisPorProduto`, `variacoesEstoque`); `staleTime` do resumo 180s e canais 120s; hook
+  `usePrefetchEstoque` dispara prefetch no hover/focus do menu Estoque (só com módulo habilitado).
+- [x] **Testes.** `produtos-saldo-filtro` (nome variação), `mapResumoEstoqueRpc`, Estoque, produto-card.
+- [x] **Fix cadastro.** `dialog-cadastro-produto` invalida `QK.produtosEstoqueResumo` (chave morta `produtos-saldo` desde P0/P1).
+
 ## Estoque — performance carga Avil — 2026-08-14
 
 - [x] **Motivo.** Org Avil carregava 5388 linhas de variação em 6 páginas HTTP sequenciais (~40% descartadas no browser pelo corte de família canônica). Query DB ~13ms — gargalo era rede + payload + agrupamento client-side.

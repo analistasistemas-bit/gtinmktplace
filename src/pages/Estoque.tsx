@@ -18,6 +18,7 @@ import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque'
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { filtrarProdutos, canaisEfetivos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
+import { QK } from '@/lib/queries';
 import {
   fetchProdutosEstoqueResumo, fetchCanaisPorProduto,
   type ProdutoComSaldo, type ProdutoEstoqueResumo,
@@ -42,10 +43,10 @@ export default function Estoque() {
   const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoqueResumo | null>(null);
 
   const { data: estoque, isLoading, isError } = useQuery({
-    queryKey: ['produtos-estoque-resumo'],
+    queryKey: QK.produtosEstoqueResumo,
     queryFn: fetchProdutosEstoqueResumo,
     enabled: !!modulos?.includes('estoque'),
-    staleTime: 30_000,
+    staleTime: 180_000,
   });
 
   const produtos = estoque?.produtos ?? [];
@@ -54,10 +55,10 @@ export default function Estoque() {
   const {
     data: canaisPorProduto, isLoading: canaisLoading, isError: canaisErro,
   } = useQuery({
-    queryKey: ['canais-por-produto'],
+    queryKey: QK.canaisPorProduto,
     queryFn: fetchCanaisPorProduto,
     enabled: !!modulos?.includes('estoque'),
-    staleTime: 60_000,
+    staleTime: 120_000,
   });
   const canaisIndisponivel = canaisLoading || canaisErro;
 

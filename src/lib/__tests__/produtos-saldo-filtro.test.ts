@@ -8,7 +8,7 @@ function produto(over: Partial<ProdutoEstoqueResumo> = {}): ProdutoEstoqueResumo
     capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN',
     origem: 'nacional', mlItemId: null, criadoEm: '2026-08-01T10:00:00Z',
     saldoTotal: 20, qtdSkus: 1, skuUnico: '00000002',
-    gtins: ['4005800241901'], codigos: ['00000002'], cores: ['incolor'],
+    gtins: ['4005800241901'], codigos: ['00000002'], cores: ['incolor'], nomes: [],
     ...over,
   };
 }
@@ -26,6 +26,11 @@ describe('filtrarProdutos — busca', () => {
 
   it('acha pela cor da variação', () => {
     expect(filtrarProdutos([produto()], { ...base, termo: 'incolor' })).toHaveLength(1);
+  });
+
+  it('acha pelo nome da variação', () => {
+    const p = produto({ nomes: ['Protetor FPS 50+'] });
+    expect(filtrarProdutos([p], { ...base, termo: 'fps 50' })).toHaveLength(1);
   });
 
   it('ignora acento e caixa', () => {

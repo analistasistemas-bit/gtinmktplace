@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import Estoque from '../Estoque';
+import { QK } from '@/lib/queries';
 import type { ProdutoEstoqueResumo, ResumoEstoqueRpc } from '@/lib/produtos-saldo';
 
 // `typeof import(...)` em vez de `import type { filtrarProdutos as X }`: importar um VALOR sob
@@ -15,7 +16,7 @@ const produto: ProdutoEstoqueResumo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
   capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20, qtdSkus: 1, skuUnico: '00000005',
-  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'],
+  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'], nomes: [],
 };
 
 const resumoMock: ResumoEstoqueRpc = {
@@ -111,7 +112,7 @@ describe('Estoque', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     // Semeia a query já resolvida, para poder selecionar "não publicado" antes de forçar o erro
     // — a opção fica desabilitada durante loading/erro, então só dá pra clicar nela com sucesso.
-    qc.setQueryData(['canais-por-produto'], new Map());
+    qc.setQueryData(QK.canaisPorProduto, new Map());
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter><Estoque /></MemoryRouter>
@@ -123,7 +124,7 @@ describe('Estoque', () => {
     expect(screen.getByRole('button', { name: 'Não publicado' })).toHaveAttribute('data-variant', 'secondary');
 
     fetchCanaisPorProdutoMock.mockRejectedValueOnce(new Error('falhou ao carregar canais'));
-    await qc.refetchQueries({ queryKey: ['canais-por-produto'] });
+    await qc.refetchQueries({ queryKey: QK.canaisPorProduto });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Não publicado' })).toBeDisabled();
@@ -151,7 +152,7 @@ describe('Estoque', () => {
   it('canais falham com "não publicado" selecionado: nenhuma chamada de filtrarProdutos combina o filtro velho com canais indisponíveis (sem flash de lista vazia)', async () => {
     const user = userEvent.setup();
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(['canais-por-produto'], new Map());
+    qc.setQueryData(QK.canaisPorProduto, new Map());
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter><Estoque /></MemoryRouter>
@@ -162,7 +163,7 @@ describe('Estoque', () => {
 
     filtrarProdutosMock.mockClear();
     fetchCanaisPorProdutoMock.mockRejectedValueOnce(new Error('falhou ao carregar canais'));
-    await qc.refetchQueries({ queryKey: ['canais-por-produto'] });
+    await qc.refetchQueries({ queryKey: QK.canaisPorProduto });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Não publicado' })).toBeDisabled();

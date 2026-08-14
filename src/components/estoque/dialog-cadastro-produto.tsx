@@ -27,6 +27,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { supabase } from '@/lib/supabase';
+import { QK } from '@/lib/queries';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import {
@@ -207,12 +208,12 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
       onCadastrado?.();
       setChaveCadastro(crypto.randomUUID());
       // Primeira invalidação: o produto já aparece na listagem, sem esperar as fotos.
-      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       await subirLoteDeFotos(r);
       // Segunda invalidação, OBRIGATÓRIA: a primeira roda antes dos uploads, e `imagem_path` /
       // `capa_storage_path` só são gravados dentro de uploadFotoProduto. Sem esta, o card fica
       // com placeholder mesmo com a foto já enviada.
-      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       if (r.filaOk && r.falhasEstoque.length === 0) toast.success('✓ Produto cadastrado');
     } catch (e) {
       if (e instanceof ProdutoJaExisteError) {
@@ -259,7 +260,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
       // Cobre os dois chamadores: o retry manual da etapa 2 (que sem isto nunca invalidava —
       // o card ficava com placeholder mesmo com o path já gravado) e o lote automático (que já
       // invalida de novo ao fim de `salvar()`; repetir aqui é redundante mas inofensivo).
-      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       toast.success('✓ Foto enviada');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Falha ao enviar a foto.');
