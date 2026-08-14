@@ -10,10 +10,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { excluirProduto } from '@/lib/excluir';
-import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
+import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 
 export function DialogExcluirProduto({ produto, aberto, onFechar }: {
-  produto: ProdutoComSaldo | null;
+  produto: ProdutoEstoqueResumo | null;
   aberto: boolean;
   onFechar: () => void;
 }) {
@@ -28,7 +28,8 @@ export function DialogExcluirProduto({ produto, aberto, onFechar }: {
   const mutation = useMutation({
     mutationFn: () => excluirProduto(codigo),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      qc.invalidateQueries({ queryKey: ['produtos-estoque-resumo'] });
+      qc.invalidateQueries({ queryKey: ['skus-estoque-org'] });
       qc.invalidateQueries({ queryKey: ['canais-por-produto'] });
       toast.success('Produto excluído');
       onFechar();
@@ -36,7 +37,7 @@ export function DialogExcluirProduto({ produto, aberto, onFechar }: {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const skus = produto?.variacoes.length ?? 0;
+  const skus = produto?.qtdSkus ?? 0;
   const saldo = produto?.saldoTotal ?? 0;
 
   return (

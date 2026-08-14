@@ -61,7 +61,8 @@ export function DialogAjuste({ produto, aberto, onFechar }: {
     }),
     onSuccess: (r) => {
       const falhos = r.resultados.filter((i) => i.erro);
-      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
+      qc.invalidateQueries({ queryKey: ['produtos-estoque-resumo'] });
+      qc.invalidateQueries({ queryKey: ['variacoes-estoque', produto?.codigoPai] });
       if (produto) qc.invalidateQueries({ queryKey: QK.movimentosEstoque(produto.codigoPai) });
       // Item com erro mantém o diálogo aberto: o operador precisa ver o que NÃO entrou antes
       // de assumir que o produto está zerado.

@@ -18,9 +18,16 @@ import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque'
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { filtrarProdutos, canaisEfetivos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
-import { fetchProdutosComSaldo, fetchCanaisPorProduto, type ProdutoComSaldo } from '@/lib/produtos-saldo';
+import {
+  fetchProdutosEstoqueResumo, fetchCanaisPorProduto,
+  type ProdutoComSaldo, type ProdutoEstoqueResumo,
+} from '@/lib/produtos-saldo';
 import { useProfile } from '@/hooks/useProfile';
-import { resumirEstoque } from '@/lib/produtos-saldo-resumo';
+import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
+
+const RESUMO_VAZIO: ResumoEstoque = {
+  produtos: 0, skus: 0, unidades: 0, skusSemEstoque: 0, valorEmEstoque: 0, skusSemCusto: 0,
+};
 
 export default function Estoque() {
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
@@ -30,21 +37,20 @@ export default function Estoque() {
   const [entradaAberta, setEntradaAberta] = useState(false);
   const [alvoEntrada, setAlvoEntrada] = useState<AlvoEntrada | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
-  // ADR-0110: ajustar/zerar tira o produto de venda — mesmo peso comercial de pausar (ADR-0060).
   const { isAdmin } = useProfile();
   const [produtoAjuste, setProdutoAjuste] = useState<ProdutoComSaldo | null>(null);
-  // ADR-0113: excluir é admin pela mesma razão do ajuste — e mais pesado que ele.
-  const [produtoExcluir, setProdutoExcluir] = useState<ProdutoComSaldo | null>(null);
+  const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoqueResumo | null>(null);
 
-  const { data: produtos, isLoading, isError } = useQuery({
-    queryKey: ['produtos-saldo'],
-    queryFn: fetchProdutosComSaldo,
+  const { data: estoque, isLoading, isError } = useQuery({
+    queryKey: ['produtos-estoque-resumo'],
+    queryFn: fetchProdutosEstoqueResumo,
     enabled: !!modulos?.includes('estoque'),
     staleTime: 30_000,
   });
 
-  // isLoading/isError explícitos: `data === undefined` sozinho confunde "carregando" com "falhou",
-  // e o filtro por publicação depende dessa diferença.
+  const produtos = estoque?.produtos ?? [];
+  const resumo = estoque?.kpis ?? RESUMO_VAZIO;
+
   const {
     data: canaisPorProduto, isLoading: canaisLoading, isError: canaisErro,
   } = useQuery({
@@ -53,12 +59,8 @@ export default function Estoque() {
     enabled: !!modulos?.includes('estoque'),
     staleTime: 60_000,
   });
-  // `canaisIndisponivel` só serve para decidir o dado (`undefined` em vez do Map) — loading e
-  // erro tratam a UI (mensagem, aviso) de forma diferente, ver BarraFiltrosEstoque.
   const canaisIndisponivel = canaisLoading || canaisErro;
 
-  // Filtro selecionado + canais caíram = a tela responderia errado. Volta para "todos".
-  // Loading é transitório (sem aviso); erro precisa avisar, porque o filtro saiu por falha.
   useEffect(() => {
     if (canaisIndisponivel && filtro === 'nao-publicado') {
       setFiltro('todos');
@@ -68,26 +70,17 @@ export default function Estoque() {
     }
   }, [canaisIndisponivel, canaisErro, filtro]);
 
-  // Esconder o menu NÃO protege a rota — URL direta renderiza a tela. A escrita já está
-  // protegida pelas edges (403); isto é coerência de navegação.
   if (modulosLoading) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Carregando…</div>;
   }
   if (!modulos?.includes('estoque')) return <Navigate to="/" replace />;
 
-  // Filtro efetivo pro RENDER atual: o useEffect acima só corrige o state `filtro` no próximo
-  // ciclo — sem isto, o render atual ainda calcularia `lista` com filtro 'nao-publicado' e
-  // `canaisPorProduto: undefined`, e como `produtoPublicado` assume "publicado" quando os
-  // canais não carregaram, a lista ficaria vazia por um frame até o efeito corrigir o state.
   const filtroEfetivo = canaisIndisponivel && filtro === 'nao-publicado' ? 'todos' : filtro;
 
-  const lista = filtrarProdutos(produtos ?? [], {
+  const lista = filtrarProdutos(produtos, {
     termo: busca, filtro: filtroEfetivo, ordem,
     canaisPorProduto: canaisIndisponivel ? undefined : canaisPorProduto,
   });
-
-  // Os KPIs resumem o ESTOQUE, não o resultado da busca — por isso saem da lista completa.
-  const resumo = resumirEstoque(produtos ?? []);
 
   return (
     <div className="p-4 md:p-6">
@@ -117,7 +110,7 @@ export default function Estoque() {
         </>
       ) : isError ? (
         <p className="text-sm text-muted-foreground">não foi possível carregar os produtos.</p>
-      ) : (produtos ?? []).length === 0 ? (
+      ) : produtos.length === 0 ? (
         <EmptyState
           icon={Boxes}
           title="Nenhum produto cadastrado ainda."
@@ -134,13 +127,10 @@ export default function Estoque() {
           />
           {lista.length > 0 && (
             <>
-              {/* Sem `aria-live`: a busca não tem debounce, então cada tecla reanunciaria a
-                  contagem, e a região só existe quando há resultado (live region montada junto
-                  com o conteúdo não anuncia de forma confiável). É rótulo da lista visível. */}
               <p className="mb-2 text-xs text-muted-foreground">
-                {lista.length === (produtos ?? []).length
+                {lista.length === produtos.length
                   ? `${lista.length} ${lista.length === 1 ? 'produto' : 'produtos'}`
-                  : `${lista.length} de ${(produtos ?? []).length} produtos`}
+                  : `${lista.length} de ${produtos.length} produtos`}
               </p>
               <CabecalhoProdutos />
             </>
@@ -168,7 +158,6 @@ export default function Estoque() {
       )}
 
       <DialogEntrada
-        produtos={produtos ?? []}
         aberto={entradaAberta}
         onFechar={() => setEntradaAberta(false)}
         skuInicial={alvoEntrada?.sku}

@@ -1,7 +1,7 @@
 // E6b (ADR-0094, D-9): entrada de mercadoria. A escrita vai pela edge `entrada-estoque`
 // (service_role) — a tela nunca toca `variacoes.estoque`, que é bloqueado por trigger.
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { QK } from '@/lib/queries';
-import { registrarEntrada, type ProdutoComSaldo } from '@/lib/produtos-saldo';
+import { fetchSkusEstoqueOrg, registrarEntrada } from '@/lib/produtos-saldo';
 import { parseNumeroPtBr } from '@/lib/formato';
 
 interface OpcaoSku {
@@ -19,8 +19,7 @@ interface OpcaoSku {
   estoque: number;
 }
 
-export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroInicial }: {
-  produtos: ProdutoComSaldo[];
+export function DialogEntrada({ aberto, onFechar, skuInicial, filtroInicial }: {
   aberto: boolean;
   onFechar: () => void;
   skuInicial?: string;
@@ -33,9 +32,14 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
   const [quantidade, setQuantidade] = useState('');
   const [custo, setCusto] = useState('');
   const [documento, setDocumento] = useState('');
-  // O `ref` nasce ao ABRIR e só troca depois de um sucesso confirmado: duplo clique e retry
-  // de rede reusam a mesma referência, e a 2ª aplicação vira no-op na unique do ledger.
   const [ref, setRef] = useState(() => crypto.randomUUID());
+
+  const { data: skus = [] } = useQuery({
+    queryKey: ['skus-estoque-org'],
+    queryFn: fetchSkusEstoqueOrg,
+    enabled: aberto,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (!aberto) return;
@@ -48,22 +52,21 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
   }, [aberto, skuInicial, filtroInicial]);
 
   const opcoes = useMemo<OpcaoSku[]>(() => {
-    const todas = produtos.flatMap((p) => p.variacoes.map((v) => ({
-      codigo: v.codigo,
-      rotulo: `${v.codigo} · ${p.nomePai}${v.cor ? ` (${v.cor})` : v.nome ? ` (${v.nome})` : ''}`,
-      codigoPai: p.codigoPai,
-      estoque: v.estoque,
-    })));
+    const todas = skus.map((s) => ({
+      codigo: s.codigo,
+      rotulo: `${s.codigo} · ${s.nome}${s.cor ? ` (${s.cor})` : ''}`,
+      codigoPai: s.codigoPai,
+      estoque: s.estoque,
+    }));
     const termo = busca.trim().toLowerCase();
     if (!termo) return todas.slice(0, 50);
     return todas.filter((o) => o.rotulo.toLowerCase().includes(termo)
       || o.codigoPai.toLowerCase().includes(termo)).slice(0, 50);
-  }, [produtos, busca]);
+  }, [skus, busca]);
 
   const selecionada = useMemo(
-    () => produtos.flatMap((p) => p.variacoes.map((v) => ({ ...v, codigoPai: p.codigoPai })))
-      .find((v) => v.codigo === codigo),
-    [produtos, codigo],
+    () => skus.find((s) => s.codigo === codigo),
+    [skus, codigo],
   );
 
   const qtdNum = Number(quantidade);
@@ -77,8 +80,6 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
       documento: documento.trim() || null, ref,
     }),
     onSuccess: (r) => {
-      // pushOk=false não é sucesso limpo: o saldo entrou mas os anúncios ficaram defasados,
-      // e o operador precisa saber disso antes de achar que já pode vender.
       if (!r.pushOk) {
         toast.warning('Saldo atualizado. A sincronização com os marketplaces falhou e será refeita automaticamente em até 24h.');
       } else if (r.duplicada) {
@@ -86,8 +87,12 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
       } else {
         toast.success(`✓ Entrada registrada. Saldo de ${codigo}: ${r.estoque}`);
       }
-      qc.invalidateQueries({ queryKey: ['produtos-saldo'] });
-      if (selecionada) qc.invalidateQueries({ queryKey: QK.movimentosEstoque(selecionada.codigoPai) });
+      qc.invalidateQueries({ queryKey: ['produtos-estoque-resumo'] });
+      qc.invalidateQueries({ queryKey: ['skus-estoque-org'] });
+      if (selecionada) {
+        qc.invalidateQueries({ queryKey: ['variacoes-estoque', selecionada.codigoPai] });
+        qc.invalidateQueries({ queryKey: QK.movimentosEstoque(selecionada.codigoPai) });
+      }
       onFechar();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -95,7 +100,6 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      {/* sm: obrigatorio: ver nota em dialog-cadastro-produto.tsx. */}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Dar entrada de mercadoria</DialogTitle>
@@ -105,7 +109,6 @@ export function DialogEntrada({ produtos, aberto, onFechar, skuInicial, filtroIn
           </DialogDescription>
         </DialogHeader>
 
-        {/* Mantém o conteúdo contido no grid do DialogContent em viewports estreitas. */}
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="entrada-busca" className="text-sm font-medium">SKU</label>

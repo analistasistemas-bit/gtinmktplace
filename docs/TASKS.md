@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — performance carga Avil — 2026-08-14
+
+- [x] **Motivo.** Org Avil carregava 5388 linhas de variação em 6 páginas HTTP sequenciais (~40% descartadas no browser pelo corte de família canônica). Query DB ~13ms — gargalo era rede + payload + agrupamento client-side.
+- [x] **Migration `20260814181410_estoque_perf_rpc.sql`.** Três RPCs `security definer` com escopo `current_org_id()`:
+  - `produtos_estoque_resumo()` — KPIs + lista slim (DISTINCT ON família canônica)
+  - `variacoes_estoque_produto(p_codigo_pai)` — variações sob demanda ao expandir card
+  - `skus_estoque_org()` — picker flat do DialogEntrada
+- [x] **Frontend two-phase.** `fetchProdutosEstoqueResumo` na carga inicial; variações e SKUs lazy; `buscarTodasPaginasParalelo` em `fetchCanaisPorProduto`.
+- [x] **Testes.** Mappers RPC, Estoque, produto-card, dialog-entrada, filtro (gtins/codigos/cores).
+- [ ] **Deploy.** `supabase db push` + validar carga Avil em produção.
+
 ## Estoque — alerta "Venda sem saldo suficiente" vs desync ML — 2026-08-14
 
 ADR: `docs/decisions/0094-estoque-ledger-e-push.md` (Bloco A, alertas operacionais)

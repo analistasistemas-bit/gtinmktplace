@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogExcluirProduto } from '../dialog-excluir-produto';
-import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
+import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 
 const excluir = vi.fn();
 vi.mock('@/lib/excluir', async (orig) => ({
@@ -14,8 +14,8 @@ const produto = {
   codigoPai: '00000026',
   nomePai: 'Creme Multirreparador Calmante',
   saldoTotal: 12,
-  variacoes: [{ codigo: '00000026', cor: null, nome: null, estoque: 12 }],
-} as unknown as ProdutoComSaldo;
+  qtdSkus: 1,
+} as unknown as ProdutoEstoqueResumo;
 
 function montar(onFechar = () => {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

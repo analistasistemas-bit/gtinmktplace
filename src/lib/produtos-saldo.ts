@@ -1,6 +1,7 @@
 // E6b (ADR-0094): saldo por produto para a tela Estoque, e as chamadas das edges do módulo.
 import { supabase } from '@/lib/supabase';
-import { buscarTodasPaginas } from '@/lib/paginacao-supabase';
+import { buscarTodasPaginas, buscarTodasPaginasParalelo } from '@/lib/paginacao-supabase';
+import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { erroDaEdge, corpoDoErroDaEdge } from '@/lib/edge-erro';
 import type { ProdutoEntrada } from '@/lib/produto-entrada';
@@ -37,6 +38,30 @@ export interface VariacaoComSaldo {
   mlPictureId: string | null;
 }
 
+/** Linha slim da lista Estoque — sem array de variações (carregadas sob demanda ao expandir). */
+export interface ProdutoEstoqueResumo {
+  codigoPai: string;
+  nomePai: string;
+  descricaoPai: string | null;
+  saldoTotal: number;
+  qtdSkus: number;
+  capaStoragePath: string | null;
+  capaMlPictureId: string | null;
+  fornecedor: string | null;
+  unidade: string | null;
+  origem: string;
+  mlItemId: string | null;
+  criadoEm: string;
+  /** GTINs agregados das variações canônicas — filtro client-side de busca. */
+  gtins: string[];
+  /** Códigos SKU das variações canônicas — filtro client-side de busca. */
+  codigos: string[];
+  /** Cores das variações canônicas — filtro client-side de busca. */
+  cores: string[];
+  /** Preenchido quando qtdSkus === 1 — pré-seleção no DialogEntrada. */
+  skuUnico: string | null;
+}
+
 export interface ProdutoComSaldo {
   codigoPai: string;
   nomePai: string;
@@ -53,6 +78,130 @@ export interface ProdutoComSaldo {
    *  estar furado (espelhar.ts:117 só loga a falha) — ver §3.4 da spec. */
   mlItemId: string | null;
   criadoEm: string;
+}
+
+export interface ResumoEstoqueRpc {
+  kpis: ResumoEstoque;
+  produtos: ProdutoEstoqueResumo[];
+}
+
+export interface SkuEstoqueOrg {
+  codigo: string;
+  codigoPai: string;
+  nome: string;
+  cor: string | null;
+  estoque: number;
+}
+
+interface LinhaVariacaoRpc {
+  codigo: string;
+  nome: string | null;
+  cor: string | null;
+  gtin: string | null;
+  estoque: number;
+  custo: number | null;
+  preco: number;
+  peso_gramas: number | null;
+  altura_cm: number | null;
+  largura_cm: number | null;
+  comprimento_cm: number | null;
+  imagem_path: string | null;
+  ml_picture_id: string | null;
+}
+
+interface ProdutoResumoRpc {
+  codigo_pai: string;
+  nome_pai: string;
+  descricao_pai: string | null;
+  saldo_total: number;
+  qtd_skus: number;
+  capa_storage_path: string | null;
+  capa_ml_picture_id: string | null;
+  fornecedor: string | null;
+  unidade: string | null;
+  origem: string;
+  ml_item_id: string | null;
+  criado_em: string;
+  gtins: string[];
+  codigos: string[];
+  cores: string[];
+  sku_unico: string | null;
+}
+
+interface KpisRpc {
+  produtos: number;
+  skus: number;
+  unidades: number;
+  skus_sem_estoque: number;
+  valor_em_estoque: number;
+  skus_sem_custo: number;
+}
+
+interface ResumoRpcRaw {
+  kpis: KpisRpc;
+  produtos: ProdutoResumoRpc[];
+}
+
+function mapVariacaoRpc(l: LinhaVariacaoRpc): VariacaoComSaldo {
+  return {
+    codigo: l.codigo, nome: l.nome, cor: l.cor, gtin: l.gtin, estoque: l.estoque,
+    custo: l.custo, preco: l.preco,
+    pesoGramas: l.peso_gramas, alturaCm: l.altura_cm, larguraCm: l.largura_cm,
+    comprimentoCm: l.comprimento_cm, imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id,
+  };
+}
+
+/** Converte resposta bruta do RPC em tipos da UI. Exportado para testes. */
+export function mapResumoEstoqueRpc(raw: ResumoRpcRaw): ResumoEstoqueRpc {
+  const k = raw.kpis;
+  return {
+    kpis: {
+      produtos: k.produtos,
+      skus: k.skus,
+      unidades: Number(k.unidades),
+      skusSemEstoque: k.skus_sem_estoque,
+      valorEmEstoque: Number(k.valor_em_estoque),
+      skusSemCusto: k.skus_sem_custo,
+    },
+    produtos: (raw.produtos ?? []).map((p) => ({
+      codigoPai: p.codigo_pai,
+      nomePai: p.nome_pai,
+      descricaoPai: p.descricao_pai,
+      saldoTotal: Number(p.saldo_total),
+      qtdSkus: p.qtd_skus,
+      capaStoragePath: p.capa_storage_path,
+      capaMlPictureId: p.capa_ml_picture_id,
+      fornecedor: p.fornecedor,
+      unidade: p.unidade,
+      origem: p.origem,
+      mlItemId: p.ml_item_id,
+      criadoEm: p.criado_em,
+      gtins: p.gtins ?? [],
+      codigos: p.codigos ?? [],
+      cores: p.cores ?? [],
+      skuUnico: p.sku_unico,
+    })),
+  };
+}
+
+export function mergeProdutoComVariacoes(
+  resumo: ProdutoEstoqueResumo,
+  variacoes: VariacaoComSaldo[],
+): ProdutoComSaldo {
+  return {
+    codigoPai: resumo.codigoPai,
+    nomePai: resumo.nomePai,
+    descricaoPai: resumo.descricaoPai,
+    variacoes,
+    saldoTotal: resumo.saldoTotal,
+    capaStoragePath: resumo.capaStoragePath,
+    capaMlPictureId: resumo.capaMlPictureId,
+    fornecedor: resumo.fornecedor,
+    unidade: resumo.unidade,
+    origem: resumo.origem,
+    mlItemId: resumo.mlItemId,
+    criadoEm: resumo.criadoEm,
+  };
 }
 
 export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoComSaldo[] {
@@ -110,7 +259,37 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
   return [...porPai.values()].sort((a, b) => a.nomePai.localeCompare(b.nomePai, 'pt-BR'));
 }
 
+/** KPIs + lista slim via RPC server-side (família canônica por codigo_pai). */
+export async function fetchProdutosEstoqueResumo(): Promise<ResumoEstoqueRpc> {
+  const { data, error } = await supabase.rpc('produtos_estoque_resumo');
+  if (error) throw new Error(error.message);
+  return mapResumoEstoqueRpc(data as ResumoRpcRaw);
+}
+
+/** Variações de um produto — só da família canônica. Carregadas ao expandir o card. */
+export async function fetchVariacoesProduto(codigoPai: string): Promise<VariacaoComSaldo[]> {
+  const { data, error } = await supabase.rpc('variacoes_estoque_produto', { p_codigo_pai: codigoPai });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as LinhaVariacaoRpc[]).map(mapVariacaoRpc);
+}
+
+/** SKUs flat da org — picker do DialogEntrada (carrega ao abrir o diálogo). */
+export async function fetchSkusEstoqueOrg(): Promise<SkuEstoqueOrg[]> {
+  const { data, error } = await supabase.rpc('skus_estoque_org');
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<{
+    codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number;
+  }>).map((s) => ({
+    codigo: s.codigo,
+    codigoPai: s.codigo_pai,
+    nome: s.nome,
+    cor: s.cor,
+    estoque: s.estoque,
+  }));
+}
+
 /**
+ * @deprecated Preferir `fetchProdutosEstoqueResumo`. Mantido para testes de agrupamento legado.
  * Produtos com saldo da org. O agrupamento acontece no cliente, sobre um select simples com
  * RLS por org. PAGINAÇÃO OBRIGATÓRIA: o PostgREST trunca em ~1000 linhas, e truncar aqui é
  * pior que uma lista incompleta — o corte "família mais recente" escolheria uma família
@@ -253,7 +432,7 @@ export async function uploadFotoProduto(
 
 /** Canais em que cada codigo_pai está publicado. Produto ainda não publicado não aparece no mapa. */
 export async function fetchCanaisPorProduto(): Promise<Map<string, string[]>> {
-  const data = await buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
+  const data = await buscarTodasPaginasParalelo<Record<string, unknown>>((de, ate) => supabase
     .from('anuncios_externos')
     .select('codigo_pai, canal')
     .eq('status', 'publicado')

@@ -1,40 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogEntrada } from '../dialog-entrada';
-import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
 
-const variacao = (codigo: string, cor: string) => ({
-  codigo, nome: null, cor, gtin: null, estoque: 5, custo: null, preco: 10,
-  pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null, mlPictureId: null,
-});
+const fetchSkusEstoqueOrgMock = vi.fn(() => Promise.resolve([
+  { codigo: '00000005', codigoPai: '00000004', nome: 'Protetor Solar', cor: 'incolor', estoque: 5 },
+  { codigo: '00000006', codigoPai: '00000004', nome: 'Protetor Solar', cor: 'bege', estoque: 5 },
+  { codigo: '00000010', codigoPai: '00000009', nome: 'Outro Produto', cor: 'única', estoque: 5 },
+]));
 
-const produtos: ProdutoComSaldo[] = [
-  {
-    codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
-    capaStoragePath: null, capaMlPictureId: null, fornecedor: null, unidade: null, origem: 'nacional',
-    mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 10,
-    variacoes: [variacao('00000005', 'incolor'), variacao('00000006', 'bege')],
-  },
-  {
-    codigoPai: '00000009', nomePai: 'Outro Produto', descricaoPai: null,
-    capaStoragePath: null, capaMlPictureId: null, fornecedor: null, unidade: null, origem: 'nacional',
-    mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 5,
-    variacoes: [variacao('00000010', 'única')],
-  },
-];
+vi.mock('@/lib/produtos-saldo', async (orig) => ({
+  ...(await orig<typeof import('@/lib/produtos-saldo')>()),
+  fetchSkusEstoqueOrg: () => fetchSkusEstoqueOrgMock(),
+  registrarEntrada: vi.fn(),
+}));
 
 describe('DialogEntrada', () => {
-  // O código do PAI não aparece no rótulo do SKU — filtrar por ele só funciona se o predicado
-  // olhar codigoPai explicitamente. Sem isso a lista abre vazia.
-  it('filtroInicial pelo código do pai lista só as variações daquele produto', () => {
+  it('filtroInicial pelo código do pai lista só as variações daquele produto', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
-        <DialogEntrada produtos={produtos} aberto onFechar={() => {}} filtroInicial="00000004" />
+        <DialogEntrada aberto onFechar={() => {}} filtroInicial="00000004" />
       </QueryClientProvider>,
     );
-    expect(screen.getByText(/00000005/)).toBeInTheDocument();
+    expect(await screen.findByText(/00000005/)).toBeInTheDocument();
     expect(screen.getByText(/00000006/)).toBeInTheDocument();
     expect(screen.queryByText(/00000010/)).toBeNull();
   });

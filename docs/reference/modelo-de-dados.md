@@ -401,7 +401,17 @@ RLS: policy `"estoque_movimentos: select org"` (`for select to authenticated usi
 `grant select ... to authenticated` é obrigatório **além** da policy (privilégio de tabela e RLS
 são checagens independentes; mesmo padrão de `notificacoes`, ADR-0085).
 
-**Funções `security definer`** (`search_path=''`), revogadas de `public`/`anon`/`authenticated` e
+**RPCs de leitura da tela Estoque** (`security definer`, `stable`, escopo `current_org_id()`,
+migration `20260814181410_estoque_perf_rpc.sql`). Concedidas a `authenticated` — substituem o
+select paginado de todas as variações + agrupamento no browser:
+
+| Função | Papel |
+|---|---|
+| `produtos_estoque_resumo() returns json` | KPIs (`produtos`, `skus`, `unidades`, `skus_sem_estoque`, `valor_em_estoque`, `skus_sem_custo`) + lista slim por `codigo_pai` canônico (`DISTINCT ON … ORDER BY criado_em DESC`, mesma regra de `agruparProdutosComSaldo`). Inclui arrays `gtins`, `codigos`, `cores` para busca client-side. |
+| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. |
+| `skus_estoque_org() returns setof json` | Lista flat `(codigo, codigo_pai, nome, cor, estoque)` para o picker do DialogEntrada. |
+
+**Funções `security definer` de escrita** (`search_path=''`), revogadas de `public`/`anon`/`authenticated` e
 concedidas só a `service_role` (as RPCs nunca são chamadas pelo browser — sempre via edge com
 `service_role`, D-15):
 

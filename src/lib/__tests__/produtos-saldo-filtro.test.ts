@@ -1,18 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { filtrarProdutos, canaisEfetivos, type FiltroEstoque } from '../produtos-saldo-filtro';
-import type { ProdutoComSaldo } from '../produtos-saldo';
+import type { ProdutoEstoqueResumo } from '../produtos-saldo';
 
-function produto(over: Partial<ProdutoComSaldo> = {}): ProdutoComSaldo {
+function produto(over: Partial<ProdutoEstoqueResumo> = {}): ProdutoEstoqueResumo {
   return {
     codigoPai: '00000001', nomePai: 'Protetor Solar', descricaoPai: null,
     capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN',
     origem: 'nacional', mlItemId: null, criadoEm: '2026-08-01T10:00:00Z',
-    saldoTotal: 20,
-    variacoes: [{
-      codigo: '00000002', nome: null, cor: 'incolor', gtin: '4005800241901',
-      estoque: 20, custo: 10, preco: 20, pesoGramas: null, alturaCm: null,
-      larguraCm: null, comprimentoCm: null, imagemPath: null, mlPictureId: null,
-    }],
+    saldoTotal: 20, qtdSkus: 1, skuUnico: '00000002',
+    gtins: ['4005800241901'], codigos: ['00000002'], cores: ['incolor'],
     ...over,
   };
 }

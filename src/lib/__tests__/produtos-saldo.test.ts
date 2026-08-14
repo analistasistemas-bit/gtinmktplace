@@ -162,3 +162,28 @@ describe('urlFotoMl', () => {
     expect(urlFotoMl('')).toBeNull();
   });
 });
+
+describe('mapResumoEstoqueRpc', () => {
+  it('mapeia KPIs e produtos slim da resposta do RPC', async () => {
+    const { mapResumoEstoqueRpc } = await import('../produtos-saldo');
+    const r = mapResumoEstoqueRpc({
+      kpis: {
+        produtos: 2, skus: 5, unidades: 100, skus_sem_estoque: 1,
+        valor_em_estoque: 500.5, skus_sem_custo: 2,
+      },
+      produtos: [{
+        codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: null,
+        saldo_total: 8, qtd_skus: 2,
+        capa_storage_path: null, capa_ml_picture_id: 'PIC1',
+        fornecedor: 'X', unidade: 'UN', origem: 'nacional',
+        ml_item_id: null, criado_em: '2026-08-01T10:00:00Z',
+        gtins: ['789'], codigos: ['A1', 'A2'], cores: ['Azul'], sku_unico: null,
+      }],
+    });
+    expect(r.kpis.skusSemEstoque).toBe(1);
+    expect(r.kpis.valorEmEstoque).toBe(500.5);
+    expect(r.produtos[0].codigoPai).toBe('P1');
+    expect(r.produtos[0].gtins).toEqual(['789']);
+    expect(r.produtos[0].cores).toEqual(['Azul']);
+  });
+});

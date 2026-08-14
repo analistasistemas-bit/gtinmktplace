@@ -3,42 +3,29 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProdutoCard, CabecalhoProdutos, GRID_LINHA_PRODUTO } from '../produto-card';
-import type { ProdutoComSaldo } from '@/lib/produtos-saldo';
+import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
 vi.mock('@/components/movimentos-estoque', () => ({
   MovimentosEstoque: () => <div>Movimentos de estoque</div>,
 }));
+vi.mock('@/lib/produtos-saldo', async (orig) => ({
+  ...(await orig<typeof import('@/lib/produtos-saldo')>()),
+  fetchVariacoesProduto: () => Promise.resolve([]),
+}));
 
-const produtoMono: ProdutoComSaldo = {
+const produtoMono: ProdutoEstoqueResumo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: 'Descrição longa.',
   capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
-  mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20,
-  variacoes: [
-    {
-      codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901', estoque: 20,
-      custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-      comprimentoCm: null, imagemPath: null, mlPictureId: null,
-    },
-  ],
+  mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20, qtdSkus: 1, skuUnico: '00000005',
+  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'],
 };
 
-const produto: ProdutoComSaldo = {
+const produto: ProdutoEstoqueResumo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: 'Descrição longa.',
   capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
-  mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 40,
-  variacoes: [
-    {
-      codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901', estoque: 20,
-      custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-      comprimentoCm: null, imagemPath: null, mlPictureId: null,
-    },
-    {
-      codigo: '00000006', nome: null, cor: 'branco', gtin: '4005800241902', estoque: 20,
-      custo: 12, preco: 89.9, pesoGramas: null, alturaCm: null, larguraCm: null,
-      comprimentoCm: null, imagemPath: null, mlPictureId: null,
-    },
-  ],
+  mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 40, qtdSkus: 2, skuUnico: null,
+  gtins: ['4005800241901', '4005800241902'], codigos: ['00000005', '00000006'], cores: ['incolor', 'branco'],
 };
 
 function renderCard(produtoFixture = produto, onDarEntrada = vi.fn()) {
