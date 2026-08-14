@@ -63,7 +63,7 @@ export function VariacaoEstoqueLinha({ variacao: v }: { variacao: VariacaoComSal
   const preco = fmtBRL(Number(v.preco));
 
   return (
-    <div className={cn(GRID_LINHA_VARIACAO, 'border-b px-3 py-2 last:border-b-0 hover:bg-muted/40')}>
+    <div className={cn(GRID_LINHA_VARIACAO, 'border-b px-3 py-2 hover:bg-muted/40')}>
       <FotoCapaFamilia capaUrl={foto} tamanho="small" />
 
       <div className="min-w-0">

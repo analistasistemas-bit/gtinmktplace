@@ -29,12 +29,13 @@ export const VARIACOES_VIRTUAL_THRESHOLD = 50;
 
 export const VARIACAO_ROW_ESTIMATE_PX = 56;
 
-function ListaVariacoesEstoque({ variacoes }: { variacoes: VariacaoComSaldo[] }) {
+function ListaVariacoesEstoque({ variacoes, nomeProduto }: { variacoes: VariacaoComSaldo[]; nomeProduto: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
     count: variacoes.length,
     getScrollElement: () => scrollRef.current,
+    // Desktop (~2 linhas na célula identidade). Mobile ganha 3ª linha (custo/preço) — measureElement corrige.
     estimateSize: () => VARIACAO_ROW_ESTIMATE_PX,
     overscan: 5,
   });
@@ -43,7 +44,10 @@ function ListaVariacoesEstoque({ variacoes }: { variacoes: VariacaoComSaldo[] })
     <div
       ref={scrollRef}
       data-testid="variacoes-virtual-scroll"
-      className="max-h-[min(24rem,50vh)] overflow-y-auto"
+      tabIndex={0}
+      role="region"
+      aria-label={`Variações de ${nomeProduto}`}
+      className="max-h-[min(24rem,50vh)] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
     >
       <div
         data-testid="variacoes-virtual-inner"
@@ -258,9 +262,13 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
                 ) : (() => {
                   const lista = variacoes ?? [];
                   if (lista.length <= VARIACOES_VIRTUAL_THRESHOLD) {
-                    return lista.map((v) => <VariacaoEstoqueLinha key={v.codigo} variacao={v} />);
+                    return (
+                      <div className="[&>*:last-child]:border-b-0">
+                        {lista.map((v) => <VariacaoEstoqueLinha key={v.codigo} variacao={v} />)}
+                      </div>
+                    );
                   }
-                  return <ListaVariacoesEstoque variacoes={lista} />;
+                  return <ListaVariacoesEstoque variacoes={lista} nomeProduto={produto.nomePai} />;
                 })()}
               </div>
             </TabsContent>

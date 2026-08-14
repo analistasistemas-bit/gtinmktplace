@@ -7,8 +7,10 @@
 - [x] **P2.3 — Virtualização no expand.** Acima de 50 SKUs (`VARIACOES_VIRTUAL_THRESHOLD`), a aba
   Variações usa `@tanstack/react-virtual` com scroll `max-h-[min(24rem,50vh)]`; cabeçalho fixo fora
   do virtualizer; aba Movimentos inalterada.
-- [x] **Testes.** `produto-card.test.tsx`: 51 variações → container virtual + DOM parcial; 5 → map
+- [x] **Testes.** `produto-card.test.tsx`: 51 variações → container virtual + DOM parcial; 50 e 5 → map
   completo sem virtual scroll.
+- [x] **Revisão Opus.** Bordas entre linhas no modo virtual; scroll focável (`tabIndex` + `role="region"`);
+  `scrollbar-gutter: stable`; testes com bounds no DOM parcial.
 
 ## Estoque — P2 busca + prefetch — 2026-08-14
 

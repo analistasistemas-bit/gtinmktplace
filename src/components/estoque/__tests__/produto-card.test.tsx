@@ -227,8 +227,27 @@ describe('ProdutoCard', () => {
     const inner = screen.getByTestId('variacoes-virtual-inner');
     expect(Number.parseInt(inner.style.height, 10)).toBe(n * VARIACAO_ROW_ESTIMATE_PX);
 
+    // jsdom não layouta o scroller — o virtualizer pode montar 0 linhas aqui, mas NUNCA monta
+    // as N de um map completo (contraste com o teste de 50 abaixo). Em browser real monta ~17.
     const codigosNoDom = variacoes.filter((v) => screen.queryByText(v.codigo));
     expect(codigosNoDom.length).toBeLessThan(n);
+
+    expect(screen.getByRole('region', { name: 'Variações de Protetor Solar' })).toHaveAttribute('tabindex', '0');
+  });
+
+  it('não virtualiza no limiar exato (50 variações) — todas no DOM', async () => {
+    const variacoes = mockVariacoes(VARIACOES_VIRTUAL_THRESHOLD);
+    fetchVariacoesProdutoMock.mockResolvedValue(variacoes);
+
+    const user = userEvent.setup();
+    renderCard({ ...produto, qtdSkus: VARIACOES_VIRTUAL_THRESHOLD });
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText(variacoes[0]!.codigo)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('variacoes-virtual-scroll')).not.toBeInTheDocument();
+    expect(variacoes.filter((v) => screen.queryByText(v.codigo)).length).toBe(VARIACOES_VIRTUAL_THRESHOLD);
   });
 
   it('não virtualiza quando há poucas variações — todas visíveis no DOM', async () => {
