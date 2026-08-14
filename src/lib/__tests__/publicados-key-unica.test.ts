@@ -12,6 +12,7 @@ function fakeChain(resultado: unknown) {
     select: () => chain,
     not: () => chain,
     eq: () => chain,
+    in: () => chain,
     order: () => chain,
     then: (resolve: any) => Promise.resolve(resultado).then(resolve),
   };
@@ -31,10 +32,18 @@ describe('fetchPublicados', () => {
       codigo_pai: '02835002', item_externo_id: 'MLB2', permalink: null,
       titulo: 'LINHA PARA COSTURA', publicado_em: '2026-06-07', variacoes_externas: {},
     };
-    mockFrom.mockImplementation((tabela: string) =>
-      fakeChain(tabela === 'familias'
-        ? { data: [FAMILIA], error: null }
-        : { data: [externo, { ...externo }], error: null }));
+    let anunciosCalls = 0;
+    mockFrom.mockImplementation((tabela: string) => {
+      if (tabela === 'familias') return fakeChain({ data: [FAMILIA], error: null });
+      if (tabela === 'anuncios_externos_itens') return fakeChain({ data: [], error: null });
+      if (tabela === 'anuncios_externos') {
+        anunciosCalls += 1;
+        // 1ª chamada: raízes UP para catalogRetentavel; 2ª: partições split (ADR-0048).
+        if (anunciosCalls === 1) return fakeChain({ data: [], error: null });
+        return fakeChain({ data: [externo, { ...externo }], error: null });
+      }
+      return fakeChain({ data: [], error: null });
+    });
 
     const itens = await fetchPublicados();
     expect(itens.map((i) => i.mlItemId)).toEqual(['MLB1', 'MLB2']);
