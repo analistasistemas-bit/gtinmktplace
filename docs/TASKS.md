@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Catálogo — botão "Tentar catálogo de novo" (Publicados) — 2026-08-14
+
+ADR: `docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md` (extensão operacional)
+
+- [x] **Edge `retentar-catalogo`** — re-enfileira `vincular-catalogo` (delay 60s) para família
+  publicada com variação/item em `erro` ou `nao_elegivel` sem listing.
+- [x] **UI Publicados** — botão ↻ na coluna Ações (só admin, flag `catalogRetentavel`).
+- [x] **Testes** — pure `catalogo-retentavel` + botão em `Publicados.test.tsx`.
+
 ## Catálogo — opt-in recusado por under_review — 2026-08-14
 
 ADR: `docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md` (adendo pós-incidente lote #16)

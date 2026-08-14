@@ -20,6 +20,27 @@ curl -X POST https://<project>.supabase.co/functions/v1/reprocessar-familia \
 
 A função reseta `erro → pendente` e re-enfileira (guard idempotente — ADR-0030).
 
+## Retentar vínculo de catálogo
+
+Quando uma variação publicada ficou em `catalog_status` **erro** ou **nao_elegivel** (sem
+`catalog_listing_id`), o operador pode re-enfileirar o worker de opt-in:
+
+**Pela UI:** tela **Publicados** → linha com catálogo retentável → botão **Tentar catálogo de
+novo** (ícone ↻, só admin). Resultado esperado em ~1 minuto.
+
+**Por API:**
+
+```bash
+curl -X POST https://<project>.supabase.co/functions/v1/retentar-catalogo \
+  -H "Authorization: Bearer <user-jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"familia_id":"<id>"}'
+```
+
+A função valida família publicada da org, exige variação Legacy ou item UP retentável, e
+enfileira `vincular-catalogo` com delay de 60s (ADR-0021). Não reseta `catalog_status` no
+banco — o worker relê elegibilidade/opt-in.
+
 ## Destravar família/worker enfileirando no QStash na mão
 
 Quando uma família ficou em estado inconsistente e o reprocessamento normal não cobre:

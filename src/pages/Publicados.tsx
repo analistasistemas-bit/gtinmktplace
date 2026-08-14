@@ -60,6 +60,7 @@ import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
+import { useRetentarCatalogo } from '@/hooks/useRetentarCatalogo';
 import { useProfile } from '@/hooks/useProfile';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
@@ -120,6 +121,8 @@ interface LinhaProps {
   republicando: boolean;
   onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => void;
   pausando: boolean;
+  onRetentarCatalogo: (familiaId: string) => void;
+  retentandoCatalogo: boolean;
   isAdmin: boolean;
 }
 
@@ -146,7 +149,8 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
 }
 
 function LinhaTabela({
-  item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando, isAdmin,
+  item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
+  onRetentarCatalogo, retentandoCatalogo, isAdmin,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
@@ -266,6 +270,20 @@ function LinhaTabela({
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          )}
+
+          {item.catalogRetentavel && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Tentar catálogo de novo"
+              title={!isAdmin ? 'Somente administradores podem retentar o vínculo de catálogo' : 'Tentar catálogo de novo'}
+              className="h-7 px-2 text-xs"
+              disabled={!isAdmin || retentandoCatalogo}
+              onClick={(e) => { e.stopPropagation(); onRetentarCatalogo(item.familiaId); }}
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
           )}
 
           <AlertDialog>
@@ -430,6 +448,7 @@ export default function Publicados() {
   const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
   const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
+  const { mutate: retentarCatalogoMut, isPending: retentandoCatalogo } = useRetentarCatalogo();
   const { isAdmin } = useProfile();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
 
@@ -449,6 +468,7 @@ export default function Publicados() {
   const [removendoId, setRemovendoId] = useState<string | null>(null);
   const [republicandoId, setRepublicandoId] = useState<string | null>(null);
   const [pausandoId, setPausandoId] = useState<string | null>(null);
+  const [retentandoCatalogoId, setRetentandoCatalogoId] = useState<string | null>(null);
 
   const aplicar = useCallback(
     (mudanca: (atual: EstadoPublicados) => Partial<EstadoPublicados>) => {
@@ -517,6 +537,18 @@ export default function Publicados() {
           description: err instanceof Error ? err.message : String(err),
         }),
       onSettled: () => setPausandoId(null),
+    });
+  };
+
+  const handleRetentarCatalogo = (familiaId: string) => {
+    setRetentandoCatalogoId(familiaId);
+    retentarCatalogoMut(familiaId, {
+      onSuccess: () => toast.success('Vínculo de catálogo re-enfileirado — resultado em ~1 minuto'),
+      onError: (err) =>
+        toast.error('Falha ao retentar catálogo', {
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      onSettled: () => setRetentandoCatalogoId(null),
     });
   };
 
@@ -858,6 +890,8 @@ export default function Publicados() {
                       republicando={preparandoRepublicar && republicandoId === item.familiaId}
                       onPausarReativar={handlePausarReativar}
                       pausando={pausandoOuReativando && pausandoId === item.mlItemId}
+                      onRetentarCatalogo={handleRetentarCatalogo}
+                      retentandoCatalogo={retentandoCatalogo && retentandoCatalogoId === item.familiaId}
                       isAdmin={isAdmin}
                     />
                   ))
