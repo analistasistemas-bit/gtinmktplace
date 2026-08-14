@@ -40,6 +40,7 @@
 | remover-publicado | false | HTTP (JWT manual) | sim (guarded) |
 | excluir-lote | true | HTTP (frontend) | não |
 | reprocessar-familia | false | HTTP (JWT manual) | sim (guard de status) |
+| retentar-catalogo | false | HTTP (JWT manual) | sim (re-enfileira vincular-catalogo) |
 | invalidar-cache-cor | true | HTTP (frontend) | não |
 | reconciliar-user-products | false | HTTP (JWT manual, admin) | sim (upsert atômico) |
 | reconciliar-convergencia-up | false | QStash schedule | sim (claim atômico) |
@@ -500,6 +501,9 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   consequência aceita e registrada no ADR. O modo republicar (`preservar_familia`) não varre — o
   SKU continua vivo. `excluir-lote` devolve `movimentos_removidos` no JSON.
 - **reprocessar-familia** — reseta `erro→pendente` e re-enfileira (guard idempotente, ADR-0030).
+- **retentar-catalogo** *(HTTP, JWT manual — ADR-0021, 2026-08-14)* — re-enfileira
+  `vincular-catalogo` (delay 60s) para família `publicado` com variação Legacy ou item UP em
+  `erro`/`nao_elegivel` sem `catalog_listing_id`. Não altera estado no banco.
 - **reconciliar-user-products** *(HTTP, admin — ADR-0088, 2026-07-23)* — backfill: importa pro
   modelo User Products itens planos já existentes no ML publicados antes do ADR-0088
   (ADR-0084/0087), que hoje não têm linha em `anuncios_externos_itens`. 2 RPCs

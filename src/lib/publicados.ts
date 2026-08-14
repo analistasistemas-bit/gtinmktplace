@@ -40,6 +40,8 @@ export interface PublicadoItem {
   valorVendido?: number | null;
   /** Quantidade de variações publicadas neste anúncio (excluídas da publicação não contam). */
   qtdVariacoes?: number;
+  /** Alguma variação/item publicado sem vínculo de catálogo em erro ou não elegível (retentável). */
+  catalogRetentavel?: boolean;
 }
 
 /**
@@ -77,7 +79,8 @@ export function dedupePublicados(itens: PublicadoItem[]): PublicadoItem[] {
     // União dos identificadores de todos os ciclos: o representante é o mais antigo, mas a busca
     // precisa achar o anúncio por qualquer código/GTIN de variação (inclusive de ciclos de UPDATE).
     const identificadores = [...new Set(grupo.flatMap((g) => g.identificadores ?? []))];
-    out.push({ ...rep, fornecedor, identificadores });
+    const catalogRetentavel = grupo.some((g) => g.catalogRetentavel);
+    out.push({ ...rep, fornecedor, identificadores, catalogRetentavel });
   }
   return out;
 }

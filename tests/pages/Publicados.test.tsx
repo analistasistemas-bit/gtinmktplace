@@ -12,6 +12,7 @@ const useStatusPublicadosMock = vi.fn();
 const useRemoverPublicadoMock = vi.fn();
 const usePrepararRepublicacaoMock = vi.fn();
 const usePausarReativarPublicadoMock = vi.fn();
+const useRetentarCatalogoMock = vi.fn();
 const useResumoFinanceiroMock = vi.fn();
 const useVendasMock = vi.fn();
 const useCustosMock = vi.fn();
@@ -62,6 +63,14 @@ vi.mock('@/hooks/useRemoverPublicado', () => ({
 
 vi.mock('@/hooks/usePausarReativarPublicado', () => ({
   usePausarReativarPublicado: () => usePausarReativarPublicadoMock(),
+}));
+
+vi.mock('@/hooks/useRetentarCatalogo', () => ({
+  useRetentarCatalogo: () => useRetentarCatalogoMock(),
+}));
+
+vi.mock('@/hooks/useProfile', () => ({
+  useProfile: () => ({ isAdmin: true }),
 }));
 
 vi.mock('@/hooks/useResumoFinanceiro', () => ({
@@ -129,6 +138,11 @@ function mockHooksPadrao() {
     error: null,
   });
   usePausarReativarPublicadoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  useRetentarCatalogoMock.mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
     error: null,
@@ -328,6 +342,42 @@ describe('Publicados', () => {
     );
     expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
     expect(screen.getByText('TESOURA INOX SHOPEE')).toBeInTheDocument();
+  });
+
+  it('admin + catalogRetentavel: botão retentar catálogo visível e dispara mutation', () => {
+    const mutate = vi.fn();
+    useRetentarCatalogoMock.mockReturnValue({ mutate, isPending: false, error: null });
+    usePublicadosMock.mockReturnValue({
+      data: [itemBase({ catalogRetentavel: true })],
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    const btn = screen.getByRole('button', { name: 'Tentar catálogo de novo' });
+    fireEvent.click(btn);
+    expect(mutate).toHaveBeenCalledWith('f1', expect.any(Object));
+  });
+
+  it('catalogRetentavel false: botão retentar catálogo ausente', () => {
+    usePublicadosMock.mockReturnValue({
+      data: [itemBase({ catalogRetentavel: false })],
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
   });
 });
 

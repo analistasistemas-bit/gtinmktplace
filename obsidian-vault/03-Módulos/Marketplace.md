@@ -21,7 +21,7 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
 - **Categoria real do ML** — coluna Tipo mostra a categoria real do anúncio, não só a inferida
   internamente
 - **Catálogo** — vínculo opt-in por GTIN (`vincular-catalogo`); alerta de no-match/ficha
-  divergente (kit) via Telegram
+  divergente (kit) via Telegram; retentar manual na Publicados (`retentar-catalogo`, ADR-0021)
 - **Moderação** — `monitorar-moderados` varre anúncios pausados/moderados e alerta Telegram
 - **Remoção** — `remover-publicado` (limpa registro local, ML intocado) e `excluir-lote`
   (preserva publicados)

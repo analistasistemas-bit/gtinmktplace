@@ -21,6 +21,11 @@ import { parseAnomalias, parseMudancaEstrutural } from './tipos-dominio';
 import type { FaixaAtacado } from './atacado';
 import type { PublicadoItem, StatusPublicado } from './publicados';
 import { dedupePublicados } from './publicados';
+import {
+  catalogStatusRetentavelEmEspelho,
+  familiaTemCatalogoRetentavel,
+  itemExternoCatalogoRetentavel,
+} from './catalogo-retentavel';
 
 export const QK = {
   lotes: (userId: string) => ['lotes', userId] as const,
@@ -834,9 +839,20 @@ export async function setAtacadoGrupo(variacaoIds: string[], faixas: FaixaAtacad
 // Publicados
 // ============================================================================
 
-type VariacaoPub = Pick<VariacaoRow, 'codigo' | 'gtin' | 'preco_publicacao' | 'excluida_da_publicacao'>;
+type VariacaoPub = Pick<
+  VariacaoRow,
+  'codigo' | 'gtin' | 'preco_publicacao' | 'excluida_da_publicacao'
+  | 'catalog_status' | 'catalog_listing_id' | 'ml_variation_id'
+>;
 
-export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): PublicadoItem {
+export function publicadoFromRow(
+  r: FamiliaRow & { variacoes: VariacaoPub[] },
+  itensUpRetentaveis?: Array<{
+    catalog_status?: string | null;
+    catalog_listing_id?: string | null;
+    item_externo_id?: string | null;
+  }>,
+): PublicadoItem {
   const incl = (r.variacoes ?? []).filter((v) => !v.excluida_da_publicacao);
   const base = incl.length > 0 ? incl : (r.variacoes ?? []);
   const precos = base
@@ -849,6 +865,14 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): 
   const identificadores = base
     .flatMap((v) => [v.codigo, v.gtin])
     .filter((s): s is string => !!s);
+  const catalogRetentavel = familiaTemCatalogoRetentavel(
+    (r.variacoes ?? []).map((v) => ({
+      catalog_status: v.catalog_status ?? null,
+      catalog_listing_id: v.catalog_listing_id ?? null,
+      ml_variation_id: v.ml_variation_id ?? null,
+    })),
+    itensUpRetentaveis,
+  );
   return {
     familiaId: r.id,
     codigoPai: r.codigo_pai,
@@ -863,6 +887,7 @@ export function publicadoFromRow(r: FamiliaRow & { variacoes: VariacaoPub[] }): 
     mlItemId: r.ml_item_id!,
     mlPermalink: r.ml_permalink ?? null,
     publicadoEm: r.publicado_em ?? null,
+    catalogRetentavel,
   };
 }
 
@@ -884,16 +909,66 @@ export async function fetchCatalogoEmRisco(): Promise<FamiliaRiscoRow[]> {
   return (data ?? []) as FamiliaRiscoRow[];
 }
 
+async function carregarItensUpRetentaveisPorCodigo(
+  codigosPai: string[],
+): Promise<Map<string, Array<{ catalog_status: string | null; catalog_listing_id: string | null; item_externo_id: string | null }>>> {
+  const out = new Map<string, Array<{ catalog_status: string | null; catalog_listing_id: string | null; item_externo_id: string | null }>>();
+  if (codigosPai.length === 0) return out;
+
+  const { data: raizes, error: errRaizes } = await supabase
+    .from('anuncios_externos')
+    .select('id, codigo_pai')
+    .in('codigo_pai', codigosPai)
+    .eq('canal', 'mercado_livre')
+    .eq('particao', 0);
+  if (errRaizes) throw errRaizes;
+
+  const raizPorCodigo = new Map<string, string[]>();
+  for (const r of raizes ?? []) {
+    const arr = raizPorCodigo.get(r.codigo_pai) ?? [];
+    arr.push(r.id);
+    raizPorCodigo.set(r.codigo_pai, arr);
+  }
+  const rootIds = (raizes ?? []).map((r) => r.id);
+  if (rootIds.length === 0) return out;
+
+  const { data: itens, error: errItens } = await supabase
+    .from('anuncios_externos_itens')
+    .select('anuncio_externo_id, item_externo_id, catalog_listing_id, catalog_status')
+    .in('anuncio_externo_id', rootIds)
+    .eq('retirado', false);
+  if (errItens) throw errItens;
+
+  const raizParaCodigo = new Map((raizes ?? []).map((r) => [r.id, r.codigo_pai]));
+  for (const item of itens ?? []) {
+    const codigo = raizParaCodigo.get(item.anuncio_externo_id);
+    if (!codigo || !itemExternoCatalogoRetentavel(item)) continue;
+    const arr = out.get(codigo) ?? [];
+    arr.push({
+      catalog_status: item.catalog_status ?? null,
+      catalog_listing_id: item.catalog_listing_id ?? null,
+      item_externo_id: item.item_externo_id ?? null,
+    });
+    out.set(codigo, arr);
+  }
+  return out;
+}
+
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
+
+  const rows = (data ?? []) as Array<FamiliaRow & { variacoes: VariacaoPub[] }>;
+  const codigosPai = [...new Set(rows.map((r) => r.codigo_pai))];
+  const itensUpPorCodigo = await carregarItensUpRetentaveisPorCodigo(codigosPai);
+
   // 1 linha por anúncio (ml_item_id) — várias famílias compartilham o mesmo após ciclos de UPDATE.
   const principais = dedupePublicados(
-    (data ?? []).map((r) => publicadoFromRow(r as FamiliaRow & { variacoes: VariacaoPub[] })),
+    rows.map((r) => publicadoFromRow(r, itensUpPorCodigo.get(r.codigo_pai))),
   );
 
   // Split (ADR-0048): anúncios de partições >0 vivem só em anuncios_externos (familias.ml_item_id
@@ -932,6 +1007,13 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       mlPermalink: a.permalink ?? null,
       publicadoEm: a.publicado_em ?? rep.publicadoEm,
       qtdVariacoes: qtdPorAnuncio.get(a.item_externo_id) ?? 0,
+      catalogRetentavel: catalogStatusRetentavelEmEspelho(
+        (a.variacoes_externas as Record<string, {
+          catalog_status?: string | null;
+          catalog_listing_id?: string | null;
+          variation_id?: string | null;
+        }> | null) ?? null,
+      ),
     });
   }
   return [...comContagem, ...extras];

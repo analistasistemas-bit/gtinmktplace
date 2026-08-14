@@ -52,6 +52,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.reprocessar-familia]
 verify_jwt = false
+[functions.retentar-catalogo]
+verify_jwt = false
 [functions.monitorar-moderados]
 verify_jwt = false
 [functions.sync-pergunta]
