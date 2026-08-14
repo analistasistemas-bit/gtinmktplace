@@ -28,6 +28,16 @@ falha parcial. Respondidas não agrupam — a resposta é parte do card.
 **Lição:** conferir `raw->>'id'` antes de tratar repetição visual como duplicação de dados; contar
 "N no app = N no ML" não discrimina sozinho.
 
+## 2026-08-14 — opt-in de catálogo parou em `erro` com item ML em moderação (lote #16, DSA)
+
+Família `00000034` / SKU `00000035` / item `MLB7411163866`. O worker achou ficha por GTIN
+(`MLB18407878`) e o `POST /items/catalog_listings` devolveu 400 `under_review` ~10 min após o
+publish. Gravou `catalog_status='erro'`, não reagendou e não alertou. O item depois ficou ativo.
+
+**Correção (ADR-0021 adendo):** `optinErroRetentavel` classifica esse 400 como retentável;
+conta/persiste como `nao_elegivel` (backoff + alerta Telegram ao esgotar). Outros 400 continuam
+`erro`. Linhas já em `erro` (este caso) exigem re-enfileirar `vincular-catalogo`.
+
 ## 2026-08-13 — variação viva no ML, inexistente no PubliAI (linha Xik, cor Azul)
 
 Uma venda pelo anúncio de catálogo `MLB7010890734` não baixou estoque e caiu no alerta "venda sem

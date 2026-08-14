@@ -335,6 +335,12 @@ export function detalharErroOptin(json: unknown): string {
   return b?.message ?? JSON.stringify(json);
 }
 
+/** Opt-in recusado porque o item ML ainda está em moderação — retentável pelo backoff de `nao_elegivel`. */
+export function optinErroRetentavel(erro: string | null | undefined): boolean {
+  if (!erro) return false;
+  return /under_review/i.test(erro);
+}
+
 /**
  * Opt-in no catálogo. 4xx → retorna erro (não lança); o chamador persiste sem derrubar o anúncio.
  * `variation_id` é opcional: item Legacy (com variações) sempre o envia via `montarBodyOptin`; item
@@ -494,8 +500,13 @@ export async function vincularVariacoesCatalogo(
       if (acao === 'optin') {
         const r = await optinCatalogo(token, montarBodyOptinVariacao(itemId, v.ml_variation_id, cpid!));
         if (r.erro) {
-          resumo.erro++;
-          await setVar(v.id, { catalog_status: 'erro', catalog_erro: r.erro });
+          if (optinErroRetentavel(r.erro)) {
+            resumo.nao_elegivel++;
+            await setVar(v.id, { catalog_status: 'nao_elegivel', catalog_erro: r.erro });
+          } else {
+            resumo.erro++;
+            await setVar(v.id, { catalog_status: 'erro', catalog_erro: r.erro });
+          }
         } else {
           resumo.vinculado++;
           await setVar(v.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
@@ -602,8 +613,13 @@ export async function vincularItensCatalogoUP(
       if (acao === 'optin') {
         const r = await optinCatalogo(token, montarBodyOptinItem(f.item_externo_id, cpid!));
         if (r.erro) {
-          await setItem(f.id, { catalog_status: 'erro', catalog_erro: r.erro });
-          resumo.erro++;
+          if (optinErroRetentavel(r.erro)) {
+            await setItem(f.id, { catalog_status: 'nao_elegivel', catalog_erro: r.erro });
+            resumo.nao_elegivel++;
+          } else {
+            await setItem(f.id, { catalog_status: 'erro', catalog_erro: r.erro });
+            resumo.erro++;
+          }
         } else {
           await setItem(f.id, { catalog_status: 'vinculado', catalog_listing_id: r.catalogListingId ?? null, catalog_erro: null });
           resumo.vinculado++;

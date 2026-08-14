@@ -258,3 +258,25 @@ primeiro job espera +1h (antes: retries em minutos). Decisão explícita do oper
 vinculação é best-effort e não bloqueia a publicação.
 
 Spec: `docs/superpowers/specs/2026-08-12-catalogo-em-risco-design.md`.
+
+---
+
+## Revisão pós-incidente (2026-08-14) — opt-in recusado por under_review
+
+**Incidente:** lote #16, org DSA — família `00000034`, SKU `00000035`, item `MLB7411163866`, ficha
+`MLB18407878`. ~10 min após o publish o `POST /items/catalog_listings` devolveu
+`(400) Cannot create a catalog listing from an item with status under_review.` O worker gravava
+`catalog_status='erro'`, `decidirResultadoRodadaCatalogo` finalizava sem retry e sem Telegram
+(`deveAlertarCatalogoNoMatch` ignora `resumo.erro`). O item depois ficou ativo; o job não voltou.
+
+**Decisão:** helper puro `optinErroRetentavel(erro)` — verdadeiro só quando a mensagem indica item
+em revisão (`/under_review/i`, case-insensitive). Nos orquestradores (`vincularVariacoesCatalogo`,
+`vincularItensCatalogoUP`), após `optinCatalogo` com erro retentável: `resumo.nao_elegivel++` e
+persistir `{ catalog_status: 'nao_elegivel', catalog_erro }`. Outros 400 (domínio, validação etc.)
+continuam `resumo.erro++` / `catalog_status: 'erro'`. Reusa o backoff existente de `nao_elegivel`
+(1h/6h/24h/48h, ~3,3 dias) e o alerta Telegram `elegibilidade_esgotada` ao esgotar (ADR-0036).
+
+**Não muda:** delay inicial de 10 min; enum/`catalog_status`; `monitorar-moderados`. Linhas já
+gravadas em `erro` (lote #16) **não** reprocessam sozinhas — exigem re-enfileirar
+`vincular-catalogo`. Catch genérico das orquestrações continua `resumo.erro` (só classifica o
+retorno de `optinCatalogo`).

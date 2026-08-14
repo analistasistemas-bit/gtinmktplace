@@ -75,4 +75,5 @@ cilada). Lote #31 → `MLB4875716733`.
 ## Vínculo de catálogo (`vincular-catalogo`)
 
 Opt-in por GTIN, com delay de 10min (dá tempo do item existir no ML). Alerta Telegram se
-no-match ou ficha divergente (kit).
+no-match ou ficha divergente (kit). Opt-in recusado por item `under_review` no ML reentra no backoff
+de `nao_elegivel` (1h/6h/24h/48h) em vez de parar em `erro`.

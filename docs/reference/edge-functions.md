@@ -449,7 +449,9 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   O worker aceita `alertar: false` no **body do job**: suprime só o envio do Telegram e é propagado
   nos reagendamentos, para o backfill rodar sem enxurrada de mensagens. Job sem o campo (todas as
   publicações normais) alerta como sempre; `queue.ts` não conhece o campo de propósito, para não
-  arrastar a frota QStash inteira no deploy. **ADR-0088 Fase 2:** roteia por
+  arrastar a frota QStash inteira no deploy. **Revisão 2026-08-14:** opt-in recusado porque o item ML
+  ainda está `under_review` conta como `nao_elegivel` (mesmo backoff/alerta), não como `erro`
+  terminal. **ADR-0088 Fase 2:** roteia por
   família Legacy (1 item, N variações — `vincularVariacoesCatalogo`) ou User Products (N itens
   filhos, cada cor seu próprio item ML sem `variations[]` — `vincularItensCatalogoUP`), detectado
   pela presença de linhas em `anuncios_externos_itens` (trava em `particao=0`, a única que a saga UP

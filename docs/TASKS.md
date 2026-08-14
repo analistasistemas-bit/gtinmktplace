@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Catálogo — opt-in recusado por under_review — 2026-08-14
+
+ADR: `docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md` (adendo pós-incidente lote #16)
+
+- [x] **Helper `optinErroRetentavel`** — classifica 400 `under_review` como retentável.
+- [x] **Orquestradores Legacy e UP** — opt-in under_review conta/persiste como `nao_elegivel` (backoff + alerta existentes); outros 400 continuam `erro`.
+- [x] **Testes** — helper + integração item plano e UP; `decidirResultadoRodadaCatalogo` inalterado.
+
 ## Catálogo em risco — anúncios pausando sem aviso — 2026-08-13
 
 Spec: `docs/superpowers/specs/2026-08-12-catalogo-em-risco-design.md` ·
