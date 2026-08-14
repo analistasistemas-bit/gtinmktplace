@@ -534,6 +534,7 @@ export default function DetalheFinanceiro() {
             ['liberado', 'Liberados'],
             ['aliberar', 'A liberar'],
             ['sacado', 'Sacados'],
+            ['cancelados', 'Cancelados'],
             ['devolvidos', 'Devolvidos'],
           ] as const).map(([k, lbl]) => (
             <Button key={k} size="sm" variant={filtroLib === k ? 'default' : 'outline'}

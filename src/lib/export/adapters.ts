@@ -575,6 +575,7 @@ const COLS_FIN_DETALHE: Coluna[] = [
 
 const FILTRO_LIB_LABEL: Record<string, string> = {
   todos: 'Todos', liberado: 'Liberado', aliberar: 'A liberar', sacado: 'Sacados',
+  cancelados: 'Cancelados', devolvidos: 'Devolvidos',
 };
 
 interface FinanceiroDetalheArgs {

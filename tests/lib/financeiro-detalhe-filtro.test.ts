@@ -33,24 +33,36 @@ const DEVOLVIDA = venda({
   estorno: 384.8, tem_devolucao: true, money_release_date: PASSADO,
   itens: [item({ id: 'i2', unit_price: 384.8 })],
 });
+const CANCELADA = venda({
+  id: 'c', order_id: 3, status: 'cancelled', total_amount: 50, liquido: 45,
+  estorno: 50, tem_devolucao: false, money_release_date: PASSADO,
+  itens: [item({ id: 'i3', unit_price: 50 })],
+});
 
 describe('filtrarPedidosFinanceiro', () => {
-  it('"todos" mostra só venda faturável — a devolvida fica fora', () => {
-    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA]);
+  it('"todos" mostra só venda faturável — a devolvida e cancelada ficam fora', () => {
+    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA, CANCELADA]);
     const visiveis = filtrarPedidosFinanceiro(pedidos, 'todos', AGORA);
     expect(visiveis).toHaveLength(1);
     expect(visiveis[0].orderIds).toEqual([1]);
   });
 
-  it('"devolvidos" mostra exclusivamente o que não é faturável', () => {
-    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA]);
+  it('"devolvidos" mostra exclusivamente o que não é faturável com devolução (cancelado sem devolução não aparece)', () => {
+    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA, CANCELADA]);
     const visiveis = filtrarPedidosFinanceiro(pedidos, 'devolvidos', AGORA);
     expect(visiveis).toHaveLength(1);
     expect(visiveis[0].orderIds).toEqual([2]);
   });
 
-  it('"liberado" nunca traz devolvida, mesmo com data de liberação no passado', () => {
-    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA]);
+  it('"cancelados" mostra exclusivamente o que não é faturável sem devolução (devolvida não aparece)', () => {
+    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA, CANCELADA]);
+    const visiveis = filtrarPedidosFinanceiro(pedidos, 'cancelados', AGORA);
+    expect(visiveis).toHaveLength(1);
+    expect(visiveis[0].orderIds).toEqual([3]);
+  });
+
+  it('"liberado" nunca traz devolvida nem cancelada, mesmo com data de liberação no passado', () => {
+    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA, CANCELADA]);
     const visiveis = filtrarPedidosFinanceiro(pedidos, 'liberado', AGORA);
     expect(visiveis).toHaveLength(1);
     expect(visiveis[0].orderIds).toEqual([1]);
@@ -59,18 +71,19 @@ describe('filtrarPedidosFinanceiro', () => {
   it('"sacado" traz só o que foi marcado como sacado', () => {
     const pedidos = agruparPorPedido([
       PAGA_LIBERADA,
-      venda({ id: 'c', order_id: 3, money_release_date: PASSADO, sacado_em: '2026-08-05T00:00:00Z' }),
+      venda({ id: 's', order_id: 4, money_release_date: PASSADO, sacado_em: '2026-08-05T00:00:00Z' }),
     ]);
-    expect(filtrarPedidosFinanceiro(pedidos, 'sacado', AGORA).map((p) => p.orderIds)).toEqual([[3]]);
+    expect(filtrarPedidosFinanceiro(pedidos, 'sacado', AGORA).map((p) => p.orderIds)).toEqual([[4]]);
   });
 
-  it('pack misto (uma order cancelada, outra paga) continua visível — tem dinheiro a receber', () => {
+  it('pack misto (uma order cancelada, outra paga) continua visível em "todos" e fora de devolvidos e cancelados', () => {
     const pedidos = agruparPorPedido([
       venda({ id: 'x', order_id: 10, pack_id: 99, shipping_id: 99, status: 'cancelled', total_amount: 16, liquido: 14 }),
       venda({ id: 'y', order_id: 11, pack_id: 99, shipping_id: 99, total_amount: 40, liquido: 33 }),
     ]);
     expect(filtrarPedidosFinanceiro(pedidos, 'todos', AGORA)).toHaveLength(1);
     expect(filtrarPedidosFinanceiro(pedidos, 'devolvidos', AGORA)).toHaveLength(0);
+    expect(filtrarPedidosFinanceiro(pedidos, 'cancelados', AGORA)).toHaveLength(0);
   });
 });
 
