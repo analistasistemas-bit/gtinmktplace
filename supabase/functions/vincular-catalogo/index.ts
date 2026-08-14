@@ -33,7 +33,8 @@ async function coresNoMatchUP(admin: ReturnType<typeof adminClient>, familia: { 
 
 // Worker do opt-in de catálogo (ADR-0021), deferido via QStash. A elegibilidade de catálogo do
 // ML só fica pronta minutos (às vezes dias) após o CREATE; este job roda com delay e as variações
-// `pendente` reagendam pelo mesmo backoff longo de `nao_elegivel` (1h/6h/24h/48h). O 500 fica só
+// `pendente` e opt-in recusado por `under_review` reagendam pelo mesmo backoff longo de
+// `nao_elegivel` (1h/6h/24h/48h). O 500 fica só
 // para falha real (token/rede/leitura de elegibilidade).
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -92,7 +93,7 @@ Deno.serve(async (req) => {
       } else {
         await enfileirarVinculacaoCatalogo(job.familia_id, resultado.delaySegundos, resultado.proximaTentativa, 2);
       }
-      console.log(`catálogo (job) ${familia.ml_item_id}: espera na tentativa ${tentativaAtual}, reagendado p/ tentativa ${resultado.proximaTentativa} em +${resultado.delaySegundos}s`);
+      console.log(`catálogo (job) ${familia.ml_item_id}: espera na tentativa ${tentativaAtual} (nao_elegivel/pendente/under_review), reagendado p/ tentativa ${resultado.proximaTentativa} em +${resultado.delaySegundos}s`);
       return new Response(JSON.stringify({ reagendado: true, proximaTentativa: resultado.proximaTentativa }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 

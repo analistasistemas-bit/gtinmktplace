@@ -70,6 +70,8 @@ function stubFetch(opts: {
   ficha?: Record<string, unknown> | null;     // resposta de /products/search
   length?: string | null;                     // LENGTH do nosso item (trava de metragem)
   optinId?: string;                           // id devolvido pelo POST
+  optinStatus?: number;
+  optinBody?: unknown;
 }) {
   const calls: Array<{ url: string; method: string }> = [];
   const fn = vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -79,7 +81,12 @@ function stubFetch(opts: {
     const ok = (json: unknown) => new Response(JSON.stringify(json), { status: 200 });
     if (url.includes('/catalog_listing_eligibility')) return ok(opts.elig ?? {});
     if (url.includes('/products/search')) return ok(opts.ficha === null ? { results: [] } : { results: [opts.ficha] });
-    if (url.includes('/items/catalog_listings')) return ok({ id: opts.optinId ?? 'MLB-LISTING-1' });
+    if (url.includes('/items/catalog_listings')) {
+      if (opts.optinStatus && opts.optinStatus >= 400) {
+        return new Response(JSON.stringify(opts.optinBody ?? { message: 'error' }), { status: opts.optinStatus });
+      }
+      return ok({ id: opts.optinId ?? 'MLB-LISTING-1' });
+    }
     if (url.match(/\/items\/[^/]+\?/)) return ok({ attributes: opts.length ? [{ id: 'LENGTH', value_name: opts.length }] : [] });
     return ok({});
   });
@@ -178,5 +185,35 @@ describe('vincularItensCatalogoUP — vinculação por item (não por variação
     expect(resumo.vinculado).toBe(0);
     expect(resumo.erro).toBe(1);
     expect(writes.some((w) => w.id === 'item-verde' && w.values.catalog_status === 'vinculado')).toBe(true);
+  });
+
+  it('opt-in 400 under_review → nao_elegivel (retentável), não erro terminal', async () => {
+    stubFetch({
+      elig: READY, ficha: FICHA_UNIDADE,
+      optinStatus: 400,
+      optinBody: { message: 'Cannot create a catalog listing from an item with status under_review.' },
+    });
+    const { admin, writes } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.nao_elegivel).toBe(1);
+    expect(resumo.erro).toBe(0);
+    const w = writes.find((x) => x.id === 'item-1' && x.values.catalog_status === 'nao_elegivel');
+    expect(w?.values.catalog_erro).toContain('under_review');
+  });
+
+  it('opt-in 400 de domínio → erro terminal (não retentável)', async () => {
+    stubFetch({
+      elig: READY, ficha: FICHA_UNIDADE,
+      optinStatus: 400,
+      optinBody: {
+        message: 'Validation error',
+        cause: [{ code: 'catalog_product_id.invalid', message: 'Invalid catalog_product_id: MLB25749603 does not belong to domain MLB-BODY_SKIN_CARE_PRODUCTS' }],
+      },
+    });
+    const { admin, writes } = fakeAdmin();
+    const resumo = await vincularItensCatalogoUP('tok', admin, [filho()]);
+    expect(resumo.erro).toBe(1);
+    expect(resumo.nao_elegivel).toBe(0);
+    expect(writes.find((x) => x.id === 'item-1' && x.values.catalog_status === 'erro')).toBeTruthy();
   });
 });

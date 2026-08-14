@@ -11,6 +11,7 @@ import {
   normalizarComprimentoMetros,
   parseProdutoCatalogoBusca,
   fichaEquivalente,
+  optinErroRetentavel,
   type EligVar,
   type ResumoCatalogo,
 } from '../catalogo';
@@ -18,6 +19,34 @@ import {
 const READY: EligVar = { id: 1, status: 'READY_FOR_OPTIN', buy_box_eligible: true };
 const FAMILY_DIFF: EligVar = { id: 2, status: 'FAMILY_DIFF', buy_box_eligible: false, reason: 'variation_belongs_to_different_family' };
 const NOT_ELIGIBLE: EligVar = { id: 3, status: 'NOT_ELIGIBLE', buy_box_eligible: false };
+
+describe('optinErroRetentavel', () => {
+  it('400 under_review (caso real lote #16) → true', () => {
+    expect(optinErroRetentavel('(400) Cannot create a catalog listing from an item with status under_review.')).toBe(true);
+  });
+
+  it('under_review em qualquer casing → true', () => {
+    expect(optinErroRetentavel('status Under_Review')).toBe(true);
+  });
+
+  it('400 catalog_product_id.invalid / domínio → false', () => {
+    expect(optinErroRetentavel('(400) catalog_product_id.invalid Invalid catalog_product_id: MLB25749603 does not belong to domain MLB-BODY_SKIN_CARE_PRODUCTS')).toBe(false);
+  });
+
+  it('Validation error / outros 400 → false', () => {
+    expect(optinErroRetentavel('(400) Validation error')).toBe(false);
+  });
+
+  it('undefined / vazio → false', () => {
+    expect(optinErroRetentavel(undefined)).toBe(false);
+    expect(optinErroRetentavel('')).toBe(false);
+    expect(optinErroRetentavel(null)).toBe(false);
+  });
+
+  it('"review" isolado (sem under_review) → false', () => {
+    expect(optinErroRetentavel('item under review by ML')).toBe(false);
+  });
+});
 
 describe('decidirAcaoCatalogo', () => {
   it('já vinculada (catalog_listing_id) → pula, ignora elegibilidade', () => {
