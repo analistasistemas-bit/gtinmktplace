@@ -89,6 +89,28 @@ antes: só descarta com evidência positiva.
 escolher a camada; se são vários, a trava desce para o ponto por onde todos passam — e vira
 parâmetro obrigatório, para o compilador guardar a regra no lugar da disciplina.
 
+## Adendo 2026-08-14 — abas Devolvidos e Cancelados no Detalhe do líquido
+
+O filtro `devolvidos` introduzido no adendo de 2026-08-12 (A3/A4/A5) usava `!faturavel` e, depois
+da separação parcial, `tem_devolucao`. Os dois critérios inflavam a aba:
+
+1. **Cancelamentos** (`cancelled` sem claim de devolução) apareciam junto das devoluções reais.
+2. **`tem_devolucao`** é atalho de badge: `upsertDevolucao` marca a venda em **qualquer** claim
+   sincronizado (mediação, `cancel_sale`, etc.), não só `type = 'returns'` — o mesmo critério do
+   glossário e de `devolucoesConcluidasNoPeriodo` (ADR-0106).
+
+**Decisão (read-side, sem migration):**
+
+- Aba **Cancelados:** `!faturavel` e nenhum `order_id` com claim `type = 'returns'` em
+  `ml_devolucoes` (`orderIdsComDevolucaoReal`).
+- Aba **Devolvidos:** o inverso — não faturável **com** claim `returns`.
+- `rotuloNaoFaturavel` e `filtrarPedidosFinanceiro` recebem o `Set` de order IDs; callers sem
+  devoluções carregadas mantêm fallback em `tem_devolucao` (export/PDF legado).
+
+Contagem validada na conta AVIL (30d, 2026-08-14): 5 devoluções reais vs dezenas antes; o painel
+"Devoluções a caminho" do ML (~5) **não** é referência 1:1 — ele lista pela chegada do pacote
+(glossário, ADR-0106); esta aba lista pedidos cancelados com claim `returns` no período das vendas.
+
 ## Fora de escopo
 
 `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) também não valida se a order é uma venda, então um claim sobre compra pode recriar linha em `ml_devolucoes`. Não corrigido aqui: é o menu Faturamento, e a trava óbvia (exigir venda existente) arriscaria descartar devolução legítima cuja venda ainda não sincronizou. Registrado para a próxima rodada.

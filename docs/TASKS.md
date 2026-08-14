@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Financeiro — filtros Devolvidos e Cancelados no Detalhe do líquido — 2026-08-14
+
+ADR: `docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md` (adendo 2026-08-14) ·
+glossário **Devolução (concluída)** · ADR-0106
+
+- [x] **Motivo.** A aba `Devolvidos` listava dezenas de linhas (não batia com ~5 devoluções do painel
+  ML). Duas causas: (1) o filtro usava `!faturavel` e misturava cancelamentos; (2) mesmo após separar
+  abas, `tem_devolucao` é setada em **qualquer** claim (`upsertDevolucao`), inclusive mediação e
+  `cancel_sale` — o rótulo `devolvido` aparecia onde o glossário exige `type = 'returns'`.
+- [x] **Filtro `Cancelados`.** Pedido não faturável sem claim `returns` (`!faturavel &&
+  !pedidoTemDevolucaoReal`). Botão próprio na barra (Sacados → Cancelados → Devolvidos). Commits
+  `6c1b9ef2`.
+- [x] **Filtro `Devolvidos`.** Cruza `ml_devolucoes` via `orderIdsComDevolucaoReal` (só
+  `type = 'returns'`), não a flag `tem_devolucao`. `DetalheFinanceiro` carrega `useDevolucoes`.
+  Commit `6e235c62`.
+- [x] **Validação.** Conta AVIL, 30 dias, browser-use em produção pós-deploy: **5** Devolvidos (todos
+  `devolvido`), **32** Cancelados (todos `cancelado`); ~30 linhas que estavam erradas em Devolvidos
+  migraram para Cancelados. Testes: `financeiro-detalhe-filtro`, `financeiro-cancelado`,
+  `devolucoes-cards` (24 no escopo).
+- [ ] **Baixo (opcional):** `aria-label` do checkbox ainda diz "devolvido" em linha cancelada.
+
 ## Catálogo — botão "Tentar catálogo de novo" (Publicados) — 2026-08-14
 
 ADR: `docs/decisions/0021-vinculacao-automatica-ao-catalogo-ml.md` (extensão operacional)
