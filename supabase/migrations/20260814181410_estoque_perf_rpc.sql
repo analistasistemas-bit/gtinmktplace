@@ -35,6 +35,7 @@ as $$
     select
       v.familia_id,
       v.codigo,
+      v.cor,
       v.gtin,
       v.estoque,
       v.custo,
