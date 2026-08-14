@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — alerta "Venda sem saldo suficiente" vs desync ML — 2026-08-14
+
+ADR: `docs/decisions/0094-estoque-ledger-e-push.md` (Bloco A, alertas operacionais)
+
+- [x] **Motivo.** Telegram mostrava `⚠️ Venda sem saldo suficiente` em vendas com saldo já zerado há
+  dias (desync ML ↔ PubliAI). A mensagem genérica + dedupe por pedido gerava spam quando o anúncio
+  seguia publicado no ML com estoque interno 0. Vender a **última unidade** (1→0) **não** alerta —
+  o critério antigo (`estoque_anterior < pedido`) era correto, mas indistinguível na mensagem.
+- [x] **Classificação pura.** `classificarBaixaSemSaldo()` em `_shared/estoque/baixa.ts`:
+  `ok` (aplicada ≥ pedida), `parcial` (havia saldo >0 mas insuficiente), `desync`
+  (`estoque_anterior === 0`).
+- [x] **Mensagens distintas no `sync-venda`.** Parcial mantém dedupe por pedido
+  (`estoque_sem_saldo`); desync usa dedupe por SKU/dia (`estoque_desync_ml:{codigo}:{YYYY-MM-DD}`,
+  fuso America/Sao_Paulo) com texto "ML vendeu com estoque zerado no PubliAI".
+- [x] **Testes.** +126 linhas em `baixa.test.ts` (31 testes no módulo).
+- [x] **Merge e deploy.** Main `be14f101`; `sync-venda` redeployada (v66).
+- [ ] **P1 (fora de escopo):** verificação pós-push ao zerar estoque no ML para evitar desync
+  prolongado (ex.: SKU `00000005` / MLB4982690837, 6 dias zerado e ainda publicado).
+
 ## Financeiro — filtros Devolvidos e Cancelados no Detalhe do líquido — 2026-08-14
 
 ADR: `docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md` (adendo 2026-08-14) ·

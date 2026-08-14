@@ -668,9 +668,12 @@ falha ao ler `organizations` não libera.
   one-shot `novaPaga` — a idempotência vem do ledger, então o retry do QStash retoma uma baixa que
   falhou no meio), chama `registrarBaixaVenda` (`_shared/estoque/baixa.ts`), que roda a RPC
   `baixar_estoque` por SKU e despacha o outbox de push pendente (`despacharPushPendente`) — nunca o
-  que só esta execução aplicou, para reencontrar um push perdido de execuções anteriores. Notifica
-  categoria `vendas` em venda sem saldo suficiente e em falha de RPC (nunca some em silêncio, é
-  caminho financeiro). Cancelamento **antes do despacho** (`pedido.status === 'cancelled'` com
+  que só esta execução aplicou, para reencontrar um push perdido de execuções anteriores.   Notifica categoria `vendas` em falha de RPC (nunca some em silêncio, é caminho financeiro).
+  **Alertas de baixa parcial vs desync (2026-08-14):** `classificarBaixaSemSaldo` distingue três
+  desfechos — `ok` (aplicada ≥ pedida, inclusive última unidade), `parcial` (havia saldo >0 mas
+  insuficiente) e `desync` (`estoque_anterior === 0`, ML vendeu com PubliAI já zerado). Parcial
+  alerta por pedido (`estoque_sem_saldo`); desync dedupe por SKU/dia
+  (`estoque_desync_ml:{codigo}:{YYYY-MM-DD}`, America/Sao_Paulo) com mensagem explícita de desync. Cancelamento **antes do despacho** (`pedido.status === 'cancelled'` com
   shipment em estado pré-despacho conhecido, ou sem envio) chama `estornarVendaCancelada` (RPC
   `estornar_estoque`, D-7) e despacha o outbox de reposição para **todos** os canais (inclusive o
   ML, que não repõe sozinho); despacho **desconhecido ou já ocorrido** apenas notifica categoria
