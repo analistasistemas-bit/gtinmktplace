@@ -65,6 +65,17 @@ export async function buscarDevolucoes(): Promise<Devolucao[]> {
  *  divergirem no mesmo período. */
 export const dataNoPeriodo = (d: Devolucao): string | null => d.fechado_em ?? d.aberto_em;
 
+/** Order IDs com claim de devolução real (type=returns), não mediação/cancelamento. */
+export function orderIdsComDevolucaoReal(
+  devolucoes: Pick<Devolucao, 'order_id' | 'type'>[],
+): Set<number> {
+  const ids = new Set<number>();
+  for (const d of devolucoes) {
+    if (d.order_id != null && d.type === 'returns') ids.add(d.order_id);
+  }
+  return ids;
+}
+
 /** Devoluções que ainda pedem ação do vendedor — o card "Precisa de atenção" do Dashboard.
  *  Ter `acoes_pendentes` NÃO basta: o ML continua devolvendo `available_actions` (ex.:
  *  "return review ok", com prazo) em claim já **fechado e reembolsado**, e o card ficava

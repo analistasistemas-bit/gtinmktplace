@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { devolucoesAbertas, devolucoesConcluidasNoPeriodo, dataNoPeriodo, type Devolucao } from '@/lib/devolucoes';
+import { devolucoesAbertas, devolucoesConcluidasNoPeriodo, dataNoPeriodo, orderIdsComDevolucaoReal, type Devolucao } from '@/lib/devolucoes';
 
 /** Os 8 claims reais da conta do Diego (lidos do banco em 2026-08-06), que foram a base do
  *  diagnóstico. Mantidos como estão: qualquer mudança de critério passa a ser medida contra
@@ -33,6 +33,18 @@ const REAIS: Devolucao[] = [
 ];
 
 const AGOSTO = { desde: '2026-08-01T03:00:00.000Z', ate: '2026-08-06T23:59:59.999Z' };
+
+describe('orderIdsComDevolucaoReal', () => {
+  it('inclui só order_id com type=returns', () => {
+    const devolucoes = [
+      base({ claim_id: 1, order_id: 100, type: 'returns' }),
+      base({ claim_id: 2, order_id: 200, type: 'mediations' }),
+      base({ claim_id: 3, order_id: 300, type: 'cancel_purchase' }),
+      base({ claim_id: 4, order_id: null, type: 'returns' }),
+    ];
+    expect(orderIdsComDevolucaoReal(devolucoes)).toEqual(new Set([100]));
+  });
+});
 
 describe('devolucoesConcluidasNoPeriodo', () => {
   it('atribui a devolução ao mês em que o dinheiro saiu, não ao da abertura', () => {

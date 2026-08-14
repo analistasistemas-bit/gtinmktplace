@@ -85,6 +85,30 @@ describe('filtrarPedidosFinanceiro', () => {
     expect(filtrarPedidosFinanceiro(pedidos, 'devolvidos', AGORA)).toHaveLength(0);
     expect(filtrarPedidosFinanceiro(pedidos, 'cancelados', AGORA)).toHaveLength(0);
   });
+
+  it('com Set de returns: tem_devolucao true mas order_id só em mediação cai em cancelados, não devolvidos', () => {
+    const pedidos = agruparPorPedido([
+      PAGA_LIBERADA,
+      venda({
+        id: 'm', order_id: 99, status: 'cancelled', total_amount: 50, liquido: 45,
+        estorno: 50, tem_devolucao: true, money_release_date: PASSADO,
+        itens: [item({ id: 'im', unit_price: 50 })],
+      }),
+    ]);
+    const orderIdsReturns = new Set([2]); // só order 2 tem claim type=returns
+    expect(filtrarPedidosFinanceiro(pedidos, 'devolvidos', AGORA, orderIdsReturns)).toHaveLength(0);
+    expect(filtrarPedidosFinanceiro(pedidos, 'cancelados', AGORA, orderIdsReturns).map((p) => p.orderIds))
+      .toEqual([[99]]);
+  });
+
+  it('com Set de returns: order_id com type=returns aparece em devolvidos', () => {
+    const pedidos = agruparPorPedido([PAGA_LIBERADA, DEVOLVIDA, CANCELADA]);
+    const orderIdsReturns = new Set([2]);
+    expect(filtrarPedidosFinanceiro(pedidos, 'devolvidos', AGORA, orderIdsReturns).map((p) => p.orderIds))
+      .toEqual([[2]]);
+    expect(filtrarPedidosFinanceiro(pedidos, 'cancelados', AGORA, orderIdsReturns).map((p) => p.orderIds))
+      .toEqual([[3]]);
+  });
 });
 
 describe('totais sob paginação', () => {

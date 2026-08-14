@@ -236,11 +236,23 @@ export function retidoDoPedido(p: Pick<Pedido, 'brutoFaturavel' | 'liquido' | 'i
   return round2(p.brutoFaturavel - p.liquido - p.imposto);
 }
 
+/** Pedido com devolução real (type=returns), não mediação/cancelamento (ADR-0106). */
+export function pedidoTemDevolucaoReal(
+  p: Pick<Pedido, 'orderIds' | 'tem_devolucao'>,
+  orderIdsDevolucao?: Set<number>,
+): boolean {
+  if (orderIdsDevolucao) return p.orderIds.some((id) => orderIdsDevolucao.has(id));
+  return p.tem_devolucao;
+}
+
 /** Motivo de o pedido ficar fora dos totais monetários, para a tela e o PDF marcarem a linha.
  *  null = pedido com alguma venda faturável (inclusive pack misto, que conta a parte paga). */
-export function rotuloNaoFaturavel(p: Pick<Pedido, 'faturavel' | 'tem_devolucao'>): string | null {
+export function rotuloNaoFaturavel(
+  p: Pick<Pedido, 'faturavel' | 'tem_devolucao' | 'orderIds'>,
+  orderIdsDevolucao?: Set<number>,
+): string | null {
   if (p.faturavel) return null;
-  return p.tem_devolucao ? 'devolvido' : 'cancelado';
+  return pedidoTemDevolucaoReal(p, orderIdsDevolucao) ? 'devolvido' : 'cancelado';
 }
 
 export type FiltroFinanceiro = 'todos' | 'liberado' | 'aliberar' | 'sacado' | 'cancelados' | 'devolvidos';
@@ -254,10 +266,11 @@ export type FiltroFinanceiro = 'todos' | 'liberado' | 'aliberar' | 'sacado' | 'c
  */
 export function filtrarPedidosFinanceiro(
   pedidos: Pedido[], filtro: FiltroFinanceiro, agoraMs: number = Date.now(),
+  orderIdsDevolucao?: Set<number>,
 ): Pedido[] {
   return pedidos.filter((p) => {
-    if (filtro === 'devolvidos') return !p.faturavel && p.tem_devolucao;
-    if (filtro === 'cancelados') return !p.faturavel && !p.tem_devolucao;
+    if (filtro === 'devolvidos') return !p.faturavel && pedidoTemDevolucaoReal(p, orderIdsDevolucao);
+    if (filtro === 'cancelados') return !p.faturavel && !pedidoTemDevolucaoReal(p, orderIdsDevolucao);
     if (!p.faturavel) return false;
     if (filtro === 'todos') return true;
     return statusLiberacao({

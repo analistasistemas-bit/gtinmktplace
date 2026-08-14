@@ -23,7 +23,9 @@ import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
 import { resumoSelecaoSaque } from '@/lib/saque-selecao';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularResumo } from '@/lib/resumo-vendas';
+import { orderIdsComDevolucaoReal } from '@/lib/devolucoes';
 import { agruparPorPedido, filtrarPedidosFinanceiro, nomeCurtoComprador, nomeExibicaoComprador, pedidoCasaBusca, retidoDoPedido, rotuloNaoFaturavel, totaisFinanceiro, type FiltroFinanceiro, type Pedido } from '@/lib/pedidos-faturamento';
+import { useDevolucoes } from '@/hooks/useDevolucoes';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { montarFotoResolver } from '@/lib/fotos-produto';
 import { montarCorResolver } from '@/lib/cor-produto';
@@ -140,11 +142,13 @@ function LinhaDetalhe({
   selecionado,
   onSelecionar,
   sacadoPorNome,
+  orderIdsDevolucao,
 }: {
   p: Pedido;
   selecionado: boolean;
   onSelecionar: (checked: boolean) => void;
   sacadoPorNome: string | null;
+  orderIdsDevolucao: Set<number>;
 }) {
   // Expansão persistida (sobrevive a sair/voltar do detalhe e ao refetch), como o sort.
   const [aberto, setAberto] = useSessionState(`expand:detalhe-financeiro:${p.chave}`, false);
@@ -153,7 +157,7 @@ function LinhaDetalhe({
   const retido = retidoDoPedido(p);
   // Devolvido/cancelado: fora dos totais (ADR-0038). Sem a marca, a linha mostrava bruto cheio e
   // líquido zerado como se o ML tivesse retido tudo — na verdade o dinheiro voltou ao comprador.
-  const naoFaturavel = rotuloNaoFaturavel(p);
+  const naoFaturavel = rotuloNaoFaturavel(p, orderIdsDevolucao);
   return (
     <>
       <TableRow
@@ -245,6 +249,7 @@ export default function DetalheFinanceiro() {
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
 
   const vendasQ = useVendas(janela, 'todos');
+  const devolucoesQ = useDevolucoes();
   const custosQ = useCustos();
   const fotosQ = useFotosProduto();
   const coresQ = useCoresProduto();
@@ -283,13 +288,19 @@ export default function DetalheFinanceiro() {
   const retido = r.descontos;
   const pctRetido = bruto > 0 ? (retido / bruto) * 100 : 0;
 
+  const orderIdsDevolucao = useMemo(
+    () => orderIdsComDevolucaoReal(devolucoesQ.data ?? []),
+    [devolucoesQ.data],
+  );
+
   const [filtroLib, setFiltroLib] = useState<FiltroFinanceiro>('todos');
   const [busca, setBusca] = useSessionState('busca:detalhe-financeiro', '');
   const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
 
   const pedidosFiltrados = useMemo(
-    () => filtrarPedidosFinanceiro(pedidos, filtroLib).filter((p) => pedidoCasaBusca(p, busca)),
-    [pedidos, filtroLib, busca],
+    () => filtrarPedidosFinanceiro(pedidos, filtroLib, Date.now(), orderIdsDevolucao)
+      .filter((p) => pedidoCasaBusca(p, busca)),
+    [pedidos, filtroLib, busca, orderIdsDevolucao],
   );
 
   // Ordenação: colunas textuais começam em A→Z; numéricas/data em maior→menor (mais recente).
@@ -599,6 +610,7 @@ export default function DetalheFinanceiro() {
                   selecionado={selecionados.has(p.chave)}
                   onSelecionar={(checked) => setSelecionado(p.chave, checked)}
                   sacadoPorNome={p.sacado_por ? nomesUsuarios?.get(p.sacado_por) ?? null : null}
+                  orderIdsDevolucao={orderIdsDevolucao}
                 />
               ))
             )}
