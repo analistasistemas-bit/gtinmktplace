@@ -107,21 +107,32 @@ async function enviarAnuncio(anuncio) {
 
     // Guard de eco + gates (invoice/anatel)
     const seguinte = interpretarRespostaMatcher(r1.corpo, plano);
-    if (seguinte.acao !== 'summary') {
+    if (seguinte.acao !== 'summary' && seguinte.acao !== 'invalidate') {
       return {
         anuncio, ok: false, etapa: 'pos-matcher', motivo: seguinte.motivo, corpo: r1.corpo,
         aviso: 'Wizard iniciado no servidor; terminar este anúncio MANUALMENTE na página do ML.',
       };
     }
 
-    // Chamada 2: massive_summary_confirm (POST) — payload ECOADO da resposta 1
-    const urlSummary = montarUrlOptinUp(basePath, anuncio.mlItemId, 'massive_summary_confirm');
-    const r2 = await executarEnvio(tabId, urlSummary, 'POST', {
-      parentProductId: seguinte.parentProductId,
-      productAssociations: seguinte.productAssociations,
-      flow: plano.flow,
-      invoice: null,
-    });
+    // Chamada 2 — payload SEMPRE ecoado da resposta 1. Dois desfechos possíveis, ambos POST:
+    // 'invalidate' quando nenhuma variação tem ficha (caminho medido em produção) e 'summary'
+    // quando sobrou alguma vinculada. Ver spec, seção do contrato.
+    const recurso = seguinte.acao === 'invalidate' ? 'invalidate_summary_confirm' : 'massive_summary_confirm';
+    const corpo2 = seguinte.acao === 'invalidate'
+      ? {
+        productId: seguinte.productId,
+        flow: plano.flow,
+        variationId: seguinte.variationId,
+        invalidateVariations: seguinte.invalidateVariations,
+      }
+      : {
+        parentProductId: seguinte.parentProductId,
+        productAssociations: seguinte.productAssociations,
+        flow: plano.flow,
+        invoice: null,
+      };
+    const urlSummary = montarUrlOptinUp(basePath, anuncio.mlItemId, recurso);
+    const r2 = await executarEnvio(tabId, urlSummary, 'POST', corpo2);
     if (r2.status < 200 || r2.status >= 300) {
       return {
         anuncio, ok: false, etapa: 'summary', status: r2.status, corpo: r2.corpo,

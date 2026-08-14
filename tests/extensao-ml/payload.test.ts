@@ -228,3 +228,48 @@ describe('interpretarRespostaMatcher — guard de eco antes do summary', () => {
     expect(interpretarRespostaMatcher(null, planoOk)).toMatchObject({ acao: 'manual', motivo: 'resposta_sem_product_associations' });
   });
 });
+
+// Caminho REAL observado em produção no 1º envio (MLB7066697288, 2026-08-13): quando TODAS as
+// variações vão como null, o ML não roteia para MULTI_VARIATION_SUMMARY — devolve
+// INVALIDATION_SUMMARY e a 2ª chamada passa a ser POST invalidate_summary_confirm com
+// {productId, flow, variationId, invalidateVariations}. Resultado verificado: a tag
+// catalog_forewarning saiu do item e a busca por ela caiu de 3 para 2 anúncios.
+describe('interpretarRespostaMatcher — INVALIDATION_SUMMARY (todas as variações sem ficha)', () => {
+  const plano = {
+    tipo: 'ok' as const, productId: 'MLB53418360', flow: 'REPRODUCTIZE',
+    confirmedProductMatches: [],
+    resumo: { null_enviados: ['204693165357', '204693165381'], preservados: [], excluidos_por_status: [], risco_ausente: [] },
+  };
+  const resposta = {
+    step: 'INVALIDATION_SUMMARY',
+    step_data: {
+      product_association: { entity_id: 'MLB7066697288', variation_id: null, catalog_product_id: 'MLB53418360' },
+      confirm_card: 'MASSIVE_USERPRODUCT_INVALIDATE',
+      invalidate_variations: ['204693165357', '204693165381'],
+    },
+  };
+
+  it('roteia para invalidate com o payload da 2ª chamada montado do eco', () => {
+    expect(interpretarRespostaMatcher(resposta, plano)).toEqual({
+      acao: 'invalidate',
+      productId: 'MLB53418360',
+      variationId: null,
+      invalidateVariations: ['204693165357', '204693165381'],
+    });
+  });
+
+  it('guard de eco também vale aqui: lista divergente → manual', () => {
+    const divergente = { ...resposta, step_data: { ...resposta.step_data, invalidate_variations: ['204693165357'] } };
+    expect(interpretarRespostaMatcher(divergente, plano)).toMatchObject({ acao: 'manual', motivo: 'eco_divergente' });
+  });
+
+  it('ordem diferente no eco não é divergência', () => {
+    const trocado = { ...resposta, step_data: { ...resposta.step_data, invalidate_variations: ['204693165381', '204693165357'] } };
+    expect(interpretarRespostaMatcher(trocado, plano)).toMatchObject({ acao: 'invalidate' });
+  });
+
+  it('sem catalog_product_id na associação → manual', () => {
+    const semId = { ...resposta, step_data: { ...resposta.step_data, product_association: { entity_id: 'X', variation_id: null, catalog_product_id: null } } };
+    expect(interpretarRespostaMatcher(semId, plano)).toMatchObject({ acao: 'manual', motivo: 'resposta_sem_parent_product' });
+  });
+});

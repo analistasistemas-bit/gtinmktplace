@@ -72,11 +72,34 @@ export function montarUrlOptinUp(basePath, itemId, recurso) {
   return `${String(basePath).replace(/\/+$/, '')}/api/optin-up/${itemId}/${recurso}`;
 }
 
+const mesmoConjunto = (a, b) =>
+  JSON.stringify([...a].map(String).sort()) === JSON.stringify([...b].map(String).sort());
+
 export function interpretarRespostaMatcher(corpo, plano) {
   const sd = corpo?.step_data;
-  if (!sd || !Array.isArray(sd.product_associations)) return { acao: 'manual', motivo: 'resposta_sem_product_associations' };
+  if (!sd) return { acao: 'manual', motivo: 'resposta_sem_product_associations' };
   if (sd.add_invoice) return { acao: 'manual', motivo: 'exige_invoice' };
   if (sd.anatel_data) return { acao: 'manual', motivo: 'exige_anatel' };
+
+  // Caminho de INVALIDAÇÃO (observado em produção no 1º envio, MLB7066697288 em 2026-08-13):
+  // quando TODAS as variações vão como null, o ML não devolve MULTI_VARIATION_SUMMARY e sim
+  // INVALIDATION_SUMMARY, e a 2ª chamada vira POST invalidate_summary_confirm. Mesmo guard de
+  // eco: a lista que o servidor computou tem que ser exatamente a que mandamos como null.
+  if (Array.isArray(sd.invalidate_variations)) {
+    if (!mesmoConjunto(sd.invalidate_variations, plano?.resumo?.null_enviados ?? [])) {
+      return { acao: 'manual', motivo: 'eco_divergente' };
+    }
+    const productId = sd.product_association?.catalog_product_id;
+    if (!productId) return { acao: 'manual', motivo: 'resposta_sem_parent_product' };
+    return {
+      acao: 'invalidate',
+      productId,
+      variationId: sd.product_association?.variation_id ?? null,
+      invalidateVariations: sd.invalidate_variations,
+    };
+  }
+
+  if (!Array.isArray(sd.product_associations)) return { acao: 'manual', motivo: 'resposta_sem_product_associations' };
   const parentProductId = sd.parent_catalog_product?.id;
   if (!parentProductId) return { acao: 'manual', motivo: 'resposta_sem_parent_product' };
   // Guard de eco: o conjunto de entity_ids que o servidor computou como null tem que ser

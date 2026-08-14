@@ -342,6 +342,50 @@ Mapeamento, conforme `getMappedGroups` e `onCardConfirm` do bundle:
 do fluxo de um anúncio multivariação (`experience: "MASSIVE"` refere-se a múltiplas variações do
 mesmo anúncio, **não** a vários anúncios de uma vez). Continua valendo: **uma chamada por anúncio**.
 
+### Validado em produção (2026-08-13) — 1º envio real, `MLB7066697288`
+
+O contrato acima foi executado ponta a ponta, com autorização explícita do operador, no anúncio
+"Fio De Malha Extra Premium" (50 variações, **todas** sem ficha, nenhum vínculo a preservar —
+escolhido justamente por não haver o que estragar).
+
+**Correção importante ao que este documento previa:** o fluxo tem duas chamadas, e a segunda **não
+é sempre** `massive_summary_confirm`. Quando todas as variações vão como `null`, o ML roteia para um
+fluxo de invalidação:
+
+```
+1) PATCH .../multivariation_matcher_confirm   → 200
+   resposta: step "INVALIDATION_SUMMARY", confirm_card "MASSIVE_USERPRODUCT_INVALIDATE",
+             step_data.invalidate_variations = [os 50 entity_id]
+
+2) POST  .../invalidate_summary_confirm       → 200
+   body: { productId, flow, variationId, invalidateVariations }   (ecoado da resposta 1)
+   resposta: step "CONGRATS_WARNING", type "MASSIVE_INVALIDATE_BUYBOX"
+```
+
+`massive_summary_confirm` (com `parentProductId`/`productAssociations`) continua sendo o caminho
+quando sobra variação vinculada — **esse ainda não foi observado ao vivo**.
+
+**Efeito medido no item** (antes → depois):
+
+| campo | antes | depois |
+|---|---|---|
+| `catalog_product_id` | `MLB53418360` | `null` |
+| tag `catalog_listing_eligible` | presente | removida |
+| tag `catalog_forewarning` | presente | **removida** (após alguns minutos) |
+| `status` | `active` | `active` |
+
+`GET /users/{seller}/items/search?tags=catalog_forewarning` caiu de **3 para 2** anúncios — o item
+saiu da fila de pausa do ML, continuando ativo e vendendo. A página do wizard voltou ao passo
+`SEARCH` ("Busque seu produto no catálogo"), coerente com a associação ao produto-pai ter sido
+desfeita: como nenhuma das 50 variações tinha ficha, não havia competição a perder.
+
+O guard de eco funcionou: o servidor devolveu exatamente os 50 `entity_id` enviados como `null`.
+
+**Nota de execução:** o PATCH da chamada 1 acabou sendo enviado duas vezes (uma tentativa cuja saída
+não foi capturada pelo filtro do terminal, e a repetição). Sem efeito colateral — o matcher confirm
+é declarativo e a segunda resposta foi idêntica —, o que confirma na prática a idempotência assumida
+no desenho.
+
 ### O que ainda não foi observado
 
 O `basePath` real e os headers exatos (cookie de sessão + `x-csrf-token`) não foram capturados de uma
