@@ -11,7 +11,7 @@
   - `skus_estoque_org()` — picker flat do DialogEntrada
 - [x] **Frontend two-phase.** `fetchProdutosEstoqueResumo` na carga inicial; variações e SKUs lazy; `buscarTodasPaginasParalelo` em `fetchCanaisPorProduto`.
 - [x] **Testes.** Mappers RPC, Estoque, produto-card, dialog-entrada, filtro (gtins/codigos/cores).
-- [ ] **Deploy.** `supabase db push` + validar carga Avil em produção.
+- [x] **Deploy.** Migration aplicada (`supabase db push`); frontend via main `6dfcc175`. Validar carga Avil em produção.
 
 ## Estoque — alerta "Venda sem saldo suficiente" vs desync ML — 2026-08-14
 
