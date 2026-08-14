@@ -42,18 +42,29 @@ export function montarPlanoAnuncio(estado, variacoesRisco, vinculos) {
       if (v?.status) { resumo.excluidos_por_status.push(String(v.id)); continue; } // filtro do ML
       if (v?.id == null) return { tipo: 'manual', motivo: 'variacao_sem_id' };
       const id = String(v.id);
+      const naPagina = v?.match?.product?.id ?? null;
+      const confirmado = vinculos[id];
+
+      // Vínculo confirmado tem PRECEDÊNCIA sobre a lista de risco. Motivo (medido na Linha Liza
+      // MLB7159179348, 2026-08-13): o mesmo ml_variation_id existe em duas famílias do mesmo
+      // anúncio (CREATE + UPDATE) e pode carregar status contraditórios — 'vinculado' numa linha
+      // e 'nao_elegivel' na outra. Com o risco vencendo, a variação que está competindo iria como
+      // null e o vínculo bom seria desfeito — exatamente o dano que este código existe para evitar.
+      if (confirmado) {
+        if (!naPagina) return { tipo: 'manual', motivo: `vinculo_sem_match_na_pagina:${id}` };
+        if (confirmado !== naPagina) return { tipo: 'manual', motivo: `vinculo_divergente:${id}` };
+        matches.push({ entity_id: v.id, catalog_product_id: naPagina }); // preserva
+        resumo.preservados.push(id);
+        continue;
+      }
+
       if (risco.has(id)) {
         matches.push({ entity_id: v.id, catalog_product_id: null }); // "Não encontro minha variação"
         resumo.null_enviados.push(id);
         continue;
       }
-      const naPagina = v?.match?.product?.id ?? null;
       if (!naPagina) return { tipo: 'manual', motivo: `variacao_sem_decisao:${id}` };
-      const confirmado = vinculos[id];
-      if (!confirmado) return { tipo: 'manual', motivo: `match_nao_confirmado:${id}` };
-      if (confirmado !== naPagina) return { tipo: 'manual', motivo: `vinculo_divergente:${id}` };
-      matches.push({ entity_id: v.id, catalog_product_id: naPagina }); // preserva
-      resumo.preservados.push(id);
+      return { tipo: 'manual', motivo: `match_nao_confirmado:${id}` };
     }
     confirmedProductMatches.push({
       group_attributes: (g?.match_product?.attributes ?? []).map(

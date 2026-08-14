@@ -229,6 +229,61 @@ describe('interpretarRespostaMatcher — guard de eco antes do summary', () => {
   });
 });
 
+// Conflito REAL de dados, encontrado no dry-run da Linha Liza (MLB7159179348, 2026-08-13) ANTES
+// de qualquer envio: o mesmo ml_variation_id aparece em DUAS famílias (CREATE + UPDATE do mesmo
+// anúncio) com status contraditórios — a variação 197583285254 (Acqua 2500) é 'vinculado' numa
+// linha e 'nao_elegivel' na outra. A página do ML confirma que ela ESTÁ casada com MLB31005551.
+// Se o risco tivesse precedência, ela iria como null e o vínculo bom seria desfeito.
+describe('montarPlanoAnuncio — vínculo confirmado tem precedência sobre linha de risco resíduo', () => {
+  const VINCULADA = '197583285254';
+  const CPID = 'MLB31005551';
+  const estadoLiza = {
+    stepData: {
+      parent_catalog_product: { id: 'MLB28760822' },
+      groups: [
+        { match_product: null, variations: [{ id: '197583285260', attributes: [], match: null }] },
+        { match_product: null, variations: [{ id: '197583285258', attributes: [], match: null }] },
+        { match_product: null, variations: [{ id: '197583285256', attributes: [], match: null }] },
+        { match_product: null, variations: [{ id: VINCULADA, attributes: [], match: { product: { id: CPID } } }] },
+      ],
+    },
+    contextData: { flow: 'REPRODUCTIZE' },
+  };
+  // a lista de risco vem contaminada com a variação vinculada (linha resíduo da outra família)
+  const riscoContaminado = ['197583285260', '197583285258', '197583285256', VINCULADA];
+  const vinculos = { [VINCULADA]: CPID };
+
+  it('preserva a vinculada mesmo estando na lista de risco, e manda null só nas outras', () => {
+    const p = montarPlanoAnuncio(estadoLiza, riscoContaminado, vinculos);
+    expect(p.tipo).toBe('ok');
+    expect(p.resumo.preservados).toEqual([VINCULADA]);
+    expect(p.resumo.null_enviados.sort()).toEqual(['197583285256', '197583285258', '197583285260']);
+    const daVinculada = p.confirmedProductMatches
+      .flatMap((g) => g.matches).find((m) => String(m.entity_id) === VINCULADA);
+    expect(daVinculada.catalog_product_id).toBe(CPID); // NUNCA null
+  });
+
+  it('vínculo do banco que NÃO bate com o match da página → manual (não reescreve o ML)', () => {
+    const p = montarPlanoAnuncio(estadoLiza, riscoContaminado, { [VINCULADA]: 'MLB_OUTRO' });
+    expect(p).toMatchObject({ tipo: 'manual', motivo: `vinculo_divergente:${VINCULADA}` });
+  });
+
+  it('vínculo no banco mas SEM match na página → manual (banco desatualizado)', () => {
+    const semMatch = {
+      ...estadoLiza,
+      stepData: {
+        ...estadoLiza.stepData,
+        groups: estadoLiza.stepData.groups.map((g) => ({
+          ...g,
+          variations: g.variations.map((v) => (v.id === VINCULADA ? { ...v, match: null } : v)),
+        })),
+      },
+    };
+    expect(montarPlanoAnuncio(semMatch, riscoContaminado, vinculos))
+      .toMatchObject({ tipo: 'manual', motivo: `vinculo_sem_match_na_pagina:${VINCULADA}` });
+  });
+});
+
 // Caminho REAL observado em produção no 1º envio (MLB7066697288, 2026-08-13): quando TODAS as
 // variações vão como null, o ML não roteia para MULTI_VARIATION_SUMMARY — devolve
 // INVALIDATION_SUMMARY e a 2ª chamada passa a ser POST invalidate_summary_confirm com
