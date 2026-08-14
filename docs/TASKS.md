@@ -21,9 +21,19 @@ Plano: `docs/superpowers/plans/2026-08-12-catalogo-em-risco-plan.md`
 - [x] **Script de backfill.** `scripts/backfill-catalogo-pendente.ts` (dry-run por padrão).
 - [ ] **Deploy** das 8 funções afetadas (`vincular-catalogo` + os 7 importadores de `telegram.ts`).
 - [ ] **Executar o backfill** das 93 famílias — depois do deploy, com aprovação do Diego.
-- [ ] **Fase 3 — extensão de navegador** para o "Não encontro minha variação" em massa. Fora desta
-  entrega: depende de confirmar o formato do `productId` no PATCH interno do ML. Não há caminho
-  OAuth (reverificado 2026-08-12: `403 EBADCSRFTOKEN` com Bearer válido).
+- [x] **Fase 3 — contrato resolvido e validado em produção** (2026-08-13, ADR-0118). O `productId`
+  é o `parent_catalog_product.id`, não o `user_product_id`. São **duas** chamadas por anúncio, e a
+  segunda depende do desfecho da primeira: `invalidate_summary_confirm` quando nenhuma variação tem
+  ficha, `massive_summary_confirm` quando sobra vinculada. Os 3 anúncios sinalizados foram
+  resolvidos (66 cliques manuais → segundos), sem perder nenhum dos 9 vínculos que competiam.
+- [x] **Escopo passou a ser a tag `catalog_forewarning`** do próprio ML (o mesmo sinal de "Próximos
+  a serem pausados"), no lugar da heurística local que listava 130 anúncios. Decisão do Diego.
+- [ ] **Deploy do card com a tag** — 15 funções, `status-publicados` obrigatoriamente antes ou junto
+  do front (senão o campo vem ausente e o card some em silêncio).
+- [ ] **Exercitar a extensão pelo painel.** As chamadas foram validadas direto na página; o fluxo de
+  clique do operador ainda não foi percorrido ponta a ponta.
+- [ ] **Item plano** (16 anúncios, `ml_variation_id = ml_item_id`) usa outro fluxo no ML — fora do
+  lote da extensão.
 
 ## Estoque — variação órfã no ML vendia sem baixar — 2026-08-13
 
