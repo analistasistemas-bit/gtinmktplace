@@ -231,6 +231,15 @@ Resumo: configurar Telegram em Configurações, deployar `monitorar-moderados`, 
 > `config.toml` (ver [edge-functions.md](../reference/edge-functions.md)). Prefira manter o
 > valor no `config.toml` a passar a flag no deploy.
 
+## Anúncios "Próximos a serem pausados" (catálogo)
+
+Procedimento do operador — como resolver quando o ML avisa que vai pausar anúncios por falta de
+associação ao catálogo: [../runbooks/catalogo-anuncios-a-pausar.md](../runbooks/catalogo-anuncios-a-pausar.md).
+
+Resumo: o card "Catálogo em risco" em Publicados lista só os anúncios que o ML sinalizou (tag
+`catalog_forewarning`); resolver pela extensão (`extensao-ml/`, com dry-run antes do envio) ou à mão
+pelo link do card. Contrato e travas em [ADR-0118](../decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md).
+
 ## Catálogo em risco: backfill das famílias congeladas em `pendente`
 
 Quando famílias ficam presas em `catalog_status='pendente'` (o worker parou de perguntar a

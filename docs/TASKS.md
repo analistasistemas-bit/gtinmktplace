@@ -28,8 +28,12 @@ Plano: `docs/superpowers/plans/2026-08-12-catalogo-em-risco-plan.md`
   resolvidos (66 cliques manuais → segundos), sem perder nenhum dos 9 vínculos que competiam.
 - [x] **Escopo passou a ser a tag `catalog_forewarning`** do próprio ML (o mesmo sinal de "Próximos
   a serem pausados"), no lugar da heurística local que listava 130 anúncios. Decisão do Diego.
-- [ ] **Deploy do card com a tag** — 15 funções, `status-publicados` obrigatoriamente antes ou junto
-  do front (senão o campo vem ausente e o card some em silêncio).
+- [x] **Deploy concluído (2026-08-13).** 15 edge functions, com `status-publicados` (v46→v47)
+  deployada ANTES do merge do front — a ordem importa: com o campo ausente o card sumiria sem erro.
+  Front no Render, main `5cb33680`. Card validado em produção com dados injetados: de dois anúncios
+  em risco local, só o sinalizado pelo ML aparece.
+- [x] **Runbook do operador:** `docs/runbooks/catalogo-anuncios-a-pausar.md` — como agir nas
+  próximas vezes que o ML sinalizar anúncios.
 - [ ] **Exercitar a extensão pelo painel.** As chamadas foram validadas direto na página; o fluxo de
   clique do operador ainda não foi percorrido ponta a ponta.
 - [ ] **Item plano** (16 anúncios, `ml_variation_id = ml_item_id`) usa outro fluxo no ML — fora do

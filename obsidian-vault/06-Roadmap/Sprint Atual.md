@@ -9,23 +9,46 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-08-13)
+## 📍 Passo atual (2026-08-13) — Fase 3 EM PRODUÇÃO
 
-> **🚧 Catálogo em risco — código pronto, aguardando deploy e backfill.** O ML marcava anúncios como
+> **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
+> pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram
+> segundos**, e os **9 vínculos que competiam foram preservados** (`ALREADY_OPTED_IN`); o resto
+> ficou em `LOOPING_ITEM` — o mesmo status do clique manual.
+>
+> **Como foi possível:** o ADR-0036 dava isso como impossível, e a conclusão dele continua correta
+> (não há caminho OAuth). Mas respondia a pergunta errada — o backend não consegue, o **navegador do
+> operador** consegue. Extensão MV3 em `extensao-ml/`, sem credencial armazenada, com dry-run
+> obrigatório antes de qualquer envio.
+>
+> **Contrato** (extraído do bundle do próprio ML e validado ao vivo): duas chamadas por anúncio, e a
+> segunda depende do desfecho da primeira — `invalidate_summary_confirm` quando nenhuma cor tem
+> ficha, `massive_summary_confirm` quando sobra vinculada.
+>
+> **Escopo mudou:** o card passou a listar só o que o ML sinaliza (tag `catalog_forewarning`,
+> legível pela API OAuth) — **3** anúncios, contra os 130 da heurística local anterior.
+>
+> **Dois bugs achados antes de causar dano**, ambos invisíveis a teste unitário: o mesmo
+> `ml_variation_id` existe em duas famílias com status contraditórios (teria mandado `null` em 8
+> variações que competiam no Ecoamigurumi); e no eco do servidor `entity_id` é o **item**, com a
+> variação em `variation_id` (o guard rejeitaria a resposta correta).
+>
+> Runbook do operador: `docs/runbooks/catalogo-anuncios-a-pausar.md`.
+> Pendência: o **painel** da extensão ainda não foi exercitado ponta a ponta — as chamadas foram
+> disparadas direto na página. Aguarda o próximo anúncio sinalizado.
+
+## 📍 Fase 1 (2026-08-13) — detecção
+
+> **✅ Em produção.** O ML marcava anúncios como
 > "Próximos a serem pausados" e o PubliAI não avisava nada. Causa: `pendente` devolvia 500 e vivia
 > só do retry curto do QStash (minutos), enquanto a elegibilidade do ML leva horas ou dias — o retry
 > esgotava e a família congelava; e o alerta do ADR-0036 exigia `pendente === 0`, então também nunca
 > saía. **93 famílias / 296 variações** congeladas.
 >
-> Entregue na branch `worktree-catalogo-em-risco`: `pendente` entra no backoff longo, falha de
-> leitura da elegibilidade propaga em vez de finalizar a rodada zerada (Legacy **e** User Products),
-> alerta cobre `pendente` residual, e o card **"Catálogo em risco"** aparece em Publicados com link
-> direto por anúncio. Sem migration.
->
-> **Não automatizável pela API:** o "Não encontro minha variação" é endpoint interno do site do ML
-> (`403 EBADCSRFTOKEN` mesmo com Bearer OAuth válido, reverificado 2026-08-12). A resolução em massa
-> vira a **Fase 3** (extensão de navegador, sem credencial armazenada). Ver ADR-0021 e ADR-0036
-> (revisões de 2026-08-12).
+> Entregue e mergeado: `pendente` entra no backoff longo, falha de leitura da elegibilidade propaga
+> em vez de finalizar a rodada zerada (Legacy **e** User Products), alerta cobre `pendente` residual,
+> e o card **"Catálogo em risco"** aparece em Publicados. Sem migration. Backfill das 93 famílias
+> executado em silêncio (sem enxurrada de Telegram). Ver ADR-0021 e ADR-0036 (revisões 2026-08-12).
 
 ## 📍 Passo anterior (2026-08-11)
 
