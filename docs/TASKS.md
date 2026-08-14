@@ -11,6 +11,7 @@
   completo sem virtual scroll.
 - [x] **Revisão Opus.** Bordas entre linhas no modo virtual; scroll focável (`tabIndex` + `role="region"`);
   `scrollbar-gutter: stable`; testes com bounds no DOM parcial.
+- [x] **Deploy.** Frontend via main `c75f8983` (sem migration).
 
 ## Estoque — P2 busca + prefetch — 2026-08-14
 
