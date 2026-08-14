@@ -12,6 +12,7 @@
   `usePrefetchEstoque` dispara prefetch no hover/focus do menu Estoque (só com módulo habilitado).
 - [x] **Testes.** `produtos-saldo-filtro` (nome variação), `mapResumoEstoqueRpc`, Estoque, produto-card.
 - [x] **Fix cadastro.** `dialog-cadastro-produto` invalida `QK.produtosEstoqueResumo` (chave morta `produtos-saldo` desde P0/P1).
+- [x] **Deploy.** Migration aplicada (`supabase db push`); frontend via main `3ee838c5`.
 
 ## Estoque — performance carga Avil — 2026-08-14
 
