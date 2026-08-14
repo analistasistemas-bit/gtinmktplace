@@ -1,18 +1,46 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ProdutoCard, CabecalhoProdutos, GRID_LINHA_PRODUTO } from '../produto-card';
-import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
+import { ProdutoCard, CabecalhoProdutos, GRID_LINHA_PRODUTO, VARIACOES_VIRTUAL_THRESHOLD, VARIACAO_ROW_ESTIMATE_PX } from '../produto-card';
+import type { ProdutoEstoqueResumo, VariacaoComSaldo } from '@/lib/produtos-saldo';
+import * as produtosSaldo from '@/lib/produtos-saldo';
 
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
 vi.mock('@/components/movimentos-estoque', () => ({
   MovimentosEstoque: () => <div>Movimentos de estoque</div>,
 }));
+
+const fetchVariacoesProdutoMock = vi.fn<typeof produtosSaldo.fetchVariacoesProduto>();
 vi.mock('@/lib/produtos-saldo', async (orig) => ({
   ...(await orig<typeof import('@/lib/produtos-saldo')>()),
-  fetchVariacoesProduto: () => Promise.resolve([]),
+  fetchVariacoesProduto: (...args: Parameters<typeof produtosSaldo.fetchVariacoesProduto>) =>
+    fetchVariacoesProdutoMock(...args),
 }));
+
+/** Gera N variações mock para testes de virtualização. */
+function mockVariacoes(n: number, codigoBase = 1001): VariacaoComSaldo[] {
+  return Array.from({ length: n }, (_, i) => ({
+    codigo: `0000${String(codigoBase + i).padStart(4, '0')}`,
+    nome: `Var ${i + 1}`,
+    cor: 'incolor',
+    gtin: `40058002419${String(i).padStart(2, '0')}`,
+    estoque: i,
+    custo: 10 + i,
+    preco: 20 + i,
+    pesoGramas: 100,
+    alturaCm: 10,
+    larguraCm: 10,
+    comprimentoCm: 10,
+    imagemPath: null,
+    mlPictureId: null,
+  }));
+}
+
+beforeEach(() => {
+  fetchVariacoesProdutoMock.mockReset();
+  fetchVariacoesProdutoMock.mockResolvedValue([]);
+});
 
 const produtoMono: ProdutoEstoqueResumo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: 'Descrição longa.',
@@ -180,5 +208,44 @@ describe('ProdutoCard', () => {
     await userEvent.click(screen.getByLabelText(/Mais ações/));
     expect(await screen.findByText('Excluir produto')).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(/remova pela tela Publicados/i)).toBeInTheDocument();
+  });
+
+  it('virtualiza a lista quando há mais variações que o limiar', async () => {
+    const n = VARIACOES_VIRTUAL_THRESHOLD + 1;
+    const variacoes = mockVariacoes(n);
+    fetchVariacoesProdutoMock.mockResolvedValue(variacoes);
+
+    const user = userEvent.setup();
+    const produtoMany = { ...produto, qtdSkus: n };
+    renderCard(produtoMany);
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('variacoes-virtual-scroll')).toBeInTheDocument();
+    });
+
+    const inner = screen.getByTestId('variacoes-virtual-inner');
+    expect(Number.parseInt(inner.style.height, 10)).toBe(n * VARIACAO_ROW_ESTIMATE_PX);
+
+    const codigosNoDom = variacoes.filter((v) => screen.queryByText(v.codigo));
+    expect(codigosNoDom.length).toBeLessThan(n);
+  });
+
+  it('não virtualiza quando há poucas variações — todas visíveis no DOM', async () => {
+    const variacoes = mockVariacoes(5);
+    fetchVariacoesProdutoMock.mockResolvedValue(variacoes);
+
+    const user = userEvent.setup();
+    const produtoFew = { ...produto, qtdSkus: 5 };
+    renderCard(produtoFew);
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => {
+      for (const v of variacoes) {
+        expect(screen.getByText(v.codigo)).toBeInTheDocument();
+      }
+    });
+
+    expect(screen.queryByTestId('variacoes-virtual-scroll')).not.toBeInTheDocument();
   });
 });

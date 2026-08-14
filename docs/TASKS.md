@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — P2.3 virtualização expand — 2026-08-14
+
+- [x] **P2.3 — Virtualização no expand.** Acima de 50 SKUs (`VARIACOES_VIRTUAL_THRESHOLD`), a aba
+  Variações usa `@tanstack/react-virtual` com scroll `max-h-[min(24rem,50vh)]`; cabeçalho fixo fora
+  do virtualizer; aba Movimentos inalterada.
+- [x] **Testes.** `produto-card.test.tsx`: 51 variações → container virtual + DOM parcial; 5 → map
+  completo sem virtual scroll.
+
 ## Estoque — P2 busca + prefetch — 2026-08-14
 
 - [x] **P2.1 — Busca por nome de variação.** Migration `20260814184715_estoque_p2_nomes_busca.sql`:

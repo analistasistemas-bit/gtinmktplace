@@ -2,8 +2,9 @@
 // o painel expandido é filho da linha e o min-content de tabela aninhada estourava a largura da
 // página. O alinhamento de colunas vem de CSS Grid com tracks FIXOS — grid não dimensiona track
 // por conteúdo do jeito que a tabela dimensiona, então GTIN/nome longo não empurra nada.
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,8 +21,50 @@ import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
 import {
   fetchVariacoesProduto, mergeProdutoComVariacoes,
-  urlFotoMl, type ProdutoComSaldo, type ProdutoEstoqueResumo,
+  urlFotoMl, type ProdutoComSaldo, type ProdutoEstoqueResumo, type VariacaoComSaldo,
 } from '@/lib/produtos-saldo';
+
+/** Acima deste limite a lista de variações no expand usa virtualização. */
+export const VARIACOES_VIRTUAL_THRESHOLD = 50;
+
+export const VARIACAO_ROW_ESTIMATE_PX = 56;
+
+function ListaVariacoesEstoque({ variacoes }: { variacoes: VariacaoComSaldo[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: variacoes.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => VARIACAO_ROW_ESTIMATE_PX,
+    overscan: 5,
+  });
+
+  return (
+    <div
+      ref={scrollRef}
+      data-testid="variacoes-virtual-scroll"
+      className="max-h-[min(24rem,50vh)] overflow-y-auto"
+    >
+      <div
+        data-testid="variacoes-virtual-inner"
+        className="relative w-full"
+        style={{ height: virtualizer.getTotalSize() }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.key}
+            data-index={virtualRow.index}
+            ref={virtualizer.measureElement}
+            className="absolute left-0 top-0 w-full"
+            style={{ transform: `translateY(${virtualRow.start}px)` }}
+          >
+            <VariacaoEstoqueLinha variacao={variacoes[virtualRow.index]!} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export interface AlvoEntrada {
   /** Só preenchido quando o produto tem UMA variação — com várias, a escolha é do operador. */
@@ -212,7 +255,13 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
                   <div className="space-y-2 p-3">
                     {[0, 1].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
                   </div>
-                ) : (variacoes ?? []).map((v) => <VariacaoEstoqueLinha key={v.codigo} variacao={v} />)}
+                ) : (() => {
+                  const lista = variacoes ?? [];
+                  if (lista.length <= VARIACOES_VIRTUAL_THRESHOLD) {
+                    return lista.map((v) => <VariacaoEstoqueLinha key={v.codigo} variacao={v} />);
+                  }
+                  return <ListaVariacoesEstoque variacoes={lista} />;
+                })()}
               </div>
             </TabsContent>
             <TabsContent value="movimentos">
