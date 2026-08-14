@@ -362,8 +362,37 @@ fluxo de invalidação:
    resposta: step "CONGRATS_WARNING", type "MASSIVE_INVALIDATE_BUYBOX"
 ```
 
-`massive_summary_confirm` (com `parentProductId`/`productAssociations`) continua sendo o caminho
-quando sobra variação vinculada — **esse ainda não foi observado ao vivo**.
+### O caminho com preservação — validado em `MLB7159179348` (Linha Liza)
+
+Executado logo depois, no anúncio com **3 variações sem ficha e 1 vinculada** (Acqua 2500 →
+`MLB31005551`). Aqui o ML roteia para o outro desfecho:
+
+```
+1) PATCH .../multivariation_matcher_confirm   → 200
+   resposta: step "MASSIVE_SUMMARY", add_invoice false,
+             footer_type "MASSIVE_CATALOGREQUIRED_PARTIAL_BUYBOXOPTIN"  (parcial: um sobreviveu)
+             product_associations = 3 com null + 1 com MLB31005551
+
+2) POST  .../massive_summary_confirm          → 200
+   body: { parentProductId, productAssociations, flow, invoice: null }   (ecoado da resposta 1)
+   resposta: step "MASSIVE_CONGRATS_SUCCESS", type "PRODUCT_CHANGE", catalog_created_quantity 1
+```
+
+**Resultado na elegibilidade** — a prova de que a preservação funcionou:
+
+| variação | cor | status depois |
+|---|---|---|
+| 197583285254 | Acqua 2500 | **`ALREADY_OPTED_IN`** (segue vinculada e competindo) |
+| 197583285256 | Bandeira | `LOOPING_ITEM` |
+| 197583285258 | Bco 8001 | `LOOPING_ITEM` |
+| 197583285260 | Manteiga | `LOOPING_ITEM` |
+
+`LOOPING_ITEM` é exatamente o status que a investigação de 2026-06-22 registrou como efeito do
+clique manual "Não encontro minha variação" — agora confirmado como resultado da automação.
+
+**Formato do eco (corrigiu um guard errado):** em `product_associations` o `entity_id` é o **item**
+(repetido em todas as linhas) e a variação vem em **`variation_id`**. O guard comparava por
+`entity_id` e teria rejeitado a resposta correta como divergente.
 
 **Efeito medido no item** (antes → depois):
 

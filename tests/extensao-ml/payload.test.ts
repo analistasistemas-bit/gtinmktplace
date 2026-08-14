@@ -289,6 +289,45 @@ describe('montarPlanoAnuncio — vínculo confirmado tem precedência sobre linh
 // INVALIDATION_SUMMARY e a 2ª chamada passa a ser POST invalidate_summary_confirm com
 // {productId, flow, variationId, invalidateVariations}. Resultado verificado: a tag
 // catalog_forewarning saiu do item e a busca por ela caiu de 3 para 2 anúncios.
+// Formato REAL do MASSIVE_SUMMARY, observado na Linha Liza (MLB7159179348, 2026-08-13): em
+// product_associations o `entity_id` é o ITEM (repetido em todas as linhas) e a variação vem em
+// `variation_id`. O guard comparava por entity_id e rejeitaria a resposta correta como divergente.
+describe('interpretarRespostaMatcher — MASSIVE_SUMMARY identifica a variação por variation_id', () => {
+  const plano = {
+    tipo: 'ok' as const, productId: 'MLB28760822', flow: 'REPRODUCTIZE', confirmedProductMatches: [],
+    resumo: {
+      null_enviados: ['197583285260', '197583285258', '197583285256'],
+      preservados: ['197583285254'], excluidos_por_status: [], risco_ausente: [],
+    },
+  };
+  const resposta = {
+    step: 'MASSIVE_SUMMARY',
+    step_data: {
+      add_invoice: false,
+      confirm_card: 'CATALOGREQUIRED_MASSIVE_ITEM_PRODUCTCHANGE',
+      parent_catalog_product: { id: 'MLB28760822' },
+      product_associations: [
+        { entity_id: 'MLB7159179348', variation_id: '197583285260', catalog_product_id: null },
+        { entity_id: 'MLB7159179348', variation_id: '197583285258', catalog_product_id: null },
+        { entity_id: 'MLB7159179348', variation_id: '197583285256', catalog_product_id: null },
+        { entity_id: 'MLB7159179348', variation_id: '197583285254', catalog_product_id: 'MLB31005551' },
+      ],
+    },
+  };
+
+  it('aceita o eco real (compara por variation_id, não por entity_id)', () => {
+    expect(interpretarRespostaMatcher(resposta, plano)).toMatchObject({
+      acao: 'summary', parentProductId: 'MLB28760822',
+    });
+  });
+
+  it('se o servidor anular a preservada, o guard barra', () => {
+    const ruim = { ...resposta, step_data: { ...resposta.step_data, product_associations:
+      resposta.step_data.product_associations.map((a) => ({ ...a, catalog_product_id: null })) } };
+    expect(interpretarRespostaMatcher(ruim, plano)).toMatchObject({ acao: 'manual', motivo: 'eco_divergente' });
+  });
+});
+
 describe('interpretarRespostaMatcher — INVALIDATION_SUMMARY (todas as variações sem ficha)', () => {
   const plano = {
     tipo: 'ok' as const, productId: 'MLB53418360', flow: 'REPRODUCTIZE',

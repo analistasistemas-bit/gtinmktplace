@@ -113,12 +113,14 @@ export function interpretarRespostaMatcher(corpo, plano) {
   if (!Array.isArray(sd.product_associations)) return { acao: 'manual', motivo: 'resposta_sem_product_associations' };
   const parentProductId = sd.parent_catalog_product?.id;
   if (!parentProductId) return { acao: 'manual', motivo: 'resposta_sem_parent_product' };
-  // Guard de eco: o conjunto de entity_ids que o servidor computou como null tem que ser
+  // Guard de eco: o conjunto de variações que o servidor computou como null tem que ser
   // exatamente o que o plano mandou como null. Divergiu → o servidor entendeu outra coisa; parar.
-  const nullServidor = sd.product_associations
-    .filter((a) => !a?.catalog_product_id).map((a) => String(a.entity_id)).sort();
-  const nullPlano = [...(plano?.resumo?.null_enviados ?? [])].sort();
-  if (JSON.stringify(nullServidor) !== JSON.stringify(nullPlano)) {
+  // A variação é identificada por `variation_id` — no MASSIVE_SUMMARY real o `entity_id` é o ITEM,
+  // repetido em todas as linhas (medido na Linha Liza, 2026-08-13). O fallback para entity_id
+  // cobre o item plano, que não tem variação.
+  const idDaAssociacao = (a) => String(a?.variation_id ?? a?.entity_id);
+  const nullServidor = sd.product_associations.filter((a) => !a?.catalog_product_id).map(idDaAssociacao);
+  if (!mesmoConjunto(nullServidor, plano?.resumo?.null_enviados ?? [])) {
     return { acao: 'manual', motivo: 'eco_divergente' };
   }
   return { acao: 'summary', parentProductId, productAssociations: sd.product_associations };
