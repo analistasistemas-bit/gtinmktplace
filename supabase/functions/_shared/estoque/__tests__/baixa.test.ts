@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { selecionarBaixas, refBaixa, selecionarSemSku, refSemSku, registrarBaixaVenda } from '../baixa';
+import {
+  selecionarBaixas, refBaixa, selecionarSemSku, refSemSku,
+  registrarBaixaVenda, classificarBaixaSemSaldo,
+} from '../baixa';
 
 describe('selecionarBaixas', () => {
   it('ignora item sem codigo', () => {
@@ -202,5 +205,126 @@ describe('registrarBaixaVenda — SKU desconhecido pelo catálogo', () => {
     const admin = adminFake({ aplicado: true, motivo: 'venda' });
     const r = await registrarBaixaVenda(admin as never, pedido);
     expect(r.skuDesconhecido).toEqual([]);
+  });
+});
+
+describe('classificarBaixaSemSaldo', () => {
+  it('anterior=1, pedido=1, aplicado=1 → ok (sem alerta, última unidade atendida)', () => {
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 1, quantidade_pedida: 1, quantidade_aplicada: 1 }, 1))
+      .toBe('ok');
+  });
+
+  it('anterior=2, pedido=2, aplicado=2 → ok', () => {
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 2, quantidade_pedida: 2, quantidade_aplicada: 2 }, 2))
+      .toBe('ok');
+  });
+
+  it('anterior=1, pedido=3, aplicado=1 → parcial (venda acima do saldo)', () => {
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 1, quantidade_pedida: 3, quantidade_aplicada: 1 }, 3))
+      .toBe('parcial');
+  });
+
+  it('anterior=0, pedido=1, aplicado=0 → desync (ML vendeu com PubliAI zerado)', () => {
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 0, quantidade_pedida: 1, quantidade_aplicada: 0 }, 1))
+      .toBe('desync');
+  });
+
+  it('usa fallback de pedido se quantidade_pedida não estiver no retorno', () => {
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 1, quantidade_aplicada: 1 }, 1)).toBe('ok');
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 1, quantidade_aplicada: 1 }, 3)).toBe('parcial');
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 0, quantidade_aplicada: 0 }, 1)).toBe('desync');
+  });
+
+  it('deriva quantidade_aplicada do estoque_anterior se omitida', () => {
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 0 }, 1)).toBe('desync');
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 2 }, 5)).toBe('parcial');
+    expect(classificarBaixaSemSaldo({ estoque_anterior: 5 }, 5)).toBe('ok');
+  });
+});
+
+describe('registrarBaixaVenda — saldo insuficiente vs desync ML', () => {
+  function adminFake(rpc: {
+    aplicado: boolean;
+    motivo: string;
+    estoque_anterior?: number;
+    quantidade_pedida?: number;
+    quantidade_aplicada?: number;
+  }) {
+    return {
+      from: () => ({
+        insert: () => Promise.resolve({ error: null }),
+        select: () => ({
+          eq: () => ({
+            is: () => ({
+              neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+            }),
+          }),
+        }),
+      }),
+      rpc: () => Promise.resolve({ data: rpc, error: null }),
+    };
+  }
+
+  const pedido = {
+    orgId: 'org1', canal: 'mercado_livre', orderId: 999,
+    itens: [{ codigo: '00220809', quantity: 3, ml_item_id: 'MLB7010890734', titulo: 'Linha Azul' }],
+  };
+
+  it('baixa normal (anterior >= pedido) não gera alertas', async () => {
+    const admin = adminFake({
+      aplicado: true,
+      motivo: 'venda',
+      estoque_anterior: 5,
+      quantidade_pedida: 3,
+      quantidade_aplicada: 3,
+    });
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(r.vendaAcimaSaldo).toEqual([]);
+    expect(r.desyncMl).toEqual([]);
+  });
+
+  it('baixa da última unidade (anterior=1, pedido=1, aplicado=1) não gera alerta', async () => {
+    const admin = adminFake({
+      aplicado: true,
+      motivo: 'venda',
+      estoque_anterior: 1,
+      quantidade_pedida: 1,
+      quantidade_aplicada: 1,
+    });
+    const r = await registrarBaixaVenda(admin as never, {
+      ...pedido,
+      itens: [{ codigo: '00220809', quantity: 1, ml_item_id: 'MLB7010890734', titulo: 'Linha Azul' }],
+    });
+    expect(r.vendaAcimaSaldo).toEqual([]);
+    expect(r.desyncMl).toEqual([]);
+  });
+
+  it('venda parcial (anterior=1, pedido=3, aplicado=1) gera vendaAcimaSaldo', async () => {
+    const admin = adminFake({
+      aplicado: true,
+      motivo: 'venda',
+      estoque_anterior: 1,
+      quantidade_pedida: 3,
+      quantidade_aplicada: 1,
+    });
+    const r = await registrarBaixaVenda(admin as never, pedido);
+    expect(r.vendaAcimaSaldo).toEqual([{ codigo: '00220809', pedido: 3, anterior: 1, aplicado: 1 }]);
+    expect(r.desyncMl).toEqual([]);
+  });
+
+  it('venda desync ML (anterior=0, pedido=1, aplicado=0) gera desyncMl', async () => {
+    const admin = adminFake({
+      aplicado: true,
+      motivo: 'venda',
+      estoque_anterior: 0,
+      quantidade_pedida: 1,
+      quantidade_aplicada: 0,
+    });
+    const r = await registrarBaixaVenda(admin as never, {
+      ...pedido,
+      itens: [{ codigo: '00220809', quantity: 1, ml_item_id: 'MLB7010890734', titulo: 'Linha Azul' }],
+    });
+    expect(r.vendaAcimaSaldo).toEqual([]);
+    expect(r.desyncMl).toEqual([{ codigo: '00220809', pedido: 1 }]);
   });
 });

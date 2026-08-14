@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
   // devolve `aplicado=false` e não é reaplicado.
   if (pedido.status === 'paid' && orgId) {
     try {
-      const { pendentesDePush, semSaldo, falhas, semSku, skuDesconhecido } = await registrarBaixaVenda(admin, {
+      const { pendentesDePush, vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido } = await registrarBaixaVenda(admin, {
         orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
       });
       // Despacha o OUTBOX, não só o que esta execução aplicou: assim um push que ficou
@@ -158,16 +158,35 @@ Deno.serve(async (req) => {
       // passado — cada movimento carrega a própria intenção.
       await despacharPushPendente(admin, orgId, pendentesDePush, enfileirarSincronizacaoEstoque);
 
-      // Todo alerta passa por reservarNotificacao: o sync-venda roda várias vezes para
-      // o mesmo pedido (webhooks de order + de shipment).
-      if (semSaldo.length > 0
+      // Venda pediu mais do que havia, mas ainda existia saldo (>0). Alerta por pedido.
+      if (vendaAcimaSaldo.length > 0
         && await reservarNotificacao(admin, orgId, userId, 'estoque_sem_saldo', String(pedido.id))) {
-        const linhas = semSaldo.map((s) => `• ${s.codigo} — pedido de ${s.pedido} un.`).join('\n');
+        const linhas = vendaAcimaSaldo
+          .map((s) => `• ${s.codigo} — pedido de ${s.pedido} un., havia ${s.anterior}, baixou ${s.aplicado}`)
+          .join('\n');
         await notificarCategoria(
           admin, orgId, 'vendas',
-          `⚠️ Venda sem saldo suficiente (pedido ${pedido.id})\n\n${linhas}\n\n`
-          + 'O estoque foi zerado e o anúncio pode ter vendido mais do que você tem.',
+          `⚠️ Venda acima do saldo (pedido ${pedido.id})\n\n${linhas}\n\n`
+          + 'O estoque foi zerado; confira se o anúncio no ML reflete o saldo real.',
         );
+      }
+      // ML vendeu com PubliAI já em zero: desync entre marketplace e saldo local. Dedupe por SKU/dia.
+      if (desyncMl.length > 0) {
+        const dataHoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const desyncParaNotificar: Array<{ codigo: string; pedido: number }> = [];
+        for (const item of desyncMl) {
+          if (await reservarNotificacao(admin, orgId, userId, 'estoque_desync_ml', `${item.codigo}:${dataHoje}`)) {
+            desyncParaNotificar.push(item);
+          }
+        }
+        if (desyncParaNotificar.length > 0) {
+          const linhas = desyncParaNotificar.map((s) => `• ${s.codigo} — pedido de ${s.pedido} un.`).join('\n');
+          await notificarCategoria(
+            admin, orgId, 'vendas',
+            `⚠️ ML vendeu com estoque zerado no PubliAI (pedido ${pedido.id})\n\n${linhas}\n\n`
+            + 'O saldo interno já estava em zero; o anúncio no ML provavelmente ainda mostra unidades. Confira em Publicados ou pause o anúncio.',
+          );
+        }
       }
       // Venda paga que não achou SKU: o saldo NÃO desceu e antes isso não deixava rastro
       // nenhum (incidente de 2026-08-11, 12 unidades). Agora vira movimento informativo no

@@ -55,14 +55,33 @@ export interface MovimentoPendente {
 export interface ResultadoBaixaVenda {
   /** Movimentos com push ainda não entregue ao QStash (outbox no ledger). */
   pendentesDePush: MovimentoPendente[];
-  /** SKUs cuja venda excedeu o saldo (D-8) — o operador precisa saber. */
-  semSaldo: Array<{ codigo: string; pedido: number }>;
+  /** Venda pediu mais do que havia, mas ainda existia saldo (>0). Alerta por pedido. */
+  vendaAcimaSaldo: Array<{ codigo: string; pedido: number; anterior: number; aplicado: number }>;
+  /** ML vendeu com PubliAI já em zero. Dedupe por SKU/dia no caller. */
+  desyncMl: Array<{ codigo: string; pedido: number }>;
   /** RPCs que erraram. Nunca vazio em silêncio: o chamador notifica. */
   falhas: Array<{ codigo: string; mensagem: string }>;
   /** Itens da venda paga que ficaram SEM baixa por não ter SKU resolvido. */
   semSku: Array<{ titulo: string | null; mlItemId: string | null; quantidade: number }>;
   /** SKUs que vieram no pedido mas não existem no catálogo — a RPC recusa e nada é baixado. */
   skuDesconhecido: Array<{ codigo: string; quantidade: number }>;
+}
+
+/**
+ * Classifica o resultado da baixa de estoque em relação ao saldo:
+ * - 'ok': quantidade aplicada atendeu todo o pedido (inclusive última unidade disponível).
+ * - 'desync': ML vendeu com estoque já zerado no PubliAI (estoque_anterior === 0).
+ * - 'parcial': venda pediu mais do que havia, mas ainda existia saldo (> 0).
+ */
+export function classificarBaixaSemSaldo(
+  r: { estoque_anterior?: number; quantidade_aplicada?: number; quantidade_pedida?: number },
+  pedidoFallback: number,
+): 'ok' | 'parcial' | 'desync' {
+  const pedida = r.quantidade_pedida ?? pedidoFallback;
+  const aplicada = r.quantidade_aplicada ?? (r.estoque_anterior !== undefined ? Math.min(Math.max(0, r.estoque_anterior), pedida) : pedida);
+  if (aplicada >= pedida) return 'ok';
+  if ((r.estoque_anterior ?? 0) === 0) return 'desync';
+  return 'parcial';
 }
 
 export async function registrarBaixaVenda(
@@ -75,10 +94,11 @@ export async function registrarBaixaVenda(
 
   const baixas = selecionarBaixas(p.itens);
   if (baixas.length === 0) {
-    return { pendentesDePush: [], semSaldo: [], falhas: [], semSku, skuDesconhecido: [] };
+    return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [] };
   }
 
-  const semSaldo: Array<{ codigo: string; pedido: number }> = [];
+  const vendaAcimaSaldo: Array<{ codigo: string; pedido: number; anterior: number; aplicado: number }> = [];
+  const desyncMl: Array<{ codigo: string; pedido: number }> = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   const skuDesconhecido: Array<{ codigo: string; quantidade: number }> = [];
 
@@ -96,7 +116,7 @@ export async function registrarBaixaVenda(
     }
     const r = data as {
       aplicado: boolean; motivo: string; codigo_pai?: string;
-      estoque_anterior?: number; quantidade_pedida?: number;
+      estoque_anterior?: number; quantidade_pedida?: number; quantidade_aplicada?: number;
     };
     if (!r.aplicado) {
       // SKU que o catálogo não conhece (incidente 2026-08-13): o pedido TROUXE o código, então
@@ -105,9 +125,16 @@ export async function registrarBaixaVenda(
       if (r.motivo === 'sku_nao_encontrado') skuDesconhecido.push({ codigo: b.codigo, quantidade: b.quantity });
       continue;
     }
-    // "Vendeu sem saldo": o pedido foi maior que o saldo que existia antes da baixa.
-    if (r.estoque_anterior !== undefined && r.estoque_anterior < b.quantity) {
-      semSaldo.push({ codigo: b.codigo, pedido: b.quantity });
+    const classe = classificarBaixaSemSaldo(r, b.quantity);
+    if (classe === 'desync') {
+      desyncMl.push({ codigo: b.codigo, pedido: b.quantity });
+    } else if (classe === 'parcial') {
+      vendaAcimaSaldo.push({
+        codigo: b.codigo,
+        pedido: b.quantity,
+        anterior: r.estoque_anterior ?? 0,
+        aplicado: r.quantidade_aplicada ?? 0,
+      });
     }
   }
 
@@ -115,7 +142,7 @@ export async function registrarBaixaVenda(
   // movimento com push ainda não entregue. É o que fecha o buraco em que a RPC
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
-  return { pendentesDePush: await lerPushPendente(admin, p.orgId), semSaldo, falhas, semSku, skuDesconhecido };
+  return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido };
 }
 
 /**
