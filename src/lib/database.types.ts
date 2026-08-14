@@ -1768,6 +1768,7 @@ export type Database = {
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
       marcar_notificacoes_lidas: { Args: { p_ids?: string[] }; Returns: number }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
+      produtos_estoque_resumo: { Args: never; Returns: Json }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
       reconciliar_backfill_up_candidatas: {
         Args: { p_org_id: string }
@@ -1818,6 +1819,10 @@ export type Database = {
         Returns: number
       }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      skus_estoque_org: {
+        Args: never
+        Returns: Json[]
+      }
       start_support_session: {
         Args: { p_now: string; p_request_id: string; p_requester_id: string }
         Returns: {
@@ -1872,6 +1877,10 @@ export type Database = {
           p_scope: string
         }
         Returns: string
+      }
+      variacoes_estoque_produto: {
+        Args: { p_codigo_pai: string }
+        Returns: Json[]
       }
       upsert_ml_credentials: {
         Args: {

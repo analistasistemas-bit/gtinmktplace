@@ -263,21 +263,21 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
 export async function fetchProdutosEstoqueResumo(): Promise<ResumoEstoqueRpc> {
   const { data, error } = await supabase.rpc('produtos_estoque_resumo');
   if (error) throw new Error(error.message);
-  return mapResumoEstoqueRpc(data as ResumoRpcRaw);
+  return mapResumoEstoqueRpc(data as unknown as ResumoRpcRaw);
 }
 
 /** Variações de um produto — só da família canônica. Carregadas ao expandir o card. */
 export async function fetchVariacoesProduto(codigoPai: string): Promise<VariacaoComSaldo[]> {
   const { data, error } = await supabase.rpc('variacoes_estoque_produto', { p_codigo_pai: codigoPai });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as LinhaVariacaoRpc[]).map(mapVariacaoRpc);
+  return ((data ?? []) as unknown as LinhaVariacaoRpc[]).map(mapVariacaoRpc);
 }
 
 /** SKUs flat da org — picker do DialogEntrada (carrega ao abrir o diálogo). */
 export async function fetchSkusEstoqueOrg(): Promise<SkuEstoqueOrg[]> {
   const { data, error } = await supabase.rpc('skus_estoque_org');
   if (error) throw new Error(error.message);
-  return ((data ?? []) as Array<{
+  return ((data ?? []) as unknown as Array<{
     codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number;
   }>).map((s) => ({
     codigo: s.codigo,
