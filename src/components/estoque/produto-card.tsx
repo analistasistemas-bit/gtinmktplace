@@ -44,6 +44,7 @@ function ListaVariacoesEstoque({ variacoes, nomeProduto }: { variacoes: Variacao
     <div
       ref={scrollRef}
       data-testid="variacoes-virtual-scroll"
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- região scrollável precisa ser focável (WCAG 2.1.1)
       tabIndex={0}
       role="region"
       aria-label={`Variações de ${nomeProduto}`}
