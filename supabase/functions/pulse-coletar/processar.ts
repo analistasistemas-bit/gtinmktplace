@@ -13,9 +13,6 @@ import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
 
 const API = 'https://api.mercadolibre.com';
 const CONCORRENCIA = 6;
-// Histórico lido por produto para reconstruir o estado atual (última linha por item_id). Teto
-// defensivo — o job de agregação/prune de 90d (follow-up em TASKS.md) mantém isto limitado no v1.
-const HISTORICO_LIMITE = 1000;
 
 export interface ResultadoColeta { produtos: number; gravadas: number; alertas: number; }
 
@@ -30,22 +27,6 @@ interface PulseProdutoRow {
   catalog_product_id: string;
   codigo_pai: string | null;
   origem: 'auto' | 'manual';
-}
-
-/** Estado atual das ofertas de um produto = última linha por item_id (dia desc). */
-function ultimaLinhaPorItem(historico: (OfertaAnterior & { dia: string })[]): OfertaAnterior[] {
-  const vistos = new Set<string>();
-  const out: OfertaAnterior[] = [];
-  for (const linha of historico) {
-    if (vistos.has(linha.item_id)) continue;
-    vistos.add(linha.item_id);
-    out.push({
-      item_id: linha.item_id, seller_id: linha.seller_id, preco: Number(linha.preco),
-      tier: linha.tier, frete_gratis: linha.frete_gratis, loja_oficial: linha.loja_oficial,
-      ativo: linha.ativo,
-    });
-  }
-  return out;
 }
 
 // 1) sincronizarRadar (só tier completo): espelha anuncios_externos publicados em pulse_produtos
@@ -96,6 +77,9 @@ export async function processarColetaOrg(
   tier: 'completo' | 'quente', maxProdutos: number,
 ): Promise<ResultadoColeta> {
   const token = await getValidAccessTokenConexao(conexao);
+  // Nossa conta no ML: a lista de ofertas do catálogo inclui o NOSSO anúncio, que não é
+  // concorrente de si mesmo (valor não-numérico → NaN → nada é filtrado, comportamento seguro).
+  const proprioSellerId = conexao.contaExternaId ? Number(conexao.contaExternaId) : null;
 
   if (tier === 'completo') await sincronizarRadar(admin, orgId);
 
@@ -119,13 +103,16 @@ export async function processarColetaOrg(
     // Falha de LEITURA não é "sem ofertas" (mesma trava de monitorar-moderados/catalogo.ts):
     // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
     if (json === null) return;
-    const atuais = parseOfertasProduto(json);
+    const atuais = parseOfertasProduto(json, proprioSellerId);
     for (const o of atuais) sellerIdsColetados.add(o.seller_id);
 
-    const { data: historicoRaw } = await admin.from('pulse_ofertas')
-      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
-      .eq('produto_id', produto.id).order('dia', { ascending: false }).limit(HISTORICO_LIMITE);
-    const anteriores = ultimaLinhaPorItem((historicoRaw ?? []) as (OfertaAnterior & { dia: string })[]);
+    // View `pulse_ofertas_atual`: já é 1 linha por item (distinct on … order by dia desc). Ler o
+    // histórico bruto com um teto de linhas fazia um item antigo cair fora da janela e voltar
+    // como "novo concorrente" no diff — alerta falso.
+    const { data: anterioresRaw } = await admin.from('pulse_ofertas_atual')
+      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo')
+      .eq('produto_id', produto.id);
+    const anteriores = ((anterioresRaw ?? []) as OfertaAnterior[]).map((o) => ({ ...o, preco: Number(o.preco) }));
 
     const diff = diffOfertas(anteriores, atuais);
 

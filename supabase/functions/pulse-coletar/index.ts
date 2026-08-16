@@ -42,8 +42,18 @@ Deno.serve(async (req) => {
   if (scopedOrgId) query = query.eq('org_id', scopedOrgId);
   const { data: conexoesRaw } = await query;
 
+  // Teto de tempo: o worker morre com WORKER_RESOURCE_LIMIT/IDLE_TIMEOUT perto dos 150s (já
+  // aconteceu com reconciliar-faturamento). As orgs que não couberem entram no próximo ciclo —
+  // a seleção ordena por `ultimo_snapshot_em asc`, então a rotação é justa por construção.
+  const LIMITE_MS = 100_000;
+  const inicio = Date.now();
+
   let produtos = 0, gravadas = 0, alertas = 0;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
+    if (Date.now() - inicio > LIMITE_MS) {
+      console.warn('pulse-coletar: teto de tempo atingido, orgs restantes ficam para o próximo ciclo');
+      break;
+    }
     const conexao = mapearConexao(row);
     if (!conexao) continue;
     try {

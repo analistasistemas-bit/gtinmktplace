@@ -6,6 +6,20 @@ import { parseOfertasProduto, parsePriceToWin } from '../parse.ts';
 // shipping.free_shipping, official_store_id. sold_quantity/available_quantity vêm null.
 
 describe('parseOfertasProduto', () => {
+  it('exclui a nossa própria oferta (não somos concorrentes de nós mesmos)', () => {
+    const json = {
+      results: [
+        { item_id: 'MLB1', price: 50, seller_id: 111, listing_type_id: 'gold_special', shipping: { free_shipping: true }, official_store_id: null },
+        { item_id: 'MLB2', price: 60, seller_id: 222, listing_type_id: 'gold_special', shipping: { free_shipping: false }, official_store_id: null },
+      ],
+    };
+    expect(parseOfertasProduto(json, 111).map((o) => o.item_id)).toEqual(['MLB2']);
+    // Sem seller próprio (conexão sem conta_externa_id) nada é filtrado.
+    expect(parseOfertasProduto(json, null)).toHaveLength(2);
+    // conta_externa_id não-numérico vira NaN e também não filtra nada.
+    expect(parseOfertasProduto(json, Number('abc'))).toHaveLength(2);
+  });
+
   it('extrai ofertas do shape real de /products/{id}/items', () => {
     const json = {
       results: [

@@ -2,7 +2,10 @@ import type { OfertaColetada, PriceToWin } from './tipos.ts';
 
 // /products/{id}/items → results[]: item_id, price, seller_id, listing_type_id,
 // shipping.free_shipping, official_store_id. sold/available vêm null — não parsear.
-export function parseOfertasProduto(json: unknown): OfertaColetada[] {
+// `excluirSellerId` = nossa própria conta no ML: a lista do catálogo inclui a NOSSA oferta, e
+// sem excluí-la o radar trataria o próprio anúncio como concorrente (alerta "preço caiu" quando
+// nós mesmos baixamos, "novo concorrente" quando nós publicamos).
+export function parseOfertasProduto(json: unknown, excluirSellerId?: number | null): OfertaColetada[] {
   const results = (json as { results?: unknown[] } | null)?.results;
   if (!Array.isArray(results)) return [];
   const out: OfertaColetada[] = [];
@@ -12,6 +15,7 @@ export function parseOfertasProduto(json: unknown): OfertaColetada[] {
     const preco = typeof o.price === 'number' ? o.price : null;
     const sellerId = typeof o.seller_id === 'number' ? o.seller_id : null;
     if (!itemId || preco == null || sellerId == null) continue;
+    if (excluirSellerId != null && sellerId === excluirSellerId) continue;
     out.push({
       item_id: itemId,
       seller_id: sellerId,
