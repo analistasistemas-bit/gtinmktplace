@@ -135,3 +135,16 @@
 | **Admin** | Usuário com `profiles.is_admin = true`. Gerencia usuários **da própria organização** (criar, editar menus, ativar/desativar, promover outros admins) e enxerga **todos** os menus, independentemente de `allowed_menus`. |
 | **Permissão de menu** | Conjunto de menus que um usuário **não-admin** pode ver e acessar (`profiles.allowed_menus`, array de chaves de menu). Trava em dois níveis: esconde no sidebar e bloqueia a rota. Não é trava de backend (ver ADR-0047). |
 | **Chave de menu** | Identificador estável de um item de navegação (`dashboard`, `lotes`, `revisao`, `publicados`, `faturamento`, `financeiro`, `viabilidade`, `configuracoes`). `usuarios` é um menu extra exclusivo de admin, não atribuível. `organizacoes` é exclusivo de super-admin. |
+
+## Pulse (inteligência de mercado)
+
+| Termo | Definição |
+|---|---|
+| **Pulse** | Menu de inteligência de mercado do PubliAI (ADR-0119). Server-side, sem extensão no v1; responde três decisões: reprecificar?, agir quando? (alertas), até onde baixar? (rentabilidade). Visível por config org-scoped nas Configurações. |
+| **Radar (dirigido)** | O conjunto de itens que uma org monitora. Entram por auto-descoberta (concorrentes dos anúncios publicados — top-10 por vendas via catálogo ou busca GTIN/título) ou manualmente (URL/MLB-id). Nunca é crawl do ML inteiro. |
+| **Item monitorado** | Um anúncio do ML dentro do radar de uma org. Tem ciclo de vida: ativo → pausado (sem acesso há 60 dias) → arquivado (anúncio encerrado ou origem despublicada). Teto por org. |
+| **Snapshot de mercado** | Leitura diária de um item monitorado (preço, `sold_quantity`, estoque estimado, status), gravada **só se algo mudou**. Cru vive 90 dias; depois vira resumo semanal. |
+| **Venda estimada** | Delta de `sold_quantity` entre snapshots. É **estimativa de dado público** (o ML publica faixas como "50+"), nunca fato — a UI rotula como estimada. No 1º dia usa a média vitalícia (`sold_quantity ÷ idade do anúncio`). |
+| **Price-to-win** | Para anúncio de catálogo: quem detém o buy box agora e o preço necessário para ganhá-lo (endpoint do ML). |
+| **Alerta acionável** | Alerta do Pulse (queda de preço de concorrente, estoque esgotado, novo concorrente) acompanhado da margem calculada ao cobrir e de botão de reprecificação — que passa pela revisão humana de sempre. |
+| **Tier quente** | Frequência de coleta 6/6h aplicada aos concorrentes diretos de anúncios ativos; o restante do radar é diário. |

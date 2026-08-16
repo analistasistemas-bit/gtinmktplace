@@ -130,5 +130,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0116 | [GTIN com dígito verificador errado é ausência de código (e o campo virou editável na Revisão)](../../docs/decisions/0116-gtin-invalido-e-ausencia-de-codigo.md) |
 | 0117 | [Menu Financeiro controla liberação e saque; compra não é venda](../../docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md) |
 | 0118 | [Resolução em massa do "Não encontro minha variação" por extensão de navegador](../../docs/decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md) |
+| 0119 | [Pulse: inteligência de mercado dirigida, server-side e sem crawl massivo](../../docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
