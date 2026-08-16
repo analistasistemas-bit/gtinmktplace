@@ -29,6 +29,7 @@ const TABELAS = [
   'lotes', 'familias', 'variacoes', 'anuncios_externos', 'ml_credentials', 'ml_vendas',
   'ml_vendas_itens', 'ml_perguntas', 'ml_devolucoes', 'ml_moderacao', 'ml_webhook_eventos', 'configuracoes',
   'estoque_movimentos',
+  'pulse_produtos', 'pulse_ofertas', 'pulse_vendedores', 'pulse_alertas',
 ];
 
 type Resultado = { assercao: string; status: 'PASS' | 'FAIL'; detalhe: string };
@@ -233,8 +234,9 @@ async function main() {
     // ATENÇÃO: esta lista é SEPARADA de TABELAS (aqui a ordem respeita as FKs). Tabela
     // nova precisa entrar NOS DOIS lugares — só no TABELAS ela é asseverada mas nunca
     // limpa, e a FK para `organizations` trava o delete da org, deixando lixo no banco.
-    // `estoque_movimentos` vem primeiro: referencia organizations sem ON DELETE CASCADE.
-    for (const t of ['estoque_movimentos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
+    // `estoque_movimentos` e as `pulse_*` vêm primeiro: referenciam organizations sem
+    // ON DELETE CASCADE (as pulse_* na ordem filhas → pai).
+    for (const t of ['estoque_movimentos', 'pulse_alertas', 'pulse_ofertas', 'pulse_vendedores', 'pulse_produtos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
       const { error } = await svc.from(t).delete().eq('org_id', tenant.orgId);
       // Limpeza silenciosa que falha deixa dado de teste no banco (aconteceu em
       // 2026-07-29 com estoque_movimentos). Erro aqui tem que aparecer.
