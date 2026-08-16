@@ -12,9 +12,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TabelaRadar } from '@/components/pulse/tabela-radar';
 import { DialogDetalhe } from '@/components/pulse/dialog-detalhe';
 import { DialogAdicionar } from '@/components/pulse/dialog-adicionar';
+import { PainelAlertas } from '@/components/pulse/painel-alertas';
+import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK } from '@/lib/queries';
-import { fetchPulseProdutos, coletarPulseAgora } from '@/lib/pulse';
+import { fetchPulseProdutos, coletarPulseAgora, type PulseAlerta } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
 
 export default function Pulse() {
@@ -22,6 +24,7 @@ export default function Pulse() {
   const qc = useQueryClient();
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
+  const [alertaReprecificar, setAlertaReprecificar] = useState<PulseAlerta | null>(null);
 
   const { data: produtos, isLoading } = useQuery({
     queryKey: QK.pulseProdutos,
@@ -68,6 +71,8 @@ export default function Pulse() {
         }
       />
 
+      <PainelAlertas onVerProduto={setDetalheId} onReprecificar={setAlertaReprecificar} />
+
       {isLoading ? (
         <div className="flex flex-col gap-1.5">
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
@@ -85,6 +90,12 @@ export default function Pulse() {
 
       <DialogAdicionar aberto={adicionarAberto} onFechar={() => setAdicionarAberto(false)} />
       <DialogDetalhe produto={produtoDetalhe} onFechar={() => setDetalheId(null)} />
+      <DialogReprecificar
+        codigoPai={alertaReprecificar?.pulse_produtos?.codigo_pai ?? null}
+        precoInicial={alertaReprecificar ? Number(alertaReprecificar.payload.para) : null}
+        ptwCustos={lista.find((p) => p.id === alertaReprecificar?.produto_id)?.ptw_custos ?? null}
+        onFechar={() => setAlertaReprecificar(null)}
+      />
     </div>
   );
 }

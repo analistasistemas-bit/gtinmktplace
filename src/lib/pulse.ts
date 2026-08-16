@@ -7,7 +7,7 @@ import { estadoAtualOfertas } from './pulse-margem';
 // As tabelas pulse_* são recentes e database.types.ts ainda não foi regenerado (mesmo padrão
 // de cast pontual usado em queries.ts para ml_formato_publicacao); RLS continua protegendo a
 // leitura pela organização normalmente.
-function pulseFrom(tabela: 'pulse_produtos' | 'pulse_ofertas' | 'pulse_vendedores') {
+function pulseFrom(tabela: 'pulse_produtos' | 'pulse_ofertas' | 'pulse_vendedores' | 'pulse_alertas') {
   return supabase.from(tabela as never) as ReturnType<typeof supabase.from>;
 }
 
@@ -25,6 +25,12 @@ export interface PulseOferta {
 export interface PulseVendedor {
   seller_id: number; nickname: string | null; power_seller: string | null;
   nivel: string | null; transactions_total: number | null; dia: string;
+}
+export interface PulseAlerta {
+  id: string; produto_id: string | null;
+  tipo: 'preco_caiu' | 'novo_concorrente' | 'concorrente_saiu';
+  payload: Record<string, unknown>; lido: boolean; criado_em: string;
+  pulse_produtos: { titulo: string | null; codigo_pai: string | null; catalog_product_id: string } | null;
 }
 
 export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
@@ -95,6 +101,24 @@ export async function pausarPulseProduto(id: string, pausar: boolean): Promise<v
   const { error } = await pulseFrom('pulse_produtos')
     .update({ status: pausar ? 'pausado' : 'ativo' })
     .eq('id', id);
+  if (error) throw error;
+}
+
+/** Alertas não lidos (últimos 20), com o produto associado embutido (título/codigo_pai para o
+ *  texto e para a ação de Reprecificar). */
+export async function fetchPulseAlertas(): Promise<PulseAlerta[]> {
+  const { data, error } = await pulseFrom('pulse_alertas')
+    .select('id, produto_id, tipo, payload, lido, criado_em, pulse_produtos(titulo, codigo_pai, catalog_product_id)')
+    .eq('lido', false)
+    .order('criado_em', { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return (data ?? []) as PulseAlerta[];
+}
+
+/** Marca o alerta como lido — grant é column-level só em `lido` (não pode ir mais nada no update). */
+export async function marcarAlertaLido(id: string): Promise<void> {
+  const { error } = await pulseFrom('pulse_alertas').update({ lido: true }).eq('id', id);
   if (error) throw error;
 }
 

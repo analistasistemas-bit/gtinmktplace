@@ -1,6 +1,6 @@
 // Categorias de notificação Telegram — espelho de supabase/functions/_shared/notificacoes/categorias.ts.
 // Manter os dois em sincronia (o front e o Deno não compartilham módulo).
-export const CATEGORIAS_NOTIFICACAO = ['vendas', 'perguntas', 'pos_venda', 'financeiro', 'moderacao', 'mensagens', 'integracao'] as const;
+export const CATEGORIAS_NOTIFICACAO = ['vendas', 'perguntas', 'pos_venda', 'financeiro', 'moderacao', 'mensagens', 'integracao', 'pulse'] as const;
 export type CategoriaNotificacao = (typeof CATEGORIAS_NOTIFICACAO)[number];
 
 export const CATEGORIA_LABEL: Record<CategoriaNotificacao, string> = {
@@ -11,6 +11,7 @@ export const CATEGORIA_LABEL: Record<CategoriaNotificacao, string> = {
   moderacao: 'Moderação',
   mensagens: 'Mensagens',
   integracao: 'Integração',
+  pulse: 'Pulse (mercado)',
 };
 
 export const CATEGORIA_DESCRICAO: Record<CategoriaNotificacao, string> = {
@@ -21,4 +22,5 @@ export const CATEGORIA_DESCRICAO: Record<CategoriaNotificacao, string> = {
   moderacao: 'Anúncio moderado e catálogo sem match',
   mensagens: 'Mensagem pós-venda de comprador',
   integracao: 'Conexão com o Mercado Livre parou de sincronizar',
+  pulse: 'Alertas de concorrência: queda de preço, novo concorrente, saída de concorrente.',
 };

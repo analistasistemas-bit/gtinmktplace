@@ -1,12 +1,13 @@
 // Pulse (ADR-0119): detalhe do produto — ofertas atuais, histórico de menor preço e o
 // simulador de margem (regra LOUD: falta insumo → "Margem indisponível", nunca assume).
-// Reprecificar fica pra Task 6 (fluxo de alertas) — não renderiza aqui.
+// Reprecificar abre dialog-reprecificar com o preço do simulador.
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,6 +15,7 @@ import { QK } from '@/lib/queries';
 import { fetchPulseDetalhe, fetchContextoMargem, type PulseProduto, type PulseVendedor } from '@/lib/pulse';
 import { estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
+import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 
 function insumoFaltante(
   contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
@@ -28,7 +30,9 @@ function insumoFaltante(
 export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | null; onFechar: () => void }) {
   const aberto = produto != null;
   const [precoEditado, setPrecoEditado] = useState<string | null>(null);
+  const [reprecificarAberto, setReprecificarAberto] = useState(false);
   useEffect(() => setPrecoEditado(null), [produto?.id]);
+  useEffect(() => setReprecificarAberto(false), [produto?.id]);
 
   const { data, isLoading } = useQuery({
     queryKey: produto ? QK.pulseDetalhe(produto.id) : QK.pulseDetalhe('_'),
@@ -68,6 +72,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     : null;
 
   return (
+    <>
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
@@ -162,7 +167,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                 </div>
 
                 <h4 className="mb-1.5 text-sm font-medium">Simulador de margem</h4>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <Input
                     inputMode="decimal"
                     className="w-32"
@@ -181,6 +186,15 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                   ) : (
                     <span className="text-sm text-muted-foreground">Informe um preço para simular.</span>
                   )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    disabled={!precoSimulado || precoSimulado <= 0}
+                    onClick={() => setReprecificarAberto(true)}
+                  >
+                    Reprecificar
+                  </Button>
                 </div>
               </section>
             )}
@@ -188,5 +202,12 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
         )}
       </DialogContent>
     </Dialog>
+    <DialogReprecificar
+      codigoPai={reprecificarAberto ? produto?.codigo_pai ?? null : null}
+      precoInicial={precoSimulado ?? null}
+      ptwCustos={produto?.ptw_custos ?? null}
+      onFechar={() => setReprecificarAberto(false)}
+    />
+    </>
   );
 }
