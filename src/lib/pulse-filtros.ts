@@ -7,12 +7,17 @@ import { posicaoVsMercado } from './pulse-formato';
 /** Recorte ativado ao clicar num KPI. `null` = sem recorte. */
 export type FocoPulse = 'mais_caro' | 'menor_preco' | 'sem_vinculo';
 
-/** Situação do produto NO RADAR (pausar/reativar pelo menu da linha), não o status do anúncio no ML. */
-export type StatusRadar = 'todos' | 'ativo' | 'pausado';
+/**
+ * Situação do NOSSO anúncio no Mercado Livre. Filtrar pela situação no radar (o pausar/reativar do
+ * menu da linha) foi o pedido lido errado da primeira vez: nenhum produto jamais foi pausado ali,
+ * então "só pausados" devolvia lista vazia enquanto o operador tinha metade dos anúncios pausados
+ * no ML por estoque zerado.
+ */
+export type StatusAnuncio = 'todos' | 'ativo' | 'pausado';
 
 export interface FiltrosPulse {
   busca: string;
-  status: StatusRadar;
+  status: StatusAnuncio;
   foco: FocoPulse | null;
 }
 
@@ -39,6 +44,17 @@ function casaFoco(p: PulseProduto, foco: FocoPulse, menorConcorrente: number | n
   return foco === 'mais_caro' ? pos.deltaPct > 0.5 : pos.deltaPct < -0.5;
 }
 
+/**
+ * "Ativo" é só `active`. Todo o resto que o ML devolve (`paused`, `closed`, `under_review`…) cai
+ * em "pausado" — não estão à venda, que é o que a pergunta do operador significa. Situação ainda
+ * não lida fica fora dos dois: sem o dado, não afirmamos nem uma nem outra.
+ */
+function casaStatus(p: PulseProduto, status: StatusAnuncio): boolean {
+  if (status === 'todos') return true;
+  if (!p.anuncio_status) return false;
+  return status === 'ativo' ? p.anuncio_status === 'active' : p.anuncio_status !== 'active';
+}
+
 export function filtrarProdutos(
   produtos: PulseProduto[],
   filtros: FiltrosPulse,
@@ -46,7 +62,7 @@ export function filtrarProdutos(
 ): PulseProduto[] {
   return produtos.filter((p) => {
     if (!casaBusca(p, filtros.busca)) return false;
-    if (filtros.status !== 'todos' && p.status !== filtros.status) return false;
+    if (!casaStatus(p, filtros.status)) return false;
     if (filtros.foco && !casaFoco(p, filtros.foco, menorConcorrenteDe(p))) return false;
     return true;
   });

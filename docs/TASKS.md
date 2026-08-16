@@ -57,6 +57,13 @@
   faixa (37 de 222). Migration + `pulse-coletar` deployados e coleta verificada: 87 de 222 com
   preço vivo; o restante mostra "—" com o motivo (Errata 4 do ADR-0119).
 
+- [x] **Situação do anúncio e resgate de órfãos (2026-08-16).** O filtro de "pausados" olhava o
+  status no radar (sempre vazio) em vez do anúncio no ML; e anúncio publicado cujo JSON
+  `variacoes_externas` não guardou o `catalog_product_id` ficava inteiro fora do radar mesmo com o
+  vínculo confirmado em `variacoes`. Corrigidos os dois (Errata 5 do ADR-0119). Verificado: DSA
+  5 → 6 produtos, 3 ativos e 3 pausados por estoque zerado; Avil +0 (os 126 órfãos dela são os
+  aviamentos sem catálogo da Errata 2).
+
 **Follow-ups pendentes:**
 - [ ] **Grants amplos nas tabelas `pulse_*` (achado 2026-08-16, não é regressão).** A migration
   `20260816125057_pulse_v1.sql` concede `grant update (status) on pulse_produtos`, mas

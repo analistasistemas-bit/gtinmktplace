@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
 import {
-  classeTom, motivoSemPrecoProprio, ordemPriceToWin, posicaoVsMercado, seloPriceToWin,
+  classeTom, motivoSemPrecoProprio, ordemPriceToWin, posicaoVsMercado, seloAnuncio, seloPriceToWin,
 } from '@/lib/pulse-formato';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -64,6 +64,9 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
         const horas = p.ultimo_snapshot_em
           ? (Date.now() - new Date(p.ultimo_snapshot_em).getTime()) / 3_600_000
           : Infinity;
+        // Anúncio fora do ar precisa se identificar na lista: sem isso, ele aparece como um
+        // produto qualquer sem preço, e a razão só sai no tooltip.
+        const selo = seloAnuncio(p);
         return (
           <div className="flex items-start gap-2">
             <div className="min-w-0">
@@ -73,6 +76,15 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
               </span>
               <span className="text-xs tabular-nums text-muted-foreground">
                 {p.gtin ?? p.codigo_pai ?? '—'}
+                {selo && (
+                  <Badge
+                    variant="outline"
+                    className={cn('ml-2 px-1.5 py-0 text-[10px] font-normal', classeTom(selo.tom))}
+                    title={selo.ajuda}
+                  >
+                    {selo.texto}
+                  </Badge>
+                )}
                 {horas > 48 && (
                   <span className="ml-2 text-warning" title={`Última coleta ${relativo(p.ultimo_snapshot_em)}`}>
                     · coleta {relativo(p.ultimo_snapshot_em)}

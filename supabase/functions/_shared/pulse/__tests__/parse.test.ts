@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin } from '../parse.ts';
+import {
+  extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin, parseStatusAnuncios,
+} from '../parse.ts';
 
 // Fixtures espelham a resposta real provada em 2026-08-16 (plano Pulse v1, "Fatos empíricos"):
 // /products/{id}/items → results[] com item_id, price, seller_id, listing_type_id,
@@ -132,6 +134,34 @@ describe('ofertasNaoLidas', () => {
   it('sem paging não inventa excedente', () => {
     expect(ofertasNaoLidas({ results: [{}] })).toBe(0);
     expect(ofertasNaoLidas(null)).toBe(0);
+  });
+});
+
+describe('parseStatusAnuncios', () => {
+  it('extrai id, status e sub_status do multiget', () => {
+    const json = [
+      { code: 200, body: { id: 'MLB1', status: 'paused', sub_status: ['out_of_stock'] } },
+      { code: 200, body: { id: 'MLB2', status: 'active', sub_status: [] } },
+    ];
+    expect(parseStatusAnuncios(json)).toEqual([
+      { item_id: 'MLB1', status: 'paused', sub_status: ['out_of_stock'] },
+      { item_id: 'MLB2', status: 'active', sub_status: [] },
+    ]);
+  });
+
+  // Um id inválido volta com code de erro no meio dos que deram certo — descartar o lote inteiro
+  // apagaria a situação de todos os outros anúncios daquela chamada.
+  it('um item com erro não derruba os demais do lote', () => {
+    const json = [
+      { code: 404, body: { message: 'not found' } },
+      { code: 200, body: { id: 'MLB2', status: 'active', sub_status: [] } },
+    ];
+    expect(parseStatusAnuncios(json).map((s) => s.item_id)).toEqual(['MLB2']);
+  });
+
+  it('resposta fora do formato não vira lista de situações', () => {
+    expect(parseStatusAnuncios(null)).toEqual([]);
+    expect(parseStatusAnuncios({ results: [] })).toEqual([]);
   });
 });
 

@@ -787,7 +787,11 @@ falha ao ler `organizations` não libera.
   execução) só reconsulta ofertas dos produtos `origem='auto'`, sem vendedores/referência. A mesma
   resposta de `/products/{id}/items` (`limit=100` explícito; excedente vai para o log) alimenta
   `pulse_produtos.meu_preco` — a nossa oferta na ficha, o preço vivo que a coluna "Seu preço" mostra
-  (Errata 4 do ADR-0119). Grava em
+  (Errata 4 do ADR-0119). `sincronizarRadar` monta o radar pelo `catalog_product_id` do JSON
+  `variacoes_externas` e, **só para os códigos publicados sem nenhum cpid ali**, cai em
+  `variacoes` da família mais recente com `catalog_status='vinculado'` — sem esse resgate, anúncio
+  publicado e vinculado ficava inteiro fora do radar (Errata 5). Passo em lote à parte lê a
+  situação do anúncio (`/items?ids=…`, 20 por chamada) para `anuncio_status`. Grava em
   `pulse_ofertas` via upsert `produto_id,item_id,dia` — merge, **sem** `ignoreDuplicates`, para uma
   2ª execução no mesmo dia sobrescrever a linha de hoje com o valor atual em vez de travar no 1º
   valor visto e reemitir alerta a cada rodada. A notificação traz **os novos desta execução e o

@@ -214,6 +214,53 @@ disso (máx. 85 medido), mas o teto é real: acima dele o radar veria um subconj
 poderia cair fora, zerando a coluna sem motivo aparente. Agora o `limit=100` é explícito e o
 excedente vai para o log.
 
+## Errata 5 (2026-08-16) — anúncio publicado fora do radar, e "pausado" era a coisa errada
+
+Duas queixas do mesmo dia, causas independentes.
+
+### 1. Filtrar por "pausados" devolvia lista vazia
+
+O filtro olhava `pulse_produtos.status`, que é o ciclo de vida do produto **dentro do radar**
+(pausar/reativar pelo menu da linha). Nenhum produto jamais foi pausado ali — os 222 estavam
+`ativo` — enquanto metade dos anúncios estava parada no ML por estoque zerado. O filtro estava
+tecnicamente correto e respondia à pergunta errada.
+
+Passa a usar a situação real, lida do multiget `/items?ids=…&attributes=id,status,sub_status` num
+passo em lote (20 ids por chamada, ~8 requisições para 150 anúncios; dentro do loop por produto
+seriam 222). O id vem de `anuncios_externos`, **não** de `meu_item_id`: anúncio pausado some da
+ficha de catálogo, então `meu_item_id` é null exatamente quando a situação mais importa.
+
+`out_of_stock` ganha texto próprio ("pausado por estoque zerado — repor o estoque o reativa")
+porque é acionável; pausa por moderação não é a mesma coisa e não pode receber a mesma frase.
+Com a situação conhecida, `motivoSemPrecoProprio` deixa de **deduzir** "pausado ou sem estoque" da
+ausência na ficha — a ausência tem mais de uma causa.
+
+### 2. Anúncio publicado e vinculado que nunca entrou no radar
+
+`sincronizarRadar` montava a lista a partir de `anuncios_externos.variacoes_externas[].
+catalog_product_id` — o espelho JSON da publicação. Quando esse campo não foi gravado, o anúncio
+ficava **inteiro** fora do radar, mesmo com `variacoes.catalog_status = 'vinculado'`. Medido na
+DSA: `MLB4982690837` (`00000004`), vinculado à ficha `MLB15976572`, ausente do radar.
+
+Fonte de dado comparada antes de escolher:
+
+| Fonte | Avil | DSA |
+|---|---:|---:|
+| JSON `variacoes_externas` (atual) | 217 | 5 |
+| Todas as variações das famílias do código | 434 | 6 |
+| Variações da família mais recente | 180 | 6 |
+| **Só os códigos órfãos, família mais recente, `vinculado`** | **+0** | **+1** |
+
+As duas fontes amplas trazem lixo histórico (re-ingest deixa várias famílias por `codigo_pai`) ou
+perdem vínculos que o JSON tem. O recorte adotado é aditivo: consulta `variacoes` **apenas** para
+os códigos publicados que hoje não têm nenhum `catalog_product_id` no JSON. Recupera exatamente a
+ficha que faltava e não acrescenta nada na Avil — cujos 126 órfãos são os aviamentos sem catálogo
+da Errata 2, confirmando aquela medição por outro caminho.
+
+Verificado após o deploy: DSA passou de 5 para 6 produtos, 3 `active` e 3 `paused`/`out_of_stock`.
+O produto recuperado aparece com "—" em Seu preço — correto, está pausado e portanto ausente da
+ficha.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

@@ -85,7 +85,8 @@ perde dado.
 Abra **Pulse** na barra lateral. A lista mostra uma linha por ficha de catálogo monitorada.
 
 - **Produto** — nome da ficha no Mercado Livre. Abaixo, em cinza, o EAN do produto. Quando a
-  última coleta passou de 2 dias, aparece um aviso em amarelo ao lado.
+  última coleta passou de 2 dias, aparece um aviso em amarelo ao lado. Anúncio que não está à
+  venda ganha uma etiqueta aqui — **Sem estoque**, **Pausado no ML** ou **Fora do ar**.
 - **Seu preço** — o preço da **sua oferta nessa ficha**, lido do Mercado Livre na última coleta.
   É o preço que o comprador vê, já com promoção se houver — e não o que está cadastrado aqui
   dentro. Um `—` não é falha: passe o mouse e a célula diz o motivo (anúncio pausado ou sem
@@ -126,9 +127,13 @@ Três controles, que se acumulam:
   mostrar só esses produtos; clique de novo no mesmo cartão para remover o recorte. "No radar"
   limpa tudo e devolve a lista inteira. O cartão aplicado fica destacado.
 - **Buscar por nome ou EAN** — também aceita o código do produto.
-- **Situação no radar** — Todos / Só ativos / Só pausados. Atenção: "pausado no radar" é o produto
-  que **você** pausou pelo menu ⋮ da linha, para parar de acompanhá-lo. Não tem relação com o
-  anúncio estar pausado no Mercado Livre.
+- **Situação do anúncio** — Todos / Só anúncios ativos / Só anúncios pausados. É a situação real no
+  Mercado Livre, lida na coleta. "Pausado" inclui tudo que não está à venda: estoque zerado,
+  pausa manual, moderação. Produto cuja situação ainda não foi lida não entra em nenhum dos dois
+  recortes — só em "Todos".
+
+  Não confunda com o **pausar no radar** do menu ⋮ da linha: aquilo só faz o Pulse parar de
+  acompanhar o produto, e a linha continua na lista, esmaecida.
 
 Com qualquer filtro aplicado aparece a contagem ("12 de 222") e o botão **Limpar filtros**.
 O ícone **i** de cada cartão abre a explicação do número sem aplicar o filtro.

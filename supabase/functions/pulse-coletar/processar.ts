@@ -6,7 +6,9 @@ import { mlGet } from '../_shared/ml/http.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin } from '../_shared/pulse/parse.ts';
+import {
+  extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin, parseStatusAnuncios,
+} from '../_shared/pulse/parse.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
 import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
 import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
@@ -40,6 +42,11 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
   );
 
   const codigosPaiVistos = new Set(publicados.map((a) => a.codigo_pai));
+  const comCpidNoJson = new Set(
+    publicados
+      .filter((a) => Object.values(a.variacoes_externas ?? {}).some((v) => v?.catalog_product_id))
+      .map((a) => a.codigo_pai),
+  );
   // Dedupe por catalog_product_id (Map): duas SKUs/anúncios podem apontar pra mesma ficha de
   // catálogo. Sem isso, o upsert em lote manda o MESMO (org_id, catalog_product_id) duas vezes
   // na mesma instrução e o Postgres recusa com "cannot affect row a second time" — a sincronia
@@ -54,6 +61,49 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
       });
     }
   }
+  // Resgate dos órfãos: anúncio publicado cujo JSON `variacoes_externas` não guardou nenhum
+  // `catalog_product_id` ficava INTEIRO fora do radar, mesmo com o vínculo confirmado em
+  // `variacoes` (medido: o MLB4982690837 da DSA, `catalog_status='vinculado'`, nunca entrou).
+  // O JSON é o espelho da publicação e nem sempre foi preenchido; `variacoes` é onde o vínculo
+  // vive de fato. Só os órfãos são consultados — varrer todos os códigos publicados traria
+  // fichas de famílias antigas (medido: 434 contra 217 na Avil).
+  const orfaos = [...codigosPaiVistos].filter((c) => !comCpidNoJson.has(c));
+  if (orfaos.length > 0) {
+    const familias = await paginarTudo<{ id: string; codigo_pai: string; criado_em: string }>((de, ate) =>
+      admin.from('familias')
+        .select('id, codigo_pai, criado_em')
+        .in('codigo_pai', orfaos)
+        .order('criado_em', { ascending: false })
+        .range(de, ate),
+    );
+    // Família mais recente por código — o PostgREST não tem `distinct on`, e o histórico de
+    // re-ingest deixa várias famílias com o mesmo `codigo_pai`.
+    const familiaPorCodigo = new Map<string, string>();
+    for (const f of familias) if (!familiaPorCodigo.has(f.codigo_pai)) familiaPorCodigo.set(f.codigo_pai, f.id);
+
+    const familiaIds = [...familiaPorCodigo.values()];
+    if (familiaIds.length > 0) {
+      const codigoPorFamilia = new Map([...familiaPorCodigo].map(([c, id]) => [id, c]));
+      const vars = await paginarTudo<{ familia_id: string; catalog_product_id: string | null; catalog_status: string | null }>((de, ate) =>
+        admin.from('variacoes')
+          .select('familia_id, catalog_product_id, catalog_status')
+          .eq('org_id', orgId)
+          .in('familia_id', familiaIds)
+          .not('catalog_product_id', 'is', null)
+          .range(de, ate),
+      );
+      for (const v of vars) {
+        // Só vínculo confirmado: uma ficha que o anúncio não disputa não é produto do radar.
+        if (v.catalog_status !== 'vinculado' || !v.catalog_product_id) continue;
+        const codigo = codigoPorFamilia.get(v.familia_id);
+        if (!codigo || porCpid.has(v.catalog_product_id)) continue;
+        porCpid.set(v.catalog_product_id, {
+          org_id: orgId, catalog_product_id: v.catalog_product_id, codigo_pai: codigo, origem: 'auto',
+        });
+      }
+    }
+  }
+
   // GTIN por ficha: cada catalog_product_id corresponde a UMA variação (uma cor), então o EAN sai
   // de `variacoes.catalog_product_id`, não do código da família — que agrupa várias fichas.
   const cpids = [...porCpid.keys()];
@@ -258,6 +308,52 @@ export async function processarColetaOrg(
         ptw_atualizado_em: new Date().toISOString(),
       }).eq('id', produto.id);
     });
+  }
+
+  // 5b) situação do NOSSO anúncio no ML (só tier completo). Passo próprio e em lote — 20 ids por
+  // chamada, ~8 requisições para 150 anúncios contra uma por produto se ficasse no loop acima. E
+  // fora do teto de tempo daquele loop: o produto que ficou para o ciclo seguinte também precisa
+  // da situação, senão a tela fica sem saber justamente dos atrasados.
+  // O id vem de `anuncios_externos`, não de `meu_item_id`: anúncio pausado some da ficha de
+  // catálogo, então `meu_item_id` é null exatamente quando a situação mais importa.
+  if (tier === 'completo') {
+    const comCodigo = produtos.filter((p) => p.codigo_pai);
+    const codigos = [...new Set(comCodigo.map((p) => p.codigo_pai!))];
+    if (codigos.length > 0) {
+      const anuncios = await paginarTudo<{ codigo_pai: string; item_externo_id: string | null }>((de, ate) =>
+        admin.from('anuncios_externos')
+          .select('codigo_pai, item_externo_id')
+          .eq('org_id', orgId).eq('canal', 'mercado_livre').eq('status', 'publicado')
+          .in('codigo_pai', codigos)
+          .not('item_externo_id', 'is', null)
+          .order('particao', { ascending: true })
+          .range(de, ate),
+      );
+      const itemPorCodigo = new Map<string, string>();
+      for (const a of anuncios) {
+        if (a.item_externo_id && !itemPorCodigo.has(a.codigo_pai)) itemPorCodigo.set(a.codigo_pai, a.item_externo_id);
+      }
+
+      const ids = [...new Set(itemPorCodigo.values())];
+      const statusPorItem = new Map<string, { status: string | null; sub: string[] | null }>();
+      for (let i = 0; i < ids.length; i += 20) {
+        const lote = ids.slice(i, i + 20);
+        const json = await mlGet(`${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status`, token);
+        for (const st of parseStatusAnuncios(json)) statusPorItem.set(st.item_id, { status: st.status, sub: st.sub_status });
+      }
+
+      const agora = new Date().toISOString();
+      await pool(CONCORRENCIA, comCodigo, async (produto) => {
+        const itemId = itemPorCodigo.get(produto.codigo_pai!);
+        const st = itemId ? statusPorItem.get(itemId) : undefined;
+        // Leitura que falhou não vira "situação desconhecida": preserva a última conhecida em vez
+        // de apagá-la, do mesmo jeito que o price-to-win não sobrescreve com null.
+        if (!st) return;
+        await admin.from('pulse_produtos').update({
+          anuncio_status: st.status, anuncio_sub_status: st.sub, anuncio_status_em: agora,
+        }).eq('id', produto.id);
+      });
+    }
   }
 
   // 6) alertas: 1 notificação agregada por org por execução.

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select';
 import {
   contarPulse, filtrarProdutos, temFiltroAtivo, FILTROS_VAZIOS,
-  type FiltrosPulse, type FocoPulse, type StatusRadar,
+  type FiltrosPulse, type FocoPulse, type StatusAnuncio,
 } from '@/lib/pulse-filtros';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -172,19 +172,20 @@ export default function Pulse() {
             />
           </div>
 
-          {/* "Pausado" aqui é o produto pausado NO RADAR (menu da linha) — não o anúncio pausado
-              no Mercado Livre. Os rótulos dizem "no radar" para não confundir os dois. */}
+          {/* Situação do anúncio no Mercado Livre — é o que o operador quer saber ("quais dos meus
+              anúncios estão parados?"). O pausar/reativar do menu da linha é outra coisa: ele só
+              tira o produto do acompanhamento, e a linha continua visível, esmaecida. */}
           <Select
             value={filtros.status}
-            onValueChange={(v) => setFiltros((f) => ({ ...f, status: v as StatusRadar }))}
+            onValueChange={(v) => setFiltros((f) => ({ ...f, status: v as StatusAnuncio }))}
           >
-            <SelectTrigger className="h-9 w-[190px]" aria-label="Filtrar por situação no radar">
+            <SelectTrigger className="h-9 w-[205px]" aria-label="Filtrar por situação do anúncio">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="todos">Todos os produtos</SelectItem>
-              <SelectItem value="ativo">Só ativos no radar</SelectItem>
-              <SelectItem value="pausado">Só pausados no radar</SelectItem>
+              <SelectItem value="ativo">Só anúncios ativos</SelectItem>
+              <SelectItem value="pausado">Só anúncios pausados</SelectItem>
             </SelectContent>
           </Select>
 

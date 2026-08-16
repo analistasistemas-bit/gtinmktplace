@@ -66,6 +66,31 @@ export function ofertasNaoLidas(json: unknown): number {
   return Math.max(0, p.total - results.length);
 }
 
+/**
+ * Multiget `/items?ids=...` — situação dos NOSSOS anúncios. A resposta é uma lista de envelopes
+ * `{ code, body }`: um id inválido volta com `code` de erro no meio dos que deram certo, e tratar
+ * o lote inteiro como perdido apagaria a situação de todos os outros.
+ */
+export function parseStatusAnuncios(
+  json: unknown,
+): { item_id: string; status: string | null; sub_status: string[] | null }[] {
+  if (!Array.isArray(json)) return [];
+  const out: { item_id: string; status: string | null; sub_status: string[] | null }[] = [];
+  for (const r of json) {
+    const env = r as { code?: unknown; body?: unknown };
+    if (env?.code !== 200) continue;
+    const b = env.body as Record<string, unknown> | null;
+    const id = typeof b?.id === 'string' ? b.id : null;
+    if (!id) continue;
+    out.push({
+      item_id: id,
+      status: typeof b?.status === 'string' ? b.status : null,
+      sub_status: Array.isArray(b?.sub_status) ? (b.sub_status as unknown[]).filter((s): s is string => typeof s === 'string') : null,
+    });
+  }
+  return out;
+}
+
 // /suggestions/items/{id}/details
 export function parsePriceToWin(json: unknown): PriceToWin | null {
   const d = json as Record<string, unknown> | null;

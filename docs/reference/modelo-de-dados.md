@@ -632,6 +632,9 @@ do NOSSO item via `/suggestions/items/{id}/details` (o prefixo `ptw` é históri
 `price_to_win` do buy box — Errata 3 do ADR-0119). `ptw_status` assume `no_benchmark_lowest`,
 `no_benchmark_ok`, `with_benchmark_high`, `with_benchmark_highest` ou, em referência do tipo
 Markdown, `not_optin_applied`/`promotion_scheduled`/`promotion_active`.
+`anuncio_status`/`anuncio_sub_status` (text[])/`anuncio_status_em` — situação do NOSSO anúncio no ML
+(`active`, `paused` + `out_of_stock`, …), do multiget `/items` (Errata 5 do ADR-0119). Não confundir
+com `status`, que é a situação do produto **dentro do radar**.
 `meu_item_id`/`meu_preco`/`meu_preco_em` — preço **vivo** da nossa oferta na ficha, extraído da
 mesma resposta de `/products/{id}/items` que traz as concorrentes (Errata 4 do ADR-0119). `null`
 quando não temos oferta ativa lá (pausado, sem estoque, sem vínculo); com split vence o menor preço

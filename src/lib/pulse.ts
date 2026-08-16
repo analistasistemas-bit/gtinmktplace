@@ -28,6 +28,11 @@ export interface PulseProduto {
    */
   meu_preco: number | null;
   meu_preco_em: string | null;
+  /** Situação do NOSSO anúncio no ML (`active`, `paused`, `closed`…). Não é `status`, que é a
+   *  situação do produto dentro do radar. `null` = ainda não lida. */
+  anuncio_status: string | null;
+  anuncio_sub_status: string[] | null;
+  anuncio_status_em: string | null;
 }
 export interface PulseOferta {
   item_id: string; seller_id: number; preco: number; tier: string | null;
@@ -50,7 +55,7 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
   const { data, error } = await pulseFrom('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });

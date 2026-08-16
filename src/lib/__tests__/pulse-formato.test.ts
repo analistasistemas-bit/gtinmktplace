@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  seloPriceToWin, ordemPriceToWin, motivoSemPrecoProprio, tipoAnuncio, reputacao, posicaoVsMercado,
+  seloPriceToWin, ordemPriceToWin, motivoSemPrecoProprio, seloAnuncio, tipoAnuncio, reputacao,
+  posicaoVsMercado,
 } from '../pulse-formato';
 
 const vinculado = (ptw_status: string | null) =>
@@ -68,6 +69,8 @@ describe('motivoSemPrecoProprio', () => {
     catalogo_status: 'vinculado',
     ultimo_snapshot_em: '2026-08-16T00:00:00Z',
     meu_preco_em: '2026-08-16T22:08:09Z',
+    anuncio_status: 'active' as string | null,
+    anuncio_sub_status: null as string[] | null,
   };
 
   it('ficha manual: não é anúncio nosso', () => {
@@ -90,8 +93,29 @@ describe('motivoSemPrecoProprio', () => {
     expect(motivoSemPrecoProprio({ ...base, catalogo_status: 'ficha_divergente' })).toContain('não está vinculado');
   });
 
-  it('lido, vinculado, mas fora da ficha: pausado ou sem estoque', () => {
-    expect(motivoSemPrecoProprio(base)).toContain('pausado ou sem estoque');
+  it('lido, vinculado, anúncio ativo, mas fora da ficha: sem dedução extra', () => {
+    expect(motivoSemPrecoProprio(base)).toContain('não está entre as ofertas ativas');
+  });
+
+  // A situação real vence a dedução: some da ficha tanto quem está pausado quanto quem perdeu o
+  // vínculo, e "sem estoque" e "em moderação" são problemas diferentes com a mesma aparência.
+  it('anúncio pausado por estoque zerado diz isso, e diz o que resolve', () => {
+    const s = motivoSemPrecoProprio({ ...base, anuncio_status: 'paused', anuncio_sub_status: ['out_of_stock'] });
+    expect(s).toContain('estoque zerado');
+    expect(s).toContain('repor o estoque');
+  });
+
+  it('pausado por outro motivo não é chamado de falta de estoque', () => {
+    const s = motivoSemPrecoProprio({ ...base, anuncio_status: 'under_review', anuncio_sub_status: [] });
+    expect(s).not.toContain('estoque');
+    expect(s).toContain('under_review');
+  });
+
+  it('situação do anúncio vence o vínculo: pausado é pausado, mesmo sem vínculo', () => {
+    const s = motivoSemPrecoProprio({
+      ...base, catalogo_status: 'ficha_divergente', anuncio_status: 'paused', anuncio_sub_status: ['out_of_stock'],
+    });
+    expect(s).toContain('estoque zerado');
   });
 
   it('sempre explica — nunca devolve vazio, que leria como tela quebrada', () => {
@@ -103,6 +127,27 @@ describe('motivoSemPrecoProprio', () => {
       { ...base, meu_preco_em: null },
     ];
     for (const c of casos) expect(motivoSemPrecoProprio(c).length).toBeGreaterThan(10);
+  });
+});
+
+describe('seloAnuncio', () => {
+  it('anúncio ativo não ganha etiqueta — só o que está fora do ar se identifica', () => {
+    expect(seloAnuncio({ anuncio_status: 'active', anuncio_sub_status: [] })).toBeNull();
+  });
+
+  it('situação ainda não lida não vira etiqueta', () => {
+    expect(seloAnuncio({ anuncio_status: null, anuncio_sub_status: null })).toBeNull();
+  });
+
+  it('estoque zerado e pausa comum são etiquetas distintas', () => {
+    expect(seloAnuncio({ anuncio_status: 'paused', anuncio_sub_status: ['out_of_stock'] })?.texto).toBe('Sem estoque');
+    expect(seloAnuncio({ anuncio_status: 'paused', anuncio_sub_status: [] })?.texto).toBe('Pausado no ML');
+  });
+
+  it('situação desconhecida do ML não vaza como está, mas fica no tooltip', () => {
+    const s = seloAnuncio({ anuncio_status: 'closed', anuncio_sub_status: null });
+    expect(s?.texto).toBe('Fora do ar');
+    expect(s?.ajuda).toContain('closed');
   });
 });
 

@@ -63,7 +63,8 @@ export function seloPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_st
  * O preço vem da nossa oferta na ficha, então some junto com ela.
  */
 export function motivoSemPrecoProprio(
-  p: Pick<PulseProduto, 'origem' | 'catalogo_status' | 'ultimo_snapshot_em' | 'meu_preco_em'>,
+  p: Pick<PulseProduto,
+    'origem' | 'catalogo_status' | 'ultimo_snapshot_em' | 'meu_preco_em' | 'anuncio_status' | 'anuncio_sub_status'>,
 ): string {
   if (p.origem === 'manual') return 'Ficha adicionada para pesquisa — você não vende este produto.';
   if (!p.ultimo_snapshot_em) return 'Ainda sem a primeira coleta.';
@@ -71,10 +72,33 @@ export function motivoSemPrecoProprio(
   // seguinte. Sem esta trava, esses produtos seriam anunciados como "pausados" — afirmação sobre
   // o anúncio a partir de uma leitura que não aconteceu.
   if (!p.meu_preco_em) return 'Preço ainda não lido do Mercado Livre — aguarde a próxima coleta.';
+  // Situação real do anúncio, quando conhecida, vence qualquer dedução: some da ficha tanto quem
+  // está pausado quanto quem perdeu o vínculo, e "sem estoque" e "em moderação" são problemas
+  // diferentes com a mesma aparência.
+  if (p.anuncio_status && p.anuncio_status !== 'active') {
+    if (p.anuncio_sub_status?.includes('out_of_stock')) {
+      return 'Seu anúncio está pausado no Mercado Livre por estoque zerado — repor o estoque o reativa.';
+    }
+    return `Seu anúncio não está à venda no Mercado Livre (situação: ${p.anuncio_status}).`;
+  }
   if (p.catalogo_status && p.catalogo_status !== 'vinculado') {
     return 'Seu anúncio não está vinculado a esta ficha, então não aparece entre as ofertas dela.';
   }
-  return 'Seu anúncio não está entre as ofertas ativas da ficha — normalmente pausado ou sem estoque.';
+  return 'Seu anúncio não está entre as ofertas ativas da ficha.';
+}
+
+/** Etiqueta da situação do anúncio no ML, para a lista. `null` quando está tudo normal (ativo). */
+export function seloAnuncio(
+  p: Pick<PulseProduto, 'anuncio_status' | 'anuncio_sub_status'>,
+): Selo | null {
+  if (!p.anuncio_status || p.anuncio_status === 'active') return null;
+  if (p.anuncio_sub_status?.includes('out_of_stock')) {
+    return { texto: 'Sem estoque', tom: 'atencao', ajuda: 'Anúncio pausado no Mercado Livre por estoque zerado.' };
+  }
+  if (p.anuncio_status === 'paused') {
+    return { texto: 'Pausado no ML', tom: 'atencao', ajuda: 'Anúncio pausado no Mercado Livre.' };
+  }
+  return { texto: 'Fora do ar', tom: 'risco', ajuda: `Situação do anúncio no ML: ${p.anuncio_status}.` };
 }
 
 // Escala de preço frente à referência, do mais barato ao mais caro. Os estados de Markdown ficam
