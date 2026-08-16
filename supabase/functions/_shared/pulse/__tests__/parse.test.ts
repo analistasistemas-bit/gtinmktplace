@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseOfertasProduto, parsePriceToWin } from '../parse.ts';
+import { extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin } from '../parse.ts';
 
 // Fixtures espelham a resposta real provada em 2026-08-16 (plano Pulse v1, "Fatos empíricos"):
 // /products/{id}/items → results[] com item_id, price, seller_id, listing_type_id,
@@ -80,6 +80,58 @@ describe('parseOfertasProduto', () => {
   it('sem results[] → []', () => {
     expect(parseOfertasProduto({})).toEqual([]);
     expect(parseOfertasProduto(null)).toEqual([]);
+  });
+});
+
+describe('extrairNossaOferta', () => {
+  const ficha = (results: unknown[]) => ({ results, paging: { total: results.length } });
+
+  it('acha a nossa oferta na mesma resposta das concorrentes', () => {
+    const json = ficha([
+      { item_id: 'MLB111', seller_id: 999, price: 44.9 },
+      { item_id: 'MLB222', seller_id: 9757132, price: 48.9 },
+    ]);
+    expect(extrairNossaOferta(json, 9757132)).toEqual({ item_id: 'MLB222', preco: 48.9 });
+  });
+
+  it('anúncio publicado por faixa: vence o MENOR preço nosso (o comparável com o menor rival)', () => {
+    const json = ficha([
+      { item_id: 'MLB_a', seller_id: 42, price: 90 },
+      { item_id: 'MLB_b', seller_id: 42, price: 70 },
+      { item_id: 'MLB_c', seller_id: 42, price: 110 },
+    ]);
+    expect(extrairNossaOferta(json, 42)).toEqual({ item_id: 'MLB_b', preco: 70 });
+  });
+
+  it('sem oferta nossa na ficha → null (anúncio pausado ou sem vínculo), nunca preço de outro', () => {
+    const json = ficha([{ item_id: 'MLB111', seller_id: 999, price: 44.9 }]);
+    expect(extrairNossaOferta(json, 42)).toBeNull();
+  });
+
+  it('sem conta externa conhecida não elege oferta nenhuma como nossa', () => {
+    const json = ficha([{ item_id: 'MLB111', seller_id: 999, price: 44.9 }]);
+    expect(extrairNossaOferta(json, null)).toBeNull();
+    expect(extrairNossaOferta(json, undefined)).toBeNull();
+  });
+
+  it('resposta inválida não vira preço', () => {
+    expect(extrairNossaOferta(null, 42)).toBeNull();
+    expect(extrairNossaOferta({}, 42)).toBeNull();
+  });
+});
+
+describe('ofertasNaoLidas', () => {
+  it('conta o que ficou fora da página lida', () => {
+    expect(ofertasNaoLidas({ results: new Array(100).fill({}), paging: { total: 137 } })).toBe(37);
+  });
+
+  it('ficha inteira lida → 0', () => {
+    expect(ofertasNaoLidas({ results: [{}, {}], paging: { total: 2 } })).toBe(0);
+  });
+
+  it('sem paging não inventa excedente', () => {
+    expect(ofertasNaoLidas({ results: [{}] })).toBe(0);
+    expect(ofertasNaoLidas(null)).toBe(0);
   });
 });
 

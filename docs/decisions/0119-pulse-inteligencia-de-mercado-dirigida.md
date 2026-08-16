@@ -154,6 +154,60 @@ schema — renomear exigiria migration sem ganho de comportamento.
 referência como não aplicável e a tela mostrar mesmo assim, o selo passa a afirmar mais do que o ML
 afirma. Registrado em `docs/TASKS.md` — exige coluna nova e redeploy do coletor.
 
+## Errata 4 (2026-08-16) — "Seu preço" não era o preço vigente
+
+**Como apareceu:** Diego comparou a coluna com o painel do ML e os números não batiam.
+
+**Causa:** `meu_preco` era derivado de `variacoes.preco_publicado_ml`, e esse campo só é escrito
+por `publish-familia-ml`, `update-familia-ml`, `publicar-split-ml` e `remover-publicado` — ou seja,
+**quando o app publica**. Nenhum job reconcilia esse valor com o ML. Não sabemos como o preço do
+anúncio chegou a divergir, e a correção é a mesma em qualquer hipótese: o banco não é fonte da
+verdade para o preço vigente.
+
+**Verificado em três fontes independentes**, item `MLB7343600804` / `codigo_pai 00000022`:
+
+| Fonte | Preço |
+|---|---|
+| `variacoes.preco_publicado_ml` (o que a tela mostrava) | 44,60 |
+| Painel de anúncios do ML | 48,90 |
+| `/items/{id}` com token | 48,90 |
+| Nossa oferta em `/products/MLB36209242/items` | 48,90 |
+
+Eram **três defeitos na mesma coluna**, todos medidos no radar de 222 produtos:
+
+1. **Defasado** — sem reconciliação com o ML (o relatado).
+2. **Substituição por rascunho** — `preco_publicado_ml ?? preco_publicacao` caía no preço
+   *pretendido* em 2 produtos. Valor financeiro trocado por outro em silêncio, o que a regra LOUD
+   proíbe.
+3. **Escolha arbitrária** — `.find()` pegava a primeira variação com preço. 37 dos 222 (17%) têm
+   mais de um preço distinto entre variações, e o PostgREST não garante ordem no array aninhado.
+   O `DialogReprecificar` já **se recusa a agir** nesse caso; a lista exibia um dos preços e
+   derivava dele o badge de posição.
+
+**Decisão: o preço vivo vem da mesma resposta das concorrentes.** `/products/{id}/items` já traz a
+nossa oferta ao lado das dos rivais — mesma fonte, mesmo instante, mesma base. Gravamos
+`pulse_produtos.meu_preco` / `meu_item_id` / `meu_preco_em` na coleta. Zero chamadas novas.
+
+**Por que não multiget de `/items`:** ele devolve o preço **base**, sem a promoção ativa
+(verificado: `MLB7391084566` → `price: 38,90`, `deal_ids: []`, enquanto
+`/seller-promotions/items/{id}?app_version=v2` devolve `PRICE_DISCOUNT started, price: 35,79`). As
+ofertas dos concorrentes vêm com preço **efetivo** (rival com `price: 49,68`, `original_price: 54`).
+Gravar o preço base compararia bases diferentes — 8% de erro em qualquer produto em campanha.
+
+**Custo aceito:** só existe preço vivo quando temos oferta ativa na ficha. Dos 222 produtos, 117
+são `catalogo_status='vinculado'`; os demais (99 `ficha_divergente` + 6 outros) passam a mostrar
+"—" **com o motivo**, em vez de um número que não era o preço vigente nem comparável (nosso
+anúncio nem está naquela ficha). Anúncio pausado ou sem estoque sai da ficha e também perde a
+posição — correto: não está competindo.
+
+**Split:** com o anúncio publicado por faixa temos várias ofertas na ficha; vence a de **menor
+preço**, a única comparável com "menor concorrente".
+
+**Achado colateral:** a coleta usava o default de paginação do ML (100). Nenhuma ficha atual passa
+disso (máx. 85 medido), mas o teto é real: acima dele o radar veria um subconjunto e a nossa oferta
+poderia cair fora, zerando a coluna sem motivo aparente. Agora o `limit=100` é explícito e o
+excedente vai para o log.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

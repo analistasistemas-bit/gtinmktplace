@@ -57,6 +57,22 @@ export function seloPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_st
   return null;
 }
 
+/**
+ * Por que a coluna "Seu preço" está vazia. Célula financeira em branco sem motivo lê como tela
+ * quebrada; e o motivo é acionável — "sem vínculo" tem conserto, "pausado" não é problema.
+ * O preço vem da nossa oferta na ficha, então some junto com ela.
+ */
+export function motivoSemPrecoProprio(
+  p: Pick<PulseProduto, 'origem' | 'catalogo_status' | 'ultimo_snapshot_em'>,
+): string {
+  if (p.origem === 'manual') return 'Ficha adicionada para pesquisa — você não vende este produto.';
+  if (!p.ultimo_snapshot_em) return 'Ainda sem a primeira coleta.';
+  if (p.catalogo_status && p.catalogo_status !== 'vinculado') {
+    return 'Seu anúncio não está vinculado a esta ficha, então não aparece entre as ofertas dela.';
+  }
+  return 'Seu anúncio não está entre as ofertas ativas da ficha — normalmente pausado ou sem estoque.';
+}
+
 // Escala de preço frente à referência, do mais barato ao mais caro. Os estados de Markdown ficam
 // de fora de propósito: "promoção agendada" não é uma posição de preço e ordená-la entre as
 // outras inventaria uma comparação que o ML não fez.

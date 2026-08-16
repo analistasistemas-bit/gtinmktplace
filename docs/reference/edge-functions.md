@@ -782,9 +782,12 @@ falha ao ler `organizations` não libera.
   teto de 50 produtos **por org** na execução. Tier `completo` (schedule diário 06h BRT, teto 200
   produtos por org na execução) roda `sincronizarRadar` (espelha `anuncios_externos` publicados em
   `pulse_produtos`, arquiva os que saíram), coleta ofertas de todos os produtos ativos, snapshot de
-  vendedores (1×/dia, só se `transactions_total` mudou) e price-to-win dos produtos com
-  `origem='auto'` **e** `codigo_pai` preenchido; tier `quente` (a cada 6h, teto 100 por org na
-  execução) só reconsulta ofertas dos produtos `origem='auto'`, sem vendedores/PTW. Grava em
+  vendedores (1×/dia, só se `transactions_total` mudou) e a referência de preço do ML dos produtos
+  com `origem='auto'` **e** `codigo_pai` preenchido; tier `quente` (a cada 6h, teto 100 por org na
+  execução) só reconsulta ofertas dos produtos `origem='auto'`, sem vendedores/referência. A mesma
+  resposta de `/products/{id}/items` (`limit=100` explícito; excedente vai para o log) alimenta
+  `pulse_produtos.meu_preco` — a nossa oferta na ficha, o preço vivo que a coluna "Seu preço" mostra
+  (Errata 4 do ADR-0119). Grava em
   `pulse_ofertas` via upsert `produto_id,item_id,dia` — merge, **sem** `ignoreDuplicates`, para uma
   2ª execução no mesmo dia sobrescrever a linha de hoje com o valor atual em vez de travar no 1º
   valor visto e reemitir alerta a cada rodada. Alertas em `pulse_alertas` + 1 notificação agregada

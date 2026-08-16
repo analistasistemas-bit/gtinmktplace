@@ -86,7 +86,10 @@ Abra **Pulse** na barra lateral. A lista mostra uma linha por ficha de catálogo
 
 - **Produto** — nome da ficha no Mercado Livre. Abaixo, em cinza, o EAN do produto. Quando a
   última coleta passou de 2 dias, aparece um aviso em amarelo ao lado.
-- **Seu preço** — o preço publicado do seu anúncio.
+- **Seu preço** — o preço da **sua oferta nessa ficha**, lido do Mercado Livre na última coleta.
+  É o preço que o comprador vê, já com promoção se houver — e não o que está cadastrado aqui
+  dentro. Um `—` não é falha: passe o mouse e a célula diz o motivo (anúncio pausado ou sem
+  estoque, sem vínculo de catálogo, ficha manual, ou ainda sem a primeira coleta).
 - **Menor concorrente** — o **menor preço entre os concorrentes** naquela ficha. O seu próprio
   anúncio **não** entra nessa conta: você não é concorrente de si mesmo.
 - **Sua posição** — quanto você está acima ou abaixo do menor concorrente, em %. É a leitura que
@@ -184,7 +187,7 @@ subindo ou parado.
 
 Quatro números lado a lado:
 
-- **Seu preço** — o preço publicado do seu anúncio.
+- **Seu preço** — o preço da sua oferta nessa ficha, lido do ML na última coleta.
 - **Menor concorrente** — a oferta mais barata da ficha, sem contar você.
 - **Sua posição** — quanto você está acima ou abaixo desse menor concorrente.
 - **Referência do ML** — o preço de referência que o Mercado Livre calcula para o seu anúncio.
@@ -338,6 +341,8 @@ Honestidade aqui evita decisão errada:
 | Menu Pulse não aparece | Módulo desligado para a org, ou menu não liberado para o usuário | Ver seção 1 |
 | Radar vazio | Nenhum anúncio publicado com ficha de catálogo ainda | Publique ou adicione um produto manualmente |
 | Coluna Menor concorrente com `—` | Produto ainda não teve a primeira coleta | **Atualizar agora**, ou esperar o ciclo |
+| Coluna **Seu preço** com `—` | Sua oferta não está entre as ativas da ficha | Passe o mouse: o motivo aparece. Pausado/sem estoque é normal; sem vínculo tem conserto |
+| **Seu preço** diferente do que você lembra ter cadastrado | A coluna mostra o preço **vigente no ML**, não o cadastrado aqui | O ML é a fonte. Se estiver errado lá, ajuste pela Revisão |
 | Referência do ML sempre `—` | Produto que você não vende (manual), ou anúncio muito novo | Normal em ficha manual: a referência é sobre o **seu** anúncio |
 | Referência do ML diz **Sem vínculo de catálogo** | Seu anúncio não está atrelado a essa ficha (ficha divergente) | Resolva o vínculo pelo fluxo de catálogo — sem ele o ML não calcula referência |
 | "Abaixo da referência" num produto onde você está mais caro que o menor rival | Não é contradição: são duas referências diferentes | Ver o aviso da seção 3 |

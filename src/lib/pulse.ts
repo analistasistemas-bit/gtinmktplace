@@ -20,8 +20,14 @@ export interface PulseProduto {
   ptw_status: string | null; ptw_preco_sugerido: number | null;
   ptw_custos: { comissao: number | null; frete: number | null } | null;
   ultimo_snapshot_em: string | null;
-  /** Preço publicado do nosso anúncio, resolvido por `codigo_pai` (null em ficha manual). */
+  /**
+   * Preço VIVO da nossa oferta nesta ficha, lido do ML na última coleta. `null` quando não temos
+   * oferta ativa na ficha — anúncio pausado, sem estoque ou sem vínculo de catálogo. Nunca cai
+   * para o preço local: era exatamente isso que fazia a coluna mostrar um valor defasado
+   * (Errata 4 do ADR-0119).
+   */
   meu_preco: number | null;
+  meu_preco_em: string | null;
 }
 export interface PulseOferta {
   item_id: string; seller_id: number; preco: number; tier: string | null;
@@ -39,34 +45,20 @@ export interface PulseAlerta {
 }
 
 export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
+  // `meu_preco` vem do próprio radar: o coletor lê a nossa oferta na ficha, na mesma resposta das
+  // concorrentes. A versão anterior derivava esse número das variações locais, que só são escritas
+  // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
   const { data, error } = await pulseFrom('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });
   if (error) throw error;
-  const produtos = (data ?? []) as PulseProduto[];
-
-  // Preço próprio numa query só (a lista precisa dele para "Sua posição" em toda linha).
-  const codigos = [...new Set(produtos.map((p) => p.codigo_pai).filter((c): c is string => !!c))];
-  if (codigos.length === 0) return produtos.map((p) => ({ ...p, meu_preco: null }));
-
-  const { data: fam, error: erroFam } = await supabase
-    .from('familias')
-    .select('codigo_pai, criado_em, variacoes(preco_publicacao, preco_publicado_ml)')
-    .in('codigo_pai', codigos)
-    .order('criado_em', { ascending: false });
-  if (erroFam) throw erroFam;
-
-  // Família mais recente COM preço vence — uma recém-criada sem variações não pode zerar a coluna.
-  const precos = new Map<string, number>();
-  for (const f of (fam ?? []) as { codigo_pai: string; variacoes: { preco_publicacao: number | null; preco_publicado_ml: number | null }[] | null }[]) {
-    if (precos.has(f.codigo_pai)) continue;
-    const p = (f.variacoes ?? []).map((v) => v.preco_publicado_ml ?? v.preco_publicacao).find((x) => x != null);
-    if (p != null) precos.set(f.codigo_pai, Number(p));
-  }
-  return produtos.map((p) => ({ ...p, meu_preco: p.codigo_pai ? precos.get(p.codigo_pai) ?? null : null }));
+  return ((data ?? []) as PulseProduto[]).map((p) => ({
+    ...p,
+    meu_preco: p.meu_preco != null ? Number(p.meu_preco) : null,
+  }));
 }
 
 export async function fetchPulseDetalhe(
@@ -165,15 +157,17 @@ export async function marcarAlertaLido(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Custo do produto + alíquota de imposto + preço de publicação atual, para o simulador de
- *  margem. Regra LOUD (ADR-0055/0086): alíquota só entra confirmada — nunca o default 8/16
- *  em silêncio. */
+/** Custo do produto + alíquota de imposto, para o simulador de margem. Regra LOUD
+ *  (ADR-0055/0086): alíquota só entra confirmada — nunca o default 8/16 em silêncio. */
+// Sem `precoAtual`: o preço de venda vigente é o da nossa oferta na ficha (`pulse_produtos.
+// meu_preco`), não o das variações locais — derivá-lo daqui devolvia um valor defasado e o
+// detalhe o preferia ao vivo, propagando o erro para a margem simulada (Errata 4 do ADR-0119).
 export async function fetchContextoMargem(
   codigoPai: string,
-): Promise<{ custo: number | null; aliquotaPct: number | null; precoAtual: number | null }> {
+): Promise<{ custo: number | null; aliquotaPct: number | null }> {
   const { data: familias, error } = await supabase
     .from('familias')
-    .select('origem, variacoes(custo, preco_publicacao, preco_publicado_ml)')
+    .select('origem, variacoes(custo)')
     .eq('codigo_pai', codigoPai)
     .order('criado_em', { ascending: false })
     .limit(5);
@@ -181,20 +175,18 @@ export async function fetchContextoMargem(
   // Família mais recente COM variações — uma família recém-criada (ainda sem variações
   // gravadas) não pode se passar pela fonte de custo (regra LOUD: cai em null, não em 0).
   const familia = (familias ?? []).find((f) => (f.variacoes ?? []).length > 0);
-  if (!familia) return { custo: null, aliquotaPct: null, precoAtual: null };
+  if (!familia) return { custo: null, aliquotaPct: null };
 
-  const variacoes = (familia.variacoes ?? []) as
-    { custo: number | null; preco_publicacao: number | null; preco_publicado_ml: number | null }[];
+  const variacoes = (familia.variacoes ?? []) as { custo: number | null }[];
   const custos = variacoes.map((v) => v.custo).filter((c): c is number => c != null);
   const custo = custos.length > 0 ? Math.max(...custos) : null;
-  const precoAtual = variacoes.map((v) => v.preco_publicado_ml ?? v.preco_publicacao).find((p) => p != null) ?? null;
 
   const aliquotas = await fetchAliquotas();
   const aliquotaPct = !aliquotas.confirmada
     ? null
     : familia.origem === 'importado' ? aliquotas.importado : aliquotas.nacional;
 
-  return { custo, aliquotaPct, precoAtual };
+  return { custo, aliquotaPct };
 }
 
 async function postPulse<T>(fn: string, body: unknown): Promise<T> {

@@ -15,7 +15,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { QK } from '@/lib/queries';
 import { fetchPulseDetalhe, fetchContextoMargem, type PulseProduto, type PulseVendedor } from '@/lib/pulse';
 import { estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada } from '@/lib/pulse-margem';
-import { classeTom, posicaoVsMercado, reputacao, tipoAnuncio } from '@/lib/pulse-formato';
+import {
+  classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, tipoAnuncio,
+} from '@/lib/pulse-formato';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
@@ -84,7 +86,9 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   }
 
   const menorConcorrente = atuais[0]?.preco ?? null;
-  const meuPreco = contexto?.precoAtual ?? produto?.meu_preco ?? null;
+  // Uma fonte só: a nossa oferta viva na ficha. Antes o preço local vinha primeiro e vencia o
+  // vivo, então o detalhe mostrava um valor defasado e a margem simulada herdava o erro.
+  const meuPreco = produto?.meu_preco ?? null;
   const posicao = posicaoVsMercado(meuPreco, menorConcorrente);
   const precoInput = precoEditado ?? (meuPreco != null ? String(meuPreco) : '');
   const precoSimulado = parseNumeroPtBr(precoInput);
@@ -123,9 +127,13 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                     <div>
                       <p className="text-xs text-muted-foreground">Seu preço</p>
-                      <p className="text-lg font-semibold tabular-nums">
-                        {meuPreco != null ? fmtBRL(meuPreco) : '—'}
-                      </p>
+                      {meuPreco != null ? (
+                        <p className="text-lg font-semibold tabular-nums">{fmtBRL(meuPreco)}</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          {motivoSemPrecoProprio(produto)}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Menor concorrente</p>

@@ -6,7 +6,7 @@ import { mlGet } from '../_shared/ml/http.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { parseOfertasProduto, parsePriceToWin } from '../_shared/pulse/parse.ts';
+import { extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin } from '../_shared/pulse/parse.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
 import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
 import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
@@ -125,10 +125,17 @@ export async function processarColetaOrg(
 
   // 3) coletar por produto — pool(6): ofertas do catálogo → diff → grava/desativa idempotente.
   await pool(CONCORRENCIA, produtos, async (produto) => {
-    const json = await mlGet(`${API}/products/${produto.catalog_product_id}/items`, token);
+    // limit=100 explícito (é o default do ML, mas default não é contrato).
+    const json = await mlGet(`${API}/products/${produto.catalog_product_id}/items?limit=100`, token);
     // Falha de LEITURA não é "sem ofertas" (mesma trava de monitorar-moderados/catalogo.ts):
     // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
     if (json === null) return;
+    const naoLidas = ofertasNaoLidas(json);
+    if (naoLidas > 0) {
+      console.warn(
+        `pulse-coletar: ficha ${produto.catalog_product_id} tem ${naoLidas} oferta(s) além da página lida — radar parcial`,
+      );
+    }
     const atuais = parseOfertasProduto(json, proprioSellerId);
     for (const o of atuais) sellerIdsColetados.add(o.seller_id);
 
@@ -176,7 +183,17 @@ export async function processarColetaOrg(
     // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
     // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
     // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
-    const patch: Record<string, string> = { ultimo_snapshot_em: new Date().toISOString() };
+    // Preço VIVO do nosso anúncio, da mesma resposta das concorrentes (Errata 4 do ADR-0119).
+    // Escrito sempre — inclusive como null: se o anúncio saiu da ficha (pausado, sem estoque,
+    // vínculo perdido), manter o último preço conhecido faria a tela afirmar uma posição de
+    // mercado que não existe mais. Só chegamos aqui com a leitura da ficha bem-sucedida.
+    const nossa = extrairNossaOferta(json, proprioSellerId);
+    const patch: Record<string, string | number | null> = {
+      ultimo_snapshot_em: new Date().toISOString(),
+      meu_item_id: nossa?.item_id ?? null,
+      meu_preco: nossa?.preco ?? null,
+      meu_preco_em: nossa ? new Date().toISOString() : null,
+    };
     if (!produto.titulo) {
       const ficha = await mlGet(`${API}/products/${produto.catalog_product_id}`, token);
       const nome = (ficha as { name?: string } | null)?.name;

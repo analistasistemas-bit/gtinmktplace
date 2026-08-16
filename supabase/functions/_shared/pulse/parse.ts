@@ -28,6 +28,44 @@ export function parseOfertasProduto(json: unknown, excluirSellerId?: number | nu
   return out;
 }
 
+/**
+ * Nossa própria oferta na ficha, da MESMA resposta de `/products/{id}/items` — é o preço que o
+ * comprador vê, na mesma base dos concorrentes. `/items/{id}` não serve: devolve o preço base,
+ * sem a promoção ativa (ADR-0119, Errata 4).
+ *
+ * Com anúncio publicado por faixa (split) temos mais de uma oferta na ficha; vence a de MENOR
+ * preço, que é a comparável com o menor concorrente.
+ */
+export function extrairNossaOferta(
+  json: unknown,
+  sellerId: number | null | undefined,
+): { item_id: string; preco: number } | null {
+  const results = (json as { results?: unknown[] } | null)?.results;
+  if (!Array.isArray(results) || sellerId == null) return null;
+  let melhor: { item_id: string; preco: number } | null = null;
+  for (const r of results) {
+    const o = r as Record<string, unknown>;
+    if (o.seller_id !== sellerId) continue;
+    const itemId = typeof o.item_id === 'string' ? o.item_id : null;
+    const preco = typeof o.price === 'number' ? o.price : null;
+    if (!itemId || preco == null) continue;
+    if (!melhor || preco < melhor.preco) melhor = { item_id: itemId, preco };
+  }
+  return melhor;
+}
+
+/**
+ * A ficha pode ter mais ofertas do que o ML devolve numa página (teto de 100). Quando isso
+ * acontece o radar está vendo um subconjunto — e a nossa oferta pode ficar de fora, zerando a
+ * coluna "Seu preço" sem motivo aparente. Devolve o excedente para o chamador registrar.
+ */
+export function ofertasNaoLidas(json: unknown): number {
+  const p = (json as { paging?: { total?: unknown } } | null)?.paging;
+  const results = (json as { results?: unknown[] } | null)?.results;
+  if (typeof p?.total !== 'number' || !Array.isArray(results)) return 0;
+  return Math.max(0, p.total - results.length);
+}
+
 // /suggestions/items/{id}/details
 export function parsePriceToWin(json: unknown): PriceToWin | null {
   const d = json as Record<string, unknown> | null;

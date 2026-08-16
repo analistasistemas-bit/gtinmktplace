@@ -632,6 +632,11 @@ do NOSSO item via `/suggestions/items/{id}/details` (o prefixo `ptw` é históri
 `price_to_win` do buy box — Errata 3 do ADR-0119). `ptw_status` assume `no_benchmark_lowest`,
 `no_benchmark_ok`, `with_benchmark_high`, `with_benchmark_highest` ou, em referência do tipo
 Markdown, `not_optin_applied`/`promotion_scheduled`/`promotion_active`.
+`meu_item_id`/`meu_preco`/`meu_preco_em` — preço **vivo** da nossa oferta na ficha, extraído da
+mesma resposta de `/products/{id}/items` que traz as concorrentes (Errata 4 do ADR-0119). `null`
+quando não temos oferta ativa lá (pausado, sem estoque, sem vínculo); com split vence o menor preço
+nosso. Nunca derivar de `variacoes.preco_publicado_ml`: esse campo só é escrito na publicação e não
+acompanha alteração feita fora do app.
 `ultimo_snapshot_em`, `criado_em`, `atualizado_em`
 (trigger `pulse_produtos_set_updated_at`, `moddatetime`). Índice `pulse_produtos_org_status_idx` em
 `(org_id, status, ultimo_snapshot_em asc)` — ordem de coleta: produto sem snapshot (ou mais velho)

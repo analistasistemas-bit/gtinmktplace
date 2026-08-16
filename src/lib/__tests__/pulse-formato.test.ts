@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { seloPriceToWin, ordemPriceToWin, tipoAnuncio, reputacao, posicaoVsMercado } from '../pulse-formato';
+import {
+  seloPriceToWin, ordemPriceToWin, motivoSemPrecoProprio, tipoAnuncio, reputacao, posicaoVsMercado,
+} from '../pulse-formato';
 
 const vinculado = (ptw_status: string | null) =>
   ({ ptw_status, catalogo_status: 'vinculado', origem: 'auto' }) as const;
@@ -57,6 +59,36 @@ describe('seloPriceToWin', () => {
 
   it('vinculado mas ainda sem avaliação do ML: nada a dizer', () => {
     expect(seloPriceToWin({ ptw_status: null, catalogo_status: 'vinculado', origem: 'auto' })).toBeNull();
+  });
+});
+
+describe('motivoSemPrecoProprio', () => {
+  const base = { origem: 'auto' as const, catalogo_status: 'vinculado', ultimo_snapshot_em: '2026-08-16T00:00:00Z' };
+
+  it('ficha manual: não é anúncio nosso', () => {
+    expect(motivoSemPrecoProprio({ ...base, origem: 'manual' })).toContain('você não vende');
+  });
+
+  it('antes da primeira coleta, a causa é a coleta — não o anúncio', () => {
+    expect(motivoSemPrecoProprio({ ...base, ultimo_snapshot_em: null })).toContain('primeira coleta');
+  });
+
+  it('sem vínculo de catálogo: causa acionável', () => {
+    expect(motivoSemPrecoProprio({ ...base, catalogo_status: 'ficha_divergente' })).toContain('não está vinculado');
+  });
+
+  it('vinculado e coletado, mas fora da ficha: pausado ou sem estoque', () => {
+    expect(motivoSemPrecoProprio(base)).toContain('pausado ou sem estoque');
+  });
+
+  it('sempre explica — nunca devolve vazio, que leria como tela quebrada', () => {
+    const casos = [
+      base,
+      { ...base, origem: 'manual' as const },
+      { ...base, catalogo_status: null },
+      { ...base, ultimo_snapshot_em: null },
+    ];
+    for (const c of casos) expect(motivoSemPrecoProprio(c).length).toBeGreaterThan(10);
   });
 });
 

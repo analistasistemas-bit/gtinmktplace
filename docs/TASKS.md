@@ -49,6 +49,14 @@
   do ML" e o conflito aparente com "Menor concorrente" explicado na UI e no guia (Errata 3 do
   ADR-0119). Só frontend — nenhum redeploy de edge function.
 
+- [x] **"Seu preço" agora é o preço vivo (2026-08-16).** A coluna vinha de
+  `variacoes.preco_publicado_ml`, escrito só na publicação e nunca reconciliado: medido 44,60 no
+  banco contra 48,90 no ML. Passa a vir da nossa própria oferta em `/products/{id}/items` — mesma
+  resposta das concorrentes, mesma base de comparação, zero chamadas novas. Também corrigidos a
+  substituição pelo preço de rascunho e a escolha arbitrária de variação em famílias com preço por
+  faixa (37 de 222). Migration + `pulse-coletar` deployados e coleta verificada: 87 de 222 com
+  preço vivo; o restante mostra "—" com o motivo (Errata 4 do ADR-0119).
+
 **Follow-ups pendentes:**
 - [ ] Pulse: gravar e respeitar `applicable_suggestion` de `/suggestions/items/{id}/details`. Hoje
   a tela mostra a referência de preço mesmo quando o ML a marca como não aplicável — o selo afirma

@@ -11,7 +11,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
-import { classeTom, ordemPriceToWin, posicaoVsMercado, seloPriceToWin } from '@/lib/pulse-formato';
+import {
+  classeTom, motivoSemPrecoProprio, ordemPriceToWin, posicaoVsMercado, seloPriceToWin,
+} from '@/lib/pulse-formato';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 
@@ -87,9 +89,16 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       header: 'Seu preço',
       className: 'text-right',
       sortValue: (p) => p.meu_preco,
-      cell: (p) => (
-        <span className="tabular-nums">{p.meu_preco != null ? fmtBRL(p.meu_preco) : '—'}</span>
-      ),
+      // Preço vivo da nossa oferta na ficha. Quando não há oferta nossa lá, a célula diz por quê
+      // — em branco, uma coluna de dinheiro lê como tela quebrada.
+      cell: (p) =>
+        p.meu_preco != null ? (
+          <span className="tabular-nums">{fmtBRL(p.meu_preco)}</span>
+        ) : (
+          <span className="cursor-help text-muted-foreground" title={motivoSemPrecoProprio(p)}>
+            —
+          </span>
+        ),
     },
     {
       key: 'menor',
