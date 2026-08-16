@@ -64,6 +64,10 @@ verify_jwt = false
 verify_jwt = false
 [functions.notificar-liberacao]
 verify_jwt = false
+# ADR-0119 (Pulse): dual-mode como monitorar-moderados — QStash (cron) chama sem JWT; a
+# checagem real (assinatura ou requireUserOrg) é dentro da function.
+[functions.pulse-coletar]
+verify_jwt = false
 
 # --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
 [functions.atributos-familia]
@@ -109,4 +113,7 @@ verify_jwt = true
 [functions.usuarios]
 verify_jwt = true
 [functions.suporte]
+verify_jwt = true
+# ADR-0119 (Pulse): "Adicionar produto" — chamada pelo APP com o JWT do usuário.
+[functions.pulse-adicionar]
 verify_jwt = true

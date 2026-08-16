@@ -1,0 +1,225 @@
+// Pulse (ADR-0119): coletor server-side. 6 passos — ver plano Task 3.
+import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { mlGet } from '../_shared/ml/http.ts';
+import { paginarTudo } from '../_shared/pagina.ts';
+import { pool } from '../_shared/concorrencia/pool.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { parseOfertasProduto, parsePriceToWin } from '../_shared/pulse/parse.ts';
+import { diffOfertas } from '../_shared/pulse/diff.ts';
+import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
+import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
+
+const API = 'https://api.mercadolibre.com';
+const CONCORRENCIA = 6;
+// Histórico lido por produto para reconstruir o estado atual (última linha por item_id). Teto
+// defensivo — o job de agregação/prune de 90d (follow-up em TASKS.md) mantém isto limitado no v1.
+const HISTORICO_LIMITE = 1000;
+
+export interface ResultadoColeta { produtos: number; gravadas: number; alertas: number; }
+
+interface AnuncioPublicadoRow {
+  codigo_pai: string;
+  titulo: string | null;
+  variacoes_externas: Record<string, { catalog_product_id?: string }> | null;
+}
+
+interface PulseProdutoRow {
+  id: string;
+  catalog_product_id: string;
+  codigo_pai: string | null;
+  origem: 'auto' | 'manual';
+}
+
+/** Estado atual das ofertas de um produto = última linha por item_id (dia desc). */
+function ultimaLinhaPorItem(historico: (OfertaAnterior & { dia: string })[]): OfertaAnterior[] {
+  const vistos = new Set<string>();
+  const out: OfertaAnterior[] = [];
+  for (const linha of historico) {
+    if (vistos.has(linha.item_id)) continue;
+    vistos.add(linha.item_id);
+    out.push({
+      item_id: linha.item_id, seller_id: linha.seller_id, preco: Number(linha.preco),
+      tier: linha.tier, frete_gratis: linha.frete_gratis, loja_oficial: linha.loja_oficial,
+      ativo: linha.ativo,
+    });
+  }
+  return out;
+}
+
+// 1) sincronizarRadar (só tier completo): espelha anuncios_externos publicados em pulse_produtos
+// e arquiva os que saíram da lista de publicados.
+async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<void> {
+  const publicados = await paginarTudo<AnuncioPublicadoRow>((de, ate) =>
+    admin.from('anuncios_externos')
+      .select('codigo_pai, titulo, variacoes_externas')
+      .eq('org_id', orgId).eq('canal', 'mercado_livre').eq('status', 'publicado')
+      .range(de, ate),
+  );
+
+  const codigosPaiVistos = new Set(publicados.map((a) => a.codigo_pai));
+  // Dedupe por catalog_product_id (Map): duas SKUs/anúncios podem apontar pra mesma ficha de
+  // catálogo. Sem isso, o upsert em lote manda o MESMO (org_id, catalog_product_id) duas vezes
+  // na mesma instrução e o Postgres recusa com "cannot affect row a second time" — a sincronia
+  // inteira da org falharia em silêncio (só console.warn). Último anúncio visto vence.
+  const porCpid = new Map<string, { org_id: string; catalog_product_id: string; codigo_pai: string; titulo: string | null; origem: 'auto' }>();
+  for (const anuncio of publicados) {
+    for (const v of Object.values(anuncio.variacoes_externas ?? {})) {
+      if (!v?.catalog_product_id) continue;
+      porCpid.set(v.catalog_product_id, {
+        org_id: orgId, catalog_product_id: v.catalog_product_id,
+        codigo_pai: anuncio.codigo_pai, titulo: anuncio.titulo, origem: 'auto',
+      });
+    }
+  }
+  const rows = [...porCpid.values()];
+  if (rows.length > 0) {
+    // Sem 'status' no payload: o merge do PostgREST só sobrescreve as colunas enviadas — status
+    // (e o ciclo de vida ativo/pausado do operador) fica intocado num produto já existente.
+    const { error } = await admin.from('pulse_produtos').upsert(rows, { onConflict: 'org_id,catalog_product_id' });
+    if (error) console.warn('pulse-coletar: sincronizarRadar upsert falhou:', error.message);
+  }
+
+  const { data: ativosAuto } = await admin.from('pulse_produtos')
+    .select('id, codigo_pai').eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado');
+  const arquivar = (ativosAuto ?? [])
+    .filter((p) => !codigosPaiVistos.has(p.codigo_pai as string))
+    .map((p) => p.id as string);
+  if (arquivar.length > 0) {
+    await admin.from('pulse_produtos').update({ status: 'arquivado' }).in('id', arquivar);
+  }
+}
+
+export async function processarColetaOrg(
+  admin: SupabaseClient, conexao: ConexaoCanal, orgId: string,
+  tier: 'completo' | 'quente', maxProdutos: number,
+): Promise<ResultadoColeta> {
+  const token = await getValidAccessTokenConexao(conexao);
+
+  if (tier === 'completo') await sincronizarRadar(admin, orgId);
+
+  // 2) selecionar
+  let query = admin.from('pulse_produtos')
+    .select('id, catalog_product_id, codigo_pai, origem')
+    .eq('org_id', orgId).eq('status', 'ativo')
+    .order('ultimo_snapshot_em', { ascending: true, nullsFirst: true })
+    .limit(maxProdutos);
+  if (tier === 'quente') query = query.eq('origem', 'auto');
+  const { data: produtosRaw } = await query;
+  const produtos = (produtosRaw ?? []) as PulseProdutoRow[];
+
+  let gravadas = 0;
+  let alertasTotal = 0;
+  const sellerIdsColetados = new Set<number>();
+
+  // 3) coletar por produto — pool(6): ofertas do catálogo → diff → grava/desativa idempotente.
+  await pool(CONCORRENCIA, produtos, async (produto) => {
+    const json = await mlGet(`${API}/products/${produto.catalog_product_id}/items`, token);
+    // Falha de LEITURA não é "sem ofertas" (mesma trava de monitorar-moderados/catalogo.ts):
+    // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
+    if (json === null) return;
+    const atuais = parseOfertasProduto(json);
+    for (const o of atuais) sellerIdsColetados.add(o.seller_id);
+
+    const { data: historicoRaw } = await admin.from('pulse_ofertas')
+      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
+      .eq('produto_id', produto.id).order('dia', { ascending: false }).limit(HISTORICO_LIMITE);
+    const anteriores = ultimaLinhaPorItem((historicoRaw ?? []) as (OfertaAnterior & { dia: string })[]);
+
+    const diff = diffOfertas(anteriores, atuais);
+
+    if (diff.gravar.length > 0) {
+      // SEM ignoreDuplicates (desvio do plano, ver relatório): o tier quente roda a cada 6h e
+      // pode achar um 2º preço no MESMO dia (unique é produto_id,item_id,dia). Com
+      // ignoreDuplicates, a linha de hoje ficava travada no 1º valor visto — o próximo diff
+      // comparava sempre contra esse valor velho e reemitia preco_caiu a cada execução do dia.
+      // Merge (default) sobrescreve a linha de hoje com o valor atual e continua idempotente
+      // numa re-execução com o mesmo payload (mesmos valores → no-op efetivo). ativo:true
+      // explícito porque a linha pode ter sido desativada mais cedo no mesmo dia (oferta voltou).
+      const { error } = await admin.from('pulse_ofertas').upsert(
+        diff.gravar.map((o) => ({ org_id: orgId, produto_id: produto.id, ...o, ativo: true })),
+        { onConflict: 'produto_id,item_id,dia' },
+      );
+      if (error) console.warn(`pulse-coletar: gravar ofertas do produto ${produto.id} falhou:`, error.message);
+      else gravadas += diff.gravar.length;
+    }
+    if (diff.desativar.length > 0) {
+      // Mesmo motivo do gravar acima: merge (sem ignoreDuplicates) garante que um sumiço
+      // detectado numa 2ª execução do mesmo dia realmente marque ativo=false na linha de hoje.
+      const { error } = await admin.from('pulse_ofertas').upsert(
+        diff.desativar.map((o) => ({ org_id: orgId, produto_id: produto.id, ...o, ativo: false })),
+        { onConflict: 'produto_id,item_id,dia' },
+      );
+      if (error) console.warn(`pulse-coletar: desativar ofertas do produto ${produto.id} falhou:`, error.message);
+    }
+    if (diff.alertas.length > 0) {
+      const { error } = await admin.from('pulse_alertas').insert(
+        diff.alertas.map((a) => ({ org_id: orgId, produto_id: produto.id, tipo: a.tipo, payload: a.payload })),
+      );
+      if (!error) alertasTotal += diff.alertas.length;
+      else console.warn(`pulse-coletar: alertas do produto ${produto.id} falharam:`, error.message);
+    }
+    await admin.from('pulse_produtos').update({ ultimo_snapshot_em: new Date().toISOString() }).eq('id', produto.id);
+  });
+
+  // 4) vendedores (só tier completo): 1 snapshot por seller_id, só se transactions_total mudou.
+  if (tier === 'completo') {
+    await pool(CONCORRENCIA, [...sellerIdsColetados], async (sellerId) => {
+      const { data: ultima } = await admin.from('pulse_vendedores')
+        .select('dia, transactions_total')
+        .eq('org_id', orgId).eq('seller_id', sellerId)
+        .order('dia', { ascending: false }).limit(1).maybeSingle();
+      const hojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      if (ultima?.dia === hojeSP) return; // já processado hoje (re-execução no mesmo dia)
+
+      const json = await mlGet(`${API}/users/${sellerId}`, token);
+      const u = json as {
+        nickname?: string; power_seller_status?: string | null; level_id?: string | null;
+        seller_reputation?: { transactions?: { total?: number } };
+      } | null;
+      if (!u) return;
+      const total = typeof u.seller_reputation?.transactions?.total === 'number' ? u.seller_reputation.transactions.total : null;
+      const anterior = ultima ? { transactions_total: ultima.transactions_total as number | null } : null;
+      if (!deveGravarVendedor(anterior, total)) return;
+
+      const { error } = await admin.from('pulse_vendedores').upsert(
+        {
+          org_id: orgId, seller_id: sellerId, nickname: u.nickname ?? null,
+          power_seller: u.power_seller_status ?? null, nivel: u.level_id ?? null, transactions_total: total,
+        },
+        { onConflict: 'org_id,seller_id,dia', ignoreDuplicates: true },
+      );
+      if (error) console.warn(`pulse-coletar: vendedor ${sellerId} falhou:`, error.message);
+    });
+  }
+
+  // 5) price-to-win (só tier completo, só produtos origem='auto'): não sobrescreve com null.
+  if (tier === 'completo') {
+    const produtosAuto = produtos.filter((p) => p.origem === 'auto' && p.codigo_pai);
+    await pool(CONCORRENCIA, produtosAuto, async (produto) => {
+      const { data: anuncio } = await admin.from('anuncios_externos')
+        .select('item_externo_id')
+        .eq('org_id', orgId).eq('codigo_pai', produto.codigo_pai!).eq('canal', 'mercado_livre')
+        .not('item_externo_id', 'is', null)
+        .order('particao', { ascending: true }).limit(1).maybeSingle();
+      const itemId = anuncio?.item_externo_id as string | undefined;
+      if (!itemId) return;
+
+      const json = await mlGet(`${API}/suggestions/items/${itemId}/details`, token);
+      const ptw = parsePriceToWin(json);
+      if (!ptw) return;
+      await admin.from('pulse_produtos').update({
+        ptw_status: ptw.status, ptw_preco_sugerido: ptw.preco_sugerido, ptw_custos: ptw.custos,
+        ptw_atualizado_em: new Date().toISOString(),
+      }).eq('id', produto.id);
+    });
+  }
+
+  // 6) alertas: 1 notificação agregada por org por execução.
+  if (alertasTotal > 0) {
+    await notificarCategoria(admin, orgId, 'pulse', `Pulse: ${alertasTotal} alerta(s) de mercado — abra o menu Pulse para agir.`);
+  }
+
+  return { produtos: produtos.length, gravadas, alertas: alertasTotal };
+}

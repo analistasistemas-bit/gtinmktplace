@@ -10,6 +10,7 @@ export const CATEGORIAS_NOTIFICACAO = [
   'moderacao',
   'mensagens',
   'integracao',
+  'pulse',
 ] as const;
 
 export type CategoriaNotificacao = (typeof CATEGORIAS_NOTIFICACAO)[number];
