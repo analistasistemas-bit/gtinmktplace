@@ -54,7 +54,23 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
       });
     }
   }
-  const rows = [...porCpid.values()];
+  // GTIN por ficha: cada catalog_product_id corresponde a UMA variação (uma cor), então o EAN sai
+  // de `variacoes.catalog_product_id`, não do código da família — que agrupa várias fichas.
+  const cpids = [...porCpid.keys()];
+  const gtinPorCpid = new Map<string, string>();
+  if (cpids.length > 0) {
+    const { data: vars } = await admin.from('variacoes')
+      .select('catalog_product_id, gtin')
+      .eq('org_id', orgId).in('catalog_product_id', cpids).not('gtin', 'is', null);
+    for (const v of (vars ?? []) as { catalog_product_id: string; gtin: string }[]) {
+      if (!gtinPorCpid.has(v.catalog_product_id)) gtinPorCpid.set(v.catalog_product_id, v.gtin);
+    }
+  }
+
+  const rows = [...porCpid.values()].map((r) => {
+    const gtin = gtinPorCpid.get(r.catalog_product_id);
+    return gtin ? { ...r, gtin } : r;
+  });
   if (rows.length > 0) {
     // Sem 'status' nem 'titulo' no payload: o merge do PostgREST só sobrescreve as colunas
     // enviadas. Status preserva o ciclo de vida do operador; o título vem do ML (nome da ficha,

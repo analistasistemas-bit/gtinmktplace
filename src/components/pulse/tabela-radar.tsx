@@ -81,7 +81,11 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
             >
               <TableCell className="max-w-[320px]">
                 <span className="block truncate font-medium">{p.titulo ?? p.catalog_product_id}</span>
-                {p.codigo_pai && <span className="text-xs text-muted-foreground">{p.codigo_pai}</span>}
+                {/* EAN da ficha (cada catalog_product_id é uma cor); sem GTIN cadastrado, cai no
+                    código da família para o operador ainda conseguir localizar o produto. */}
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {p.gtin ?? p.codigo_pai ?? '—'}
+                </span>
               </TableCell>
               <TableCell>
                 <Badge variant={p.origem === 'manual' ? 'secondary' : 'outline'}>

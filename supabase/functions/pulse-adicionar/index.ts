@@ -52,9 +52,19 @@ Deno.serve(async (req) => {
   const produto = await mlGet(`${API}/products/${catalogProductId}`, token);
   const titulo = (produto as { name?: string } | null)?.name ?? null;
 
+  // GTIN: o que o operador digitou, ou o da nossa variação vinculada a essa ficha (a ficha do ML
+  // não expõe EAN nos atributos — verificado).
+  let gtin: string | null = resolvida.tipo === 'gtin' ? resolvida.valor : null;
+  if (!gtin) {
+    const { data: v } = await admin.from('variacoes')
+      .select('gtin').eq('org_id', orgId).eq('catalog_product_id', catalogProductId)
+      .not('gtin', 'is', null).limit(1).maybeSingle();
+    gtin = (v?.gtin as string | undefined) ?? null;
+  }
+
   const { data, error } = await admin.from('pulse_produtos')
     .upsert(
-      { org_id: orgId, catalog_product_id: catalogProductId, titulo, origem: 'manual', status: 'ativo' },
+      { org_id: orgId, catalog_product_id: catalogProductId, titulo, gtin, origem: 'manual', status: 'ativo' },
       { onConflict: 'org_id,catalog_product_id' },
     )
     .select('id').single();

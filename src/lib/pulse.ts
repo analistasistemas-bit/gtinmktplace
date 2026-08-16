@@ -14,7 +14,7 @@ function pulseFrom(
 }
 
 export interface PulseProduto {
-  id: string; catalog_product_id: string; codigo_pai: string | null; titulo: string | null;
+  id: string; catalog_product_id: string; codigo_pai: string | null; titulo: string | null; gtin: string | null;
   origem: 'auto' | 'manual'; status: 'ativo' | 'pausado' | 'arquivado';
   ptw_status: string | null; ptw_preco_sugerido: number | null;
   ptw_custos: { comissao: number | null; frete: number | null } | null;
@@ -38,7 +38,7 @@ export interface PulseAlerta {
 export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   const { data, error } = await pulseFrom('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, origem, status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });
