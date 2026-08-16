@@ -43,7 +43,16 @@
   produtos com price-to-win, 0 alertas (correto: 1ª coleta não alerta por design) e **0 ofertas
   da própria loja** — a trava do achado ALTA confirmada com dado real.
 
+- [x] **Correção de vocabulário (2026-08-16).** Um produto com 79 ofertas exibia "Sem concorrência":
+  o mapa de tradução dos status traduzia 5 valores que não existem na API e invertia o sentido do
+  único que aparece na prática. Corrigido contra a doc oficial, coluna renomeada para "Referência
+  do ML" e o conflito aparente com "Menor concorrente" explicado na UI e no guia (Errata 3 do
+  ADR-0119). Só frontend — nenhum redeploy de edge function.
+
 **Follow-ups pendentes:**
+- [ ] Pulse: gravar e respeitar `applicable_suggestion` de `/suggestions/items/{id}/details`. Hoje
+  a tela mostra a referência de preço mesmo quando o ML a marca como não aplicável — o selo afirma
+  mais do que o ML afirma. Exige coluna nova + redeploy do `pulse-coletar` (Errata 3 do ADR-0119).
 - [ ] Pulse: job de agregação semanal + prune de 90d + auto-pausa de produto sem acesso há 60d —
   antes de 2026-11-14.
 - [ ] **Pulse v2: extensão coletora de DOM — PRIORIDADE ALTA, é o que dá cobertura ao módulo.**

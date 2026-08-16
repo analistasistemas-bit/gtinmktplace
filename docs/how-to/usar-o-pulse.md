@@ -70,7 +70,7 @@ Na lista, a coluna **Origem** mostra qual é qual: `Auto` ou `Manual`.
 
 | Coleta | Quando roda | O que atualiza |
 |---|---|---|
-| Completa | Todo dia, 06:00 (horário de Brasília) | Sincroniza o radar com seus anúncios publicados, coleta ofertas, vendedores e o price-to-win |
+| Completa | Todo dia, 06:00 (horário de Brasília) | Sincroniza o radar com seus anúncios publicados, coleta ofertas, vendedores e a referência de preço do ML |
 | Rápida | A cada 6 horas | Só as ofertas (preço, frete, quem está no catálogo) dos produtos automáticos |
 | Sob demanda | Quando você clica em **Atualizar agora** | Coleta completa, limitada a 50 produtos da sua organização |
 
@@ -84,23 +84,42 @@ perde dado.
 
 Abra **Pulse** na barra lateral. A lista mostra uma linha por ficha de catálogo monitorada.
 
-- **Produto** — nome da ficha no Mercado Livre. Abaixo, em cinza, o código do seu produto
-  (`codigo_pai`) quando é um anúncio seu.
-- **Origem** — `Auto` (veio dos seus anúncios) ou `Manual` (você adicionou).
-- **Menor preço** — o **menor preço entre os concorrentes** naquela ficha. O seu próprio anúncio
-  **não** entra nessa conta: você não é concorrente de si mesmo.
+- **Produto** — nome da ficha no Mercado Livre. Abaixo, em cinza, o EAN do produto. Quando a
+  última coleta passou de 2 dias, aparece um aviso em amarelo ao lado.
+- **Seu preço** — o preço publicado do seu anúncio.
+- **Menor concorrente** — o **menor preço entre os concorrentes** naquela ficha. O seu próprio
+  anúncio **não** entra nessa conta: você não é concorrente de si mesmo.
+- **Sua posição** — quanto você está acima ou abaixo do menor concorrente, em %. É a leitura que
+  decide reprecificar: `+7% mais caro`, `10% mais barato`, `Empatado`.
 - **Ofertas** — quantos vendedores estão ativos na ficha agora (também sem contar você).
-- **Price-to-win** — o que o próprio Mercado Livre diz sobre a competitividade do **seu** anúncio.
-  Os dois selos mais comuns:
-  - **Acima do benchmark** (vermelho) — seu preço está acima do que o ML considera competitivo; é
-    onde você provavelmente está perdendo a caixa de compra.
-  - **Dividindo o 1º lugar** — você está empatado na disputa.
-  - Um traço `—` significa que o ML ainda não devolveu avaliação para esse anúncio (é normal em
-    anúncio novo ou em produto que você não vende).
-- **Última coleta** — há quanto tempo o Pulse olhou essa ficha ("há 3h", "há 2d", "nunca coletado").
+- **Referência do ML** — onde o seu preço está frente ao **preço de referência** que o próprio
+  Mercado Livre calcula para o seu anúncio. Os quatro selos possíveis:
+
+  | Selo | O que significa |
+  |---|---|
+  | **Abaixo da referência** | Seu preço está abaixo do preço de referência do ML. |
+  | **Na referência** | Seu preço é igual ao preço de referência. |
+  | **Acima da referência** | Seu preço está alto em relação à referência. |
+  | **Acima de todos** | Seu preço está acima da referência **e** acima do maior preço dos concorrentes. |
+
+  Quando a referência do ML vem de uma promoção, o selo mostra o estado dela:
+  **Promoção sugerida**, **Promoção agendada** ou **Promoção ativa**.
+
+  Dois selos não são posição de preço e sim explicação de por que não há nenhuma:
+  **Sem vínculo de catálogo** (seu anúncio não está atrelado a essa ficha, então o ML não calcula
+  referência — resolva o vínculo pelo fluxo de catálogo) e **Você não vende** (ficha manual,
+  adicionada só para pesquisa).
+
 - **⋮** (menu da linha) — pausar ou reativar o produto no radar.
 
-Clique em qualquer linha para abrir o **detalhe**.
+Clique em qualquer cabeçalho para ordenar por aquela coluna, e em qualquer linha para abrir o
+**detalhe**.
+
+> **Cuidado para não confundir duas referências diferentes.** "Menor concorrente" é o piso real da
+> ficha. A "Referência do ML" é um preço que o Mercado Livre calcula a partir de concorrentes
+> internos e externos — **não** é o menor preço da ficha. Por isso um produto pode aparecer como
+> `Abaixo da referência` (o ML acha que você poderia cobrar mais) e ao mesmo tempo `+7% mais caro`
+> que o menor rival. As duas informações são verdadeiras e olham para coisas distintas.
 
 > **Traço `—` em Menor preço e Ofertas** quer dizer que a ficha ainda não teve a primeira coleta.
 > Espere o próximo ciclo ou clique em **Atualizar agora**.
@@ -163,11 +182,13 @@ subindo ou parado.
 
 ### Sua posição (só para produtos que você vende)
 
-Três números lado a lado:
+Quatro números lado a lado:
 
-- **Seu preço atual** — o preço publicado do seu anúncio.
+- **Seu preço** — o preço publicado do seu anúncio.
 - **Menor concorrente** — a oferta mais barata da ficha, sem contar você.
-- **Price-to-win sugerido** — o preço que o próprio Mercado Livre indica para você ganhar a disputa.
+- **Sua posição** — quanto você está acima ou abaixo desse menor concorrente.
+- **Referência do ML** — o preço de referência que o Mercado Livre calcula para o seu anúncio.
+  Repetindo o aviso da seção 3: **não** é o menor preço da ficha, e pode ficar acima dele.
 
 E abaixo, o simulador.
 
@@ -192,7 +213,7 @@ qual e não mostra margem nenhuma. As três causas:
 |---|---|
 | falta **custo do produto** | Cadastre o custo das variações (menu Estoque → entrada de produto). Sem custo real não existe margem real. |
 | falta **alíquota de imposto** | Confirme as alíquotas em **Configurações** (nacional 8% / importado 16%). Enquanto não estiverem confirmadas, o sistema se recusa a assumir um valor. |
-| falta **price-to-win do Mercado Livre** | O ML ainda não devolveu comissão e frete para esse anúncio. Costuma resolver sozinho na coleta seguinte. |
+| falta **referência de preço do Mercado Livre** | O ML ainda não devolveu comissão e frete para esse anúncio. Costuma resolver sozinho na coleta seguinte. |
 
 Isso é proposital: um número de margem errado é pior do que nenhum número — leva a baixar preço
 abaixo do custo achando que está no lucro.
@@ -272,9 +293,10 @@ O Pulse foi feito para consumo rápido, não para ficar aberto o dia todo.
 ação. Agir só no que muda decisão — normalmente queda de preço em produto onde você tem margem
 folgada.
 
-**Uma vez por semana (10 minutos).** Passar a lista filtrando pelo selo **Acima do benchmark**: são
-os anúncios onde o próprio ML está dizendo que você está caro. Abrir cada um, simular o preço
-sugerido e decidir.
+**Uma vez por semana (10 minutos).** Ordenar a lista pela coluna **Sua posição** (do mais caro para
+o mais barato) e olhar o topo: são os anúncios onde você está mais acima do menor concorrente.
+Abrir cada um, simular o preço e decidir. O selo **Acima de todos** na coluna Referência do ML
+merece a mesma atenção — é o próprio ML dizendo que você está caro.
 
 **Antes de entrar num produto novo.** Adicionar a ficha manualmente, esperar de 3 a 7 dias e olhar
 "Menor preço por dia de coleta" e o número de ofertas. Mercado com muitos vendedores e preço caindo
@@ -315,9 +337,11 @@ Honestidade aqui evita decisão errada:
 |---|---|---|
 | Menu Pulse não aparece | Módulo desligado para a org, ou menu não liberado para o usuário | Ver seção 1 |
 | Radar vazio | Nenhum anúncio publicado com ficha de catálogo ainda | Publique ou adicione um produto manualmente |
-| Coluna Menor preço com `—` | Produto ainda não teve a primeira coleta | **Atualizar agora**, ou esperar o ciclo |
-| Price-to-win sempre `—` | Produto que você não vende (manual), ou anúncio muito novo | Normal em ficha manual: o price-to-win é sobre o **seu** anúncio |
-| "Margem indisponível" | Falta custo, alíquota confirmada ou price-to-win | Ver a tabela da seção 6 |
+| Coluna Menor concorrente com `—` | Produto ainda não teve a primeira coleta | **Atualizar agora**, ou esperar o ciclo |
+| Referência do ML sempre `—` | Produto que você não vende (manual), ou anúncio muito novo | Normal em ficha manual: a referência é sobre o **seu** anúncio |
+| Referência do ML diz **Sem vínculo de catálogo** | Seu anúncio não está atrelado a essa ficha (ficha divergente) | Resolva o vínculo pelo fluxo de catálogo — sem ele o ML não calcula referência |
+| "Abaixo da referência" num produto onde você está mais caro que o menor rival | Não é contradição: são duas referências diferentes | Ver o aviso da seção 3 |
+| "Margem indisponível" | Falta custo, alíquota confirmada ou a referência do ML | Ver a tabela da seção 6 |
 | Adicionar produto recusado | Link de anúncio avulso em vez de ficha de catálogo | Use o link `/p/MLB…` ou o GTIN |
 | Nenhum alerta há dias | Mercado parado, ou produtos ainda na primeira coleta | Normal — alerta só aparece quando algo muda de verdade |
 | Alerta some depois de marcar lido | Comportamento esperado | O painel mostra só não lidos |

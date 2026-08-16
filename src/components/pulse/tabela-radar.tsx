@@ -126,10 +126,12 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
     },
     {
       key: 'ptw',
-      header: 'Price-to-win',
+      // "Price-to-win" é o nome de outra API do ML (a disputa pelo primeiro lugar do catálogo).
+      // O que esta coluna mostra é o preço de referência que o ML calcula para o anúncio.
+      header: 'Referência do ML',
       className: 'hidden lg:table-cell',
       // Escala ordinal (mais barato → mais caro), não alfabética: ordenar por texto colocaria
-      // "Abaixo da média" antes de "Acima da média" e misturaria a leitura.
+      // "Abaixo da referência" antes de "Acima da referência" e misturaria a leitura.
       sortValue: (p) => ordemPriceToWin(p),
       cell: (p) => {
         const selo = seloPriceToWin(p);

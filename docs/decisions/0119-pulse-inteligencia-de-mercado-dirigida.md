@@ -66,8 +66,9 @@ Testes reais contra a API do ML corrigiram três premissas deste ADR:
    terceiro ficam para o v2, via extensão coletora de DOM (base: `extensao-ml/`, ADR-0118).
    Alertas de "estoque esgotado" de concorrente saem do escopo (dado inexistente); o sinal
    equivalente é "concorrente saiu do catálogo".
-3. **Price-to-win confirmado melhor que o esperado**: `/suggestions/items/{id}/details` devolve
-   status, preço sugerido e custos (comissão + frete) do próprio ML.
+3. **Referência de preço confirmada melhor que o esperado**: `/suggestions/items/{id}/details`
+   devolve status, preço sugerido e custos (comissão + frete) do próprio ML.
+   *(Chamávamos isso de "price-to-win" — nome de outro endpoint. Ver Errata 3.)*
 4. **§6 corrigido:** o "padrão do menu Estoque" é `organizations.modulos_habilitados` ligado
    pelo super-admin em `/admin` — não uma config na tela de Configurações. É esse o mecanismo
    do Pulse (o texto original conflacionava os dois padrões).
@@ -108,6 +109,50 @@ Pulse permanece útil para a DSA (5 de 7) e marginal para a Avil (15 de 133).
 Alternativa mais barata, se o v2 demorar: uma tela de **tendência por categoria** usando
 `highlights` + `trends` (os dois únicos endpoints vivos). Não responde "quem é meu concorrente e a
 que preço", mas responde "o que está vendendo neste nicho" — decisão de sortimento, não de preço.
+
+## Errata 3 (2026-08-16) — "price-to-win" era o nome errado, e os selos estavam inventados
+
+**Como apareceu:** um produto com 79 ofertas coletadas exibia o selo "Sem concorrência".
+
+**Causa:** a Errata 1 registrou `/suggestions/items/{id}/details` como "price-to-win", mas esse é
+o nome de **outro** endpoint do ML (`/items/{id}/price_to_win`, a disputa pelo primeiro lugar do
+catálogo, com status `winning` / `sharing_first_place` / `competing` / `listed`). O que nós
+chamamos é a **referência de preço**, e ela tem um vocabulário próprio. O mapa de tradução da UI
+foi escrito por aproximação a partir do nome errado: dos oito status que ele traduzia, **cinco não
+existem** nessa API (`with_benchmark_lowest`, `with_benchmark_low`, `with_benchmark_mid`,
+`no_benchmark`, `sharing_first_place`) e o único que aparecia na prática estava traduzido ao
+contrário do que a documentação diz.
+
+**Vocabulário correto** ([doc oficial](https://developers.mercadolivre.com.br/pt_br/referencias-de-precos)) —
+quatro posições frente ao preço de referência:
+
+| Status | Documentação do ML |
+|---|---|
+| `no_benchmark_lowest` | preço atual **abaixo** do referido |
+| `no_benchmark_ok` | preço atual **igual** ao referido |
+| `with_benchmark_high` | preço atual **alto** em relação ao referido |
+| `with_benchmark_highest` | preço acima do referido **e** do maior preço dos concorrentes |
+
+Quando a referência vencedora é do tipo Markdown, o status vira o estado da promoção:
+`not_optin_applied`, `promotion_scheduled`, `promotion_active` — fora da escala de preço, porque
+"promoção agendada" não é uma posição.
+
+O prefixo `no_` vs `with_` **não está documentado**. Não inventar explicação para ele: foi
+exatamente esse tipo de preenchimento de lacuna que produziu o bug.
+
+**Consequência de leitura, que a correção torna visível:** o menor concorrente e a referência do ML
+são medidas diferentes e podem apontar para lados opostos. O caso real: preço 47,90, menor rival
+44,90 (`+7% mais caro`) e referência do ML 50,28 (`Abaixo da referência`). A referência é calculada
+pelo ML a partir de concorrentes internos e externos (`strategy_type: similar_price`), não é o piso
+da ficha. A UI e o guia dizem isso explicitamente.
+
+**Escopo da correção:** só rótulo e ordenação (`src/lib/pulse-formato.ts`, cabeçalho da coluna,
+bloco de decisão do detalhe) e a documentação. As colunas `ptw_*` continuam com esse nome no
+schema — renomear exigiria migration sem ganho de comportamento.
+
+**Follow-up não incluído:** a resposta do ML traz `applicable_suggestion`. Se ele marcar a
+referência como não aplicável e a tela mostrar mesmo assim, o selo passa a afirmar mais do que o ML
+afirma. Registrado em `docs/TASKS.md` — exige coluna nova e redeploy do coletor.
 
 ## Consequências
 

@@ -92,7 +92,7 @@ export default function Pulse() {
     <div className="p-4 md:p-6">
       <PageHeader
         title="Pulse"
-        subtitle="Radar de concorrência dos seus produtos de catálogo, com alertas e price-to-win."
+        subtitle="Radar de concorrência dos seus produtos de catálogo, com alertas e referência de preço do ML."
         actions={
           <>
             <Button variant="outline" onClick={() => atualizar.mutate()} disabled={atualizar.isPending}>

@@ -103,7 +103,7 @@ describe('parsePriceToWin', () => {
   });
 
   it('sem costs → custos null', () => {
-    const json = { status: 'no_benchmark', suggested_price: { amount: 10 } };
-    expect(parsePriceToWin(json)).toEqual({ status: 'no_benchmark', preco_sugerido: 10, custos: null });
+    const json = { status: 'no_benchmark_lowest', suggested_price: { amount: 10 } };
+    expect(parsePriceToWin(json)).toEqual({ status: 'no_benchmark_lowest', preco_sugerido: 10, custos: null });
   });
 });

@@ -23,7 +23,7 @@ function insumoFaltante(
 ): string | null {
   if (!contexto || contexto.custo == null) return 'custo do produto';
   if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'price-to-win do Mercado Livre';
+  if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'referência de preço do Mercado Livre';
   return null;
 }
 

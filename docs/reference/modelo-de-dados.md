@@ -627,8 +627,12 @@ UPDATE do membro citadas abaixo.
 Um produto monitorado por `(org_id, catalog_product_id)` — unique `pulse_produtos_org_cpid_uniq`.
 `codigo_pai` (anúncio nosso que originou; `null` quando `origem='manual'`), `titulo`, `origem`
 (`auto` | `manual`, default `auto`), `status` (`ativo` | `pausado` | `arquivado`, default `ativo`),
-`ptw_status`/`ptw_preco_sugerido`/`ptw_custos` (jsonb)/`ptw_atualizado_em` — price-to-win do NOSSO
-item via `/suggestions/items/{id}/details`, `ultimo_snapshot_em`, `criado_em`, `atualizado_em`
+`ptw_status`/`ptw_preco_sugerido`/`ptw_custos` (jsonb)/`ptw_atualizado_em` — **referência de preço**
+do NOSSO item via `/suggestions/items/{id}/details` (o prefixo `ptw` é histórico: não é o endpoint
+`price_to_win` do buy box — Errata 3 do ADR-0119). `ptw_status` assume `no_benchmark_lowest`,
+`no_benchmark_ok`, `with_benchmark_high`, `with_benchmark_highest` ou, em referência do tipo
+Markdown, `not_optin_applied`/`promotion_scheduled`/`promotion_active`.
+`ultimo_snapshot_em`, `criado_em`, `atualizado_em`
 (trigger `pulse_produtos_set_updated_at`, `moddatetime`). Índice `pulse_produtos_org_status_idx` em
 `(org_id, status, ultimo_snapshot_em asc)` — ordem de coleta: produto sem snapshot (ou mais velho)
 primeiro. RLS: select org + **update org restrito à coluna `status`** (`grant update (status)`) —

@@ -26,7 +26,7 @@ function insumoFaltante(
 ): string | null {
   if (!contexto || contexto.custo == null) return 'custo do produto';
   if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'price-to-win do Mercado Livre';
+  if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'referência de preço do Mercado Livre';
   return null;
 }
 
@@ -144,7 +144,16 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                       )}
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">ML sugere</p>
+                      {/* Duas referências convivem nesta linha e podem apontar para lados opostos:
+                          o menor concorrente é o piso real da ficha; a referência do ML é um preço
+                          calculado por ele a partir de concorrentes internos e externos. Sem dizer
+                          isso, o bloco parece se contradizer. */}
+                      <p
+                        className="text-xs text-muted-foreground"
+                        title="Preço de referência calculado pelo Mercado Livre. Não é o menor preço da ficha — por isso pode ficar acima do menor concorrente."
+                      >
+                        Referência do ML
+                      </p>
                       <p className="text-lg font-semibold tabular-nums">
                         {produto.ptw_preco_sugerido != null ? fmtBRL(produto.ptw_preco_sugerido) : '—'}
                       </p>
