@@ -63,10 +63,14 @@ export function seloPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_st
  * O preço vem da nossa oferta na ficha, então some junto com ela.
  */
 export function motivoSemPrecoProprio(
-  p: Pick<PulseProduto, 'origem' | 'catalogo_status' | 'ultimo_snapshot_em'>,
+  p: Pick<PulseProduto, 'origem' | 'catalogo_status' | 'ultimo_snapshot_em' | 'meu_preco_em'>,
 ): string {
   if (p.origem === 'manual') return 'Ficha adicionada para pesquisa — você não vende este produto.';
   if (!p.ultimo_snapshot_em) return 'Ainda sem a primeira coleta.';
+  // Preço nunca lido ainda: cada execução tem teto de produtos, então uma sobra fica para o ciclo
+  // seguinte. Sem esta trava, esses produtos seriam anunciados como "pausados" — afirmação sobre
+  // o anúncio a partir de uma leitura que não aconteceu.
+  if (!p.meu_preco_em) return 'Preço ainda não lido do Mercado Livre — aguarde a próxima coleta.';
   if (p.catalogo_status && p.catalogo_status !== 'vinculado') {
     return 'Seu anúncio não está vinculado a esta ficha, então não aparece entre as ofertas dela.';
   }

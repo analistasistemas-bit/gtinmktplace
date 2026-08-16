@@ -63,7 +63,12 @@ describe('seloPriceToWin', () => {
 });
 
 describe('motivoSemPrecoProprio', () => {
-  const base = { origem: 'auto' as const, catalogo_status: 'vinculado', ultimo_snapshot_em: '2026-08-16T00:00:00Z' };
+  const base = {
+    origem: 'auto' as const,
+    catalogo_status: 'vinculado',
+    ultimo_snapshot_em: '2026-08-16T00:00:00Z',
+    meu_preco_em: '2026-08-16T22:08:09Z',
+  };
 
   it('ficha manual: não é anúncio nosso', () => {
     expect(motivoSemPrecoProprio({ ...base, origem: 'manual' })).toContain('você não vende');
@@ -73,11 +78,19 @@ describe('motivoSemPrecoProprio', () => {
     expect(motivoSemPrecoProprio({ ...base, ultimo_snapshot_em: null })).toContain('primeira coleta');
   });
 
+  // Cada execução tem teto de produtos: uma sobra fica para o ciclo seguinte com o preço nunca
+  // lido. Dizer "pausado" ali é afirmar sobre o anúncio a partir de uma leitura que não houve.
+  it('produto que a coleta ainda não alcançou não é chamado de pausado', () => {
+    const s = motivoSemPrecoProprio({ ...base, meu_preco_em: null });
+    expect(s).toContain('ainda não lido');
+    expect(s).not.toContain('pausado');
+  });
+
   it('sem vínculo de catálogo: causa acionável', () => {
     expect(motivoSemPrecoProprio({ ...base, catalogo_status: 'ficha_divergente' })).toContain('não está vinculado');
   });
 
-  it('vinculado e coletado, mas fora da ficha: pausado ou sem estoque', () => {
+  it('lido, vinculado, mas fora da ficha: pausado ou sem estoque', () => {
     expect(motivoSemPrecoProprio(base)).toContain('pausado ou sem estoque');
   });
 
@@ -87,6 +100,7 @@ describe('motivoSemPrecoProprio', () => {
       { ...base, origem: 'manual' as const },
       { ...base, catalogo_status: null },
       { ...base, ultimo_snapshot_em: null },
+      { ...base, meu_preco_em: null },
     ];
     for (const c of casos) expect(motivoSemPrecoProprio(c).length).toBeGreaterThan(10);
   });

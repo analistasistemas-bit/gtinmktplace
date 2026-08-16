@@ -58,6 +58,15 @@
   preço vivo; o restante mostra "—" com o motivo (Errata 4 do ADR-0119).
 
 **Follow-ups pendentes:**
+- [ ] **Grants amplos nas tabelas `pulse_*` (achado 2026-08-16, não é regressão).** A migration
+  `20260816125057_pulse_v1.sql` concede `grant update (status) on pulse_produtos`, mas
+  `information_schema.column_privileges` mostra `authenticated` com INSERT/UPDATE em **todas** as
+  colunas de `pulse_produtos` — os default privileges do schema `public` já davam ALL antes do
+  grant restrito, que ficou redundante. A RLS ainda isola por org (não há vazamento entre
+  organizações), mas um membro da própria org pode escrever em `meu_preco`, `titulo`, `ptw_*`.
+  Correção: `revoke insert, update, delete on public.pulse_produtos from authenticated;` seguido
+  do `grant update (status)` — validar antes que só o botão pausar/reativar escreve nessa tabela
+  pelo cliente. Conferir também `pulse_ofertas`, `pulse_vendedores` e `pulse_alertas`.
 - [ ] Pulse: gravar e respeitar `applicable_suggestion` de `/suggestions/items/{id}/details`. Hoje
   a tela mostra a referência de preço mesmo quando o ML a marca como não aplicável — o selo afirma
   mais do que o ML afirma. Exige coluna nova + redeploy do `pulse-coletar` (Errata 3 do ADR-0119).

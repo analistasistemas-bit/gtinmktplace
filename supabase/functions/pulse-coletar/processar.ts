@@ -188,11 +188,16 @@ export async function processarColetaOrg(
     // vínculo perdido), manter o último preço conhecido faria a tela afirmar uma posição de
     // mercado que não existe mais. Só chegamos aqui com a leitura da ficha bem-sucedida.
     const nossa = extrairNossaOferta(json, proprioSellerId);
+    const agora = new Date().toISOString();
     const patch: Record<string, string | number | null> = {
-      ultimo_snapshot_em: new Date().toISOString(),
+      ultimo_snapshot_em: agora,
       meu_item_id: nossa?.item_id ?? null,
       meu_preco: nossa?.preco ?? null,
-      meu_preco_em: nossa ? new Date().toISOString() : null,
+      // Carimba a LEITURA, não o achado. Só assim `meu_preco = null` distingue "olhamos a ficha e
+      // não estamos nela" de "ainda não olhamos desde a atualização" — e a tela não afirma
+      // "pausado ou sem estoque" sobre produto que a coleta nem chegou a alcançar (o teto de
+      // produtos por execução deixa uma sobra para o ciclo seguinte).
+      meu_preco_em: agora,
     };
     if (!produto.titulo) {
       const ficha = await mlGet(`${API}/products/${produto.catalog_product_id}`, token);

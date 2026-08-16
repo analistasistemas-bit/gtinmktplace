@@ -203,6 +203,12 @@ posição — correto: não está competindo.
 **Split:** com o anúncio publicado por faixa temos várias ofertas na ficha; vence a de **menor
 preço**, a única comparável com "menor concorrente".
 
+**`meu_preco_em` carimba a leitura, não o achado.** Na primeira versão ele só era gravado quando a
+oferta era encontrada, e `null` passava a significar duas coisas: "olhamos e não estamos na ficha"
+e "ainda não olhamos". Como cada execução tem teto de produtos, a segunda população não é
+hipotética — medida logo após o deploy: **30 dos 222** estavam nela, e a tela diria "pausado ou sem
+estoque" para todos, afirmando sobre o anúncio a partir de uma leitura que não aconteceu.
+
 **Achado colateral:** a coleta usava o default de paginação do ML (100). Nenhuma ficha atual passa
 disso (máx. 85 medido), mas o teto é real: acima dele o radar veria um subconjunto e a nossa oferta
 poderia cair fora, zerando a coluna sem motivo aparente. Agora o `limit=100` é explícito e o
