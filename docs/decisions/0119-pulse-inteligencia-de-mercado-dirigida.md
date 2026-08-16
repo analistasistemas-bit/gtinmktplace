@@ -52,6 +52,29 @@ Queríamos essa capacidade dentro do PubliAI, sem "implementação gigante".
   vitalícia (`sold_quantity ÷ idade do anúncio`); só a tendência recente exige 1–2 semanas de
   acúmulo.
 
+## Errata (2026-08-16, prova empírica com token real — antes de qualquer implementação)
+
+Testes reais contra a API do ML corrigiram três premissas deste ADR:
+
+1. **`/items/{id}` de terceiro devolve 403 sempre** (com token, sem token, multiget misto). O ML
+   fechou o acesso a anúncios de terceiros: `sold_quantity` e estoque **por anúncio de
+   concorrente não existem via API**. Ferramentas como a Joom Pulse obtêm isso raspando o site
+   (extensão no navegador do usuário + crawlers de HTML), não pela API.
+2. **Pivot aprovado pelo Diego:** vendas de concorrente no v1 são **por vendedor** — delta de
+   `seller_reputation.transactions.total` de `/users/{seller_id}` entre snapshots (provado:
+   20.500 transações de um seller terceiro) — rotuladas como estimativa. Vendas por anúncio de
+   terceiro ficam para o v2, via extensão coletora de DOM (base: `extensao-ml/`, ADR-0118).
+   Alertas de "estoque esgotado" de concorrente saem do escopo (dado inexistente); o sinal
+   equivalente é "concorrente saiu do catálogo".
+3. **Price-to-win confirmado melhor que o esperado**: `/suggestions/items/{id}/details` devolve
+   status, preço sugerido e custos (comissão + frete) do próprio ML.
+4. **§6 corrigido:** o "padrão do menu Estoque" é `organizations.modulos_habilitados` ligado
+   pelo super-admin em `/admin` — não uma config na tela de Configurações. É esse o mecanismo
+   do Pulse (o texto original conflacionava os dois padrões).
+
+Dados próprios seguem intactos: `sold_quantity` exato dos nossos anúncios via multiget.
+Plano: `docs/superpowers/plans/2026-08-16-pulse-v1-plan.md`.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.
