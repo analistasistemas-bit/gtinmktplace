@@ -109,13 +109,26 @@ export interface PulseResumoOfertas { menorPreco: number | null; nOfertas: numbe
 export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map<string, PulseResumoOfertas>> {
   const resumo = new Map<string, PulseResumoOfertas>();
   if (produtoIds.length === 0) return resumo;
-  const { data, error } = await pulseFrom('pulse_ofertas_atual')
-    .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
-    .in('produto_id', produtoIds);
-  if (error) throw error;
 
+  // O PostgREST trunca em ~1000 linhas SEM avisar: 40 produtos × 30 ofertas já estoura, e os
+  // últimos produtos ficariam com "menor preço" errado sem sinal nenhum na tela. Paginamos até
+  // esvaziar em vez de confiar num teto.
+  const PAGINA = 1000;
+  const linhas: (PulseOferta & { produto_id: string })[] = [];
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await pulseFrom('pulse_ofertas_atual')
+      .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
+      .in('produto_id', produtoIds)
+      .order('produto_id', { ascending: true })
+      .order('item_id', { ascending: true })
+      .range(de, de + PAGINA - 1);
+    if (error) throw error;
+    const pagina = (data ?? []) as (PulseOferta & { produto_id: string })[];
+    linhas.push(...pagina);
+    if (pagina.length < PAGINA) break;
+  }
   const porProduto = new Map<string, PulseOferta[]>();
-  for (const row of (data ?? []) as (PulseOferta & { produto_id: string })[]) {
+  for (const row of linhas) {
     const lista = porProduto.get(row.produto_id) ?? [];
     lista.push(row);
     porProduto.set(row.produto_id, lista);

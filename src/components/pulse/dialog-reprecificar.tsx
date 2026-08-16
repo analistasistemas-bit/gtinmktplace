@@ -71,11 +71,23 @@ export function DialogReprecificar({
         return;
       }
       const { data: variacoes, error: erroVariacoes } = await supabase.from('variacoes')
-        .select('id').eq('familia_id', familias[0].id);
+        .select('id, preco_publicacao').eq('familia_id', familias[0].id);
       if (erroVariacoes) throw erroVariacoes;
       // Regra financeira LOUD: sem variação lida, não existe "gravou" — nunca reportar sucesso
       // sobre uma escrita que não aconteceu.
       if (!variacoes || variacoes.length === 0) throw new Error('Família sem variações — ajuste o preço pela Revisão.');
+
+      // Preço divergente entre variações significa anúncio publicado por faixa (split). Gravar um
+      // preço único aqui achataria a faixa em silêncio — e o worker de preço único recusa com 400
+      // justamente por isso (_shared/preco/grupos.ts). Este dialog só sabe reprecificar em bloco.
+      const distintos = new Set(
+        variacoes.map((v) => (v.preco_publicacao == null ? 'null' : Number(v.preco_publicacao).toFixed(2))),
+      );
+      if (distintos.size > 1) {
+        throw new Error(
+          'Este anúncio tem preço diferente por variação — reprecificar aqui achataria todos. Ajuste na Revisão.',
+        );
+      }
       for (const v of variacoes) await updateVariacaoPreco(v.id, novoPreco);
       toast.success('✓ Preço gravado — confirme e publique na Revisão.');
       navigate('/revisao');
@@ -119,7 +131,10 @@ export function DialogReprecificar({
 
         <DialogFooter>
           <Button variant="outline" onClick={onFechar} disabled={confirmar.isPending}>Cancelar</Button>
-          <Button onClick={() => confirmar.mutate()} disabled={!preco.trim() || confirmar.isPending}>
+          <Button
+            onClick={() => confirmar.mutate()}
+            disabled={!precoSimulado || precoSimulado <= 0 || confirmar.isPending}
+          >
             {confirmar.isPending ? 'Gravando…' : 'Gravar e ir para Revisão'}
           </Button>
         </DialogFooter>

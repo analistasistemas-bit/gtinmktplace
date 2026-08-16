@@ -73,7 +73,13 @@ export function DataTable<T>({
   };
 
   return (
-    <div className={cn('overflow-x-auto rounded-lg border', className)}>
+    <div
+      className={cn('overflow-x-auto rounded-lg border', className)}
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- região scrollável precisa ser focável (WCAG 2.1.1)
+      tabIndex={0}
+      role="region"
+      aria-label="Tabela de dados"
+    >
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur">
           <TableRow>
@@ -91,7 +97,9 @@ export function DataTable<T>({
                     <button
                       type="button"
                       onClick={() => alternar(c.key)}
-                      aria-label={`Ordenar por ${typeof c.header === 'string' ? c.header : c.key}`}
+                      // Sem aria-label: ele viraria o nome acessível do <th> e cada célula da
+                      // coluna seria anunciada como "Ordenar por X". O texto do header já nomeia,
+                      // e aria-sort já comunica o estado.
                       className={cn(
                         'group -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                         ativa && 'text-foreground',
@@ -140,13 +148,16 @@ export function DataTable<T>({
                   onRowClick && 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                   rowClassName?.(row),
                 )}
-                // Linha clicável precisa ser alcançável pelo teclado, não só pelo mouse.
+                // Linha clicável precisa ser alcançável pelo teclado. Mantemos role="row" (trocar
+                // por "button" órfã os <td> e o leitor anuncia a linha inteira como um controle só).
                 tabIndex={onRowClick ? 0 : undefined}
-                role={onRowClick ? 'button' : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 onKeyDown={
                   onRowClick
                     ? (e) => {
+                        // Sem esta guarda, Espaço/Enter num botão DENTRO da linha borbulha e abre
+                        // o detalhe em vez de acionar o botão.
+                        if (e.target !== e.currentTarget) return;
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           onRowClick(row);

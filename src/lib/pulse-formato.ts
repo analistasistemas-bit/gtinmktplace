@@ -28,7 +28,11 @@ const PTW: Record<string, Selo> = {
  * resolver a ficha divergente devolve a disputa e o price-to-win.
  */
 export function seloPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem'>): Selo | null {
-  if (p.ptw_status) return PTW[p.ptw_status] ?? { texto: p.ptw_status, tom: 'neutro' };
+  // Status novo do ML não vira badge com nome de API na tela do operador — o código cru fica no
+  // tooltip, para o suporte conseguir rastrear.
+  if (p.ptw_status) {
+    return PTW[p.ptw_status] ?? { texto: 'Sem referência', tom: 'neutro', ajuda: `Status do ML: ${p.ptw_status}` };
+  }
   if (p.catalogo_status && p.catalogo_status !== 'vinculado') {
     return {
       texto: 'Sem vínculo de catálogo',
@@ -42,6 +46,21 @@ export function seloPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_st
   return null;
 }
 
+/** Posição na escala do price-to-win, do mais barato ao mais caro. Ordena a coluna. */
+const ORDEM: Record<string, number> = {
+  with_benchmark_lowest: 0,
+  sharing_first_place: 1,
+  with_benchmark_low: 2,
+  with_benchmark_mid: 3,
+  with_benchmark_high: 4,
+  with_benchmark_highest: 5,
+};
+
+export function ordemPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem'>): number | null {
+  if (p.ptw_status && p.ptw_status in ORDEM) return ORDEM[p.ptw_status];
+  return seloPriceToWin(p) ? 99 : null; // sem escala (sem vínculo, sem referência) vai para o fim
+}
+
 /** Tipo de anúncio do ML na linguagem do vendedor. */
 export function tipoAnuncio(tier: string | null): string {
   if (!tier) return '—';
@@ -49,14 +68,14 @@ export function tipoAnuncio(tier: string | null): string {
   if (tier.includes('gold_special')) return 'Clássico';
   if (tier.includes('gold')) return 'Ouro';
   if (tier.includes('silver') || tier.includes('bronze') || tier.includes('free')) return 'Grátis';
-  return tier;
+  return 'Outro'; // tipo novo do ML não vira jargão de API na tela
 }
 
 /** Reputação do vendedor. Sem selo o ML devolve null — mostrar "—·" antes do volume é ruído. */
 export function reputacao(powerSeller: string | null): string | null {
   if (!powerSeller) return null;
   const mapa: Record<string, string> = { gold: 'MercadoLíder Gold', platinum: 'MercadoLíder Platinum', silver: 'MercadoLíder' };
-  return mapa[powerSeller] ?? powerSeller;
+  return mapa[powerSeller] ?? 'MercadoLíder';
 }
 
 export interface Posicao {
@@ -74,7 +93,8 @@ export function posicaoVsMercado(meuPreco: number | null, menorConcorrente: numb
   if (meuPreco == null || menorConcorrente == null || menorConcorrente <= 0) return null;
   const deltaPct = ((meuPreco - menorConcorrente) / menorConcorrente) * 100;
   if (Math.abs(deltaPct) < 0.5) return { deltaPct, texto: 'Empatado', tom: 'neutro' };
-  if (deltaPct < 0) return { deltaPct, texto: `${deltaPct.toFixed(0)}% mais barato`, tom: 'ok' };
+  // "mais barato" já carrega o sinal; o "-" na frente leria como negação da frase.
+  if (deltaPct < 0) return { deltaPct, texto: `${Math.abs(deltaPct).toFixed(0)}% mais barato`, tom: 'ok' };
   return {
     deltaPct,
     texto: `+${deltaPct.toFixed(0)}% mais caro`,

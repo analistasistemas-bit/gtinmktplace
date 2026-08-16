@@ -51,6 +51,11 @@ const ALL_EXPECTED_KEYS = [
   'Unidades em estoque',
   'SKUs sem estoque',
   'Valor em estoque',
+  // Pulse
+  'No radar',
+  'Mais caro que o mercado',
+  'Você é o menor preço',
+  'Sem vínculo de catálogo',
 ];
 
 describe('kpi-descriptions', () => {

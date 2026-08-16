@@ -48,7 +48,8 @@ function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {
       aria-label={`Menor preço variou de ${fmtBRL(min)} a ${fmtBRL(max)} no período`}>
       <path d={`${d} L${w},${h} L0,${h} Z`} fill="currentColor" className="text-primary/10" />
       <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary" />
-      <circle cx={w} cy={y(ultimo.preco)} r="2.5" fill="currentColor" className="text-primary" />
+      {/* cx = w - 2.5 para o ponto final não sair pela metade na borda do viewBox. */}
+      <circle cx={w - 2.5} cy={y(ultimo.preco)} r="2.5" fill="currentColor" className="text-primary" />
     </svg>
   );
 }
@@ -102,10 +103,10 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader className="pr-8">
             <DialogTitle className="text-base leading-snug">
-              {produto?.titulo ?? produto?.catalog_product_id}
+              {produto?.titulo ?? 'Ficha sem nome'}
             </DialogTitle>
             <DialogDescription className="tabular-nums">
-              {produto?.gtin ?? produto?.catalog_product_id}
+              {produto?.gtin ?? `Ficha ${produto?.catalog_product_id ?? ''}`}
             </DialogDescription>
           </DialogHeader>
 
@@ -211,7 +212,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                     <Sparkline pontos={historico} />
                     <div className="pb-1 text-xs text-muted-foreground">
                       <div className="tabular-nums">{fmtBRL(historico[historico.length - 1].preco)} hoje</div>
-                      <div>{historico.length} dias com mudança</div>
+                      <div>{historico.length} dias com coleta</div>
                     </div>
                   </div>
                 </section>

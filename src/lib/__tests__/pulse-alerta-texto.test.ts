@@ -27,12 +27,31 @@ describe('textoAlerta', () => {
     expect(textoAlerta(alerta)).toBe('Um concorrente saiu de Fone Bluetooth X');
   });
 
-  it('cai para catalog_product_id quando o produto não tem título', () => {
+  it('sem título, nomeia a ficha em vez de soltar o código do ML cru na frase', () => {
     const alerta = base({
       tipo: 'concorrente_saiu',
       payload: {},
       pulse_produtos: { titulo: null, codigo_pai: null, catalog_product_id: 'MLB456' },
     });
-    expect(textoAlerta(alerta)).toBe('Um concorrente saiu de MLB456');
+    expect(textoAlerta(alerta)).toBe('Um concorrente saiu de ficha MLB456');
+  });
+
+  it('alerta órfão (sem produto) não vira "em produto a R$ 50"', () => {
+    const alerta = base({ tipo: 'novo_concorrente', payload: { preco: 50 }, pulse_produtos: null });
+    expect(textoAlerta(alerta)).toBe(`Novo concorrente em um produto do radar a ${fmtBRL(50)}`);
+  });
+
+  it('payload sem valores não imprime "R$ NaN"', () => {
+    const alerta = base({ tipo: 'preco_caiu', payload: {}, pulse_produtos: { titulo: 'Produto X', codigo_pai: null, catalog_product_id: 'MLB1' } });
+    expect(textoAlerta(alerta)).toBe('Menor preço de Produto X caiu');
+  });
+
+  it('tipo desconhecido (deploy novo da edge) não devolve linha em branco', () => {
+    const alerta = base({
+      tipo: 'tipo_que_nao_existe' as never,
+      payload: {},
+      pulse_produtos: { titulo: 'Produto X', codigo_pai: null, catalog_product_id: 'MLB1' },
+    });
+    expect(textoAlerta(alerta)).toBe('Mudança no mercado de Produto X');
   });
 });

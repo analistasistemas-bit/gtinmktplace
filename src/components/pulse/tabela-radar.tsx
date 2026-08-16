@@ -1,16 +1,17 @@
 // Pulse (ADR-0119): lista do radar. A leitura que decide reprecificar é "onde estou em relação ao
 // menor concorrente" — por isso ela é coluna própria, e não um número escondido no detalhe.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { MoreVertical, Pause, Play, Sparkles } from 'lucide-react';
+import { MoreVertical, Pause, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { fetchPulseResumoOfertas, pausarPulseProduto, type PulseProduto } from '@/lib/pulse';
-import { classeTom, posicaoVsMercado, seloPriceToWin } from '@/lib/pulse-formato';
+import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
+import { classeTom, ordemPriceToWin, posicaoVsMercado, seloPriceToWin } from '@/lib/pulse-formato';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 
@@ -24,17 +25,18 @@ function relativo(iso: string | null): string {
   return `há ${Math.round(diffH / 24)}d`;
 }
 
-export function TabelaRadar({ produtos, onAbrirDetalhe }: {
+export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe }: {
   produtos: PulseProduto[];
+  /** Ofertas por produto — a query vive na página, para KPIs e tabela lerem o mesmo dado. */
+  resumo: Map<string, PulseResumoOfertas> | undefined;
+  resumoCarregando: boolean;
   onAbrirDetalhe: (produtoId: string) => void;
 }) {
   const qc = useQueryClient();
-  const ids = produtos.map((p) => p.id);
-  const { data: resumo, isLoading } = useQuery({
-    queryKey: ['pulse', 'ofertas-resumo', ids],
-    queryFn: () => fetchPulseResumoOfertas(ids),
-    enabled: ids.length > 0,
-  });
+
+  /** Enquanto as ofertas carregam, um traço mentiria ("sem concorrência") — mostramos o skeleton. */
+  const celulaMercado = (conteudo: React.ReactNode) =>
+    resumoCarregando ? <Skeleton className="ml-auto h-4 w-14" /> : conteudo;
 
   const pausar = useMutation({
     mutationFn: ({ id, pausar: p }: { id: string; pausar: boolean }) => pausarPulseProduto(id, p),
@@ -62,11 +64,11 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
           : Infinity;
         return (
           <div className="flex items-start gap-2">
-            {p.origem === 'manual' && (
-              <Sparkles className="mt-1 h-3.5 w-3.5 shrink-0 text-info" aria-label="Adicionado manualmente" />
-            )}
             <div className="min-w-0">
-              <span className="block truncate font-medium">{p.titulo ?? p.catalog_product_id}</span>
+              {/* Ficha sem nome ainda: o código do ML não é nome de produto, vai só no title. */}
+              <span className="block truncate font-medium" title={p.titulo ? undefined : p.catalog_product_id}>
+                {p.titulo ?? 'Ficha sem nome'}
+              </span>
               <span className="text-xs tabular-nums text-muted-foreground">
                 {p.gtin ?? p.codigo_pai ?? '—'}
                 {horas > 48 && (
@@ -96,7 +98,7 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
       sortValue: (p) => menorDe(p),
       cell: (p) => {
         const v = menorDe(p);
-        return <span className="tabular-nums">{v != null ? fmtBRL(v) : '—'}</span>;
+        return celulaMercado(<span className="tabular-nums">{v != null ? fmtBRL(v) : '—'}</span>);
       },
     },
     {
@@ -106,6 +108,7 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
       sortValue: (p) => posicaoDe(p)?.deltaPct ?? null,
       cell: (p) => {
         const pos = posicaoDe(p);
+        if (resumoCarregando) return <Skeleton className="h-4 w-24" />;
         if (!pos) return <span className="text-muted-foreground">—</span>;
         return (
           <Badge variant="outline" className={cn('font-normal tabular-nums', classeTom(pos.tom))}>
@@ -117,14 +120,17 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
     {
       key: 'ofertas',
       header: 'Ofertas',
-      className: 'text-right',
+      className: 'hidden text-right md:table-cell',
       sortValue: (p) => resumo?.get(p.id)?.nOfertas ?? null,
-      cell: (p) => <span className="tabular-nums">{resumo?.get(p.id)?.nOfertas ?? '—'}</span>,
+      cell: (p) => celulaMercado(<span className="tabular-nums">{resumo?.get(p.id)?.nOfertas ?? '—'}</span>),
     },
     {
       key: 'ptw',
       header: 'Price-to-win',
-      sortValue: (p) => seloPriceToWin(p)?.texto ?? null,
+      className: 'hidden lg:table-cell',
+      // Escala ordinal (mais barato → mais caro), não alfabética: ordenar por texto colocaria
+      // "Abaixo da média" antes de "Acima da média" e misturaria a leitura.
+      sortValue: (p) => ordemPriceToWin(p),
       cell: (p) => {
         const selo = seloPriceToWin(p);
         if (!selo) return <span className="text-muted-foreground">—</span>;
@@ -144,8 +150,7 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 px-0"
+              size="icon-sm"
               aria-label={`Mais ações para ${p.titulo ?? p.catalog_product_id}`}
               // O clique do menu não pode abrir o detalhe da linha (a linha inteira é clicável).
               onClick={(e) => e.stopPropagation()}
@@ -176,7 +181,7 @@ export function TabelaRadar({ produtos, onAbrirDetalhe }: {
       columns={colunas}
       rows={produtos}
       rowKey={(p) => p.id}
-      loading={isLoading && produtos.length === 0}
+      loading={resumoCarregando && produtos.length === 0}
       defaultSort={{ key: 'posicao', dir: 'desc' }}
       onRowClick={(p) => onAbrirDetalhe(p.id)}
       rowClassName={(p) => (p.status === 'pausado' ? 'opacity-55' : undefined)}

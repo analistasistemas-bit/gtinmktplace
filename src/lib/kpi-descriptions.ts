@@ -102,6 +102,16 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Quantos SKUs estão com saldo zero ou negativo — são os que precisam de entrada de mercadoria. Anúncio com saldo zero é pausado pelo próprio Mercado Livre e volta sozinho quando entra estoque.',
   'Valor em estoque':
     'Soma de custo × saldo de cada SKU com estoque, usando o último custo informado na entrada. SKUs com estoque e sem custo cadastrado ficam de fora do total e são avisados abaixo do valor.',
+
+  // Pulse (ADR-0119)
+  'No radar':
+    'Quantas fichas de catálogo o Pulse acompanha hoje: as dos seus anúncios publicados (entram sozinhas) mais as que você adicionou à mão. Produto pausado no radar não conta.',
+  'Mais caro que o mercado':
+    'Em quantas fichas o seu preço publicado está acima do menor concorrente. Só conta fichas onde há preço seu e pelo menos uma oferta concorrente coletada — o total comparável aparece abaixo do número.',
+  'Você é o menor preço':
+    'Em quantas fichas o seu preço publicado é o mais barato entre os concorrentes coletados. Sua própria oferta nunca entra na comparação.',
+  'Sem vínculo de catálogo':
+    'Fichas em que o seu anúncio não está vinculado ao catálogo do Mercado Livre. Sem vínculo ele não disputa a página e o ML não calcula preço para ganhar — resolver a ficha divergente devolve as duas coisas.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada

@@ -9,9 +9,10 @@ describe('seloPriceToWin', () => {
       .toBe('risco');
   });
 
-  it('status desconhecido cai no texto cru em vez de tradução inventada', () => {
+  it('status desconhecido não vaza jargão de API para a tela (código fica no tooltip)', () => {
     const s = seloPriceToWin({ ptw_status: 'status_novo_do_ml', catalogo_status: 'vinculado', origem: 'auto' });
-    expect(s?.texto).toBe('status_novo_do_ml');
+    expect(s?.texto).toBe('Sem referência');
+    expect(s?.ajuda).toContain('status_novo_do_ml');
   });
 
   it('sem price-to-win e sem vínculo: explica a causa (era um traço mudo)', () => {
@@ -57,9 +58,9 @@ describe('posicaoVsMercado', () => {
     expect(posicaoVsMercado(105, 100)!.tom).toBe('atencao');
   });
 
-  it('mais barato', () => {
+  it('mais barato — sem o sinal, que negaria a própria frase', () => {
     const p = posicaoVsMercado(90, 100)!;
-    expect(p.texto).toBe('-10% mais barato');
+    expect(p.texto).toBe('10% mais barato');
     expect(p.tom).toBe('ok');
   });
 

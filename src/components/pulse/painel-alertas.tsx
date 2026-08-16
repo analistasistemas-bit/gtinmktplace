@@ -17,7 +17,9 @@ export function PainelAlertas({
   onReprecificar: (alerta: PulseAlerta) => void;
 }) {
   const qc = useQueryClient();
-  const { data: alertas } = useQuery({ queryKey: QK.pulseAlertas, queryFn: fetchPulseAlertas, staleTime: 30_000 });
+  const { data: alertas, isError } = useQuery({
+    queryKey: QK.pulseAlertas, queryFn: fetchPulseAlertas, staleTime: 30_000,
+  });
 
   const marcarLido = useMutation({
     mutationFn: marcarAlertaLido,
@@ -33,6 +35,15 @@ export function PainelAlertas({
     },
     onSettled: () => qc.invalidateQueries({ queryKey: QK.pulseAlertas }),
   });
+
+  // Consulta quebrada não pode parecer "nenhum alerta" — é a primeira pergunta que a tela responde.
+  if (isError) {
+    return (
+      <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
+        Não foi possível carregar os alertas. Os números abaixo continuam válidos.
+      </div>
+    );
+  }
 
   const lista = alertas ?? [];
   if (lista.length === 0) return null;
@@ -68,7 +79,8 @@ export function PainelAlertas({
                 size="sm"
                 aria-label="Marcar como lido"
                 onClick={() => marcarLido.mutate(alerta.id)}
-                disabled={marcarLido.isPending}
+                // Só o alerta em voo desabilita — a mutation é compartilhada e congelava a lista toda.
+                disabled={marcarLido.isPending && marcarLido.variables === alerta.id}
               >
                 <Check className="h-4 w-4" />
               </Button>

@@ -30,15 +30,18 @@ export default function Pulse() {
   const [alertaReprecificar, setAlertaReprecificar] = useState<PulseAlerta | null>(null);
   const [busca, setBusca] = useState('');
 
-  const { data: produtos, isLoading } = useQuery({
+  const { data: produtos, isLoading, isError, error, refetch } = useQuery({
     queryKey: QK.pulseProdutos,
     queryFn: fetchPulseProdutos,
     enabled: !!modulos?.includes('pulse'),
     staleTime: 60_000,
   });
 
+  // Uma única query de ofertas para a página inteira: KPIs e tabela leem o mesmo Map. A chave usa
+  // os ids de TODOS os produtos (não os filtrados pela busca), senão cada tecla digitada criaria
+  // uma entrada de cache nova e as colunas de mercado piscariam para "—".
   const ids = (produtos ?? []).map((p) => p.id);
-  const { data: resumoOfertas } = useQuery({
+  const { data: resumoOfertas, isLoading: resumoCarregando } = useQuery({
     queryKey: ['pulse', 'ofertas-resumo', ids],
     queryFn: () => fetchPulseResumoOfertas(ids),
     enabled: ids.length > 0,
@@ -146,6 +149,18 @@ export default function Pulse() {
         <div className="flex flex-col gap-1.5">
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
         </div>
+      ) : isError ? (
+        // Falha de leitura não pode se disfarçar de "radar vazio" — o operador leria "sem
+        // concorrência nova" quando na verdade a consulta caiu.
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">Não foi possível carregar o radar.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {error instanceof Error ? error.message : 'Erro desconhecido ao consultar os produtos.'}
+          </p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+            Tentar de novo
+          </Button>
+        </div>
       ) : lista.length === 0 ? (
         <EmptyState
           icon={Activity}
@@ -161,7 +176,12 @@ export default function Pulse() {
           action={<Button variant="outline" onClick={() => setBusca('')}>Limpar busca</Button>}
         />
       ) : (
-        <TabelaRadar produtos={filtrada} onAbrirDetalhe={setDetalheId} />
+        <TabelaRadar
+          produtos={filtrada}
+          resumo={resumoOfertas}
+          resumoCarregando={resumoCarregando}
+          onAbrirDetalhe={setDetalheId}
+        />
       )}
 
       <DialogAdicionar aberto={adicionarAberto} onFechar={() => setAdicionarAberto(false)} />
