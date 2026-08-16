@@ -53,6 +53,9 @@ export const QK = {
   perguntasPagina: (
     pagina: number, tamanho: number, filtro: unknown,
   ) => ['perguntas', pagina, tamanho, filtro] as const,
+  pulseProdutos: ['pulse', 'produtos'] as const,
+  pulseDetalhe: (id: string) => ['pulse', 'detalhe', id] as const,
+  pulseAlertas: ['pulse', 'alertas'] as const,
 };
 
 export type LoteRow = Database['public']['Tables']['lotes']['Row'];
