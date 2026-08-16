@@ -7,6 +7,12 @@ import type { ProdutoEstoqueResumo, VariacaoComSaldo } from '@/lib/produtos-sald
 import * as produtosSaldo from '@/lib/produtos-saldo';
 
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
+
+/** Status ao vivo dos anúncios — mutável por teste (o hook real chama a edge status-publicados). */
+let statusItens: Array<{ ml_item_id: string; preco: number | null }> = [];
+vi.mock('@/hooks/useStatusPublicados', () => ({
+  useStatusPublicados: () => ({ data: { itens: statusItens } }),
+}));
 vi.mock('@/components/movimentos-estoque', () => ({
   MovimentosEstoque: () => <div>Movimentos de estoque</div>,
 }));
@@ -34,12 +40,14 @@ function mockVariacoes(n: number, codigoBase = 1001): VariacaoComSaldo[] {
     comprimentoCm: 10,
     imagemPath: null,
     mlPictureId: null,
+    mlItemId: null,
   }));
 }
 
 beforeEach(() => {
   fetchVariacoesProdutoMock.mockReset();
   fetchVariacoesProdutoMock.mockResolvedValue([]);
+  statusItens = [];
 });
 
 const produtoMono: ProdutoEstoqueResumo = {
@@ -266,5 +274,42 @@ describe('ProdutoCard', () => {
     });
 
     expect(screen.queryByTestId('variacoes-virtual-scroll')).not.toBeInTheDocument();
+  });
+
+  // Fiação do preço vivo: cada SKU casa com o SEU anúncio (User Products e split têm um item ML
+  // por SKU), não com o item da família. Sem isso, todas as cores exibiriam o mesmo preço.
+  it('cada variação mostra o preço vivo do anúncio que vende aquele SKU', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([
+      { ...mockVariacoes(1)[0]!, codigo: '00000005', preco: 28.99, mlItemId: 'MLB1' },
+      { ...mockVariacoes(1)[0]!, codigo: '00000006', preco: 28.99, mlItemId: 'MLB2' },
+    ]);
+    statusItens = [
+      { ml_item_id: 'MLB1', preco: 39.9 },
+      { ml_item_id: 'MLB2', preco: 44.5 },
+    ];
+
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => expect(screen.getAllByText(/R\$\s?39,90/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/R\$\s?44,50/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/local R\$\s?28,99/).length).toBe(4); // 2 linhas × (coluna + mobile)
+  });
+
+  // SKU sem anúncio (ou status ainda não carregado) mantém o preço local — nunca vazio.
+  it('variação sem anúncio no mapa segue mostrando o preço local', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([
+      { ...mockVariacoes(1)[0]!, codigo: '00000005', preco: 28.99, mlItemId: null },
+    ]);
+    statusItens = [{ ml_item_id: 'MLB1', preco: 39.9 }];
+
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => expect(screen.getAllByText(/R\$\s?28,99/).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/R\$\s?39,90/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/local R\$/)).not.toBeInTheDocument();
   });
 });

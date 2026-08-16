@@ -55,12 +55,26 @@ export function CabecalhoVariacoes() {
   );
 }
 
-export function VariacaoEstoqueLinha({ variacao: v }: { variacao: VariacaoComSaldo }) {
+/**
+ * `precoMl` é o preço VIVO do anúncio que vende este SKU (multiget do canal, via
+ * `status-publicados`). Ele vence `v.preco` porque `variacoes.preco` é o preço local da
+ * planilha/markup e nunca é reconciliado com o canal — na org DSA em 16/08/2026 a tela mostrava
+ * R$ 28,99 num SKU anunciado a R$ 39,90. O local não some: vira nota, porque é ele que alimenta
+ * markup e o próximo push (ADR-0055), e a divergência entre os dois é informação, não ruído.
+ */
+export function VariacaoEstoqueLinha({ variacao: v, precoMl }: {
+  variacao: VariacaoComSaldo;
+  precoMl?: number | null;
+}) {
   const { data: url } = useImageUrl(v.imagemPath);
   // Mesma cadeia do card do produto: Storage primeiro, foto do anúncio no ML depois.
   const foto = url ?? urlFotoMl(v.mlPictureId);
   const custo = v.custo != null ? fmtBRL(Number(v.custo)) : '—';
-  const preco = fmtBRL(Number(v.preco));
+  const precoLocal = fmtBRL(Number(v.preco));
+  // Sem preço vivo (SKU não publicado, status ainda carregando, org sem credencial) a coluna
+  // segue no local: preço em branco seria pior que preço defasado.
+  const divergente = precoMl != null && Number(precoMl) !== Number(v.preco);
+  const preco = precoMl != null ? fmtBRL(Number(precoMl)) : precoLocal;
 
   return (
     <div className={cn(GRID_LINHA_VARIACAO, 'border-b px-3 py-2 hover:bg-muted/40')}>
@@ -74,7 +88,7 @@ export function VariacaoEstoqueLinha({ variacao: v }: { variacao: VariacaoComSal
         <div className="truncate text-xs text-muted-foreground">{v.cor ?? v.nome ?? '—'}</div>
         {/* Abaixo de lg as colunas somem: custo/preço voltam aqui para não sumir do mobile. */}
         <div className="truncate text-xs tabular-nums text-muted-foreground lg:hidden">
-          custo {custo} · preço {preco}
+          custo {custo} · preço {preco}{divergente && ` · local ${precoLocal}`}
         </div>
       </div>
 
@@ -87,8 +101,15 @@ export function VariacaoEstoqueLinha({ variacao: v }: { variacao: VariacaoComSal
       <div className={cn(CELULA_LG, 'truncate text-right text-xs tabular-nums text-muted-foreground')}>
         {custo}
       </div>
-      <div className={cn(CELULA_LG, 'truncate text-right text-xs font-medium tabular-nums')}>
-        {preco}
+      <div className={cn(CELULA_LG, 'min-w-0 text-right text-xs tabular-nums')}>
+        <div className="truncate font-medium" title={precoMl != null ? 'Preço vigente no anúncio' : undefined}>
+          {preco}
+        </div>
+        {divergente && (
+          <div className="truncate text-[0.625rem] leading-tight text-muted-foreground">
+            local {precoLocal}
+          </div>
+        )}
       </div>
 
       <div className="text-right text-sm font-semibold tabular-nums tracking-tight">{v.estoque}</div>

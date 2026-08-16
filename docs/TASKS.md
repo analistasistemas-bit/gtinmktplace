@@ -2,6 +2,31 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Estoque — preço da coluna passa a ser o do anúncio — 2026-08-16
+
+- [x] **Bug.** A coluna "Preço" do painel de variações mostrava `variacoes.preco`, o preço local da
+  planilha/markup, que nenhum job reconcilia com o canal. Medido na org DSA: NIVEA `00000029` a
+  R$ 28,99 na tela contra R$ 39,90 no anúncio; Principia `00000023` a R$ 29,00 contra R$ 48,90;
+  Eucerin `00000035` a R$ 75,00 contra R$ 96,90.
+- [x] **Fonte do preço vivo: `status-publicados`**, não o Pulse. O `pulse_produtos.meu_preco` só
+  existe onde há ficha de catálogo (3 de 7 produtos na DSA, 15 de 133 na Avil — Errata 2 do
+  ADR-0119); `status-publicados` já faz multiget `/items?attributes=...,price` e cobre 100% dos
+  anúncios da org. Conferido nos 2 produtos com as duas fontes: 39,90 e 96,90 em ambas.
+- [x] **Migration `20260816230056_estoque_preco_ml_por_sku.sql`.** `variacoes_estoque_produto`
+  devolve `ml_item_id` por SKU — precedência `anuncios_externos_itens` (User Products, 1 item por
+  SKU) → partição de `anuncios_externos` que contém o SKU (split) → `familias.ml_item_id`. Sem
+  isso, todas as cores de um produto UP exibiriam o preço do mesmo anúncio.
+- [x] **UI.** A coluna mostra o preço do anúncio e, quando diverge, o local vira nota (`local
+  R$ 28,99`). Sem anúncio, status carregando ou org sem credencial → segue o local. O status ao
+  vivo só é buscado com um card aberto (`useStatusPublicados({ enabled })`) — a chamada varre
+  todos os anúncios da org. `variacoes.preco` NÃO é sobrescrito: é ele que alimenta markup e o
+  próximo push (ADR-0055).
+- [ ] **Limitação conhecida.** `/items` devolve o preço BASE; com promoção ativa do vendedor o
+  efetivo é menor (medido na Errata 4 do ADR-0119: 38,90 base contra 35,79 em `/seller-promotions`).
+  Nenhum dos casos medidos na DSA tinha promoção ativa. Se aparecer, o caminho é acrescentar o
+  preço promocional ao `lerStatus` como campo NOVO — `StatusCanal.preco` é usado como faixa viva
+  do split (ADR-0078) e não pode mudar de semântica.
+
 ## Pulse v1 — radar de concorrência (ADR-0119) — 2026-08-16
 
 - [x] **Migration `20260816125057_pulse_v1.sql`.** 4 tabelas Grupo B — `pulse_produtos`,

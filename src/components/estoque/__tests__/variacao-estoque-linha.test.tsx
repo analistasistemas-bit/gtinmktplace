@@ -45,6 +45,29 @@ describe('VariacaoEstoqueLinha', () => {
     render(<VariacaoEstoqueLinha variacao={variacao({ custo: null })} />);
     expect(screen.getByText(/custo — · preço/)).toBeInTheDocument();
   });
+
+  // O bug que originou a coluna: `variacoes.preco` é o preço da planilha/markup e não é
+  // reconciliado com o ML (NIVEA a R$ 28,99 na tela contra R$ 39,90 no anúncio). Quando o preço
+  // vivo do canal é conhecido, é ELE que a coluna mostra — o local vira nota de rodapé.
+  it('preço do ML vence o local e o local aparece como nota', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao({ preco: 28.99 })} precoMl={39.9} />);
+    expect(screen.getAllByText(/R\$\s?39,90/).length).toBeGreaterThan(0);
+    // Duas ocorrências de propósito: a nota da coluna (desktop) e a linha secundária (mobile).
+    expect(screen.getAllByText(/local R\$\s?28,99/).length).toBe(2);
+  });
+
+  it('preço do ML igual ao local não repete o valor como nota', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao({ preco: 89.9 })} precoMl={89.9} />);
+    expect(screen.queryByText(/local R\$/)).not.toBeInTheDocument();
+  });
+
+  // Sem anúncio (ou com o status ao vivo ainda carregando) a coluna segue mostrando o local:
+  // preço em branco ou zerado seria pior que preço defasado.
+  it('sem preço do ML mostra o local, sem nota', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao({ preco: 89.9 })} />);
+    expect(screen.getAllByText(/R\$\s?89,90/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/local R\$/)).not.toBeInTheDocument();
+  });
 });
 
 describe('CabecalhoVariacoes', () => {

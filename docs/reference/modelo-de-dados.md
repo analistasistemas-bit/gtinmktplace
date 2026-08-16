@@ -408,7 +408,7 @@ select paginado de todas as variações + agrupamento no browser:
 | Função | Papel |
 |---|---|
 | `produtos_estoque_resumo() returns json` | KPIs (`produtos`, `skus`, `unidades`, `skus_sem_estoque`, `valor_em_estoque`, `skus_sem_custo`) + lista slim por `codigo_pai` canônico (`DISTINCT ON … ORDER BY criado_em DESC`, mesma regra de `agruparProdutosComSaldo`). Inclui arrays `gtins`, `codigos`, `cores` para busca client-side. |
-| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. |
+| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. Devolve também `ml_item_id`, o anúncio que vende AQUELE SKU (precedência: `anuncios_externos_itens` por SKU → partição de `anuncios_externos` que contém o SKU → `familias.ml_item_id`), usado para casar a linha com o preço vivo de `status-publicados`. |
 | `skus_estoque_org() returns setof json` | Lista flat `(codigo, codigo_pai, nome, cor, estoque)` para o picker do DialogEntrada. |
 
 **Funções `security definer` de escrita** (`search_path=''`), revogadas de `public`/`anon`/`authenticated` e

@@ -2,7 +2,7 @@
 // o painel expandido é filho da linha e o min-content de tabela aninhada estourava a largura da
 // página. O alinhamento de colunas vem de CSS Grid com tracks FIXOS — grid não dimensiona track
 // por conteúdo do jeito que a tabela dimensiona, então GTIN/nome longo não empurra nada.
-import { useId, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Trash2 } from 'lucide-react';
@@ -17,6 +17,7 @@ import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import { VariacaoEstoqueLinha, CabecalhoVariacoes, PillSaldo } from '@/components/estoque/variacao-estoque-linha';
 import { useImageUrl } from '@/hooks/useImageUrl';
+import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
 import {
@@ -29,7 +30,11 @@ export const VARIACOES_VIRTUAL_THRESHOLD = 50;
 
 export const VARIACAO_ROW_ESTIMATE_PX = 56;
 
-function ListaVariacoesEstoque({ variacoes, nomeProduto }: { variacoes: VariacaoComSaldo[]; nomeProduto: string }) {
+function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl }: {
+  variacoes: VariacaoComSaldo[];
+  nomeProduto: string;
+  precoMl: (v: VariacaoComSaldo) => number | null;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -63,7 +68,10 @@ function ListaVariacoesEstoque({ variacoes, nomeProduto }: { variacoes: Variacao
             className="absolute left-0 top-0 w-full"
             style={{ transform: `translateY(${virtualRow.start}px)` }}
           >
-            <VariacaoEstoqueLinha variacao={variacoes[virtualRow.index]!} />
+            <VariacaoEstoqueLinha
+              variacao={variacoes[virtualRow.index]!}
+              precoMl={precoMl(variacoes[virtualRow.index]!)}
+            />
           </div>
         ))}
       </div>
@@ -138,6 +146,19 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
     enabled: aberto,
     staleTime: 30_000,
   });
+
+  // Preço vivo do canal, só com o card aberto (a chamada varre todos os anúncios da org). A
+  // lista NUNCA espera por ele: enquanto não chega, cada linha mostra o preço local.
+  const { data: statusPublicados } = useStatusPublicados({ enabled: aberto });
+  const precoMlPorItem = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const i of statusPublicados?.itens ?? []) {
+      if (i.preco != null) mapa.set(i.ml_item_id, i.preco);
+    }
+    return mapa;
+  }, [statusPublicados]);
+  const precoMl = (v: VariacaoComSaldo) =>
+    (v.mlItemId ? precoMlPorItem.get(v.mlItemId) ?? null : null);
 
   const alvo: AlvoEntrada = produto.qtdSkus === 1 && produto.skuUnico
     ? { sku: produto.skuUnico, codigoPai: produto.codigoPai }
@@ -265,11 +286,19 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
                   if (lista.length <= VARIACOES_VIRTUAL_THRESHOLD) {
                     return (
                       <div className="[&>*:last-child]:border-b-0">
-                        {lista.map((v) => <VariacaoEstoqueLinha key={v.codigo} variacao={v} />)}
+                        {lista.map((v) => (
+                          <VariacaoEstoqueLinha key={v.codigo} variacao={v} precoMl={precoMl(v)} />
+                        ))}
                       </div>
                     );
                   }
-                  return <ListaVariacoesEstoque variacoes={lista} nomeProduto={produto.nomePai} />;
+                  return (
+                    <ListaVariacoesEstoque
+                      variacoes={lista}
+                      nomeProduto={produto.nomePai}
+                      precoMl={precoMl}
+                    />
+                  );
                 })()}
               </div>
             </TabsContent>

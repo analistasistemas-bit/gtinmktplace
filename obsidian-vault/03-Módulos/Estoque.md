@@ -122,6 +122,16 @@ no caminho — `<table>` dentro de `<TableCell>` forçava scroll horizontal estr
   (`https://http2.mlstatic.com/D_{ml_picture_id}-V.jpg`), preferindo capa da família → variação
   principal → primeira variação com foto. Sem nenhuma foto, placeholder — é o caso dos 7 produtos
   em aberto ([[Bugs Conhecidos]]).
+- **Preço (desde 2026-08-16):** a coluna mostra o preço VIVO do anúncio, lido de
+  `status-publicados` (multiget `/items?attributes=...,price`, cobre 100% dos anúncios da org).
+  `variacoes.preco` é o preço local da planilha/markup e nenhum job o reconcilia com o canal —
+  mostrava R$ 28,99 num SKU anunciado a R$ 39,90. Quando os dois divergem, o local aparece como
+  nota (`local R$ 28,99`) porque é ele que alimenta markup e o próximo push (ADR-0055); a tela
+  **não** o sobrescreve. O casamento SKU → anúncio é `variacoes_estoque_produto.ml_item_id`
+  (User Products → partição do split → família), senão todas as cores de um produto UP mostrariam
+  o preço do mesmo anúncio. `pulse_produtos.meu_preco` não serve de base: só existe onde há ficha
+  de catálogo (3 de 7 na DSA, 15 de 133 na Avil — Errata 2 do ADR-0119). Limitação: `/items` devolve o
+  preço BASE, sem promoção ativa do vendedor.
 
 ## Regra operacional inegociável
 
