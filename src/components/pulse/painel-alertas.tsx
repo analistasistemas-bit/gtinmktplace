@@ -38,21 +38,21 @@ export function PainelAlertas({
   if (lista.length === 0) return null;
 
   return (
-    <Card className="mb-4 border-warning/30 bg-warning/10">
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium text-warning">
-          <Bell className="h-4 w-4" />
+    <Card className="mb-4 border-warning/30 bg-warning/10 py-0">
+      <CardHeader className="px-4 pb-0 pt-3">
+        <CardTitle className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-warning">
+          <Bell className="h-3.5 w-3.5" />
           {lista.length === 1 ? '1 alerta novo' : `${lista.length} alertas novos`}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-0 pt-0">
+      <CardContent className="flex flex-col gap-0 px-4 pb-2 pt-1">
         {lista.map((alerta) => (
           <div
             key={alerta.id}
-            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-warning/20 py-2 text-sm first:border-0"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-warning/20 py-1.5 text-sm first:border-0"
           >
-            <span>{textoAlerta(alerta)}</span>
-            <div className="ml-auto flex items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate" title={textoAlerta(alerta)}>{textoAlerta(alerta)}</span>
+            <div className="flex shrink-0 items-center gap-1.5">
               {alerta.produto_id && (
                 <Button variant="outline" size="sm" onClick={() => onVerProduto(alerta.produto_id!)}>
                   Ver produto

@@ -58,19 +58,27 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
   // de `variacoes.catalog_product_id`, não do código da família — que agrupa várias fichas.
   const cpids = [...porCpid.keys()];
   const gtinPorCpid = new Map<string, string>();
+  const statusPorCpid = new Map<string, string>();
   if (cpids.length > 0) {
     const { data: vars } = await admin.from('variacoes')
-      .select('catalog_product_id, gtin')
-      .eq('org_id', orgId).in('catalog_product_id', cpids).not('gtin', 'is', null);
-    for (const v of (vars ?? []) as { catalog_product_id: string; gtin: string }[]) {
-      if (!gtinPorCpid.has(v.catalog_product_id)) gtinPorCpid.set(v.catalog_product_id, v.gtin);
+      .select('catalog_product_id, gtin, catalog_status')
+      .eq('org_id', orgId).in('catalog_product_id', cpids);
+    for (const v of (vars ?? []) as { catalog_product_id: string; gtin: string | null; catalog_status: string | null }[]) {
+      if (v.gtin && !gtinPorCpid.has(v.catalog_product_id)) gtinPorCpid.set(v.catalog_product_id, v.gtin);
+      // 'vinculado' vence qualquer outro status: basta UMA variação vinculada para o nosso anúncio
+      // estar competindo naquela ficha (e o price-to-win existir).
+      const atual = statusPorCpid.get(v.catalog_product_id);
+      if (v.catalog_status && (atual == null || v.catalog_status === 'vinculado')) {
+        statusPorCpid.set(v.catalog_product_id, v.catalog_status);
+      }
     }
   }
 
-  const rows = [...porCpid.values()].map((r) => {
-    const gtin = gtinPorCpid.get(r.catalog_product_id);
-    return gtin ? { ...r, gtin } : r;
-  });
+  const rows = [...porCpid.values()].map((r) => ({
+    ...r,
+    ...(gtinPorCpid.has(r.catalog_product_id) ? { gtin: gtinPorCpid.get(r.catalog_product_id) } : {}),
+    ...(statusPorCpid.has(r.catalog_product_id) ? { catalogo_status: statusPorCpid.get(r.catalog_product_id) } : {}),
+  }));
   if (rows.length > 0) {
     // Sem 'status' nem 'titulo' no payload: o merge do PostgREST só sobrescreve as colunas
     // enviadas. Status preserva o ciclo de vida do operador; o título vem do ML (nome da ficha,

@@ -1,8 +1,9 @@
-// Pulse (ADR-0119): detalhe do produto — ofertas atuais, histórico de menor preço e o
-// simulador de margem (regra LOUD: falta insumo → "Margem indisponível", nunca assume).
-// Reprecificar abre dialog-reprecificar com o preço do simulador.
+// Pulse (ADR-0119): detalhe do produto. A decisão ("meu preço x mercado, e sobra quanto?") fica no
+// topo; a lista de ofertas é a evidência abaixo dela — antes o operador precisava rolar 20 linhas
+// para descobrir que estava vendendo no prejuízo.
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Truck, Store } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -14,8 +15,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { QK } from '@/lib/queries';
 import { fetchPulseDetalhe, fetchContextoMargem, type PulseProduto, type PulseVendedor } from '@/lib/pulse';
 import { estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada } from '@/lib/pulse-margem';
+import { classeTom, posicaoVsMercado, reputacao, tipoAnuncio } from '@/lib/pulse-formato';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
+import { cn } from '@/lib/utils';
 
 function insumoFaltante(
   contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
@@ -25,6 +28,29 @@ function insumoFaltante(
   if (contexto.aliquotaPct == null) return 'alíquota de imposto';
   if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'price-to-win do Mercado Livre';
   return null;
+}
+
+/** Minigráfico do menor preço no tempo. Sem lib: 40 linhas de SVG contra 40 KB de dependência. */
+function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {
+  if (pontos.length < 2) return null;
+  const precos = pontos.map((p) => p.preco);
+  const min = Math.min(...precos);
+  const max = Math.max(...precos);
+  const amplitude = max - min || 1;
+  const w = 260;
+  const h = 44;
+  const passo = w / (pontos.length - 1);
+  const y = (v: number) => h - 4 - ((v - min) / amplitude) * (h - 8);
+  const d = pontos.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * passo).toFixed(1)},${y(p.preco).toFixed(1)}`).join(' ');
+  const ultimo = pontos[pontos.length - 1];
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-11 w-full max-w-[260px]" role="img"
+      aria-label={`Menor preço variou de ${fmtBRL(min)} a ${fmtBRL(max)} no período`}>
+      <path d={`${d} L${w},${h} L0,${h} Z`} fill="currentColor" className="text-primary/10" />
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary" />
+      <circle cx={w} cy={y(ultimo.preco)} r="2.5" fill="currentColor" className="text-primary" />
+    </svg>
+  );
 }
 
 export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | null; onFechar: () => void }) {
@@ -46,24 +72,21 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   });
 
   const ofertas = data?.ofertas ?? [];
-  const vendedores = data?.vendedores ?? [];
-  // Estado atual vem da view (sem truncamento); estadoAtualOfertas aqui só filtra ativo e ordena.
   const atuais = estadoAtualOfertas(data?.ofertasAtuais ?? []);
   const historico = menorPrecoPorDia(ofertas).slice(-14);
 
   const vendedoresPorSeller = new Map<number, PulseVendedor[]>();
-  for (const v of vendedores) {
+  for (const v of data?.vendedores ?? []) {
     const lista = vendedoresPorSeller.get(v.seller_id) ?? [];
     lista.push(v);
     vendedoresPorSeller.set(v.seller_id, lista);
   }
 
   const menorConcorrente = atuais[0]?.preco ?? null;
-  const precoDefault = contexto?.precoAtual ?? menorConcorrente;
-  const precoInput = precoEditado ?? (precoDefault != null ? String(precoDefault) : '');
+  const meuPreco = contexto?.precoAtual ?? produto?.meu_preco ?? null;
+  const posicao = posicaoVsMercado(meuPreco, menorConcorrente);
+  const precoInput = precoEditado ?? (meuPreco != null ? String(meuPreco) : '');
   const precoSimulado = parseNumeroPtBr(precoInput);
-  // Enquanto o contexto de margem ainda carrega, não afirma qual insumo falta — só sabe isso
-  // depois que a resposta chega (regra LOUD é sobre dado ausente, não sobre dado ainda em voo).
   const faltando = produto?.codigo_pai && !contextoCarregando ? insumoFaltante(contexto, produto.ptw_custos) : null;
   const margem = precoSimulado && precoSimulado > 0 && !faltando
     ? margemEstimada({
@@ -71,145 +94,218 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
         ptwCustos: produto?.ptw_custos ?? null, aliquotaPct: contexto?.aliquotaPct ?? null,
       })
     : null;
+  const margemRuim = margem != null && margem.liquido < 0;
 
   return (
     <>
-    <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>{produto?.titulo ?? produto?.catalog_product_id}</DialogTitle>
-          <DialogDescription>{produto?.catalog_product_id}</DialogDescription>
-        </DialogHeader>
+      <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader className="pr-8">
+            <DialogTitle className="text-base leading-snug">
+              {produto?.titulo ?? produto?.catalog_product_id}
+            </DialogTitle>
+            <DialogDescription className="tabular-nums">
+              {produto?.gtin ?? produto?.catalog_product_id}
+            </DialogDescription>
+          </DialogHeader>
 
-        {isLoading ? (
-          <div className="flex flex-col gap-2">
-            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-6">
-            <section>
-              <h3 className="mb-2 text-sm font-medium">Ofertas atuais</h3>
-              {atuais.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhuma oferta ativa coletada ainda.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="text-xs text-muted-foreground">
-                      <TableHead>Preço</TableHead>
-                      <TableHead>Vendedor</TableHead>
-                      <TableHead>Frete</TableHead>
-                      <TableHead>Loja</TableHead>
-                      <TableHead>Tier</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {atuais.map((o) => {
-                      const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
-                      const ultimo = hist[hist.length - 1];
-                      const delta = vendasEstimadasVendedor(hist);
-                      return (
-                        <TableRow key={o.item_id}>
-                          <TableCell className="tabular-nums">{fmtBRL(o.preco)}</TableCell>
-                          <TableCell>
-                            <div className="font-medium">{ultimo?.nickname ?? `Vendedor ${o.seller_id}`}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {ultimo?.power_seller ?? '—'}
-                              {ultimo?.transactions_total != null && (
-                                <> · {fmtInt(ultimo.transactions_total)} vendas totais do vendedor</>
-                              )}
-                              {delta != null && <> · ≈{fmtInt(delta)} vendas do vendedor no período (estimado)</>}
-                            </div>
-                          </TableCell>
-                          <TableCell>{o.frete_gratis ? 'Grátis' : '—'}</TableCell>
-                          <TableCell>{o.loja_oficial ? 'Oficial' : '—'}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{o.tier ?? '—'}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </section>
-
-            <section>
-              <h3 className="mb-2 text-sm font-medium">Menor preço por dia de coleta</h3>
-              {historico.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Ainda sem histórico suficiente.</p>
-              ) : (
-                <ul className="flex flex-col gap-1 text-sm">
-                  {historico.map((h) => (
-                    <li key={h.dia} className="flex justify-between border-b border-dashed py-1 last:border-0">
-                      <span className="text-muted-foreground">{h.dia}</span>
-                      <span className="tabular-nums">{fmtBRL(h.preco)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {produto?.codigo_pai && (
-              <section>
-                <h3 className="mb-2 text-sm font-medium">Sua posição</h3>
-                <div className="mb-4 grid grid-cols-3 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Seu preço atual</p>
-                    <p className="tabular-nums">{contexto?.precoAtual != null ? fmtBRL(contexto.precoAtual) : '—'}</p>
+          {isLoading ? (
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-24 w-full rounded-lg" />
+              <Skeleton className="h-40 w-full rounded-lg" />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
+              {/* Bloco de decisão: o que o operador veio saber, antes da evidência. */}
+              {produto?.codigo_pai && (
+                <section className="rounded-lg border bg-muted/30 p-4">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Seu preço</p>
+                      <p className="text-lg font-semibold tabular-nums">
+                        {meuPreco != null ? fmtBRL(meuPreco) : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Menor concorrente</p>
+                      <p className="text-lg font-semibold tabular-nums">
+                        {menorConcorrente != null ? fmtBRL(menorConcorrente) : '—'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Sua posição</p>
+                      {posicao ? (
+                        <Badge variant="outline" className={cn('mt-1 font-normal', classeTom(posicao.tom))}>
+                          {posicao.texto}
+                        </Badge>
+                      ) : (
+                        <p className="text-lg text-muted-foreground">—</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">ML sugere</p>
+                      <p className="text-lg font-semibold tabular-nums">
+                        {produto.ptw_preco_sugerido != null ? fmtBRL(produto.ptw_preco_sugerido) : '—'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Menor concorrente</p>
-                    <p className="tabular-nums">{menorConcorrente != null ? fmtBRL(menorConcorrente) : '—'}</p>
+
+                  <div className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
+                    <div className="flex flex-col gap-1">
+                      <label htmlFor="pulse-simulador" className="text-xs text-muted-foreground">
+                        Simular preço
+                      </label>
+                      <Input
+                        id="pulse-simulador"
+                        inputMode="decimal"
+                        className="h-9 w-32 tabular-nums"
+                        value={precoInput}
+                        onChange={(e) => setPrecoEditado(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">Sobra para você</span>
+                      {contextoCarregando ? (
+                        <span className="text-sm text-muted-foreground">calculando…</span>
+                      ) : faltando ? (
+                        <Badge variant="outline" className={classeTom('atencao')}>
+                          Margem indisponível: falta {faltando}
+                        </Badge>
+                      ) : margem ? (
+                        <span
+                          className={cn(
+                            'text-lg font-semibold tabular-nums',
+                            margemRuim ? 'text-destructive' : 'text-success',
+                          )}
+                        >
+                          {fmtBRL(margem.liquido)}
+                          <span className="ml-1 text-sm font-normal opacity-80">
+                            ({margem.margemPct.toFixed(1)}%)
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">informe um preço</span>
+                      )}
+                    </div>
+                    <Button
+                      className="ml-auto"
+                      disabled={!precoSimulado || precoSimulado <= 0}
+                      onClick={() => setReprecificarAberto(true)}
+                    >
+                      Reprecificar
+                    </Button>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Price-to-win sugerido</p>
-                    <p className="tabular-nums">
-                      {produto.ptw_preco_sugerido != null ? fmtBRL(produto.ptw_preco_sugerido) : '—'}
+
+                  {margemRuim && (
+                    <p className="mt-3 text-sm text-destructive">
+                      Nesse preço você perde {fmtBRL(Math.abs(margem!.liquido))} por unidade vendida.
                     </p>
-                  </div>
-                </div>
-
-                <h4 className="mb-1.5 text-sm font-medium">Simulador de margem</h4>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Input
-                    inputMode="decimal"
-                    className="w-32"
-                    aria-label="Preço simulado"
-                    value={precoInput}
-                    onChange={(e) => setPrecoEditado(e.target.value)}
-                  />
-                  {contextoCarregando ? (
-                    <span className="text-sm text-muted-foreground">Carregando custo e alíquota…</span>
-                  ) : faltando ? (
-                    <Badge variant="destructive">Margem indisponível: falta {faltando}</Badge>
-                  ) : margem ? (
-                    <span className="text-sm">
-                      Líquido <span className="font-medium tabular-nums">{fmtBRL(margem.liquido)}</span>{' '}
-                      <span className="text-muted-foreground tabular-nums">({margem.margemPct.toFixed(1)}%)</span>
-                    </span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">Informe um preço para simular.</span>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="ml-auto"
-                    disabled={!precoSimulado || precoSimulado <= 0}
-                    onClick={() => setReprecificarAberto(true)}
-                  >
-                    Reprecificar
-                  </Button>
-                </div>
+                </section>
+              )}
+
+              {historico.length >= 2 && (
+                <section>
+                  <h3 className="mb-1 text-sm font-medium">Menor preço do mercado</h3>
+                  <div className="flex items-end gap-4">
+                    <Sparkline pontos={historico} />
+                    <div className="pb-1 text-xs text-muted-foreground">
+                      <div className="tabular-nums">{fmtBRL(historico[historico.length - 1].preco)} hoje</div>
+                      <div>{historico.length} dias com mudança</div>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              <section>
+                <h3 className="mb-2 text-sm font-medium">
+                  Concorrentes{' '}
+                  <span className="font-normal text-muted-foreground">({atuais.length} ofertas ativas)</span>
+                </h3>
+                {atuais.length === 0 ? (
+                  <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    Nenhuma oferta coletada ainda. Use “Atualizar agora” na lista para forçar uma coleta.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow className="text-xs text-muted-foreground">
+                          <TableHead className="text-right">Preço</TableHead>
+                          <TableHead>Vendedor</TableHead>
+                          <TableHead>Anúncio</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {atuais.map((o) => {
+                          const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
+                          const ultimo = hist[hist.length - 1];
+                          const delta = vendasEstimadasVendedor(hist);
+                          const selo = reputacao(ultimo?.power_seller ?? null);
+                          const maisBarato = menorConcorrente != null && o.preco === menorConcorrente;
+                          return (
+                            <TableRow key={o.item_id}>
+                              <TableCell className="text-right">
+                                <span className={cn('tabular-nums', maisBarato && 'font-semibold text-foreground')}>
+                                  {fmtBRL(o.preco)}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className="font-medium">{ultimo?.nickname ?? `Vendedor ${o.seller_id}`}</span>
+                                  {selo && (
+                                    <Badge variant="outline" className="border-info/30 bg-info/10 text-[10px] font-normal text-info">
+                                      {selo}
+                                    </Badge>
+                                  )}
+                                  {o.loja_oficial && (
+                                    <Badge variant="outline" className="text-[10px] font-normal">
+                                      <Store className="mr-1 h-3 w-3" />
+                                      Loja oficial
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {ultimo?.transactions_total != null
+                                    ? `${fmtInt(ultimo.transactions_total)} vendas na conta`
+                                    : 'volume não coletado'}
+                                  {delta != null && delta > 0 && ` · ≈${fmtInt(delta)} desde que entrou no radar`}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                <div className="flex items-center gap-2">
+                                  {tipoAnuncio(o.tier)}
+                                  {o.frete_gratis && (
+                                    <span className="inline-flex items-center gap-1 text-success" title="Frete grátis">
+                                      <Truck className="h-3 w-3" />
+                                      grátis
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground">
+                  O volume é da conta do vendedor no Mercado Livre inteiro, não deste anúncio — a API não
+                  expõe vendas por anúncio de terceiros.
+                </p>
               </section>
-            )}
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-    <DialogReprecificar
-      codigoPai={reprecificarAberto ? produto?.codigo_pai ?? null : null}
-      precoInicial={precoSimulado ?? null}
-      ptwCustos={produto?.ptw_custos ?? null}
-      onFechar={() => setReprecificarAberto(false)}
-    />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <DialogReprecificar
+        codigoPai={reprecificarAberto ? produto?.codigo_pai ?? null : null}
+        precoInicial={precoSimulado ?? null}
+        ptwCustos={produto?.ptw_custos ?? null}
+        onFechar={() => setReprecificarAberto(false)}
+      />
     </>
   );
 }

@@ -16,9 +16,12 @@ function pulseFrom(
 export interface PulseProduto {
   id: string; catalog_product_id: string; codigo_pai: string | null; titulo: string | null; gtin: string | null;
   origem: 'auto' | 'manual'; status: 'ativo' | 'pausado' | 'arquivado';
+  catalogo_status: string | null;
   ptw_status: string | null; ptw_preco_sugerido: number | null;
   ptw_custos: { comissao: number | null; frete: number | null } | null;
   ultimo_snapshot_em: string | null;
+  /** Preço publicado do nosso anúncio, resolvido por `codigo_pai` (null em ficha manual). */
+  meu_preco: number | null;
 }
 export interface PulseOferta {
   item_id: string; seller_id: number; preco: number; tier: string | null;
@@ -38,12 +41,32 @@ export interface PulseAlerta {
 export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   const { data, error } = await pulseFrom('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as PulseProduto[];
+  const produtos = (data ?? []) as PulseProduto[];
+
+  // Preço próprio numa query só (a lista precisa dele para "Sua posição" em toda linha).
+  const codigos = [...new Set(produtos.map((p) => p.codigo_pai).filter((c): c is string => !!c))];
+  if (codigos.length === 0) return produtos.map((p) => ({ ...p, meu_preco: null }));
+
+  const { data: fam, error: erroFam } = await supabase
+    .from('familias')
+    .select('codigo_pai, criado_em, variacoes(preco_publicacao, preco_publicado_ml)')
+    .in('codigo_pai', codigos)
+    .order('criado_em', { ascending: false });
+  if (erroFam) throw erroFam;
+
+  // Família mais recente COM preço vence — uma recém-criada sem variações não pode zerar a coluna.
+  const precos = new Map<string, number>();
+  for (const f of (fam ?? []) as { codigo_pai: string; variacoes: { preco_publicacao: number | null; preco_publicado_ml: number | null }[] | null }[]) {
+    if (precos.has(f.codigo_pai)) continue;
+    const p = (f.variacoes ?? []).map((v) => v.preco_publicado_ml ?? v.preco_publicacao).find((x) => x != null);
+    if (p != null) precos.set(f.codigo_pai, Number(p));
+  }
+  return produtos.map((p) => ({ ...p, meu_preco: p.codigo_pai ? precos.get(p.codigo_pai) ?? null : null }));
 }
 
 export async function fetchPulseDetalhe(
