@@ -75,6 +75,40 @@ Testes reais contra a API do ML corrigiram três premissas deste ADR:
 Dados próprios seguem intactos: `sold_quantity` exato dos nossos anúncios via multiget.
 Plano: `docs/superpowers/plans/2026-08-16-pulse-v1-plan.md`.
 
+## Errata 2 (2026-08-16, medição pós-deploy) — a cobertura do v1 é minoritária
+
+Com o v1 no ar, medimos quantos anúncios publicados o radar realmente alcança:
+
+| Organização | Anúncios publicados | Com ficha de catálogo | Fora do radar |
+|---|---:|---:|---:|
+| DSA | 7 | 5 | 2 |
+| Avil | 133 | 15 | **118 (89%)** |
+
+**Causa (verificada, não suposta):** os produtos fora do radar não têm ficha de catálogo no ML —
+não é vínculo faltando. Testamos 10 GTINs de anúncios sem catálogo: **0 têm ficha**. Os códigos
+começam com `2`, faixa GS1 de **uso interno da empresa** (não é GTIN global registrado) — são
+aviamentos e itens genéricos, categoria que o catálogo do ML não cataloga.
+
+**Não há caminho pela API para esses anúncios** (todos verificados com token real em 16/08/2026):
+
+| Endpoint | Resultado |
+|---|---|
+| `/sites/MLB/search?q=` (busca textual) | 403 forbidden |
+| `/sites/MLB/search?category=` | 403 forbidden |
+| `/items/{id}` de terceiro | 403 forbidden |
+| `/products/search?product_identifier={gtin}` | 200, mas sem ficha para esses GTINs |
+| `/highlights/MLB/category/{cat}` | 200 — 20 posições, mas só 7 eram `PRODUCT` legível (9 `USER_PRODUCT`, 4 `ITEM`, ilegíveis para terceiros) |
+| `/trends/MLB/{cat}` | 200 — termos mais buscados, dado de categoria |
+
+**Consequência para o roadmap:** a extensão de navegador do v2 deixa de ser um acréscimo (vendas
+por anúncio) e passa a ser **o que dá cobertura ao módulo**. Lendo a página na sessão logada do
+operador, ela alcança qualquer anúncio — com ou sem catálogo, próprio ou de terceiro. Sem ela, o
+Pulse permanece útil para a DSA (5 de 7) e marginal para a Avil (15 de 133).
+
+Alternativa mais barata, se o v2 demorar: uma tela de **tendência por categoria** usando
+`highlights` + `trends` (os dois únicos endpoints vivos). Não responde "quem é meu concorrente e a
+que preço", mas responde "o que está vendendo neste nicho" — decisão de sortimento, não de preço.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

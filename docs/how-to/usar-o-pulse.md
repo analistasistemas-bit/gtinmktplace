@@ -5,6 +5,24 @@
 > termos em [../reference/glossario.md](../reference/glossario.md).
 > **Em produção desde:** 2026-08-16.
 
+> ## ⚠️ Cobertura: só produtos de catálogo
+>
+> O Pulse enxerga **apenas anúncios vinculados a uma ficha de catálogo** do Mercado Livre (as
+> páginas `/p/MLBxxxxx`). Medido em 16/08/2026 nos anúncios publicados:
+>
+> | Organização | Anúncios publicados | No radar | Fora do radar |
+> |---|---:|---:|---:|
+> | DSA | 7 | 5 | 2 |
+> | Avil | 133 | 15 | **118 (89%)** |
+>
+> Isso **não** é falta de configuração: são produtos que não existem no catálogo do ML — aviamentos
+> e itens genéricos, cujos códigos de barras são internos da empresa (faixa GS1 iniciada em `2`),
+> não GTINs globais. Testados 10 desses códigos, nenhum tem ficha no ML.
+>
+> Para esses anúncios **não existe caminho pela API**: a busca textual do ML foi descontinuada
+> (403) e anúncio de terceiro é inacessível (403). Cobri-los depende da extensão de navegador
+> prevista para a v2 — ver a seção 11.
+
 O Pulse responde três perguntas que antes você respondia no olho:
 
 | Pergunta | Onde ela é respondida |
@@ -273,9 +291,17 @@ Honestidade aqui evita decisão errada:
   para saber é o volume da **conta** do vendedor, e é isso que a tela mostra, sempre rotulado como
   estimativa. Ferramentas que mostram vendas por anúncio obtêm isso raspando o site pelo navegador,
   não pela API; isso está previsto para uma versão futura, com uma extensão de navegador.
-- **Não vigia produtos fora de catálogo.** Anúncio solto, sem ficha, não é consultável.
+- **Não vigia produtos fora de catálogo — e hoje isso é a maior parte dos anúncios.** Ver o aviso no
+  topo deste guia: 89% dos anúncios da Avil e 2 dos 7 da DSA estão nessa situação. O motivo é a
+  plataforma: catálogo no ML existe para produto identificável por marca e modelo; aviamentos e
+  itens genéricos não têm ficha, e os códigos de barras deles são internos da empresa, não GTINs
+  globais. Sem ficha, o ML não expõe nenhuma forma oficial de descobrir quem são os concorrentes.
+  **É esse buraco que a extensão de navegador da v2 fecha** — lendo a página na sua sessão logada,
+  ela enxerga qualquer anúncio, com ou sem catálogo.
 - **Não faz busca livre por palavra-chave.** O endpoint de busca do ML foi descontinuado para
-  aplicações. Você entra pelo GTIN ou pelo link da ficha.
+  aplicações (403, verificado em 16/08/2026). Você entra pelo GTIN ou pelo link da ficha. O que
+  sobra de visão de mercado sem catálogo é por **categoria**, não por produto: o ranking de mais
+  vendidos e os termos mais buscados — ainda não usados pelo Pulse.
 - **Não altera preço no Mercado Livre.** Grava o preço e te leva à Revisão. Sempre.
 - **Não tem dado retroativo.** O histórico começa no dia em que o produto entra no radar. Isso vale
   para produtos novos também — daí a recomendação de adicionar a ficha alguns dias antes de precisar

@@ -46,8 +46,16 @@
 **Follow-ups pendentes:**
 - [ ] Pulse: job de agregação semanal + prune de 90d + auto-pausa de produto sem acesso há 60d —
   antes de 2026-11-14.
-- [ ] Pulse v2: extensão coletora de DOM para vendas por anúncio de terceiro (base `extensao-ml/`,
-  ver errata ADR-0119).
+- [ ] **Pulse v2: extensão coletora de DOM — PRIORIDADE ALTA, é o que dá cobertura ao módulo.**
+  Medição de 16/08 (errata 2 do ADR-0119): o radar alcança **5 de 7** anúncios da DSA e apenas
+  **15 de 133** da Avil — 89% dela está fora porque são aviamentos sem ficha de catálogo no ML
+  (códigos de barras internos, faixa GS1 `2`, não GTIN global). Verificado que **não há caminho
+  pela API** para esses: busca textual e por categoria devolvem 403, anúncio de terceiro 403.
+  A extensão (base `extensao-ml/`, ADR-0118) lê a página na sessão logada e alcança qualquer
+  anúncio — resolve cobertura **e** vendas por anúncio de uma vez.
+- [ ] Pulse: alternativa barata se a extensão demorar — tela de tendência por categoria com
+  `/highlights/MLB/category/{cat}` e `/trends/MLB/{cat}` (únicos endpoints vivos sem catálogo).
+  Responde "o que vende neste nicho", não "quem é meu concorrente e a que preço".
 
 ## Estoque — P2.3 virtualização expand — 2026-08-14
 
