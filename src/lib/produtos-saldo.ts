@@ -248,7 +248,11 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
     p.variacoes.push({
       codigo: l.codigo, nome: l.nome, cor: l.cor, gtin: l.gtin, estoque: l.estoque, custo: l.custo, preco: l.preco,
       pesoGramas: l.peso_gramas, alturaCm: l.altura_cm, larguraCm: l.largura_cm, comprimentoCm: l.comprimento_cm,
-      imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id, mlItemId: f.ml_item_id,
+      // null de propósito: este caminho legado só enxerga `familias.ml_item_id`, que é o ÚLTIMO
+      // degrau da precedência da RPC. Herdá-lo aqui faria toda cor de um produto User Products
+      // mostrar o preço do mesmo anúncio — o bug que a RPC evita. Sem ponteiro, a linha cai no
+      // preço local, que é sempre verdadeiro sobre si mesmo.
+      imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id, mlItemId: null,
     });
     p.saldoTotal += l.estoque;
     if (f.variacao_principal_codigo) principalPorPai.set(pai, f.variacao_principal_codigo);
