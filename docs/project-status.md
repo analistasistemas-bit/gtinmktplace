@@ -262,7 +262,7 @@ módulo de estoque operável. Ordem cronológica.
   não tem capa própria — na AVIL só **1 de 147** famílias tem `capa_storage_path`, mas **140 de
   147** têm `ml_picture_id`.
 
-## Pulse v1 — radar de concorrência (ADR-0119, 2026-08-16) — CONCLUÍDO, EM VALIDAÇÃO
+## Pulse v1 — radar de concorrência (ADR-0119, 2026-08-16) — EM PRODUÇÃO (org DSA)
 
 Fora de épico numerado. Menu "Pulse" org-gated (mesmo padrão do módulo Estoque): coletor
 server-side dual-mode (`pulse-coletar`, QStash schedule ou botão "Atualizar agora" escopado à org),
@@ -270,9 +270,14 @@ adicionar manualmente por link de catálogo/GTIN (`pulse-adicionar`), 4 tabelas 
 (`pulse_produtos`/`pulse_ofertas`/`pulse_vendedores`/`pulse_alertas`, migration
 `20260816125057_pulse_v1.sql`) e UI (radar, detalhe com margem estimada + simulador de preço,
 alertas com sino na categoria `pulse`, reprecificar que grava o preço e leva à Revisão — nenhuma
-escrita nova no ML). Suíte verde 365 arquivos / 3217 testes, `pnpm lint` 0 erros. **Ainda não em produção:** migration + as 2
-edge functions não deployadas, e os 2 schedules QStash (`pulse-coletar` tier completo 06h BRT / tier
-quente 6/6h) ainda não criados — etapa da sessão principal, fora desta branch. Ver
+escrita nova no ML). Suíte verde 365 arquivos / 3218 testes, `pnpm lint` 0 erros. **Em produção desde 2026-08-16:**
+migration aplicada, as 2 edge functions deployadas e os 2 schedules QStash criados (tier completo
+`0 9 * * *`, tier quente `0 */6 * * *`). Módulo habilitado só na org **DSA**; a Avil ainda não vê o
+menu, mas **já é coletada** — o histórico dela acumula desde o dia 1, como planejado. Primeira
+coleta real: 222 produtos no radar, 267 vendedores, 31 com price-to-win, 0 ofertas da própria loja.
+Code review em `.code-review-fable5/code-review-v1.md` (91/100, 3 achados corrigidos — o principal:
+a lista de ofertas do catálogo inclui o nosso próprio anúncio e precisa ser filtrada por
+`conta_externa_id`, senão o radar alerta contra si mesmo). Ver
 `docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md` (inclui errata: vendas por anúncio
 de terceiro é 403 sempre na API do ML, ficou para o v2 via extensão) e `docs/TASKS.md`.
 

@@ -95,11 +95,12 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
-| `pulse-coletar` (tier completo) ⚠️ | `0 9 * * *` | `{"tier":"completo"}` | — (definir na criação) |
-| `pulse-coletar` (tier quente) ⚠️ | `0 */6 * * *` | `{"tier":"quente"}` | — (definir na criação) |
+| `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
+| `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
 
-⚠️ Os dois schedules do `pulse-coletar` (ADR-0119) ainda **não existem** na conta QStash — criação é
-etapa do deploy da sessão principal (Task 7 só documenta). Cron em UTC: `0 9 * * *` = 06:00 BRT.
+Os dois schedules do `pulse-coletar` (ADR-0119) foram criados em 2026-08-16:
+`scd_7whbaAZrFGPAL3JkbWsmNuYb2AVc` (completo) e `scd_5pCHsB95LbDd7cpJMLsJNK8iHNQC` (quente), body
+auditado como JSON puro logo após a criação. Cron em UTC: `0 9 * * *` = 06:00 BRT.
 
 ⚠️ **Armadilha do body duplamente codificado.** O `backfill-faturamento` é o único schedule que
 passa parâmetros, e ficou semanas com `body = '"{\"dias\":30}"'` — uma **string** contendo JSON,

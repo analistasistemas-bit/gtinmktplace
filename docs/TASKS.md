@@ -26,9 +26,22 @@
   Revisão — **nenhuma escrita nova no ML**, publicação continua 100% no fluxo Revisão.
 - [x] **Testes e lint.** `pulse-margem.test.ts`, `pulse-alerta-texto.test.ts` + suíte pura do
   coletor; suíte verde 365 arquivos / 3217 testes, `pnpm lint` 0 erros (verificado nesta Task 7).
-- [ ] **Deploy.** Migration + 2 edge functions (`pulse-coletar`, `pulse-adicionar`) — etapa da
-  sessão principal, fora desta branch. Schedules QStash (`0 9 * * *` tier completo, `0 */6 * * *`
-  tier quente) ainda não criados — ver `docs/reference/edge-functions.md`.
+- [x] **Code review (Fable, `.code-review-fable5/code-review-v1.md`) — 91/100, 3 achados corrigidos:**
+  (1) ALTA — a lista de ofertas do catálogo inclui a **nossa própria oferta**; sem filtrar por
+  `conexao.contaExternaId` o radar alertava contra o próprio anúncio e oferecia reprecificar para
+  cobrir o próprio preço; (2) MÉDIA — estado anterior lido do histórico com teto de linhas
+  ressuscitava concorrente antigo como "novo" → passou a usar a view `pulse_ofertas_atual`;
+  (3) MÉDIA — loop de orgs sem teto de tempo (precedente `reconciliar-faturamento` /
+  `WORKER_RESOURCE_LIMIT`) → teto de 100s com rotação justa por `ultimo_snapshot_em asc`.
+- [x] **Deploy (2026-08-16).** Migration aplicada (`supabase db push`), `pulse-coletar` e
+  `pulse-adicionar` deployadas, schedules QStash criados (`scd_7whbaAZrFGPAL3JkbWsmNuYb2AVc`
+  tier completo `0 9 * * *`; `scd_5pCHsB95LbDd7cpJMLsJNK8iHNQC` tier quente `0 */6 * * *`, body
+  auditado como JSON puro). Módulo `pulse` habilitado só na org **DSA** (Avil fica de fora até a
+  calibração, mas **já coleta** — o histórico dela acumula desde hoje).
+- [x] **Validação em produção (1ª coleta real, 2026-08-16).** 222 produtos no radar (217 Avil +
+  5 DSA, auto-descobertos), ofertas reais gravadas (até 84 por produto), 267 vendedores, 31
+  produtos com price-to-win, 0 alertas (correto: 1ª coleta não alerta por design) e **0 ofertas
+  da própria loja** — a trava do achado ALTA confirmada com dado real.
 
 **Follow-ups pendentes:**
 - [ ] Pulse: job de agregação semanal + prune de 90d + auto-pausa de produto sem acesso há 60d —
