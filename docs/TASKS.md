@@ -2,6 +2,40 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Pulse v1 — radar de concorrência (ADR-0119) — 2026-08-16
+
+- [x] **Migration `20260816125057_pulse_v1.sql`.** 4 tabelas Grupo B — `pulse_produtos`,
+  `pulse_ofertas`, `pulse_vendedores`, `pulse_alertas` — RLS por org (select), duas exceções de
+  UPDATE do membro (`pulse_produtos.status`, `pulse_alertas.lido`). Categoria de notificação
+  `'pulse'` liberada em `notificacoes_categoria_check` e `profiles_telegram_categorias_validas`,
+  com 2 backfills (menu `'pulse'` para não-admins, assinatura Telegram para admins ativos).
+- [x] **Coletor server-side (`pulse-coletar`).** Dual-mode como `monitorar-moderados` (QStash sem
+  escopo de org vs. usuário logado escopado + tier `completo`). Tier `completo` (schedule diário)
+  sincroniza o radar a partir de `anuncios_externos` publicados, coleta ofertas + vendedores + PTW;
+  tier `quente` (schedule 6/6h) só reconsulta ofertas dos produtos `origem='auto'`. Lógica pura
+  (`parseOfertasProduto`, `diffOfertas`, `deveGravarVendedor`) em `_shared/pulse/` com testes
+  isolados.
+- [x] **Adicionar manualmente (`pulse-adicionar`).** Link de catálogo ou GTIN; item avulso de
+  anúncio de terceiro é 403 sempre na API do ML — recusado com mensagem explícita (errata do
+  ADR-0119).
+- [x] **Menu/rota `/pulse` org-gated** (mesmo padrão do módulo Estoque).
+- [x] **UI:** `tabela-radar.tsx` + `dialog-detalhe.tsx` (margem estimada via `pulse-margem.ts`,
+  simulador de preço), `dialog-adicionar.tsx`, `painel-alertas.tsx` (texto por tipo de alerta —
+  `preco_caiu`/`novo_concorrente`/`concorrente_saiu` — em `pulse-alerta-texto.ts`) e
+  `dialog-reprecificar.tsx`, que grava o novo preço via `updateVariacaoPreco` existente e leva à
+  Revisão — **nenhuma escrita nova no ML**, publicação continua 100% no fluxo Revisão.
+- [x] **Testes e lint.** `pulse-margem.test.ts`, `pulse-alerta-texto.test.ts` + suíte pura do
+  coletor; suíte verde 365 arquivos / 3217 testes, `pnpm lint` 0 erros (verificado nesta Task 7).
+- [ ] **Deploy.** Migration + 2 edge functions (`pulse-coletar`, `pulse-adicionar`) — etapa da
+  sessão principal, fora desta branch. Schedules QStash (`0 9 * * *` tier completo, `0 */6 * * *`
+  tier quente) ainda não criados — ver `docs/reference/edge-functions.md`.
+
+**Follow-ups pendentes:**
+- [ ] Pulse: job de agregação semanal + prune de 90d + auto-pausa de produto sem acesso há 60d —
+  antes de 2026-11-14.
+- [ ] Pulse v2: extensão coletora de DOM para vendas por anúncio de terceiro (base `extensao-ml/`,
+  ver errata ADR-0119).
+
 ## Estoque — P2.3 virtualização expand — 2026-08-14
 
 - [x] **P2.3 — Virtualização no expand.** Acima de 50 SKUs (`VARIACOES_VIRTUAL_THRESHOLD`), a aba

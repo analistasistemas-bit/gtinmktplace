@@ -616,6 +616,62 @@ de graça da RLS já existente de `configuracoes` (insert/update admin org).
 
 ---
 
+## Pulse (ADR-0119)
+
+Radar dirigido de concorrência: 4 tabelas, coletadas server-side pela edge `pulse-coletar`
+(ver [edge-functions.md](edge-functions.md)). *Migration `20260816125057_pulse_v1.sql`.* RLS por
+org (`org_id = (select current_org_id())`); escrita só `service_role`, exceto as duas exceções de
+UPDATE do membro citadas abaixo.
+
+### `pulse_produtos`
+Um produto monitorado por `(org_id, catalog_product_id)` — unique `pulse_produtos_org_cpid_uniq`.
+`codigo_pai` (anúncio nosso que originou; `null` quando `origem='manual'`), `titulo`, `origem`
+(`auto` | `manual`, default `auto`), `status` (`ativo` | `pausado` | `arquivado`, default `ativo`),
+`ptw_status`/`ptw_preco_sugerido`/`ptw_custos` (jsonb)/`ptw_atualizado_em` — price-to-win do NOSSO
+item via `/suggestions/items/{id}/details`, `ultimo_snapshot_em`, `criado_em`, `atualizado_em`
+(trigger `pulse_produtos_set_updated_at`, `moddatetime`). Índice `pulse_produtos_org_status_idx` em
+`(org_id, status, ultimo_snapshot_em asc)` — ordem de coleta: produto sem snapshot (ou mais velho)
+primeiro. RLS: select org + **update org restrito à coluna `status`** (`grant update (status)`) —
+é assim que o operador **pausa/reativa** um produto direto do app (`pausarPulseProduto`);
+`status='arquivado'` só é gravado pelo coletor (`sincronizarRadar`, `service_role`) quando o
+`codigo_pai` sai da lista de anúncios publicados.
+
+### `pulse_ofertas`
+Snapshot diário de cada oferta concorrente de um produto. `produto_id` (FK `pulse_produtos`, `on
+delete cascade`), `item_id`, `seller_id` (bigint), `preco`, `tier`, `frete_gratis`, `loja_oficial`,
+`ativo` (default `true` — `false` = oferta sumiu do catálogo naquele dia), `dia` (date, default
+hoje em `America/Sao_Paulo`). Unique `pulse_ofertas_prod_item_dia_uniq` em
+`(produto_id, item_id, dia)` — é o alvo do upsert idempotente do coletor (merge, não
+`ignoreDuplicates`: ver `edge-functions.md`). Índice `pulse_ofertas_org_prod_dia_idx` em
+`(org_id, produto_id, dia desc)` — reconstrói o estado atual (última linha por `item_id`). RLS:
+só select org, sem update/insert do membro.
+
+### `pulse_vendedores`
+Snapshot diário de reputação de um vendedor concorrente. `seller_id` (bigint), `nickname`,
+`power_seller`, `nivel`, `transactions_total` (bigint), `dia` (date, default hoje BRT). Unique
+`pulse_vendedores_org_seller_dia_uniq` em `(org_id, seller_id, dia)` — 1 gravação por vendedor por
+dia, só quando `transactions_total` mudou (`deveGravarVendedor`, coletado só no tier `completo`).
+Índice `pulse_vendedores_org_seller_idx` em `(org_id, seller_id, dia desc)`. RLS: só select org.
+
+### `pulse_alertas`
+Alerta gerado pelo diff de ofertas de uma coleta. `produto_id` (FK `pulse_produtos`, `on delete
+cascade`), `tipo` (check: `preco_caiu` | `novo_concorrente` | `concorrente_saiu`), `payload`
+(jsonb, default `{}`), `lido` (default `false`). Índice `pulse_alertas_org_lido_idx` em
+`(org_id, lido, criado_em desc)`. RLS: select org + **update org restrito à coluna `lido`**
+(`grant update (lido)`) — o sino de alertas do app marca como lido sem passar por edge function.
+
+**Categoria de notificação `pulse`.** A mesma migration altera dois CHECK constraints para incluir
+`'pulse'`: `notificacoes_categoria_check` (`public.notificacoes.categoria`) e
+`profiles_telegram_categorias_validas` (`public.profiles.telegram_categorias` — precisa ser
+liberado **antes** do backfill 2 abaixo, senão o CHECK aborta a migration; precedente
+`20260712171337_integracao_categoria_notificacao.sql`). Dois backfills na sequência: **(1)** chave
+de menu `'pulse'` em `profiles.allowed_menus` para todo não-admin que já tem `'configuracoes'`
+(precedente `menus_multicanal`/`canais`); **(2)** `'pulse'` em `profiles.telegram_categorias` para
+todo admin ativo (`is_admin and is_active`) — sem isso `lerAssinantes` não teria assinante e o
+alerta de coleta não gravaria em `notificacoes`.
+
+---
+
 ## Storage
 
 Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}` — **não mudaram

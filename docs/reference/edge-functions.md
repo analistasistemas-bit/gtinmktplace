@@ -66,6 +66,9 @@
 | **Monitoramento / alertas** ||||
 | monitorar-moderados | false | HTTP (JWT manual) ou QStash | sim |
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
+| **Pulse (ADR-0119)** ||||
+| pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia) |
+| pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -92,6 +95,11 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
+| `pulse-coletar` (tier completo) ⚠️ | `0 9 * * *` | `{"tier":"completo"}` | — (definir na criação) |
+| `pulse-coletar` (tier quente) ⚠️ | `0 */6 * * *` | `{"tier":"quente"}` | — (definir na criação) |
+
+⚠️ Os dois schedules do `pulse-coletar` (ADR-0119) ainda **não existem** na conta QStash — criação é
+etapa do deploy da sessão principal (Task 7 só documenta). Cron em UTC: `0 9 * * *` = 06:00 BRT.
 
 ⚠️ **Armadilha do body duplamente codificado.** O `backfill-faturamento` é o único schedule que
 passa parâmetros, e ficou semanas com `body = '"{\"dias\":30}"'` — uma **string** contendo JSON,
@@ -765,6 +773,27 @@ falha ao ler `organizations` não libera.
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram
   (ADR-0035). Runbook: [../runbooks/monitorar-moderados.md](../runbooks/monitorar-moderados.md).
 - **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040).
+
+### Pulse (ADR-0119)
+- **pulse-coletar** — coletor server-side do radar de concorrência, dual-mode (mesmo padrão de
+  `monitorar-moderados`): QStash (schedule) roda sem escopo de org — todas as conexões ML, tier do
+  `body`; usuário logado (botão "Atualizar agora") escopa só a própria org, sempre tier `completo`,
+  teto de 50 produtos **por org** na execução. Tier `completo` (schedule diário 06h BRT, teto 200
+  produtos por org na execução) roda `sincronizarRadar` (espelha `anuncios_externos` publicados em
+  `pulse_produtos`, arquiva os que saíram), coleta ofertas de todos os produtos ativos, snapshot de
+  vendedores (1×/dia, só se `transactions_total` mudou) e price-to-win dos produtos com
+  `origem='auto'` **e** `codigo_pai` preenchido; tier `quente` (a cada 6h, teto 100 por org na
+  execução) só reconsulta ofertas dos produtos `origem='auto'`, sem vendedores/PTW. Grava em
+  `pulse_ofertas` via upsert `produto_id,item_id,dia` — merge, **sem** `ignoreDuplicates`, para uma
+  2ª execução no mesmo dia sobrescrever a linha de hoje com o valor atual em vez de travar no 1º
+  valor visto e reemitir alerta a cada rodada. Alertas em `pulse_alertas` + 1 notificação agregada
+  por org por execução na categoria `pulse`.
+- **pulse-adicionar** — adiciona manualmente um produto ao radar por link de catálogo
+  (`/p/MLBxxxx`) ou GTIN (busca em `/products/search`); item avulso de anúncio de terceiro é
+  impossível de coletar pela API (403 sempre — ver errata do ADR-0119) e a função recusa essa
+  entrada com mensagem explícita. Upsert em `pulse_produtos` (`org_id,catalog_product_id`),
+  `origem='manual'`, `status='ativo'` — **efeito colateral:** re-adicionar um produto que o
+  operador tinha pausado o volta silenciosamente para `ativo`.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal

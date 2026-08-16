@@ -262,6 +262,20 @@ módulo de estoque operável. Ordem cronológica.
   não tem capa própria — na AVIL só **1 de 147** famílias tem `capa_storage_path`, mas **140 de
   147** têm `ml_picture_id`.
 
+## Pulse v1 — radar de concorrência (ADR-0119, 2026-08-16) — CONCLUÍDO, EM VALIDAÇÃO
+
+Fora de épico numerado. Menu "Pulse" org-gated (mesmo padrão do módulo Estoque): coletor
+server-side dual-mode (`pulse-coletar`, QStash schedule ou botão "Atualizar agora" escopado à org),
+adicionar manualmente por link de catálogo/GTIN (`pulse-adicionar`), 4 tabelas novas
+(`pulse_produtos`/`pulse_ofertas`/`pulse_vendedores`/`pulse_alertas`, migration
+`20260816125057_pulse_v1.sql`) e UI (radar, detalhe com margem estimada + simulador de preço,
+alertas com sino na categoria `pulse`, reprecificar que grava o preço e leva à Revisão — nenhuma
+escrita nova no ML). Suíte verde 365 arquivos / 3217 testes, `pnpm lint` 0 erros. **Ainda não em produção:** migration + as 2
+edge functions não deployadas, e os 2 schedules QStash (`pulse-coletar` tier completo 06h BRT / tier
+quente 6/6h) ainda não criados — etapa da sessão principal, fora desta branch. Ver
+`docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md` (inclui errata: vendas por anúncio
+de terceiro é 403 sempre na API do ML, ficou para o v2 via extensão) e `docs/TASKS.md`.
+
 ## Trilho de UX/design (2026-06-21, em producao)
 
 Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.
