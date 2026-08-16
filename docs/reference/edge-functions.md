@@ -790,7 +790,10 @@ falha ao ler `organizations` não libera.
   (Errata 4 do ADR-0119). Grava em
   `pulse_ofertas` via upsert `produto_id,item_id,dia` — merge, **sem** `ignoreDuplicates`, para uma
   2ª execução no mesmo dia sobrescrever a linha de hoje com o valor atual em vez de travar no 1º
-  valor visto e reemitir alerta a cada rodada. Alertas em `pulse_alertas` + 1 notificação agregada
+  valor visto e reemitir alerta a cada rodada. A notificação traz **os novos desta execução e o
+  total ainda não lido** — sem o segundo número a conta nunca fecha com o painel, que mostra o
+  acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela).
+  Alertas em `pulse_alertas` + 1 notificação agregada
   por org por execução na categoria `pulse`.
 - **pulse-adicionar** — adiciona manualmente um produto ao radar por link de catálogo
   (`/p/MLBxxxx`) ou GTIN (busca em `/products/search`); item avulso de anúncio de terceiro é

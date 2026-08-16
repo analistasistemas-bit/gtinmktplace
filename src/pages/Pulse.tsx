@@ -1,14 +1,20 @@
 // Pulse (ADR-0119): radar dirigido de concorrência — preços e vendedores dos produtos de
 // catálogo dos nossos anúncios, com price-to-win e simulador de margem.
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Activity, Bell, Plus, RefreshCw, Search, TrendingUp } from 'lucide-react';
+import { Activity, Bell, Plus, RefreshCw, Search, TrendingUp, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KpiCard } from '@/components/ui/kpi-card';
-import { posicaoVsMercado } from '@/lib/pulse-formato';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  contarPulse, filtrarProdutos, temFiltroAtivo, FILTROS_VAZIOS,
+  type FiltrosPulse, type FocoPulse, type StatusRadar,
+} from '@/lib/pulse-filtros';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,7 +25,10 @@ import { PainelAlertas } from '@/components/pulse/painel-alertas';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK } from '@/lib/queries';
-import { fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora, type PulseAlerta } from '@/lib/pulse';
+import {
+  fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora,
+  type PulseAlerta, type PulseProduto,
+} from '@/lib/pulse';
 import { cn } from '@/lib/utils';
 
 export default function Pulse() {
@@ -28,7 +37,7 @@ export default function Pulse() {
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
   const [alertaReprecificar, setAlertaReprecificar] = useState<PulseAlerta | null>(null);
-  const [busca, setBusca] = useState('');
+  const [filtros, setFiltros] = useState<FiltrosPulse>(FILTROS_VAZIOS);
 
   const { data: produtos, isLoading, isError, error, refetch } = useQuery({
     queryKey: QK.pulseProdutos,
@@ -47,19 +56,21 @@ export default function Pulse() {
     enabled: ids.length > 0,
   });
 
-  // Os três números que respondem "tenho trabalho hoje?" — derivados do que já está carregado.
-  const resumoPosicao = useMemo(() => {
-    let maisCaro = 0, maisBarato = 0, comparaveis = 0, semVinculo = 0;
-    for (const p of produtos ?? []) {
-      if (p.catalogo_status && p.catalogo_status !== 'vinculado') semVinculo++;
-      const pos = posicaoVsMercado(p.meu_preco, resumoOfertas?.get(p.id)?.menorPreco ?? null);
-      if (!pos) continue;
-      comparaveis++;
-      if (pos.deltaPct > 0.5) maisCaro++;
-      else if (pos.deltaPct < -0.5) maisBarato++;
-    }
-    return { maisCaro, maisBarato, comparaveis, semVinculo };
-  }, [produtos, resumoOfertas]);
+  const menorConcorrenteDe = useCallback(
+    (p: PulseProduto) => resumoOfertas?.get(p.id)?.menorPreco ?? null,
+    [resumoOfertas],
+  );
+
+  // Os números que respondem "tenho trabalho hoje?". Saem da mesma regra que filtra a lista, para
+  // clicar num card de 12 devolver 12 linhas.
+  const contagens = useMemo(
+    () => contarPulse(produtos ?? [], menorConcorrenteDe),
+    [produtos, menorConcorrenteDe],
+  );
+
+  /** Clicar no card já aplicado remove o recorte — o card é um interruptor, não um destino. */
+  const alternarFoco = (foco: FocoPulse) =>
+    setFiltros((f) => ({ ...f, foco: f.foco === foco ? null : foco }));
 
   const atualizar = useMutation({
     mutationFn: coletarPulseAgora,
@@ -79,14 +90,8 @@ export default function Pulse() {
 
   const lista = produtos ?? [];
   const produtoDetalhe = lista.find((p) => p.id === detalheId) ?? null;
-  const filtrada = busca.trim()
-    ? lista.filter((p) => {
-        const t = busca.trim().toLowerCase();
-        return (p.titulo ?? '').toLowerCase().includes(t)
-          || (p.gtin ?? '').includes(t)
-          || (p.codigo_pai ?? '').includes(t);
-      })
-    : lista;
+  const filtrada = filtrarProdutos(lista, filtros, menorConcorrenteDe);
+  const filtrando = temFiltroAtivo(filtros);
 
   return (
     <div className="p-4 md:p-6">
@@ -110,38 +115,90 @@ export default function Pulse() {
       <PainelAlertas onVerProduto={setDetalheId} onReprecificar={setAlertaReprecificar} />
 
       {lista.length > 0 && (
+        // Cada card é o atalho para as linhas que ele conta. "No radar" não filtra nada — ele
+        // limpa: é o caminho de volta para a lista inteira depois de qualquer recorte.
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <KpiCard size="compact" label="No radar" value={lista.length} icon={Activity} tom="info" />
+          <KpiCard
+            size="compact"
+            label="No radar"
+            value={contagens.total}
+            icon={Activity}
+            tom="info"
+            onClick={() => setFiltros(FILTROS_VAZIOS)}
+            ativo={!filtrando}
+          />
           <KpiCard
             size="compact"
             label="Mais caro que o mercado"
-            value={resumoPosicao.maisCaro}
+            value={contagens.maisCaro}
             icon={TrendingUp}
-            tom={resumoPosicao.maisCaro > 0 ? 'warning' : 'success'}
-            hint={resumoPosicao.comparaveis > 0 ? `de ${resumoPosicao.comparaveis} comparáveis` : 'sem comparação ainda'}
+            tom={contagens.maisCaro > 0 ? 'warning' : 'success'}
+            hint={contagens.comparaveis > 0 ? `de ${contagens.comparaveis} comparáveis` : 'sem comparação ainda'}
+            onClick={() => alternarFoco('mais_caro')}
+            ativo={filtros.foco === 'mais_caro'}
           />
-          <KpiCard size="compact" label="Você é o menor preço" value={resumoPosicao.maisBarato} icon={TrendingUp} tom="success" />
+          <KpiCard
+            size="compact"
+            label="Você é o menor preço"
+            value={contagens.menorPreco}
+            icon={TrendingUp}
+            tom="success"
+            onClick={() => alternarFoco('menor_preco')}
+            ativo={filtros.foco === 'menor_preco'}
+          />
           <KpiCard
             size="compact"
             label="Sem vínculo de catálogo"
-            value={resumoPosicao.semVinculo}
+            value={contagens.semVinculo}
             icon={Bell}
-            tom={resumoPosicao.semVinculo > 0 ? 'warning' : 'info'}
-            hint={resumoPosicao.semVinculo > 0 ? 'não disputam a página' : undefined}
+            tom={contagens.semVinculo > 0 ? 'warning' : 'info'}
+            hint={contagens.semVinculo > 0 ? 'não disputam a página' : undefined}
+            onClick={() => alternarFoco('sem_vinculo')}
+            ativo={filtros.foco === 'sem_vinculo'}
           />
         </div>
       )}
 
       {lista.length > 3 && (
-        <div className="relative mb-3 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar por nome ou EAN"
-            aria-label="Buscar produto no radar"
-            className="h-9 pl-8"
-          />
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filtros.busca}
+              onChange={(e) => setFiltros((f) => ({ ...f, busca: e.target.value }))}
+              placeholder="Buscar por nome ou EAN"
+              aria-label="Buscar produto no radar"
+              className="h-9 pl-8"
+            />
+          </div>
+
+          {/* "Pausado" aqui é o produto pausado NO RADAR (menu da linha) — não o anúncio pausado
+              no Mercado Livre. Os rótulos dizem "no radar" para não confundir os dois. */}
+          <Select
+            value={filtros.status}
+            onValueChange={(v) => setFiltros((f) => ({ ...f, status: v as StatusRadar }))}
+          >
+            <SelectTrigger className="h-9 w-[190px]" aria-label="Filtrar por situação no radar">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os produtos</SelectItem>
+              <SelectItem value="ativo">Só ativos no radar</SelectItem>
+              <SelectItem value="pausado">Só pausados no radar</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {filtrando && (
+            <Button variant="ghost" size="sm" className="h-9" onClick={() => setFiltros(FILTROS_VAZIOS)}>
+              <X className="mr-1.5 h-3.5 w-3.5" />
+              Limpar filtros
+            </Button>
+          )}
+          {filtrando && (
+            <span className="text-sm text-muted-foreground" role="status">
+              {filtrada.length} de {lista.length}
+            </span>
+          )}
         </div>
       )}
 
@@ -171,9 +228,11 @@ export default function Pulse() {
       ) : filtrada.length === 0 ? (
         <EmptyState
           icon={Search}
-          title={`Nenhum produto para “${busca}”.`}
-          description="Busque pelo nome do produto ou pelo EAN exibido sob ele."
-          action={<Button variant="outline" onClick={() => setBusca('')}>Limpar busca</Button>}
+          title={filtros.busca.trim() ? `Nenhum produto para “${filtros.busca}”.` : 'Nenhum produto neste filtro.'}
+          description="Ajuste o filtro, ou busque pelo nome do produto ou pelo EAN exibido sob ele."
+          action={
+            <Button variant="outline" onClick={() => setFiltros(FILTROS_VAZIOS)}>Limpar filtros</Button>
+          }
         />
       ) : (
         <TabelaRadar

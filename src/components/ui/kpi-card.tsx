@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react';
+import { useState, type ComponentType, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUp, ArrowDown, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,10 @@ interface KpiCardProps {
   /** Chave no dicionário de descrições (default: usa o próprio `label`). Só precisa ser passada
    *  explicitamente pelos KPIs cujo cálculo diverge entre telas — ver kpi-descriptions.ts. */
   infoKey?: string;
+  /** Card vira um botão de filtro (o número é o atalho para ver as linhas que o compõem). */
+  onClick?: () => void;
+  /** Só com `onClick`: filtro correspondente está aplicado. */
+  ativo?: boolean;
 }
 
 /**
@@ -77,7 +81,7 @@ export function KpiInfoButton({ infoKey, tom }: { infoKey: string; tom?: KpiTom 
 
 export function KpiCard({
   label, value, icon: Icon, delta, deltaTrend = 'neutral', hint, loading, className, valueClassName,
-  variant = 'default', to, size = 'default', tom, infoKey,
+  variant = 'default', to, size = 'default', tom, infoKey, onClick, ativo,
 }: KpiCardProps) {
   const compact = size === 'compact';
 
@@ -164,19 +168,46 @@ export function KpiCard({
     </>
   );
 
+  // Card-filtro: o clique fica no próprio contêiner, não num <button> em volta nem sobreposto.
+  // O "i" de explicação já é um botão — aninhar botões é HTML inválido, e a área sobreposta
+  // impedia o popover do Radix de abrir. Mesmo padrão das linhas clicáveis do DataTable, onde o
+  // menu ⋮ convive com a linha: quem está dentro para a propagação.
+  const propsFiltro = onClick
+    ? {
+        role: 'button' as const,
+        tabIndex: 0,
+        'aria-pressed': ativo,
+        'aria-label': ativo ? `Remover filtro ${label}` : `Filtrar por ${label}`,
+        onClick,
+        onKeyDown: (e: KeyboardEvent) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        },
+      }
+    : {};
+
   const card = compact ? (
-    <div className={cn(
-      'h-full rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
-      to && 'cursor-pointer',
-      className,
-    )}>
+    <div
+      {...propsFiltro}
+      className={cn(
+        'h-full rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
+        (to || onClick) && 'cursor-pointer',
+        onClick && 'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        ativo && 'border-primary/60 bg-primary/5 ring-1 ring-primary/40',
+        className,
+      )}
+    >
       {content}
     </div>
   ) : (
     <Card className={cn(
       'h-full p-4 transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
       variant === 'brand' && 'bg-[image:var(--brand-gradient-soft)]',
-      to && 'cursor-pointer hover:-translate-y-0.5 hover:ring-2 hover:ring-primary/40',
+      (to || onClick) && 'cursor-pointer hover:-translate-y-0.5 hover:ring-2 hover:ring-primary/40',
+      ativo && 'ring-2 ring-primary/50',
       className,
     )}>
       {content}

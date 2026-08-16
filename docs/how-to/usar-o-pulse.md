@@ -118,6 +118,21 @@ Abra **Pulse** na barra lateral. A lista mostra uma linha por ficha de catálogo
 Clique em qualquer cabeçalho para ordenar por aquela coluna, e em qualquer linha para abrir o
 **detalhe**.
 
+### Filtrar a lista
+
+Três controles, que se acumulam:
+
+- **Os quatro cartões do topo são filtros.** Clique em "Mais caro que o mercado" e a lista passa a
+  mostrar só esses produtos; clique de novo no mesmo cartão para remover o recorte. "No radar"
+  limpa tudo e devolve a lista inteira. O cartão aplicado fica destacado.
+- **Buscar por nome ou EAN** — também aceita o código do produto.
+- **Situação no radar** — Todos / Só ativos / Só pausados. Atenção: "pausado no radar" é o produto
+  que **você** pausou pelo menu ⋮ da linha, para parar de acompanhá-lo. Não tem relação com o
+  anúncio estar pausado no Mercado Livre.
+
+Com qualquer filtro aplicado aparece a contagem ("12 de 222") e o botão **Limpar filtros**.
+O ícone **i** de cada cartão abre a explicação do número sem aplicar o filtro.
+
 > **Cuidado para não confundir duas referências diferentes.** "Menor concorrente" é o piso real da
 > ficha. A "Referência do ML" é um preço que o Mercado Livre calcula a partir de concorrentes
 > internos e externos — **não** é o menor preço da ficha. Por isso um produto pode aparecer como

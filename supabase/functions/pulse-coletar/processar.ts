@@ -262,7 +262,18 @@ export async function processarColetaOrg(
 
   // 6) alertas: 1 notificação agregada por org por execução.
   if (alertasTotal > 0) {
-    await notificarCategoria(admin, orgId, 'pulse', `Pulse: ${alertasTotal} alerta(s) de mercado — abra o menu Pulse para agir.`);
+    // A mensagem traz os NOVOS desta execução e o total ainda não lido. Sem o segundo número, a
+    // conta nunca fecha com o painel: cada execução avisa o que ela achou, enquanto a tela mostra
+    // o acumulado pendente. Três execuções de 5, 3 e 1 viram "9 alertas novos" no app.
+    const { count } = await admin.from('pulse_alertas')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId).eq('lido', false);
+    const pendentes = count ?? 0;
+    const sufixo = pendentes > alertasTotal ? ` (${pendentes} aguardando no total)` : '';
+    await notificarCategoria(
+      admin, orgId, 'pulse',
+      `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
+    );
   }
 
   return { produtos: produtos.length, gravadas, alertas: alertasTotal };
