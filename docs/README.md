@@ -26,6 +26,7 @@ entender e operar o sistema:
 | Rodar o projeto localmente | [how-to/desenvolvimento-local.md](how-to/desenvolvimento-local.md) |
 | Fazer deploy de functions / migrations | [how-to/deploy-e-migrations.md](how-to/deploy-e-migrations.md) |
 | Executar operações rotineiras (reprocessar, OAuth, faturamento) | [how-to/operacoes-rotineiras.md](how-to/operacoes-rotineiras.md) |
+| Usar o Pulse (radar de concorrência) — guia do operador | [how-to/usar-o-pulse.md](how-to/usar-o-pulse.md) |
 
 > `tutorials/` está reservada para a documentação **de usuário** (guias passo a passo de
 > operação do app), próxima fase do esforço de documentação.
