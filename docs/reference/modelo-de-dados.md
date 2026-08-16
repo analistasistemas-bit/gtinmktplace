@@ -646,6 +646,12 @@ hoje em `America/Sao_Paulo`). Unique `pulse_ofertas_prod_item_dia_uniq` em
 `(org_id, produto_id, dia desc)` — reconstrói o estado atual (última linha por `item_id`). RLS:
 só select org, sem update/insert do membro.
 
+**View `pulse_ofertas_atual`** (`security_invoker = true`): `select distinct on (produto_id,
+item_id) … order by dia desc` — a última linha de cada oferta. É o que o front lê para "menor
+preço/nº de ofertas" do radar e "ofertas atuais" do detalhe; nunca o histórico bruto, porque o
+PostgREST trunca respostas em ~1000 linhas em silêncio. A RLS de `pulse_ofertas` vale para quem
+consulta a view (invoker).
+
 ### `pulse_vendedores`
 Snapshot diário de reputação de um vendedor concorrente. `seller_id` (bigint), `nickname`,
 `power_seller`, `nivel`, `transactions_total` (bigint), `dia` (date, default hoje BRT). Unique

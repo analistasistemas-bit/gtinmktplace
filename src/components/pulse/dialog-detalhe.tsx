@@ -47,7 +47,8 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
 
   const ofertas = data?.ofertas ?? [];
   const vendedores = data?.vendedores ?? [];
-  const atuais = estadoAtualOfertas(ofertas);
+  // Estado atual vem da view (sem truncamento); estadoAtualOfertas aqui só filtra ativo e ordena.
+  const atuais = estadoAtualOfertas(data?.ofertasAtuais ?? []);
   const historico = menorPrecoPorDia(ofertas).slice(-14);
 
   const vendedoresPorSeller = new Map<number, PulseVendedor[]>();
@@ -171,6 +172,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                   <Input
                     inputMode="decimal"
                     className="w-32"
+                    aria-label="Preço simulado"
                     value={precoInput}
                     onChange={(e) => setPrecoEditado(e.target.value)}
                   />

@@ -85,6 +85,16 @@ grant update (status) on public.pulse_produtos to authenticated;
 create trigger pulse_produtos_set_updated_at before update on public.pulse_produtos
   for each row execute procedure extensions.moddatetime (atualizado_em);
 
+-- Estado atual das ofertas (última linha por produto+item). Evita o front varrer o histórico
+-- inteiro: o PostgREST trunca respostas em ~1000 linhas em silêncio e o radar mostraria menor
+-- preço errado/ausente. security_invoker: a RLS de pulse_ofertas vale para quem consulta a view.
+create view public.pulse_ofertas_atual with (security_invoker = true) as
+  select distinct on (produto_id, item_id)
+    id, org_id, produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia
+  from public.pulse_ofertas
+  order by produto_id, item_id, dia desc;
+grant select on public.pulse_ofertas_atual to authenticated;
+
 -- Categoria de notificação 'pulse' (sincronia manual com os dois categorias.ts — Tasks 3 e 6).
 alter table public.notificacoes drop constraint notificacoes_categoria_check;
 alter table public.notificacoes add constraint notificacoes_categoria_check

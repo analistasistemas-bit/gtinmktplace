@@ -99,6 +99,7 @@ export function DialogReprecificar({
           <Input
             inputMode="decimal"
             className="w-32"
+            aria-label="Novo preço"
             value={preco}
             onChange={(e) => setPreco(e.target.value)}
           />

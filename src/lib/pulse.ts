@@ -7,7 +7,9 @@ import { estadoAtualOfertas } from './pulse-margem';
 // As tabelas pulse_* são recentes e database.types.ts ainda não foi regenerado (mesmo padrão
 // de cast pontual usado em queries.ts para ml_formato_publicacao); RLS continua protegendo a
 // leitura pela organização normalmente.
-function pulseFrom(tabela: 'pulse_produtos' | 'pulse_ofertas' | 'pulse_vendedores' | 'pulse_alertas') {
+function pulseFrom(
+  tabela: 'pulse_produtos' | 'pulse_ofertas' | 'pulse_ofertas_atual' | 'pulse_vendedores' | 'pulse_alertas',
+) {
   return supabase.from(tabela as never) as ReturnType<typeof supabase.from>;
 }
 
@@ -46,7 +48,15 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
 
 export async function fetchPulseDetalhe(
   produtoId: string,
-): Promise<{ ofertas: PulseOferta[]; vendedores: PulseVendedor[] }> {
+): Promise<{ ofertas: PulseOferta[]; ofertasAtuais: PulseOferta[]; vendedores: PulseVendedor[] }> {
+  // Estado atual vem da VIEW (última linha por item, sem truncamento); o histórico bruto
+  // (limit 400, linhas mais recentes) alimenta só a lista "menor preço por dia".
+  const { data: atuaisData, error: atuaisErro } = await pulseFrom('pulse_ofertas_atual')
+    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
+    .eq('produto_id', produtoId);
+  if (atuaisErro) throw atuaisErro;
+  const ofertasAtuais = (atuaisData ?? []) as PulseOferta[];
+
   const { data: ofertasData, error: ofertasErro } = await pulseFrom('pulse_ofertas')
     .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
     .eq('produto_id', produtoId)
@@ -55,33 +65,30 @@ export async function fetchPulseDetalhe(
   if (ofertasErro) throw ofertasErro;
   const ofertas = (ofertasData ?? []) as PulseOferta[];
 
-  const sellerIds = [...new Set(ofertas.map((o) => o.seller_id))];
-  if (sellerIds.length === 0) return { ofertas, vendedores: [] };
+  const sellerIds = [...new Set(ofertasAtuais.map((o) => o.seller_id))];
+  if (sellerIds.length === 0) return { ofertas, ofertasAtuais, vendedores: [] };
 
   const { data: vendedoresData, error: vendedoresErro } = await pulseFrom('pulse_vendedores')
     .select('seller_id, nickname, power_seller, nivel, transactions_total, dia')
     .in('seller_id', sellerIds)
     .order('dia', { ascending: true });
   if (vendedoresErro) throw vendedoresErro;
-  return { ofertas, vendedores: (vendedoresData ?? []) as PulseVendedor[] };
+  return { ofertas, ofertasAtuais, vendedores: (vendedoresData ?? []) as PulseVendedor[] };
 }
 
 export interface PulseResumoOfertas { menorPreco: number | null; nOfertas: number }
 
 /**
  * Estado atual (menor preço + nº de ofertas ativas) por produto, para a lista do radar.
- * `pulse_ofertas` só grava linha quando algo muda (ADR-0119 §2) — não dá pra filtrar por
- * dia recente, precisa da história inteira de cada item pra achar sua última linha.
- * ponytail: sem paginação/prune aqui — segue a decisão do plano (v1 não perde dado por não
- * tê-lo); o job de agregação/prune de 90 dias é follow-up em TASKS.md.
+ * Lê a view `pulse_ofertas_atual` (última linha por item): 1 linha por oferta, nunca o
+ * histórico bruto — o PostgREST trunca respostas em ~1000 linhas em silêncio.
  */
 export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map<string, PulseResumoOfertas>> {
   const resumo = new Map<string, PulseResumoOfertas>();
   if (produtoIds.length === 0) return resumo;
-  const { data, error } = await pulseFrom('pulse_ofertas')
+  const { data, error } = await pulseFrom('pulse_ofertas_atual')
     .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia')
-    .in('produto_id', produtoIds)
-    .order('dia', { ascending: false });
+    .in('produto_id', produtoIds);
   if (error) throw error;
 
   const porProduto = new Map<string, PulseOferta[]>();
