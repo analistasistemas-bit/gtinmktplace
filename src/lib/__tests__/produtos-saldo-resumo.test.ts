@@ -5,7 +5,7 @@ import type { ProdutoComSaldo, VariacaoComSaldo } from '../produtos-saldo';
 function v(over: Partial<VariacaoComSaldo> = {}): VariacaoComSaldo {
   return {
     codigo: '1', nome: null, cor: null, gtin: null, estoque: 10, custo: 5, preco: 20,
-    pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null, mlPictureId: null,
+    pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: null, mlPictureId: null, mlItemId: null,
     ...over,
   };
 }
