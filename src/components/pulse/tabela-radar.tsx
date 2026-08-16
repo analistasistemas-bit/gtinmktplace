@@ -12,9 +12,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { fetchPulseResumoOfertas, pausarPulseProduto, type PulseProduto } from '@/lib/pulse';
 import { fmtBRL } from '@/lib/formato';
 
-const PTW_LABEL: Record<string, { texto: string; variant?: 'destructive' | 'secondary' }> = {
-  with_benchmark_highest: { texto: 'Acima do benchmark', variant: 'destructive' },
+// Escala do "preço para ganhar" do ML, do mais barato ao mais caro. Status fora desta lista cai no
+// texto cru — preferimos mostrar o código do ML a inventar uma tradução para algo não observado.
+const PTW_LABEL: Record<string, { texto: string; variant?: 'destructive' | 'secondary' | 'outline' }> = {
+  with_benchmark_lowest: { texto: 'Menor preço do mercado', variant: 'secondary' },
+  with_benchmark_low: { texto: 'Abaixo da média', variant: 'secondary' },
+  with_benchmark_mid: { texto: 'Na média do mercado', variant: 'outline' },
+  with_benchmark_high: { texto: 'Acima da média', variant: 'destructive' },
+  with_benchmark_highest: { texto: 'Preço mais alto', variant: 'destructive' },
   sharing_first_place: { texto: 'Dividindo o 1º lugar', variant: 'secondary' },
+  no_benchmark_lowest: { texto: 'Sem concorrência direta', variant: 'outline' },
+  no_benchmark: { texto: 'Sem referência do ML', variant: 'outline' },
 };
 
 function relativo(iso: string | null): string {

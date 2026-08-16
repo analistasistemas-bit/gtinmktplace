@@ -18,7 +18,6 @@ export interface ResultadoColeta { produtos: number; gravadas: number; alertas: 
 
 interface AnuncioPublicadoRow {
   codigo_pai: string;
-  titulo: string | null;
   variacoes_externas: Record<string, { catalog_product_id?: string }> | null;
 }
 
@@ -27,6 +26,7 @@ interface PulseProdutoRow {
   catalog_product_id: string;
   codigo_pai: string | null;
   origem: 'auto' | 'manual';
+  titulo: string | null;
 }
 
 // 1) sincronizarRadar (só tier completo): espelha anuncios_externos publicados em pulse_produtos
@@ -34,7 +34,7 @@ interface PulseProdutoRow {
 async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<void> {
   const publicados = await paginarTudo<AnuncioPublicadoRow>((de, ate) =>
     admin.from('anuncios_externos')
-      .select('codigo_pai, titulo, variacoes_externas')
+      .select('codigo_pai, variacoes_externas')
       .eq('org_id', orgId).eq('canal', 'mercado_livre').eq('status', 'publicado')
       .range(de, ate),
   );
@@ -44,20 +44,22 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
   // catálogo. Sem isso, o upsert em lote manda o MESMO (org_id, catalog_product_id) duas vezes
   // na mesma instrução e o Postgres recusa com "cannot affect row a second time" — a sincronia
   // inteira da org falharia em silêncio (só console.warn). Último anúncio visto vence.
-  const porCpid = new Map<string, { org_id: string; catalog_product_id: string; codigo_pai: string; titulo: string | null; origem: 'auto' }>();
+  const porCpid = new Map<string, { org_id: string; catalog_product_id: string; codigo_pai: string; origem: 'auto' }>();
   for (const anuncio of publicados) {
     for (const v of Object.values(anuncio.variacoes_externas ?? {})) {
       if (!v?.catalog_product_id) continue;
       porCpid.set(v.catalog_product_id, {
         org_id: orgId, catalog_product_id: v.catalog_product_id,
-        codigo_pai: anuncio.codigo_pai, titulo: anuncio.titulo, origem: 'auto',
+        codigo_pai: anuncio.codigo_pai, origem: 'auto',
       });
     }
   }
   const rows = [...porCpid.values()];
   if (rows.length > 0) {
-    // Sem 'status' no payload: o merge do PostgREST só sobrescreve as colunas enviadas — status
-    // (e o ciclo de vida ativo/pausado do operador) fica intocado num produto já existente.
+    // Sem 'status' nem 'titulo' no payload: o merge do PostgREST só sobrescreve as colunas
+    // enviadas. Status preserva o ciclo de vida do operador; o título vem do ML (nome da ficha,
+    // resolvido na coleta) — mandá-lo daqui apagaria o nome bom toda madrugada, porque
+    // `anuncios_externos.titulo` está vazio na maioria dos anúncios.
     const { error } = await admin.from('pulse_produtos').upsert(rows, { onConflict: 'org_id,catalog_product_id' });
     if (error) console.warn('pulse-coletar: sincronizarRadar upsert falhou:', error.message);
   }
@@ -85,7 +87,7 @@ export async function processarColetaOrg(
 
   // 2) selecionar
   let query = admin.from('pulse_produtos')
-    .select('id, catalog_product_id, codigo_pai, origem')
+    .select('id, catalog_product_id, codigo_pai, origem, titulo')
     .eq('org_id', orgId).eq('status', 'ativo')
     .order('ultimo_snapshot_em', { ascending: true, nullsFirst: true })
     .limit(maxProdutos);
@@ -147,7 +149,16 @@ export async function processarColetaOrg(
       if (!error) alertasTotal += diff.alertas.length;
       else console.warn(`pulse-coletar: alertas do produto ${produto.id} falharam:`, error.message);
     }
-    await admin.from('pulse_produtos').update({ ultimo_snapshot_em: new Date().toISOString() }).eq('id', produto.id);
+    // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
+    // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
+    // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
+    const patch: Record<string, string> = { ultimo_snapshot_em: new Date().toISOString() };
+    if (!produto.titulo) {
+      const ficha = await mlGet(`${API}/products/${produto.catalog_product_id}`, token);
+      const nome = (ficha as { name?: string } | null)?.name;
+      if (typeof nome === 'string' && nome.trim()) patch.titulo = nome.trim();
+    }
+    await admin.from('pulse_produtos').update(patch).eq('id', produto.id);
   });
 
   // 4) vendedores (só tier completo): 1 snapshot por seller_id, só se transactions_total mudou.
