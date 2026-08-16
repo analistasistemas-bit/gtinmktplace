@@ -24,6 +24,7 @@ const Relatorio = lazy(() => import('@/pages/Relatorio'));
 const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
 const Publicados = lazy(() => import('@/pages/Publicados'));
 const Estoque = lazy(() => import('@/pages/Estoque'));
+const Pulse = lazy(() => import('@/pages/Pulse'));
 const DetalheVendas = lazy(() => import('@/pages/DetalheVendas'));
 const Faturamento = lazy(() => import('@/pages/Faturamento'));
 const Financeiro = lazy(() => import('@/pages/Financeiro'));
@@ -58,6 +59,7 @@ export function AppRoutes() {
             <Route path="/publicados" element={<Publicados />} />
             <Route path="/publicados/vendas" element={<DetalheVendas />} />
             <Route path="/estoque" element={<Estoque />} />
+            <Route path="/pulse" element={<Pulse />} />
             <Route path="/faturamento" element={<Faturamento />} />
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />

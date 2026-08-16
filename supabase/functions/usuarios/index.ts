@@ -5,7 +5,7 @@ import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
-const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'estoque', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
+const MENU_KEYS = ['dashboard', 'lotes', 'revisao', 'publicados', 'estoque', 'pulse', 'faturamento', 'financeiro', 'viabilidade', 'canais', 'configuracoes'];
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -172,7 +172,7 @@ Deno.serve(async (req) => {
       const alvo = String(body.org_id ?? '');
       if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
       // Mesmos ids do registry do frontend (src/lib/modulos.ts) — manter em sincronia.
-      const MODULOS_VALIDOS = ['estoque'];
+      const MODULOS_VALIDOS = ['estoque', 'pulse'];
       const modulos = Array.isArray(body.modulos)
         ? (body.modulos as string[]).filter((m) => MODULOS_VALIDOS.includes(m))
         : [];
