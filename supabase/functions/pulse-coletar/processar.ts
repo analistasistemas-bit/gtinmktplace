@@ -369,7 +369,7 @@ export async function processarColetaOrg(
         if (!st) return;
         const com = itemId ? comissaoPorItem.get(itemId) : undefined;
         await admin.from('pulse_produtos').update({
-          anuncio_status: st.status, anuncio_sub_status: st.sub, anuncio_status_em: agora,
+          anuncio_status: st.status, anuncio_sub_status: st.sub_status, anuncio_status_em: agora,
           ...(com ? { comissao_pct: com.pct, comissao_fixa: com.fixa, comissao_em: agora } : {}),
         }).eq('id', produto.id);
       });
