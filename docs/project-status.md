@@ -281,6 +281,17 @@ a lista de ofertas do catálogo inclui o nosso próprio anúncio e precisa ser f
 `docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md` (inclui errata: vendas por anúncio
 de terceiro é 403 sempre na API do ML, ficou para o v2 via extensão) e `docs/TASKS.md`.
 
+**Segunda revisão (2026-08-17, `.code-review-fable5/code-review-v2.md`, 72/100):** revisão integral
+do módulo depois das Erratas 3–6. Nenhum achado crítico; 1 ALTA e 4 MÉDIA corrigidos e em produção.
+O achado principal era uma contradição entre as próprias erratas do ADR — a Errata 6 mandava ler a
+comissão "no preço praticado" mas usava o preço base do multiget, que a Errata 4 já havia
+desqualificado; com promoção ativa a sobra exibida superestimava, e o rótulo "estimativa" não
+disparava porque ancorava no campo errado. Resolvido pela **Errata 7**: consulta no preço efetivo,
+coluna `comissao_preco` registrando o preço da leitura, e a âncora do rótulo corrigida nos dois
+dialogs. Um achado do relatório foi **refutado** por medição — o PostgREST devolve `numeric` como
+número JSON, não string, então não havia comparação lexicográfica de preço; o que sobrou foi um
+comentário errado no código, corrigido. Suíte 367 arquivos / 3292 testes.
+
 ## Trilho de UX/design (2026-06-21, em producao)
 
 Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.

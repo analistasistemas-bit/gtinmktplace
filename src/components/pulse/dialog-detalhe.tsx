@@ -17,7 +17,9 @@ import {
   fetchPulseDetalhe, fetchContextoMargem,
   type PulseProduto, type PulseVendedor, type PulseOferta,
 } from '@/lib/pulse';
-import { estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada } from '@/lib/pulse-margem';
+import {
+  estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, margemEhEstimativa,
+} from '@/lib/pulse-margem';
 import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, tipoAnuncio,
 } from '@/lib/pulse-formato';
@@ -110,11 +112,8 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       })
     : null;
   const margemRuim = margem != null && margem.liquido < 0;
-  // O percentual da comissão muda por faixa de preço (14% até ~R$ 100, 11% em R$ 250 na categoria
-  // medida). A estrutura guardada vale para o preço praticado; em outro preço o número é
-  // estimativa, e a tela precisa dizer isso em vez de exibi-lo com a mesma confiança.
-  const margemEstimativa = margem != null && meuPreco != null && precoSimulado != null
-    && Math.abs(precoSimulado - meuPreco) > 0.005;
+  const margemEstimativa = margem != null
+    && margemEhEstimativa(precoSimulado, produto?.comissao_preco ?? null);
 
   const vendasDe = (o: PulseOferta) => {
     const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
@@ -325,7 +324,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                           {margemEstimativa && (
                             <span
                               className="ml-1 text-xs font-normal text-muted-foreground"
-                              title="A comissão do ML muda por faixa de preço, e a que temos foi lida no preço atual do anúncio. Em outro preço, este número é aproximado."
+                              title="A comissão do ML muda por faixa de preço, e a que temos foi lida em outro preço. Neste preço, o número é aproximado."
                             >
                               estimativa
                             </span>
@@ -401,6 +400,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
         custos={produto ? {
           comissaoPct: produto.comissao_pct,
           comissaoFixa: produto.comissao_fixa,
+          comissaoPreco: produto.comissao_preco,
           frete: produto.ptw_custos?.frete ?? null,
         } : null}
         onFechar={() => setReprecificarAberto(false)}

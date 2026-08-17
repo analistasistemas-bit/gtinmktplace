@@ -33,9 +33,16 @@ export interface PulseProduto {
   anuncio_status: string | null;
   anuncio_sub_status: string[] | null;
   anuncio_status_em: string | null;
-  /** Estrutura da comissão do ML lida para o preço praticado (Errata 6). Muda por faixa de preço. */
+  /** Estrutura da comissão do ML lida para o preço efetivo (Erratas 6 e 7). Muda por faixa de preço. */
   comissao_pct: number | null;
   comissao_fixa: number | null;
+  /**
+   * Preço em que a estrutura acima foi lida. Margem calculada em preço diferente deste é
+   * estimativa, e a tela precisa dizer isso — antes da Errata 7 o rótulo ancorava em `meu_preco`,
+   * que é outra coisa quando a comissão foi lida no preço base de um anúncio promovido.
+   * `null` = linha anterior à Errata 7, tratada como estimativa.
+   */
+  comissao_preco: number | null;
   comissao_em: string | null;
 }
 export interface PulseOferta {
@@ -59,7 +66,7 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
   const { data, error } = await pulseFrom('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });
@@ -67,10 +74,14 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   return ((data ?? []) as PulseProduto[]).map((p) => ({
     ...p,
     meu_preco: p.meu_preco != null ? Number(p.meu_preco) : null,
-    // numeric do Postgres chega como string pelo PostgREST; sem o Number(), a comissão entraria
-    // como texto na conta da margem.
+    // `Number()` aqui é cinto de segurança barato, não correção de um defeito conhecido: medido em
+    // 2026-08-17 contra a produção, o PostgREST serializa `numeric` como NÚMERO JSON, não como
+    // string. (O comentário anterior afirmava o contrário — a confusão vem do `node-postgres`, que
+    // devolve `numeric` como string; o PostgREST, que é o que usamos, não.) Mantido porque a coluna
+    // alimenta conta de margem e o custo de um `Number()` é zero.
     comissao_pct: p.comissao_pct != null ? Number(p.comissao_pct) : null,
     comissao_fixa: p.comissao_fixa != null ? Number(p.comissao_fixa) : null,
+    comissao_preco: p.comissao_preco != null ? Number(p.comissao_preco) : null,
   }));
 }
 

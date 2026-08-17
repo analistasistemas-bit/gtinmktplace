@@ -50,7 +50,30 @@ Deno.serve(async (req) => {
   }
 
   const produto = await mlGet(`${API}/products/${catalogProductId}`, token);
+  // Ficha inexistente (link `/p/MLB999…` digitado errado) criava uma linha morta no radar: o
+  // coletor devolve null para sempre e a tela fica em "Ainda sem a primeira coleta" eternamente.
+  if (produto === null) {
+    return json({ erro: 'Ficha de catálogo não encontrada no Mercado Livre. Confira o link ou o GTIN.' }, 404);
+  }
   const titulo = (produto as { name?: string } | null)?.name ?? null;
+
+  // Já está no radar? Reaproveita a linha em vez de sobrescrevê-la. O upsert incondicional
+  // rebaixava `origem` de 'auto' para 'manual' e forçava `status: 'ativo'` — e as consequências
+  // são silenciosas: o tier quente pula produto manual, a referência de preço do ML congela, o
+  // arquivamento automático não o alcança e a tela passa a dizer "você não vende este produto"
+  // sobre produto que o operador vende. O `origem` voltaria sozinho no próximo tier completo
+  // (`sincronizarRadar` reenvia 'auto'), mas o `status` não volta nunca: `sincronizarRadar` omite
+  // `status` de propósito, para preservar o pausar/reativar do operador.
+  const { data: existente } = await admin.from('pulse_produtos')
+    .select('id, status').eq('org_id', orgId).eq('catalog_product_id', catalogProductId).maybeSingle();
+  if (existente) {
+    // Exceção deliberada: readicionar uma ficha arquivada é um pedido explícito de trazê-la de
+    // volta. Só o `status` muda — `origem` continua o que era.
+    if (existente.status === 'arquivado') {
+      await admin.from('pulse_produtos').update({ status: 'ativo' }).eq('id', existente.id);
+    }
+    return json({ produto_id: existente.id, ja_existia: true });
+  }
 
   // GTIN: o que o operador digitou, ou o da nossa variação vinculada a essa ficha (a ficha do ML
   // não expõe EAN nos atributos — verificado).

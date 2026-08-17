@@ -94,18 +94,79 @@
   justamente as linhas candidatas a reprecificar. Medido: NIVEA a R$ 39,90 mostrava R$ 5,36 (13,4%)
   contra R$ 4,39 (11,0%) reais. Passa a ler `sale_fee_details` de `/sites/MLB/listing_prices` no
   preço praticado. Verificado contra o painel do ML nos 3 produtos com preço: 5,59 / 13,57 / 5,87,
-  batendo exatamente (Errata 6 do ADR-0119).
+  batendo exatamente (Errata 6 do ADR-0119). **Ressalva descoberta em 2026-08-17:** essa validação
+  foi feita só em produtos sem promoção ativa — ver a correção abaixo.
+
+## Pulse — revisão de código do módulo (Fable) — 2026-08-17
+
+Revisão integral do módulo (33 arquivos), relatório em `.code-review-fable5/code-review-v2.md`:
+72/100, aprovar com ressalvas, nenhum achado crítico. Corrigido nesta rodada:
+
+- [x] **Comissão lida no preço BASE, não no efetivo (ALTA, Errata 7 do ADR-0119).** A Errata 6
+  pedia a comissão "no preço praticado" mas a consulta usava o `price` do multiget de `/items` —
+  que a Errata 4 já havia provado ser o preço base, sem promoção. Com promoção cruzando faixa, a
+  estrutura era gravada errada e a sobra exibida **superestimava**, na direção que induz a baixar
+  preço. Agravante: o rótulo "estimativa" ancorava em `meu_preco`, então esse caso saía sem rótulo;
+  e o dialog de reprecificar não rotulava nada em hipótese alguma. Corrigido em três partes: preço
+  efetivo na consulta (casado pelo `item_id` da nossa oferta), coluna `comissao_preco` registrando
+  o preço da leitura, e `margemEhEstimativa` (pura, 6 testes) ancorando nela nos dois dialogs.
+  Verificado em produção após deploy: os 3 produtos com oferta viva gravaram
+  `comissao_preco = meu_preco`; NIVEA segue em R$ 5,59 / R$ 4,39 (sem regressão).
+- [x] **Adicionar manual rebaixava produto do radar (MÉDIA).** O upsert de `pulse-adicionar`
+  mandava `origem:'manual'` e `status:'ativo'` incondicionalmente: readicionar uma ficha que já
+  estava no radar como `auto` tirava o produto do tier quente, congelava a referência de preço e
+  fazia a tela dizer "você não vende este produto". O `origem` voltava sozinho no tier completo
+  seguinte (≤24h), mas o `status` não voltava nunca. Agora a linha existente é reaproveitada; só
+  ficha **arquivada** é reativada, e só o `status` muda.
+- [x] **Alertas saíam mesmo com a gravação das ofertas falhando (MÉDIA).** Sem o estado novo no
+  banco, o ciclo seguinte recomputava o mesmo diff e reemitia os mesmos alertas — sem chave de
+  idempotência para segurar. Agora o insert de alertas exige os dois upserts terem passado.
+- [x] **Arquivamento sem paginação (MÉDIA).** A lista de candidatos a arquivar truncava em ~1000
+  linhas em silêncio: produto além do teto ficaria no radar para sempre. Passa por `paginarTudo`.
+- [x] **Passo 5 sem `status='publicado'` (BAIXA).** Elegia anúncio com status `erro` de partição
+  menor e consultava a referência de preço de um item morto. Alinhado ao passo 5b.
+- [x] **Ficha inexistente criava linha morta (BAIXA).** Link `/p/MLB999…` errado entrava no radar e
+  ficava em "Ainda sem a primeira coleta" para sempre. Agora devolve 404.
+- [x] **Comentário factualmente errado sobre o PostgREST.** O código afirmava que `numeric` chega
+  como string. Medido contra a produção em 2026-08-17: chega como **número JSON**. A confusão vem
+  do `node-postgres` (que devolve string), driver que não usamos. Comentário corrigido; os
+  `Number()` ficaram como cinto de segurança barato, agora documentados como tal. **Consequência:**
+  o achado do relatório sobre `menorPrecoPorDia` comparar preços lexicograficamente não procede —
+  a comparação é numérica.
 
 **Follow-ups pendentes:**
-- [ ] **Grants amplos nas tabelas `pulse_*` (achado 2026-08-16, não é regressão).** A migration
-  `20260816125057_pulse_v1.sql` concede `grant update (status) on pulse_produtos`, mas
-  `information_schema.column_privileges` mostra `authenticated` com INSERT/UPDATE em **todas** as
-  colunas de `pulse_produtos` — os default privileges do schema `public` já davam ALL antes do
-  grant restrito, que ficou redundante. A RLS ainda isola por org (não há vazamento entre
-  organizações), mas um membro da própria org pode escrever em `meu_preco`, `titulo`, `ptw_*`.
-  Correção: `revoke insert, update, delete on public.pulse_produtos from authenticated;` seguido
-  do `grant update (status)` — validar antes que só o botão pausar/reativar escreve nessa tabela
-  pelo cliente. Conferir também `pulse_ofertas`, `pulse_vendedores` e `pulse_alertas`.
+- [ ] **Paginar as duas queries de lista restantes.** `variacoes` por `.in(catalog_product_id)` no
+  `sincronizarRadar` e `fetchPulseProdutos` no front carregam o radar inteiro numa query. Hoje são
+  ~222 linhas por org — sem sintoma; acima de 1000 o PostgREST trunca em silêncio e o radar exibe
+  um subconjunto sem avisar. O Pulse v2 (extensão) existe para multiplicar essa contagem.
+- [ ] **Teto de itens por org (ADR-0119 §2) nunca foi implementado nem registrado.** Das travas de
+  crescimento do ADR, é a única sem dono: `pulse-adicionar` aceita adições manuais sem limite.
+- [ ] **Painel de alertas não diz QUAL concorrente.** Dois concorrentes distintos saindo da mesma
+  ficha geram duas linhas de texto idêntico ("Um concorrente saiu de X"), sem nada que as
+  diferencie — provável origem da queixa de "alerta do Telegram não bate com o do app". O payload
+  já tem `item_id` e `seller_id`; falta decidir o que exibir (nickname do vendedor exige join com
+  `pulse_vendedores`).
+- [ ] **Alerta de produto arquivado tem "Ver produto" inerte, e o input do Reprecificar pode nascer
+  "NaN"** quando o payload não tem `para`. Ambos cosméticos.
+- [ ] **KPIs contam sobre a lista cheia.** Com busca ou situação aplicadas, clicar num card de "12"
+  mostra menos de 12 linhas (a contagem "N de M" ao lado mitiga). Comportamento defensável — cards
+  como termômetro global — mas contradiz o comentário no código. Decidir e documentar.
+- [ ] **Grants amplos — do projeto inteiro, não do Pulse (achado 2026-08-16, revisto 2026-08-17).**
+  A migration `20260816125057_pulse_v1.sql` concede `grant update (status) on pulse_produtos`, mas
+  os default privileges do schema `public` já davam ALL antes, então o grant restrito ficou
+  redundante. **Medido em produção: as 25 tabelas do schema `public` têm exatamente os mesmos
+  privilégios** (SELECT/INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER), e para `anon` além de
+  `authenticated` — não é desvio do Pulse, é o default do Supabase. Corrigir só as `pulse_*` daria
+  falsa sensação de segurança; o item é de endurecimento do schema, com ADR próprio.
+  O que a RLS de fato segura hoje (verificado nas policies): INSERT e DELETE não têm policy em
+  nenhuma tabela `pulse_*` → negados. UPDATE só tem policy em `pulse_produtos` e `pulse_alertas`,
+  presa a `current_org_id()` → sem vazamento entre organizações. Resta que um membro da própria org
+  pode escrever em qualquer coluna dessas duas (`meu_preco`, `comissao_pct`, `ptw_*`), quando a
+  intenção era só `status` e `lido`. TRUNCATE não é sujeito a RLS, mas o PostgREST não o expõe.
+  Correção quando for feita: `revoke insert, update, delete ... from authenticated, anon` seguido de
+  `grant update (status) on pulse_produtos` e `grant update (lido) on pulse_alertas` — são as duas
+  únicas escritas do cliente (`pausarPulseProduto`, `marcarAlertaLido` em `src/lib/pulse.ts`);
+  revogar sem recriar as duas quebra o pausar/reativar e o marcar-alerta-como-lido.
 - [ ] Pulse: gravar e respeitar `applicable_suggestion` de `/suggestions/items/{id}/details`. Hoje
   a tela mostra a referência de preço mesmo quando o ML a marca como não aplicável — o selo afirma
   mais do que o ML afirma. Exige coluna nova + redeploy do `pulse-coletar` (Errata 3 do ADR-0119).

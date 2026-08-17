@@ -14,10 +14,10 @@ import {
 import { supabase } from '@/lib/supabase';
 import { updateVariacaoPreco } from '@/lib/queries';
 import { fetchContextoMargem } from '@/lib/pulse';
-import { margemEstimada } from '@/lib/pulse-margem';
+import { margemEstimada, margemEhEstimativa } from '@/lib/pulse-margem';
 import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 
-/** Mesma regra do detalhe: comissão só da estrutura lida no preço praticado (Errata 6). */
+/** Mesma regra do detalhe: comissão só da estrutura lida no preço efetivo (Erratas 6 e 7). */
 function insumoFaltante(
   contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
   custos: { comissaoPct: number | null; frete: number | null } | null,
@@ -34,8 +34,15 @@ export function DialogReprecificar({
 }: {
   codigoPai: string | null;
   precoInicial: number | null;
-  /** Estrutura da comissão (percentual + fixo) e frete — nunca o valor pronto de `ptw_custos`. */
-  custos: { comissaoPct: number | null; comissaoFixa: number | null; frete: number | null } | null;
+  /**
+   * Estrutura da comissão (percentual + fixo) e frete — nunca o valor pronto de `ptw_custos`.
+   * `comissaoPreco` é o preço em que a estrutura foi lida: reprecificar existe para digitar OUTRO
+   * preço, então aqui o número quase sempre é estimativa e a tela tem que dizer isso.
+   */
+  custos: {
+    comissaoPct: number | null; comissaoFixa: number | null; comissaoPreco: number | null;
+    frete: number | null;
+  } | null;
   onFechar: () => void;
 }) {
   const aberto = codigoPai != null;
@@ -58,6 +65,8 @@ export function DialogReprecificar({
         frete: custos?.frete ?? null, aliquotaPct: contexto?.aliquotaPct ?? null,
       })
     : null;
+  const margemEstimativa = margem != null
+    && margemEhEstimativa(precoSimulado, custos?.comissaoPreco ?? null);
 
   const confirmar = useMutation({
     mutationFn: async () => {
@@ -127,6 +136,14 @@ export function DialogReprecificar({
             <span className="text-sm">
               Líquido <span className="font-medium tabular-nums">{fmtBRL(margem.liquido)}</span>{' '}
               <span className="text-muted-foreground tabular-nums">({margem.margemPct.toFixed(1)}%)</span>
+              {margemEstimativa && (
+                <span
+                  className="ml-1 text-xs text-muted-foreground"
+                  title="A comissão do Mercado Livre muda por faixa de preço, e a que temos foi lida em outro preço. Neste preço, o número é aproximado."
+                >
+                  estimativa
+                </span>
+              )}
             </span>
           ) : (
             <span className="text-sm text-muted-foreground">Informe um preço para simular a margem.</span>

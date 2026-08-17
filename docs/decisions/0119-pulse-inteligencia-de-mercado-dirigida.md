@@ -303,6 +303,50 @@ reintroduzir o defeito.
 O frete continua vindo de `ptw_custos.frete`; ele bate com o painel do ML no caso medido e não
 faz parte deste defeito.
 
+## Errata 7 (2026-08-17) — a Errata 6 pedia o preço praticado e usava o preço base
+
+Achado na revisão de código do módulo (Fable, `code-review-v2`), como contradição entre duas
+erratas deste mesmo ADR.
+
+A Errata 6 declarou que a comissão passa a ser lida "no preço praticado". A implementação
+consultava `/sites/MLB/listing_prices?price=…` com o `price` vindo do multiget de `/items` — e a
+**Errata 4 já havia provado, por medição, que esse endpoint devolve o preço BASE**, sem a promoção
+ativa (`MLB7391084566`: 38,90 no `/items` contra 35,79 efetivos). Ou seja: a errata 6 pediu um
+insumo que a errata 4 tinha acabado de desqualificar, e ninguém cruzou as duas.
+
+**Por que importa:** a estrutura da comissão muda por faixa de preço (medido: 14% + R$ 4,99 fixo a
+R$ 10; 14% de R$ 25 a R$ 100; 11% a R$ 250). Um anúncio com preço base acima do corte da parcela
+fixa e promoção que leva o efetivo para baixo dele grava `comissao_fixa = 0` enquanto a venda real
+paga a parcela. O erro tem direção: **superestima a sobra**, que é o lado que induz o operador a
+baixar preço. É o mesmo defeito da Errata 6, um degrau acima — e a validação registrada em
+`TASKS.md` ("batendo exatamente nos 3 produtos") foi feita em produtos **sem** promoção, então não
+cobria o caso divergente.
+
+**Agravante — o rótulo mentia junto.** `margemEstimativa` comparava o preço simulado com
+`meu_preco`. No caso com promoção, a comissão vinha do preço base e o preço exibido era o efetivo:
+os dois diferiam, mas a comparação era com `meu_preco`, então o número saía **sem** rótulo, com a
+mesma confiança de um valor exato. Pior: o dialog de **reprecificar** — cuja função é justamente
+digitar outro preço — não rotulava nada em hipótese alguma.
+
+**Decisão.**
+
+1. O coletor consulta `listing_prices` no preço **efetivo** (`meu_preco`, lido de
+   `/products/{id}/items` na mesma execução) sempre que o conhece para o **mesmo** item; só cai no
+   `price` do multiget quando aquele item não foi visto na coleta. A chave é o `item_id` da nossa
+   oferta, e não o anúncio eleito por partição, para nunca casar o preço de um anúncio com a
+   categoria de outro em anúncio publicado por faixa.
+2. Nova coluna `pulse_produtos.comissao_preco` registra **em que preço a estrutura foi lida**.
+3. `margemEhEstimativa(precoSimulado, comissaoPreco)` (função pura, testada) substitui a
+   comparação com `meu_preco` nos dois dialogs. `comissao_preco` nulo — linha anterior a esta
+   errata — conta como estimativa: preço da leitura desconhecido não pode virar afirmação de
+   exatidão.
+
+**Verificado em produção (2026-08-17), após deploy e coleta:** os 3 produtos com oferta viva
+gravaram `comissao_preco = meu_preco` (39,90 / 48,90 / 96,90); os 3 sem oferta na ficha gravaram o
+preço base do multiget (84,75 / 54,90 / 47,90), agora registrado em vez de anônimo. Regressão
+conferida: NIVEA a R$ 39,90 continua com comissão R$ 5,59 e sobra R$ 4,39 (11,0%), idênticos ao
+medido contra o painel do ML na Errata 6 — a correção não mexe em produto sem promoção.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

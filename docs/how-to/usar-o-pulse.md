@@ -230,9 +230,13 @@ quatro parcelas.
 >
 > A comissão do Mercado Livre muda conforme a faixa de preço e a categoria — na mesma categoria
 > pode ser 14% até cerca de R$ 100 e 11% acima disso, e produtos baratos ainda levam uma parcela
-> fixa. O Pulse lê a taxa exata do **preço que o seu anúncio pratica hoje**. Quando você simula um
-> preço diferente, a taxa usada continua sendo aquela, então o resultado sai marcado como
-> estimativa. Quanto mais longe do preço atual, mais o número pode escorregar.
+> fixa. O Pulse lê a taxa exata **no preço em que o anúncio estava na hora da coleta** e guarda
+> esse preço junto. Quando o preço que você está vendo é outro — porque você simulou, porque está
+> reprecificando, ou porque o anúncio não tinha oferta viva na ficha naquela coleta — o resultado
+> sai marcado como estimativa. Quanto mais longe daquele preço, mais o número pode escorregar.
+>
+> O rótulo aparece **sempre** na janela de Reprecificar: ali você está digitando um preço novo por
+> definição, então a taxa guardada quase nunca é a daquele preço.
 
 ### Quando aparece "Margem indisponível: falta ..."
 

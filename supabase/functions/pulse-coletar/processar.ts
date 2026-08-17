@@ -139,11 +139,18 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
     if (error) console.warn('pulse-coletar: sincronizarRadar upsert falhou:', error.message);
   }
 
-  const { data: ativosAuto } = await admin.from('pulse_produtos')
-    .select('id, codigo_pai').eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado');
-  const arquivar = (ativosAuto ?? [])
+  // Paginado: o PostgREST trunca em ~1000 linhas sem avisar, e aqui o truncamento é silencioso na
+  // pior direção — produto além do teto nunca entraria na lista de candidatos e ficaria no radar
+  // para sempre, mesmo depois de o anúncio sair do ar. O Pulse v2 (extensão) existe justamente
+  // para multiplicar a contagem de linhas.
+  const ativosAuto = await paginarTudo<{ id: string; codigo_pai: string | null }>((de, ate) =>
+    admin.from('pulse_produtos')
+      .select('id, codigo_pai').eq('org_id', orgId).eq('origem', 'auto').neq('status', 'arquivado')
+      .order('id', { ascending: true }).range(de, ate)
+  );
+  const arquivar = ativosAuto
     .filter((p) => !codigosPaiVistos.has(p.codigo_pai as string))
-    .map((p) => p.id as string);
+    .map((p) => p.id);
   if (arquivar.length > 0) {
     await admin.from('pulse_produtos').update({ status: 'arquivado' }).in('id', arquivar);
   }
@@ -173,6 +180,12 @@ export async function processarColetaOrg(
   let gravadas = 0;
   let alertasTotal = 0;
   const sellerIdsColetados = new Set<number>();
+  // Preço EFETIVO da nossa oferta, por item, colhido no passo 3 desta mesma execução. O passo 5b
+  // consulta a comissão e só pode confiar no `price` do multiget de `/items` quando não tem isto:
+  // aquele campo é o preço BASE, sem promoção (Errata 4), e a faixa da comissão muda com o preço
+  // (Errata 7). Chaveado pelo item_id da NOSSA oferta justamente para não casar o preço de um
+  // anúncio com a categoria de outro no caso de anúncio publicado por faixa.
+  const precoEfetivoPorItem = new Map<string, number>();
 
   // 3) coletar por produto — pool(6): ofertas do catálogo → diff → grava/desativa idempotente.
   await pool(CONCORRENCIA, produtos, async (produto) => {
@@ -200,6 +213,12 @@ export async function processarColetaOrg(
 
     const diff = diffOfertas(anteriores, atuais);
 
+    // Alerta só sai se o estado novo entrou no banco. Os dois upserts abaixo e o insert de alertas
+    // não são atômicos: com a gravação falhando, `pulse_ofertas_atual` não avança, o próximo ciclo
+    // recomputa o MESMO diff e reemite os mesmos alertas — e o insert de alertas não tem chave de
+    // idempotência para segurar isso. Perder um alerta que será recalculado no ciclo seguinte é
+    // melhor do que repetir o mesmo alerta a cada 6h até o banco voltar.
+    let estadoGravado = true;
     if (diff.gravar.length > 0) {
       // SEM ignoreDuplicates (desvio do plano, ver relatório): o tier quente roda a cada 6h e
       // pode achar um 2º preço no MESMO dia (unique é produto_id,item_id,dia). Com
@@ -212,8 +231,10 @@ export async function processarColetaOrg(
         diff.gravar.map((o) => ({ org_id: orgId, produto_id: produto.id, ...o, ativo: true })),
         { onConflict: 'produto_id,item_id,dia' },
       );
-      if (error) console.warn(`pulse-coletar: gravar ofertas do produto ${produto.id} falhou:`, error.message);
-      else gravadas += diff.gravar.length;
+      if (error) {
+        console.warn(`pulse-coletar: gravar ofertas do produto ${produto.id} falhou:`, error.message);
+        estadoGravado = false;
+      } else gravadas += diff.gravar.length;
     }
     if (diff.desativar.length > 0) {
       // Mesmo motivo do gravar acima: merge (sem ignoreDuplicates) garante que um sumiço
@@ -222,9 +243,17 @@ export async function processarColetaOrg(
         diff.desativar.map((o) => ({ org_id: orgId, produto_id: produto.id, ...o, ativo: false })),
         { onConflict: 'produto_id,item_id,dia' },
       );
-      if (error) console.warn(`pulse-coletar: desativar ofertas do produto ${produto.id} falhou:`, error.message);
+      if (error) {
+        console.warn(`pulse-coletar: desativar ofertas do produto ${produto.id} falhou:`, error.message);
+        estadoGravado = false;
+      }
     }
-    if (diff.alertas.length > 0) {
+    if (diff.alertas.length > 0 && !estadoGravado) {
+      console.warn(
+        `pulse-coletar: ${diff.alertas.length} alerta(s) do produto ${produto.id} adiados — ofertas não gravadas`,
+      );
+    }
+    if (diff.alertas.length > 0 && estadoGravado) {
       const { error } = await admin.from('pulse_alertas').insert(
         diff.alertas.map((a) => ({ org_id: orgId, produto_id: produto.id, tipo: a.tipo, payload: a.payload })),
       );
@@ -239,6 +268,7 @@ export async function processarColetaOrg(
     // vínculo perdido), manter o último preço conhecido faria a tela afirmar uma posição de
     // mercado que não existe mais. Só chegamos aqui com a leitura da ficha bem-sucedida.
     const nossa = extrairNossaOferta(json, proprioSellerId);
+    if (nossa) precoEfetivoPorItem.set(nossa.item_id, nossa.preco);
     const agora = new Date().toISOString();
     const patch: Record<string, string | number | null> = {
       ultimo_snapshot_em: agora,
@@ -295,7 +325,10 @@ export async function processarColetaOrg(
     await pool(CONCORRENCIA, produtosAuto, async (produto) => {
       const { data: anuncio } = await admin.from('anuncios_externos')
         .select('item_externo_id')
+        // `status='publicado'` igual ao passo 5b: sem ele um anúncio com status 'erro' de partição
+        // menor era eleito e a referência de preço vinha de um item morto.
         .eq('org_id', orgId).eq('codigo_pai', produto.codigo_pai!).eq('canal', 'mercado_livre')
+        .eq('status', 'publicado')
         .not('item_externo_id', 'is', null)
         .order('particao', { ascending: true }).limit(1).maybeSingle();
       const itemId = anuncio?.item_externo_id as string | undefined;
@@ -346,18 +379,26 @@ export async function processarColetaOrg(
         for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
       }
 
-      // Comissão do ML na FAIXA do preço praticado (Errata 6). `listing_prices` não tem multiget,
-      // mas é uma chamada por anúncio, no mesmo passo em lote e fora do teto de tempo do loop de
-      // ofertas. Sem categoria/tipo/preço não há o que consultar — e comissão não se estima.
-      const comissaoPorItem = new Map<string, { pct: number; fixa: number }>();
+      // Comissão do ML na FAIXA do preço EFETIVO (Erratas 6 e 7). `listing_prices` não tem
+      // multiget, mas é uma chamada por anúncio, no mesmo passo em lote e fora do teto de tempo do
+      // loop de ofertas. Sem categoria/tipo/preço não há o que consultar — e comissão não se estima.
+      //
+      // O preço da consulta vem do passo 3 (nossa oferta na ficha, já com promoção aplicada) e só
+      // cai no `price` do multiget quando aquele item não foi visto na coleta desta execução — o
+      // campo do multiget é o preço BASE e erra a faixa em anúncio promovido (Errata 4). Nos dois
+      // casos gravamos em `comissao_preco` o preço realmente usado, para a tela saber se o número
+      // é exato para o preço exibido ou uma estimativa.
+      const comissaoPorItem = new Map<string, { pct: number; fixa: number; preco: number }>();
       await pool(CONCORRENCIA, [...infoPorItem.values()], async (info) => {
-        if (!info.category_id || !info.listing_type_id || info.price == null) return;
+        if (!info.category_id || !info.listing_type_id) return;
+        const preco = precoEfetivoPorItem.get(info.item_id) ?? info.price;
+        if (preco == null) return;
         const json = await mlGet(
-          `${API}/sites/MLB/listing_prices?price=${info.price}&category_id=${info.category_id}&listing_type_id=${info.listing_type_id}`,
+          `${API}/sites/MLB/listing_prices?price=${preco}&category_id=${info.category_id}&listing_type_id=${info.listing_type_id}`,
           token,
         );
         const c = parseComissao(json);
-        if (c) comissaoPorItem.set(info.item_id, c);
+        if (c) comissaoPorItem.set(info.item_id, { ...c, preco });
       });
 
       const agora = new Date().toISOString();
@@ -370,7 +411,9 @@ export async function processarColetaOrg(
         const com = itemId ? comissaoPorItem.get(itemId) : undefined;
         await admin.from('pulse_produtos').update({
           anuncio_status: st.status, anuncio_sub_status: st.sub_status, anuncio_status_em: agora,
-          ...(com ? { comissao_pct: com.pct, comissao_fixa: com.fixa, comissao_em: agora } : {}),
+          ...(com
+            ? { comissao_pct: com.pct, comissao_fixa: com.fixa, comissao_preco: com.preco, comissao_em: agora }
+            : {}),
         }).eq('id', produto.id);
       });
     }

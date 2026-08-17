@@ -251,7 +251,12 @@ export default function Pulse() {
         precoInicial={alertaReprecificar ? Number(alertaReprecificar.payload.para) : null}
         custos={(() => {
           const p = lista.find((x) => x.id === alertaReprecificar?.produto_id);
-          return p ? { comissaoPct: p.comissao_pct, comissaoFixa: p.comissao_fixa, frete: p.ptw_custos?.frete ?? null } : null;
+          return p
+            ? {
+                comissaoPct: p.comissao_pct, comissaoFixa: p.comissao_fixa,
+                comissaoPreco: p.comissao_preco, frete: p.ptw_custos?.frete ?? null,
+              }
+            : null;
         })()}
         onFechar={() => setAlertaReprecificar(null)}
       />

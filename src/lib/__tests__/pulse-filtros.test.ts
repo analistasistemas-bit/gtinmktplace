@@ -10,7 +10,7 @@ const produto = (over: Partial<PulseProduto>): PulseProduto => ({
   ptw_status: null, ptw_preco_sugerido: null, ptw_custos: null,
   ultimo_snapshot_em: '2026-08-16T00:00:00Z', meu_preco: 100, meu_preco_em: '2026-08-16T00:00:00Z',
   anuncio_status: 'active', anuncio_sub_status: [], anuncio_status_em: '2026-08-16T00:00:00Z',
-  comissao_pct: 14, comissao_fixa: 0, comissao_em: '2026-08-16T00:00:00Z',
+  comissao_pct: 14, comissao_fixa: 0, comissao_preco: 100, comissao_em: '2026-08-16T00:00:00Z',
   ...over,
 });
 

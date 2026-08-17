@@ -52,6 +52,25 @@ export function comissaoNoPreco(
 }
 
 /**
+ * A sobra exibida é exata ou estimativa? A estrutura da comissão vale só para a FAIXA do preço em
+ * que foi lida (medido: 14% + R$ 4,99 fixo a R$ 10; 14% de R$ 25 a R$ 100; 11% a R$ 250), então
+ * fora daquele preço o número é aproximado — e a tela precisa dizer, em vez de exibi-lo com a
+ * mesma confiança de um valor exato.
+ *
+ * A âncora é `comissaoPreco`, não o preço atual do anúncio: quando o anúncio tem promoção, a
+ * leitura pode ter sido feita no preço base, e ancorar no preço atual fazia justamente esse caso
+ * sair SEM rótulo (Errata 7 do ADR-0119). `comissaoPreco` nulo é linha anterior à Errata 7 —
+ * preço da leitura desconhecido, logo estimativa.
+ */
+export function margemEhEstimativa(
+  precoSimulado: number | null,
+  comissaoPreco: number | null,
+): boolean {
+  if (comissaoPreco == null || precoSimulado == null) return true;
+  return Math.abs(precoSimulado - comissaoPreco) > 0.005;
+}
+
+/**
  * Margem líquida estimada: comissão do ML no preço + frete + imposto por origem + custo do
  * produto. QUALQUER insumo ausente → null (regra LOUD: margem nunca é exibida com dado assumido).
  *

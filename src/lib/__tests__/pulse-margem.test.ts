@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, comissaoNoPreco,
+  margemEhEstimativa,
 } from '../pulse-margem';
 import type { PulseOferta, PulseVendedor } from '../pulse';
 
@@ -129,5 +130,37 @@ describe('margemEstimada — regra LOUD: qualquer insumo ausente → null', () =
 
   it('retorna null sem alíquota de imposto', () => {
     expect(margemEstimada({ ...base, aliquotaPct: null })).toBeNull();
+  });
+});
+
+// Errata 7 do ADR-0119: o rótulo "estimativa" ancora no preço em que a comissão foi LIDA, não no
+// preço atual do anúncio. Antes ancorava em `meu_preco`, e o caso com promoção — leitura feita no
+// preço base, exibição no efetivo — saía sem rótulo, com a confiança de um valor exato.
+describe('margemEhEstimativa', () => {
+  it('preço simulado igual ao da leitura da comissão → número exato, sem rótulo', () => {
+    expect(margemEhEstimativa(39.9, 39.9)).toBe(false);
+  });
+
+  it('tolera ruído de centavo (arredondamento não vira estimativa)', () => {
+    expect(margemEhEstimativa(39.902, 39.9)).toBe(false);
+  });
+
+  it('preço simulado fora do preço da leitura → estimativa', () => {
+    expect(margemEhEstimativa(32.99, 39.9)).toBe(true);
+  });
+
+  // O caso que a Errata 7 corrigiu: anúncio promovido, comissão lida no preço BASE (38,90) e tela
+  // exibindo o efetivo (35,79). Ancorado em `meu_preco` isso dava "exato"; ancorado na leitura,
+  // sai rotulado.
+  it('promoção: exibir o efetivo com comissão lida no base é estimativa', () => {
+    expect(margemEhEstimativa(35.79, 38.9)).toBe(true);
+  });
+
+  it('preço da leitura desconhecido (linha anterior à Errata 7) → estimativa', () => {
+    expect(margemEhEstimativa(39.9, null)).toBe(true);
+  });
+
+  it('sem preço simulado → estimativa (nunca afirma exatidão sobre nada)', () => {
+    expect(margemEhEstimativa(null, 39.9)).toBe(true);
   });
 });

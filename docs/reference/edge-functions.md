@@ -791,7 +791,11 @@ falha ao ler `organizations` não libera.
   `variacoes_externas` e, **só para os códigos publicados sem nenhum cpid ali**, cai em
   `variacoes` da família mais recente com `catalog_status='vinculado'` — sem esse resgate, anúncio
   publicado e vinculado ficava inteiro fora do radar (Errata 5). Passo em lote à parte lê a
-  situação do anúncio (`/items?ids=…`, 20 por chamada) para `anuncio_status`. Grava em
+  situação do anúncio (`/items?ids=…`, 20 por chamada) para `anuncio_status` e consulta
+  `/sites/MLB/listing_prices` para a estrutura da comissão. Essa consulta usa o preço **efetivo**
+  (`meu_preco`, colhido no passo de ofertas desta mesma execução) sempre que ele existe para o
+  **mesmo** `item_id`, e só cai no `price` do multiget — que é o preço base, sem promoção — quando
+  não existe; o preço usado fica gravado em `comissao_preco` (Errata 7 do ADR-0119). Grava em
   `pulse_ofertas` via upsert `produto_id,item_id,dia` — merge, **sem** `ignoreDuplicates`, para uma
   2ª execução no mesmo dia sobrescrever a linha de hoje com o valor atual em vez de travar no 1º
   valor visto e reemitir alerta a cada rodada. A notificação traz **os novos desta execução e o
@@ -802,9 +806,13 @@ falha ao ler `organizations` não libera.
 - **pulse-adicionar** — adiciona manualmente um produto ao radar por link de catálogo
   (`/p/MLBxxxx`) ou GTIN (busca em `/products/search`); item avulso de anúncio de terceiro é
   impossível de coletar pela API (403 sempre — ver errata do ADR-0119) e a função recusa essa
-  entrada com mensagem explícita. Upsert em `pulse_produtos` (`org_id,catalog_product_id`),
-  `origem='manual'`, `status='ativo'` — **efeito colateral:** re-adicionar um produto que o
-  operador tinha pausado o volta silenciosamente para `ativo`.
+  entrada com mensagem explícita. Ficha inexistente devolve 404 em vez de criar linha morta no
+  radar. Insere em `pulse_produtos` (`org_id,catalog_product_id`) com `origem='manual'`,
+  `status='ativo'` **apenas quando a ficha ainda não está no radar**: se já estiver, reaproveita a
+  linha existente e devolve `ja_existia: true` sem tocar em `origem` nem em `status`. O upsert
+  incondicional anterior rebaixava produto `auto` para `manual` (tirando-o do tier quente e
+  congelando a referência de preço) e desfazia o pausar do operador. Única exceção: ficha
+  **arquivada** volta para `ativo`, porque readicioná-la é um pedido explícito de trazê-la de volta.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
