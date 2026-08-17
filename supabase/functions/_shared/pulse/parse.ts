@@ -2,6 +2,8 @@ import type { OfertaColetada, PriceToWin } from './tipos.ts';
 
 // /products/{id}/items → results[]: item_id, price, seller_id, listing_type_id,
 // shipping.free_shipping, official_store_id. sold/available vêm null — não parsear.
+// `permalink` é lido de forma oportunista: se a ficha o expuser, é o link do anúncio do
+// concorrente; se não, fica null e a tela não mostra link nenhum.
 // `excluirSellerId` = nossa própria conta no ML: a lista do catálogo inclui a NOSSA oferta, e
 // sem excluí-la o radar trataria o próprio anúncio como concorrente (alerta "preço caiu" quando
 // nós mesmos baixamos, "novo concorrente" quando nós publicamos).
@@ -23,6 +25,9 @@ export function parseOfertasProduto(json: unknown, excluirSellerId?: number | nu
       tier: typeof o.listing_type_id === 'string' ? o.listing_type_id : null,
       frete_gratis: Boolean((o.shipping as { free_shipping?: unknown } | null)?.free_shipping),
       loja_oficial: o.official_store_id != null,
+      // Só aceita URL http(s) de verdade: string vazia ou caminho relativo viraria um link quebrado
+      // na tela, e link quebrado é pior do que ausência de link.
+      permalink: typeof o.permalink === 'string' && /^https?:\/\//.test(o.permalink) ? o.permalink : null,
     });
   }
   return out;

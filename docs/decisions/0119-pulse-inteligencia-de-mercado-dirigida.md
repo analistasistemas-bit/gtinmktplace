@@ -100,6 +100,7 @@ aviamentos e itens genéricos, categoria que o catálogo do ML não cataloga.
 | `/products/search?product_identifier={gtin}` | 200, mas sem ficha para esses GTINs |
 | `/highlights/MLB/category/{cat}` | 200 — 20 posições, mas só 7 eram `PRODUCT` legível (9 `USER_PRODUCT`, 4 `ITEM`, ilegíveis para terceiros) |
 | `/trends/MLB/{cat}` | 200 — termos mais buscados, dado de categoria |
+| `permalink` em `/products/{id}/items` | **ausente** — medido 2026-08-17 em 36 ofertas de 6 fichas: nenhuma trouxe o campo (Errata 8) |
 
 **Consequência para o roadmap:** a extensão de navegador do v2 deixa de ser um acréscimo (vendas
 por anúncio) e passa a ser **o que dá cobertura ao módulo**. Lendo a página na sessão logada do
@@ -347,6 +348,34 @@ gravaram `comissao_preco = meu_preco` (39,90 / 48,90 / 96,90); os 3 sem oferta n
 preço base do multiget (84,75 / 54,90 / 47,90), agora registrado em vez de anônimo. Regressão
 conferida: NIVEA a R$ 39,90 continua com comissão R$ 5,59 e sobra R$ 4,39 (11,0%), idênticos ao
 medido contra o painel do ML na Errata 6 — a correção não mexe em produto sem promoção.
+
+## Errata 8 (2026-08-17) — link do anúncio do concorrente: só o da ficha é possível
+
+Pedido do operador: abrir o anúncio do concorrente direto da tabela de concorrentes. Medido antes
+de decidir, e o resultado foi negativo nas duas frentes:
+
+1. **A URL não é derivável do `item_id`.** `produto.mercadolivre.com.br/MLB-<n>`, com e sem o
+   sufixo `-_JM`, devolve "Hubo un error accediendo a esta pagina". O ML exige o slug do anúncio,
+   que não temos.
+2. **`/products/{id}/items` não devolve `permalink`.** Medido em produção: 36 ofertas de 6 fichas,
+   zero com o campo. A medição é conclusiva porque `mudou()` passou a comparar `permalink` — se o
+   campo existisse, as 36 linhas teriam sido regravadas (null → valor) e só 4 foram, as de mudança
+   normal de preço.
+
+Com `/items/{id}` de terceiro já provado 403, não sobra fonte para o link individual.
+
+**Decisão:** a tela linka a **ficha** (`/p/{catalog_product_id}` — o mesmo formato que
+`resolverEntrada` aceita em "Adicionar produto"), onde as ofertas aparecem lado a lado e cada uma
+abre o anúncio do respectivo vendedor. A nota da tabela diz por que não há link por linha, em vez
+de deixar o operador procurando. Inventar uma URL provável foi descartado: link quebrado gasta o
+clique e mina a confiança na tela inteira.
+
+A leitura de `permalink` ficou no coletor e a coluna `pulse_ofertas.permalink` existe, nulas: são
+uma linha de parse e uma coluna nullable que fazem o link por concorrente aparecer sozinho caso o
+ML passe a expor o campo. Removê-las exigiria dropar e recriar a view `pulse_ofertas_atual` (o
+`create or replace` não remove coluna) e refazer os grants — mais risco do que a coluna dormente.
+
+Link individual por concorrente continua dependendo da extensão do v2, como as vendas por anúncio.
 
 ## Consequências
 

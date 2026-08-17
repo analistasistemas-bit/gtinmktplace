@@ -6,6 +6,12 @@ export interface OfertaColetada {
   tier: string | null;
   frete_gratis: boolean;
   loja_oficial: boolean;
+  /**
+   * URL do anúncio no ML, quando a ficha a expõe. É a ÚNICA fonte possível para anúncio de
+   * concorrente: `/items/{id}` de terceiro devolve 403 sempre (ADR-0119), e a URL não pode ser
+   * derivada do `item_id`. `null` = a resposta não trouxe — a tela simplesmente não linka.
+   */
+  permalink: string | null;
 }
 export interface OfertaAnterior extends OfertaColetada { ativo: boolean; }
 export type TipoAlerta = 'preco_caiu' | 'novo_concorrente' | 'concorrente_saiu';

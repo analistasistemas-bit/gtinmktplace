@@ -9,6 +9,7 @@ const oferta = (over: Partial<OfertaColetada> = {}): OfertaColetada => ({
   tier: 'gold_special',
   frete_gratis: false,
   loja_oficial: false,
+  permalink: null,
   ...over,
 });
 const anterior = (over: Partial<OfertaAnterior> = {}): OfertaAnterior => ({ ...oferta(), ativo: true, ...over });
@@ -76,5 +77,24 @@ describe('diffOfertas', () => {
     expect(r.gravar).toEqual([]);
     expect(r.desativar).toEqual([]);
     expect(r.alertas).toEqual([]);
+  });
+
+  // Sem isto, uma oferta de preço estável ficaria para sempre sem link, esperando uma mudança de
+  // preço que pode nunca vir.
+  it('link do anúncio aparecendo numa oferta estável faz gravar (backfill), sem alertar', () => {
+    const anteriores = [anterior({ item_id: 'MLB1', preco: 100, permalink: null })];
+    const atuais = [oferta({ item_id: 'MLB1', preco: 100, permalink: 'https://x/MLB-1' })];
+    const r = diffOfertas(anteriores, atuais);
+    expect(r.gravar).toHaveLength(1);
+    expect(r.gravar[0].permalink).toBe('https://x/MLB-1');
+    expect(r.alertas).toEqual([]);
+  });
+
+  // Se a ficha nunca expuser permalink, os dois lados ficam null e nada é regravado — a trava de
+  // crescimento do §2 do ADR continua valendo.
+  it('ficha que não expõe link não gera regravação em toda execução', () => {
+    const anteriores = [anterior({ item_id: 'MLB1', preco: 100, permalink: null })];
+    const atuais = [oferta({ item_id: 'MLB1', preco: 100, permalink: null })];
+    expect(diffOfertas(anteriores, atuais).gravar).toEqual([]);
   });
 });

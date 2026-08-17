@@ -3,7 +3,7 @@
 // para descobrir que estava vendendo no prejuízo.
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Truck, Store } from 'lucide-react';
+import { Truck, Store, ExternalLink } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -200,6 +200,23 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
               grátis
             </span>
           )}
+          {/* Só linka com o permalink que veio da ficha. A URL do anúncio não é derivável do
+              item_id (testado) e `/items/{id}` de terceiro é 403, então quando o campo não vem não
+              há link nenhum — melhor do que mandar o operador para uma página de erro. */}
+          {o.permalink && (
+            <a
+              href={o.permalink}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-info hover:underline"
+              title={`Abrir o anúncio de ${nomeDe(o)} no Mercado Livre`}
+              aria-label={`Abrir o anúncio de ${nomeDe(o)} no Mercado Livre (nova aba)`}
+            >
+              <ExternalLink className="h-3 w-3" />
+              ver
+            </a>
+          )}
         </div>
       ),
     },
@@ -213,8 +230,24 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
             <DialogTitle className="text-base leading-snug">
               {produto?.titulo ?? 'Ficha sem nome'}
             </DialogTitle>
-            <DialogDescription className="tabular-nums">
-              {produto?.gtin ?? `Ficha ${produto?.catalog_product_id ?? ''}`}
+            <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
+              <span>{produto?.gtin ?? `Ficha ${produto?.catalog_product_id ?? ''}`}</span>
+              {/* Leva à ficha no ML, onde as ofertas dos concorrentes aparecem lado a lado e cada
+                  uma abre o anúncio do vendedor. É o link possível: a API não devolve a URL do
+                  anúncio de terceiro (ver comentário na coluna "Anúncio"). O formato `/p/{cpid}` é
+                  o mesmo que `resolverEntrada` aceita em "Adicionar produto". */}
+              {produto?.catalog_product_id && (
+                <a
+                  href={`https://www.mercadolivre.com.br/p/${produto.catalog_product_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-normal text-info hover:underline"
+                  aria-label="Abrir a ficha deste produto no Mercado Livre (nova aba)"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Ver ofertas no Mercado Livre
+                </a>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -386,7 +419,9 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                 )}
                 <p className="mt-2 text-xs text-muted-foreground">
                   O volume é da conta do vendedor no Mercado Livre inteiro, não deste anúncio — a API não
-                  expõe vendas por anúncio de terceiros.
+                  expõe vendas por anúncio de terceiros. Pelo mesmo motivo não há link direto para o
+                  anúncio de cada concorrente: use <span className="whitespace-nowrap">“Ver ofertas no
+                  Mercado Livre”</span> acima, que abre a ficha com todas elas.
                 </p>
               </section>
             </div>

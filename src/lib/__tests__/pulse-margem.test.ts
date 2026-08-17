@@ -7,7 +7,7 @@ import type { PulseOferta, PulseVendedor } from '../pulse';
 
 const oferta = (over: Partial<PulseOferta>): PulseOferta => ({
   item_id: 'MLB1', seller_id: 111, preco: 100, tier: 'gold_special',
-  frete_gratis: true, loja_oficial: false, ativo: true, dia: '2026-08-10', ...over,
+  frete_gratis: true, loja_oficial: false, ativo: true, dia: '2026-08-10', permalink: null, ...over,
 });
 
 const vendedor = (over: Partial<PulseVendedor>): PulseVendedor => ({

@@ -207,7 +207,9 @@ export async function processarColetaOrg(
     // histórico bruto com um teto de linhas fazia um item antigo cair fora da janela e voltar
     // como "novo concorrente" no diff — alerta falso.
     const { data: anterioresRaw } = await admin.from('pulse_ofertas_atual')
-      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo')
+      // `permalink` entra aqui porque `mudou()` o compara: sem lê-lo, o guardado chegaria sempre
+      // como undefined e toda oferta pareceria mudada em toda execução.
+      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, permalink')
       .eq('produto_id', produto.id);
     const anteriores = ((anterioresRaw ?? []) as OfertaAnterior[]).map((o) => ({ ...o, preco: Number(o.preco) }));
 

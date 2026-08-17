@@ -192,6 +192,15 @@ cara, e **todo cabeçalho é clicável para reordenar**:
 > sinal de porte e atividade do concorrente, nunca como "vendas deste produto". A seção 11 explica
 > por que essa é a informação disponível.
 
+**Para abrir os anúncios no Mercado Livre**, use o link *"Ver ofertas no Mercado Livre"* que fica no
+topo do detalhe, ao lado do EAN: ele abre a ficha do produto no ML, com todas as ofertas lado a
+lado, e dali você entra no anúncio de qualquer concorrente.
+
+Não há link direto por linha da tabela, e não é esquecimento: a API do ML não devolve o endereço do
+anúncio de terceiro (o mesmo motivo que impede mostrar as vendas por anúncio), e o endereço também
+não pode ser montado a partir do código do anúncio — foi testado. Preferimos não ter link a ter um
+link que abre página de erro.
+
 ### Menor preço por dia de coleta
 
 O histórico do menor preço da ficha, um ponto por dia em que **algo mudou**. Dia sem mudança não

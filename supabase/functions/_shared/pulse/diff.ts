@@ -1,7 +1,12 @@
 import type { AlertaNovo, DiffOfertas, OfertaAnterior, OfertaColetada } from './tipos.ts';
 
+// `permalink` entra na comparação de propósito: sem ele, o snapshot só-se-mudou deixaria uma
+// oferta de preço estável para sempre sem link, esperando uma mudança de preço que pode não vir.
+// Incluí-lo faz um backfill único (o guardado é null, o novo não é) e depois se estabiliza — se a
+// ficha não expuser permalink, os dois lados ficam null e nada é regravado.
 const mudou = (a: OfertaAnterior, b: OfertaColetada) =>
-  a.preco !== b.preco || a.tier !== b.tier || a.frete_gratis !== b.frete_gratis || a.loja_oficial !== b.loja_oficial;
+  a.preco !== b.preco || a.tier !== b.tier || a.frete_gratis !== b.frete_gratis
+  || a.loja_oficial !== b.loja_oficial || a.permalink !== b.permalink;
 
 /**
  * Snapshot só-se-mudou (ADR-0119 §2). `anteriores` = estado atual por item

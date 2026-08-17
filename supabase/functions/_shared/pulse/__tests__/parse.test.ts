@@ -56,6 +56,7 @@ describe('parseOfertasProduto', () => {
         tier: 'gold_special',
         frete_gratis: true,
         loja_oficial: false,
+        permalink: null,
       },
       {
         item_id: 'MLB987654321',
@@ -64,6 +65,7 @@ describe('parseOfertasProduto', () => {
         tier: 'gold_pro',
         frete_gratis: false,
         loja_oficial: true,
+        permalink: null,
       },
     ]);
   });
@@ -76,13 +78,37 @@ describe('parseOfertasProduto', () => {
       ],
     };
     expect(parseOfertasProduto(json)).toEqual([
-      { item_id: 'MLB2', seller_id: 2, preco: 50, tier: 'gold_special', frete_gratis: false, loja_oficial: false },
+      { item_id: 'MLB2', seller_id: 2, preco: 50, tier: 'gold_special', frete_gratis: false, loja_oficial: false, permalink: null },
     ]);
   });
 
   it('sem results[] → []', () => {
     expect(parseOfertasProduto({})).toEqual([]);
     expect(parseOfertasProduto(null)).toEqual([]);
+  });
+
+  // O link do anúncio do concorrente só pode vir daqui: a URL não é derivável do item_id
+  // (verificado) e `/items/{id}` de terceiro é 403. Sem o campo, a tela não linka.
+  describe('permalink', () => {
+    const umaOferta = (extra: Record<string, unknown>) => ({
+      results: [{ item_id: 'MLB1', price: 10, seller_id: 1, ...extra }],
+    });
+
+    it('captura a URL do anúncio quando a ficha a expõe', () => {
+      const [o] = parseOfertasProduto(umaOferta({ permalink: 'https://produto.mercadolivre.com.br/MLB-1-x' }));
+      expect(o.permalink).toBe('https://produto.mercadolivre.com.br/MLB-1-x');
+    });
+
+    it('ficha sem o campo não inventa link', () => {
+      const [o] = parseOfertasProduto(umaOferta({}));
+      expect(o.permalink).toBeNull();
+    });
+
+    it('valor que não é URL http(s) vira null — link quebrado é pior que link ausente', () => {
+      expect(parseOfertasProduto(umaOferta({ permalink: '' }))[0].permalink).toBeNull();
+      expect(parseOfertasProduto(umaOferta({ permalink: '/MLB-1' }))[0].permalink).toBeNull();
+      expect(parseOfertasProduto(umaOferta({ permalink: 42 }))[0].permalink).toBeNull();
+    });
   });
 });
 
