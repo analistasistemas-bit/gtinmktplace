@@ -239,6 +239,12 @@ git commit -m "fix: start renewed support sessions transactionally"
 - Modify: `docs/TASKS.md`
 - Modify: `obsidian-vault/04-Decisões/Índice de ADRs.md` somente se o índice exigir atualização do ADR-0092.
 - Create: `.code-review-fable5/code-review-v2.md`
+  > **Perdido em 2026-08-17.** Ao preservar o relatório da revisão do módulo Pulse eu copiei o
+  > arquivo por cima deste, sem checar que o nome já existia. Os relatórios são gitignorados, então
+  > não há histórico para recuperar. O conteúdo desta entrega continua descrito neste plano e em
+  > `docs/TASKS.md`; o que se perdeu foi o relatório de revisão em si. O arquivo com esse nome hoje
+  > não existe mais — o do Pulse foi renomeado para
+  > `code-review-pulse-modulo-2026-08-17.md`.
 - Modify: `.code-review-fable5/state.json`
 
 **Interfaces:**

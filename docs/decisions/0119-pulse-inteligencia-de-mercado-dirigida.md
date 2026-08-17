@@ -305,8 +305,9 @@ faz parte deste defeito.
 
 ## Errata 7 (2026-08-17) — a Errata 6 pedia o preço praticado e usava o preço base
 
-Achado na revisão de código do módulo (Fable, `code-review-v2`), como contradição entre duas
-erratas deste mesmo ADR.
+Achado na revisão de código do módulo (Fable,
+`.code-review-fable5/code-review-pulse-modulo-2026-08-17.md`), como contradição entre duas erratas
+deste mesmo ADR.
 
 A Errata 6 declarou que a comissão passa a ser lida "no preço praticado". A implementação
 consultava `/sites/MLB/listing_prices?price=…` com o `price` vindo do multiget de `/items` — e a

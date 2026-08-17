@@ -281,7 +281,8 @@ a lista de ofertas do catálogo inclui o nosso próprio anúncio e precisa ser f
 `docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md` (inclui errata: vendas por anúncio
 de terceiro é 403 sempre na API do ML, ficou para o v2 via extensão) e `docs/TASKS.md`.
 
-**Segunda revisão (2026-08-17, `.code-review-fable5/code-review-v2.md`, 72/100):** revisão integral
+**Segunda revisão (2026-08-17, `.code-review-fable5/code-review-pulse-modulo-2026-08-17.md`,
+72/100):** revisão integral
 do módulo depois das Erratas 3–6. Nenhum achado crítico; 1 ALTA e 4 MÉDIA corrigidos e em produção.
 O achado principal era uma contradição entre as próprias erratas do ADR — a Errata 6 mandava ler a
 comissão "no preço praticado" mas usava o preço base do multiget, que a Errata 4 já havia

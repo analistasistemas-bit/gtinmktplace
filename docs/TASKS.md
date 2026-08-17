@@ -99,7 +99,8 @@
 
 ## Pulse — revisão de código do módulo (Fable) — 2026-08-17
 
-Revisão integral do módulo (33 arquivos), relatório em `.code-review-fable5/code-review-v2.md`:
+Revisão integral do módulo (33 arquivos), relatório em
+`.code-review-fable5/code-review-pulse-modulo-2026-08-17.md`:
 72/100, aprovar com ressalvas, nenhum achado crítico. Corrigido nesta rodada:
 
 - [x] **Comissão lida no preço BASE, não no efetivo (ALTA, Errata 7 do ADR-0119).** A Errata 6
