@@ -391,6 +391,26 @@ ML passe a expor o campo. Removê-las exigiria dropar e recriar a view `pulse_of
 
 Link individual por concorrente continua dependendo da extensão do v2, como as vendas por anúncio.
 
+## Errata 9 (2026-08-17) — dois endpoints dados como mortos estão vivos; nasce o Sonar (ADR-0120)
+
+Investigando como o Hunter Spy exibe "vendas" de concorrentes (interceptação do backend deles no
+navegador do operador + testes com token real), dois fatos corrigem a tabela da Errata 2:
+
+1. **`/products/search?q=<termo>` funciona** (busca textual no catálogo, `paging.total` até
+   10.000). A Errata 2 só havia testado `/sites/MLB/search` (esse segue 403) e
+   `product_identifier` por GTIN. Busca por termo existe — limitada a produtos COM ficha.
+2. **`/items/{id}/visits/time_window?last=30&unit=day` devolve visitas diárias de item de
+   TERCEIRO** (medido: 42 visitas/30d num item de concorrente). Multiget com janela é limitado a
+   1 id por chamada; `/visits/items?ids=` dá o total vitalício.
+3. Bônus da interceptação: o campo `sales` do Hunter só assume {0,1,2,3,4,5,25,50,100,1000,5000}
+   — é a faixa pública "+N vendidos" raspada do site, e a soma bate com o KPI deles. Confirma a
+   premissa do pivot da Errata 1: ninguém tem vendas exatas de terceiros por API.
+
+**Consequência:** a "pesquisa de nicho por termo" prevista como v2 ficou viável só com API oficial
+e virou o **ADR-0120 (Pulse Sonar)** — aba nova no Pulse + coluna "Visitas 30d" nos concorrentes
+do Radar. A extensão do v2 continua sendo o caminho para vendas POR ANÚNCIO e para anúncios sem
+ficha; nada da Errata 2 muda quanto a isso.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

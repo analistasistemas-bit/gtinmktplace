@@ -131,5 +131,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0117 | [Menu Financeiro controla liberação e saque; compra não é venda](../../docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md) |
 | 0118 | [Resolução em massa do "Não encontro minha variação" por extensão de navegador](../../docs/decisions/0118-resolucao-em-massa-do-no-match-de-catalogo.md) |
 | 0119 | [Pulse: inteligência de mercado dirigida, server-side e sem crawl massivo](../../docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md) |
+| 0120 | [Pulse Sonar: garimpo de sortimento por termo, só API oficial](../../docs/decisions/0120-pulse-sonar-garimpo-por-termo.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
