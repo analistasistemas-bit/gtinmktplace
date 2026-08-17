@@ -162,7 +162,7 @@ function mockHooksPadrao() {
   useCanaisHabilitadosMock.mockReturnValue({ data: ['mercado_livre'] });
   // isSuccess importa: as colunas de venda por anúncio só preenchem com o mapa assentado
   // (useResumoVendas.canonicoPronto) — senão a linha mostraria a fatia própria e depois saltaria.
-  useAnuncioCanonicoMock.mockReturnValue({ data: {}, isSuccess: true, isError: false });
+  useAnuncioCanonicoMock.mockReturnValue({ data: { listings: {} }, isSuccess: true, isError: false });
   useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   fetchMovimentosEstoqueMock.mockResolvedValue({ itens: [], total: 0 });
 }
@@ -223,7 +223,7 @@ describe('Publicados', () => {
       ],
       isFetching: false, error: null, refetch: vi.fn(),
     });
-    useAnuncioCanonicoMock.mockReturnValue({ data: { 'MLB-CATALOGO': 'MLB1' }, isSuccess: true, isError: false });
+    useAnuncioCanonicoMock.mockReturnValue({ data: { listings: { 'MLB-CATALOGO': 'MLB1' } }, isSuccess: true, isError: false });
 
     render(
       <MemoryRouter>
@@ -237,6 +237,39 @@ describe('Publicados', () => {
     // getByText (não toHaveTextContent): a célula tem que ser exatamente 59, senão qualquer valor
     // da linha que contenha "59" — um R$ 1.590,00 futuro — passaria por acidente.
     expect(within(linha).getByText('59')).toBeInTheDocument();
+  });
+
+  // Regressão (incidente 2026-08-17): o mesmo produto vendia no ML por VÁRIOS anúncios (um MLB por
+  // cor, padrão legado) e só um deles estava vinculado no app. Sem vínculo de catálogo, o critério
+  // é o GTIN — o mesmo que o backend já usa no ingest (ADR-0045). A tela mostrava 7 un onde o
+  // produto vendera 49 em 90 dias.
+  it('soma na linha do anúncio dono as vendas que entraram por anúncio irmão (GTIN)', () => {
+    const item = (mlItemId: string, quantity: number, ean: string) => ({
+      id: `i-${mlItemId}`, ml_item_id: mlItemId, variation_id: null, titulo: 'COLA LIQUIDA SILICONE 250ML',
+      codigo: '01829149', cor: null, ean, quantity, unit_price: 24.1, sale_fee: 0, is_publiai: true,
+    });
+    useVendasMock.mockReturnValue({
+      data: [
+        { id: 'v1', order_id: 1, status: 'paid', total_amount: 168.7, liquido: 168.7, estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [item('MLB1', 7, '111')] },
+        { id: 'v2', order_id: 2, status: 'paid', total_amount: 1012.2, liquido: 1012.2, estorno: null, pack_id: null, shipping_id: null, frete_vendedor: null, itens: [item('MLB-IRMAO', 42, '222')] },
+      ],
+      isFetching: false, error: null, refetch: vi.fn(),
+    });
+    useAnuncioCanonicoMock.mockReturnValue({
+      data: { listings: {}, gtins: { '111': 'MLB1', '222': 'MLB1' }, conhecidos: new Set(['MLB1']) },
+      isSuccess: true, isError: false,
+    });
+
+    render(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
+      .map((el) => el.closest('tr'))
+      .find((tr): tr is HTMLTableRowElement => tr != null)!;
+    expect(within(linha).getByText('49')).toBeInTheDocument();
   });
 
   // O mapa canônico chega numa query separada das vendas. Se a coluna renderizar antes dele, mostra

@@ -29,8 +29,9 @@ export function useResumoVendas(janela: Janela, canal: CanalAtivo = 'todos'): {
   const vendasQ = useVendas(janela, 'todos', canal);
   const custosQ = useCustos();
   const aliquotasQ = useAliquotas();
-  // Vendas por catálogo somam no anúncio dono (ADR-0021/0045): sem o mapa, as unidades vendidas
-  // pelo anúncio de catálogo somem da linha do produto em Publicados.
+  // Vendas que entraram por um MLB que a tela não lista — anúncio de catálogo (ADR-0021/0045) ou
+  // anúncio irmão legado (mesmo produto publicado no ML como N anúncios) — somam no anúncio dono.
+  // Sem o mapa, essas unidades somem da linha do produto em Publicados.
   const canonicoQ = useAnuncioCanonico();
   // Default 8/16 só cobre o loading inicial (data ainda undefined, sem erro). Em erro real de
   // aliquotasQ, `data` fica undefined (1ª carga) ou mantém o último valor bom (TanStack Query não

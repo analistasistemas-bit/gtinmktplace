@@ -27,7 +27,7 @@ const vendas = [
   venda({ id: 'b', order_id: 2, total_amount: 200, liquido: 200,
     itens: [item({ id: 'b1', ml_item_id: 'CAT', titulo: 'Título do catálogo', quantity: 2, unit_price: 100 })] }),
 ];
-const canonico = { CAT: 'MEU' };
+const canonico = { listings: { CAT: 'MEU' } };
 
 describe('calcularResumo.porItem', () => {
   it('soma as unidades do anúncio de catálogo na linha do anúncio dono', () => {

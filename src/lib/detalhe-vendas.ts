@@ -163,9 +163,10 @@ export function montarDetalheVendas(
     const liqPack = round2(liquidoPorPack.get(pk) ?? 0);
     const valorPack = valorItensPorPack.get(pk) ?? 0;
     for (const it of v.itens) {
-      // Venda por catálogo entra com o MLB do anúncio de catálogo: funde na linha do anúncio dono
-      // para o produto não aparecer duas vezes no detalhe (ver anuncio-canonico.ts).
-      const key = it.ml_item_id ? canonizarItem(it.ml_item_id, canonico) : it.id;
+      // Venda por catálogo (MLB do anúncio de catálogo) ou por anúncio irmão legado (resolvido pelo
+      // GTIN) funde na linha do anúncio dono, para o produto não aparecer duas vezes no detalhe
+      // (ver anuncio-canonico.ts).
+      const key = it.ml_item_id ? canonizarItem(it.ml_item_id, canonico, it.ean) : it.id;
       const g = grupos.get(key)
         ?? { unidades: 0, valor: 0, liquido: 0, comissao: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, tituloDono: null, codigo: null, ean: null, publiai: it.is_publiai };
       const valorItem = it.unit_price * it.quantity;

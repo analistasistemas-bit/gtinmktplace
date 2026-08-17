@@ -61,7 +61,7 @@ describe('resolver de foto do produto', () => {
 
   it('venda de catálogo resolve pelo anúncio dono (canônico)', () => {
     const m = montarMapasFoto([variacao('A', 'fotos/unica.png', 'MLB1')], []);
-    const foto = montarFotoResolver(m, { MLBcatalogo: 'MLB1' })(item({ ml_item_id: 'MLBcatalogo' }));
+    const foto = montarFotoResolver(m, { listings: { MLBcatalogo: 'MLB1' } })(item({ ml_item_id: 'MLBcatalogo' }));
     expect(foto).toBe('fotos/unica.png');
   });
 

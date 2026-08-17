@@ -63,6 +63,49 @@ Por que o vínculo e não o GTIN aqui: código/GTIN também são compartilhados 
 legitimamente distintos — split por faixa de preço (ADR-0078/0048) e kit x unidade (ADR-0071) —
 e fundi-los seria errado. O `catalog_listing_id` só existe para o anúncio de catálogo.
 
+## Adendo 2026-08-17 — o mesmo GTIN resolve o **anúncio irmão legado**
+
+A extensão de 2026-08-06 cobriu só o anúncio de catálogo, porque o vínculo (`catalog_listing_id`)
+existia. Falta o caso sem vínculo nenhum: produto que **já vendia no ML como N anúncios — um MLB por
+cor/estampa** — e entrou no app com apenas um desses MLBs em `familias.ml_item_id`. As vendas dos
+irmãos não casam com nenhuma linha da tela e ficam órfãs: nem somam no produto, nem aparecem em
+lugar algum.
+
+Medido em produção (org AVIL, 90 dias, 2026-08-17): **18 MLBs órfãos, 89 unidades, R$ 5.450**. O caso
+que Diego reportou — "TECIDO HELANCA LIGHT 10METROS" (`codigo_pai` 26705343, `MLB4959919693`) — são
+9 anúncios, um por cor: a tela mostrava **7 un / R$ 538,30** (só a cor Amarelo Canário, o único MLB
+vinculado) contra **49 un / R$ 3.757,28** reais.
+
+**O critério continua sendo o GTIN — não é heurística nova.** O ingest já resolve esses itens por
+GTIN (`_shared/faturamento/venda.ts`, cascata do fallback): os itens órfãos chegam a
+`ml_vendas_itens` com `is_publiai = true` justamente porque o backend os reconheceu pelo EAN. O que
+faltava era o **frontend** aplicar o mesmo critério ao escolher a chave de agregação. Este adendo só
+propaga client-side a decisão que já vale server-side.
+
+Implementação em `src/lib/anuncio-canonico.ts`: `MapaCanonico` deixa de ser um `Record` de listings e
+passa a ter `listings` (vínculo de catálogo), `gtins` (GTIN → anúncio dono) e `conhecidos` (MLBs que
+o app lista). `canonizarItem(mlItemId, mapa, ean?)` resolve nesta ordem:
+
+1. vínculo explícito de catálogo (precedência — é o mais forte);
+2. MLB que o app já lista → dono de si mesmo (**GTIN nunca reatribui venda entre anúncios válidos**);
+3. GTIN da linha da venda → anúncio dono;
+4. o próprio MLB (degradação segura, comportamento anterior).
+
+**Guard contra o falso positivo que este ADR temia:** GTIN que aponta para mais de um anúncio é
+descartado por inteiro do mapa. Kit x unidade (ADR-0071) e split por faixa de preço (ADR-0078/0048)
+têm exatamente essa assinatura, então se auto-excluem — não atribuir é melhor que atribuir errado.
+Ambiguidade medida no cadastro atual: **11 de 3.170 GTINs (0,35%)**.
+
+O `ean` é **opt-in** no resolver: só quem agrega venda por anúncio o informa (`resumo-vendas.ts` →
+Publicados, `cockpit.ts` → Top produtos do Dashboard, `detalhe-vendas.ts`). `fotos-produto.ts` e
+`cor-produto.ts` seguem chamando sem `ean` e mantêm o comportamento anterior — a cor de uma venda sem
+variação não pode ser inferida por GTIN (ver o comentário em `cor-produto.ts`).
+
+**Resíduo declarado:** 5 dos 18 MLBs órfãos (**R$ 1.999,92** — Oxford Natal `02710170` e o item
+`00000033`) têm `variacoes.gtin = null`; o produto não tem EAN, então nenhum critério de GTIN os
+alcança. Continuam órfãos por decisão, não por omissão. Resolvê-los exige vincular os MLBs irmãos
+como anúncios do produto (mudança de modelo, ADR próprio).
+
 ## Alternativas descartadas
 
 - **Match por `seller_custom_field`/`seller_sku`**: nem sempre presente em venda de catálogo;

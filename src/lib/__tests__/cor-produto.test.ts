@@ -52,7 +52,7 @@ describe('resolver de cor do produto', () => {
     const m = montarMapasCor([
       variacao({ codigo: '00000005', cor: 'incolor', ml_item_id: 'MLB4982690837' }),
     ], []);
-    const r = montarCorResolver(m, { MLB7343614472: 'MLB4982690837' });
+    const r = montarCorResolver(m, { listings: { MLB7343614472: 'MLB4982690837' } });
     expect(r(item({ ml_item_id: 'MLB7343614472' }))).toBe('incolor');
   });
 

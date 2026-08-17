@@ -2,6 +2,36 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Vendas por anúncio: irmão legado sem vínculo sumia da tela — 2026-08-17
+
+- [x] **Bug (reportado por Diego).** "Unid. vendidas" e "Valor vendido" abaixo do real em vários
+  produtos. Causa: a atribuição casa `ml_vendas_itens.ml_item_id` com o anúncio listado; produto que
+  já vendia no ML como **N anúncios (um MLB por cor/estampa)** entrou no app com só um MLB
+  vinculado, e as vendas dos irmãos ficavam órfãs — nenhuma linha as recebia. Medido na org AVIL
+  (90 dias): **18 MLBs órfãos, 89 un, R$ 5.450**. Caso do print — Helanca `26705343`: tela mostrava
+  **7 un / R$ 538,30**, real **49 un / R$ 3.757,28** (9 anúncios, um por cor).
+- [x] **Fix (adendo do ADR-0045, sem ADR novo).** O critério é o GTIN, o mesmo que o ingest já usa
+  (`_shared/faturamento/venda.ts` marca `is_publiai` por EAN) — o frontend passou a aplicá-lo na
+  chave de agregação. `MapaCanonico` (`src/lib/anuncio-canonico.ts`) ganhou `gtins` e `conhecidos`;
+  `canonizarItem(mlItemId, mapa, ean?)` resolve na ordem: vínculo de catálogo → MLB que o app já
+  lista (dono de si) → GTIN → o próprio MLB.
+- [x] **Guard contra falso positivo.** GTIN que aponta para mais de um anúncio é descartado do mapa
+  — é a assinatura de kit x unidade (ADR-0071) e split por faixa (ADR-0078/0048), que o ADR-0045
+  temia fundir. Ambiguidade real: 11 de 3.170 GTINs (0,35%). O `ean` é **opt-in**: `fotos-produto` e
+  `cor-produto` seguem sem ele e não mudam de comportamento.
+- [x] **Menus corrigidos:** Publicados (colunas por anúncio, Encalhados, Top produtos, export),
+  Dashboard (Top produtos + PDF), Detalhe de vendas. KPIs monetários (bruto/líquido/pedidos) não
+  eram afetados — agregam por pack. Estoque, Pulse e Geografia não usam essa chave.
+- [x] **Testes:** `irmao-legado-vendas.test.ts` (6 casos: os 3 agregadores + GTIN ambíguo + anúncio
+  já listado + degradação sem mapa), casos novos em `anuncio-canonico.test.ts` e em
+  `tests/pages/Publicados.test.tsx` (renderiza 7 → 49). Suíte: 3.331 testes verdes, lint sem erro,
+  `tsc -b --force` limpo.
+- [x] **Validação em runtime:** queries novas conferidas no PostgREST real (embed e filtros) e app
+  local aberto no navegador com a tela Publicados renderizando sem erro de console.
+- [ ] **Resíduo declarado:** 5 dos 18 MLBs órfãos (**R$ 1.999,92** — Oxford Natal `02710170` e o
+  item `00000033`) têm `variacoes.gtin = null`; sem EAN nenhum critério de GTIN os alcança.
+  Resolver exige vincular os MLBs irmãos como anúncios do produto (mudança de modelo, ADR próprio).
+
 ## Publicados — "Corrigir e republicar" pausa o anúncio Legacy no ML — 2026-08-17
 
 - [x] **Bug.** O modo republicar (`remover-publicado` com `preservar_familia: true`) só pausava
