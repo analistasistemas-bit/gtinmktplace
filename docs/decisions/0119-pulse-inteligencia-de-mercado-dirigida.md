@@ -152,9 +152,22 @@ da ficha. A UI e o guia dizem isso explicitamente.
 bloco de decisão do detalhe) e a documentação. As colunas `ptw_*` continuam com esse nome no
 schema — renomear exigiria migration sem ganho de comportamento.
 
-**Follow-up não incluído:** a resposta do ML traz `applicable_suggestion`. Se ele marcar a
-referência como não aplicável e a tela mostrar mesmo assim, o selo passa a afirmar mais do que o ML
-afirma. Registrado em `docs/TASKS.md` — exige coluna nova e redeploy do coletor.
+**Follow-up — resolvido em 2026-08-17.** A resposta do ML traz `applicable_suggestion`, e a tela
+mostrava o selo de qualquer jeito: passava a afirmar sobre o preço do operador mais do que o próprio
+ML afirma. Importa porque o selo é lido como veredito — "Acima da referência" empurra para baixar
+preço, e fazer isso a partir de uma referência que a fonte marcou como não aplicável é decisão
+financeira sobre número que ninguém sustenta.
+
+Agora a coluna `ptw_aplicavel` guarda o campo e a tela o respeita: `false` vira o selo neutro
+"Referência não aplicável", sai da escala de ordenação (senão a linha ficaria entre "abaixo" e
+"acima", contradizendo o próprio selo) e o detalhe deixa de exibir o valor em destaque — número
+grande é lido como alvo de preço.
+
+**Medido em produção:** dos 5 produtos com referência, 3 vieram com `applicable_suggestion: true` e
+2 (ambos `no_benchmark_lowest`) sem o campo. Por isso `null` é tratado como "não sabemos" e mantém o
+comportamento anterior: se fosse lido como "não se aplica", esses dois perderiam o selo sem que o ML
+tenha dito nada. Nenhum produto está com `false` hoje — esse caminho foi validado por teste unitário
+e por injeção da resposta na tela, não por dado real.
 
 ## Errata 4 (2026-08-16) — "Seu preço" não era o preço vigente
 

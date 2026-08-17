@@ -4,8 +4,35 @@ import {
   posicaoVsMercado,
 } from '../pulse-formato';
 
-const vinculado = (ptw_status: string | null) =>
-  ({ ptw_status, catalogo_status: 'vinculado', origem: 'auto' }) as const;
+const vinculado = (ptw_status: string | null, ptw_aplicavel: boolean | null = null) =>
+  ({ ptw_status, catalogo_status: 'vinculado', origem: 'auto', ptw_aplicavel }) as const;
+
+// O ML devolve, junto com a referência, se ela se aplica àquele anúncio. O selo é lido como
+// veredito ("Acima da referência" empurra para baixar preço), então usá-lo quando a própria fonte
+// diz que não vale é afirmar mais do que o ML afirma.
+describe('seloPriceToWin — applicable_suggestion', () => {
+  it('referência marcada como não aplicável não vira posição de preço', () => {
+    const selo = seloPriceToWin(vinculado('with_benchmark_high', false));
+    expect(selo?.texto).toBe('Referência não aplicável');
+    expect(selo?.tom).toBe('neutro');
+    expect(selo?.texto).not.toMatch(/acima|abaixo/i);
+  });
+
+  it('aplicável mantém o selo normal', () => {
+    expect(seloPriceToWin(vinculado('with_benchmark_high', true))?.texto).toBe('Acima da referência');
+  });
+
+  // "não sabemos" não é "não se aplica": esconder um selo bom por causa de leitura ausente é
+  // perder informação sem motivo.
+  it('campo ausente (null) mantém o comportamento anterior', () => {
+    expect(seloPriceToWin(vinculado('with_benchmark_high', null))?.texto).toBe('Acima da referência');
+  });
+
+  it('não aplicável sai da escala de ordenação de preço', () => {
+    expect(ordemPriceToWin(vinculado('no_benchmark_lowest', false))).toBe(99);
+    expect(ordemPriceToWin(vinculado('no_benchmark_lowest', true))).toBe(0);
+  });
+});
 
 describe('seloPriceToWin', () => {
   // Os quatro status que /suggestions/items/{id}/details realmente devolve, com o significado da
@@ -47,19 +74,19 @@ describe('seloPriceToWin', () => {
   });
 
   it('sem referência e sem vínculo: explica a causa (era um traço mudo)', () => {
-    const s = seloPriceToWin({ ptw_status: null, catalogo_status: 'ficha_divergente', origem: 'auto' });
+    const s = seloPriceToWin({ ptw_status: null, catalogo_status: 'ficha_divergente', origem: 'auto', ptw_aplicavel: null });
     expect(s?.texto).toBe('Sem vínculo de catálogo');
     expect(s?.tom).toBe('atencao');
     expect(s?.ajuda).toContain('não está vinculado');
   });
 
   it('ficha manual: a referência é sobre anúncio nosso, então não se aplica', () => {
-    const s = seloPriceToWin({ ptw_status: null, catalogo_status: null, origem: 'manual' });
+    const s = seloPriceToWin({ ptw_status: null, catalogo_status: null, origem: 'manual', ptw_aplicavel: null });
     expect(s?.texto).toBe('Você não vende');
   });
 
   it('vinculado mas ainda sem avaliação do ML: nada a dizer', () => {
-    expect(seloPriceToWin({ ptw_status: null, catalogo_status: 'vinculado', origem: 'auto' })).toBeNull();
+    expect(seloPriceToWin({ ptw_status: null, catalogo_status: 'vinculado', origem: 'auto', ptw_aplicavel: null })).toBeNull();
   });
 });
 

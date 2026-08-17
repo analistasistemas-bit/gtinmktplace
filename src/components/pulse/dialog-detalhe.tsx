@@ -316,9 +316,21 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                       >
                         Referência do ML
                       </p>
-                      <p className="text-lg font-semibold tabular-nums">
-                        {produto.ptw_preco_sugerido != null ? fmtBRL(produto.ptw_preco_sugerido) : '—'}
-                      </p>
+                      {/* Referência que o ML marcou como não aplicável não é exibida como número:
+                          um valor grande e em destaque é lido como alvo de preço, e seria alvo que
+                          a própria fonte não sustenta. O selo da lista diz a mesma coisa. */}
+                      {produto.ptw_aplicavel === false ? (
+                        <p
+                          className="text-sm text-muted-foreground"
+                          title="O Mercado Livre calculou uma referência para este anúncio, mas marcou que ela não se aplica agora."
+                        >
+                          não aplicável
+                        </p>
+                      ) : (
+                        <p className="text-lg font-semibold tabular-nums">
+                          {produto.ptw_preco_sugerido != null ? fmtBRL(produto.ptw_preco_sugerido) : '—'}
+                        </p>
+                      )}
                     </div>
                   </div>
 

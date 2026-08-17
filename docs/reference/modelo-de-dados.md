@@ -627,11 +627,16 @@ UPDATE do membro citadas abaixo.
 Um produto monitorado por `(org_id, catalog_product_id)` — unique `pulse_produtos_org_cpid_uniq`.
 `codigo_pai` (anúncio nosso que originou; `null` quando `origem='manual'`), `titulo`, `origem`
 (`auto` | `manual`, default `auto`), `status` (`ativo` | `pausado` | `arquivado`, default `ativo`),
-`ptw_status`/`ptw_preco_sugerido`/`ptw_custos` (jsonb)/`ptw_atualizado_em` — **referência de preço**
+`ptw_status`/`ptw_preco_sugerido`/`ptw_aplicavel`/`ptw_custos` (jsonb)/`ptw_atualizado_em` —
+**referência de preço**
 do NOSSO item via `/suggestions/items/{id}/details` (o prefixo `ptw` é histórico: não é o endpoint
 `price_to_win` do buy box — Errata 3 do ADR-0119). `ptw_status` assume `no_benchmark_lowest`,
 `no_benchmark_ok`, `with_benchmark_high`, `with_benchmark_highest` ou, em referência do tipo
-Markdown, `not_optin_applied`/`promotion_scheduled`/`promotion_active`.
+Markdown, `not_optin_applied`/`promotion_scheduled`/`promotion_active`. `ptw_aplicavel` é o
+`applicable_suggestion` do ML: `false` = ele calculou a referência mas diz que ela não se aplica, e
+a tela então não afirma posição de preço (selo neutro, fora da escala de ordenação, valor suprimido
+no detalhe); `null` = campo ausente na leitura, tratado como "não sabemos" e mantendo o
+comportamento anterior — medido em 2026-08-17 que o ML omite o campo em parte das respostas.
 `anuncio_status`/`anuncio_sub_status` (text[])/`anuncio_status_em` — situação do NOSSO anúncio no ML
 (`active`, `paused` + `out_of_stock`, …), do multiget `/items` (Errata 5 do ADR-0119). Não confundir
 com `status`, que é a situação do produto **dentro do radar**.

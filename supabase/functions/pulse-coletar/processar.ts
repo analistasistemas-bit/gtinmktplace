@@ -353,6 +353,7 @@ export async function processarColetaOrg(
       if (!ptw) return;
       await admin.from('pulse_produtos').update({
         ptw_status: ptw.status, ptw_preco_sugerido: ptw.preco_sugerido, ptw_custos: ptw.custos,
+        ptw_aplicavel: ptw.aplicavel,
         ptw_atualizado_em: new Date().toISOString(),
       }).eq('id', produto.id);
     });

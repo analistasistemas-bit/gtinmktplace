@@ -18,6 +18,9 @@ export interface PulseProduto {
   origem: 'auto' | 'manual'; status: 'ativo' | 'pausado' | 'arquivado';
   catalogo_status: string | null;
   ptw_status: string | null; ptw_preco_sugerido: number | null;
+  /** `applicable_suggestion` do ML: se a referência de preço se aplica a este anúncio.
+   *  `false` = a tela não afirma posição de preço. `null` = campo ausente na leitura. */
+  ptw_aplicavel: boolean | null;
   ptw_custos: { comissao: number | null; frete: number | null } | null;
   ultimo_snapshot_em: string | null;
   /**
@@ -70,7 +73,7 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
   const { data, error } = await pulseFrom('pulse_produtos')
     .select(
-      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
+      'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
     )
     .neq('status', 'arquivado')
     .order('atualizado_em', { ascending: false });

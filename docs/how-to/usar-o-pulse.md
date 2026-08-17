@@ -109,6 +109,12 @@ Abra **Pulse** na barra lateral. A lista mostra uma linha por ficha de catálogo
   Quando a referência do ML vem de uma promoção, o selo mostra o estado dela:
   **Promoção sugerida**, **Promoção agendada** ou **Promoção ativa**.
 
+  Existe ainda **Referência não aplicável**: o Mercado Livre calculou uma referência para aquele
+  anúncio mas marcou que ela não vale agora. Nesse caso a tela não diz se o seu preço está alto ou
+  baixo, e o detalhe não mostra o valor — porque um número em destaque é lido como alvo de preço, e
+  seria um alvo que o próprio ML não sustenta. É de propósito: o selo é lido como veredito, e
+  "Acima da referência" empurra para baixar preço.
+
   Dois selos não são posição de preço e sim explicação de por que não há nenhuma:
   **Sem vínculo de catálogo** (seu anúncio não está atrelado a essa ficha, então o ML não calcula
   referência — resolva o vínculo pelo fluxo de catálogo) e **Você não vende** (ficha manual,

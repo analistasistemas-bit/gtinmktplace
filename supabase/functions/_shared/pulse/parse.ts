@@ -130,6 +130,9 @@ export function parsePriceToWin(json: unknown): PriceToWin | null {
   return {
     status: typeof d.status === 'string' ? d.status : null,
     preco_sugerido: typeof sug === 'number' ? sug : null,
+    // Só `true`/`false` viram valor; qualquer outra coisa fica null e a tela trata como
+    // "não sabemos", que é diferente de "não se aplica".
+    aplicavel: typeof d.applicable_suggestion === 'boolean' ? d.applicable_suggestion : null,
     custos: costs
       ? {
           comissao: typeof costs.selling_fees === 'number' ? costs.selling_fees : null,

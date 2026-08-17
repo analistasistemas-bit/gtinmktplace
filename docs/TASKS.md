@@ -186,9 +186,12 @@ Revisão integral do módulo (33 arquivos), relatório em
   `grant update (status) on pulse_produtos` e `grant update (lido) on pulse_alertas` — são as duas
   únicas escritas do cliente (`pausarPulseProduto`, `marcarAlertaLido` em `src/lib/pulse.ts`);
   revogar sem recriar as duas quebra o pausar/reativar e o marcar-alerta-como-lido.
-- [ ] Pulse: gravar e respeitar `applicable_suggestion` de `/suggestions/items/{id}/details`. Hoje
-  a tela mostra a referência de preço mesmo quando o ML a marca como não aplicável — o selo afirma
-  mais do que o ML afirma. Exige coluna nova + redeploy do `pulse-coletar` (Errata 3 do ADR-0119).
+- [x] **Respeitar `applicable_suggestion` (2026-08-17).** A tela mostrava a referência de preço
+  mesmo quando o ML a marcava como não aplicável — o selo afirmava mais do que o ML afirma, e ele é
+  lido como veredito de preço. Coluna `ptw_aplicavel` + selo neutro "Referência não aplicável", que
+  também sai da escala de ordenação e suprime o valor em destaque no detalhe. Medido: dos 5
+  produtos com referência, 3 vieram `true` e 2 sem o campo — por isso `null` mantém o comportamento
+  anterior em vez de esconder selo bom (Errata 3 do ADR-0119).
 - [ ] Pulse: job de agregação semanal + prune de 90d + auto-pausa de produto sem acesso há 60d —
   antes de 2026-11-14.
 - [ ] **Pulse v2: extensão coletora de DOM — PRIORIDADE ALTA, é o que dá cobertura ao módulo.**

@@ -25,4 +25,10 @@ export interface PriceToWin {
   status: string | null;
   preco_sugerido: number | null;
   custos: { comissao: number | null; frete: number | null } | null;
+  /**
+   * `applicable_suggestion` do ML: o próprio Mercado Livre dizendo se a referência que ele calculou
+   * se aplica a este anúncio agora. `false` = calculada mas não vale; a tela não pode usá-la para
+   * afirmar que o preço está alto ou baixo. `null` = a resposta não trouxe o campo.
+   */
+  aplicavel: boolean | null;
 }

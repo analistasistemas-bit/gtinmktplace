@@ -220,7 +220,20 @@ describe('parsePriceToWin', () => {
       status: 'with_benchmark_highest',
       preco_sugerido: 89.9,
       custos: { comissao: 3.78, frete: 6.65 },
+      aplicavel: null,
     });
+  });
+
+  // O ML diz, junto com a referência, se ela se aplica àquele anúncio. Sem ler isso, a tela afirma
+  // posição de preço em cima de um número que a própria fonte não sustenta.
+  it('captura applicable_suggestion quando o ML o envia', () => {
+    expect(parsePriceToWin({ status: 'with_benchmark_high', applicable_suggestion: false })?.aplicavel).toBe(false);
+    expect(parsePriceToWin({ status: 'with_benchmark_high', applicable_suggestion: true })?.aplicavel).toBe(true);
+  });
+
+  it('campo ausente ou fora do tipo → null ("não sabemos", que não é "não se aplica")', () => {
+    expect(parsePriceToWin({ status: 'with_benchmark_high' })?.aplicavel).toBeNull();
+    expect(parsePriceToWin({ status: 'with_benchmark_high', applicable_suggestion: 'sim' })?.aplicavel).toBeNull();
   });
 
   it('sem status → null', () => {
@@ -230,6 +243,8 @@ describe('parsePriceToWin', () => {
 
   it('sem costs → custos null', () => {
     const json = { status: 'no_benchmark_lowest', suggested_price: { amount: 10 } };
-    expect(parsePriceToWin(json)).toEqual({ status: 'no_benchmark_lowest', preco_sugerido: 10, custos: null });
+    expect(parsePriceToWin(json)).toEqual({
+      status: 'no_benchmark_lowest', preco_sugerido: 10, custos: null, aplicavel: null,
+    });
   });
 });

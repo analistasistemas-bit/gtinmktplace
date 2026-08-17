@@ -36,7 +36,20 @@ const MARKDOWN: Record<string, Selo> = {
  * (404 em /suggestions) — dizer isso vale mais que um traço mudo, porque é acionável:
  * resolver a ficha divergente devolve a disputa e a referência de preço.
  */
-export function seloPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem'>): Selo | null {
+export function seloPriceToWin(
+  p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem' | 'ptw_aplicavel'>,
+): Selo | null {
+  // O ML marcou a própria referência como não aplicável: a tela não pode usá-la para dizer que o
+  // preço está alto ou baixo, senão afirma mais do que a fonte afirma — e o selo é lido como
+  // veredito ("Acima da referência" empurra para baixar preço). `null` é outra coisa: significa que
+  // a leitura não trouxe o campo, e aí o comportamento anterior vale.
+  if (p.ptw_aplicavel === false) {
+    return {
+      texto: 'Referência não aplicável',
+      tom: 'neutro',
+      ajuda: 'O Mercado Livre calculou uma referência de preço para este anúncio, mas marcou que ela não se aplica agora. Por isso a tela não diz se o seu preço está alto ou baixo.',
+    };
+  }
   // Status novo do ML não vira badge com nome de API na tela do operador — o código cru fica no
   // tooltip, para o suporte conseguir rastrear. E o fallback não pode sugerir posição de preço
   // nenhuma: um status que não conhecemos não é "barato" nem "caro".
@@ -111,7 +124,13 @@ const ORDEM: Record<string, number> = {
   with_benchmark_highest: 3,
 };
 
-export function ordemPriceToWin(p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem'>): number | null {
+export function ordemPriceToWin(
+  p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem' | 'ptw_aplicavel'>,
+): number | null {
+  // Referência que o ML marcou como não aplicável não entra na escala de preço: ordenar por ela
+  // colocaria a linha entre as posições ("abaixo", "acima") e contradiria o próprio selo, que diz
+  // justamente que não há posição a afirmar.
+  if (p.ptw_aplicavel === false) return 99;
   if (p.ptw_status && p.ptw_status in ORDEM) return ORDEM[p.ptw_status];
   return seloPriceToWin(p) ? 99 : null; // sem escala (sem vínculo, sem referência) vai para o fim
 }
