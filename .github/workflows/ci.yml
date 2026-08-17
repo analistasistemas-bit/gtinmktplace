@@ -17,8 +17,17 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# O job `frontend` levava ~4 min e 80% disso era `pnpm test` (3m11 de 3m58, medido no run
+# 31980783835). A suíte roda em 3 shards paralelos — `vitest --shard` divide por ARQUIVO, então
+# a soma cobre exatamente a suíte inteira (verificado: 1036 + 1061 + 1183 = 3280, idêntico ao
+# `vitest run` completo). Nada de "só os testes afetados": a cobertura continua total, muda só o
+# wall-clock.
+#
+# `frontend` continua existindo como job — é o nome exato que a proteção da `main` exige — mas
+# virou GATE: não roda nada, só reprova se qualquer paralelo abaixo falhar. Renomear ou remover
+# este job quebra o merge por push direto.
 jobs:
-  frontend:
+  lint-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +38,39 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm test
       - run: pnpm build
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Sem fail-fast: um shard vermelho não deve esconder o resultado dos outros dois — com 3
+      # relatórios de uma vez, um push conserta tudo.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm vitest run --shard=${{ matrix.shard }}/3
+
+  frontend:
+    needs: [lint-build, test]
+    # `always()` é obrigatório: sem ele o gate fica `skipped` quando um dependente falha, e check
+    # pulado não é check verde — a proteção da `main` ficaria travada sem dizer por quê.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reprovar se lint/build ou algum shard falhou
+        run: |
+          echo "lint-build: ${{ needs.lint-build.result }}"
+          echo "test:       ${{ needs.test.result }}"
+          [ "${{ needs.lint-build.result }}" = "success" ] || exit 1
+          [ "${{ needs.test.result }}" = "success" ] || exit 1
 
   backend-lint:
     runs-on: ubuntu-latest
