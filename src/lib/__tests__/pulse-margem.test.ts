@@ -12,7 +12,7 @@ const oferta = (over: Partial<PulseOferta>): PulseOferta => ({
 
 const vendedor = (over: Partial<PulseVendedor>): PulseVendedor => ({
   seller_id: 111, nickname: 'LOJA', power_seller: 'platinum', nivel: '5_green',
-  transactions_total: 100, dia: '2026-08-10', ...over,
+  transactions_total: 100, dia: '2026-08-10', uf: null, ...over,
 });
 
 describe('estadoAtualOfertas', () => {

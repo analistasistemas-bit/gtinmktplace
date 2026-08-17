@@ -123,6 +123,10 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
     return hist[hist.length - 1]?.nickname ?? `Vendedor ${o.seller_id}`;
   };
+  const ufDe = (o: PulseOferta) => {
+    const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
+    return hist[hist.length - 1]?.uf ?? null;
+  };
 
   const colunasConcorrentes: Column<PulseOferta>[] = [
     {
@@ -162,6 +166,19 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
             )}
           </div>
         );
+      },
+    },
+    {
+      key: 'uf',
+      // "Estado" e não "UF": é a palavra que o operador usa. Ordena com os sem-estado no fim, para
+      // a lista não começar com uma coluna de traços.
+      header: 'Estado',
+      sortValue: (o) => ufDe(o) ?? 'ZZ',
+      cell: (o) => {
+        const uf = ufDe(o);
+        return uf
+          ? <span className="tabular-nums" title={`Envia de ${uf}`}>{uf}</span>
+          : <span className="text-xs text-muted-foreground" title="O Mercado Livre não expôs o endereço deste vendedor">—</span>;
       },
     },
     {

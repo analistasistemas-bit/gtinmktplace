@@ -791,7 +791,8 @@ falha ao ler `organizations` não libera.
   teto de 50 produtos **por org** na execução. Tier `completo` (schedule diário 06h BRT, teto 200
   produtos por org na execução) roda `sincronizarRadar` (espelha `anuncios_externos` publicados em
   `pulse_produtos`, arquiva os que saíram), coleta ofertas de todos os produtos ativos, snapshot de
-  vendedores (1×/dia, só se `transactions_total` mudou) e a referência de preço do ML dos produtos
+  vendedores (1×/dia, se `transactions_total` **ou** a `uf` mudou — a UF vem de `address.state` da
+  mesma resposta de `/users/{id}`, sem chamada nova) e a referência de preço do ML dos produtos
   com `origem='auto'` **e** `codigo_pai` preenchido; tier `quente` (a cada 6h, teto 100 por org na
   execução) só reconsulta ofertas dos produtos `origem='auto'`, sem vendedores/referência. A mesma
   resposta de `/products/{id}/items` (`limit=100` explícito; excedente vai para o log) alimenta

@@ -54,6 +54,8 @@ export interface PulseOferta {
 export interface PulseVendedor {
   seller_id: number; nickname: string | null; power_seller: string | null;
   nivel: string | null; transactions_total: number | null; dia: string;
+  /** Sigla do estado de onde o vendedor envia. `null` quando o ML não expôs o endereço. */
+  uf: string | null;
 }
 export interface PulseAlerta {
   id: string; produto_id: string | null;
@@ -110,7 +112,7 @@ export async function fetchPulseDetalhe(
   if (sellerIds.length === 0) return { ofertas, ofertasAtuais, vendedores: [] };
 
   const { data: vendedoresData, error: vendedoresErro } = await pulseFrom('pulse_vendedores')
-    .select('seller_id, nickname, power_seller, nivel, transactions_total, dia')
+    .select('seller_id, nickname, power_seller, nivel, transactions_total, dia, uf')
     .in('seller_id', sellerIds)
     .order('dia', { ascending: true });
   if (vendedoresErro) throw vendedoresErro;

@@ -678,9 +678,14 @@ consulta a view (invoker).
 
 ### `pulse_vendedores`
 Snapshot diário de reputação de um vendedor concorrente. `seller_id` (bigint), `nickname`,
-`power_seller`, `nivel`, `transactions_total` (bigint), `dia` (date, default hoje BRT). Unique
+`power_seller`, `nivel`, `transactions_total` (bigint), `uf` (sigla do estado de onde ele envia,
+de `address.state` de `/users/{id}` sem o prefixo `BR-`; `null` quando o ML não expôs o endereço —
+medido em 2026-08-17: 150 de 232 vendedores traziam), `dia` (date, default hoje BRT). Unique
 `pulse_vendedores_org_seller_dia_uniq` em `(org_id, seller_id, dia)` — 1 gravação por vendedor por
-dia, só quando `transactions_total` mudou (`deveGravarVendedor`, coletado só no tier `completo`).
+dia, quando `transactions_total` **ou** `uf` mudou (`deveGravarVendedor`, coletado só no tier
+`completo`). A `uf` entra na decisão para o backfill não depender de uma venda acontecer; pelo mesmo
+motivo o upsert **não** usa `ignoreDuplicates` (com ele a linha de hoje ficaria travada no primeiro
+valor do dia e a UF nunca entraria).
 Índice `pulse_vendedores_org_seller_idx` em `(org_id, seller_id, dia desc)`. RLS: só select org.
 
 ### `pulse_alertas`

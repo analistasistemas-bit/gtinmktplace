@@ -11,7 +11,7 @@ import {
   parseStatusAnuncios, type AnuncioMultiget,
 } from '../_shared/pulse/parse.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
-import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
+import { deveGravarVendedor, ufDoVendedor } from '../_shared/pulse/vendedor.ts';
 import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -294,11 +294,16 @@ export async function processarColetaOrg(
   if (tier === 'completo') {
     await pool(CONCORRENCIA, [...sellerIdsColetados], async (sellerId) => {
       const { data: ultima } = await admin.from('pulse_vendedores')
-        .select('dia, transactions_total')
+        // `uf` entra aqui porque `deveGravarVendedor` a compara: sem lê-la, o guardado chegaria
+        // sempre como undefined e todo vendedor pareceria mudado em toda execução.
+        .select('dia, transactions_total, uf')
         .eq('org_id', orgId).eq('seller_id', sellerId)
         .order('dia', { ascending: false }).limit(1).maybeSingle();
       const hojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-      if (ultima?.dia === hojeSP) return; // já processado hoje (re-execução no mesmo dia)
+      // Já processado hoje: pula, para não repetir a chamada numa 2ª execução do mesmo dia. A
+      // exceção é a linha de hoje ainda sem UF — aí a chamada não é redundante, é o que traz o
+      // dado que falta, e sem ela o estado do concorrente só apareceria no dia seguinte.
+      if (ultima?.dia === hojeSP && ultima?.uf != null) return;
 
       const json = await mlGet(`${API}/users/${sellerId}`, token);
       const u = json as {
@@ -307,15 +312,22 @@ export async function processarColetaOrg(
       } | null;
       if (!u) return;
       const total = typeof u.seller_reputation?.transactions?.total === 'number' ? u.seller_reputation.transactions.total : null;
-      const anterior = ultima ? { transactions_total: ultima.transactions_total as number | null } : null;
-      if (!deveGravarVendedor(anterior, total)) return;
+      const uf = ufDoVendedor(u);
+      const anterior = ultima
+        ? { transactions_total: ultima.transactions_total as number | null, uf: ultima.uf as string | null }
+        : null;
+      if (!deveGravarVendedor(anterior, total, uf)) return;
 
+      // SEM `ignoreDuplicates`: o backfill da UF precisa sobrescrever a linha de hoje, que pode ter
+      // sido gravada mais cedo sem o campo. Com ignoreDuplicates a linha ficaria travada no 1º
+      // valor do dia e a UF nunca entraria (mesmo motivo do upsert de ofertas).
       const { error } = await admin.from('pulse_vendedores').upsert(
         {
           org_id: orgId, seller_id: sellerId, nickname: u.nickname ?? null,
-          power_seller: u.power_seller_status ?? null, nivel: u.level_id ?? null, transactions_total: total,
+          power_seller: u.power_seller_status ?? null, nivel: u.level_id ?? null,
+          transactions_total: total, uf,
         },
-        { onConflict: 'org_id,seller_id,dia', ignoreDuplicates: true },
+        { onConflict: 'org_id,seller_id,dia' },
       );
       if (error) console.warn(`pulse-coletar: vendedor ${sellerId} falhou:`, error.message);
     });

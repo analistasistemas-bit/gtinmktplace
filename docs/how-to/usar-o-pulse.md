@@ -182,6 +182,10 @@ cara, e **todo cabeçalho é clicável para reordenar**:
 - **Preço** praticado — o menor vem destacado.
 - **Vendedor** — apelido no ML, selo de reputação e, quando é o caso, "Loja oficial". Ordena
   alfabeticamente.
+- **Estado** — a UF de onde aquele vendedor envia. Serve para ler o preço com o frete junto: um
+  rival em SP chega mais rápido e mais barato no Sudeste do que um do Nordeste, e um concorrente
+  R$ 2 mais barato do outro lado do país pode não ser mais barato para o comprador. Aparece "—"
+  quando o Mercado Livre não expõe o endereço daquele vendedor.
 - **Vendas na conta** — total de transações da conta no ML inteiro. Ordene por aqui para achar os
   concorrentes de maior porte. Abaixo, quando já há histórico, aparece *"≈N no período"*: quanto
   essa conta vendeu desde que o Pulse começou a acompanhá-la.

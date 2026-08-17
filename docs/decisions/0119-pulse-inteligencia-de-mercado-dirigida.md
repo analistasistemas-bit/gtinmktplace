@@ -101,6 +101,7 @@ aviamentos e itens genéricos, categoria que o catálogo do ML não cataloga.
 | `/highlights/MLB/category/{cat}` | 200 — 20 posições, mas só 7 eram `PRODUCT` legível (9 `USER_PRODUCT`, 4 `ITEM`, ilegíveis para terceiros) |
 | `/trends/MLB/{cat}` | 200 — termos mais buscados, dado de categoria |
 | `permalink` em `/products/{id}/items` | **ausente** — medido 2026-08-17 em 36 ofertas de 6 fichas: nenhuma trouxe o campo (Errata 8) |
+| `address.state` em `/users/{id}` | **presente** — medido 2026-08-17: 150 de 232 vendedores traziam a UF, no formato `BR-SP`. É a origem da coluna "Estado" da tabela de concorrentes, sem chamada nova |
 
 **Consequência para o roadmap:** a extensão de navegador do v2 deixa de ser um acréscimo (vendas
 por anúncio) e passa a ser **o que dá cobertura ao módulo**. Lendo a página na sessão logada do
