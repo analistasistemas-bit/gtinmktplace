@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin, parseStatusAnuncios,
+  extrairNossaOferta, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
+  parseStatusAnuncios,
 } from '../parse.ts';
 
 // Fixtures espelham a resposta real provada em 2026-08-16 (plano Pulse v1, "Fatos empíricos"):
@@ -138,14 +139,14 @@ describe('ofertasNaoLidas', () => {
 });
 
 describe('parseStatusAnuncios', () => {
-  it('extrai id, status e sub_status do multiget', () => {
+  it('extrai situação e o que a consulta de comissão precisa (categoria, tipo, preço)', () => {
     const json = [
-      { code: 200, body: { id: 'MLB1', status: 'paused', sub_status: ['out_of_stock'] } },
+      { code: 200, body: { id: 'MLB1', status: 'paused', sub_status: ['out_of_stock'], category_id: 'MLB1', listing_type_id: 'gold_special', price: 39.9 } },
       { code: 200, body: { id: 'MLB2', status: 'active', sub_status: [] } },
     ];
     expect(parseStatusAnuncios(json)).toEqual([
-      { item_id: 'MLB1', status: 'paused', sub_status: ['out_of_stock'] },
-      { item_id: 'MLB2', status: 'active', sub_status: [] },
+      { item_id: 'MLB1', status: 'paused', sub_status: ['out_of_stock'], category_id: 'MLB1', listing_type_id: 'gold_special', price: 39.9 },
+      { item_id: 'MLB2', status: 'active', sub_status: [], category_id: null, listing_type_id: null, price: null },
     ]);
   });
 
@@ -162,6 +163,23 @@ describe('parseStatusAnuncios', () => {
   it('resposta fora do formato não vira lista de situações', () => {
     expect(parseStatusAnuncios(null)).toEqual([]);
     expect(parseStatusAnuncios({ results: [] })).toEqual([]);
+  });
+});
+
+describe('parseComissao', () => {
+  it('guarda percentual e parcela fixa, não o valor pronto', () => {
+    const json = { sale_fee_amount: 5.59, sale_fee_details: { percentage_fee: 14, fixed_fee: 0, gross_amount: 5.59 } };
+    expect(parseComissao(json)).toEqual({ pct: 14, fixa: 0 });
+  });
+
+  it('parcela fixa em preço baixo não é descartada', () => {
+    const json = { sale_fee_details: { percentage_fee: 14, fixed_fee: 4.99 } };
+    expect(parseComissao(json)).toEqual({ pct: 14, fixa: 4.99 });
+  });
+
+  it('sem percentual não devolve estrutura — margem prefere faltar a errar', () => {
+    expect(parseComissao({ sale_fee_amount: 5.59 })).toBeNull();
+    expect(parseComissao(null)).toBeNull();
   });
 });
 

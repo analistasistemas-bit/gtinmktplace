@@ -11,9 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable, type Column } from '@/components/ui/data-table';
 import { QK } from '@/lib/queries';
-import { fetchPulseDetalhe, fetchContextoMargem, type PulseProduto, type PulseVendedor } from '@/lib/pulse';
+import {
+  fetchPulseDetalhe, fetchContextoMargem,
+  type PulseProduto, type PulseVendedor, type PulseOferta,
+} from '@/lib/pulse';
 import { estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada } from '@/lib/pulse-margem';
 import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, tipoAnuncio,
@@ -22,13 +25,19 @@ import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
 
+/**
+ * A comissão TEM que vir de `comissao_pct` (lida no preço praticado). Cair em
+ * `ptw_custos.comissao` seria voltar ao defeito da Errata 6: aquele valor é calculado sobre o
+ * preço sugerido pelo ML e superestima a sobra em todo anúncio acima da sugestão.
+ */
 function insumoFaltante(
   contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
-  ptwCustos: { comissao: number | null; frete: number | null } | null,
+  produto: { comissao_pct: number | null; ptw_custos: { frete: number | null } | null } | null,
 ): string | null {
   if (!contexto || contexto.custo == null) return 'custo do produto';
   if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'referência de preço do Mercado Livre';
+  if (produto?.comissao_pct == null) return 'comissão do Mercado Livre';
+  if (produto.ptw_custos?.frete == null) return 'custo de frete do Mercado Livre';
   return null;
 }
 
@@ -92,14 +101,110 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   const posicao = posicaoVsMercado(meuPreco, menorConcorrente);
   const precoInput = precoEditado ?? (meuPreco != null ? String(meuPreco) : '');
   const precoSimulado = parseNumeroPtBr(precoInput);
-  const faltando = produto?.codigo_pai && !contextoCarregando ? insumoFaltante(contexto, produto.ptw_custos) : null;
+  const faltando = produto?.codigo_pai && !contextoCarregando ? insumoFaltante(contexto, produto) : null;
   const margem = precoSimulado && precoSimulado > 0 && !faltando
     ? margemEstimada({
         preco: precoSimulado, custoProduto: contexto?.custo ?? null,
-        ptwCustos: produto?.ptw_custos ?? null, aliquotaPct: contexto?.aliquotaPct ?? null,
+        comissao: produto ? { pct: produto.comissao_pct, fixa: produto.comissao_fixa } : null,
+        frete: produto?.ptw_custos?.frete ?? null, aliquotaPct: contexto?.aliquotaPct ?? null,
       })
     : null;
   const margemRuim = margem != null && margem.liquido < 0;
+  // O percentual da comissão muda por faixa de preço (14% até ~R$ 100, 11% em R$ 250 na categoria
+  // medida). A estrutura guardada vale para o preço praticado; em outro preço o número é
+  // estimativa, e a tela precisa dizer isso em vez de exibi-lo com a mesma confiança.
+  const margemEstimativa = margem != null && meuPreco != null && precoSimulado != null
+    && Math.abs(precoSimulado - meuPreco) > 0.005;
+
+  const vendasDe = (o: PulseOferta) => {
+    const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
+    return hist[hist.length - 1]?.transactions_total ?? null;
+  };
+  const nomeDe = (o: PulseOferta) => {
+    const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
+    return hist[hist.length - 1]?.nickname ?? `Vendedor ${o.seller_id}`;
+  };
+
+  const colunasConcorrentes: Column<PulseOferta>[] = [
+    {
+      key: 'preco',
+      header: 'Preço',
+      className: 'text-right',
+      sortValue: (o) => o.preco,
+      cell: (o) => (
+        <span className={cn(
+          'tabular-nums',
+          menorConcorrente != null && o.preco === menorConcorrente && 'font-semibold text-foreground',
+        )}>
+          {fmtBRL(o.preco)}
+        </span>
+      ),
+    },
+    {
+      key: 'vendedor',
+      header: 'Vendedor',
+      sortValue: (o) => nomeDe(o).toLowerCase(),
+      cell: (o) => {
+        const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
+        const selo = reputacao(hist[hist.length - 1]?.power_seller ?? null);
+        return (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="font-medium">{nomeDe(o)}</span>
+            {selo && (
+              <Badge variant="outline" className="border-info/30 bg-info/10 text-[10px] font-normal text-info">
+                {selo}
+              </Badge>
+            )}
+            {o.loja_oficial && (
+              <Badge variant="outline" className="text-[10px] font-normal">
+                <Store className="mr-1 h-3 w-3" />
+                Loja oficial
+              </Badge>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'vendas',
+      // "na conta" fica no cabeçalho de propósito: é o total do vendedor no ML inteiro, não deste
+      // produto. Uma coluna ordenável chamada só "Vendas" convidaria a ler como vendas do anúncio.
+      header: 'Vendas na conta',
+      className: 'text-right',
+      sortValue: (o) => vendasDe(o),
+      cell: (o) => {
+        const total = vendasDe(o);
+        const delta = vendasEstimadasVendedor(vendedoresPorSeller.get(o.seller_id) ?? []);
+        if (total == null) return <span className="text-xs text-muted-foreground">não coletado</span>;
+        return (
+          <div className="tabular-nums">
+            {fmtInt(total)}
+            {delta != null && delta > 0 && (
+              <div className="text-xs text-muted-foreground" title="Desde que este vendedor entrou no radar">
+                ≈{fmtInt(delta)} no período
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'anuncio',
+      header: 'Anúncio',
+      sortValue: (o) => tipoAnuncio(o.tier),
+      cell: (o) => (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {tipoAnuncio(o.tier)}
+          {o.frete_gratis && (
+            <span className="inline-flex items-center gap-1 text-success" title="Frete grátis">
+              <Truck className="h-3 w-3" />
+              grátis
+            </span>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -182,7 +287,24 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">Sobra para você</span>
+                      <span className="text-xs text-muted-foreground">
+                        Sobra para você
+                        {/* A conta fica à vista: foi uma comissão errada, silenciosa, que
+                            superestimou a sobra deste produto em R$ 0,97 (Errata 6). */}
+                        {margem && (
+                          <span
+                            className="ml-1 cursor-help opacity-70"
+                            title={[
+                              `Comissão do ML: ${fmtBRL(margem.comissao)}`,
+                              `Frete: ${fmtBRL(produto.ptw_custos?.frete ?? 0)}`,
+                              `Imposto: ${contexto?.aliquotaPct ?? 0}%`,
+                              `Custo do produto: ${fmtBRL(contexto?.custo ?? 0)}`,
+                            ].join(' · ')}
+                          >
+                            (comissão {fmtBRL(margem.comissao)})
+                          </span>
+                        )}
+                      </span>
                       {contextoCarregando ? (
                         <span className="text-sm text-muted-foreground">calculando…</span>
                       ) : faltando ? (
@@ -200,6 +322,14 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                           <span className="ml-1 text-sm font-normal opacity-80">
                             ({margem.margemPct.toFixed(1)}%)
                           </span>
+                          {margemEstimativa && (
+                            <span
+                              className="ml-1 text-xs font-normal text-muted-foreground"
+                              title="A comissão do ML muda por faixa de preço, e a que temos foi lida no preço atual do anúncio. Em outro preço, este número é aproximado."
+                            >
+                              estimativa
+                            </span>
+                          )}
                         </span>
                       ) : (
                         <span className="text-sm text-muted-foreground">informe um preço</span>
@@ -245,68 +375,15 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                     Nenhuma oferta coletada ainda. Use “Atualizar agora” na lista para forçar uma coleta.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border">
-                    <Table>
-                      <TableHeader className="bg-muted/50">
-                        <TableRow className="text-xs text-muted-foreground">
-                          <TableHead className="text-right">Preço</TableHead>
-                          <TableHead>Vendedor</TableHead>
-                          <TableHead>Anúncio</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {atuais.map((o) => {
-                          const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
-                          const ultimo = hist[hist.length - 1];
-                          const delta = vendasEstimadasVendedor(hist);
-                          const selo = reputacao(ultimo?.power_seller ?? null);
-                          const maisBarato = menorConcorrente != null && o.preco === menorConcorrente;
-                          return (
-                            <TableRow key={o.item_id}>
-                              <TableCell className="text-right">
-                                <span className={cn('tabular-nums', maisBarato && 'font-semibold text-foreground')}>
-                                  {fmtBRL(o.preco)}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                  <span className="font-medium">{ultimo?.nickname ?? `Vendedor ${o.seller_id}`}</span>
-                                  {selo && (
-                                    <Badge variant="outline" className="border-info/30 bg-info/10 text-[10px] font-normal text-info">
-                                      {selo}
-                                    </Badge>
-                                  )}
-                                  {o.loja_oficial && (
-                                    <Badge variant="outline" className="text-[10px] font-normal">
-                                      <Store className="mr-1 h-3 w-3" />
-                                      Loja oficial
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {ultimo?.transactions_total != null
-                                    ? `${fmtInt(ultimo.transactions_total)} vendas na conta`
-                                    : 'volume não coletado'}
-                                  {delta != null && delta > 0 && ` · ≈${fmtInt(delta)} desde que entrou no radar`}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                <div className="flex items-center gap-2">
-                                  {tipoAnuncio(o.tier)}
-                                  {o.frete_gratis && (
-                                    <span className="inline-flex items-center gap-1 text-success" title="Frete grátis">
-                                      <Truck className="h-3 w-3" />
-                                      grátis
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
+                  // DataTable em vez da tabela manual: traz a ordenação por coluna de graça, a
+                  // mesma da lista do radar. "Vendas na conta" virou coluna própria justamente
+                  // para poder ordenar por volume — o nome do vendedor ordena alfabeticamente.
+                  <DataTable
+                    columns={colunasConcorrentes}
+                    rows={atuais}
+                    rowKey={(o) => o.item_id}
+                    defaultSort={{ key: 'preco', dir: 'asc' }}
+                  />
                 )}
                 <p className="mt-2 text-xs text-muted-foreground">
                   O volume é da conta do vendedor no Mercado Livre inteiro, não deste anúncio — a API não
@@ -321,7 +398,11 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       <DialogReprecificar
         codigoPai={reprecificarAberto ? produto?.codigo_pai ?? null : null}
         precoInicial={precoSimulado ?? null}
-        ptwCustos={produto?.ptw_custos ?? null}
+        custos={produto ? {
+          comissaoPct: produto.comissao_pct,
+          comissaoFixa: produto.comissao_fixa,
+          frete: produto.ptw_custos?.frete ?? null,
+        } : null}
         onFechar={() => setReprecificarAberto(false)}
       />
     </>

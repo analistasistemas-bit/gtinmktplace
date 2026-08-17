@@ -39,20 +39,36 @@ export function vendasEstimadasVendedor(hist: PulseVendedor[]): number | null {
 }
 
 /**
- * Margem líquida estimada usando os custos do price-to-win do ML (comissão e frete em R$) +
- * imposto por origem + custo do produto. QUALQUER insumo ausente → null (regra LOUD: margem
- * nunca é exibida com dado assumido).
+ * Comissão do ML para um preço, a partir da estrutura lida na coleta. `null` sem a estrutura —
+ * comissão nunca é estimada por regra de três a partir de um valor pronto de outro preço, que foi
+ * exatamente o defeito da Errata 6.
+ */
+export function comissaoNoPreco(
+  preco: number,
+  comissao: { pct: number | null; fixa: number | null } | null,
+): number | null {
+  if (comissao?.pct == null) return null;
+  return (preco * comissao.pct) / 100 + (comissao.fixa ?? 0);
+}
+
+/**
+ * Margem líquida estimada: comissão do ML no preço + frete + imposto por origem + custo do
+ * produto. QUALQUER insumo ausente → null (regra LOUD: margem nunca é exibida com dado assumido).
+ *
+ * A comissão vem da estrutura (percentual + fixo) lida para o preço praticado, não do valor
+ * pronto de `ptw_custos` — aquele é calculado sobre o preço SUGERIDO pelo ML e superestimava a
+ * sobra em todo anúncio acima da sugestão.
  */
 export function margemEstimada(args: {
   preco: number; custoProduto: number | null;
-  ptwCustos: { comissao: number | null; frete: number | null } | null;
+  comissao: { pct: number | null; fixa: number | null } | null;
+  frete: number | null;
   aliquotaPct: number | null;
-}): { liquido: number; margemPct: number } | null {
-  const { preco, custoProduto, ptwCustos, aliquotaPct } = args;
-  if (custoProduto == null || ptwCustos?.comissao == null || ptwCustos?.frete == null || aliquotaPct == null) {
-    return null;
-  }
-  const liquido = preco - ptwCustos.comissao - ptwCustos.frete - (preco * aliquotaPct) / 100 - custoProduto;
+}): { liquido: number; margemPct: number; comissao: number } | null {
+  const { preco, custoProduto, frete, aliquotaPct } = args;
+  const comissao = comissaoNoPreco(preco, args.comissao);
+  if (custoProduto == null || comissao == null || frete == null || aliquotaPct == null) return null;
+  const liquido = preco - comissao - frete - (preco * aliquotaPct) / 100 - custoProduto;
   const margemPct = (liquido / preco) * 100;
-  return { liquido, margemPct };
+  return { liquido, margemPct, comissao };
 }

@@ -635,6 +635,10 @@ Markdown, `not_optin_applied`/`promotion_scheduled`/`promotion_active`.
 `anuncio_status`/`anuncio_sub_status` (text[])/`anuncio_status_em` — situação do NOSSO anúncio no ML
 (`active`, `paused` + `out_of_stock`, …), do multiget `/items` (Errata 5 do ADR-0119). Não confundir
 com `status`, que é a situação do produto **dentro do radar**.
+`comissao_pct`/`comissao_fixa`/`comissao_em` — estrutura da comissão do ML (`sale_fee_details` de
+`/sites/MLB/listing_prices`) lida para o preço praticado. É a fonte da margem: `ptw_custos.comissao`
+é a comissão do preço SUGERIDO e não pode ser usada no preço real (Errata 6 do ADR-0119). Muda por
+faixa de preço e por categoria.
 `meu_item_id`/`meu_preco`/`meu_preco_em` — preço **vivo** da nossa oferta na ficha, extraído da
 mesma resposta de `/products/{id}/items` que traz as concorrentes (Errata 4 do ADR-0119). `null`
 quando não temos oferta ativa lá (pausado, sem estoque, sem vínculo); com split vence o menor preço

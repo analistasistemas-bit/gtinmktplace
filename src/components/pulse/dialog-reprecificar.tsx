@@ -17,22 +17,25 @@ import { fetchContextoMargem } from '@/lib/pulse';
 import { margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 
+/** Mesma regra do detalhe: comissão só da estrutura lida no preço praticado (Errata 6). */
 function insumoFaltante(
   contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
-  ptwCustos: { comissao: number | null; frete: number | null } | null,
+  custos: { comissaoPct: number | null; frete: number | null } | null,
 ): string | null {
   if (!contexto || contexto.custo == null) return 'custo do produto';
   if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (!ptwCustos || ptwCustos.comissao == null || ptwCustos.frete == null) return 'referência de preço do Mercado Livre';
+  if (custos?.comissaoPct == null) return 'comissão do Mercado Livre';
+  if (custos.frete == null) return 'custo de frete do Mercado Livre';
   return null;
 }
 
 export function DialogReprecificar({
-  codigoPai, precoInicial, ptwCustos, onFechar,
+  codigoPai, precoInicial, custos, onFechar,
 }: {
   codigoPai: string | null;
   precoInicial: number | null;
-  ptwCustos: { comissao: number | null; frete: number | null } | null;
+  /** Estrutura da comissão (percentual + fixo) e frete — nunca o valor pronto de `ptw_custos`. */
+  custos: { comissaoPct: number | null; comissaoFixa: number | null; frete: number | null } | null;
   onFechar: () => void;
 }) {
   const aberto = codigoPai != null;
@@ -47,11 +50,12 @@ export function DialogReprecificar({
   });
 
   const precoSimulado = parseNumeroPtBr(preco);
-  const faltando = !contextoCarregando ? insumoFaltante(contexto, ptwCustos) : null;
+  const faltando = !contextoCarregando ? insumoFaltante(contexto, custos) : null;
   const margem = precoSimulado && precoSimulado > 0 && !faltando
     ? margemEstimada({
         preco: precoSimulado, custoProduto: contexto?.custo ?? null,
-        ptwCustos, aliquotaPct: contexto?.aliquotaPct ?? null,
+        comissao: custos ? { pct: custos.comissaoPct, fixa: custos.comissaoFixa } : null,
+        frete: custos?.frete ?? null, aliquotaPct: contexto?.aliquotaPct ?? null,
       })
     : null;
 

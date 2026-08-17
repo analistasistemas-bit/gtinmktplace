@@ -89,6 +89,13 @@
   5 → 6 produtos, 3 ativos e 3 pausados por estoque zerado; Avil +0 (os 126 órfãos dela são os
   aviamentos sem catálogo da Errata 2).
 
+- [x] **Comissão do ML no preço certo (2026-08-16).** A margem usava `ptw_custos.comissao`, que é a
+  comissão do preço SUGERIDO pelo ML — superestimava a sobra em todo anúncio acima da sugestão,
+  justamente as linhas candidatas a reprecificar. Medido: NIVEA a R$ 39,90 mostrava R$ 5,36 (13,4%)
+  contra R$ 4,39 (11,0%) reais. Passa a ler `sale_fee_details` de `/sites/MLB/listing_prices` no
+  preço praticado. Verificado contra o painel do ML nos 3 produtos com preço: 5,59 / 13,57 / 5,87,
+  batendo exatamente (Errata 6 do ADR-0119).
+
 **Follow-ups pendentes:**
 - [ ] **Grants amplos nas tabelas `pulse_*` (achado 2026-08-16, não é regressão).** A migration
   `20260816125057_pulse_v1.sql` concede `grant update (status) on pulse_produtos`, mas

@@ -7,7 +7,8 @@ import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import {
-  extrairNossaOferta, ofertasNaoLidas, parseOfertasProduto, parsePriceToWin, parseStatusAnuncios,
+  extrairNossaOferta, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
+  parseStatusAnuncios, type AnuncioMultiget,
 } from '../_shared/pulse/parse.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
 import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
@@ -335,22 +336,41 @@ export async function processarColetaOrg(
       }
 
       const ids = [...new Set(itemPorCodigo.values())];
-      const statusPorItem = new Map<string, { status: string | null; sub: string[] | null }>();
+      const infoPorItem = new Map<string, AnuncioMultiget>();
       for (let i = 0; i < ids.length; i += 20) {
         const lote = ids.slice(i, i + 20);
-        const json = await mlGet(`${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status`, token);
-        for (const st of parseStatusAnuncios(json)) statusPorItem.set(st.item_id, { status: st.status, sub: st.sub_status });
+        const json = await mlGet(
+          `${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status,category_id,listing_type_id,price`,
+          token,
+        );
+        for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
       }
+
+      // Comissão do ML na FAIXA do preço praticado (Errata 6). `listing_prices` não tem multiget,
+      // mas é uma chamada por anúncio, no mesmo passo em lote e fora do teto de tempo do loop de
+      // ofertas. Sem categoria/tipo/preço não há o que consultar — e comissão não se estima.
+      const comissaoPorItem = new Map<string, { pct: number; fixa: number }>();
+      await pool(CONCORRENCIA, [...infoPorItem.values()], async (info) => {
+        if (!info.category_id || !info.listing_type_id || info.price == null) return;
+        const json = await mlGet(
+          `${API}/sites/MLB/listing_prices?price=${info.price}&category_id=${info.category_id}&listing_type_id=${info.listing_type_id}`,
+          token,
+        );
+        const c = parseComissao(json);
+        if (c) comissaoPorItem.set(info.item_id, c);
+      });
 
       const agora = new Date().toISOString();
       await pool(CONCORRENCIA, comCodigo, async (produto) => {
         const itemId = itemPorCodigo.get(produto.codigo_pai!);
-        const st = itemId ? statusPorItem.get(itemId) : undefined;
+        const st = itemId ? infoPorItem.get(itemId) : undefined;
         // Leitura que falhou não vira "situação desconhecida": preserva a última conhecida em vez
         // de apagá-la, do mesmo jeito que o price-to-win não sobrescreve com null.
         if (!st) return;
+        const com = itemId ? comissaoPorItem.get(itemId) : undefined;
         await admin.from('pulse_produtos').update({
           anuncio_status: st.status, anuncio_sub_status: st.sub, anuncio_status_em: agora,
+          ...(com ? { comissao_pct: com.pct, comissao_fixa: com.fixa, comissao_em: agora } : {}),
         }).eq('id', produto.id);
       });
     }

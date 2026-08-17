@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada } from '../pulse-margem';
+import {
+  estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, comissaoNoPreco,
+} from '../pulse-margem';
 import type { PulseOferta, PulseVendedor } from '../pulse';
 
 const oferta = (over: Partial<PulseOferta>): PulseOferta => ({
@@ -73,28 +75,56 @@ describe('vendasEstimadasVendedor', () => {
   });
 });
 
+describe('comissaoNoPreco', () => {
+  it('percentual mais parcela fixa', () => {
+    expect(comissaoNoPreco(39.9, { pct: 14, fixa: 0 })).toBeCloseTo(5.586, 3);
+    expect(comissaoNoPreco(10, { pct: 14, fixa: 4.99 })).toBeCloseTo(6.39, 2);
+  });
+
+  it('sem percentual não há comissão para calcular — comissão não se estima', () => {
+    expect(comissaoNoPreco(100, { pct: null, fixa: 0 })).toBeNull();
+    expect(comissaoNoPreco(100, null)).toBeNull();
+  });
+
+  it('parcela fixa ausente conta como zero, não invalida o cálculo', () => {
+    expect(comissaoNoPreco(100, { pct: 14, fixa: null })).toBe(14);
+  });
+});
+
 describe('margemEstimada — regra LOUD: qualquer insumo ausente → null', () => {
-  const base = { preco: 100, custoProduto: 40, ptwCustos: { comissao: 10, frete: 8 }, aliquotaPct: 8 };
+  const base = {
+    preco: 100, custoProduto: 40, comissao: { pct: 10, fixa: 0 }, frete: 8, aliquotaPct: 8,
+  };
 
   it('calcula margem completa quando todos os insumos existem', () => {
     // líquido = 100 − 10 − 8 − (100*8/100) − 40 = 34
-    expect(margemEstimada(base)).toEqual({ liquido: 34, margemPct: 34 });
+    expect(margemEstimada(base)).toEqual({ liquido: 34, margemPct: 34, comissao: 10 });
+  });
+
+  // Caso real que originou a Errata 6: o app usava a comissão do preço SUGERIDO (R$ 4,62 sobre
+  // R$ 32,99) no preço praticado de R$ 39,90, e exibia R$ 5,36 de sobra em vez de R$ 4,39.
+  it('reproduz o caso NIVEA a R$ 39,90 com a comissão do preço certo', () => {
+    const m = margemEstimada({
+      preco: 39.9, custoProduto: 20.08, comissao: { pct: 14, fixa: 0 }, frete: 6.65, aliquotaPct: 8,
+    })!;
+    expect(m.comissao).toBeCloseTo(5.59, 2);
+    expect(m.liquido).toBeCloseTo(4.39, 2);
+    expect(m.margemPct).toBeCloseTo(11.0, 1);
+    // A conta antiga daria 5,36 — a diferença é o que estava sendo mostrado a mais.
+    expect(m.liquido).toBeLessThan(5.36);
   });
 
   it('retorna null sem custo do produto', () => {
     expect(margemEstimada({ ...base, custoProduto: null })).toBeNull();
   });
 
-  it('retorna null sem comissão do price-to-win', () => {
-    expect(margemEstimada({ ...base, ptwCustos: { comissao: null, frete: 8 } })).toBeNull();
+  it('retorna null sem a estrutura da comissão', () => {
+    expect(margemEstimada({ ...base, comissao: { pct: null, fixa: 0 } })).toBeNull();
+    expect(margemEstimada({ ...base, comissao: null })).toBeNull();
   });
 
-  it('retorna null sem frete do price-to-win', () => {
-    expect(margemEstimada({ ...base, ptwCustos: { comissao: 10, frete: null } })).toBeNull();
-  });
-
-  it('retorna null sem price-to-win nenhum', () => {
-    expect(margemEstimada({ ...base, ptwCustos: null })).toBeNull();
+  it('retorna null sem frete', () => {
+    expect(margemEstimada({ ...base, frete: null })).toBeNull();
   });
 
   it('retorna null sem alíquota de imposto', () => {

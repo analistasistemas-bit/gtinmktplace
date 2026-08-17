@@ -71,11 +71,19 @@ export function ofertasNaoLidas(json: unknown): number {
  * `{ code, body }`: um id inválido volta com `code` de erro no meio dos que deram certo, e tratar
  * o lote inteiro como perdido apagaria a situação de todos os outros.
  */
-export function parseStatusAnuncios(
-  json: unknown,
-): { item_id: string; status: string | null; sub_status: string[] | null }[] {
+export interface AnuncioMultiget {
+  item_id: string;
+  status: string | null;
+  sub_status: string[] | null;
+  /** Necessários para consultar a comissão do ML no preço praticado (Errata 6). */
+  category_id: string | null;
+  listing_type_id: string | null;
+  price: number | null;
+}
+
+export function parseStatusAnuncios(json: unknown): AnuncioMultiget[] {
   if (!Array.isArray(json)) return [];
-  const out: { item_id: string; status: string | null; sub_status: string[] | null }[] = [];
+  const out: AnuncioMultiget[] = [];
   for (const r of json) {
     const env = r as { code?: unknown; body?: unknown };
     if (env?.code !== 200) continue;
@@ -86,9 +94,26 @@ export function parseStatusAnuncios(
       item_id: id,
       status: typeof b?.status === 'string' ? b.status : null,
       sub_status: Array.isArray(b?.sub_status) ? (b.sub_status as unknown[]).filter((s): s is string => typeof s === 'string') : null,
+      category_id: typeof b?.category_id === 'string' ? b.category_id : null,
+      listing_type_id: typeof b?.listing_type_id === 'string' ? b.listing_type_id : null,
+      price: typeof b?.price === 'number' ? b.price : null,
     });
   }
   return out;
+}
+
+/**
+ * `/sites/MLB/listing_prices` — estrutura da comissão para um preço. Guardamos percentual e
+ * parcela fixa, não o valor pronto: `sale_fee_amount` só vale para o preço consultado, e o
+ * simulador precisa recalcular. Verificado que `pct * preço + fixo` reproduz `sale_fee_amount`
+ * em todas as faixas testadas (ADR-0119, Errata 6).
+ */
+export function parseComissao(json: unknown): { pct: number; fixa: number } | null {
+  const d = (json as { sale_fee_details?: Record<string, unknown> } | null)?.sale_fee_details;
+  if (!d) return null;
+  const pct = typeof d.percentage_fee === 'number' ? d.percentage_fee : null;
+  if (pct == null) return null;
+  return { pct, fixa: typeof d.fixed_fee === 'number' ? d.fixed_fee : 0 };
 }
 
 // /suggestions/items/{id}/details

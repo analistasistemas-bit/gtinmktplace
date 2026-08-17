@@ -261,6 +261,48 @@ Verificado após o deploy: DSA passou de 5 para 6 produtos, 3 `active` e 3 `paus
 O produto recuperado aparece com "—" em Seu preço — correto, está pausado e portanto ausente da
 ficha.
 
+## Errata 6 (2026-08-16) — a comissão era a do preço errado
+
+**Como apareceu:** Diego conferiu a "Sobra para você" contra o custo real e não bateu.
+
+**Causa:** `ptw_custos.comissao` vem de `/suggestions/items/{id}/details` e é a comissão calculada
+sobre o **`suggested_price`**, não sobre o preço praticado. O simulador aplicava esse valor ao
+preço atual.
+
+Medido no item `MLB5040504553` a R$ 39,90 (sugestão do ML: R$ 32,99):
+
+| | Comissão | Sobra exibida |
+|---|---:|---:|
+| Como estava | R$ 4,62 (14% de 32,99) | R$ 5,36 — 13,4% |
+| Correto | R$ 5,59 (14% de 39,90) | **R$ 4,39 — 11,0%** |
+
+Confirmado em três fontes: `/sites/MLB/listing_prices`, o painel de anúncios do ML
+("A pagar R$ 5,59" / "Você recebe R$ 27,66") e a aritmética 39,90 − 5,59 − 6,65 = 27,66.
+
+**O erro tinha direção:** superestimava a sobra sempre que o preço estivesse **acima** da sugestão
+do ML — exatamente as linhas de "mais caro que o mercado", que são as candidatas naturais a
+reprecificar. Quem baixasse preço a partir daquele número trabalharia com quase R$ 1 a mais de
+folga do que existia.
+
+**Decisão: guardar a estrutura da taxa, não o valor pronto.** A coleta lê
+`/sites/MLB/listing_prices?price=<preço praticado>&category_id=…&listing_type_id=…` e grava
+`comissao_pct` + `comissao_fixa`. `categoria`/`tipo`/`preço` vêm do mesmo multiget que já busca a
+situação do anúncio (dois atributos a mais, nenhuma chamada extra); `listing_prices` não tem
+multiget, então é uma chamada por anúncio, no mesmo passo em lote e fora do teto de tempo.
+
+**Limite conhecido e exibido:** a estrutura muda por faixa de preço. Medido na categoria
+`MLB198494`: R$ 10 → 14% + R$ 4,99 fixo; R$ 25 a R$ 100 → 14%; R$ 250 → 11%. E varia por
+categoria (o Principia sai a 12%). A estrutura guardada vale para o preço praticado, então no
+simulador o resultado é rotulado **estimativa** quando o preço digitado difere do atual. Não
+interpolamos em silêncio: um 14% aplicado a R$ 250 exageraria a comissão em R$ 7,50.
+
+**Trava:** `insumoFaltante` (detalhe e reprecificar) passa a exigir `comissao_pct`. Sem ela a
+margem some com "falta comissão do Mercado Livre" — cair de volta em `ptw_custos.comissao` seria
+reintroduzir o defeito.
+
+O frete continua vindo de `ptw_custos.frete`; ele bate com o painel do ML no caso medido e não
+faz parte deste defeito.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

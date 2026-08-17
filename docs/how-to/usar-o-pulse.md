@@ -176,18 +176,16 @@ Clicando numa linha do radar, você vê três blocos.
 
 ### Ofertas atuais
 
-A lista de quem está vendendo aquela ficha **agora**, ordenada da mais barata para a mais cara:
+A lista de quem está vendendo aquela ficha **agora**. Começa ordenada da mais barata para a mais
+cara, e **todo cabeçalho é clicável para reordenar**:
 
-- **Preço** praticado.
-- **Vendedor** — apelido no ML, o selo de reputação (`gold`, `platinum`…) e, quando já há histórico,
-  duas informações de volume:
-  - *"N vendas totais do vendedor"* — o total de transações da conta dele no ML inteiro, desde
-    sempre.
-  - *"≈N vendas do vendedor no período (estimado)"* — quanto essa conta vendeu desde que o Pulse
-    começou a acompanhar.
-- **Frete** — se a oferta tem frete grátis.
-- **Loja** — se é loja oficial.
-- **Tier** — tipo de anúncio (clássico, premium).
+- **Preço** praticado — o menor vem destacado.
+- **Vendedor** — apelido no ML, selo de reputação e, quando é o caso, "Loja oficial". Ordena
+  alfabeticamente.
+- **Vendas na conta** — total de transações da conta no ML inteiro. Ordene por aqui para achar os
+  concorrentes de maior porte. Abaixo, quando já há histórico, aparece *"≈N no período"*: quanto
+  essa conta vendeu desde que o Pulse começou a acompanhá-la.
+- **Anúncio** — tipo (Clássico, Premium) e frete grátis quando houver.
 
 > **Leia com atenção:** esses números são do **vendedor inteiro**, não daquele anúncio específico. Um
 > vendedor com 20.000 transações pode ter vendido dez unidades do produto que te interessa. Use como
@@ -223,20 +221,30 @@ Digite um preço no campo e o Pulse calcula o que **sobra** para você naquele p
 
 > Líquido **R$ 12,40** *(23,1%)*
 
-A conta desconta, do preço digitado: a **comissão** e o **frete** informados pelo próprio Mercado
-Livre para o seu anúncio, o **imposto** conforme a origem do produto (nacional ou importado) e o
-**custo** do produto cadastrado no PubliAI.
+A conta desconta, do preço digitado: a **comissão** e o **frete** do Mercado Livre para o seu
+anúncio, o **imposto** conforme a origem do produto (nacional ou importado) e o **custo** do
+produto cadastrado no PubliAI. Passe o mouse em "(comissão R$ …)" ao lado do rótulo para ver as
+quatro parcelas.
+
+> **Por que às vezes aparece "estimativa"**
+>
+> A comissão do Mercado Livre muda conforme a faixa de preço e a categoria — na mesma categoria
+> pode ser 14% até cerca de R$ 100 e 11% acima disso, e produtos baratos ainda levam uma parcela
+> fixa. O Pulse lê a taxa exata do **preço que o seu anúncio pratica hoje**. Quando você simula um
+> preço diferente, a taxa usada continua sendo aquela, então o resultado sai marcado como
+> estimativa. Quanto mais longe do preço atual, mais o número pode escorregar.
 
 ### Quando aparece "Margem indisponível: falta ..."
 
 O Pulse **nunca chuta** um número financeiro. Se faltar qualquer peça da conta, ele diz exatamente
-qual e não mostra margem nenhuma. As três causas:
+qual e não mostra margem nenhuma. As causas:
 
 | Mensagem | O que fazer |
 |---|---|
 | falta **custo do produto** | Cadastre o custo das variações (menu Estoque → entrada de produto). Sem custo real não existe margem real. |
 | falta **alíquota de imposto** | Confirme as alíquotas em **Configurações** (nacional 8% / importado 16%). Enquanto não estiverem confirmadas, o sistema se recusa a assumir um valor. |
-| falta **referência de preço do Mercado Livre** | O ML ainda não devolveu comissão e frete para esse anúncio. Costuma resolver sozinho na coleta seguinte. |
+| falta **comissão do Mercado Livre** | A coleta ainda não leu a taxa desse anúncio. Costuma resolver sozinho na coleta seguinte. |
+| falta **custo de frete do Mercado Livre** | Mesma coisa: o ML ainda não devolveu o custo de envio. |
 
 Isso é proposital: um número de margem errado é pior do que nenhum número — leva a baixar preço
 abaixo do custo achando que está no lucro.

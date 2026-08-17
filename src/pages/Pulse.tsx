@@ -249,7 +249,10 @@ export default function Pulse() {
       <DialogReprecificar
         codigoPai={alertaReprecificar?.pulse_produtos?.codigo_pai ?? null}
         precoInicial={alertaReprecificar ? Number(alertaReprecificar.payload.para) : null}
-        ptwCustos={lista.find((p) => p.id === alertaReprecificar?.produto_id)?.ptw_custos ?? null}
+        custos={(() => {
+          const p = lista.find((x) => x.id === alertaReprecificar?.produto_id);
+          return p ? { comissaoPct: p.comissao_pct, comissaoFixa: p.comissao_fixa, frete: p.ptw_custos?.frete ?? null } : null;
+        })()}
         onFechar={() => setAlertaReprecificar(null)}
       />
     </div>
