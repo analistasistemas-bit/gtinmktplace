@@ -478,6 +478,15 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   por org+codigo_pai), limpa storage e `anuncios_externos`; bloqueia se há UPDATE em voo.
   **E6 (ADR-0061):** aceita `canal` (default `'mercado_livre'`) — remove só da linha
   `(org_id, canal, codigo_pai)` especificada, sem afetar o produto em outros canais.
+  **Modo republicar (`preservar_familia: true`, "Corrigir e republicar", 2026-07-28):** pausa os
+  itens no ML, preserva família/variações/imagens, zera só os vínculos de publicação
+  (`ml_item_id`, `ml_variation_id`, `preco_publicado_ml`, `anuncios_externos`) e devolve o lote
+  para `revisao` — a próxima publicação vira CREATE. **Pausa da raiz Legacy (2026-08-17):** em
+  família sem filhos UP a saga não roda, então o modo republicar pausa o PRÓPRIO `ml_item_id`
+  (GET decide: `active` → PUT pausar; pausado/closed/moderado → segue sem PUT; 404/410 → item já
+  sumiu, seguro; erro transiente aborta fail-closed ANTES de qualquer mutação local). Antes disso
+  o anúncio Legacy ficava ativo e órfão no ML e a republicação criava duplicado. Esse caminho
+  agora exige conexão ML viva (a remoção de Legacy/UP-esvaziada continua sem token).
   **Guarda completa de remoção UP (ADR-0088, 2026-07-23):** mini-saga própria
   (`_shared/user-products/remover-composicao.ts`) pausa TODOS os filhos com `item_externo_id`
   (mesmo os já `retirado=true` — nunca confia nesse campo como "seguro pular", crash real na janela

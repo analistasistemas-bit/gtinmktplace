@@ -4,7 +4,7 @@ import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 import { limparMovimentosOrfaos } from '../_shared/estoque/limpeza.ts';
 import type { ContextoCanal } from '../_shared/canais/contrato.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
-import { atualizarStatusML } from '../_shared/ml/atualizar-item.ts';
+import { atualizarStatusML, buscarItemML } from '../_shared/ml/atualizar-item.ts';
 import { buscarItemUP, type FetchLike } from '../_shared/ml/buscar-item.ts';
 import {
   removerComposicaoUP, type PortasRemocao, type FilhoComp, type ResultadoRemocaoUP,
@@ -19,8 +19,9 @@ export interface RemoverPublicadoInput {
 
 export interface RemoverPublicadoDeps {
   admin: SupabaseClient;
-  /** Só necessário quando a família tem filhos User Products ativos — Legacy e famílias UP
-   *  já esvaziadas (sem linhas em anuncios_externos_itens) não precisam de token vivo. */
+  /** Necessário quando a família tem filhos User Products ativos e, no modo republicar
+   *  (`preservarFamilia`), também para Legacy/UP-esvaziada — o anúncio raiz é pausado no ML
+   *  antes de cortar o vínculo. Só a REMOÇÃO de Legacy/UP-esvaziada segue sem token vivo. */
   ctx?: ContextoCanal;
   conexao?: ConexaoCanal;
   /** Injetável em teste; produção usa a saga real (`removerComposicaoUP`). */
@@ -64,6 +65,9 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     .select('id, mudando_composicao').eq('org_id', alvo.org_id).eq('codigo_pai', alvo.codigo_pai).eq('canal', canal);
   if (externosErr) throw new Error(`remover-publicado: consultar anuncios_externos falhou: ${externosErr.message}`);
   const idsExternos = (externos ?? []).map((e: { id: string }) => e.id);
+  // true ⇔ a mini-saga UP abaixo rodou sobre 1+ filhos (e só chegamos adiante se TODOS
+  // confirmaram pausado). false ⇔ Legacy ou UP já esvaziada — ninguém pausou nada no ML.
+  let filhosUPPausadosPelaSaga = false;
   // Guarda (revisão Codex): uma mudança de composição em andamento/travada deixa uma janela real
   // onde um filho `retirado=true` pode já estar ATIVO no ML (crash entre ativar-remoto e
   // marcarAtivo, que só então limpa retirado), ou um filho `criacao_incerta` pode ter um POST real
@@ -82,6 +86,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     // NUNCA pode virar "não tem filhos UP" em silêncio — arriscaria deletar uma família UP real
     // sem pausar nada primeiro.
     if (filhosErr) throw new Error(`remover-publicado: consultar filhos UP falhou: ${filhosErr.message}`);
+    filhosUPPausadosPelaSaga = (filhosRaw ?? []).length > 0;
     const filhos: FilhoComp[] = ((filhosRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
       sku: f.sku as string,
       status: f.status as FilhoComp['status'],
@@ -134,6 +139,29 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       if (recheckErr) throw new Error(`remover-publicado: re-checar mudando_composicao falhou: ${recheckErr.message}`);
       if ((recheck ?? []).some((e: { mudando_composicao?: boolean }) => e.mudando_composicao)) {
         return { tipo: 'em_voo' };
+      }
+    }
+    // Família Legacy (ou UP já esvaziada): a saga acima não pausou nada — pausa o PRÓPRIO anúncio
+    // antes de cortar o vínculo local, senão ele fica ATIVO e órfão no ML e a republicação
+    // (CREATE) gera um duplicado. GET primeiro decide: `active` → PUT pausar (o PUT também enforça
+    // posse — item de outro seller responde 403 e aborta); já pausado/closed/moderado → nada a
+    // pausar (PUT em closed daria 400 e travaria justamente a recuperação de anúncio moderado);
+    // 404/410 → item já sumiu, seguro seguir. Erro transiente (GET ou PUT) aborta ANTES de
+    // qualquer mutação local — fail-closed, o operador clica de novo (idempotente).
+    if (!filhosUPPausadosPelaSaga) {
+      if (!deps.ctx) throw new Error('Organização sem conexão com o Mercado Livre');
+      const token = await deps.ctx.getToken();
+      let statusItem: string | null = null;
+      let itemSumiu = false;
+      try {
+        statusItem = (await buscarItemML(token, alvo.ml_item_id)).status;
+      } catch (e) {
+        const st = (e as { status?: number } | null)?.status;
+        if (st === 404 || st === 410) itemSumiu = true;
+        else throw new Error(`remover-publicado: consultar anúncio no ML falhou: ${(e as Error).message}`);
+      }
+      if (!itemSumiu && statusItem === 'active') {
+        await atualizarStatusML(token, alvo.ml_item_id, 'paused');
       }
     }
     const { error: famErr } = await admin.from('familias').update({

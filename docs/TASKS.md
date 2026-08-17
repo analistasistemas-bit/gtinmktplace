@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicados — "Corrigir e republicar" pausa o anúncio Legacy no ML — 2026-08-17
+
+- [x] **Bug.** O modo republicar (`remover-publicado` com `preservar_familia: true`) só pausava
+  itens de família User Products (mini-saga do ADR-0088). Em família **Legacy** (anúncio único,
+  ex.: Eucerin `00000034`) ele cortava o vínculo local sem tocar o ML: o anúncio antigo ficava
+  **ativo e órfão** no ML e a republicação (CREATE) criava um duplicado — contrariando o próprio
+  diálogo da UI ("Todos os itens desta família serão pausados"). A spec de 2026-07-28 só cobria UP.
+- [x] **Fix em `remover-publicado/processar.ts`:** quando a saga UP não pausou filhos (Legacy ou
+  UP-esvaziada), o modo republicar pausa o próprio `ml_item_id`. GET decide: `active` → PUT
+  pausar; pausado/closed/moderado → segue sem PUT (PUT em closed daria 400 e travaria a
+  recuperação de anúncio moderado); 404/410 → item já sumiu, seguro. Erro transiente (GET ou PUT)
+  aborta fail-closed ANTES de qualquer mutação local — o clique é idempotente. Caminho passa a
+  exigir conexão ML viva; a remoção comum de Legacy segue sem token.
+- [x] **Testes:** 6 novos casos (pausa, skip por status, 404, fail-closed em GET/PUT, sem conexão)
+  + ajuste do caso ADR-0097 que chamava o modo republicar sem conexão. Suíte completa verde.
+- [ ] **Deploy pendente:** `supabase functions deploy remover-publicado` após merge (deploy de
+  edge não acompanha o push na main).
+
 ## Estoque — preço da coluna passa a ser o do anúncio — 2026-08-16
 
 - [x] **Bug.** A coluna "Preço" do painel de variações mostrava `variacoes.preco`, o preço local da

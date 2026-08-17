@@ -439,6 +439,10 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
   });
 
   it('modo republicar preserva a família — e portanto NÃO varre', async () => {
+    // Legacy sem filhos UP: o modo republicar agora pausa o anúncio raiz por GET+PUT no fetch
+    // global — item já pausado dispensa o PUT, e o teste segue focado só na varredura.
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ status: 'paused' }), { status: 200 })));
     const { admin, rpcs } = fakeAdmin({
       familias: [
         { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
@@ -448,9 +452,10 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
       anuncios_externos_itens: [[]],
     });
 
-    await removerPublicado({ admin }, {
+    await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, {
       familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true,
     });
+    vi.unstubAllGlobals();
 
     // O SKU continua vivo: varrer aqui apagaria o histórico de um produto que só está
     // sendo republicado.
@@ -481,6 +486,100 @@ describe('removerPublicado — casos já existentes (regressão)', () => {
     const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
     expect(r.tipo).toBe('em_voo');
     expect(deletes).toEqual([]);
+  });
+});
+
+// Modo republicar em família Legacy (sem filhos UP): a saga não roda, então o PRÓPRIO anúncio
+// raiz precisa ser pausado no ML antes de cortar o vínculo local — senão ele fica ativo e órfão
+// no ML e a republicação (CREATE) gera um duplicado. GET primeiro decide: active → PUT pausar;
+// já pausado/closed/moderado → nada a pausar; 404/410 → item já sumiu, seguro seguir; erro
+// transiente no GET ou no PUT → aborta SEM tocar nada local (fail-closed, operador tenta de novo).
+describe('removerPublicado — modo republicar pausa o anúncio raiz (família Legacy)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  const cenarioLegacy = () => fakeAdmin({
+    familias: [
+      { id: 'fam-1', lote_id: 'lote-40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+      [],
+    ],
+    anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+    anuncios_externos_itens: [[]], // Legacy: raiz existe mas sem filho técnico UP
+  });
+
+  it('anúncio ativo → GET + PUT pausar no ML, depois preserva e corta vínculos', async () => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: { method?: string; body?: string }) => {
+      if (opts?.method === 'PUT') { puts.push(String(opts.body)); return new Response('{}', { status: 200 }); }
+      return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
+    }));
+    const { admin, updates } = cenarioLegacy();
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'preservada', familiaId: 'fam-1', loteId: 'lote-40' });
+    expect(puts).toEqual([JSON.stringify({ status: 'paused' })]);
+    expect(updates).toEqual(expect.arrayContaining([
+      { tabela: 'familias', payload: expect.objectContaining({ ml_item_id: null, status: 'pronto' }) },
+    ]));
+  });
+
+  it('anúncio já pausado/closed → segue SEM PUT (pausar closed daria 400 e travaria a recuperação)', async () => {
+    const fetchFake = vi.fn(async (_url: string, opts?: { method?: string }) => {
+      if (opts?.method === 'PUT') throw new Error('PUT não deveria acontecer');
+      return new Response(JSON.stringify({ status: 'closed' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchFake);
+    const { admin } = cenarioLegacy();
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r.tipo).toBe('preservada');
+  });
+
+  it('item já sumiu no ML (404) → segue sem pausar (recuperação de anúncio morto)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"not_found"}', { status: 404 })));
+    const { admin } = cenarioLegacy();
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r.tipo).toBe('preservada');
+  });
+
+  it('GET transiente (500) → lança e NADA local é alterado (fail-closed)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
+    const { admin, updates, deletes } = cenarioLegacy();
+    await expect(removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    )).rejects.toThrow(/consultar anúncio no ML falhou/);
+    expect(updates).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('PUT pausar falha (500) → lança e NADA local é alterado (item de outro seller cai aqui via 403)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, opts?: { method?: string }) => {
+      if (opts?.method === 'PUT') return new Response('{"message":"boom"}', { status: 500 });
+      return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
+    }));
+    const { admin, updates, deletes } = cenarioLegacy();
+    await expect(removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    )).rejects.toThrow();
+    expect(updates).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('sem ctx/conexao → lança (nunca corta o vínculo sem conseguir pausar)', async () => {
+    const { admin, updates } = cenarioLegacy();
+    await expect(removerPublicado(
+      { admin },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    )).rejects.toThrow(/conexão com o Mercado Livre/);
+    expect(updates).toEqual([]);
   });
 });
 
