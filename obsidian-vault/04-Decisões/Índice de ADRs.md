@@ -133,5 +133,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0119 | [Pulse: inteligência de mercado dirigida, server-side e sem crawl massivo](../../docs/decisions/0119-pulse-inteligencia-de-mercado-dirigida.md) |
 | 0120 | [Pulse Sonar: garimpo de sortimento por termo, só API oficial](../../docs/decisions/0120-pulse-sonar-garimpo-por-termo.md) |
 | 0121 | [Cancelamento de pedido tratado também pela reconciliação](../../docs/decisions/0121-cancelamento-tratado-tambem-pela-reconciliacao.md) |
+| 0122 | [Sonar: vendas estimadas do nicho via Apify](../../docs/decisions/0122-sonar-vendas-estimadas-via-apify.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Check, ChevronDown, ChevronRight, Circle, Eye, Loader2, Package, Search, TrendingUp, Truck, Users,
+  Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Eye, Loader2, Package, Search,
+  ShoppingCart, TrendingUp, Trophy, Truck, Users,
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid,
@@ -21,8 +22,8 @@ import {
 } from '@/components/ui/table';
 import { DialogMargemSonar } from '@/components/pulse/dialog-margem-sonar';
 import {
-  fetchPainelSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
-  type PainelSonar, type EtapaProgresso,
+  fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
+  type PainelSonar, type EtapaProgresso, type RespostaVendasSonar,
 } from '@/lib/sonar';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 
@@ -45,6 +46,118 @@ function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
   );
 }
 
+// Bloco de vendas estimadas (ADR-0122): carrega em paralelo ao painel oficial e degrada sozinho —
+// Apify fora do ar ou sem token nunca derruba o resto do Sonar.
+function SonarVendas({ resp, carregando, erro }: {
+  resp: RespostaVendasSonar | undefined; carregando: boolean; erro: boolean;
+}) {
+  if (carregando) {
+    return (
+      <Card className="mb-4 p-4">
+        <div className="mb-2 text-sm font-medium">Vendas do nicho</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+        </div>
+      </Card>
+    );
+  }
+  if (erro) {
+    return (
+      <Card className="mb-4 p-4">
+        <div className="mb-1 text-sm font-medium">Vendas do nicho</div>
+        <p className="text-sm text-muted-foreground">
+          Consulta de vendas falhou ou demorou demais — o resto do painel não é afetado. Busque de
+          novo para tentar outra vez.
+        </p>
+      </Card>
+    );
+  }
+  if (!resp) return null;
+  if (!resp.configurado) {
+    return (
+      <Card className="mb-4 p-4">
+        <div className="mb-1 text-sm font-medium">Vendas do nicho</div>
+        <p className="text-sm text-muted-foreground">
+          Configure o token da Apify (variável <code className="font-mono text-xs">APIFY_TOKEN</code>)
+          para ver vendas acumuladas, mercado endereçável e produto destaque do nicho.
+        </p>
+      </Card>
+    );
+  }
+
+  const destaque = resp.produto_destaque;
+  return (
+    <Card className="mb-4 p-4">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">Vendas do nicho</span>
+        <Badge variant="outline">estimativa · via Apify</Badge>
+        <span className="text-xs text-muted-foreground">
+          "+N vendidos" acumulado dos {resp.itens_analisados} anúncios mais relevantes — piso, não venda mensal
+        </span>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard
+          size="compact"
+          label="Vendas acumuladas"
+          value={`≈ ${fmtInt(resp.vendas_totais)}`}
+          hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios com o dado`}
+          icon={ShoppingCart}
+          tom="info"
+        />
+        <KpiCard
+          size="compact"
+          label="Mercado endereçável"
+          value={`≈ ${fmtBRL(resp.valor_mercado)}`}
+          hint="Σ preço × vendidos acumulados"
+          icon={CircleDollarSign}
+          tom="info"
+        />
+        {destaque && (
+          <div className="flex items-center gap-3 rounded-lg border p-3">
+            {destaque.imagem && (
+              <img src={destaque.imagem} alt="" className="h-12 w-12 shrink-0 rounded bg-white object-contain" />
+            )}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Trophy className="h-3.5 w-3.5 text-warning" /> Produto destaque
+              </div>
+              {destaque.link ? (
+                <a
+                  href={destaque.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={destaque.titulo}
+                  className="block truncate text-sm font-medium hover:underline"
+                >
+                  {destaque.titulo}
+                </a>
+              ) : (
+                <div className="truncate text-sm font-medium" title={destaque.titulo}>{destaque.titulo}</div>
+              )}
+              <div className="text-xs text-muted-foreground">
+                ≈ {fmtInt(destaque.vendidos ?? 0)} vendidos
+                {destaque.preco != null && ` · ${fmtBRL(destaque.preco)}`}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      {resp.palavras_chave_titulos.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+            Palavras-chave dos títulos dos anúncios
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {resp.palavras_chave_titulos.slice(0, 15).map((p) => (
+              <Badge key={p.termo} variant="secondary">{p.termo} ({p.contagem})</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function PulseSonar() {
   const [termo, setTermo] = useState('');
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
@@ -61,6 +174,16 @@ export default function PulseSonar() {
     queryFn: () => fetchPainelSonar(termoBuscado!),
     enabled: !!termoBuscado,
     staleTime: Infinity, // cache real é o Redis (24h) — o front nunca refaz a mesma busca sozinho
+  });
+
+  // Vendas estimadas (ADR-0122): paralelo e independente do painel oficial. retry desligado —
+  // cada tentativa sem cache dispara um run pago na Apify.
+  const { data: vendas, isFetching: vendasCarregando, isError: vendasErro } = useQuery({
+    queryKey: ['pulse', 'sonar-vendas', termoBuscado],
+    queryFn: () => fetchVendasSonar(termoBuscado!),
+    enabled: !!termoBuscado,
+    staleTime: Infinity,
+    retry: false,
   });
 
   // Avanço do stepper temporizado no cliente: a edge responde numa chamada única.
@@ -147,6 +270,8 @@ export default function PulseSonar() {
             <KpiCard size="compact" label="Vendedores distintos" value={painel.agregado.vendedores_distintos} icon={Users} tom="info" />
             <KpiCard size="compact" label="Frete grátis" value={`${painel.agregado.frete_gratis_pct}%`} icon={Truck} tom="info" />
           </div>
+
+          <SonarVendas resp={vendas} carregando={vendasCarregando} erro={vendasErro} />
 
           {painel.agregado.visitas_por_dia.length > 0 && (
             <Card className="mb-4 p-4">

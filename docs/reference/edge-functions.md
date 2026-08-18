@@ -70,6 +70,7 @@
 | pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | pulse-sonar | true | HTTP (frontend) | sim (leitura; cache Redis 24h por termo) |
+| pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por termo) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -892,6 +893,20 @@ falha ao ler `organizations` não libera.
   resultado v1 já cacheado não servir o shape antigo por até 24h; falha do ML na busca principal
   (`null`) devolve 502 e não cacheia, para não travar um termo vazio por 24h a partir de um erro
   transitório.
+- **pulse-sonar-vendas** (ADR-0122, `verify_jwt=true`, chamada pelo app com o JWT do usuário) —
+  vendas estimadas do nicho via Apify, complemento do Sonar chamado pelo front **em paralelo** à
+  `pulse-sonar` (edge separada de propósito: o run da Apify pode levar minutos e a falha dele
+  degrada só o bloco de vendas). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
+  sem `APIFY_TOKEN` configurado devolve `{configurado:false}` com 200 (indisponível ≠ erro).
+  Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
+  (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}` ≈ 50 anúncios por
+  relevância; cliente em `_shared/apify/client.ts`) e agrega em `montarPainelVendas`
+  (`_shared/pulse/sonar-vendas.ts`): `vendas_totais` (Σ do "+N vendidos" da página — acumulado e
+  arredondado, piso; anúncio sem o dado NUNCA soma como zero), `valor_mercado` (Σ preço ×
+  vendidos onde ambos existem), `produto_destaque` (mais vendido) e `palavras_chave_titulos`
+  (títulos de anúncios reais, não nomes de ficha). Cache Redis `sonar:vendas:v1:MLB:<termo>`,
+  TTL 24h, chave global (dado público, ADR-0120 §3) — o cache também limita o custo Apify a
+  1 run por termo/dia; falha/timeout do run devolve 502 e não cacheia.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal

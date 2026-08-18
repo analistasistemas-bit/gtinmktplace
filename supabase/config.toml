@@ -120,3 +120,6 @@ verify_jwt = true
 # ADR-0120 (Pulse Sonar): garimpo on-demand por termo — chamada pelo APP com o JWT do usuário.
 [functions.pulse-sonar]
 verify_jwt = true
+# ADR-0122 (Sonar vendas): vendas estimadas via Apify — chamada pelo APP com o JWT do usuário.
+[functions.pulse-sonar-vendas]
+verify_jwt = true

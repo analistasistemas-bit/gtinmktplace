@@ -55,6 +55,48 @@ export function fichasSemVendedor(painel: PainelSonar): PainelSonar['fichas'] {
   return painel.fichas.filter((f) => f.ofertas === 0);
 }
 
+// --- Vendas estimadas via Apify (ADR-0122) ------------------------------------------------------
+// Tipos espelhados de supabase/functions/_shared/pulse/sonar-vendas.ts (mesma regra do PainelSonar:
+// sem import cross-runtime). `vendidos` é o "+N vendidos" da página: acumulado e arredondado (piso).
+
+export interface ItemVendasSonar {
+  titulo: string;
+  preco: number | null;
+  vendidos: number | null;
+  link: string | null;
+  imagem: string | null;
+  vendedor: string | null;
+}
+
+export interface PainelVendasSonar {
+  configurado: true;
+  termo: string;
+  gerado_em: string;
+  itens_analisados: number;
+  itens_com_vendas: number;
+  vendas_totais: number;
+  valor_mercado: number;
+  produto_destaque: ItemVendasSonar | null;
+  palavras_chave_titulos: Array<{ termo: string; contagem: number }>;
+}
+
+/** `configurado: false` = APIFY_TOKEN ausente no backend — indisponível, não erro (ADR-0122 §5). */
+export type RespostaVendasSonar = { configurado: false } | PainelVendasSonar;
+
+/** POST /functions/v1/pulse-sonar-vendas { termo } → RespostaVendasSonar. */
+export async function fetchVendasSonar(termo: string): Promise<RespostaVendasSonar> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sem sessão');
+  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-vendas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ termo }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  return json as RespostaVendasSonar;
+}
+
 // --- Progresso por etapas (pedido do Diego 17/08) ---------------------------------------------
 
 export const ETAPAS_SONAR = [

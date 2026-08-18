@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — vendas estimadas via Apify (ADR-0122) — 2026-08-18
+
+- [x] **ADR-0122:** scraping pago reavaliado (ressalva do ADR-0120) — Apify contratada pelo Diego
+  para dar ao Sonar paridade com o Hunter Spy (vendas totais, mercado endereçável, produto
+  destaque). Visitas seguem só pela API oficial: nenhum scraper entrega visitas.
+- [x] **Edge nova `pulse-sonar-vendas`** (`verify_jwt=true`), separada da `pulse-sonar` (run da
+  Apify pode levar minutos; falha degrada só o bloco de vendas). Actor
+  `karamelo/mercadolivre-scraper-brasil-portugues` síncrono (120s), cache Redis global 24h
+  `sonar:vendas:v1:MLB:<termo>`. Sem `APIFY_TOKEN` → `{configurado:false}`, nunca erro.
+- [x] **Parsers puros** em `_shared/pulse/sonar-vendas.ts` (12 testes): "+N vendidos"/"5 mil" →
+  inteiro, preço pt-BR, `vendas_totais`, `valor_mercado` (Σ preço × vendidos), `produto_destaque`,
+  palavras-chave dos títulos reais. Sem dado nunca vira zero (LOUD).
+- [x] **UI:** seção "Vendas do nicho" no Sonar (badge "estimativa · via Apify", valores com "≈" e
+  rótulo de acumulado), carregando em paralelo ao painel oficial; `retry: false` (run pago).
+- [ ] **Pendente do operador:** colar o token em `.env.local` (`APIFY_TOKEN=`) e configurar em
+  produção: `supabase secrets set APIFY_TOKEN=<valor>` + deploy da edge.
+
 ## Cancelamento tratado pela reconciliação (ADR-0121) — 2026-08-18
 
 - [x] **Investigação do estoque do sabonete NIVEA (SKU 00000029):** saldo local 0 está correto
