@@ -69,6 +69,7 @@
 | **Pulse (ADR-0119)** ||||
 | pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
+| pulse-sonar | true | HTTP (frontend) | sim (leitura; cache Redis 24h por termo) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -823,6 +824,22 @@ falha ao ler `organizations` não libera.
   incondicional anterior rebaixava produto `auto` para `manual` (tirando-o do tier quente e
   congelando a referência de preço) e desfazia o pausar do operador. Única exceção: ficha
   **arquivada** volta para `ativo`, porque readicioná-la é um pedido explícito de trazê-la de volta.
+- **pulse-sonar** (ADR-0120) — garimpo on-demand por termo livre (`{termo}`, mínimo 3 caracteres):
+  busca `/products/search` (site MLB, até 20 fichas), e por ficha, em lotes de 5 concorrentes
+  (`Promise.allSettled` — falha em uma ficha não derruba a busca, entra com `visitas_30d: null`
+  e dados parciais) lê `/products/{id}/items` (ofertas — **sem** excluir a própria org: no
+  garimpo a nossa oferta também é mercado), resolve `category_id` pelo preditor nativo do ML
+  (`buscarCategoriaPreditor`, já cacheado 30d em `_shared/ml/domain-discovery.ts`, casando pelo
+  nome da ficha — `/products/{id}` não devolve `category_id`), visitas de 30 dias só do item MAIS
+  BARATO da ficha (`/items/{id}/visits/time_window`; multiget não serve, teto de 1 id por
+  chamada) e `/users/{seller_id}` por vendedor distinto (UF via `ufDoVendedor`, `transactions.total`),
+  com cache de vendedor por request (`Map`, sellers repetem entre fichas). `montarPainelSonar`
+  (`_shared/pulse/sonar.ts`) agrega tudo em `PainelSonar` — soma de visitas por dia entre fichas
+  com datas desalinhadas, `visitas_30d` nulo nunca vira zero na soma, % frete grátis ponderado
+  por ofertas, vendedores distintos e `palavras_chave`. Resultado cacheado no Redis por
+  `sonar:v1:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
+  ADR-0120 §3); falha do ML na busca principal (`null`) devolve 502 e não cacheia, para não
+  travar um termo vazio por 24h a partir de um erro transitório.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
