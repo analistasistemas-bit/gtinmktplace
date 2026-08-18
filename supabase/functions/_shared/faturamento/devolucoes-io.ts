@@ -2,6 +2,8 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ehClaimDeCompra, mapearDevolucao, type ClaimML, type ReturnML } from './devolucao.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
+import { chunk } from './utils.ts';
+import type { DevolucaoLocal } from './reconciliar-filtros.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -98,4 +100,24 @@ export async function upsertDevolucao(
       .eq('user_id', userId).eq('order_id', row.order_id);
   }
   return { nova, row };
+}
+
+/**
+ * Estado local dos claims informados, para o reconciliar decidir quais precisam ser reprocessados
+ * (`claimPrecisaProcessar`). Uma consulta em lote no lugar de reprocessar tudo às cegas.
+ *
+ * Em lotes pelo mesmo motivo de `carregarPerguntasLocais`: `in.()` vai na URL e a resposta do
+ * PostgREST tem teto de 1000 linhas — `buscarClaimsSeller` pagina até 2000 por status.
+ */
+export async function carregarDevolucoesLocais(
+  admin: SupabaseClient, userId: string, claimIds: number[],
+): Promise<Map<number, DevolucaoLocal>> {
+  const mapa = new Map<number, DevolucaoLocal>();
+  for (const lote of chunk(claimIds, 200)) {
+    const { data } = await admin.from('ml_devolucoes')
+      .select('claim_id, status, stage, aberto_em, fechado_em, return_status_money')
+      .eq('user_id', userId).in('claim_id', lote);
+    for (const r of data ?? []) mapa.set(Number(r.claim_id), r as unknown as DevolucaoLocal);
+  }
+  return mapa;
 }

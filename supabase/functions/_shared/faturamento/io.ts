@@ -159,6 +159,28 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
   };
 }
 
+/**
+ * Envelopa `carregarCatalogo` com memo por `userId`. O reconciliar-faturamento carrega o mesmo
+ * catálogo DUAS vezes por org na mesma execução (passo de claims e passo de vendas) — e cada
+ * carga pagina `familias` + `variacoes` + `anuncios_externos_itens` inteiras (5.395 variações =
+ * 6 páginas de ~150 KB em 2026-08). Era ~metade dos GETs em /rest/v1/variacoes.
+ *
+ * O escopo é a INVOCAÇÃO, não o módulo: chame dentro do handler. Cache de módulo em edge function
+ * vive por isolate e serviria catálogo velho — família publicada agora não apareceria enquanto o
+ * isolate estivesse quente. Guarda a Promise, não o valor, para deduplicar chamadas concorrentes.
+ */
+export function memoCatalogo(admin: SupabaseClient): (userId: string) => Promise<Catalogo> {
+  const cache = new Map<string, Promise<Catalogo>>();
+  return (userId: string) => {
+    let pendente = cache.get(userId);
+    if (!pendente) {
+      pendente = carregarCatalogo(admin, userId);
+      cache.set(userId, pendente);
+    }
+    return pendente;
+  };
+}
+
 /** GET /orders/{id}. Lança MLApiError(status) em erro (caller classifica via classificarErroML). */
 export async function buscarPedido(token: string, orderId: string): Promise<PedidoML> {
   const resp = await fetch(`${API}/orders/${orderId}`, { headers: { Authorization: `Bearer ${token}` } });

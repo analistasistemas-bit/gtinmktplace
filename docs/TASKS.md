@@ -2,6 +2,41 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Egress PostgREST estourando a cota do Free Plan — 2026-08-18
+
+- [x] **Incidente.** Supabase avisou que restringiria os projetos da org em 18/08 por consumo:
+  4,98 GB de 5 GB no ciclo 24/07–24/08, com **PostgREST = 93,4% do egress** (172,7 MB só em 17/08)
+  e piso noturno constante — sinal de tráfego automático, não de uso humano.
+- [x] **Diagnóstico (read-only, `edge_logs` 24h + `pg_stat_statements`).** Não era payload gordo
+  nem o frontend (já corrigido em ADR-0081/0082, <1 MB/dia): era **volume de requisições dos
+  workers de faturamento** — ~155 mil requests REST/dia. `upsertVenda` gasta 6 requisições por
+  venda e era re-executado para cada venda a cada hora, mesmo sem mudança: 870 mil upserts em
+  `ml_vendas` desde maio para 1.734 vendas (~500 regravações por venda). Relatório completo em
+  `docs/analise-egress-postgrest.md`.
+- [x] **Correção 1 — schedule do `backfill-faturamento`: `30 * * * *` → `30 6 * * *`** (24×/dia →
+  1×/dia, 03:30 BRT). Só QStash, sem código. A rede de segurança de 7 dias re-varrida de hora em
+  hora era redundância tripla sobre webhook + `reconciliar-faturamento` (72h). **−33 MB/dia.**
+- [x] **Correção 3 — `memoCatalogo`** (`_shared/faturamento/io.ts`): o `reconciliar-faturamento`
+  carregava o mesmo catálogo da org duas vezes por execução (passo de claims e passo de vendas),
+  cada carga paginando `familias` + `variacoes` + `anuncios_externos_itens` inteiras (5.395
+  variações = 6 páginas). Memo por **invocação** (guarda a Promise, não o valor — dedup de
+  concorrência); cache de módulo não serve porque vive por isolate e entregaria catálogo velho.
+  **−12 a 20 MB/dia.**
+- [x] **Correção 4 — filtro de reprocesso** (`_shared/faturamento/reconciliar-filtros.ts`, puro e
+  testado): estado local carregado em lote e só processa o que mudou. Medido antes do fix: 87 das
+  88 perguntas `ANSWERED`/imutáveis e 67 dos 88 claims fechados há >7 dias, todos regravados de
+  hora em hora. Predicado de claim mantém graça de 7 dias pós-fechamento e nunca pula dinheiro em
+  trânsito (`return_status_money` vem de `GET /returns` e muda **invisível** no payload do claim).
+  Predicado vive no chamador periódico, não em `upsertPergunta`/`upsertDevolucao` — essas servem o
+  webhook, que dispara porque algo mudou. **−8 a 10 MB/dia**, mais o fim do bump horário de
+  `ml_vendas.atualizado_em` que fazia o delta-poll do frontend devolver linhas em todo tick.
+- [x] **Testes:** `reconciliar-filtros.test.ts` — 21 casos, cada "pula" com o simétrico "não pula".
+  Suíte 3353/3353, `deno lint`/`deno check` zerados, `pnpm lint` 0 erros.
+- [ ] **Correção 2 (pendente, maior alavanca restante): early-exit no `upsertVenda`** por
+  `date_last_updated` — **−45 a 55 MB/dia**. Não feita nesta entrega: é código financeiro e o
+  critério de "nada mudou" precisa cobrir `shipment`/frete/`money_release`, que vêm de FORA do
+  pedido. Exige ADR + trava de teste.
+
 ## Vendas por anúncio: irmão legado sem vínculo sumia da tela — 2026-08-17
 
 - [x] **Bug (reportado por Diego).** "Unid. vendidas" e "Valor vendido" abaixo do real em vários

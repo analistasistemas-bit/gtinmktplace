@@ -2,6 +2,8 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { mapearPergunta, preservarComprador, type PerguntaML } from './pergunta.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
+import { chunk } from './utils.ts';
+import type { PerguntaLocal } from './reconciliar-filtros.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -104,4 +106,24 @@ export async function upsertPergunta(
   }, { onConflict: 'user_id,question_id' });
   const novaNaoRespondida = !eraConhecida && row.status === 'UNANSWERED';
   return { novaNaoRespondida, row };
+}
+
+/**
+ * Estado local das perguntas informadas, para o reconciliar decidir quais precisam de upsert
+ * (`perguntaPrecisaUpsert`). Uma consulta em lote no lugar de um SELECT por pergunta.
+ *
+ * Em lotes porque o `in.()` vai na URL (que tem teto de tamanho no PostgREST) e a resposta é
+ * limitada a 1000 linhas — `buscarPerguntasSeller` pagina até 2000.
+ */
+export async function carregarPerguntasLocais(
+  admin: SupabaseClient, userId: string, questionIds: number[],
+): Promise<Map<number, PerguntaLocal>> {
+  const mapa = new Map<number, PerguntaLocal>();
+  for (const lote of chunk(questionIds, 200)) {
+    const { data } = await admin.from('ml_perguntas')
+      .select('question_id, status, resposta, item_titulo, comprador_id, comprador_nick')
+      .eq('user_id', userId).in('question_id', lote);
+    for (const r of data ?? []) mapa.set(Number(r.question_id), r as unknown as PerguntaLocal);
+  }
+  return mapa;
 }
