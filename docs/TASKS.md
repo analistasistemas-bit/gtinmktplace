@@ -31,7 +31,7 @@
   quando a conta não tem Mercado Envios.
 - [x] **Frontend:** card na Viabilidade após analisar (≥1 item `existeNoML`), com aviso de categorias
   mistas. `categoriaMlId` exposto em `ItemAnalisado`.
-- [ ] **Deploy:** `supabase functions deploy tabela-frete-ml` após merge.
+- [x] **Deploy:** `supabase functions deploy tabela-frete-ml` (2026-08-18).
 
 ## Sonar — veredito de oportunidade (ADR-0124) — 2026-08-18
 
