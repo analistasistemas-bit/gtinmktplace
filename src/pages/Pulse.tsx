@@ -1,7 +1,7 @@
 // Pulse (ADR-0119): radar dirigido de concorrência — preços e vendedores dos produtos de
 // catálogo dos nossos anúncios, com price-to-win e simulador de margem.
 import { useCallback, useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Activity, Bell, Plus, RefreshCw, Search, TrendingUp, X } from 'lucide-react';
@@ -11,6 +11,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   contarPulse, filtrarProdutos, temFiltroAtivo, FILTROS_VAZIOS,
   type FiltrosPulse, type FocoPulse, type StatusAnuncio,
@@ -30,9 +31,12 @@ import {
   type PulseAlerta, type PulseProduto,
 } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
+import PulseSonar from './PulseSonar';
 
 export default function Pulse() {
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'sonar' ? 'sonar' : 'radar';
   const qc = useQueryClient();
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
@@ -98,7 +102,7 @@ export default function Pulse() {
       <PageHeader
         title="Pulse"
         subtitle="Radar de concorrência dos seus produtos de catálogo, com alertas e referência de preço do ML."
-        actions={
+        actions={tab === 'radar' ? (
           <>
             <Button variant="outline" onClick={() => atualizar.mutate()} disabled={atualizar.isPending}>
               <RefreshCw className={cn('mr-2 h-4 w-4', atualizar.isPending && 'animate-spin')} />
@@ -109,9 +113,19 @@ export default function Pulse() {
               Adicionar produto
             </Button>
           </>
-        }
+        ) : undefined}
       />
 
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setSearchParams(v === 'sonar' ? { tab: 'sonar' } : {}, { replace: true })}
+      >
+        <TabsList className="mb-4">
+          <TabsTrigger value="radar">Radar</TabsTrigger>
+          <TabsTrigger value="sonar">Sonar</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="radar">
       <PainelAlertas onVerProduto={setDetalheId} onReprecificar={setAlertaReprecificar} />
 
       {lista.length > 0 && (
@@ -243,6 +257,12 @@ export default function Pulse() {
           onAbrirDetalhe={setDetalheId}
         />
       )}
+        </TabsContent>
+
+        <TabsContent value="sonar">
+          <PulseSonar />
+        </TabsContent>
+      </Tabs>
 
       <DialogAdicionar aberto={adicionarAberto} onFechar={() => setAdicionarAberto(false)} />
       <DialogDetalhe produto={produtoDetalhe} onFechar={() => setDetalheId(null)} />
