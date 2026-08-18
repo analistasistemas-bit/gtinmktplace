@@ -32,6 +32,18 @@
   `ml_vendas.atualizado_em` que fazia o delta-poll do frontend devolver linhas em todo tick.
 - [x] **Testes:** `reconciliar-filtros.test.ts` — 21 casos, cada "pula" com o simétrico "não pula".
   Suíte 3353/3353, `deno lint`/`deno check` zerados, `pnpm lint` 0 erros.
+- [x] **Validado em produção** (2026-08-18 00:5x UTC, duas execuções disparadas via QStash, números
+  idênticos nas duas = convergiu): `perguntas 0/85` e `0/2` — **nenhuma escrita em `ml_perguntas`
+  em 25 min**, contra 87 upserts/hora antes; `claims 37/96` e `2/17`, com **14 escritas** em
+  `ml_devolucoes` no lugar de 88+. `ml_vendas` seguiu com 287 escritas — é a correção 2, intocada.
+- [ ] **Achado durante a validação: ~25 claims que NUNCA convergem.** O ML devolve 113 claims, mas
+  `ml_devolucoes` tem 88 linhas: a diferença são claims em que a conta é a **compradora**, que
+  `upsertDevolucao` descarta via `ehClaimDeCompra` sem gravar nada. Como não gravam, o predicado os
+  vê como "novos" toda hora e eles são reprocessados para sempre — ~8 requisições REST cada,
+  ~4,8 mil/dia (~2,6 MB/dia). Pior: o `index.ts` ignora o `ignorado: true` do retorno e ainda roda
+  `buscarPedido` + `upsertVenda` num pedido que não é venda nossa. Fix candidato: filtrar por
+  `ehClaimDeCompra` antes do loop. Não entrou aqui por estar fora do escopo pedido — precisa
+  confirmar que nenhum desses pedidos deva mesmo virar venda.
 - [ ] **Correção 2 (pendente, maior alavanca restante): early-exit no `upsertVenda`** por
   `date_last_updated` — **−45 a 55 MB/dia**. Não feita nesta entrega: é código financeiro e o
   critério de "nada mudou" precisa cobrir `shipment`/frete/`money_release`, que vêm de FORA do
