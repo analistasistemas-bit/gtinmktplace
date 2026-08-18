@@ -89,8 +89,9 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
   useEffect(() => {
     // Mesmo padrão de numParaInput (viabilidade-linha.tsx): vírgula decimal, lido por
     // parseNumeroPtBr. String(10.995) direto vira "10.995", e o regex de milhar do parser lê
-    // isso como 10995 — a vírgula tira a ambiguidade.
-    setPrecoStr(ficha?.preco?.mediana != null ? String(ficha.preco.mediana).replace('.', ',') : '');
+    // isso como 10995 — a vírgula tira a ambiguidade. toFixed(2) evita cauda de float da mediana
+    // ((10.1+10.2)/2 = 10.149999999999999) vazando pro input.
+    setPrecoStr(ficha?.preco?.mediana != null ? ficha.preco.mediana.toFixed(2).replace('.', ',') : '');
     setCustoStr('');
     setOrigem(null);
     simular.reset();
