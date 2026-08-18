@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Detalhe do líquido divergia do Mercado Pago (ADR-0123) — 2026-08-18
+
+- [x] **Diagnóstico:** o líquido por venda estava certo (17/08: 17 vendas = R$ 949,92 vs
+  R$ 948,93 de net no MP, delta = o pagamento de frete). Errada era a **data**: o MP antecipa
+  `money_release_date` na confirmação da entrega, o ML não emite webhook, e a venda já saiu da
+  janela de 72h do `reconciliar-faturamento` → estimativa original (~D+30) congelada.
+  Medido na org AVIL: **222/1157 vendas divergentes, R$ 3.136,21** já na conta exibidos como
+  "A liberar".
+- [x] **Telegram inocentado:** os R$ 989,21 / 25 vendas da notificação são do **dia 18**, idênticos
+  ao banco — a comparação era com o dia 17 da tela, não um erro de cálculo.
+- [x] **Fix (ADR-0123):** passo novo no `reconciliar-faturamento` realinha `money_release_date` de
+  todas as vendas da org usando o mapa de pagamentos que `carregarLiquidoMP` já carrega (120 dias,
+  zero requisições extras). `mapaLiberacaoPorOrder` (puro, 3 testes) + `reconciliarLiberacoes`.
+- [x] **Verificado em produção (18/08):** divergentes 222 → **0**; dia 17/08 passou a ter 26 vendas
+  / R$ 1.320,92 contra 26 pagamentos / R$ 1.302,95 de net no MP — a diferença de R$ 17,97 são os 3
+  pagamentos de frete que o MP credita à parte. Deploy `reconciliar-faturamento` v69.
+- [ ] **Em aberto (decisão do Diego):** a notificação do Telegram só avisa o que libera no dia
+  corrente. Liberação descoberta com atraso pela reconciliação não gera aviso. Ampliar para janela
+  retroativa exige decidir o tamanho e o tratamento do backlog histórico.
+
 ## Sonar — vendas estimadas via Apify (ADR-0122) — 2026-08-18
 
 - [x] **ADR-0122:** scraping pago reavaliado (ressalva do ADR-0120) — Apify contratada pelo Diego
