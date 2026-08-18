@@ -47,6 +47,9 @@ describe('resumoPrecos', () => {
   it('min/mediana/max com mediana de lista par = média dos centrais', () => {
     expect(resumoPrecos([10, 30, 20, 40])).toEqual({ min: 10, mediana: 25, max: 40 });
   });
+  it('min/mediana/max com mediana de lista ímpar = valor central', () => {
+    expect(resumoPrecos([10, 30, 20])).toEqual({ min: 10, mediana: 20, max: 30 });
+  });
   it('null para lista vazia', () => {
     expect(resumoPrecos([])).toBeNull();
   });
