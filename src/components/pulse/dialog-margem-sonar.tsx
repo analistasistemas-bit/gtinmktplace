@@ -44,7 +44,7 @@ function LinhaRegime({ label, comissao, frete, freteMedido, margem }: {
         Você recebe <span className="font-medium tabular-nums">{fmtBRL(margem.recebe)}</span>
       </div>
       <div className="text-sm">
-        Margem <span className="font-medium tabular-nums">{fmtBRL(margem.liquido)}</span>{' '}
+        Margem sobre o custo (markup) <span className="font-medium tabular-nums">{fmtBRL(margem.liquido)}</span>{' '}
         <span className={margem.margemPct >= 0 ? 'text-success' : 'text-destructive'}>
           ({margem.margemPct.toFixed(1)}%)
         </span>
@@ -64,12 +64,15 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
   const [origem, setOrigem] = useState<Origem | null>(null);
   const [precoStr, setPrecoStr] = useState('');
 
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isLoading: aliquotasCarregando, isError: aliquotasErro } = useAliquotas();
 
   const custo = parseNumeroPtBr(custoStr);
   const precoAlvo = parseNumeroPtBr(precoStr);
-  const aliquotaPct = origem === 'NACIONAL' ? aliquotas?.nacional ?? null
-    : origem === 'IMPORTADO' ? aliquotas?.importado ?? null : null;
+  // Sem confirmação, fetchAliquotas devolve 8/16 de FALLBACK — usar isso calado simularia imposto
+  // presumido (regra LOUD). Mesma trava de fetchContextoMargem em pulse.ts.
+  const aliquotaPct = !aliquotas?.confirmada ? null
+    : origem === 'NACIONAL' ? aliquotas.nacional
+    : origem === 'IMPORTADO' ? aliquotas.importado : null;
 
   // A comissão do ML muda por faixa de preço (Errata 6/ADR-0119): guarda o preço/categoria em que
   // ela foi lida junto do resultado, para nunca aplicar a comissão de UM preço à margem de outro.
@@ -84,7 +87,10 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
 
   // Reabrir com outra ficha reseta a simulação — mediana pré-preenchida, resto exige o operador.
   useEffect(() => {
-    setPrecoStr(ficha?.preco?.mediana != null ? String(ficha.preco.mediana) : '');
+    // Mesmo padrão de numParaInput (viabilidade-linha.tsx): vírgula decimal, lido por
+    // parseNumeroPtBr. String(10.995) direto vira "10.995", e o regex de milhar do parser lê
+    // isso como 10995 — a vírgula tira a ambiguidade.
+    setPrecoStr(ficha?.preco?.mediana != null ? String(ficha.preco.mediana).replace('.', ',') : '');
     setCustoStr('');
     setOrigem(null);
     simular.reset();
@@ -95,9 +101,11 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
     && precoAlvo != null && precoAlvo > 0 && aliquotaPct != null;
 
   const hint = !ficha?.category_id ? null
+    : aliquotasErro ? 'Não foi possível carregar as alíquotas da organização.'
+    : aliquotasCarregando ? 'Carregando alíquotas…'
+    : !aliquotas?.confirmada ? 'Confirme as alíquotas da organização em Configurações antes de simular.'
     : custo == null || custo <= 0 ? 'Informe o custo hipotético do produto.'
     : origem == null ? 'Selecione a origem do produto.'
-    : aliquotaPct == null ? 'Carregando alíquotas…'
     : precoAlvo == null || precoAlvo <= 0 ? 'Informe um preço alvo válido.' : null;
 
   // Simulação só vale para o preço/categoria em que foi calculada — editar o preço depois de
@@ -148,8 +156,8 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="NACIONAL">Nacional ({aliquotas?.nacional ?? 8}%)</SelectItem>
-                    <SelectItem value="IMPORTADO">Importado ({aliquotas?.importado ?? 16}%)</SelectItem>
+                    <SelectItem value="NACIONAL">Nacional ({aliquotas?.confirmada ? `${aliquotas.nacional}%` : '—'})</SelectItem>
+                    <SelectItem value="IMPORTADO">Importado ({aliquotas?.confirmada ? `${aliquotas.importado}%` : '—'})</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

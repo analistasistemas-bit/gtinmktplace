@@ -52,6 +52,9 @@ export default function PulseSonar() {
   const iniciadoEmRef = useRef(0);
   const [semVendedorAberto, setSemVendedorAberto] = useState(false);
   const [fichaSimulando, setFichaSimulando] = useState<PainelSonar['fichas'][number] | null>(null);
+  // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as 4 etapas
+  // concluídas antes de trocar pelo resultado (em vez de sumir direto na 3ª, travada).
+  const [mostrarProgresso, setMostrarProgresso] = useState(false);
 
   const { data: painel, isFetching, isError, error } = useQuery({
     queryKey: ['pulse', 'sonar', termoBuscado],
@@ -62,11 +65,15 @@ export default function PulseSonar() {
 
   // Avanço do stepper temporizado no cliente: a edge responde numa chamada única.
   useEffect(() => {
-    if (!isFetching) return;
-    iniciadoEmRef.current = Date.now();
-    forcarRender((n) => n + 1);
-    const id = setInterval(() => forcarRender((n) => n + 1), 250);
-    return () => clearInterval(id);
+    if (isFetching) {
+      iniciadoEmRef.current = Date.now();
+      setMostrarProgresso(true);
+      forcarRender((n) => n + 1);
+      const id = setInterval(() => forcarRender((n) => n + 1), 250);
+      return () => clearInterval(id);
+    }
+    const t = setTimeout(() => setMostrarProgresso(false), 400);
+    return () => clearTimeout(t);
   }, [isFetching]);
 
   const buscar = (e: FormEvent) => {
@@ -115,8 +122,8 @@ export default function PulseSonar() {
             + 'Mercado Livre não expõe vendas exatas de terceiros.'
           }
         />
-      ) : isFetching ? (
-        <SonarProgresso passos={passosProgresso(elapsedMs, false)} />
+      ) : mostrarProgresso ? (
+        <SonarProgresso passos={passosProgresso(elapsedMs, !isFetching)} />
       ) : isError ? (
         <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">Não foi possível garimpar este termo.</p>
