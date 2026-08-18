@@ -116,3 +116,15 @@ amostra (27 contra 7). Há teste travando isso.
 
 Os cortes são constantes nomeadas num único módulo justamente para essa recalibração ser uma
 troca de número, não uma refatoração.
+
+## Adendo (2026-08-18) — "Saiba mais" determinístico
+
+O card ganhou um expansível "Saiba mais" que traduz o veredito em linguagem de mercado. Decisão:
+**explicação 100% determinística** (templates sobre os mesmos cortes deste ADR), nunca gerada por
+IA — custo zero, sem latência, sem risco de interpretação inventada, e testável junto do gabarito.
+Conteúdo: pontuação real (`soma de máximo` + gate de Demanda explícito), frase por fator com o
+número da amostra vs. o corte, mini-régua das faixas, o delta até a próxima faixa ("para
+destravar"), uma frase de ação por nível e um bloco "Contexto do nicho" com dados que o score não
+usa (mediana de preço das fichas, ticket médio, % Full e % internacionais da amostra Apify) —
+rotulado como fora da pontuação. Implementação em `src/lib/veredito-sonar.ts` (campo aditivo
+`explicacao` + `contextoNicho`), render em `src/components/pulse/veredito-sonar.tsx`.

@@ -26,7 +26,7 @@ import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import {
   lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
 } from '@/lib/sonar-buscas-recentes';
-import { calcularVeredito } from '@/lib/veredito-sonar';
+import { calcularVeredito, contextoNicho } from '@/lib/veredito-sonar';
 import {
   fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
   type PainelSonar, type EtapaProgresso, type RaioXNicho, type RespostaVendasSonar,
@@ -349,7 +349,10 @@ export default function PulseSonar() {
         </div>
       ) : painel ? (
         <>
-          <VereditoSonar veredito={calcularVeredito(painel, vendas?.configurado ? vendas : null)} />
+          <VereditoSonar
+            veredito={calcularVeredito(painel, vendas?.configurado ? vendas : null)}
+            contexto={contextoNicho(painel, vendas?.configurado ? vendas : null)}
+          />
 
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
             <KpiCard size="compact" label="Visitas (30d)" value={fmtMilhar(painel.agregado.visitas_30d_total, 1)} icon={Eye} tom="info" />

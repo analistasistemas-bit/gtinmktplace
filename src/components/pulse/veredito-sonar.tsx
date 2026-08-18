@@ -1,9 +1,11 @@
 // Card de veredito do Sonar (ADR-0124): a conclusão do garimpo, antes dos números crus.
 // Identidade visual deliberadamente distinta do SemaforoPreco (ADR-0020) — aquele julga um preço,
 // este julga um nicho; ícones de tendência aqui, ícones de círculo lá.
-import { Gauge, Minus, ShieldAlert, TrendingDown, TrendingUp } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, Gauge, Minus, ShieldAlert, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import type { NivelFator, Veredito } from '@/lib/veredito-sonar';
+import { cn } from '@/lib/utils';
+import type { ContextoItem, ExplicacaoRegua, NivelFator, Veredito } from '@/lib/veredito-sonar';
 
 const CLS_VEREDITO = {
   alta: { borda: 'border-success/40', fundo: 'bg-success/5', texto: 'text-success' },
@@ -23,8 +25,46 @@ const ICONE_FATOR: Record<NivelFator, typeof TrendingUp> = {
   ruim: TrendingDown,
 };
 
-export function VereditoSonar({ veredito }: { veredito: Veredito }) {
+const LABEL_FATOR: Record<'demanda' | 'disputa' | 'tracao' | 'marca', string> = {
+  demanda: 'Demanda',
+  disputa: 'Disputa',
+  tracao: 'Tração',
+  marca: 'Marca',
+};
+
+/** Barra horizontal com as 3 zonas (ruim/médio/bom) e um marcador no valor atual. `invertida`
+ *  troca a ordem das cores porque, em disputa e marca, maior é pior. */
+function MiniRegua({ regua }: { regua: ExplicacaoRegua }) {
+  const { min, max, cortes: [c1, c2], valor, invertida } = regua;
+  const total = Math.max(max - min, 1);
+  const larguras = [
+    ((c1 - min) / total) * 100,
+    ((c2 - c1) / total) * 100,
+    ((max - c2) / total) * 100,
+  ];
+  const cores = invertida
+    ? ['bg-success/60', 'bg-warning/60', 'bg-destructive/60']
+    : ['bg-destructive/60', 'bg-warning/60', 'bg-success/60'];
+  const posicao = Math.min(100, Math.max(0, ((valor - min) / total) * 100));
+  return (
+    <div className="relative mt-1.5 h-1.5 w-full overflow-visible rounded-full" aria-hidden>
+      <div className="flex h-full w-full overflow-hidden rounded-full">
+        {larguras.map((l, i) => (
+          <div key={i} className={cores[i]} style={{ width: `${l}%` }} />
+        ))}
+      </div>
+      <div
+        className="absolute top-1/2 h-2.5 w-0.5 -translate-y-1/2 rounded-full bg-foreground"
+        style={{ left: `${posicao}%` }}
+      />
+    </div>
+  );
+}
+
+export function VereditoSonar({ veredito, contexto }: { veredito: Veredito; contexto: ContextoItem[] }) {
+  const [aberto, setAberto] = useState(false);
   const cls = CLS_VEREDITO[veredito.nivel];
+  const { explicacao } = veredito;
   return (
     <Card className={`mb-4 border ${cls.borda} ${cls.fundo} p-4`}>
       <div className="flex flex-wrap items-start gap-3">
@@ -70,6 +110,66 @@ export function VereditoSonar({ veredito }: { veredito: Veredito }) {
               ? ' — revender marca com loja oficial forte tem risco de moderação por propriedade intelectual.'
               : ' — confira se a marca permite revenda antes de cadastrar.'}
           </span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        className="mt-3 flex items-center gap-1 border-t pt-2.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        Saiba mais
+        <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', aberto && 'rotate-180')} aria-hidden />
+      </button>
+
+      {aberto && (
+        <div className="mt-3 space-y-4 border-t pt-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">
+              {explicacao.pontuacao.soma} de {explicacao.pontuacao.maximo} pontos
+            </span>
+            {explicacao.gateDemanda && (
+              <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
+                demanda derrubou o veredito sozinha
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {explicacao.fatores.map((f) => (
+              <div key={f.chave}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-xs font-semibold uppercase ${CLS_FATOR[f.nivel]}`}>{LABEL_FATOR[f.chave]}</span>
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">{f.frase}</p>
+                {f.regua && <MiniRegua regua={f.regua} />}
+                {f.destravar && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Para destravar:</span> {f.destravar}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <p className={`rounded-md border p-2.5 text-sm ${cls.borda} ${cls.fundo}`}>{explicacao.acao}</p>
+
+          {contexto.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
+                Contexto do nicho — não entra na pontuação
+              </p>
+              <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+                {contexto.map((item) => (
+                  <div key={item.rotulo}>
+                    <dt className="text-xs text-muted-foreground">{item.rotulo}</dt>
+                    <dd className="text-sm font-medium">{item.valor}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
         </div>
       )}
     </Card>

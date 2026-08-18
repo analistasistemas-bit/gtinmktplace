@@ -130,6 +130,16 @@
 - [x] **Documentação.** ADR-0120 e Errata 9 do ADR-0119 registrados; glossário e índice de ADRs
   no vault atualizados; `docs/reference/edge-functions.md` e `docs/reference/modelo-de-dados.md`
   cobrem o shape novo (edge nova, passo 7, coluna/view).
+## Sonar: "Saiba mais" do veredito — 2026-08-18
+
+- [x] **Explicação determinística do veredito** (adendo no ADR-0124): expansível "Saiba mais" no
+  card com pontuação real + gate de Demanda, frase de mercado por fator (número da amostra vs.
+  corte), mini-régua das faixas, delta "para destravar", frase de ação por nível e bloco
+  "Contexto do nicho" (mediana de preço, ticket médio, % Full, % internacionais — fora do score).
+  Sem IA, sem rede: `explicacao` aditiva em `lib/veredito-sonar.ts` + `contextoNicho`; render em
+  `components/pulse/veredito-sonar.tsx`. Testes estendidos sobre os nichos-gabarito (12/12);
+  validado em runtime com Playwright + mocks das duas edges.
+
 ## Egress PostgREST estourando a cota do Free Plan — 2026-08-18
 
 - [x] **Incidente.** Supabase avisou que restringiria os projetos da org em 18/08 por consumo:

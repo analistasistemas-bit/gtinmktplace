@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcularVeredito } from '../veredito-sonar';
+import { calcularVeredito, contextoNicho } from '../veredito-sonar';
 import type { PainelSonar, PainelVendasSonar } from '../sonar';
 
 // Fixtures dos 3 nichos REAIS medidos em 18/08 — são o gabarito da calibração (ADR-0124).
@@ -67,6 +67,30 @@ describe('calcularVeredito — gabarito dos nichos reais', () => {
     expect(v.fatores.find((f) => f.chave === 'disputa')!.nivel).toBe('ruim'); // 27 vendedores, 88% frete
     expect(v.fatores.find((f) => f.chave === 'tracao')!.nivel).toBe('bom');   // R$ 647k por vendedor
     expect(v.motivo).toMatch(/disputa alta/i);
+
+    // explicacao: pontuação, gate e frases com os números reais
+    expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
+    expect(v.explicacao.gateDemanda).toBe(false);
+
+    const demanda = v.explicacao.fatores.find((f) => f.chave === 'demanda')!;
+    expect(demanda.nivel).toBe('bom');
+    expect(demanda.frase).toContain('75%');
+    expect(demanda.frase).toContain('154.100');
+    expect(demanda.destravar).toBeNull();
+
+    const disputa = v.explicacao.fatores.find((f) => f.chave === 'disputa')!;
+    expect(disputa.nivel).toBe('ruim');
+    expect(disputa.frase).toContain('27 vendedores');
+    expect(disputa.frase).toContain('25'); // corte citado na frase
+    expect(disputa.destravar).toBe('com até 25 vendedores a disputa sairia da zona crítica — hoje são 27');
+    expect(disputa.regua).toEqual({ min: 0, max: 40, cortes: [10, 25], valor: 27, invertida: true });
+
+    const tracao = v.explicacao.fatores.find((f) => f.chave === 'tracao')!;
+    expect(tracao.nivel).toBe('bom');
+    expect(tracao.frase).toContain('647,1 mil');
+    expect(tracao.destravar).toBeNull();
+
+    expect(v.explicacao.acao).toMatch(/nicho viável com ressalvas/i);
   });
 
   it('protetor solar facial (genérico): MÉDIA — mesma leitura em escala maior', () => {
@@ -85,6 +109,20 @@ describe('calcularVeredito — gabarito dos nichos reais', () => {
     expect(v.nivel).toBe('alta');
     expect(v.fatores.find((f) => f.chave === 'disputa')!.nivel).toBe('bom');
     expect(v.motivo).toMatch(/quase sem disputa/i);
+
+    expect(v.explicacao.pontuacao).toEqual({ soma: 5, maximo: 6 });
+    expect(v.explicacao.gateDemanda).toBe(false);
+
+    const disputa = v.explicacao.fatores.find((f) => f.chave === 'disputa')!;
+    expect(disputa.nivel).toBe('bom');
+    expect(disputa.frase).toContain('7 vendedores');
+    expect(disputa.destravar).toBeNull();
+
+    const tracao = v.explicacao.fatores.find((f) => f.chave === 'tracao')!;
+    expect(tracao.nivel).toBe('medio');
+    expect(tracao.destravar).toBe('a partir de R$ 150 mil por vendedor a tração deixaria de ser intermediária e passaria a puxar o veredito para cima');
+
+    expect(v.explicacao.acao).toMatch(/sinais favoráveis/i);
   });
 
   it('catálogo saturado em 10.000 não derruba a Disputa (os dois nichos reais mostram 10.000)', () => {
@@ -107,6 +145,14 @@ describe('calcularVeredito — gates e casos de borda', () => {
     );
     expect(v.nivel).toBe('baixa');
     expect(v.motivo).toMatch(/sem vendas comprovadas/i);
+
+    expect(v.explicacao.gateDemanda).toBe(true);
+    const demanda = v.explicacao.fatores.find((f) => f.chave === 'demanda')!;
+    expect(demanda.nivel).toBe('ruim');
+    expect(demanda.frase).toContain('300');
+    expect(demanda.frase).toContain('1.000');
+    expect(demanda.destravar).toBe('com 1.000 vendas na amostra a demanda sairia do piso — hoje são 300');
+    expect(v.explicacao.acao).toMatch(/demanda insuficiente derruba o veredito para baixa/i);
   });
 
   it('dinheiro diluído entre muitos vendedores derruba a tração', () => {
@@ -124,12 +170,26 @@ describe('calcularVeredito — gates e casos de borda', () => {
     expect(v.fatores.map((f) => f.chave)).toEqual(['demanda', 'disputa']);
     expect(v.fatores[0].detalhe).toMatch(/visitas/);
     expect(v.nivel).toBe('alta');
+
+    // sem vendas: Tração some da explicação também; Demanda vira frase de visitas (proxy, não prova).
+    expect(v.explicacao.fatores.map((f) => f.chave)).not.toContain('tracao');
+    const demanda = v.explicacao.fatores.find((f) => f.chave === 'demanda')!;
+    expect(demanda.frase).toMatch(/50 mil visitas/);
+    expect(demanda.frase).toMatch(/sem dados de venda/i);
+    expect(demanda.destravar).toBeNull();
   });
 
   it('sem vendas e sem procura: BAIXA com motivo de procura, não de venda', () => {
     const v = calcularVeredito(painel({ visitas: 120, vendedores: 5, frete: 20 }), null);
     expect(v.nivel).toBe('baixa');
     expect(v.motivo).toMatch(/procura/i);
+
+    expect(v.explicacao.gateDemanda).toBe(true);
+    const demanda = v.explicacao.fatores.find((f) => f.chave === 'demanda')!;
+    expect(demanda.frase).toContain('120');
+    expect(demanda.frase).toMatch(/sem dados de venda/i);
+    expect(demanda.destravar).toBe('a partir de 300 visitas em 30 dias a demanda sairia do piso — hoje são 120');
+    expect(demanda.regua).toEqual({ min: 0, max: 15_000, cortes: [300, 10_000], valor: 120, invertida: false });
   });
 
   it('marca é só alerta: não muda o veredito, mas reporta o percentual', () => {
@@ -141,5 +201,51 @@ describe('calcularVeredito — gates e casos de borda', () => {
     expect(v.nivel).toBe('alta');              // 80% loja oficial NÃO derruba
     expect(v.marca!.nivel).toBe('ruim');
     expect(v.marca!.detalhe).toMatch(/80%/);
+
+    const marca = v.explicacao.fatores.find((f) => f.chave === 'marca')!;
+    expect(marca.nivel).toBe('ruim');
+    expect(marca.frase).toContain('80%');
+    expect(marca.frase).toMatch(/não entra na pontuação/i);
+    expect(marca.frase).toMatch(/propriedade intelectual/i);
+    expect(marca.destravar).toBe('abaixo de 50% das fichas com loja oficial este alerta sairia da zona crítica — hoje são 80%');
+    expect(marca.regua).toEqual({ min: 0, max: 100, cortes: [20, 50], valor: 80, invertida: true });
+  });
+});
+
+describe('calcularVeredito — explicacao: pontuação nunca some quando fator é bom', () => {
+  it('demanda, disputa e tração bons: destravar é sempre null (nada pra destravar)', () => {
+    // valor_mercado bem alto por vendedor pra garantir tração 'bom' também.
+    const v = calcularVeredito(
+      painel({ visitas: 452, ofertas: 13, vendedores: 5, frete: 20 }),
+      vendas({ itens_com_vendas: 18, itens_analisados: 20, vendas_totais: 8_100, valor_mercado: 1_000_000 }),
+    );
+    for (const f of v.explicacao.fatores) {
+      if (f.nivel === 'bom') expect(f.destravar).toBeNull();
+      else expect(f.destravar).not.toBeNull();
+    }
+  });
+});
+
+describe('contextoNicho — leitura complementar, fora do score', () => {
+  it('sem vendas configuradas: só a mediana de preço das fichas', () => {
+    const itens = contextoNicho(painel({ visitas: 452, vendedores: 7, frete: 23 }), null);
+    expect(itens).toEqual([{ rotulo: 'Preço mediano das fichas', valor: 'R$ 20,00' }]);
+  });
+
+  it('com vendas configuradas: soma ticket médio, % Full e % internacionais da amostra', () => {
+    const v = vendas({
+      itens_analisados: 20,
+      raio_x: { total_anuncios: null, ticket_medio: 99.9, lojas_oficiais: 0, full: 4, frete_gratis: 0, internacionais: 2 },
+    });
+    const itens = contextoNicho(painel({ visitas: 452, vendedores: 7, frete: 23 }), v);
+    const rotulos = itens.map((i) => i.rotulo);
+    expect(rotulos).toEqual([
+      'Preço mediano das fichas',
+      'Ticket médio da amostra',
+      '% Full na amostra',
+      '% internacionais na amostra',
+    ]);
+    expect(itens.find((i) => i.rotulo === '% Full na amostra')!.valor).toBe('20%');
+    expect(itens.find((i) => i.rotulo === '% internacionais na amostra')!.valor).toBe('10%');
   });
 });
