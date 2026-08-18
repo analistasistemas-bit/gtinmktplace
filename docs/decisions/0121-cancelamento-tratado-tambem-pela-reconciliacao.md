@@ -66,6 +66,13 @@ na janela. Isso é seguro porque os dois lados são idempotentes: `estornar_esto
 própria dentro da RPC, e o aviso por `reservarNotificacao` (chave `estoque_cancelado_despachado` +
 `order_id`). O custo é uma RPC no-op por item por varredura, em pedidos cancelados — raros.
 
+**Custo já pago, não reversível.** O corte da decisão 4 nasceu *depois* do deploy: a primeira
+varredura com o gatilho novo emitiu 26 alertas de cancelamentos históricos, in-app e no Telegram,
+nas duas orgs. Só 8 deles tinham baixa de estoque — os outros 18 eram ruído puro. A lição, que
+vale para qualquer caminho de alerta novo que leia dado histórico: **a primeira execução alerta
+sobre a história inteira**, então o predicado de "isso ainda importa?" precisa existir *antes* do
+deploy, não depois de ver o estrago. Mesma classe da trava LOUD em caminho financeiro.
+
 **Não resolve sozinho** o saldo já divergente: o que foi baixado indevidamente no passado continua
 baixado. Corrigir isso é entrada manual, com conferência física do que voltou — decisão do
 operador, não do sistema.
