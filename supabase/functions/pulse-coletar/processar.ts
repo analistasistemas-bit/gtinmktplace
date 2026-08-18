@@ -489,18 +489,31 @@ export async function processarColetaOrg(
     linhas.sort((a, b) => (a.visitas_30d ?? -1) - (b.visitas_30d ?? -1));
 
     // Teto de tempo próprio: o worker inteiro morre com WORKER_RESOURCE_LIMIT perto dos 150s e este
-    // passo é o mais longo da execução (~1 chamada por oferta viva). Quem não couber mantém o
-    // número da véspera — defasado por um dia, contra derrubar a execução das orgs seguintes.
+    // passo é o mais longo da execução (~1 chamada por oferta viva). Cortar aqui é melhor do que
+    // derrubar a execução das orgs seguintes.
+    //
+    // O que a tela mostra para quem não couber: a linha MAIS RECENTE daquela oferta, que nem sempre
+    // é a que já tem número. Se o passo 3 gravou uma linha nova hoje (preço mudou), ela nasce com
+    // `visitas_30d` null e a view `distinct on … order by dia desc` passa a devolver esse null — o
+    // número da véspera continua no banco, mas fora do alcance da view. Na prática a janela é curta:
+    // quem cria linha nova antes do baseline é a rodada quente das 03:00 BRT, e o baseline das 06:00
+    // remede primeiro exatamente essas linhas (null vai para a frente da fila acima).
+    // ponytail: carry-forward do valor da véspera na linha nova resolveria de vez, e foi adiado pelo
+    // controller — o upgrade é copiar `visitas_30d` da linha anterior no upsert do passo 3.
     const ateVisitas = Date.now() + 30_000;
     let estourou = false;
     await pool(CONCORRENCIA, linhas, async (linha) => {
       if (Date.now() > ateVisitas) { estourou = true; return; }
       const json = await mlGet(`${API}/items/${linha.item_id}/visits/time_window?last=30&unit=day`, token);
-      // Leitura que falhou grava null, não zero, e null é "não medido" — a tela mostra "—". Zero
-      // visitas em 30 dias é uma afirmação forte sobre o concorrente e só pode sair de uma leitura
-      // boa; manter o número da véspera seria apresentá-lo como medida de hoje.
-      const total = parseVisitasJanela(json)?.total ?? null;
-      await admin.from('pulse_ofertas').update({ visitas_30d: total }).eq('id', linha.id);
+      // Só grava com leitura BOA, e o zero legítimo do ML é gravado como zero. Leitura que falhou
+      // (403, 429, timeout) não escreve nada: apagar uma medida boa com null por causa de uma falha
+      // transitória seria pior do que exibir o número de ontem, e o mesmo critério vale para quem o
+      // teto de tempo acima deixou de fora — as duas pontas preservam.
+      const visitas = parseVisitasJanela(json);
+      if (!visitas) return;
+      const { error } = await admin.from('pulse_ofertas')
+        .update({ visitas_30d: visitas.total }).eq('id', linha.id);
+      if (error) console.warn(`pulse-coletar: visitas do item ${linha.item_id} falharam:`, error.message);
     });
     if (estourou) {
       console.warn(`pulse-coletar: teto de tempo das visitas 30d atingido na org ${orgId} — resto fica para amanhã`);
