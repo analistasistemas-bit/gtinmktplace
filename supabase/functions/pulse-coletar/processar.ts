@@ -439,20 +439,34 @@ export async function processarColetaOrg(
     }
   }
 
-  // 6) alertas: 1 notificação agregada por org por execução.
+  // 6) alertas: 1 notificação agregada por org por execução — SÓ para org com o módulo habilitado.
+  //
+  // A coleta roda para todas as orgs de propósito (o histórico acumula desde o dia 1, decisão do
+  // deploy do v1), mas a notificação não pode acompanhar: a mensagem diz "abra o menu Pulse para
+  // agir" e, para uma org sem o módulo, esse menu não existe. Aconteceu de verdade — o backfill da
+  // migration inscreveu todo perfil na categoria `pulse` do Telegram, e os operadores da Avil
+  // receberam alertas de um menu que não podiam abrir. Os alertas continuam sendo gravados: eles
+  // aparecem no painel no dia em que o módulo for ligado.
   if (alertasTotal > 0) {
-    // A mensagem traz os NOVOS desta execução e o total ainda não lido. Sem o segundo número, a
-    // conta nunca fecha com o painel: cada execução avisa o que ela achou, enquanto a tela mostra
-    // o acumulado pendente. Três execuções de 5, 3 e 1 viram "9 alertas novos" no app.
-    const { count } = await admin.from('pulse_alertas')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId).eq('lido', false);
-    const pendentes = count ?? 0;
-    const sufixo = pendentes > alertasTotal ? ` (${pendentes} aguardando no total)` : '';
-    await notificarCategoria(
-      admin, orgId, 'pulse',
-      `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
-    );
+    const { data: org } = await admin.from('organizations')
+      .select('modulos_habilitados').eq('id', orgId).maybeSingle();
+    const moduloAtivo = ((org?.modulos_habilitados as string[] | null) ?? []).includes('pulse');
+    if (!moduloAtivo) {
+      console.warn(`pulse-coletar: ${alertasTotal} alerta(s) da org ${orgId} sem notificação — módulo pulse desabilitado`);
+    } else {
+      // A mensagem traz os NOVOS desta execução e o total ainda não lido. Sem o segundo número, a
+      // conta nunca fecha com o painel: cada execução avisa o que ela achou, enquanto a tela mostra
+      // o acumulado pendente. Três execuções de 5, 3 e 1 viram "9 alertas novos" no app.
+      const { count } = await admin.from('pulse_alertas')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId).eq('lido', false);
+      const pendentes = count ?? 0;
+      const sufixo = pendentes > alertasTotal ? ` (${pendentes} aguardando no total)` : '';
+      await notificarCategoria(
+        admin, orgId, 'pulse',
+        `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
+      );
+    }
   }
 
   // 7) visitas dos últimos 30 dias de cada oferta viva (ADR-0120). É a ÚNICA medida de demanda por

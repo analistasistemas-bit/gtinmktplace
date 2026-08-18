@@ -843,8 +843,11 @@ falha ao ler `organizations` não libera.
   valor visto e reemitir alerta a cada rodada. A notificação traz **os novos desta execução e o
   total ainda não lido** — sem o segundo número a conta nunca fecha com o painel, que mostra o
   acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela).
-  Alertas em `pulse_alertas` + 1 notificação agregada
-  por org por execução na categoria `pulse`.
+  Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
+  **somente para org com `pulse` em `modulos_habilitados`**. A coleta roda para todas as orgs (o
+  histórico acumula desde o dia 1), mas a mensagem diz "abra o menu Pulse" e uma org sem o módulo
+  não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu que não podiam
+  abrir (2026-08-18). Os alertas continuam gravados e aparecem no painel quando o módulo for ligado.
   **Passo 7 — visitas 30d (ADR-0120), só no baseline** (`baseline = !scopedOrgId && tier ===
   'completo'`: a varredura agendada da madrugada, nunca o botão manual nem o tier `quente` — senão
   cada clique dispararia a varredura inteira por um número que não se move a cada 6h). Mede as
