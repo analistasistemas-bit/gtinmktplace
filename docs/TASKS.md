@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — raio-X do nicho (adendo ADR-0122) — 2026-08-18
+
+- [x] **Barra no card "Vendas do nicho"** (pedido do Diego, referência Hunter Spy): ticket médio,
+  lojas oficiais, Full, frete grátis e internacionais **da amostra já paga** (campos que o dataset
+  da Apify já trazia sem uso) + **total de anúncios** absoluto (o "N resultados" da página).
+  Custo adicional zero. "Novos (15d)" e "Flex" ficaram de fora: o dataset não tem o dado.
+- [x] **Fonte oficial testada e morta:** `/sites/MLB/search` (contagens absolutas via
+  `available_filters`) devolve **403 com token de usuário válido** — registrado no adendo do
+  ADR-0122 para não retestar. Cache bump `sonar:vendas:v4` (v3 aposentada = corte de 6).
+- [x] 5 testes novos de parser (17 no total no módulo); validação ao vivo com run real
+  ("abraçadeira nylon": total 9.999, Full 16/20, oficiais 3/20) + screenshot.
+
 ## Tabela de frete ML na Viabilidade — 2026-08-18
 
 - [x] **Edge `tabela-frete-ml`** (`verify_jwt=true`): grade compacta 7×4 (peso × preço) via

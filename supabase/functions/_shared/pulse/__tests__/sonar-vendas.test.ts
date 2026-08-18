@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  montarPainelVendas, parseItensApify, parsePrecoApify, parseVendidos, type ItemVendas,
+  montarPainelVendas, parseItensApify, parsePrecoApify, parseTotalAnuncios, parseVendidos,
+  type ItemVendas,
 } from '../sonar-vendas.ts';
 
 describe('parseVendidos', () => {
@@ -43,7 +44,7 @@ describe('parsePrecoApify', () => {
 });
 
 describe('parseItensApify', () => {
-  it('mapeia campos do actor e descarta item sem título', () => {
+  it('mapeia campos do actor (incl. os do raio-X) e descarta item sem título', () => {
     const json = [
       {
         eTituloProduto: 'Protetor Solar Facial FPS 60',
@@ -52,6 +53,10 @@ describe('parseItensApify', () => {
         zProdutoLink: 'https://www.mercadolivre.com.br/p/MLB123',
         imagemLink: 'https://http2.mlstatic.com/x.webp',
         Vendedor: 'LOJA X',
+        freteGratis: true,
+        lojaOficial: false,
+        eCompraInternacional: false,
+        envio: 'Chegará grátis amanhã Enviado pelo FULL',
       },
       { novoPreco: '10' },
     ];
@@ -62,7 +67,19 @@ describe('parseItensApify', () => {
       link: 'https://www.mercadolivre.com.br/p/MLB123',
       imagem: 'https://http2.mlstatic.com/x.webp',
       vendedor: 'LOJA X',
+      frete_gratis: true,
+      loja_oficial: false,
+      internacional: false,
+      full: true,
     }]);
+  });
+
+  it('campos do raio-X ausentes viram null, nunca false inventado', () => {
+    const [item] = parseItensApify([{ eTituloProduto: 'X', novoPreco: '10' }]);
+    expect(item.frete_gratis).toBeNull();
+    expect(item.loja_oficial).toBeNull();
+    expect(item.internacional).toBeNull();
+    expect(item.full).toBeNull(); // envio vazio → não dá pra afirmar que não é Full
   });
   it('corpo inválido → []', () => {
     expect(parseItensApify(null)).toEqual([]);
@@ -70,9 +87,45 @@ describe('parseItensApify', () => {
   });
 });
 
+describe('parseTotalAnuncios', () => {
+  it('lê "8.973 resultados" do 1º item', () => {
+    expect(parseTotalAnuncios([{ resultadosTotais: '8.973 resultados' }])).toBe(8973);
+    expect(parseTotalAnuncios([{ resultadosTotais: 8973 }])).toBe(8973);
+  });
+  it('ausente/ilegível/vazio → null', () => {
+    expect(parseTotalAnuncios([{ resultadosTotais: 'resultados' }])).toBeNull();
+    expect(parseTotalAnuncios([{}])).toBeNull();
+    expect(parseTotalAnuncios([])).toBeNull();
+    expect(parseTotalAnuncios(null)).toBeNull();
+  });
+});
+
 describe('montarPainelVendas', () => {
   const item = (over: Partial<ItemVendas>): ItemVendas => ({
-    titulo: 'Produto', preco: null, vendidos: null, link: null, imagem: null, vendedor: null, ...over,
+    titulo: 'Produto', preco: null, vendidos: null, link: null, imagem: null, vendedor: null,
+    frete_gratis: null, loja_oficial: null, internacional: null, full: null, ...over,
+  });
+
+  it('raio_x conta só os true da amostra e tira o ticket médio dos preços presentes', () => {
+    const p = montarPainelVendas('x', [
+      item({ preco: 10, loja_oficial: true, full: true, frete_gratis: true, internacional: false }),
+      item({ preco: 30, loja_oficial: true, full: null, frete_gratis: false, internacional: true }),
+      item({ preco: null, loja_oficial: null, full: false, frete_gratis: true, internacional: null }),
+    ], 8973);
+    expect(p.raio_x).toEqual({
+      total_anuncios: 8973,
+      ticket_medio: 20,
+      lojas_oficiais: 2,
+      full: 1,
+      frete_gratis: 2,
+      internacionais: 1,
+    });
+  });
+
+  it('sem preços e sem total → ticket_medio e total_anuncios null', () => {
+    const p = montarPainelVendas('x', [item({})]);
+    expect(p.raio_x.ticket_medio).toBeNull();
+    expect(p.raio_x.total_anuncios).toBeNull();
   });
 
   it('soma vendas e valor só de quem tem o dado; null nunca vira zero no denominador', () => {

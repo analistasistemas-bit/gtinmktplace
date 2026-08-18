@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Eye, Loader2, Package, Search,
-  ShoppingCart, TrendingUp, Trophy, Truck, Users,
+  BadgeCheck, Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Eye, Globe, Loader2,
+  Package, Receipt, Search, ShoppingCart, Store, TrendingUp, Trophy, Truck, Users, Zap,
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid,
@@ -25,7 +25,7 @@ import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import { calcularVeredito } from '@/lib/veredito-sonar';
 import {
   fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
-  type PainelSonar, type EtapaProgresso, type RespostaVendasSonar,
+  type PainelSonar, type EtapaProgresso, type RaioXNicho, type RespostaVendasSonar,
 } from '@/lib/sonar';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
 
@@ -44,6 +44,39 @@ function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
           <span className={p.status === 'pendente' ? 'text-muted-foreground' : ''}>{p.label}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Raio-X do nicho: contagens da mesma amostra já paga da Apify (custo extra zero) + o total de
+// anúncios que o ML imprime na página de busca. Itens com valor null são omitidos, nunca zerados.
+function RaioXBarra({ raioX }: { raioX: RaioXNicho }) {
+  const itens = [
+    { icone: Receipt, label: 'Ticket médio', valor: raioX.ticket_medio != null ? fmtBRL(raioX.ticket_medio) : null, amostra: true },
+    { icone: Store, label: 'Lojas oficiais', valor: String(raioX.lojas_oficiais), amostra: true },
+    { icone: Zap, label: 'Full', valor: String(raioX.full), amostra: true },
+    { icone: Truck, label: 'Frete grátis', valor: String(raioX.frete_gratis), amostra: true },
+    { icone: Globe, label: 'Internacionais', valor: String(raioX.internacionais), amostra: true },
+    {
+      icone: BadgeCheck,
+      label: 'Total de anúncios',
+      valor: raioX.total_anuncios != null ? fmtMilhar(raioX.total_anuncios, 1) : null,
+      amostra: false,
+    },
+  ].filter((i) => i.valor !== null);
+  if (itens.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t pt-2.5">
+      {itens.map((i) => (
+        <span key={i.label} className="flex items-center gap-1.5 text-xs">
+          <i.icone className="h-3.5 w-3.5 shrink-0 text-info" aria-hidden />
+          <span className="text-muted-foreground">{i.label}:</span>
+          <span className="font-semibold tabular-nums">{i.valor}</span>
+        </span>
+      ))}
+      <span className="text-[11px] text-muted-foreground/70">
+        · contagens na amostra; total é do nicho inteiro
+      </span>
     </div>
   );
 }
@@ -147,6 +180,7 @@ function SonarVendas({ resp, carregando, erro }: {
           </div>
         )}
       </div>
+      {resp.raio_x && <RaioXBarra raioX={resp.raio_x} />}
       {resp.palavras_chave_titulos.length > 0 && (
         <div className="mt-3">
           <div className="mb-1.5 text-xs font-medium text-muted-foreground">

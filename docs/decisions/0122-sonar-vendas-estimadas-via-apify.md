@@ -58,6 +58,22 @@ nenhum scraper entrega visitas porque elas não aparecem na página pública.
    número inventado nem erro barulhento. Token: secret de edge (`supabase secrets set
    APIFY_TOKEN=...`); no dev, placeholder em `.env.local`.
 
+## Adendo 2026-08-18 — Raio-X do nicho (mesma amostra, custo zero)
+
+O payload ganhou `raio_x`: ticket médio, lojas oficiais, Full, frete grátis e internacionais
+**contados na amostra já paga** (campos `lojaOficial`/`freteGratis`/`envio`/`eCompraInternacional`
+do dataset), mais `total_anuncios` — o "8.973 resultados" que o ML imprime na própria página de
+busca, único número absoluto do nicho. Custo adicional: **zero** (nenhuma chamada nova).
+
+Antes disso foi testada a fonte oficial `GET /sites/MLB/search` (que devolveria as contagens
+absolutas via `available_filters`): **403 com token de usuário válido** (18/08) — o app não tem
+permissão para a busca de anúncios, mesma onda de restrições da Errata 9 do ADR-0119. Se o ML
+reabrir o endpoint, as contagens absolutas substituem as de amostra de graça.
+
+"Novos (15d)" e "Flex" ficaram de fora: o dataset não traz a data de criação do anúncio
+(`Tiempo` é o timestamp do scrape) nem o tipo Flex — exibi-los exigiria inventar dado.
+Chave de cache bumpada para `sonar:vendas:v4` (v3 aposentada guarda painéis do corte de 6).
+
 ## Alternativas descartadas
 
 - **Integrar na `pulse-sonar`:** acopla o painel oficial ao tempo/custo/falha da Apify; um run

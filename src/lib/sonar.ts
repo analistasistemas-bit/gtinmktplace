@@ -66,6 +66,20 @@ export interface ItemVendasSonar {
   link: string | null;
   imagem: string | null;
   vendedor: string | null;
+  frete_gratis: boolean | null;
+  loja_oficial: boolean | null;
+  internacional: boolean | null;
+  full: boolean | null;
+}
+
+/** Contagens DA AMOSTRA de anúncios (a UI rotula); só `total_anuncios` é o absoluto do nicho. */
+export interface RaioXNicho {
+  total_anuncios: number | null;
+  ticket_medio: number | null;
+  lojas_oficiais: number;
+  full: number;
+  frete_gratis: number;
+  internacionais: number;
 }
 
 export interface PainelVendasSonar {
@@ -78,6 +92,7 @@ export interface PainelVendasSonar {
   valor_mercado: number;
   produto_destaque: ItemVendasSonar | null;
   palavras_chave_titulos: Array<{ termo: string; contagem: number }>;
+  raio_x: RaioXNicho;
 }
 
 /** `configurado: false` = APIFY_TOKEN ausente no backend — indisponível, não erro (ADR-0122 §5). */

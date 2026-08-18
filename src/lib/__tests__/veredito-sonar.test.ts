@@ -48,6 +48,10 @@ function vendas(over: Partial<PainelVendasSonar>): PainelVendasSonar {
     valor_mercado: 1_000_000,
     produto_destaque: null,
     palavras_chave_titulos: [],
+    raio_x: {
+      total_anuncios: null, ticket_medio: null, lojas_oficiais: 0, full: 0,
+      frete_gratis: 0, internacionais: 0,
+    },
     ...over,
   };
 }

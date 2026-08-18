@@ -5,7 +5,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { apifyConfigurado, buscarAnunciosML } from '../_shared/apify/client.ts';
-import { montarPainelVendas, parseItensApify } from '../_shared/pulse/sonar-vendas.ts';
+import { montarPainelVendas, parseItensApify, parseTotalAnuncios } from '../_shared/pulse/sonar-vendas.ts';
 
 // 7 dias, não 24h: "+N vendidos" é acumulado desde a criação do anúncio e arredondado em faixas
 // (100 / 500 / 1k / …), então praticamente não muda de um dia para o outro — o TTL curto só
@@ -33,11 +33,9 @@ Deno.serve(async (req) => {
   // e não pode virar toast destrutivo no front (ADR-0122 §5).
   if (!apifyConfigurado()) return json({ configurado: false });
 
-  // A versão da chave IDENTIFICA o corte, não é um contador (v1=48 anúncios, v2=20, v3=6) — por
-  // isso voltar ao corte de 20 volta à v2, reaproveitando o cache válido que já está lá em vez de
-  // pagar runs de novo. Sem essa separação, painéis de cortes diferentes conviveriam por 7 dias
-  // com totais incomparáveis entre termos.
-  const chave = `sonar:vendas:v2:MLB:${normalizado}`;
+  // A versão da chave identifica corte E shape (v1=48 anúncios, v2=20, v3=6 — aposentada,
+  // v4=20 com raio_x). Bump para v4 e não reuso da v3: a v3 guarda painéis do corte de 6.
+  const chave = `sonar:vendas:v4:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return json(JSON.parse(cacheado));
 
@@ -46,7 +44,10 @@ Deno.serve(async (req) => {
   // transitório para todo mundo, mesmo racional da pulse-sonar).
   if (itens === null) return json({ erro: 'Consulta de vendas falhou ou demorou demais. Tente de novo em instantes.' }, 502);
 
-  const resposta = { configurado: true as const, ...montarPainelVendas(normalizado, parseItensApify(itens)) };
+  const resposta = {
+    configurado: true as const,
+    ...montarPainelVendas(normalizado, parseItensApify(itens), parseTotalAnuncios(itens)),
+  };
   await redisSet(chave, JSON.stringify(resposta), CACHE_TTL_S).catch(() => {});
   return json(resposta);
 });

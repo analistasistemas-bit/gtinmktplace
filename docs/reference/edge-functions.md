@@ -920,7 +920,10 @@ falha ao ler `organizations` não libera.
   (`_shared/pulse/sonar-vendas.ts`): `vendas_totais` (Σ do "+N vendidos" da página — acumulado e
   arredondado, piso; anúncio sem o dado NUNCA soma como zero), `valor_mercado` (Σ preço ×
   vendidos onde ambos existem), `produto_destaque` (mais vendido) e `palavras_chave_titulos`
-  (títulos de anúncios reais, não nomes de ficha). Cache Redis `sonar:vendas:v2:MLB:<termo>`,
+  (títulos de anúncios reais, não nomes de ficha) e `raio_x` (ticket médio, lojas oficiais, Full,
+  frete grátis e internacionais contados NA AMOSTRA + `total_anuncios` absoluto lido da própria
+  página — a fonte oficial `/sites/MLB/search` devolve 403 para o app, testado 18/08).
+  Cache Redis `sonar:vendas:v4:MLB:<termo>`,
   **TTL 7 dias**, chave global (dado público, ADR-0120 §3) — o dado é acumulado histórico em
   faixas arredondadas, então TTL curto só repagava o mesmo número; falha/timeout do run devolve
   502 e não cacheia.
