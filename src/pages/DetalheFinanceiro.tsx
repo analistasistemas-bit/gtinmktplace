@@ -482,6 +482,10 @@ export default function DetalheFinanceiro() {
     selecionadosVisiveis.filter((p) => p.faturavel && p.sacado_em == null),
   );
 
+  // Somatório do que o operador marcou — TODAS as linhas selecionadas, não só as elegíveis a saque:
+  // ele quer conferir o valor do que está lendo na tela, e uma linha já sacada continua marcada.
+  const resumoSelecao = resumoSelecaoSaque(selecionadosVisiveis);
+
   const markupTotal = totaisFiltrados.markup;
 
   return (
@@ -560,7 +564,14 @@ export default function DetalheFinanceiro() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{selecionadosVisiveis.length} selecionado(s)</span>
+          <span className="text-xs text-muted-foreground">
+            {selecionadosVisiveis.length} selecionado(s)
+            {/* Σ líquido da seleção, mesma base da coluna "Líquido" (resumoSelecaoSaque) — o
+                operador soma o que marcou sem depender da calculadora. */}
+            {selecionadosVisiveis.length > 0 && (
+              <> · <span className="font-medium text-emerald-500">{fmtBRL(resumoSelecao.valor)}</span></>
+            )}
+          </span>
           <Button size="sm" variant="outline" onClick={onRegistrarSaque}
             disabled={selecionadosVisiveis.length === 0 || mutationRegistrar.isPending || mutationDesfazer.isPending}>
             <CheckCircle2 className="mr-1.5 h-4 w-4" />Registrar saque
