@@ -11,6 +11,8 @@ import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } f
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao, carregarDevolucoesLocais } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
+import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { perguntaPrecisaUpsert, claimPrecisaProcessar } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
@@ -147,9 +149,17 @@ Deno.serve(async (req) => {
                 (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []))),
               carregarGtinsFallback(token, [pedido], idsPubliai),
             ]);
-            await upsertVenda(admin, userId, orgId, pedido, {
+            const { itens } = await upsertVenda(admin, userId, orgId, pedido, {
               freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
               liquidoPorPayment: liquidoPorPayment ?? undefined,
+            });
+            // ADR-0121: é por AQUI que o cancelamento com devolução chega — o pedido já saiu da
+            // janela de 72h do passo 2, e o webhook do cancelamento pode nunca ter vindo.
+            await tratarPedidoCancelado(admin, depsCancelamento, {
+              orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
+              statusPedido: pedido.status ?? null,
+              shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+              temEnvio: pedido.shipping?.id != null,
             });
           } catch { /* segue */ }
         }));
@@ -182,9 +192,17 @@ Deno.serve(async (req) => {
               buscarFreteVendedor(token, shippingId),
               buscarShipment(token, shippingId),
             ]);
-            await upsertVenda(admin, userId, orgId, pedido, {
+            const { itens } = await upsertVenda(admin, userId, orgId, pedido, {
               freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: e.cx.contaExternaId,
               liquidoPorPayment: liquidoPorPayment ?? undefined,
+            });
+            // ADR-0121 — o sync-venda só vê o cancelamento se o ML reenviar o webhook, e ele nem
+            // sempre reenvia. Idempotente dos dois lados: pode rodar a cada varredura.
+            await tratarPedidoCancelado(admin, depsCancelamento, {
+              orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
+              statusPedido: pedido.status ?? null,
+              shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+              temEnvio: pedido.shipping?.id != null,
             });
             total++;
           } catch { /* segue */ }

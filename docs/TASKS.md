@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cancelamento tratado pela reconciliação (ADR-0121) — 2026-08-18
+
+- [x] **Investigação do estoque do sabonete NIVEA (SKU 00000029):** saldo local 0 está correto
+  (174 un de entrada − 1 ajuste − 173 baixadas). O ML vendeu 184 pagas, ou seja **11 unidades
+  acima do que entrou**, com 13 un registradas como oversell (`quantidade=0` no ledger).
+- [x] **Causa do silêncio:** os pedidos cancelados `2000017926934620` e `2000017939290244`
+  receberam um único webhook cada (o da compra, `paid`, que baixou o estoque). O cancelamento
+  chegou pela varredura do `reconciliar-faturamento`, que não tocava estoque nem notificava —
+  zero linhas `pos_venda` na org contra 888 em `vendas`.
+- [x] **`_shared/estoque/cancelamento.ts` (novo):** `tratarPedidoCancelado` com a decisão do
+  ADR-0094 D-7 (allowlist de pré-despacho repõe; o resto avisa em `pos_venda`), idempotente pelos
+  dois lados. Fiação real isolada em `cancelamento-deps.ts` (o módulo é testado por vitest e não
+  pode arrastar `queue.ts`, que só existe no runtime Deno). 10 testes.
+- [x] **Dois gatilhos:** `sync-venda` (webhook) e `reconciliar-faturamento` (passos de claims e de
+  vendas). O passo de claims é o que alcança pedido cancelado dias depois, fora da janela de 72h.
+- [x] **Envio `cancelled` avisa, não repõe:** os dois pedidos foram cancelamento por mediação com
+  devolução — repor criaria estoque fantasma e ampliaria o oversell.
+- [ ] **Pendente do operador:** conferir fisicamente o que voltou dos pedidos cancelados e dar
+  entrada manual (5 un entre 00000029 e 00000005). O sistema não corrige saldo passado.
+
 ## Pulse Sonar — garimpo on-demand por termo (ADR-0120) — 2026-08-17/18
 
 - [x] **Edge nova `pulse-sonar`** (`verify_jwt=true`). Busca livre por termo (mínimo 3 caracteres)

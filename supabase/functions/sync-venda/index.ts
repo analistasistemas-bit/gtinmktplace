@@ -4,9 +4,9 @@
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
-import {
-  registrarBaixaVenda, estornarVendaCancelada, despacharPushPendente,
-} from '../_shared/estoque/baixa.ts';
+import { registrarBaixaVenda, despacharPushPendente } from '../_shared/estoque/baixa.ts';
+import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
+import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import {
@@ -231,38 +231,17 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Cancelado ANTES do despacho: a mercadoria nunca saiu, então repõe (D-7).
-  //
-  // FALHA FECHADA: `buscarShipment` devolve null em QUALQUER erro HTTP ou de rede
-  // (io.ts:139-163), inclusive para pedido já despachado. Tratar null como "não
-  // despachado" reporia estoque de mercadoria que saiu. Só repõe quando o status é
-  // explicitamente um estado pré-despacho conhecido (ou o pedido não tem envio).
-  if (orgId && pedido.status === 'cancelled') {
-    const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
-    const st = shipment?.status != null ? String(shipment.status) : null;
-    const preDespachoConhecido = st !== null && PRE_DESPACHO.includes(st);
-    const semEnvio = pedido.shipping?.id == null;
-    try {
-      if (preDespachoConhecido || semEnvio) {
-        // A checagem "houve baixa?" vive dentro da RPC, atômica com o estorno — e
-        // quando não há baixa ela grava o tombstone que impede a execução `paid`
-        // posterior de baixar um pedido já cancelado.
-        const { pendentesDePush } = await estornarVendaCancelada(admin, {
-          orgId, canal: 'mercado_livre', orderId: pedido.id, itens,
-        });
-        // Os movimentos de estorno nascem com push_canal_origem = null, então a
-        // reposição alcança TODOS os canais — inclusive o ML, que não repõe sozinho.
-        await despacharPushPendente(admin, orgId, pendentesDePush, enfileirarSincronizacaoEstoque);
-      } else if (await reservarNotificacao(admin, orgId, userId, 'estoque_cancelado_despachado', String(pedido.id))) {
-        await notificarCategoria(
-          admin, orgId, 'pos_venda',
-          `📦 Pedido ${pedido.id} cancelado, mas o envio ${st === null ? 'não pôde ser consultado' : `está em "${st}"`}.\n\n`
-          + 'O estoque NÃO foi reposto automaticamente — confira o que voltou e dê entrada manual.',
-        );
-      }
-    } catch (e) {
-      console.error('estorno_estoque_falhou', e);
-    }
+  // Cancelado ANTES do despacho: a mercadoria nunca saiu, então repõe (D-7). A decisão mora em
+  // `_shared/estoque/cancelamento.ts` porque a reconciliação horária também precisa dela — este
+  // worker só enxerga o cancelamento quando o ML reenvia o webhook, e ele nem sempre reenvia
+  // (ADR-0121).
+  if (orgId) {
+    await tratarPedidoCancelado(admin, depsCancelamento, {
+      orgId, userId, canal: 'mercado_livre', orderId: pedido.id, itens,
+      statusPedido: pedido.status ?? null,
+      shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
+      temEnvio: pedido.shipping?.id != null,
+    });
   }
 
   // Leitura do MP falhou: a venda e o alerta já saíram (upsertVenda é idempotente e

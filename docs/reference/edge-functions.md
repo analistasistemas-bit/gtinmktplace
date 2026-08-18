@@ -696,7 +696,13 @@ falha ao ler `organizations` não libera.
   shipment em estado pré-despacho conhecido, ou sem envio) chama `estornarVendaCancelada` (RPC
   `estornar_estoque`, D-7) e despacha o outbox de reposição para **todos** os canais (inclusive o
   ML, que não repõe sozinho); despacho **desconhecido ou já ocorrido** apenas notifica categoria
-  `pos_venda` (não repõe). **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  `pos_venda` (não repõe). Desde **ADR-0121** essa decisão vive em
+  `_shared/estoque/cancelamento.ts` (`tratarPedidoCancelado`, fiação real em `cancelamento-deps.ts`)
+  e é chamada também pelo `reconciliar-faturamento` — o ML nem sempre reenvia webhook no
+  cancelamento (medido em 18/08/2026: dois pedidos com um único webhook, o da compra), e sem o
+  segundo gatilho o ramo inteiro nunca executava: zero linhas `pos_venda` na org contra 888 em
+  `vendas`. Envio `cancelled` continua **avisando e não repondo** (pode ser cancelamento por
+  mediação pós-despacho). **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.
