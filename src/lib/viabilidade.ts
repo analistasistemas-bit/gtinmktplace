@@ -27,6 +27,8 @@ export interface ItemAnalisado {
    * `codigo_pai` continua autoritativo (spike 037 §3.5).
    */
   jaCadastrado?: boolean;
+  /** category_id ML da oferta de catálogo (quando existeNoML). */
+  categoriaMlId?: string | null;
 }
 export interface RespostaAnalise {
   itens: ItemAnalisado[]; ignorados: number;

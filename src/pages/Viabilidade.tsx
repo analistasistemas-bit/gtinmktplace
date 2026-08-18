@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ViabilidadeLinha } from '@/components/viabilidade-linha';
+import { TabelaFreteViabilidade } from '@/components/tabela-frete-viabilidade';
 import { useAnaliseViabilidade } from '@/hooks/useAnaliseViabilidade';
 import type { ItemAnalisado } from '@/lib/viabilidade';
 
@@ -57,6 +58,14 @@ export default function Viabilidade() {
   const pendingLabel = nGtins != null
     ? `Analisando ${nGtins} ${nGtins === 1 ? 'produto' : 'produtos'} no Mercado Livre…`
     : 'Analisando os produtos da planilha no Mercado Livre…';
+
+  const itensNoML = itens.filter((it) => it.existeNoML);
+  const categoriaMlId = itensNoML.find((it) => it.categoriaMlId)?.categoriaMlId ?? null;
+  const categoriasDistintas = new Set(
+    itensNoML.map((it) => it.categoriaMlId).filter((c): c is string => !!c),
+  );
+  const categoriasMistas = categoriasDistintas.size > 1;
+  const analiseConcluida = analise.isSuccess && itensNoML.length > 0;
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -139,14 +148,23 @@ export default function Viabilidade() {
         <EmptyState title="Nada para mostrar" description="Nenhum produto válido foi encontrado na entrada." />
       )}
       {itens.length > 0 && (
-        <div className="rounded-lg border border-border shadow-sm">
+        <>
+          {categoriaMlId && analise.data?.me2Habilitado === true && !analise.isPending && (
+            <TabelaFreteViabilidade
+              categoriaMlId={categoriaMlId}
+              categoriasMistas={categoriasMistas}
+              analiseConcluida={analiseConcluida}
+            />
+          )}
+          <div className="rounded-lg border border-border shadow-sm">
           {analise.data!.ignorados > 0 && (
             <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
               {analise.data!.ignorados} linha(s) ignorada(s) (sem GTIN/preço/custo).
             </p>
           )}
           <Tabela itens={itens} editavel={analise.variables?.tipo === 'gtins'} />
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
