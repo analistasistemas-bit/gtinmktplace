@@ -21,11 +21,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { DialogMargemSonar } from '@/components/pulse/dialog-margem-sonar';
+import { VereditoSonar } from '@/components/pulse/veredito-sonar';
+import { calcularVeredito } from '@/lib/veredito-sonar';
 import {
   fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
   type PainelSonar, type EtapaProgresso, type RespostaVendasSonar,
 } from '@/lib/sonar';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
 
 function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
   return (
@@ -100,7 +102,9 @@ function SonarVendas({ resp, carregando, erro }: {
         <KpiCard
           size="compact"
           label="Vendas acumuladas"
-          value={`≈ ${fmtInt(resp.vendas_totais)}`}
+          // "unidades" explícito: sem a palavra o número passa por valor em reais (dúvida real do
+          // Diego em 18/08). Quem é valor é o card ao lado.
+          value={`≈ ${fmtMilhar(resp.vendas_totais, 1)} unidades`}
           hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios com o dado`}
           icon={ShoppingCart}
           tom="info"
@@ -108,7 +112,7 @@ function SonarVendas({ resp, carregando, erro }: {
         <KpiCard
           size="compact"
           label="Mercado endereçável"
-          value={`≈ ${fmtBRL(resp.valor_mercado)}`}
+          value={`≈ R$ ${fmtMilhar(resp.valor_mercado, 1)}`}
           hint="Σ preço × vendidos acumulados"
           icon={CircleDollarSign}
           tom="info"
@@ -136,7 +140,7 @@ function SonarVendas({ resp, carregando, erro }: {
                 <div className="truncate text-sm font-medium" title={destaque.titulo}>{destaque.titulo}</div>
               )}
               <div className="text-xs text-muted-foreground">
-                ≈ {fmtInt(destaque.vendidos ?? 0)} vendidos
+                ≈ {fmtMilhar(destaque.vendidos ?? 0, 1)} vendidos
                 {destaque.preco != null && ` · ${fmtBRL(destaque.preco)}`}
               </div>
             </div>
@@ -187,18 +191,26 @@ export default function PulseSonar() {
     retry: false,
   });
 
-  // Avanço do stepper temporizado no cliente: a edge responde numa chamada única.
+  // A tela de resultado só abre quando o painel oficial E as vendas resolverem (pedido do Diego
+  // 18/08: "quando aparecer a tela, já tem que estar todas as informações"). Sem isso o painel
+  // estreava com esqueleto no bloco de vendas e o veredito trocava de nível na frente do
+  // operador quando a Apify respondia. Vendas com erro também resolve (retry: false) — falha
+  // nunca prende o operador no stepper.
+  const carregando = isFetching || vendasCarregando;
+
+  // Avanço do stepper temporizado no cliente: cada edge responde numa chamada única.
   useEffect(() => {
-    if (isFetching) {
-      iniciadoEmRef.current = Date.now();
+    if (carregando) {
+      if (iniciadoEmRef.current === 0) iniciadoEmRef.current = Date.now();
       setMostrarProgresso(true);
       forcarRender((n) => n + 1);
       const id = setInterval(() => forcarRender((n) => n + 1), 250);
       return () => clearInterval(id);
     }
+    iniciadoEmRef.current = 0;
     const t = setTimeout(() => setMostrarProgresso(false), 400);
     return () => clearTimeout(t);
-  }, [isFetching]);
+  }, [carregando]);
 
   const buscar = (e: FormEvent) => {
     e.preventDefault();
@@ -229,7 +241,7 @@ export default function PulseSonar() {
             className="h-9 pl-8"
           />
         </div>
-        <Button type="submit" disabled={isFetching}>
+        <Button type="submit" disabled={carregando}>
           <Search className="mr-2 h-4 w-4" />
           Garimpar
         </Button>
@@ -247,7 +259,7 @@ export default function PulseSonar() {
           }
         />
       ) : mostrarProgresso ? (
-        <SonarProgresso passos={passosProgresso(elapsedMs, !isFetching)} />
+        <SonarProgresso passos={passosProgresso(elapsedMs, !carregando)} />
       ) : isError ? (
         <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">Não foi possível garimpar este termo.</p>
@@ -257,12 +269,17 @@ export default function PulseSonar() {
         </div>
       ) : painel ? (
         <>
+          <VereditoSonar veredito={calcularVeredito(painel, vendas?.configurado ? vendas : null)} />
+
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <KpiCard size="compact" label="Visitas (30d)" value={fmtInt(painel.agregado.visitas_30d_total)} icon={Eye} tom="info" />
+            <KpiCard size="compact" label="Visitas (30d)" value={fmtMilhar(painel.agregado.visitas_30d_total, 1)} icon={Eye} tom="info" />
             <KpiCard
               size="compact"
               label="Fichas no catálogo"
-              value={painel.total_catalogo}
+              // O ML satura `paging.total` em 10.000 — sem o "+" o número vira uma contagem falsa.
+              value={painel.total_catalogo >= 10_000
+                ? `${fmtMilhar(painel.total_catalogo)}+`
+                : fmtMilhar(painel.total_catalogo)}
               hint={`${ativas.length + vazias.length} analisadas`}
               icon={Package}
               tom="info"

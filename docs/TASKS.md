@@ -11,6 +11,26 @@
   mistas. `categoriaMlId` exposto em `ItemAnalisado`.
 - [ ] **Deploy:** `supabase functions deploy tabela-frete-ml` após merge.
 
+## Sonar — veredito de oportunidade (ADR-0124) — 2026-08-18
+
+- [x] **Card de veredito no topo do Sonar** (🟢 alta / 🟡 média / 🔴 baixa + frase de motivo):
+  função pura `src/lib/veredito-sonar.ts` combinando os dois payloads que a tela já recebe —
+  sem endpoint novo, sem custo extra. Fatores: Demanda (liquidez da amostra + piso de vendas),
+  Disputa (vendedores + % frete grátis como proxy de profissionalização), Tração (R$ por
+  vendedor). Marca (% loja oficial) **só alerta** — decisão do Diego, não pontua.
+- [x] **Calibração contra 3 nichos reais** virou gabarito em teste: EUCERIN 🟡 (disputa
+  profissionalizada), genérico 🟡, tecido oxford 🟢 — critério de aceitação: nicho pequeno onde a
+  operação lucra não pode ser punido por ser pequeno. Guard de `total_catalogo` descartado (o ML
+  satura em 10.000 até em nicho pequeno; teste trava isso).
+- [x] **Formatação abreviada pt-BR** (`fmtMilhar` ganhou casa decimal opcional): "140,8 mil"
+  visitas, "10 mil+" fichas (satura), "≈ 812 mil unidades" (rótulo novo — era lido como R$),
+  "≈ R$ 58,8 mi" mercado.
+- [x] 9 testes do veredito + 3 do fmtMilhar; validação visual via Playwright na branch.
+- [x] **Tela abre completa de uma vez (pedido do Diego 18/08):** o stepper ganhou a 5ª etapa
+  "Consultando vendas do nicho" e só libera o resultado quando painel E vendas resolvem — antes
+  o painel estreava com esqueleto no bloco de vendas e o veredito trocava de nível na frente do
+  operador quando a Apify respondia. Falha nas vendas também libera (retry desligado).
+
 ## Detalhe do líquido divergia do Mercado Pago (ADR-0123) — 2026-08-18
 
 - [x] **Diagnóstico:** o líquido por venda estava certo (17/08: 17 vendas = R$ 949,92 vs

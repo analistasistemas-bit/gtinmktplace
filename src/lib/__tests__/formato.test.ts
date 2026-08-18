@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { parseNumeroPtBr } from '../formato';
+import { fmtMilhar, parseNumeroPtBr } from '../formato';
+
+describe('fmtMilhar', () => {
+  it('sem decimal (comportamento das telas que já usavam) arredonda o milhar', () => {
+    expect(fmtMilhar(154_100)).toBe('154 mil');
+    expect(fmtMilhar(10_000)).toBe('10 mil');
+    expect(fmtMilhar(60)).toBe('60');
+  });
+  it('milhões sempre com 1 casa, independente do parâmetro', () => {
+    expect(fmtMilhar(17_470_820)).toBe('17,5 mi');
+    expect(fmtMilhar(17_470_820, 1)).toBe('17,5 mi');
+  });
+  it('decimaisMil=1 detalha o milhar mas omite o decimal zero', () => {
+    expect(fmtMilhar(154_100, 1)).toBe('154,1 mil');
+    expect(fmtMilhar(79_830, 1)).toBe('79,8 mil');
+    expect(fmtMilhar(10_000, 1)).toBe('10 mil'); // não "10,0 mil"
+  });
+});
 
 describe('parseNumeroPtBr', () => {
   it.each([

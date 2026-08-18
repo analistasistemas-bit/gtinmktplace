@@ -135,5 +135,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0121 | [Cancelamento de pedido tratado também pela reconciliação](../../docs/decisions/0121-cancelamento-tratado-tambem-pela-reconciliacao.md) |
 | 0122 | [Sonar: vendas estimadas do nicho via Apify](../../docs/decisions/0122-sonar-vendas-estimadas-via-apify.md) |
 | 0123 | [Reconciliar a data de liberação do Mercado Pago fora da janela de 72h](../../docs/decisions/0123-reconciliacao-da-data-de-liberacao-mp.md) |
+| 0124 | [Veredito de oportunidade do Sonar](../../docs/decisions/0124-veredito-de-oportunidade-do-sonar.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

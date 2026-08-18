@@ -34,6 +34,15 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **acumulado desde a criação do anúncio e arredondado pelo ML** (piso), exibido com "≈" — não é
 > venda mensal nem exata. Visitas continuam vindo só da API oficial: nenhum scraper as entrega.
 
+> **✅ Sonar — veredito de oportunidade EM PRODUÇÃO (ADR-0124, 2026-08-18).** Card no topo do
+> Sonar com 🟢 alta / 🟡 média / 🔴 baixa + frase de motivo, para bater o olho e decidir sem
+> calcular: Demanda (liquidez da amostra + piso de vendas), Disputa (vendedores + % frete grátis)
+> e Tração (R$ por vendedor); Marca (% loja oficial) só alerta, não pontua. Função pura no
+> frontend sobre os payloads que a tela já recebe — custo zero. Calibrado contra 3 nichos reais
+> como gabarito de teste (tecido oxford = 🟢 é o critério de aceitação). Números grandes
+> abreviados em pt-BR ("140,8 mil", "≈ R$ 58,8 mi", "10 mil+" nas fichas saturadas) e vendas
+> rotuladas como **unidades**.
+
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram
 > segundos**, e os **9 vínculos que competiam foram preservados** (`ALREADY_OPTED_IN`); o resto
