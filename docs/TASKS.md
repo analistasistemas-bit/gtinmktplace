@@ -44,10 +44,16 @@
   `buscarPedido` + `upsertVenda` num pedido que não é venda nossa. Fix candidato: filtrar por
   `ehClaimDeCompra` antes do loop. Não entrou aqui por estar fora do escopo pedido — precisa
   confirmar que nenhum desses pedidos deva mesmo virar venda.
+- [ ] **`backfill-faturamento` continua sem o filtro.** Importa os mesmos `perguntas-io` /
+  `devolucoes-io` e faz a varredura sem filtrar. Inofensivo a 1×/dia, mas se alguém restaurar o
+  cron horário o desperdício volta inteiro — `memoCatalogo` e os predicados já estão prontos para
+  reuso lá.
 - [ ] **Correção 2 (pendente, maior alavanca restante): early-exit no `upsertVenda`** por
   `date_last_updated` — **−45 a 55 MB/dia**. Não feita nesta entrega: é código financeiro e o
   critério de "nada mudou" precisa cobrir `shipment`/frete/`money_release`, que vêm de FORA do
-  pedido. Exige ADR + trava de teste.
+  pedido. Exige ADR + trava de teste. **Sem ela, o esperado com 1+3+4 é ~85–105 MB/dia**
+  (≈3,1–3,6 GB/mês contra os 5 GB do plano) — passa da cota, mas com folga estreita. E o ciclo
+  atual (até 24/08) já queimou 4,98 GB: estas correções protegem o ciclo SEGUINTE, não este.
 
 ## Vendas por anúncio: irmão legado sem vínculo sumia da tela — 2026-08-17
 

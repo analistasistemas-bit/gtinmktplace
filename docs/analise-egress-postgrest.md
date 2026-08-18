@@ -7,6 +7,11 @@
 > (`memoCatalogo`) e **4** (filtro de reprocesso de perguntas/claims). A correção **2** (early-exit
 > no `upsertVenda`) segue pendente e é a maior alavanca restante. Ver `docs/TASKS.md` e
 > `docs/reference/edge-functions.md`.
+>
+> **Atenção ao número da seção 2:** o "~30–50 MB/dia" ali assume a correção **2**, que NÃO foi
+> feita. Com 1+3+4 apenas — e usando o efeito medido em produção do filtro (perguntas eliminadas
+> por completo, claims −65%) — o esperado é **~85–105 MB/dia** (≈3,1–3,6 GB/mês contra os 5 GB do
+> plano). Passa da cota com ~30% de folga, não com as 3–5× que a correção 2 traria.
 **Fontes:** código na main + dados reais coletados por leitura: `pg_stat_statements` (acumulado desde 26/05), `edge_logs` das últimas 24h (Management API, SQL read-only), `table-stats` via CLI.
 
 ## Conclusão em uma frase
