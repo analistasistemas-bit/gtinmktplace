@@ -21,11 +21,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { DialogMargemSonar } from '@/components/pulse/dialog-margem-sonar';
+import { VereditoSonar } from '@/components/pulse/veredito-sonar';
+import { calcularVeredito } from '@/lib/veredito-sonar';
 import {
   fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
   type PainelSonar, type EtapaProgresso, type RespostaVendasSonar,
 } from '@/lib/sonar';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
 
 function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
   return (
@@ -100,7 +102,9 @@ function SonarVendas({ resp, carregando, erro }: {
         <KpiCard
           size="compact"
           label="Vendas acumuladas"
-          value={`≈ ${fmtInt(resp.vendas_totais)}`}
+          // "unidades" explícito: sem a palavra o número passa por valor em reais (dúvida real do
+          // Diego em 18/08). Quem é valor é o card ao lado.
+          value={`≈ ${fmtMilhar(resp.vendas_totais, 1)} unidades`}
           hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios com o dado`}
           icon={ShoppingCart}
           tom="info"
@@ -108,7 +112,7 @@ function SonarVendas({ resp, carregando, erro }: {
         <KpiCard
           size="compact"
           label="Mercado endereçável"
-          value={`≈ ${fmtBRL(resp.valor_mercado)}`}
+          value={`≈ R$ ${fmtMilhar(resp.valor_mercado, 1)}`}
           hint="Σ preço × vendidos acumulados"
           icon={CircleDollarSign}
           tom="info"
@@ -136,7 +140,7 @@ function SonarVendas({ resp, carregando, erro }: {
                 <div className="truncate text-sm font-medium" title={destaque.titulo}>{destaque.titulo}</div>
               )}
               <div className="text-xs text-muted-foreground">
-                ≈ {fmtInt(destaque.vendidos ?? 0)} vendidos
+                ≈ {fmtMilhar(destaque.vendidos ?? 0, 1)} vendidos
                 {destaque.preco != null && ` · ${fmtBRL(destaque.preco)}`}
               </div>
             </div>
@@ -257,12 +261,17 @@ export default function PulseSonar() {
         </div>
       ) : painel ? (
         <>
+          <VereditoSonar veredito={calcularVeredito(painel, vendas?.configurado ? vendas : null)} />
+
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <KpiCard size="compact" label="Visitas (30d)" value={fmtInt(painel.agregado.visitas_30d_total)} icon={Eye} tom="info" />
+            <KpiCard size="compact" label="Visitas (30d)" value={fmtMilhar(painel.agregado.visitas_30d_total, 1)} icon={Eye} tom="info" />
             <KpiCard
               size="compact"
               label="Fichas no catálogo"
-              value={painel.total_catalogo}
+              // O ML satura `paging.total` em 10.000 — sem o "+" o número vira uma contagem falsa.
+              value={painel.total_catalogo >= 10_000
+                ? `${fmtMilhar(painel.total_catalogo)}+`
+                : fmtMilhar(painel.total_catalogo)}
               hint={`${ativas.length + vazias.length} analisadas`}
               icon={Package}
               tom="info"

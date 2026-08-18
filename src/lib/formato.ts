@@ -19,9 +19,17 @@ export function fmtInt(n: number): string {
   return new Intl.NumberFormat('pt-BR').format(n);
 }
 
-export function fmtMilhar(n: number): string {
+/**
+ * Abreviação pt-BR: 1.234.567 → "1,2 mi", 154.100 → "154 mil" (ou "154,1 mil" com
+ * `decimaisMil=1`), 60 → "60". O decimal no ramo dos milhares é opcional para não mudar as telas
+ * que já usam a forma redonda; o ramo dos milhões sempre teve 1 casa e continua tendo. Um decimal
+ * que dá zero é omitido ("10,0 mil" → "10 mil"), senão o número redondo fica com cara de precisão.
+ */
+export function fmtMilhar(n: number, decimaisMil = 0): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace('.', ',')} mi`;
-  if (n >= 1_000) return `${Math.round(n / 1000)} mil`;
+  if (n >= 1_000) {
+    return `${(n / 1000).toFixed(decimaisMil).replace('.', ',').replace(/,0$/, '')} mil`;
+  }
   return String(n);
 }
 
