@@ -11,6 +11,7 @@ import {
   parseStatusAnuncios, type AnuncioMultiget,
 } from '../_shared/pulse/parse.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
+import { parseVisitasJanela } from '../_shared/pulse/sonar.ts';
 import { deveGravarVendedor, ufDoVendedor } from '../_shared/pulse/vendedor.ts';
 import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
 
@@ -159,6 +160,10 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
 export async function processarColetaOrg(
   admin: SupabaseClient, conexao: ConexaoCanal, orgId: string,
   tier: 'completo' | 'quente', maxProdutos: number,
+  // `baseline` é a varredura agendada da madrugada, e NÃO se deduz de `tier`: o botão "Atualizar
+  // agora" do operador também roda em tier completo. Passos caros que medem algo de janela longa
+  // (visitas 30d) só entram aqui — senão cada clique no botão dispararia a varredura inteira.
+  baseline = false,
 ): Promise<ResultadoColeta> {
   const token = await getValidAccessTokenConexao(conexao);
   // Nossa conta no ML: a lista de ofertas do catálogo inclui o NOSSO anúncio, que não é
@@ -448,6 +453,58 @@ export async function processarColetaOrg(
       admin, orgId, 'pulse',
       `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
     );
+  }
+
+  // 7) visitas dos últimos 30 dias de cada oferta viva (ADR-0120). É a ÚNICA medida de demanda por
+  // anúncio de terceiro que a API oficial entrega — a Errata 9 do ADR-0119 mediu o endpoint vivo
+  // para item de concorrente, ao contrário de `/items/{id}`, que segue 403.
+  //
+  // Só no baseline: é uma chamada por oferta (a janela não tem multiget), o número é de 30 dias e
+  // não se move a cada 6h — repetir no tier quente multiplicaria o custo por 4 pelo mesmo valor.
+  //
+  // POR ÚLTIMO de propósito, depois da notificação: é o passo mais longo e o único aqui que pode
+  // lançar (o `paginarTudo` abaixo). Antes do passo 6, uma falha de leitura sua engoliria o aviso
+  // de alertas que já estão gravados no banco — o operador ficaria sem saber deles até abrir a tela.
+  if (baseline && produtos.length > 0) {
+    const linhas: { id: string; item_id: string; visitas_30d: number | null }[] = [];
+    // Lotes de 50 ids: `.in()` vai na query string e 200 UUIDs dariam ~7,6 KB de request line —
+    // território de 414 no gateway. Os outros `.in()` desta função carregam chaves curtas.
+    for (let i = 0; i < produtos.length; i += 50) {
+      const lote = produtos.slice(i, i + 50).map((p) => p.id);
+      linhas.push(...await paginarTudo<{ id: string; item_id: string; visitas_30d: number | null }>((de, ate) =>
+        admin.from('pulse_ofertas_atual')
+          .select('id, item_id, visitas_30d')
+          .in('produto_id', lote)
+          .eq('ativo', true)
+          .order('id', { ascending: true }) // ordem estável: sem ela a paginação repete/pula linha
+          .range(de, ate),
+      ));
+    }
+    // Menos visitas primeiro (e nunca medido antes de todos) para o teto de tempo abaixo cortar
+    // sempre a mesma ponta da fila — sem ordem, a cauda ficaria eternamente sem medida. Ordena aqui
+    // e não no banco porque a lista vem em lotes: só depois de juntar existe a ordem global.
+    // ponytail: o critério é "menor número", não "medida mais velha" — a data da medição exigiria
+    // uma segunda coluna, fora do escopo desta task. Se a ponta de cima ficar defasada em regime, o
+    // upgrade é `visitas_30d_em timestamptz` e ordenar por ela.
+    linhas.sort((a, b) => (a.visitas_30d ?? -1) - (b.visitas_30d ?? -1));
+
+    // Teto de tempo próprio: o worker inteiro morre com WORKER_RESOURCE_LIMIT perto dos 150s e este
+    // passo é o mais longo da execução (~1 chamada por oferta viva). Quem não couber mantém o
+    // número da véspera — defasado por um dia, contra derrubar a execução das orgs seguintes.
+    const ateVisitas = Date.now() + 30_000;
+    let estourou = false;
+    await pool(CONCORRENCIA, linhas, async (linha) => {
+      if (Date.now() > ateVisitas) { estourou = true; return; }
+      const json = await mlGet(`${API}/items/${linha.item_id}/visits/time_window?last=30&unit=day`, token);
+      // Leitura que falhou grava null, não zero, e null é "não medido" — a tela mostra "—". Zero
+      // visitas em 30 dias é uma afirmação forte sobre o concorrente e só pode sair de uma leitura
+      // boa; manter o número da véspera seria apresentá-lo como medida de hoje.
+      const total = parseVisitasJanela(json)?.total ?? null;
+      await admin.from('pulse_ofertas').update({ visitas_30d: total }).eq('id', linha.id);
+    });
+    if (estourou) {
+      console.warn(`pulse-coletar: teto de tempo das visitas 30d atingido na org ${orgId} — resto fica para amanhã`);
+    }
   }
 
   return { produtos: produtos.length, gravadas, alertas: alertasTotal };

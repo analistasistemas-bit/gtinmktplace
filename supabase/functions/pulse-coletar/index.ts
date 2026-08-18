@@ -57,7 +57,11 @@ Deno.serve(async (req) => {
     const conexao = mapearConexao(row);
     if (!conexao) continue;
     try {
-      const r = await processarColetaOrg(admin, conexao, row.org_id, tier, maxProdutos);
+      // baseline = varredura agendada completa (a da madrugada). `tier === 'completo'` sozinho não
+      // basta: o botão "Atualizar agora" do operador também roda completo, e os passos de janela
+      // longa (visitas 30d) não podem disparar a cada clique.
+      const baseline = !scopedOrgId && tier === 'completo';
+      const r = await processarColetaOrg(admin, conexao, row.org_id, tier, maxProdutos, baseline);
       produtos += r.produtos; gravadas += r.gravadas; alertas += r.alertas;
     } catch (e) {
       // Uma org falhar (sem credencial, ML fora do ar) nunca derruba as outras.

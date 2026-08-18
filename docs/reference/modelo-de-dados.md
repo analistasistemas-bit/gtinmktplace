@@ -669,7 +669,10 @@ delete cascade`), `item_id`, `seller_id` (bigint), `preco`, `tier`, `frete_grati
 hoje em `America/Sao_Paulo`), `permalink` (URL do anúncio no ML — **sempre nula hoje**: medido em
 2026-08-17 que `/products/{id}/items` não devolve o campo, e a URL não é derivável do `item_id`;
 existe para o link por concorrente acender sozinho caso o ML passe a expor, ver Errata 8 do
-ADR-0119). Unique `pulse_ofertas_prod_item_dia_uniq` em
+ADR-0119), `visitas_30d` (integer, visitas do anúncio nos últimos 30 dias via
+`/items/{id}/visits/time_window` — o coletor mede **só no baseline diário**, não no tier quente de
+6/6h, e escreve na última linha de cada oferta; `null` = não medido, **nunca** zero, ver ADR-0120).
+Unique `pulse_ofertas_prod_item_dia_uniq` em
 `(produto_id, item_id, dia)` — é o alvo do upsert idempotente do coletor (merge, não
 `ignoreDuplicates`: ver `edge-functions.md`). Índice `pulse_ofertas_org_prod_dia_idx` em
 `(org_id, produto_id, dia desc)` — reconstrói o estado atual (última linha por `item_id`). RLS:

@@ -205,6 +205,21 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       },
     },
     {
+      key: 'visitas',
+      // Demanda do anúncio do concorrente: a única medida por anúncio que a API oficial dá
+      // (Errata 9 do ADR-0119). Medida uma vez por dia, no baseline — o painel não a atualiza.
+      header: 'Visitas 30d',
+      className: 'text-right',
+      // Sem coalescer para 0: o DataTable já joga nulo para o fim nas duas direções, e "não
+      // medido" ordenado como zero visitas afirmaria justamente o que não sabemos.
+      sortValue: (o) => o.visitas_30d,
+      cell: (o) => (
+        o.visitas_30d == null
+          ? <span className="text-xs text-muted-foreground" title="Ainda não medido">—</span>
+          : <span className="tabular-nums" title="Visitas no anúncio nos últimos 30 dias">{fmtInt(o.visitas_30d)}</span>
+      ),
+    },
+    {
       key: 'anuncio',
       header: 'Anúncio',
       sortValue: (o) => tipoAnuncio(o.tier),

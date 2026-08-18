@@ -53,6 +53,11 @@ export interface PulseOferta {
   frete_gratis: boolean; loja_oficial: boolean; ativo: boolean; dia: string;
   /** URL do anúncio no ML quando a ficha a expõe; `null` quando não veio (a tela não linka). */
   permalink: string | null;
+  /**
+   * Visitas do anúncio nos últimos 30 dias (ADR-0120), medidas só no baseline diário.
+   * `null` = ainda não medido — **nunca** zero, que seria uma afirmação sobre o concorrente.
+   */
+  visitas_30d: number | null;
 }
 export interface PulseVendedor {
   seller_id: number; nickname: string | null; power_seller: string | null;
@@ -98,13 +103,13 @@ export async function fetchPulseDetalhe(
   // Estado atual vem da VIEW (última linha por item, sem truncamento); o histórico bruto
   // (limit 400, linhas mais recentes) alimenta só a lista "menor preço por dia".
   const { data: atuaisData, error: atuaisErro } = await pulseFrom('pulse_ofertas_atual')
-    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink')
+    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d')
     .eq('produto_id', produtoId);
   if (atuaisErro) throw atuaisErro;
   const ofertasAtuais = (atuaisData ?? []) as PulseOferta[];
 
   const { data: ofertasData, error: ofertasErro } = await pulseFrom('pulse_ofertas')
-    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink')
+    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d')
     .eq('produto_id', produtoId)
     .order('dia', { ascending: false })
     .limit(400);
@@ -140,7 +145,7 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
   const linhas: (PulseOferta & { produto_id: string })[] = [];
   for (let de = 0; ; de += PAGINA) {
     const { data, error } = await pulseFrom('pulse_ofertas_atual')
-      .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink')
+      .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d')
       .in('produto_id', produtoIds)
       .order('produto_id', { ascending: true })
       .order('item_id', { ascending: true })
