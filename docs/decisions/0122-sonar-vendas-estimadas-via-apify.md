@@ -27,8 +27,9 @@ nenhum scraper entrega visitas porque elas não aparecem na página pública.
    retorna `quantidadeVendida` sem enrichment pago). Input: `{ keyword, maxPages: 1 }`, ordem de
    relevância do ML. Chamada síncrona `run-sync-get-dataset-items` com `timeout=120s`; padrão
    assíncrono (start + poll) só se o timeout se provar insuficiente na prática.
-3. **Teto de gasto por busca: `maxTotalChargeUsd=0.03` ≈ 6 anúncios** (orçamento definido pelo
-   Diego em 18/08; começou em 0,24 sem teto, passou por 0,10). O preço real medido é
+3. **Teto de gasto por busca: `maxTotalChargeUsd=0.10` ≈ 20 anúncios.** Escolhido pelo Diego em
+   18/08 pesando custo × cobertura, depois de um teste em 0,03 (6 anúncios) que se mostrou barato
+   demais em informação. Histórico do teto: 0,24 sem teto → 0,10 → 0,03 → **0,10**. O preço real medido é
    **US$ 0,005 por anúncio** (a página do actor anuncia "a partir de US$ 1,20/1.000"; o cobrado é
    US$ 5,00/1.000 — a estimativa original de ~US$ 0,06 por busca estava 4× baixa: 1 página cheia
    custava **US$ 0,24**). Como o modelo é PAY_PER_EVENT **sem custo fixo de run**, o teto é a
@@ -40,12 +41,13 @@ nenhum scraper entrega visitas porque elas não aparecem na página pública.
    é o mesmo em qualquer corte** (o mais vendido está sempre no topo da relevância). Perde-se
    altura no total, não a leitura do nicho; como todo termo usa o mesmo corte, os nichos seguem
    comparáveis entre si. A UI chama o bloco de "amostra dos N anúncios mais relevantes".
-4. **Cache Redis 7 dias, chave global `sonar:vendas:v3:MLB:<termo>`** — mesmo racional do
+4. **Cache Redis 7 dias, chave global `sonar:vendas:v2:MLB:<termo>`** — mesmo racional do
    ADR-0120 §3 (dado público, sem org_id). 7 dias e não 24 h porque o dado é acumulado histórico
    em faixas arredondadas: praticamente não muda de um dia para o outro, e repetir o termo era o
-   desperdício mais caro. A **versão da chave acompanha o teto** (v1=48 anúncios, v2=20, v3=6):
-   sem o bump, painéis do corte anterior conviveriam por uma semana com os novos, com totais
-   incomparáveis entre termos.
+   desperdício mais caro. A **versão da chave identifica o corte** (v1=48 anúncios, v2=20, v3=6) e
+   não é um contador: voltar ao corte de 20 volta à v2 e reaproveita o cache válido em vez de
+   pagar runs de novo. Sem essa separação, painéis de cortes diferentes conviveriam por uma semana
+   com totais incomparáveis entre termos.
 5. **Semântica do dado (regra LOUD):** `quantidadeVendida` é o "+N vendidos" da página —
    **acumulado desde a criação do anúncio, arredondado pelo ML (piso), não é venda mensal nem
    exata**. A UI exibe com "≈", rotula "acumulado" e informa quantos anúncios têm o dado.
