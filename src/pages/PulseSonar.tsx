@@ -92,7 +92,8 @@ function SonarVendas({ resp, carregando, erro }: {
         <span className="text-sm font-medium">Vendas do nicho</span>
         <Badge variant="outline">estimativa · via Apify</Badge>
         <span className="text-xs text-muted-foreground">
-          "+N vendidos" acumulado dos {resp.itens_analisados} anúncios mais relevantes — piso, não venda mensal
+          amostra dos {resp.itens_analisados} anúncios mais relevantes — "+N vendidos" acumulado,
+          piso do nicho e não venda mensal
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

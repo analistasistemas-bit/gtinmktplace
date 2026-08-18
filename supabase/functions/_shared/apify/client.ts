@@ -3,11 +3,19 @@
 // fica bem abaixo disso; padrão assíncrono (start + poll) só se este teto se provar curto.
 const ACTOR_ML = 'karamelo~mercadolivre-scraper-brasil-portugues'; // ADR-0122 §2
 const TIMEOUT_RUN_S = 120;
-// Teto de gasto por busca. O actor é PAY_PER_EVENT a US$ 0,005 por anúncio e NÃO cobra nada fixo
-// pelo run, então o teto vira, na prática, o número de anúncios: 0,10 ≈ 20. Medido em 18/08 —
-// atingir o teto devolve o run como SUCCEEDED com os itens que couberam, não como falha
-// (testado com 0,05 → 10 itens, HTTP 201). `maxItems` não serve: só vale para pay-per-result.
-const TETO_USD = 0.10;
+// Teto de gasto por busca — orçamento definido pelo Diego em 18/08. O actor é PAY_PER_EVENT a
+// US$ 0,005 por anúncio e NÃO cobra nada fixo pelo run, então o teto vira, na prática, o número
+// de anúncios: 0,03 ≈ 6. Atingir o teto devolve o run como SUCCEEDED com os itens que couberam,
+// não como falha (medido: 0,05 → 10 itens, 0,10 → 20). `maxItems` não serve aqui: só vale para
+// actors pay-per-result.
+//
+// Por que não é possível baratear o anúncio em si (medido em 18/08, todas as vias testadas):
+// o ML barra scraping próprio — proxy datacenter devolve página vazia e residencial devolve a
+// tela "Continuar" (exige JS), confirmando o ADR-0120. Actor mais barato por item (`gio21`,
+// US$ 0,00175) não traz vendas; `automation-lab` traz, mas só raspa a página de ofertas do dia.
+// Os US$ 0,005 são o preço do desbloqueio (browser real + proxy premium), não gordura — a única
+// alavanca é a QUANTIDADE. Reavaliar se a Apify passar a cobrar menos por item em plano pago.
+const TETO_USD = 0.03;
 
 export const apifyConfigurado = (): boolean => !!Deno.env.get('APIFY_TOKEN');
 

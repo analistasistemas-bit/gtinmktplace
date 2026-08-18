@@ -900,14 +900,14 @@ falha ao ler `organizations` não libera.
   sem `APIFY_TOKEN` configurado devolve `{configurado:false}` com 200 (indisponível ≠ erro).
   Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
   (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}`, ordem de relevância;
-  cliente em `_shared/apify/client.ts`) com **`maxTotalChargeUsd=0.10` ≈ 20 anúncios** — o actor é
+  cliente em `_shared/apify/client.ts`) com **`maxTotalChargeUsd=0.03` ≈ 6 anúncios** — o actor é
   PAY_PER_EVENT a US$ 0,005 por anúncio e sem custo fixo de run, então o teto controla o gasto e a
   quantidade ao mesmo tempo; atingir o teto devolve o run como SUCCEEDED com o que coube, não como
   falha (ADR-0122 §3). Agrega em `montarPainelVendas`
   (`_shared/pulse/sonar-vendas.ts`): `vendas_totais` (Σ do "+N vendidos" da página — acumulado e
   arredondado, piso; anúncio sem o dado NUNCA soma como zero), `valor_mercado` (Σ preço ×
   vendidos onde ambos existem), `produto_destaque` (mais vendido) e `palavras_chave_titulos`
-  (títulos de anúncios reais, não nomes de ficha). Cache Redis `sonar:vendas:v2:MLB:<termo>`,
+  (títulos de anúncios reais, não nomes de ficha). Cache Redis `sonar:vendas:v3:MLB:<termo>`,
   **TTL 7 dias**, chave global (dado público, ADR-0120 §3) — o dado é acumulado histórico em
   faixas arredondadas, então TTL curto só repagava o mesmo número; falha/timeout do run devolve
   502 e não cacheia.

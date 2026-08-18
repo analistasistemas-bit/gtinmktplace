@@ -33,9 +33,9 @@ Deno.serve(async (req) => {
   // e não pode virar toast destrutivo no front (ADR-0122 §5).
   if (!apifyConfigurado()) return json({ configurado: false });
 
-  // v2: bump obrigatório junto com o teto de gasto — sem ele, um painel v1 de 48 anúncios ficaria
-  // servindo por 7 dias ao lado dos novos de 20, com totais incomparáveis entre termos.
-  const chave = `sonar:vendas:v2:MLB:${normalizado}`;
+  // v3: a versão acompanha o teto de gasto (v1=48 anúncios, v2=20, v3=6). Sem o bump, painéis do
+  // corte anterior ficariam servindo por 7 dias ao lado dos novos, com totais incomparáveis.
+  const chave = `sonar:vendas:v3:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return json(JSON.parse(cacheado));
 
