@@ -103,19 +103,23 @@ export const ETAPAS_SONAR = [
   'Buscando fichas do catálogo',
   'Analisando concorrentes',
   'Medindo visitas',
+  'Consultando vendas do nicho',
   'Montando painel',
 ] as const;
 
 const INTERVALO_ETAPA_MS = 2500;
-const ULTIMA_ETAPA_TEMPORIZADA = ETAPAS_SONAR.length - 2; // trava na penúltima (índice 2) sem resposta
+const ULTIMA_ETAPA_TEMPORIZADA = ETAPAS_SONAR.length - 2; // trava na penúltima sem resposta
 
 export type EtapaStatus = 'concluida' | 'ativa' | 'pendente';
 export interface EtapaProgresso { label: string; status: EtapaStatus }
 
 /**
- * Máquina pura do stepper: a edge responde numa chamada só, então o avanço das 3 primeiras
- * etapas é temporizado no cliente (uma a cada 2,5s) e trava na 3ª até a resposta chegar; a 4ª só
- * conclui quando `concluido` vira true. Sem barra de %: não prometemos números que não medimos.
+ * Máquina pura do stepper: as duas edges respondem numa chamada cada, então o avanço das
+ * primeiras etapas é temporizado no cliente (uma a cada 2,5s) e trava na penúltima até TUDO
+ * chegar; a última só conclui quando `concluido` vira true. Desde 18/08 `concluido` exige painel
+ * E vendas resolvidos: a tela de resultado abre completa de uma vez, em vez de estrear com
+ * esqueleto no bloco de vendas e um veredito que troca na frente do operador.
+ * Sem barra de %: não prometemos números que não medimos.
  */
 export function passosProgresso(elapsedMs: number, concluido: boolean): EtapaProgresso[] {
   const etapaAtiva = Math.min(Math.floor(elapsedMs / INTERVALO_ETAPA_MS), ULTIMA_ETAPA_TEMPORIZADA);

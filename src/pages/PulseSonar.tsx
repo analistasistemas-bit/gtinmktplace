@@ -191,18 +191,26 @@ export default function PulseSonar() {
     retry: false,
   });
 
-  // Avanço do stepper temporizado no cliente: a edge responde numa chamada única.
+  // A tela de resultado só abre quando o painel oficial E as vendas resolverem (pedido do Diego
+  // 18/08: "quando aparecer a tela, já tem que estar todas as informações"). Sem isso o painel
+  // estreava com esqueleto no bloco de vendas e o veredito trocava de nível na frente do
+  // operador quando a Apify respondia. Vendas com erro também resolve (retry: false) — falha
+  // nunca prende o operador no stepper.
+  const carregando = isFetching || vendasCarregando;
+
+  // Avanço do stepper temporizado no cliente: cada edge responde numa chamada única.
   useEffect(() => {
-    if (isFetching) {
-      iniciadoEmRef.current = Date.now();
+    if (carregando) {
+      if (iniciadoEmRef.current === 0) iniciadoEmRef.current = Date.now();
       setMostrarProgresso(true);
       forcarRender((n) => n + 1);
       const id = setInterval(() => forcarRender((n) => n + 1), 250);
       return () => clearInterval(id);
     }
+    iniciadoEmRef.current = 0;
     const t = setTimeout(() => setMostrarProgresso(false), 400);
     return () => clearTimeout(t);
-  }, [isFetching]);
+  }, [carregando]);
 
   const buscar = (e: FormEvent) => {
     e.preventDefault();
@@ -233,7 +241,7 @@ export default function PulseSonar() {
             className="h-9 pl-8"
           />
         </div>
-        <Button type="submit" disabled={isFetching}>
+        <Button type="submit" disabled={carregando}>
           <Search className="mr-2 h-4 w-4" />
           Garimpar
         </Button>
@@ -251,7 +259,7 @@ export default function PulseSonar() {
           }
         />
       ) : mostrarProgresso ? (
-        <SonarProgresso passos={passosProgresso(elapsedMs, !isFetching)} />
+        <SonarProgresso passos={passosProgresso(elapsedMs, !carregando)} />
       ) : isError ? (
         <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">Não foi possível garimpar este termo.</p>

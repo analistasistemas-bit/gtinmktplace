@@ -2,27 +2,28 @@ import { describe, it, expect } from 'vitest';
 import { passosProgresso, margemSimulada, fichasAtivas, fichasSemVendedor, ETAPAS_SONAR } from '../sonar';
 import type { PainelSonar } from '../sonar';
 
-describe('passosProgresso — máquina dos 4 passos (ADR-0120, pedido do Diego 17/08)', () => {
+describe('passosProgresso — máquina dos 5 passos (ADR-0120; 5ª etapa = vendas, 18/08)', () => {
   it('início (0ms, sem resposta): 1º passo ativo, resto pendente', () => {
     expect(passosProgresso(0, false)).toEqual([
       { label: ETAPAS_SONAR[0], status: 'ativa' },
       { label: ETAPAS_SONAR[1], status: 'pendente' },
       { label: ETAPAS_SONAR[2], status: 'pendente' },
       { label: ETAPAS_SONAR[3], status: 'pendente' },
+      { label: ETAPAS_SONAR[4], status: 'pendente' },
     ]);
   });
 
   it('avança um passo a cada 2,5s', () => {
-    expect(passosProgresso(2500, false).map((p) => p.status)).toEqual(['concluida', 'ativa', 'pendente', 'pendente']);
-    expect(passosProgresso(5000, false).map((p) => p.status)).toEqual(['concluida', 'concluida', 'ativa', 'pendente']);
+    expect(passosProgresso(2500, false).map((p) => p.status)).toEqual(['concluida', 'ativa', 'pendente', 'pendente', 'pendente']);
+    expect(passosProgresso(5000, false).map((p) => p.status)).toEqual(['concluida', 'concluida', 'ativa', 'pendente', 'pendente']);
   });
 
-  it('trava na 3ª etapa enquanto a resposta não chega, por mais tempo que passe', () => {
-    expect(passosProgresso(50_000, false).map((p) => p.status)).toEqual(['concluida', 'concluida', 'ativa', 'pendente']);
+  it('trava na penúltima etapa enquanto a resposta não chega, por mais tempo que passe', () => {
+    expect(passosProgresso(50_000, false).map((p) => p.status)).toEqual(['concluida', 'concluida', 'concluida', 'ativa', 'pendente']);
   });
 
-  it('resposta chegando conclui todas as 4 etapas, mesmo com pouco tempo decorrido', () => {
-    expect(passosProgresso(300, true).map((p) => p.status)).toEqual(['concluida', 'concluida', 'concluida', 'concluida']);
+  it('resposta chegando conclui todas as 5 etapas, mesmo com pouco tempo decorrido', () => {
+    expect(passosProgresso(300, true).map((p) => p.status)).toEqual(['concluida', 'concluida', 'concluida', 'concluida', 'concluida']);
   });
 });
 

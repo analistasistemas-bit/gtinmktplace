@@ -17,6 +17,10 @@
   visitas, "10 mil+" fichas (satura), "≈ 812 mil unidades" (rótulo novo — era lido como R$),
   "≈ R$ 58,8 mi" mercado.
 - [x] 9 testes do veredito + 3 do fmtMilhar; validação visual via Playwright na branch.
+- [x] **Tela abre completa de uma vez (pedido do Diego 18/08):** o stepper ganhou a 5ª etapa
+  "Consultando vendas do nicho" e só libera o resultado quando painel E vendas resolvem — antes
+  o painel estreava com esqueleto no bloco de vendas e o veredito trocava de nível na frente do
+  operador quando a Apify respondia. Falha nas vendas também libera (retry desligado).
 
 ## Detalhe do líquido divergia do Mercado Pago (ADR-0123) — 2026-08-18
 
