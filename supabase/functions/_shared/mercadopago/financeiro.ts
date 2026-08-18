@@ -21,6 +21,8 @@ export interface PagamentoMP {
   collector_id?: number | string | null;
   /** ML cria um pagamento de frete à parte por venda, com description "marketplace_shipment". */
   description?: string | null;
+  /** Pedido do ML que originou o pagamento (`order.id` == `ml_vendas.order_id`). */
+  order?: { id?: string | number | null } | null;
   /** Data agendada em que o saldo DESTE pagamento fica disponível para saque (ISO). Confiável
    *  por-pagamento; o que o ADR-0031 rejeitou foi SOMAR por esta data (retenção/reserva oculta). */
   money_release_date?: string | null;

@@ -107,6 +107,8 @@ export interface DadosPagamentoMP {
   estorno: number;
   /** money_release_date — quando o saldo é liberado (ISO). */
   releaseDate: string | null;
+  /** order.id do pagamento (== ml_vendas.order_id). null quando o MP não informa. */
+  orderId: string | null;
 }
 
 export interface VendaItemRow {

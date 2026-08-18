@@ -773,7 +773,19 @@ falha ao ler `organizations` não libera.
   acima são do schedule, que percorre todas as conexões — o 546 do botão em 30 dias (02/08) é
   consistente com os 129s medidos em 27/07 mais esse crescimento, mas não há cronometragem direta
   do caminho manual.
-- **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
+- **reconciliar-faturamento** *(schedule)* — **Data de liberação do MP (ADR-0123, 18/08/2026):** o
+  Passo 2 realinha `ml_vendas.money_release_date` de TODAS as vendas da org (não só as 72h) com o
+  mapa de pagamentos que `carregarLiquidoMP` já carregou — `mapaLiberacaoPorOrder` (puro, indexa
+  por `payment.order.id` e fica com a liberação mais recente) + `reconciliarLiberacoes` (io.ts).
+  Custo de rede zero. Motivo: o MP **antecipa** a liberação quando a entrega é confirmada e o ML
+  **não** emite webhook de pedido, então a venda sai da janela de 72h com a estimativa original
+  (~D+30) congelada e o Detalhe do líquido conta como "a liberar" dinheiro que já caiu na conta
+  (medido na org AVIL: 222/1157 vendas divergentes, R$ 3.136,21). Nunca grava `null` por cima de
+  dado bom (só escreve quando o mapa tem data; leitura do MP falha → passo não roda). Venda cuja
+  data corrigida cai em dia já passado e nunca notificada recebe `liberacao_notificada_em` daquele
+  dia — a notificação diária só olha o dia corrente, e marcar evita que o backlog dispare de uma
+  vez se a janela do Telegram mudar. Resposta ganhou `liberacoesCorrigidas`. Redeploy: **v69**.
+  Rede de segurança: re-sincroniza as últimas ~72h
   de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`), sem limite de janela — `buscarClaimsSeller` varre TODOS os
   claims opened+closed do vendedor (a **varredura no ML** segue completa; o que passou a ser
   filtrado é o reprocesso no banco — ver "Filtro de reprocesso" abaixo). Liveness (ADR-0069): só o catch

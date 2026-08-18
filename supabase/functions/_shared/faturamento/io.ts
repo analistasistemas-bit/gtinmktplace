@@ -7,6 +7,7 @@ import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
 import { montarMapasCustoVigente, resolverCustoVigente, type LinhaCusto, type ItemParaCusto } from './custo-vigente.ts';
+import { chunk } from './utils.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -379,4 +380,68 @@ export async function upsertVenda(
   const eraPaga = anterior?.status === 'paid';
   const novaPaga = venda.status === 'paid' && !eraPaga;
   return { vendaId, novaPaga, itens, compradorNome: row.comprador_nome };
+}
+
+/**
+ * Realinha `ml_vendas.money_release_date` com o Mercado Pago nas vendas da org que já saíram da
+ * janela de 72h de `reconciliar-faturamento`. O MP ANTECIPA a liberação quando a entrega é
+ * confirmada e não emite webhook de pedido — sem este passo a data fica congelada na estimativa
+ * original (~D+30) e o Detalhe do líquido mostra como "a liberar" dinheiro que já caiu na conta
+ * (medido em 2026-08-18 na org AVIL: 222/1157 vendas divergentes, R$ 3.136,21 já liberados).
+ *
+ * Só escreve quando o mapa TEM data para o pedido — nunca grava null por cima de dado bom, mesma
+ * garantia que `preservarDadosMP` dá no caminho do upsert. Custo zero de rede: reaproveita a
+ * varredura de 120 dias que `carregarLiquidoMP` já fez.
+ *
+ * `hojeBRT` (YYYY-MM-DD): quando a data corrigida cai num dia JÁ PASSADO e a venda nunca foi
+ * notificada, marca `liberacao_notificada_em`. A notificação diária só olha o dia corrente, então
+ * esse backlog nunca seria avisado; marcar impede que ele dispare de uma vez se a janela do
+ * Telegram mudar depois.
+ */
+export async function reconciliarLiberacoes(
+  admin: SupabaseClient,
+  orgId: string,
+  porOrder: Map<string, string>,
+  hojeBRT: string,
+): Promise<{ corrigidas: number; marcadas: number }> {
+  if (porOrder.size === 0) return { corrigidas: 0, marcadas: 0 };
+
+  const orderIds = [...porOrder.keys()].map(Number).filter((n) => Number.isFinite(n));
+  let corrigidas = 0;
+  let marcadas = 0;
+
+  for (const bloco of chunk(orderIds, 300)) {
+    const { data, error } = await admin.from('ml_vendas')
+      .select('id, order_id, money_release_date, liberacao_notificada_em')
+      .eq('org_id', orgId).in('order_id', bloco);
+    if (error) throw new Error(`reconciliarLiberacoes select: ${error.message}`);
+
+    const pendentes = (data ?? []).flatMap((v: {
+      id: string;
+      order_id: number;
+      money_release_date: string | null;
+      liberacao_notificada_em: string | null;
+    }) => {
+      const real = porOrder.get(String(v.order_id));
+      if (!real) return [];
+      if (v.money_release_date && Date.parse(v.money_release_date) === Date.parse(real)) return [];
+      const patch: { money_release_date: string; liberacao_notificada_em?: string } = {
+        money_release_date: real,
+      };
+      const diaReal = new Date(real).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+      if (v.liberacao_notificada_em == null && diaReal < hojeBRT) patch.liberacao_notificada_em = diaReal;
+      return [{ id: v.id, patch }];
+    });
+
+    for (const lote of chunk(pendentes, 5)) {
+      await Promise.all(lote.map(async ({ id, patch }) => {
+        const { error: errUp } = await admin.from('ml_vendas').update(patch).eq('id', id);
+        if (errUp) { console.error(`reconciliarLiberacoes update ${id}: ${errUp.message}`); return; }
+        corrigidas += 1;
+        if (patch.liberacao_notificada_em) marcadas += 1;
+      }));
+    }
+  }
+
+  return { corrigidas, marcadas };
 }

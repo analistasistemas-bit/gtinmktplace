@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { montarMapaLiquido, carregarLiquidoMP, carregarLiquidoMPDoPedido } from '../enriquecimento';
+import { montarMapaLiquido, mapaLiberacaoPorOrder, carregarLiquidoMP, carregarLiquidoMPDoPedido } from '../enriquecimento';
 import type { PagamentoMP } from '../../mercadopago/financeiro';
 
 function pag(p: Partial<PagamentoMP> & { id: number }): PagamentoMP {
@@ -19,6 +19,7 @@ describe('montarMapaLiquido', () => {
     expect(mapa.get('1')).toEqual({
       estorno: 10,
       releaseDate: '2026-07-30T00:00:00.000-04:00',
+      orderId: null,
     });
   });
 
@@ -109,8 +110,8 @@ describe('carregarLiquidoMPDoPedido', () => {
     const mapa = await carregarLiquidoMPDoPedido('token', 123, [1, '2']);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe('https://api.mercadopago.com/v1/payments/1');
-    expect(mapa?.get('1')).toEqual({ estorno: 10, releaseDate: '2026-07-30T00:00:00.000-04:00' });
-    expect(mapa?.get('2')).toEqual({ estorno: 0, releaseDate: '2026-07-30T00:00:00.000-04:00' });
+    expect(mapa?.get('1')).toEqual({ estorno: 10, releaseDate: '2026-07-30T00:00:00.000-04:00', orderId: null });
+    expect(mapa?.get('2')).toEqual({ estorno: 0, releaseDate: '2026-07-30T00:00:00.000-04:00', orderId: null });
   });
 
   // Os mesmos filtros da varredura: collector alheio e perna de frete (montarMapaLiquido), e
@@ -137,6 +138,36 @@ describe('carregarLiquidoMPDoPedido', () => {
       id: 1, status: 'refunded', collector_id: 123, transaction_amount_refunded: 59.99,
     }) as unknown as Response);
     const mapa = await carregarLiquidoMPDoPedido('token', 123, [1]);
-    expect(mapa?.get('1')).toEqual({ estorno: 59.99, releaseDate: null });
+    expect(mapa?.get('1')).toEqual({ estorno: 59.99, releaseDate: null, orderId: null });
+  });
+});
+
+describe('mapaLiberacaoPorOrder', () => {
+  const conta = 123;
+
+  it('indexa por order_id e fica com a liberação mais recente do pedido', () => {
+    const mapa = mapaLiberacaoPorOrder(montarMapaLiquido([
+      pag({ id: 1, collector_id: conta, order: { id: '2000017' }, money_release_date: '2026-08-17T09:00:00.000-04:00' }),
+      pag({ id: 2, collector_id: conta, order: { id: '2000017' }, money_release_date: '2026-08-20T09:00:00.000-04:00' }),
+      pag({ id: 3, collector_id: conta, order: { id: '2000018' }, money_release_date: '2026-08-15T09:00:00.000-04:00' }),
+    ], conta));
+    expect(mapa.get('2000017')).toBe('2026-08-20T09:00:00.000-04:00');
+    expect(mapa.get('2000018')).toBe('2026-08-15T09:00:00.000-04:00');
+  });
+
+  it('herda os filtros do ADR-0031: sem frete (marketplace_shipment) e sem terceiro', () => {
+    const mapa = mapaLiberacaoPorOrder(montarMapaLiquido([
+      pag({ id: 1, collector_id: conta, description: 'marketplace_shipment', order: { id: '900' }, money_release_date: '2026-08-17T09:00:00.000-04:00' }),
+      pag({ id: 2, collector_id: 999, order: { id: '901' }, money_release_date: '2026-08-17T09:00:00.000-04:00' }),
+    ], conta));
+    expect([...mapa.keys()]).toEqual([]);
+  });
+
+  it('ignora pagamento sem order.id ou sem data de liberação', () => {
+    const mapa = mapaLiberacaoPorOrder(montarMapaLiquido([
+      pag({ id: 1, collector_id: conta, money_release_date: '2026-08-17T09:00:00.000-04:00' }),
+      pag({ id: 2, collector_id: conta, order: { id: '902' }, money_release_date: null }),
+    ], conta));
+    expect([...mapa.keys()]).toEqual([]);
   });
 });

@@ -6,8 +6,8 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
-import { buscarPedidosPeriodo, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
-import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
+import { buscarPedidosPeriodo, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor, reconciliarLiberacoes } from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback, mapaLiberacaoPorOrder } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao, carregarDevolucoesLocais } from '../_shared/faturamento/devolucoes-io.ts';
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
@@ -169,6 +169,9 @@ Deno.serve(async (req) => {
 
   // Passo 2 (TODAS as orgs): Vendas (72h) — o item mais caro, agora por último.
   let total = 0;
+  let liberacoesCorrigidas = 0;
+  // Dia corrente BRT, mesma convenção de `notificar-liberacao`.
+  const hojeBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
   for (const e of estados) {
     if (restante() < 10_000) { pulou.push(`${e.orgId}:vendas`); continue; }
     const { userId, orgId, token } = e;
@@ -183,6 +186,22 @@ Deno.serve(async (req) => {
       // estorno/liberação já gravados, e a próxima rodada volta a estes pedidos.
       if (liquidoPorPayment === null) {
         console.warn(`reconciliar: leitura do MP falhou para a org ${orgId}; estorno/liberação preservados`);
+      } else {
+        // Realinha a data de liberação das vendas FORA da janela de 72h: o MP antecipa
+        // `money_release_date` na confirmação da entrega sem emitir webhook de pedido, então só o
+        // mapa do MP (já carregado, 120 dias) enxerga a mudança. Sem isso o Detalhe do líquido
+        // conta como "a liberar" dinheiro que já está na conta.
+        try {
+          const { corrigidas, marcadas } = await reconciliarLiberacoes(
+            admin, orgId, mapaLiberacaoPorOrder(liquidoPorPayment), hojeBRT,
+          );
+          if (corrigidas > 0) {
+            console.log(`reconciliar: ${corrigidas} datas de liberação corrigidas (org ${orgId}), ${marcadas} marcadas como já notificadas`);
+          }
+          liberacoesCorrigidas += corrigidas;
+        } catch (err) {
+          console.error(`reconciliar: liberações falharam para org ${orgId}:`, err instanceof Error ? err.message : err);
+        }
       }
       for (const lote of chunk(pedidos, PARALELAS)) {
         await Promise.all(lote.map(async (pedido) => {
@@ -215,7 +234,7 @@ Deno.serve(async (req) => {
 
   if (pulou.length > 0) console.warn(`reconciliar-faturamento: orçamento de tempo esgotado, pulou: ${pulou.join(', ')}`);
 
-  return new Response(JSON.stringify({ ok: true, reconciliados: total, pulou }), {
+  return new Response(JSON.stringify({ ok: true, reconciliados: total, liberacoesCorrigidas, pulou }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });

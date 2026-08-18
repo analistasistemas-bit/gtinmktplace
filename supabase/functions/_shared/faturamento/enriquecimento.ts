@@ -21,9 +21,32 @@ export function montarMapaLiquido(
     mapa.set(String(p.id), {
       estorno: Number(p.transaction_amount_refunded ?? 0),
       releaseDate: p.money_release_date ?? null,
+      orderId: p.order?.id != null ? String(p.order.id) : null,
     });
   }
   return mapa;
+}
+
+/**
+ * order_id → data de liberação MAIS RECENTE entre os pagamentos daquele pedido, derivada do mapa
+ * por pagamento (mesmos dois filtros do ADR-0031, já aplicados lá). Pura.
+ *
+ * Existe porque o MP ANTECIPA `money_release_date` quando a entrega é confirmada, e isso não gera
+ * webhook de pedido: a venda sai da janela de 72h de `reconciliar-faturamento` com a estimativa
+ * original (~D+30) congelada, e o Detalhe do líquido mostra como "a liberar" dinheiro que já caiu
+ * na conta. Medido em 2026-08-18 na org AVIL: 222 de 1157 vendas divergentes, R$ 3.136,21 já
+ * liberados no MP e exibidos como pendentes.
+ */
+export function mapaLiberacaoPorOrder(
+  porPayment: Map<string, DadosPagamentoMP>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const d of porPayment.values()) {
+    if (!d.orderId || !d.releaseDate) continue;
+    const atual = out.get(d.orderId);
+    if (!atual || Date.parse(d.releaseDate) > Date.parse(atual)) out.set(d.orderId, d.releaseDate);
+  }
+  return out;
 }
 
 /**
