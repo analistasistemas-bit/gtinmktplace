@@ -899,14 +899,18 @@ falha ao ler `organizations` não libera.
   degrada só o bloco de vendas). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
   sem `APIFY_TOKEN` configurado devolve `{configurado:false}` com 200 (indisponível ≠ erro).
   Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
-  (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}` ≈ 50 anúncios por
-  relevância; cliente em `_shared/apify/client.ts`) e agrega em `montarPainelVendas`
+  (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}`, ordem de relevância;
+  cliente em `_shared/apify/client.ts`) com **`maxTotalChargeUsd=0.10` ≈ 20 anúncios** — o actor é
+  PAY_PER_EVENT a US$ 0,005 por anúncio e sem custo fixo de run, então o teto controla o gasto e a
+  quantidade ao mesmo tempo; atingir o teto devolve o run como SUCCEEDED com o que coube, não como
+  falha (ADR-0122 §3). Agrega em `montarPainelVendas`
   (`_shared/pulse/sonar-vendas.ts`): `vendas_totais` (Σ do "+N vendidos" da página — acumulado e
   arredondado, piso; anúncio sem o dado NUNCA soma como zero), `valor_mercado` (Σ preço ×
   vendidos onde ambos existem), `produto_destaque` (mais vendido) e `palavras_chave_titulos`
-  (títulos de anúncios reais, não nomes de ficha). Cache Redis `sonar:vendas:v1:MLB:<termo>`,
-  TTL 24h, chave global (dado público, ADR-0120 §3) — o cache também limita o custo Apify a
-  1 run por termo/dia; falha/timeout do run devolve 502 e não cacheia.
+  (títulos de anúncios reais, não nomes de ficha). Cache Redis `sonar:vendas:v2:MLB:<termo>`,
+  **TTL 7 dias**, chave global (dado público, ADR-0120 §3) — o dado é acumulado histórico em
+  faixas arredondadas, então TTL curto só repagava o mesmo número; falha/timeout do run devolve
+  502 e não cacheia.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal

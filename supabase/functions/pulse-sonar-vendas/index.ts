@@ -7,7 +7,10 @@ import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { apifyConfigurado, buscarAnunciosML } from '../_shared/apify/client.ts';
 import { montarPainelVendas, parseItensApify } from '../_shared/pulse/sonar-vendas.ts';
 
-const CACHE_TTL_S = 24 * 60 * 60;
+// 7 dias, não 24h: "+N vendidos" é acumulado desde a criação do anúncio e arredondado em faixas
+// (100 / 500 / 1k / …), então praticamente não muda de um dia para o outro — o TTL curto só
+// pagava o mesmo dado de novo. Cada run custa ~US$ 0,10, então repetição é o desperdício caro.
+const CACHE_TTL_S = 7 * 24 * 60 * 60;
 const normalizarTermo = (t: string) => t.trim().toLowerCase().replace(/\s+/g, ' ');
 
 function json(body: unknown, status = 200): Response {
@@ -30,7 +33,9 @@ Deno.serve(async (req) => {
   // e não pode virar toast destrutivo no front (ADR-0122 §5).
   if (!apifyConfigurado()) return json({ configurado: false });
 
-  const chave = `sonar:vendas:v1:MLB:${normalizado}`;
+  // v2: bump obrigatório junto com o teto de gasto — sem ele, um painel v1 de 48 anúncios ficaria
+  // servindo por 7 dias ao lado dos novos de 20, com totais incomparáveis entre termos.
+  const chave = `sonar:vendas:v2:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return json(JSON.parse(cacheado));
 
