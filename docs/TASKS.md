@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Pulse Sonar — garimpo on-demand por termo (ADR-0120) — 2026-08-17/18
+
+- [x] **Edge nova `pulse-sonar`** (`verify_jwt=true`). Busca livre por termo (mínimo 3 caracteres)
+  em `/products/search` (até 40 fichas), enriquece só ficha com oferta ativa (categoria via
+  `buscarCategoriaPreditor` com `comTimeout` de 10s, visitas de 30 dias do item mais barato,
+  vendedores com cache por request) e monta `PainelSonar`. Cache Redis global 24h
+  (`sonar:v2:MLB:<termo>` — dado público, sem `org_id`). Deployada em produção (v2).
+- [x] **Edge `pulse-coletar` ganhou o passo 7:** coleta visitas de 30 dias de cada oferta viva
+  no baseline diário (`tier === 'completo'` do schedule sem escopo de org — nunca no botão manual
+  nem no tier quente), fila com o menos medido primeiro, teto de 30s por org, falha de leitura
+  preserva a medida anterior em vez de gravar `null`. Deployada em produção (v15).
+- [x] **Migration `20260818012222_pulse_ofertas_visitas_30d.sql`.** Coluna `visitas_30d integer`
+  em `pulse_ofertas` + view `pulse_ofertas_atual` recriada (coluna no fim, `security_invoker=true`).
+  Aplicada em produção.
+- [x] **Frontend.** Aba "Sonar" no Pulse (`src/pages/PulseSonar.tsx`, `Tabs` em `Pulse.tsx`,
+  `dialog-margem-sonar.tsx`, `lib/sonar.ts`) e coluna "Visitas 30d" no detalhe do Radar
+  (`dialog-detalhe.tsx`).
+- [x] **Documentação.** ADR-0120 e Errata 9 do ADR-0119 registrados; glossário e índice de ADRs
+  no vault atualizados; `docs/reference/edge-functions.md` e `docs/reference/modelo-de-dados.md`
+  cobrem o shape novo (edge nova, passo 7, coluna/view).
+
 ## Publicados — "Corrigir e republicar" pausa o anúncio Legacy no ML — 2026-08-17
 
 - [x] **Bug.** O modo republicar (`remover-publicado` com `preservar_familia: true`) só pausava

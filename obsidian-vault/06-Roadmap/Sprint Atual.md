@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-08-11
+atualizado: 2026-08-18
 ---
 
 # Sprint Atual
@@ -11,11 +11,18 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
 ## 📍 Passo atual (2026-08-13) — Fase 3 EM PRODUÇÃO
 
-> **🚧 Pulse v1 — radar de concorrência concluído, aguardando deploy (ADR-0119, 2026-08-16).** Menu
+> **✅ Pulse v1 — radar de concorrência EM PRODUÇÃO (ADR-0119, 2026-08-16, org DSA).** Menu
 > "Pulse" org-gated: coletor server-side dual-mode, adicionar manual por catálogo/GTIN, 4 tabelas
-> novas e UI (radar, margem estimada, alertas, reprecificar via Revisão). `pnpm lint`/`pnpm test`
-> verdes; migration, as 2 edge functions e os 2 schedules QStash ainda não deployados. Ver
-> `docs/project-status.md`.
+> novas e UI (radar, margem estimada, alertas, reprecificar via Revisão). Migration, as 2 edge
+> functions e os 2 schedules QStash deployados. Ver `docs/project-status.md`.
+>
+> **✅ Pulse Sonar — garimpo on-demand por termo EM PRODUÇÃO (ADR-0120, 2026-08-17/18).** Nova
+> aba "Sonar" dentro do Pulse: busca livre por termo (edge `pulse-sonar`, até 40 fichas via
+> `/products/search`, cache Redis global 24h `sonar:v2:MLB:<termo>`), painel por ficha com preço,
+> ofertas, % frete grátis, vendedores e visitas de 30 dias do item mais barato. `pulse-coletar`
+> ganhou um passo 7: mede visitas de 30 dias de cada oferta viva no baseline diário (teto de 30s,
+> fila com o menos medido primeiro), gravadas em `pulse_ofertas.visitas_30d` (migration
+> `20260818012222_pulse_ofertas_visitas_30d.sql`) e exibidas também no detalhe do Radar.
 
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram

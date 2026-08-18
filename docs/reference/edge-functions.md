@@ -814,6 +814,16 @@ falha ao ler `organizations` não libera.
   acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela).
   Alertas em `pulse_alertas` + 1 notificação agregada
   por org por execução na categoria `pulse`.
+  **Passo 7 — visitas 30d (ADR-0120), só no baseline** (`baseline = !scopedOrgId && tier ===
+  'completo'`: a varredura agendada da madrugada, nunca o botão manual nem o tier `quente` — senão
+  cada clique dispararia a varredura inteira por um número que não se move a cada 6h). Mede as
+  visitas dos últimos 30 dias de cada oferta viva (`pulse_ofertas_atual`) via
+  `/items/{id}/visits/time_window?last=30&unit=day` — única medida de demanda de anúncio de
+  terceiro que a API expõe (Errata 9 do ADR-0119). Fila ordenada por menos-medido-primeiro
+  (`visitas_30d` null vai na frente), teto de tempo próprio de 30s (o passo mais longo da execução;
+  o que não couber fica para o baseline seguinte). Leitura que falha (403/429/timeout) não escreve
+  nada — preserva a medida do dia anterior em vez de apagá-la com `null`. Grava em
+  `pulse_ofertas.visitas_30d` (migration `20260818012222_pulse_ofertas_visitas_30d.sql`).
 - **pulse-adicionar** — adiciona manualmente um produto ao radar por link de catálogo
   (`/p/MLBxxxx`) ou GTIN (busca em `/products/search`); item avulso de anúncio de terceiro é
   impossível de coletar pela API (403 sempre — ver errata do ADR-0119) e a função recusa essa
@@ -824,22 +834,30 @@ falha ao ler `organizations` não libera.
   incondicional anterior rebaixava produto `auto` para `manual` (tirando-o do tier quente e
   congelando a referência de preço) e desfazia o pausar do operador. Única exceção: ficha
   **arquivada** volta para `ativo`, porque readicioná-la é um pedido explícito de trazê-la de volta.
-- **pulse-sonar** (ADR-0120) — garimpo on-demand por termo livre (`{termo}`, mínimo 3 caracteres):
-  busca `/products/search` (site MLB, até 20 fichas), e por ficha, em lotes de 5 concorrentes
-  (`Promise.allSettled` — falha em uma ficha não derruba a busca, entra com `visitas_30d: null`
-  e dados parciais) lê `/products/{id}/items` (ofertas — **sem** excluir a própria org: no
-  garimpo a nossa oferta também é mercado), resolve `category_id` pelo preditor nativo do ML
+- **pulse-sonar** (ADR-0120, `verify_jwt=true`, chamada pelo app com o JWT do usuário) — garimpo
+  on-demand por termo livre (`{termo}`, mínimo 3 caracteres): busca `/products/search` (site MLB,
+  até 40 fichas — dobrado de 20 porque o topo do resultado vem cheio de ficha sem vendedor ativo, e
+  ficha vazia é barata: curto-circuita antes de categoria/visitas/vendedores), e por ficha, em
+  lotes de 5 (`Promise.allSettled` — falha em uma ficha não derruba a busca, entra como resultado
+  vazio) lê `/products/{id}/items` (ofertas — **sem** excluir a própria org: no garimpo a nossa
+  oferta também é mercado). **Ficha sem oferta ativa** (404 "No winners found" ou `results: []`
+  mesmo com 200) devolve resultado vazio direto — não é enriquecida com categoria/visitas/
+  vendedores. Ficha com oferta resolve `category_id` pelo preditor nativo do ML
   (`buscarCategoriaPreditor`, já cacheado 30d em `_shared/ml/domain-discovery.ts`, casando pelo
-  nome da ficha — `/products/{id}` não devolve `category_id`), visitas de 30 dias só do item MAIS
+  nome da ficha — `/products/{id}` não devolve `category_id`; chamada sob `comTimeout` de 10s
+  porque a função é compartilhada com o fluxo de publish, que não pode ganhar timeout lá — sem
+  isso um fetch interno travado derrubaria a ficha inteira), visitas de 30 dias só do item MAIS
   BARATO da ficha (`/items/{id}/visits/time_window`; multiget não serve, teto de 1 id por
   chamada) e `/users/{seller_id}` por vendedor distinto (UF via `ufDoVendedor`, `transactions.total`),
   com cache de vendedor por request (`Map`, sellers repetem entre fichas). `montarPainelSonar`
   (`_shared/pulse/sonar.ts`) agrega tudo em `PainelSonar` — soma de visitas por dia entre fichas
   com datas desalinhadas, `visitas_30d` nulo nunca vira zero na soma, % frete grátis ponderado
   por ofertas, vendedores distintos e `palavras_chave`. Resultado cacheado no Redis por
-  `sonar:v1:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
-  ADR-0120 §3); falha do ML na busca principal (`null`) devolve 502 e não cacheia, para não
-  travar um termo vazio por 24h a partir de um erro transitório.
+  `sonar:v2:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
+  ADR-0120 §3) — bump de v1→v2 pela mudança de shape nas fichas sem vendedor ativo, para um
+  resultado v1 já cacheado não servir o shape antigo por até 24h; falha do ML na busca principal
+  (`null`) devolve 502 e não cacheia, para não travar um termo vazio por 24h a partir de um erro
+  transitório.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
