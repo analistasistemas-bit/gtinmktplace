@@ -22,6 +22,16 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
+// Contém falha E travamento no call site: buscarCategoriaPreditor é compartilhado com o fluxo de
+// publish (_shared/ml/domain-discovery.ts) e não pode ganhar timeout lá. Sem isso, um fetch
+// interno que rejeita ou nunca resolve derruba a ficha INTEIRA em processarFicha (perde
+// ofertas/preço/vendedores por causa só da categoria).
+const comTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([
+    p.catch(() => fallback),
+    new Promise<T>((res) => setTimeout(() => res(fallback), ms)),
+  ]);
+
 // Visitas: só o item MAIS BARATO da ficha (proxy do ganhador). Multiget não serve — "maximum
 // amount of items to query is 1" (testado 17/08).
 async function resolverVisitas(ofertas: OfertaColetada[], token: string) {
@@ -61,7 +71,7 @@ async function processarFicha(ficha: FichaBusca, token: string, sellerCache: Map
   // 30d em _shared/ml/domain-discovery.ts), casando pelo nome da ficha (provado com token real
   // em 17/08 — "Tecido Oxford Liso 10 Metros…" → MLB439096). Vazio/erro → null, não derruba a ficha.
   const [candidatos, visitas] = await Promise.all([
-    buscarCategoriaPreditor(token, ficha.nome),
+    comTimeout(buscarCategoriaPreditor(token, ficha.nome), 10_000, []),
     resolverVisitas(ofertas, token),
   ]);
   const categoryId = candidatos[0]?.categoriaId ?? null;
