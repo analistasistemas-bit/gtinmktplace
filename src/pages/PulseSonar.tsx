@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  BadgeCheck, Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Eye, Globe, Loader2,
-  Package, Receipt, Search, ShoppingCart, Store, TrendingUp, Trophy, Truck, Users, Zap,
+  BadgeCheck, Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Clock, Eye, Globe,
+  Loader2, Package, Receipt, Search, ShoppingCart, Store, Trash2, TrendingUp, Trophy, Truck,
+  Users, Zap,
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid,
@@ -22,6 +23,9 @@ import {
 } from '@/components/ui/table';
 import { DialogMargemSonar } from '@/components/pulse/dialog-margem-sonar';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
+import {
+  lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
+} from '@/lib/sonar-buscas-recentes';
 import { calcularVeredito } from '@/lib/veredito-sonar';
 import {
   fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
@@ -204,6 +208,7 @@ export default function PulseSonar() {
   const iniciadoEmRef = useRef(0);
   const [semVendedorAberto, setSemVendedorAberto] = useState(false);
   const [fichaSimulando, setFichaSimulando] = useState<PainelSonar['fichas'][number] | null>(null);
+  const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
   // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as 4 etapas
   // concluídas antes de trocar pelo resultado (em vez de sumir direto na 3ª, travada).
   const [mostrarProgresso, setMostrarProgresso] = useState(false);
@@ -246,11 +251,17 @@ export default function PulseSonar() {
     return () => clearTimeout(t);
   }, [carregando]);
 
+  const garimpar = (t: string) => {
+    setBuscasRecentes(registrarBusca(t));
+    setTermo(t);
+    setTermoBuscado(t);
+  };
+
   const buscar = (e: FormEvent) => {
     e.preventDefault();
     const t = termo.trim();
     if (t.length < 3) { toast.error('Digite ao menos 3 caracteres para garimpar.'); return; }
-    setTermoBuscado(t);
+    garimpar(t);
   };
 
   const ativas = painel ? fichasAtivas(painel) : [];
@@ -282,16 +293,51 @@ export default function PulseSonar() {
       </form>
 
       {!termoBuscado ? (
-        <EmptyState
-          icon={Search}
-          title="O que o Sonar faz"
-          description={
-            'Varre um nicho do Mercado Livre antes de você cadastrar o produto: fichas de '
-            + 'catálogo, concorrência, preço e demanda do nicho. Limites do dado: só cobre '
-            + 'produtos com ficha de catálogo, e a demanda é medida por visitas e ranking — o '
-            + 'Mercado Livre não expõe vendas exatas de terceiros.'
-          }
-        />
+        buscasRecentes.length > 0 ? (
+          <Card className="max-w-2xl p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
+                Buscas recentes
+              </div>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => { limparBuscasRecentes(); setBuscasRecentes([]); }}
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                Limpar tudo
+              </button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {buscasRecentes.map((b) => (
+                <button
+                  key={b.termo}
+                  type="button"
+                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent"
+                  onClick={() => garimpar(b.termo)}
+                >
+                  <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{b.termo}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {tempoRelativo(b.em, new Date())}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Card>
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="O que o Sonar faz"
+            description={
+              'Varre um nicho do Mercado Livre antes de você cadastrar o produto: fichas de '
+              + 'catálogo, concorrência, preço e demanda do nicho. Limites do dado: só cobre '
+              + 'produtos com ficha de catálogo, e a demanda é medida por visitas e ranking — o '
+              + 'Mercado Livre não expõe vendas exatas de terceiros.'
+            }
+          />
+        )
       ) : mostrarProgresso ? (
         <SonarProgresso passos={passosProgresso(elapsedMs, !carregando)} />
       ) : isError ? (

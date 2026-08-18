@@ -2,6 +2,16 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — buscas recentes — 2026-08-18
+
+- [x] **Card "Buscas recentes" na tela inicial do Sonar** (pedido do Diego, referência Hunter
+  Spy): últimas 10 buscas com tempo relativo ("há 23 minutos"), clique re-garimpa (termo em cache
+  volta em ~2s sem custo), "Limpar tudo". Substitui o EmptyState quando há histórico.
+- [x] **localStorage por navegador** (`sonar:buscas-recentes`), sem tabela/RLS de propósito —
+  vira coluna em `configuracoes` se um dia precisar seguir o usuário entre máquinas. Lógica em
+  funções puras (`src/lib/sonar-buscas-recentes.ts`, 10 testes): dedup por termo normalizado
+  move ao topo, corte em 10, tempo relativo pt-BR.
+
 ## Sonar — raio-X do nicho (adendo ADR-0122) — 2026-08-18
 
 - [x] **Barra no card "Vendas do nicho"** (pedido do Diego, referência Hunter Spy): ticket médio,
