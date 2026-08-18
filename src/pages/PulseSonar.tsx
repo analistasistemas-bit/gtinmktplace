@@ -1,6 +1,6 @@
 // Sonar (ADR-0120): garimpo on-demand de um nicho do Mercado Livre, par do Radar (Pulse.tsx),
 // que vigia o que já vendemos. O Sonar varre ANTES de cadastrar o produto.
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -18,9 +18,7 @@ import { Input } from '@/components/ui/input';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
+import { DataTable, type Column } from '@/components/ui/data-table';
 import { DialogMargemSonar } from '@/components/pulse/dialog-margem-sonar';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import {
@@ -266,6 +264,59 @@ export default function PulseSonar() {
 
   const ativas = painel ? fichasAtivas(painel) : [];
   const vazias = painel ? fichasSemVendedor(painel) : [];
+
+  // Sem `defaultSort`: a ordem que chega da API é o ranking de relevância do ML, e perder isso ao
+  // abrir a tela custaria mais que a conveniência de já vir ordenado por alguma coluna.
+  const colunasFichas = useMemo<Column<PainelSonar['fichas'][number]>[]>(() => [
+    {
+      key: 'nome',
+      header: 'Produto',
+      className: 'max-w-xs',
+      cell: (f) => <span className="block max-w-xs truncate" title={f.nome}>{f.nome}</span>,
+      sortValue: (f) => f.nome,
+    },
+    {
+      key: 'ofertas',
+      header: 'Ofertas',
+      className: 'tabular-nums',
+      cell: (f) => f.ofertas,
+      sortValue: (f) => f.ofertas,
+    },
+    {
+      key: 'preco',
+      header: 'Faixa de preço',
+      className: 'tabular-nums',
+      cell: (f) => (f.preco ? `${fmtBRL(f.preco.min)} – ${fmtBRL(f.preco.max)}` : '—'),
+      // Ordena pelo piso da faixa: é o número que o operador compara ao decidir se entra.
+      sortValue: (f) => f.preco?.min ?? null,
+    },
+    {
+      key: 'visitas',
+      header: 'Visitas (30d)',
+      className: 'tabular-nums',
+      cell: (f) => (f.visitas_30d == null ? <span title="Não medido">—</span> : fmtInt(f.visitas_30d)),
+      sortValue: (f) => f.visitas_30d ?? null,
+    },
+    {
+      key: 'vendedores',
+      header: 'Vendedores / UF',
+      className: 'text-xs text-muted-foreground',
+      cell: (f) => {
+        const ufs = [...new Set(f.vendedores.map((v) => v.uf).filter((uf): uf is string => !!uf))];
+        return <>{f.vendedores.length} {ufs.length > 0 && `(${ufs.join(', ')})`}</>;
+      },
+      sortValue: (f) => f.vendedores.length,
+    },
+    {
+      key: 'acao',
+      header: '',
+      cell: (f) => (
+        <Button variant="outline" size="sm" onClick={() => setFichaSimulando(f)}>
+          Simular margem
+        </Button>
+      ),
+    },
+  ], []);
   const elapsedMs = iniciadoEmRef.current ? Date.now() - iniciadoEmRef.current : 0;
 
   return (
@@ -397,51 +448,12 @@ export default function PulseSonar() {
             </Card>
           )}
 
-          {ativas.length === 0 ? (
-            <EmptyState icon={Package} title="Nenhuma ficha com vendedor ativo para este termo." />
-          ) : (
-            <div className="overflow-x-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Produto</TableHead>
-                    <TableHead>Ofertas</TableHead>
-                    <TableHead>Faixa de preço</TableHead>
-                    <TableHead>Visitas (30d)</TableHead>
-                    <TableHead>Vendedores / UF</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {ativas.map((f) => {
-                    const ufs = [...new Set(f.vendedores.map((v) => v.uf).filter((uf): uf is string => !!uf))];
-                    return (
-                      <TableRow key={f.product_id}>
-                        <TableCell className="max-w-xs truncate" title={f.nome}>{f.nome}</TableCell>
-                        <TableCell className="tabular-nums">{f.ofertas}</TableCell>
-                        <TableCell className="tabular-nums">
-                          {f.preco ? `${fmtBRL(f.preco.min)} – ${fmtBRL(f.preco.max)}` : '—'}
-                        </TableCell>
-                        <TableCell className="tabular-nums">
-                          {f.visitas_30d == null
-                            ? <span title="Não medido">—</span>
-                            : fmtInt(f.visitas_30d)}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {f.vendedores.length} {ufs.length > 0 && `(${ufs.join(', ')})`}
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="outline" size="sm" onClick={() => setFichaSimulando(f)}>
-                            Simular margem
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable
+            columns={colunasFichas}
+            rows={ativas}
+            rowKey={(f) => f.product_id}
+            empty={<EmptyState icon={Package} title="Nenhuma ficha com vendedor ativo para este termo." />}
+          />
 
           {painel.palavras_chave.length > 0 && (
             <div className="mt-4">

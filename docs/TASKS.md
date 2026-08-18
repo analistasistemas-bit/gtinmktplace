@@ -130,6 +130,14 @@
 - [x] **Documentação.** ADR-0120 e Errata 9 do ADR-0119 registrados; glossário e índice de ADRs
   no vault atualizados; `docs/reference/edge-functions.md` e `docs/reference/modelo-de-dados.md`
   cobrem o shape novo (edge nova, passo 7, coluna/view).
+## Sonar: tabela de fichas ordenável — 2026-08-18
+
+- [x] **Ordenação por coluna** na tabela de fichas do Sonar: a `<Table>` manual virou o `DataTable`
+  genérico (`components/ui/data-table.tsx`, o mesmo de Publicados/Faturamento), que já traz
+  cabeçalho clicável, asc/desc e nulos sempre no fim. Ordena por Produto (texto), Ofertas,
+  Faixa de preço (pelo piso da faixa), Visitas 30d (ficha não medida vai para o fim) e nº de
+  vendedores. Sem `defaultSort`: a ordem inicial continua sendo o ranking de relevância do ML.
+
 ## Sonar: "Saiba mais" do veredito — 2026-08-18
 
 - [x] **Explicação determinística do veredito** (adendo no ADR-0124): expansível "Saiba mais" no
