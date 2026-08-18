@@ -24,6 +24,16 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > fila com o menos medido primeiro), gravadas em `pulse_ofertas.visitas_30d` (migration
 > `20260818012222_pulse_ofertas_visitas_30d.sql`) e exibidas também no detalhe do Radar.
 
+> **✅ Sonar — vendas estimadas do nicho EM PRODUÇÃO (ADR-0122, 2026-08-18).** Fecha a lacuna
+> contra o Hunter Spy: seção "Vendas do nicho" com vendas acumuladas, mercado endereçável (R$),
+> produto destaque e palavras-chave dos títulos de anúncios reais. Fonte é a **Apify** (actor
+> `karamelo/mercadolivre-scraper-brasil-portugues`), o scraping pago que o ADR-0120 tinha
+> descartado com a ressalva de reavaliar — reavaliado e contratado. Edge separada
+> `pulse-sonar-vendas` (a falha da Apify degrada só este bloco), cache Redis global 24h
+> `sonar:vendas:v1:MLB:<termo>`, secret `APIFY_TOKEN`. O dado é o "+N vendidos" da página:
+> **acumulado desde a criação do anúncio e arredondado pelo ML** (piso), exibido com "≈" — não é
+> venda mensal nem exata. Visitas continuam vindo só da API oficial: nenhum scraper as entrega.
+
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram
 > segundos**, e os **9 vínculos que competiam foram preservados** (`ALREADY_OPTED_IN`); o resto

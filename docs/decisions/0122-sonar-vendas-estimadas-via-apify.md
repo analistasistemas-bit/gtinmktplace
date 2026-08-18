@@ -52,7 +52,13 @@ nenhum scraper entrega visitas porque elas não aparecem na página pública.
 
 ## Consequências
 
-- Custo variável por termo novo (~US$ 0,06/run), limitado pelo cache global 24 h.
+- Custo variável por termo novo (~US$ 0,06/run). **O cache limita repetições do mesmo termo, não
+  o gasto total:** termos distintos são ilimitados e não há cota por org, então o teto real é
+  "quantos termos novos forem garimpados no dia". Dois pedidos simultâneos do mesmo termo ainda
+  não-cacheado também disparam dois runs pagos (o lock `redisSetNX` de `_shared/redis/client.ts`
+  resolve, se o volume justificar). Rever com quota por org se o gasto incomodar.
+- `vendas_totais` soma faixas arredondadas do ML (100 / 500 / 1k / … / 250k), então o total exibido
+  tem menos precisão do que os dígitos sugerem — daí o "≈" e o rótulo de acumulado na UI.
 - Dependência de HTML de terceiro (via actor mantido pela comunidade Apify): aceita porque está
   isolada numa edge própria, com parser tolerante e degradação silenciosa para o resto do Sonar.
 - Run síncrono que estourar o timeout é cobrado pela Apify mesmo sem devolver resultado —
