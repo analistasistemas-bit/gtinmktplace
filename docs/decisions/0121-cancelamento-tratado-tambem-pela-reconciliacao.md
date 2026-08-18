@@ -47,6 +47,18 @@ caso criaria estoque fantasma, que empurra unidade inexistente para o canal — 
 oversell que a investigação de 18/08 encontrou (11 unidades vendidas no ML acima do que entrou).
 Falha fechada continua sendo a regra: só repõe o que é comprovadamente pré-despacho.
 
+**4. O aviso só sai se houve baixa daquele pedido.** Medido na primeira varredura com o novo
+gatilho (18/08/2026, 03:00 UTC): 26 pedidos cancelados históricos — vários de 2021/2024,
+anteriores ao ledger — dispararam o alerta de uma vez, in-app e no Telegram. Sem baixa não há
+saldo devendo voltar e o operador não tem o que conferir, então `houveBaixaDeVenda` (movimento
+`venda` com `quantidade < 0` para a referência do pedido) passa a ser condição do aviso. Falha de
+leitura dessa consulta **não** cala o alerta: perder o aviso de um cancelamento real é pior que
+repetir um ruidoso, e o dedupe garante no máximo uma repetição.
+
+O corte é só do aviso. O ramo que repõe continua chamando a RPC sempre, porque é lá que nasce o
+tombstone `cancelamento_sem_baixa` que impede uma execução `paid` atrasada de baixar um pedido já
+cancelado (D-19).
+
 ## Consequências
 
 **Aceitas.** A reconciliação revisita o mesmo pedido cancelado de hora em hora enquanto ele estiver

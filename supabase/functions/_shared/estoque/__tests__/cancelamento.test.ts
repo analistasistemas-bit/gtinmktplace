@@ -15,6 +15,7 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
     despachos: 0,
     notificacoes: [] as Array<{ categoria: string; texto: string }>,
     reservas: [] as Array<{ entidade: string; chave: string }>,
+    consultasDeBaixa: 0,
   };
   const deps: DepsCancelamento = {
     estornarVendaCancelada: (_admin, p) => {
@@ -26,6 +27,10 @@ function fakeDeps(over: Partial<DepsCancelamento> = {}) {
       return Promise.resolve({ marcados: 1, falhas: 0 });
     },
     enfileirarSincronizacaoEstoque: () => Promise.resolve('msg-1'),
+    houveBaixaDeVenda: () => {
+      chamadas.consultasDeBaixa++;
+      return Promise.resolve(true);
+    },
     reservarNotificacao: (_admin, _org, _user, entidade, chave) => {
       chamadas.reservas.push({ entidade, chave });
       return Promise.resolve(true);
@@ -99,6 +104,16 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
     expect(r).toBe('avisado');
     expect(chamadas.estornos).toHaveLength(0);
     expect(chamadas.notificacoes[0].texto).toContain('não pôde ser consultado');
+  });
+
+  // Sem este corte a primeira varredura alertaria todo cancelamento histórico da base de uma vez
+  // (26 pedidos, alguns de 2021, medido em 18/08/2026) — in-app E no Telegram.
+  it('pedido que nunca baixou estoque não vira alerta', async () => {
+    const { chamadas, deps } = fakeDeps({ houveBaixaDeVenda: () => Promise.resolve(false) });
+    const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: 'delivered' });
+    expect(r).toBe('sem-baixa');
+    expect(chamadas.notificacoes).toHaveLength(0);
+    expect(chamadas.reservas).toHaveLength(0);
   });
 
   // A reconciliação revisita o mesmo pedido de hora em hora enquanto ele estiver na janela.

@@ -237,6 +237,36 @@ export async function lerPushPendente(
   }));
 }
 
+/**
+ * Houve baixa de estoque para este pedido? (ADR-0121)
+ *
+ * Existe para calar o aviso de cancelamento em pedido que nunca baixou nada: sem baixa não há
+ * saldo devendo voltar, e o operador não tem o que conferir. Medido em 18/08/2026, na primeira
+ * varredura com o novo gatilho: 26 pedidos cancelados — vários de 2021/2024, anteriores ao
+ * ledger — dispararam o alerta de uma vez, in-app e no Telegram. O aviso é sobre estoque, então
+ * a condição também tem que ser sobre estoque.
+ *
+ * `quantidade < 0` de propósito: um movimento com `quantidade = 0` é o registro de venda que o
+ * saldo zerado não pôde atender (D-8) — nada desceu, nada volta.
+ */
+export async function houveBaixaDeVenda(
+  admin: SupabaseClient,
+  p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
+): Promise<boolean> {
+  const refs = selecionarBaixas(p.itens).map((b) => refBaixa(p.canal, p.orderId, b.codigo));
+  if (refs.length === 0) return false;
+  const { data, error } = await admin.from('estoque_movimentos')
+    .select('id').eq('org_id', p.orgId).eq('motivo', 'venda')
+    .in('referencia_externa', refs).lt('quantidade', 0).limit(1);
+  // Falha de leitura NÃO cala o aviso: perder o alerta de um cancelamento real é pior que
+  // repetir um alerta ruidoso, e o dedupe garante que ele sai no máximo uma vez.
+  if (error) {
+    console.error('houve_baixa_de_venda_falhou', p.orderId, error.message);
+    return true;
+  }
+  return (data ?? []).length > 0;
+}
+
 export interface ResultadoDespacho { marcados: number; falhas: number }
 
 /**

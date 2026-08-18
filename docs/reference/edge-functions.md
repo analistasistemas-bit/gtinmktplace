@@ -702,7 +702,10 @@ falha ao ler `organizations` não libera.
   cancelamento (medido em 18/08/2026: dois pedidos com um único webhook, o da compra), e sem o
   segundo gatilho o ramo inteiro nunca executava: zero linhas `pos_venda` na org contra 888 em
   `vendas`. Envio `cancelled` continua **avisando e não repondo** (pode ser cancelamento por
-  mediação pós-despacho). **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
+  mediação pós-despacho). O aviso exige `houveBaixaDeVenda` — sem movimento `venda` daquele
+  pedido não há saldo a conferir; sem esse corte a primeira varredura alertou 26 cancelamentos
+  históricos de uma vez (18/08/2026). Redeploy: `sync-venda` **v72**, `reconciliar-faturamento`
+  **v68**. **Devolução (`sync-devolucao`, claims) não é tocada por este épico: nem
   repõe estoque, nem notifica** — repor exige saber o que voltou e em que estado, decisão do
   operador, fora de escopo (ADR-0094). Toda a lógica de baixa/estorno é envolvida em try/catch — a
   venda é sagrada, nenhuma falha de estoque derruba o `sync-venda`. Redeploy: **v50**.

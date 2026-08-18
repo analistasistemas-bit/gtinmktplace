@@ -31,6 +31,10 @@ export interface DepsCancelamento {
   enfileirarSincronizacaoEstoque: (
     job: { org_id: string; codigo_pai: string; canal_origem: string | null; reativar?: boolean }, orgId: string,
   ) => Promise<string>;
+  houveBaixaDeVenda: (
+    admin: SupabaseClient,
+    p: { orgId: string; canal: string; orderId: string | number; itens: ItemVendaBaixa[] },
+  ) => Promise<boolean>;
   reservarNotificacao: (
     admin: SupabaseClient, orgId: string, userId: string | null, entidade: string, chave: string,
   ) => Promise<boolean>;
@@ -54,6 +58,7 @@ export interface PedidoCancelado {
 export type ResultadoCancelamento =
   | 'reposto'
   | 'avisado'
+  | 'sem-baixa' // cancelado, mas o estoque nunca desceu por este pedido — nada a conferir
   | 'silenciado' // aviso já dado antes (a reconciliação revisita o pedido de hora em hora)
   | 'ignorado'
   | 'erro';
@@ -86,6 +91,14 @@ export async function tratarPedidoCancelado(
       // TODOS os canais — inclusive o ML, que não repõe sozinho.
       await deps.despacharPushPendente(admin, p.orgId, pendentesDePush, deps.enfileirarSincronizacaoEstoque);
       return 'reposto';
+    }
+    // Sem baixa não há saldo devendo voltar: o aviso não teria o que pedir para conferir.
+    // Sem este corte, a primeira varredura alerta todo cancelamento histórico da base de uma
+    // vez — 26 pedidos, alguns de 2021, medido em 18/08/2026.
+    if (!await deps.houveBaixaDeVenda(admin, {
+      orgId: p.orgId, canal: p.canal, orderId: p.orderId, itens: p.itens,
+    })) {
+      return 'sem-baixa';
     }
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
       return 'silenciado';
