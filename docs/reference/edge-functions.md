@@ -91,7 +91,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | Função | Cron (UTC) | Body | Retries |
 |---|---|---|---|
 | `reconciliar-convergencia-up` | `*/15 * * * *` | *(sem body)* | 3 |
-| `backfill-faturamento` | `30 * * * *` | `{"dias":7}` | 3 |
+| `backfill-faturamento` | `30 6 * * *` | `{"dias":7}` | 3 |
 | `monitorar-moderados` | `0 */6 * * *` | *(sem body)* | 3 |
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
@@ -765,7 +765,8 @@ falha ao ler `organizations` não libera.
   do caminho manual.
 - **reconciliar-faturamento** *(schedule)* — rede de segurança: re-sincroniza as últimas ~72h
   de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`), sem limite de janela — `buscarClaimsSeller` varre TODOS os
-  claims opened+closed do vendedor. Liveness (ADR-0069): só o catch
+  claims opened+closed do vendedor (a **varredura no ML** segue completa; o que passou a ser
+  filtrado é o reprocesso no banco — ver "Filtro de reprocesso" abaixo). Liveness (ADR-0069): só o catch
   do token classifica (`registrarFalhaAuth`/alerta 'integracao' em 401/403); os catches internos
   de pedidos/perguntas/claims (`buscarPedidosPeriodo` etc.) continuam "segue" sem classificar —
   não é backstop de auth-liveness para esses casos, só para falha no token em si.
@@ -779,6 +780,27 @@ falha ao ler `organizations` não libera.
   re-buscar um pedido já coberto pela janela de vendas) foi removida: como devoluções agora rodam
   antes de vendas, não dá pra saber se o pedido será coberto — o custo extra é irrelevante (limitado
   ao nº de devoluções, tipicamente poucas).
+  **Filtro de reprocesso (2026-08-18, corte de egress):** a varredura re-upsertava TODA pergunta e
+  TODO claim a cada hora, mesmo sem mudança — medido em 17/08: 87 das 88 perguntas `ANSWERED` e
+  imutáveis, 67 dos 88 claims fechados há mais de 7 dias, ~19 mil requisições PostgREST/dia para
+  regravar dado idêntico. Agora carrega o estado local em lote (`carregarPerguntasLocais`,
+  `carregarDevolucoesLocais` — em blocos de 200 ids, porque `in.()` vai na URL e a resposta tem
+  teto de 1000 linhas) e só processa o que os predicados puros de
+  `_shared/faturamento/reconciliar-filtros.ts` marcarem. Pergunta: processa se nova, se
+  status/resposta/título mudaram, ou enquanto faltar `comprador_nick` resolvível (título **nulo**
+  não conta — `buscarTituloItem` devolve null em erro e o upsert apagaria o título bom). Claim:
+  processa se novo, aberto, se `status`/`stage` divergirem do gravado, enquanto
+  `return_status_money` não estiver em estado final, ou dentro de `GRACA_CLAIM_DIAS = 7` do
+  fechamento — a graça existe porque `return_status_money` vem de `GET /returns` e muda de forma
+  **invisível** no payload do claim. O predicado vive no chamador periódico, **não** dentro de
+  `upsertPergunta`/`upsertDevolucao`: essas funções também servem o caminho de webhook
+  (`sync-pergunta`, `sync-devolucao`), que dispara justamente porque algo mudou. Efeito colateral
+  bom: `upsertDevolucao` parou de bater `ml_vendas.atualizado_em` de hora em hora nas vendas com
+  devolução, o que fazia o delta-poll do frontend (ADR-0082) devolver linhas em todo tick.
+  **Memo de catálogo:** os passos 1 e 2 carregavam o MESMO catálogo da org duas vezes por execução
+  (cada carga pagina `familias` + `variacoes` + `anuncios_externos_itens` inteiras — 6 páginas em
+  08/2026). `memoCatalogo(admin)` (`_shared/faturamento/io.ts`) guarda a Promise por `userId` com
+  escopo de **invocação**; cache de módulo serviria catálogo velho enquanto o isolate estiver quente.
 
 ### Monitoramento / alertas
 - **monitorar-moderados** — varre publicados, detecta moderação nova/resolvida, alerta Telegram

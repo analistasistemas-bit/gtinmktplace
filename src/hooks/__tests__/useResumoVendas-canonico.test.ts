@@ -66,7 +66,7 @@ describe('useResumoVendas — canonicoPronto', () => {
   });
 
   it('mapa resolvido: flag true e a venda de catálogo soma na chave do anúncio dono', () => {
-    const r = montar({ data: { CATALOGO: 'MEU' }, isSuccess: true, isError: false });
+    const r = montar({ data: { listings: { CATALOGO: 'MEU' } }, isSuccess: true, isError: false });
     expect(r.canonicoPronto).toBe(true);
     expect(r.resumo.porItem.MEU.unidades).toBe(2);
     expect(r.resumo.porItem.CATALOGO).toBeUndefined();

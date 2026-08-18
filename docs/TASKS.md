@@ -22,6 +22,88 @@
 - [x] **Documentação.** ADR-0120 e Errata 9 do ADR-0119 registrados; glossário e índice de ADRs
   no vault atualizados; `docs/reference/edge-functions.md` e `docs/reference/modelo-de-dados.md`
   cobrem o shape novo (edge nova, passo 7, coluna/view).
+## Egress PostgREST estourando a cota do Free Plan — 2026-08-18
+
+- [x] **Incidente.** Supabase avisou que restringiria os projetos da org em 18/08 por consumo:
+  4,98 GB de 5 GB no ciclo 24/07–24/08, com **PostgREST = 93,4% do egress** (172,7 MB só em 17/08)
+  e piso noturno constante — sinal de tráfego automático, não de uso humano.
+- [x] **Diagnóstico (read-only, `edge_logs` 24h + `pg_stat_statements`).** Não era payload gordo
+  nem o frontend (já corrigido em ADR-0081/0082, <1 MB/dia): era **volume de requisições dos
+  workers de faturamento** — ~155 mil requests REST/dia. `upsertVenda` gasta 6 requisições por
+  venda e era re-executado para cada venda a cada hora, mesmo sem mudança: 870 mil upserts em
+  `ml_vendas` desde maio para 1.734 vendas (~500 regravações por venda). Relatório completo em
+  `docs/analise-egress-postgrest.md`.
+- [x] **Correção 1 — schedule do `backfill-faturamento`: `30 * * * *` → `30 6 * * *`** (24×/dia →
+  1×/dia, 03:30 BRT). Só QStash, sem código. A rede de segurança de 7 dias re-varrida de hora em
+  hora era redundância tripla sobre webhook + `reconciliar-faturamento` (72h). **−33 MB/dia.**
+- [x] **Correção 3 — `memoCatalogo`** (`_shared/faturamento/io.ts`): o `reconciliar-faturamento`
+  carregava o mesmo catálogo da org duas vezes por execução (passo de claims e passo de vendas),
+  cada carga paginando `familias` + `variacoes` + `anuncios_externos_itens` inteiras (5.395
+  variações = 6 páginas). Memo por **invocação** (guarda a Promise, não o valor — dedup de
+  concorrência); cache de módulo não serve porque vive por isolate e entregaria catálogo velho.
+  **−12 a 20 MB/dia.**
+- [x] **Correção 4 — filtro de reprocesso** (`_shared/faturamento/reconciliar-filtros.ts`, puro e
+  testado): estado local carregado em lote e só processa o que mudou. Medido antes do fix: 87 das
+  88 perguntas `ANSWERED`/imutáveis e 67 dos 88 claims fechados há >7 dias, todos regravados de
+  hora em hora. Predicado de claim mantém graça de 7 dias pós-fechamento e nunca pula dinheiro em
+  trânsito (`return_status_money` vem de `GET /returns` e muda **invisível** no payload do claim).
+  Predicado vive no chamador periódico, não em `upsertPergunta`/`upsertDevolucao` — essas servem o
+  webhook, que dispara porque algo mudou. **−8 a 10 MB/dia**, mais o fim do bump horário de
+  `ml_vendas.atualizado_em` que fazia o delta-poll do frontend devolver linhas em todo tick.
+- [x] **Testes:** `reconciliar-filtros.test.ts` — 21 casos, cada "pula" com o simétrico "não pula".
+  Suíte 3353/3353, `deno lint`/`deno check` zerados, `pnpm lint` 0 erros.
+- [x] **Validado em produção** (2026-08-18 00:5x UTC, duas execuções disparadas via QStash, números
+  idênticos nas duas = convergiu): `perguntas 0/85` e `0/2` — **nenhuma escrita em `ml_perguntas`
+  em 25 min**, contra 87 upserts/hora antes; `claims 37/96` e `2/17`, com **14 escritas** em
+  `ml_devolucoes` no lugar de 88+. `ml_vendas` seguiu com 287 escritas — é a correção 2, intocada.
+- [ ] **Achado durante a validação: ~25 claims que NUNCA convergem.** O ML devolve 113 claims, mas
+  `ml_devolucoes` tem 88 linhas: a diferença são claims em que a conta é a **compradora**, que
+  `upsertDevolucao` descarta via `ehClaimDeCompra` sem gravar nada. Como não gravam, o predicado os
+  vê como "novos" toda hora e eles são reprocessados para sempre — ~8 requisições REST cada,
+  ~4,8 mil/dia (~2,6 MB/dia). Pior: o `index.ts` ignora o `ignorado: true` do retorno e ainda roda
+  `buscarPedido` + `upsertVenda` num pedido que não é venda nossa. Fix candidato: filtrar por
+  `ehClaimDeCompra` antes do loop. Não entrou aqui por estar fora do escopo pedido — precisa
+  confirmar que nenhum desses pedidos deva mesmo virar venda.
+- [ ] **`backfill-faturamento` continua sem o filtro.** Importa os mesmos `perguntas-io` /
+  `devolucoes-io` e faz a varredura sem filtrar. Inofensivo a 1×/dia, mas se alguém restaurar o
+  cron horário o desperdício volta inteiro — `memoCatalogo` e os predicados já estão prontos para
+  reuso lá.
+- [ ] **Correção 2 (pendente, maior alavanca restante): early-exit no `upsertVenda`** por
+  `date_last_updated` — **−45 a 55 MB/dia**. Não feita nesta entrega: é código financeiro e o
+  critério de "nada mudou" precisa cobrir `shipment`/frete/`money_release`, que vêm de FORA do
+  pedido. Exige ADR + trava de teste. **Sem ela, o esperado com 1+3+4 é ~85–105 MB/dia**
+  (≈3,1–3,6 GB/mês contra os 5 GB do plano) — passa da cota, mas com folga estreita. E o ciclo
+  atual (até 24/08) já queimou 4,98 GB: estas correções protegem o ciclo SEGUINTE, não este.
+
+## Vendas por anúncio: irmão legado sem vínculo sumia da tela — 2026-08-17
+
+- [x] **Bug (reportado por Diego).** "Unid. vendidas" e "Valor vendido" abaixo do real em vários
+  produtos. Causa: a atribuição casa `ml_vendas_itens.ml_item_id` com o anúncio listado; produto que
+  já vendia no ML como **N anúncios (um MLB por cor/estampa)** entrou no app com só um MLB
+  vinculado, e as vendas dos irmãos ficavam órfãs — nenhuma linha as recebia. Medido na org AVIL
+  (90 dias): **18 MLBs órfãos, 89 un, R$ 5.450**. Caso do print — Helanca `26705343`: tela mostrava
+  **7 un / R$ 538,30**, real **49 un / R$ 3.757,28** (9 anúncios, um por cor).
+- [x] **Fix (adendo do ADR-0045, sem ADR novo).** O critério é o GTIN, o mesmo que o ingest já usa
+  (`_shared/faturamento/venda.ts` marca `is_publiai` por EAN) — o frontend passou a aplicá-lo na
+  chave de agregação. `MapaCanonico` (`src/lib/anuncio-canonico.ts`) ganhou `gtins` e `conhecidos`;
+  `canonizarItem(mlItemId, mapa, ean?)` resolve na ordem: vínculo de catálogo → MLB que o app já
+  lista (dono de si) → GTIN → o próprio MLB.
+- [x] **Guard contra falso positivo.** GTIN que aponta para mais de um anúncio é descartado do mapa
+  — é a assinatura de kit x unidade (ADR-0071) e split por faixa (ADR-0078/0048), que o ADR-0045
+  temia fundir. Ambiguidade real: 11 de 3.170 GTINs (0,35%). O `ean` é **opt-in**: `fotos-produto` e
+  `cor-produto` seguem sem ele e não mudam de comportamento.
+- [x] **Menus corrigidos:** Publicados (colunas por anúncio, Encalhados, Top produtos, export),
+  Dashboard (Top produtos + PDF), Detalhe de vendas. KPIs monetários (bruto/líquido/pedidos) não
+  eram afetados — agregam por pack. Estoque, Pulse e Geografia não usam essa chave.
+- [x] **Testes:** `irmao-legado-vendas.test.ts` (6 casos: os 3 agregadores + GTIN ambíguo + anúncio
+  já listado + degradação sem mapa), casos novos em `anuncio-canonico.test.ts` e em
+  `tests/pages/Publicados.test.tsx` (renderiza 7 → 49). Suíte: 3.331 testes verdes, lint sem erro,
+  `tsc -b --force` limpo.
+- [x] **Validação em runtime:** queries novas conferidas no PostgREST real (embed e filtros) e app
+  local aberto no navegador com a tela Publicados renderizando sem erro de console.
+- [ ] **Resíduo declarado:** 5 dos 18 MLBs órfãos (**R$ 1.999,92** — Oxford Natal `02710170` e o
+  item `00000033`) têm `variacoes.gtin = null`; sem EAN nenhum critério de GTIN os alcança.
+  Resolver exige vincular os MLBs irmãos como anúncios do produto (mudança de modelo, ADR próprio).
 
 ## Publicados — "Corrigir e republicar" pausa o anúncio Legacy no ML — 2026-08-17
 

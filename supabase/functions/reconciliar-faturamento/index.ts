@@ -6,10 +6,12 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
-import { buscarPedidosPeriodo, buscarPedido, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
+import { buscarPedidosPeriodo, buscarPedido, memoCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
 import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
-import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
-import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta, carregarPerguntasLocais } from '../_shared/faturamento/perguntas-io.ts';
+import { buscarClaimsSeller, buscarReturn, upsertDevolucao, carregarDevolucoesLocais } from '../_shared/faturamento/devolucoes-io.ts';
+import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
+import { perguntaPrecisaUpsert, claimPrecisaProcessar } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
@@ -40,6 +42,8 @@ Deno.serve(async (req) => {
   const restante = () => ORCAMENTO_MS - (Date.now() - inicio);
 
   const admin = adminClient();
+  // Memo por invocação: claims (passo 1) e vendas (passo 2) usam o MESMO catálogo por org.
+  const catalogoDe = memoCatalogo(admin);
   const ate = new Date();
   const desde = new Date(ate.getTime() - JANELA_HORAS * 60 * 60 * 1000);
   const intervalo = { desde: desde.toISOString(), ate: ate.toISOString() };
@@ -91,7 +95,20 @@ Deno.serve(async (req) => {
           try { titulos.set(itemId, await buscarTituloItem(token, itemId)); } catch { /* segue sem título */ }
         }));
       }
-      for (const lote of chunk(perguntas, PARALELAS)) {
+      // Só regrava o que mudou. Pergunta respondida no ML é imutável, e a varredura horária
+      // reescrevia todas elas (2 requisições cada) para nada — ver reconciliar-filtros.ts.
+      const locais = await carregarPerguntasLocais(
+        admin, userId, perguntas.map((q) => Number(q.id)).filter((n) => Number.isFinite(n)),
+      );
+      const pendentes = perguntas.filter((q) => {
+        const row = mapearPergunta(q);
+        const itemId = q.item_id ?? null;
+        return perguntaPrecisaUpsert(row, itemId ? titulos.get(itemId) ?? null : null, locais.get(row.question_id));
+      });
+      if (pendentes.length < perguntas.length) {
+        console.log(`reconciliar: perguntas org ${orgId} — ${pendentes.length}/${perguntas.length} precisam de upsert`);
+      }
+      for (const lote of chunk(pendentes, PARALELAS)) {
         await Promise.all(lote.map(async (q) => {
           try {
             const itemId = q.item_id ?? null;
@@ -102,9 +119,20 @@ Deno.serve(async (req) => {
     } catch { /* segue */ }
 
     try {
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
       const claims = await buscarClaimsSeller(token);
-      for (const lote of chunk(claims, PARALELAS)) {
+      // Reprocessar um claim custa ~8 requisições REST (return + devolução + pedido + venda
+      // inteira). Claim fechado há semanas, com dinheiro resolvido e mesmo status/stage, não tem
+      // o que atualizar — ver reconciliar-filtros.ts. Filtra ANTES de buscar o return no ML.
+      const locaisDev = await carregarDevolucoesLocais(
+        admin, userId, claims.map((c) => Number(c.id)).filter((n) => Number.isFinite(n)),
+      );
+      const agoraMs = Date.now();
+      const claimsPendentes = claims.filter((c) => claimPrecisaProcessar(c, locaisDev.get(Number(c.id)), agoraMs));
+      if (claimsPendentes.length < claims.length) {
+        console.log(`reconciliar: claims org ${orgId} — ${claimsPendentes.length}/${claims.length} precisam de reprocesso`);
+      }
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
+      for (const lote of chunk(claimsPendentes, PARALELAS)) {
         await Promise.all(lote.map(async (claim) => {
           try {
             const ret = await buscarReturn(token, String(claim.id));
@@ -136,7 +164,7 @@ Deno.serve(async (req) => {
     const { userId, orgId, token } = e;
     try {
       const pedidos = await buscarPedidosPeriodo(token, intervalo);
-      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
       const [liquidoPorPayment, gtinPorItem] = await Promise.all([
         carregarLiquidoMP(token, Number(e.cx.contaExternaId)),
         carregarGtinsFallback(token, pedidos, idsPubliai),

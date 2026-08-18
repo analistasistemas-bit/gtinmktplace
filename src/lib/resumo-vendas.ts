@@ -176,9 +176,10 @@ export function calcularResumo(
     for (const it of v.itens) {
       unidades += it.quantity;
       if (it.ml_item_id) {
-        // Venda por catálogo chega com o MLB do anúncio de catálogo: soma na linha do anúncio
-        // dono, senão some da tela Publicados (que lista só o MLB próprio). Ver anuncio-canonico.ts.
-        const chave = canonizarItem(it.ml_item_id, canonico);
+        // Venda por catálogo (ou por anúncio irmão legado, resolvido pelo GTIN) chega com um MLB
+        // que a tela Publicados não lista: soma na linha do anúncio dono, senão some da tela.
+        // Ver anuncio-canonico.ts.
+        const chave = canonizarItem(it.ml_item_id, canonico, it.ean);
         const acc = porItem[chave] ?? { unidades: 0, valor: 0 };
         acc.unidades += it.quantity;
         acc.valor += it.unit_price * it.quantity;

@@ -8,6 +8,35 @@ atualizado: 2026-08-13
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
+## 2026-08-18 — Supabase ameaçou restringir a org por egress de PostgREST
+
+4,98 GB de 5 GB do plano Free no ciclo 24/07–24/08, com **PostgREST em 93,4%** do egress (172,7 MB
+só em 17/08) e piso noturno constante — sinal de tráfego automático, não humano.
+
+**Causa:** não era payload gordo nem o frontend (já corrigido em ADR-0081/0082, <1 MB/dia). Era
+**volume**: ~155 mil requisições REST/dia dos workers de faturamento reescrevendo dado idêntico de
+hora em hora. `upsertVenda` gasta 6 requisições por venda e era re-executado para cada venda a cada
+hora — 870 mil upserts em `ml_vendas` desde maio para 1.734 vendas (~500 regravações por venda).
+Medido em 17/08: 87 das 88 perguntas `ANSWERED` e imutáveis, 67 dos 88 claims fechados há >7 dias.
+
+**Correções aplicadas:** schedule do `backfill-faturamento` de `30 * * * *` para `30 6 * * *`
+(24×/dia → 1×/dia); `memoCatalogo` (o `reconciliar-faturamento` carregava o mesmo catálogo da org
+duas vezes por execução); e filtro de reprocesso puro (`_shared/faturamento/reconciliar-filtros.ts`)
+que só regrava pergunta/claim que mudou. Validado em produção com duas execuções idênticas:
+perguntas 0/87 processadas, claims 39/113.
+
+**Pendente e maior alavanca restante:** early-exit no `upsertVenda` (−45 a 55 MB/dia). É código
+financeiro — o critério de "nada mudou" precisa cobrir `shipment`/frete/`money_release`, que vêm de
+fora do pedido. Sem ele o consumo fica em ~85–105 MB/dia: abaixo da cota, mas com folga estreita.
+
+**Lições:** (1) egress de PostgREST é dominado por **contagem de requisições**, não por tamanho de
+resposta — cada resposta carrega ~500 B de header; (2) um predicado de "pulei porque nada mudou"
+pertence ao chamador periódico, nunca dentro do upsert compartilhado com o caminho de webhook, que
+dispara justamente porque algo mudou; (3) `pg_stat_statements.rows` é inútil como proxy de egress
+no PostgREST (toda resposta é uma linha `json_agg`).
+
+Detalhe completo em `docs/analise-egress-postgrest.md` e `docs/TASKS.md`.
+
 ## 2026-08-13 — "perguntas quadriplicadas" na fila: não era duplicação
 
 Reportado como bug de sync: a mesma pergunta ("Possui a Cor 2931 Nautico") aparecia 4–5 vezes em

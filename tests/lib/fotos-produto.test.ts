@@ -57,7 +57,7 @@ describe('montarFotoResolver — venda por catálogo (ADR-0045)', () => {
   it('canonicaliza o MLB de catálogo pro MLB do anúncio dono antes de bater no porItem', () => {
     const resolver = montarFotoResolver(
       mapas({ porItem: new Map([['MLB_DONO', 'org/lote/variacao.jpg']]) }),
-      { MLB_CATALOGO: 'MLB_DONO' },
+      { listings: { MLB_CATALOGO: 'MLB_DONO' } },
     );
 
     expect(resolver(item({ ml_item_id: 'MLB_CATALOGO' }))).toBe('org/lote/variacao.jpg');
@@ -66,7 +66,7 @@ describe('montarFotoResolver — venda por catálogo (ADR-0045)', () => {
   it('canonicaliza também no fallback da capa da família (cadastro avulso vendido por catálogo)', () => {
     const resolver = montarFotoResolver(
       mapas({ porItemCapa: new Map([['MLB_DONO', 'org/lote/fam-capa.png']]) }),
-      { MLB_CATALOGO: 'MLB_DONO' },
+      { listings: { MLB_CATALOGO: 'MLB_DONO' } },
     );
 
     expect(resolver(item({ ml_item_id: 'MLB_CATALOGO', codigo: '00000023', ean: '609963220755' })))

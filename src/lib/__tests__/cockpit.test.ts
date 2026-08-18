@@ -32,7 +32,7 @@ describe('topProdutos', () => {
     const top = topProdutos([
       venda({ itens: [item({ ml_item_id: 'MEU', titulo: 'Protetor Eucerin', quantity: 3, unit_price: 100 })] }),
       venda({ itens: [item({ ml_item_id: 'CAT', titulo: 'Eucerin (título do catálogo)', quantity: 2, unit_price: 100 })] }),
-    ], 5, { CAT: 'MEU' });
+    ], 5, { listings: { CAT: 'MEU' } });
     expect(top).toHaveLength(1);
     expect(top[0]).toMatchObject({ mlItemId: 'MEU', titulo: 'Protetor Eucerin', unidades: 5, valor: 500 });
   });

@@ -16,15 +16,16 @@ export interface ProdutoTop {
 }
 
 /** Top N anúncios por valor vendido (bruto) no período, das vendas faturáveis.
- *  `canonico` funde a venda que entrou pelo anúncio de catálogo no anúncio dono (ver
- *  `anuncio-canonico.ts`) — o título exibido é sempre o do anúncio original. */
+ *  `canonico` funde no anúncio dono a venda que entrou por um MLB que a tela não lista — anúncio de
+ *  catálogo (vínculo) ou irmão legado (GTIN), ver `anuncio-canonico.ts`. O título exibido é sempre
+ *  o do anúncio original. */
 export function topProdutos(vendas: Venda[], n = 5, canonico?: MapaCanonico): ProdutoTop[] {
   const m = new Map<string, { titulo: string; tituloDono: string | null; unidades: number; valor: number }>();
   for (const v of vendas) {
     if (!ehFaturavel(v.status)) continue;
     for (const it of v.itens) {
       if (!it.ml_item_id) continue;
-      const chave = canonizarItem(it.ml_item_id, canonico);
+      const chave = canonizarItem(it.ml_item_id, canonico, it.ean);
       const acc = m.get(chave) ?? { titulo: it.titulo ?? chave, tituloDono: null, unidades: 0, valor: 0 };
       if ((!acc.titulo || acc.titulo === chave) && it.titulo) acc.titulo = it.titulo;
       if (it.ml_item_id === chave && it.titulo) acc.tituloDono ??= it.titulo;
