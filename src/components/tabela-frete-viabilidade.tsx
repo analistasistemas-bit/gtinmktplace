@@ -51,7 +51,7 @@ export function TabelaFreteViabilidade({ categoriaMlId, categoriasMistas, analis
     );
   }
 
-  if (!isTabelaFrete(data)) return null;
+  if (!data || !isTabelaFrete(data)) return null;
 
   const { faixasPreco, faixasPeso, celulas } = data;
 
