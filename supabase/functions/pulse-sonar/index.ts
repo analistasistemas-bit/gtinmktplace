@@ -13,7 +13,10 @@ import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
 import { montarPainelSonar, parseFichasBusca, parseVisitasJanela, resumoPrecos, type FichaBusca, type ResultadoFicha } from '../_shared/pulse/sonar.ts';
 
 const API = 'https://api.mercadolibre.com';
-const FICHAS_POR_BUSCA = 20; // ponytail: teto fixo; paginação "carregar mais" quando provar demanda
+const FICHAS_POR_BUSCA = 40; // ponytail: teto fixo; paginação "carregar mais" quando provar demanda.
+// Dobrado de 20 — o topo do /products/search vem cheio de ficha sem vendedor ativo (404 "No
+// winners found" em /products/{id}/items); fichas vazias são baratas (curto-circuitam antes de
+// categoria/visitas/vendedores), então o dobro de fichas não dobra o volume de chamadas ao ML.
 const LOTE_CONCORRENCIA = 5; // teto de fichas em paralelo, para não estourar rate limit do ML
 const CACHE_TTL_S = 24 * 60 * 60; // dado público; chave global sem org_id (ADR-0120 §3)
 const normalizarTermo = (t: string) => t.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -62,6 +65,10 @@ const resultadoVazio = (): ResultadoFicha => ({
 async function processarFicha(ficha: FichaBusca, token: string, sellerCache: Map<number, InfoVendedor>): Promise<ResultadoFicha> {
   const ofertasJson = await mlGet(`${API}/products/${ficha.product_id}/items`, token);
   const ofertas = parseOfertasProduto(ofertasJson);
+  // Ficha sem vendedor ativo (404 "No winners found" ou results: [] mesmo com 200): não vale
+  // gastar categoria/visitas/vendedores nela. Entra no painel como "sem vendedor ativo".
+  if (ofertas.length === 0) return resultadoVazio();
+
   const naoLidas = ofertasNaoLidas(ofertasJson);
   const freteGratisPct = ofertas.length
     ? Math.round((ofertas.filter((o) => o.frete_gratis).length / ofertas.length) * 100)
@@ -110,7 +117,9 @@ Deno.serve(async (req) => {
   const normalizado = normalizarTermo(termo);
   if (normalizado.length < 3) return json({ erro: 'termo obrigatório (mínimo 3 caracteres)' }, 400);
 
-  const chave = `sonar:v1:MLB:${normalizado}`;
+  // v2: bump por causa da mudança de comportamento nas fichas sem vendedor ativo — um resultado
+  // v1 já cacheado para o termo de teste ficaria servindo o shape antigo por até 24h.
+  const chave = `sonar:v2:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return json(JSON.parse(cacheado));
 
