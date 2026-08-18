@@ -784,7 +784,7 @@ falha ao ler `organizations` não libera.
   dado bom (só escreve quando o mapa tem data; leitura do MP falha → passo não roda). Venda cuja
   data corrigida cai em dia já passado e nunca notificada recebe `liberacao_notificada_em` daquele
   dia — a notificação diária só olha o dia corrente, e marcar evita que o backlog dispare de uma
-  vez se a janela do Telegram mudar. Resposta ganhou `liberacoesCorrigidas`. Redeploy: **v69**.
+  vez se a janela do Telegram mudar. Resposta ganhou `liberacoesCorrigidas`. Redeploy: **v71**.
   Rede de segurança: re-sincroniza as últimas ~72h
   de todos os usuários com credencial (cobre webhooks perdidos) e re-sincroniza o estorno/líquido via Mercado Pago das vendas associadas a devoluções/claims (resolvendo `order_id` por `shipping_id` se o claim for de `shipment`), sem limite de janela — `buscarClaimsSeller` varre TODOS os
   claims opened+closed do vendedor (a **varredura no ML** segue completa; o que passou a ser

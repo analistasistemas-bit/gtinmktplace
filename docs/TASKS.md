@@ -17,7 +17,7 @@
   zero requisições extras). `mapaLiberacaoPorOrder` (puro, 3 testes) + `reconciliarLiberacoes`.
 - [x] **Verificado em produção (18/08):** divergentes 222 → **0**; dia 17/08 passou a ter 26 vendas
   / R$ 1.320,92 contra 26 pagamentos / R$ 1.302,95 de net no MP — a diferença de R$ 17,97 são os 3
-  pagamentos de frete que o MP credita à parte. Deploy `reconciliar-faturamento` v69.
+  pagamentos de frete que o MP credita à parte. Deploy `reconciliar-faturamento` v71.
 - [ ] **Em aberto (decisão do Diego):** a notificação do Telegram só avisa o que libera no dia
   corrente. Liberação descoberta com atraso pela reconciliação não gera aviso. Ampliar para janela
   retroativa exige decidir o tamanho e o tratamento do backlog histórico.
