@@ -86,6 +86,7 @@ async function analisarItem(
       frete,
       dimensoesEncontradas: dimensoes != null,
       descricaoCatalogo: conc.descricao_catalogo ?? null,
+      categoriaMlId: categoria,
       // Heurística de UX (casa por GTIN) — não é o guard; o 409 de cadastrar-produto continua autoritativo.
       jaCadastrado: salva.jaCadastrado,
     };

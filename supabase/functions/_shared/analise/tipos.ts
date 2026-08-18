@@ -59,6 +59,8 @@ export interface ItemAnalisado {
   jaCadastrado?: boolean;
   /** true quando a busca/comissão falhou para este item (os demais seguem). */
   erro?: boolean;
+  /** category_id ML da oferta de catálogo (quando existeNoML). */
+  categoriaMlId?: string | null;
 }
 
 export interface RespostaAnalise {

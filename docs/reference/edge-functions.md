@@ -76,6 +76,7 @@
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
 | metricas-vendas | true | HTTP (frontend) | sim (leitura) |
 | analisar-viabilidade | true | HTTP (frontend) | não |
+| tabela-frete-ml | true | HTTP (frontend) | sim (cache 24h) |
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
 | **Acesso / usuários** ||||
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
@@ -963,6 +964,7 @@ falha ao ler `organizations` não libera.
   (`BRAND`, `SALE_FORMAT`, `UNITS_PER_PACK`…), e peso/medidas são `SELLER_PACKAGE_*`, atributo
   do anúncio de cada vendedor.
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
+- **tabela-frete-ml** — grade compacta 7×4 (faixas de peso × preço) do frete que o vendedor absorve, para a Viabilidade. Body `{ categoria_ml_id }`; varre ~28 combinações via `shipping_options/free` (batch 5); cache Redis 24h `tabela-frete:v1:{org}:{categoria}`. Sem ME2 → `{ indisponivel: true, motivo: 'sem_me2' }`.
 
 ### Acesso / usuários
 

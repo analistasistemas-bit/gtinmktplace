@@ -90,6 +90,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.analisar-viabilidade]
 verify_jwt = true
+[functions.tabela-frete-ml]
+verify_jwt = true
 [functions.metricas-vendas]
 verify_jwt = true
 [functions.ml-webhook]

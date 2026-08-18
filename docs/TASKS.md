@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Tabela de frete ML na Viabilidade — 2026-08-18
+
+- [x] **Edge `tabela-frete-ml`** (`verify_jwt=true`): grade compacta 7×4 (peso × preço) via
+  `shipping_options/free`, cache Redis 24h por org+categoria. Retorna `{ indisponivel, motivo: 'sem_me2' }`
+  quando a conta não tem Mercado Envios.
+- [x] **Frontend:** card na Viabilidade após analisar (≥1 item `existeNoML`), com aviso de categorias
+  mistas. `categoriaMlId` exposto em `ItemAnalisado`.
+- [ ] **Deploy:** `supabase functions deploy tabela-frete-ml` após merge.
+
 ## Sonar — veredito de oportunidade (ADR-0124) — 2026-08-18
 
 - [x] **Card de veredito no topo do Sonar** (🟢 alta / 🟡 média / 🔴 baixa + frase de motivo):
