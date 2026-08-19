@@ -394,9 +394,9 @@ export default function PulseSonar() {
       sortValue: (i) => i.posicao,
     },
     {
-      key: 'anuncio', header: 'Anúncio', className: 'max-w-xs',
+      key: 'anuncio', header: 'Anúncio', className: 'max-w-[190px]',
       cell: (i) => (
-        <div className="flex max-w-xs items-center gap-2">
+        <div className="flex max-w-[190px] items-center gap-2">
           {i.imagem && <img src={i.imagem} alt="" className="h-9 w-9 shrink-0 rounded bg-white object-contain" />}
           <div className="min-w-0">
             <span className="block truncate" title={i.titulo}>{i.titulo}</span>
@@ -433,14 +433,14 @@ export default function PulseSonar() {
       sortValue: (i) => i.preco,
     },
     {
-      key: 'vendidos', header: 'Vendidos (acum.)', className: 'tabular-nums',
+      key: 'vendidos', header: 'Vendidos', className: 'tabular-nums',
       cell: (i) => i.vendidos == null
         ? <span title="O ML não exibe o dado para este anúncio">—</span>
         : <span title="Acumulado da vida do anúncio, faixa piso do ML — não é ritmo">+{fmtMilhar(i.vendidos)}</span>,
       sortValue: (i) => i.vendidos,
     },
     {
-      key: 'faturamento', header: 'Faturamento (acum.)', className: 'tabular-nums',
+      key: 'faturamento', header: 'Faturamento', className: 'tabular-nums',
       cell: (i) => i.vendidos == null || i.preco == null
         ? <span title="Sem vendidos ou preço — não derivamos">—</span>
         : <span title="≈ vendidos × preço atual — o preço pode ter variado ao longo da vida">≈ {fmtBRL(i.vendidos * i.preco)}</span>,
@@ -457,7 +457,7 @@ export default function PulseSonar() {
       sortValue: (i) => i.avaliacao_nota,
     },
     {
-      key: 'visitas', header: 'Visitas (30d)', className: 'tabular-nums',
+      key: 'visitas', header: 'Visitas', className: 'tabular-nums',
       cell: (i) => {
         const v = i.item_id != null ? visitasPorItem.get(i.item_id) ?? null : null;
         // D8: null = falha/sem conexão → "—"; {total: 0} = ZERO MEDIDO → "0".
@@ -472,10 +472,12 @@ export default function PulseSonar() {
       sortValue: (i) => (i.item_id != null ? visitasPorItem.get(i.item_id)?.total ?? null : null),
     },
     {
-      key: 'vendedor', header: 'Loja', className: 'text-xs',
+      key: 'vendedor', header: 'Loja', className: 'max-w-[140px] text-xs',
       cell: (i) => (
-        <div className="flex items-center gap-1">
-          {i.vendedor ?? <span title="A amostra não identifica o rótulo de loja deste anúncio (cobertura ~65%)">—</span>}
+        <div className="flex min-w-0 items-center gap-1">
+          {i.vendedor
+            ? <span className="truncate" title={i.vendedor}>{i.vendedor}</span>
+            : <span title="A amostra não identifica o rótulo de loja deste anúncio (cobertura ~65%)">—</span>}
           {i.loja_oficial === true && <Badge variant="secondary">Oficial</Badge>}
         </div>
       ),
@@ -495,7 +497,7 @@ export default function PulseSonar() {
       },
     },
     {
-      key: 'acao', header: '',
+      key: 'acao', header: '', stickyRight: true,
       cell: (i) => {
         // D15: prioridade ao link da Apify (se bem formado); fallback = URL canônica do item_id.
         const href = linkDoAnuncio(i.link, i.item_id ?? '');

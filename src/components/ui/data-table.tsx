@@ -18,6 +18,8 @@ export interface Column<T> {
   className?: string;
   /** Valor usado para ordenar esta coluna. Presente = cabeçalho vira botão de ordenação. */
   sortValue?: (row: T) => string | number | null;
+  /** Opt-in: fixa a coluna à direita (sticky) para sobreviver ao scroll horizontal — ex.: ações. */
+  stickyRight?: boolean;
 }
 
 export type SortDir = 'asc' | 'desc';
@@ -89,7 +91,10 @@ export function DataTable<T>({
               return (
                 <TableHead
                   key={c.key}
-                  className={c.className}
+                  className={cn(
+                    c.className,
+                    c.stickyRight && 'sticky right-0 z-20 border-l bg-muted/50 backdrop-blur',
+                  )}
                   // aria-sort pertence ao cabeçalho da coluna, não ao botão dentro dele.
                   aria-sort={c.sortValue ? (ativa ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none') : undefined}
                 >
@@ -126,7 +131,12 @@ export function DataTable<T>({
             Array.from({ length: skeletonRows }).map((_, i) => (
               <TableRow key={`sk-${i}`}>
                 {columns.map((c) => (
-                  <TableCell key={c.key}><Skeleton className="h-4 w-full" /></TableCell>
+                  <TableCell
+                    key={c.key}
+                    className={cn(c.stickyRight && 'sticky right-0 z-10 border-l bg-background')}
+                  >
+                    <Skeleton className="h-4 w-full" />
+                  </TableCell>
                 ))}
               </TableRow>
             ))
@@ -167,7 +177,15 @@ export function DataTable<T>({
                 }
               >
                 {columns.map((c) => (
-                  <TableCell key={c.key} className={c.className}>{c.cell(row)}</TableCell>
+                  <TableCell
+                    key={c.key}
+                    className={cn(
+                      c.className,
+                      c.stickyRight && 'sticky right-0 z-10 border-l bg-background',
+                    )}
+                  >
+                    {c.cell(row)}
+                  </TableCell>
                 ))}
               </TableRow>
             ))
