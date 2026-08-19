@@ -89,6 +89,30 @@ describe('calcularSimulacaoML', () => {
     expect(resultado.veredito.tipo).toBe('Dados insuficientes')
   })
 
+  it('derives manual Premium commission five points above Classic', () => {
+    const cotacaoManualSemPremium = {
+      origem: 'manual',
+      classico: {
+        percentualComissaoPct: 11.5,
+        taxaFixa: 0,
+        comissaoTotal: 11.5,
+        frete: 16.15,
+        proveniencia: 'estimated',
+      },
+    } as unknown as CotacoesPorModalidade
+
+    const resultado = calcularSimulacaoML(entradaBase, cotacaoManualSemPremium)
+
+    expect(resultado.modalidades.premium?.custos.comissao).toBe(16.5)
+  })
+
+  it('downgrades results to estimated when no category was provided', () => {
+    const resultado = calcularSimulacaoML(entradaBase, cotacoesBase)
+
+    expect(resultado.modalidades.classico?.proveniencia).toBe('estimated')
+    expect((resultado as { proveniencia?: string }).proveniencia).toBe('estimated')
+  })
+
   it('calculates max purchase cost and marks current-quote target price as a projection', () => {
     const resultado = calcularSimulacaoML(
       { ...entradaBase, margemAlvoPct: 12 },

@@ -23,6 +23,7 @@ export interface EntradaCalculadoraML {
   rebate: number
   margemAlvoPct: number
   dimensoes?: DimensoesProduto
+  categoriaId?: string
   modalidadeParaDecisao?: ModalidadeML
 }
 
@@ -34,10 +35,20 @@ export interface CustosModalidadeML {
   proveniencia: Proveniencia
 }
 
-export interface CotacoesPorModalidade {
+export interface CotacoesOficiaisPorModalidade {
+  origem?: 'official'
   classico: CustosModalidadeML
   premium: CustosModalidadeML
 }
+
+export interface CotacaoManualPorModalidade {
+  origem: 'manual'
+  classico: CustosModalidadeML
+}
+
+export type CotacoesPorModalidade =
+  | CotacoesOficiaisPorModalidade
+  | CotacaoManualPorModalidade
 
 export interface DecomposicaoCustosML {
   custoProduto: number
@@ -80,6 +91,7 @@ export interface VereditoML {
 
 export interface ResultadoCalculadoraML {
   peso: PesoUtilizado | null
+  proveniencia: Proveniencia
   modalidades: Record<ModalidadeML, ResultadoModalidadeML | null>
   veredito: VereditoML
 }
@@ -110,14 +122,16 @@ export function calcularSimulacaoML(
   validarEntrada(entrada)
 
   const peso = calcularPesoUtilizado(entrada.dimensoes)
+  const cotacoesNormalizadas = normalizarCotacoes(entrada, cotacoes)
   const modalidades: ResultadoCalculadoraML['modalidades'] = {
-    classico: calcularModalidade(entrada, cotacoes?.classico),
-    premium: calcularModalidade(entrada, cotacoes?.premium),
+    classico: calcularModalidade(entrada, cotacoesNormalizadas.classico),
+    premium: calcularModalidade(entrada, cotacoesNormalizadas.premium),
   }
   const modalidadeParaDecisao = entrada.modalidadeParaDecisao ?? 'classico'
 
   return {
     peso,
+    proveniencia: calcularProvenienciaGlobal(entrada, modalidades),
     modalidades,
     veredito: calcularVeredito(
       entrada,
@@ -169,7 +183,7 @@ function calcularModalidade(
   )
 
   return {
-    proveniencia: cotacao.proveniencia,
+    proveniencia: calcularProvenienciaModalidade(entrada, cotacao),
     custos: {
       custoProduto: entrada.custoProduto,
       comissao: cotacao.comissaoTotal,
@@ -190,6 +204,52 @@ function calcularModalidade(
     ),
     custoMaximoCompra,
   }
+}
+
+function normalizarCotacoes(
+  entrada: EntradaCalculadoraML,
+  cotacoes?: CotacoesPorModalidade,
+): Partial<Record<ModalidadeML, CustosModalidadeML>> {
+  if (!cotacoes) return {}
+  if (cotacoes.origem !== 'manual') return cotacoes
+
+  return {
+    classico: cotacoes.classico,
+    premium: {
+      percentualComissaoPct: cotacoes.classico.percentualComissaoPct + 5,
+      taxaFixa: cotacoes.classico.taxaFixa,
+      comissaoTotal: arredondarMoeda(
+        cotacoes.classico.comissaoTotal + entrada.precoVenda * 0.05,
+      ),
+      frete: cotacoes.classico.frete,
+      proveniencia: 'estimated',
+    },
+  }
+}
+
+function calcularProvenienciaModalidade(
+  entrada: EntradaCalculadoraML,
+  cotacao: CustosModalidadeML,
+): Proveniencia {
+  if (!entrada.categoriaId?.trim()) return 'estimated'
+  return cotacao.proveniencia === 'official' ? 'official' : 'partial'
+}
+
+function calcularProvenienciaGlobal(
+  entrada: EntradaCalculadoraML,
+  modalidades: ResultadoCalculadoraML['modalidades'],
+): Proveniencia {
+  if (!entrada.categoriaId?.trim()) return 'estimated'
+
+  const resultados = Object.values(modalidades)
+  if (
+    resultados.some((resultado) => resultado === null) ||
+    resultados.some((resultado) => resultado?.proveniencia !== 'official')
+  ) {
+    return 'partial'
+  }
+
+  return 'official'
 }
 
 function calcularVeredito(
