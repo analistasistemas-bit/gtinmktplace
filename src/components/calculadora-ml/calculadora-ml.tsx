@@ -49,6 +49,7 @@ export function CalculadoraML() {
               onModalidade={(proxima) => { setModalidade(proxima); calculadora.atualizarEntrada({ modalidadeParaDecisao: proxima }) }}
               onValidar={() => { void calculadora.validarNaApi() }}
               erroMeta={calculadora.erroMeta}
+              cotacaoMeta={calculadora.cotacaoMeta}
             />
           </aside>
         </div>

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,6 +6,9 @@ const atualizarEntrada = vi.fn()
 const atualizarTaxasManuais = vi.fn()
 const selecionarProduto = vi.fn()
 const validarNaApi = vi.fn()
+const refetchCategorias = vi.fn()
+
+let categoriasState = { data: [], isLoading: false, isError: false, refetch: refetchCategorias }
 
 const estadoBase = {
   entrada: {
@@ -59,14 +62,17 @@ const estadoBase = {
 
 let estado = estadoBase
 vi.mock('@/hooks/useCalculadoraML', () => ({ useCalculadoraML: () => estado }))
-vi.mock('@/hooks/useCategoriasML', () => ({ useCategoriasML: () => ({ data: [], isLoading: false, isError: false }) }))
+vi.mock('@/hooks/useCategoriasML', () => ({ useCategoriasML: () => categoriasState }))
 
 import { CalculadoraML } from '../calculadora-ml'
+import { BuscaCategoriaML } from '../busca-categoria-ml'
+import { FormularioCalculadoraML } from '../formulario-calculadora-ml'
 
 describe('Calculadora ML', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     estado = estadoBase
+    categoriasState = { data: [], isLoading: false, isError: false, refetch: refetchCategorias }
   })
 
   it('mantém aviso acionável quando a categoria está vazia', () => {
@@ -102,5 +108,58 @@ describe('Calculadora ML', () => {
     estado = { ...estadoBase, produtos: { data: undefined, isLoading: true, isError: false, refetch: vi.fn() } }
     render(<CalculadoraML />)
     expect(screen.getByText(/carregando produtos/i)).toBeInTheDocument()
+  })
+
+  it('mantém dimensões parciais como rascunho sem enviar zeros ao motor', () => {
+    const onEntrada = vi.fn()
+    const entrada = { ...estadoBase.entrada }
+    const props = {
+      entrada,
+      taxas: estadoBase.taxasManuais,
+      produtos: [],
+      produtoSelecionado: null,
+      produtosCarregando: false,
+      onEntrada,
+      onTaxas: vi.fn(),
+      onProduto: vi.fn(),
+    }
+    render(<FormularioCalculadoraML {...props} />)
+
+    fireEvent.change(screen.getByLabelText('Altura (cm)'), { target: { value: '10' } })
+    expect(onEntrada).not.toHaveBeenCalledWith(expect.objectContaining({ dimensoes: expect.anything() }))
+    expect(screen.getByLabelText('Altura (cm)')).toHaveValue(10)
+  })
+
+  it('oferece retry real quando a busca de categoria falha', async () => {
+    const user = userEvent.setup()
+    categoriasState = { data: [], isLoading: false, isError: true, refetch: refetchCategorias }
+    render(<BuscaCategoriaML onSelect={vi.fn()} />)
+
+    await user.type(screen.getByRole('textbox', { name: /buscar categoria/i }), 'calçados')
+    await user.click(screen.getByRole('button', { name: /buscar categoria/i }))
+    expect(refetchCategorias).toHaveBeenCalledOnce()
+  })
+
+  it('limita entradas negativas e percentuais acima de 100 com orientação', () => {
+    const onEntrada = vi.fn()
+    const onTaxas = vi.fn()
+    render(<FormularioCalculadoraML entrada={estadoBase.entrada} taxas={estadoBase.taxasManuais} produtos={[]} produtoSelecionado={null} produtosCarregando={false} onEntrada={onEntrada} onTaxas={onTaxas} onProduto={vi.fn()} />)
+
+    fireEvent.change(screen.getByLabelText('Custo de compra (R$)'), { target: { value: '-5' } })
+    fireEvent.change(screen.getByLabelText('Margem-alvo (%)'), { target: { value: '120' } })
+    fireEvent.change(screen.getByLabelText('Comissão (%)'), { target: { value: '140' } })
+
+    expect(onEntrada).toHaveBeenCalledWith({ custoProduto: 0 })
+    expect(onEntrada).toHaveBeenCalledWith({ margemAlvoPct: 100 })
+    expect(onTaxas).toHaveBeenCalledWith({ percentualComissaoPct: 100 })
+    expect(screen.getAllByText(/entre 0 e 100|não pode ser negativo/i).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('confirma na tela quando o preço projetado foi validado na API', () => {
+    estado = { ...estadoBase, cotacaoMeta: { id: 'tarifa-validada' } }
+    render(<CalculadoraML />)
+
+    expect(screen.getByText(/preço projetado validado na api/i)).toBeInTheDocument()
+    expect(screen.getByText(/oficial.*api ml/i)).toBeInTheDocument()
   })
 })

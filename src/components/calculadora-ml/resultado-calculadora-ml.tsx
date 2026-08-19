@@ -13,6 +13,7 @@ interface ResultadoCalculadoraMLProps {
   onModalidade: (modalidade: ModalidadeML) => void
   onValidar: () => void
   erroMeta: string | null
+  cotacaoMeta: unknown
 }
 
 const moeda = (valor: number | null | undefined) => valor == null ? 'Não calculado' : valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -58,7 +59,7 @@ function Modalidade({ nome, resultado, ativa, mobile, onSelecionar }: { nome: st
   )
 }
 
-export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modalidadeSelecionada, onModalidade, onValidar, erroMeta }: ResultadoCalculadoraMLProps) {
+export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modalidadeSelecionada, onModalidade, onValidar, erroMeta, cotacaoMeta }: ResultadoCalculadoraMLProps) {
   const tipo = resultado.veredito.tipo
   const icon = tipo === 'Comprar' ? CheckCircle2 : tipo === 'Dados insuficientes' ? Info : CircleAlert
   const Icon = icon
@@ -76,6 +77,7 @@ export function ResultadoCalculadoraML({ resultado, statusCotacao, aviso, modali
 
       <section className="rounded-xl border border-border/70 bg-muted/30 p-4" aria-label="Status da cotação">
         <div className="flex items-start gap-2"><Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /><div className="text-sm"><p className="font-medium">{statusCotacao === 'loading' ? 'Consultando taxas oficiais…' : statusCotacao === 'official' ? 'Taxas oficiais aplicadas' : 'Taxas manuais estimadas'}</p><p className="mt-1 text-muted-foreground">{aviso ?? (statusCotacao === 'official' ? 'Comissão e frete vieram da API para esta categoria e preço.' : 'Categoria, comissão e frete podem variar. Valide na API antes de decidir.')}</p></div></div>
+        {cotacaoMeta && <div className="mt-3 flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 p-2.5 text-sm text-success" role="status"><CheckCircle2 className="size-4 shrink-0" aria-hidden="true" /><span><strong>Preço projetado validado na API.</strong> Esta cotação é oficial para os parâmetros consultados.</span><StatusPill tone="success">Oficial · API ML</StatusPill></div>}
       </section>
 
       <div className="flex gap-1 rounded-lg border border-border/70 bg-muted/40 p-1 sm:hidden" role="tablist" aria-label="Modalidade de anúncio">

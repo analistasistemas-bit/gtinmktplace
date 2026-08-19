@@ -13,7 +13,7 @@ interface BuscaCategoriaMLProps {
 
 export function BuscaCategoriaML({ value, onSelect, disabled = false }: BuscaCategoriaMLProps) {
   const [query, setQuery] = useState('')
-  const { data: categorias = [], isLoading, isError } = useCategoriasML(query)
+  const { data: categorias = [], isLoading, isError, refetch } = useCategoriasML(query)
 
   return (
     <div className="space-y-2" aria-describedby="categoria-ajuda">
@@ -36,7 +36,7 @@ export function BuscaCategoriaML({ value, onSelect, disabled = false }: BuscaCat
           disabled={disabled}
           aria-label="Buscar categoria Mercado Livre"
         />
-        <Button type="button" variant="outline" size="icon" disabled={disabled || query.trim().length < 3} aria-label="Buscar categoria">
+        <Button type="button" variant="outline" size="icon" disabled={disabled || query.trim().length < 3 || isLoading} aria-label="Buscar categoria" onClick={() => { void refetch() }}>
           <Search aria-hidden="true" />
         </Button>
       </div>

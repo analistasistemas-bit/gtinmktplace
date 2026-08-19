@@ -1,5 +1,6 @@
 import type { ChangeEvent } from 'react'
 import { ChevronDown, Package } from 'lucide-react'
+import { useState } from 'react'
 import { BuscaCategoriaML } from './busca-categoria-ml'
 import type { ProdutoCalculadoraML, TaxasManuaisML } from '@/hooks/useCalculadoraML'
 import type { DimensoesProduto, EntradaCalculadoraML } from '@/lib/calculadora-ml'
@@ -17,23 +18,43 @@ interface FormularioCalculadoraMLProps {
   onProduto: (produto: ProdutoCalculadoraML | null) => void
 }
 
-function numero(event: ChangeEvent<HTMLInputElement>) {
+function numero(event: ChangeEvent<HTMLInputElement>, min: number, max?: number, onError?: (mensagem: string | null) => void) {
   const valor = Number(event.target.value)
-  return Number.isFinite(valor) ? valor : 0
+  if (!Number.isFinite(valor)) return min
+  if (valor < min) {
+    onError?.(min === 0 ? 'Este valor não pode ser negativo.' : `Este valor deve ser no mínimo ${min}.`)
+    return min
+  }
+  if (max !== undefined && valor > max) {
+    onError?.(`Este valor deve ficar entre ${min} e ${max}.`)
+    return max
+  }
+  onError?.(null)
+  return valor
 }
 
-function CampoNumero({ id, label, value, onChange, min = 0, step = '0.01', hint }: { id: string; label: string; value: number; onChange: (value: number) => void; min?: number; step?: string; hint?: string }) {
+function CampoNumero({ id, label, value, onChange, min = 0, max, step = '0.01', hint }: { id: string; label: string; value: number; onChange: (value: number) => void; min?: number; max?: number; step?: string; hint?: string }) {
+  const [erro, setErro] = useState<string | null>(null)
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-sm font-medium">{label}</label>
-      <Input id={id} type="number" min={min} step={step} value={value} onChange={(event) => onChange(numero(event))} inputMode="decimal" />
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      <Input id={id} type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(numero(event, min, max, setErro))} inputMode="decimal" aria-invalid={Boolean(erro)} aria-describedby={erro ? `${id}-erro` : hint ? `${id}-hint` : undefined} />
+      {erro && <p id={`${id}-erro`} className="text-xs text-destructive" role="alert">{erro}</p>}
+      {hint && <p id={`${id}-hint`} className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }
 
 export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelecionado, produtosCarregando, onEntrada, onTaxas, onProduto }: FormularioCalculadoraMLProps) {
-  const setDimensao = (chave: keyof DimensoesProduto, valor: number) => onEntrada({ dimensoes: { ...(entrada.dimensoes ?? { alturaCm: 0, larguraCm: 0, comprimentoCm: 0, pesoKg: 0 }), [chave]: valor } })
+  const [dimensoesRascunho, setDimensoesRascunho] = useState<Partial<DimensoesProduto>>(entrada.dimensoes ?? {})
+  const dimensoesCompletas = (dimensoes: Partial<DimensoesProduto>): dimensoes is DimensoesProduto =>
+    (['alturaCm', 'larguraCm', 'comprimentoCm', 'pesoKg'] as const).every((chave) => Number.isFinite(dimensoes[chave]) && (dimensoes[chave] as number) > 0)
+  const setDimensao = (chave: keyof DimensoesProduto, valor: number) => {
+    const proximo = { ...dimensoesRascunho, [chave]: valor }
+    setDimensoesRascunho(proximo)
+    if (dimensoesCompletas(proximo)) onEntrada({ dimensoes: proximo })
+    else if (dimensoesCompletas(entrada.dimensoes ?? {})) onEntrada({ dimensoes: undefined })
+  }
   return (
     <div className="space-y-6">
       <section className="space-y-4" aria-labelledby="contexto-heading">
@@ -59,8 +80,8 @@ export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelec
         <div className="grid gap-4 sm:grid-cols-2">
           <CampoNumero id="custo-produto" label="Custo de compra (R$)" value={entrada.custoProduto} onChange={(value) => onEntrada({ custoProduto: value })} />
           <CampoNumero id="preco-venda" label="Preço de venda (R$)" value={entrada.precoVenda} onChange={(value) => onEntrada({ precoVenda: value })} />
-          <CampoNumero id="margem-alvo" label="Margem-alvo (%)" value={entrada.margemAlvoPct} onChange={(value) => onEntrada({ margemAlvoPct: value })} step="0.1" />
-          <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} step="0.1" />
+          <CampoNumero id="margem-alvo" label="Margem-alvo (%)" value={entrada.margemAlvoPct} onChange={(value) => onEntrada({ margemAlvoPct: value })} step="0.1" max={100} />
+          <CampoNumero id="imposto" label="Impostos (%)" value={entrada.aliquotaImpostoPct} onChange={(value) => onEntrada({ aliquotaImpostoPct: value })} step="0.1" max={100} />
         </div>
       </section>
 
@@ -76,15 +97,15 @@ export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelec
       <section className="space-y-4" aria-labelledby="logistica-heading">
         <div><h2 id="logistica-heading" className="font-heading text-lg font-semibold">Logística e taxas manuais</h2><p className="mt-1 text-sm text-muted-foreground">Use o frete manual somente quando a cotação oficial não estiver disponível.</p></div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <CampoNumero id="altura" label="Altura (cm)" value={entrada.dimensoes?.alturaCm ?? 0} onChange={(value) => setDimensao('alturaCm', value)} />
-          <CampoNumero id="largura" label="Largura (cm)" value={entrada.dimensoes?.larguraCm ?? 0} onChange={(value) => setDimensao('larguraCm', value)} />
-          <CampoNumero id="comprimento" label="Comprimento (cm)" value={entrada.dimensoes?.comprimentoCm ?? 0} onChange={(value) => setDimensao('comprimentoCm', value)} />
-          <CampoNumero id="peso" label="Peso real (kg)" value={entrada.dimensoes?.pesoKg ?? 0} onChange={(value) => setDimensao('pesoKg', value)} />
+          <CampoNumero id="altura" label="Altura (cm)" value={dimensoesRascunho.alturaCm ?? 0} onChange={(value) => setDimensao('alturaCm', value)} />
+          <CampoNumero id="largura" label="Largura (cm)" value={dimensoesRascunho.larguraCm ?? 0} onChange={(value) => setDimensao('larguraCm', value)} />
+          <CampoNumero id="comprimento" label="Comprimento (cm)" value={dimensoesRascunho.comprimentoCm ?? 0} onChange={(value) => setDimensao('comprimentoCm', value)} />
+          <CampoNumero id="peso" label="Peso real (kg)" value={dimensoesRascunho.pesoKg ?? 0} onChange={(value) => setDimensao('pesoKg', value)} />
         </div>
         <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
           <p className="mb-3 text-sm font-medium">Fallback manual (estimativa)</p>
           <div className="grid gap-4 sm:grid-cols-3">
-            <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} step="0.1" />
+            <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} step="0.1" max={100} />
             <CampoNumero id="taxa-fixa-manual" label="Taxa fixa (R$)" value={taxas.taxaFixa} onChange={(value) => onTaxas({ taxaFixa: value })} />
             <CampoNumero id="frete-manual" label="Frete (R$)" value={taxas.frete ?? 0} onChange={(value) => onTaxas({ frete: value })} hint="Informe 0 apenas se o frete for realmente zero." />
           </div>
