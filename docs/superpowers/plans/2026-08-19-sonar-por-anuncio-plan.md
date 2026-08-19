@@ -34,7 +34,7 @@
 
 | Ação | Arquivo | Responsabilidade |
 |---|---|---|
-| Create | `docs/decisions/0126-sonar-tabela-por-anuncio-e-historico.md` | ADR da entrega (supersede parcial do ADR-0125) — Task 1 |
+| Create | `docs/decisions/0127-sonar-tabela-por-anuncio-e-historico.md` | ADR da entrega (supersede parcial do ADR-0125) — Task 1 |
 | Create | `supabase/migrations/<ts>_sonar_snapshots.sql` | Tabela de histórico + RLS — Task 2 |
 | Modify | `supabase/functions/_shared/pulse/sonar-vendas.ts` | `category_id` no parse, `itens` no painel, `LinhaSnapshot`/`linhasSnapshot` — Task 3 |
 | Modify | `supabase/functions/_shared/pulse/__tests__/sonar-vendas.test.ts` | Testes dos itens acima — Task 3 |
@@ -62,13 +62,13 @@ Sequência: backend (1–5) → medição (7, exige a edge de visitas no ar) →
 
 ---
 
-### Task 1: ADR-0126
+### Task 1: ADR-0127
 
 **Modelo:** sonnet
 
 **Files:**
-- Create: `docs/decisions/0126-sonar-tabela-por-anuncio-e-historico.md`
-- Modify: `obsidian-vault/04-Decisões/Índice de ADRs.md` (adicionar linha do 0126)
+- Create: `docs/decisions/0127-sonar-tabela-por-anuncio-e-historico.md`
+- Modify: `obsidian-vault/04-Decisões/Índice de ADRs.md` (adicionar linha do 0127)
 
 **Interfaces:**
 - Consumes: spec inteira (`docs/superpowers/specs/2026-08-19-sonar-tabela-por-anuncio-design.md`).
@@ -87,7 +87,7 @@ Estrutura (mesmo formato do ADR-0125): Status aceito, Data 2026-08-19, Relaciona
 
 - [ ] **Step 2: Atualizar o índice de ADRs no obsidian-vault**
 
-Adicionar a linha do 0126 em `obsidian-vault/04-Decisões/Índice de ADRs.md`, mesmo formato das linhas existentes.
+Adicionar a linha do 0127 em `obsidian-vault/04-Decisões/Índice de ADRs.md`, mesmo formato das linhas existentes.
 
 - [ ] **Step 3: Conferir lint da suíte (nada de código mudou)**
 
@@ -97,8 +97,8 @@ Expected: verde (sanidade — nenhum código tocado).
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs/decisions/0126-sonar-tabela-por-anuncio-e-historico.md "obsidian-vault/04-Decisões/Índice de ADRs.md"
-git commit -m "docs: ADR-0126 — Sonar por anúncio + histórico de snapshots"
+git add docs/decisions/0127-sonar-tabela-por-anuncio-e-historico.md "obsidian-vault/04-Decisões/Índice de ADRs.md"
+git commit -m "docs: ADR-0127 — Sonar por anúncio + histórico de snapshots"
 ```
 
 ---
@@ -121,7 +121,7 @@ Run: `supabase migration new sonar_snapshots`
 Preencher o arquivo gerado com EXATAMENTE este conteúdo (DDL da spec, seção "Modelo de dados"):
 
 ```sql
--- Sonar (ADR-0126): histórico de snapshots por anúncio por garimpo fresco.
+-- Sonar (ADR-0127): histórico de snapshots por anúncio por garimpo fresco.
 -- GLOBAL, sem org_id, de propósito: mesmo dado público que já vive em cache Redis com chave
 -- global (ADR-0120 §3). Escrita só service_role (edge pulse-sonar-vendas), leitura autenticada.
 create table public.sonar_snapshots (
@@ -165,7 +165,7 @@ Via SQL read-only da Management API (memória: sem `unaccent`, 502 transitório 
 
 ```bash
 git add supabase/migrations/*_sonar_snapshots.sql
-git commit -m "feat(sonar): tabela sonar_snapshots — histórico por anúncio por garimpo (ADR-0126)"
+git commit -m "feat(sonar): tabela sonar_snapshots — histórico por anúncio por garimpo (ADR-0127)"
 ```
 
 ---
@@ -263,7 +263,7 @@ Em `supabase/functions/_shared/pulse/sonar-vendas.ts`:
 4. Em `montarPainelVendas`, no objeto retornado, adicionar `itens,` (o parâmetro já se chama `itens`).
 5. No fim do arquivo:
 ```ts
-// --- Snapshot histórico (ADR-0126/D7): shape exato da tabela sonar_snapshots -------------------
+// --- Snapshot histórico (ADR-0127/D7): shape exato da tabela sonar_snapshots -------------------
 export interface LinhaSnapshot {
   termo: string;
   gerado_em: string;
@@ -301,7 +301,7 @@ Expected: PASS. Atenção: se algum teste existente de `parseItensApify`/`montar
 
 ```bash
 git add supabase/functions/_shared/pulse/sonar-vendas.ts supabase/functions/_shared/pulse/__tests__/sonar-vendas.test.ts
-git commit -m "feat(sonar): category_id + itens no painel de vendas e linhasSnapshot (ADR-0126)"
+git commit -m "feat(sonar): category_id + itens no painel de vendas e linhasSnapshot (ADR-0127)"
 ```
 
 ---
@@ -332,7 +332,7 @@ import { montarPainelVendas, parseItensApify, parseTotalAnuncios, linhasSnapshot
 
 2. Antes do `Deno.serve`, adicionar:
 ```ts
-// Histórico (ADR-0126/D7): grava SÓ em cache-miss — 1 snapshot por termo por ciclo de TTL, por
+// Histórico (ADR-0127/D7): grava SÓ em cache-miss — 1 snapshot por termo por ciclo de TTL, por
 // construção. Falha de insert não derruba a resposta (o dado Apify já foi pago), mas nunca é
 // silenciosa: log + historico_gravado:false na resposta.
 async function gravarSnapshots(termo: string, geradoEm: string, itens: ItemVendas[]): Promise<boolean> {
@@ -372,7 +372,7 @@ async function gravarSnapshots(termo: string, geradoEm: string, itens: ItemVenda
   return json({ ...resposta, historico_gravado: historicoGravado });
 ```
 
-5. Atualizar o comentário da chave (`index.ts:36-40`) acrescentando uma linha: `// ADR-0126: itens/category_id aditivos (sem bump); historico_gravado NUNCA entra no objeto cacheado (D7).`
+5. Atualizar o comentário da chave (`index.ts:36-40`) acrescentando uma linha: `// ADR-0127: itens/category_id aditivos (sem bump); historico_gravado NUNCA entra no objeto cacheado (D7).`
 
 - [ ] **Step 2: Verificar tipos e suíte**
 
@@ -383,7 +383,7 @@ Expected: verdes (nenhum teste novo — lógica pura já coberta na Task 3).
 
 ```bash
 git add supabase/functions/pulse-sonar-vendas/index.ts
-git commit -m "feat(sonar): pulse-sonar-vendas grava sonar_snapshots no cache-miss (ADR-0126/D7)"
+git commit -m "feat(sonar): pulse-sonar-vendas grava sonar_snapshots no cache-miss (ADR-0127/D7)"
 ```
 
 ---
@@ -451,7 +451,7 @@ export function validarItemIds(v: unknown): string[] | null {
 Criar `supabase/functions/pulse-sonar-visitas/index.ts`:
 
 ```ts
-// Sonar — visitas 30d por anúncio (ADR-0126/D3): edge fina, par da pulse-sonar-vendas. 1 chamada
+// Sonar — visitas 30d por anúncio (ADR-0127/D3): edge fina, par da pulse-sonar-vendas. 1 chamada
 // /items/{id}/visits/time_window por item (funciona para terceiros — 20/20 HTTP 200, medido
 // 19/08), cache global POR ITEM (dado público, ADR-0120 §3). Só leitura no ML.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
@@ -517,7 +517,7 @@ Deno.serve(async (req) => {
 Em `supabase/config.toml`, logo após o bloco `[functions.pulse-sonar-vendas]`:
 
 ```toml
-# ADR-0126 (Sonar por anúncio): visitas 30d por item — chamada pelo APP com o JWT do usuário.
+# ADR-0127 (Sonar por anúncio): visitas 30d por item — chamada pelo APP com o JWT do usuário.
 [functions.pulse-sonar-visitas]
 verify_jwt = true
 ```
@@ -531,7 +531,7 @@ Expected: PASS / verde.
 
 ```bash
 git add supabase/functions/_shared/pulse/sonar.ts supabase/functions/_shared/pulse/__tests__/sonar.test.ts supabase/functions/pulse-sonar-visitas/index.ts supabase/config.toml
-git commit -m "feat(sonar): edge pulse-sonar-visitas — visitas 30d por anúncio, cache por item (ADR-0126)"
+git commit -m "feat(sonar): edge pulse-sonar-visitas — visitas 30d por anúncio, cache por item (ADR-0127)"
 ```
 
 ---
@@ -563,7 +563,7 @@ Em `src/lib/__tests__/sonar.test.ts` — adicionar os describes novos E ajustar 
 ```ts
 import { itensDaAmostra, normalizarSerieVisitas, ETAPAS_SONAR } from '../sonar';
 
-describe('ETAPAS_SONAR — 4 etapas (a busca de fichas morreu, ADR-0126)', () => {
+describe('ETAPAS_SONAR — 4 etapas (a busca de fichas morreu, ADR-0127)', () => {
   it('tem 4 etapas e nenhuma menciona ficha/catálogo', () => {
     expect(ETAPAS_SONAR).toHaveLength(4);
     for (const e of ETAPAS_SONAR) expect(e.toLowerCase()).not.toMatch(/ficha|catálogo/);
@@ -625,11 +625,11 @@ Expected: FAIL — exports novos inexistentes; `ETAPAS_SONAR` ainda com 5 etapas
 
 Em `src/lib/sonar.ts` (só ADIÇÕES + a troca das etapas — `PainelSonar`/`fetchPainelSonar`/`fichasAtivas`/`fichasSemVendedor` ficam até a Task 11, a página ainda os usa):
 
-1. `ItemVendasSonar` ganha `category_id?: string | null;` (comentário: espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0126 não tem).
+1. `ItemVendasSonar` ganha `category_id?: string | null;` (comentário: espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem).
 2. `PainelVendasSonar` ganha `itens?: ItemVendasSonar[];` e `historico_gravado?: boolean;` (mesmos comentários).
 3. Novos exports (depois de `fetchVendasSonar`):
 ```ts
-// --- Visitas por anúncio (ADR-0126/D3): espelho de pulse-sonar-visitas -------------------------
+// --- Visitas por anúncio (ADR-0127/D3): espelho de pulse-sonar-visitas -------------------------
 
 export interface VisitasAnuncio { total: number; por_dia: Array<{ data: string; total: number }> }
 
@@ -701,7 +701,7 @@ Expected: PASS — inclusive os testes ajustados de `passosProgresso` (4 etapas)
 
 ```bash
 git add src/lib/sonar.ts src/lib/__tests__/sonar.test.ts
-git commit -m "feat(sonar): lib do front — visitas por anúncio, normalização D9, etapas novas (ADR-0126)"
+git commit -m "feat(sonar): lib do front — visitas por anúncio, normalização D9, etapas novas (ADR-0127)"
 ```
 
 ---
@@ -713,11 +713,11 @@ git commit -m "feat(sonar): lib do front — visitas por anúncio, normalizaçã
 **Files:**
 - Create: `scripts/sonar-gabarito-fixtures.mjs`
 - Create: `src/lib/__tests__/fixtures/sonar-gabarito/eucerin-protetor-solar.json`, `.../protetor-solar-facial.json`, `.../tecido-oxford-10-metros.json`
-- Modify: `docs/decisions/0126-sonar-tabela-por-anuncio-e-historico.md` (seção "Calibração v2")
+- Modify: `docs/decisions/0127-sonar-tabela-por-anuncio-e-historico.md` (seção "Calibração v2")
 
 **Interfaces:**
 - Consumes: edge `pulse-sonar-vendas` de PRODUÇÃO (a versão já no ar serve — o shape v4 com `por_anuncio` está em produção desde o ADR-0125); edge `pulse-sonar-visitas` (Task 5, deployada no Step 1).
-- Produces: 3 fixtures `{ vendas: PainelVendasSonar, visitas_total: number | null }` + tabela "Calibração v2" no ADR-0126 com os números medidos e os cortes escolhidos. A Task 8 lê os cortes DALI.
+- Produces: 3 fixtures `{ vendas: PainelVendasSonar, visitas_total: number | null }` + tabela "Calibração v2" no ADR-0127 com os números medidos e os cortes escolhidos. A Task 8 lê os cortes DALI.
 
 **ESTA É UMA TASK DE MEDIÇÃO, NÃO DE ADIVINHAÇÃO.** O executor NÃO PODE inventar os cortes: ele roda os 3 termos, olha os números medidos, e escolhe cortes que reproduzam **média / média / alta** (nessa ordem). Se nenhum corte plausível reproduzir o gabarito para um fator, aplica a contingência de D12 (o fator vira informativo, não pontuado) e REPORTA — nunca força um corte que "passe no teste" distorcendo o resto.
 
@@ -735,7 +735,7 @@ Run: `supabase functions deploy pulse-sonar-visitas` e conferir com `supabase fu
 Criar `scripts/sonar-gabarito-fixtures.mjs`:
 
 ```js
-// Recalibração D12 (ADR-0126): roda os 3 termos-gabarito na pulse-sonar-vendas de PRODUÇÃO e
+// Recalibração D12 (ADR-0127): roda os 3 termos-gabarito na pulse-sonar-vendas de PRODUÇÃO e
 // congela os payloads como fixtures. CUSTO REAL: US$ 0,30 exatos (3 × US$0,10) — medido em
 // 19/08/2026: nenhum dos 3 termos em cache. Após o run, cada termo fica cacheado 7 dias —
 // re-rodar no mesmo dia NÃO cobra de novo.
@@ -825,13 +825,13 @@ Escolher cortes `DISPUTA_V2 { pulverizacaoBaixa, pulverizacaoAlta, fretePouco, f
 - PROIBIDO copiar/escalar números de `DISPUTA`/`TRACAO`/`VISITAS` antigos (escala morta, spec D11).
 - Não reproduziu com nenhum corte plausível → contingência D12: o fator vira informativo (não pontuado) e o porquê vai para o ADR.
 
-- [ ] **Step 5: Registrar no ADR-0126 e commitar**
+- [ ] **Step 5: Registrar no ADR-0127 e commitar**
 
 Substituir a frase-placeholder da seção "Calibração v2" do ADR pela tabela: métricas medidas por termo (data da medição), cortes escolhidos e o racional de cada um (1 frase por corte), mais qualquer contingência aplicada.
 
 ```bash
-git add scripts/sonar-gabarito-fixtures.mjs src/lib/__tests__/fixtures/sonar-gabarito docs/decisions/0126-sonar-tabela-por-anuncio-e-historico.md
-git commit -m "feat(sonar): fixtures-gabarito medidos + calibração v2 no ADR-0126 (D12, US\$0,30)"
+git add scripts/sonar-gabarito-fixtures.mjs src/lib/__tests__/fixtures/sonar-gabarito docs/decisions/0127-sonar-tabela-por-anuncio-e-historico.md
+git commit -m "feat(sonar): fixtures-gabarito medidos + calibração v2 no ADR-0127 (D12, US\$0,30)"
 ```
 
 ---
@@ -845,7 +845,7 @@ git commit -m "feat(sonar): fixtures-gabarito medidos + calibração v2 no ADR-0
 - Test: `src/lib/__tests__/veredito-sonar.test.ts` (adicionar describes novos; os antigos ficam até a Task 11)
 
 **Interfaces:**
-- Consumes: fixtures e cortes da Task 7 (tabela "Calibração v2" do ADR-0126); `PainelVendasSonar`, `ItemVendasSonar`, `itensDaAmostra` (Task 6); tipos existentes `NivelFator`, `NivelVeredito`, `Fator`, `AlertaMarca`, `ExplicacaoRegua`, `ExplicacaoFator`, `Explicacao`, `ContextoItem` e helpers `regua`, `montarMotivo`, `TITULOS`, `ACAO`, `PONTOS`, `pct`, `brlMil` (reusados, não duplicados).
+- Consumes: fixtures e cortes da Task 7 (tabela "Calibração v2" do ADR-0127); `PainelVendasSonar`, `ItemVendasSonar`, `itensDaAmostra` (Task 6); tipos existentes `NivelFator`, `NivelVeredito`, `Fator`, `AlertaMarca`, `ExplicacaoRegua`, `ExplicacaoFator`, `Explicacao`, `ContextoItem` e helpers `regua`, `montarMotivo`, `TITULOS`, `ACAO`, `PONTOS`, `pct`, `brlMil` (reusados, não duplicados).
 - Produces (usados pela Task 10):
   - `export interface VereditoAnuncios { nivel: NivelVeredito; titulo: string; motivo: string; fatores: Fator[]; marca: AlertaMarca | null; explicacao: Explicacao }` (sem `semVendas` — o fallback morreu, D16)
   - `export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal: number | null): VereditoAnuncios`
@@ -954,10 +954,10 @@ Expected: FAIL — `calcularVereditoAnuncios`/`subamostraNomeada` não exportada
 
 - [ ] **Step 3: Implementação**
 
-Adicionar em `src/lib/veredito-sonar.ts` (ao lado do código antigo, sem tocá-lo; import de `itensDaAmostra` e `ItemVendasSonar` de `./sonar`). Os QUATRO grupos de números marcados `/* ← ADR-0126 §Calibração v2 */` vêm OBRIGATORIAMENTE da tabela medida na Task 7 — se ela não existir ainda, esta task está fora de ordem, PARE:
+Adicionar em `src/lib/veredito-sonar.ts` (ao lado do código antigo, sem tocá-lo; import de `itensDaAmostra` e `ItemVendasSonar` de `./sonar`). Os QUATRO grupos de números marcados `/* ← ADR-0127 §Calibração v2 */` vêm OBRIGATORIAMENTE da tabela medida na Task 7 — se ela não existir ainda, esta task está fora de ordem, PARE:
 
 ```ts
-// ================= Veredito v2 (ADR-0126/D10-D12): unidade = anúncio =========================
+// ================= Veredito v2 (ADR-0127/D10-D12): unidade = anúncio =========================
 // Sem painel de fichas e SEM fallback sem Apify (D16): a lista de anúncios É a Apify — sem ela
 // não há tabela nem veredito. Visitas somadas entram como sub-sinal DENTRO da Demanda.
 
@@ -972,15 +972,15 @@ export interface VereditoAnuncios {
 
 const COBERTURA_MINIMA = 0.5; // D10: <50% de itens com vendedor → Disputa e Tração indisponíveis
 
-// Cortes MEDIDOS na recalibração (Task 7 do plano; tabela no ADR-0126 §Calibração v2).
+// Cortes MEDIDOS na recalibração (Task 7 do plano; tabela no ADR-0127 §Calibração v2).
 // PROIBIDO copiar números de DISPUTA/TRACAO/VISITAS antigos — a escala morreu com a fonte (D11).
 const DISPUTA_V2 = {
-  pulverizacaoBaixa: 0, pulverizacaoAlta: 0,   /* ← ADR-0126 §Calibração v2 */
-  fretePouco: 0, freteMuito: 0,                /* ← ADR-0126 §Calibração v2 */
-  patrocinadoMuito: 0,                          /* ← ADR-0126 §Calibração v2 */
+  pulverizacaoBaixa: 0, pulverizacaoAlta: 0,   /* ← ADR-0127 §Calibração v2 */
+  fretePouco: 0, freteMuito: 0,                /* ← ADR-0127 §Calibração v2 */
+  patrocinadoMuito: 0,                          /* ← ADR-0127 §Calibração v2 */
 };
-const TRACAO_V2 = { boa: 0, media: 0 };         /* ← ADR-0126 §Calibração v2 */
-const VISITAS_V2 = { minimas: 0 };              /* ← ADR-0126 §Calibração v2 */
+const TRACAO_V2 = { boa: 0, media: 0 };         /* ← ADR-0127 §Calibração v2 */
+const VISITAS_V2 = { minimas: 0 };              /* ← ADR-0127 §Calibração v2 */
 
 const REBAIXA: Record<NivelFator, NivelFator> = { bom: 'medio', medio: 'ruim', ruim: 'ruim' };
 
@@ -1164,7 +1164,7 @@ export function contextoNichoAnuncios(vendas: PainelVendasSonar): ContextoItem[]
 }
 ```
 
-Substituir os `0` marcados `/* ← ADR-0126 §Calibração v2 */` pelos números medidos na Task 7. Iterar contra o teste do gabarito: se NENHUM corte plausível fizer os 3 asserts passarem para um fator, aplicar a contingência D12 (o fator vira informativo — remover do array `fatores` e mover para `fatoresExplicacao` com a nota, como na trava D10) e registrar no ADR. O assert do tecido oxford NUNCA é relaxado.
+Substituir os `0` marcados `/* ← ADR-0127 §Calibração v2 */` pelos números medidos na Task 7. Iterar contra o teste do gabarito: se NENHUM corte plausível fizer os 3 asserts passarem para um fator, aplicar a contingência D12 (o fator vira informativo — remover do array `fatores` e mover para `fatoresExplicacao` com a nota, como na trava D10) e registrar no ADR. O assert do tecido oxford NUNCA é relaxado.
 
 - [ ] **Step 4: Rodar e confirmar que passa (suíte inteira)**
 
@@ -1175,7 +1175,7 @@ Expected: PASS — os 6 describes novos E os testes antigos de `calcularVeredito
 
 ```bash
 git add src/lib/veredito-sonar.ts src/lib/__tests__/veredito-sonar.test.ts
-git commit -m "feat(sonar): veredito v2 por anúncio — pulverização, tração por subamostra, trava de cobertura (ADR-0126)"
+git commit -m "feat(sonar): veredito v2 por anúncio — pulverização, tração por subamostra, trava de cobertura (ADR-0127)"
 ```
 
 ---
@@ -1256,7 +1256,7 @@ Expected: FAIL — exports novos inexistentes.
 Adicionar em `src/lib/sonar-filtros.ts` (imports: `ItemVendasSonar`, `VisitasAnuncio` de `./sonar`):
 
 ```ts
-// --- v2 (ADR-0126): filtros sobre a unidade ANÚNCIO. maxVendedores morreu com as fichas. -------
+// --- v2 (ADR-0127): filtros sobre a unidade ANÚNCIO. maxVendedores morreu com as fichas. -------
 
 export interface FiltrosAnuncios {
   minVendas: number | null;
@@ -1333,7 +1333,7 @@ Expected: PASS — novos e antigos (antigos morrem só na Task 11).
 
 ```bash
 git add src/lib/sonar-filtros.ts src/lib/__tests__/sonar-filtros.test.ts
-git commit -m "feat(sonar): filtros v2 sobre a unidade anúncio (ADR-0126)"
+git commit -m "feat(sonar): filtros v2 sobre a unidade anúncio (ADR-0127)"
 ```
 
 ---
@@ -1374,7 +1374,7 @@ export default function PulseSonar() {
   const [mostrarProgresso, setMostrarProgresso] = useState(false);
   const [filtros, setFiltros] = useState<FiltrosAnuncios>(FILTROS_ANUNCIOS_VAZIOS);
 
-  // Query PRIMÁRIA (ADR-0126/D3): a tabela nasce da Apify. retry desligado — cada tentativa
+  // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
   // sem cache dispara um run pago (US$ 0,10).
   const { data: vendas, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['pulse', 'sonar-vendas', termoBuscado],
@@ -1681,7 +1681,7 @@ Expected: tudo verde. Atenção ao tsc: nenhum import morto de `sonar-cruzamento
 
 ```bash
 git add src/pages/PulseSonar.tsx src/components/pulse/veredito-sonar.tsx src/components/pulse/dialog-margem-sonar.tsx
-git commit -m "feat(sonar): tabela por anúncio — duas queries, estados D16, simulador via category_id (ADR-0126)"
+git commit -m "feat(sonar): tabela por anúncio — duas queries, estados D16, simulador via category_id (ADR-0127)"
 ```
 
 ---
@@ -1742,7 +1742,7 @@ Expected: tudo verde; nenhum import quebrado.
 
 ```bash
 git add -A
-git commit -m "refactor(sonar): remove edge de fichas, cruzamento e código v1 do veredito/filtros (ADR-0126)"
+git commit -m "refactor(sonar): remove edge de fichas, cruzamento e código v1 do veredito/filtros (ADR-0127)"
 ```
 
 ---
@@ -1763,9 +1763,9 @@ git commit -m "refactor(sonar): remove edge de fichas, cruzamento e código v1 d
 
 - [ ] **Step 1: Atualizar os quatro alvos**
 
-Conteúdo mínimo por arquivo (não copiar a spec; referenciar o ADR-0126):
+Conteúdo mínimo por arquivo (não copiar a spec; referenciar o ADR-0127):
 - `edge-functions.md`: entrada da `pulse-sonar-visitas` (POST `{item_ids}`, teto 20, cache `sonar:visitas:v1:{item_id}` TTL 24h, `conectado:false` sem conexão ML); na `pulse-sonar-vendas`, o efeito de gravação em `sonar_snapshots` no cache-miss e o campo `historico_gravado` fora do cache; remoção da seção da `pulse-sonar`.
-- `modelo-de-dados.md`: `sonar_snapshots` com a nota "global sem org_id (dado público, ADR-0120 §3/ADR-0126); escrita só service_role; `vendidos` é faixa-piso — delta entre snapshots é PISO do período (D13)".
+- `modelo-de-dados.md`: `sonar_snapshots` com a nota "global sem org_id (dado público, ADR-0120 §3/ADR-0127); escrita só service_role; `vendidos` é faixa-piso — delta entre snapshots é PISO do período (D13)".
 - `TASKS.md`: linha da entrega com data e ADR.
 - Obsidian: Sprint Atual + qualquer nota que descreva o Sonar de fichas.
 
@@ -1778,7 +1778,7 @@ Expected: vazio (ADRs e specs/planos são registro histórico — não reescreve
 
 ```bash
 git add docs/reference/edge-functions.md docs/reference/modelo-de-dados.md docs/TASKS.md obsidian-vault
-git commit -m "docs: Sonar por anúncio — edge-functions, modelo de dados e vault (ADR-0126)"
+git commit -m "docs: Sonar por anúncio — edge-functions, modelo de dados e vault (ADR-0127)"
 ```
 
 ---

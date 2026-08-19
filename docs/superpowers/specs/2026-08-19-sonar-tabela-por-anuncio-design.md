@@ -92,7 +92,7 @@ Reformulação:
 
 Rodar "EUCERIN protetor solar", "protetor solar facial" e "tecido oxford 10 metros" na `pulse-sonar-vendas` (custo zero para o que estiver no cache 7d; máximo US$ 0,30) e congelar os payloads como fixtures do novo `veredito-sonar.test.ts`. Os cortes de Disputa v2, Tração v2 e do fallback de visitas saem DESSES payloads — a recalibração é medição, o resultado dela não está previsto nesta spec.
 
-Critério de aceitação, herdado do ADR-0124 e agora mais exigente: os 3 nichos têm que reproduzir **média / média / alta, nessa ordem**. "Tecido oxford 10 metros = alta" segue inegociável (nicho em que a operação lucra; calibração que o condene está errada por construção). **Contingência:** se alguma métrica nova não conseguir reproduzir o gabarito com nenhum corte plausível, o fator correspondente vira **informativo, não pontuado** (mesmo tratamento da Marca, ADR-0124 §5), a escala proporcional do §4 absorve, e a limitação é registrada no ADR-0126 — nunca forçar um corte que "passe no teste" distorcendo o resto.
+Critério de aceitação, herdado do ADR-0124 e agora mais exigente: os 3 nichos têm que reproduzir **média / média / alta, nessa ordem**. "Tecido oxford 10 metros = alta" segue inegociável (nicho em que a operação lucra; calibração que o condene está errada por construção). **Contingência:** se alguma métrica nova não conseguir reproduzir o gabarito com nenhum corte plausível, o fator correspondente vira **informativo, não pontuado** (mesmo tratamento da Marca, ADR-0124 §5), a escala proporcional do §4 absorve, e a limitação é registrada no ADR-0127 — nunca forçar um corte que "passe no teste" distorcendo o resto.
 **Descartado:** gabarito ampliado (20-30 termos rotulados) nesta entrega — custa US$ 2-3 e horas do Diego; segue como follow-up. N=3 não piora o que já existe.
 
 ### D13 — Histórico: delta entre snapshots de `vendidos` é PISO, nunca total
@@ -140,7 +140,7 @@ Comportamento decidido para os três modos de falha:
 | DELETE (parcial) | `supabase/functions/_shared/pulse/sonar.ts` | `montarPainelSonar`, `parseFichasBusca`, `resumoPrecos`; ficam `parseVisitasJanela` e `extrairPalavrasChave` (usados por Radar/vendas) |
 | CREATE | `supabase/functions/pulse-sonar-visitas/index.ts` | edge fina de visitas (D3) |
 | CREATE | `supabase/migrations/<ts>_sonar_snapshots.sql` | tabela de histórico (via `supabase migration new`, ADR-0043) |
-| CREATE | `docs/decisions/0126-sonar-tabela-por-anuncio-e-historico.md` | ADR desta decisão (supersede parcial do ADR-0125) |
+| CREATE | `docs/decisions/0127-sonar-tabela-por-anuncio-e-historico.md` | ADR desta decisão (supersede parcial do ADR-0125) |
 | EDIT | `supabase/functions/pulse-sonar-vendas/index.ts` | insert de snapshot no cache-miss + `historico_gravado` (D7) |
 | EDIT | `src/lib/sonar.ts` | remove `PainelSonar`/`fichasAtivas`/`fichasSemVendedor`/`fetchPainelSonar`; adiciona `fetchVisitasSonar` e tipos de visitas |
 | EDIT | `src/lib/veredito-sonar.ts` | veredito v2 (D10/D11) |
@@ -182,7 +182,7 @@ grant select on public.sonar_snapshots to authenticated;
 -- escrita: nenhuma policy de insert/update/delete — só service_role (edge), como pulse_v1
 ```
 
-**Global, sem `org_id`, de propósito:** é o mesmo dado público que já vive em cache Redis com chave global (ADR-0120 §3; `sonar:vendas:v4` não tem org). RLS habilitada com select aberto a autenticados e escrita exclusiva do service_role — variação consciente do padrão org-scoped de `20260816125057_pulse_v1.sql`, registrada no ADR-0126.
+**Global, sem `org_id`, de propósito:** é o mesmo dado público que já vive em cache Redis com chave global (ADR-0120 §3; `sonar:vendas:v4` não tem org). RLS habilitada com select aberto a autenticados e escrita exclusiva do service_role — variação consciente do padrão org-scoped de `20260816125057_pulse_v1.sql`, registrada no ADR-0127.
 
 **Crescimento:** ~250 bytes/linha com índices (estimativa). O cache de 7d limita a 1 garimpo fresco por termo por semana; com 20 termos distintos/semana (estimativa de uso), 400 linhas/semana ≈ 21 mil linhas ≈ 5-8 MB/ano (estimativa). Ordem de grandeza abaixo das `pulse_ofertas` diárias do Radar; nenhuma partição.
 
