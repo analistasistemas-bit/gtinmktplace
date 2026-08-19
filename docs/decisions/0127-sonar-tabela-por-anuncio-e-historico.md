@@ -97,7 +97,12 @@ concorrência do nicho — o oxford mede cobertura exatamente 0,50, então um ú
 no próximo garimpo dispararia a trava, e rebaixar aí transformaria falta de dado em sinal de
 negócio. Na prática o par (a)+(b) resolve todo painel travado em "média parcial" (ou "baixa" pelo
 gate de Demanda), nunca em "alta"; (c) o vocabulário da UI fala em **rótulo de loja**, nunca
-"vendedor" (o card imprime a marca — ver Fragilidades).
+"vendedor" (o card imprime a marca — ver Fragilidades); (d) **`% Full` não medido em NENHUM anúncio
+da amostra também produz veredito parcial**: a Disputa fica limitada a 🟡 (a pulverização medida
+ainda pode marcá-la 🔴) e "alta" não é declarada. Sem isso o *protetor solar facial* — que é 🔴 só
+pela cláusula `Full 85% >= 60` — leria **alta** com o campo de envio vazio, ou seja, subiria de
+faixa por FALTA de dado. Regra geral aplicada nos dois casos: ausência de dado nunca melhora um
+veredito, e o motivo aparece na tela em vez de sumir.
 
 **D11 — Disputa e Tração viram métricas invariantes ao tamanho da amostra; cortes antigos
 inválidos na fonte nova.** Os cortes atuais (`DISPUTA = { vendedoresPoucos: 10, vendedoresMuitos:

@@ -358,7 +358,7 @@ describe('trava de cobertura <50% (D10) — nunca medir concorrência sobre meia
 describe('invariância ao tamanho da amostra (D11) — a censura não pode mudar o nível', () => {
   it('nicho totalmente pulverizado com 6 e com 20 itens → mesmo nível de Disputa', () => {
     const nicho = (n: number) => painelSintetico(Array.from({ length: n }, (_, i) =>
-      itemV2({ item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1000 })));
+      itemV2({ item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1000, full: false })));
     const v6 = calcularVereditoAnuncios(nicho(6), null);
     const v20 = calcularVereditoAnuncios(nicho(20), null);
     const disputa6 = v6.fatores.find((f) => f.chave === 'disputa');
@@ -409,11 +409,37 @@ describe('vocabulário (ADR-0127 §Fragilidades) — o card imprime a MARCA, nã
         return calcularVereditoAnuncios(vendas, visitas_total);
       }),
       calcularVereditoAnuncios(painelSintetico([itemV2({ vendedor: null, vendidos: 1 })]), null),
+      // liquidez 0,20 com 2.000 vendas: único caso que exercita o branch "ruim por liquidez" do
+      // fraseDemanda — os outros caem no branch de vendas mínimas e nunca leem aquela frase.
+      calcularVereditoAnuncios(painelSintetico([
+        ...Array.from({ length: 2 }, (_, i) => itemV2({ item_id: `MLB${i}`, vendidos: 1000 })),
+        ...Array.from({ length: 8 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendidos: null })),
+      ]), null),
     ];
     for (const v of casos) {
-      for (const texto of textosGerados(v)) expect(texto).not.toMatch(/vendedor/i);
+      // "ficha" morreu junto com o painel de catálogo (D1/D3): a unidade agora é o anúncio.
+      for (const texto of textosGerados(v)) expect(texto).not.toMatch(/vendedor|ficha/i);
       expect(textosGerados(v).some((t) => /rótulo/i.test(t))).toBe(true);
     }
+  });
+});
+
+describe('Full não medido (LOUD) — ausência de dado não pode PROMOVER a Disputa', () => {
+  it('facial com envio anulado em todos os anúncios NÃO sobe para alta', () => {
+    const { vendas } = fixture('protetor-solar-facial');
+    const semFull: PainelVendasSonar = {
+      ...vendas,
+      por_anuncio: Object.fromEntries(
+        Object.entries(vendas.por_anuncio!).map(([k, i]) => [k, { ...i, full: null }]),
+      ),
+      raio_x: { ...vendas.raio_x, full: 0 },
+    };
+    // O facial é 🔴 SÓ pela cláusula de Full (85% >= 60). Sem Full medido, deixar o termo sair dos
+    // dois lados da regra faria 0,69 de pulverização virar Disputa 🟢 → 6/6 → "alta", em silêncio,
+    // num nicho que o gabarito fixa em média. Ausência de dado nunca melhora um veredito.
+    const v = calcularVereditoAnuncios(semFull, null);
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('medio');
+    expect(v.nivel).not.toBe('alta');
   });
 });
 

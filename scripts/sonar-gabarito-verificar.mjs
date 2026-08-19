@@ -63,16 +63,23 @@ function veredito(m) {
   let disputa = null, tracao = null;
   // Trava de cobertura (D10): nickname em menos de 50% dos itens → Disputa e Tração indisponíveis.
   if (m.cobertura >= COBERTURA_MIN) {
-    disputa = (m.pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada || m.fullPct >= DISPUTA_V2.fullMuito) ? 'ruim'
-      : (m.pulverizacao >= DISPUTA_V2.pulverizacaoAberta && m.fullPct <= DISPUTA_V2.fullPouco) ? 'bom' : 'medio';
+    // Sem Full medido (fullPct null) a Disputa fica limitada a 'medio': ausência de dado não pode
+    // promover o fator (senão o facial, 🔴 só pela cláusula de Full, viraria 🟢 e o nicho, alta).
+    disputa = (m.pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada
+      || (m.fullPct != null && m.fullPct >= DISPUTA_V2.fullMuito)) ? 'ruim'
+      : (m.pulverizacao >= DISPUTA_V2.pulverizacaoAberta
+        && m.fullPct != null && m.fullPct <= DISPUTA_V2.fullPouco) ? 'bom' : 'medio';
     tracao = m.tracao >= TRACAO_V2.boa ? 'bom' : m.tracao >= TRACAO_V2.media ? 'medio' : 'ruim';
     fatores.push(disputa, tracao);
   }
   const soma = fatores.reduce((a, nivel) => a + PONTOS[nivel], 0);
   const maximo = fatores.length * 2;
+  // "Alta" exige dado completo: sem rótulo de loja na maioria dos anúncios OU sem nenhum tipo de
+  // envio informado o veredito é PARCIAL e não passa de média — ausência não melhora veredito.
+  const parcial = disputa === null || m.fullPct == null;
   const nivel = (demanda === 'ruim' || soma <= maximo / 3) ? 'baixa'
-    : (soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA) ? 'alta' : 'media';
-  return { demanda, disputa, tracao, soma, maximo, nivel };
+    : (soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA && !parcial) ? 'alta' : 'media';
+  return { demanda, disputa, tracao, soma, maximo, nivel, parcial };
 }
 
 let falhou = false;

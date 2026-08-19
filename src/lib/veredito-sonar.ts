@@ -196,7 +196,7 @@ function fraseDemanda(nivel: NivelFator, vendasTotais: number, liquidez: number)
     if (vendasTotais < DEMANDA.vendasMinimas) {
       return `Só ${fmtInt(vendasTotais)} vendas registradas na amostra — abaixo de ${fmtInt(DEMANDA.vendasMinimas)}, não há prova de compra suficiente para considerar o nicho comprador.`;
     }
-    return `Apenas ${pctL} dos anúncios analisados venderam — abaixo de ${Math.round(DEMANDA.liquidezRuim * 100)}%, a maioria das fichas do topo nunca vendeu.`;
+    return `Apenas ${pctL} dos anúncios analisados venderam — abaixo de ${Math.round(DEMANDA.liquidezRuim * 100)}%, a maioria dos anúncios do topo nunca vendeu.`;
   }
   if (nivel === 'bom') {
     return `${pctL} dos anúncios analisados já venderam e o nicho acumula ${fmtInt(vendasTotais)} vendas — mercado comprovadamente comprador.`;
@@ -440,9 +440,9 @@ export interface VereditoAnuncios {
   motivo: string;
   fatores: Fator[];
   marca: AlertaMarca | null;
-  /** true quando a trava de cobertura (D10) tirou Disputa e Tração da conta: o veredito saiu com
-   *  meia informação e se DECLARA parcial, em vez de rebaixar em silêncio. Falta de dado não é
-   *  sinal de negócio. */
+  /** true quando faltou dado para medir a concorrência: a trava de cobertura (D10) tirou Disputa e
+   *  Tração da conta, ou nenhum anúncio informou o tipo de envio (metade da Disputa). O veredito se
+   *  DECLARA parcial e não chega a "alta" — falta de dado não é sinal de negócio, nem para cima. */
   parcial: boolean;
   explicacao: Explicacao;
 }
@@ -529,12 +529,14 @@ function nivelDisputaV2(vendas: PainelVendasSonar, sub: SubamostraNomeada): {
   const pulverizacao = sub.distintos / sub.nomeados;
   const fullPct = fullPctAmostra(vendas);
   // Topo concentrado sob poucos rótulos = território fechado; maioria Full = concorrente com
-  // estoque em CD. Com `fullPct` null o termo simplesmente sai dos dois lados da regra — não vira
-  // 0% (que empurraria para 'bom') nem bloqueia o 'bom' (que puniria a ausência).
+  // estoque em CD. Sem Full medido (`fullPct` null) o fator fica LIMITADO A 'medio': ausência não
+  // vira 0% (que puxaria para 'bom') e também não pode PROMOVER — o facial é 🔴 só pela cláusula
+  // de Full, e sem ela viraria 🟢/alta em silêncio num nicho que o gabarito fixa em média.
+  // Ausência de dado nunca melhora um veredito (mesma regra que o ORIGEM de 14/07 custou caro).
   const nivel: NivelFator = pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada
     || (fullPct != null && fullPct >= DISPUTA_V2.fullMuito)
     ? 'ruim'
-    : pulverizacao >= DISPUTA_V2.pulverizacaoAberta && (fullPct == null || fullPct <= DISPUTA_V2.fullPouco)
+    : pulverizacao >= DISPUTA_V2.pulverizacaoAberta && fullPct != null && fullPct <= DISPUTA_V2.fullPouco
       ? 'bom'
       : 'medio';
   return {
@@ -564,9 +566,9 @@ function alertaMarcaV2(vendas: PainelVendasSonar): { nivel: NivelFator; detalhe:
   return { nivel: 'bom', detalhe, pct: p };
 }
 
-function montarMotivoAnuncios(nivel: NivelVeredito, fatores: Fator[], parcial: boolean): string {
-  if (parcial && nivel !== 'baixa') {
-    return 'Menos da metade dos anúncios traz rótulo de loja — não deu para avaliar a concorrência do nicho.';
+function montarMotivoAnuncios(nivel: NivelVeredito, fatores: Fator[], razaoParcial: string | null): string {
+  if (razaoParcial != null && nivel !== 'baixa') {
+    return `Não deu para avaliar a concorrência do nicho: ${razaoParcial}.`;
   }
   const pior = fatores.find((f) => f.nivel === 'ruim');
   if (nivel === 'baixa') {
@@ -630,7 +632,14 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   const demanda = nivelDemandaV2(vendas, visitasTotal);
   const disputa = nivelDisputaV2(vendas, sub);
   const tracao = nivelTracaoV2(sub);
-  const parcial = disputa == null || tracao == null;
+  // Duas causas de veredito parcial, ambas LOUD: sem rótulo de loja na maioria dos anúncios
+  // (trava D10) ou sem NENHUM tipo de envio informado (metade da Disputa não medida).
+  const semRotulo = disputa == null || tracao == null;
+  const semFull = disputa != null && disputa.fullPct == null;
+  const razaoParcial = semRotulo
+    ? 'menos da metade dos anúncios traz rótulo de loja'
+    : semFull ? 'nenhum anúncio da amostra informa o tipo de envio' : null;
+  const parcial = razaoParcial != null;
 
   const fatores: Fator[] = [{ chave: 'demanda', label: 'Demanda', nivel: demanda.nivel, detalhe: demanda.detalhe }];
   if (disputa) fatores.push({ chave: 'disputa', label: 'Disputa', nivel: disputa.nivel, detalhe: disputa.detalhe });
@@ -639,8 +648,11 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   const soma = fatores.reduce((acc, f) => acc + PONTOS[f.nivel], 0);
   const maximo = fatores.length * 2; // escala proporcional (ADR-0124 §4) absorve a trava D10
   const gateDemanda = demanda.nivel === 'ruim';
+  // "Alta" exige dado completo: com a Disputa medida pela metade o facial (🔴 só pela cláusula de
+  // Full) chegaria a 5/6 e leria "alta" por FALTA de dado. Ausência nunca melhora um veredito — e
+  // isto não é rebaixamento silencioso: `parcial` diz o porquê na tela.
   const nivel: NivelVeredito = gateDemanda || soma <= maximo / 3 ? 'baixa'
-    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA ? 'alta'
+    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA && !parcial ? 'alta'
       : 'media';
 
   const marca = alertaMarcaV2(vendas);
@@ -656,7 +668,10 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     fatoresExplicacao.push({
       chave: 'disputa',
       nivel: disputa.nivel,
-      frase: fraseDisputaV2(disputa.nivel, sub, disputa.pulverizacao, disputa.fullPct),
+      frase: fraseDisputaV2(disputa.nivel, sub, disputa.pulverizacao, disputa.fullPct)
+        + (semFull
+          ? ' Nenhum anúncio da amostra informa o tipo de envio: metade da Disputa (o % Full) não pôde ser medida, então o fator não passa de intermediário e o veredito sai parcial — sem dado completo não se declara oportunidade alta.'
+          : ''),
       // Pulverização MAIOR é melhor (campo aberto) — régua não invertida, ao contrário da antiga,
       // que contava vendedores absolutos.
       regua: regua(0, 1, [DISPUTA_V2.pulverizacaoConcentrada, DISPUTA_V2.pulverizacaoAberta], disputa.pulverizacao, false),
@@ -675,12 +690,12 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
         : `a partir de ${brlMil(tracao.nivel === 'ruim' ? TRACAO_V2.media : TRACAO_V2.boa)} por rótulo de loja a tração subiria de faixa — hoje: ${brlMil(tracao.porRotulo)}`,
     });
   }
-  if (parcial) {
+  if (semRotulo) {
     // Trava D10 visível no "Saiba mais": indisponível ≠ ruim, e o veredito diz isso em voz alta.
     fatoresExplicacao.push({
       chave: 'disputa',
       nivel: 'medio',
-      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios da amostra trazem rótulo de loja (mínimo: ${Math.round(COBERTURA_MINIMA * 100)}%) — sem base para medir a concorrência do nicho. Disputa e Tração saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial.`,
+      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios da amostra trazem rótulo de loja (mínimo: ${Math.round(COBERTURA_MINIMA * 100)}%) — sem base para medir a concorrência do nicho. Disputa e Tração saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial e não declara oportunidade alta.`,
       regua: null,
       destravar: null,
     });
@@ -698,14 +713,14 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   const acaoBase = ACAO[nivel];
   const acao = gateDemanda
     ? `Demanda insuficiente derruba o veredito para baixa por conta própria, independente dos outros fatores. ${acaoBase}`
-    : parcial
-      ? `Avaliação parcial: sem rótulo de loja na maioria dos anúncios, não foi possível avaliar a concorrência do nicho — o veredito saiu só com a Demanda. ${acaoBase}`
+    : razaoParcial != null
+      ? `Avaliação parcial: ${razaoParcial}, então não foi possível avaliar a concorrência do nicho por completo — sem isso o veredito não declara oportunidade alta. ${acaoBase}`
       : acaoBase;
 
   return {
     nivel,
     titulo: TITULOS[nivel],
-    motivo: montarMotivoAnuncios(nivel, fatores, parcial),
+    motivo: montarMotivoAnuncios(nivel, fatores, razaoParcial),
     fatores,
     marca,
     parcial,
