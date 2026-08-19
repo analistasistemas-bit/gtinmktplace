@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
+
+- [x] **Unidade da tabela virou anúncio**, não mais ficha de catálogo: interseção 0 medida entre
+  fichas do painel oficial e os 20 anúncios da amostra Apify (ADR-0127/D1). Cruzamento
+  ficha↔anúncio do ADR-0125/D4 (`src/lib/sonar-cruzamento.ts`) foi deletado.
+- [x] **Edge `pulse-sonar` deletada** (fichas de catálogo, API oficial). **Edge nova
+  `pulse-sonar-visitas`** (`{item_ids}`, teto 20, cache `sonar:visitas:v1:{item_id}` TTL 24h,
+  `{conectado:false}` sem conexão ML) assume o único uso restante da API oficial: visitas 30d por
+  anúncio. `pulse-sonar-vendas` (Apify) continua primária e passa a gravar histórico em
+  cache-miss.
+- [x] **Tabela nova `sonar_snapshots`**: uma linha por anúncio por garimpo fresco, global sem
+  `org_id`, RLS com leitura para `authenticated` e escrita só `service_role`, unique `(termo,
+  item_id, gerado_em)`. Delta de `vendidos` entre snapshots é PISO do período, nunca total
+  (ADR-0127/D13).
+- [x] **Veredito recalibrado sobre anúncios**: Disputa vira pulverização de vendedores, Tração vira
+  faturamento por vendedor da mesma subamostra — métricas invariantes ao tamanho da amostra
+  (ADR-0127/D11), com trava LOUD de cobertura quando o nickname do vendedor vem em <50% da
+  amostra (D10).
+- [x] Documentação (`edge-functions.md`, `modelo-de-dados.md`, `glossario.md`, obsidian-vault)
+  atualizada no mesmo ciclo. ADR-0127 supersede em parte o ADR-0125/D4.
+
 ## Sonar — remoção da sonda `date_created` (ADR-0125/D9) — 2026-08-19
 
 - [x] A sonda multiget `/items?ids=...&attributes=id,date_created` (coluna "Criação") foi ao ar

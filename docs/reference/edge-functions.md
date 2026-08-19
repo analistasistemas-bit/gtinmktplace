@@ -69,8 +69,8 @@
 | **Pulse (ADR-0119)** ||||
 | pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
-| pulse-sonar | true | HTTP (frontend) | sim (leitura; cache Redis 24h por termo) |
-| pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por termo) |
+| pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
+| pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -883,40 +883,11 @@ falha ao ler `organizations` não libera.
   incondicional anterior rebaixava produto `auto` para `manual` (tirando-o do tier quente e
   congelando a referência de preço) e desfazia o pausar do operador. Única exceção: ficha
   **arquivada** volta para `ativo`, porque readicioná-la é um pedido explícito de trazê-la de volta.
-- **pulse-sonar** (ADR-0120, `verify_jwt=true`, chamada pelo app com o JWT do usuário) — garimpo
-  on-demand por termo livre (`{termo}`, mínimo 3 caracteres): busca `/products/search` (site MLB,
-  até 40 fichas — dobrado de 20 porque o topo do resultado vem cheio de ficha sem vendedor ativo, e
-  ficha vazia é barata: curto-circuita antes de categoria/visitas/vendedores), e por ficha, em
-  lotes de 5 (`Promise.allSettled` — falha em uma ficha não derruba a busca, entra como resultado
-  vazio) lê `/products/{id}/items` (ofertas — **sem** excluir a própria org: no garimpo a nossa
-  oferta também é mercado). **Ficha sem oferta ativa** (404 "No winners found" ou `results: []`
-  mesmo com 200) devolve resultado vazio direto — não é enriquecida com categoria/visitas/
-  vendedores. Ficha com oferta resolve `category_id` pelo preditor nativo do ML
-  (`buscarCategoriaPreditor`, já cacheado 30d em `_shared/ml/domain-discovery.ts`, casando pelo
-  nome da ficha — `/products/{id}` não devolve `category_id`; chamada sob `comTimeout` de 10s
-  porque a função é compartilhada com o fluxo de publish, que não pode ganhar timeout lá — sem
-  isso um fetch interno travado derrubaria a ficha inteira), visitas de 30 dias só do item MAIS
-  BARATO da ficha (`/items/{id}/visits/time_window`; multiget não serve, teto de 1 id por
-  chamada) e `/users/{seller_id}` por vendedor distinto (UF via `ufDoVendedor`, `transactions.total`),
-  com cache de vendedor por request (`Map`, sellers repetem entre fichas). Cada ficha ganha
-  `item_ids: string[]` (id de cada oferta, na ordem do ML — chave primária do cruzamento
-  ficha↔anúncio no front com `pulse-sonar-vendas`, ADR-0125/D4). `montarPainelSonar`
-  (`_shared/pulse/sonar.ts`) agrega tudo em `PainelSonar` — soma de visitas por dia entre fichas
-  com datas desalinhadas, `visitas_30d` nulo nunca vira zero na soma, % frete grátis ponderado
-  por ofertas, vendedores distintos e `palavras_chave`. Resultado cacheado no Redis por
-  `sonar:v3:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
-  ADR-0120 §3) — bump v1→v2 pela mudança de shape nas fichas sem vendedor ativo, v2→v3
-  (ADR-0125/D3) porque `item_ids` é obrigatório para o cruzamento. Falha do ML na busca
-  principal (`null`) devolve 502 e não cacheia, para não travar um termo vazio por 24h a partir de
-  um erro transitório. Chegou a ganhar uma sonda `date_created` (Grupo C, coluna "Criação",
-  ADR-0125/D9): multiget `/items?ids=...&attributes=id,date_created` apostando que passaria para
-  itens de terceiro como já passa para os PRÓPRIOS no coletor Pulse. Foi ao ar em 19/08/2026 e
-  recebeu 403 também no multiget — hipótese refutada, sonda removida (D9 revisado no ADR-0125): a
-  coluna "Criação (dias)" não é obtenível pela API oficial para anúncios de terceiro.
 - **pulse-sonar-vendas** (ADR-0122, `verify_jwt=true`, chamada pelo app com o JWT do usuário) —
-  vendas estimadas do nicho via Apify, complemento do Sonar chamado pelo front **em paralelo** à
-  `pulse-sonar` (edge separada de propósito: o run da Apify pode levar minutos e a falha dele
-  degrada só o bloco de vendas). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
+  query primária da tela: a tabela do Sonar passou a listar os até 20 **anúncios reais** da busca
+  Apify, não mais fichas de catálogo (ADR-0127/D1 — a `pulse-sonar` original, que buscava fichas
+  via `/products/search`, foi **deletada**: interseção 0 medida entre fichas e anúncios em
+  19/08/2026, veja ADR-0127 §Contexto). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
   sem `APIFY_TOKEN` configurado devolve `{configurado:false}` com 200 (indisponível ≠ erro).
   Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
   (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}`, ordem de relevância;
@@ -934,14 +905,34 @@ falha ao ler `organizations` não libera.
   `avaliacao_nota`/`avaliacao_qtd`, `posicao`, `patrocinado` (de `tipoResultado`, não do campo
   `patrocinado` do actor — vazio em produção), `selo`, `preco_anterior`/`desconto_pct`, `flex`.
   Resposta ganha `por_anuncio: Record<item_id, ItemVendas>` (`indexarPorAnuncio` — colisão fica
-  com o primeiro da ordem de relevância), o índice que o front usa para cruzar com `item_ids` da
-  `pulse-sonar` (ADR-0125/D4; as edges continuam desacopladas, ADR-0122 — nenhuma chama a outra).
+  com o primeiro da ordem de relevância), o índice que a tabela renderiza direto (o cruzamento
+  ficha↔anúncio do ADR-0125/D4 morreu junto com a `pulse-sonar`, ADR-0127).
   Cache Redis `sonar:vendas:v4:MLB:<termo>`,
   **TTL 7 dias**, chave global (dado público, ADR-0120 §3) — `por_anuncio` entrou como campo
   ADITIVO na mesma v4 (ADR-0125/D2): bump para v5 recobraria a Apify em todo termo já cacheado nos
   últimos 7 dias, então entrada v4 anterior a esta entrega simplesmente não tem o índice até o TTL
   expirar sozinho, sem custo forçado. O dado é acumulado histórico em faixas arredondadas, então
   TTL curto só repagava o mesmo número; falha/timeout do run devolve 502 e não cacheia.
+  **Histórico (ADR-0127/D7):** em cache-miss (run Apify fresco), grava até 20 linhas em
+  `sonar_snapshots` (upsert em `(termo, item_id, gerado_em)`, `ignoreDuplicates`, via
+  `adminClient()`) antes de responder; cache hit não grava — mesmo dado, nenhum ponto novo, 1
+  snapshot por termo por ciclo de TTL. Falha de insert não derruba a resposta (o Apify já foi
+  pago) mas não é silenciosa: log + campo aditivo `historico_gravado: boolean` na resposta,
+  montado na hora de responder e nunca gravado no Redis — em cache hit vale sempre `false`.
+- **pulse-sonar-visitas** (ADR-0127/D3, `verify_jwt=true`, chamada pelo app com o JWT do usuário,
+  em paralelo à `pulse-sonar-vendas` depois que os `item_ids` chegam) — edge fina, nasceu para
+  substituir a busca de vendedores/UF da `pulse-sonar` deletada: 1 chamada por anúncio a
+  `/items/{id}/visits/time_window?last=30&unit=day` (funciona para terceiros, 20/20 HTTP 200
+  medido 19/08), em lotes de concorrência 5. Recebe `{item_ids: string[]}`, teto de 20 (acima
+  disso, 400). Cache **por item** (não por termo, para reaproveitar entre garimpos que repetem
+  anúncio) em `sonar:visitas:v1:{item_id}`, TTL 24h — mais curto que o das vendas porque a janela
+  de 30 dias anda todo dia; chave global, sem `org_id` (dado público, ADR-0120 §3, mesma regra da
+  `pulse-sonar-vendas`). Falha de item não cacheia (erro transitório não pode travar o item por
+  24h); zero medido com HTTP 200 cacheia normal — zero é dado, não ausência (ADR-0127/D8). Sem
+  conexão ML da org, devolve `{conectado:false}` com 200 (mesmo padrão do `configurado:false` da
+  vendas): a coluna Visitas mostra "—" e o resto da tela vive — único modo degradado que sobra
+  depois da `pulse-sonar` (ADR-0127/D16). Com conexão, devolve
+  `{conectado:true, por_item: Record<item_id, {total, por_dia} | null>}`.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal

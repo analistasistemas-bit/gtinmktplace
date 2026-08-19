@@ -713,6 +713,25 @@ de menu `'pulse'` em `profiles.allowed_menus` para todo não-admin que já tem `
 todo admin ativo (`is_admin and is_active`) — sem isso `lerAssinantes` não teria assinante e o
 alerta de coleta não gravaria em `notificacoes`.
 
+### `sonar_snapshots` (ADR-0127)
+Histórico do Sonar: uma linha por anúncio por garimpo fresco (não por dia — a cadência é o TTL do
+cache de vendas, 7d). *Migration `20260819145325_sonar_snapshots.sql`.* **Global, sem `org_id`, de
+propósito** — mesmo dado público que já vive em cache Redis com chave global (ADR-0120 §3;
+`sonar:vendas:v4` também não tem `org_id`); variação consciente do padrão org-scoped das outras
+tabelas do Pulse. RLS habilitada: `select` aberto a `authenticated` (`grant select`), **nenhuma
+policy de insert/update/delete** — escrita só pelo `service_role` (edge `pulse-sonar-vendas`, no
+cache-miss). `termo` (normalizado, igual à chave de cache), `gerado_em` (timestamptz do painel —
+dá idempotência natural no retry), `item_id` (idPublicacao MLB…), `titulo`, `preco` (numeric,
+`null` = não veio, LOUD), `vendidos` (integer, número cru pós-`parseVendidos`; `null` nunca vira
+zero), `posicao`, `patrocinado` (boolean; `null` = desconhecido), `vendedor` (nickname), `catalog_product_id`,
+`criado_em`. Unique `sonar_snapshots_termo_item_gerado_uniq` em `(termo, item_id, gerado_em)` — o
+alvo do upsert `on conflict do nothing` da edge. Índice `sonar_snapshots_item_gerado_idx` em
+`(item_id, gerado_em desc)`, para a série por anúncio de um futuro drill-down.
+**Semântica do delta (ADR-0127/D13):** `vendidos` vem em faixas arredondadas pelo ML — entre dois
+snapshots, 500→500 não significa "não vendeu", significa "não cruzou a próxima faixa". Qualquer
+consumidor futuro do histórico trata o delta entre snapshots como **piso** do período, nunca como
+total.
+
 ---
 
 ## Storage

@@ -23,6 +23,8 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > ganhou um passo 7: mede visitas de 30 dias de cada oferta viva no baseline diário (teto de 30s,
 > fila com o menos medido primeiro), gravadas em `pulse_ofertas.visitas_30d` (migration
 > `20260818012222_pulse_ofertas_visitas_30d.sql`) e exibidas também no detalhe do Radar.
+> **Superado em parte em 2026-08-19 (ADR-0127):** a edge `pulse-sonar` (fichas de catálogo) foi
+> deletada — a tabela do Sonar passou a listar anúncios reais, não fichas. Ver entrada abaixo.
 
 > **✅ Sonar — vendas estimadas do nicho EM PRODUÇÃO (ADR-0122, 2026-08-18).** Fecha a lacuna
 > contra o Hunter Spy: seção "Vendas do nicho" com vendas acumuladas, mercado endereçável (R$),
@@ -42,6 +44,19 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > como gabarito de teste (tecido oxford = 🟢 é o critério de aceitação). Números grandes
 > abreviados em pt-BR ("140,8 mil", "≈ R$ 58,8 mi", "10 mil+" nas fichas saturadas) e vendas
 > rotuladas como **unidades**.
+
+> **✅ Sonar por anúncio + histórico de snapshots EM PRODUÇÃO (ADR-0127, 2026-08-19).** A tabela
+> do Sonar trocou de unidade: lista os até 20 **anúncios reais** da amostra Apify, não mais fichas
+> de catálogo — interseção 0 medida entre os dois universos em produção (19/08). Edge `pulse-sonar`
+> (fichas) **deletada**; edge nova `pulse-sonar-visitas` assume o único uso restante da API oficial
+> (visitas 30d por anúncio, cache `sonar:visitas:v1:{item_id}` TTL 24h); `pulse-sonar-vendas`
+> (Apify) continua primária e passa a gravar histórico em `sonar_snapshots` (tabela nova, global
+> sem `org_id`, RLS leitura autenticada/escrita service_role) a cada garimpo fresco — delta futuro
+> de `vendidos` é sempre PISO do período, nunca total. Veredito recalibrado: Disputa vira
+> pulverização de vendedores e Tração vira faturamento por vendedor da mesma subamostra, métricas
+> invariantes ao tamanho da amostra, com trava de cobertura quando o nickname vem em <50% dos
+> itens. Cruzamento ficha↔anúncio do ADR-0125/D4 e a busca de vendedores/UF por fonte oficial
+> saem de circulação. ADR-0127 supersede em parte o ADR-0125/D4.
 
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram
