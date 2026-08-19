@@ -106,6 +106,28 @@ describe('calcularSimulacaoML', () => {
     expect(resultado.modalidades.premium?.custos.comissao).toBe(16.5)
   })
 
+  it('keeps manual fallback estimated even when a category is present', () => {
+    const cotacaoManual: CotacoesPorModalidade = {
+      origem: 'manual',
+      classico: {
+        percentualComissaoPct: 11.5,
+        taxaFixa: 0,
+        comissaoTotal: 11.5,
+        frete: 16.15,
+        proveniencia: 'estimated',
+      },
+    }
+
+    const resultado = calcularSimulacaoML(
+      { ...entradaBase, categoriaId: 'MLB123' },
+      cotacaoManual,
+    )
+
+    expect(resultado.modalidades.classico?.proveniencia).toBe('estimated')
+    expect(resultado.modalidades.premium?.proveniencia).toBe('estimated')
+    expect(resultado.proveniencia).toBe('estimated')
+  })
+
   it('downgrades results to estimated when no category was provided', () => {
     const resultado = calcularSimulacaoML(entradaBase, cotacoesBase)
 

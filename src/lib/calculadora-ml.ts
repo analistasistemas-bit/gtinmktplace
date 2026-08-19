@@ -214,7 +214,7 @@ function normalizarCotacoes(
   if (cotacoes.origem !== 'manual') return cotacoes
 
   return {
-    classico: cotacoes.classico,
+    classico: { ...cotacoes.classico, proveniencia: 'estimated' },
     premium: {
       percentualComissaoPct: cotacoes.classico.percentualComissaoPct + 5,
       taxaFixa: cotacoes.classico.taxaFixa,
@@ -232,6 +232,7 @@ function calcularProvenienciaModalidade(
   cotacao: CustosModalidadeML,
 ): Proveniencia {
   if (!entrada.categoriaId?.trim()) return 'estimated'
+  if (cotacao.proveniencia === 'estimated') return 'estimated'
   return cotacao.proveniencia === 'official' ? 'official' : 'partial'
 }
 
@@ -242,6 +243,9 @@ function calcularProvenienciaGlobal(
   if (!entrada.categoriaId?.trim()) return 'estimated'
 
   const resultados = Object.values(modalidades)
+  if (resultados.some((resultado) => resultado?.proveniencia === 'estimated')) {
+    return 'estimated'
+  }
   if (
     resultados.some((resultado) => resultado === null) ||
     resultados.some((resultado) => resultado?.proveniencia !== 'official')
