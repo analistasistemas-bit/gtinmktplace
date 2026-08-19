@@ -123,10 +123,18 @@ export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelec
         <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
           <p className="mb-3 text-sm font-medium">Fallback manual (estimativa)</p>
           <div className="grid gap-4 sm:grid-cols-3">
-            <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} step="0.1" max={100} />
+            <CampoNumero id="comissao-manual" label="Comissão (%)" value={taxas.percentualComissaoPct} onChange={(value) => onTaxas({ percentualComissaoPct: value })} step="0.1" max={95} />
             <CampoNumero id="taxa-fixa-manual" label="Taxa fixa (R$)" value={taxas.taxaFixa} onChange={(value) => onTaxas({ taxaFixa: value })} />
-            <CampoNumero id="frete-manual" label="Frete (R$)" value={taxas.frete ?? 0} onChange={(value) => onTaxas({ frete: value })} hint="Informe 0 apenas se o frete for realmente zero." />
+            <CampoNumero id="frete-manual" label="Frete (R$)" value={taxas.frete ?? 0} onChange={(value) => onTaxas({ frete: value, freteRealmenteZero: value === 0 ? taxas.freteRealmenteZero : false })} hint="Informe 0 apenas se o frete for realmente zero." />
           </div>
+          <label className="mt-3 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={taxas.freteRealmenteZero}
+              onChange={(event) => onTaxas({ freteRealmenteZero: event.target.checked })}
+            />
+            Frete realmente zero
+          </label>
         </div>
       </section>
       <Button type="button" variant="ghost" size="sm" onClick={() => onProduto(null)} disabled={!produtoSelecionado}>Limpar produto cadastrado</Button>

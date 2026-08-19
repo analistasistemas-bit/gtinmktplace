@@ -35,7 +35,7 @@ const estadoBase = {
     categoriaId: undefined,
   },
   atualizarEntrada,
-  taxasManuais: { percentualComissaoPct: 12, taxaFixa: 5, frete: 10 },
+  taxasManuais: { percentualComissaoPct: 12, taxaFixa: 5, frete: 10, freteRealmenteZero: false },
   atualizarTaxasManuais,
   produtoSelecionado: null,
   selecionarProduto,
@@ -55,6 +55,11 @@ const estadoBase = {
         precoEquilibrio: { valor: 87.5, proveniencia: 'estimated' as const, ehProjecao: true as const },
         precoAlvo: { valor: 100, proveniencia: 'estimated' as const, ehProjecao: true as const },
         custoMaximoCompra: 61,
+        sensibilidade: {
+          custoCompraMais10Pct: { lucro: 18, variacaoLucro: -5 },
+          precoVendaMenos5Pct: { lucro: 19.07, variacaoLucro: -3.93 },
+          freteMais5: { lucro: 18, variacaoLucro: -5 },
+        },
       },
       premium: {
         proveniencia: 'estimated' as const,
@@ -64,12 +69,18 @@ const estadoBase = {
         precoEquilibrio: { valor: 87.5, proveniencia: 'estimated' as const, ehProjecao: true as const },
         precoAlvo: { valor: 100, proveniencia: 'estimated' as const, ehProjecao: true as const },
         custoMaximoCompra: 56,
+        sensibilidade: {
+          custoCompraMais10Pct: { lucro: 13, variacaoLucro: -5 },
+          precoVendaMenos5Pct: { lucro: 14.32, variacaoLucro: -3.68 },
+          freteMais5: { lucro: 13, variacaoLucro: -5 },
+        },
       },
     },
     veredito: { tipo: 'Comprar' as const, fatores: ['Margem atual de 23% atinge a meta de 12%.', 'Lucro estimado de R$ 23,00 por unidade.'] },
   },
   validarNaApi,
   cotacaoMeta: null,
+  validacaoMeta: null,
   erroMeta: null,
 }
 
@@ -100,10 +111,20 @@ describe('Calculadora ML', () => {
     const user = userEvent.setup()
     render(<CalculadoraML />)
 
-    expect(screen.getByRole('heading', { name: /clássico/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /premium/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^clássico$/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^premium$/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /ver premium/i }))
     expect(screen.getByText('R$ 22,00')).toBeInTheDocument()
+  })
+
+  it('renders numeric sensitivity for the active modality', async () => {
+    const user = userEvent.setup()
+    render(<CalculadoraML />)
+
+    expect(screen.getByText(/preço de venda -5%/i)).toBeInTheDocument()
+    expect(screen.getByText(/3,93/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /ver premium/i }))
+    expect(screen.getByText(/3,68/)).toBeInTheDocument()
   })
 
   it('expõe proveniência, veredito explicado e validação do preço projetado', async () => {
@@ -164,7 +185,7 @@ describe('Calculadora ML', () => {
 
     expect(onEntrada).toHaveBeenCalledWith({ custoProduto: 0 })
     expect(onEntrada).toHaveBeenCalledWith({ margemAlvoPct: 100 })
-    expect(onTaxas).toHaveBeenCalledWith({ percentualComissaoPct: 100 })
+    expect(onTaxas).toHaveBeenCalledWith({ percentualComissaoPct: 95 })
     expect(screen.getAllByText(/entre 0 e 100|não pode ser negativo/i).length).toBeGreaterThanOrEqual(2)
   })
 
@@ -174,11 +195,42 @@ describe('Calculadora ML', () => {
       premium: { comissao: 22, percentual: 17, fixa: 5, imposto: 0, recebe: 63 },
       frete: 10,
     }
-    estado = { ...estadoBase, cotacaoMeta: tarifaValidada }
+    estado = {
+      ...estadoBase,
+      cotacaoMeta: tarifaValidada,
+      validacaoMeta: { modalidade: 'classico', margemPct: 12, proveniencia: 'official' },
+    }
     render(<CalculadoraML />)
 
     expect(screen.getByText(/preço projetado validado na api/i)).toBeInTheDocument()
     expect(screen.getByText(/oficial.*api ml/i)).toBeInTheDocument()
+  })
+
+  it('announces only decision and status changes without nesting a main landmark', () => {
+    const view = render(<CalculadoraML />)
+
+    expect(view.container.querySelector('main')).toBeNull()
+    expect(view.container.querySelectorAll('[aria-live="polite"]')).toHaveLength(2)
+  })
+
+  it('requires an explicit confirmation before accepting manual zero freight', () => {
+    const onTaxas = vi.fn()
+    render(
+      <FormularioCalculadoraML
+        entrada={estadoBase.entrada}
+        taxas={{ ...estadoBase.taxasManuais, frete: 0 }}
+        produtos={[]}
+        produtoSelecionado={null}
+        produtosCarregando={false}
+        onEntrada={vi.fn()}
+        onTaxas={onTaxas}
+        onProduto={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /frete realmente zero/i }))
+
+    expect(onTaxas).toHaveBeenCalledWith({ freteRealmenteZero: true })
   })
 
   it('sincroniza dimensões de produto atualizado e preserva edição parcial subsequente', () => {

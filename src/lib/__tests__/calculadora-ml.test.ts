@@ -90,7 +90,7 @@ describe('calcularSimulacaoML', () => {
   })
 
   it('derives manual Premium commission five points above Classic', () => {
-    const cotacaoManualSemPremium = {
+    const cotacaoManualSemPremium: CotacoesPorModalidade = {
       origem: 'manual',
       classico: {
         percentualComissaoPct: 11.5,
@@ -99,7 +99,7 @@ describe('calcularSimulacaoML', () => {
         frete: 16.15,
         proveniencia: 'estimated',
       },
-    } as unknown as CotacoesPorModalidade
+    }
 
     const resultado = calcularSimulacaoML(entradaBase, cotacaoManualSemPremium)
 
@@ -214,5 +214,67 @@ describe('calcularSimulacaoML', () => {
     )
 
     expect(resultado.veredito.fatores).toHaveLength(3)
+  })
+
+  it('keeps manual quotes with an unconfirmed commission from becoming actionable', () => {
+    const resultado = calcularSimulacaoML(entradaBase, {
+      origem: 'manual',
+      classico: {
+        percentualComissaoPct: 0,
+        taxaFixa: 0,
+        comissaoTotal: 0,
+        frete: 16.15,
+        proveniencia: 'estimated',
+      },
+    })
+
+    expect(resultado.veredito.tipo).toBe('Dados insuficientes')
+  })
+
+  it('keeps a manual quote with unconfirmed freight from becoming actionable', () => {
+    const resultado = calcularSimulacaoML(entradaBase, {
+      origem: 'manual',
+      classico: {
+        percentualComissaoPct: 11.5,
+        taxaFixa: 0,
+        comissaoTotal: 11.5,
+        frete: null,
+        proveniencia: 'estimated',
+      },
+    })
+
+    expect(resultado.veredito.tipo).toBe('Dados insuficientes')
+  })
+
+  it('rejects a manual Classic commission above 95% because Premium would exceed 100%', () => {
+    expect(() =>
+      calcularSimulacaoML(entradaBase, {
+        origem: 'manual',
+        classico: {
+          percentualComissaoPct: 96,
+          taxaFixa: 0,
+          comissaoTotal: 96,
+          frete: 16.15,
+          proveniencia: 'estimated',
+        },
+      }),
+    ).toThrow(/95/)
+  })
+
+  it('reports numeric profit changes for cost, price and freight sensitivity scenarios', () => {
+    const resultado = calcularSimulacaoML(
+      { ...entradaBase, categoriaId: 'MLB123' },
+      cotacoesBase,
+    )
+
+    expect(resultado.modalidades.classico?.sensibilidade).toEqual({
+      custoCompraMais10Pct: { lucro: 1.35, variacaoLucro: -5 },
+      precoVendaMenos5Pct: { lucro: 2.42, variacaoLucro: -3.93 },
+      freteMais5: { lucro: 1.35, variacaoLucro: -5 },
+    })
+    expect(resultado.modalidades.premium?.sensibilidade.precoVendaMenos5Pct).toEqual({
+      lucro: -2.33,
+      variacaoLucro: -3.68,
+    })
   })
 })

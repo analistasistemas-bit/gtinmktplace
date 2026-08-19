@@ -6,8 +6,14 @@ import {
   type CotacoesPorModalidade,
   type DimensoesProduto,
   type EntradaCalculadoraML,
+  type Proveniencia,
 } from '@/lib/calculadora-ml'
-import { fetchProdutosEstoqueResumo, type ProdutoEstoqueResumo } from '@/lib/produtos-saldo'
+import {
+  fetchProdutosEstoqueResumo,
+  fetchVariacoesProduto,
+  type ProdutoEstoqueResumo,
+  type VariacaoComSaldo,
+} from '@/lib/produtos-saldo'
 import { QK } from '@/lib/queries'
 import { calcularTarifaML, cotacoesOficiaisDaTarifa, type Tarifa } from '@/lib/tarifa'
 
@@ -17,12 +23,15 @@ export interface TaxasManuaisML {
   percentualComissaoPct: number
   taxaFixa: number
   frete: number | null
+  freteRealmenteZero: boolean
 }
 
-export interface ProdutoCalculadoraML extends ProdutoEstoqueResumo {
-  custoProduto?: number | null
-  precoVenda?: number | null
-  dimensoes?: Partial<DimensoesProduto> | null
+export type ProdutoCalculadoraML = ProdutoEstoqueResumo
+
+export interface ValidacaoMetaML {
+  modalidade: 'classico' | 'premium'
+  margemPct: number
+  proveniencia: Proveniencia
 }
 
 export interface UseCalculadoraMLOptions extends Partial<EntradaCalculadoraML> {
@@ -43,6 +52,7 @@ const TAXAS_MANUAIS_INICIAIS: TaxasManuaisML = {
   percentualComissaoPct: 0,
   taxaFixa: 0,
   frete: 0,
+  freteRealmenteZero: false,
 }
 
 function arredondarMoeda(valor: number): number {
@@ -61,9 +71,30 @@ function criarCotacaoManual(
       comissaoTotal: arredondarMoeda(
         precoVenda * (taxas.percentualComissaoPct / 100) + taxas.taxaFixa,
       ),
-      frete: taxas.frete,
+      frete: freteManualConfirmado(taxas),
       proveniencia: 'estimated',
     },
+  }
+}
+
+function freteManualConfirmado(taxas: TaxasManuaisML): number | null {
+  if (taxas.frete === null) return null
+  return taxas.frete > 0 || taxas.freteRealmenteZero ? taxas.frete : null
+}
+
+function cotacaoOficialComFreteConfirmado(
+  tarifa: Tarifa,
+  entrada: EntradaCalculadoraML,
+  taxas: TaxasManuaisML,
+): CotacoesPorModalidade {
+  const cotacao = cotacoesOficiaisDaTarifa(tarifa)
+  if (entrada.dimensoes) return cotacao
+
+  const frete = freteManualConfirmado(taxas)
+  return {
+    origem: 'official',
+    classico: { ...cotacao.classico, frete, proveniencia: 'partial' },
+    premium: { ...cotacao.premium, frete, proveniencia: 'partial' },
   }
 }
 
@@ -89,23 +120,69 @@ function dimensoesDaTarifa(
 
 function preencherProduto(
   entrada: EntradaCalculadoraML,
-  produto: ProdutoCalculadoraML,
+  variacao: VariacaoComSaldo,
 ): EntradaCalculadoraML {
   const proxima = { ...entrada }
-  if (Number.isFinite(produto.custoProduto)) proxima.custoProduto = produto.custoProduto as number
-  if (Number.isFinite(produto.precoVenda)) proxima.precoVenda = produto.precoVenda as number
+  if (variacao.custo !== null && Number.isFinite(variacao.custo)) {
+    proxima.custoProduto = variacao.custo
+  }
+  if (Number.isFinite(variacao.preco)) proxima.precoVenda = variacao.preco
 
-  const dimensoes = produto.dimensoes
-  if (
-    dimensoes &&
-    Number.isFinite(dimensoes.alturaCm) &&
-    Number.isFinite(dimensoes.larguraCm) &&
-    Number.isFinite(dimensoes.comprimentoCm) &&
-    Number.isFinite(dimensoes.pesoKg)
-  ) {
-    proxima.dimensoes = dimensoes as DimensoesProduto
+  const dimensoes = dimensoesDaVariacao(variacao)
+  if (dimensoes) {
+    proxima.dimensoes = dimensoes
   }
   return proxima
+}
+
+function dimensoesDaVariacao(variacao: VariacaoComSaldo): DimensoesProduto | undefined {
+  const alturaCm = variacao.alturaCm
+  const larguraCm = variacao.larguraCm
+  const comprimentoCm = variacao.comprimentoCm
+  const pesoKg = variacao.pesoGramas === null ? null : variacao.pesoGramas / 1000
+  if (
+    alturaCm === null || larguraCm === null || comprimentoCm === null || pesoKg === null ||
+    !Number.isFinite(alturaCm) || !Number.isFinite(larguraCm) ||
+    !Number.isFinite(comprimentoCm) || !Number.isFinite(pesoKg) ||
+    alturaCm <= 0 || larguraCm <= 0 || comprimentoCm <= 0 || pesoKg <= 0
+  ) return undefined
+  return {
+    alturaCm,
+    larguraCm,
+    comprimentoCm,
+    pesoKg,
+  }
+}
+
+function variacaoTemDadosUsaveis(variacao: VariacaoComSaldo): boolean {
+  return (
+    (variacao.custo !== null && Number.isFinite(variacao.custo)) ||
+    variacao.preco > 0 ||
+    dimensoesDaVariacao(variacao) !== undefined
+  )
+}
+
+function escolherVariacao(
+  produto: ProdutoCalculadoraML,
+  variacoes: VariacaoComSaldo[],
+): VariacaoComSaldo | undefined {
+  return (
+    (produto.skuUnico
+      ? variacoes.find((variacao) => variacao.codigo === produto.skuUnico)
+      : undefined) ??
+    variacoes.find(variacaoTemDadosUsaveis) ??
+    variacoes[0]
+  )
+}
+
+function entradaAlteraChaveCotacao(parcial: Partial<EntradaCalculadoraML>): boolean {
+  return ['precoVenda', 'categoriaId', 'aliquotaImpostoPct', 'dimensoes'].some((chave) =>
+    Object.prototype.hasOwnProperty.call(parcial, chave),
+  )
+}
+
+function variacaoAlteraChaveCotacao(variacao: VariacaoComSaldo): boolean {
+  return Number.isFinite(variacao.preco) || dimensoesDaVariacao(variacao) !== undefined
 }
 
 /**
@@ -123,13 +200,17 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     ...taxasIniciais,
   }))
   const [tarifaOficial, setTarifaOficial] = useState<Tarifa | null>(null)
-  const [statusCotacao, setStatusCotacao] = useState<'idle' | 'loading' | 'official' | 'estimated'>('idle')
+  const [statusCotacao, setStatusCotacao] = useState<'idle' | 'loading' | 'official' | 'partial' | 'estimated'>('idle')
   const [avisoApi, setAvisoApi] = useState<string | null>(null)
   const [produtoSelecionado, setProdutoSelecionado] = useState<ProdutoCalculadoraML | null>(null)
   const [cotacaoMeta, setCotacaoMeta] = useState<Tarifa | null>(null)
+  const [validacaoMeta, setValidacaoMeta] = useState<ValidacaoMetaML | null>(null)
   const [erroMeta, setErroMeta] = useState<string | null>(null)
   const sequenciaCotacao = useRef(0)
   const sequenciaMeta = useRef(0)
+  const sequenciaProduto = useRef(0)
+  const taxasManuaisRef = useRef(taxasManuais)
+  taxasManuaisRef.current = taxasManuais
 
   const produtos = useQuery({
     queryKey: QK.produtosEstoqueResumo,
@@ -156,7 +237,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     ],
   )
   const cotacao: CotacoesPorModalidade = tarifaOficial
-    ? cotacoesOficiaisDaTarifa(tarifaOficial)
+    ? cotacaoOficialComFreteConfirmado(tarifaOficial, entrada, taxasManuais)
     : cotacaoManual
   const resultado = useMemo(
     () => calcularSimulacaoML(entrada, cotacao),
@@ -164,34 +245,53 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   )
 
   const atualizarEntrada = useCallback((parcial: Partial<EntradaCalculadoraML>) => {
-    sequenciaCotacao.current += 1
     sequenciaMeta.current += 1
-    setTarifaOficial(null)
     setCotacaoMeta(null)
+    setValidacaoMeta(null)
     setErroMeta(null)
+    if (entradaAlteraChaveCotacao(parcial)) {
+      sequenciaCotacao.current += 1
+      setTarifaOficial(null)
+      setStatusCotacao('loading')
+    }
     setEntrada((atual) => ({ ...atual, ...parcial }))
   }, [])
 
   const atualizarTaxasManuais = useCallback((parcial: Partial<TaxasManuaisML>) => {
-    sequenciaCotacao.current += 1
     sequenciaMeta.current += 1
-    setTarifaOficial(null)
     setCotacaoMeta(null)
+    setValidacaoMeta(null)
     setErroMeta(null)
-    setStatusCotacao('estimated')
-    setAvisoApi('Taxas manuais estimadas estão ativas; valide na API antes de decidir.')
+    if (!tarifaOficial) {
+      setStatusCotacao('estimated')
+      setAvisoApi('Taxas manuais estimadas estão ativas; valide na API antes de decidir.')
+    }
     setTaxasManuais((atual) => ({ ...atual, ...parcial }))
-  }, [])
+  }, [tarifaOficial])
 
-  const selecionarProduto = useCallback((produto: ProdutoCalculadoraML | null) => {
+  const selecionarProduto = useCallback(async (produto: ProdutoCalculadoraML | null) => {
+    const id = ++sequenciaProduto.current
     sequenciaMeta.current += 1
     setProdutoSelecionado(produto)
     setCotacaoMeta(null)
+    setValidacaoMeta(null)
     setErroMeta(null)
     if (!produto) return
-    sequenciaCotacao.current += 1
-    setTarifaOficial(null)
-    setEntrada((atual) => preencherProduto(atual, produto))
+
+    try {
+      const variacoes = await fetchVariacoesProduto(produto.codigoPai)
+      if (sequenciaProduto.current !== id) return
+      const variacao = escolherVariacao(produto, variacoes)
+      if (!variacao) return
+      if (variacaoAlteraChaveCotacao(variacao)) {
+        sequenciaCotacao.current += 1
+        setTarifaOficial(null)
+        setStatusCotacao('loading')
+      }
+      setEntrada((atual) => preencherProduto(atual, variacao))
+    } catch {
+      // A seleção continua útil mesmo que o prefill opcional falhe.
+    }
   }, [])
 
   useEffect(() => {
@@ -228,8 +328,17 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
             return
           }
           setTarifaOficial(tarifa)
-          setStatusCotacao('official')
-          setAvisoApi(null)
+          if (entrada.dimensoes) {
+            setStatusCotacao('official')
+            setAvisoApi(null)
+          } else {
+            setStatusCotacao('partial')
+            setAvisoApi(
+              freteManualConfirmado(taxasManuaisRef.current) === null
+                ? 'Comissão oficial aplicada; confirme o frete manual para decidir.'
+                : 'Comissão oficial aplicada com frete manual confirmado.',
+            )
+          }
         })
         .catch(() => {
           if (sequenciaCotacao.current !== id) return
@@ -243,6 +352,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     entrada.precoVenda,
     entrada.categoriaId,
     entrada.aliquotaImpostoPct,
+    entrada.dimensoes,
     dimensoesCotacao,
   ])
 
@@ -257,6 +367,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     }
     setErroMeta(null)
     setCotacaoMeta(null)
+    setValidacaoMeta(null)
     try {
       const tarifa = await calcularTarifaML(
         precoProjetado,
@@ -265,15 +376,40 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
         entrada.aliquotaImpostoPct,
       )
       if (sequenciaMeta.current !== id) return null
-      if (!tarifa) setErroMeta('A API não retornou uma cotação para o preço projetado.')
+      if (!tarifa) {
+        setErroMeta('A API não retornou uma cotação para o preço projetado.')
+        return null
+      }
+      const resultadoValidado = calcularSimulacaoML(
+        { ...entrada, precoVenda: precoProjetado },
+        cotacaoOficialComFreteConfirmado(tarifa, entrada, taxasManuais),
+      )
+      const resultadoModalidade = resultadoValidado.modalidades[modalidade]
+      if (
+        !resultadoModalidade ||
+        resultadoModalidade.margemPct < entrada.margemAlvoPct - 0.01
+      ) {
+        const margem = resultadoModalidade?.margemPct
+        setErroMeta(
+          margem === undefined
+            ? 'A cotação oficial não confirmou a margem-alvo: faltam dados de frete.'
+            : `A cotação oficial não confirmou a margem-alvo de ${entrada.margemAlvoPct.toLocaleString('pt-BR')}% (margem recalculada: ${margem.toLocaleString('pt-BR')}%).`,
+        )
+        return null
+      }
       setCotacaoMeta(tarifa)
+      setValidacaoMeta({
+        modalidade,
+        margemPct: resultadoModalidade.margemPct,
+        proveniencia: resultadoModalidade.proveniencia,
+      })
       return tarifa
     } catch {
       if (sequenciaMeta.current !== id) return null
       setErroMeta('Não foi possível validar o preço projetado na API.')
       return null
     }
-  }, [entrada, dimensoesCotacao, resultado])
+  }, [entrada, dimensoesCotacao, resultado, taxasManuais])
 
   return {
     entrada,
@@ -289,6 +425,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     resultado,
     validarNaApi,
     cotacaoMeta,
+    validacaoMeta,
     erroMeta,
   }
 }

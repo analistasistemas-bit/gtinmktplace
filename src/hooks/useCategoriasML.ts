@@ -5,17 +5,23 @@ import { buscarCategoriasML } from '@/lib/categorias-ml'
 const DEBOUNCE_MS = 300
 
 export function useCategoriasML(query: string) {
-  const [termo, setTermo] = useState(query.trim())
+  const queryNormalizada = query.trim()
+  const [termo, setTermo] = useState(queryNormalizada)
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setTermo(query.trim()), DEBOUNCE_MS)
+    const timer = window.setTimeout(() => setTermo(queryNormalizada), DEBOUNCE_MS)
     return () => window.clearTimeout(timer)
-  }, [query])
+  }, [queryNormalizada])
 
-  return useQuery({
+  const consulta = useQuery({
     queryKey: ['categorias-ml', termo],
     queryFn: () => buscarCategoriasML(termo),
     enabled: termo.length >= 3,
     staleTime: 5 * 60_000,
   })
+
+  return {
+    ...consulta,
+    data: termo === queryNormalizada && termo.length >= 3 ? consulta.data ?? [] : [],
+  }
 }

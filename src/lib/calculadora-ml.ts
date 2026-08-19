@@ -67,6 +67,17 @@ export interface PrecoProjetadoML {
   ehProjecao: true
 }
 
+export interface CenarioSensibilidadeML {
+  lucro: number
+  variacaoLucro: number
+}
+
+export interface SensibilidadeModalidadeML {
+  custoCompraMais10Pct: CenarioSensibilidadeML
+  precoVendaMenos5Pct: CenarioSensibilidadeML
+  freteMais5: CenarioSensibilidadeML
+}
+
 export interface ResultadoModalidadeML {
   proveniencia: Proveniencia
   custos: DecomposicaoCustosML
@@ -75,6 +86,7 @@ export interface ResultadoModalidadeML {
   precoEquilibrio: PrecoProjetadoML
   precoAlvo: PrecoProjetadoML
   custoMaximoCompra: number
+  sensibilidade: SensibilidadeModalidadeML
 }
 
 export type TipoVereditoML =
@@ -131,11 +143,14 @@ export function calcularSimulacaoML(
 
   return {
     peso,
-    proveniencia: calcularProvenienciaGlobal(entrada, modalidades),
+    proveniencia: calcularProvenienciaGlobal(entrada, modalidades, cotacoes),
     modalidades,
     veredito: calcularVeredito(
       entrada,
       modalidades[modalidadeParaDecisao],
+      cotacoes?.origem === 'manual' &&
+        (cotacoes.classico.percentualComissaoPct === 0 ||
+          cotacoes.classico.frete === null),
     ),
   }
 }
@@ -203,6 +218,7 @@ function calcularModalidade(
       entrada.margemAlvoPct,
     ),
     custoMaximoCompra,
+    sensibilidade: calcularSensibilidade(entrada, { ...cotacao, frete: cotacao.frete }, lucro),
   }
 }
 
@@ -212,6 +228,9 @@ function normalizarCotacoes(
 ): Partial<Record<ModalidadeML, CustosModalidadeML>> {
   if (!cotacoes) return {}
   if (cotacoes.origem !== 'manual') return cotacoes
+  if (cotacoes.classico.percentualComissaoPct > 95) {
+    throw new RangeError('percentualComissaoPct manual deve ser no máximo 95%.')
+  }
 
   return {
     classico: { ...cotacoes.classico, proveniencia: 'estimated' },
@@ -239,8 +258,10 @@ function calcularProvenienciaModalidade(
 function calcularProvenienciaGlobal(
   entrada: EntradaCalculadoraML,
   modalidades: ResultadoCalculadoraML['modalidades'],
+  cotacoes?: CotacoesPorModalidade,
 ): Proveniencia {
   if (!entrada.categoriaId?.trim()) return 'estimated'
+  if (cotacoes?.origem === 'manual') return 'estimated'
 
   const resultados = Object.values(modalidades)
   if (resultados.some((resultado) => resultado?.proveniencia === 'estimated')) {
@@ -259,8 +280,9 @@ function calcularProvenienciaGlobal(
 function calcularVeredito(
   entrada: EntradaCalculadoraML,
   resultado: ResultadoModalidadeML | null,
+  cotacaoManualIncompleta = false,
 ): VereditoML {
-  if (entrada.precoVenda === 0 || !resultado) {
+  if (entrada.precoVenda === 0 || !resultado || cotacaoManualIncompleta) {
     return {
       tipo: 'Dados insuficientes',
       fatores: [
@@ -311,6 +333,54 @@ function calcularVeredito(
       `A meta de ${formatarPct(entrada.margemAlvoPct)} não comporta preço projetado com os custos atuais.`,
       `Lucro atual de ${formatarMoeda(resultado.lucro)} por unidade.`,
     ],
+  }
+}
+
+function calcularSensibilidade(
+  entrada: EntradaCalculadoraML,
+  cotacao: CustosModalidadeML & { frete: number },
+  lucroAtual: number,
+): SensibilidadeModalidadeML {
+  const criarCenario = (
+    custoProduto: number,
+    precoVenda: number,
+    frete: number,
+  ): CenarioSensibilidadeML => {
+    const comissao = arredondarMoeda(
+      cotacao.comissaoTotal +
+        (precoVenda - entrada.precoVenda) * (cotacao.percentualComissaoPct / 100),
+    )
+    const imposto = arredondarMoeda((precoVenda * entrada.aliquotaImpostoPct) / 100)
+    const lucro = arredondarMoeda(
+      precoVenda - arredondarMoeda(
+        custoProduto +
+          comissao +
+          frete +
+          imposto +
+          entrada.custosFixos +
+          entrada.custosVariaveis -
+          entrada.rebate,
+      ),
+    )
+    return { lucro, variacaoLucro: arredondarMoeda(lucro - lucroAtual) }
+  }
+
+  return {
+    custoCompraMais10Pct: criarCenario(
+      entrada.custoProduto * 1.1,
+      entrada.precoVenda,
+      cotacao.frete,
+    ),
+    precoVendaMenos5Pct: criarCenario(
+      entrada.custoProduto,
+      entrada.precoVenda * 0.95,
+      cotacao.frete,
+    ),
+    freteMais5: criarCenario(
+      entrada.custoProduto,
+      entrada.precoVenda,
+      cotacao.frete + 5,
+    ),
   }
 }
 

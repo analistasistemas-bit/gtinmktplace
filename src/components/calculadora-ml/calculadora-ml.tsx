@@ -12,7 +12,7 @@ export function CalculadoraML() {
   const categoriaAusente = !calculadora.entrada.categoriaId?.trim()
 
   return (
-    <main className="min-h-full bg-muted/20 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-full bg-muted/20 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="max-w-3xl">
           <div className="flex items-center gap-2 text-sm font-medium text-primary"><Calculator className="size-4" aria-hidden="true" /> Viabilidade</div>
@@ -50,11 +50,12 @@ export function CalculadoraML() {
               onValidar={() => { void calculadora.validarNaApi() }}
               erroMeta={calculadora.erroMeta}
               cotacaoMeta={calculadora.cotacaoMeta}
+              validacaoMeta={calculadora.validacaoMeta}
             />
           </aside>
         </div>
       </div>
-    </main>
+    </div>
   )
 }
 
