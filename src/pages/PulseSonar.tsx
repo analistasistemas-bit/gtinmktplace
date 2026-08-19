@@ -29,7 +29,7 @@ import {
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
   fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, normalizarSerieVisitas, passosProgresso,
-  type EtapaProgresso, type ItemVendasSonar, type RaioXNicho, type RespostaVendasSonar,
+  type EtapaProgresso, type ItemVendasSonar, type PainelVendasSonar, type RaioXNicho,
   type VisitasAnuncio,
 } from '@/lib/sonar';
 import {
@@ -89,45 +89,9 @@ function RaioXBarra({ raioX }: { raioX: RaioXNicho }) {
   );
 }
 
-// Bloco de vendas estimadas (ADR-0122): carrega em paralelo e degrada sozinho — Apify fora do ar
-// ou sem token nunca derruba o resto do Sonar.
-function SonarVendas({ resp, carregando, erro }: {
-  resp: RespostaVendasSonar | undefined; carregando: boolean; erro: boolean;
-}) {
-  if (carregando) {
-    return (
-      <Card className="mb-4 p-4">
-        <div className="mb-2 text-sm font-medium">Vendas do nicho</div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
-        </div>
-      </Card>
-    );
-  }
-  if (erro) {
-    return (
-      <Card className="mb-4 p-4">
-        <div className="mb-1 text-sm font-medium">Vendas do nicho</div>
-        <p className="text-sm text-muted-foreground">
-          Consulta de vendas falhou ou demorou demais — o resto do painel não é afetado. Busque de
-          novo para tentar outra vez.
-        </p>
-      </Card>
-    );
-  }
-  if (!resp) return null;
-  if (!resp.configurado) {
-    return (
-      <Card className="mb-4 p-4">
-        <div className="mb-1 text-sm font-medium">Vendas do nicho</div>
-        <p className="text-sm text-muted-foreground">
-          Configure o token da Apify (variável <code className="font-mono text-xs">APIFY_TOKEN</code>)
-          para ver vendas acumuladas, mercado endereçável e produto destaque do nicho.
-        </p>
-      </Card>
-    );
-  }
-
+// Bloco de vendas estimadas (ADR-0122): renderiza junto com o resto do painel — D16 já resolveu
+// "sem token"/erro/carregando antes deste ponto (a página só chega aqui com `vendas.configurado`).
+function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
   const destaque = resp.produto_destaque;
   return (
     <Card className="mb-4 p-4">
@@ -688,7 +652,7 @@ export default function PulseSonar() {
             veredito={calcularVereditoAnuncios(vendas, visitasTotal)}
             contexto={contextoNichoAnuncios(vendas)}
           />
-          <SonarVendas resp={vendas} carregando={false} erro={false} />
+          <SonarVendas resp={vendas} />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />
@@ -712,11 +676,7 @@ export default function PulseSonar() {
             columns={colunas}
             rows={visiveis}
             rowKey={(i) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`}
-            empty={
-              temFiltroAnunciosAtivo(filtros)
-                ? <EmptyState icon={Package} title="Nenhum anúncio passa pelos filtros ativos." />
-                : <EmptyState icon={Package} title="Nenhum anúncio na amostra." />
-            }
+            empty={<EmptyState icon={Package} title="Nenhum anúncio passa pelos filtros ativos." />}
           />
         </>
       ) : (

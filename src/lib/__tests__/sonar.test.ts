@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { passosProgresso, margemSimulada, fichasAtivas, fichasSemVendedor, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas } from '../sonar';
-import type { PainelSonar } from '../sonar';
+import { passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas } from '../sonar';
 
 describe('passosProgresso — máquina dos 4 passos (ADR-0120/0127; busca de fichas morreu)', () => {
   it('início (0ms, sem resposta): 1º passo ativo, resto pendente', () => {
@@ -106,34 +105,5 @@ describe('margemSimulada — recebe/imposto/margem sobre custo (não sobre preç
   it('custo zero não estoura (margem 0, não Infinity/NaN)', () => {
     const r = margemSimulada({ precoAlvo: 100, custo: 0, aliquotaPct: 8, tarifa: { comissao: 15, frete: 5 } });
     expect(r.margemPct).toBe(0);
-  });
-});
-
-describe('fichasAtivas / fichasSemVendedor — separação por ofertas > 0 (ruling: ficha vazia não entra no painel principal)', () => {
-  const ficha = (over: Partial<PainelSonar['fichas'][number]>): PainelSonar['fichas'][number] => ({
-    product_id: 'MLB1', nome: 'Produto', category_id: 'MLB100', ofertas: 3,
-    preco: { min: 10, mediana: 15, max: 20 }, frete_gratis_pct: 50, visitas_30d: 100,
-    visitas_por_dia: [], vendedores: [{ seller_id: 1, uf: 'SP', transacoes_total: 10, loja_oficial: false }],
-    ...over,
-  });
-
-  const painel = (fichas: PainelSonar['fichas']): PainelSonar => ({
-    termo: 'x', gerado_em: '2026-08-17T00:00:00Z', total_catalogo: fichas.length, fichas,
-    agregado: { visitas_30d_total: 0, visitas_por_dia: [], ofertas_total: 0, vendedores_distintos: 0, frete_gratis_pct: 0 },
-    palavras_chave: [],
-  });
-
-  it('separa fichas com oferta ativa das vazias (ofertas: 0)', () => {
-    const vazia = ficha({
-      product_id: 'MLB2', ofertas: 0, category_id: null, preco: null, visitas_30d: null, vendedores: [],
-    });
-    const p = painel([ficha({}), vazia]);
-    expect(fichasAtivas(p)).toEqual([ficha({})]);
-    expect(fichasSemVendedor(p)).toEqual([vazia]);
-  });
-
-  it('painel sem fichas vazias: fichasSemVendedor vazio', () => {
-    const p = painel([ficha({})]);
-    expect(fichasSemVendedor(p)).toEqual([]);
   });
 });
