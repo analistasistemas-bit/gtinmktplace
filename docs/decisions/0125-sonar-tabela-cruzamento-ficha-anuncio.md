@@ -4,6 +4,11 @@
 - **Data:** 2026-08-19
 - **Relacionados:** ADR-0120 (Sonar catálogo-only), ADR-0122 (vendas via Apify), ADR-0124 (veredito)
 
+> **Superado em parte pelo ADR-0127** (2026-08-19): a decisão **D4** (casamento ficha↔anúncio no
+> frontend) foi contradita por medição — interseção 0 entre a amostra Apify e os `item_ids` das
+> fichas no termo medido em 19/08. As demais decisões deste ADR (D1-D3, D9) continuam válidas como
+> registro de medição.
+
 ## Contexto
 
 O Sonar tem dois universos que hoje não se cruzam: as ~40 **fichas de catálogo** (`pulse-sonar`,
