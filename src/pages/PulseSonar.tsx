@@ -484,7 +484,6 @@ export default function PulseSonar() {
         return (
           <div className="flex items-center gap-1">
             {label ? <Badge variant="outline">{label}</Badge> : '—'}
-            {i.frete_gratis === true && <Truck className="h-3.5 w-3.5 text-info" aria-label="Frete grátis" />}
             {i.internacional === true && <Globe className="h-3.5 w-3.5 text-info" aria-label="Internacional" />}
           </div>
         );
