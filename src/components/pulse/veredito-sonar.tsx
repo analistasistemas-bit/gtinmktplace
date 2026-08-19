@@ -94,18 +94,17 @@ export function VereditoSonar({ veredito, contexto }: { veredito: VereditoAnunci
         </div>
       </div>
 
-      {/* Ordem = peso na decisão: Demanda é gate, Disputa é o que separa nicho aberto de fechado,
-          Tração refina. A ordem vem do array e não é reordenada aqui de propósito. */}
-      <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-3">
+      {/* Uma linha por fator (não grid-cols-3): a descrição precisa da largura inteira do card
+          para não truncar — "8 rótulos de loja em..." cortava no meio da frase. Ordem = peso na
+          decisão: Demanda é gate, Disputa é o que separa nicho aberto de fechado, Tração refina. */}
+      <div className="mt-3 flex flex-col gap-1.5">
         {veredito.fatores.map((f) => {
           const Icone = ICONE_FATOR[f.nivel];
           return (
-            <div key={f.chave} className="flex items-baseline gap-2">
+            <div key={f.chave} className="flex flex-wrap items-baseline gap-x-2">
               <Icone className={`h-4 w-4 shrink-0 self-center ${CLS_FATOR[f.nivel]}`} aria-hidden />
               <span className="text-sm font-medium">{f.label}</span>
-              <span className="truncate text-xs text-muted-foreground" title={f.detalhe}>
-                {f.detalhe}
-              </span>
+              <span className="text-xs text-muted-foreground">{f.detalhe}</span>
             </div>
           );
         })}
