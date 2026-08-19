@@ -33,7 +33,7 @@ import {
   type PainelSonar, type EtapaProgresso, type RaioXNicho, type RespostaVendasSonar,
 } from '@/lib/sonar';
 import {
-  cruzarFichaComVendas, espalhamentoPct, vendedorMaisForte, visitasPorOferta, type VendasFicha,
+  cruzarFichaComVendas, diasDesde, espalhamentoPct, vendedorMaisForte, visitasPorOferta, type VendasFicha,
 } from '@/lib/sonar-cruzamento';
 import {
   aplicarFiltros, temFiltroAtivo, FILTROS_VAZIOS, type FiltrosSonar,
@@ -425,6 +425,10 @@ export default function PulseSonar() {
   // antigo sem o índice não tem como cruzar. Fora daqui a tabela é IDÊNTICA à de antes.
   const grupoBDisponivel = vendas?.configurado === true && !!vendas.por_anuncio;
 
+  // Grupo C (T10/D9): independe da Apify — vem da sonda multiget da própria `pulse-sonar`. Coluna
+  // só existe quando ALGUMA ficha ativa tem `criado_em`; sonda desligada/falhada = coluna ausente.
+  const criacaoDisponivel = useMemo(() => ativas.some((f) => f.criado_em != null), [ativas]);
+
   // Cruzamento ficha↔anúncio (D4) calculado UMA vez por ficha aqui, nunca por célula — Map
   // reaproveitado por todas as colunas do Grupo B e pelos filtros.
   const vendasPorFicha = useMemo(() => {
@@ -445,6 +449,10 @@ export default function PulseSonar() {
   // Sem `defaultSort`: a ordem que chega da API é o ranking de relevância do ML, e perder isso ao
   // abrir a tela custaria mais que a conveniência de já vir ordenado por alguma coluna.
   const colunasFichas = useMemo<Column<Ficha>[]>(() => {
+    // Uma só leitura do relógio por render do memo — sortValue precisa da MESMA referência em
+    // toda a passada de comparação, senão o comparator fica instável (Array.sort com resultado
+    // indefinido) e a linha some/pula na borda de um dia.
+    const agora = new Date();
     const colProduto: Column<Ficha> = {
       key: 'nome',
       header: 'Produto',
@@ -633,6 +641,18 @@ export default function PulseSonar() {
       sortValue: (f) => f.vendedores.length,
     };
 
+    const colCriacao: Column<Ficha> = {
+      key: 'criacao',
+      header: 'Criação',
+      className: 'tabular-nums',
+      cell: (f) => {
+        const dias = diasDesde(f.criado_em ?? null, agora);
+        if (dias == null || !f.criado_em) return <span title="Não medido">—</span>;
+        return <span title={new Date(f.criado_em).toLocaleDateString('pt-BR')}>{dias} d</span>;
+      },
+      sortValue: (f) => diasDesde(f.criado_em ?? null, agora),
+    };
+
     const colAcao: Column<Ficha> = {
       key: 'acao',
       header: '',
@@ -671,9 +691,10 @@ export default function PulseSonar() {
       colVisitas,
       ...(grupoBDisponivel ? [colEnvio] : []),
       colVendedores,
+      ...(criacaoDisponivel ? [colCriacao] : []),
       colAcao,
     ];
-  }, [grupoBDisponivel, vendasPorFicha]);
+  }, [grupoBDisponivel, vendasPorFicha, criacaoDisponivel]);
   const elapsedMs = iniciadoEmRef.current ? Date.now() - iniciadoEmRef.current : 0;
 
   return (

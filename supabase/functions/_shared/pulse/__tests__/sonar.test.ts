@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extrairPalavrasChave, montarPainelSonar, parseFichasBusca, parseVisitasJanela, resumoPrecos, type ResultadoFicha } from '../sonar.ts';
+import { extrairPalavrasChave, montarPainelSonar, parseDateCreatedMultiget, parseFichasBusca, parseVisitasJanela, resumoPrecos, sondaDeveDesligar, type ResultadoFicha } from '../sonar.ts';
 
 describe('parseFichasBusca', () => {
   it('extrai id/nome/domain e ignora entradas sem id', () => {
@@ -74,6 +74,7 @@ describe('montarPainelSonar', () => {
           { seller_id: 2, uf: 'RJ', transacoes_total: 10, loja_oficial: false },
         ],
         item_ids: ['MLB100', 'MLB200'],
+        criado_em: null,
       },
       {
         category_id: null,
@@ -87,6 +88,7 @@ describe('montarPainelSonar', () => {
           { seller_id: 3, uf: null, transacoes_total: null, loja_oficial: true },
         ],
         item_ids: [],
+        criado_em: null,
       },
     ];
 
@@ -107,5 +109,49 @@ describe('montarPainelSonar', () => {
     expect(painel.agregado.ofertas_total).toBe(15);
     expect(painel.agregado.vendedores_distintos).toBe(3); // seller 2 repete entre fichas
     expect(painel.agregado.frete_gratis_pct).toBe(33); // (50%*10 + 0%*5) / 15 = 33.3% → arredondado
+  });
+});
+
+describe('parseDateCreatedMultiget', () => {
+  it('só aceita code 200 com date_created string; ignora 403, sem date_created e não-string', () => {
+    const json = [
+      { code: 200, body: { id: 'MLB1', date_created: '2026-01-01T00:00:00.000Z' } },
+      { code: 403, body: { id: 'MLB2', date_created: '2026-01-01T00:00:00.000Z' } },
+      { code: 200, body: { id: 'MLB3' } }, // sem date_created
+      { code: 200, body: { id: 'MLB4', date_created: 123 } }, // não string
+    ];
+    expect(parseDateCreatedMultiget(json)).toEqual(new Map([['MLB1', '2026-01-01T00:00:00.000Z']]));
+  });
+  it('lote 100% 403: mapa vazio', () => {
+    const json = [
+      { code: 403, body: { id: 'MLB1' } },
+      { code: 403, body: { id: 'MLB2' } },
+    ];
+    expect(parseDateCreatedMultiget(json)).toEqual(new Map());
+  });
+  it('devolve mapa vazio para json não-array', () => {
+    expect(parseDateCreatedMultiget(null)).toEqual(new Map());
+    expect(parseDateCreatedMultiget({})).toEqual(new Map());
+  });
+});
+
+describe('sondaDeveDesligar', () => {
+  it('só 403 (1 lote) → desliga', () => {
+    expect(sondaDeveDesligar(['forbidden'])).toBe(true);
+  });
+  it('todos os lotes 403 (2 lotes) → desliga', () => {
+    expect(sondaDeveDesligar(['forbidden', 'forbidden'])).toBe(true);
+  });
+  it('403 + transitória → NÃO desliga (falha transitória não prova a hipótese)', () => {
+    expect(sondaDeveDesligar(['forbidden', 'transitoria'])).toBe(false);
+  });
+  it('403 + sucesso → NÃO desliga (a hipótese não falhou de vez)', () => {
+    expect(sondaDeveDesligar(['forbidden', 'ok'])).toBe(false);
+  });
+  it('só transitória → NÃO desliga', () => {
+    expect(sondaDeveDesligar(['transitoria'])).toBe(false);
+  });
+  it('sem lotes (nenhum id) → NÃO desliga', () => {
+    expect(sondaDeveDesligar([])).toBe(false);
   });
 });

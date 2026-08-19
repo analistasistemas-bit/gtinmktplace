@@ -897,15 +897,25 @@ falha ao ler `organizations` não libera.
   isso um fetch interno travado derrubaria a ficha inteira), visitas de 30 dias só do item MAIS
   BARATO da ficha (`/items/{id}/visits/time_window`; multiget não serve, teto de 1 id por
   chamada) e `/users/{seller_id}` por vendedor distinto (UF via `ufDoVendedor`, `transactions.total`),
-  com cache de vendedor por request (`Map`, sellers repetem entre fichas). `montarPainelSonar`
+  com cache de vendedor por request (`Map`, sellers repetem entre fichas). Cada ficha ganha
+  `item_ids: string[]` (id de cada oferta, na ordem do ML — chave primária do cruzamento
+  ficha↔anúncio no front com `pulse-sonar-vendas`, ADR-0125/D4) e `criado_em: string | null`
+  (Grupo C, ADR-0125/D9): sonda best-effort que reaproveita o MESMO item mais barato cujas visitas
+  já foram medidas, via multiget `/items?ids=...&attributes=id,date_created` com `fetch` LOCAL
+  (não o `mlGet` compartilhado — ele engole o status HTTP) rodada uma vez, fora do loop de
+  concorrência, em lotes de 20 ids após todas as fichas resolvidas. Auto-desligável: 403 no
+  request inteiro ou em TODOS os envelopes de TODOS os lotes grava a flag Redis
+  `sonar:items-multiget-403` (TTL 24h) e a sonda para de rodar enquanto ela existir; falha
+  transitória (timeout, rede, 5xx) não grava a flag — só aquele lote fica sem data. `montarPainelSonar`
   (`_shared/pulse/sonar.ts`) agrega tudo em `PainelSonar` — soma de visitas por dia entre fichas
   com datas desalinhadas, `visitas_30d` nulo nunca vira zero na soma, % frete grátis ponderado
   por ofertas, vendedores distintos e `palavras_chave`. Resultado cacheado no Redis por
-  `sonar:v2:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
-  ADR-0120 §3) — bump de v1→v2 pela mudança de shape nas fichas sem vendedor ativo, para um
-  resultado v1 já cacheado não servir o shape antigo por até 24h; falha do ML na busca principal
-  (`null`) devolve 502 e não cacheia, para não travar um termo vazio por 24h a partir de um erro
-  transitório.
+  `sonar:v3:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
+  ADR-0120 §3) — bump v1→v2 pela mudança de shape nas fichas sem vendedor ativo, v2→v3
+  (ADR-0125/D3) porque `item_ids` é obrigatório para o cruzamento; `criado_em` entrou depois na
+  mesma v3 como campo aditivo (mesma regra do D2 abaixo), sem bump novo. Falha do ML na busca
+  principal (`null`) devolve 502 e não cacheia, para não travar um termo vazio por 24h a partir de
+  um erro transitório.
 - **pulse-sonar-vendas** (ADR-0122, `verify_jwt=true`, chamada pelo app com o JWT do usuário) —
   vendas estimadas do nicho via Apify, complemento do Sonar chamado pelo front **em paralelo** à
   `pulse-sonar` (edge separada de propósito: o run da Apify pode levar minutos e a falha dele
@@ -922,11 +932,19 @@ falha ao ler `organizations` não libera.
   vendidos onde ambos existem), `produto_destaque` (mais vendido) e `palavras_chave_titulos`
   (títulos de anúncios reais, não nomes de ficha) e `raio_x` (ticket médio, lojas oficiais, Full,
   frete grátis e internacionais contados NA AMOSTRA + `total_anuncios` absoluto lido da própria
-  página — a fonte oficial `/sites/MLB/search` devolve 403 para o app, testado 18/08).
+  página — a fonte oficial `/sites/MLB/search` devolve 403 para o app, testado 18/08). Cada item
+  ganha 10 campos novos do mesmo payload já pago (ADR-0125): `item_id`, `catalog_product_id`,
+  `avaliacao_nota`/`avaliacao_qtd`, `posicao`, `patrocinado` (de `tipoResultado`, não do campo
+  `patrocinado` do actor — vazio em produção), `selo`, `preco_anterior`/`desconto_pct`, `flex`.
+  Resposta ganha `por_anuncio: Record<item_id, ItemVendas>` (`indexarPorAnuncio` — colisão fica
+  com o primeiro da ordem de relevância), o índice que o front usa para cruzar com `item_ids` da
+  `pulse-sonar` (ADR-0125/D4; as edges continuam desacopladas, ADR-0122 — nenhuma chama a outra).
   Cache Redis `sonar:vendas:v4:MLB:<termo>`,
-  **TTL 7 dias**, chave global (dado público, ADR-0120 §3) — o dado é acumulado histórico em
-  faixas arredondadas, então TTL curto só repagava o mesmo número; falha/timeout do run devolve
-  502 e não cacheia.
+  **TTL 7 dias**, chave global (dado público, ADR-0120 §3) — `por_anuncio` entrou como campo
+  ADITIVO na mesma v4 (ADR-0125/D2): bump para v5 recobraria a Apify em todo termo já cacheado nos
+  últimos 7 dias, então entrada v4 anterior a esta entrega simplesmente não tem o índice até o TTL
+  expirar sozinho, sem custo forçado. O dado é acumulado histórico em faixas arredondadas, então
+  TTL curto só repagava o mesmo número; falha/timeout do run devolve 502 e não cacheia.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal

@@ -54,16 +54,22 @@ quando não vazio. Nunca por link (`zProdutoLink` só carrega `MLBU…`) nem por
 — sem ela não existe casamento. As edges continuam desacopladas (ADR-0122): `pulse-sonar-vendas`
 só expõe o índice `por_anuncio` chaveado por `idPublicacao`; o cruzamento vive no front.
 
-**D9 (referência, sonda ainda não implementada nesta leva)** — Grupo C ("Criação (dias)") é sonda
-condicional via multiget `/items?ids=...&attributes=id,date_created`, auto-desligável por flag
-Redis em 403. Fora do escopo desta leva (T0–T5); registrado aqui porque a decisão de design faz
-parte do mesmo plano.
+**D9 — Grupo C ("Criação (dias)") é sonda condicional, não promessa.** Multiget
+`/items?ids=...&attributes=id,date_created` (mesmo endpoint já usado para itens PRÓPRIOS em
+`pulse-coletar/processar.ts`), com `fetch` LOCAL em `pulse-sonar/index.ts` (status HTTP
+inspecionado — `mlGet` compartilhado engole o status e não pode ser tocado, o coletor Pulse
+depende do contrato dele) rodada uma vez por garimpo, em lotes de 20, reaproveitando o MESMO item
+mais barato cujas visitas já são medidas. 403 no request inteiro ou em TODOS os envelopes de TODOS
+os lotes → grava flag Redis `sonar:items-multiget-403` (TTL 24h) e a sonda para de rodar enquanto
+ela existir; falha transitória (timeout, rede, 5xx) não grava a flag. Implementada nesta leva
+(T10): a coluna "Criação" só existe na UI quando pelo menos uma ficha tem `criado_em`.
 
 ## Consequências
 
 - `ItemVendas` (shared) ganha 10 campos novos, todos deriváveis do payload já pago — zero chamada
   nova à Apify.
-- `ResultadoFicha` (shared, pulse-sonar) ganha `item_ids: string[]` — obrigatório para D4.
+- `ResultadoFicha` (shared, pulse-sonar) ganha `item_ids: string[]` — obrigatório para D4 — e
+  `criado_em: string | null` — sonda best-effort de D9, nunca derruba a ficha nem a tela.
 - Cache `sonar:v3` convive com `sonar:v2` até o TTL de 24h expirar sozinho; nenhuma leitura
   cruzada.
 - Fichas de cauda longa (sem `idProdutoCatalogo` e fora do top ~20 da busca) não casam — célula
