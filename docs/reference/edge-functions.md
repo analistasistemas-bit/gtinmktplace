@@ -886,8 +886,10 @@ falha ao ler `organizations` não libera.
 - **pulse-sonar-vendas** (ADR-0122, `verify_jwt=true`, chamada pelo app com o JWT do usuário) —
   query primária da tela: a tabela do Sonar passou a listar os até 20 **anúncios reais** da busca
   Apify, não mais fichas de catálogo (ADR-0127/D1 — a `pulse-sonar` original, que buscava fichas
-  via `/products/search`, foi **deletada**: interseção 0 medida entre fichas e anúncios em
-  19/08/2026, veja ADR-0127 §Contexto). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
+  via `/products/search`, foi **removida do repositório**, fonte e entrada no `config.toml`:
+  interseção 0 medida entre fichas e anúncios em 19/08/2026, veja ADR-0127 §Contexto. A função
+  **continua deployada em produção** enquanto o front no ar a chamar; o `supabase functions delete
+  pulse-sonar` é pendência pós-merge, rastreada em `docs/TASKS.md`). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
   sem `APIFY_TOKEN` configurado devolve `{configurado:false}` com 200 (indisponível ≠ erro).
   Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
   (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}`, ordem de relevância;
@@ -921,7 +923,7 @@ falha ao ler `organizations` não libera.
   montado na hora de responder e nunca gravado no Redis — em cache hit vale sempre `false`.
 - **pulse-sonar-visitas** (ADR-0127/D3, `verify_jwt=true`, chamada pelo app com o JWT do usuário,
   em paralelo à `pulse-sonar-vendas` depois que os `item_ids` chegam) — edge fina, nasceu para
-  substituir a busca de vendedores/UF da `pulse-sonar` deletada: 1 chamada por anúncio a
+  substituir a busca de vendedores/UF da `pulse-sonar` removida do repositório: 1 chamada por anúncio a
   `/items/{id}/visits/time_window?last=30&unit=day` (funciona para terceiros, 20/20 HTTP 200
   medido 19/08), em lotes de concorrência 5. Recebe `{item_ids: string[]}`, teto de 20 (acima
   disso, 400). Cache **por item** (não por termo, para reaproveitar entre garimpos que repetem

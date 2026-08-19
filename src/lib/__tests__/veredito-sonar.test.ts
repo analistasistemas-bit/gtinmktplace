@@ -186,12 +186,30 @@ describe('Full não medido (LOUD) — ausência de dado não pode PROMOVER a Dis
       ),
       raio_x: { ...vendas.raio_x, full: 0 },
     };
-    // O facial é 🔴 SÓ pela cláusula de Full (85% >= 60). Sem Full medido, deixar o termo sair dos
+    // O facial é 🔴 SÓ pela cláusula de Full (100% sobre os medidos >= 60). Sem Full medido, deixar o termo sair dos
     // dois lados da regra faria 0,69 de pulverização virar Disputa 🟢 → 6/6 → "alta", em silêncio,
     // num nicho que o gabarito fixa em média. Ausência de dado nunca melhora um veredito.
     const v = calcularVereditoAnuncios(semFull, null);
     expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('medio');
     expect(v.nivel).not.toBe('alta');
+  });
+
+  it('Full medido em PARTE da amostra: denominador é o medido, não a amostra inteira', () => {
+    // 8 anúncios com envio medido (todos Full) + 12 com `envio: ""` (full null) — caso real do
+    // dataset da Apify. Diluído sobre N daria 8/20 = 40% (<= fullPouco) e, com pulverização 0,50,
+    // a Disputa sairia 🟢 → 5/6 → "alta", com `parcial: false` (nenhum aviso na tela). Sobre o que
+    // foi medido são 8/8 = 100% (>= fullMuito) → 🔴 → 3/6 → média. Ausência nunca promove.
+    const medidos = Array.from({ length: 8 }, (_, i) => itemV2({
+      item_id: `MLBf${i}`, vendedor: `LOJA-${i}`, vendidos: 500, full: true,
+    }));
+    const semEnvio = Array.from({ length: 12 }, (_, i) => itemV2({
+      item_id: `MLBn${i}`, vendedor: `LOJA-${i % 10}`, vendidos: 500, full: null,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico([...medidos, ...semEnvio]), null);
+    expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'medio']);
+    expect(v.explicacao.pontuacao).toEqual({ soma: 3, maximo: 6 });
+    expect(v.nivel).toBe('media');
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.detalhe).toContain('100% Full');
   });
 });
 
@@ -203,6 +221,7 @@ describe('contextoNichoAnuncios — leitura complementar, fora do score', () => 
     expect(rotulos).toContain('Preço mediano da amostra');
     expect(rotulos).toContain('% Full na amostra');
     expect(rotulos).toContain('% internacionais na amostra');
-    expect(itens.find((i) => i.rotulo === '% Full na amostra')!.valor).toBe('20%');
+    // 4 Full em 19 anúncios com envio medido (1 dos 20 vem com `envio: ""`) = 21%, não 4/20.
+    expect(itens.find((i) => i.rotulo === '% Full na amostra')!.valor).toBe('21%');
   });
 });

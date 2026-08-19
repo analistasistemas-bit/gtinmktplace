@@ -48,7 +48,10 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **✅ Sonar por anúncio + histórico de snapshots EM PRODUÇÃO (ADR-0127, 2026-08-19).** A tabela
 > do Sonar trocou de unidade: lista os até 20 **anúncios reais** da amostra Apify, não mais fichas
 > de catálogo — interseção 0 medida entre os dois universos em produção (19/08). Edge `pulse-sonar`
-> (fichas) **deletada**; edge nova `pulse-sonar-visitas` assume o único uso restante da API oficial
+> (fichas) **removida do repositório** (fonte + entrada no `config.toml`), mas ainda **deployada em
+> produção**: o front no ar segue chamando-a, então o `supabase functions delete pulse-sonar` é
+> pendência pós-merge (ver `docs/TASKS.md`); edge nova `pulse-sonar-visitas` assume o único uso
+> restante da API oficial
 > (visitas 30d por anúncio, cache `sonar:visitas:v1:{item_id}` TTL 24h); `pulse-sonar-vendas`
 > (Apify) continua primária e passa a gravar histórico em `sonar_snapshots` (tabela nova, global
 > sem `org_id`, RLS leitura autenticada/escrita service_role) a cada garimpo fresco — delta futuro

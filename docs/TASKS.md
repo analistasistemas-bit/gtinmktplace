@@ -7,7 +7,10 @@
 - [x] **Unidade da tabela virou anúncio**, não mais ficha de catálogo: interseção 0 medida entre
   fichas do painel oficial e os 20 anúncios da amostra Apify (ADR-0127/D1). Cruzamento
   ficha↔anúncio do ADR-0125/D4 (`src/lib/sonar-cruzamento.ts`) foi deletado.
-- [x] **Edge `pulse-sonar` deletada** (fichas de catálogo, API oficial). **Edge nova
+- [x] **Edge `pulse-sonar` removida do repositório** (fichas de catálogo, API oficial): fonte e
+  entrada no `config.toml` apagadas. A função **segue deployada em produção de propósito** — o
+  front que está no ar ainda a chama; o `supabase functions delete pulse-sonar` é pendência
+  pós-merge (item aberto no fim desta seção). **Edge nova
   `pulse-sonar-visitas`** (`{item_ids}`, teto 20, cache `sonar:visitas:v1:{item_id}` TTL 24h,
   `{conectado:false}` sem conexão ML) assume o único uso restante da API oficial: visitas 30d por
   anúncio. `pulse-sonar-vendas` (Apify) continua primária e passa a gravar histórico em
@@ -22,6 +25,10 @@
   amostra (D10).
 - [x] Documentação (`edge-functions.md`, `modelo-de-dados.md`, `glossario.md`, obsidian-vault)
   atualizada no mesmo ciclo. ADR-0127 supersede em parte o ADR-0125/D4.
+- [ ] **Pendente pós-merge: `supabase functions delete pulse-sonar`.** A edge não tem mais fonte no
+  repositório, mas continua deployada porque o front em produção ainda a chama. Só depois do merge
+  na `main` e do deploy do front novo o delete pode ser executado — até lá é uma função viva sem
+  código versionado, e sem este item ela sobreviveria esquecida.
 
 ## Sonar — remoção da sonda `date_created` (ADR-0125/D9) — 2026-08-19
 

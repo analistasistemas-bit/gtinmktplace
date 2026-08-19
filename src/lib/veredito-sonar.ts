@@ -228,13 +228,18 @@ export function subamostraNomeada(vendas: PainelVendasSonar): SubamostraNomeada 
   };
 }
 
-/** % Full da amostra. `null` quando NENHUM anúncio traz envio identificado — aí o termo sai da
- *  regra de Disputa em vez de virar 0% (LOUD: ausência não é dado). */
+/** % Full sobre os anúncios que TÊM envio identificado — não sobre a amostra inteira. `raio_x.full`
+ *  conta só `full === true`; dividir por `itens_analisados` jogaria cada `envio: ""` no denominador
+ *  como se fosse "não-Full", diluindo o número para baixo — e % Full baixo é lido como pouca
+ *  concorrência estruturada, ou seja, a ausência de dado PROMOVERIA a Disputa (8 Full medidos + 12
+ *  sem envio: 40% diluído vs. 100% medido — duas faixas de veredito). `null` quando nenhum anúncio
+ *  traz envio identificado — aí o termo sai da regra de Disputa em vez de virar 0% (LOUD: ausência
+ *  não é dado). Mesmo denominador da variante `fullLoud` de `scripts/sonar-gabarito-verificar.mjs`;
+ *  nenhum corte da Calibração v2 se move. */
 function fullPctAmostra(vendas: PainelVendasSonar): number | null {
-  if (vendas.itens_analisados === 0) return null;
-  const itens = itensDaAmostra(vendas);
-  if (itens.length > 0 && itens.every((i) => i.full == null)) return null;
-  return (vendas.raio_x.full / vendas.itens_analisados) * 100;
+  const medidos = itensDaAmostra(vendas).filter((i) => i.full != null);
+  if (medidos.length === 0) return null;
+  return (medidos.filter((i) => i.full === true).length / medidos.length) * 100;
 }
 
 /** Demanda intacta (D11) + visitas como CONTEXTO no detalhe. Não existe `VISITAS_V2`: o único

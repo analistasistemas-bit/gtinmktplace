@@ -181,6 +181,18 @@ estimado.
 | visitas 30d (20/20 itens medidos) | 106.258 | 370.872 | 7.605 |
 | total de anúncios (contador do ML) | 65 | 8.895 | 293 |
 
+> **Denominador do `% Full` na implementação.** A linha `% Full` acima foi medida sobre **N = 20**
+> (`raio_x.full ÷ itens_analisados`), e fica registrada assim. O código (`fullPctAmostra`) usa o
+> denominador dos **anúncios com envio identificado** — a variante `fullLoud` de
+> `scripts/sonar-gabarito-verificar.mjs` — porque `raio_x.full` só conta `full === true`: cada
+> `envio: ""` cairia no denominador como se fosse "não-Full" e diluiria a porcentagem para baixo, e
+> % Full baixo é lido como pouca concorrência estruturada. Ou seja, a **ausência de dado promoveria**
+> a Disputa e o nicho, em silêncio (8 Full medidos + 12 sem envio dão 40% diluído, dentro de
+> `fullPouco`, contra 100% sobre o medido — duas faixas de veredito de diferença). Sobre os medidos:
+> EUCERIN **35%** (igual, 0 nulos), facial **100%** (3/20 nulos, segue acima de `fullMuito`), oxford
+> **21%** (1/20 nulo, segue abaixo de `fullPouco`). **Nenhum corte se move e o gabarito não muda** —
+> por isso os cortes abaixo continuam derivados dos números medidos sobre N.
+
 ### Cortes escolhidos
 
 ```ts
@@ -208,7 +220,7 @@ Regra de Disputa v2 (mesma forma da antiga — um OR para ruim, um AND para bom)
 | Termo | Demanda / Disputa / Tração | Soma | Veredito | Esperado |
 |---|---|---|---|---|
 | EUCERIN protetor solar | 🟢 / 🔴 (pulv. 0,10) / 🟢 | 4/6 | média | média ✅ |
-| protetor solar facial | 🟢 / 🔴 (Full 85%) / 🟢 | 4/6 | média | média ✅ |
+| protetor solar facial | 🟢 / 🔴 (Full 85% sobre N; 100% sobre os medidos — ver nota) / 🟢 | 4/6 | média | média ✅ |
 | tecido oxford 10 metros | 🟢 / 🟢 / 🟡 | 5/6 | **alta** | alta ✅ |
 
 `node scripts/sonar-gabarito-verificar.mjs` re-deriva tudo dos fixtures commitados (offline, custo

@@ -147,7 +147,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
                 <div className="truncate text-sm font-medium" title={destaque.titulo}>{destaque.titulo}</div>
               )}
               <div className="text-xs text-muted-foreground">
-                ≈ {fmtMilhar(destaque.vendidos ?? 0, 1)} vendidos
+                {destaque.vendidos != null ? `≈ ${fmtMilhar(destaque.vendidos, 1)} vendidos` : '— vendidos'}
                 {destaque.preco != null && ` · ${fmtBRL(destaque.preco)}`}
               </div>
             </div>
