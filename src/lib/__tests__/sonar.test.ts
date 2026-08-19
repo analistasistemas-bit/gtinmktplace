@@ -59,6 +59,13 @@ describe('normalizarSerieVisitas — D9 (medido 19/08: API omite dias sem visita
     expect(serie).toHaveLength(30);
     expect(serie.every((p) => p.total === 0)).toBe(true);
   });
+
+  it('não desliza a janela com `hoje` fora do meio-dia UTC (23h em Brasília = 02h UTC do dia seguinte)', () => {
+    const hojeNoite = new Date('2026-08-20T02:00:00.000Z'); // 19/08 23h em America/Sao_Paulo (UTC-3)
+    const serie = normalizarSerieVisitas([], 30, hojeNoite);
+    expect(serie[0].data).toBe('2026-07-21');
+    expect(serie[29].data).toBe('2026-08-19');
+  });
 });
 
 describe('itensDaAmostra — lista da tabela com fallback para cache v4 antigo', () => {

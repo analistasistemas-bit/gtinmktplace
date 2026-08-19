@@ -149,7 +149,7 @@ export async function fetchVisitasSonar(itemIds: string[]): Promise<RespostaVisi
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-visitas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ item_ids: itemIds }),
+    body: JSON.stringify({ item_ids: itemIds.map((id) => id.trim()) }),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
@@ -175,11 +175,16 @@ export function normalizarSerieVisitas(
   hoje = new Date(),
 ): Array<{ data: string; total: number }> {
   const mapa = new Map(porDia.map((p) => [p.data, p.total]));
+  // "Hoje" no fuso do operador (America/Sao_Paulo, mesmo padrão de faturamento/io.ts), não no
+  // fuso do processo nem em UTC puro: perto da virada do dia BRT (ex.: 23h), misturar acessores
+  // locais com toISOString (UTC) desliza a janela inteira um dia para frente — bug medido pelo
+  // revisor. Âncora em Date.UTC é só uma linha do tempo neutra para a aritmética de dias (24h
+  // fixas, sem DST — BR não tem horário de verão desde 2019), não representa fuso nenhum.
+  const [ano, mes, dia] = hoje.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }).split('-').map(Number);
+  const ancoraMs = Date.UTC(ano, mes - 1, dia);
   const serie: Array<{ data: string; total: number }> = [];
   for (let i = dias - 1; i >= 0; i--) {
-    const d = new Date(hoje);
-    d.setDate(d.getDate() - i);
-    const data = d.toISOString().slice(0, 10);
+    const data = new Date(ancoraMs - i * 86_400_000).toISOString().slice(0, 10);
     serie.push({ data, total: mapa.get(data) ?? 0 });
   }
   return serie;
