@@ -91,8 +91,10 @@ function RaioXBarra({ raioX }: { raioX: RaioXNicho }) {
 
 // Bloco de vendas estimadas (ADR-0122): renderiza junto com o resto do painel — D16 já resolveu
 // "sem token"/erro/carregando antes deste ponto (a página só chega aqui com `vendas.configurado`).
-function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
+export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
   const destaque = resp.produto_destaque;
+  // D15: mesma regra do link cru vs. canônico da coluna de ações, aplicada ao destaque.
+  const hrefDestaque = destaque ? linkDoAnuncio(destaque.link, destaque.item_id ?? '') : null;
   return (
     <Card className="mb-4 p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -131,9 +133,9 @@ function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <Trophy className="h-3.5 w-3.5 text-warning" /> Produto destaque
               </div>
-              {destaque.link ? (
+              {hrefDestaque ? (
                 <a
-                  href={destaque.link}
+                  href={hrefDestaque}
                   target="_blank"
                   rel="noreferrer"
                   title={destaque.titulo}
