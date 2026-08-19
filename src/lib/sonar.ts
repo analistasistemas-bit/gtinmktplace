@@ -168,6 +168,35 @@ export function passosProgresso(elapsedMs: number, concluido: boolean): EtapaPro
   });
 }
 
+// --- Link do anúncio (ADR-0127/D15) -------------------------------------------------------------
+
+const ML_HOST_RE = /(^|\.)mercadolivre\.com\.br$/;
+
+/**
+ * Decide o href da coluna de ações. O `link` cru da Apify às vezes vem malformado — medido em
+ * 19/08: domínio duplicado no path (`www.mercadolivre.com.br/produto.mercadolivre.com.br/MLB-…`),
+ * que leva a uma página de erro no ML. Nesse caso (e em link nulo/vazio/não-ML) monta a URL
+ * canônica a partir do item_id; sem item_id utilizável, `null` — nunca URL inventada (regra LOUD).
+ */
+export function linkDoAnuncio(link: string | null, itemId: string): string | null {
+  const canonico = (() => {
+    const m = /^MLB(\d+)$/.exec(itemId);
+    return m ? `https://produto.mercadolivre.com.br/MLB-${m[1]}` : null;
+  })();
+
+  if (!link) return canonico;
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return canonico;
+  }
+  const ehHttp = url.protocol === 'http:' || url.protocol === 'https:';
+  const domDuplicadoNoPath = url.pathname.includes('mercadolivre.com.br');
+  if (ehHttp && ML_HOST_RE.test(url.hostname) && !domDuplicadoNoPath) return link;
+  return canonico;
+}
+
 // --- Simulador de margem ------------------------------------------------------------------------
 
 /**

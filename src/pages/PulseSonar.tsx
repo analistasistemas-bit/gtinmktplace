@@ -28,7 +28,7 @@ import {
 } from '@/lib/sonar-buscas-recentes';
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
-  fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, normalizarSerieVisitas, passosProgresso,
+  fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
   type EtapaProgresso, type ItemVendasSonar, type PainelVendasSonar, type RaioXNicho,
   type VisitasAnuncio,
 } from '@/lib/sonar';
@@ -495,10 +495,8 @@ export default function PulseSonar() {
     {
       key: 'acao', header: '',
       cell: (i) => {
-        // D15: prioridade ao link da Apify; fallback = URL canônica montada do item_id.
-        const href = i.link ?? (i.item_id != null
-          ? `https://produto.mercadolivre.com.br/MLB-${i.item_id.replace(/^MLB/, '')}`
-          : null);
+        // D15: prioridade ao link da Apify (se bem formado); fallback = URL canônica do item_id.
+        const href = linkDoAnuncio(i.link, i.item_id ?? '');
         return (
           <div className="flex items-center justify-end gap-1.5">
             <Button variant="outline" size="sm" onClick={() => setAnuncioSimulando({

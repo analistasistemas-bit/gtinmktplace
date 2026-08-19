@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas } from '../sonar';
+import { passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio } from '../sonar';
 
 describe('passosProgresso — máquina dos 4 passos (ADR-0120/0127; busca de fichas morreu)', () => {
   it('início (0ms, sem resposta): 1º passo ativo, resto pendente', () => {
@@ -105,5 +105,35 @@ describe('margemSimulada — recebe/imposto/margem sobre custo (não sobre preç
   it('custo zero não estoura (margem 0, não Infinity/NaN)', () => {
     const r = margemSimulada({ precoAlvo: 100, custo: 0, aliquotaPct: 8, tarifa: { comissao: 15, frete: 5 } });
     expect(r.margemPct).toBe(0);
+  });
+});
+
+describe('linkDoAnuncio — href do anúncio na coluna de ações (ADR-0127/D15)', () => {
+  it('link normal (bem formado, domínio do ML) é preservado', () => {
+    const link = 'https://produto.mercadolivre.com.br/MLB-4445303151-produto-x';
+    expect(linkDoAnuncio(link, 'MLB4445303151')).toBe(link);
+  });
+
+  it('domínio duplicado no path (caso real medido 19/08) cai para a URL canônica via item_id', () => {
+    const malformado = 'https://www.mercadolivre.com.br/produto.mercadolivre.com.br/MLB-4445303151-produto-x';
+    expect(linkDoAnuncio(malformado, 'MLB4445303151')).toBe('https://produto.mercadolivre.com.br/MLB-4445303151');
+  });
+
+  it('link nulo cai para a URL canônica via item_id', () => {
+    expect(linkDoAnuncio(null, 'MLB4445303151')).toBe('https://produto.mercadolivre.com.br/MLB-4445303151');
+  });
+
+  it('link vazio ou não-URL também cai para o fallback', () => {
+    expect(linkDoAnuncio('', 'MLB4445303151')).toBe('https://produto.mercadolivre.com.br/MLB-4445303151');
+    expect(linkDoAnuncio('não é url', 'MLB4445303151')).toBe('https://produto.mercadolivre.com.br/MLB-4445303151');
+  });
+
+  it('link de domínio fora do Mercado Livre cai para o fallback', () => {
+    expect(linkDoAnuncio('https://exemplo.com/produto', 'MLB4445303151')).toBe('https://produto.mercadolivre.com.br/MLB-4445303151');
+  });
+
+  it('itemId inválido (não casa com MLB\\d+) e sem link utilizável devolve null', () => {
+    expect(linkDoAnuncio(null, 'XYZ123')).toBeNull();
+    expect(linkDoAnuncio('', '')).toBeNull();
   });
 });
