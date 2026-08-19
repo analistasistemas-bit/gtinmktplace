@@ -5,7 +5,8 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { apifyConfigurado, buscarAnunciosML } from '../_shared/apify/client.ts';
-import { montarPainelVendas, parseItensApify, parseTotalAnuncios } from '../_shared/pulse/sonar-vendas.ts';
+import { adminClient } from '../_shared/supabase.ts';
+import { montarPainelVendas, parseItensApify, parseTotalAnuncios, linhasSnapshot, type ItemVendas } from '../_shared/pulse/sonar-vendas.ts';
 
 // 7 dias, não 24h: "+N vendidos" é acumulado desde a criação do anúncio e arredondado em faixas
 // (100 / 500 / 1k / …), então praticamente não muda de um dia para o outro — o TTL curto só
@@ -15,6 +16,27 @@ const normalizarTermo = (t: string) => t.trim().toLowerCase().replace(/\s+/g, ' 
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+}
+
+// Histórico (ADR-0127/D7): grava SÓ em cache-miss — 1 snapshot por termo por ciclo de TTL, por
+// construção. Falha de insert não derruba a resposta (o dado Apify já foi pago), mas nunca é
+// silenciosa: log + historico_gravado:false na resposta.
+async function gravarSnapshots(termo: string, geradoEm: string, itens: ItemVendas[]): Promise<boolean> {
+  const linhas = linhasSnapshot(termo, geradoEm, itens);
+  if (linhas.length === 0) return false;
+  try {
+    const { error } = await adminClient()
+      .from('sonar_snapshots')
+      .upsert(linhas, { onConflict: 'termo,item_id,gerado_em', ignoreDuplicates: true });
+    if (error) {
+      console.error(`[sonar-snapshots] insert falhou para "${termo}": ${error.message}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error(`[sonar-snapshots] insert lançou para "${termo}":`, e instanceof Error ? e.message : e);
+    return false;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -38,19 +60,23 @@ Deno.serve(async (req) => {
   // ADR-0125/D2: `por_anuncio` (T1) entrou como campo ADITIVO no shape v4 — não exige bump.
   // Entrada v4 cacheada ANTES desta entrega simplesmente não tem o índice; a UI mostra "—" até
   // o TTL (≤7d) expirar sozinho. Bump só para mudança incompatível ou de corte (regra daqui pra frente).
+  // ADR-0127: itens/category_id aditivos (sem bump); historico_gravado NUNCA entra no objeto cacheado (D7).
   const chave = `sonar:vendas:v4:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
-  if (cacheado) return json(JSON.parse(cacheado));
+  // D7: historico_gravado fica FORA do objeto cacheado — em hit vale false (não gravou AGORA).
+  if (cacheado) return json({ ...JSON.parse(cacheado), historico_gravado: false });
 
   const itens = await buscarAnunciosML(normalizado);
   // null = falha/timeout do run — não cachear (cache global 24h travaria o termo com erro
   // transitório para todo mundo, mesmo racional da pulse-sonar).
   if (itens === null) return json({ erro: 'Consulta de vendas falhou ou demorou demais. Tente de novo em instantes.' }, 502);
 
+  const parseados = parseItensApify(itens);
   const resposta = {
     configurado: true as const,
-    ...montarPainelVendas(normalizado, parseItensApify(itens), parseTotalAnuncios(itens)),
+    ...montarPainelVendas(normalizado, parseados, parseTotalAnuncios(itens)),
   };
+  const historicoGravado = await gravarSnapshots(resposta.termo, resposta.gerado_em, parseados);
   await redisSet(chave, JSON.stringify(resposta), CACHE_TTL_S).catch(() => {});
-  return json(resposta);
+  return json({ ...resposta, historico_gravado: historicoGravado });
 });
