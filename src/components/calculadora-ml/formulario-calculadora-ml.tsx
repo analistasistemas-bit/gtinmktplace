@@ -1,6 +1,6 @@
 import type { ChangeEvent } from 'react'
 import { ChevronDown, Package } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BuscaCategoriaML } from './busca-categoria-ml'
 import type { ProdutoCalculadoraML, TaxasManuaisML } from '@/hooks/useCalculadoraML'
 import type { DimensoesProduto, EntradaCalculadoraML } from '@/lib/calculadora-ml'
@@ -33,6 +33,12 @@ function numero(event: ChangeEvent<HTMLInputElement>, min: number, max?: number,
   return valor
 }
 
+function chaveDimensoes(dimensoes?: Partial<DimensoesProduto>): string {
+  return (['alturaCm', 'larguraCm', 'comprimentoCm', 'pesoKg'] as const)
+    .map((chave) => dimensoes?.[chave] ?? '')
+    .join('|')
+}
+
 function CampoNumero({ id, label, value, onChange, min = 0, max, step = '0.01', hint }: { id: string; label: string; value: number; onChange: (value: number) => void; min?: number; max?: number; step?: string; hint?: string }) {
   const [erro, setErro] = useState<string | null>(null)
   return (
@@ -47,13 +53,25 @@ function CampoNumero({ id, label, value, onChange, min = 0, max, step = '0.01', 
 
 export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelecionado, produtosCarregando, onEntrada, onTaxas, onProduto }: FormularioCalculadoraMLProps) {
   const [dimensoesRascunho, setDimensoesRascunho] = useState<Partial<DimensoesProduto>>(entrada.dimensoes ?? {})
+  const dimensoesExternasKey = chaveDimensoes(entrada.dimensoes)
+  const atualizacaoEsperadaRef = useRef(dimensoesExternasKey)
   const dimensoesCompletas = (dimensoes: Partial<DimensoesProduto>): dimensoes is DimensoesProduto =>
     (['alturaCm', 'larguraCm', 'comprimentoCm', 'pesoKg'] as const).every((chave) => Number.isFinite(dimensoes[chave]) && (dimensoes[chave] as number) > 0)
+  useEffect(() => {
+    if (dimensoesExternasKey === atualizacaoEsperadaRef.current) return
+    atualizacaoEsperadaRef.current = dimensoesExternasKey
+    setDimensoesRascunho(entrada.dimensoes ?? {})
+  }, [dimensoesExternasKey, entrada.dimensoes])
   const setDimensao = (chave: keyof DimensoesProduto, valor: number) => {
     const proximo = { ...dimensoesRascunho, [chave]: valor }
     setDimensoesRascunho(proximo)
-    if (dimensoesCompletas(proximo)) onEntrada({ dimensoes: proximo })
-    else if (dimensoesCompletas(entrada.dimensoes ?? {})) onEntrada({ dimensoes: undefined })
+    if (dimensoesCompletas(proximo)) {
+      atualizacaoEsperadaRef.current = chaveDimensoes(proximo)
+      onEntrada({ dimensoes: proximo })
+    } else if (dimensoesCompletas(entrada.dimensoes ?? {})) {
+      atualizacaoEsperadaRef.current = chaveDimensoes(undefined)
+      onEntrada({ dimensoes: undefined })
+    }
   }
   return (
     <div className="space-y-6">

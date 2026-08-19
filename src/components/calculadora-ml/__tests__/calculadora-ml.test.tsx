@@ -162,4 +162,30 @@ describe('Calculadora ML', () => {
     expect(screen.getByText(/preço projetado validado na api/i)).toBeInTheDocument()
     expect(screen.getByText(/oficial.*api ml/i)).toBeInTheDocument()
   })
+
+  it('sincroniza dimensões de produto atualizado e preserva edição parcial subsequente', () => {
+    const onEntrada = vi.fn()
+    const dimensoesProdutoA = { alturaCm: 10, larguraCm: 20, comprimentoCm: 30, pesoKg: 1 }
+    const dimensoesProdutoB = { alturaCm: 40, larguraCm: 50, comprimentoCm: 60, pesoKg: 2 }
+    const props = {
+      entrada: { ...estadoBase.entrada, dimensoes: dimensoesProdutoA },
+      taxas: estadoBase.taxasManuais,
+      produtos: [],
+      produtoSelecionado: null,
+      produtosCarregando: false,
+      onEntrada,
+      onTaxas: vi.fn(),
+      onProduto: vi.fn(),
+    }
+    const view = render(<FormularioCalculadoraML {...props} />)
+
+    view.rerender(<FormularioCalculadoraML {...props} entrada={{ ...props.entrada, dimensoes: dimensoesProdutoB }} />)
+    expect(screen.getByLabelText('Altura (cm)')).toHaveValue(40)
+    expect(screen.getByLabelText('Largura (cm)')).toHaveValue(50)
+
+    fireEvent.change(screen.getByLabelText('Altura (cm)'), { target: { value: '0' } })
+    view.rerender(<FormularioCalculadoraML {...props} entrada={{ ...props.entrada, dimensoes: undefined }} />)
+    expect(screen.getByLabelText('Altura (cm)')).toHaveValue(0)
+    expect(screen.getByLabelText('Largura (cm)')).toHaveValue(50)
+  })
 })
