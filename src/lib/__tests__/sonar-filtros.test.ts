@@ -122,6 +122,13 @@ const itemV2 = (over: Partial<ItemVendasSonar> = {}): ItemVendasSonar => ({
 const visitas = (total: number): VisitasAnuncio => ({ total, por_dia: [] });
 
 describe('aplicarFiltrosAnuncios — D14 sobre a unidade anúncio (null nunca vira 0)', () => {
+  it('FILTROS_ANUNCIOS_VAZIOS devolve todos os itens com excluidasSemDado 0', () => {
+    const itens = [itemV2({ item_id: 'MLB1' }), itemV2({ item_id: 'MLB2', vendidos: null, preco: null })];
+    const r = aplicarFiltrosAnuncios(itens, new Map(), FILTROS_ANUNCIOS_VAZIOS);
+    expect(r.visiveis).toHaveLength(2);
+    expect(r.excluidasSemDado).toBe(0);
+  });
+
   it('minVendas: null no item EXCLUI e conta em excluidasSemDado', () => {
     const r = aplicarFiltrosAnuncios(
       [itemV2({ item_id: 'MLB1', vendidos: 500 }), itemV2({ item_id: 'MLB2', vendidos: null })],
