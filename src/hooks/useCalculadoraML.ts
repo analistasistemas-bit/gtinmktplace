@@ -67,13 +67,23 @@ function criarCotacaoManual(
   }
 }
 
-function dimensoesDaTarifa(dimensoes?: DimensoesProduto) {
-  if (!dimensoes) return undefined
+function dimensoesDaTarifa(
+  alturaCm?: number,
+  larguraCm?: number,
+  comprimentoCm?: number,
+  pesoKg?: number,
+) {
+  if (
+    alturaCm === undefined &&
+    larguraCm === undefined &&
+    comprimentoCm === undefined &&
+    pesoKg === undefined
+  ) return undefined
   return {
-    alturaCm: dimensoes.alturaCm,
-    larguraCm: dimensoes.larguraCm,
-    comprimentoCm: dimensoes.comprimentoCm,
-    pesoGramas: dimensoes.pesoKg * 1000,
+    alturaCm: alturaCm ?? null,
+    larguraCm: larguraCm ?? null,
+    comprimentoCm: comprimentoCm ?? null,
+    pesoGramas: pesoKg === undefined ? null : pesoKg * 1000,
   }
 }
 
@@ -130,6 +140,20 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   const cotacaoManual = useMemo(
     () => criarCotacaoManual(entrada.precoVenda, taxasManuais),
     [entrada.precoVenda, taxasManuais],
+  )
+  const dimensoesCotacao = useMemo(
+    () => dimensoesDaTarifa(
+      entrada.dimensoes?.alturaCm,
+      entrada.dimensoes?.larguraCm,
+      entrada.dimensoes?.comprimentoCm,
+      entrada.dimensoes?.pesoKg,
+    ),
+    [
+      entrada.dimensoes?.alturaCm,
+      entrada.dimensoes?.larguraCm,
+      entrada.dimensoes?.comprimentoCm,
+      entrada.dimensoes?.pesoKg,
+    ],
   )
   const cotacao: CotacoesPorModalidade = tarifaOficial
     ? cotacoesOficiaisDaTarifa(tarifaOficial)
@@ -193,7 +217,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
       void calcularTarifaML(
         entrada.precoVenda,
         categoriaId,
-        dimensoesDaTarifa(entrada.dimensoes),
+        dimensoesCotacao,
         entrada.aliquotaImpostoPct,
       )
         .then((tarifa) => {
@@ -219,10 +243,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
     entrada.precoVenda,
     entrada.categoriaId,
     entrada.aliquotaImpostoPct,
-    entrada.dimensoes?.alturaCm,
-    entrada.dimensoes?.larguraCm,
-    entrada.dimensoes?.comprimentoCm,
-    entrada.dimensoes?.pesoKg,
+    dimensoesCotacao,
   ])
 
   const validarNaApi = useCallback(async (): Promise<Tarifa | null> => {
@@ -240,7 +261,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
       const tarifa = await calcularTarifaML(
         precoProjetado,
         categoriaId,
-        dimensoesDaTarifa(entrada.dimensoes),
+        dimensoesCotacao,
         entrada.aliquotaImpostoPct,
       )
       if (sequenciaMeta.current !== id) return null
@@ -252,7 +273,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
       setErroMeta('Não foi possível validar o preço projetado na API.')
       return null
     }
-  }, [entrada, resultado])
+  }, [entrada, dimensoesCotacao, resultado])
 
   return {
     entrada,
