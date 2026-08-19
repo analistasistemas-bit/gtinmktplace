@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Calculadora Mercado Livre premium na Viabilidade (ADR-0125) — 2026-08-19
+## Calculadora Mercado Livre premium na Viabilidade (ADR-0126) — 2026-08-19
 
 - [x] Simulação simultânea de anúncio Clássico e Premium, lucro, margem, custos, peso cúbico,
   sensibilidades e preço para margem-alvo em motor financeiro puro e testado.
@@ -12,6 +12,33 @@
   zero e frete gratuito exige confirmação explícita.
 - [x] Produto cadastrado como preenchimento editável, UI responsiva e validação visual desktop +
   mobile. Simulações não são persistidas e nenhuma escrita de tenant foi adicionada.
+
+## Sonar — tabela de produtos: cruzamento ficha↔anúncio + colunas Hunter (ADR-0125) — 2026-08-19
+
+- [x] **Cruzamento ficha↔anúncio no front** (`src/lib/sonar-cruzamento.ts`), chaveado por
+  `idPublicacao` (item_id, primário) com atalho por `idProdutoCatalogo` — dado já pago da Apify
+  que a tabela descartava. Anúncio principal = maior `vendidos` (nunca soma faixas arredondadas de
+  amostra parcial), desempate menor `posicao`. Colunas novas: Vendas (acum.), Faturamento (acum.),
+  Avaliação, Posição (orgânica), Envio (FULL/FLEX + internacional) — só aparecem com Apify
+  configurada e `por_anuncio` presente (D5); célula sem casamento mostra "—", nunca 0.
+- [x] **Filtros client-side** (`src/lib/sonar-filtros.ts`): mín. vendas/visitas, máx. vendedores,
+  faixa de preço, nota mínima, toggles (só FULL, só com desconto, esconder patrocinados, esconder
+  loja oficial). Filtro numérico com campo `null` na ficha EXCLUI e conta em "N sem esse dado"
+  (D14) — nunca trata ausência como 0. KPIs e veredito continuam sobre o painel inteiro, nunca
+  sobre as linhas filtradas.
+- [x] **Sonda `date_created` via multiget** (`pulse-sonar/index.ts`, coluna "Criação"): aposta do
+  ADR-0119 Errata 1 de que `/items?ids=...&attributes=id,date_created` passa para itens de
+  terceiro (como já passa para os PRÓPRIOS no coletor Pulse) — provada com `fetch` local (status
+  inspecionado, `mlGet` não tocado). Auto-desligável: 403 no todo ou em todos os envelopes grava
+  flag Redis `sonar:items-multiget-403` (TTL 24h) e para de tentar; falha transitória não grava a
+  flag. Coluna só existe quando alguma ficha tem `criado_em`, nunca quebra a tela.
+- [x] Cache `pulse-sonar` bump `sonar:v2` → `sonar:v3` (`item_ids` obrigatório para o cruzamento,
+  D3); `pulse-sonar-vendas` manteve `sonar:vendas:v4` com campo aditivo `por_anuncio` (D2, sem
+  bump — cache já pago não é recobrado). ADR-0125 registra as decisões D1-D4 e D9.
+- [x] 378 arquivos / 3482 testes verdes (+9: parser da sonda + decisão pura de desligar a sonda,
+  extraída depois de revisão — 403 misturado com falha transitória NÃO desliga); `pnpm lint` 0
+  erros/12 warnings pré-existentes; `tsc -b --force` e `deno lint`/`deno check` (242/243 arquivos)
+  verdes.
 
 ## Sonar — buscas recentes — 2026-08-18
 

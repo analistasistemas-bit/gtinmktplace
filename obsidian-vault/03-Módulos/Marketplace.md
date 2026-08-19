@@ -33,7 +33,7 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
 - **Calculadora ML em Viabilidade** — compara Clássico e Premium com lucro, margem, custo total,
   peso cúbico, sensibilidades e preço-alvo. Categoria é opcional, mas a tela avisa quando o
   resultado não usa tarifa oficial; a busca usa uma Edge Function read-only. Sem persistência ou
-  escrita no tenant (ADR-0125).
+  escrita no tenant (ADR-0126).
 
 ## Componentes
 

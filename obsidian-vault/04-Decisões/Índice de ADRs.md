@@ -136,6 +136,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0122 | [Sonar: vendas estimadas do nicho via Apify](../../docs/decisions/0122-sonar-vendas-estimadas-via-apify.md) |
 | 0123 | [Reconciliar a data de liberação do Mercado Pago fora da janela de 72h](../../docs/decisions/0123-reconciliacao-da-data-de-liberacao-mp.md) |
 | 0124 | [Veredito de oportunidade do Sonar](../../docs/decisions/0124-veredito-de-oportunidade-do-sonar.md) |
-| 0125 | [Calculadora Mercado Livre premium, API-first e sem persistência](../../docs/decisions/0125-calculadora-mercado-livre-premium.md) |
+| 0125 | [Sonar: cruzamento ficha↔anúncio e paridade Hunter na tabela](../../docs/decisions/0125-sonar-tabela-cruzamento-ficha-anuncio.md) |
+| 0126 | [Calculadora Mercado Livre premium, API-first e sem persistência](../../docs/decisions/0126-calculadora-mercado-livre-premium.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

@@ -35,6 +35,9 @@ Deno.serve(async (req) => {
 
   // A versão da chave identifica corte E shape (v1=48 anúncios, v2=20, v3=6 — aposentada,
   // v4=20 com raio_x). Bump para v4 e não reuso da v3: a v3 guarda painéis do corte de 6.
+  // ADR-0125/D2: `por_anuncio` (T1) entrou como campo ADITIVO no shape v4 — não exige bump.
+  // Entrada v4 cacheada ANTES desta entrega simplesmente não tem o índice; a UI mostra "—" até
+  // o TTL (≤7d) expirar sozinho. Bump só para mudança incompatível ou de corte (regra daqui pra frente).
   const chave = `sonar:vendas:v4:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return json(JSON.parse(cacheado));

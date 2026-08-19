@@ -317,7 +317,7 @@ recusam org sem o módulo com **403** — é ali que está a fronteira de segura
   e seguindo pelo fluxo normal — IA, Revisão, publicação. `origem` e foto nunca são
   pré-preenchidas. Ver `docs/spikes/037-cadastrar-a-partir-da-viabilidade.md`.
 
-### Calculadora Mercado Livre (ADR-0125)
+### Calculadora Mercado Livre (ADR-0126)
 
 A segunda modalidade de `/viabilidade` simula Clássico e Premium sem persistir dados nem alterar
 o tenant. O fluxo é `CalculadoraML` → `useCalculadoraML` → motor puro

@@ -16,6 +16,23 @@ export interface ItemVendas {
   internacional: boolean | null;
   /** Derivado do texto de envio da página ("Enviado pelo FULL" / "Full Super"). */
   full: boolean | null;
+  // --- Campos novos (T1/ADR-0125, paridade Hunter) — tudo já pago, zero chamada extra. ---
+  /** = idPublicacao (item_id do anúncio no ML). Chave primária de casamento com a ficha (D4). */
+  item_id: string | null;
+  /** = idProdutoCatalogo. Atalho de casamento quando o anúncio está em catálogo (só 6/20 no dataset medido). */
+  catalog_product_id: string | null;
+  avaliacao_nota: number | null;
+  avaliacao_qtd: number | null;
+  /** Posição na busca (1-based). NÃO diz se é orgânica — ver `patrocinado`. */
+  posicao: number | null;
+  /** tipoResultado !== 'ORGANIC'. NUNCA o campo `patrocinado` do actor — vazio em 0/20 no dataset medido. */
+  patrocinado: boolean | null;
+  /** Selo do ML, ex. "MAIS VENDIDO". */
+  selo: string | null;
+  preco_anterior: number | null;
+  desconto_pct: number | null;
+  /** Mesmo padrão do `full`, a partir do mesmo texto de envio. */
+  flex: boolean | null;
 }
 
 /** Raio-X do nicho a partir da MESMA amostra já paga (custo extra zero). Contagens são DA
@@ -41,6 +58,8 @@ export interface PainelVendasSonar {
   produto_destaque: ItemVendas | null;
   palavras_chave_titulos: Array<{ termo: string; contagem: number }>;
   raio_x: RaioXNicho;
+  /** Índice por `item_id` (D4/ADR-0125) — cruzamento ficha↔anúncio vive no front (ADR-0122). */
+  por_anuncio: Record<string, ItemVendas>;
 }
 
 /** "+500 vendidos" | "5 mil" | 500 → inteiro; sem dado/ilegível → null (nunca 0). */
@@ -70,6 +89,30 @@ export function parsePrecoApify(v: unknown): number | null {
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
+
+/** produtoReviews: "4.9" | "4,9" → número; fora de 0–5 (ex. "6", nota inválida) → null. */
+const parseAvaliacaoNota = (v: unknown): number | null => {
+  const n = parsePrecoApify(v);
+  return n != null && n <= 5 ? n : null;
+};
+
+/** posicaoItem: inteiro ≥1 (posição na busca é 1-based); qualquer outra coisa → null. */
+const parsePosicao = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : null;
+
+/** tipoResultado: só 'ORGANIC' vira false — qualquer outra string não-vazia é patrocinado.
+ *  NUNCA usar o campo `patrocinado` do actor (vazio em 0/20 no dataset medido, ADR-0125). */
+const parsePatrocinado = (v: unknown): boolean | null =>
+  typeof v === 'string' && v.trim() !== '' ? v.trim() !== 'ORGANIC' : null;
+
+/** precoDiscount: "13% OFF" → 13. */
+const parseDescontoPct = (v: unknown): number | null => {
+  if (typeof v !== 'string') return null;
+  const m = v.match(/(\d+)\s*%/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 /** "8.973 resultados" (campo `resultadosTotais`, igual em todos os itens) → 8973. */
 export function parseTotalAnuncios(json: unknown): number | null {
@@ -102,7 +145,28 @@ export function parseItensApify(json: unknown): ItemVendas[] {
       loja_oficial: bool(o.lojaOficial),
       internacional: bool(o.eCompraInternacional),
       full: envio === null ? null : /full/i.test(envio),
+      item_id: str(o.idPublicacao),
+      catalog_product_id: str(o.idProdutoCatalogo),
+      avaliacao_nota: parseAvaliacaoNota(o.produtoReviews),
+      avaliacao_qtd: parseVendidos(o.numeroAvaliacoes),
+      posicao: parsePosicao(o.posicaoItem),
+      patrocinado: parsePatrocinado(o.tipoResultado),
+      selo: str(o.highlight),
+      preco_anterior: parsePrecoApify(o.precoAnterior),
+      desconto_pct: parseDescontoPct(o.precoDiscount),
+      flex: envio === null ? null : /flex/i.test(envio),
     });
+  }
+  return out;
+}
+
+/** Índice por `item_id` (D4/ADR-0125) — item sem `item_id` fica fora; colisão fica com o
+ *  primeiro (mesma convenção do destaque abaixo: ordem de relevância da busca do ML). */
+export function indexarPorAnuncio(itens: ItemVendas[]): Record<string, ItemVendas> {
+  const out: Record<string, ItemVendas> = {};
+  for (const item of itens) {
+    if (!item.item_id || out[item.item_id]) continue;
+    out[item.item_id] = item;
   }
   return out;
 }
@@ -143,6 +207,7 @@ export function montarPainelVendas(
     valor_mercado: valorMercado,
     produto_destaque: destaque,
     palavras_chave_titulos: extrairPalavrasChave(itens.map((i) => i.titulo)),
+    por_anuncio: indexarPorAnuncio(itens),
     raio_x: {
       total_anuncios: totalAnuncios,
       ticket_medio: precos.length > 0 ? precos.reduce((a, b) => a + b, 0) / precos.length : null,

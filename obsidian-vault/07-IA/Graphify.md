@@ -17,8 +17,8 @@ arquitetura são `docs/` e `docs/decisions/`; o Graphify confirma relações no 
   precisa escolher um só.
 - **Escopo de docs/ADRs:** rodado separadamente (`docs/` sozinho já passa de 500 arquivos e
   precisa de subagents de extração semântica para markdown/imagens).
-- **Resultado auditado (2026-08-19):** 3.896 nós e 11.440 links no grafo combinado
-  `src`+`supabase`, depois da poda de 11 relações falsas de produção para testes; 150 comunidades.
+- **Resultado auditado (2026-08-19):** 3.932 nós e 11.541 links no grafo combinado
+  `src`+`supabase`, depois da poda de 11 relações falsas de produção para testes; 166 comunidades.
 
 ## God nodes identificados (mais conectados)
 

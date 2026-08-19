@@ -1,4 +1,4 @@
-# ADR-0125 — Calculadora Mercado Livre premium, API-first e sem persistência
+# ADR-0126 — Calculadora Mercado Livre premium, API-first e sem persistência
 
 - **Status:** aceito
 - **Data:** 2026-08-19
