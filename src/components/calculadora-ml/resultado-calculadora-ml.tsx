@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleAlert, Info, RefreshCw, Target, TrendingDown, TrendingUp } from 'lucide-react'
 import type { ModalidadeML, ResultadoCalculadoraML, ResultadoModalidadeML } from '@/lib/calculadora-ml'
+import type { Tarifa } from '@/lib/tarifa'
 import type { TaxasManuaisML } from '@/hooks/useCalculadoraML'
 import { Button } from '@/components/ui/button'
 import { StatusPill } from '@/components/ui/status-pill'
@@ -13,7 +14,7 @@ interface ResultadoCalculadoraMLProps {
   onModalidade: (modalidade: ModalidadeML) => void
   onValidar: () => void
   erroMeta: string | null
-  cotacaoMeta: unknown
+  cotacaoMeta: Tarifa | null
 }
 
 const moeda = (valor: number | null | undefined) => valor == null ? 'Não calculado' : valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })

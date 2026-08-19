@@ -1,12 +1,25 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { useCalculadoraML } from '@/hooks/useCalculadoraML'
+import type { Tarifa } from '@/lib/tarifa'
 
 const atualizarEntrada = vi.fn()
 const atualizarTaxasManuais = vi.fn()
 const selecionarProduto = vi.fn()
 const validarNaApi = vi.fn()
 const refetchCategorias = vi.fn()
+
+type HookState = ReturnType<typeof useCalculadoraML>
+type EstadoCalculadoraMock = Omit<HookState, 'produtos' | 'cotacaoMeta'> & {
+  produtos: Pick<HookState['produtos'], 'data' | 'isLoading' | 'isError' | 'refetch'>
+  cotacaoMeta: Tarifa | null
+}
+
+const produtosData: NonNullable<HookState['produtos']['data']> = {
+  kpis: { produtos: 0, skus: 0, unidades: 0, skusSemEstoque: 0, valorEmEstoque: 0, skusSemCusto: 0 },
+  produtos: [],
+}
 
 let categoriasState = { data: [], isLoading: false, isError: false, refetch: refetchCategorias }
 
@@ -26,7 +39,7 @@ const estadoBase = {
   atualizarTaxasManuais,
   produtoSelecionado: null,
   selecionarProduto,
-  produtos: { data: [], isLoading: false, isError: false, refetch: vi.fn() },
+  produtos: { data: produtosData, isLoading: false, isError: false, refetch: vi.fn() },
   cotacao: { origem: 'manual' as const, classico: { percentualComissaoPct: 12, taxaFixa: 5, comissaoTotal: 17, frete: 10, proveniencia: 'estimated' as const } },
   statusCotacao: 'estimated' as const,
   aviso: null,
@@ -60,7 +73,7 @@ const estadoBase = {
   erroMeta: null,
 }
 
-let estado = estadoBase
+let estado: EstadoCalculadoraMock = estadoBase
 vi.mock('@/hooks/useCalculadoraML', () => ({ useCalculadoraML: () => estado }))
 vi.mock('@/hooks/useCategoriasML', () => ({ useCategoriasML: () => categoriasState }))
 
@@ -156,7 +169,12 @@ describe('Calculadora ML', () => {
   })
 
   it('confirma na tela quando o preço projetado foi validado na API', () => {
-    estado = { ...estadoBase, cotacaoMeta: { id: 'tarifa-validada' } }
+    const tarifaValidada: Tarifa = {
+      classico: { comissao: 17, percentual: 12, fixa: 5, imposto: 0, recebe: 68 },
+      premium: { comissao: 22, percentual: 17, fixa: 5, imposto: 0, recebe: 63 },
+      frete: 10,
+    }
+    estado = { ...estadoBase, cotacaoMeta: tarifaValidada }
     render(<CalculadoraML />)
 
     expect(screen.getByText(/preço projetado validado na api/i)).toBeInTheDocument()
