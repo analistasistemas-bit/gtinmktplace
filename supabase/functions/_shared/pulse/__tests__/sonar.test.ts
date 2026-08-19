@@ -73,6 +73,7 @@ describe('montarPainelSonar', () => {
           { seller_id: 1, uf: 'SP', transacoes_total: 50, loja_oficial: false },
           { seller_id: 2, uf: 'RJ', transacoes_total: 10, loja_oficial: false },
         ],
+        item_ids: ['MLB100', 'MLB200'],
       },
       {
         category_id: null,
@@ -85,6 +86,7 @@ describe('montarPainelSonar', () => {
           { seller_id: 2, uf: 'RJ', transacoes_total: 10, loja_oficial: false },
           { seller_id: 3, uf: null, transacoes_total: null, loja_oficial: true },
         ],
+        item_ids: [],
       },
     ];
 
@@ -93,8 +95,8 @@ describe('montarPainelSonar', () => {
     expect(painel.termo).toBe('tecido oxford');
     expect(painel.total_catalogo).toBe(137);
     expect(painel.fichas).toHaveLength(2);
-    expect(painel.fichas[0]).toMatchObject({ product_id: 'A1', nome: 'Tecido Oxford Liso', category_id: 'MLB1' });
-    expect(painel.fichas[1]).toMatchObject({ product_id: 'B1', nome: 'Tecido Oxford Estampado', category_id: null });
+    expect(painel.fichas[0]).toMatchObject({ product_id: 'A1', nome: 'Tecido Oxford Liso', category_id: 'MLB1', item_ids: ['MLB100', 'MLB200'] });
+    expect(painel.fichas[1]).toMatchObject({ product_id: 'B1', nome: 'Tecido Oxford Estampado', category_id: null, item_ids: [] });
 
     expect(painel.agregado.visitas_30d_total).toBe(100); // só a ficha A soma; B (null) não vira 0
     expect(painel.agregado.visitas_por_dia).toEqual([

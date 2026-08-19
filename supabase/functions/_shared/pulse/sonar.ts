@@ -67,6 +67,9 @@ export interface ResultadoFicha {
   visitas_30d: number | null;
   visitas_por_dia: Array<{ data: string; total: number }>;
   vendedores: Array<{ seller_id: number; uf: string | null; transacoes_total: number | null; loja_oficial: boolean }>;
+  /** item_id (= idPublicacao no dataset Apify) de cada oferta da ficha, na ordem do ML — chave
+   *  primária do cruzamento ficha↔anúncio no front (D4/ADR-0125). Ficha sem oferta → []. */
+  item_ids: string[];
 }
 
 export interface PainelSonar {

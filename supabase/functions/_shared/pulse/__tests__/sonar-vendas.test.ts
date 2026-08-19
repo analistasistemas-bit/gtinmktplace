@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-  montarPainelVendas, parseItensApify, parsePrecoApify, parseTotalAnuncios, parseVendidos,
+  indexarPorAnuncio, montarPainelVendas, parseItensApify, parsePrecoApify, parseTotalAnuncios, parseVendidos,
   type ItemVendas,
 } from '../sonar-vendas.ts';
+
+// Campos "extra" default de um ItemVendas totalmente vazio (T1) — usado nos testes que já
+// existiam antes desta entrega, para não afrouxar o toEqual quando a interface cresce.
+const EXTRA_VAZIO = {
+  item_id: null, catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null,
+  posicao: null, patrocinado: null, selo: null, preco_anterior: null, desconto_pct: null,
+  flex: null,
+};
 
 describe('parseVendidos', () => {
   it('número cru vira inteiro', () => {
@@ -71,6 +79,8 @@ describe('parseItensApify', () => {
       loja_oficial: false,
       internacional: false,
       full: true,
+      ...EXTRA_VAZIO,
+      flex: false, // envio presente ("...Enviado pelo FULL") sem "flex" no texto → false, não null
     }]);
   });
 
@@ -84,6 +94,85 @@ describe('parseItensApify', () => {
   it('corpo inválido → []', () => {
     expect(parseItensApify(null)).toEqual([]);
     expect(parseItensApify({ error: 'x' })).toEqual([]);
+  });
+
+  // Campos novos (T1, paridade Hunter) — valores REAIS medidos no dataset de produção em
+  // 2026-08-18 (termo "abraçadeira nylon"), registrados no ADR-0125.
+  it('idPublicacao/idProdutoCatalogo: string não-vazia mapeia, "" vira null', () => {
+    const [comAmbos] = parseItensApify([{
+      eTituloProduto: 'X', idPublicacao: 'MLB4445303151', idProdutoCatalogo: 'MLB73054518',
+    }]);
+    expect(comAmbos.item_id).toBe('MLB4445303151');
+    expect(comAmbos.catalog_product_id).toBe('MLB73054518');
+
+    const [semCatalogo] = parseItensApify([{ eTituloProduto: 'X', idPublicacao: 'MLB1', idProdutoCatalogo: '' }]);
+    expect(semCatalogo.catalog_product_id).toBeNull();
+  });
+
+  it('produtoReviews: "4.9" e "4,9" viram 4.9; fora de 0–5 vira null', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', produtoReviews: '4.9' }])[0].avaliacao_nota).toBe(4.9);
+    expect(parseItensApify([{ eTituloProduto: 'X', produtoReviews: '4,9' }])[0].avaliacao_nota).toBe(4.9);
+    expect(parseItensApify([{ eTituloProduto: 'X', produtoReviews: '6' }])[0].avaliacao_nota).toBeNull();
+    expect(parseItensApify([{ eTituloProduto: 'X' }])[0].avaliacao_nota).toBeNull();
+  });
+
+  it('numeroAvaliacoes: aceita "(84)" e "84"; vazio vira null', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', numeroAvaliacoes: '(84)' }])[0].avaliacao_qtd).toBe(84);
+    expect(parseItensApify([{ eTituloProduto: 'X', numeroAvaliacoes: '84' }])[0].avaliacao_qtd).toBe(84);
+    expect(parseItensApify([{ eTituloProduto: 'X', numeroAvaliacoes: '' }])[0].avaliacao_qtd).toBeNull();
+  });
+
+  it('posicaoItem: inteiro ≥1 mapeia; ausente/inválido vira null', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', posicaoItem: 1 }])[0].posicao).toBe(1);
+    expect(parseItensApify([{ eTituloProduto: 'X', posicaoItem: 0 }])[0].posicao).toBeNull();
+    expect(parseItensApify([{ eTituloProduto: 'X' }])[0].posicao).toBeNull();
+  });
+
+  it('tipoResultado (NUNCA o campo `patrocinado` do actor): ORGANIC→false, outro→true, ausente→null', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', tipoResultado: 'ORGANIC' }])[0].patrocinado).toBe(false);
+    expect(parseItensApify([{ eTituloProduto: 'X', tipoResultado: 'ADVERTISING' }])[0].patrocinado).toBe(true);
+    expect(parseItensApify([{ eTituloProduto: 'X' }])[0].patrocinado).toBeNull();
+    expect(parseItensApify([{ eTituloProduto: 'X', tipoResultado: 'ORGANIC', patrocinado: true }])[0].patrocinado).toBe(false);
+  });
+
+  it('highlight: "" vira null, string real mapeia', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', highlight: 'MAIS VENDIDO' }])[0].selo).toBe('MAIS VENDIDO');
+    expect(parseItensApify([{ eTituloProduto: 'X', highlight: '' }])[0].selo).toBeNull();
+  });
+
+  it('precoAnterior (pt-BR, reusa parsePrecoApify) e precoDiscount ("13% OFF" → 13)', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', precoAnterior: '45,9' }])[0].preco_anterior).toBe(45.9);
+    expect(parseItensApify([{ eTituloProduto: 'X', precoDiscount: '13% OFF' }])[0].desconto_pct).toBe(13);
+    expect(parseItensApify([{ eTituloProduto: 'X' }])[0].desconto_pct).toBeNull();
+  });
+
+  it('flex: mesmo padrão do full, a partir do texto de envio', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', envio: 'Enviado pelo FLEX' }])[0].flex).toBe(true);
+    expect(parseItensApify([{ eTituloProduto: 'X', envio: 'Frete grátis Enviado pelo FULL' }])[0].flex).toBe(false);
+    expect(parseItensApify([{ eTituloProduto: 'X' }])[0].flex).toBeNull();
+  });
+});
+
+describe('indexarPorAnuncio', () => {
+  const item = (over: Partial<ItemVendas>): ItemVendas => ({
+    titulo: 'Produto', preco: null, vendidos: null, link: null, imagem: null, vendedor: null,
+    frete_gratis: null, loja_oficial: null, internacional: null, full: null, ...EXTRA_VAZIO, ...over,
+  });
+
+  it('indexa por item_id (idPublicacao)', () => {
+    const a = item({ item_id: 'MLB1' });
+    const b = item({ item_id: 'MLB2' });
+    expect(indexarPorAnuncio([a, b])).toEqual({ MLB1: a, MLB2: b });
+  });
+
+  it('item sem item_id fica fora do índice', () => {
+    expect(indexarPorAnuncio([item({ item_id: null })])).toEqual({});
+  });
+
+  it('colisão de item_id: fica com o primeiro (ordem de relevância)', () => {
+    const primeiro = item({ item_id: 'MLB1', titulo: 'Primeiro' });
+    const segundo = item({ item_id: 'MLB1', titulo: 'Segundo' });
+    expect(indexarPorAnuncio([primeiro, segundo])).toEqual({ MLB1: primeiro });
   });
 });
 
@@ -103,7 +192,7 @@ describe('parseTotalAnuncios', () => {
 describe('montarPainelVendas', () => {
   const item = (over: Partial<ItemVendas>): ItemVendas => ({
     titulo: 'Produto', preco: null, vendidos: null, link: null, imagem: null, vendedor: null,
-    frete_gratis: null, loja_oficial: null, internacional: null, full: null, ...over,
+    frete_gratis: null, loja_oficial: null, internacional: null, full: null, ...EXTRA_VAZIO, ...over,
   });
 
   it('raio_x conta só os true da amostra e tira o ticket médio dos preços presentes', () => {
@@ -154,5 +243,12 @@ describe('montarPainelVendas', () => {
       item({ titulo: 'Protetor Solar Corporal' }),
     ]);
     expect(p.palavras_chave_titulos[0]).toEqual({ termo: 'protetor', contagem: 2 });
+  });
+
+  it('expõe por_anuncio (T1/D4) — mesmo índice de indexarPorAnuncio', () => {
+    const a = item({ item_id: 'MLB1' });
+    const b = item({ item_id: null }); // sem item_id: fica fora do índice
+    const p = montarPainelVendas('x', [a, b]);
+    expect(p.por_anuncio).toEqual({ MLB1: a });
   });
 });

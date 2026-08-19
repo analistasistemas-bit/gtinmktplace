@@ -59,7 +59,7 @@ async function resolverVendedor(sellerId: number, token: string, cache: Map<numb
 }
 
 const resultadoVazio = (): ResultadoFicha => ({
-  category_id: null, ofertas: 0, preco: null, frete_gratis_pct: 0, visitas_30d: null, visitas_por_dia: [], vendedores: [],
+  category_id: null, ofertas: 0, preco: null, frete_gratis_pct: 0, visitas_30d: null, visitas_por_dia: [], vendedores: [], item_ids: [],
 });
 
 async function processarFicha(ficha: FichaBusca, token: string, sellerCache: Map<number, InfoVendedor>): Promise<ResultadoFicha> {
@@ -100,6 +100,7 @@ async function processarFicha(ficha: FichaBusca, token: string, sellerCache: Map
     visitas_30d: visitas?.total ?? null,
     visitas_por_dia: visitas?.por_dia ?? [],
     vendedores,
+    item_ids: ofertas.map((o) => o.item_id),
   };
 }
 
@@ -119,7 +120,10 @@ Deno.serve(async (req) => {
 
   // v2: bump por causa da mudança de comportamento nas fichas sem vendedor ativo — um resultado
   // v1 já cacheado para o termo de teste ficaria servindo o shape antigo por até 24h.
-  const chave = `sonar:v2:MLB:${normalizado}`;
+  // v3 (ADR-0125/D3): ResultadoFicha ganhou `item_ids`, obrigatório para o cruzamento
+  // ficha↔anúncio (D4) — sem bump, um painel v2 cacheado serviria fichas sem item_ids por 24h.
+  // Bump aqui é grátis (API oficial, sem custo monetário Apify).
+  const chave = `sonar:v3:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return json(JSON.parse(cacheado));
 

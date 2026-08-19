@@ -12,6 +12,10 @@ export interface ResultadoFichaSonar {
   visitas_30d: number | null;
   visitas_por_dia: Array<{ data: string; total: number }>;
   vendedores: Array<{ seller_id: number; uf: string | null; transacoes_total: number | null; loja_oficial: boolean }>;
+  /** Opcional: cache v2 antigo (pré-ADR-0125) não tem o campo — cruzamento vira "sem dado". */
+  item_ids?: string[];
+  /** Opcional: sonda de Grupo C (T10, fora desta leva) — ainda não preenchido pela edge. */
+  criado_em?: string | null;
 }
 
 export interface PainelSonar {
@@ -70,6 +74,17 @@ export interface ItemVendasSonar {
   loja_oficial: boolean | null;
   internacional: boolean | null;
   full: boolean | null;
+  // --- Campos novos (T4/ADR-0125, espelho de sonar-vendas.ts) ---
+  item_id: string | null;
+  catalog_product_id: string | null;
+  avaliacao_nota: number | null;
+  avaliacao_qtd: number | null;
+  posicao: number | null;
+  patrocinado: boolean | null;
+  selo: string | null;
+  preco_anterior: number | null;
+  desconto_pct: number | null;
+  flex: boolean | null;
 }
 
 /** Contagens DA AMOSTRA de anúncios (a UI rotula); só `total_anuncios` é o absoluto do nicho. */
@@ -93,6 +108,8 @@ export interface PainelVendasSonar {
   produto_destaque: ItemVendasSonar | null;
   palavras_chave_titulos: Array<{ termo: string; contagem: number }>;
   raio_x: RaioXNicho;
+  /** Opcional: entrada v4 cacheada antes do ADR-0125 (D2, campo aditivo) não tem o índice. */
+  por_anuncio?: Record<string, ItemVendasSonar>;
 }
 
 /** `configurado: false` = APIFY_TOKEN ausente no backend — indisponível, não erro (ADR-0122 §5). */
