@@ -1,6 +1,6 @@
 ---
 tags: [modulo, marketplace]
-atualizado: 2026-07-04
+atualizado: 2026-08-19
 ---
 
 # Marketplace
@@ -30,6 +30,10 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
   status ao vivo após a ação (ADR-0060)
 - **Split de produto** — produtos com >100 cores aparecem como N anúncios; ver
   [[Publicação Mercado Livre]]
+- **Calculadora ML em Viabilidade** — compara Clássico e Premium com lucro, margem, custo total,
+  peso cúbico, sensibilidades e preço-alvo. Categoria é opcional, mas a tela avisa quando o
+  resultado não usa tarifa oficial; a busca usa uma Edge Function read-only. Sem persistência ou
+  escrita no tenant (ADR-0125).
 
 ## Componentes
 

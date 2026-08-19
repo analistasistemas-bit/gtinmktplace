@@ -317,6 +317,21 @@ recusam org sem o módulo com **403** — é ali que está a fronteira de segura
   e seguindo pelo fluxo normal — IA, Revisão, publicação. `origem` e foto nunca são
   pré-preenchidas. Ver `docs/spikes/037-cadastrar-a-partir-da-viabilidade.md`.
 
+### Calculadora Mercado Livre (ADR-0125)
+
+A segunda modalidade de `/viabilidade` simula Clássico e Premium sem persistir dados nem alterar
+o tenant. O fluxo é `CalculadoraML` → `useCalculadoraML` → motor puro
+`src/lib/calculadora-ml.ts`. Quando há categoria e conexão válidas, o hook consulta
+`calcular-tarifa-ml`; a categoria opcional pode ser localizada por `buscar-categorias-ml`, que
+somente lê um token ainda válido e nunca o renova. Produto cadastrado é apenas um atalho de
+preenchimento: o operador continua podendo editar custo, preço, dimensões e peso.
+
+O resultado declara a proveniência de cada modalidade: **oficial** (comissão e frete do ML),
+**parcial** (comissão oficial e frete confirmado manualmente) ou **estimada** (taxas manuais).
+Frete desconhecido nunca vira zero; zero exige confirmação explícita. Sem categoria, token ou API,
+o formulário permanece utilizável e avisa que o cálculo não é oficial. Sensibilidades de custo,
+preço e frete e o preço para a margem-alvo são derivados localmente pelo mesmo motor financeiro.
+
 ## Mapa do código
 
 ```
@@ -329,7 +344,7 @@ src/
 └── stores/       estado global (Zustand)
 
 supabase/
-├── functions/    32 Edge Functions Deno + _shared/ (ml, ai, canais, redis, queue, …)
+├── functions/    55 Edge Functions Deno + _shared/ (ml, ai, canais, redis, queue, …)
 ├── migrations/   DDL do schema (fonte única — ADR-0043)
 └── config.toml   verify_jwt por função
 

@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-08-11
+atualizado: 2026-08-19
 ---
 
 # Changelog
@@ -8,6 +8,17 @@ atualizado: 2026-08-11
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-08-19
+
+- **Feature: Calculadora Mercado Livre premium na Viabilidade (ADR-0125).** Compara anúncios
+  Clássico e Premium, explicita lucro, margem, custos, peso cúbico, sensibilidades e preço para a
+  margem-alvo. Tarifa oficial vem da API quando categoria e conexão permitem; categoria é
+  opcional com aviso visível e busca read-only no preditor do ML. Fallback manual conserva a
+  proveniência estimada/parcial e nunca presume frete zero. Pode preencher dados de um produto
+  cadastrado, mas tudo permanece editável. O modo manual é estimado; `partial` aparece somente ao
+  combinar comissão oficial com frete confirmado manualmente. Não persiste simulações nem escreve
+  dados do tenant.
 
 ## 2026-08-11
 

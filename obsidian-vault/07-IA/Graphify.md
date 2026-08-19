@@ -1,6 +1,6 @@
 ---
 tags: [ia, graphify]
-atualizado: 2026-07-24
+atualizado: 2026-08-19
 ---
 
 # Graphify
@@ -17,8 +17,8 @@ arquitetura são `docs/` e `docs/decisions/`; o Graphify confirma relações no 
   precisa escolher um só.
 - **Escopo de docs/ADRs:** rodado separadamente (`docs/` sozinho já passa de 500 arquivos e
   precisa de subagents de extração semântica para markdown/imagens).
-- **Resultado auditado (2026-07-24):** 8.313 nós e 16.074 links no grafo combinado
-  `src`+`supabase`, gerado no commit `c14f759d0ae6fb35c5a0405b4a680433e4049cd8`.
+- **Resultado auditado (2026-08-19):** 3.896 nós e 11.440 links no grafo combinado
+  `src`+`supabase`, depois da poda de 11 relações falsas de produção para testes; 150 comunidades.
 
 ## God nodes identificados (mais conectados)
 
