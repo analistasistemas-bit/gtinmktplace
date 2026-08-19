@@ -33,6 +33,8 @@ export interface ItemVendas {
   desconto_pct: number | null;
   /** Mesmo padrão do `full`, a partir do mesmo texto de envio. */
   flex: boolean | null;
+  /** = produtoCategoryID (20/20 no dataset medido 18/08) — simulador de margem sem preditor. */
+  category_id: string | null;
 }
 
 /** Raio-X do nicho a partir da MESMA amostra já paga (custo extra zero). Contagens são DA
@@ -60,6 +62,9 @@ export interface PainelVendasSonar {
   raio_x: RaioXNicho;
   /** Índice por `item_id` (D4/ADR-0125) — cruzamento ficha↔anúncio vive no front (ADR-0122). */
   por_anuncio: Record<string, ItemVendas>;
+  /** Amostra completa na ordem da busca — a tabela do front nasce daqui (item sem item_id
+   *  fica fora de por_anuncio, mas continua sendo uma linha da tabela). Aditivo (D5). */
+  itens: ItemVendas[];
 }
 
 /** "+500 vendidos" | "5 mil" | 500 → inteiro; sem dado/ilegível → null (nunca 0). */
@@ -155,6 +160,7 @@ export function parseItensApify(json: unknown): ItemVendas[] {
       preco_anterior: parsePrecoApify(o.precoAnterior),
       desconto_pct: parseDescontoPct(o.precoDiscount),
       flex: envio === null ? null : /flex/i.test(envio),
+      category_id: str(o.produtoCategoryID),
     });
   }
   return out;
@@ -208,10 +214,39 @@ export function montarPainelVendas(
     produto_destaque: destaque,
     palavras_chave_titulos: extrairPalavrasChave(itens.map((i) => i.titulo)),
     por_anuncio: indexarPorAnuncio(itens),
+    itens,
     raio_x: {
       total_anuncios: totalAnuncios,
       ticket_medio: precos.length > 0 ? precos.reduce((a, b) => a + b, 0) / precos.length : null,
       ...conta,
     },
   };
+}
+
+// --- Snapshot histórico (ADR-0127/D7): shape exato da tabela sonar_snapshots -------------------
+export interface LinhaSnapshot {
+  termo: string;
+  gerado_em: string;
+  item_id: string;
+  titulo: string;
+  preco: number | null;
+  vendidos: number | null;   // cru pós-parseVendidos; delta futuro = PISO (D13), null nunca 0
+  posicao: number | null;
+  patrocinado: boolean | null;
+  vendedor: string | null;
+  catalog_product_id: string | null;
+}
+
+/** Item sem item_id fica fora: sem chave não há série. LOUD: nulls passam intactos. */
+export function linhasSnapshot(termo: string, geradoEm: string, itens: ItemVendas[]): LinhaSnapshot[] {
+  const out: LinhaSnapshot[] = [];
+  for (const i of itens) {
+    if (!i.item_id) continue;
+    out.push({
+      termo, gerado_em: geradoEm, item_id: i.item_id, titulo: i.titulo, preco: i.preco,
+      vendidos: i.vendidos, posicao: i.posicao, patrocinado: i.patrocinado,
+      vendedor: i.vendedor, catalog_product_id: i.catalog_product_id,
+    });
+  }
+  return out;
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  indexarPorAnuncio, montarPainelVendas, parseItensApify, parsePrecoApify, parseTotalAnuncios, parseVendidos,
-  type ItemVendas,
+  indexarPorAnuncio, linhasSnapshot, montarPainelVendas, parseItensApify, parsePrecoApify,
+  parseTotalAnuncios, parseVendidos, type ItemVendas,
 } from '../sonar-vendas.ts';
 
 // Campos "extra" default de um ItemVendas totalmente vazio (T1) — usado nos testes que já
@@ -9,7 +9,7 @@ import {
 const EXTRA_VAZIO = {
   item_id: null, catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null,
   posicao: null, patrocinado: null, selo: null, preco_anterior: null, desconto_pct: null,
-  flex: null,
+  flex: null, category_id: null,
 };
 
 describe('parseVendidos', () => {
@@ -250,5 +250,47 @@ describe('montarPainelVendas', () => {
     const b = item({ item_id: null }); // sem item_id: fica fora do índice
     const p = montarPainelVendas('x', [a, b]);
     expect(p.por_anuncio).toEqual({ MLB1: a });
+  });
+});
+
+const itemBase = (over: Partial<ItemVendas> = {}): ItemVendas => ({
+  titulo: 'Abraçadeira nylon 200un', preco: 12.9, vendidos: 500, link: null, imagem: null,
+  vendedor: 'FIXA-FORTE', frete_gratis: true, loja_oficial: false, internacional: false,
+  full: true, item_id: 'MLB111', catalog_product_id: null, category_id: 'MLB1499',
+  avaliacao_nota: 4.8, avaliacao_qtd: 84, posicao: 1, patrocinado: false, selo: null,
+  preco_anterior: null, desconto_pct: null, flex: false, ...over,
+});
+
+describe('category_id — produtoCategoryID (20/20 no dataset medido 18/08; destrava o simulador sem preditor)', () => {
+  it('parseia produtoCategoryID e trata vazio como null', () => {
+    const [comCat] = parseItensApify([{ eTituloProduto: 'X', produtoCategoryID: 'MLB1499' }]);
+    const [semCat] = parseItensApify([{ eTituloProduto: 'Y', produtoCategoryID: '' }]);
+    expect(comCat.category_id).toBe('MLB1499');
+    expect(semCat.category_id).toBeNull();
+  });
+});
+
+describe('painel expõe `itens` (amostra completa, ordem da busca — a tabela nasce daqui)', () => {
+  it('itens preserva a lista e a ordem, inclusive item sem item_id (que fica fora de por_anuncio)', () => {
+    const a = itemBase({ item_id: 'MLB1', posicao: 1 });
+    const b = itemBase({ item_id: null, posicao: 2, titulo: 'Sem id' });
+    const painel = montarPainelVendas('t', [a, b], null);
+    expect(painel.itens).toEqual([a, b]);
+    expect(Object.keys(painel.por_anuncio)).toEqual(['MLB1']);
+  });
+});
+
+describe('linhasSnapshot — D7/D13: uma linha por anúncio, null nunca vira 0', () => {
+  it('mapeia os 10 campos e preserva null (vendidos null NUNCA vira 0)', () => {
+    const linhas = linhasSnapshot('abraçadeira nylon', '2026-08-19T12:00:00.000Z',
+      [itemBase({ vendidos: null, preco: null })]);
+    expect(linhas).toEqual([{
+      termo: 'abraçadeira nylon', gerado_em: '2026-08-19T12:00:00.000Z', item_id: 'MLB111',
+      titulo: 'Abraçadeira nylon 200un', preco: null, vendidos: null, posicao: 1,
+      patrocinado: false, vendedor: 'FIXA-FORTE', catalog_product_id: null,
+    }]);
+  });
+  it('descarta item sem item_id (sem chave não há série histórica)', () => {
+    expect(linhasSnapshot('t', 'g', [itemBase({ item_id: null })])).toEqual([]);
   });
 });
