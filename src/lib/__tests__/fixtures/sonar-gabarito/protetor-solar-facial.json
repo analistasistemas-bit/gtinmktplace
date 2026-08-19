@@ -1,0 +1,2650 @@
+{
+  "vendas": {
+    "configurado": true,
+    "termo": "protetor solar facial",
+    "gerado_em": "2026-08-19T15:23:48.267Z",
+    "itens_analisados": 20,
+    "itens_com_vendas": 16,
+    "vendas_totais": 662500,
+    "valor_mercado": 46753270,
+    "produto_destaque": {
+      "titulo": "Protetor Solar Facial FPS 80 Antioleosidade Anthelios Airlicium La Roche-Posay 40g",
+      "preco": 78.68,
+      "vendidos": 250000,
+      "link": "https://www.mercadolivre.com.br/protetor-solar-facial-fps-80-antioleosidade-anthelios-airlicium-la-roche-posay-40g/p/MLB19755099",
+      "imagem": "https://http2.mlstatic.com/D_NQ_NP_752201-MLA113617929791_062026-O.webp",
+      "vendedor": "LA ROCHE-POSAY Loja oficial",
+      "frete_gratis": true,
+      "loja_oficial": true,
+      "internacional": false,
+      "full": true,
+      "item_id": "MLB4195198970",
+      "catalog_product_id": "MLB19755099",
+      "avaliacao_nota": 4.9,
+      "avaliacao_qtd": 37645,
+      "posicao": 5,
+      "patrocinado": false,
+      "selo": null,
+      "preco_anterior": 119.9,
+      "desconto_pct": 34,
+      "flex": false
+    },
+    "palavras_chave_titulos": [
+      {
+        "termo": "facial",
+        "contagem": 19
+      },
+      {
+        "termo": "protetor",
+        "contagem": 19
+      },
+      {
+        "termo": "solar",
+        "contagem": 19
+      },
+      {
+        "termo": "fps",
+        "contagem": 15
+      },
+      {
+        "termo": "cor",
+        "contagem": 9
+      },
+      {
+        "termo": "40g",
+        "contagem": 7
+      },
+      {
+        "termo": "seco",
+        "contagem": 5
+      },
+      {
+        "termo": "toque",
+        "contagem": 5
+      },
+      {
+        "termo": "30g",
+        "contagem": 4
+      },
+      {
+        "termo": "alta",
+        "contagem": 4
+      },
+      {
+        "termo": "anthelios",
+        "contagem": 4
+      },
+      {
+        "termo": "posay",
+        "contagem": 4
+      },
+      {
+        "termo": "proteção",
+        "contagem": 4
+      },
+      {
+        "termo": "roche",
+        "contagem": 4
+      },
+      {
+        "termo": "sem",
+        "contagem": 4
+      },
+      {
+        "termo": "capital",
+        "contagem": 3
+      },
+      {
+        "termo": "creme",
+        "contagem": 3
+      },
+      {
+        "termo": "efeito",
+        "contagem": 3
+      },
+      {
+        "termo": "hidrata",
+        "contagem": 3
+      },
+      {
+        "termo": "hidratante",
+        "contagem": 3
+      }
+    ],
+    "por_anuncio": {
+      "MLB3654552420": {
+        "titulo": "Protetor solar facial sun fresh fps 70 40g Neutrogena",
+        "preco": 39.8,
+        "vendidos": 50000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-sun-fresh-fps-70-40g-neutrogena/p/MLB17476594",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_641747-MLA99450652452_112025-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3654552420",
+        "catalog_product_id": "MLB17476594",
+        "avaliacao_nota": null,
+        "avaliacao_qtd": 5250,
+        "posicao": 1,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 66.99,
+        "desconto_pct": 40,
+        "flex": false
+      },
+      "MLB4313573717": {
+        "titulo": "Hidrabene Protetor facial Solar FPS 70 Toque Seco Antissinais Clareia a pele 50g",
+        "preco": 38.9,
+        "vendidos": 5000,
+        "link": "https://www.mercadolivre.com.br/hidrabene-protetor-facial-solar-fps-70-toque-seco-antissinais-clareia-a-pele-50g/p/MLB60416809",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_691073-MLA109924601057_042026-O.webp",
+        "vendedor": "HIDRABENE Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB4313573717",
+        "catalog_product_id": "MLB60416809",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 659,
+        "posicao": 2,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 41.9,
+        "desconto_pct": 7,
+        "flex": false
+      },
+      "MLB6932971316": {
+        "titulo": "Creme Protetor Hidratante Hidrata A Pele, Fornece Pro",
+        "preco": 17.37,
+        "vendidos": null,
+        "link": "https://www.mercadolivre.com.br/ouhoe-moisturizing-sunscreen-cream-spf-uva-protection/p/MLB2065959188",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_667922-CBT113008318929_062026-O.webp",
+        "vendedor": null,
+        "frete_gratis": false,
+        "loja_oficial": false,
+        "internacional": true,
+        "full": null,
+        "item_id": "MLB6932971316",
+        "catalog_product_id": "MLB2065959188",
+        "avaliacao_nota": null,
+        "avaliacao_qtd": null,
+        "posicao": 3,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": null
+      },
+      "MLB5163310134": {
+        "titulo": "Hidrabene Protetor Solar Facial Creme Textura Ultra Leve Fps70 50 g",
+        "preco": 40.4,
+        "vendidos": 1000,
+        "link": "https://www.mercadolivre.com.br/hidrabene-protetor-solar-facial-creme-textura-ultra-leve-fps70-50-g/p/MLB41892437",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_647906-MLA99390612678_112025-O.webp",
+        "vendedor": "HIDRABENE",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB5163310134",
+        "catalog_product_id": "MLB41892437",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 239,
+        "posicao": 4,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB4195198970": {
+        "titulo": "Protetor Solar Facial FPS 80 Antioleosidade Anthelios Airlicium La Roche-Posay 40g",
+        "preco": 78.68,
+        "vendidos": 250000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-fps-80-antioleosidade-anthelios-airlicium-la-roche-posay-40g/p/MLB19755099",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_752201-MLA113617929791_062026-O.webp",
+        "vendedor": "LA ROCHE-POSAY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB4195198970",
+        "catalog_product_id": "MLB19755099",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 37645,
+        "posicao": 5,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 119.9,
+        "desconto_pct": 34,
+        "flex": false
+      },
+      "MLB3696123026": {
+        "titulo": "Protetor Solar Facial com Cor FPS 60, Anthelios Ultra Cover La Roche-Posay, 30g",
+        "preco": 67.22,
+        "vendidos": 100000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-com-cor-fps-60-anthelios-ultra-cover-la-roche-posay-30g/p/MLB19801958",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_643449-MLA103364503100_012026-O.webp",
+        "vendedor": "LA ROCHE-POSAY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3696123026",
+        "catalog_product_id": "MLB19801958",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 22350,
+        "posicao": 6,
+        "patrocinado": false,
+        "selo": "OFERTA IMPERDÍVEL",
+        "preco_anterior": 109.9,
+        "desconto_pct": 38,
+        "flex": false
+      },
+      "MLB7359246082": {
+        "titulo": "Hidratante Facial Com Fps 30 Proteção Solar Raavi Dermocosme",
+        "preco": 54.9,
+        "vendidos": null,
+        "link": "https://www.mercadolivre.com.br/hidratante-facial-com-fps-30-protecao-solar-raavi-dermocosme/up/MLBU4643483198",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_866825-MLB114434927624_082026-O.webp",
+        "vendedor": "RAAVI",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB7359246082",
+        "catalog_product_id": null,
+        "avaliacao_nota": null,
+        "avaliacao_qtd": null,
+        "posicao": 7,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB6888756930": {
+        "titulo": "ISDIN Protetor Solar Facial Fusion Water 5 Stars Sem Cor FPS 60 - 30ml",
+        "preco": 69.9,
+        "vendidos": 50000,
+        "link": "https://www.mercadolivre.com.br/isdin-protetor-solar-facial-fusion-water-5-stars-sem-cor-fps-60-30ml/p/MLB19508914",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_709346-MLA99448475090_112025-O.webp",
+        "vendedor": "ISDIN por FARMAIS Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB6888756930",
+        "catalog_product_id": "MLB19508914",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 7879,
+        "posicao": 8,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB3340533709": {
+        "titulo": "Protetor Solar Facial Alta Cobertura Anthelios La Roche-Posay Cor 3.0 30g",
+        "preco": 80.99,
+        "vendidos": 100000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-alta-cobertura-anthelios-la-roche-posay-cor-30-30g/p/MLB19767143",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_728452-MLA103883256579_012026-O.webp",
+        "vendedor": "LA ROCHE-POSAY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3340533709",
+        "catalog_product_id": "MLB19767143",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 25956,
+        "posicao": 9,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 109.9,
+        "desconto_pct": 26,
+        "flex": false
+      },
+      "MLB7393992776": {
+        "titulo": "Protetor Solar Facial Vitamina C Fps50+ Pa+++ 50g",
+        "preco": 34.74,
+        "vendidos": null,
+        "link": "https://www.mercadolivre.com.br/protector-solar-vitamina-c-spf50-pa-iluminador-50g/p/MLB2104150664",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_818914-CBT114643813902_082026-O.webp",
+        "vendedor": null,
+        "frete_gratis": false,
+        "loja_oficial": false,
+        "internacional": true,
+        "full": null,
+        "item_id": "MLB7393992776",
+        "catalog_product_id": "MLB2104150664",
+        "avaliacao_nota": null,
+        "avaliacao_qtd": null,
+        "posicao": 10,
+        "patrocinado": false,
+        "selo": "NOVIDADE",
+        "preco_anterior": 40.92,
+        "desconto_pct": 15,
+        "flex": null
+      },
+      "MLB3797183999": {
+        "titulo": "Protetor Solar Facial Sem Cor Antioleosidade Toque Seco FPS 60 Reduz Acne e Poros Acabamento Invisível Com Niacinamida Ácido Salicílico Capital Soleil UV-Clear Vichy 40g",
+        "preco": 67.02,
+        "vendidos": 10000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-sem-cor-antioleosidade-toque-seco-fps-60-reduz-acne-e-poros-acabamento-invisivel-com-niacinamida-acido-salicilico-capital-soleil-uv-clear-vichy-40g/p/MLB38686865",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_880060-MLA99931287339_112025-O.webp",
+        "vendedor": "VICHY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3797183999",
+        "catalog_product_id": "MLB38686865",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 4260,
+        "posicao": 11,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 100.9,
+        "desconto_pct": 33,
+        "flex": false
+      },
+      "MLB7394248196": {
+        "titulo": "Protetor Solar Fps 50 Vitamina C Facial Corporal",
+        "preco": 36.82,
+        "vendidos": null,
+        "link": "https://www.mercadolivre.com.br/protector-solar-spf50-vitamina-c-cara-cuerpo-resistente-agua/p/MLB2095149433",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_696782-CBT116009498863_082026-O.webp",
+        "vendedor": null,
+        "frete_gratis": false,
+        "loja_oficial": false,
+        "internacional": true,
+        "full": null,
+        "item_id": "MLB7394248196",
+        "catalog_product_id": "MLB2095149433",
+        "avaliacao_nota": null,
+        "avaliacao_qtd": null,
+        "posicao": 12,
+        "patrocinado": false,
+        "selo": "OFERTA IMPERDÍVEL",
+        "preco_anterior": 40.92,
+        "desconto_pct": 10,
+        "flex": null
+      },
+      "MLB4184468108": {
+        "titulo": "Protetor Solar Facial FPS 60 Gel Creme Oil-Free com Ação Hidratante e Antioxidante UVA/UVB para Peles Oleosas Sem Cor Anthelios XL Protect La Roche-Posay 40g",
+        "preco": 66.78,
+        "vendidos": 10000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-fps-60-gel-creme-oil-free-com-acao-hidratante-e-antioxidante-uvauvb-para-peles-oleosas-sem-cor-anthelios-xl-protect-la-roche-posay-40g/p/MLB19504792",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_964467-MLA97317249263_112025-O.webp",
+        "vendedor": "LA ROCHE-POSAY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB4184468108",
+        "catalog_product_id": "MLB19504792",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 3611,
+        "posicao": 14,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 97.9,
+        "desconto_pct": 31,
+        "flex": false
+      },
+      "MLB2989828520": {
+        "titulo": "EUCERIN Protetor Solar Facial Antimanchas Cor Clara FPS 70 50ml, Pigment Control, Proteção UVA, UVB e Luz Visível, Thiamidol",
+        "preco": 89.91,
+        "vendidos": 10000,
+        "link": "https://www.mercadolivre.com.br/eucerin-protetor-solar-facial-antimanchas-cor-clara-fps-70-50ml-pigment-control-protecao-uva-uvb-e-luz-visivel-thiamidol/p/MLB19828355",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_652408-MLA105570998773_012026-O.webp",
+        "vendedor": "EUCERIN Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB2989828520",
+        "catalog_product_id": "MLB19828355",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 9939,
+        "posicao": 15,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 129.9,
+        "desconto_pct": 30,
+        "flex": false
+      },
+      "MLB3813196444": {
+        "titulo": "NIVEA SUN Protetor Solar Protect & Hidrata FPS 50 400ml, Alta Proteção UVA/UVB, Hidratação Prolongada, Rápida Absorção, Pantenol, Cuidado Solar Corporal e Facial",
+        "preco": 70.9,
+        "vendidos": 10000,
+        "link": "https://www.mercadolivre.com.br/nivea-sun-protetor-solar-protect-hidrata-fps-50-400ml-alta-protecao-uvauvb-hidratacao-prolongada-rapida-absorcao-pantenol-cuidado-solar-corporal-e-facial/p/MLB17476586",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_896473-MLA106000743063_012026-O.webp",
+        "vendedor": "NIVEA Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3813196444",
+        "catalog_product_id": "MLB17476586",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 20456,
+        "posicao": 16,
+        "patrocinado": false,
+        "selo": "OFERTA IMPERDÍVEL",
+        "preco_anterior": 130.17,
+        "desconto_pct": 45,
+        "flex": false
+      },
+      "MLB3440027362": {
+        "titulo": "Protetor Solar Facial com Cor Efeito Matte 12h Toque Seco Alta Proteção FPS 50 Cor 2.0 Capital Soleil Vichy 30g",
+        "preco": 70.02,
+        "vendidos": 5000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-com-cor-efeito-matte-12h-toque-seco-alta-protecao-fps-50-cor-20-capital-soleil-vichy-30g/p/MLB20583016",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_909668-MLA99833218103_112025-O.webp",
+        "vendedor": "VICHY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3440027362",
+        "catalog_product_id": "MLB20583016",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 1154,
+        "posicao": 17,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 91.9,
+        "desconto_pct": 23,
+        "flex": false
+      },
+      "MLB7124261450": {
+        "titulo": "Protetor Solar Facial com Cor FPS 70 Alta Cobertura - L'Oréal Paris Solar Expertise Efeito Make Up 30g",
+        "preco": 54.86,
+        "vendidos": 1000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-com-cor-fps-70-alta-cobertura-loreal-paris-solar-expertise-efeito-make-up-30g/p/MLB54473693",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_785129-MLA99450932534_112025-O.webp",
+        "vendedor": "L'ORÉAL PARIS Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB7124261450",
+        "catalog_product_id": "MLB54473693",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 1382,
+        "posicao": 18,
+        "patrocinado": false,
+        "selo": "MAIS VENDIDO",
+        "preco_anterior": 60.99,
+        "desconto_pct": 10,
+        "flex": false
+      },
+      "MLB2012775040": {
+        "titulo": "Protetor Solar Facial FPS 60 com Ativo Hialurônico que Previne Rugas, Manchas Solares, Hidrata e Tem Toque Seco, sem Perfume, Solar Expertise Antirrugas L'Oréal Paris 40g",
+        "preco": 48.4,
+        "vendidos": 50000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-fps-60-com-ativo-hialuronico-que-previne-rugas-manchas-solares-hidrata-e-tem-toque-seco-sem-perfume-solar-expertise-antirrugas-loreal-paris-40g/p/MLB18408466",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_837208-MLA99451973552_112025-O.webp",
+        "vendedor": "L'ORÉAL PARIS",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB2012775040",
+        "catalog_product_id": "MLB18408466",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 17328,
+        "posicao": 19,
+        "patrocinado": false,
+        "selo": "ÚLTIMA!",
+        "preco_anterior": 61.9,
+        "desconto_pct": 21,
+        "flex": false
+      },
+      "MLB4240984693": {
+        "titulo": "Protetor Solar Facial Darrow Actine One Tom 2 FPS50 40g",
+        "preco": 60.82,
+        "vendidos": 500,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-darrow-actine-one-tom-2-fps50-40g/p/MLB57723519",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_821807-MLA115302576223_072026-O.webp",
+        "vendedor": "DARROW por Darrow Laboratório Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB4240984693",
+        "catalog_product_id": "MLB57723519",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 229,
+        "posicao": 20,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 81.99,
+        "desconto_pct": 25,
+        "flex": false
+      },
+      "MLB3709755412": {
+        "titulo": "Protetor Solar Facial com Base FPS 60, Ação Clareadora Antibrilho, Previne Manchas Solares, Efeito Matte Toque Seco, Cor Clara, Clarify Capital Soleil Vichy 40g",
+        "preco": 74.09,
+        "vendidos": 10000,
+        "link": "https://www.mercadolivre.com.br/protetor-solar-facial-com-base-fps-60-acao-clareadora-antibrilho-previne-manchas-solares-efeito-matte-toque-seco-cor-clara-clarify-capital-soleil-vichy-40g/p/MLB18408167",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_640562-MLA99930106219_112025-O.webp",
+        "vendedor": "VICHY Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB3709755412",
+        "catalog_product_id": "MLB18408167",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 2754,
+        "posicao": 21,
+        "patrocinado": false,
+        "selo": "OFERTA IMPERDÍVEL",
+        "preco_anterior": 114.9,
+        "desconto_pct": 35,
+        "flex": false
+      }
+    },
+    "raio_x": {
+      "total_anuncios": 8895,
+      "ticket_medio": 58.12599999999999,
+      "lojas_oficiais": 13,
+      "full": 17,
+      "frete_gratis": 17,
+      "internacionais": 3
+    }
+  },
+  "visitas_por_item": {
+    "MLB3654552420": {
+      "total": 39534,
+      "por_dia": [
+        {
+          "data": "2026-07-26",
+          "total": 104
+        },
+        {
+          "data": "2026-08-01",
+          "total": 1056
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2327
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1119
+        },
+        {
+          "data": "2026-08-10",
+          "total": 2168
+        },
+        {
+          "data": "2026-07-23",
+          "total": 1668
+        },
+        {
+          "data": "2026-07-27",
+          "total": 14
+        },
+        {
+          "data": "2026-08-05",
+          "total": 1111
+        },
+        {
+          "data": "2026-08-11",
+          "total": 1457
+        },
+        {
+          "data": "2026-08-12",
+          "total": 1611
+        },
+        {
+          "data": "2026-08-04",
+          "total": 1432
+        },
+        {
+          "data": "2026-08-07",
+          "total": 228
+        },
+        {
+          "data": "2026-08-16",
+          "total": 1609
+        },
+        {
+          "data": "2026-07-20",
+          "total": 2204
+        },
+        {
+          "data": "2026-08-09",
+          "total": 1614
+        },
+        {
+          "data": "2026-08-02",
+          "total": 1266
+        },
+        {
+          "data": "2026-08-19",
+          "total": 792
+        },
+        {
+          "data": "2026-07-22",
+          "total": 2179
+        },
+        {
+          "data": "2026-07-30",
+          "total": 1243
+        },
+        {
+          "data": "2026-08-03",
+          "total": 1414
+        },
+        {
+          "data": "2026-08-08",
+          "total": 1710
+        },
+        {
+          "data": "2026-07-29",
+          "total": 1021
+        },
+        {
+          "data": "2026-08-06",
+          "total": 17
+        },
+        {
+          "data": "2026-08-14",
+          "total": 1600
+        },
+        {
+          "data": "2026-07-25",
+          "total": 142
+        },
+        {
+          "data": "2026-08-13",
+          "total": 1461
+        },
+        {
+          "data": "2026-08-15",
+          "total": 1457
+        },
+        {
+          "data": "2026-08-17",
+          "total": 1900
+        },
+        {
+          "data": "2026-07-24",
+          "total": 958
+        },
+        {
+          "data": "2026-07-28",
+          "total": 834
+        },
+        {
+          "data": "2026-08-18",
+          "total": 1818
+        }
+      ]
+    },
+    "MLB4313573717": {
+      "total": 17457,
+      "por_dia": [
+        {
+          "data": "2026-07-29",
+          "total": 947
+        },
+        {
+          "data": "2026-08-15",
+          "total": 974
+        },
+        {
+          "data": "2026-07-27",
+          "total": 736
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1062
+        },
+        {
+          "data": "2026-08-05",
+          "total": 252
+        },
+        {
+          "data": "2026-07-20",
+          "total": 616
+        },
+        {
+          "data": "2026-08-02",
+          "total": 2008
+        },
+        {
+          "data": "2026-08-10",
+          "total": 1603
+        },
+        {
+          "data": "2026-08-01",
+          "total": 1516
+        },
+        {
+          "data": "2026-07-23",
+          "total": 39
+        },
+        {
+          "data": "2026-08-16",
+          "total": 898
+        },
+        {
+          "data": "2026-07-30",
+          "total": 880
+        },
+        {
+          "data": "2026-08-08",
+          "total": 185
+        },
+        {
+          "data": "2026-08-06",
+          "total": 215
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2
+        },
+        {
+          "data": "2026-08-17",
+          "total": 816
+        },
+        {
+          "data": "2026-08-04",
+          "total": 203
+        },
+        {
+          "data": "2026-08-12",
+          "total": 2
+        },
+        {
+          "data": "2026-08-19",
+          "total": 514
+        },
+        {
+          "data": "2026-07-25",
+          "total": 592
+        },
+        {
+          "data": "2026-08-03",
+          "total": 218
+        },
+        {
+          "data": "2026-08-13",
+          "total": 93
+        },
+        {
+          "data": "2026-08-18",
+          "total": 1022
+        },
+        {
+          "data": "2026-07-28",
+          "total": 846
+        },
+        {
+          "data": "2026-08-07",
+          "total": 210
+        },
+        {
+          "data": "2026-08-11",
+          "total": 86
+        },
+        {
+          "data": "2026-08-14",
+          "total": 305
+        },
+        {
+          "data": "2026-07-26",
+          "total": 596
+        },
+        {
+          "data": "2026-08-09",
+          "total": 21
+        }
+      ]
+    },
+    "MLB6932971316": {
+      "total": 6,
+      "por_dia": [
+        {
+          "data": "2026-07-31",
+          "total": 1
+        },
+        {
+          "data": "2026-07-22",
+          "total": 1
+        },
+        {
+          "data": "2026-08-09",
+          "total": 1
+        },
+        {
+          "data": "2026-07-29",
+          "total": 2
+        },
+        {
+          "data": "2026-07-27",
+          "total": 1
+        }
+      ]
+    },
+    "MLB5163310134": {
+      "total": 8584,
+      "por_dia": [
+        {
+          "data": "2026-07-20",
+          "total": 361
+        },
+        {
+          "data": "2026-08-05",
+          "total": 361
+        },
+        {
+          "data": "2026-08-06",
+          "total": 317
+        },
+        {
+          "data": "2026-08-03",
+          "total": 295
+        },
+        {
+          "data": "2026-07-21",
+          "total": 423
+        },
+        {
+          "data": "2026-08-01",
+          "total": 230
+        },
+        {
+          "data": "2026-08-08",
+          "total": 69
+        },
+        {
+          "data": "2026-07-23",
+          "total": 43
+        },
+        {
+          "data": "2026-08-10",
+          "total": 657
+        },
+        {
+          "data": "2026-08-19",
+          "total": 93
+        },
+        {
+          "data": "2026-07-29",
+          "total": 294
+        },
+        {
+          "data": "2026-08-12",
+          "total": 641
+        },
+        {
+          "data": "2026-08-15",
+          "total": 244
+        },
+        {
+          "data": "2026-07-24",
+          "total": 117
+        },
+        {
+          "data": "2026-07-28",
+          "total": 309
+        },
+        {
+          "data": "2026-08-17",
+          "total": 290
+        },
+        {
+          "data": "2026-07-30",
+          "total": 207
+        },
+        {
+          "data": "2026-08-09",
+          "total": 105
+        },
+        {
+          "data": "2026-08-13",
+          "total": 537
+        },
+        {
+          "data": "2026-08-04",
+          "total": 453
+        },
+        {
+          "data": "2026-08-11",
+          "total": 506
+        },
+        {
+          "data": "2026-07-22",
+          "total": 83
+        },
+        {
+          "data": "2026-08-07",
+          "total": 111
+        },
+        {
+          "data": "2026-08-02",
+          "total": 240
+        },
+        {
+          "data": "2026-08-14",
+          "total": 72
+        },
+        {
+          "data": "2026-07-26",
+          "total": 237
+        },
+        {
+          "data": "2026-07-25",
+          "total": 255
+        },
+        {
+          "data": "2026-07-27",
+          "total": 319
+        },
+        {
+          "data": "2026-08-18",
+          "total": 283
+        },
+        {
+          "data": "2026-08-16",
+          "total": 249
+        },
+        {
+          "data": "2026-07-31",
+          "total": 183
+        }
+      ]
+    },
+    "MLB4195198970": {
+      "total": 82680,
+      "por_dia": [
+        {
+          "data": "2026-08-13",
+          "total": 3118
+        },
+        {
+          "data": "2026-08-14",
+          "total": 2568
+        },
+        {
+          "data": "2026-08-18",
+          "total": 2676
+        },
+        {
+          "data": "2026-07-30",
+          "total": 5197
+        },
+        {
+          "data": "2026-08-02",
+          "total": 2359
+        },
+        {
+          "data": "2026-08-05",
+          "total": 2843
+        },
+        {
+          "data": "2026-08-10",
+          "total": 2676
+        },
+        {
+          "data": "2026-08-11",
+          "total": 2564
+        },
+        {
+          "data": "2026-08-07",
+          "total": 272
+        },
+        {
+          "data": "2026-07-28",
+          "total": 3254
+        },
+        {
+          "data": "2026-08-09",
+          "total": 2421
+        },
+        {
+          "data": "2026-07-31",
+          "total": 3510
+        },
+        {
+          "data": "2026-07-29",
+          "total": 3804
+        },
+        {
+          "data": "2026-07-27",
+          "total": 3152
+        },
+        {
+          "data": "2026-08-15",
+          "total": 2116
+        },
+        {
+          "data": "2026-07-20",
+          "total": 2929
+        },
+        {
+          "data": "2026-07-24",
+          "total": 2117
+        },
+        {
+          "data": "2026-08-17",
+          "total": 2480
+        },
+        {
+          "data": "2026-07-22",
+          "total": 2751
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2751
+        },
+        {
+          "data": "2026-08-06",
+          "total": 2589
+        },
+        {
+          "data": "2026-08-01",
+          "total": 2073
+        },
+        {
+          "data": "2026-08-04",
+          "total": 2730
+        },
+        {
+          "data": "2026-08-03",
+          "total": 3004
+        },
+        {
+          "data": "2026-07-23",
+          "total": 2491
+        },
+        {
+          "data": "2026-08-16",
+          "total": 2324
+        },
+        {
+          "data": "2026-07-26",
+          "total": 2289
+        },
+        {
+          "data": "2026-08-12",
+          "total": 2735
+        },
+        {
+          "data": "2026-08-19",
+          "total": 1233
+        },
+        {
+          "data": "2026-07-25",
+          "total": 2145
+        },
+        {
+          "data": "2026-08-08",
+          "total": 3509
+        }
+      ]
+    },
+    "MLB3696123026": {
+      "total": 61143,
+      "por_dia": [
+        {
+          "data": "2026-07-29",
+          "total": 1412
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2305
+        },
+        {
+          "data": "2026-07-27",
+          "total": 1746
+        },
+        {
+          "data": "2026-07-24",
+          "total": 2144
+        },
+        {
+          "data": "2026-07-23",
+          "total": 2922
+        },
+        {
+          "data": "2026-07-22",
+          "total": 2686
+        },
+        {
+          "data": "2026-08-08",
+          "total": 2725
+        },
+        {
+          "data": "2026-07-20",
+          "total": 2196
+        },
+        {
+          "data": "2026-08-18",
+          "total": 4759
+        },
+        {
+          "data": "2026-07-26",
+          "total": 2080
+        },
+        {
+          "data": "2026-08-03",
+          "total": 967
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1073
+        },
+        {
+          "data": "2026-08-01",
+          "total": 847
+        },
+        {
+          "data": "2026-08-04",
+          "total": 1850
+        },
+        {
+          "data": "2026-08-14",
+          "total": 1839
+        },
+        {
+          "data": "2026-08-11",
+          "total": 1962
+        },
+        {
+          "data": "2026-08-07",
+          "total": 1430
+        },
+        {
+          "data": "2026-08-16",
+          "total": 2001
+        },
+        {
+          "data": "2026-08-17",
+          "total": 2796
+        },
+        {
+          "data": "2026-08-10",
+          "total": 2115
+        },
+        {
+          "data": "2026-08-13",
+          "total": 2069
+        },
+        {
+          "data": "2026-07-25",
+          "total": 1885
+        },
+        {
+          "data": "2026-07-28",
+          "total": 1557
+        },
+        {
+          "data": "2026-08-19",
+          "total": 1677
+        },
+        {
+          "data": "2026-07-30",
+          "total": 1601
+        },
+        {
+          "data": "2026-08-15",
+          "total": 1641
+        },
+        {
+          "data": "2026-08-02",
+          "total": 742
+        },
+        {
+          "data": "2026-08-12",
+          "total": 2141
+        },
+        {
+          "data": "2026-08-05",
+          "total": 1993
+        },
+        {
+          "data": "2026-08-06",
+          "total": 1795
+        },
+        {
+          "data": "2026-08-09",
+          "total": 2187
+        }
+      ]
+    },
+    "MLB7359246082": {
+      "total": 3,
+      "por_dia": [
+        {
+          "data": "2026-08-07",
+          "total": 1
+        },
+        {
+          "data": "2026-08-18",
+          "total": 2
+        }
+      ]
+    },
+    "MLB6888756930": {
+      "total": 5925,
+      "por_dia": [
+        {
+          "data": "2026-07-26",
+          "total": 246
+        },
+        {
+          "data": "2026-08-08",
+          "total": 3
+        },
+        {
+          "data": "2026-08-16",
+          "total": 153
+        },
+        {
+          "data": "2026-08-06",
+          "total": 400
+        },
+        {
+          "data": "2026-08-10",
+          "total": 69
+        },
+        {
+          "data": "2026-08-19",
+          "total": 93
+        },
+        {
+          "data": "2026-08-11",
+          "total": 6
+        },
+        {
+          "data": "2026-08-18",
+          "total": 307
+        },
+        {
+          "data": "2026-08-04",
+          "total": 252
+        },
+        {
+          "data": "2026-07-31",
+          "total": 187
+        },
+        {
+          "data": "2026-08-05",
+          "total": 370
+        },
+        {
+          "data": "2026-07-28",
+          "total": 1
+        },
+        {
+          "data": "2026-07-29",
+          "total": 97
+        },
+        {
+          "data": "2026-07-30",
+          "total": 190
+        },
+        {
+          "data": "2026-07-24",
+          "total": 186
+        },
+        {
+          "data": "2026-07-27",
+          "total": 151
+        },
+        {
+          "data": "2026-07-20",
+          "total": 190
+        },
+        {
+          "data": "2026-07-22",
+          "total": 290
+        },
+        {
+          "data": "2026-08-14",
+          "total": 424
+        },
+        {
+          "data": "2026-07-21",
+          "total": 418
+        },
+        {
+          "data": "2026-08-13",
+          "total": 301
+        },
+        {
+          "data": "2026-08-02",
+          "total": 244
+        },
+        {
+          "data": "2026-08-03",
+          "total": 212
+        },
+        {
+          "data": "2026-08-12",
+          "total": 4
+        },
+        {
+          "data": "2026-07-25",
+          "total": 239
+        },
+        {
+          "data": "2026-08-17",
+          "total": 176
+        },
+        {
+          "data": "2026-08-01",
+          "total": 216
+        },
+        {
+          "data": "2026-08-15",
+          "total": 158
+        },
+        {
+          "data": "2026-08-09",
+          "total": 5
+        },
+        {
+          "data": "2026-08-07",
+          "total": 309
+        },
+        {
+          "data": "2026-07-23",
+          "total": 28
+        }
+      ]
+    },
+    "MLB3340533709": {
+      "total": 46066,
+      "por_dia": [
+        {
+          "data": "2026-07-23",
+          "total": 1176
+        },
+        {
+          "data": "2026-08-03",
+          "total": 1605
+        },
+        {
+          "data": "2026-08-12",
+          "total": 1798
+        },
+        {
+          "data": "2026-08-14",
+          "total": 1615
+        },
+        {
+          "data": "2026-07-21",
+          "total": 1075
+        },
+        {
+          "data": "2026-07-28",
+          "total": 1590
+        },
+        {
+          "data": "2026-08-17",
+          "total": 2333
+        },
+        {
+          "data": "2026-07-30",
+          "total": 1992
+        },
+        {
+          "data": "2026-08-02",
+          "total": 852
+        },
+        {
+          "data": "2026-07-22",
+          "total": 1432
+        },
+        {
+          "data": "2026-07-26",
+          "total": 783
+        },
+        {
+          "data": "2026-08-06",
+          "total": 2018
+        },
+        {
+          "data": "2026-08-10",
+          "total": 1529
+        },
+        {
+          "data": "2026-08-05",
+          "total": 2110
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1508
+        },
+        {
+          "data": "2026-08-01",
+          "total": 725
+        },
+        {
+          "data": "2026-07-20",
+          "total": 1002
+        },
+        {
+          "data": "2026-08-19",
+          "total": 573
+        },
+        {
+          "data": "2026-08-11",
+          "total": 1515
+        },
+        {
+          "data": "2026-08-04",
+          "total": 2244
+        },
+        {
+          "data": "2026-08-09",
+          "total": 1054
+        },
+        {
+          "data": "2026-07-24",
+          "total": 1038
+        },
+        {
+          "data": "2026-08-08",
+          "total": 2748
+        },
+        {
+          "data": "2026-08-18",
+          "total": 1538
+        },
+        {
+          "data": "2026-07-25",
+          "total": 758
+        },
+        {
+          "data": "2026-08-07",
+          "total": 1587
+        },
+        {
+          "data": "2026-07-27",
+          "total": 1409
+        },
+        {
+          "data": "2026-08-15",
+          "total": 1332
+        },
+        {
+          "data": "2026-08-13",
+          "total": 1836
+        },
+        {
+          "data": "2026-08-16",
+          "total": 1450
+        },
+        {
+          "data": "2026-07-29",
+          "total": 1841
+        }
+      ]
+    },
+    "MLB7393992776": {
+      "total": 45,
+      "por_dia": [
+        {
+          "data": "2026-08-18",
+          "total": 18
+        },
+        {
+          "data": "2026-08-19",
+          "total": 9
+        },
+        {
+          "data": "2026-08-16",
+          "total": 1
+        },
+        {
+          "data": "2026-08-17",
+          "total": 17
+        }
+      ]
+    },
+    "MLB3797183999": {
+      "total": 23749,
+      "por_dia": [
+        {
+          "data": "2026-07-22",
+          "total": 2226
+        },
+        {
+          "data": "2026-08-03",
+          "total": 658
+        },
+        {
+          "data": "2026-07-26",
+          "total": 584
+        },
+        {
+          "data": "2026-08-15",
+          "total": 627
+        },
+        {
+          "data": "2026-07-24",
+          "total": 593
+        },
+        {
+          "data": "2026-08-16",
+          "total": 655
+        },
+        {
+          "data": "2026-07-25",
+          "total": 560
+        },
+        {
+          "data": "2026-08-18",
+          "total": 751
+        },
+        {
+          "data": "2026-08-09",
+          "total": 838
+        },
+        {
+          "data": "2026-08-12",
+          "total": 671
+        },
+        {
+          "data": "2026-08-08",
+          "total": 1355
+        },
+        {
+          "data": "2026-07-23",
+          "total": 813
+        },
+        {
+          "data": "2026-07-27",
+          "total": 746
+        },
+        {
+          "data": "2026-07-31",
+          "total": 557
+        },
+        {
+          "data": "2026-08-17",
+          "total": 703
+        },
+        {
+          "data": "2026-07-21",
+          "total": 1265
+        },
+        {
+          "data": "2026-08-05",
+          "total": 706
+        },
+        {
+          "data": "2026-08-19",
+          "total": 322
+        },
+        {
+          "data": "2026-08-10",
+          "total": 692
+        },
+        {
+          "data": "2026-08-01",
+          "total": 428
+        },
+        {
+          "data": "2026-07-20",
+          "total": 1062
+        },
+        {
+          "data": "2026-08-02",
+          "total": 423
+        },
+        {
+          "data": "2026-08-13",
+          "total": 900
+        },
+        {
+          "data": "2026-08-14",
+          "total": 871
+        },
+        {
+          "data": "2026-07-28",
+          "total": 639
+        },
+        {
+          "data": "2026-07-29",
+          "total": 657
+        },
+        {
+          "data": "2026-08-11",
+          "total": 693
+        },
+        {
+          "data": "2026-08-06",
+          "total": 644
+        },
+        {
+          "data": "2026-08-07",
+          "total": 720
+        },
+        {
+          "data": "2026-07-30",
+          "total": 762
+        },
+        {
+          "data": "2026-08-04",
+          "total": 628
+        }
+      ]
+    },
+    "MLB7394248196": {
+      "total": 97,
+      "por_dia": [
+        {
+          "data": "2026-08-16",
+          "total": 8
+        },
+        {
+          "data": "2026-08-17",
+          "total": 42
+        },
+        {
+          "data": "2026-08-18",
+          "total": 36
+        },
+        {
+          "data": "2026-08-19",
+          "total": 11
+        }
+      ]
+    },
+    "MLB4184468108": {
+      "total": 8155,
+      "por_dia": [
+        {
+          "data": "2026-08-02",
+          "total": 254
+        },
+        {
+          "data": "2026-08-11",
+          "total": 196
+        },
+        {
+          "data": "2026-07-26",
+          "total": 249
+        },
+        {
+          "data": "2026-08-19",
+          "total": 128
+        },
+        {
+          "data": "2026-07-22",
+          "total": 275
+        },
+        {
+          "data": "2026-08-06",
+          "total": 224
+        },
+        {
+          "data": "2026-08-05",
+          "total": 273
+        },
+        {
+          "data": "2026-08-09",
+          "total": 262
+        },
+        {
+          "data": "2026-07-29",
+          "total": 240
+        },
+        {
+          "data": "2026-07-24",
+          "total": 193
+        },
+        {
+          "data": "2026-07-30",
+          "total": 278
+        },
+        {
+          "data": "2026-08-16",
+          "total": 207
+        },
+        {
+          "data": "2026-08-12",
+          "total": 269
+        },
+        {
+          "data": "2026-08-03",
+          "total": 302
+        },
+        {
+          "data": "2026-08-17",
+          "total": 290
+        },
+        {
+          "data": "2026-08-10",
+          "total": 216
+        },
+        {
+          "data": "2026-08-15",
+          "total": 223
+        },
+        {
+          "data": "2026-07-25",
+          "total": 193
+        },
+        {
+          "data": "2026-08-14",
+          "total": 272
+        },
+        {
+          "data": "2026-07-21",
+          "total": 279
+        },
+        {
+          "data": "2026-07-20",
+          "total": 264
+        },
+        {
+          "data": "2026-07-28",
+          "total": 265
+        },
+        {
+          "data": "2026-07-31",
+          "total": 256
+        },
+        {
+          "data": "2026-08-01",
+          "total": 205
+        },
+        {
+          "data": "2026-07-27",
+          "total": 272
+        },
+        {
+          "data": "2026-08-13",
+          "total": 354
+        },
+        {
+          "data": "2026-08-04",
+          "total": 331
+        },
+        {
+          "data": "2026-08-18",
+          "total": 288
+        },
+        {
+          "data": "2026-07-23",
+          "total": 248
+        },
+        {
+          "data": "2026-08-07",
+          "total": 278
+        },
+        {
+          "data": "2026-08-08",
+          "total": 571
+        }
+      ]
+    },
+    "MLB2989828520": {
+      "total": 34947,
+      "por_dia": [
+        {
+          "data": "2026-07-23",
+          "total": 688
+        },
+        {
+          "data": "2026-08-09",
+          "total": 1670
+        },
+        {
+          "data": "2026-08-18",
+          "total": 1667
+        },
+        {
+          "data": "2026-07-26",
+          "total": 630
+        },
+        {
+          "data": "2026-08-17",
+          "total": 1536
+        },
+        {
+          "data": "2026-08-19",
+          "total": 553
+        },
+        {
+          "data": "2026-07-29",
+          "total": 734
+        },
+        {
+          "data": "2026-08-03",
+          "total": 1094
+        },
+        {
+          "data": "2026-08-11",
+          "total": 1230
+        },
+        {
+          "data": "2026-07-21",
+          "total": 713
+        },
+        {
+          "data": "2026-07-31",
+          "total": 679
+        },
+        {
+          "data": "2026-08-16",
+          "total": 1800
+        },
+        {
+          "data": "2026-08-08",
+          "total": 1447
+        },
+        {
+          "data": "2026-08-14",
+          "total": 1601
+        },
+        {
+          "data": "2026-07-22",
+          "total": 741
+        },
+        {
+          "data": "2026-08-15",
+          "total": 1887
+        },
+        {
+          "data": "2026-07-20",
+          "total": 653
+        },
+        {
+          "data": "2026-07-30",
+          "total": 710
+        },
+        {
+          "data": "2026-08-01",
+          "total": 920
+        },
+        {
+          "data": "2026-08-06",
+          "total": 1003
+        },
+        {
+          "data": "2026-07-27",
+          "total": 714
+        },
+        {
+          "data": "2026-07-25",
+          "total": 559
+        },
+        {
+          "data": "2026-08-12",
+          "total": 2294
+        },
+        {
+          "data": "2026-08-13",
+          "total": 2378
+        },
+        {
+          "data": "2026-07-24",
+          "total": 609
+        },
+        {
+          "data": "2026-08-07",
+          "total": 661
+        },
+        {
+          "data": "2026-08-02",
+          "total": 1223
+        },
+        {
+          "data": "2026-08-04",
+          "total": 1025
+        },
+        {
+          "data": "2026-08-05",
+          "total": 1066
+        },
+        {
+          "data": "2026-07-28",
+          "total": 843
+        },
+        {
+          "data": "2026-08-10",
+          "total": 1619
+        }
+      ]
+    },
+    "MLB3813196444": {
+      "total": 4252,
+      "por_dia": [
+        {
+          "data": "2026-08-16",
+          "total": 155
+        },
+        {
+          "data": "2026-07-29",
+          "total": 32
+        },
+        {
+          "data": "2026-07-26",
+          "total": 29
+        },
+        {
+          "data": "2026-07-30",
+          "total": 16
+        },
+        {
+          "data": "2026-07-31",
+          "total": 32
+        },
+        {
+          "data": "2026-08-17",
+          "total": 610
+        },
+        {
+          "data": "2026-08-09",
+          "total": 56
+        },
+        {
+          "data": "2026-08-02",
+          "total": 448
+        },
+        {
+          "data": "2026-08-03",
+          "total": 252
+        },
+        {
+          "data": "2026-08-01",
+          "total": 363
+        },
+        {
+          "data": "2026-07-20",
+          "total": 47
+        },
+        {
+          "data": "2026-08-04",
+          "total": 83
+        },
+        {
+          "data": "2026-08-07",
+          "total": 139
+        },
+        {
+          "data": "2026-08-15",
+          "total": 57
+        },
+        {
+          "data": "2026-08-06",
+          "total": 149
+        },
+        {
+          "data": "2026-08-19",
+          "total": 212
+        },
+        {
+          "data": "2026-07-21",
+          "total": 43
+        },
+        {
+          "data": "2026-07-28",
+          "total": 45
+        },
+        {
+          "data": "2026-07-22",
+          "total": 66
+        },
+        {
+          "data": "2026-08-08",
+          "total": 194
+        },
+        {
+          "data": "2026-07-27",
+          "total": 27
+        },
+        {
+          "data": "2026-08-12",
+          "total": 41
+        },
+        {
+          "data": "2026-08-10",
+          "total": 50
+        },
+        {
+          "data": "2026-08-13",
+          "total": 48
+        },
+        {
+          "data": "2026-08-14",
+          "total": 45
+        },
+        {
+          "data": "2026-08-11",
+          "total": 35
+        },
+        {
+          "data": "2026-08-18",
+          "total": 661
+        },
+        {
+          "data": "2026-07-23",
+          "total": 91
+        },
+        {
+          "data": "2026-07-25",
+          "total": 39
+        },
+        {
+          "data": "2026-07-24",
+          "total": 36
+        },
+        {
+          "data": "2026-08-05",
+          "total": 151
+        }
+      ]
+    },
+    "MLB3440027362": {
+      "total": 3849,
+      "por_dia": [
+        {
+          "data": "2026-07-29",
+          "total": 117
+        },
+        {
+          "data": "2026-08-05",
+          "total": 138
+        },
+        {
+          "data": "2026-08-08",
+          "total": 205
+        },
+        {
+          "data": "2026-07-26",
+          "total": 115
+        },
+        {
+          "data": "2026-07-28",
+          "total": 138
+        },
+        {
+          "data": "2026-07-23",
+          "total": 118
+        },
+        {
+          "data": "2026-08-11",
+          "total": 129
+        },
+        {
+          "data": "2026-07-27",
+          "total": 112
+        },
+        {
+          "data": "2026-07-24",
+          "total": 85
+        },
+        {
+          "data": "2026-08-18",
+          "total": 132
+        },
+        {
+          "data": "2026-07-22",
+          "total": 157
+        },
+        {
+          "data": "2026-07-31",
+          "total": 123
+        },
+        {
+          "data": "2026-07-25",
+          "total": 85
+        },
+        {
+          "data": "2026-08-12",
+          "total": 107
+        },
+        {
+          "data": "2026-08-17",
+          "total": 115
+        },
+        {
+          "data": "2026-08-06",
+          "total": 130
+        },
+        {
+          "data": "2026-08-16",
+          "total": 95
+        },
+        {
+          "data": "2026-07-30",
+          "total": 151
+        },
+        {
+          "data": "2026-08-14",
+          "total": 117
+        },
+        {
+          "data": "2026-07-21",
+          "total": 122
+        },
+        {
+          "data": "2026-08-19",
+          "total": 55
+        },
+        {
+          "data": "2026-08-13",
+          "total": 157
+        },
+        {
+          "data": "2026-08-10",
+          "total": 133
+        },
+        {
+          "data": "2026-08-02",
+          "total": 125
+        },
+        {
+          "data": "2026-08-09",
+          "total": 113
+        },
+        {
+          "data": "2026-08-15",
+          "total": 103
+        },
+        {
+          "data": "2026-08-01",
+          "total": 128
+        },
+        {
+          "data": "2026-08-07",
+          "total": 147
+        },
+        {
+          "data": "2026-08-03",
+          "total": 149
+        },
+        {
+          "data": "2026-08-04",
+          "total": 155
+        },
+        {
+          "data": "2026-07-20",
+          "total": 93
+        }
+      ]
+    },
+    "MLB7124261450": {
+      "total": 24738,
+      "por_dia": [
+        {
+          "data": "2026-07-31",
+          "total": 551
+        },
+        {
+          "data": "2026-08-14",
+          "total": 1134
+        },
+        {
+          "data": "2026-08-13",
+          "total": 1328
+        },
+        {
+          "data": "2026-07-21",
+          "total": 176
+        },
+        {
+          "data": "2026-08-03",
+          "total": 1044
+        },
+        {
+          "data": "2026-08-10",
+          "total": 1425
+        },
+        {
+          "data": "2026-08-18",
+          "total": 928
+        },
+        {
+          "data": "2026-07-29",
+          "total": 143
+        },
+        {
+          "data": "2026-08-08",
+          "total": 2575
+        },
+        {
+          "data": "2026-08-02",
+          "total": 1087
+        },
+        {
+          "data": "2026-07-22",
+          "total": 175
+        },
+        {
+          "data": "2026-08-06",
+          "total": 1287
+        },
+        {
+          "data": "2026-08-09",
+          "total": 928
+        },
+        {
+          "data": "2026-08-07",
+          "total": 1170
+        },
+        {
+          "data": "2026-08-12",
+          "total": 1374
+        },
+        {
+          "data": "2026-08-17",
+          "total": 1010
+        },
+        {
+          "data": "2026-07-28",
+          "total": 135
+        },
+        {
+          "data": "2026-07-26",
+          "total": 131
+        },
+        {
+          "data": "2026-08-15",
+          "total": 1146
+        },
+        {
+          "data": "2026-08-19",
+          "total": 306
+        },
+        {
+          "data": "2026-08-05",
+          "total": 1076
+        },
+        {
+          "data": "2026-08-11",
+          "total": 1521
+        },
+        {
+          "data": "2026-07-23",
+          "total": 224
+        },
+        {
+          "data": "2026-07-24",
+          "total": 150
+        },
+        {
+          "data": "2026-07-25",
+          "total": 125
+        },
+        {
+          "data": "2026-08-16",
+          "total": 1233
+        },
+        {
+          "data": "2026-07-20",
+          "total": 61
+        },
+        {
+          "data": "2026-07-27",
+          "total": 169
+        },
+        {
+          "data": "2026-07-30",
+          "total": 395
+        },
+        {
+          "data": "2026-08-01",
+          "total": 751
+        },
+        {
+          "data": "2026-08-04",
+          "total": 980
+        }
+      ]
+    },
+    "MLB2012775040": {
+      "total": 845,
+      "por_dia": [
+        {
+          "data": "2026-08-18",
+          "total": 132
+        },
+        {
+          "data": "2026-07-20",
+          "total": 3
+        },
+        {
+          "data": "2026-07-24",
+          "total": 3
+        },
+        {
+          "data": "2026-08-05",
+          "total": 5
+        },
+        {
+          "data": "2026-07-26",
+          "total": 1
+        },
+        {
+          "data": "2026-07-25",
+          "total": 2
+        },
+        {
+          "data": "2026-07-27",
+          "total": 253
+        },
+        {
+          "data": "2026-08-19",
+          "total": 74
+        },
+        {
+          "data": "2026-08-12",
+          "total": 1
+        },
+        {
+          "data": "2026-07-29",
+          "total": 1
+        },
+        {
+          "data": "2026-07-22",
+          "total": 5
+        },
+        {
+          "data": "2026-07-30",
+          "total": 1
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2
+        },
+        {
+          "data": "2026-07-31",
+          "total": 2
+        },
+        {
+          "data": "2026-07-28",
+          "total": 357
+        },
+        {
+          "data": "2026-08-10",
+          "total": 2
+        },
+        {
+          "data": "2026-07-23",
+          "total": 1
+        }
+      ]
+    },
+    "MLB4240984693": {
+      "total": 2626,
+      "por_dia": [
+        {
+          "data": "2026-07-20",
+          "total": 179
+        },
+        {
+          "data": "2026-07-26",
+          "total": 117
+        },
+        {
+          "data": "2026-08-18",
+          "total": 124
+        },
+        {
+          "data": "2026-07-31",
+          "total": 12
+        },
+        {
+          "data": "2026-08-02",
+          "total": 17
+        },
+        {
+          "data": "2026-07-30",
+          "total": 26
+        },
+        {
+          "data": "2026-08-05",
+          "total": 136
+        },
+        {
+          "data": "2026-08-06",
+          "total": 176
+        },
+        {
+          "data": "2026-08-13",
+          "total": 87
+        },
+        {
+          "data": "2026-08-16",
+          "total": 102
+        },
+        {
+          "data": "2026-08-07",
+          "total": 28
+        },
+        {
+          "data": "2026-07-24",
+          "total": 96
+        },
+        {
+          "data": "2026-08-04",
+          "total": 141
+        },
+        {
+          "data": "2026-08-17",
+          "total": 132
+        },
+        {
+          "data": "2026-07-22",
+          "total": 117
+        },
+        {
+          "data": "2026-07-25",
+          "total": 117
+        },
+        {
+          "data": "2026-08-12",
+          "total": 124
+        },
+        {
+          "data": "2026-08-14",
+          "total": 41
+        },
+        {
+          "data": "2026-07-28",
+          "total": 71
+        },
+        {
+          "data": "2026-07-23",
+          "total": 102
+        },
+        {
+          "data": "2026-08-03",
+          "total": 22
+        },
+        {
+          "data": "2026-07-27",
+          "total": 124
+        },
+        {
+          "data": "2026-07-21",
+          "total": 67
+        },
+        {
+          "data": "2026-08-09",
+          "total": 68
+        },
+        {
+          "data": "2026-08-01",
+          "total": 7
+        },
+        {
+          "data": "2026-08-10",
+          "total": 75
+        },
+        {
+          "data": "2026-07-29",
+          "total": 22
+        },
+        {
+          "data": "2026-08-11",
+          "total": 69
+        },
+        {
+          "data": "2026-08-19",
+          "total": 43
+        },
+        {
+          "data": "2026-08-08",
+          "total": 70
+        },
+        {
+          "data": "2026-08-15",
+          "total": 114
+        }
+      ]
+    },
+    "MLB3709755412": {
+      "total": 6171,
+      "por_dia": [
+        {
+          "data": "2026-08-01",
+          "total": 180
+        },
+        {
+          "data": "2026-07-27",
+          "total": 174
+        },
+        {
+          "data": "2026-07-28",
+          "total": 175
+        },
+        {
+          "data": "2026-08-13",
+          "total": 348
+        },
+        {
+          "data": "2026-08-19",
+          "total": 84
+        },
+        {
+          "data": "2026-08-06",
+          "total": 187
+        },
+        {
+          "data": "2026-08-07",
+          "total": 170
+        },
+        {
+          "data": "2026-08-17",
+          "total": 217
+        },
+        {
+          "data": "2026-08-12",
+          "total": 249
+        },
+        {
+          "data": "2026-08-09",
+          "total": 150
+        },
+        {
+          "data": "2026-07-20",
+          "total": 174
+        },
+        {
+          "data": "2026-07-21",
+          "total": 196
+        },
+        {
+          "data": "2026-08-16",
+          "total": 214
+        },
+        {
+          "data": "2026-07-26",
+          "total": 154
+        },
+        {
+          "data": "2026-08-11",
+          "total": 201
+        },
+        {
+          "data": "2026-08-10",
+          "total": 197
+        },
+        {
+          "data": "2026-08-14",
+          "total": 301
+        },
+        {
+          "data": "2026-07-31",
+          "total": 164
+        },
+        {
+          "data": "2026-08-05",
+          "total": 185
+        },
+        {
+          "data": "2026-08-18",
+          "total": 235
+        },
+        {
+          "data": "2026-07-22",
+          "total": 220
+        },
+        {
+          "data": "2026-08-15",
+          "total": 224
+        },
+        {
+          "data": "2026-07-24",
+          "total": 162
+        },
+        {
+          "data": "2026-08-02",
+          "total": 164
+        },
+        {
+          "data": "2026-07-29",
+          "total": 171
+        },
+        {
+          "data": "2026-08-04",
+          "total": 188
+        },
+        {
+          "data": "2026-07-23",
+          "total": 160
+        },
+        {
+          "data": "2026-07-25",
+          "total": 142
+        },
+        {
+          "data": "2026-08-03",
+          "total": 230
+        },
+        {
+          "data": "2026-07-30",
+          "total": 197
+        },
+        {
+          "data": "2026-08-08",
+          "total": 358
+        }
+      ]
+    }
+  },
+  "visitas_itens_consultados": 20,
+  "visitas_medidos": 20,
+  "visitas_total": 370872
+}

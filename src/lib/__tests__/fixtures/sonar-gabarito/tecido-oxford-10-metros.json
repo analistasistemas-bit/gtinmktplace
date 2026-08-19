@@ -1,0 +1,2753 @@
+{
+  "vendas": {
+    "configurado": true,
+    "termo": "tecido oxford 10 metros",
+    "gerado_em": "2026-08-19T15:24:14.018Z",
+    "itens_analisados": 20,
+    "itens_com_vendas": 18,
+    "vendas_totais": 5375,
+    "valor_mercado": 382205.25,
+    "produto_destaque": {
+      "titulo": "10 Metros Tecido Oxford Branco Para Sublimação E Decoração ",
+      "preco": 75,
+      "vendidos": 1000,
+      "link": "https://www.mercadolivre.com.br/10-metros-tecido-oxford-branco-para-sublimacao-e-decoracao/up/MLBU1411475877",
+      "imagem": "https://http2.mlstatic.com/D_NQ_NP_702380-MLB89750871892_082025-O.webp",
+      "vendedor": null,
+      "frete_gratis": true,
+      "loja_oficial": false,
+      "internacional": false,
+      "full": true,
+      "item_id": "MLB1942257369",
+      "catalog_product_id": null,
+      "avaliacao_nota": 4.9,
+      "avaliacao_qtd": 151,
+      "posicao": 1,
+      "patrocinado": false,
+      "selo": null,
+      "preco_anterior": 128.41,
+      "desconto_pct": 41,
+      "flex": false
+    },
+    "palavras_chave_titulos": [
+      {
+        "termo": "tecido",
+        "contagem": 20
+      },
+      {
+        "termo": "oxford",
+        "contagem": 15
+      },
+      {
+        "termo": "liso",
+        "contagem": 12
+      },
+      {
+        "termo": "metros",
+        "contagem": 11
+      },
+      {
+        "termo": "cores",
+        "contagem": 6
+      },
+      {
+        "termo": "decoração",
+        "contagem": 5
+      },
+      {
+        "termo": "poliéster",
+        "contagem": 5
+      },
+      {
+        "termo": "branco",
+        "contagem": 4
+      },
+      {
+        "termo": "largura",
+        "contagem": 4
+      },
+      {
+        "termo": "premium",
+        "contagem": 4
+      },
+      {
+        "termo": "uniforme",
+        "contagem": 4
+      },
+      {
+        "termo": "100",
+        "contagem": 3
+      },
+      {
+        "termo": "10m",
+        "contagem": 3
+      },
+      {
+        "termo": "cor",
+        "contagem": 3
+      },
+      {
+        "termo": "artesanato",
+        "contagem": 2
+      },
+      {
+        "termo": "juta",
+        "contagem": 2
+      },
+      {
+        "termo": "preto",
+        "contagem": 2
+      },
+      {
+        "termo": "sublimação",
+        "contagem": 2
+      },
+      {
+        "termo": "40cor",
+        "contagem": 1
+      },
+      {
+        "termo": "50m",
+        "contagem": 1
+      }
+    ],
+    "por_anuncio": {
+      "MLB1942257369": {
+        "titulo": "10 Metros Tecido Oxford Branco Para Sublimação E Decoração ",
+        "preco": 75,
+        "vendidos": 1000,
+        "link": "https://www.mercadolivre.com.br/10-metros-tecido-oxford-branco-para-sublimacao-e-decoracao/up/MLBU1411475877",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_702380-MLB89750871892_082025-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB1942257369",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 151,
+        "posicao": 1,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 128.41,
+        "desconto_pct": 41,
+        "flex": false
+      },
+      "MLB4278232959": {
+        "titulo": "Tecido Oxford Liso 10,00 X 1,50 Metros - Varias Cores",
+        "preco": 74.17,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/produto.mercadolivre.com.br/MLB-4278232959-tecido-oxford-liso-1000-x-150-metros-varias-cores-_JM",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_975968-MLB96143544366_102025-O.webp",
+        "vendedor": "ZZ STORE",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB4278232959",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.7,
+        "avaliacao_qtd": 29,
+        "posicao": 2,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 78.9,
+        "desconto_pct": 5,
+        "flex": false
+      },
+      "MLB4941153445": {
+        "titulo": "Tecido Oxford Liso 3 Metros X 1,50 Largura - 100% Poliéster",
+        "preco": 29.9,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/tecido-oxford-liso-3-metros-x-150-largura--100-poliester/up/MLBU4410367521",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_759285-MLB115074543665_072026-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB4941153445",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.6,
+        "avaliacao_qtd": null,
+        "posicao": 3,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB4543265631": {
+        "titulo": "Tecido Juta Bege Natural de Trama P9 para Artesanato e Decoração 5m x 1.5m",
+        "preco": 142,
+        "vendidos": 500,
+        "link": "https://www.mercadolivre.com.br/tecido-juta-bege-natural-de-trama-p9-para-artesanato-e-decoracao-5m-x-15m/p/MLB45905615",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_694479-MLA95964323337_102025-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB4543265631",
+        "catalog_product_id": "MLB45905615",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": null,
+        "posicao": 4,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB5886362810": {
+        "titulo": "10m Tecido Oxford Liso Premium Para Uniforme - Cores Cor Royal",
+        "preco": 77,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/10m-tecido-oxford-liso-premium-para-uniforme-cores-cor-royal/p/MLB53223836",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_814250-MLA95395047036_102025-O.webp",
+        "vendedor": "GABTEXTIL Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB5886362810",
+        "catalog_product_id": "MLB53223836",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 823,
+        "posicao": 5,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB2623969595": {
+        "titulo": "Tecido Oxford Poliéster - 1,50m De Largura - Kit 5 Metros",
+        "preco": 43.65,
+        "vendidos": 500,
+        "link": "https://www.mercadolivre.com.br/produto.mercadolivre.com.br/MLB-2623969595-tecido-oxford-poliester-150m-de-largura-kit-5-metros-_JM",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_847126-MLB90625009841_082025-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": true,
+        "item_id": "MLB2623969595",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 138,
+        "posicao": 6,
+        "patrocinado": false,
+        "selo": "ÚLTIMAS 5",
+        "preco_anterior": 69,
+        "desconto_pct": 36,
+        "flex": false
+      },
+      "MLB4658890415": {
+        "titulo": "2 Metros Tecido Juta - Decoração, Artesanato [1,00 Largura] Juta Tramas De Juta",
+        "preco": 35.7,
+        "vendidos": 25,
+        "link": "https://www.mercadolivre.com.br/2-metros-tecido-juta-decoracao-artesanato-100-largura-juta-tramas-de-juta/p/MLB69242613",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_995636-MLA110357193856_052026-O.webp",
+        "vendedor": "CASA DI VALLE",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB4658890415",
+        "catalog_product_id": "MLB69242613",
+        "avaliacao_nota": 4.7,
+        "avaliacao_qtd": 144,
+        "posicao": 7,
+        "patrocinado": false,
+        "selo": "OFERTA IMPERDÍVEL",
+        "preco_anterior": 64.9,
+        "desconto_pct": 44,
+        "flex": false
+      },
+      "MLB6864796514": {
+        "titulo": "Tecido Oxford Liso Branco de 10 m para Uniforme e Decoração MN tecidos",
+        "preco": 72.28,
+        "vendidos": 1000,
+        "link": "https://www.mercadolivre.com.br/tecido-oxford-liso-branco-de-10-m-para-uniforme-e-decoracao-mn-tecidos/p/MLB44554945",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_658593-MLA80944935848_122024-O.webp",
+        "vendedor": "OXFORD",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB6864796514",
+        "catalog_product_id": "MLB44554945",
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": 353,
+        "posicao": 8,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 129.99,
+        "desconto_pct": 44,
+        "flex": false
+      },
+      "MLB5893661490": {
+        "titulo": "Tecido Oxford Liso 10,00 X 1,50 Metros - Cores - Uniformes",
+        "preco": 73.99,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/produto.mercadolivre.com.br/MLB-5893661490-tecido-oxford-liso-1000-x-150-metros-cores-uniformes-_JM",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_640736-MLB97122292217_112025-O.webp",
+        "vendedor": "ZZ store Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB5893661490",
+        "catalog_product_id": null,
+        "avaliacao_nota": 5,
+        "avaliacao_qtd": 28,
+        "posicao": 9,
+        "patrocinado": false,
+        "selo": "ÚLTIMAS 4",
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB5017982915": {
+        "titulo": "Estojo B5 10 Peças Tecido Oxford 3 Argolas",
+        "preco": 65.16,
+        "vendidos": null,
+        "link": "https://www.mercadolivre.com.br/estuche-b5-10-piezas-cartuchera-tela-oxford-3-aros/p/MLB2094332727",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_612764-CBT114362975153_072026-O.webp",
+        "vendedor": null,
+        "frete_gratis": false,
+        "loja_oficial": false,
+        "internacional": true,
+        "full": null,
+        "item_id": "MLB5017982915",
+        "catalog_product_id": "MLB2094332727",
+        "avaliacao_nota": null,
+        "avaliacao_qtd": null,
+        "posicao": 10,
+        "patrocinado": false,
+        "selo": "NOVIDADE",
+        "preco_anterior": 68.59,
+        "desconto_pct": 5,
+        "flex": null
+      },
+      "MLB3983847879": {
+        "titulo": "Tecido Oxford Preto Microfibra 1.5x5m Casa di Valle Decoração Estúdio",
+        "preco": 52.29,
+        "vendidos": 25,
+        "link": "https://www.mercadolivre.com.br/tecido-oxford-preto-microfibra-15x5m-casa-di-valle-decoracao-estudio/p/MLB46311386",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_830232-MLA99361621284_112025-O.webp",
+        "vendedor": "CASA DI VALLE",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB3983847879",
+        "catalog_product_id": "MLB46311386",
+        "avaliacao_nota": 4.7,
+        "avaliacao_qtd": 1546,
+        "posicao": 11,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 59.9,
+        "desconto_pct": 12,
+        "flex": false
+      },
+      "MLB6534208002": {
+        "titulo": "2 Metros De Tecido Oxford Colorido +40cor Qualidade Premium ",
+        "preco": 22.99,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/2-metros-de-tecido-oxford-colorido-40cor-qualidade-premium/up/MLBU3876361840",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_836596-MLB109731218083_032026-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB6534208002",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.7,
+        "avaliacao_qtd": null,
+        "posicao": 12,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB5886323286": {
+        "titulo": "Tecido Oxford Liso para Uniforme em Poliéster Verde Bandeira 10m",
+        "preco": 70.4,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/tecido-oxford-liso-para-uniforme-em-poliester-verde-bandeira-10m/p/MLB53303062",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_752813-MLA95961276975_102025-O.webp",
+        "vendedor": "GABTEXTIL Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB5886323286",
+        "catalog_product_id": "MLB53303062",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 1962,
+        "posicao": 13,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB5807031188": {
+        "titulo": "Tecido de sublimação leve Art Premium Fabrics 12 m branco",
+        "preco": 78,
+        "vendidos": 500,
+        "link": "https://www.mercadolivre.com.br/tecido-de-sublimacao-leve-art-premium-fabrics-12-m-branco/p/MLB45904953",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_840291-MLA95970313177_102025-O.webp",
+        "vendedor": "GABTEXTIL Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB5807031188",
+        "catalog_product_id": "MLB45904953",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": null,
+        "posicao": 14,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB4309752661": {
+        "titulo": "10m Tecido Oxford Liso Premium Para Uniforme - Cores Cor Vermelho",
+        "preco": 78.1,
+        "vendidos": 500,
+        "link": "https://www.mercadolivre.com.br/10m-tecido-oxford-liso-premium-para-uniforme-cores-cor-vermelho/p/MLB53366567",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_650922-MLA95962249581_102025-O.webp",
+        "vendedor": "GABTEXTIL Loja oficial",
+        "frete_gratis": true,
+        "loja_oficial": true,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB4309752661",
+        "catalog_product_id": "MLB53366567",
+        "avaliacao_nota": 4.8,
+        "avaliacao_qtd": 629,
+        "posicao": 15,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB4722898863": {
+        "titulo": "Tecido Oxford Liso 5 Metros X 1,50 Largura - 100% Poliéster",
+        "preco": 48.9,
+        "vendidos": 25,
+        "link": "https://www.mercadolivre.com.br/tecido-oxford-liso-5-metros-x-150-largura--100-poliester/up/MLBU4036693302",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_785013-MLB104027758268_012026-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB4722898863",
+        "catalog_product_id": null,
+        "avaliacao_nota": 5,
+        "avaliacao_qtd": null,
+        "posicao": 16,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB5959781254": {
+        "titulo": "5 Metros Tecido Oxford Liso 100% Poliéster Branco Para Toalha De Mesa",
+        "preco": 42.12,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/5-metros-tecido-oxford-liso-100-poliester-branco-para-toalha-de-mesa/p/MLB62147358",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_611928-MLA99597793752_122025-O.webp",
+        "vendedor": "FABRICAÊ TECIDOS",
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB5959781254",
+        "catalog_product_id": "MLB62147358",
+        "avaliacao_nota": 4.7,
+        "avaliacao_qtd": 60,
+        "posicao": 17,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": 46.8,
+        "desconto_pct": 10,
+        "flex": false
+      },
+      "MLB7068635584": {
+        "titulo": "Tecido Linho Misto Liso",
+        "preco": 28.03,
+        "vendidos": 500,
+        "link": "https://www.mercadolivre.com.br/tecido-linho-misto-liso/up/MLBU4194860674",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_938909-MLB106473350976_022026-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB7068635584",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": null,
+        "posicao": 18,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB7153023658": {
+        "titulo": "5 Metros Tecido Malha Helanca Light Poliester Cores Cor Preto Desenho Do Tecido Liso",
+        "preco": 49.12,
+        "vendidos": null,
+        "link": "https://www.mercadolivre.com.br/5-metros-tecido-malha-helanca-light-poliester-cores-cor-preto-desenho-do-tecido-liso/p/MLB68521244",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_801767-MLA109904366152_042026-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB7153023658",
+        "catalog_product_id": "MLB68521244",
+        "avaliacao_nota": null,
+        "avaliacao_qtd": null,
+        "posicao": 19,
+        "patrocinado": false,
+        "selo": "MAIS VENDIDO",
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      },
+      "MLB4480092423": {
+        "titulo": "Tecido Oxford Liso 10,00 X 1,50 Metros - Várias Cores",
+        "preco": 75.56,
+        "vendidos": 100,
+        "link": "https://www.mercadolivre.com.br/tecido-oxford-liso-1000-x-150-metros--varias-cores/up/MLBU3797323193",
+        "imagem": "https://http2.mlstatic.com/D_NQ_NP_932510-MLB113246944796_072026-O.webp",
+        "vendedor": null,
+        "frete_gratis": true,
+        "loja_oficial": false,
+        "internacional": false,
+        "full": false,
+        "item_id": "MLB4480092423",
+        "catalog_product_id": null,
+        "avaliacao_nota": 4.9,
+        "avaliacao_qtd": null,
+        "posicao": 20,
+        "patrocinado": false,
+        "selo": null,
+        "preco_anterior": null,
+        "desconto_pct": null,
+        "flex": false
+      }
+    },
+    "raio_x": {
+      "total_anuncios": 293,
+      "ticket_medio": 61.71799999999998,
+      "lojas_oficiais": 5,
+      "full": 4,
+      "frete_gratis": 19,
+      "internacionais": 1
+    }
+  },
+  "visitas_por_item": {
+    "MLB1942257369": {
+      "total": 1051,
+      "por_dia": [
+        {
+          "data": "2026-08-18",
+          "total": 84
+        },
+        {
+          "data": "2026-08-01",
+          "total": 11
+        },
+        {
+          "data": "2026-08-11",
+          "total": 41
+        },
+        {
+          "data": "2026-07-22",
+          "total": 43
+        },
+        {
+          "data": "2026-07-20",
+          "total": 45
+        },
+        {
+          "data": "2026-07-25",
+          "total": 30
+        },
+        {
+          "data": "2026-08-07",
+          "total": 25
+        },
+        {
+          "data": "2026-08-14",
+          "total": 24
+        },
+        {
+          "data": "2026-08-03",
+          "total": 46
+        },
+        {
+          "data": "2026-08-05",
+          "total": 30
+        },
+        {
+          "data": "2026-07-23",
+          "total": 51
+        },
+        {
+          "data": "2026-07-26",
+          "total": 37
+        },
+        {
+          "data": "2026-08-12",
+          "total": 44
+        },
+        {
+          "data": "2026-08-10",
+          "total": 45
+        },
+        {
+          "data": "2026-08-02",
+          "total": 31
+        },
+        {
+          "data": "2026-08-08",
+          "total": 19
+        },
+        {
+          "data": "2026-07-21",
+          "total": 65
+        },
+        {
+          "data": "2026-08-16",
+          "total": 46
+        },
+        {
+          "data": "2026-07-28",
+          "total": 1
+        },
+        {
+          "data": "2026-08-15",
+          "total": 21
+        },
+        {
+          "data": "2026-07-24",
+          "total": 45
+        },
+        {
+          "data": "2026-08-06",
+          "total": 17
+        },
+        {
+          "data": "2026-08-09",
+          "total": 32
+        },
+        {
+          "data": "2026-08-04",
+          "total": 39
+        },
+        {
+          "data": "2026-08-19",
+          "total": 28
+        },
+        {
+          "data": "2026-07-27",
+          "total": 47
+        },
+        {
+          "data": "2026-08-13",
+          "total": 38
+        },
+        {
+          "data": "2026-08-17",
+          "total": 66
+        }
+      ]
+    },
+    "MLB4278232959": {
+      "total": 974,
+      "por_dia": [
+        {
+          "data": "2026-07-23",
+          "total": 30
+        },
+        {
+          "data": "2026-08-02",
+          "total": 24
+        },
+        {
+          "data": "2026-08-14",
+          "total": 26
+        },
+        {
+          "data": "2026-07-25",
+          "total": 19
+        },
+        {
+          "data": "2026-07-27",
+          "total": 25
+        },
+        {
+          "data": "2026-08-06",
+          "total": 37
+        },
+        {
+          "data": "2026-08-17",
+          "total": 57
+        },
+        {
+          "data": "2026-08-18",
+          "total": 54
+        },
+        {
+          "data": "2026-08-03",
+          "total": 41
+        },
+        {
+          "data": "2026-08-19",
+          "total": 14
+        },
+        {
+          "data": "2026-08-13",
+          "total": 49
+        },
+        {
+          "data": "2026-07-31",
+          "total": 33
+        },
+        {
+          "data": "2026-07-29",
+          "total": 25
+        },
+        {
+          "data": "2026-08-05",
+          "total": 44
+        },
+        {
+          "data": "2026-08-15",
+          "total": 22
+        },
+        {
+          "data": "2026-08-07",
+          "total": 32
+        },
+        {
+          "data": "2026-08-01",
+          "total": 27
+        },
+        {
+          "data": "2026-08-16",
+          "total": 29
+        },
+        {
+          "data": "2026-07-20",
+          "total": 19
+        },
+        {
+          "data": "2026-07-28",
+          "total": 28
+        },
+        {
+          "data": "2026-08-12",
+          "total": 42
+        },
+        {
+          "data": "2026-07-21",
+          "total": 14
+        },
+        {
+          "data": "2026-07-24",
+          "total": 28
+        },
+        {
+          "data": "2026-08-04",
+          "total": 52
+        },
+        {
+          "data": "2026-08-10",
+          "total": 40
+        },
+        {
+          "data": "2026-08-11",
+          "total": 40
+        },
+        {
+          "data": "2026-07-26",
+          "total": 26
+        },
+        {
+          "data": "2026-08-08",
+          "total": 28
+        },
+        {
+          "data": "2026-08-09",
+          "total": 24
+        },
+        {
+          "data": "2026-07-22",
+          "total": 18
+        },
+        {
+          "data": "2026-07-30",
+          "total": 27
+        }
+      ]
+    },
+    "MLB4941153445": {
+      "total": 436,
+      "por_dia": [
+        {
+          "data": "2026-08-07",
+          "total": 6
+        },
+        {
+          "data": "2026-07-25",
+          "total": 7
+        },
+        {
+          "data": "2026-08-01",
+          "total": 9
+        },
+        {
+          "data": "2026-08-06",
+          "total": 7
+        },
+        {
+          "data": "2026-07-26",
+          "total": 9
+        },
+        {
+          "data": "2026-07-27",
+          "total": 8
+        },
+        {
+          "data": "2026-08-19",
+          "total": 17
+        },
+        {
+          "data": "2026-08-08",
+          "total": 11
+        },
+        {
+          "data": "2026-08-13",
+          "total": 9
+        },
+        {
+          "data": "2026-08-16",
+          "total": 41
+        },
+        {
+          "data": "2026-08-03",
+          "total": 9
+        },
+        {
+          "data": "2026-08-17",
+          "total": 53
+        },
+        {
+          "data": "2026-07-30",
+          "total": 24
+        },
+        {
+          "data": "2026-08-02",
+          "total": 8
+        },
+        {
+          "data": "2026-07-24",
+          "total": 4
+        },
+        {
+          "data": "2026-08-18",
+          "total": 62
+        },
+        {
+          "data": "2026-08-05",
+          "total": 11
+        },
+        {
+          "data": "2026-08-09",
+          "total": 2
+        },
+        {
+          "data": "2026-07-28",
+          "total": 10
+        },
+        {
+          "data": "2026-07-29",
+          "total": 19
+        },
+        {
+          "data": "2026-08-04",
+          "total": 4
+        },
+        {
+          "data": "2026-08-14",
+          "total": 56
+        },
+        {
+          "data": "2026-07-31",
+          "total": 11
+        },
+        {
+          "data": "2026-08-15",
+          "total": 39
+        }
+      ]
+    },
+    "MLB4543265631": {
+      "total": 638,
+      "por_dia": [
+        {
+          "data": "2026-07-21",
+          "total": 2
+        },
+        {
+          "data": "2026-08-12",
+          "total": 23
+        },
+        {
+          "data": "2026-07-23",
+          "total": 7
+        },
+        {
+          "data": "2026-07-25",
+          "total": 27
+        },
+        {
+          "data": "2026-07-22",
+          "total": 4
+        },
+        {
+          "data": "2026-07-26",
+          "total": 29
+        },
+        {
+          "data": "2026-07-30",
+          "total": 15
+        },
+        {
+          "data": "2026-08-07",
+          "total": 29
+        },
+        {
+          "data": "2026-07-27",
+          "total": 30
+        },
+        {
+          "data": "2026-07-29",
+          "total": 26
+        },
+        {
+          "data": "2026-08-04",
+          "total": 32
+        },
+        {
+          "data": "2026-08-19",
+          "total": 1
+        },
+        {
+          "data": "2026-08-08",
+          "total": 33
+        },
+        {
+          "data": "2026-07-28",
+          "total": 42
+        },
+        {
+          "data": "2026-08-11",
+          "total": 48
+        },
+        {
+          "data": "2026-08-01",
+          "total": 7
+        },
+        {
+          "data": "2026-08-17",
+          "total": 10
+        },
+        {
+          "data": "2026-07-24",
+          "total": 12
+        },
+        {
+          "data": "2026-07-31",
+          "total": 8
+        },
+        {
+          "data": "2026-08-14",
+          "total": 12
+        },
+        {
+          "data": "2026-08-15",
+          "total": 13
+        },
+        {
+          "data": "2026-08-16",
+          "total": 9
+        },
+        {
+          "data": "2026-08-06",
+          "total": 26
+        },
+        {
+          "data": "2026-08-02",
+          "total": 9
+        },
+        {
+          "data": "2026-08-05",
+          "total": 27
+        },
+        {
+          "data": "2026-08-09",
+          "total": 50
+        },
+        {
+          "data": "2026-08-10",
+          "total": 39
+        },
+        {
+          "data": "2026-08-03",
+          "total": 34
+        },
+        {
+          "data": "2026-08-18",
+          "total": 17
+        },
+        {
+          "data": "2026-08-13",
+          "total": 17
+        }
+      ]
+    },
+    "MLB5886362810": {
+      "total": 153,
+      "por_dia": [
+        {
+          "data": "2026-08-13",
+          "total": 10
+        },
+        {
+          "data": "2026-08-17",
+          "total": 5
+        },
+        {
+          "data": "2026-08-16",
+          "total": 3
+        },
+        {
+          "data": "2026-07-28",
+          "total": 4
+        },
+        {
+          "data": "2026-07-29",
+          "total": 2
+        },
+        {
+          "data": "2026-08-19",
+          "total": 3
+        },
+        {
+          "data": "2026-07-22",
+          "total": 2
+        },
+        {
+          "data": "2026-08-10",
+          "total": 16
+        },
+        {
+          "data": "2026-07-26",
+          "total": 5
+        },
+        {
+          "data": "2026-08-05",
+          "total": 12
+        },
+        {
+          "data": "2026-08-15",
+          "total": 2
+        },
+        {
+          "data": "2026-08-04",
+          "total": 5
+        },
+        {
+          "data": "2026-07-20",
+          "total": 4
+        },
+        {
+          "data": "2026-07-24",
+          "total": 2
+        },
+        {
+          "data": "2026-08-06",
+          "total": 6
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2
+        },
+        {
+          "data": "2026-08-08",
+          "total": 5
+        },
+        {
+          "data": "2026-08-09",
+          "total": 2
+        },
+        {
+          "data": "2026-07-23",
+          "total": 1
+        },
+        {
+          "data": "2026-08-14",
+          "total": 7
+        },
+        {
+          "data": "2026-07-27",
+          "total": 2
+        },
+        {
+          "data": "2026-08-11",
+          "total": 13
+        },
+        {
+          "data": "2026-08-18",
+          "total": 11
+        },
+        {
+          "data": "2026-08-03",
+          "total": 6
+        },
+        {
+          "data": "2026-08-07",
+          "total": 8
+        },
+        {
+          "data": "2026-08-12",
+          "total": 15
+        }
+      ]
+    },
+    "MLB2623969595": {
+      "total": 469,
+      "por_dia": [
+        {
+          "data": "2026-07-24",
+          "total": 8
+        },
+        {
+          "data": "2026-08-06",
+          "total": 6
+        },
+        {
+          "data": "2026-08-12",
+          "total": 24
+        },
+        {
+          "data": "2026-08-05",
+          "total": 8
+        },
+        {
+          "data": "2026-07-28",
+          "total": 7
+        },
+        {
+          "data": "2026-08-01",
+          "total": 10
+        },
+        {
+          "data": "2026-07-29",
+          "total": 6
+        },
+        {
+          "data": "2026-08-09",
+          "total": 11
+        },
+        {
+          "data": "2026-08-13",
+          "total": 14
+        },
+        {
+          "data": "2026-07-22",
+          "total": 18
+        },
+        {
+          "data": "2026-07-21",
+          "total": 26
+        },
+        {
+          "data": "2026-08-15",
+          "total": 27
+        },
+        {
+          "data": "2026-08-07",
+          "total": 12
+        },
+        {
+          "data": "2026-07-20",
+          "total": 18
+        },
+        {
+          "data": "2026-07-25",
+          "total": 3
+        },
+        {
+          "data": "2026-08-16",
+          "total": 31
+        },
+        {
+          "data": "2026-07-31",
+          "total": 10
+        },
+        {
+          "data": "2026-08-04",
+          "total": 10
+        },
+        {
+          "data": "2026-08-11",
+          "total": 30
+        },
+        {
+          "data": "2026-08-18",
+          "total": 31
+        },
+        {
+          "data": "2026-07-30",
+          "total": 3
+        },
+        {
+          "data": "2026-08-10",
+          "total": 20
+        },
+        {
+          "data": "2026-08-02",
+          "total": 14
+        },
+        {
+          "data": "2026-07-23",
+          "total": 16
+        },
+        {
+          "data": "2026-07-27",
+          "total": 10
+        },
+        {
+          "data": "2026-08-03",
+          "total": 10
+        },
+        {
+          "data": "2026-08-14",
+          "total": 11
+        },
+        {
+          "data": "2026-08-17",
+          "total": 60
+        },
+        {
+          "data": "2026-08-08",
+          "total": 9
+        },
+        {
+          "data": "2026-08-19",
+          "total": 5
+        },
+        {
+          "data": "2026-07-26",
+          "total": 1
+        }
+      ]
+    },
+    "MLB4658890415": {
+      "total": 207,
+      "por_dia": [
+        {
+          "data": "2026-08-12",
+          "total": 4
+        },
+        {
+          "data": "2026-08-05",
+          "total": 1
+        },
+        {
+          "data": "2026-08-01",
+          "total": 1
+        },
+        {
+          "data": "2026-07-28",
+          "total": 9
+        },
+        {
+          "data": "2026-08-03",
+          "total": 6
+        },
+        {
+          "data": "2026-08-10",
+          "total": 15
+        },
+        {
+          "data": "2026-08-09",
+          "total": 13
+        },
+        {
+          "data": "2026-07-20",
+          "total": 5
+        },
+        {
+          "data": "2026-07-27",
+          "total": 5
+        },
+        {
+          "data": "2026-08-08",
+          "total": 5
+        },
+        {
+          "data": "2026-07-29",
+          "total": 3
+        },
+        {
+          "data": "2026-07-26",
+          "total": 4
+        },
+        {
+          "data": "2026-08-07",
+          "total": 10
+        },
+        {
+          "data": "2026-08-14",
+          "total": 9
+        },
+        {
+          "data": "2026-07-25",
+          "total": 6
+        },
+        {
+          "data": "2026-07-30",
+          "total": 4
+        },
+        {
+          "data": "2026-07-24",
+          "total": 9
+        },
+        {
+          "data": "2026-08-02",
+          "total": 4
+        },
+        {
+          "data": "2026-07-22",
+          "total": 5
+        },
+        {
+          "data": "2026-08-15",
+          "total": 5
+        },
+        {
+          "data": "2026-08-19",
+          "total": 2
+        },
+        {
+          "data": "2026-07-21",
+          "total": 9
+        },
+        {
+          "data": "2026-08-13",
+          "total": 10
+        },
+        {
+          "data": "2026-08-17",
+          "total": 14
+        },
+        {
+          "data": "2026-08-04",
+          "total": 2
+        },
+        {
+          "data": "2026-08-11",
+          "total": 9
+        },
+        {
+          "data": "2026-07-23",
+          "total": 2
+        },
+        {
+          "data": "2026-08-06",
+          "total": 7
+        },
+        {
+          "data": "2026-08-18",
+          "total": 19
+        },
+        {
+          "data": "2026-08-16",
+          "total": 9
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1
+        }
+      ]
+    },
+    "MLB6864796514": {
+      "total": 772,
+      "por_dia": [
+        {
+          "data": "2026-07-21",
+          "total": 76
+        },
+        {
+          "data": "2026-07-27",
+          "total": 48
+        },
+        {
+          "data": "2026-07-22",
+          "total": 48
+        },
+        {
+          "data": "2026-07-30",
+          "total": 15
+        },
+        {
+          "data": "2026-08-17",
+          "total": 13
+        },
+        {
+          "data": "2026-07-24",
+          "total": 30
+        },
+        {
+          "data": "2026-07-29",
+          "total": 12
+        },
+        {
+          "data": "2026-08-06",
+          "total": 19
+        },
+        {
+          "data": "2026-07-25",
+          "total": 39
+        },
+        {
+          "data": "2026-08-18",
+          "total": 14
+        },
+        {
+          "data": "2026-08-05",
+          "total": 6
+        },
+        {
+          "data": "2026-08-15",
+          "total": 13
+        },
+        {
+          "data": "2026-07-23",
+          "total": 24
+        },
+        {
+          "data": "2026-07-28",
+          "total": 18
+        },
+        {
+          "data": "2026-08-09",
+          "total": 18
+        },
+        {
+          "data": "2026-08-11",
+          "total": 20
+        },
+        {
+          "data": "2026-08-04",
+          "total": 9
+        },
+        {
+          "data": "2026-08-14",
+          "total": 22
+        },
+        {
+          "data": "2026-08-08",
+          "total": 22
+        },
+        {
+          "data": "2026-08-03",
+          "total": 8
+        },
+        {
+          "data": "2026-08-01",
+          "total": 5
+        },
+        {
+          "data": "2026-07-26",
+          "total": 44
+        },
+        {
+          "data": "2026-07-31",
+          "total": 2
+        },
+        {
+          "data": "2026-08-19",
+          "total": 6
+        },
+        {
+          "data": "2026-08-10",
+          "total": 17
+        },
+        {
+          "data": "2026-08-16",
+          "total": 15
+        },
+        {
+          "data": "2026-08-13",
+          "total": 19
+        },
+        {
+          "data": "2026-07-20",
+          "total": 128
+        },
+        {
+          "data": "2026-08-02",
+          "total": 11
+        },
+        {
+          "data": "2026-08-07",
+          "total": 26
+        },
+        {
+          "data": "2026-08-12",
+          "total": 25
+        }
+      ]
+    },
+    "MLB5893661490": {
+      "total": 1315,
+      "por_dia": [
+        {
+          "data": "2026-08-15",
+          "total": 23
+        },
+        {
+          "data": "2026-08-08",
+          "total": 29
+        },
+        {
+          "data": "2026-08-16",
+          "total": 33
+        },
+        {
+          "data": "2026-08-09",
+          "total": 17
+        },
+        {
+          "data": "2026-07-28",
+          "total": 61
+        },
+        {
+          "data": "2026-08-19",
+          "total": 16
+        },
+        {
+          "data": "2026-07-20",
+          "total": 65
+        },
+        {
+          "data": "2026-07-27",
+          "total": 34
+        },
+        {
+          "data": "2026-07-31",
+          "total": 56
+        },
+        {
+          "data": "2026-08-12",
+          "total": 48
+        },
+        {
+          "data": "2026-08-01",
+          "total": 41
+        },
+        {
+          "data": "2026-07-23",
+          "total": 40
+        },
+        {
+          "data": "2026-07-21",
+          "total": 55
+        },
+        {
+          "data": "2026-08-13",
+          "total": 35
+        },
+        {
+          "data": "2026-08-17",
+          "total": 36
+        },
+        {
+          "data": "2026-08-18",
+          "total": 27
+        },
+        {
+          "data": "2026-07-29",
+          "total": 59
+        },
+        {
+          "data": "2026-07-24",
+          "total": 33
+        },
+        {
+          "data": "2026-08-04",
+          "total": 97
+        },
+        {
+          "data": "2026-08-02",
+          "total": 51
+        },
+        {
+          "data": "2026-08-06",
+          "total": 63
+        },
+        {
+          "data": "2026-07-26",
+          "total": 20
+        },
+        {
+          "data": "2026-08-07",
+          "total": 32
+        },
+        {
+          "data": "2026-08-11",
+          "total": 35
+        },
+        {
+          "data": "2026-07-22",
+          "total": 41
+        },
+        {
+          "data": "2026-08-03",
+          "total": 61
+        },
+        {
+          "data": "2026-08-05",
+          "total": 61
+        },
+        {
+          "data": "2026-08-14",
+          "total": 26
+        },
+        {
+          "data": "2026-07-30",
+          "total": 55
+        },
+        {
+          "data": "2026-08-10",
+          "total": 48
+        },
+        {
+          "data": "2026-07-25",
+          "total": 17
+        }
+      ]
+    },
+    "MLB5017982915": {
+      "total": 0,
+      "por_dia": []
+    },
+    "MLB3983847879": {
+      "total": 186,
+      "por_dia": [
+        {
+          "data": "2026-07-22",
+          "total": 6
+        },
+        {
+          "data": "2026-08-18",
+          "total": 6
+        },
+        {
+          "data": "2026-08-02",
+          "total": 5
+        },
+        {
+          "data": "2026-07-20",
+          "total": 6
+        },
+        {
+          "data": "2026-08-08",
+          "total": 6
+        },
+        {
+          "data": "2026-08-17",
+          "total": 8
+        },
+        {
+          "data": "2026-08-03",
+          "total": 9
+        },
+        {
+          "data": "2026-07-27",
+          "total": 7
+        },
+        {
+          "data": "2026-07-30",
+          "total": 6
+        },
+        {
+          "data": "2026-08-12",
+          "total": 8
+        },
+        {
+          "data": "2026-08-16",
+          "total": 2
+        },
+        {
+          "data": "2026-08-11",
+          "total": 9
+        },
+        {
+          "data": "2026-07-24",
+          "total": 1
+        },
+        {
+          "data": "2026-08-19",
+          "total": 3
+        },
+        {
+          "data": "2026-08-06",
+          "total": 6
+        },
+        {
+          "data": "2026-08-05",
+          "total": 7
+        },
+        {
+          "data": "2026-07-29",
+          "total": 5
+        },
+        {
+          "data": "2026-08-09",
+          "total": 3
+        },
+        {
+          "data": "2026-07-26",
+          "total": 6
+        },
+        {
+          "data": "2026-07-23",
+          "total": 7
+        },
+        {
+          "data": "2026-08-01",
+          "total": 6
+        },
+        {
+          "data": "2026-08-14",
+          "total": 2
+        },
+        {
+          "data": "2026-07-25",
+          "total": 1
+        },
+        {
+          "data": "2026-08-04",
+          "total": 9
+        },
+        {
+          "data": "2026-08-10",
+          "total": 5
+        },
+        {
+          "data": "2026-08-13",
+          "total": 9
+        },
+        {
+          "data": "2026-08-07",
+          "total": 11
+        },
+        {
+          "data": "2026-07-31",
+          "total": 5
+        },
+        {
+          "data": "2026-07-28",
+          "total": 3
+        },
+        {
+          "data": "2026-07-21",
+          "total": 10
+        },
+        {
+          "data": "2026-08-15",
+          "total": 9
+        }
+      ]
+    },
+    "MLB6534208002": {
+      "total": 29,
+      "por_dia": [
+        {
+          "data": "2026-07-20",
+          "total": 1
+        },
+        {
+          "data": "2026-08-01",
+          "total": 2
+        },
+        {
+          "data": "2026-08-08",
+          "total": 1
+        },
+        {
+          "data": "2026-08-16",
+          "total": 2
+        },
+        {
+          "data": "2026-08-18",
+          "total": 2
+        },
+        {
+          "data": "2026-08-19",
+          "total": 1
+        },
+        {
+          "data": "2026-08-07",
+          "total": 3
+        },
+        {
+          "data": "2026-08-10",
+          "total": 1
+        },
+        {
+          "data": "2026-08-14",
+          "total": 3
+        },
+        {
+          "data": "2026-08-04",
+          "total": 1
+        },
+        {
+          "data": "2026-08-17",
+          "total": 4
+        },
+        {
+          "data": "2026-07-26",
+          "total": 1
+        },
+        {
+          "data": "2026-08-06",
+          "total": 1
+        },
+        {
+          "data": "2026-07-24",
+          "total": 1
+        },
+        {
+          "data": "2026-08-12",
+          "total": 1
+        },
+        {
+          "data": "2026-08-13",
+          "total": 1
+        },
+        {
+          "data": "2026-07-23",
+          "total": 1
+        },
+        {
+          "data": "2026-08-15",
+          "total": 2
+        }
+      ]
+    },
+    "MLB5886323286": {
+      "total": 180,
+      "por_dia": [
+        {
+          "data": "2026-07-29",
+          "total": 7
+        },
+        {
+          "data": "2026-08-11",
+          "total": 12
+        },
+        {
+          "data": "2026-08-04",
+          "total": 7
+        },
+        {
+          "data": "2026-07-27",
+          "total": 4
+        },
+        {
+          "data": "2026-08-08",
+          "total": 5
+        },
+        {
+          "data": "2026-07-28",
+          "total": 4
+        },
+        {
+          "data": "2026-08-05",
+          "total": 5
+        },
+        {
+          "data": "2026-08-10",
+          "total": 11
+        },
+        {
+          "data": "2026-07-25",
+          "total": 4
+        },
+        {
+          "data": "2026-08-17",
+          "total": 7
+        },
+        {
+          "data": "2026-08-06",
+          "total": 10
+        },
+        {
+          "data": "2026-07-23",
+          "total": 2
+        },
+        {
+          "data": "2026-08-01",
+          "total": 7
+        },
+        {
+          "data": "2026-07-21",
+          "total": 2
+        },
+        {
+          "data": "2026-08-16",
+          "total": 7
+        },
+        {
+          "data": "2026-07-26",
+          "total": 7
+        },
+        {
+          "data": "2026-08-12",
+          "total": 9
+        },
+        {
+          "data": "2026-08-03",
+          "total": 6
+        },
+        {
+          "data": "2026-08-18",
+          "total": 9
+        },
+        {
+          "data": "2026-08-15",
+          "total": 2
+        },
+        {
+          "data": "2026-07-20",
+          "total": 5
+        },
+        {
+          "data": "2026-07-22",
+          "total": 3
+        },
+        {
+          "data": "2026-08-13",
+          "total": 9
+        },
+        {
+          "data": "2026-07-31",
+          "total": 4
+        },
+        {
+          "data": "2026-08-19",
+          "total": 3
+        },
+        {
+          "data": "2026-08-09",
+          "total": 2
+        },
+        {
+          "data": "2026-07-24",
+          "total": 4
+        },
+        {
+          "data": "2026-07-30",
+          "total": 5
+        },
+        {
+          "data": "2026-08-02",
+          "total": 7
+        },
+        {
+          "data": "2026-08-07",
+          "total": 4
+        },
+        {
+          "data": "2026-08-14",
+          "total": 7
+        }
+      ]
+    },
+    "MLB5807031188": {
+      "total": 35,
+      "por_dia": [
+        {
+          "data": "2026-08-19",
+          "total": 4
+        },
+        {
+          "data": "2026-08-15",
+          "total": 2
+        },
+        {
+          "data": "2026-08-18",
+          "total": 13
+        },
+        {
+          "data": "2026-08-03",
+          "total": 1
+        },
+        {
+          "data": "2026-08-16",
+          "total": 8
+        },
+        {
+          "data": "2026-08-17",
+          "total": 7
+        }
+      ]
+    },
+    "MLB4309752661": {
+      "total": 198,
+      "por_dia": [
+        {
+          "data": "2026-07-30",
+          "total": 2
+        },
+        {
+          "data": "2026-08-06",
+          "total": 11
+        },
+        {
+          "data": "2026-07-27",
+          "total": 2
+        },
+        {
+          "data": "2026-07-26",
+          "total": 5
+        },
+        {
+          "data": "2026-08-03",
+          "total": 14
+        },
+        {
+          "data": "2026-08-10",
+          "total": 14
+        },
+        {
+          "data": "2026-08-17",
+          "total": 6
+        },
+        {
+          "data": "2026-08-04",
+          "total": 10
+        },
+        {
+          "data": "2026-08-11",
+          "total": 15
+        },
+        {
+          "data": "2026-07-21",
+          "total": 5
+        },
+        {
+          "data": "2026-08-08",
+          "total": 5
+        },
+        {
+          "data": "2026-07-28",
+          "total": 4
+        },
+        {
+          "data": "2026-07-22",
+          "total": 5
+        },
+        {
+          "data": "2026-08-09",
+          "total": 4
+        },
+        {
+          "data": "2026-08-13",
+          "total": 18
+        },
+        {
+          "data": "2026-08-14",
+          "total": 8
+        },
+        {
+          "data": "2026-08-15",
+          "total": 3
+        },
+        {
+          "data": "2026-07-23",
+          "total": 1
+        },
+        {
+          "data": "2026-08-16",
+          "total": 4
+        },
+        {
+          "data": "2026-08-05",
+          "total": 11
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1
+        },
+        {
+          "data": "2026-08-12",
+          "total": 14
+        },
+        {
+          "data": "2026-08-07",
+          "total": 9
+        },
+        {
+          "data": "2026-07-25",
+          "total": 1
+        },
+        {
+          "data": "2026-08-01",
+          "total": 2
+        },
+        {
+          "data": "2026-08-19",
+          "total": 2
+        },
+        {
+          "data": "2026-07-29",
+          "total": 6
+        },
+        {
+          "data": "2026-07-20",
+          "total": 5
+        },
+        {
+          "data": "2026-07-24",
+          "total": 5
+        },
+        {
+          "data": "2026-08-18",
+          "total": 6
+        }
+      ]
+    },
+    "MLB4722898863": {
+      "total": 205,
+      "por_dia": [
+        {
+          "data": "2026-07-28",
+          "total": 2
+        },
+        {
+          "data": "2026-08-09",
+          "total": 5
+        },
+        {
+          "data": "2026-07-26",
+          "total": 5
+        },
+        {
+          "data": "2026-07-24",
+          "total": 1
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1
+        },
+        {
+          "data": "2026-08-06",
+          "total": 3
+        },
+        {
+          "data": "2026-08-14",
+          "total": 15
+        },
+        {
+          "data": "2026-07-20",
+          "total": 1
+        },
+        {
+          "data": "2026-08-16",
+          "total": 9
+        },
+        {
+          "data": "2026-07-22",
+          "total": 3
+        },
+        {
+          "data": "2026-07-30",
+          "total": 2
+        },
+        {
+          "data": "2026-08-15",
+          "total": 15
+        },
+        {
+          "data": "2026-08-17",
+          "total": 14
+        },
+        {
+          "data": "2026-08-18",
+          "total": 17
+        },
+        {
+          "data": "2026-08-02",
+          "total": 1
+        },
+        {
+          "data": "2026-08-13",
+          "total": 9
+        },
+        {
+          "data": "2026-07-27",
+          "total": 3
+        },
+        {
+          "data": "2026-07-25",
+          "total": 3
+        },
+        {
+          "data": "2026-08-10",
+          "total": 40
+        },
+        {
+          "data": "2026-08-04",
+          "total": 3
+        },
+        {
+          "data": "2026-08-12",
+          "total": 13
+        },
+        {
+          "data": "2026-08-05",
+          "total": 7
+        },
+        {
+          "data": "2026-08-11",
+          "total": 20
+        },
+        {
+          "data": "2026-08-19",
+          "total": 10
+        },
+        {
+          "data": "2026-07-29",
+          "total": 3
+        }
+      ]
+    },
+    "MLB5959781254": {
+      "total": 147,
+      "por_dia": [
+        {
+          "data": "2026-07-24",
+          "total": 7
+        },
+        {
+          "data": "2026-08-06",
+          "total": 3
+        },
+        {
+          "data": "2026-08-03",
+          "total": 10
+        },
+        {
+          "data": "2026-08-18",
+          "total": 7
+        },
+        {
+          "data": "2026-08-02",
+          "total": 9
+        },
+        {
+          "data": "2026-08-05",
+          "total": 4
+        },
+        {
+          "data": "2026-07-22",
+          "total": 3
+        },
+        {
+          "data": "2026-07-29",
+          "total": 3
+        },
+        {
+          "data": "2026-08-07",
+          "total": 3
+        },
+        {
+          "data": "2026-08-14",
+          "total": 7
+        },
+        {
+          "data": "2026-08-17",
+          "total": 3
+        },
+        {
+          "data": "2026-07-21",
+          "total": 9
+        },
+        {
+          "data": "2026-07-31",
+          "total": 2
+        },
+        {
+          "data": "2026-08-09",
+          "total": 8
+        },
+        {
+          "data": "2026-07-20",
+          "total": 4
+        },
+        {
+          "data": "2026-08-15",
+          "total": 5
+        },
+        {
+          "data": "2026-08-12",
+          "total": 4
+        },
+        {
+          "data": "2026-08-11",
+          "total": 4
+        },
+        {
+          "data": "2026-08-16",
+          "total": 4
+        },
+        {
+          "data": "2026-07-23",
+          "total": 6
+        },
+        {
+          "data": "2026-07-26",
+          "total": 2
+        },
+        {
+          "data": "2026-07-30",
+          "total": 2
+        },
+        {
+          "data": "2026-08-04",
+          "total": 2
+        },
+        {
+          "data": "2026-08-01",
+          "total": 5
+        },
+        {
+          "data": "2026-07-27",
+          "total": 6
+        },
+        {
+          "data": "2026-07-28",
+          "total": 5
+        },
+        {
+          "data": "2026-08-08",
+          "total": 4
+        },
+        {
+          "data": "2026-07-25",
+          "total": 2
+        },
+        {
+          "data": "2026-08-10",
+          "total": 3
+        },
+        {
+          "data": "2026-08-13",
+          "total": 11
+        }
+      ]
+    },
+    "MLB7068635584": {
+      "total": 87,
+      "por_dia": [
+        {
+          "data": "2026-07-23",
+          "total": 7
+        },
+        {
+          "data": "2026-08-16",
+          "total": 3
+        },
+        {
+          "data": "2026-08-03",
+          "total": 3
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1
+        },
+        {
+          "data": "2026-07-20",
+          "total": 3
+        },
+        {
+          "data": "2026-07-21",
+          "total": 1
+        },
+        {
+          "data": "2026-07-30",
+          "total": 1
+        },
+        {
+          "data": "2026-08-04",
+          "total": 1
+        },
+        {
+          "data": "2026-07-27",
+          "total": 1
+        },
+        {
+          "data": "2026-08-11",
+          "total": 3
+        },
+        {
+          "data": "2026-08-10",
+          "total": 3
+        },
+        {
+          "data": "2026-08-02",
+          "total": 4
+        },
+        {
+          "data": "2026-07-22",
+          "total": 4
+        },
+        {
+          "data": "2026-08-14",
+          "total": 2
+        },
+        {
+          "data": "2026-08-17",
+          "total": 6
+        },
+        {
+          "data": "2026-07-28",
+          "total": 4
+        },
+        {
+          "data": "2026-07-26",
+          "total": 2
+        },
+        {
+          "data": "2026-07-25",
+          "total": 7
+        },
+        {
+          "data": "2026-08-13",
+          "total": 4
+        },
+        {
+          "data": "2026-08-07",
+          "total": 6
+        },
+        {
+          "data": "2026-07-29",
+          "total": 1
+        },
+        {
+          "data": "2026-08-18",
+          "total": 3
+        },
+        {
+          "data": "2026-07-24",
+          "total": 2
+        },
+        {
+          "data": "2026-08-01",
+          "total": 1
+        },
+        {
+          "data": "2026-08-05",
+          "total": 4
+        },
+        {
+          "data": "2026-08-06",
+          "total": 3
+        },
+        {
+          "data": "2026-08-09",
+          "total": 3
+        },
+        {
+          "data": "2026-08-12",
+          "total": 4
+        }
+      ]
+    },
+    "MLB7153023658": {
+      "total": 219,
+      "por_dia": [
+        {
+          "data": "2026-08-10",
+          "total": 9
+        },
+        {
+          "data": "2026-08-12",
+          "total": 12
+        },
+        {
+          "data": "2026-08-18",
+          "total": 8
+        },
+        {
+          "data": "2026-08-19",
+          "total": 4
+        },
+        {
+          "data": "2026-08-09",
+          "total": 2
+        },
+        {
+          "data": "2026-08-04",
+          "total": 10
+        },
+        {
+          "data": "2026-08-06",
+          "total": 8
+        },
+        {
+          "data": "2026-08-07",
+          "total": 1
+        },
+        {
+          "data": "2026-08-16",
+          "total": 2
+        },
+        {
+          "data": "2026-07-20",
+          "total": 24
+        },
+        {
+          "data": "2026-07-25",
+          "total": 5
+        },
+        {
+          "data": "2026-08-08",
+          "total": 3
+        },
+        {
+          "data": "2026-08-13",
+          "total": 3
+        },
+        {
+          "data": "2026-08-03",
+          "total": 2
+        },
+        {
+          "data": "2026-08-17",
+          "total": 3
+        },
+        {
+          "data": "2026-07-21",
+          "total": 22
+        },
+        {
+          "data": "2026-07-30",
+          "total": 10
+        },
+        {
+          "data": "2026-08-14",
+          "total": 3
+        },
+        {
+          "data": "2026-07-27",
+          "total": 8
+        },
+        {
+          "data": "2026-07-23",
+          "total": 11
+        },
+        {
+          "data": "2026-07-26",
+          "total": 6
+        },
+        {
+          "data": "2026-07-31",
+          "total": 1
+        },
+        {
+          "data": "2026-08-15",
+          "total": 6
+        },
+        {
+          "data": "2026-07-22",
+          "total": 16
+        },
+        {
+          "data": "2026-08-02",
+          "total": 2
+        },
+        {
+          "data": "2026-07-29",
+          "total": 6
+        },
+        {
+          "data": "2026-07-24",
+          "total": 7
+        },
+        {
+          "data": "2026-07-28",
+          "total": 12
+        },
+        {
+          "data": "2026-08-05",
+          "total": 2
+        },
+        {
+          "data": "2026-08-11",
+          "total": 10
+        },
+        {
+          "data": "2026-08-01",
+          "total": 1
+        }
+      ]
+    },
+    "MLB4480092423": {
+      "total": 304,
+      "por_dia": [
+        {
+          "data": "2026-08-17",
+          "total": 14
+        },
+        {
+          "data": "2026-07-21",
+          "total": 8
+        },
+        {
+          "data": "2026-08-02",
+          "total": 10
+        },
+        {
+          "data": "2026-08-19",
+          "total": 7
+        },
+        {
+          "data": "2026-07-23",
+          "total": 12
+        },
+        {
+          "data": "2026-07-28",
+          "total": 9
+        },
+        {
+          "data": "2026-07-22",
+          "total": 14
+        },
+        {
+          "data": "2026-07-26",
+          "total": 7
+        },
+        {
+          "data": "2026-08-11",
+          "total": 13
+        },
+        {
+          "data": "2026-07-27",
+          "total": 12
+        },
+        {
+          "data": "2026-08-04",
+          "total": 15
+        },
+        {
+          "data": "2026-08-13",
+          "total": 15
+        },
+        {
+          "data": "2026-08-08",
+          "total": 7
+        },
+        {
+          "data": "2026-08-12",
+          "total": 15
+        },
+        {
+          "data": "2026-07-29",
+          "total": 12
+        },
+        {
+          "data": "2026-08-01",
+          "total": 8
+        },
+        {
+          "data": "2026-07-25",
+          "total": 7
+        },
+        {
+          "data": "2026-07-31",
+          "total": 3
+        },
+        {
+          "data": "2026-07-20",
+          "total": 13
+        },
+        {
+          "data": "2026-08-03",
+          "total": 12
+        },
+        {
+          "data": "2026-08-16",
+          "total": 12
+        },
+        {
+          "data": "2026-08-15",
+          "total": 9
+        },
+        {
+          "data": "2026-07-30",
+          "total": 6
+        },
+        {
+          "data": "2026-08-09",
+          "total": 8
+        },
+        {
+          "data": "2026-08-18",
+          "total": 6
+        },
+        {
+          "data": "2026-08-10",
+          "total": 18
+        },
+        {
+          "data": "2026-07-24",
+          "total": 11
+        },
+        {
+          "data": "2026-08-14",
+          "total": 21
+        }
+      ]
+    }
+  },
+  "visitas_itens_consultados": 20,
+  "visitas_medidos": 20,
+  "visitas_total": 7605
+}
