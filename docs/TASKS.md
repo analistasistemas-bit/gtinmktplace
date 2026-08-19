@@ -137,6 +137,9 @@
   cabeçalho clicável, asc/desc e nulos sempre no fim. Ordena por Produto (texto), Ofertas,
   Faixa de preço (pelo piso da faixa), Visitas 30d (ficha não medida vai para o fim) e nº de
   vendedores. Sem `defaultSort`: a ordem inicial continua sendo o ranking de relevância do ML.
+- [x] **Atalho para o ML** em cada linha: ícone de link externo ao lado de "Simular margem",
+  apontando para `mercadolivre.com.br/p/{product_id}` (ficha de catálogo — a URL do anúncio de
+  terceiro não é derivável pela API). Mesmo formato já usado no dialog de detalhe do Radar.
 
 ## Sonar: "Saiba mais" do veredito — 2026-08-18
 

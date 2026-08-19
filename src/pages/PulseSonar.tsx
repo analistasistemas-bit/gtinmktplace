@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  BadgeCheck, Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Clock, Eye, Globe,
-  Loader2, Package, Receipt, Search, ShoppingCart, Store, Trash2, TrendingUp, Trophy, Truck,
-  Users, Zap,
+  BadgeCheck, Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Clock, ExternalLink,
+  Eye, Globe, Loader2, Package, Receipt, Search, ShoppingCart, Store, Trash2, TrendingUp, Trophy,
+  Truck, Users, Zap,
 } from 'lucide-react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid,
@@ -310,10 +310,26 @@ export default function PulseSonar() {
     {
       key: 'acao',
       header: '',
+      // `/p/{product_id}` leva à ficha de catálogo, onde as ofertas dos concorrentes aparecem lado
+      // a lado — é o link possível: a API não devolve a URL do anúncio de terceiro. Mesmo formato
+      // usado no dialog de detalhe do Radar e aceito pelo "Adicionar produto".
       cell: (f) => (
-        <Button variant="outline" size="sm" onClick={() => setFichaSimulando(f)}>
-          Simular margem
-        </Button>
+        <div className="flex items-center justify-end gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => setFichaSimulando(f)}>
+            Simular margem
+          </Button>
+          <Button asChild variant="ghost" size="icon-sm">
+            <a
+              href={`https://www.mercadolivre.com.br/p/${f.product_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Abrir "${f.nome}" no Mercado Livre (nova aba)`}
+              title="Abrir no Mercado Livre"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </Button>
+        </div>
       ),
     },
   ], []);
