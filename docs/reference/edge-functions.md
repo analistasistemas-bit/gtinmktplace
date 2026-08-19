@@ -1,6 +1,6 @@
 # Referência — Edge Functions
 
-> **Tipo:** Reference (Diátaxis). As 32 Edge Functions Deno do PubliAI (`supabase/functions/`).
+> **Tipo:** Reference (Diátaxis). As 55 Edge Functions Deno do PubliAI (`supabase/functions/`).
 > `verify_jwt` é extraído de `supabase/config.toml` (verdade de configuração). Trigger e
 > idempotência vêm do código de cada `index.ts`. Termos em [glossario.md](glossario.md);
 > deploy em [../how-to/deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
@@ -77,6 +77,7 @@
 | metricas-vendas | true | HTTP (frontend) | sim (leitura) |
 | analisar-viabilidade | true | HTTP (frontend) | não |
 | tabela-frete-ml | true | HTTP (frontend) | sim (cache 24h) |
+| buscar-categorias-ml | true | HTTP (frontend) | sim (leitura) |
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
 | **Acesso / usuários** ||||
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
@@ -985,6 +986,12 @@ falha ao ler `organizations` não libera.
   (`BRAND`, `SALE_FORMAT`, `UNITS_PER_PACK`…), e peso/medidas são `SELLER_PACKAGE_*`, atributo
   do anúncio de cada vendedor.
 - **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
+- **buscar-categorias-ml** — sugestões opcionais para a Calculadora ML (ADR-0126). Recebe
+  `{ query }` com 3–120 caracteres e devolve até 8 itens `{ id, nome, caminho? }` do preditor
+  oficial do Mercado Livre. Exige JWT e resolve a conexão pela `org_id` da sessão. É
+  deliberadamente **read-only**: usa somente o access token ainda válido já persistido e não faz
+  refresh; sem conexão ou com token vencido devolve lista vazia para manter a digitação manual.
+  Falha do preditor devolve 503 sanitizado, sem expor query, token ou payload externo nos logs.
 - **tabela-frete-ml** — grade compacta 7×4 (faixas de peso × preço) do frete que o vendedor absorve, para a Viabilidade. Body `{ categoria_ml_id }`; varre ~28 combinações via `shipping_options/free` (batch 5); cache Redis 24h `tabela-frete:v1:{org}:{categoria}`. Sem ME2 → `{ indisponivel: true, motivo: 'sem_me2' }`.
 
 ### Acesso / usuários

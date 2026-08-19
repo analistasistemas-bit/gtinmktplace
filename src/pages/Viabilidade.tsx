@@ -6,10 +6,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ViabilidadeLinha } from '@/components/viabilidade-linha';
 import { TabelaFreteViabilidade } from '@/components/tabela-frete-viabilidade';
+import { CalculadoraML } from '@/components/calculadora-ml/calculadora-ml';
 import { useAnaliseViabilidade } from '@/hooks/useAnaliseViabilidade';
 import type { ItemAnalisado } from '@/lib/viabilidade';
 
 const COLS = ['Produto', 'Menor na API do ML', 'Vendedores', 'Seu mínimo', 'Líquido se igualar', 'Viabilidade'];
+type ModoViabilidade = 'analise' | 'calculadora';
 
 function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean }) {
   if (itens.length === 0) return null;
@@ -31,6 +33,7 @@ function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean
 
 export default function Viabilidade() {
   const analise = useAnaliseViabilidade();
+  const [modo, setModo] = useState<ModoViabilidade>('analise');
   const [gtins, setGtins] = useState('');
   const [bip, setBip] = useState('');
 
@@ -90,82 +93,95 @@ export default function Viabilidade() {
         </div>
       )}
 
-      <Tabs defaultValue="planilha">
-        <TabsList>
-          <TabsTrigger value="planilha">Subir planilha</TabsTrigger>
-          <TabsTrigger value="gtins">Colar GTINs</TabsTrigger>
+      <Tabs value={modo} onValueChange={(value) => setModo(value as ModoViabilidade)}>
+        <TabsList aria-label="Modo de viabilidade">
+          <TabsTrigger value="analise">Análise de mercado</TabsTrigger>
+          <TabsTrigger value="calculadora">Calculadora ML</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="planilha">
-          <div {...getRootProps()}
-            className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-12 text-center transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-muted/40'}`}>
-            <input {...getInputProps()} />
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
-              <Upload className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-base font-medium text-foreground">
-                {isDragActive ? 'Solte a planilha aqui' : 'Arraste sua planilha .xlsx aqui'}
+        <TabsContent value="analise">
+          <Tabs defaultValue="planilha">
+            <TabsList>
+              <TabsTrigger value="planilha">Subir planilha</TabsTrigger>
+              <TabsTrigger value="gtins">Colar GTINs</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="planilha">
+              <div {...getRootProps()}
+                className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-12 text-center transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-muted/40'}`}>
+                <input {...getInputProps()} />
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                  <Upload className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-base font-medium text-foreground">
+                    {isDragActive ? 'Solte a planilha aqui' : 'Arraste sua planilha .xlsx aqui'}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    ou clique para selecionar — planilha completa do lote ou só NOME, UNIDADE, GTIN, PRECO, CUSTO
+                  </p>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="gtins">
+              <div className="space-y-2">
+                {/* eslint-disable-next-line jsx-a11y/no-autofocus -- campo de bipagem precisa do foco p/ o leitor */}
+                <input autoFocus value={bip} onChange={(e) => setBip(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); bipar(bip); } }}
+                  inputMode="numeric" aria-label="Bipar código de barras"
+                  placeholder="📷 Bipe o código de barras aqui — cada leitura vira uma linha abaixo"
+                  className="w-full rounded-md border border-border bg-background p-2 text-sm" />
+                <textarea value={gtins} onChange={(e) => setGtins(e.target.value)} rows={5}
+                  aria-label="GTINs, um por linha"
+                  placeholder="Um GTIN por linha" className="w-full rounded-md border border-border bg-background p-2 text-sm" />
+                <button onClick={() => analise.mutate({ tipo: 'gtins', gtins: gtins.split('\n') })}
+                  disabled={analise.isPending || gtins.trim() === ''}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50">
+                  <Search className="h-4 w-4" /> Pesquisar
+                </button>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {analise.isPending && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">{pendingLabel}</p>
+              <div className="track-indeterminate" role="progressbar" aria-label="Analisando produtos no Mercado Livre" />
+              <p className="text-xs text-muted-foreground">
+                Consultando o catálogo e as tarifas do ML — pode levar alguns segundos com muitos GTINs.
               </p>
-              <p className="text-sm text-muted-foreground">
-                ou clique para selecionar — planilha completa do lote ou só NOME, UNIDADE, GTIN, PRECO, CUSTO
-              </p>
             </div>
-          </div>
+          )}
+          {analise.isError && <p className="text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">{analise.error.message}</p>}
+          {analise.isSuccess && itens.length === 0 && (
+            <EmptyState title="Nada para mostrar" description="Nenhum produto válido foi encontrado na entrada." />
+          )}
+          {itens.length > 0 && (
+            <>
+              {categoriaMlId && analise.data?.me2Habilitado === true && !analise.isPending && (
+                <TabelaFreteViabilidade
+                  categoriaMlId={categoriaMlId}
+                  categoriasMistas={categoriasMistas}
+                  analiseConcluida={analiseConcluida}
+                />
+              )}
+              <div className="rounded-lg border border-border shadow-sm">
+              {analise.data!.ignorados > 0 && (
+                <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                  {analise.data!.ignorados} linha(s) ignorada(s) (sem GTIN/preço/custo).
+                </p>
+              )}
+              <Tabela itens={itens} editavel={analise.variables?.tipo === 'gtins'} />
+              </div>
+            </>
+          )}
         </TabsContent>
 
-        <TabsContent value="gtins">
-          <div className="space-y-2">
-            {/* eslint-disable-next-line jsx-a11y/no-autofocus -- campo de bipagem precisa do foco p/ o leitor */}
-            <input autoFocus value={bip} onChange={(e) => setBip(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); bipar(bip); } }}
-              inputMode="numeric" aria-label="Bipar código de barras"
-              placeholder="📷 Bipe o código de barras aqui — cada leitura vira uma linha abaixo"
-              className="w-full rounded-md border border-border bg-background p-2 text-sm" />
-            <textarea value={gtins} onChange={(e) => setGtins(e.target.value)} rows={5}
-              aria-label="GTINs, um por linha"
-              placeholder="Um GTIN por linha" className="w-full rounded-md border border-border bg-background p-2 text-sm" />
-            <button onClick={() => analise.mutate({ tipo: 'gtins', gtins: gtins.split('\n') })}
-              disabled={analise.isPending || gtins.trim() === ''}
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50">
-              <Search className="h-4 w-4" /> Pesquisar
-            </button>
-          </div>
+        <TabsContent value="calculadora">
+          <CalculadoraML />
         </TabsContent>
       </Tabs>
-
-      {analise.isPending && (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">{pendingLabel}</p>
-          <div className="track-indeterminate" role="progressbar" aria-label="Analisando produtos no Mercado Livre" />
-          <p className="text-xs text-muted-foreground">
-            Consultando o catálogo e as tarifas do ML — pode levar alguns segundos com muitos GTINs.
-          </p>
-        </div>
-      )}
-      {analise.isError && <p className="text-sm text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">{analise.error.message}</p>}
-      {analise.isSuccess && itens.length === 0 && (
-        <EmptyState title="Nada para mostrar" description="Nenhum produto válido foi encontrado na entrada." />
-      )}
-      {itens.length > 0 && (
-        <>
-          {categoriaMlId && analise.data?.me2Habilitado === true && !analise.isPending && (
-            <TabelaFreteViabilidade
-              categoriaMlId={categoriaMlId}
-              categoriasMistas={categoriasMistas}
-              analiseConcluida={analiseConcluida}
-            />
-          )}
-          <div className="rounded-lg border border-border shadow-sm">
-          {analise.data!.ignorados > 0 && (
-            <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-              {analise.data!.ignorados} linha(s) ignorada(s) (sem GTIN/preço/custo).
-            </p>
-          )}
-          <Tabela itens={itens} editavel={analise.variables?.tipo === 'gtins'} />
-          </div>
-        </>
-      )}
     </div>
   );
 }

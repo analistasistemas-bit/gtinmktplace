@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Calculadora Mercado Livre premium na Viabilidade (ADR-0126) — 2026-08-19
+
+- [x] Simulação simultânea de anúncio Clássico e Premium, lucro, margem, custos, peso cúbico,
+  sensibilidades e preço para margem-alvo em motor financeiro puro e testado.
+- [x] Categoria opcional com aviso persistente e sugestões via Edge Function read-only; sem
+  categoria ou API, fallback manual identificado como estimado.
+- [x] Tarifa API-first com proveniência oficial/parcial/estimada; frete desconhecido nunca vira
+  zero e frete gratuito exige confirmação explícita.
+- [x] Produto cadastrado como preenchimento editável, UI responsiva e validação visual desktop +
+  mobile. Simulações não são persistidas e nenhuma escrita de tenant foi adicionada.
+
 ## Sonar — tabela de produtos: cruzamento ficha↔anúncio + colunas Hunter (ADR-0125) — 2026-08-19
 
 - [x] **Cruzamento ficha↔anúncio no front** (`src/lib/sonar-cruzamento.ts`), chaveado por
