@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import type { CotacoesOficiaisPorModalidade } from './calculadora-ml';
 
 export interface TarifaTipo {
   comissao: number;
@@ -14,6 +15,27 @@ export interface Tarifa {
   premium: TarifaTipo;
   /** Frete que o vendedor absorve (frete grátis ao comprador). 0 quando o comprador paga. */
   frete: number;
+}
+
+/** Adapta a resposta oficial sem recomputar comissão, taxa fixa ou frete no cliente. */
+export function cotacoesOficiaisDaTarifa(tarifa: Tarifa): CotacoesOficiaisPorModalidade {
+  return {
+    origem: 'official',
+    classico: {
+      percentualComissaoPct: tarifa.classico.percentual,
+      taxaFixa: tarifa.classico.fixa,
+      comissaoTotal: tarifa.classico.comissao,
+      frete: tarifa.frete,
+      proveniencia: 'official',
+    },
+    premium: {
+      percentualComissaoPct: tarifa.premium.percentual,
+      taxaFixa: tarifa.premium.fixa,
+      comissaoTotal: tarifa.premium.comissao,
+      frete: tarifa.frete,
+      proveniencia: 'official',
+    },
+  };
 }
 
 /** Dimensões/peso da variação representativa — entram no cálculo do frete do vendedor. */
