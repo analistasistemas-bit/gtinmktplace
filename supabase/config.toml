@@ -24,6 +24,8 @@ verify_jwt = false
 verify_jwt = false
 [functions.calcular-tarifa-ml]
 verify_jwt = false
+[functions.buscar-categorias-ml]
+verify_jwt = true
 [functions.update-familia-ml]
 verify_jwt = false
 [functions.publicar-split-ml]
