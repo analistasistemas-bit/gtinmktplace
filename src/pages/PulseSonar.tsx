@@ -1,16 +1,15 @@
 // Sonar (ADR-0120): garimpo on-demand de um nicho do Mercado Livre, par do Radar (Pulse.tsx),
 // que vigia o que já vendemos. O Sonar varre ANTES de cadastrar o produto.
+//
+// ADR-0127: a tabela nasce da Apify (por anúncio real da busca), não mais do catálogo do ML —
+// fichas de catálogo podiam listar produtos mortos, sem nenhum anúncio ativo vendendo.
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  BadgeCheck, Check, ChevronDown, ChevronRight, Circle, CircleDollarSign, Clock, ExternalLink,
-  Eye, Filter, Globe, Loader2, Package, Receipt, Search, ShoppingCart, Store, Trash2, TrendingUp,
-  Trophy, Truck, Users, X, Zap,
+  BadgeCheck, Check, Circle, CircleDollarSign, Clock, ExternalLink, Filter, Globe, Loader2,
+  Package, Receipt, Search, ShoppingCart, Store, Trash2, Trophy, Truck, X, Zap,
 } from 'lucide-react';
-import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip as RTooltip, CartesianGrid,
-} from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,25 +21,21 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Sparkline } from '@/components/ui/sparkline';
-import { DialogMargemSonar } from '@/components/pulse/dialog-margem-sonar';
+import { DialogMargemSonar, type AnuncioSimulavel } from '@/components/pulse/dialog-margem-sonar';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import {
   lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
 } from '@/lib/sonar-buscas-recentes';
-import { calcularVeredito, contextoNicho } from '@/lib/veredito-sonar';
+import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
-  fetchPainelSonar, fetchVendasSonar, fichasAtivas, fichasSemVendedor, passosProgresso,
-  type PainelSonar, type EtapaProgresso, type RaioXNicho, type RespostaVendasSonar,
+  fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, normalizarSerieVisitas, passosProgresso,
+  type EtapaProgresso, type ItemVendasSonar, type RaioXNicho, type RespostaVendasSonar,
+  type VisitasAnuncio,
 } from '@/lib/sonar';
 import {
-  cruzarFichaComVendas, espalhamentoPct, vendedorMaisForte, visitasPorOferta, type VendasFicha,
-} from '@/lib/sonar-cruzamento';
-import {
-  aplicarFiltros, temFiltroAtivo, FILTROS_VAZIOS, type FiltrosSonar,
+  aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
-
-type Ficha = PainelSonar['fichas'][number];
 
 function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
   return (
@@ -94,8 +89,8 @@ function RaioXBarra({ raioX }: { raioX: RaioXNicho }) {
   );
 }
 
-// Bloco de vendas estimadas (ADR-0122): carrega em paralelo ao painel oficial e degrada sozinho —
-// Apify fora do ar ou sem token nunca derruba o resto do Sonar.
+// Bloco de vendas estimadas (ADR-0122): carrega em paralelo e degrada sozinho — Apify fora do ar
+// ou sem token nunca derruba o resto do Sonar.
 function SonarVendas({ resp, carregando, erro }: {
   resp: RespostaVendasSonar | undefined; carregando: boolean; erro: boolean;
 }) {
@@ -210,13 +205,11 @@ function SonarVendas({ resp, carregando, erro }: {
   );
 }
 
-// Popover de filtros (D13): controles marcados † no plano (dependem da Apify) só renderizam com
-// `grupoBDisponivel` — mesma regra das colunas do Grupo B (D5). `esconderLojaOficial` é da API
-// oficial e aparece sempre.
-function SonarFiltrosPopover({ filtros, setFiltros, grupoBDisponivel }: {
-  filtros: FiltrosSonar;
-  setFiltros: (f: FiltrosSonar) => void;
-  grupoBDisponivel: boolean;
+// Popover de filtros (D13/ADR-0127): a tabela inteira agora nasce da Apify — ou tem tudo, ou não
+// tem tabela (D16) — então todos os controles renderizam sempre, sem condicional de grupo.
+function SonarFiltrosPopover({ filtros, setFiltros }: {
+  filtros: FiltrosAnuncios;
+  setFiltros: (f: FiltrosAnuncios) => void;
 }) {
   const num = (v: string) => {
     if (v.trim() === '') return null;
@@ -235,7 +228,7 @@ function SonarFiltrosPopover({ filtros, setFiltros, grupoBDisponivel }: {
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-2">
             <label htmlFor="sonar-filtro-preco-min" className="text-xs">
-              Preço mín. (mediana)
+              Preço mín.
               <Input
                 id="sonar-filtro-preco-min"
                 type="number"
@@ -246,7 +239,7 @@ function SonarFiltrosPopover({ filtros, setFiltros, grupoBDisponivel }: {
               />
             </label>
             <label htmlFor="sonar-filtro-preco-max" className="text-xs">
-              Preço máx. (mediana)
+              Preço máx.
               <Input
                 id="sonar-filtro-preco-max"
                 type="number"
@@ -267,75 +260,56 @@ function SonarFiltrosPopover({ filtros, setFiltros, grupoBDisponivel }: {
                 className="mt-1"
               />
             </label>
-            <label htmlFor="sonar-filtro-max-vendedores" className="text-xs">
-              Máx. vendedores
+            <label htmlFor="sonar-filtro-min-vendas" className="text-xs">
+              Mín. vendas (acum.)
               <Input
-                id="sonar-filtro-max-vendedores"
+                id="sonar-filtro-min-vendas"
                 type="number"
                 inputMode="numeric"
-                value={filtros.maxVendedores ?? ''}
-                onChange={(e) => setFiltros({ ...filtros, maxVendedores: num(e.target.value) })}
+                value={filtros.minVendas ?? ''}
+                onChange={(e) => setFiltros({ ...filtros, minVendas: num(e.target.value) })}
                 className="mt-1"
               />
             </label>
-            {grupoBDisponivel && (
-              <>
-                <label htmlFor="sonar-filtro-min-vendas" className="text-xs">
-                  Mín. vendas (acum.)
-                  <Input
-                    id="sonar-filtro-min-vendas"
-                    type="number"
-                    inputMode="numeric"
-                    value={filtros.minVendas ?? ''}
-                    onChange={(e) => setFiltros({ ...filtros, minVendas: num(e.target.value) })}
-                    className="mt-1"
-                  />
-                </label>
-                <label htmlFor="sonar-filtro-min-nota" className="text-xs">
-                  Nota mín.
-                  <Input
-                    id="sonar-filtro-min-nota"
-                    type="number"
-                    inputMode="decimal"
-                    min={0}
-                    max={5}
-                    value={filtros.minNota ?? ''}
-                    onChange={(e) => setFiltros({ ...filtros, minNota: num(e.target.value) })}
-                    className="mt-1"
-                  />
-                </label>
-              </>
-            )}
+            <label htmlFor="sonar-filtro-min-nota" className="text-xs">
+              Nota mín.
+              <Input
+                id="sonar-filtro-min-nota"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={5}
+                value={filtros.minNota ?? ''}
+                onChange={(e) => setFiltros({ ...filtros, minNota: num(e.target.value) })}
+                className="mt-1"
+              />
+            </label>
           </div>
           <div className="flex flex-col gap-2 border-t pt-2.5">
-            {grupoBDisponivel && (
-              <>
-                <label htmlFor="sonar-filtro-so-full" className="flex items-center justify-between text-sm">
-                  Só FULL
-                  <Switch
-                    id="sonar-filtro-so-full"
-                    checked={filtros.soFull}
-                    onCheckedChange={(v) => setFiltros({ ...filtros, soFull: v })}
-                  />
-                </label>
-                <label htmlFor="sonar-filtro-so-desconto" className="flex items-center justify-between text-sm">
-                  Só com desconto ativo
-                  <Switch
-                    id="sonar-filtro-so-desconto"
-                    checked={filtros.soComDesconto}
-                    onCheckedChange={(v) => setFiltros({ ...filtros, soComDesconto: v })}
-                  />
-                </label>
-                <label htmlFor="sonar-filtro-esconder-patrocinados" className="flex items-center justify-between text-sm">
-                  Esconder patrocinados
-                  <Switch
-                    id="sonar-filtro-esconder-patrocinados"
-                    checked={filtros.esconderPatrocinados}
-                    onCheckedChange={(v) => setFiltros({ ...filtros, esconderPatrocinados: v })}
-                  />
-                </label>
-              </>
-            )}
+            <label htmlFor="sonar-filtro-so-full" className="flex items-center justify-between text-sm">
+              Só FULL
+              <Switch
+                id="sonar-filtro-so-full"
+                checked={filtros.soFull}
+                onCheckedChange={(v) => setFiltros({ ...filtros, soFull: v })}
+              />
+            </label>
+            <label htmlFor="sonar-filtro-so-desconto" className="flex items-center justify-between text-sm">
+              Só com desconto ativo
+              <Switch
+                id="sonar-filtro-so-desconto"
+                checked={filtros.soComDesconto}
+                onCheckedChange={(v) => setFiltros({ ...filtros, soComDesconto: v })}
+              />
+            </label>
+            <label htmlFor="sonar-filtro-esconder-patrocinados" className="flex items-center justify-between text-sm">
+              Esconder patrocinados
+              <Switch
+                id="sonar-filtro-esconder-patrocinados"
+                checked={filtros.esconderPatrocinados}
+                onCheckedChange={(v) => setFiltros({ ...filtros, esconderPatrocinados: v })}
+              />
+            </label>
             <label htmlFor="sonar-filtro-esconder-oficial" className="flex items-center justify-between text-sm">
               Esconder loja oficial
               <Switch
@@ -356,25 +330,17 @@ export default function PulseSonar() {
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
   const [, forcarRender] = useState(0);
   const iniciadoEmRef = useRef(0);
-  const [semVendedorAberto, setSemVendedorAberto] = useState(false);
-  const [fichaSimulando, setFichaSimulando] = useState<PainelSonar['fichas'][number] | null>(null);
+  const [anuncioSimulando, setAnuncioSimulando] = useState<AnuncioSimulavel | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
-  // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as 4 etapas
-  // concluídas antes de trocar pelo resultado (em vez de sumir direto na 3ª, travada).
+  // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as etapas
+  // concluídas antes de trocar pelo resultado.
   const [mostrarProgresso, setMostrarProgresso] = useState(false);
   // Filtros da tabela (D13): 100% client-side, estado local — sem URL/localStorage nesta entrega.
-  const [filtros, setFiltros] = useState<FiltrosSonar>(FILTROS_VAZIOS);
+  const [filtros, setFiltros] = useState<FiltrosAnuncios>(FILTROS_ANUNCIOS_VAZIOS);
 
-  const { data: painel, isFetching, isError, error } = useQuery({
-    queryKey: ['pulse', 'sonar', termoBuscado],
-    queryFn: () => fetchPainelSonar(termoBuscado!),
-    enabled: !!termoBuscado,
-    staleTime: Infinity, // cache real é o Redis (24h) — o front nunca refaz a mesma busca sozinho
-  });
-
-  // Vendas estimadas (ADR-0122): paralelo e independente do painel oficial. retry desligado —
-  // cada tentativa sem cache dispara um run pago na Apify.
-  const { data: vendas, isFetching: vendasCarregando, isError: vendasErro } = useQuery({
+  // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
+  // sem cache dispara um run pago (US$ 0,10).
+  const { data: vendas, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['pulse', 'sonar-vendas', termoBuscado],
     queryFn: () => fetchVendasSonar(termoBuscado!),
     enabled: !!termoBuscado,
@@ -382,12 +348,44 @@ export default function PulseSonar() {
     retry: false,
   });
 
-  // A tela de resultado só abre quando o painel oficial E as vendas resolverem (pedido do Diego
-  // 18/08: "quando aparecer a tela, já tem que estar todas as informações"). Sem isso o painel
-  // estreava com esqueleto no bloco de vendas e o veredito trocava de nível na frente do
-  // operador quando a Apify respondia. Vendas com erro também resolve (retry: false) — falha
-  // nunca prende o operador no stepper.
-  const carregando = isFetching || vendasCarregando;
+  const itens = useMemo(
+    () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
+    [vendas],
+  );
+  const itemIds = useMemo(
+    () => itens.map((i) => i.item_id).filter((x): x is string => x != null),
+    [itens],
+  );
+
+  // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
+  const { data: visitas, isFetching: visitasCarregando } = useQuery({
+    queryKey: ['pulse', 'sonar-visitas', termoBuscado],
+    queryFn: () => fetchVisitasSonar(itemIds),
+    enabled: itemIds.length > 0,
+    staleTime: Infinity,
+    retry: 1,
+  });
+
+  // D8: entrada ausente/null = "—" (falha ou sem conexão); {total: 0} = "0" (zero medido).
+  const visitasPorItem = useMemo(() => {
+    const map = new Map<string, VisitasAnuncio | null>();
+    if (visitas?.conectado) {
+      for (const [id, v] of Object.entries(visitas.por_item)) map.set(id, v);
+    }
+    return map;
+  }, [visitas]);
+
+  const visitasTotal = useMemo(() => {
+    // LOUD: soma só o medido; nada medido → null, nunca 0.
+    const medidos = [...visitasPorItem.values()].filter((v): v is VisitasAnuncio => v != null);
+    return medidos.length > 0 ? medidos.reduce((a, v) => a + v.total, 0) : null;
+  }, [visitasPorItem]);
+
+  const carregando = isFetching || visitasCarregando;
+  const { visiveis, excluidasSemDado } = useMemo(
+    () => aplicarFiltrosAnuncios(itens, visitasPorItem, filtros),
+    [itens, visitasPorItem, filtros],
+  );
 
   // Avanço do stepper temporizado no cliente: cada edge responde numa chamada única.
   useEffect(() => {
@@ -416,264 +414,151 @@ export default function PulseSonar() {
     garimpar(t);
   };
 
-  // Memoizados: entram como dependência dos useMemo abaixo (filtros/cruzamento) — sem isso o
-  // array novo a cada render invalidaria o memo sempre.
-  const ativas = useMemo(() => (painel ? fichasAtivas(painel) : []), [painel]);
-  const vazias = useMemo(() => (painel ? fichasSemVendedor(painel) : []), [painel]);
-
-  // Colunas do Grupo B só existem com Apify configurada E `por_anuncio` presente (D5) — cache v4
-  // antigo sem o índice não tem como cruzar. Fora daqui a tabela é IDÊNTICA à de antes.
-  const grupoBDisponivel = vendas?.configurado === true && !!vendas.por_anuncio;
-
-  // Cruzamento ficha↔anúncio (D4) calculado UMA vez por ficha aqui, nunca por célula — Map
-  // reaproveitado por todas as colunas do Grupo B e pelos filtros.
-  const vendasPorFicha = useMemo(() => {
-    const porAnuncio = vendas?.configurado === true ? vendas.por_anuncio : undefined;
-    const map = new Map<string, VendasFicha | null>();
-    if (!painel) return map;
-    for (const f of painel.fichas) map.set(f.product_id, cruzarFichaComVendas(f, porAnuncio));
-    return map;
-  }, [painel, vendas]);
-
-  // Filtros (D13/D14): aplicados só nas rows da tabela — KPIs e veredito continuam com `painel`
-  // inteiro, nunca com `ativas` filtrada (senão o veredito mudaria com o filtro).
-  const { visiveis: fichasVisiveis, excluidasSemDado } = useMemo(
-    () => aplicarFiltros(ativas, vendasPorFicha, filtros),
-    [ativas, vendasPorFicha, filtros],
-  );
-
-  // Sem `defaultSort`: a ordem que chega da API é o ranking de relevância do ML, e perder isso ao
-  // abrir a tela custaria mais que a conveniência de já vir ordenado por alguma coluna.
-  const colunasFichas = useMemo<Column<Ficha>[]>(() => {
-    const colProduto: Column<Ficha> = {
-      key: 'nome',
-      header: 'Produto',
-      className: 'max-w-xs',
-      cell: (f) => {
-        const vf = grupoBDisponivel ? vendasPorFicha.get(f.product_id) : null;
-        return (
-          <div className="max-w-xs">
-            <span className="block truncate" title={f.nome}>{f.nome}</span>
-            {(vf?.selo || vf?.patrocinado === true) && (
-              <div className="mt-0.5 flex flex-wrap gap-1">
-                {vf?.selo && <Badge variant="secondary" className="text-[10px]">{vf.selo}</Badge>}
-                {vf?.patrocinado === true && <Badge variant="outline" className="text-[10px]">Patrocinado</Badge>}
-              </div>
-            )}
-          </div>
-        );
-      },
-      sortValue: (f) => f.nome,
-    };
-
-    const colOfertas: Column<Ficha> = {
-      key: 'ofertas',
-      header: 'Ofertas',
-      className: 'tabular-nums',
-      cell: (f) => f.ofertas,
-      sortValue: (f) => f.ofertas,
-    };
-
-    const colVendas: Column<Ficha> = {
-      key: 'vendidos',
-      header: 'Vendas (acum.)',
-      className: 'tabular-nums',
-      cell: (f) => {
-        const vf = vendasPorFicha.get(f.product_id);
-        if (vf?.vendidos == null) return <span title="Sem anúncio correspondente na amostra">—</span>;
-        return (
-          <span title="Acumulado da vida do anúncio, arredondado em faixas pelo ML — não é ritmo mensal">
-            +{fmtMilhar(vf.vendidos)}
-          </span>
-        );
-      },
-      sortValue: (f) => vendasPorFicha.get(f.product_id)?.vendidos ?? null,
-    };
-
-    const colFaturamento: Column<Ficha> = {
-      key: 'faturamento',
-      header: 'Faturamento (acum.)',
-      className: 'tabular-nums',
-      cell: (f) => {
-        const vf = vendasPorFicha.get(f.product_id);
-        if (vf?.faturamento == null) return <span title="Sem anúncio correspondente na amostra">—</span>;
-        return (
-          <span title="≈ vendidos × preço atual do anúncio — o preço pode ter variado ao longo da vida">
-            ≈ {fmtBRL(vf.faturamento)}
-          </span>
-        );
-      },
-      sortValue: (f) => vendasPorFicha.get(f.product_id)?.faturamento ?? null,
-    };
-
-    const colPreco: Column<Ficha> = {
-      key: 'preco',
-      header: 'Preço',
-      className: 'tabular-nums',
-      cell: (f) => {
-        if (!f.preco) return '—';
-        const espalhamento = espalhamentoPct(f.preco);
-        const vf = grupoBDisponivel ? vendasPorFicha.get(f.product_id) : null;
-        return (
-          <div>
-            <span className="font-medium">{fmtBRL(f.preco.mediana)}</span>
-            <div className="text-xs text-muted-foreground">
-              {fmtBRL(f.preco.min)} – {fmtBRL(f.preco.max)}
-              {espalhamento != null && ` · +${Math.round(espalhamento)}%`}
-            </div>
-            {vf?.preco_anterior != null && vf.desconto_pct != null && (
-              <div className="text-xs text-muted-foreground" title="desconto do anúncio na amostra Apify">
-                de <span className="line-through">{fmtBRL(vf.preco_anterior)}</span> · {vf.desconto_pct}% OFF
-              </div>
-            )}
-          </div>
-        );
-      },
-      // Sort mudou de min pra mediana (T8): mediana é o número principal exibido agora — se o
-      // Diego preferir o piso de volta, é reverter esta linha.
-      sortValue: (f) => f.preco?.mediana ?? null,
-    };
-
-    const colAvaliacao: Column<Ficha> = {
-      key: 'avaliacao',
-      header: 'Avaliação',
-      className: 'tabular-nums',
-      cell: (f) => {
-        const vf = vendasPorFicha.get(f.product_id);
-        if (vf?.avaliacao_nota == null) return <span title="Sem anúncio correspondente na amostra">—</span>;
-        return (
-          <div>
-            <span>★ {vf.avaliacao_nota.toFixed(1)}</span>
-            {vf.avaliacao_qtd != null && <div className="text-xs text-muted-foreground">({vf.avaliacao_qtd})</div>}
-          </div>
-        );
-      },
-      sortValue: (f) => vendasPorFicha.get(f.product_id)?.avaliacao_nota ?? null,
-    };
-
-    const colPosicao: Column<Ficha> = {
-      key: 'posicao',
-      header: 'Posição',
-      className: 'tabular-nums',
-      cell: (f) => {
-        const vf = vendasPorFicha.get(f.product_id);
-        const titulo = 'Posição orgânica na busca do ML (amostra)';
-        if (vf?.posicao_organica == null) return <span title={titulo}>—</span>;
-        return <span title={titulo}>#{vf.posicao_organica}</span>;
-      },
-      sortValue: (f) => vendasPorFicha.get(f.product_id)?.posicao_organica ?? null,
-    };
-
-    const colVisitas: Column<Ficha> = {
-      key: 'visitas',
-      header: 'Visitas (30d)',
-      className: 'tabular-nums',
-      cell: (f) => {
-        if (f.visitas_30d == null) return <span title="Não medido">—</span>;
-        const porOferta = visitasPorOferta(f.visitas_30d, f.ofertas);
-        return (
-          <div className="flex items-center gap-2">
-            <div>
-              <span>{fmtInt(f.visitas_30d)}</span>
-              {porOferta != null && (
-                <div
-                  className="text-xs text-muted-foreground"
-                  title={`Visitas do anúncio ganhador ÷ nº de ofertas (${f.ofertas})`}
-                >
-                  ≈ {fmtInt(Math.round(porOferta))}/oferta
-                </div>
-              )}
-            </div>
-            <Sparkline dados={f.visitas_por_dia} />
-          </div>
-        );
-      },
-      sortValue: (f) => f.visitas_30d ?? null,
-    };
-
-    const colEnvio: Column<Ficha> = {
-      key: 'envio',
-      header: 'Envio',
-      className: 'text-xs',
-      cell: (f) => {
-        const vf = vendasPorFicha.get(f.product_id);
-        const label = vf?.full === true ? 'FULL' : vf?.flex === true ? 'FLEX' : null;
-        return (
-          <div>
-            <div className="flex items-center gap-1">
-              {label ? <Badge variant="outline">{label}</Badge> : <span title="Sem anúncio correspondente na amostra">—</span>}
-              {vf?.internacional === true && <Globe className="h-3.5 w-3.5 text-info" aria-label="Internacional" />}
-            </div>
-            <div className="text-muted-foreground">frete grátis {f.frete_gratis_pct}%</div>
-          </div>
-        );
-      },
-    };
-
-    const colVendedores: Column<Ficha> = {
-      key: 'vendedores',
-      header: 'Vendedores / UF',
-      className: 'text-xs text-muted-foreground',
-      cell: (f) => {
-        const ufs = [...new Set(f.vendedores.map((v) => v.uf).filter((uf): uf is string => !!uf))];
-        const top = vendedorMaisForte(f.vendedores);
-        const oficial = f.vendedores.some((v) => v.loja_oficial);
-        return (
-          <div>
-            <div className="flex items-center gap-1">
-              <span>{f.vendedores.length} {ufs.length > 0 && `(${ufs.join(', ')})`}</span>
-              {oficial && <Badge variant="secondary">Oficial</Badge>}
-            </div>
-            {top && (
-              <div>top: {fmtMilhar(top.transacoes_total)} vendas{top.uf && ` · ${top.uf}`}</div>
-            )}
-          </div>
-        );
-      },
-      sortValue: (f) => f.vendedores.length,
-    };
-
-    const colAcao: Column<Ficha> = {
-      key: 'acao',
-      header: '',
-      // `/p/{product_id}` leva à ficha de catálogo, onde as ofertas dos concorrentes aparecem lado
-      // a lado — é o link possível: a API não devolve a URL do anúncio de terceiro. Mesmo formato
-      // usado no dialog de detalhe do Radar e aceito pelo "Adicionar produto".
-      cell: (f) => (
-        <div className="flex items-center justify-end gap-1.5">
-          <Button variant="outline" size="sm" onClick={() => setFichaSimulando(f)}>
-            Simular margem
-          </Button>
-          <Button asChild variant="ghost" size="icon-sm">
-            <a
-              href={`https://www.mercadolivre.com.br/p/${f.product_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Abrir "${f.nome}" no Mercado Livre (nova aba)`}
-              title="Abrir no Mercado Livre"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          </Button>
+  // Sem `defaultSort`: a ordem que chega da amostra é o ranking de relevância do ML, e perder
+  // isso ao abrir a tela custaria mais que a conveniência de já vir ordenado por alguma coluna.
+  const colunas = useMemo<Column<ItemVendasSonar>[]>(() => [
+    {
+      key: 'posicao', header: '#', className: 'tabular-nums',
+      cell: (i) => (
+        <div>
+          {i.posicao != null ? `#${i.posicao}` : <span title="Posição não veio na amostra">—</span>}
+          {i.patrocinado === true && <Badge variant="outline" className="ml-1 text-[10px]">Patrocinado</Badge>}
         </div>
       ),
-    };
+      sortValue: (i) => i.posicao,
+    },
+    {
+      key: 'anuncio', header: 'Anúncio', className: 'max-w-xs',
+      cell: (i) => (
+        <div className="flex max-w-xs items-center gap-2">
+          {i.imagem && <img src={i.imagem} alt="" className="h-9 w-9 shrink-0 rounded bg-white object-contain" />}
+          <div className="min-w-0">
+            <span className="block truncate" title={i.titulo}>{i.titulo}</span>
+            {(i.selo || i.catalog_product_id) && (
+              <div className="mt-0.5 flex flex-wrap gap-1">
+                {i.selo && <Badge variant="secondary" className="text-[10px]">{i.selo}</Badge>}
+                {i.catalog_product_id && (
+                  <Badge variant="outline" className="text-[10px]" title={`Anúncio vinculado à ficha ${i.catalog_product_id}`}>
+                    Catálogo
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+      sortValue: (i) => i.titulo,
+    },
+    {
+      key: 'preco', header: 'Preço', className: 'tabular-nums',
+      cell: (i) => {
+        if (i.preco == null) return '—';
+        return (
+          <div>
+            <span className="font-medium">{fmtBRL(i.preco)}</span>
+            {i.preco_anterior != null && i.desconto_pct != null && (
+              <div className="text-xs text-muted-foreground">
+                de <span className="line-through">{fmtBRL(i.preco_anterior)}</span> · {i.desconto_pct}% OFF
+              </div>
+            )}
+          </div>
+        );
+      },
+      sortValue: (i) => i.preco,
+    },
+    {
+      key: 'vendidos', header: 'Vendidos (acum.)', className: 'tabular-nums',
+      cell: (i) => i.vendidos == null
+        ? <span title="O ML não exibe o dado para este anúncio">—</span>
+        : <span title="Acumulado da vida do anúncio, faixa piso do ML — não é ritmo">+{fmtMilhar(i.vendidos)}</span>,
+      sortValue: (i) => i.vendidos,
+    },
+    {
+      key: 'faturamento', header: 'Faturamento (acum.)', className: 'tabular-nums',
+      cell: (i) => i.vendidos == null || i.preco == null
+        ? <span title="Sem vendidos ou preço — não derivamos">—</span>
+        : <span title="≈ vendidos × preço atual — o preço pode ter variado ao longo da vida">≈ {fmtBRL(i.vendidos * i.preco)}</span>,
+      sortValue: (i) => (i.vendidos != null && i.preco != null ? i.vendidos * i.preco : null),
+    },
+    {
+      key: 'avaliacao', header: 'Avaliação', className: 'tabular-nums',
+      cell: (i) => i.avaliacao_nota == null ? '—' : (
+        <div>
+          <span>★ {i.avaliacao_nota.toFixed(1)}</span>
+          {i.avaliacao_qtd != null && <div className="text-xs text-muted-foreground">({i.avaliacao_qtd})</div>}
+        </div>
+      ),
+      sortValue: (i) => i.avaliacao_nota,
+    },
+    {
+      key: 'visitas', header: 'Visitas (30d)', className: 'tabular-nums',
+      cell: (i) => {
+        const v = i.item_id != null ? visitasPorItem.get(i.item_id) ?? null : null;
+        // D8: null = falha/sem conexão → "—"; {total: 0} = ZERO MEDIDO → "0".
+        if (v == null) return <span title="Não medido (falha ou organização sem conexão ML)">—</span>;
+        return (
+          <div className="flex items-center gap-2">
+            <span>{fmtInt(v.total)}</span>
+            <Sparkline dados={normalizarSerieVisitas(v.por_dia)} />
+          </div>
+        );
+      },
+      sortValue: (i) => (i.item_id != null ? visitasPorItem.get(i.item_id)?.total ?? null : null),
+    },
+    {
+      key: 'vendedor', header: 'Loja', className: 'text-xs',
+      cell: (i) => (
+        <div className="flex items-center gap-1">
+          {i.vendedor ?? <span title="A amostra não identifica o rótulo de loja deste anúncio (cobertura ~65%)">—</span>}
+          {i.loja_oficial === true && <Badge variant="secondary">Oficial</Badge>}
+        </div>
+      ),
+      sortValue: (i) => i.vendedor,
+    },
+    {
+      key: 'envio', header: 'Envio', className: 'text-xs',
+      cell: (i) => {
+        const label = i.full === true ? 'FULL' : i.flex === true ? 'FLEX' : null;
+        return (
+          <div className="flex items-center gap-1">
+            {label ? <Badge variant="outline">{label}</Badge> : '—'}
+            {i.frete_gratis === true && <Truck className="h-3.5 w-3.5 text-info" aria-label="Frete grátis" />}
+            {i.internacional === true && <Globe className="h-3.5 w-3.5 text-info" aria-label="Internacional" />}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'acao', header: '',
+      cell: (i) => {
+        // D15: prioridade ao link da Apify; fallback = URL canônica montada do item_id.
+        const href = i.link ?? (i.item_id != null
+          ? `https://produto.mercadolivre.com.br/MLB-${i.item_id.replace(/^MLB/, '')}`
+          : null);
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setAnuncioSimulando({
+              id: i.item_id ?? i.titulo,
+              nome: i.titulo,
+              category_id: i.category_id ?? null,
+              preco_referencia: i.preco,
+            })}>
+              Simular margem
+            </Button>
+            {href && (
+              <Button asChild variant="ghost" size="icon-sm">
+                <a href={href} target="_blank" rel="noopener noreferrer"
+                  aria-label={`Abrir "${i.titulo}" no Mercado Livre (nova aba)`} title="Abrir no Mercado Livre">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </Button>
+            )}
+          </div>
+        );
+      },
+    },
+  ], [visitasPorItem]);
 
-    // Com Apify fora (D5) a tabela é EXATAMENTE a de antes: Produto, Ofertas, Preço, Visitas,
-    // Vendedores/UF, Ações. Com Apify dentro, "Ofertas" cede espaço aos 5 campos novos — 9
-    // colunas de dados + Ações no total (D11), sem estourar a largura do desktop.
-    return [
-      colProduto,
-      ...(grupoBDisponivel ? [] : [colOfertas]),
-      ...(grupoBDisponivel ? [colVendas, colFaturamento] : []),
-      colPreco,
-      ...(grupoBDisponivel ? [colAvaliacao, colPosicao] : []),
-      colVisitas,
-      ...(grupoBDisponivel ? [colEnvio] : []),
-      colVendedores,
-      colAcao,
-    ];
-  }, [grupoBDisponivel, vendasPorFicha]);
   const elapsedMs = iniciadoEmRef.current ? Date.now() - iniciadoEmRef.current : 0;
 
   return (
@@ -739,84 +624,67 @@ export default function PulseSonar() {
             icon={Search}
             title="O que o Sonar faz"
             description={
-              'Varre um nicho do Mercado Livre antes de você cadastrar o produto: fichas de '
-              + 'catálogo, concorrência, preço e demanda do nicho. Limites do dado: só cobre '
-              + 'produtos com ficha de catálogo, e a demanda é medida por visitas e ranking — o '
-              + 'Mercado Livre não expõe vendas exatas de terceiros.'
+              'Varre um nicho do Mercado Livre antes de você cadastrar o produto: os anúncios reais '
+              + 'da busca, vendas acumuladas, visitas e concorrência. Fonte: amostra dos 20 anúncios '
+              + 'mais relevantes (via Apify) + visitas da API oficial.'
             }
           />
         )
       ) : mostrarProgresso ? (
         <SonarProgresso passos={passosProgresso(elapsedMs, !carregando)} />
+      ) : vendas && !vendas.configurado ? (
+        // D16 modo 1: sem APIFY_TOKEN → estado vazio explícito, nada de tabela fantasma.
+        <EmptyState
+          icon={Search}
+          title="O Sonar depende da Apify"
+          description={'A tabela de anúncios nasce da amostra Apify. Configure o token '
+            + '(variável APIFY_TOKEN no backend) para prospectar. Sem ele não há dado — '
+            + 'não mostramos tela vazia fingindo nicho morto.'}
+        />
       ) : isError ? (
+        // D16 modo 2: run falhou/estourou o teto → erro com termo, causa e retry.
+        // NUNCA "0 anúncios encontrados" — mentiria dizendo que o nicho está vazio.
         <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-          <p className="text-sm font-medium text-destructive">Não foi possível prospectar este termo.</p>
+          <p className="text-sm font-medium text-destructive">
+            Não foi possível prospectar "{termoBuscado}".
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {error instanceof Error ? error.message : 'Erro desconhecido.'}
           </p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>
+            Tentar de novo
+          </Button>
         </div>
-      ) : painel ? (
+      ) : vendas?.configurado && itens.length === 0 ? (
+        // Run OK mas amostra vazia (raro): erro explícito, mesmo racional do modo 2. Amostra
+        // vazia NUNCA vira "nenhum anúncio encontrado" — painel em cache pode não ter a lista.
+        <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <p className="text-sm font-medium text-destructive">A amostra veio vazia para "{termoBuscado}".</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Isso é falha de coleta, não nicho sem anúncios. Busque de novo em instantes.
+          </p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Tentar de novo</Button>
+        </div>
+      ) : vendas?.configurado ? (
         <>
           <VereditoSonar
-            veredito={calcularVeredito(painel, vendas?.configurado ? vendas : null)}
-            contexto={contextoNicho(painel, vendas?.configurado ? vendas : null)}
+            veredito={calcularVereditoAnuncios(vendas, visitasTotal)}
+            contexto={contextoNichoAnuncios(vendas)}
           />
-
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <KpiCard size="compact" label="Visitas (30d)" value={fmtMilhar(painel.agregado.visitas_30d_total, 1)} icon={Eye} tom="info" />
-            <KpiCard
-              size="compact"
-              label="Fichas no catálogo"
-              // O ML satura `paging.total` em 10.000 — sem o "+" o número vira uma contagem falsa.
-              value={painel.total_catalogo >= 10_000
-                ? `${fmtMilhar(painel.total_catalogo)}+`
-                : fmtMilhar(painel.total_catalogo)}
-              hint={`${ativas.length + vazias.length} analisadas`}
-              icon={Package}
-              tom="info"
-            />
-            <KpiCard size="compact" label="Ofertas" value={fmtInt(painel.agregado.ofertas_total)} icon={TrendingUp} tom="info" />
-            <KpiCard size="compact" label="Vendedores distintos" value={painel.agregado.vendedores_distintos} icon={Users} tom="info" />
-            <KpiCard size="compact" label="Frete grátis" value={`${painel.agregado.frete_gratis_pct}%`} icon={Truck} tom="info" />
-          </div>
-
-          <SonarVendas resp={vendas} carregando={vendasCarregando} erro={vendasErro} />
-
-          {painel.agregado.visitas_por_dia.length > 0 && (
-            <Card className="mb-4 p-4">
-              <div className="mb-2 text-sm font-medium">Visitas por dia</div>
-              <div className="h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={painel.agregado.visitas_por_dia} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="grad-sonar" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="data" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
-                    <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={40} tickFormatter={(v) => fmtInt(Number(v))} />
-                    <RTooltip formatter={(v) => [fmtInt(Number(v)), 'Visitas']} labelClassName="text-foreground" contentStyle={{ fontSize: 12 }} />
-                    <Area type="monotone" dataKey="total" stroke="var(--primary)" strokeWidth={2} fill="url(#grad-sonar)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          )}
+          <SonarVendas resp={vendas} carregando={false} erro={false} />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} grupoBDisponivel={grupoBDisponivel} />
+            <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />
             <span className="text-xs text-muted-foreground">
-              {fichasVisiveis.length} de {ativas.length} fichas
-              {excluidasSemDado > 0 && temFiltroAtivo(filtros) && (
-                <span title="Fichas sem o dado do filtro ativo (null nunca vira 0) — não sumiram por serem ruins.">
+              {visiveis.length} de {itens.length} anúncios
+              {excluidasSemDado > 0 && temFiltroAnunciosAtivo(filtros) && (
+                <span title="Anúncios sem o dado do filtro ativo (null nunca vira 0) — não sumiram por serem ruins.">
                   {' '}· {excluidasSemDado} sem esse dado
                 </span>
               )}
             </span>
-            {temFiltroAtivo(filtros) && (
-              <Button variant="ghost" size="sm" onClick={() => setFiltros(FILTROS_VAZIOS)}>
+            {temFiltroAnunciosAtivo(filtros) && (
+              <Button variant="ghost" size="sm" onClick={() => setFiltros(FILTROS_ANUNCIOS_VAZIOS)}>
                 <X className="mr-1 h-3.5 w-3.5" />
                 Limpar filtros
               </Button>
@@ -824,50 +692,15 @@ export default function PulseSonar() {
           </div>
 
           <DataTable
-            columns={colunasFichas}
-            rows={fichasVisiveis}
-            rowKey={(f) => f.product_id}
+            columns={colunas}
+            rows={visiveis}
+            rowKey={(i) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`}
             empty={
-              temFiltroAtivo(filtros)
-                ? <EmptyState icon={Package} title="Nenhuma ficha passa pelos filtros ativos." />
-                : <EmptyState icon={Package} title="Nenhuma ficha com vendedor ativo para este termo." />
+              temFiltroAnunciosAtivo(filtros)
+                ? <EmptyState icon={Package} title="Nenhum anúncio passa pelos filtros ativos." />
+                : <EmptyState icon={Package} title="Nenhum anúncio na amostra." />
             }
           />
-
-          {painel.palavras_chave.length > 0 && (
-            <div className="mt-4">
-              <div className="mb-1.5 text-sm font-medium">Palavras-chave do nicho</div>
-              <div className="flex flex-wrap gap-1.5">
-                {painel.palavras_chave.map((p) => (
-                  <Badge key={p.termo} variant="secondary">{p.termo} ({p.contagem})</Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {vazias.length > 0 && (
-            <div className="mt-6">
-              <button
-                type="button"
-                className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
-                onClick={() => setSemVendedorAberto((o) => !o)}
-              >
-                {semVendedorAberto ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                Fichas de catálogo sem vendedor ativo ({vazias.length})
-              </button>
-              {semVendedorAberto && (
-                <div className="mt-2 rounded-lg border p-3">
-                  <p className="mb-2 text-xs text-muted-foreground">
-                    Essas fichas já existem no catálogo do Mercado Livre, mas ninguém está vendendo
-                    agora — pode ser oportunidade: a ficha está pronta e sem concorrência ativa.
-                  </p>
-                  <ul className="flex flex-col gap-1 text-sm">
-                    {vazias.map((f) => <li key={f.product_id}>{f.nome}</li>)}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
         </>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -875,7 +708,7 @@ export default function PulseSonar() {
         </div>
       )}
 
-      <DialogMargemSonar ficha={fichaSimulando} onFechar={() => setFichaSimulando(null)} />
+      <DialogMargemSonar ficha={anuncioSimulando} onFechar={() => setAnuncioSimulando(null)} />
     </div>
   );
 }

@@ -17,11 +17,11 @@ import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 
 type Origem = 'NACIONAL' | 'IMPORTADO';
 
-interface FichaSimulavel {
-  product_id: string;
+export interface AnuncioSimulavel {
+  id: string;                      // item_id do anúncio (ou título, se sem id) — só para reset
   nome: string;
-  category_id: string | null;
-  preco: { min: number; mediana: number; max: number } | null;
+  category_id: string | null;      // produtoCategoryID da Apify (20/20 medido) — sem preditor
+  preco_referencia: number | null; // preço atual do anúncio, pré-preenche o alvo
 }
 
 function LinhaRegime({ label, comissao, frete, freteMedido, margem }: {
@@ -58,7 +58,7 @@ function LinhaRegime({ label, comissao, frete, freteMedido, margem }: {
   );
 }
 
-export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel | null; onFechar: () => void }) {
+export function DialogMargemSonar({ ficha, onFechar }: { ficha: AnuncioSimulavel | null; onFechar: () => void }) {
   const aberto = ficha != null;
   const [custoStr, setCustoStr] = useState('');
   const [origem, setOrigem] = useState<Origem | null>(null);
@@ -85,18 +85,19 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
     onError: () => toast.error('Falha ao calcular a tarifa do Mercado Livre.'),
   });
 
-  // Reabrir com outra ficha reseta a simulação — mediana pré-preenchida, resto exige o operador.
+  // Reabrir com outro anúncio reseta a simulação — preço de referência pré-preenchido, resto
+  // exige o operador.
   useEffect(() => {
     // Mesmo padrão de numParaInput (viabilidade-linha.tsx): vírgula decimal, lido por
     // parseNumeroPtBr. String(10.995) direto vira "10.995", e o regex de milhar do parser lê
-    // isso como 10995 — a vírgula tira a ambiguidade. toFixed(2) evita cauda de float da mediana
-    // ((10.1+10.2)/2 = 10.149999999999999) vazando pro input.
-    setPrecoStr(ficha?.preco?.mediana != null ? ficha.preco.mediana.toFixed(2).replace('.', ',') : '');
+    // isso como 10995 — a vírgula tira a ambiguidade. toFixed(2) evita cauda de float do preço
+    // vazando pro input.
+    setPrecoStr(ficha?.preco_referencia != null ? ficha.preco_referencia.toFixed(2).replace('.', ',') : '');
     setCustoStr('');
     setOrigem(null);
     simular.reset();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- só reseta ao trocar de ficha
-  }, [ficha?.product_id, ficha?.preco?.mediana]);
+  }, [ficha?.id, ficha?.preco_referencia]);
 
   const podeSimular = !!ficha?.category_id && custo != null && custo > 0
     && precoAlvo != null && precoAlvo > 0 && aliquotaPct != null;
@@ -136,7 +137,7 @@ export function DialogMargemSonar({ ficha, onFechar }: { ficha: FichaSimulavel |
         </DialogHeader>
 
         {!ficha?.category_id ? (
-          <Badge variant="destructive">Categoria indisponível para esta ficha — não é possível simular.</Badge>
+          <Badge variant="destructive">Categoria indisponível para este anúncio — não é possível simular.</Badge>
         ) : (
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-2 gap-3">

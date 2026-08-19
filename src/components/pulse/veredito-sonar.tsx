@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { ChevronDown, Gauge, Minus, ShieldAlert, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { ContextoItem, ExplicacaoRegua, NivelFator, Veredito } from '@/lib/veredito-sonar';
+import type { ContextoItem, ExplicacaoRegua, NivelFator, VereditoAnuncios } from '@/lib/veredito-sonar';
 
 const CLS_VEREDITO = {
   alta: { borda: 'border-success/40', fundo: 'bg-success/5', texto: 'text-success' },
@@ -61,7 +61,7 @@ function MiniRegua({ regua }: { regua: ExplicacaoRegua }) {
   );
 }
 
-export function VereditoSonar({ veredito, contexto }: { veredito: Veredito; contexto: ContextoItem[] }) {
+export function VereditoSonar({ veredito, contexto }: { veredito: VereditoAnuncios; contexto: ContextoItem[] }) {
   const [aberto, setAberto] = useState(false);
   const cls = CLS_VEREDITO[veredito.nivel];
   const { explicacao } = veredito;
@@ -72,13 +72,25 @@ export function VereditoSonar({ veredito, contexto }: { veredito: Veredito; cont
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`text-lg font-semibold ${cls.texto}`}>{veredito.titulo}</span>
-            {veredito.semVendas && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                sem dados de venda
+            {veredito.parcial && (
+              <span
+                className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                title="Não foi possível avaliar a concorrência do nicho por completo — falta de dado não é sinal de negócio, nem para cima."
+              >
+                avaliação parcial
               </span>
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{veredito.motivo}</p>
+          {/* `montarMotivoAnuncios` só menciona o motivo da avaliação parcial quando o nível NÃO é
+              'baixa' (o gate de demanda já explica o 'baixa' sozinho) — sem esta linha o badge
+              "avaliação parcial" ficaria sem explicação visível nesse caso. */}
+          {veredito.parcial && veredito.nivel === 'baixa' && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Além disso, não foi possível avaliar a concorrência do nicho por completo — falta de
+              dado não é sinal de negócio.
+            </p>
+          )}
         </div>
       </div>
 
