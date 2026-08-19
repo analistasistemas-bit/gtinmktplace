@@ -21,6 +21,9 @@ const DEMANDA = { liquidezBoa: 0.70, vendasBoas: 5_000, vendasMinimas: 1_000, li
 const DISPUTA_V2 = { pulverizacaoConcentrada: 0.25, pulverizacaoAberta: 0.40, fullMuito: 60, fullPouco: 40 };
 const TRACAO_V2 = { boa: 350_000, media: 15_000 };
 const COBERTURA_MIN = 0.50; // "menos de 50% derruba" — 0,50 exato PASSA (oxford está nele)
+// Com a trava de cobertura sobra só a Demanda: `maximo` cai para 2 e `soma >= maximo - 1` faria a
+// Demanda 🟡 SOZINHA virar "oportunidade alta" (ADR-0127/D10, ajuste da Task 8).
+const PISO_FATORES_ALTA = 2;
 const PONTOS = { bom: 2, medio: 1, ruim: 0 };
 
 /** O card do ML imprime "NOME Loja oficial" e "NOME" para o MESMO vendedor (ZZ STORE / ZZ store
@@ -67,7 +70,8 @@ function veredito(m) {
   }
   const soma = fatores.reduce((a, nivel) => a + PONTOS[nivel], 0);
   const maximo = fatores.length * 2;
-  const nivel = (demanda === 'ruim' || soma <= maximo / 3) ? 'baixa' : soma >= maximo - 1 ? 'alta' : 'media';
+  const nivel = (demanda === 'ruim' || soma <= maximo / 3) ? 'baixa'
+    : (soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA) ? 'alta' : 'media';
   return { demanda, disputa, tracao, soma, maximo, nivel };
 }
 

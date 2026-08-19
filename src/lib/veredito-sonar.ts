@@ -487,7 +487,11 @@ export function subamostraNomeada(vendas: PainelVendasSonar): SubamostraNomeada 
     rotulos.add(i.vendedor);
     if (i.vendidos != null && i.preco != null) faturamento += i.vendidos * i.preco;
   }
-  const analisados = itens.length;
+  // Denominador é `itens_analisados` (o mesmo do script de calibração), não `itens.length`: no
+  // fallback por `por_anuncio` (cache v4 pré-ADR-0127) anúncio sem `item_id` some do índice, e
+  // dividir pelo que sobrou inflaria a cobertura — a trava D10 ficaria mais permissiva que a
+  // definição medida.
+  const analisados = vendas.itens_analisados;
   return {
     analisados,
     nomeados,

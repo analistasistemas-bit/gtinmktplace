@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   calcularVeredito, calcularVereditoAnuncios, contextoNicho, contextoNichoAnuncios, subamostraNomeada,
@@ -261,7 +262,7 @@ describe('contextoNicho — leitura complementar, fora do score', () => {
 // e o script divergirem, quem errou foi a implementação, não o corte.
 
 const fixture = (slug: string): { vendas: PainelVendasSonar; visitas_total: number | null } =>
-  JSON.parse(readFileSync(`src/lib/__tests__/fixtures/sonar-gabarito/${slug}.json`, 'utf8'));
+  JSON.parse(readFileSync(resolve(import.meta.dirname!, 'fixtures/sonar-gabarito', `${slug}.json`), 'utf8'));
 
 const itemV2 = (over: Partial<ItemVendasSonar> = {}): ItemVendasSonar => ({
   titulo: 'X', preco: 100, vendidos: 100, link: null, imagem: null, vendedor: 'LOJA-A',
