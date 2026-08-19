@@ -29,6 +29,18 @@ export function parseVisitasJanela(json: unknown): VisitasJanela | null {
   return { total: d.total_visits, por_dia };
 }
 
+/** Corpo da pulse-sonar-visitas: array de 1..20 item_ids (teto = amostra de 20, D4). Qualquer
+ *  coisa fora disso → null (400 no chamador). Dedup preserva a ordem. */
+export function validarItemIds(v: unknown): string[] | null {
+  if (!Array.isArray(v) || v.length === 0 || v.length > 20) return null;
+  const out: string[] = [];
+  for (const x of v) {
+    if (typeof x !== 'string' || x.trim() === '') return null;
+    if (!out.includes(x.trim())) out.push(x.trim());
+  }
+  return out;
+}
+
 const STOPWORDS = new Set(['de', 'do', 'da', 'para', 'com', 'em', 'e', 'o', 'a', 'un', 'kit', 'cm', 'mm']);
 
 export function extrairPalavrasChave(nomes: string[], limite = 20): Array<{ termo: string; contagem: number }> {

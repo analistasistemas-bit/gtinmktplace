@@ -127,3 +127,6 @@ verify_jwt = true
 # ADR-0122 (Sonar vendas): vendas estimadas via Apify — chamada pelo APP com o JWT do usuário.
 [functions.pulse-sonar-vendas]
 verify_jwt = true
+# ADR-0127 (Sonar por anúncio): visitas 30d por item — chamada pelo APP com o JWT do usuário.
+[functions.pulse-sonar-visitas]
+verify_jwt = true

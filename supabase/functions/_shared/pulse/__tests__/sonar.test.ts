@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extrairPalavrasChave, montarPainelSonar, parseFichasBusca, parseVisitasJanela, resumoPrecos, type ResultadoFicha } from '../sonar.ts';
+import { extrairPalavrasChave, montarPainelSonar, parseFichasBusca, parseVisitasJanela, resumoPrecos, validarItemIds, type ResultadoFicha } from '../sonar.ts';
 
 describe('parseFichasBusca', () => {
   it('extrai id/nome/domain e ignora entradas sem id', () => {
@@ -107,5 +107,18 @@ describe('montarPainelSonar', () => {
     expect(painel.agregado.ofertas_total).toBe(15);
     expect(painel.agregado.vendedores_distintos).toBe(3); // seller 2 repete entre fichas
     expect(painel.agregado.frete_gratis_pct).toBe(33); // (50%*10 + 0%*5) / 15 = 33.3% → arredondado
+  });
+});
+
+describe('validarItemIds — trust boundary da pulse-sonar-visitas (teto 20 = amostra D4)', () => {
+  it('aceita lista válida e deduplica', () => {
+    expect(validarItemIds(['MLB1', 'MLB2', 'MLB1'])).toEqual(['MLB1', 'MLB2']);
+  });
+  it('rejeita vazio, >20, não-array e item não-string/vazio', () => {
+    expect(validarItemIds([])).toBeNull();
+    expect(validarItemIds(Array.from({ length: 21 }, (_, i) => `MLB${i}`))).toBeNull();
+    expect(validarItemIds('MLB1')).toBeNull();
+    expect(validarItemIds(['MLB1', 42])).toBeNull();
+    expect(validarItemIds(['MLB1', ' '])).toBeNull();
   });
 });
