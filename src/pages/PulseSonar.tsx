@@ -359,7 +359,7 @@ export default function PulseSonar() {
 
   // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
   const { data: visitas, isFetching: visitasCarregando } = useQuery({
-    queryKey: ['pulse', 'sonar-visitas', termoBuscado],
+    queryKey: ['pulse', 'sonar-visitas', termoBuscado, itemIds],
     queryFn: () => fetchVisitasSonar(itemIds),
     enabled: itemIds.length > 0,
     staleTime: Infinity,
@@ -655,9 +655,26 @@ export default function PulseSonar() {
             Tentar de novo
           </Button>
         </div>
+      ) : vendas?.configurado && itens.length === 0 && vendas.itens_analisados > 0 ? (
+        // Discriminante `itens_analisados` (D16): cache v4 gravado ANTES desta entrega tem
+        // itens_analisados > 0 mas não tem `itens`/`por_anuncio` (payload pré-ADR-0127) — migração
+        // transitória, TTL 7 dias, desaparece sozinho. SEM botão de retry: refetch() bate na mesma
+        // chave de cache e devolve o MESMO payload (decisão: sem force-refresh no backend, cada
+        // run custa US$ 0,10 — não vira botão de queimar orçamento por impaciência).
+        <div role="alert" className="rounded-lg border border-warning/30 bg-warning/10 p-4">
+          <p className="text-sm font-medium text-warning">
+            O resultado em cache para "{termoBuscado}" é de antes desta atualização.
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Esse painel foi gravado antes de o Sonar passar a listar os anúncios da busca (em vez de
+            fichas de catálogo) e não tem essa lista. Ele se renova sozinho em até 7 dias — buscar
+            outro termo funciona normalmente.
+          </p>
+        </div>
       ) : vendas?.configurado && itens.length === 0 ? (
-        // Run OK mas amostra vazia (raro): erro explícito, mesmo racional do modo 2. Amostra
-        // vazia NUNCA vira "nenhum anúncio encontrado" — painel em cache pode não ter a lista.
+        // itens_analisados === 0: aqui sim é falha de coleta, não cache antigo incompleto — o
+        // retry funciona porque falha de run não é cacheada (pulse-sonar-vendas/index.ts). Amostra
+        // vazia NUNCA vira "nenhum anúncio encontrado".
         <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">A amostra veio vazia para "{termoBuscado}".</p>
           <p className="mt-1 text-sm text-muted-foreground">
