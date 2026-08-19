@@ -83,6 +83,8 @@ export interface ItemVendasSonar {
   preco_anterior: number | null;
   desconto_pct: number | null;
   flex: boolean | null;
+  /** Espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem. */
+  category_id?: string | null;
 }
 
 /** Contagens DA AMOSTRA de anúncios (a UI rotula); só `total_anuncios` é o absoluto do nicho. */
@@ -108,6 +110,10 @@ export interface PainelVendasSonar {
   raio_x: RaioXNicho;
   /** Opcional: entrada v4 cacheada antes do ADR-0125 (D2, campo aditivo) não tem o índice. */
   por_anuncio?: Record<string, ItemVendasSonar>;
+  /** Espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem. */
+  itens?: ItemVendasSonar[];
+  /** Espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem. */
+  historico_gravado?: boolean;
 }
 
 /** `configurado: false` = APIFY_TOKEN ausente no backend — indisponível, não erro (ADR-0122 §5). */
@@ -127,13 +133,64 @@ export async function fetchVendasSonar(termo: string): Promise<RespostaVendasSon
   return json as RespostaVendasSonar;
 }
 
+// --- Visitas por anúncio (ADR-0127/D3): espelho de pulse-sonar-visitas -------------------------
+
+export interface VisitasAnuncio { total: number; por_dia: Array<{ data: string; total: number }> }
+
+/** `conectado: false` = org sem conexão ML — indisponível, não erro (D16, único modo degradado).
+ *  `por_item[id] = null` = falha de chamada; `total: 0` = ZERO MEDIDO (D8) — nunca confundir. */
+export type RespostaVisitasSonar =
+  | { conectado: false }
+  | { conectado: true; por_item: Record<string, VisitasAnuncio | null> };
+
+export async function fetchVisitasSonar(itemIds: string[]): Promise<RespostaVisitasSonar> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sem sessão');
+  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-visitas`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ item_ids: itemIds }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  return json as RespostaVisitasSonar;
+}
+
+/** Lista da tabela: amostra completa quando o painel é novo; cache v4 antigo cai para
+ *  por_anuncio (perde só item sem item_id, que também não teria visitas/snapshot). */
+export function itensDaAmostra(vendas: PainelVendasSonar): ItemVendasSonar[] {
+  return vendas.itens ?? Object.values(vendas.por_anuncio ?? {});
+}
+
+/**
+ * D9 (medido 19/08): /visits/time_window OMITE dias sem visita e devolve pontos FORA DE ORDEM
+ * (7 pontos numa janela de 30 dias). Ordena e preenche com 0 os dias ausentes — senão o
+ * sparkline comprime 30 dias em 7 e mente sobre o período. O 0 preenchido é legítimo (janela
+ * fechada), diferente de "sem dado" (D8).
+ * REFUTADO (não tentar de novo): nº de pontos devolvidos NÃO é proxy de idade do anúncio.
+ */
+export function normalizarSerieVisitas(
+  porDia: Array<{ data: string; total: number }>,
+  dias = 30,
+  hoje = new Date(),
+): Array<{ data: string; total: number }> {
+  const mapa = new Map(porDia.map((p) => [p.data, p.total]));
+  const serie: Array<{ data: string; total: number }> = [];
+  for (let i = dias - 1; i >= 0; i--) {
+    const d = new Date(hoje);
+    d.setDate(d.getDate() - i);
+    const data = d.toISOString().slice(0, 10);
+    serie.push({ data, total: mapa.get(data) ?? 0 });
+  }
+  return serie;
+}
+
 // --- Progresso por etapas (pedido do Diego 17/08) ---------------------------------------------
 
 export const ETAPAS_SONAR = [
-  'Buscando fichas do catálogo',
-  'Analisando concorrentes',
+  'Buscando anúncios do nicho',
+  'Analisando vendas e concorrência',
   'Medindo visitas',
-  'Consultando vendas do nicho',
   'Montando painel',
 ] as const;
 
