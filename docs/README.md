@@ -27,9 +27,9 @@ entender e operar o sistema:
 | Fazer deploy de functions / migrations | [how-to/deploy-e-migrations.md](how-to/deploy-e-migrations.md) |
 | Executar operações rotineiras (reprocessar, OAuth, faturamento) | [how-to/operacoes-rotineiras.md](how-to/operacoes-rotineiras.md) |
 | Usar o Pulse (radar de concorrência) — guia do operador | [how-to/usar-o-pulse.md](how-to/usar-o-pulse.md) |
+| Usar a Calculadora Mercado Livre — guia passo a passo | [tutorials/como-usar-calculadora-mercado-livre.md](tutorials/como-usar-calculadora-mercado-livre.md) |
 
-> `tutorials/` está reservada para a documentação **de usuário** (guias passo a passo de
-> operação do app), próxima fase do esforço de documentação.
+> `tutorials/` reúne a documentação **de usuário**: guias passo a passo para operar o app.
 
 ## Estrutura desta documentação
 
@@ -49,6 +49,7 @@ docs/
 ├── reference/                     ← schema, edge functions, glossário, permissões ML
 ├── explanation/                   ← arquitetura ponta a ponta
 ├── how-to/                        ← deploy, dev local, operações rotineiras
+├── tutorials/                     ← guias passo a passo para o usuário final
 ├── diagrams/                      ← C4, ERD, sequências (histórico, pré-E6/E7)
 ├── architecture/                  ← 8 diagramas Archify atuais (visão geral, multi-tenant, fluxos, TO-BE)
 ├── spikes/                        ← investigações pontuais antes de virar ADR/plano
