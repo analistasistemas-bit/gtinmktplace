@@ -394,9 +394,11 @@ export default function PulseSonar() {
       sortValue: (i) => i.posicao,
     },
     {
-      key: 'anuncio', header: 'Anúncio', className: 'max-w-[300px]',
+      // `w-full` faz esta coluna absorver a folga da tabela: as numéricas ficam no tamanho do
+      // conteúdo e o nome do produto — a informação que identifica a linha — leva o resto.
+      key: 'anuncio', header: 'Anúncio', className: 'w-full max-w-[420px]',
       cell: (i) => (
-        <div className="flex max-w-[190px] items-center gap-2">
+        <div className="flex items-center gap-2">
           {i.imagem && <img src={i.imagem} alt="" className="h-9 w-9 shrink-0 rounded bg-white object-contain" />}
           <div className="min-w-0">
             <span className="block truncate" title={i.titulo}>{i.titulo}</span>
@@ -500,8 +502,8 @@ export default function PulseSonar() {
               nome: i.titulo,
               category_id: i.category_id ?? null,
               preco_referencia: i.preco,
-            })}>
-              Simular margem
+            })} title="Simular margem deste anúncio">
+              Simular
             </Button>
             {href && (
               <Button asChild variant="ghost" size="icon-sm">
