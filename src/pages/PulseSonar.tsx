@@ -394,7 +394,7 @@ export default function PulseSonar() {
       sortValue: (i) => i.posicao,
     },
     {
-      key: 'anuncio', header: 'Anúncio', className: 'max-w-[190px]',
+      key: 'anuncio', header: 'Anúncio', className: 'max-w-[300px]',
       cell: (i) => (
         <div className="flex max-w-[190px] items-center gap-2">
           {i.imagem && <img src={i.imagem} alt="" className="h-9 w-9 shrink-0 rounded bg-white object-contain" />}
@@ -471,18 +471,10 @@ export default function PulseSonar() {
       },
       sortValue: (i) => (i.item_id != null ? visitasPorItem.get(i.item_id)?.total ?? null : null),
     },
-    {
-      key: 'vendedor', header: 'Loja', className: 'max-w-[140px] text-xs',
-      cell: (i) => (
-        <div className="flex min-w-0 items-center gap-1">
-          {i.vendedor
-            ? <span className="truncate" title={i.vendedor}>{i.vendedor}</span>
-            : <span title="A amostra não identifica o rótulo de loja deste anúncio (cobertura ~65%)">—</span>}
-          {i.loja_oficial === true && <Badge variant="secondary">Oficial</Badge>}
-        </div>
-      ),
-      sortValue: (i) => i.vendedor,
-    },
+    // Coluna "Loja" removida a pedido do operador (19/08/2026): o nome da loja não muda decisão
+    // de garimpo. O campo `vendedor` CONTINUA sendo coletado — é dele que sai a contagem de
+    // rótulos distintos que alimenta a pulverização no fator Disputa do veredito, e o
+    // `loja_oficial` segue no Raio-X e no fator Marca.
     {
       key: 'envio', header: 'Envio', className: 'text-xs',
       cell: (i) => {
