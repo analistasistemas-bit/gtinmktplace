@@ -119,6 +119,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   const [cotacaoMeta, setCotacaoMeta] = useState<Tarifa | null>(null)
   const [erroMeta, setErroMeta] = useState<string | null>(null)
   const sequenciaCotacao = useRef(0)
+  const sequenciaMeta = useRef(0)
 
   const produtos = useQuery({
     queryKey: QK.produtosEstoqueResumo,
@@ -140,6 +141,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
 
   const atualizarEntrada = useCallback((parcial: Partial<EntradaCalculadoraML>) => {
     sequenciaCotacao.current += 1
+    sequenciaMeta.current += 1
     setTarifaOficial(null)
     setCotacaoMeta(null)
     setErroMeta(null)
@@ -147,12 +149,21 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   }, [])
 
   const atualizarTaxasManuais = useCallback((parcial: Partial<TaxasManuaisML>) => {
+    sequenciaCotacao.current += 1
+    sequenciaMeta.current += 1
     setTarifaOficial(null)
+    setCotacaoMeta(null)
+    setErroMeta(null)
+    setStatusCotacao('estimated')
+    setAvisoApi('Taxas manuais estimadas estão ativas; valide na API antes de decidir.')
     setTaxasManuais((atual) => ({ ...atual, ...parcial }))
   }, [])
 
   const selecionarProduto = useCallback((produto: ProdutoCalculadoraML | null) => {
+    sequenciaMeta.current += 1
     setProdutoSelecionado(produto)
+    setCotacaoMeta(null)
+    setErroMeta(null)
     if (!produto) return
     sequenciaCotacao.current += 1
     setTarifaOficial(null)
@@ -215,6 +226,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
   ])
 
   const validarNaApi = useCallback(async (): Promise<Tarifa | null> => {
+    const id = ++sequenciaMeta.current
     const modalidade = entrada.modalidadeParaDecisao ?? 'classico'
     const precoProjetado = resultado.modalidades[modalidade]?.precoAlvo.valor
     const categoriaId = entrada.categoriaId?.trim()
@@ -223,6 +235,7 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
       return null
     }
     setErroMeta(null)
+    setCotacaoMeta(null)
     try {
       const tarifa = await calcularTarifaML(
         precoProjetado,
@@ -230,10 +243,12 @@ export function useCalculadoraML(opcoes: UseCalculadoraMLOptions = {}) {
         dimensoesDaTarifa(entrada.dimensoes),
         entrada.aliquotaImpostoPct,
       )
+      if (sequenciaMeta.current !== id) return null
       if (!tarifa) setErroMeta('A API não retornou uma cotação para o preço projetado.')
       setCotacaoMeta(tarifa)
       return tarifa
     } catch {
+      if (sequenciaMeta.current !== id) return null
       setErroMeta('Não foi possível validar o preço projetado na API.')
       return null
     }
