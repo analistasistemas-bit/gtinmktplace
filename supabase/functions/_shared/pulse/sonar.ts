@@ -29,42 +29,6 @@ export function parseVisitasJanela(json: unknown): VisitasJanela | null {
   return { total: d.total_visits, por_dia };
 }
 
-/**
- * Multiget `/items?ids=...&attributes=id,date_created` — sonda de Grupo C (D9/ADR-0125). Mesmos
- * envelopes `{code, body}` do multiget de status (`parseStatusAnuncios`, `parse.ts:89-108`): só
- * `code === 200` com `date_created` string entra; item 403/sem data fica de fora do mapa (não é
- * erro do parser, o call site decide o que fazer com a ausência).
- */
-export function parseDateCreatedMultiget(json: unknown): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!Array.isArray(json)) return out;
-  for (const r of json) {
-    const env = r as { code?: unknown; body?: unknown };
-    if (env?.code !== 200) continue;
-    const b = env.body as Record<string, unknown> | null;
-    const id = typeof b?.id === 'string' ? b.id : null;
-    const dataCreated = typeof b?.date_created === 'string' ? b.date_created : null;
-    if (!id || !dataCreated) continue;
-    out.set(id, dataCreated);
-  }
-  return out;
-}
-
-/** Resultado de UM lote da sonda: 'forbidden' = 403 no lote inteiro ou em todos os envelopes;
- *  'transitoria' = timeout/rede/5xx (não prova nada sobre a hipótese); 'ok' = respondeu (com ou
- *  sem `date_created` casando). */
-export type OutcomeLoteSonda = 'ok' | 'forbidden' | 'transitoria';
-
-/**
- * Decide se a sonda de Grupo C desliga (D9/ADR-0125): só quando TODOS os lotes voltaram 403 —
- * nenhum sucesso, nenhuma falha transitória misturada no meio. Um 403 ao lado de um timeout NÃO
- * desliga (a falha transitória não prova nada sobre a hipótese); um 403 ao lado de um lote que
- * funcionou também não (a hipótese não falhou de vez).
- */
-export function sondaDeveDesligar(outcomes: OutcomeLoteSonda[]): boolean {
-  return outcomes.length > 0 && outcomes.every((o) => o === 'forbidden');
-}
-
 const STOPWORDS = new Set(['de', 'do', 'da', 'para', 'com', 'em', 'e', 'o', 'a', 'un', 'kit', 'cm', 'mm']);
 
 export function extrairPalavrasChave(nomes: string[], limite = 20): Array<{ termo: string; contagem: number }> {
@@ -106,10 +70,6 @@ export interface ResultadoFicha {
   /** item_id (= idPublicacao no dataset Apify) de cada oferta da ficha, na ordem do ML — chave
    *  primária do cruzamento ficha↔anúncio no front (D4/ADR-0125). Ficha sem oferta → []. */
   item_ids: string[];
-  /** Grupo C (D9/ADR-0125): `date_created` do mesmo item mais barato cujas visitas já medimos,
-   *  via sonda multiget best-effort. `null` = sonda desligada (flag 403), falhou, ou ficha sem
-   *  oferta — nunca derruba a tela, a coluna só some (D9). */
-  criado_em: string | null;
 }
 
 export interface PainelSonar {

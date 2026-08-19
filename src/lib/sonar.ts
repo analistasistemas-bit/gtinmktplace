@@ -14,9 +14,6 @@ export interface ResultadoFichaSonar {
   vendedores: Array<{ seller_id: number; uf: string | null; transacoes_total: number | null; loja_oficial: boolean }>;
   /** Opcional: cache v2 antigo (pré-ADR-0125) não tem o campo — cruzamento vira "sem dado". */
   item_ids?: string[];
-  /** Opcional: sonda de Grupo C (T10/ADR-0125/D9), best-effort. `null`/ausente = sonda desligada
-   *  (flag 403), falhou, ou ficha sem oferta — a coluna "Criação" some, nunca quebra a tela. */
-  criado_em?: string | null;
 }
 
 export interface PainelSonar {

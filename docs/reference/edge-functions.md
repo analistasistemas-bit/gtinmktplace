@@ -900,23 +900,19 @@ falha ao ler `organizations` não libera.
   chamada) e `/users/{seller_id}` por vendedor distinto (UF via `ufDoVendedor`, `transactions.total`),
   com cache de vendedor por request (`Map`, sellers repetem entre fichas). Cada ficha ganha
   `item_ids: string[]` (id de cada oferta, na ordem do ML — chave primária do cruzamento
-  ficha↔anúncio no front com `pulse-sonar-vendas`, ADR-0125/D4) e `criado_em: string | null`
-  (Grupo C, ADR-0125/D9): sonda best-effort que reaproveita o MESMO item mais barato cujas visitas
-  já foram medidas, via multiget `/items?ids=...&attributes=id,date_created` com `fetch` LOCAL
-  (não o `mlGet` compartilhado — ele engole o status HTTP) rodada uma vez, fora do loop de
-  concorrência, em lotes de 20 ids após todas as fichas resolvidas. Auto-desligável: 403 no
-  request inteiro ou em TODOS os envelopes de TODOS os lotes grava a flag Redis
-  `sonar:items-multiget-403` (TTL 24h) e a sonda para de rodar enquanto ela existir; falha
-  transitória (timeout, rede, 5xx) não grava a flag — só aquele lote fica sem data. `montarPainelSonar`
+  ficha↔anúncio no front com `pulse-sonar-vendas`, ADR-0125/D4). `montarPainelSonar`
   (`_shared/pulse/sonar.ts`) agrega tudo em `PainelSonar` — soma de visitas por dia entre fichas
   com datas desalinhadas, `visitas_30d` nulo nunca vira zero na soma, % frete grátis ponderado
   por ofertas, vendedores distintos e `palavras_chave`. Resultado cacheado no Redis por
   `sonar:v3:MLB:<termo normalizado>`, TTL 24h, chave **global** (sem `org_id` — dado público,
   ADR-0120 §3) — bump v1→v2 pela mudança de shape nas fichas sem vendedor ativo, v2→v3
-  (ADR-0125/D3) porque `item_ids` é obrigatório para o cruzamento; `criado_em` entrou depois na
-  mesma v3 como campo aditivo (mesma regra do D2 abaixo), sem bump novo. Falha do ML na busca
+  (ADR-0125/D3) porque `item_ids` é obrigatório para o cruzamento. Falha do ML na busca
   principal (`null`) devolve 502 e não cacheia, para não travar um termo vazio por 24h a partir de
-  um erro transitório.
+  um erro transitório. Chegou a ganhar uma sonda `date_created` (Grupo C, coluna "Criação",
+  ADR-0125/D9): multiget `/items?ids=...&attributes=id,date_created` apostando que passaria para
+  itens de terceiro como já passa para os PRÓPRIOS no coletor Pulse. Foi ao ar em 19/08/2026 e
+  recebeu 403 também no multiget — hipótese refutada, sonda removida (D9 revisado no ADR-0125): a
+  coluna "Criação (dias)" não é obtenível pela API oficial para anúncios de terceiro.
 - **pulse-sonar-vendas** (ADR-0122, `verify_jwt=true`, chamada pelo app com o JWT do usuário) —
   vendas estimadas do nicho via Apify, complemento do Sonar chamado pelo front **em paralelo** à
   `pulse-sonar` (edge separada de propósito: o run da Apify pode levar minutos e a falha dele

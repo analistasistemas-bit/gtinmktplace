@@ -116,11 +116,3 @@ export function vendedorMaisForte(
   }
   return melhor;
 }
-
-/** Dias inteiros entre `iso` e `agora`. Sem data/data inválida → null. */
-export function diasDesde(iso: string | null, agora: Date): number | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return Math.floor((agora.getTime() - d.getTime()) / 86_400_000);
-}

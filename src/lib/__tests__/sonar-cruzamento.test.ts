@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cruzarFichaComVendas, diasDesde, espalhamentoPct, vendedorMaisForte, visitasPorOferta,
+  cruzarFichaComVendas, espalhamentoPct, vendedorMaisForte, visitasPorOferta,
   type VendasFicha,
 } from '@/lib/sonar-cruzamento';
 import type { ItemVendasSonar } from '@/lib/sonar';
@@ -137,17 +137,5 @@ describe('vendedorMaisForte', () => {
   it('todos null → null', () => {
     expect(vendedorMaisForte([{ seller_id: 1, uf: 'SP', transacoes_total: null }])).toBeNull();
     expect(vendedorMaisForte([])).toBeNull();
-  });
-});
-
-describe('diasDesde', () => {
-  it('diferença em dias inteiros', () => {
-    expect(diasDesde('2026-08-01T00:00:00Z', new Date('2026-08-11T00:00:00Z'))).toBe(10);
-  });
-  it('null → null', () => {
-    expect(diasDesde(null, new Date())).toBeNull();
-  });
-  it('data inválida → null', () => {
-    expect(diasDesde('não é data', new Date())).toBeNull();
   });
 });

@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — remoção da sonda `date_created` (ADR-0125/D9) — 2026-08-19
+
+- [x] A sonda multiget `/items?ids=...&attributes=id,date_created` (coluna "Criação") foi ao ar
+  em produção e recebeu **403 também no multiget** para itens de terceiros — a flag
+  `sonar:items-multiget-403` ficou ativa, provando a hipótese errada. Como a flag expira em 24h,
+  o garimpo voltaria a tentar (e falhar) todo dia para sempre. Removida: `sondarCriadoEm`,
+  `parseDateCreatedMultiget`, `sondaDeveDesligar`, o campo `criado_em` (edge, front e cruzamento) e
+  a coluna "Criação" da tabela do Sonar. `itemMaisBarato` foi mantida — as visitas continuam
+  usando; `diasDesde` foi removida por ficar sem nenhum uso após o resto ir embora.
+- [x] Cache `pulse-sonar` **não** bumpou (`sonar:v3` seguiu): remover campo opcional que ninguém
+  lê é retrocompatível; entradas antigas com `criado_em` expiram em 24h sozinhas.
+- [x] ADR-0125/D9 reescrita com o resultado empírico. 384 arquivos / 3521 testes verdes (-9: os
+  testes das duas funções removidas); `pnpm lint` 0 erros; `tsc -b --force` e `deno lint`/`deno
+  check` verdes.
+
 ## Calculadora Mercado Livre premium na Viabilidade (ADR-0126) — 2026-08-19
 
 - [x] Simulação simultânea de anúncio Clássico e Premium, lucro, margem, custos, peso cúbico,
