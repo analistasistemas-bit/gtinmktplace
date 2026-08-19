@@ -412,7 +412,7 @@ export default function PulseSonar() {
   const buscar = (e: FormEvent) => {
     e.preventDefault();
     const t = termo.trim();
-    if (t.length < 3) { toast.error('Digite ao menos 3 caracteres para garimpar.'); return; }
+    if (t.length < 3) { toast.error('Digite ao menos 3 caracteres para prospectar.'); return; }
     garimpar(t);
   };
 
@@ -679,7 +679,7 @@ export default function PulseSonar() {
   return (
     <div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Garimpa um nicho do Mercado Livre antes de você cadastrar o produto — o par do Radar, que
+        Prospecta um nicho do Mercado Livre antes de você cadastrar o produto — o par do Radar, que
         vigia o que você já vende.
       </p>
 
@@ -696,7 +696,7 @@ export default function PulseSonar() {
         </div>
         <Button type="submit" disabled={carregando}>
           <Search className="mr-2 h-4 w-4" />
-          Garimpar
+          Prospectar
         </Button>
       </form>
 
@@ -750,7 +750,7 @@ export default function PulseSonar() {
         <SonarProgresso passos={passosProgresso(elapsedMs, !carregando)} />
       ) : isError ? (
         <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-          <p className="text-sm font-medium text-destructive">Não foi possível garimpar este termo.</p>
+          <p className="text-sm font-medium text-destructive">Não foi possível prospectar este termo.</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {error instanceof Error ? error.message : 'Erro desconhecido.'}
           </p>
