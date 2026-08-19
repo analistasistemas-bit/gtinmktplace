@@ -10,6 +10,7 @@
 // trouxeram. Faixas calibradas em 18/08 (ADR-0124) contra 3 nichos reais; são constantes
 // nomeadas de propósito, para recalibrar sem caçar número solto no meio do código.
 import { fmtBRL, fmtInt, fmtMilhar } from './formato';
+import { itensDaAmostra } from './sonar';
 import type { PainelSonar, PainelVendasSonar } from './sonar';
 
 export type NivelFator = 'bom' | 'medio' | 'ruim';
@@ -412,6 +413,321 @@ export function contextoNicho(painel: PainelSonar, vendas: PainelVendasSonar | n
       itens.push({ rotulo: '% Full na amostra', valor: pct((rx.full / vendas.itens_analisados) * 100) });
       itens.push({ rotulo: '% internacionais na amostra', valor: pct((rx.internacionais / vendas.itens_analisados) * 100) });
     }
+  }
+  return itens;
+}
+
+// ================= Veredito v2 (ADR-0127/D10-D12): a unidade é o ANÚNCIO =======================
+// A tabela do Sonar deixou de listar fichas de catálogo e passou a listar anúncios reais vindos da
+// Apify; o veredito é recalculado sobre eles. Sem painel de fichas e SEM fallback sem Apify (D16).
+// Nasce ao lado do veredito antigo — a página ainda usa `calcularVeredito` até a Task 11.
+//
+// O que mudou de verdade:
+//  - Disputa v2 = PULVERIZAÇÃO (rótulos distintos ÷ anúncios com rótulo), razão 0-1 invariante ao
+//    tamanho da amostra, + % Full. A contagem absoluta de vendedores morreu junto com a fonte
+//    (D11): na amostra censurada de 20 anúncios o corte antigo de 25 era inatingível.
+//  - Tração v2 = faturamento por rótulo da MESMA subamostra nomeada — numerador e denominador no
+//    mesmo universo; com o denominador censurado a razão inflava.
+//  - `frete_gratis` (85-100% nos 3 nichos), `patrocinado` (0% em 80 anúncios, provável limitação
+//    do actor) e as visitas ficam FORA da pontuação (D12): saturados/sem variância, sem corte
+//    derivável. Seguem como contexto — nunca viram nota.
+//  - "vendedor" NÃO existe neste vocabulário: o card do ML imprime a MARCA, não o nickname (os 20
+//    anúncios do EUCERIN dão 2 rótulos). Todo texto fala em RÓTULO DE LOJA.
+
+export interface VereditoAnuncios {
+  nivel: NivelVeredito;
+  titulo: string;
+  motivo: string;
+  fatores: Fator[];
+  marca: AlertaMarca | null;
+  /** true quando a trava de cobertura (D10) tirou Disputa e Tração da conta: o veredito saiu com
+   *  meia informação e se DECLARA parcial, em vez de rebaixar em silêncio. Falta de dado não é
+   *  sinal de negócio. */
+  parcial: boolean;
+  explicacao: Explicacao;
+}
+
+// --- Cortes MEDIDOS em 19/08 (ADR-0127 §Calibração v2, fixtures em __tests__/fixtures/) ---------
+// PROIBIDO reaproveitar DISPUTA/TRACAO/VISITAS acima: a escala deles morreu com a fonte (D11).
+// `scripts/sonar-gabarito-verificar.mjs` é a definição executável destas fórmulas.
+const DISPUTA_V2 = { pulverizacaoConcentrada: 0.25, pulverizacaoAberta: 0.40, fullMuito: 60, fullPouco: 40 };
+const TRACAO_V2 = { boa: 350_000, media: 15_000 };
+/** "MENOS de 50% derruba" — 0,50 exato passa. O oxford, único nicho que o gabarito obriga a
+ *  aprovar, mede exatamente 0,50: um `>` aqui derrubaria o critério de aceite. */
+const COBERTURA_MINIMA = 0.5;
+/** Com a trava D10 sobra só a Demanda: `maximo` cai para 2 e `soma >= maximo - 1` faria a Demanda
+ *  🟡 SOZINHA virar "oportunidade alta" — sinal inventado a partir de ausência de dado. */
+const PISO_FATORES_ALTA = 2;
+
+const num2 = (n: number) => n.toFixed(2).replace('.', ',');
+const textoFull = (fullPct: number | null) => (fullPct == null ? 'Full não medido' : `${pct(fullPct)} Full`);
+
+export interface SubamostraNomeada {
+  analisados: number;
+  nomeados: number;
+  distintos: number;
+  cobertura: number;
+  /** Σ vendidos × preço SÓ dos itens nomeados — mesmo universo do denominador. */
+  faturamento: number;
+}
+
+/**
+ * Rótulo CRU do card, sem normalizar: foi assim que o gabarito foi medido (EUCERIN imprime
+ * "EUCERIN" e "EUCERIN Loja oficial" = 2 rótulos, pulverização 0,10). Colapsar os dois mudaria os
+ * números da calibração sem re-medir. Item sem preço OU sem vendidos não soma (ausência ≠ zero).
+ */
+export function subamostraNomeada(vendas: PainelVendasSonar): SubamostraNomeada {
+  const itens = itensDaAmostra(vendas);
+  const rotulos = new Set<string>();
+  let nomeados = 0;
+  let faturamento = 0;
+  for (const i of itens) {
+    if (i.vendedor == null) continue;
+    nomeados += 1;
+    rotulos.add(i.vendedor);
+    if (i.vendidos != null && i.preco != null) faturamento += i.vendidos * i.preco;
+  }
+  const analisados = itens.length;
+  return {
+    analisados,
+    nomeados,
+    distintos: rotulos.size,
+    cobertura: analisados > 0 ? nomeados / analisados : 0,
+    faturamento,
+  };
+}
+
+/** % Full da amostra. `null` quando NENHUM anúncio traz envio identificado — aí o termo sai da
+ *  regra de Disputa em vez de virar 0% (LOUD: ausência não é dado). */
+function fullPctAmostra(vendas: PainelVendasSonar): number | null {
+  if (vendas.itens_analisados === 0) return null;
+  const itens = itensDaAmostra(vendas);
+  if (itens.length > 0 && itens.every((i) => i.full == null)) return null;
+  return (vendas.raio_x.full / vendas.itens_analisados) * 100;
+}
+
+/** Demanda intacta (D11) + visitas como CONTEXTO no detalhe. Não existe `VISITAS_V2`: o único
+ *  consumidor de um corte de visitas era o fallback do ADR-0124 §6, revogado. */
+function nivelDemandaV2(vendas: PainelVendasSonar, visitasTotal: number | null) {
+  const d = nivelDemanda(vendas);
+  return {
+    ...d,
+    detalhe: visitasTotal != null
+      ? `${d.detalhe} · ${fmtMilhar(visitasTotal, 1)} visitas/30d na amostra`
+      : d.detalhe,
+  };
+}
+
+function nivelDisputaV2(vendas: PainelVendasSonar, sub: SubamostraNomeada): {
+  nivel: NivelFator; detalhe: string; pulverizacao: number; fullPct: number | null;
+} | null {
+  if (sub.cobertura < COBERTURA_MINIMA || sub.nomeados === 0) return null; // trava D10
+  const pulverizacao = sub.distintos / sub.nomeados;
+  const fullPct = fullPctAmostra(vendas);
+  // Topo concentrado sob poucos rótulos = território fechado; maioria Full = concorrente com
+  // estoque em CD. Com `fullPct` null o termo simplesmente sai dos dois lados da regra — não vira
+  // 0% (que empurraria para 'bom') nem bloqueia o 'bom' (que puniria a ausência).
+  const nivel: NivelFator = pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada
+    || (fullPct != null && fullPct >= DISPUTA_V2.fullMuito)
+    ? 'ruim'
+    : pulverizacao >= DISPUTA_V2.pulverizacaoAberta && (fullPct == null || fullPct <= DISPUTA_V2.fullPouco)
+      ? 'bom'
+      : 'medio';
+  return {
+    nivel,
+    detalhe: `${sub.distintos} rótulos de loja em ${sub.nomeados} anúncios · ${textoFull(fullPct)}`,
+    pulverizacao,
+    fullPct,
+  };
+}
+
+function nivelTracaoV2(sub: SubamostraNomeada): { nivel: NivelFator; detalhe: string; porRotulo: number } | null {
+  if (sub.cobertura < COBERTURA_MINIMA || sub.distintos === 0) return null; // trava D10
+  const porRotulo = sub.faturamento / sub.distintos;
+  const nivel: NivelFator = porRotulo >= TRACAO_V2.boa ? 'bom'
+    : porRotulo >= TRACAO_V2.media ? 'medio' : 'ruim';
+  return { nivel, detalhe: `${brlMil(porRotulo)} por rótulo de loja`, porRotulo };
+}
+
+/** Marca vira % da AMOSTRA de anúncios com loja oficial (antes era % de fichas). Segue fora da
+ *  pontuação — alerta de risco de moderação, não nota. */
+function alertaMarcaV2(vendas: PainelVendasSonar): { nivel: NivelFator; detalhe: string; pct: number } | null {
+  if (vendas.itens_analisados === 0) return null;
+  const p = (vendas.raio_x.lojas_oficiais / vendas.itens_analisados) * 100;
+  const detalhe = `${pct(p)} da amostra com loja oficial`;
+  if (p > MARCA.dominado) return { nivel: 'ruim', detalhe, pct: p };
+  if (p >= MARCA.aberto) return { nivel: 'medio', detalhe, pct: p };
+  return { nivel: 'bom', detalhe, pct: p };
+}
+
+function montarMotivoAnuncios(nivel: NivelVeredito, fatores: Fator[], parcial: boolean): string {
+  if (parcial && nivel !== 'baixa') {
+    return 'Menos da metade dos anúncios traz rótulo de loja — não deu para avaliar a concorrência do nicho.';
+  }
+  const pior = fatores.find((f) => f.nivel === 'ruim');
+  if (nivel === 'baixa') {
+    if (pior?.chave === 'demanda') return 'Sem vendas comprovadas entre os anúncios do topo.';
+    if (pior?.chave === 'tracao') return 'Muitos rótulos de loja brigando por pouco dinheiro.';
+    return 'Concorrência alta demais para o tamanho do mercado.';
+  }
+  if (nivel === 'alta') return 'Demanda comprovada e topo da busca ainda aberto.';
+  if (pior?.chave === 'disputa') return 'Mercado forte, mas o topo da busca já está ocupado.';
+  if (pior?.chave === 'tracao') return 'Há procura, mas o dinheiro está diluído entre os rótulos de loja da amostra.';
+  return 'Nicho viável, sem folga — depende do seu custo.';
+}
+
+function fraseDisputaV2(nivel: NivelFator, sub: SubamostraNomeada, pulverizacao: number, fullPct: number | null): string {
+  const base = `${sub.distintos} rótulos de loja distintos em ${sub.nomeados} anúncios com rótulo identificável (pulverização ${num2(pulverizacao)})`;
+  if (nivel === 'ruim') {
+    const partes: string[] = [];
+    if (pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada) {
+      partes.push(`${base} — em ${num2(DISPUTA_V2.pulverizacaoConcentrada)} ou menos o topo da busca é território fechado, não campo livre`);
+    }
+    if (fullPct != null && fullPct >= DISPUTA_V2.fullMuito) {
+      partes.push(`${pct(fullPct)} da amostra é Full — concorrente com estoque em CD dominando o campo`);
+    }
+    return `${partes.join('; ')}; entrar exige disputar espaço com quem já ocupa o topo.`;
+  }
+  if (nivel === 'bom') {
+    return `${base} e ${textoFull(fullPct)} — campo ainda aberto para quem chega agora.`;
+  }
+  return `${base} e ${textoFull(fullPct)} — disputa moderada, ainda dá para entrar com diferencial.`;
+}
+
+function destravarDisputaV2(nivel: NivelFator, pulverizacao: number, fullPct: number | null): string {
+  if (nivel === 'ruim' && pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada) {
+    return `a partir de pulverização ${num2(DISPUTA_V2.pulverizacaoAberta)} (rótulos de loja distintos ÷ anúncios com rótulo) a disputa sairia da zona crítica — hoje é ${num2(pulverizacao)}`;
+  }
+  if (nivel === 'ruim') {
+    return `com Full abaixo de ${DISPUTA_V2.fullMuito}% a disputa sairia da zona crítica — hoje: ${textoFull(fullPct)}`;
+  }
+  return `com pulverização a partir de ${num2(DISPUTA_V2.pulverizacaoAberta)} e Full até ${DISPUTA_V2.fullPouco}% a disputa entraria na faixa tranquila — hoje: ${num2(pulverizacao)} e ${textoFull(fullPct)}`;
+}
+
+function fraseTracaoV2(nivel: NivelFator, porRotulo: number): string {
+  const valor = brlMil(porRotulo);
+  const universo = 'numerador e denominador no mesmo universo (só anúncios com rótulo de loja)';
+  if (nivel === 'ruim') {
+    return `Cada rótulo de loja identificado fatura ${valor} na amostra — abaixo de ${brlMil(TRACAO_V2.media)}, o bolo dividido é pequeno para justificar a entrada; ${universo}.`;
+  }
+  if (nivel === 'bom') {
+    return `Cada rótulo de loja identificado fatura ${valor} na amostra — acima de ${brlMil(TRACAO_V2.boa)}, o nicho sustenta quem entra agora; ${universo}.`;
+  }
+  return `Cada rótulo de loja identificado fatura ${valor} na amostra — entre ${brlMil(TRACAO_V2.media)} e ${brlMil(TRACAO_V2.boa)}, dá para entrar sem grande folga; ${universo}.`;
+}
+
+/** Reuso das frases da Marca trocando o substantivo: agora medimos anúncios, não fichas. */
+const marcaTexto = (s: string) => s
+  .replace('das fichas ativas', 'dos anúncios da amostra')
+  .replace('das fichas com loja oficial', 'dos anúncios com loja oficial');
+
+export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal: number | null): VereditoAnuncios {
+  const sub = subamostraNomeada(vendas);
+  const demanda = nivelDemandaV2(vendas, visitasTotal);
+  const disputa = nivelDisputaV2(vendas, sub);
+  const tracao = nivelTracaoV2(sub);
+  const parcial = disputa == null || tracao == null;
+
+  const fatores: Fator[] = [{ chave: 'demanda', label: 'Demanda', nivel: demanda.nivel, detalhe: demanda.detalhe }];
+  if (disputa) fatores.push({ chave: 'disputa', label: 'Disputa', nivel: disputa.nivel, detalhe: disputa.detalhe });
+  if (tracao) fatores.push({ chave: 'tracao', label: 'Tração', nivel: tracao.nivel, detalhe: tracao.detalhe });
+
+  const soma = fatores.reduce((acc, f) => acc + PONTOS[f.nivel], 0);
+  const maximo = fatores.length * 2; // escala proporcional (ADR-0124 §4) absorve a trava D10
+  const gateDemanda = demanda.nivel === 'ruim';
+  const nivel: NivelVeredito = gateDemanda || soma <= maximo / 3 ? 'baixa'
+    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA ? 'alta'
+      : 'media';
+
+  const marca = alertaMarcaV2(vendas);
+
+  const fatoresExplicacao: ExplicacaoFator[] = [{
+    chave: 'demanda',
+    nivel: demanda.nivel,
+    frase: fraseDemanda(demanda.nivel, demanda.vendasTotais, demanda.liquidez),
+    regua: regua(0, 100, [Math.round(DEMANDA.liquidezRuim * 100), Math.round(DEMANDA.liquidezBoa * 100)], Math.round(demanda.liquidez * 100), false),
+    destravar: demanda.nivel === 'bom' ? null : destravarDemanda(demanda.nivel, demanda.vendasTotais, demanda.liquidez),
+  }];
+  if (disputa) {
+    fatoresExplicacao.push({
+      chave: 'disputa',
+      nivel: disputa.nivel,
+      frase: fraseDisputaV2(disputa.nivel, sub, disputa.pulverizacao, disputa.fullPct),
+      // Pulverização MAIOR é melhor (campo aberto) — régua não invertida, ao contrário da antiga,
+      // que contava vendedores absolutos.
+      regua: regua(0, 1, [DISPUTA_V2.pulverizacaoConcentrada, DISPUTA_V2.pulverizacaoAberta], disputa.pulverizacao, false),
+      destravar: disputa.nivel === 'bom' ? null : destravarDisputaV2(disputa.nivel, disputa.pulverizacao, disputa.fullPct),
+    });
+  }
+  if (tracao) {
+    const teto = TRACAO_V2.boa * 2;
+    fatoresExplicacao.push({
+      chave: 'tracao',
+      nivel: tracao.nivel,
+      frase: fraseTracaoV2(tracao.nivel, tracao.porRotulo),
+      // Marcador preso ao teto: nicho de marca chega a R$ 5,7 mi/rótulo e sairia da barra.
+      regua: regua(0, teto, [TRACAO_V2.media, TRACAO_V2.boa], Math.min(Math.round(tracao.porRotulo), teto), false),
+      destravar: tracao.nivel === 'bom' ? null
+        : `a partir de ${brlMil(tracao.nivel === 'ruim' ? TRACAO_V2.media : TRACAO_V2.boa)} por rótulo de loja a tração subiria de faixa — hoje: ${brlMil(tracao.porRotulo)}`,
+    });
+  }
+  if (parcial) {
+    // Trava D10 visível no "Saiba mais": indisponível ≠ ruim, e o veredito diz isso em voz alta.
+    fatoresExplicacao.push({
+      chave: 'disputa',
+      nivel: 'medio',
+      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios da amostra trazem rótulo de loja (mínimo: ${Math.round(COBERTURA_MINIMA * 100)}%) — sem base para medir a concorrência do nicho. Disputa e Tração saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial.`,
+      regua: null,
+      destravar: null,
+    });
+  }
+  if (marca) {
+    fatoresExplicacao.push({
+      chave: 'marca',
+      nivel: marca.nivel,
+      frase: marcaTexto(fraseMarca(marca.nivel, marca.pct)),
+      regua: regua(0, 100, [MARCA.aberto, MARCA.dominado], Math.round(marca.pct), true),
+      destravar: marca.nivel === 'bom' ? null : marcaTexto(destravarMarca(marca.nivel, marca.pct)),
+    });
+  }
+
+  const acaoBase = ACAO[nivel];
+  const acao = gateDemanda
+    ? `Demanda insuficiente derruba o veredito para baixa por conta própria, independente dos outros fatores. ${acaoBase}`
+    : parcial
+      ? `Avaliação parcial: sem rótulo de loja na maioria dos anúncios, não foi possível avaliar a concorrência do nicho — o veredito saiu só com a Demanda. ${acaoBase}`
+      : acaoBase;
+
+  return {
+    nivel,
+    titulo: TITULOS[nivel],
+    motivo: montarMotivoAnuncios(nivel, fatores, parcial),
+    fatores,
+    marca,
+    parcial,
+    explicacao: { pontuacao: { soma, maximo }, gateDemanda, fatores: fatoresExplicacao, acao },
+  };
+}
+
+/** Contexto fora do score (mediana de preço, ticket, % Full, % internacionais) — tudo da amostra
+ *  de anúncios. `% Full` usa a mesma base da Disputa, para a tela não mostrar dois números. */
+export function contextoNichoAnuncios(vendas: PainelVendasSonar): ContextoItem[] {
+  const itens: ContextoItem[] = [];
+  const precos = itensDaAmostra(vendas)
+    .map((i) => i.preco)
+    .filter((p): p is number => p != null)
+    .sort((a, b) => a - b);
+  if (precos.length > 0) {
+    const meio = Math.floor(precos.length / 2);
+    const mediana = precos.length % 2 === 1 ? precos[meio] : (precos[meio - 1] + precos[meio]) / 2;
+    itens.push({ rotulo: 'Preço mediano da amostra', valor: fmtBRL(mediana) });
+  }
+  const rx = vendas.raio_x;
+  if (rx.ticket_medio != null) itens.push({ rotulo: 'Ticket médio da amostra', valor: fmtBRL(rx.ticket_medio) });
+  if (vendas.itens_analisados > 0) {
+    const full = fullPctAmostra(vendas);
+    itens.push({ rotulo: '% Full na amostra', valor: full == null ? 'não medido' : pct(full) });
+    itens.push({ rotulo: '% internacionais na amostra', valor: pct((rx.internacionais / vendas.itens_analisados) * 100) });
   }
   return itens;
 }

@@ -88,6 +88,16 @@ Disputa e Tração reformuladas (D11); Marca vira % da amostra com loja oficial.
 (nickname) vier em menos de 50% dos itens da amostra, Disputa e Tração saem da escala proporcional
 (mecanismo que o ADR-0124 §4 já tem). **Descartado:** manter os fatores lendo o painel de fichas
 (morre em D3); "vendedores distintos" por fonte oficial (403 medido).
+**Ajustes vindos da implementação (Task 8), decididos sobre os números medidos:** (a) **"alta" exige
+no mínimo 2 fatores pontuados** — com a trava disparada sobra só a Demanda, `maximo` cai para 2 e
+`soma >= maximo - 1` faria a Demanda 🟡 sozinha virar oportunidade alta (fragilidade registrada na
+Calibração v2); (b) **a trava não rebaixa em silêncio: o veredito se declara PARCIAL**
+(`VereditoAnuncios.parcial`), com o motivo e a ação dizendo que não foi possível avaliar a
+concorrência do nicho — o oxford mede cobertura exatamente 0,50, então um único anúncio sem rótulo
+no próximo garimpo dispararia a trava, e rebaixar aí transformaria falta de dado em sinal de
+negócio. Na prática o par (a)+(b) resolve todo painel travado em "média parcial" (ou "baixa" pelo
+gate de Demanda), nunca em "alta"; (c) o vocabulário da UI fala em **rótulo de loja**, nunca
+"vendedor" (o card imprime a marca — ver Fragilidades).
 
 **D11 — Disputa e Tração viram métricas invariantes ao tamanho da amostra; cortes antigos
 inválidos na fonte nova.** Os cortes atuais (`DISPUTA = { vendedoresPoucos: 10, vendedoresMuitos:

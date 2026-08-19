@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { calcularVeredito, contextoNicho } from '../veredito-sonar';
-import type { PainelSonar, PainelVendasSonar } from '../sonar';
+import {
+  calcularVeredito, calcularVereditoAnuncios, contextoNicho, contextoNichoAnuncios, subamostraNomeada,
+} from '../veredito-sonar';
+import type { VereditoAnuncios } from '../veredito-sonar';
+import type { ItemVendasSonar, PainelSonar, PainelVendasSonar } from '../sonar';
 
 // Fixtures dos 3 nichos REAIS medidos em 18/08 — são o gabarito da calibração (ADR-0124).
 // O caso decisivo é o tecido oxford: é um nicho em que o Diego vende de verdade, então uma regra
@@ -247,5 +251,179 @@ describe('contextoNicho — leitura complementar, fora do score', () => {
     ]);
     expect(itens.find((i) => i.rotulo === '% Full na amostra')!.valor).toBe('20%');
     expect(itens.find((i) => i.rotulo === '% internacionais na amostra')!.valor).toBe('10%');
+  });
+});
+
+// =============== Veredito v2 (ADR-0127/D10-D12): a unidade é o ANÚNCIO ==========================
+// Fixtures REAIS medidos em 19/08 (US$ 0,30 de Apify), congelados em fixtures/sonar-gabarito/.
+// O gabarito herdado do ADR-0124 é inegociável: média / média / ALTA, nessa ordem.
+// `scripts/sonar-gabarito-verificar.mjs` é a definição executável das fórmulas — se estes testes
+// e o script divergirem, quem errou foi a implementação, não o corte.
+
+const fixture = (slug: string): { vendas: PainelVendasSonar; visitas_total: number | null } =>
+  JSON.parse(readFileSync(`src/lib/__tests__/fixtures/sonar-gabarito/${slug}.json`, 'utf8'));
+
+const itemV2 = (over: Partial<ItemVendasSonar> = {}): ItemVendasSonar => ({
+  titulo: 'X', preco: 100, vendidos: 100, link: null, imagem: null, vendedor: 'LOJA-A',
+  frete_gratis: false, loja_oficial: false, internacional: false, full: null, item_id: 'MLB1',
+  catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null, posicao: 1,
+  patrocinado: false, selo: null, preco_anterior: null, desconto_pct: null, flex: null, ...over,
+});
+
+const painelSintetico = (itens: ItemVendasSonar[]): PainelVendasSonar => {
+  const comVendas = itens.filter((i) => i.vendidos != null);
+  return {
+    configurado: true, termo: 'sintético', gerado_em: 'g', itens,
+    itens_analisados: itens.length, itens_com_vendas: comVendas.length,
+    vendas_totais: comVendas.reduce((a, i) => a + (i.vendidos ?? 0), 0),
+    valor_mercado: comVendas.reduce((a, i) => a + (i.vendidos ?? 0) * (i.preco ?? 0), 0),
+    produto_destaque: null, palavras_chave_titulos: [],
+    por_anuncio: Object.fromEntries(itens.filter((i) => i.item_id).map((i) => [i.item_id!, i])),
+    raio_x: {
+      total_anuncios: null, ticket_medio: null,
+      lojas_oficiais: itens.filter((i) => i.loja_oficial === true).length,
+      full: itens.filter((i) => i.full === true).length,
+      frete_gratis: itens.filter((i) => i.frete_gratis === true).length,
+      internacionais: itens.filter((i) => i.internacional === true).length,
+    },
+  };
+};
+
+/** Todo texto que a UI mostra — alimenta a trava de vocabulário (ADR-0127 §Fragilidades). */
+const textosGerados = (v: VereditoAnuncios): string[] => [
+  v.titulo, v.motivo,
+  ...v.fatores.map((f) => f.detalhe),
+  ...(v.marca ? [v.marca.detalhe] : []),
+  v.explicacao.acao,
+  ...v.explicacao.fatores.flatMap((f) => [f.frase, f.destravar ?? '']),
+];
+
+describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na Task 7)', () => {
+  it('EUCERIN protetor solar → média (4/6)', () => {
+    const { vendas, visitas_total } = fixture('eucerin-protetor-solar');
+    const v = calcularVereditoAnuncios(vendas, visitas_total);
+    expect(v.nivel).toBe('media');
+    expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
+    expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
+    expect(v.parcial).toBe(false);
+  });
+  it('protetor solar facial → média (4/6)', () => {
+    const { vendas, visitas_total } = fixture('protetor-solar-facial');
+    const v = calcularVereditoAnuncios(vendas, visitas_total);
+    expect(v.nivel).toBe('media');
+    expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
+    expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
+  });
+  it('tecido oxford 10 metros → ALTA (critério de aceitação do ADR-0124 — NUNCA relaxar)', () => {
+    const { vendas, visitas_total } = fixture('tecido-oxford-10-metros');
+    const v = calcularVereditoAnuncios(vendas, visitas_total);
+    expect(v.nivel).toBe('alta');
+    expect(v.explicacao.pontuacao).toEqual({ soma: 5, maximo: 6 });
+    expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'bom', 'medio']);
+  });
+  it('cobertura exatamente 0,50 (oxford) PASSA na trava — só "menos de 50%" derruba', () => {
+    const { vendas } = fixture('tecido-oxford-10-metros');
+    expect(subamostraNomeada(vendas).cobertura).toBe(0.5);
+    expect(calcularVereditoAnuncios(vendas, null).fatores).toHaveLength(3);
+  });
+});
+
+describe('trava de cobertura <50% (D10) — nunca medir concorrência sobre meia dúzia de rótulos', () => {
+  const travado = () => {
+    const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLB${i}`, vendedor: `V${i}`, vendidos: 2000 }));
+    const anonimos = Array.from({ length: 16 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendedor: null, vendidos: 2000 }));
+    return calcularVereditoAnuncios(painelSintetico([...nomeados, ...anonimos]), null);
+  };
+
+  it('4/20 nomeados → só o fator Demanda pontua; Disputa e Tração fora', () => {
+    expect(travado().fatores.map((f) => f.chave)).toEqual(['demanda']);
+  });
+
+  it('Demanda 🟢 sozinha NÃO vira oportunidade alta (piso de 2 fatores)', () => {
+    const v = travado();
+    expect(v.fatores[0].nivel).toBe('bom');
+    expect(v.nivel).toBe('media');
+  });
+
+  it('veredito se declara PARCIAL — a trava não rebaixa em silêncio', () => {
+    const v = travado();
+    expect(v.parcial).toBe(true);
+    expect(v.motivo).toMatch(/concorrência/i);
+    expect(v.explicacao.acao).toMatch(/parcial/i);
+    expect(v.explicacao.fatores.some((f) => f.chave === 'disputa' && f.regua === null)).toBe(true);
+  });
+});
+
+describe('invariância ao tamanho da amostra (D11) — a censura não pode mudar o nível', () => {
+  it('nicho totalmente pulverizado com 6 e com 20 itens → mesmo nível de Disputa', () => {
+    const nicho = (n: number) => painelSintetico(Array.from({ length: n }, (_, i) =>
+      itemV2({ item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1000 })));
+    const v6 = calcularVereditoAnuncios(nicho(6), null);
+    const v20 = calcularVereditoAnuncios(nicho(20), null);
+    const disputa6 = v6.fatores.find((f) => f.chave === 'disputa');
+    const disputa20 = v20.fatores.find((f) => f.chave === 'disputa');
+    expect(disputa6?.nivel).toBe(disputa20?.nivel);
+    expect(disputa6?.nivel).toBe('bom');
+  });
+});
+
+describe('visitas na Demanda (D12: informativa, nunca pontuada)', () => {
+  const bom = () => painelSintetico(Array.from({ length: 20 }, (_, i) =>
+    itemV2({ item_id: `MLB${i}`, vendedor: i % 3 === 0 ? 'LOJA-A' : `LOJA-${i}`, vendidos: 1000 })));
+
+  it('visitasTotal null NÃO rebaixa (LOUD: ausência não pune)', () => {
+    const demanda = calcularVereditoAnuncios(bom(), null).fatores.find((f) => f.chave === 'demanda');
+    expect(demanda?.nivel).toBe('bom');
+  });
+
+  it('visitas baixas NÃO rebaixam: sem corte medido, o número só aparece como contexto', () => {
+    const comVisitas = calcularVereditoAnuncios(bom(), 12);
+    const demanda = comVisitas.fatores.find((f) => f.chave === 'demanda');
+    expect(demanda?.nivel).toBe('bom');
+    expect(demanda?.detalhe).toContain('12 visitas');
+    expect(comVisitas.nivel).toBe(calcularVereditoAnuncios(bom(), null).nivel);
+  });
+});
+
+describe('subamostraNomeada — numerador e denominador do MESMO universo', () => {
+  it('faturamento só conta itens com rótulo de loja', () => {
+    const s = subamostraNomeada(painelSintetico([
+      itemV2({ item_id: 'MLB1', vendedor: 'A', vendidos: 10, preco: 10 }),
+      itemV2({ item_id: 'MLB2', vendedor: null, vendidos: 1000, preco: 100 }),
+    ]));
+    expect(s).toEqual({ analisados: 2, nomeados: 1, distintos: 1, cobertura: 0.5, faturamento: 100 });
+  });
+
+  it('rótulo é o texto CRU do card (o gabarito foi medido assim): "EUCERIN" ≠ "EUCERIN Loja oficial"', () => {
+    const s = subamostraNomeada(fixture('eucerin-protetor-solar').vendas);
+    expect(s).toMatchObject({ analisados: 20, nomeados: 20, distintos: 2, cobertura: 1 });
+  });
+});
+
+describe('vocabulário (ADR-0127 §Fragilidades) — o card imprime a MARCA, não o nickname', () => {
+  it('nenhum texto gerado diz "vendedor": só "rótulo de loja"', () => {
+    const casos: VereditoAnuncios[] = [
+      ...['eucerin-protetor-solar', 'protetor-solar-facial', 'tecido-oxford-10-metros'].map((s) => {
+        const { vendas, visitas_total } = fixture(s);
+        return calcularVereditoAnuncios(vendas, visitas_total);
+      }),
+      calcularVereditoAnuncios(painelSintetico([itemV2({ vendedor: null, vendidos: 1 })]), null),
+    ];
+    for (const v of casos) {
+      for (const texto of textosGerados(v)) expect(texto).not.toMatch(/vendedor/i);
+      expect(textosGerados(v).some((t) => /rótulo/i.test(t))).toBe(true);
+    }
+  });
+});
+
+describe('contextoNichoAnuncios — leitura complementar, fora do score', () => {
+  it('mediana de preço, ticket, % Full e % internacionais da amostra de anúncios', () => {
+    const { vendas } = fixture('tecido-oxford-10-metros');
+    const itens = contextoNichoAnuncios(vendas);
+    const rotulos = itens.map((i) => i.rotulo);
+    expect(rotulos).toContain('Preço mediano da amostra');
+    expect(rotulos).toContain('% Full na amostra');
+    expect(rotulos).toContain('% internacionais na amostra');
+    expect(itens.find((i) => i.rotulo === '% Full na amostra')!.valor).toBe('20%');
   });
 });
