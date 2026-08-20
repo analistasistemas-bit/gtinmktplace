@@ -2,8 +2,8 @@ import type { OfertaColetada, PriceToWin } from './tipos.ts';
 
 // /products/{id}/items → results[]: item_id, price, seller_id, listing_type_id,
 // shipping.free_shipping, official_store_id. sold/available vêm null — não parsear.
-// `permalink` é lido de forma oportunista: se a ficha o expuser, é o link do anúncio do
-// concorrente; se não, fica null e a tela não mostra link nenhum.
+// `permalink` é lido de forma oportunista: se a ficha não o expuser, o enriquecimento posterior
+// deriva o link público a partir do item_id.
 // `excluirSellerId` = nossa própria conta no ML: a lista do catálogo inclui a NOSSA oferta, e
 // sem excluí-la o radar trataria o próprio anúncio como concorrente (alerta "preço caiu" quando
 // nós mesmos baixamos, "novo concorrente" quando nós publicamos).
