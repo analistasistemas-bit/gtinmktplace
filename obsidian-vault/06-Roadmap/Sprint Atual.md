@@ -14,7 +14,9 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **✅ Pulse v1 — radar de concorrência EM PRODUÇÃO (ADR-0119, 2026-08-16, org DSA).** Menu
 > "Pulse" org-gated: coletor server-side dual-mode, adicionar manual por catálogo/GTIN, 4 tabelas
 > novas e UI (radar, margem estimada, alertas, reprecificar via Revisão). Migration, as 2 edge
-> functions e os 2 schedules QStash deployados. Ver `docs/project-status.md`.
+> functions e os 2 schedules QStash deployados. Em 2026-08-20, os links individuais das ofertas
+> passaram a ser derivados do `item_id` MLB, sem depender do endpoint que bloqueia detalhes de
+> concorrentes (`pulse-coletar` v20). Ver `docs/project-status.md`.
 >
 > **✅ Pulse Sonar — garimpo on-demand por termo EM PRODUÇÃO (ADR-0120, 2026-08-17/18).** Nova
 > aba "Sonar" dentro do Pulse: busca livre por termo (edge `pulse-sonar`, até 40 fichas via
