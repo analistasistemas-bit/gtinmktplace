@@ -136,10 +136,10 @@ export function ProdutoCard({
   onDarEntrada: (alvo: AlvoEntrada) => void;
   onAjustar?: (produto: ProdutoComSaldo) => void;
   onExcluir?: (produto: ProdutoEstoqueResumo) => void;
-  /** ADR-0128 D-7: admin-only — a página só passa esta prop para admin (esconder o botão é
+  /** ADR-0129 D-7: admin-only — a página só passa esta prop para admin (esconder o botão é
    *  navegação, não fronteira de segurança; o gate real vive na edge). */
   onAdicionarVariacao?: (produto: ProdutoEstoqueResumo) => void;
-  /** ADR-0128 D-11: família UPDATE mais recente deste produto (lib estoque-update-status.ts). */
+  /** ADR-0129 D-11: família UPDATE mais recente deste produto (lib estoque-update-status.ts). */
   statusUpdate?: 'atualizando' | 'erro';
 }) {
   const [aberto, setAberto] = useState(false);
@@ -195,7 +195,7 @@ export function ProdutoCard({
           <div className="min-w-0">
             <div className="truncate text-sm font-medium leading-tight">{produto.nomePai}</div>
             <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
-            {/* ADR-0128 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
+            {/* ADR-0129 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
                 expandir o card — pareado com o sino de notificação no fim do processamento. */}
             {statusUpdate && (
               <div className={cn(

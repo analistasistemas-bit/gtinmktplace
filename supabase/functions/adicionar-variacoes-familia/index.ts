@@ -1,9 +1,9 @@
-// ADR-0128 — Adicionar variação a família publicada, direto da tela Estoque. Admin monta um
+// ADR-0129 — Adicionar variação a família publicada, direto da tela Estoque. Admin monta um
 // lote real de UPDATE clonando a família publicada mais recente + suas variações vivas, insere
 // N variações novas digitadas (foto já no storage), registra o estoque inicial pelo ledger e
 // encadeia `publicar-familias` — o pipeline de UPDATE existente decide Legacy vs. User Products
 // e enfileira o worker (process-familia/update-familia-ml não mudam uma linha). Ver
-// docs/decisions/0128-adicionar-variacao-a-familia-publicada.md.
+// docs/decisions/0129-adicionar-variacao-a-familia-publicada.md.
 //
 // Desvio 1 do plano: o sketch do ADR ("enfileira via enfileirarFamilias") levaria a
 // process-familia, que para UPDATE só resolve cor e marca 'pronto' — o lote ficaria parado

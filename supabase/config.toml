@@ -44,7 +44,7 @@ verify_jwt = false
 # Explícito de propósito, para a intenção ficar registrada ao lado dos workers.
 [functions.cadastrar-produto]
 verify_jwt = true
-# ADR-0128: adicionar variação a família publicada, direto da tela Estoque.
+# ADR-0129: adicionar variação a família publicada, direto da tela Estoque.
 [functions.adicionar-variacoes-familia]
 verify_jwt = true
 [functions.entrada-estoque]

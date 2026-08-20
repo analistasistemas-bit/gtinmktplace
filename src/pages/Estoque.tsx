@@ -52,7 +52,7 @@ export default function Estoque() {
     staleTime: 180_000,
   });
 
-  // ADR-0128 D-11/D-8: status de atualização por produto (badge no card) — poll de 15s, mesmo
+  // ADR-0129 D-11/D-8: status de atualização por produto (badge no card) — poll de 15s, mesmo
   // ritmo de outras telas de acompanhamento de lote (é o que faz o badge sumir sozinho quando o
   // UPDATE termina, sem o operador dar F5).
   const { data: famRows } = useQuery({

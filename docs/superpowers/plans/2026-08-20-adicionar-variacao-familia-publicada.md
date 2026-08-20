@@ -1,4 +1,4 @@
-# Adicionar variação a família publicada (ADR-0128) — Implementation Plan
+# Adicionar variação a família publicada (ADR-0129) — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** React + TanStack Query + shadcn (frontend), Supabase Edge Functions (Deno), Postgres (migration via `supabase migration new`), QStash.
 
-**Spec:** `docs/decisions/0128-adicionar-variacao-a-familia-publicada.md` (D-1…D-11). Ler antes de qualquer task.
+**Spec:** `docs/decisions/0129-adicionar-variacao-a-familia-publicada.md` (D-1…D-11). Ler antes de qualquer task.
 
 ## Global Constraints
 
@@ -20,7 +20,7 @@
 - Comentários e strings de UI em pt-BR, estilo do codebase (comentários explicam o *porquê*).
 - Testes de edge: Deno tests em `supabase/functions/<fn>/__tests__/` (padrão `cadastrar-produto`); testes frontend: vitest em `__tests__/` ao lado do componente.
 
-## Desvios conscientes do texto do ADR-0128 (decididos no planejamento — não rediscutir)
+## Desvios conscientes do texto do ADR-0129 (decididos no planejamento — não rediscutir)
 
 1. **`enfileirarFamilias` NÃO publica.** O sketch do ADR ("enfileira via `enfileirarFamilias`") leva a `process-familia`, que para UPDATE só resolve cor e marca `pronto` (`process-familia/index.ts:195-198`) — o lote ficaria parado esperando clique na Revisão, violando D-10. A edge nova encadeia **`publicar-familias`** (fetch com JWT encaminhado), que já faz claim, decisão split vs. update (ADR-0034/0104) e enfileira o worker. As *decisões* D-1…D-11 permanecem; só o helper do sketch muda.
 2. **Lote dedicado por submissão** (não reusa o lote manual aberto do ADR-0094 D-1.1): a unique `familias_lote_id_codigo_pai_key` colidiria com a família CREATE original quando o produto nasceu por cadastro manual.
@@ -58,7 +58,7 @@
 Rodar: `supabase migration new guard_estoque_update_manual` (na raiz do worktree). Copiar a função `validar_variacao_no_tenant` VIGENTE de `20260804113000_guard_manual_product_direct_writes.sql` (linhas ~129-173) como base e recriá-la com `create or replace function`, mudando SÓ o bloco do guard de estoque. A consulta que hoje resolve o lote a partir de `new.familia_id` deve passar a selecionar também `f.operacao`. O guard vira:
 
 ```sql
--- ADR-0128: família de UPDATE em lote manual clona o estoque vivo das variações irmãs
+-- ADR-0129: família de UPDATE em lote manual clona o estoque vivo das variações irmãs
 -- (senão a família nova vira canônica na tela Estoque com saldo 0 e o worker de update
 -- zeraria o estoque no ML). O caminho-único-pelo-ledger (ADR-0094 D-15) continua valendo
 -- para CREATE (cadastro inicial) — e bloquear_escrita_direta_estoque continua bloqueando
@@ -239,7 +239,7 @@ assertEquals(fam.ml_item_id, 'MLB1'); assertEquals(fam.nome_pai, 'P');
 
 - [ ] **Step 3: Implementar `processar.ts`** com as funções acima (sem I/O). Rodar de novo → PASS.
 
-- [ ] **Step 4: Implementar `index.ts`** — fluxo (comentado no estilo do projeto, citando ADR-0128 e os desvios):
+- [ ] **Step 4: Implementar `index.ts`** — fluxo (comentado no estilo do projeto, citando ADR-0129 e os desvios):
 
 1. OPTIONS/405; `requireUserOrg(req, { access: 'write' })`.
 2. **Gate admin** — copiar de `atualizar-status-publicado/index.ts:12-24`: `if (!r.isAdmin && r.support?.scope !== 'full')` → auditar `denied` + 403 (ADR-0060/0047).
@@ -293,7 +293,7 @@ assertEquals(
 assert(mensagemNotificacaoAddVariacao('erro', 'Sandália X', 'preço divergente').includes('preço divergente'));
 ```
 
-- [ ] **Step 3: Implementar.** Disparo GATED: só quando o lote do job tem `origem='manual'` E a família `operacao='UPDATE'` (uma query `lotes.select('origem').eq('id', lote_id)` no ponto de conclusão; comentário: "ADR-0128 D-11 — só o fluxo 'adicionar variação' notifica; reposição por planilha continua silenciosa como sempre foi"). Best-effort: falha de notificação NÃO derruba o worker (try/catch com console.error). Categoria `'integracao'`.
+- [ ] **Step 3: Implementar.** Disparo GATED: só quando o lote do job tem `origem='manual'` E a família `operacao='UPDATE'` (uma query `lotes.select('origem').eq('id', lote_id)` no ponto de conclusão; comentário: "ADR-0129 D-11 — só o fluxo 'adicionar variação' notifica; reposição por planilha continua silenciosa como sempre foi"). Best-effort: falha de notificação NÃO derruba o worker (try/catch com console.error). Categoria `'integracao'`.
 
 - [ ] **Step 4: Verificar**: `deno lint && deno check update-familia-ml/index.ts && deno test update-familia-ml/` → PASS. Conferir que nenhum teste existente quebrou.
 
@@ -422,7 +422,7 @@ git commit -m "feat(adr-0128): dialog Adicionar variacao na tela Estoque (admin-
 **Files:**
 - Modify: `docs/reference/edge-functions.md` (entrada nova: `adicionar-variacoes-familia` — contrato, gates, encadeamento com publicar-familias; nota na entrada de `update-familia-ml` sobre a notificação gated)
 - Modify: `docs/reference/modelo-de-dados.md` (nota no guard `validar_variacao_no_tenant`: estoque via ledger só p/ `operacao='CREATE'`)
-- Modify: `docs/decisions/0128-adicionar-variacao-a-familia-publicada.md` (seção "Implementação prevista" → curto adendo "Implementação (2026-08-20)" registrando os desvios 1-5 do plano, com uma linha de racional cada; NÃO reabrir decisões)
+- Modify: `docs/decisions/0129-adicionar-variacao-a-familia-publicada.md` (seção "Implementação prevista" → curto adendo "Implementação (2026-08-20)" registrando os desvios 1-5 do plano, com uma linha de racional cada; NÃO reabrir decisões)
 - Modify: `docs/TASKS.md` (registrar a entrega)
 
 - [ ] **Step 1: Escrever as quatro atualizações** (fatos, sem prosa: contrato da edge, gates, fluxo, desvios).
@@ -436,7 +436,7 @@ git commit -m "docs(adr-0128): edge-functions, modelo-de-dados, adendo de implem
 
 ---
 
-## Mapa critérios de aceite (ADR-0128 §Validação) → onde é coberto
+## Mapa critérios de aceite (ADR-0129 §Validação) → onde é coberto
 
 | Critério | Cobertura |
 |---|---|

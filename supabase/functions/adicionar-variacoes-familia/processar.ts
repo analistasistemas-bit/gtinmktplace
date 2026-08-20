@@ -1,4 +1,4 @@
-// ADR-0128 — adicionar variação a família publicada, direto da tela Estoque. Miolo puro (sem
+// ADR-0129 — adicionar variação a família publicada, direto da tela Estoque. Miolo puro (sem
 // I/O) de `adicionar-variacoes-familia`: valida o payload e clona `familias`/`variacoes` para o
 // lote de UPDATE novo. `index.ts` orquestra as queries/inserts em cima destas funções.
 

@@ -272,7 +272,7 @@ ADR-0027 também para sessões administrativas, que podem contornar o RLS por de
 - alterações de saldo só passam por `registrar_entrada`, `baixar_estoque` ou
   `estornar_estoque`, mantendo saldo e `estoque_movimentos` na mesma transação.
 
-**Estoque inicial zero no INSERT (ADR-0128, migration `20260820143736_guard_estoque_update_manual.sql`):**
+**Estoque inicial zero no INSERT (ADR-0129, migration `20260820143736_guard_estoque_update_manual.sql`):**
 a exigência acima vale só quando `familias.operacao = 'CREATE'` — a família de UPDATE nascida da
 tela Estoque ("adicionar variação a família publicada") clona o estoque **vivo** das variações
 irmãs no INSERT, senão a família nova viraria canônica na tela Estoque com saldo 0 e o worker de

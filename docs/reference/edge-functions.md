@@ -380,7 +380,7 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   **Preço uniforme (ADR-0078 F2):** fora de "somente estoque", `garantirPrecoUniforme` aplica o
   mesmo guard do CREATE antes de qualquer envio (400 LOUD em preços divergentes); em "somente
   estoque" o guard é pulado (nenhum preço seria enviado de qualquer forma).
-  **Notificação de "adicionar variação" (ADR-0128 D-11):** no desfecho final (sucesso ou erro,
+  **Notificação de "adicionar variação" (ADR-0129 D-11):** no desfecho final (sucesso ou erro,
   Legacy ou UP), dispara sino via `notificarCategoria(..., 'integracao', ...)` **só quando**
   `lotes.origem='manual'` **e** `familias.operacao='UPDATE'` — reposição por planilha continua
   silenciosa como sempre foi. Best-effort (try/catch, não derruba o worker em falha de notificação).
@@ -657,7 +657,7 @@ falha ao ler `organizations` não libera.
   propósito: recusar por linha nua tornaria um publish que falhou indeletável pelas duas portas. Apaga as fotos do Storage sob o prefixo do
   **dono** de cada família (mesmo guard de posse de `remover-publicado`), e roda
   `limparMovimentosOrfaos` **depois** do delete (ADR-0097 D-2). Nunca toca o ML.
-- **adicionar-variacoes-familia** (ADR-0128) — admin adiciona N cores novas a uma família **já
+- **adicionar-variacoes-familia** (ADR-0129) — admin adiciona N cores novas a uma família **já
   publicada** no ML, direto da tela Estoque, sem passar pela Revisão (D-10). **Admin-only** (mesmo
   gate copiado de `atualizar-status-publicado`: `!isAdmin && support?.scope !== 'full'` → 403 +
   `auditarOperacaoSuporte('denied')`) e restrita ao módulo `estoque`.

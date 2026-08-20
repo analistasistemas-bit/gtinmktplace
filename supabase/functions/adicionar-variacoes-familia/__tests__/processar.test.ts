@@ -1,4 +1,4 @@
-// ADR-0128. Padrão de teste igual a cadastrar-produto/__tests__/processar.test.ts: vitest
+// ADR-0129. Padrão de teste igual a cadastrar-produto/__tests__/processar.test.ts: vitest
 // (não Deno test) — é o runner que o CI (`test`/`frontend` do ci.yml) e o vitest.config.ts
 // (`include: ['./supabase/functions/**/__tests__/**/*.test.ts']`) realmente executam.
 import { describe, expect, it } from 'vitest';

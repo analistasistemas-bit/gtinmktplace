@@ -1,4 +1,4 @@
-// ADR-0128: admin adiciona N variações (cores) novas a uma família JÁ PUBLICADA no ML, direto
+// ADR-0129: admin adiciona N variações (cores) novas a uma família JÁ PUBLICADA no ML, direto
 // da tela Estoque. Monta um lote real de UPDATE (variações vivas clonadas + as novas digitadas
 // aqui) e cai no pipeline de UPDATE existente (edge `adicionar-variacoes-familia` →
 // `publicar-familias`) — NUNCA passa pela tela Revisão (D-10). Versão SIMPLIFICADA do cadastro

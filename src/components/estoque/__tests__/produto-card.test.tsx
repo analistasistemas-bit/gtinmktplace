@@ -298,7 +298,7 @@ describe('ProdutoCard', () => {
   });
 
   // SKU sem anúncio (ou status ainda não carregado) mantém o preço local — nunca vazio.
-  // ADR-0128 D-7: item novo do menu "⋮" — aparece SÓ com onAdicionarVariacao (a página só passa
+  // ADR-0129 D-7: item novo do menu "⋮" — aparece SÓ com onAdicionarVariacao (a página só passa
   // a prop para admin), independente de onExcluir estar presente ou não.
   it('item Adicionar variação só aparece com onAdicionarVariacao definido', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

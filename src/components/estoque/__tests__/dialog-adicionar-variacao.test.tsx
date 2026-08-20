@@ -1,4 +1,4 @@
-// ADR-0128 (Task 6): dialog "Adicionar variação" — versão simplificada do cadastro
+// ADR-0129 (Task 6): dialog "Adicionar variação" — versão simplificada do cadastro
 // (dialog-cadastro-produto.tsx) para clonar uma família publicada + N cores novas num lote de
 // UPDATE. Cobre os critérios de aceite 3 (sem foto não salva) e 5 (lote em voo bloqueia), mais
 // o payload que a edge `adicionar-variacoes-familia` espera.

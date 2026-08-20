@@ -40,7 +40,7 @@ export const QK = {
   canaisHabilitados: ['canais-habilitados'] as const,
   modulosHabilitados: ['modulos-habilitados'] as const,
   produtosEstoqueResumo: ['produtos-estoque-resumo'] as const,
-  // ADR-0128 D-11/D-8: status de atualização por produto (badge no card + pré-check "em voo").
+  // ADR-0129 D-11/D-8: status de atualização por produto (badge no card + pré-check "em voo").
   familiasNaoPublicadas: ['familias-nao-publicadas'] as const,
   canaisPorProduto: ['canais-por-produto'] as const,
   variacoesEstoque: (codigoPai: string) => ['variacoes-estoque', codigoPai] as const,

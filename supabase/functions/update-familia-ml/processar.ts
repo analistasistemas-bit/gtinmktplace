@@ -51,7 +51,7 @@ export interface ProcessarDeps {
 }
 export interface ProcessarOpts { tentativas: number }
 
-/** ADR-0128 D-11: texto do sino de notificação ao concluir (sucesso) ou errar o UPDATE do lote
+/** ADR-0129 D-11: texto do sino de notificação ao concluir (sucesso) ou errar o UPDATE do lote
  * "Adicionar variação". `erro` (se informado) entra entre parênteses na mensagem de falha. */
 export function mensagemNotificacaoAddVariacao(
   resultado: 'sucesso' | 'erro', nomePai: string, erro?: string,
@@ -60,7 +60,7 @@ export function mensagemNotificacaoAddVariacao(
   return `Variações adicionadas: falha ao atualizar "${nomePai}" no Mercado Livre${erro ? ` (${erro})` : ''}.`;
 }
 
-/** ADR-0128 D-11 — só o fluxo "adicionar variação" (lote origem='manual' + família
+/** ADR-0129 D-11 — só o fluxo "adicionar variação" (lote origem='manual' + família
  * operacao='UPDATE') dispara o sino; reposição por planilha continua silenciosa como sempre foi.
  * Best-effort: chamado de dentro de um try/catch, nunca deve derrubar o worker. */
 async function notificarConclusaoAddVariacao(
@@ -78,7 +78,7 @@ async function notificarConclusaoAddVariacao(
 }
 
 /** Ponto único de entrada: roda o UPDATE (Legacy ou UP) e, no desfecho final (ok/erro), dispara o
- * sino do ADR-0128 D-11 quando elegível — cobre os dois caminhos (Legacy e mini-saga UP) sem
+ * sino do ADR-0129 D-11 quando elegível — cobre os dois caminhos (Legacy e mini-saga UP) sem
  * duplicar a checagem de elegibilidade em cada `return` interno. */
 export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const resultado = await executarAtualizacaoFamilia(deps, job, opts);

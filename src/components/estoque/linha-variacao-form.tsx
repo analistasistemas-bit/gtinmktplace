@@ -72,7 +72,7 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, fo
    *  inválido, tocado ou não (§5.4: senão o operador não descobre o que falta sem clicar em
    *  cada campo). */
   tentouSalvar: boolean;
-  /** ADR-0128: dialog "Adicionar variação" não publica cor sem foto (D-4) — default `undefined`
+  /** ADR-0129: dialog "Adicionar variação" não publica cor sem foto (D-4) — default `undefined`
    *  preserva o comportamento de hoje (foto opcional) byte a byte para o cadastro (ADR-0094). */
   fotoObrigatoria?: boolean;
   onMudar: (patch: Partial<LinhaVariacao>) => void;

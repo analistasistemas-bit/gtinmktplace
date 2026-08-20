@@ -1,4 +1,4 @@
-// ADR-0128 D-11/D-8: status de atualização por produto na tela Estoque — badge no card
+// ADR-0129 D-11/D-8: status de atualização por produto na tela Estoque — badge no card
 // (Task 6) e pré-check do bloqueio "família em voo" antes de abrir o dialog "Adicionar variação".
 import { supabase } from '@/lib/supabase';
 

@@ -35,7 +35,7 @@ function fakeAdmin(over: {
   itensUP?: Record<string, unknown>[];
   raizErr?: boolean;   // simula erro na query de roteamento (raiz UP)
   itensErr?: boolean;  // simula erro na query de roteamento (itens UP)
-  lote?: Record<string, unknown> | null; // ADR-0128 D-11: lotes.select('origem')
+  lote?: Record<string, unknown> | null; // ADR-0129 D-11: lotes.select('origem')
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -426,7 +426,7 @@ describe('processarAtualizacaoFamilia — família DISSOLVIDA pelo ML (ADR-0105)
   });
 });
 
-// ── ADR-0128 D-11 — sino de notificação ao concluir/errar o UPDATE do lote "Adicionar variação" ──
+// ── ADR-0129 D-11 — sino de notificação ao concluir/errar o UPDATE do lote "Adicionar variação" ──
 describe('mensagemNotificacaoAddVariacao', () => {
   it('sucesso: menciona o nome do pai e o Mercado Livre', () => {
     expect(mensagemNotificacaoAddVariacao('sucesso', 'Sandália X'))
@@ -439,7 +439,7 @@ describe('mensagemNotificacaoAddVariacao', () => {
   });
 });
 
-describe('processarAtualizacaoFamilia — sino gated (ADR-0128 D-11)', () => {
+describe('processarAtualizacaoFamilia — sino gated (ADR-0129 D-11)', () => {
   it('lote origem=manual + família operacao=UPDATE + sucesso → dispara notificarCategoria', async () => {
     const { admin } = fakeAdmin({
       familia: { ...FAMILIA_BASE, operacao: 'UPDATE' },
