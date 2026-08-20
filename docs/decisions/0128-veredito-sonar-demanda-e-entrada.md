@@ -38,7 +38,8 @@ usa o título "Oportunidade média".
 
 | Condição | `titulo` |
 |---|---|
-| demanda ruim / `nivel` baixa | Oportunidade baixa |
+| demanda ruim | Oportunidade baixa |
+| `nivel` baixa + entrada aberta (demanda não ruim) | Oportunidade baixa |
 | `entrada` nao_medida + demanda bom | Demanda forte · concorrência não medida |
 | `entrada` nao_medida + demanda medio | Demanda ok · concorrência não medida |
 | `entrada` fechada + demanda bom | Demanda forte · entrada fechada |
@@ -73,13 +74,20 @@ de loja ainda é rival — o líder sem nome não some da briga."*
 
 | Situação | Ação |
 |---|---|
-| demanda baixa | não compre estoque |
-| `entrada` nao_medida ou fechada | no máximo anúncio-teste mínimo, nunca volume |
+| demanda ruim (`gateDemanda`) | não compre estoque — demanda insuficiente |
+| `entrada` fechada (demanda não ruim) | não compre volume; mercado compra, entrada fechada (Full/loja oficial) |
+| `entrada` nao_medida | no máximo anúncio-teste mínimo, nunca volume |
+| `nivel` baixa + entrada aberta | não compre estoque — disputa/tração fraca, não demanda insuficiente |
 | `entrada` aberta + alta | estoque ainda conservador |
 
 Marca **não** pontua Demanda; marca ruim **fecha** Entrada. Sem classificador NLP de marca de
 laboratório — o copy de `nao_medida` orienta: *"se for marca de laboratório/fórmula, trate como
 entrada fechada até conferir loja oficial"*.
+
+**Correção 2026-08-20:** `nivel === 'baixa'` sozinho não pode sequestrar título/ação quando a causa
+real é Entrada fechada (ex.: demanda ok + Full dominante → composite baixa). Título e ação checam
+`demanda === 'ruim'` e `entrada` **antes** de cair no ramo genérico de oportunidade baixa; copy de
+"demanda insuficiente" fica restrito a `gateDemanda`.
 
 ## Consequências
 

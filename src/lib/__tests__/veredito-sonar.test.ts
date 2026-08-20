@@ -148,6 +148,28 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     expect(v.rivaisPodio.some((r) => r.vendedor == null)).toBe(true);
   });
 
+  it('demanda ok + Full ruim → nivel baixa mas titulo/acao falam entrada fechada, nao demanda insuficiente', () => {
+    // Caso abraçadeira nylon: demanda medio (60% vendem, >=5k vendas), disputa ruim (>=60% Full),
+    // tracao medio → soma 2/6 = baixa, mas gateDemanda false.
+    const itens = Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `MLB${i}`,
+      vendedor: `LOJA-${i}`,
+      vendidos: i < 12 ? 500 : null,
+      preco: 100,
+      full: i < 19,
+      loja_oficial: false,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.fatores.find((f) => f.chave === 'demanda')?.nivel).toBe('medio');
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('ruim');
+    expect(v.nivel).toBe('baixa');
+    expect(v.entrada).toBe('fechada');
+    expect(v.explicacao.gateDemanda).toBe(false);
+    expect(v.titulo).toMatch(/entrada fechada/);
+    expect(v.explicacao.acao).not.toMatch(/Demanda insuficiente/i);
+    expect(v.explicacao.acao).toMatch(/entrada fechada|Full/i);
+  });
+
   it('marca ruim (>50% loja oficial) impede nivel alta mesmo com scores altos', () => {
     // 20 anúncios pulverizados, Full baixo, demanda forte — sem marca seria alta; com >50% oficial → fechada.
     const itens = Array.from({ length: 20 }, (_, i) => itemV2({

@@ -105,7 +105,7 @@ const TITULO_ALTA = 'Oportunidade alta';
 const TITULO_MEDIA = 'Oportunidade média';
 
 function tituloVeredito(nivel: NivelVeredito, entrada: NivelEntrada, demanda: NivelFator): string {
-  if (nivel === 'baixa' || demanda === 'ruim') return TITULO_BAIXA;
+  if (demanda === 'ruim') return TITULO_BAIXA;
   if (entrada === 'nao_medida') {
     return demanda === 'bom'
       ? 'Demanda forte · concorrência não medida'
@@ -116,6 +116,7 @@ function tituloVeredito(nivel: NivelVeredito, entrada: NivelEntrada, demanda: Ni
       ? 'Demanda forte · entrada fechada'
       : 'Demanda ok · entrada fechada';
   }
+  if (nivel === 'baixa') return TITULO_BAIXA;
   if (nivel === 'alta') return TITULO_ALTA;
   return TITULO_MEDIA;
 }
@@ -126,7 +127,7 @@ function acaoVeredito(
   gateDemanda: boolean,
   razaoParcial: string | null,
 ): string {
-  if (gateDemanda || nivel === 'baixa') {
+  if (gateDemanda) {
     return 'Não compre estoque neste nicho. Demanda insuficiente — sem prova de compra, volume é prejuízo. Esse nicho só faria sentido com diferencial forte (preço de fábrica, kit exclusivo ou marca própria), e mesmo assim só depois de validar a demanda.';
   }
   if (entrada === 'nao_medida') {
@@ -134,7 +135,10 @@ function acaoVeredito(
     return `Avaliação parcial: ${causa}. No máximo um anúncio-teste mínimo — nunca volume. Se for marca de laboratório/fórmula, trate como entrada fechada até conferir loja oficial.`;
   }
   if (entrada === 'fechada') {
-    return 'Entrada fechada: topo ocupado ou marca com loja oficial forte. No máximo um anúncio-teste mínimo — nunca volume de estoque.';
+    return 'Não compre estoque neste nicho. Tem gente comprando, mas a entrada está fechada (Full dominante ou loja oficial no topo). Volume é prejuízo. Só faria sentido com preço de fábrica, kit exclusivo ou marca própria — e mesmo assim só um anúncio-teste mínimo.';
+  }
+  if (nivel === 'baixa') {
+    return 'Não compre estoque neste nicho. O mercado não sustenta mais um player genérico (disputa/tração). Só com diferencial forte, e só depois de validar.';
   }
   if (nivel === 'alta') {
     return 'Entrada aberta e sinais favoráveis. Ainda assim, publique com estoque conservador e valide o giro real nas primeiras semanas.';

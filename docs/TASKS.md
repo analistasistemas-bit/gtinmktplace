@@ -9,6 +9,8 @@
 - [x] `alta` exige `entrada === 'aberta'`; marca ruim fecha Entrada sem pontuar Demanda.
 - [x] Pódio de rivais por faturamento inclui fantasmas sem rótulo (pulverização inalterada).
 - [x] Gabarito ADR-0127 intacto (média / média / alta); cortes D10/DISPUTA_V2/DEMANDA sagrados.
+- [x] **2026-08-20:** `nivel baixa` não sequestra título/ação quando Entrada fechada (copy de demanda
+  insuficiente só em `gateDemanda`).
 
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 
