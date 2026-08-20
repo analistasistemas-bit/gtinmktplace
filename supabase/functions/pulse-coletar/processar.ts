@@ -221,11 +221,7 @@ export async function processarColetaOrg(
         permalinksAnteriores.set(oferta.item_id, oferta.permalink);
       }
     }
-    const atuais = await enrichPulsePermalinks(
-      parseOfertasProduto(json, proprioSellerId),
-      (url) => mlGet(String(url), token),
-      permalinksAnteriores,
-    );
+    const atuais = enrichPulsePermalinks(parseOfertasProduto(json, proprioSellerId), permalinksAnteriores);
     for (const o of atuais) sellerIdsColetados.add(o.seller_id);
 
     const diff = diffOfertas(anteriores, atuais);

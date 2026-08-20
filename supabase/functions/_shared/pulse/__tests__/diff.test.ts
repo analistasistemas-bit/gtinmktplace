@@ -90,9 +90,9 @@ describe('diffOfertas', () => {
     expect(r.alertas).toEqual([]);
   });
 
-  // Se a ficha nunca expuser permalink, os dois lados ficam null e nada é regravado — a trava de
-  // crescimento do §2 do ADR continua valendo.
-  it('ficha que não expõe link não gera regravação em toda execução', () => {
+  // O diff isolado continua idempotente com links ausentes; na coleta real, o enriquecimento
+  // anterior a esta etapa deriva o permalink do item_id.
+  it('links ausentes nos dois lados não geram regravação em toda execução', () => {
     const anteriores = [anterior({ item_id: 'MLB1', preco: 100, permalink: null })];
     const atuais = [oferta({ item_id: 'MLB1', preco: 100, permalink: null })];
     expect(diffOfertas(anteriores, atuais).gravar).toEqual([]);
