@@ -6,7 +6,10 @@ const { enfileirarSpy, espelharSpy } = vi.hoisted(() => ({ enfileirarSpy: vi.fn(
 vi.mock('../../_shared/queue.ts', () => ({ enfileirarVinculacaoCatalogo: enfileirarSpy }));
 vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: espelharSpy }));
 
-import { processarAtualizacaoFamilia, type ProcessarDeps } from '../processar';
+const { notificarCategoriaSpy } = vi.hoisted(() => ({ notificarCategoriaSpy: vi.fn() }));
+vi.mock('../../_shared/notificacoes/config.ts', () => ({ notificarCategoria: notificarCategoriaSpy }));
+
+import { processarAtualizacaoFamilia, mensagemNotificacaoAddVariacao, type ProcessarDeps } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { ResultadoAtualizarUP } from '../../_shared/user-products/atualizar-familia-up';
 
@@ -32,6 +35,7 @@ function fakeAdmin(over: {
   itensUP?: Record<string, unknown>[];
   raizErr?: boolean;   // simula erro na query de roteamento (raiz UP)
   itensErr?: boolean;  // simula erro na query de roteamento (itens UP)
+  lote?: Record<string, unknown> | null; // ADR-0128 D-11: lotes.select('origem')
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -39,6 +43,7 @@ function fakeAdmin(over: {
   const conexao = over.conexao === undefined ? CONEXAO_ROW : over.conexao;
   const raizUP = over.raizUP ?? null;
   const itensUP = over.itensUP ?? [];
+  const lote = over.lote === undefined ? null : over.lote;
   function chain(table: string) {
     const rec = { table, op: '', filters: {} as Record<string, unknown>, payload: {} as Record<string, unknown> };
     const ler = () => {
@@ -48,6 +53,7 @@ function fakeAdmin(over: {
       if (table === 'configuracoes') return { desconto_pct: 15 };
       if (table === 'anuncios_externos') return raizUP;
       if (table === 'anuncios_externos_itens') return itensUP;
+      if (table === 'lotes') return lote;
       return null;
     };
     const api: Record<string, unknown> = {
@@ -78,7 +84,7 @@ function baseDeps(admin: never, extra: Partial<ProcessarDeps> = {}): ProcessarDe
   return { admin, conn: fakeConnector as never, finalizarLote: async () => {}, ...extra };
 }
 
-beforeEach(() => { fakeConnector.reset(); enfileirarSpy.mockReset(); espelharSpy.mockReset(); });
+beforeEach(() => { fakeConnector.reset(); enfileirarSpy.mockReset(); espelharSpy.mockReset(); notificarCategoriaSpy.mockReset(); });
 
 describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   it('família COM linhas em anuncios_externos_itens → caminho UP; Legacy (atualizarAnuncio) NUNCA chamado', async () => {
@@ -417,5 +423,95 @@ describe('processarAtualizacaoFamilia — família DISSOLVIDA pelo ML (ADR-0105)
     const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
     expect(descobriu).toBe(false);
     expect(r.tipo).toBe('ok');
+  });
+});
+
+// ── ADR-0128 D-11 — sino de notificação ao concluir/errar o UPDATE do lote "Adicionar variação" ──
+describe('mensagemNotificacaoAddVariacao', () => {
+  it('sucesso: menciona o nome do pai e o Mercado Livre', () => {
+    expect(mensagemNotificacaoAddVariacao('sucesso', 'Sandália X'))
+      .toBe('Variações adicionadas: "Sandália X" atualizado no Mercado Livre.');
+  });
+
+  it('erro: inclui a mensagem de erro observada', () => {
+    expect(mensagemNotificacaoAddVariacao('erro', 'Sandália X', 'preço divergente'))
+      .toContain('preço divergente');
+  });
+});
+
+describe('processarAtualizacaoFamilia — sino gated (ADR-0128 D-11)', () => {
+  it('lote origem=manual + família operacao=UPDATE + sucesso → dispara notificarCategoria', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, operacao: 'UPDATE' },
+      lote: { origem: 'manual' },
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(notificarCategoriaSpy).toHaveBeenCalledTimes(1);
+    expect(notificarCategoriaSpy).toHaveBeenCalledWith(
+      admin, 'org-1', 'integracao', 'Variações adicionadas: "AGULHA" atualizado no Mercado Livre.',
+    );
+  });
+
+  it('lote origem=manual + família operacao=UPDATE + erro → notifica com a mensagem de erro', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, operacao: 'UPDATE' },
+      lote: { origem: 'manual' },
+    });
+    fakeConnector.falharProximo('FOTO', false); // definitivo
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 10 });
+    expect(r.tipo).toBe('erro');
+    expect(notificarCategoriaSpy).toHaveBeenCalledTimes(1);
+    const [, , categoria, texto] = notificarCategoriaSpy.mock.calls[0];
+    expect(categoria).toBe('integracao');
+    expect(texto).toContain('falha ao atualizar "AGULHA"');
+  });
+
+  it('família operacao=CREATE → NÃO notifica (reposição/CREATE fora do gate)', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, operacao: 'CREATE' },
+      lote: { origem: 'manual' },
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(notificarCategoriaSpy).not.toHaveBeenCalled();
+  });
+
+  it('lote origem=planilha (reposição normal) → NÃO notifica mesmo com operacao=UPDATE', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, operacao: 'UPDATE' },
+      lote: { origem: 'planilha' },
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(notificarCategoriaSpy).not.toHaveBeenCalled();
+  });
+
+  it('sem operacao (regressão: famílias antigas do teste base) → NÃO notifica', async () => {
+    const { admin } = fakeAdmin(); // FAMILIA_BASE sem `operacao`, sem `lote`
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(notificarCategoriaSpy).not.toHaveBeenCalled();
+  });
+
+  it('notificarCategoria falha → best-effort, não derruba o worker nem muda o resultado', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, operacao: 'UPDATE' },
+      lote: { origem: 'manual' },
+    });
+    notificarCategoriaSpy.mockRejectedValueOnce(new Error('telegram fora do ar'));
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'ok', itemExternoId: 'MLB-EXISTENTE', novas: 0 });
+  });
+
+  it('retry não dispara notificação (não é desfecho final)', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, operacao: 'UPDATE' },
+      lote: { origem: 'manual' },
+    });
+    fakeConnector.falharProximo('FOTO', true); // retentável
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('retry');
+    expect(notificarCategoriaSpy).not.toHaveBeenCalled();
   });
 });
