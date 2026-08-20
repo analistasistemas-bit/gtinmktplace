@@ -1,6 +1,6 @@
 ---
 tags: [modulo, estoque]
-atualizado: 2026-08-11
+atualizado: 2026-08-20
 ---
 
 # Estoque
@@ -86,6 +86,27 @@ Bloco B do E6b (ADR-0094): produto entra **sem planilha**. Edges `cadastrar-prod
 `entrada-estoque` (`verify_jwt=true`). "Sessão de cadastro = um lote": `lotes.origem = 'manual'`
 (chip Planilha/Cadastro manual no LoteCard) — `lote_id` é `NOT NULL` e sustenta `process-familia`,
 `finalizarLote` e a unique `(lote_id, codigo_pai)`.
+
+## Adicionar variação a produto publicado (ADR-0129)
+
+Menu `⋮` do card → **Adicionar variação** (admin-only, mesmo gate do Ajuste/ADR-0110). Diferente
+do cadastro manual acima (que cria família **nova**), esta ação estende uma família **já
+publicada**: clona a família mais recente + variações vivas do banco para um **lote dedicado** de
+UPDATE, insere N cores novas digitadas no formulário (foto obrigatória, CODIGO único por org,
+campos físicos pré-preenchidos de uma irmã existente), registra o estoque inicial pelo ledger e
+encadeia `publicar-familias` diretamente — **não** `enfileirarFamilias`/Revisão, porque o dado é
+100% digitado pelo admin, não saída de IA (`process-familia` pra UPDATE só resolve cor e para em
+`pronto`, o que deixaria o lote preso esperando clique manual).
+
+Reaproveita **100%** o pipeline de UPDATE existente (ADR-0016/0104) — nenhuma integração nova com
+o Mercado Livre, cor nova nasce em opt-out publicável (foto + estoque > 0), e o worker decide
+sozinho entre payload Legacy e User Products. Bloqueia (409) se já existe lote não-terminal para a
+família — dois UPDATEs da mesma família em voo é o race condition que o ADR-0104 já trata como
+risco de composição. Edge `adicionar-variacoes-familia`.
+
+**Migration exigida (o ADR não previa nenhuma):** o guard de `validar_variacao_no_tenant` exigia
+estoque zero no INSERT em lote manual — sem restringi-lo a `familias.operacao='CREATE'`, clonar o
+estoque vivo das irmãs teria **zerado o saldo no ML**. Migration `20260820143736`.
 
 ## Exclusão de produto (ADR-0113)
 

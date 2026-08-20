@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-08-18
+atualizado: 2026-08-20
 ---
 
 # Sprint Atual
@@ -86,6 +86,24 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Runbook do operador: `docs/runbooks/catalogo-anuncios-a-pausar.md`.
 > Pendência: o **painel** da extensão ainda não foi exercitado ponta a ponta — as chamadas foram
 > disparadas direto na página. Aguarda o próximo anúncio sinalizado.
+
+> **✅ Adicionar variação a produto publicado EM PRODUÇÃO (ADR-0129, 2026-08-20).** Menu "⋮" do
+> card em `/estoque` (admin-only) ganha "Adicionar variação": clona a família publicada mais
+> recente + variações vivas para um **lote dedicado de UPDATE**, insere N cores novas digitadas
+> (foto obrigatória, CODIGO único por org, campos físicos pré-preenchidos de uma irmã), registra
+> estoque inicial pelo ledger e encadeia `publicar-familias` — reaproveita 100% o pipeline de
+> UPDATE existente (ADR-0016/0104), zero integração nova com o ML. Bloqueia (409) se já há lote
+> não-terminal para a família (D-8); **nunca passa pela tela Revisão** (dado é 100% manual do
+> admin, não saída de IA). Edge nova `adicionar-variacoes-familia` (v1) + `cadastrar-produto`/
+> `update-familia-ml` redeployadas (blast radius de `_shared/produto/codigos.ts`). Migration
+> `20260820143736` restringe a `operacao='CREATE'` o guard que exigia estoque zero no INSERT em
+> lote manual — sem isso, clonar o estoque vivo das irmãs zeraria o saldo no ML.
+>
+> **Renumerado de ADR-0128 para ADR-0129 no merge:** outra sessão mergeou um ADR-0128 diferente
+> (Sonar — veredito Demanda/Entrada) enquanto esta feature estava em revisão. A colisão só apareceu
+> no `git fetch` pré-merge — os arquivos têm nomes diferentes, então não gerou conflito de git,
+> só duplicidade semântica de número. Rebase + renumeração em todo o código/docs antes do merge.
+> **Pendente:** validação E2E ao vivo (cor nova aparecendo de fato no anúncio publicado no ML).
 
 ## 📍 Fase 1 (2026-08-13) — detecção
 
