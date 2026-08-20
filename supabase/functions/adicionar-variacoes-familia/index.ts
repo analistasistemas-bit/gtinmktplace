@@ -27,6 +27,26 @@ function json(body: unknown, status = 200): Response {
 
 const CODIGO_8_DIGITOS = /^[0-9]{8}$/;
 
+// Encadeia publicar-familias com o JWT do chamador. `resp.ok` sozinho é falso positivo: o claim
+// de lá (status in ('pronto','erro'), ml_item_id not null) pode não casar nada e a edge ainda
+// devolve 200 com `enfileiradas: 0` — mesmo risco de "200 não prova canal atualizado" do push
+// de estoque no ML. Idempotente: o claim de publicar-familias só pega famílias 'pronto'/'erro',
+// então repetir a chamada num retry nunca duplica publicação.
+async function encadearPublicacao(authorization: string, familiaId: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/publicar-familias`, {
+      method: 'POST',
+      headers: { Authorization: authorization, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ familia_ids: [familiaId] }),
+    });
+    const corpo = await resp.json().catch(() => null) as { enfileiradas?: number } | null;
+    return resp.ok && Number(corpo?.enfileiradas ?? 0) > 0;
+  } catch (e) {
+    console.error('adicionar_variacoes_familia_publicar_falhou', { familiaId, erro: String(e) });
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -62,13 +82,24 @@ Deno.serve(async (req) => {
   const target = { type: 'familia', id: familiaIdRecebida };
 
   // Idempotência (mesmo padrão de cadastrar-produto/index.ts:58-60): um retry de rede reusa o
-  // que já foi gravado em vez de duplicar família, estoque ou publicação.
+  // que já foi gravado em vez de duplicar família, estoque ou publicação. Se a família ainda
+  // está 'pronto', a 1ª tentativa morreu ANTES de encadear a publicação — re-encadeia aqui em
+  // vez de fabricar `publicacaoOk: true` (o claim de publicar-familias é idempotente, só pega
+  // 'pronto'/'erro'; família já 'publicando'/'publicado' vira no-op e reportamos true, que aí
+  // é observação, não previsão).
   const { data: jaExistente } = await admin.from('familias')
-    .select('id, lote_id').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
+    .select('id, lote_id, status').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
   if (jaExistente) {
+    let publicacaoOk = true;
+    if (jaExistente.status === 'pronto') {
+      publicacaoOk = await encadearPublicacao(req.headers.get('Authorization')!, jaExistente.id as string);
+      await admin.from('lotes')
+        .update({ status: publicacaoOk ? 'publicando' : 'revisao' })
+        .eq('id', jaExistente.lote_id as string);
+    }
     return json({
       jaExistia: true, familiaId: jaExistente.id, loteId: jaExistente.lote_id,
-      publicacaoOk: true, falhasEstoque: [],
+      publicacaoOk, falhasEstoque: [],
     });
   }
 
@@ -166,6 +197,9 @@ Deno.serve(async (req) => {
   if (famErr) {
     // Mesmo discriminador por DADO do cadastrar-produto/index.ts:198-208: 23505 pode ser a
     // corrida de idempotência (mesma chave) OU outra unique — só a primeira é "tente novamente".
+    // Lote recém-criado sem família é lixo (dedicado a esta submissão, nada mais o referencia) —
+    // sem o delete ele ficava vazio e preso em 'publicando' na tela Lotes.
+    await admin.from('lotes').delete().eq('id', loteId);
     if (famErr.code === '23505') {
       const { data: mesmaChave } = await admin.from('familias')
         .select('id').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
@@ -192,6 +226,8 @@ Deno.serve(async (req) => {
   const { error: varErr } = await admin.from('variacoes').insert([...clonesVariacoes, ...novasVariacoes]);
   if (varErr) {
     await admin.from('familias').delete().eq('id', familiaId);
+    // Mesma limpeza do famErr acima: lote dedicado sem família não deve sobrar na tela Lotes.
+    await admin.from('lotes').delete().eq('id', loteId);
     await auditarOperacaoSuporte(admin, context, target, 'failed');
     return json({ error: varErr.message }, 500);
   }
@@ -216,24 +252,7 @@ Deno.serve(async (req) => {
   // reposição — o invariante do ADR-0104 §4 ("mudança de composição só roda pelo caminho
   // 'Atualizar tudo'") exige que o preço propague normalmente, que é o default quando os campos
   // somente_estoque_* ficam ausentes (publicar-familias/index.ts:35-36).
-  let publicacaoOk = false;
-  try {
-    const resp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/publicar-familias`, {
-      method: 'POST',
-      headers: { Authorization: req.headers.get('Authorization')!, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ familia_ids: [familiaId] }),
-    });
-    // `resp.ok` sozinho é falso positivo: o claim de publicar-familias (status in
-    // ('pronto','erro'), ml_item_id not null) pode não casar nada e a edge ainda devolve 200
-    // com `enfileiradas: 0` (publicar-familias/index.ts, comentário sobre o lote #45 — "68
-    // enfileiradas, 58 presas em 'publicando' sem mensagem, invisíveis"). Mesmo risco de "200
-    // não prova canal atualizado" do push de estoque no ML — sem checar o corpo, a família
-    // ficaria presa em 'publicando' com publicacaoOk:true mentiroso.
-    const corpo = await resp.json().catch(() => null) as { enfileiradas?: number } | null;
-    publicacaoOk = resp.ok && Number(corpo?.enfileiradas ?? 0) > 0;
-  } catch (e) {
-    console.error('adicionar_variacoes_familia_publicar_falhou', { familiaId, erro: String(e) });
-  }
+  const publicacaoOk = await encadearPublicacao(req.headers.get('Authorization')!, familiaId);
   if (!publicacaoOk) {
     // Rota de recuperação: o lote fica visível (e reenviável) na tela Lotes em vez de preso,
     // invisível, em 'publicando' para sempre.
