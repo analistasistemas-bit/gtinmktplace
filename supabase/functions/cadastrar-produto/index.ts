@@ -18,38 +18,11 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
-import { type CodigosGerados, derivarCodigos } from '../_shared/produto/codigos.ts';
+import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import { estoqueInicialDiverge, variacoesDivergem } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-}
-
-/**
- * Confere os códigos GERADOS contra as duas tabelas (D-6).
- *
- * Cruzado de propósito: o guard antigo de PAI só olhava `familias` e o de SKU só olhava
- * `variacoes`. Com a sequência dessincronizada, um PAI gerado igual a um SKU já existente
- * passava pelos dois — e a resolução de estoque por (org_id, codigo) não distingue os dois
- * campos, então a venda baixaria o produto errado.
- */
-async function codigosJaUsados(
-  admin: ReturnType<typeof adminClient>,
-  orgId: string,
-  codigos: string[],
-): Promise<string[]> {
-  const [{ data: pais, error: ePais }, { data: vars, error: eVars }] = await Promise.all([
-    admin.from('familias').select('codigo_pai').eq('org_id', orgId).in('codigo_pai', codigos),
-    admin.from('variacoes').select('codigo').eq('org_id', orgId).in('codigo', codigos),
-  ]);
-  // Nenhuma unique é org-wide hoje ((lote_id, codigo_pai) e (familia_id, codigo) só). Erro de
-  // consulta tratado como "sem colisão" deixaria passar um código duplicado sem rede de
-  // segurança no banco — falha alto em vez de assumir. Não trocar por `?? []` de novo.
-  if (ePais || eVars) throw new Error(`Falha conferindo códigos: ${(ePais ?? eVars)!.message}`);
-  return [...new Set([
-    ...(pais ?? []).map((f) => f.codigo_pai as string),
-    ...(vars ?? []).map((v) => v.codigo as string),
-  ])];
 }
 
 Deno.serve(async (req) => {
