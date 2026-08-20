@@ -14,7 +14,7 @@ function permalinkValido(valor: unknown): valor is string {
   return typeof valor === 'string' && /^https?:\/\//.test(valor);
 }
 
-async function lerJson(resposta: unknown): Promise<unknown> {
+function lerJson(resposta: unknown): unknown | Promise<unknown> {
   if (resposta && typeof (resposta as { json?: unknown }).json === 'function') {
     return (resposta as Response).json();
   }
