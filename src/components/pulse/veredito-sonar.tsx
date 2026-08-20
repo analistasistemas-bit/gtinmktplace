@@ -108,20 +108,24 @@ export function VereditoSonar({ veredito, contexto }: { veredito: VereditoAnunci
         </div>
       </div>
 
-      {/* Uma linha por fator (não grid-cols-3): a descrição precisa da largura inteira do card
-          para não truncar — "8 rótulos de loja em..." cortava no meio da frase. Ordem = peso na
-          decisão: Demanda é gate, Disputa é o que separa nicho aberto de fechado, Tração refina. */}
-      <div className="mt-3 flex flex-col gap-1.5">
-        {veredito.fatores.map((f) => {
-          const Icone = ICONE_FATOR[f.nivel];
-          return (
-            <div key={f.chave} className="flex flex-wrap items-baseline gap-x-2">
-              <Icone className={`h-4 w-4 shrink-0 self-center ${CLS_FATOR[f.nivel]}`} aria-hidden />
-              <span className="text-sm font-medium">{f.label}</span>
-              <span className="text-xs text-muted-foreground">{f.detalhe}</span>
-            </div>
-          );
-        })}
+      {/* Duas colunas: fatores à esquerda (largura inteira por linha, sem truncar) e o veredito
+          em uma frase à direita — o operador lê a conclusão sem abrir Saiba mais. */}
+      <div className="mt-3 grid gap-4 sm:grid-cols-2 sm:items-start">
+        <div className="flex flex-col gap-1.5">
+          {veredito.fatores.map((f) => {
+            const Icone = ICONE_FATOR[f.nivel];
+            return (
+              <div key={f.chave} className="flex flex-wrap items-baseline gap-x-2">
+                <Icone className={`h-4 w-4 shrink-0 self-center ${CLS_FATOR[f.nivel]}`} aria-hidden />
+                <span className="text-sm font-medium">{f.label}</span>
+                <span className="text-xs text-muted-foreground">{f.detalhe}</span>
+              </div>
+            );
+          })}
+        </div>
+        <p className={`rounded-md border p-3 text-sm font-medium ${cls.borda} ${cls.fundo} ${cls.texto}`}>
+          {veredito.resumo}
+        </p>
       </div>
 
       {/* Marca fica fora do grid pontuado: por decisão do Diego ela alerta mas NÃO entra na conta,

@@ -146,6 +146,29 @@ function acaoVeredito(
   return 'Entrada aberta, nicho viável com ressalvas. Valide preço e frete contra os líderes antes de investir em estoque — e mesmo assim comece conservador.';
 }
 
+/** Frase curta à direita do card. Nunca diz "demanda insuficiente" se a demanda não for o gate. */
+function resumoVeredito(
+  nivel: NivelVeredito,
+  entrada: NivelEntrada,
+  gateDemanda: boolean,
+  disputa: { nivel: NivelFator; fullPct: number | null } | null,
+  marca: { nivel: NivelFator } | null,
+): string {
+  if (gateDemanda) return 'Quase ninguém compra neste termo. Não enche estoque.';
+  const fullFecha = disputa != null && disputa.fullPct != null && disputa.fullPct >= DISPUTA_V2.fullMuito;
+  if (entrada === 'nao_medida') {
+    return 'Tem gente comprando, mas não deu para medir a concorrência. Não enche estoque.';
+  }
+  if (entrada === 'fechada') {
+    if (fullFecha) return 'Tem gente comprando, mas o topo é Full. Não enche estoque.';
+    if (marca?.nivel === 'ruim') return 'Tem gente comprando, mas o topo é loja oficial. Não enche estoque.';
+    return 'Tem gente comprando, mas a entrada está fechada. Não enche estoque.';
+  }
+  if (nivel === 'baixa') return 'O mercado não paga mais um player genérico. Não enche estoque.';
+  if (nivel === 'alta') return 'Sinais bons. Entra com estoque pequeno e valida o giro.';
+  return 'Dá para entrar, sem folga. Confere preço e frete antes de encher estoque.';
+}
+
 function regua(min: number, max: number, cortes: [number, number], valor: number, invertida: boolean): ExplicacaoRegua {
   return { min, max, cortes, valor, invertida };
 }
@@ -222,6 +245,8 @@ export interface VereditoAnuncios {
   entrada: NivelEntrada;
   /** Top 5 rivais por faturamento na amostra (inclui fantasmas sem rótulo). */
   rivaisPodio: RivalPodio[];
+  /** Uma frase visível no card, sem abrir Saiba mais — linguajar de operador, não de score. */
+  resumo: string;
   explicacao: Explicacao;
 }
 
@@ -536,6 +561,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   }
 
   const acao = acaoVeredito(nivel, entrada, gateDemanda, razaoParcial) + fraseRivaisPodio(rivais);
+  const resumo = resumoVeredito(nivel, entrada, gateDemanda, disputa, marca);
 
   return {
     nivel,
@@ -546,6 +572,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     parcial,
     entrada,
     rivaisPodio: rivais,
+    resumo,
     explicacao: { pontuacao: { soma, maximo }, gateDemanda, fatores: fatoresExplicacao, acao },
   };
 }

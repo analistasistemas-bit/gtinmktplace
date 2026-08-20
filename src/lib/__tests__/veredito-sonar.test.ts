@@ -166,6 +166,7 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     expect(v.entrada).toBe('fechada');
     expect(v.explicacao.gateDemanda).toBe(false);
     expect(v.titulo).toMatch(/entrada fechada/);
+    expect(v.resumo).toBe('Tem gente comprando, mas o topo é Full. Não enche estoque.');
     expect(v.explicacao.acao).not.toMatch(/Demanda insuficiente/i);
     expect(v.explicacao.acao).toMatch(/entrada fechada|Full/i);
   });
