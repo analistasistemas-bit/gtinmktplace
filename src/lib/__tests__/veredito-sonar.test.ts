@@ -59,6 +59,7 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
     expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
     expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
     expect(v.parcial).toBe(false);
+    expect(v.resumo).toBe('Tem gente comprando, mas poucas lojas dominam o topo. Não enche estoque.');
   });
   it('protetor solar facial → média (4/6)', () => {
     const { vendas, visitas_total } = fixture('protetor-solar-facial');
