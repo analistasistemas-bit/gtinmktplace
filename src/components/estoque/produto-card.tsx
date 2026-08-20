@@ -5,7 +5,7 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Trash2 } from 'lucide-react';
+import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -128,12 +128,19 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
   );
 }
 
-export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExcluir }: {
+export function ProdutoCard({
+  produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
+}: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
   onDarEntrada: (alvo: AlvoEntrada) => void;
   onAjustar?: (produto: ProdutoComSaldo) => void;
   onExcluir?: (produto: ProdutoEstoqueResumo) => void;
+  /** ADR-0128 D-7: admin-only — a página só passa esta prop para admin (esconder o botão é
+   *  navegação, não fronteira de segurança; o gate real vive na edge). */
+  onAdicionarVariacao?: (produto: ProdutoEstoqueResumo) => void;
+  /** ADR-0128 D-11: família UPDATE mais recente deste produto (lib estoque-update-status.ts). */
+  statusUpdate?: 'atualizando' | 'erro';
 }) {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
@@ -188,6 +195,16 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
           <div className="min-w-0">
             <div className="truncate text-sm font-medium leading-tight">{produto.nomePai}</div>
             <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
+            {/* ADR-0128 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
+                expandir o card — pareado com o sino de notificação no fim do processamento. */}
+            {statusUpdate && (
+              <div className={cn(
+                'truncate text-xs leading-tight',
+                statusUpdate === 'atualizando' ? 'text-amber-600 dark:text-amber-500' : 'text-destructive',
+              )}>
+                {statusUpdate === 'atualizando' ? 'Atualizando…' : 'Erro na última atualização'}
+              </div>
+            )}
           </div>
         </button>
 
@@ -235,7 +252,7 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
               <span className="hidden truncate md:inline">Ajustar</span>
             </Button>
           )}
-          {onExcluir && (
+          {(onExcluir || onAdicionarVariacao) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -248,18 +265,38 @@ export function ProdutoCard({ produto, canais, onDarEntrada, onAjustar, onExclui
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem
-                  disabled={produto.mlItemId != null}
-                  onSelect={() => onExcluir(produto)}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="mr-2 h-3.5 w-3.5" />
-                  Excluir produto
-                </DropdownMenuItem>
-                {produto.mlItemId != null && (
-                  <p className="px-2 pb-1.5 pt-0.5 text-xs text-muted-foreground">
-                    Publicado — remova pela tela Publicados primeiro.
-                  </p>
+                {onAdicionarVariacao && (
+                  <>
+                    <DropdownMenuItem
+                      disabled={produto.mlItemId == null}
+                      onSelect={() => onAdicionarVariacao(produto)}
+                    >
+                      <Plus className="mr-2 h-3.5 w-3.5" />
+                      Adicionar variação
+                    </DropdownMenuItem>
+                    {produto.mlItemId == null && (
+                      <p className="px-2 pb-1.5 pt-0.5 text-xs text-muted-foreground">
+                        Disponível após publicar no ML.
+                      </p>
+                    )}
+                  </>
+                )}
+                {onExcluir && (
+                  <>
+                    <DropdownMenuItem
+                      disabled={produto.mlItemId != null}
+                      onSelect={() => onExcluir(produto)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      Excluir produto
+                    </DropdownMenuItem>
+                    {produto.mlItemId != null && (
+                      <p className="px-2 pb-1.5 pt-0.5 text-xs text-muted-foreground">
+                        Publicado — remova pela tela Publicados primeiro.
+                      </p>
+                    )}
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

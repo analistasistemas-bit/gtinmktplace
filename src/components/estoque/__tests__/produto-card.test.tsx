@@ -298,6 +298,72 @@ describe('ProdutoCard', () => {
   });
 
   // SKU sem anúncio (ou status ainda não carregado) mantém o preço local — nunca vazio.
+  // ADR-0128 D-7: item novo do menu "⋮" — aparece SÓ com onAdicionarVariacao (a página só passa
+  // a prop para admin), independente de onExcluir estar presente ou não.
+  it('item Adicionar variação só aparece com onAdicionarVariacao definido', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByLabelText(/Mais ações/)).not.toBeInTheDocument();
+
+    const onAdicionarVariacao = vi.fn();
+    rerender(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onAdicionarVariacao={onAdicionarVariacao} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByLabelText(/Mais ações/));
+    const publicado = { ...produto, mlItemId: 'MLB1' };
+    rerender(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={publicado} canais={[]} onDarEntrada={vi.fn()} onAdicionarVariacao={onAdicionarVariacao} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(await screen.findByText('Adicionar variação'));
+    expect(onAdicionarVariacao).toHaveBeenCalledWith(publicado);
+  });
+
+  it('item Adicionar variação fica desabilitado quando mlItemId é null (não publicado)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onAdicionarVariacao={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByLabelText(/Mais ações/));
+    expect(await screen.findByText('Adicionar variação')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText(/Disponível após publicar no ML/i)).toBeInTheDocument();
+  });
+
+  it('badge "Atualizando…" aparece sob o código com statusUpdate=atualizando', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} statusUpdate="atualizando" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('Atualizando…')).toBeInTheDocument();
+  });
+
+  it('badge "Erro na última atualização" aparece sob o código com statusUpdate=erro', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} statusUpdate="erro" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('Erro na última atualização')).toBeInTheDocument();
+  });
+
+  it('sem statusUpdate, nenhum badge de atualização aparece', () => {
+    renderCard();
+    expect(screen.queryByText('Atualizando…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Erro na última atualização')).not.toBeInTheDocument();
+  });
+
   it('variação sem anúncio no mapa segue mostrando o preço local', async () => {
     fetchVariacoesProdutoMock.mockResolvedValue([
       { ...mockVariacoes(1)[0]!, codigo: '00000005', preco: 28.99, mlItemId: null },

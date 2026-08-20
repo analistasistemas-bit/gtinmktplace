@@ -64,7 +64,7 @@ const LOGISTICA = [
   { campo: 'comprimentoCm', rotulo: 'Comprimento', sufixo: 'cm' },
 ] as const;
 
-export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, onMudar, onRemover }: {
+export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, fotoObrigatoria, onMudar, onRemover }: {
   linha: LinhaVariacao;
   indice: number;
   podeRemover: boolean;
@@ -72,6 +72,9 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
    *  inválido, tocado ou não (§5.4: senão o operador não descobre o que falta sem clicar em
    *  cada campo). */
   tentouSalvar: boolean;
+  /** ADR-0128: dialog "Adicionar variação" não publica cor sem foto (D-4) — default `undefined`
+   *  preserva o comportamento de hoje (foto opcional) byte a byte para o cadastro (ADR-0094). */
+  fotoObrigatoria?: boolean;
   onMudar: (patch: Partial<LinhaVariacao>) => void;
   onRemover: () => void;
 }) {
@@ -168,7 +171,7 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, on
           id={id('foto')}
           ariaLabel={`Foto da variação ${n}`}
           arquivo={linha.foto}
-          opcional
+          opcional={!fotoObrigatoria}
           onEscolher={(f) => onMudar({ foto: f })}
         />
       </div>
