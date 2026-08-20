@@ -52,6 +52,7 @@
 | entrada-estoque | **true** | HTTP (frontend) | sim (`ref` de idempotência obrigatória) |
 | ajustar-estoque | **true** | HTTP (frontend, **admin**) | sim (`ref` por item: `ajuste:{ref}:{codigo}`) |
 | excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
+| adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -379,6 +380,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   **Preço uniforme (ADR-0078 F2):** fora de "somente estoque", `garantirPrecoUniforme` aplica o
   mesmo guard do CREATE antes de qualquer envio (400 LOUD em preços divergentes); em "somente
   estoque" o guard é pulado (nenhum preço seria enviado de qualquer forma).
+  **Notificação de "adicionar variação" (ADR-0128 D-11):** no desfecho final (sucesso ou erro,
+  Legacy ou UP), dispara sino via `notificarCategoria(..., 'integracao', ...)` **só quando**
+  `lotes.origem='manual'` **e** `familias.operacao='UPDATE'` — reposição por planilha continua
+  silenciosa como sempre foi. Best-effort (try/catch, não derruba o worker em falha de notificação).
 - **reconciliar-convergencia-up** *(schedule QStash — ADR-0088, 2026-07-23)* — retoma em background
   raízes User Products travadas em `mudando_composicao=true` (mudança de composição interrompida
   por crash), reusando a mesma mini-saga do `update-familia-ml` (`atualizarFamiliaUP`) por completo.
@@ -652,6 +657,47 @@ falha ao ler `organizations` não libera.
   propósito: recusar por linha nua tornaria um publish que falhou indeletável pelas duas portas. Apaga as fotos do Storage sob o prefixo do
   **dono** de cada família (mesmo guard de posse de `remover-publicado`), e roda
   `limparMovimentosOrfaos` **depois** do delete (ADR-0097 D-2). Nunca toca o ML.
+- **adicionar-variacoes-familia** (ADR-0128) — admin adiciona N cores novas a uma família **já
+  publicada** no ML, direto da tela Estoque, sem passar pela Revisão (D-10). **Admin-only** (mesmo
+  gate copiado de `atualizar-status-publicado`: `!isAdmin && support?.scope !== 'full'` → 403 +
+  `auditarOperacaoSuporte('denied')`) e restrita ao módulo `estoque`.
+  Body: `{ familia_id, chave, variacoes: [{codigo, nome, gtin, preco, custo, estoqueInicial,
+  pesoGramas, alturaCm, larguraCm, comprimentoCm, imagemPath}] }` — `familia_id` só resolve
+  `codigo_pai` (é a família canônica que a tela Estoque conhece, não necessariamente a última
+  publicada); `codigo` normaliza 1-8 dígitos para 8 com `padStart`; `imagemPath` precisa começar
+  com `${userId}/` e não conter `..`. Resposta 200: `{ loteId, familiaId, publicacaoOk: boolean,
+  falhasEstoque: string[], jaExistia?: true }`. 400: `{ erros: [{campo, mensagem}] }` ou `{ error
+  }`. 403: sem admin / sem módulo. 409: `{ error, conflitos?: string[] }` — código já usado por
+  outro produto na org, lote não-terminal em andamento para o mesmo `codigo_pai` (**D-8**:
+  `familias.status not in ('publicado','erro')`), família ainda não publicada no ML, `codigo_pai`
+  ou alguma variação viva fora do padrão de 8 dígitos, ou corrida de dupla submissão com a mesma
+  `chave` (23505).
+  **Idempotência por `chave` → `familias.chave_cadastro`**: um retry com a mesma chave devolve
+  `jaExistia: true` sem duplicar família/estoque/publicação; se a família do retry ainda está
+  `'pronto'` (a 1ª tentativa morreu **antes** de encadear a publicação), re-encadeia
+  `publicar-familias` no próprio retry em vez de fabricar `publicacaoOk: true` — o claim de
+  `publicar-familias` só pega `'pronto'`/`'erro'`, então repetir nunca duplica publicação.
+  **Clona** a família publicada mais recente por `(org_id, codigo_pai)` (`ml_item_id not null`,
+  ordenada por `publicado_em desc`) + suas variações vivas para um **lote dedicado** desta
+  submissão (não reusa o lote manual aberto do ADR-0094 D-1.1 — a unique
+  `familias_lote_id_codigo_pai_key` colidiria com a família CREATE original se o produto nasceu
+  por cadastro manual). Estoque clonado vem da família **mais recente** por `codigo_pai` (qualquer
+  status, pode ser mais nova que a última publicada se uma tentativa de UPDATE anterior falhou
+  depois) — é o saldo canônico mostrado na tela Estoque. `preco_publicacao` da cor nova = menor
+  `preco_publicacao` não-nulo entre as irmãs **incluídas**, senão o preço digitado (mesma regra do
+  `ingest-lote`, mantém `garantirPrecoUniforme` feliz). Falha no insert das variações deleta a
+  família **e o lote** criados (lote dedicado sem família é lixo — nada mais o referencia).
+  Estoque inicial de cada cor nova entra pelo **ledger** (`registrar_entrada`, ref
+  `addvar:{familiaId}:{codigo}`); falha não aborta, entra em `falhasEstoque[]`.
+  **Encadeamento com `publicar-familias` (não `enfileirarFamilias`)**: o sketch original do ADR
+  levaria a `process-familia`, que para UPDATE só resolve cor e marca `'pronto'` — o lote ficaria
+  parado esperando clique manual na Revisão, violando D-10. A edge faz `fetch` server-to-server
+  para `publicar-familias` com o **mesmo JWT** do chamador (a edge de destino roda o próprio
+  `requireUserOrg`, autorização não se perde no repasse); NÃO envia `somente_estoque_*` — adicionar
+  variação é mudança de **composição**, não reposição, e o invariante do ADR-0104 §4 exige que o
+  preço propague normalmente. Lote nasce em `status='publicando'` de propósito — **nunca** aparece
+  na fila de Revisão; se o encadeamento falhar, rebaixa para `'revisao'` só como rota de
+  recuperação visível na tela Lotes.
 
 ### Faturamento
 - **sync-venda** — antes de qualquer escrita, recusa pedido cujo `seller.id` não seja a conta

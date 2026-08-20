@@ -112,3 +112,28 @@ duplicaria essa lógica já validada em produção.
   produto na tela Estoque.
 - `pnpm lint` + `pnpm test` passando; blast radius de deploy recalculado se `_shared/` for
   tocado (ADR-0088 §1).
+
+## Implementação (2026-08-20)
+
+O plano de execução (`docs/superpowers/plans/2026-08-20-adicionar-variacao-familia-publicada.md`)
+registrou 5 desvios conscientes do texto acima — decididos no planejamento, não uma reabertura
+das decisões D-1…D-11:
+
+1. **Encadeia `publicar-familias`, não `enfileirarFamilias`.** O sketch em "Implementação
+   prevista" leva a `process-familia`, que para UPDATE só resolve cor e marca `'pronto'` — o lote
+   ficaria parado esperando clique manual na Revisão, violando D-10. `publicar-familias` já faz
+   claim, decide split vs. update (ADR-0034/0104) e enfileira o worker.
+2. **Lote dedicado por submissão**, não o lote manual aberto do ADR-0094 D-1.1: a unique
+   `familias_lote_id_codigo_pai_key` colidiria com a família CREATE original quando o produto
+   nasceu por cadastro manual.
+3. **Migration nova** (`20260820143736_guard_estoque_update_manual.sql`), apesar de "sem migration
+   esperada" acima: o guard de estoque de `validar_variacao_no_tenant` (20260804113000) proibia
+   INSERT de variação com `estoque <> 0` em lote manual; as cópias das variações vivas precisam
+   nascer com o estoque vivo, senão a família nova vira canônica na tela Estoque com saldo 0 e o
+   worker zeraria o estoque no ML. Relaxado para só valer quando `familias.operacao = 'CREATE'`.
+4. **UNIDADE/FORNECEDOR fora do formulário**, embora D-6 os liste: são colunas de `familias`, não
+   de `variacoes` — não existe onde gravar por variação. Clonados inalterados da família
+   publicada.
+5. **`estoqueInicial > 0` obrigatório** no formulário e na edge: cor nova com estoque 0 nasceria
+   `excluida_da_publicacao` (ADR-0016) e o UPDATE rodaria sem ela — submissão inútil e confusa
+   (mesmo racional anti-zumbi do D-4).
