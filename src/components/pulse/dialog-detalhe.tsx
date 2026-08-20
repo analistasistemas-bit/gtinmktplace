@@ -24,6 +24,7 @@ import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, tipoAnuncio,
 } from '@/lib/pulse-formato';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
+import { buildPulseSearchUrl } from '@/lib/pulse-url';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
 
@@ -114,6 +115,10 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   const margemRuim = margem != null && margem.liquido < 0;
   const margemEstimativa = margem != null
     && margemEhEstimativa(precoSimulado, produto?.comissao_preco ?? null);
+  const buscaMercadoLivre = buildPulseSearchUrl({
+    gtin: produto?.gtin ?? null,
+    titulo: produto?.titulo ?? null,
+  });
 
   const vendasDe = (o: PulseOferta) => {
     const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
@@ -146,13 +151,14 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     {
       key: 'vendedor',
       header: 'Vendedor',
+      className: 'w-64',
       sortValue: (o) => nomeDe(o).toLowerCase(),
       cell: (o) => {
         const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
         const selo = reputacao(hist[hist.length - 1]?.power_seller ?? null);
         return (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="font-medium">{nomeDe(o)}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="max-w-52 truncate font-medium" title={nomeDe(o)}>{nomeDe(o)}</span>
             {selo && (
               <Badge variant="outline" className="border-info/30 bg-info/10 text-[10px] font-normal text-info">
                 {selo}
@@ -186,7 +192,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       // "na conta" fica no cabeçalho de propósito: é o total do vendedor no ML inteiro, não deste
       // produto. Uma coluna ordenável chamada só "Vendas" convidaria a ler como vendas do anúncio.
       header: 'Vendas na conta',
-      className: 'text-right',
+      className: 'w-32 text-right',
       sortValue: (o) => vendasDe(o),
       cell: (o) => {
         const total = vendasDe(o);
@@ -209,7 +215,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       // Demanda do anúncio do concorrente: a única medida por anúncio que a API oficial dá
       // (Errata 9 do ADR-0119). Medida uma vez por dia, no baseline — o painel não a atualiza.
       header: 'Visitas 30d',
-      className: 'text-right',
+      className: 'w-28 text-right',
       // Sem coalescer para 0: o DataTable já joga nulo para o fim nas duas direções, e "não
       // medido" ordenado como zero visitas afirmaria justamente o que não sabemos.
       sortValue: (o) => o.visitas_30d,
@@ -222,6 +228,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     {
       key: 'anuncio',
       header: 'Anúncio',
+      className: 'w-28',
       sortValue: (o) => tipoAnuncio(o.tier),
       cell: (o) => (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -232,10 +239,16 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
               grátis
             </span>
           )}
-          {/* Só linka com o permalink que veio da ficha. A URL do anúncio não é derivável do
-              item_id (testado) e `/items/{id}` de terceiro é 403, então quando o campo não vem não
-              há link nenhum — melhor do que mandar o operador para uma página de erro. */}
-          {o.permalink && (
+        </div>
+      ),
+    },
+    {
+      key: 'oferta',
+      header: 'Oferta',
+      className: 'w-24 text-right',
+      stickyRight: true,
+      cell: (o) => (
+        o.permalink ? (
             <a
               href={o.permalink}
               target="_blank"
@@ -243,13 +256,14 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
               onClick={(e) => e.stopPropagation()}
               className="inline-flex items-center gap-1 text-info hover:underline"
               title={`Abrir o anúncio de ${nomeDe(o)} no Mercado Livre`}
-              aria-label={`Abrir o anúncio de ${nomeDe(o)} no Mercado Livre (nova aba)`}
+              aria-label={`Abrir oferta de ${nomeDe(o)} no Mercado Livre (nova aba)`}
             >
               <ExternalLink className="h-3 w-3" />
-              ver
+              Abrir
             </a>
-          )}
-        </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">Indisponível</span>
+        )
       ),
     },
   ];
@@ -257,27 +271,23 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   return (
     <>
       <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-7xl">
           <DialogHeader className="pr-8">
             <DialogTitle className="text-base leading-snug">
               {produto?.titulo ?? 'Ficha sem nome'}
             </DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
               <span>{produto?.gtin ?? `Ficha ${produto?.catalog_product_id ?? ''}`}</span>
-              {/* Leva à ficha no ML, onde as ofertas dos concorrentes aparecem lado a lado e cada
-                  uma abre o anúncio do vendedor. É o link possível: a API não devolve a URL do
-                  anúncio de terceiro (ver comentário na coluna "Anúncio"). O formato `/p/{cpid}` é
-                  o mesmo que `resolverEntrada` aceita em "Adicionar produto". */}
-              {produto?.catalog_product_id && (
+              {buscaMercadoLivre && (
                 <a
-                  href={`https://www.mercadolivre.com.br/p/${produto.catalog_product_id}`}
+                  href={buscaMercadoLivre}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 font-normal text-info hover:underline"
-                  aria-label="Abrir a ficha deste produto no Mercado Livre (nova aba)"
+                  aria-label="Buscar anúncios no Mercado Livre (nova aba)"
                 >
                   <ExternalLink className="h-3 w-3" />
-                  Ver ofertas no Mercado Livre
+                  Buscar anúncios no Mercado Livre
                 </a>
               )}
             </DialogDescription>
@@ -463,9 +473,8 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                 )}
                 <p className="mt-2 text-xs text-muted-foreground">
                   O volume é da conta do vendedor no Mercado Livre inteiro, não deste anúncio — a API não
-                  expõe vendas por anúncio de terceiros. Pelo mesmo motivo não há link direto para o
-                  anúncio de cada concorrente: use <span className="whitespace-nowrap">“Ver ofertas no
-                  Mercado Livre”</span> acima, que abre a ficha com todas elas.
+                  expõe vendas por anúncio de terceiros. Use “Abrir” para acessar uma oferta específica ou
+                  a busca acima para ver anúncios compatíveis.
                 </p>
               </section>
             </div>

@@ -10,6 +10,7 @@ import {
   extrairNossaOferta, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
   parseStatusAnuncios, type AnuncioMultiget,
 } from '../_shared/pulse/parse.ts';
+import { enrichPulsePermalinks } from '../_shared/pulse/permalink.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
 import { parseVisitasJanela } from '../_shared/pulse/sonar.ts';
 import { deveGravarVendedor, ufDoVendedor } from '../_shared/pulse/vendedor.ts';
@@ -205,9 +206,6 @@ export async function processarColetaOrg(
         `pulse-coletar: ficha ${produto.catalog_product_id} tem ${naoLidas} oferta(s) além da página lida — radar parcial`,
       );
     }
-    const atuais = parseOfertasProduto(json, proprioSellerId);
-    for (const o of atuais) sellerIdsColetados.add(o.seller_id);
-
     // View `pulse_ofertas_atual`: já é 1 linha por item (distinct on … order by dia desc). Ler o
     // histórico bruto com um teto de linhas fazia um item antigo cair fora da janela e voltar
     // como "novo concorrente" no diff — alerta falso.
@@ -217,6 +215,18 @@ export async function processarColetaOrg(
       .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, permalink')
       .eq('produto_id', produto.id);
     const anteriores = ((anterioresRaw ?? []) as OfertaAnterior[]).map((o) => ({ ...o, preco: Number(o.preco) }));
+    const permalinksAnteriores = new Map<string, string>();
+    for (const oferta of anteriores) {
+      if (typeof oferta.permalink === 'string' && /^https?:\/\//.test(oferta.permalink)) {
+        permalinksAnteriores.set(oferta.item_id, oferta.permalink);
+      }
+    }
+    const atuais = await enrichPulsePermalinks(
+      parseOfertasProduto(json, proprioSellerId),
+      (url) => mlGet(String(url), token),
+      permalinksAnteriores,
+    );
+    for (const o of atuais) sellerIdsColetados.add(o.seller_id);
 
     const diff = diffOfertas(anteriores, atuais);
 
