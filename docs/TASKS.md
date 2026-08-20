@@ -2,6 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — Demanda ≠ Entrada no veredito (ADR-0128) — 2026-08-20
+
+- [x] Separar perguntas "vende?" e "dá para entrar?": campo `entrada` (`aberta` / `fechada` /
+  `nao_medida`), títulos compostos quando parcial ou fechada, chip de Entrada na UI.
+- [x] `alta` exige `entrada === 'aberta'`; marca ruim fecha Entrada sem pontuar Demanda.
+- [x] Pódio de rivais por faturamento inclui fantasmas sem rótulo (pulverização inalterada).
+- [x] Gabarito ADR-0127 intacto (média / média / alta); cortes D10/DISPUTA_V2/DEMANDA sagrados.
+
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 
 - [x] **Unidade da tabela virou anúncio**, não mais ficha de catálogo: interseção 0 medida entre

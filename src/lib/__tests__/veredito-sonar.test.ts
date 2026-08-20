@@ -71,6 +71,8 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
     const { vendas, visitas_total } = fixture('tecido-oxford-10-metros');
     const v = calcularVereditoAnuncios(vendas, visitas_total);
     expect(v.nivel).toBe('alta');
+    expect(v.entrada).toBe('aberta');
+    expect(v.titulo).toBe('Oportunidade alta');
     expect(v.explicacao.pontuacao).toEqual({ soma: 5, maximo: 6 });
     expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'bom', 'medio']);
   });
@@ -104,6 +106,64 @@ describe('trava de cobertura <50% (D10) — nunca medir concorrência sobre meia
     expect(v.motivo).toMatch(/concorrência/i);
     expect(v.explicacao.acao).toMatch(/parcial/i);
     expect(v.explicacao.fatores.some((f) => f.chave === 'disputa' && f.regua === null)).toBe(true);
+  });
+
+  it('ADR-0128: título NÃO é "Oportunidade média" — Demanda forte · concorrência não medida', () => {
+    const v = travado();
+    expect(v.entrada).toBe('nao_medida');
+    expect(v.titulo).toBe('Demanda forte · concorrência não medida');
+    expect(v.titulo).not.toBe('Oportunidade média');
+  });
+});
+
+describe('ADR-0128 — Demanda ≠ Entrada', () => {
+  it('cobertura 2/20 + demanda forte → entrada nao_medida, nivel media, título separado', () => {
+    const nomeados = Array.from({ length: 2 }, (_, i) => itemV2({
+      item_id: `MLBn${i}`, vendedor: `LOJA-${i}`, vendidos: 10_000, preco: 100, full: false,
+    }));
+    const fantasmas = Array.from({ length: 18 }, (_, i) => itemV2({
+      item_id: `MLBg${i}`, vendedor: null, vendidos: 5_000, preco: 80, full: false,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...fantasmas]), null);
+    expect(v.fatores.find((f) => f.chave === 'demanda')?.nivel).toBe('bom');
+    expect(v.entrada).toBe('nao_medida');
+    expect(v.nivel).toBe('media');
+    expect(v.parcial).toBe(true);
+    expect(v.titulo).toBe('Demanda forte · concorrência não medida');
+    expect(v.titulo).not.toBe('Oportunidade média');
+  });
+
+  it('fantasma com alto faturamento aparece no rivaisPodio com vendedor null', () => {
+    const painel = painelSintetico([
+      itemV2({ item_id: 'MLB1', vendedor: 'LOJA-A', vendidos: 10, preco: 10, full: false }),
+      itemV2({ item_id: 'MLB2', vendedor: null, vendidos: 9_000, preco: 200, full: false }),
+      ...Array.from({ length: 18 }, (_, i) => itemV2({
+        item_id: `MLBx${i}`, vendedor: `L${i}`, vendidos: 100, preco: 50, full: false,
+      })),
+    ]);
+    const v = calcularVereditoAnuncios(painel, null);
+    const topo = v.rivaisPodio[0];
+    expect(topo.vendedor).toBeNull();
+    expect(topo.faturamento).toBe(9_000 * 200);
+    expect(v.rivaisPodio.some((r) => r.vendedor == null)).toBe(true);
+  });
+
+  it('marca ruim (>50% loja oficial) impede nivel alta mesmo com scores altos', () => {
+    // 20 anúncios pulverizados, Full baixo, demanda forte — sem marca seria alta; com >50% oficial → fechada.
+    const itens = Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `MLB${i}`,
+      vendedor: `LOJA-${i}`,
+      vendidos: 1_000,
+      preco: 400,
+      full: false,
+      loja_oficial: i < 11, // 11/20 = 55% > 50%
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.marca?.nivel).toBe('ruim');
+    expect(v.entrada).toBe('fechada');
+    expect(v.nivel).not.toBe('alta');
+    expect(v.parcial).toBe(false);
+    expect(v.titulo).toMatch(/entrada fechada/);
   });
 });
 
