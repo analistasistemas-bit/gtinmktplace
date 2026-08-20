@@ -459,6 +459,12 @@
   batendo exatamente (Errata 6 do ADR-0119). **Ressalva descoberta em 2026-08-17:** essa validação
   foi feita só em produtos sem promoção ativa — ver a correção abaixo.
 
+- [x] **Links individuais das ofertas do Pulse (2026-08-20).** O enriquecimento por
+  `GET /items?ids=…` deixava todas as ofertas como "Indisponível", porque o ML restringe os
+  detalhes dos anúncios concorrentes. `pulse-coletar` agora deriva a URL pública diretamente do
+  `item_id` MLB, preserva permalinks válidos já existentes e não faz a chamada bloqueada. Caso real
+  `MLB6803357628` coberto por teste; revisão Sol sem achados críticos/importantes; deploy v20 ativo.
+
 ## Pulse — revisão de código do módulo (Fable) — 2026-08-17
 
 Revisão integral do módulo (33 arquivos), relatório em
