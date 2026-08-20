@@ -162,7 +162,7 @@ function resumoVeredito(
   if (entrada === 'fechada') {
     if (fullFecha) return 'Tem gente comprando, mas o topo é Full. Não enche estoque.';
     if (marca?.nivel === 'ruim') return 'Tem gente comprando, mas o topo é loja oficial. Não enche estoque.';
-    return 'Tem gente comprando, mas a entrada está fechada. Não enche estoque.';
+    return 'Tem gente comprando, mas poucas lojas dominam o topo. Não enche estoque.';
   }
   if (nivel === 'baixa') return 'O mercado não paga mais um player genérico. Não enche estoque.';
   if (nivel === 'alta') return 'Sinais bons. Entra com estoque pequeno e valida o giro.';
