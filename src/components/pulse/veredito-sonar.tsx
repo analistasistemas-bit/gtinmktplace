@@ -1,17 +1,25 @@
-// Card de veredito do Sonar (ADR-0124): a conclusão do garimpo, antes dos números crus.
+// Card de veredito do Sonar (ADR-0124 + ADR-0128): a conclusão do garimpo, antes dos números crus.
 // Identidade visual deliberadamente distinta do SemaforoPreco (ADR-0020) — aquele julga um preço,
 // este julga um nicho; ícones de tendência aqui, ícones de círculo lá.
+// ADR-0128: título separa Demanda de Entrada; chip de entrada ao lado do badge parcial.
 import { useState } from 'react';
 import { ChevronDown, Gauge, Minus, ShieldAlert, TrendingDown, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { ContextoItem, ExplicacaoRegua, NivelFator, VereditoAnuncios } from '@/lib/veredito-sonar';
+import type { ContextoItem, ExplicacaoRegua, NivelEntrada, NivelFator, VereditoAnuncios } from '@/lib/veredito-sonar';
 
+/** Borda do card: baixa=vermelho, alta=verde; demais (média / não medida / fechada) = warning. */
 const CLS_VEREDITO = {
   alta: { borda: 'border-success/40', fundo: 'bg-success/5', texto: 'text-success' },
   media: { borda: 'border-warning/40', fundo: 'bg-warning/5', texto: 'text-warning' },
   baixa: { borda: 'border-destructive/40', fundo: 'bg-destructive/5', texto: 'text-destructive' },
 } as const;
+
+const LABEL_ENTRADA: Record<NivelEntrada, string> = {
+  aberta: 'entrada aberta',
+  fechada: 'entrada fechada',
+  nao_medida: 'concorrência não medida',
+};
 
 const CLS_FATOR: Record<NivelFator, string> = {
   bom: 'text-success',
@@ -80,6 +88,12 @@ export function VereditoSonar({ veredito, contexto }: { veredito: VereditoAnunci
                 avaliação parcial
               </span>
             )}
+            <span
+              className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+              title="Entrada no nicho (ADR-0128): pergunta separada da Demanda."
+            >
+              {LABEL_ENTRADA[veredito.entrada]}
+            </span>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">{veredito.motivo}</p>
           {/* `montarMotivoAnuncios` só menciona o motivo da avaliação parcial quando o nível NÃO é
@@ -94,24 +108,28 @@ export function VereditoSonar({ veredito, contexto }: { veredito: VereditoAnunci
         </div>
       </div>
 
-      {/* Uma linha por fator (não grid-cols-3): a descrição precisa da largura inteira do card
-          para não truncar — "8 rótulos de loja em..." cortava no meio da frase. Ordem = peso na
-          decisão: Demanda é gate, Disputa é o que separa nicho aberto de fechado, Tração refina. */}
-      <div className="mt-3 flex flex-col gap-1.5">
-        {veredito.fatores.map((f) => {
-          const Icone = ICONE_FATOR[f.nivel];
-          return (
-            <div key={f.chave} className="flex flex-wrap items-baseline gap-x-2">
-              <Icone className={`h-4 w-4 shrink-0 self-center ${CLS_FATOR[f.nivel]}`} aria-hidden />
-              <span className="text-sm font-medium">{f.label}</span>
-              <span className="text-xs text-muted-foreground">{f.detalhe}</span>
-            </div>
-          );
-        })}
+      {/* Duas colunas: fatores à esquerda (largura inteira por linha, sem truncar) e o veredito
+          em uma frase à direita — o operador lê a conclusão sem abrir Saiba mais. */}
+      <div className="mt-3 grid gap-4 sm:grid-cols-2 sm:items-start">
+        <div className="flex flex-col gap-1.5">
+          {veredito.fatores.map((f) => {
+            const Icone = ICONE_FATOR[f.nivel];
+            return (
+              <div key={f.chave} className="flex flex-wrap items-baseline gap-x-2">
+                <Icone className={`h-4 w-4 shrink-0 self-center ${CLS_FATOR[f.nivel]}`} aria-hidden />
+                <span className="text-sm font-medium">{f.label}</span>
+                <span className="text-xs text-muted-foreground">{f.detalhe}</span>
+              </div>
+            );
+          })}
+        </div>
+        <p className={`rounded-md border p-3 text-sm font-medium ${cls.borda} ${cls.fundo} ${cls.texto}`}>
+          {veredito.resumo}
+        </p>
       </div>
 
       {/* Marca fica fora do grid pontuado: por decisão do Diego ela alerta mas NÃO entra na conta,
-          e misturá-la aos outros faria parecer que entra. */}
+          e misturá-la aos outros faria parecer que entra. Marca ruim fecha a Entrada (ADR-0128). */}
       {veredito.marca && veredito.marca.nivel !== 'bom' && (
         <div className="mt-3 flex items-center gap-2 border-t pt-2.5 text-xs text-muted-foreground">
           <ShieldAlert className={`h-3.5 w-3.5 shrink-0 ${CLS_FATOR[veredito.marca.nivel]}`} aria-hidden />
@@ -165,6 +183,27 @@ export function VereditoSonar({ veredito, contexto }: { veredito: VereditoAnunci
           </div>
 
           <p className={`rounded-md border p-2.5 text-sm ${cls.borda} ${cls.fundo}`}>{explicacao.acao}</p>
+
+          {veredito.rivaisPodio.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
+                Pódio de rivais — por faturamento na amostra
+              </p>
+              {veredito.rivaisPodio.some((r) => r.vendedor == null) && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Anúncio sem rótulo de loja ainda é rival — o líder sem nome não some da briga.
+                </p>
+              )}
+              <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 text-sm">
+                {veredito.rivaisPodio.map((r) => (
+                  <li key={r.item_id || r.titulo}>
+                    <span className="font-medium">{r.vendedor ?? 'sem rótulo'}</span>
+                    <span className="text-muted-foreground"> — {r.titulo}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
 
           {contexto.length > 0 && (
             <div>

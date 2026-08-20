@@ -32,6 +32,12 @@ vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => ({ data: ['estoque'], isLoading: false }),
 }));
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
+// ADR-0129 D-11: query de status por produto (badge no card) — sem mock, bateria na rede real
+// a cada render desta suíte. statusUpdatePorProduto continua o de verdade (função pura).
+vi.mock('@/lib/estoque-update-status', async (orig) => ({
+  ...(await orig<typeof import('@/lib/estoque-update-status')>()),
+  fetchFamiliasNaoPublicadas: () => Promise.resolve([]),
+}));
 vi.mock('@/lib/produtos-saldo', async (orig) => ({
   ...(await orig<typeof import('@/lib/produtos-saldo')>()),
   fetchProdutosEstoqueResumo: () => Promise.resolve(resumoMock),

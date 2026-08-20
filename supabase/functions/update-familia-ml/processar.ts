@@ -25,6 +25,7 @@ import {
 } from '../_shared/ml/descobrir-familia-up.ts';
 import type { FetchLike } from '../_shared/ml/buscar-item.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -50,7 +51,48 @@ export interface ProcessarDeps {
 }
 export interface ProcessarOpts { tentativas: number }
 
+/** ADR-0129 D-11: texto do sino de notificação ao concluir (sucesso) ou errar o UPDATE do lote
+ * "Adicionar variação". `erro` (se informado) entra entre parênteses na mensagem de falha. */
+export function mensagemNotificacaoAddVariacao(
+  resultado: 'sucesso' | 'erro', nomePai: string, erro?: string,
+): string {
+  if (resultado === 'sucesso') return `Variações adicionadas: "${nomePai}" atualizado no Mercado Livre.`;
+  return `Variações adicionadas: falha ao atualizar "${nomePai}" no Mercado Livre${erro ? ` (${erro})` : ''}.`;
+}
+
+/** ADR-0129 D-11 — só o fluxo "adicionar variação" (lote origem='manual' + família
+ * operacao='UPDATE') dispara o sino; reposição por planilha continua silenciosa como sempre foi.
+ * Best-effort: chamado de dentro de um try/catch, nunca deve derrubar o worker. */
+async function notificarConclusaoAddVariacao(
+  admin: SupabaseClient, job: Job, resultado: Extract<ResultadoProcessar, { tipo: 'ok' } | { tipo: 'erro' }>,
+): Promise<void> {
+  const { data: familia } = await admin.from('familias')
+    .select('operacao, nome_pai, org_id').eq('id', job.familia_id).maybeSingle();
+  if (!familia || familia.operacao !== 'UPDATE') return;
+  const { data: lote } = await admin.from('lotes').select('origem').eq('id', job.lote_id).maybeSingle();
+  if (lote?.origem !== 'manual') return;
+  const texto = resultado.tipo === 'ok'
+    ? mensagemNotificacaoAddVariacao('sucesso', String(familia.nome_pai))
+    : mensagemNotificacaoAddVariacao('erro', String(familia.nome_pai), resultado.mensagem);
+  await notificarCategoria(admin, familia.org_id as string, 'integracao', texto);
+}
+
+/** Ponto único de entrada: roda o UPDATE (Legacy ou UP) e, no desfecho final (ok/erro), dispara o
+ * sino do ADR-0129 D-11 quando elegível — cobre os dois caminhos (Legacy e mini-saga UP) sem
+ * duplicar a checagem de elegibilidade em cada `return` interno. */
 export async function processarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
+  const resultado = await executarAtualizacaoFamilia(deps, job, opts);
+  if (resultado.tipo === 'ok' || resultado.tipo === 'erro') {
+    try {
+      await notificarConclusaoAddVariacao(deps.admin, job, resultado);
+    } catch (e) {
+      console.error('notificação (add-variação) falhou:', e instanceof Error ? e.message : String(e));
+    }
+  }
+  return resultado;
+}
+
+async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;
   const atualizarUP = deps.atualizarUP ?? atualizarFamiliaUP;
   const adotar = deps.adotarUP ?? adotarFamiliaMigrada;

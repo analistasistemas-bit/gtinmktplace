@@ -61,11 +61,16 @@ compra não existe oportunidade, por melhores que sejam os outros); fora isso, a
 `máximo − 1` e baixa até `máximo / 3`. A escala é proporcional ao número de fatores disponíveis
 para o fallback (abaixo) não virar "baixa" só por ter um fator a menos.
 
-### 5. Marca só alerta, nunca pontua
+### 5. Marca só alerta na pontuação; fecha a Entrada (ADR-0128)
 
 Decisão do Diego: nicho dominado por loja oficial gera aviso — com menção explícita ao risco de
 moderação por propriedade intelectual, que já custou o cancelamento do Aquaphor — mas **não altera
-o veredito**. Fica visualmente separado dos três que pontuam, para não parecer que entra na conta.
+a pontuação** de Demanda/Disputa/Tração. Fica visualmente separado dos três que pontuam, para não
+parecer que entra na conta.
+
+**ADR-0128:** marca ruim (>50% loja oficial) **fecha a Entrada** (`entrada = 'fechada'`), o que
+impede `nivel === 'alta'` e muda o título para "Demanda … · entrada fechada". Continua sem
+pontuar: só controla a pergunta "dá para entrar?", não a pergunta "vende?".
 
 ### 6. Fallback sem vendas
 

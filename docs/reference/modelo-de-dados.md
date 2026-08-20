@@ -268,10 +268,16 @@ ADR-0027 também para sessões administrativas, que podem contornar o RLS por de
 
 - `lotes.org_id` e `lotes.origem` não podem mudar depois da criação;
 - `familias` e `variacoes` devem manter o mesmo `org_id` de seus pais;
-- lote manual só aceita família com `chave_cadastro`, códigos de oito dígitos e variação com
-  estoque inicial zero;
+- lote manual só aceita família com `chave_cadastro` e códigos de oito dígitos;
 - alterações de saldo só passam por `registrar_entrada`, `baixar_estoque` ou
   `estornar_estoque`, mantendo saldo e `estoque_movimentos` na mesma transação.
+
+**Estoque inicial zero no INSERT (ADR-0129, migration `20260820143736_guard_estoque_update_manual.sql`):**
+a exigência acima vale só quando `familias.operacao = 'CREATE'` — a família de UPDATE nascida da
+tela Estoque ("adicionar variação a família publicada") clona o estoque **vivo** das variações
+irmãs no INSERT, senão a família nova viraria canônica na tela Estoque com saldo 0 e o worker de
+update zeraria o estoque no ML. O caminho único pelo ledger continua valendo para CREATE, e
+`bloquear_escrita_direta_estoque` continua bloqueando UPDATE direto de estoque para todo mundo.
 
 As três RPCs pertencem ao papel interno `estoque_rpc_executor` (`NOLOGIN`, sem `BYPASSRLS`) e
 usam políticas RLS mínimas e explícitas. O papel `postgres` não recebe capacidade de `SET` nem

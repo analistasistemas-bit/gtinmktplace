@@ -1,6 +1,6 @@
 // E6b (ADR-0094): tela do módulo Estoque — saldo por produto, entrada de mercadoria e
 // trilha de auditoria dos movimentos.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
 import { DialogExcluirProduto } from '@/components/estoque/dialog-excluir-produto';
+import { DialogAdicionarVariacao } from '@/components/estoque/dialog-adicionar-variacao';
 import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/estoque/produto-card';
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
@@ -23,6 +24,7 @@ import {
   fetchProdutosEstoqueResumo, fetchCanaisPorProduto,
   type ProdutoComSaldo, type ProdutoEstoqueResumo,
 } from '@/lib/produtos-saldo';
+import { fetchFamiliasNaoPublicadas, statusUpdatePorProduto } from '@/lib/estoque-update-status';
 import { useProfile } from '@/hooks/useProfile';
 import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
 
@@ -41,6 +43,7 @@ export default function Estoque() {
   const { isAdmin } = useProfile();
   const [produtoAjuste, setProdutoAjuste] = useState<ProdutoComSaldo | null>(null);
   const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoqueResumo | null>(null);
+  const [produtoAddVariacao, setProdutoAddVariacao] = useState<ProdutoEstoqueResumo | null>(null);
 
   const { data: estoque, isLoading, isError } = useQuery({
     queryKey: QK.produtosEstoqueResumo,
@@ -48,6 +51,17 @@ export default function Estoque() {
     enabled: !!modulos?.includes('estoque'),
     staleTime: 180_000,
   });
+
+  // ADR-0129 D-11/D-8: status de atualização por produto (badge no card) — poll de 15s, mesmo
+  // ritmo de outras telas de acompanhamento de lote (é o que faz o badge sumir sozinho quando o
+  // UPDATE termina, sem o operador dar F5).
+  const { data: famRows } = useQuery({
+    queryKey: QK.familiasNaoPublicadas,
+    queryFn: fetchFamiliasNaoPublicadas,
+    enabled: !!modulos?.includes('estoque'),
+    refetchInterval: 15_000,
+  });
+  const statusMap = useMemo(() => statusUpdatePorProduto(famRows ?? []), [famRows]);
 
   const produtos = estoque?.produtos ?? [];
   const resumo = estoque?.kpis ?? RESUMO_VAZIO;
@@ -145,6 +159,8 @@ export default function Estoque() {
                 onDarEntrada={(alvo) => { setAlvoEntrada(alvo); setEntradaAberta(true); }}
                 onAjustar={isAdmin ? setProdutoAjuste : undefined}
                 onExcluir={isAdmin ? setProdutoExcluir : undefined}
+                onAdicionarVariacao={isAdmin ? setProdutoAddVariacao : undefined}
+                statusUpdate={statusMap.get(p.codigoPai)}
               />
             ))}
             {lista.length === 0 && (
@@ -177,6 +193,11 @@ export default function Estoque() {
       <DialogCadastroProduto
         aberto={cadastroAberto}
         onFechar={() => setCadastroAberto(false)}
+      />
+      <DialogAdicionarVariacao
+        produto={produtoAddVariacao}
+        aberto={produtoAddVariacao != null}
+        onFechar={() => setProdutoAddVariacao(null)}
       />
     </div>
   );

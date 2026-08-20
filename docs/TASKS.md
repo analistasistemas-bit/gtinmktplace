@@ -2,6 +2,37 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — Demanda ≠ Entrada no veredito (ADR-0128) — 2026-08-20
+
+- [x] Separar perguntas "vende?" e "dá para entrar?": campo `entrada` (`aberta` / `fechada` /
+  `nao_medida`), títulos compostos quando parcial ou fechada, chip de Entrada na UI.
+- [x] `alta` exige `entrada === 'aberta'`; marca ruim fecha Entrada sem pontuar Demanda.
+- [x] Pódio de rivais por faturamento inclui fantasmas sem rótulo (pulverização inalterada).
+- [x] Gabarito ADR-0127 intacto (média / média / alta); cortes D10/DISPUTA_V2/DEMANDA sagrados.
+- [x] **2026-08-20:** `nivel baixa` não sequestra título/ação quando Entrada fechada (copy de demanda
+  insuficiente só em `gateDemanda`).
+
+## Adicionar variação a família publicada, direto da tela Estoque (ADR-0129) — 2026-08-20
+
+- [x] Edge nova `adicionar-variacoes-familia` (admin-only + módulo `estoque`): clona a família
+  publicada mais recente + variações vivas para um **lote dedicado** de UPDATE, insere N cores
+  novas digitadas (foto já no storage), registra estoque inicial pelo ledger e encadeia
+  `publicar-familias` (server-to-server, JWT encaminhado) — não `enfileirarFamilias`, que deixaria
+  o lote preso na Revisão (D-10). Idempotente por `chave_cadastro`; retry com família ainda
+  `'pronto'` re-encadeia a publicação em vez de fabricar sucesso. Guard D-8 recusa lote não-terminal
+  em andamento para o mesmo `codigo_pai`. Falha no insert de variações limpa família **e** lote.
+- [x] Migration `20260820143736_guard_estoque_update_manual.sql`: guard de estoque de
+  `validar_variacao_no_tenant` (que exigia estoque zero no INSERT em lote manual) passa a valer só
+  para `familias.operacao='CREATE'` — a família de UPDATE clona o estoque vivo das irmãs.
+- [x] Sino de notificação (`update-familia-ml/processar.ts`) no desfecho final do UPDATE, gated a
+  lote `origem='manual'` + família `operacao='UPDATE'`, categoria `integracao`, best-effort.
+- [x] `dialog-adicionar-variacao.tsx` na tela Estoque (admin-only): linhas repetíveis, banner de
+  bloqueio quando há atualização em voo (pré-check D-8), badge de status no card do produto.
+- [x] `codigosJaUsados` extraído para `_shared/produto/codigos.ts` (reusado por `cadastrar-produto`
+  e pela edge nova).
+- [x] `pnpm lint` + `pnpm test` + `npx tsc -b --force` + `deno lint`/`deno check` verdes.
+  Documentação (`edge-functions.md`, `modelo-de-dados.md`, ADR-0129) atualizada no mesmo ciclo.
+
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 
 - [x] **Unidade da tabela virou anúncio**, não mais ficha de catálogo: interseção 0 medida entre

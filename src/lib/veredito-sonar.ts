@@ -15,6 +15,19 @@ import type { PainelVendasSonar } from './sonar';
 
 export type NivelFator = 'bom' | 'medio' | 'ruim';
 export type NivelVeredito = 'alta' | 'media' | 'baixa';
+/** Entrada no nicho (ADR-0128): pergunta separada da Demanda — "dá para entrar?" ≠ "vende?". */
+export type NivelEntrada = 'aberta' | 'fechada' | 'nao_medida';
+
+/** Rival no pódio por faturamento (vendidos×preço), incluindo anúncios sem rótulo de loja. */
+export interface RivalPodio {
+  item_id: string;
+  titulo: string;
+  /** null = fantasma (sem rótulo de loja) — rival por listing, não inventa loja na pulverização. */
+  vendedor: string | null;
+  vendidos: number | null;
+  preco: number | null;
+  faturamento: number;
+}
 
 export interface Fator {
   chave: 'demanda' | 'disputa' | 'tracao';
@@ -87,17 +100,74 @@ function nivelDemanda(vendas: PainelVendasSonar): { nivel: NivelFator; detalhe: 
   return { nivel: 'medio', detalhe, liquidez, vendasTotais: vendas.vendas_totais };
 }
 
-const TITULOS: Record<NivelVeredito, string> = {
-  alta: 'Oportunidade alta',
-  media: 'Oportunidade média',
-  baixa: 'Oportunidade baixa',
-};
+const TITULO_BAIXA = 'Oportunidade baixa';
+const TITULO_ALTA = 'Oportunidade alta';
+const TITULO_MEDIA = 'Oportunidade média';
 
-const ACAO: Record<NivelVeredito, string> = {
-  baixa: 'Evite entrar com produto genérico. Esse nicho só faz sentido com diferencial forte — preço de fábrica, kit exclusivo ou marca própria.',
-  media: 'Nicho viável com ressalvas. Valide preço e frete contra os líderes antes de investir em estoque.',
-  alta: 'Sinais favoráveis. Ainda assim, publique com estoque conservador e valide o giro real nas primeiras semanas.',
-};
+function tituloVeredito(nivel: NivelVeredito, entrada: NivelEntrada, demanda: NivelFator): string {
+  if (demanda === 'ruim') return TITULO_BAIXA;
+  if (entrada === 'nao_medida') {
+    return demanda === 'bom'
+      ? 'Demanda forte · concorrência não medida'
+      : 'Demanda ok · concorrência não medida';
+  }
+  if (entrada === 'fechada') {
+    return demanda === 'bom'
+      ? 'Demanda forte · entrada fechada'
+      : 'Demanda ok · entrada fechada';
+  }
+  if (nivel === 'baixa') return TITULO_BAIXA;
+  if (nivel === 'alta') return TITULO_ALTA;
+  return TITULO_MEDIA;
+}
+
+function acaoVeredito(
+  nivel: NivelVeredito,
+  entrada: NivelEntrada,
+  gateDemanda: boolean,
+  razaoParcial: string | null,
+): string {
+  if (gateDemanda) {
+    return 'Não compre estoque neste nicho. Demanda insuficiente — sem prova de compra, volume é prejuízo. Esse nicho só faria sentido com diferencial forte (preço de fábrica, kit exclusivo ou marca própria), e mesmo assim só depois de validar a demanda.';
+  }
+  if (entrada === 'nao_medida') {
+    const causa = razaoParcial != null ? razaoParcial : 'concorrência incompleta';
+    return `Avaliação parcial: ${causa}. No máximo um anúncio-teste mínimo — nunca volume. Se for marca de laboratório/fórmula, trate como entrada fechada até conferir loja oficial.`;
+  }
+  if (entrada === 'fechada') {
+    return 'Não compre estoque neste nicho. Tem gente comprando, mas a entrada está fechada (Full dominante ou loja oficial no topo). Volume é prejuízo. Só faria sentido com preço de fábrica, kit exclusivo ou marca própria — e mesmo assim só um anúncio-teste mínimo.';
+  }
+  if (nivel === 'baixa') {
+    return 'Não compre estoque neste nicho. O mercado não sustenta mais um player genérico (disputa/tração). Só com diferencial forte, e só depois de validar.';
+  }
+  if (nivel === 'alta') {
+    return 'Entrada aberta e sinais favoráveis. Ainda assim, publique com estoque conservador e valide o giro real nas primeiras semanas.';
+  }
+  return 'Entrada aberta, nicho viável com ressalvas. Valide preço e frete contra os líderes antes de investir em estoque — e mesmo assim comece conservador.';
+}
+
+/** Frase curta à direita do card. Nunca diz "demanda insuficiente" se a demanda não for o gate. */
+function resumoVeredito(
+  nivel: NivelVeredito,
+  entrada: NivelEntrada,
+  gateDemanda: boolean,
+  disputa: { nivel: NivelFator; fullPct: number | null } | null,
+  marca: { nivel: NivelFator } | null,
+): string {
+  if (gateDemanda) return 'Quase ninguém compra neste termo. Não enche estoque.';
+  const fullFecha = disputa != null && disputa.fullPct != null && disputa.fullPct >= DISPUTA_V2.fullMuito;
+  if (entrada === 'nao_medida') {
+    return 'Tem gente comprando, mas não deu para medir a concorrência. Não enche estoque.';
+  }
+  if (entrada === 'fechada') {
+    if (fullFecha) return 'Tem gente comprando, mas o topo é Full. Não enche estoque.';
+    if (marca?.nivel === 'ruim') return 'Tem gente comprando, mas o topo é loja oficial. Não enche estoque.';
+    return 'Tem gente comprando, mas a entrada está fechada. Não enche estoque.';
+  }
+  if (nivel === 'baixa') return 'O mercado não paga mais um player genérico. Não enche estoque.';
+  if (nivel === 'alta') return 'Sinais bons. Entra com estoque pequeno e valida o giro.';
+  return 'Dá para entrar, sem folga. Confere preço e frete antes de encher estoque.';
+}
 
 function regua(min: number, max: number, cortes: [number, number], valor: number, invertida: boolean): ExplicacaoRegua {
   return { min, max, cortes, valor, invertida };
@@ -134,9 +204,9 @@ function destravarDemanda(nivel: NivelFator, vendasTotais: number, liquidez: num
 
 function fraseMarca(nivel: NivelFator, p: number): string {
   const pctM = pct(p);
-  if (nivel === 'ruim') return `${pctM} das fichas ativas têm loja oficial — mercado dominado pela marca; revender com loja oficial forte tem risco de moderação por propriedade intelectual. Não entra na pontuação.`;
-  if (nivel === 'medio') return `${pctM} das fichas ativas têm loja oficial — zona de atenção; confira se a marca permite revenda antes de cadastrar. Não entra na pontuação.`;
-  return `${pctM} das fichas ativas têm loja oficial — mercado aberto para revenda comum. Este fator não entra na pontuação; é só um alerta de risco.`;
+  if (nivel === 'ruim') return `${pctM} das fichas ativas têm loja oficial — mercado dominado pela marca; revender com loja oficial forte tem risco de moderação por propriedade intelectual. Não pontua Demanda; marca ruim fecha a Entrada.`;
+  if (nivel === 'medio') return `${pctM} das fichas ativas têm loja oficial — zona de atenção; confira se a marca permite revenda antes de cadastrar. Não pontua Demanda; só marca ruim fecha a Entrada.`;
+  return `${pctM} das fichas ativas têm loja oficial — mercado aberto para revenda comum. Este fator não pontua Demanda; é alerta de risco (e marca ruim fecha a Entrada).`;
 }
 
 function destravarMarca(nivel: NivelFator, p: number): string {
@@ -171,6 +241,12 @@ export interface VereditoAnuncios {
    *  Tração da conta, ou nenhum anúncio informou o tipo de envio (metade da Disputa). O veredito se
    *  DECLARA parcial e não chega a "alta" — falta de dado não é sinal de negócio, nem para cima. */
   parcial: boolean;
+  /** Entrada no nicho (ADR-0128): aberta / fechada / não medida — pergunta separada da Demanda. */
+  entrada: NivelEntrada;
+  /** Top 5 rivais por faturamento na amostra (inclui fantasmas sem rótulo). */
+  rivaisPodio: RivalPodio[];
+  /** Uma frase visível no card, sem abrir Saiba mais — linguajar de operador, não de score. */
+  resumo: string;
   explicacao: Explicacao;
 }
 
@@ -287,8 +363,8 @@ function nivelTracaoV2(sub: SubamostraNomeada): { nivel: NivelFator; detalhe: st
   return { nivel, detalhe: `${brlMil(porRotulo)} por rótulo de loja`, porRotulo };
 }
 
-/** Marca vira % da AMOSTRA de anúncios com loja oficial (antes era % de fichas). Segue fora da
- *  pontuação — alerta de risco de moderação, não nota. */
+/** Marca vira % da AMOSTRA de anúncios com loja oficial (antes era % de fichas). Não pontua
+ *  Demanda — alerta de risco; marca ruim fecha a Entrada (ADR-0128). */
 function alertaMarcaV2(vendas: PainelVendasSonar): { nivel: NivelFator; detalhe: string; pct: number } | null {
   if (vendas.itens_analisados === 0) return null;
   const p = (vendas.raio_x.lojas_oficiais / vendas.itens_analisados) * 100;
@@ -296,6 +372,48 @@ function alertaMarcaV2(vendas: PainelVendasSonar): { nivel: NivelFator; detalhe:
   if (p > MARCA.dominado) return { nivel: 'ruim', detalhe, pct: p };
   if (p >= MARCA.aberto) return { nivel: 'medio', detalhe, pct: p };
   return { nivel: 'bom', detalhe, pct: p };
+}
+
+/**
+ * Top 5 rivais por faturamento (vendidos×preço) na amostra — inclui fantasmas (`vendedor == null`).
+ * Não altera a pulverização: fantasmas continuam fora de `subamostraNomeada`.
+ */
+export function rivaisPodio(vendas: PainelVendasSonar): RivalPodio[] {
+  return itensDaAmostra(vendas)
+    .filter((i) => i.vendidos != null && i.preco != null)
+    .map((i) => ({
+      item_id: i.item_id ?? '',
+      titulo: i.titulo,
+      vendedor: i.vendedor,
+      vendidos: i.vendidos,
+      preco: i.preco,
+      faturamento: (i.vendidos as number) * (i.preco as number),
+    }))
+    .filter((r) => r.faturamento > 0)
+    .sort((a, b) => b.faturamento - a.faturamento)
+    .slice(0, 5);
+}
+
+function derivarEntrada(
+  parcial: boolean,
+  disputa: { nivel: NivelFator } | null,
+  marca: { nivel: NivelFator } | null,
+): NivelEntrada {
+  // Cobertura < 50% ou Full não medido → nunca declarar "oportunidade alta"; entrada não medida.
+  if (parcial) return 'nao_medida';
+  if (disputa?.nivel === 'ruim' || marca?.nivel === 'ruim') return 'fechada';
+  return 'aberta';
+}
+
+function fraseRivaisPodio(rivais: RivalPodio[]): string {
+  if (rivais.length === 0) return '';
+  const lista = rivais
+    .map((r) => (r.vendedor == null ? 'sem rótulo' : r.vendedor))
+    .join(', ');
+  const fantasma = rivais.some((r) => r.vendedor == null)
+    ? ' Anúncio sem rótulo de loja ainda é rival — o líder sem nome não some da briga.'
+    : '';
+  return `${fantasma} Pódio por faturamento: ${lista}.`;
 }
 
 function montarMotivoAnuncios(nivel: NivelVeredito, fatores: Fator[], razaoParcial: string | null): string {
@@ -380,14 +498,14 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   const soma = fatores.reduce((acc, f) => acc + PONTOS[f.nivel], 0);
   const maximo = fatores.length * 2; // escala proporcional (ADR-0124 §4) absorve a trava D10
   const gateDemanda = demanda.nivel === 'ruim';
-  // "Alta" exige dado completo: com a Disputa medida pela metade o facial (🔴 só pela cláusula de
-  // Full) chegaria a 5/6 e leria "alta" por FALTA de dado. Ausência nunca melhora um veredito — e
-  // isto não é rebaixamento silencioso: `parcial` diz o porquê na tela.
-  const nivel: NivelVeredito = gateDemanda || soma <= maximo / 3 ? 'baixa'
-    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA && !parcial ? 'alta'
-      : 'media';
-
   const marca = alertaMarcaV2(vendas);
+  const entrada = derivarEntrada(parcial, disputa, marca);
+  const rivais = rivaisPodio(vendas);
+  // "Alta" exige dado completo + entrada aberta (ADR-0128): marca ruim / disputa ruim fecham a
+  // Entrada e impedem "alta"; parcial também (falta de dado nunca promove).
+  const nivel: NivelVeredito = gateDemanda || soma <= maximo / 3 ? 'baixa'
+    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA && !parcial && entrada === 'aberta' ? 'alta'
+      : 'media';
 
   const fatoresExplicacao: ExplicacaoFator[] = [{
     chave: 'demanda',
@@ -442,20 +560,19 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     });
   }
 
-  const acaoBase = ACAO[nivel];
-  const acao = gateDemanda
-    ? `Demanda insuficiente derruba o veredito para baixa por conta própria, independente dos outros fatores. ${acaoBase}`
-    : razaoParcial != null
-      ? `Avaliação parcial: ${razaoParcial}, então não foi possível avaliar a concorrência do nicho por completo — sem isso o veredito não declara oportunidade alta. ${acaoBase}`
-      : acaoBase;
+  const acao = acaoVeredito(nivel, entrada, gateDemanda, razaoParcial) + fraseRivaisPodio(rivais);
+  const resumo = resumoVeredito(nivel, entrada, gateDemanda, disputa, marca);
 
   return {
     nivel,
-    titulo: TITULOS[nivel],
+    titulo: tituloVeredito(nivel, entrada, demanda.nivel),
     motivo: montarMotivoAnuncios(nivel, fatores, razaoParcial),
     fatores,
     marca,
     parcial,
+    entrada,
+    rivaisPodio: rivais,
+    resumo,
     explicacao: { pontuacao: { soma, maximo }, gateDemanda, fatores: fatoresExplicacao, acao },
   };
 }

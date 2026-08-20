@@ -104,6 +104,11 @@ pela cláusula `Full 85% >= 60` — leria **alta** com o campo de envio vazio, o
 faixa por FALTA de dado. Regra geral aplicada nos dois casos: ausência de dado nunca melhora um
 veredito, e o motivo aparece na tela em vez de sumir.
 
+> **ADR-0128:** o título parcial "Oportunidade média" era enganoso quando a Demanda era forte e só
+> a concorrência faltava (caso Aptamil). A trava D10 e o flag `parcial` permanecem; o título passou
+> a separar Demanda de Entrada (`Demanda forte · concorrência não medida`). Ver
+> [0128-veredito-sonar-demanda-e-entrada.md](./0128-veredito-sonar-demanda-e-entrada.md).
+
 **D11 — Disputa e Tração viram métricas invariantes ao tamanho da amostra; cortes antigos
 inválidos na fonte nova.** Os cortes atuais (`DISPUTA = { vendedoresPoucos: 10, vendedoresMuitos:
 25 }`, `TRACAO = { boa: 150_000, media: 30_000 }`) vivem numa escala cujo teto vinha de ~40 fichas
