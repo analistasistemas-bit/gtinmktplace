@@ -330,7 +330,7 @@ export async function processarColetaOrg(
     const { data: anterioresRaw } = await admin.from('pulse_ofertas_atual')
       // `permalink` entra aqui porque `mudou()` o compara: sem lê-lo, o guardado chegaria sempre
       // como undefined e toda oferta pareceria mudada em toda execução.
-      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, permalink, visitas_30d')
+      .select('item_id, seller_id, preco, tier, frete_gratis, full_ml, loja_oficial, ativo, permalink, visitas_30d')
       .eq('org_id', orgId).eq('produto_id', produto.id);
     const anteriores = ((anterioresRaw ?? []) as OfertaAnteriorComVisitas[])
       .map((o) => ({ ...o, preco: Number(o.preco) }));

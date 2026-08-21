@@ -6,8 +6,7 @@ import {
 } from '../../supabase/functions/_shared/concorrencia/qualificacao';
 import type { PulseOferta, PulseVendedor } from './pulse';
 
-/** Junta cada oferta ao perfil mais recente de seu vendedor e aplica a regra compartilhada.
- * `full` ainda não é persistido no snapshot Pulse; ele não participa da qualificação. */
+/** Junta cada oferta ao perfil mais recente de seu vendedor e aplica a regra compartilhada. */
 export function mercadoPulse(
   ofertas: PulseOferta[],
   vendedores: PulseVendedor[],
@@ -27,7 +26,7 @@ export function mercadoPulse(
       seller_id: oferta.seller_id,
       preco: oferta.preco,
       frete_gratis: oferta.frete_gratis,
-      full: false,
+      full: oferta.full_ml,
       transactions_total: vendedor?.transactions_total ?? null,
       visitas_30d: oferta.visitas_30d,
       nivel: vendedor?.nivel ?? null,

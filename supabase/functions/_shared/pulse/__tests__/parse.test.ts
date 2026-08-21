@@ -55,6 +55,7 @@ describe('parseOfertasProduto', () => {
         preco: 99.9,
         tier: 'gold_special',
         frete_gratis: true,
+        full_ml: false,
         loja_oficial: false,
         permalink: null,
       },
@@ -64,6 +65,7 @@ describe('parseOfertasProduto', () => {
         preco: 105,
         tier: 'gold_pro',
         frete_gratis: false,
+        full_ml: false,
         loja_oficial: true,
         permalink: null,
       },
@@ -78,8 +80,24 @@ describe('parseOfertasProduto', () => {
       ],
     };
     expect(parseOfertasProduto(json)).toEqual([
-      { item_id: 'MLB2', seller_id: 2, preco: 50, tier: 'gold_special', frete_gratis: false, loja_oficial: false, permalink: null },
+      { item_id: 'MLB2', seller_id: 2, preco: 50, tier: 'gold_special', frete_gratis: false, full_ml: false, loja_oficial: false, permalink: null },
     ]);
+  });
+
+  describe('full_ml (logística FULL)', () => {
+    const umaOferta = (shipping: Record<string, unknown>) => ({
+      results: [{ item_id: 'MLB1', price: 10, seller_id: 1, shipping }],
+    });
+
+    it('shipping.logistic_type fulfillment vira full_ml true', () => {
+      expect(parseOfertasProduto(umaOferta({ logistic_type: 'fulfillment' }))[0].full_ml).toBe(true);
+    });
+
+    it('outro logistic_type ou ausente vira full_ml false — nunca inventa FULL', () => {
+      expect(parseOfertasProduto(umaOferta({ logistic_type: 'cross_docking' }))[0].full_ml).toBe(false);
+      expect(parseOfertasProduto(umaOferta({}))[0].full_ml).toBe(false);
+      expect(parseOfertasProduto({ results: [{ item_id: 'MLB1', price: 10, seller_id: 1 }] })[0].full_ml).toBe(false);
+    });
   });
 
   it('sem results[] → []', () => {

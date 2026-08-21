@@ -8,14 +8,15 @@ export interface OfertaQualificavelDiff extends OfertaColetada {
 }
 
 /** Entrada de alertas: a persistência continua usando todas as ofertas, mas o diff decisório só
- * recebe as relevantes. `full` ainda não é coletado no snapshot Pulse e não altera a regra. */
+ * recebe as relevantes. `full` não participa da regra de qualificação (spec só usa `full` para
+ * estatística, não para corte). */
 export function entradaDiffRelevante<T extends OfertaQualificavelDiff>(ofertas: T[]): T[] {
   return ofertas.filter((oferta) => qualificarOferta({
     item_id: oferta.item_id,
     seller_id: oferta.seller_id,
     preco: oferta.preco,
     frete_gratis: oferta.frete_gratis,
-    full: false,
+    full: oferta.full_ml,
     transactions_total: oferta.transactions_total,
     visitas_30d: oferta.visitas_30d,
     nivel: oferta.nivel,
@@ -28,7 +29,7 @@ export function entradaDiffRelevante<T extends OfertaQualificavelDiff>(ofertas: 
 // ficha não expuser permalink, os dois lados ficam null e nada é regravado.
 const mudou = (a: OfertaAnterior, b: OfertaColetada) =>
   a.preco !== b.preco || a.tier !== b.tier || a.frete_gratis !== b.frete_gratis
-  || a.loja_oficial !== b.loja_oficial || a.permalink !== b.permalink;
+  || a.full_ml !== b.full_ml || a.loja_oficial !== b.loja_oficial || a.permalink !== b.permalink;
 
 /**
  * Snapshot só-se-mudou (ADR-0119 §2). `anteriores` = estado atual por item

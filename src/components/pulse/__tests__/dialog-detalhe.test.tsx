@@ -62,6 +62,7 @@ const oferta = (overrides: Partial<PulseOferta>): PulseOferta => ({
   preco: 36,
   tier: 'gold_special',
   frete_gratis: false,
+  full_ml: false,
   loja_oficial: false,
   ativo: true,
   dia: '2026-08-20',

@@ -8,6 +8,7 @@ const oferta = (over: Partial<OfertaColetada> = {}): OfertaColetada => ({
   preco: 100,
   tier: 'gold_special',
   frete_gratis: false,
+  full_ml: false,
   loja_oficial: false,
   permalink: null,
   ...over,
@@ -81,6 +82,13 @@ describe('diffOfertas', () => {
       tipo: 'concorrente_saiu',
       payload: { item_id: 'MLB2', seller_id: 2 },
     });
+  });
+
+  it('full_ml mudou (entrou/saiu da FULL): regrava mesmo com preço estável', () => {
+    const anteriores = [anterior({ item_id: 'MLB1', seller_id: 1, preco: 100, full_ml: false })];
+    const atuais = [oferta({ item_id: 'MLB1', seller_id: 1, preco: 100, full_ml: true })];
+    const r = diffOfertas(anteriores, atuais);
+    expect(r.gravar).toEqual([atuais[0]]);
   });
 
   it('nada mudou: gravar vazio, sem alertas', () => {

@@ -7,7 +7,7 @@ import type { PulseOferta, PulseVendedor } from '../pulse';
 
 const oferta = (over: Partial<PulseOferta>): PulseOferta => ({
   item_id: 'MLB1', seller_id: 111, preco: 100, tier: 'gold_special',
-  frete_gratis: true, loja_oficial: false, ativo: true, dia: '2026-08-10', permalink: null,
+  frete_gratis: true, full_ml: false, loja_oficial: false, ativo: true, dia: '2026-08-10', permalink: null,
   visitas_30d: null, visitas_30d_em: null, ...over,
 });
 
@@ -50,6 +50,18 @@ describe('mercadoPulse', () => {
     ]);
 
     expect(mercado.menor_relevante).toBe(70.19);
+  });
+
+  it('conta FULL relevante a partir de full_ml (nunca inventa)', () => {
+    const mercado = mercadoPulse([
+      oferta({ item_id: 'MLB1', seller_id: 1, preco: 70.19, full_ml: true }),
+      oferta({ item_id: 'MLB2', seller_id: 2, preco: 80, full_ml: false }),
+    ], [
+      vendedor({ seller_id: 1, transactions_total: 10, nivel: '3_yellow' }),
+      vendedor({ seller_id: 2, transactions_total: 10, nivel: '3_yellow' }),
+    ]);
+
+    expect(mercado.full_relevantes).toBe(1);
   });
 });
 

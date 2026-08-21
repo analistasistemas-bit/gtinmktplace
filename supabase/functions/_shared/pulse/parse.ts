@@ -1,7 +1,8 @@
 import type { OfertaColetada, PriceToWin } from './tipos.ts';
 
 // /products/{id}/items → results[]: item_id, price, seller_id, listing_type_id,
-// shipping.free_shipping, official_store_id. sold/available vêm null — não parsear.
+// shipping.free_shipping, shipping.logistic_type, official_store_id. sold/available vêm null —
+// não parsear.
 // `permalink` é lido de forma oportunista: se a ficha não o expuser, o enriquecimento posterior
 // deriva o link público a partir do item_id.
 // `excluirSellerId` = nossa própria conta no ML: a lista do catálogo inclui a NOSSA oferta, e
@@ -24,6 +25,7 @@ export function parseOfertasProduto(json: unknown, excluirSellerId?: number | nu
       preco,
       tier: typeof o.listing_type_id === 'string' ? o.listing_type_id : null,
       frete_gratis: Boolean((o.shipping as { free_shipping?: unknown } | null)?.free_shipping),
+      full_ml: (o.shipping as { logistic_type?: unknown } | null)?.logistic_type === 'fulfillment',
       loja_oficial: o.official_store_id != null,
       // Só aceita URL http(s) de verdade: string vazia ou caminho relativo viraria um link quebrado
       // na tela, e link quebrado é pior do que ausência de link.

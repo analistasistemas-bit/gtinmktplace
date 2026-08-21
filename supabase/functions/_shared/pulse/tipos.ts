@@ -5,6 +5,8 @@ export interface OfertaColetada {
   preco: number;
   tier: string | null;
   frete_gratis: boolean;
+  /** `shipping.logistic_type === 'fulfillment'` — mesma leitura de `_shared/concorrencia/parse.ts`. */
+  full_ml: boolean;
   loja_oficial: boolean;
   /**
    * URL do anúncio no ML, quando a ficha a expõe. É a ÚNICA fonte possível para anúncio de
