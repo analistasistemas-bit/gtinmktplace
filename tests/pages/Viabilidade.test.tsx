@@ -25,11 +25,11 @@ describe('Página Viabilidade', () => {
     expect(screen.getByText('Colar GTINs')).toBeInTheDocument();
   });
 
-  it('explica a limitação dos preços retornados pela API do ML', () => {
+  it('explica que só o mercado relevante entra nos cálculos', () => {
     renderPage();
-    expect(screen.getByText('Menor na API do ML')).toBeInTheDocument();
+    expect(screen.getByText('Menor relevante')).toBeInTheDocument();
     expect(screen.getByText(
-      'Promoções exibidas no site do Mercado Livre podem não aparecer na API oficial.',
+      'Ofertas sem atividade comercial suficiente ficam no mercado observado e não entram nos cálculos.',
     )).toBeInTheDocument();
   });
 });
