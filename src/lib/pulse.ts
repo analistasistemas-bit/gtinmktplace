@@ -240,6 +240,13 @@ export async function marcarAlertaLido(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Marca TODOS os alertas não lidos como lidos — não só os 20 exibidos (fetchPulseAlertas tem
+ *  teto de leitura, este update não tem). RLS escopa por org, mesmo grant column-level de `lido`. */
+export async function marcarTodosAlertasLidos(): Promise<void> {
+  const { error } = await pulseFrom('pulse_alertas').update({ lido: true }).eq('lido', false);
+  if (error) throw error;
+}
+
 /** Custo do produto + alíquota de imposto, para o simulador de margem. Regra LOUD
  *  (ADR-0055/0086): alíquota só entra confirmada — nunca o default 8/16 em silêncio. */
 // Sem `precoAtual`: o preço de venda vigente é o da nossa oferta na ficha (`pulse_produtos.

@@ -5,9 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Bell, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { QK } from '@/lib/queries';
-import { fetchPulseAlertas, marcarAlertaLido, type PulseAlerta } from '@/lib/pulse';
+import { fetchPulseAlertas, marcarAlertaLido, marcarTodosAlertasLidos, type PulseAlerta } from '@/lib/pulse';
 import { textoAlerta } from '@/lib/pulse-alerta-texto';
 
 export function PainelAlertas({
@@ -36,6 +36,21 @@ export function PainelAlertas({
     onSettled: () => qc.invalidateQueries({ queryKey: QK.pulseAlertas }),
   });
 
+  const limparTodos = useMutation({
+    mutationFn: marcarTodosAlertasLidos,
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: QK.pulseAlertas });
+      const anterior = qc.getQueryData<PulseAlerta[]>(QK.pulseAlertas);
+      qc.setQueryData<PulseAlerta[]>(QK.pulseAlertas, []);
+      return { anterior };
+    },
+    onError: (e: Error, _vars, contexto) => {
+      if (contexto?.anterior) qc.setQueryData(QK.pulseAlertas, contexto.anterior);
+      toast.error(e.message);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: QK.pulseAlertas }),
+  });
+
   // Consulta quebrada não pode parecer "nenhum alerta" — é a primeira pergunta que a tela responde.
   if (isError) {
     return (
@@ -55,6 +70,17 @@ export function PainelAlertas({
           <Bell className="h-3.5 w-3.5" />
           {lista.length === 1 ? '1 alerta novo' : `${lista.length} alertas novos`}
         </CardTitle>
+        <CardAction>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-auto py-0.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => limparTodos.mutate()}
+            disabled={limparTodos.isPending}
+          >
+            Limpar todos
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-0 px-4 pb-2 pt-1">
         {lista.map((alerta) => (

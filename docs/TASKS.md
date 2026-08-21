@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Botão "Limpar todos" no painel de alertas do Pulse — 2026-08-21
+
+- [x] `marcarTodosAlertasLidos` (`src/lib/pulse.ts`): `update pulse_alertas set lido=true where lido=false`,
+  sem `id` — RLS (`pulse_alertas: update org`) escopa por org, grant continua column-level só em
+  `lido`. Cobre TODOS os não lidos, não só os até 20 exibidos por `fetchPulseAlertas`.
+  Não roda como edge function — mesmo padrão de `marcarAlertaLido`, direto via PostgREST.
+- [x] Botão "Limpar todos" no cabeçalho do `PainelAlertas` (`src/components/pulse/painel-alertas.tsx`),
+  usando o slot `CardAction` já existente no sistema de Card. Update otimista (lista esvazia na
+  hora), rollback com toast de erro se a mutation falhar — mesmo padrão do "marcar como lido" 1 a 1.
+- [x] Teste novo `painel-alertas.test.tsx`: clique único limpa a lista inteira (não 1 por 1);
+  erro na mutation restaura a lista anterior. `tsc -b --force`, lint (0 erros), build e suíte
+  completa (398 arquivos/3664 testes) verdes.
+
 ## Concorrentes relevantes no Pulse e na Viabilidade (spec `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`) — 2026-08-21
 
 - [x] Classificador compartilhado `qualificarOferta`/`resumirMercadoQualificado`
