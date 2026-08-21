@@ -27,10 +27,10 @@ const ROTULO: Record<Semaforo, string> = {
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 
 function BlocoTipo({ titulo, c, menor, minimo, custo, aliquotaPct, frete }: {
-  titulo: string; c: ComissaoTipo; menor: number | null;
+  titulo: string; c: ComissaoTipo; menor: number;
   minimo: number | null; custo: number | null; aliquotaPct: number; frete: number;
 }) {
-  const imposto = round2((menor ?? 0) * aliquotaPct / 100);
+  const imposto = round2(menor * aliquotaPct / 100);
   const liquido = liquidoNoMercado(menor, c.saleFeeAmount, imposto, frete);
   const etiqueta = etiquetaParaMinimo(minimo, c.percentual, aliquotaPct, frete);
   const sem = semaforoTipo(menor, c.saleFeeAmount, minimo, custo, imposto, frete);
@@ -192,11 +192,19 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
     );
   }
 
-  const c = item.classico!;
-  const frete = item.frete ?? 0;
-  const impostoResumo = round2((item.mercado!.menor ?? 0) * aliquotaPct / 100);
-  const semaforo = semaforoTipo(item.mercado!.menor, c.saleFeeAmount, minimo, custo, impostoResumo, frete);
-  const liquido = liquidoNoMercado(item.mercado!.menor, c.saleFeeAmount, impostoResumo, frete);
+  const mercado = item.mercado;
+  const menorRelevante = mercado?.menor ?? null;
+  const frete = item.frete;
+  const classico = item.classico;
+  const premium = item.premium;
+  const temCalculos = menorRelevante != null && classico != null && premium != null && frete != null;
+  let semaforo: Semaforo = 'indisponivel';
+  let liquido: number | null = null;
+  if (menorRelevante != null && classico != null && frete != null) {
+    const impostoResumo = round2(menorRelevante * aliquotaPct / 100);
+    semaforo = semaforoTipo(menorRelevante, classico.saleFeeAmount, minimo, custo, impostoResumo, frete);
+    liquido = liquidoNoMercado(menorRelevante, classico.saleFeeAmount, impostoResumo, frete);
+  }
 
   return (
     <>
@@ -212,8 +220,10 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
             </span>
           </span>
         </td>
-        <td className="px-3 py-2">{fmtBRL(item.mercado!.menor ?? 0)}</td>
-        <td className="px-3 py-2">{item.mercado!.vendedores}</td>
+        <td className="px-3 py-2">{menorRelevante != null ? fmtBRL(menorRelevante) : 'Sem concorrente relevante'}</td>
+        <td className="px-3 py-2">
+          {mercado ? `${mercado.vendedores} de ${mercado.observado.vendedores}` : '—'}
+        </td>
         <td className="px-3 py-2">{minimo != null ? fmtBRL(minimo) : '—'}</td>
         <td className="px-3 py-2">{liquido != null ? fmtBRL(liquido) : '—'}</td>
         <td className="px-3 py-2">
@@ -240,7 +250,7 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
       {aberto && (
         <tr className="border-t border-border bg-muted/30">
           <td colSpan={6} className="px-3 py-3 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-reversible">
-            {editavel && item.dimensoesEncontradas === false && (
+            {editavel && temCalculos && item.dimensoesEncontradas === false && (
               <FormDimensoes
                 gtin={item.gtin}
                 onAtualizado={(it, dim) => { setOverride(it); setDimensoesInformadas(dim); }}
@@ -255,20 +265,31 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
                 <Input id={`custo-${item.gtin}`} type="number" step="0.01" disabled={!editavel} className="w-28"
                   value={custo ?? ''} onChange={(e) => setCusto(e.target.value === '' ? null : Number(e.target.value))} />
               </label>
-              <span className="text-muted-foreground">
-                Mercado: {fmtBRL(item.mercado!.menor ?? 0)}–{fmtBRL(item.mercado!.maior ?? item.mercado!.menor ?? 0)} ·
-                {' '}{item.mercado!.freteGratis} c/ frete grátis · {item.mercado!.full} FULL
-              </span>
+              {menorRelevante != null && mercado ? (
+                <span className="text-muted-foreground">
+                  Mercado relevante: {fmtBRL(menorRelevante)}–{fmtBRL(mercado.maior ?? menorRelevante)} ·
+                  {' '}{mercado.freteGratis} c/ frete grátis · {mercado.full} FULL
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Sem concorrente relevante</span>
+              )}
+              {mercado?.observado.menor != null && mercado.observado.menor !== menorRelevante && (
+                <span className="text-muted-foreground">Menor observado: {fmtBRL(mercado.observado.menor)}</span>
+              )}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <BlocoTipo titulo="Clássico" c={item.classico!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
-              <BlocoTipo titulo="Premium" c={item.premium!} menor={item.mercado!.menor} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
-            </div>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              {frete > 0
-                ? <>ℹ️ Já desconta o frete grátis ao comprador por sua conta: <span className="font-medium text-foreground">−{fmtBRL(frete)}</span> (estimado; varia por região).</>
-                : 'ℹ️ Acima de R$19, o Mercado Livre dá frete grátis ao comprador por sua conta (varia por região).'}
-            </p>
+            {temCalculos && classico != null && premium != null && frete != null && menorRelevante != null && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <BlocoTipo titulo="Clássico" c={classico} menor={menorRelevante} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
+                  <BlocoTipo titulo="Premium" c={premium} menor={menorRelevante} minimo={minimo} custo={custo} aliquotaPct={aliquotaPct} frete={frete} />
+                </div>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  {frete > 0
+                    ? <>ℹ️ Já desconta o frete grátis ao comprador por sua conta: <span className="font-medium text-foreground">−{fmtBRL(frete)}</span> (estimado; varia por região).</>
+                    : 'ℹ️ Acima de R$19, o Mercado Livre dá frete grátis ao comprador por sua conta (varia por região).'}
+                </p>
+              </>
+            )}
           </td>
         </tr>
       )}

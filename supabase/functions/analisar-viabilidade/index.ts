@@ -9,8 +9,11 @@ import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
 import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
+import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
+import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
 import { dimensoesValidas, type DimensoesPacote } from '../_shared/ml/pacote.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
+import { resolverMercadoRelevante } from '../_shared/analise/mercado-relevante.ts';
 import { resumirVariacoesSalvas, type VariacaoSalvaResumo } from '../_shared/analise/variacao-salva.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
 
@@ -44,16 +47,10 @@ async function analisarItem(
     const conc = await buscarConcorrencia(conexao, {
       nome_pai: item.nome, variacoes: [{ gtin: item.gtin }],
     });
-    const menor = conc.ofertas?.preco_min ?? conc.preco_min;
-    if (!conc.product_id || conc.vendedores === 0 || menor == null) return base;
+    if (!conc.product_id) return base;
 
     // A categoria vem das próprias ofertas (GET /products/{id} não retorna category_id).
     const categoria = conc.ofertas?.category_id ?? null;
-    if (!categoria) return base;
-
-    if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
-    const token = await getValidAccessTokenConexao(conexao);
-    const mlUserId = conexao.contaExternaId || 'me';
 
     // Select sempre chamado (T4): jaCadastrado precisa dele mesmo quando o caller já informou
     // dimensões (senão o recálculo do FormDimensoes apagaria o sinal). Dimensão informada pelo
@@ -61,34 +58,46 @@ async function analisarItem(
     // produto já cadastrado antes de cair no pacote genérico (16x11x6cm/300g) do frete.ts.
     const dimensoesInformadas = item.dimensoes && dimensoesValidas(item.dimensoes);
     const salva = await buscarVariacaoSalva(db, orgId, item.gtin);
-    const dimensoes = dimensoesInformadas ? item.dimensoes! : salva.dimensoes;
-
-    const [classicoML, premiumML, frete] = await Promise.all([
-      buscarListingPrice(token, menor, categoria, 'gold_special'),
-      buscarListingPrice(token, menor, categoria, 'gold_pro'),
-      buscarFreteVendedor(token, mlUserId, menor, categoria, dimensoes),
-    ]);
-
-    return {
+    let token: string | null = null;
+    if (conexao) token = await getValidAccessTokenConexao(conexao).catch(() => null);
+    const mercado = await resolverMercadoRelevante({
+      db,
+      orgId,
+      productId: conc.product_id,
+      ofertas: conc.ofertas?.ofertas_detalhe ?? [],
+      buscarPerfil: token
+        ? (sellerId) => buscarPerfilVendedor(token, sellerId)
+        : () => Promise.resolve(null),
+      buscarVisitas: token
+        ? (itemId) => buscarVisitas30d(token, itemId)
+        : () => Promise.resolve(null),
+    });
+    const resultado: ItemAnalisado = {
       ...base,
       // Modo GTIN não tem nome (vem = gtin); usa o nome do produto de catálogo do ML.
       nome: item.nome && item.nome !== item.gtin ? item.nome : (conc.product_name ?? item.gtin),
       existeNoML: true,
-      mercado: {
-        menor,
-        maior: conc.ofertas?.preco_max ?? null,
-        vendedores: conc.vendedores,
-        freteGratis: conc.ofertas?.frete_gratis ?? 0,
-        full: conc.ofertas?.full ?? 0,
-      },
-      classico: { saleFeeAmount: classicoML.sale_fee_amount ?? 0, ...comissaoDe(classicoML) },
-      premium: { saleFeeAmount: premiumML.sale_fee_amount ?? 0, ...comissaoDe(premiumML) },
-      frete,
-      dimensoesEncontradas: dimensoes != null,
+      mercado,
       descricaoCatalogo: conc.descricao_catalogo ?? null,
       categoriaMlId: categoria,
       // Heurística de UX (casa por GTIN) — não é o guard; o 409 de cadastrar-produto continua autoritativo.
       jaCadastrado: salva.jaCadastrado,
+    };
+    if (mercado.menor == null || !categoria || !token) return resultado;
+
+    const dimensoes = dimensoesInformadas ? item.dimensoes! : salva.dimensoes;
+    const mlUserId = conexao?.contaExternaId || 'me';
+    const [classicoML, premiumML, frete] = await Promise.all([
+      buscarListingPrice(token, mercado.menor, categoria, 'gold_special'),
+      buscarListingPrice(token, mercado.menor, categoria, 'gold_pro'),
+      buscarFreteVendedor(token, mlUserId, mercado.menor, categoria, dimensoes),
+    ]);
+    return {
+      ...resultado,
+      classico: { saleFeeAmount: classicoML.sale_fee_amount ?? 0, ...comissaoDe(classicoML) },
+      premium: { saleFeeAmount: premiumML.sale_fee_amount ?? 0, ...comissaoDe(premiumML) },
+      frete,
+      dimensoesEncontradas: dimensoes != null,
     };
   } catch (e) {
     console.warn(`analisarItem ${item.gtin} falhou: ${(e as Error).message}`);

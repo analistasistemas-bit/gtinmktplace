@@ -24,12 +24,21 @@ export interface ComissaoTipo {
   fixa: number;
 }
 
+export interface MercadoObservado {
+  menor: number | null;
+  maior: number | null;
+  vendedores: number;
+  ofertas: number;
+}
+
 export interface Mercado {
   menor: number | null;
   maior: number | null;
   vendedores: number;
   freteGratis: number;
   full: number;
+  ofertas: number;
+  observado: MercadoObservado;
 }
 
 /** Resultado por item devolvido pela edge. Só dados; a avaliação é feita no front. */

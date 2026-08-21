@@ -3,9 +3,15 @@ import { calcularSemaforo, type Semaforo } from './semaforo';
 
 // Espelha _shared/analise/tipos.ts (Deno não é importável no browser).
 export interface ComissaoTipo { saleFeeAmount: number; percentual: number; fixa: number }
+export interface MercadoObservado {
+  menor: number | null; maior: number | null;
+  vendedores: number; ofertas: number;
+}
 export interface Mercado {
   menor: number | null; maior: number | null;
   vendedores: number; freteGratis: number; full: number;
+  ofertas: number;
+  observado: MercadoObservado;
 }
 // Espelha _shared/canais/contrato.ts.
 export interface DimensoesPacote {

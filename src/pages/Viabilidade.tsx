@@ -10,7 +10,7 @@ import { CalculadoraML } from '@/components/calculadora-ml/calculadora-ml';
 import { useAnaliseViabilidade } from '@/hooks/useAnaliseViabilidade';
 import type { ItemAnalisado } from '@/lib/viabilidade';
 
-const COLS = ['Produto', 'Menor na API do ML', 'Vendedores', 'Seu mínimo', 'Líquido se igualar', 'Viabilidade'];
+const COLS = ['Produto', 'Menor relevante', 'Vendedores', 'Seu mínimo', 'Líquido se igualar', 'Viabilidade'];
 type ModoViabilidade = 'analise' | 'calculadora';
 
 function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean }) {
@@ -76,9 +76,9 @@ export default function Viabilidade() {
         subtitle="Veja, antes de subir um lote, se os produtos já vendem no ML e se o preço é viável." />
 
       <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-        <p className="font-medium text-foreground">Menor na API do ML</p>
+        <p className="font-medium text-foreground">Menor relevante</p>
         <p className="text-muted-foreground">
-          Promoções exibidas no site do Mercado Livre podem não aparecer na API oficial.
+          Ofertas sem atividade comercial suficiente ficam no mercado observado e não entram nos cálculos.
         </p>
       </div>
 

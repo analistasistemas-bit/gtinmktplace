@@ -55,7 +55,10 @@ const ITEM_BASE: ItemAnalisado = {
   custo: null,
   origem: 'nacional',
   existeNoML: true,
-  mercado: { menor: 99.9, maior: 129.9, vendedores: 1, freteGratis: 1, full: 0 },
+  mercado: {
+    menor: 99.9, maior: 129.9, vendedores: 1, freteGratis: 1, full: 0, ofertas: 1,
+    observado: { menor: 99.9, maior: 129.9, vendedores: 1, ofertas: 1 },
+  },
   classico: { saleFeeAmount: 13.99, percentual: 14, fixa: 0 },
   premium: { saleFeeAmount: 17.98, percentual: 18, fixa: 0 },
   frete: 10,
