@@ -90,8 +90,11 @@ export function parseItensProduto(json: unknown): DadosOfertas {
     .map((r) => r.category_id)
     .find((c): c is string => typeof c === 'string' && c.length > 0) ?? null;
   const ofertas_detalhe = results.map((r, i) => ({
+    item_id: typeof r.item_id === 'string' && r.item_id.length > 0 ? r.item_id : null,
     seller_id: r.seller_id != null ? Number(r.seller_id) : null,
     preco: typeof precosEfetivos[i] === 'number' && precosEfetivos[i] > 0 ? precosEfetivos[i] : null,
+    frete_gratis: r.shipping?.free_shipping === true,
+    full: r.shipping?.logistic_type === 'fulfillment',
   }));
 
   return {

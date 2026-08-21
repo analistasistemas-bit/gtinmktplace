@@ -2,33 +2,62 @@ import { describe, it, expect } from 'vitest';
 import { deveGravarVendedor, ufDoVendedor } from '../vendedor.ts';
 
 describe('deveGravarVendedor', () => {
+  const agoraMs = Date.UTC(2026, 7, 21, 12);
+  const atual = { transactions_total: 20500, uf: 'SP' };
+
   it('sem linha anterior (1ª vez) → true', () => {
-    expect(deveGravarVendedor(null, 20500)).toBe(true);
+    expect(deveGravarVendedor(null, atual, agoraMs)).toBe(true);
   });
 
   it('transactions_total mudou → true', () => {
-    expect(deveGravarVendedor({ transactions_total: 20500 }, 20510)).toBe(true);
+    expect(deveGravarVendedor({ transactions_total: 20500, uf: 'SP' }, { ...atual, transactions_total: 20510 }, agoraMs)).toBe(true);
   });
 
-  it('transactions_total igual → false', () => {
-    expect(deveGravarVendedor({ transactions_total: 20500 }, 20500)).toBe(false);
+  it('transactions_total igual com perfil recente → false', () => {
+    expect(deveGravarVendedor({
+      transactions_total: 20500, uf: 'SP', perfil_coletado_em: new Date(agoraMs).toISOString(),
+    }, atual, agoraMs)).toBe(false);
   });
 
   // Sem isto, vendedor de volume estável ficaria para sempre sem UF na tela.
   it('UF aparecendo num vendedor de volume estável → true (backfill)', () => {
-    expect(deveGravarVendedor({ transactions_total: 20500, uf: null }, 20500, 'SP')).toBe(true);
+    expect(deveGravarVendedor({ transactions_total: 20500, uf: null }, atual, agoraMs)).toBe(true);
   });
 
   it('UF já guardada e igual → false (não regrava a cada execução)', () => {
-    expect(deveGravarVendedor({ transactions_total: 20500, uf: 'SP' }, 20500, 'SP')).toBe(false);
+    expect(deveGravarVendedor({
+      transactions_total: 20500, uf: 'SP', perfil_coletado_em: new Date(agoraMs).toISOString(),
+    }, atual, agoraMs)).toBe(false);
   });
 
   it('ML que não expõe endereço não vira regravação infinita', () => {
-    expect(deveGravarVendedor({ transactions_total: 20500, uf: null }, 20500, null)).toBe(false);
+    expect(deveGravarVendedor({
+      transactions_total: 20500, uf: null, perfil_coletado_em: new Date(agoraMs).toISOString(),
+    }, { transactions_total: 20500, uf: null }, agoraMs)).toBe(false);
   });
 
   it('vendedor mudou de UF → true', () => {
-    expect(deveGravarVendedor({ transactions_total: 20500, uf: 'SP' }, 20500, 'MG')).toBe(true);
+    expect(deveGravarVendedor({ transactions_total: 20500, uf: 'SP' }, { ...atual, uf: 'MG' }, agoraMs)).toBe(true);
+  });
+
+  it('snapshot legado sem perfil_coletado_em → true', () => {
+    expect(deveGravarVendedor({ transactions_total: 20500, uf: 'SP' }, atual, agoraMs)).toBe(true);
+  });
+
+  it('perfil coletado há 23h59 → false', () => {
+    expect(deveGravarVendedor({
+      transactions_total: 20500,
+      uf: 'SP',
+      perfil_coletado_em: new Date(agoraMs - (24 * 60 * 60 * 1000 - 60 * 1000)).toISOString(),
+    }, atual, agoraMs)).toBe(false);
+  });
+
+  it('perfil coletado há 24h exatas → true', () => {
+    expect(deveGravarVendedor({
+      transactions_total: 20500,
+      uf: 'SP',
+      perfil_coletado_em: new Date(agoraMs - 24 * 60 * 60 * 1000).toISOString(),
+    }, atual, agoraMs)).toBe(true);
   });
 });
 

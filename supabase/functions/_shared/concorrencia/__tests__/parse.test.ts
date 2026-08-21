@@ -82,8 +82,8 @@ describe('parseItensProduto', () => {
     expect(r.preco_min).toBe(45.19);
     expect(r.preco_max).toBe(67.25);
     expect(r.ofertas_detalhe).toEqual([
-      { seller_id: 1, preco: 45.19 },
-      { seller_id: 2, preco: 67.25 },
+      { item_id: null, seller_id: 1, preco: 45.19, frete_gratis: false, full: false },
+      { item_id: null, seller_id: 2, preco: 67.25, frete_gratis: false, full: false },
     ]);
   });
 
@@ -99,30 +99,35 @@ describe('parseItensProduto', () => {
     expect(r.full).toBe(1);
   });
 
-  it('monta ofertas_detalhe com o par {seller_id, preco} de cada oferta', () => {
+  it('preserva item e modalidades de entrega em cada oferta', () => {
     const r = parseItensProduto({
       results: [
-        { seller_id: 1, price: 30 },
+        {
+          item_id: 'MLB123', seller_id: 1, price: 30,
+          shipping: { free_shipping: true, logistic_type: 'fulfillment' },
+        },
         { seller_id: 2, price: 25 },
       ],
     });
     expect(r.ofertas_detalhe).toEqual([
-      { seller_id: 1, preco: 30 },
-      { seller_id: 2, preco: 25 },
+      { item_id: 'MLB123', seller_id: 1, preco: 30, frete_gratis: true, full: true },
+      { item_id: null, seller_id: 2, preco: 25, frete_gratis: false, full: false },
     ]);
   });
 
   it('ofertas_detalhe: price ausente/<=0 → preco null', () => {
     const r = parseItensProduto({ results: [{ seller_id: 1 }, { seller_id: 2, price: 0 }] });
     expect(r.ofertas_detalhe).toEqual([
-      { seller_id: 1, preco: null },
-      { seller_id: 2, preco: null },
+      { item_id: null, seller_id: 1, preco: null, frete_gratis: false, full: false },
+      { item_id: null, seller_id: 2, preco: null, frete_gratis: false, full: false },
     ]);
   });
 
   it('ofertas_detalhe: seller_id ausente → seller_id null', () => {
     const r = parseItensProduto({ results: [{ price: 10 }] });
-    expect(r.ofertas_detalhe).toEqual([{ seller_id: null, preco: 10 }]);
+    expect(r.ofertas_detalhe).toEqual([
+      { item_id: null, seller_id: null, preco: 10, frete_gratis: false, full: false },
+    ]);
   });
 });
 

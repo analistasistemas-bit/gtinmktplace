@@ -1,5 +1,5 @@
 /**
- * Grava snapshot do vendedor só quando algo que nos interessa mudou (ou na 1ª vez).
+ * Grava snapshot do vendedor quando algo que nos interessa mudou, na 1ª vez ou após 24 horas.
  *
  * A UF entra na decisão junto com o volume: sem isso, um vendedor de volume estável nunca ganharia
  * uma linha nova e ficaria para sempre sem estado na tela, esperando uma venda que pode demorar.
@@ -7,13 +7,14 @@
  * ML não expuser o endereço, os dois lados ficam null e nada é regravado.
  */
 export function deveGravarVendedor(
-  anterior: { transactions_total: number | null; uf?: string | null } | null,
-  atualTotal: number | null,
-  atualUf: string | null = null,
+  anterior: { transactions_total: number | null; uf?: string | null; perfil_coletado_em?: string | null } | null,
+  atual: { transactions_total: number | null; uf: string | null },
+  agoraMs: number,
 ): boolean {
-  if (anterior == null) return true;
-  if (anterior.transactions_total !== atualTotal) return true;
-  return (anterior.uf ?? null) !== atualUf;
+  if (!anterior) return true;
+  if (anterior.transactions_total !== atual.transactions_total || anterior.uf !== atual.uf) return true;
+  const coletado = anterior.perfil_coletado_em ? Date.parse(anterior.perfil_coletado_em) : Number.NaN;
+  return !Number.isFinite(coletado) || agoraMs - coletado >= 24 * 60 * 60 * 1000;
 }
 
 /**

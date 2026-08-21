@@ -15,8 +15,11 @@ export interface ResultadoConcorrencia {
 }
 
 export interface OfertaVendedor {
+  item_id: string | null;
   seller_id: number | null;
   preco: number | null;
+  frete_gratis: boolean;
+  full: boolean;
 }
 
 export interface DadosOfertas {

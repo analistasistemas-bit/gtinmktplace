@@ -3,6 +3,8 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
+import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
+import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -12,8 +14,7 @@ import {
 } from '../_shared/pulse/parse.ts';
 import { enrichPulsePermalinks } from '../_shared/pulse/permalink.ts';
 import { diffOfertas } from '../_shared/pulse/diff.ts';
-import { parseVisitasJanela } from '../_shared/pulse/sonar.ts';
-import { deveGravarVendedor, ufDoVendedor } from '../_shared/pulse/vendedor.ts';
+import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
 import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -301,42 +302,31 @@ export async function processarColetaOrg(
     await admin.from('pulse_produtos').update(patch).eq('id', produto.id);
   });
 
-  // 4) vendedores (só tier completo): 1 snapshot por seller_id, só se transactions_total mudou.
+  // 4) vendedores (só tier completo): novo snapshot quando o perfil muda ou completa 24h.
   if (tier === 'completo') {
     await pool(CONCORRENCIA, [...sellerIdsColetados], async (sellerId) => {
       const { data: ultima } = await admin.from('pulse_vendedores')
-        // `uf` entra aqui porque `deveGravarVendedor` a compara: sem lê-la, o guardado chegaria
-        // sempre como undefined e todo vendedor pareceria mudado em toda execução.
-        .select('dia, transactions_total, uf')
+        .select('transactions_total, uf, perfil_coletado_em')
         .eq('org_id', orgId).eq('seller_id', sellerId)
         .order('dia', { ascending: false }).limit(1).maybeSingle();
-      const hojeSP = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-      // Já processado hoje: pula, para não repetir a chamada numa 2ª execução do mesmo dia. A
-      // exceção é a linha de hoje ainda sem UF — aí a chamada não é redundante, é o que traz o
-      // dado que falta, e sem ela o estado do concorrente só apareceria no dia seguinte.
-      if (ultima?.dia === hojeSP && ultima?.uf != null) return;
-
-      const json = await mlGet(`${API}/users/${sellerId}`, token);
-      const u = json as {
-        nickname?: string; power_seller_status?: string | null; level_id?: string | null;
-        seller_reputation?: { transactions?: { total?: number } };
-      } | null;
-      if (!u) return;
-      const total = typeof u.seller_reputation?.transactions?.total === 'number' ? u.seller_reputation.transactions.total : null;
-      const uf = ufDoVendedor(u);
+      const perfil = await buscarPerfilVendedor(token, sellerId);
+      if (!perfil) return;
       const anterior = ultima
-        ? { transactions_total: ultima.transactions_total as number | null, uf: ultima.uf as string | null }
+        ? {
+          transactions_total: ultima.transactions_total as number | null,
+          uf: ultima.uf as string | null,
+          perfil_coletado_em: ultima.perfil_coletado_em as string | null,
+        }
         : null;
-      if (!deveGravarVendedor(anterior, total, uf)) return;
+      if (!deveGravarVendedor(anterior, perfil, Date.now())) return;
 
-      // SEM `ignoreDuplicates`: o backfill da UF precisa sobrescrever a linha de hoje, que pode ter
-      // sido gravada mais cedo sem o campo. Com ignoreDuplicates a linha ficaria travada no 1º
-      // valor do dia e a UF nunca entraria (mesmo motivo do upsert de ofertas).
+      // SEM `ignoreDuplicates`: o snapshot renovado precisa sobrescrever a linha de hoje.
       const { error } = await admin.from('pulse_vendedores').upsert(
         {
-          org_id: orgId, seller_id: sellerId, nickname: u.nickname ?? null,
-          power_seller: u.power_seller_status ?? null, nivel: u.level_id ?? null,
-          transactions_total: total, uf,
+          org_id: orgId, seller_id: sellerId, nickname: perfil.nickname,
+          power_seller: perfil.power_seller, nivel: perfil.nivel,
+          transactions_total: perfil.transactions_total, uf: perfil.uf,
+          reputacao_detalhe: perfil.detalhe, perfil_coletado_em: new Date().toISOString(),
         },
         { onConflict: 'org_id,seller_id,dia' },
       );
@@ -503,9 +493,8 @@ export async function processarColetaOrg(
     // Menos visitas primeiro (e nunca medido antes de todos) para o teto de tempo abaixo cortar
     // sempre a mesma ponta da fila — sem ordem, a cauda ficaria eternamente sem medida. Ordena aqui
     // e não no banco porque a lista vem em lotes: só depois de juntar existe a ordem global.
-    // ponytail: o critério é "menor número", não "medida mais velha" — a data da medição exigiria
-    // uma segunda coluna, fora do escopo desta task. Se a ponta de cima ficar defasada em regime, o
-    // upgrade é `visitas_30d_em timestamptz` e ordenar por ela.
+    // ponytail: o critério é "menor número", não "medida mais velha". `visitas_30d_em` carimba a
+    // leitura bem-sucedida, mas mudar a prioridade exigiria decidir como equilibrar demanda e idade.
     linhas.sort((a, b) => (a.visitas_30d ?? -1) - (b.visitas_30d ?? -1));
 
     // Teto de tempo próprio: o worker inteiro morre com WORKER_RESOURCE_LIMIT perto dos 150s e este
@@ -524,15 +513,14 @@ export async function processarColetaOrg(
     let estourou = false;
     await pool(CONCORRENCIA, linhas, async (linha) => {
       if (Date.now() > ateVisitas) { estourou = true; return; }
-      const json = await mlGet(`${API}/items/${linha.item_id}/visits/time_window?last=30&unit=day`, token);
+      const visitas = await buscarVisitas30d(token, linha.item_id);
       // Só grava com leitura BOA, e o zero legítimo do ML é gravado como zero. Leitura que falhou
       // (403, 429, timeout) não escreve nada: apagar uma medida boa com null por causa de uma falha
       // transitória seria pior do que exibir o número de ontem, e o mesmo critério vale para quem o
       // teto de tempo acima deixou de fora — as duas pontas preservam.
-      const visitas = parseVisitasJanela(json);
-      if (!visitas) return;
+      if (visitas === null) return;
       const { error } = await admin.from('pulse_ofertas')
-        .update({ visitas_30d: visitas.total }).eq('id', linha.id);
+        .update({ visitas_30d: visitas, visitas_30d_em: new Date().toISOString() }).eq('id', linha.id);
       if (error) console.warn(`pulse-coletar: visitas do item ${linha.item_id} falharam:`, error.message);
     });
     if (estourou) {
