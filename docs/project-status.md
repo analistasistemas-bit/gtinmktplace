@@ -293,6 +293,29 @@ dialogs. Um achado do relatório foi **refutado** por medição — o PostgREST 
 número JSON, não string, então não havia comparação lexicográfica de preço; o que sobrou foi um
 comentário errado no código, corrigido. Suíte 367 arquivos / 3292 testes.
 
+### Concorrentes relevantes no Pulse e na Viabilidade (spec `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`) — IMPLEMENTADO, AGUARDANDO DEPLOY/PUSH
+
+Motivado pelo GTIN `7891025111825` (Aptamil Premium 1 800 g): 90 ofertas observadas, menor R$ 36,00
+de um vendedor sem força comercial, alimentando Pulse e Viabilidade (comissão, imposto, frete,
+líquido, semáforo). Nova camada de qualificação — mercado observado (tudo, sempre preservado para
+auditoria) vs. mercado relevante (≥10 transações, visitas 30d ≠ 0 medido, reputação fora de
+`1_red`/`2_orange`) — via classificador único compartilhado
+(`_shared/concorrencia/qualificacao.ts`) consumido pelo Pulse **e** pela Viabilidade, sem cópia da
+regra. Só o mercado relevante alimenta menor concorrente, posição, alertas (`gravarAlertasRelevantes`)
+e o cálculo financeiro; o menor observado nunca é fallback. Viabilidade reaproveita snapshot do Pulse
+(≤24h, mesma org/produto) ou busca reputação/visitas sob demanda com pool compartilhado de
+concorrência 6 e dedupe por chave (retry-safe após rejeição). Sem relevante, a UI mostra
+"Sem concorrente relevante" e travessão nos campos financeiros — nunca R$ 0,00. Cenário de
+referência (Aptamil): R$ 36,00 observado, R$ 70,19 relevante, 28/90 ofertas relevantes.
+
+Estado: 7 tarefas do plano concluídas e revisadas na branch `codex/brainstorm-pulse-qualificado`
+(worktree `.worktrees/codex-brainstorm-pulse-qualificado`) — suíte focada 161/161, `tsc -b --force`,
+`deno check`/`check:functions`, `pnpm lint` (0 erros) e `git diff --check` verdes. Migration
+`20260821110914_pulse_qualificacao_vendedor.sql` só validada por dry-run
+(`supabase db push --linked --dry-run`); **nenhuma migration, deploy de edge function, push ou merge
+foi executado** — aguardando autorização explícita de Diego. Sem ADR próprio ainda; a spec aprovada
+faz esse papel até uma ADR ser escrita. Ver `docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
+
 ## Trilho de UX/design (2026-06-21, em producao)
 
 Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.

@@ -2,6 +2,38 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Concorrentes relevantes no Pulse e na Viabilidade (spec `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`) — 2026-08-21
+
+- [x] Classificador compartilhado `qualificarOferta`/`resumirMercadoQualificado`
+  (`_shared/concorrencia/qualificacao.ts`): relevante (≥10 transações, visitas 30d ≠ 0 medido,
+  reputação fora de `1_red`/`2_orange`), observação (sem `transactions_total`) ou fora da referência
+  — mesma função no Pulse e na Viabilidade.
+- [x] Migration `20260821110914_pulse_qualificacao_vendedor.sql`: `pulse_vendedores.reputacao_detalhe`/
+  `perfil_coletado_em`, `pulse_ofertas.visitas_30d_em`, view `pulse_ofertas_atual` estendida.
+- [x] `normalizarPerfilVendedor` lê `seller_reputation` aninhado (não mais o nível raiz de
+  `/users/{seller_id}`); cache `cache:seller:v2:{seller_id}` global, TTL 24h.
+- [x] Pulse/Radar: alertas, posição e estatísticas (menor/maior, vendedores, frete grátis, FULL)
+  passam a usar só o mercado relevante; mercado observado preservado para auditoria na UI
+  (`Menor concorrente relevante` / `Menor oferta observada` / `X de Y`).
+- [x] Viabilidade: `resolverMercadoRelevante` (`_shared/analise/mercado-relevante.ts`) reaproveita
+  snapshot Pulse ≤24h por org/produto ou busca reputação/visitas sob demanda com pool compartilhado
+  de concorrência 6 e dedupe por chave, retry-safe após rejeição (promise só é evictada do `Map` se
+  ainda for a atual). Cálculo financeiro só roda com `mercado.menor != null`; sem relevante mostra
+  `Sem concorrente relevante` e travessão, nunca R$ 0,00 nem o observado como fallback.
+- [x] Cache `chaveCacheGtin` bump `gtin:v4` → `gtin:v5` (payload agora exige `item_id`,
+  `frete_gratis`, `full`).
+- [x] Suíte focada 161/161, `tsc -b --force`, `deno check`/`check:functions`, `pnpm lint` (0 erros
+  no diff, 12 warnings preexistentes), `git diff --check` verdes. Dry-run da migration confirmou
+  só o arquivo esperado pendente.
+- [x] Documentação (`edge-functions.md`, `glossario.md`, `project-status.md`) atualizada no mesmo
+  ciclo; `modelo-de-dados.md` já havia sido atualizado junto da migration.
+- [ ] **Pendente: sem ADR própria ainda** — a spec aprovada por Diego cobre a decisão, mas
+  CLAUDE.md pede ADR para mudança de regra de negócio não-trivial; avaliar se vale escrever uma
+  antes do push/merge.
+- [ ] **Pendente: deploy/push/merge** — migration, `pulse-coletar` e `analisar-viabilidade` só
+  validadas localmente/dry-run; nada foi implantado. Ordem prevista em
+  `.superpowers/sdd/2026-08-20-concorrentes-relevantes-pulse-viabilidade/task-8-brief.md`.
+
 ## Sonar — Demanda ≠ Entrada no veredito (ADR-0128) — 2026-08-20
 
 - [x] Separar perguntas "vende?" e "dá para entrar?": campo `entrada` (`aberta` / `fechada` /

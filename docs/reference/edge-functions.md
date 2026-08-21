@@ -907,7 +907,10 @@ falha ao ler `organizations` não libera.
   A notificação traz **os novos desta execução e o
   total ainda não lido** — sem o segundo número a conta nunca fecha com o painel, que mostra o
   acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela).
-  Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
+  **Alertas usam só o mercado relevante** (`gravarAlertasRelevantes`, avaliado depois de perfis e
+  visitas frescos) — a coleta continua persistindo o mercado observado bruto para auditoria, mas
+  `preco_caiu`/`novo_concorrente`/`concorrente_saiu` só disparam para ofertas qualificadas pela
+  regra compartilhada (ver `analisar-viabilidade` abaixo). Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
   **somente para org com `pulse` em `modulos_habilitados`**. A coleta roda para todas as orgs (o
   histórico acumula desde o dia 1), mas a mensagem diz "abra o menu Pulse" e uma org sem o módulo
   não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu que não podiam
@@ -922,6 +925,17 @@ falha ao ler `organizations` não libera.
   o que não couber fica para o baseline seguinte). Leitura que falha (403/429/timeout) não escreve
   nada — preserva a medida do dia anterior em vez de apagá-la com `null`. Grava em
   `pulse_ofertas.visitas_30d` (migration `20260818012222_pulse_ofertas_visitas_30d.sql`).
+  **Reputação normalizada (concorrentes relevantes, spec `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`):**
+  o perfil do vendedor lê `/users/{seller_id}` e
+  `normalizarPerfilVendedor` (`_shared/ml/perfil-vendedor.ts`) extrai os campos de dentro de
+  `seller_reputation` (nunca do nível raiz da resposta) — `level_id`, `power_seller_status`,
+  período/total/completadas/canceladas de `transactions` e as avaliações positiva/neutra/negativa;
+  as métricas detalhadas de reclamação/atraso/cancelamento entram como `detalhe.metrics`, hoje só
+  informativas. Cache `cache:seller:v2:{seller_id}` (Redis, TTL 24h, chave global — dado público
+  do vendedor, sem `org_id`). O snapshot diário grava `reputacao_detalhe` (jsonb) e
+  `perfil_coletado_em` em `pulse_vendedores` (migration
+  `20260821110914_pulse_qualificacao_vendedor.sql`); `perfil_coletado_em` controla a janela de
+  frescor de 24h usada pela qualificação (ver adiante).
 - **pulse-adicionar** — adiciona manualmente um produto ao radar por link de catálogo
   (`/p/MLBxxxx`) ou GTIN (busca em `/products/search`); item avulso de anúncio de terceiro é
   impossível de coletar pela API (403 sempre — ver errata do ADR-0119) e a função recusa essa
@@ -1000,11 +1014,30 @@ falha ao ler `organizations` não libera.
   o menor preço da concorrência usa o valor vigente de venda de cada publicação
   (`GET /items/{item_id}/sale_price?context=channel_marketplace`), e não o campo legado `price`
   de `/products/{product_id}/items`; falha nessa consulta preserva `price` como fallback. O cache
-  Redis dessa leitura usa a versão **`gtin:v4:*`** (TTL 6h), separada dos valores legados; a chave
+  Redis dessa leitura usa a versão **`gtin:v5:*`** (TTL 6h), separada dos valores legados; a chave
   é montada **só** por `chaveCacheGtin()` (`_shared/concorrencia/cache-chave.ts`) — o literal já
   apareceu em 3 call sites e um bump parcial deixaria leitura e escrita em versões diferentes.
   Todo bump invalida a concorrência de todas as orgs (sem perda de dado; a primeira análise
-  seguinte remonta o cache).
+  seguinte remonta o cache). v5 (2026-08-21) força refetch de payloads v4 incompletos: o detalhe de
+  cada oferta agora precisa de `item_id`, `frete_gratis` e `full` para a qualificação de mercado
+  relevante abaixo — um payload v4 não teria esses campos.
+  **Mercado relevante (concorrentes relevantes, spec
+  `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`):** a mesma regra de qualificação
+  do Pulse (`qualificarOferta`/`resumirMercadoQualificado`, `_shared/concorrencia/qualificacao.ts`)
+  decide o menor preço usado no cálculo financeiro — nunca o menor observado bruto. `resolverMercadoRelevante`
+  (`_shared/analise/mercado-relevante.ts`) primeiro tenta reaproveitar um snapshot do Pulse do mesmo
+  `org_id`+`catalog_product_id` com no máximo 24h (`pulse_produtos.ultimo_snapshot_em` fresco); sem
+  correspondência segura, busca reputação (`buscarPerfilVendedor`) e visitas 30d
+  (`buscarVisitas30d`) sob demanda, uma vez por vendedor/item do lote. As duas buscas dividem um
+  único pool de concorrência 6 (`criarBuscasMercadoRelevante`, chave `perfil:{seller_id}` /
+  `visitas:{item_id}`) criado uma vez por request — perfil e visitas nunca competem por pools
+  separados. Chamadas em voo para a mesma chave são deduplicadas (`Map<chave, Promise>`); uma
+  rejeição limpa a chave só se ainda apontar para a mesma promise, permitindo retry sem travar a
+  chave presa num erro antigo — uma resolução permanece deduplicada pelo resto do request. `analisarItemViabilidade`
+  (`_shared/analise/analisar-item-viabilidade.ts`) só chama `buscarListingPrice`/`buscarFreteVendedor`
+  quando `mercado.menor != null`; sem concorrente relevante, `existeNoML` continua `true`, os campos
+  financeiros ficam travessão na interface e o menor observado aparece só como contexto auditável
+  (`viabilidade-linha.tsx`, `Sem concorrente relevante`).
   margem/"Vale a pena" item-a-item descontam a alíquota de imposto por origem (ADR-0055). Frete do
   vendedor (`buscarFreteVendedor`) usa a dimensão vinda do caller (planilha) quando válida; senão
   busca em `variacoes` por `org_id`+`gtin` (produto já cadastrado antes); sem nenhuma das duas, cai
