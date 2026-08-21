@@ -57,8 +57,6 @@ qualifica), com um único classificador consumido por ambos.
     perfil — se nesse intervalo o diff parar de ver a oferta como "nova entrada", o alerta
     `novo_concorrente` não dispara para aquele evento específico (perda silenciosa, não um adiamento).
     Aceito por ora; revisitar se motivar reclamação real em produção.
-  - `full_relevantes` no Pulse é sempre 0 — o snapshot do Pulse não coleta logística FULL; só a
-    Viabilidade tem esse dado via consulta direta ao Mercado Livre. Fora de escopo desta ADR.
   - O corte fixo (10 transações, visitas medidas ≠ 0, reputação fora de `1_red`/`2_orange`) pode
     não servir todo nicho; configuração por org é `Fora de escopo` deliberado da spec.
 - **Como reverter:** a feature é aditiva — reverter é voltar a usar `menor_observado`/estatísticas
@@ -77,8 +75,18 @@ compartilhado entre perfil e visitas, dedupe por chave retry-safe), `_shared/ml/
 (normalização de `seller_reputation`), migration `20260821110914_pulse_qualificacao_vendedor.sql`.
 174 testes focados, `tsc -b --force`, `deno check`/`check:functions`, `pnpm lint` e
 `git diff --check` verdes; revisão adversarial final e QA visual em runtime real (Playwright,
-conta de validação) sem achado bloqueante (`docs/TASKS.md`). **Deploy, push e merge não executados**
-— aguardando autorização explícita de Diego.
+conta de validação) sem achado bloqueante (`docs/TASKS.md`).
+
+**Addendum (2026-08-21, `code-review-fable5` pré-deploy):** a revisão encontrou que
+`shipping.logistic_type === 'fulfillment'` já era lido em `_shared/concorrencia/parse.ts` (usado
+pela Viabilidade) mas nunca em `_shared/pulse/parse.ts` (usado pelo coletor do Pulse) — o mesmo
+endpoint `/products/{id}/items`, o mesmo campo, só não replicado no parser do Pulse.
+`full_relevantes` do Pulse era hard-coded `false`, não uma limitação de dado indisponível. Corrigido
+na mesma sessão: coluna `pulse_ofertas.full_ml` (migration
+`20260821151141_pulse_ofertas_full_logistica.sql`), parser, `mudou()` do diff e `mercadoPulse`
+atualizados; 700 testes focados + `tsc -b --force` + `check:functions` + lint + `git diff --check`
+verdes após o fix. D-1/D-2/D-4 acima não mudam — é uma correção de implementação, não uma nova
+decisão.
 
 ## Validação (critérios de aceite)
 

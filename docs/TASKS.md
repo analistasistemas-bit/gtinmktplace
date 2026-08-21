@@ -43,12 +43,18 @@
   injetados via `page.route` — sem tocar dados reais nem o Chrome do Diego): confirmou os estados
   "com relevante" e "sem concorrente relevante" no Radar, no dialog de detalhe do Pulse e na
   Viabilidade, em tema claro e escuro, sem nenhuma divergência da spec.
-- [ ] **Limitações conhecidas, não corrigidas (aceitas como estão, revisar se incomodarem em
-  produção):** (1) oferta nova de vendedor ainda sem perfil (`transactions_total` null) que entra
-  numa coleta do tier quente (6/6h) some do diff quando o perfil chega na coleta completa seguinte —
-  o alerta `novo_concorrente` não é adiado, é perdido silenciosamente para aquela entrada específica;
-  (2) `full_relevantes` do Pulse é sempre 0 — o snapshot do Pulse não coleta logística FULL, só a
-  Viabilidade tem esse dado via API do ML.
+- [ ] **Limitação conhecida, não corrigida (aceita como está, revisar se incomodar em produção):**
+  oferta nova de vendedor ainda sem perfil (`transactions_total` null) que entra numa coleta do
+  tier quente (6/6h) some do diff quando o perfil chega na coleta completa seguinte — o alerta
+  `novo_concorrente` não é adiado, é perdido silenciosamente para aquela entrada específica.
+- [x] **`code-review-fable5` pré-deploy encontrou e corrigiu:** `full_relevantes` do Pulse estava
+  hard-coded `false` — não por dado indisponível (como eu tinha registrado por engano na ADR-0130),
+  mas porque `_shared/pulse/parse.ts` nunca lia `shipping.logistic_type`, campo que
+  `_shared/concorrencia/parse.ts` (Viabilidade) já lia do MESMO endpoint `/products/{id}/items`.
+  Corrigido: coluna `pulse_ofertas.full_ml` (migration
+  `20260821151141_pulse_ofertas_full_logistica.sql`), parser, `mudou()` do diff e `mercadoPulse`
+  atualizados. 700 testes focados, `tsc -b --force`, `check:functions`, lint (0 erros) e
+  `git diff --check` verdes após o fix.
 
 ## Sonar — Demanda ≠ Entrada no veredito (ADR-0128) — 2026-08-20
 

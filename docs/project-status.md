@@ -309,15 +309,19 @@ concorrência 6 e dedupe por chave (retry-safe após rejeição). Sem relevante,
 referência (Aptamil): R$ 36,00 observado, R$ 70,19 relevante, 28/90 ofertas relevantes.
 
 Estado: 7 tarefas do plano concluídas e revisadas na branch `codex/brainstorm-pulse-qualificado`
-(worktree `.worktrees/codex-brainstorm-pulse-qualificado`) — suíte focada 161/161, `tsc -b --force`,
-`deno check`/`check:functions`, `pnpm lint` (0 erros) e `git diff --check` verdes. Migration
-`20260821110914_pulse_qualificacao_vendedor.sql` só validada por dry-run
-(`supabase db push --linked --dry-run`); **nenhuma migration, deploy de edge function, push ou merge
-foi executado** — aguardando autorização explícita de Diego. Revisão final adversarial (diff completo
+(worktree `.worktrees/codex-brainstorm-pulse-qualificado`). Revisão final adversarial (diff completo
 desde o merge-base com main) e QA visual em runtime real concluídas sem achado bloqueante — 1 fix de
 hardening aplicado (`viabilidade-linha.tsx` tolera payload de mercado sem `observado` durante skew de
-deploy). Decisão registrada em [ADR-0130](decisions/0130-concorrentes-relevantes-pulse-viabilidade.md).
-Ver `docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
+deploy). ADR própria: [ADR-0130](decisions/0130-concorrentes-relevantes-pulse-viabilidade.md).
+`code-review-fable5` pré-deploy achou e corrigiu um segundo real: `full_relevantes` do Pulse era
+hard-coded `false` — `_shared/pulse/parse.ts` nunca lia `shipping.logistic_type`, campo que o parser
+da Viabilidade já lia do mesmo endpoint; migration adicional
+`20260821151141_pulse_ofertas_full_logistica.sql` + parser/diff/margem corrigidos. Suíte focada
+700/700, `tsc -b --force`, `deno check`/`check:functions`, `pnpm lint` (0 erros) e `git diff --check`
+verdes. Migrations (`20260821110914`, `20260821151141`) só validadas por dry-run
+(`supabase db push --linked --dry-run`); **nenhuma migration, deploy de edge function, push ou merge
+foi executado** — aguardando autorização explícita de Diego. Ver
+`docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

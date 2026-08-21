@@ -898,7 +898,12 @@ falha ao ler `organizations` não libera.
   `/sites/MLB/listing_prices` para a estrutura da comissão. Essa consulta usa o preço **efetivo**
   (`meu_preco`, colhido no passo de ofertas desta mesma execução) sempre que ele existe para o
   **mesmo** `item_id`, e só cai no `price` do multiget — que é o preço base, sem promoção — quando
-  não existe; o preço usado fica gravado em `comissao_preco` (Errata 7 do ADR-0119). Grava em
+  não existe; o preço usado fica gravado em `comissao_preco` (Errata 7 do ADR-0119).
+  `pulse_ofertas.full_ml` (`shipping.logistic_type === 'fulfillment'` da mesma resposta de
+  `/products/{id}/items`, migration `20260821151141_pulse_ofertas_full_logistica.sql`) entra na
+  comparação de `mudou()` como `frete_gratis`/`tier` e alimenta `full_relevantes` na qualificação
+  (ADR-0130) — a mesma leitura que `_shared/concorrencia/parse.ts` já fazia para a Viabilidade,
+  só não replicada aqui até o `code-review-fable5` pré-deploy de 2026-08-21 pegar. Grava em
   `pulse_ofertas` via upsert `produto_id,item_id,dia` — merge, **sem** `ignoreDuplicates`, para uma
   2ª execução no mesmo dia sobrescrever a linha de hoje com o valor atual em vez de travar no 1º
   valor visto e reemitir alerta a cada rodada. O link público de cada oferta é derivado localmente

@@ -679,7 +679,12 @@ ADR-0119), `visitas_30d` (integer, visitas do anúncio nos últimos 30 dias via
 `/items/{id}/visits/time_window` — o coletor mede **só no baseline diário**, não no tier quente de
 6/6h, e escreve na última linha de cada oferta; `visitas_30d_em` (timestamptz, instante da leitura)
 controla a janela de frescor de 24 horas. `null` = nunca medido ou snapshot legado, **nunca** zero;
-zero continua significando uma leitura que mediu zero visitas, ver ADR-0120).
+zero continua significando uma leitura que mediu zero visitas, ver ADR-0120). `full_ml` (boolean,
+default `false`, migration `20260821151141_pulse_ofertas_full_logistica.sql`) —
+`shipping.logistic_type === 'fulfillment'` de `/products/{id}/items`, mesma leitura já usada em
+`_shared/concorrencia/parse.ts` para a Viabilidade; alimenta `full_relevantes` na qualificação do
+Pulse (ADR-0130). Coletado desde 2026-08-21; ofertas gravadas antes disso ficam `false` por
+default, não por medição — indistinguível de "não é FULL" até a próxima coleta regravar a linha.
 Unique `pulse_ofertas_prod_item_dia_uniq` em
 `(produto_id, item_id, dia)` — é o alvo do upsert idempotente do coletor (merge, não
 `ignoreDuplicates`: ver `edge-functions.md`). Índice `pulse_ofertas_org_prod_dia_idx` em
@@ -687,7 +692,8 @@ Unique `pulse_ofertas_prod_item_dia_uniq` em
 só select org, sem update/insert do membro.
 
 **View `pulse_ofertas_atual`** (`security_invoker = true`): `select distinct on (produto_id,
-item_id) … order by dia desc`, incluindo `visitas_30d_em` — a última linha de cada oferta. É o que o front lê para "menor
+item_id) … order by dia desc`, incluindo `visitas_30d_em` e `full_ml` — a última linha de cada
+oferta. É o que o front lê para "menor
 preço/nº de ofertas" do radar e "ofertas atuais" do detalhe; nunca o histórico bruto, porque o
 PostgREST trunca respostas em ~1000 linhas em silêncio. A RLS de `pulse_ofertas` vale para quem
 consulta a view (invoker).
