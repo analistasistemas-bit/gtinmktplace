@@ -223,6 +223,11 @@ Deno.serve(async (req) => {
 
   // Falha aqui derruba a família criada (padrão cadastrar-produto/index.ts:218-221): família
   // sem variação é lixo — não deixar estado parcial visível na tela.
+  //
+  // Insert multi-row com DUAS origens de linha: só é seguro porque `clonarVariacao` e
+  // `montarVariacaoNova` produzem o MESMO conjunto de chaves (invariante documentado em
+  // processar.ts e travado por teste). Chave presente em uma origem e ausente na outra vira
+  // NULL explícito na linha que não a tem — não o DEFAULT da coluna — e estoura nas NOT NULL.
   const { error: varErr } = await admin.from('variacoes').insert([...clonesVariacoes, ...novasVariacoes]);
   if (varErr) {
     await admin.from('familias').delete().eq('id', familiaId);

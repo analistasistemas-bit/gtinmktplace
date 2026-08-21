@@ -141,3 +141,60 @@ das decisões D-1…D-11:
    pré-preenchidos da mesma variação irmã, editáveis — mesmo racional do D-6 original: cor
    diferente do mesmo produto quase nunca muda custo nem preço mínimo. Reaproveita a mesma query
    de prefill (`fetchFamiliaCanonicaPrefill`); nenhuma chamada nova.
+
+## Correção pós-produção (2026-08-21) — insert heterogêneo de `variacoes`
+
+Salvar no diálogo falhava **sempre** com
+`null value in column "preco_editado_pelo_operador" of relation "variacoes" violates not-null constraint`.
+
+**Causa raiz.** `index.ts` insere clones e variações novas no MESMO array
+(`insert([...clonesVariacoes, ...novasVariacoes])`). O PostgREST resolve um insert multi-row
+montando a UNIÃO das chaves de todos os objetos e preenchendo com **NULL explícito** as que
+faltam em cada linha (`Prefer: missing=null`, default do supabase-js). NULL explícito **atropela
+o DEFAULT da coluna** — o DEFAULT só vale quando a coluna está ausente do insert INTEIRO, não de
+algumas linhas dele. Como o clone vem de `select('*')`, ele carregava colunas que
+`montarVariacaoNova` não montava, e cada uma dessas virava NULL na linha nova. Uma família
+publicada sempre tem ≥1 variação viva, então o array era sempre heterogêneo e o erro era 100%.
+
+Auditadas as 13 colunas NOT NULL de `public.variacoes` contra o **banco de produção** (não só as
+migrations). Quatro estavam só no clone — todas NOT NULL DEFAULT, todas quebrando:
+`preco_editado_pelo_operador`, `cor_editada_pelo_operador`, `catalog_status` e `atualizado_em`.
+O erro reportado era o da primeira; as outras três apareceriam em sequência.
+
+**Correção.** Paridade exata de chaves entre os dois builders — assim a classe inteira do bug
+deixa de existir, para qualquer coluna. Preferida a `Prefer: missing=default`
+(`insert(..., { defaultToNull: false })`) porque `index.ts` não tem harness de teste no repo:
+seria consertar o caminho de publicação com um mecanismo que nenhum check de CI enxerga, e
+`jsr:@supabase/supabase-js@2` é major flutuante. Travada por teste em
+`__tests__/processar.test.ts`, que lê as colunas reais do snapshot de schema versionado
+(`src/lib/database.types.ts`) em vez de uma lista escrita à mão — lista fixa envelheceria junto
+com o builder que deveria vigiar.
+
+Decisões de valor para a cor nova (antes implícitas no DEFAULT, agora explícitas):
+
+- **`preco_editado_pelo_operador: false`** — `preco_publicacao` da cor nova é DERIVADO das irmãs
+  (`precoPublicacaoNova`), não digitado. `true` pinaria essa cor contra um repricing futuro que
+  ainda reprecificaria as irmãs (em `false`): a família ficaria com preços divergentes e
+  `garantirPrecoUniforme` recusaria a publicação Legacy. O preço veio das irmãs, tem de seguir as
+  irmãs. Além disso a flag significa "operador editou `preco_publicacao` inline"
+  (`src/lib/queries.ts:328`) e o operador digitou `preco`. Mesmo resultado do `cadastrar-produto`.
+  Sem efeito prático hoje: o bloco de repricing competitivo do `process-familia` roda depois do
+  early-return de `operacao === 'UPDATE'` (index.ts:195) e esta edge nem chama o `process-familia`
+  (desvio 1) — a decisão vale para o futuro.
+- **`cor_editada_pelo_operador: false`** — a procedência da cor digitada já é `cor_origem:
+  'manual'`. A flag marca sobrescrita de uma cor JÁ resolvida, e nada no pipeline decide por ela
+  (a re-resolução de cor é gateada por `if (v.cor) return v`, `process-familia/index.ts:138`).
+- **`catalog_status: 'pendente'`** — SKU novo sem vínculo de catálogo; único valor coerente com
+  `catalog_product_id`/`catalog_listing_id` nulos e com `variacoes_catalog_status_check`.
+- **`exibir_com_desconto`/`desconto_pct`/`atacado`: `null`, não herdados das irmãs** — são
+  configuração comercial por variação e este fluxo não roda nenhuma decisão de preço (D-10).
+  Herdar aplicaria à cor nova um desconto que ninguém pediu; o operador configura pela tela de
+  preços depois, como em qualquer variação nova.
+- **`atualizado_em` entrou em `STRIP_VARIACAO`** — bug de dado independente da paridade: o
+  trigger `variacoes_set_updated_at` é `before update`, então num INSERT ele não roda e o clone
+  gravava o timestamp congelado da variação antiga numa linha recém-criada. É o mesmo racional
+  que `STRIP_FAMILIA` já documentava para `familias`.
+
+Lacuna residual conhecida: `database.types.ts` não tem check de regeneração no CI, então o teste
+pega "coluna nova + types regenerados + builder esquecido", mas não "coluna nova e types nunca
+regenerados". Fechar isso exigiria consultar o schema vivo no CI.

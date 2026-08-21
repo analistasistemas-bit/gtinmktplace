@@ -1,11 +1,39 @@
 // ADR-0129. Padrão de teste igual a cadastrar-produto/__tests__/processar.test.ts: vitest
 // (não Deno test) — é o runner que o CI (`test`/`frontend` do ci.yml) e o vitest.config.ts
 // (`include: ['./supabase/functions/**/__tests__/**/*.test.ts']`) realmente executam.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   clonarFamilia, clonarVariacao, montarVariacaoNova, normalizarCodigo8,
-  precoPublicacaoNova, STRIP_FAMILIA, validarEntrada,
+  precoPublicacaoNova, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
 } from '../processar.ts';
+
+/**
+ * Colunas REAIS de `public.variacoes`, lidas do snapshot de schema versionado
+ * (`src/lib/database.types.ts`, gerado pelo supabase gen types). Bloco `Row` — e não `Insert` —
+ * porque só o `Row` lista TODA coluna incondicionalmente.
+ *
+ * Ler o schema em vez de escrever a lista à mão é o ponto do teste: uma lista fixa envelhece
+ * junto com o builder que ela deveria vigiar, que é exatamente a recorrência que se quer barrar
+ * (coluna nova no banco → clone pega via select('*') → montarVariacaoNova não → 500 em produção).
+ */
+function colunasDeVariacoes(): string[] {
+  // resolve a partir do root do vitest (raiz do repo) — `import.meta.url` sob o transform do
+  // vite nem sempre é `file:`, e readFileSync recusa outros schemes.
+  const arquivo = readFileSync(resolve(process.cwd(), 'src/lib/database.types.ts'), 'utf8');
+  const bloco = /\n      variacoes: \{\n        Row: \{\n([\s\S]*?)\n        \}\n/.exec(arquivo);
+  if (!bloco) throw new Error('bloco Row de `variacoes` não encontrado em database.types.ts');
+  const colunas = bloco[1]
+    .split('\n')
+    .map((l) => /^\s{10}([a-z_]+)\??:/.exec(l)?.[1])
+    .filter((c): c is string => !!c);
+  // Guard anti-"tabela de diagnóstico com 0 linhas": se o gerador mudar de formatação, o parse
+  // devolveria poucas colunas e o teste passaria vazio, sem vigiar nada. 30 é folgado (o schema
+  // tem 35 colunas em 2026-08-21) e só quebra se o parse realmente desandar.
+  if (colunas.length < 30) throw new Error(`parse de database.types.ts devolveu só ${colunas.length} colunas`);
+  return colunas;
+}
 
 describe('normalizarCodigo8', () => {
   it('preenche 1-8 dígitos com zero à esquerda', () => {
@@ -183,5 +211,62 @@ describe('montarVariacaoNova', () => {
     expect(v.ml_picture_id).toBeNull();
     expect(v.estoque_anterior).toBeNull();
     expect(v.preco_publicacao).toBe(25);
+  });
+});
+
+/**
+ * Regressão do 500 de 2026-08-21 ("null value in column preco_editado_pelo_operador of relation
+ * variacoes violates not-null constraint"), que quebrava 100% dos salvamentos de Adicionar
+ * Variação. `index.ts` insere clones e novas no MESMO array; o PostgREST monta um único insert
+ * multi-row com a UNIÃO das chaves e preenche com NULL as ausentes de cada linha
+ * (`Prefer: missing=null`) — NULL explícito ignora o DEFAULT da coluna. Como o clone vem de
+ * `select('*')`, toda coluna que só ele tinha virava NULL na linha nova; nas NOT NULL, 500.
+ *
+ * Os testes por função (acima) não pegam isso: o bug só existe na INTERAÇÃO dos dois builders.
+ * Comparar os conjuntos de chaves é mais barato e mais durável que subir um Postgres no CI.
+ */
+describe('paridade de chaves entre clonarVariacao e montarVariacaoNova', () => {
+  const colunas = colunasDeVariacoes();
+  // Linha "cheia": o clone real vem de select('*'), então todo teste com um mock magro
+  // (como os de clonarVariacao acima) é cego para este bug por construção.
+  const linhaCheia = Object.fromEntries(colunas.map((c) => [c, `valor-${c}`]));
+
+  const chavesClone = () => Object.keys(clonarVariacao(
+    linhaCheia, { familiaId: 'fam-nova', userId: 'u1', estoqueCanonico: 1 },
+  )).sort();
+  const chavesNova = () => Object.keys(montarVariacaoNova({
+    codigo: '00000009', nome: 'Verde', gtin: null, preco: 15, custo: 6,
+    estoqueInicial: 5, pesoGramas: null, alturaCm: null, larguraCm: null,
+    comprimentoCm: null, imagemPath: 'user-1/chave/00000009.jpg',
+  }, { familiaId: 'fam-nova', userId: 'u1', orgId: 'org-1', precoPublicacao: 25 })).sort();
+
+  it('os dois builders produzem exatamente o mesmo conjunto de chaves', () => {
+    expect(chavesNova()).toEqual(chavesClone());
+  });
+
+  it('o conjunto cobre o schema real menos STRIP_VARIACAO (nenhuma coluna fica de fora)', () => {
+    const esperado = colunas
+      .filter((c) => !(STRIP_VARIACAO as readonly string[]).includes(c) || c === 'familia_id')
+      .sort();
+    expect(chavesClone()).toEqual(esperado);
+  });
+
+  it('STRIP_VARIACAO remove atualizado_em (trigger moddatetime só roda em UPDATE)', () => {
+    expect(STRIP_VARIACAO).toEqual(expect.arrayContaining(['id', 'criado_em', 'atualizado_em', 'familia_id']));
+    expect(chavesClone()).not.toContain('atualizado_em');
+  });
+
+  it('toda coluna NOT NULL com DEFAULT sai com valor explícito na linha nova (não undefined)', () => {
+    const nova = montarVariacaoNova({
+      codigo: '00000009', nome: 'Verde', gtin: null, preco: 15, custo: 6,
+      estoqueInicial: 5, pesoGramas: null, alturaCm: null, larguraCm: null,
+      comprimentoCm: null, imagemPath: 'user-1/chave/00000009.jpg',
+    }, { familiaId: 'fam-nova', userId: 'u1', orgId: 'org-1', precoPublicacao: 25 });
+    // NOT NULL DEFAULT em public.variacoes (verificado contra o banco em 2026-08-21).
+    expect(nova.preco_editado_pelo_operador).toBe(false);
+    expect(nova.cor_editada_pelo_operador).toBe(false);
+    expect(nova.excluida_da_publicacao).toBe(false);
+    expect(nova.catalog_status).toBe('pendente');
+    expect(nova.estoque).toBe(0);
   });
 });

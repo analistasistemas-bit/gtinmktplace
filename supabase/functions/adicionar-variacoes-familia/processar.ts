@@ -140,7 +140,11 @@ export function clonarFamilia(
   };
 }
 
-const STRIP_VARIACAO = ['id', 'criado_em', 'familia_id'] as const;
+// `atualizado_em`: mesmo motivo já documentado em STRIP_FAMILIA — o trigger `moddatetime`
+// (`variacoes_set_updated_at`, 20260527125643) é `before update`, então num INSERT ele não roda
+// e o clone gravaria o timestamp CONGELADO da variação antiga numa linha recém-criada. Faltava
+// aqui desde a 1ª versão (2026-08-20); ver o comentário de montarVariacaoNova.
+export const STRIP_VARIACAO = ['id', 'criado_em', 'atualizado_em', 'familia_id'] as const;
 
 /**
  * Clona linha de variacoes removendo STRIP_VARIACAO e aplicando { familia_id, user_id,
@@ -168,6 +172,17 @@ export function clonarVariacao(
 /**
  * Monta a linha nova: estoque 0 (ledger preenche), excluida_da_publicacao false,
  * cor = nome.trim(), cor_origem 'manual', ml_variation_id/ml_picture_id/estoque_anterior null.
+ *
+ * INVARIANTE (o bug de 2026-08-21): o conjunto de chaves daqui é IGUAL ao de `clonarVariacao`.
+ * `index.ts` insere clones e novas no MESMO array (`insert([...clones, ...novas])`), e o
+ * PostgREST resolve um insert multi-row montando a UNIÃO das chaves e preenchendo com NULL
+ * as que faltam em cada objeto (`Prefer: missing=null`, default do supabase-js). NULL explícito
+ * ATROPELA o DEFAULT da coluna — o DEFAULT só vale quando a coluna está ausente do insert
+ * INTEIRO, não de algumas linhas. Como o clone vem de `select('*')`, toda coluna que ele tem e
+ * esta função não vira NULL na linha nova; nas NOT NULL isso é 500 garantido
+ * (`preco_editado_pelo_operador`, `cor_editada_pelo_operador`, `catalog_status`,
+ * `atualizado_em`). Por isso todo campo aparece aqui explicitamente, mesmo quando o valor é
+ * null/default — e por isso o teste compara os dois conjuntos de chaves contra o schema real.
  */
 export function montarVariacaoNova(
   v: VariacaoNovaEntrada,
@@ -194,8 +209,38 @@ export function montarVariacaoNova(
     ml_picture_id: null,
     estoque_anterior: null,
     cor: v.nome.trim(),
+    cor_hex: null,
     cor_origem: 'manual',
+    // A cor foi DIGITADA no cadastro, não corrigida depois: quem registra essa procedência é
+    // `cor_origem: 'manual'`. A flag marca "operador sobrescreveu uma cor já resolvida" na
+    // Revisão (src/lib/queries.ts:391) e nada no pipeline decide por ela — a re-resolução de
+    // cor do process-familia é gateada por `if (v.cor) return v` (process-familia/index.ts:138),
+    // e esta linha já nasce com `cor` preenchida. false é o valor honesto e inerte.
+    cor_editada_pelo_operador: false,
     excluida_da_publicacao: false,
     preco_publicacao: ctx.precoPublicacao,
+    // false: `preco_publicacao` acima é DERIVADO das irmãs (precoPublicacaoNova = menor preço
+    // das irmãs incluídas), não digitado. Marcar `true` pinaria essa cor contra um repricing
+    // futuro que ainda reprecificaria as irmãs (que estão em false) — a família ficaria com
+    // preços divergentes e `garantirPrecoUniforme` recusaria a publicação Legacy. O preço veio
+    // das irmãs, então precisa seguir as irmãs. Some disso, a flag significa "operador editou
+    // `preco_publicacao` inline" (src/lib/queries.ts:328) e o operador digitou `preco`, não
+    // `preco_publicacao`. Mesmo resultado do cadastrar-produto, que também não marca a flag.
+    preco_editado_pelo_operador: false,
+    // SKU novo não tem vínculo de catálogo — 'pendente' é o default da coluna e o único valor
+    // coerente com catalog_product_id/listing_id nulos (variacoes_catalog_status_check).
+    catalog_product_id: null,
+    catalog_listing_id: null,
+    catalog_status: 'pendente',
+    catalog_erro: null,
+    // preco_publicado_ml é observação do que o ML confirmou — a cor ainda não foi publicada.
+    preco_publicado_ml: null,
+    // Desconto/atacado NÃO são herdados das irmãs de propósito: são configuração comercial por
+    // variação (ADR-0055/preço por variação) e este fluxo não roda nenhuma decisão de preço
+    // (D-10, sem IA e sem Revisão). Herdar aplicaria um desconto que ninguém pediu para esta
+    // cor; o operador configura pela tela de preços depois, como em qualquer variação nova.
+    exibir_com_desconto: null,
+    desconto_pct: null,
+    atacado: null,
   };
 }
