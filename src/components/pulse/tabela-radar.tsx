@@ -49,7 +49,7 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const menorDe = (p: PulseProduto) => resumo?.get(p.id)?.menorPreco ?? null;
+  const menorDe = (p: PulseProduto) => resumo?.get(p.id)?.menorRelevante ?? null;
   const posicaoDe = (p: PulseProduto) => posicaoVsMercado(p.meu_preco, menorDe(p));
 
   const colunas: Column<PulseProduto>[] = [
@@ -114,12 +114,16 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
     },
     {
       key: 'menor',
-      header: 'Menor concorrente',
+      header: 'Menor relevante',
       className: 'text-right',
       sortValue: (p) => menorDe(p),
       cell: (p) => {
         const v = menorDe(p);
-        return celulaMercado(<span className="tabular-nums">{v != null ? fmtBRL(v) : '—'}</span>);
+        return celulaMercado(
+          <span className={cn('tabular-nums', v == null && 'text-muted-foreground')}>
+            {v != null ? fmtBRL(v) : 'Sem concorrente relevante'}
+          </span>,
+        );
       },
     },
     {

@@ -18,15 +18,17 @@ import {
   type PulseProduto, type PulseVendedor, type PulseOferta,
 } from '@/lib/pulse';
 import {
-  estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, margemEhEstimativa,
+  estadoAtualOfertas, mercadoPulse, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, margemEhEstimativa,
 } from '@/lib/pulse-margem';
 import {
-  classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, tipoAnuncio,
+  classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, rotuloMotivoQualificacao,
+  rotuloReputacao, rotuloStatusQualificacao, tipoAnuncio,
 } from '@/lib/pulse-formato';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
 import { buildPulseSearchUrl } from '@/lib/pulse-url';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
+import type { QualificacaoOferta } from '../../../supabase/functions/_shared/concorrencia/qualificacao';
 
 /**
  * A comissão TEM que vir de `comissao_pct` (lida no preço praticado). Cair em
@@ -68,12 +70,43 @@ function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {
   );
 }
 
+type OfertaClassificada = PulseOferta & { qualificacao: QualificacaoOferta };
+
+function detalheDaConta(vendedor: PulseVendedor | undefined): string | undefined {
+  const detalhe = vendedor?.reputacao_detalhe;
+  const transacoes = detalhe?.transactions as Record<string, unknown> | undefined;
+  if (!transacoes) return undefined;
+  const partes = ['Dados da conta'];
+  if (typeof transacoes.period === 'string') partes.push(`Período: ${transacoes.period}`);
+  if (typeof transacoes.total === 'number') partes.push(`Transações: ${fmtInt(transacoes.total)}`);
+  const avaliacoes = transacoes.ratings as Record<string, unknown> | undefined;
+  if (avaliacoes && typeof avaliacoes.positive === 'number') {
+    partes.push(`Avaliações: ${Math.round(avaliacoes.positive * 100)}% positivas`);
+  }
+  const metricas = detalhe?.metrics as Record<string, unknown> | undefined;
+  for (const [chave, rotulo] of Object.entries({
+    claims: 'Reclamações', delayed_handling_time: 'Atrasos', cancellations: 'Cancelamentos',
+  })) {
+    const metrica = metricas?.[chave] as Record<string, unknown> | undefined;
+    if (!metrica) continue;
+    const valores = [
+      typeof metrica.period === 'string' ? metrica.period : null,
+      typeof metrica.rate === 'number' ? `${(metrica.rate * 100).toFixed(1)}%` : null,
+      typeof metrica.value === 'number' ? fmtInt(metrica.value) : null,
+    ].filter((valor): valor is string => valor != null);
+    if (valores.length) partes.push(`${rotulo}: ${valores.join(', ')}`);
+  }
+  return partes.join(' · ');
+}
+
 export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | null; onFechar: () => void }) {
   const aberto = produto != null;
   const [precoEditado, setPrecoEditado] = useState<string | null>(null);
   const [reprecificarAberto, setReprecificarAberto] = useState(false);
+  const [filtroOfertas, setFiltroOfertas] = useState<'relevantes' | 'todas'>('relevantes');
   useEffect(() => setPrecoEditado(null), [produto?.id]);
   useEffect(() => setReprecificarAberto(false), [produto?.id]);
+  useEffect(() => setFiltroOfertas('relevantes'), [produto?.id]);
 
   const { data, isLoading } = useQuery({
     queryKey: produto ? QK.pulseDetalhe(produto.id) : QK.pulseDetalhe('_'),
@@ -88,6 +121,15 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
 
   const ofertas = data?.ofertas ?? [];
   const atuais = estadoAtualOfertas(data?.ofertasAtuais ?? []);
+  const mercado = mercadoPulse(atuais, data?.vendedores ?? []);
+  const qualificacaoPorItem = new Map(mercado.ofertas.map((oferta) => [oferta.item_id, oferta.qualificacao]));
+  const ofertasClassificadas: OfertaClassificada[] = atuais.map((oferta) => ({
+    ...oferta,
+    qualificacao: qualificacaoPorItem.get(oferta.item_id)!,
+  }));
+  const ofertasExibidas = filtroOfertas === 'relevantes'
+    ? ofertasClassificadas.filter((oferta) => oferta.qualificacao.status === 'relevante')
+    : ofertasClassificadas;
   const historico = menorPrecoPorDia(ofertas).slice(-14);
 
   const vendedoresPorSeller = new Map<number, PulseVendedor[]>();
@@ -97,7 +139,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     vendedoresPorSeller.set(v.seller_id, lista);
   }
 
-  const menorConcorrente = atuais[0]?.preco ?? null;
+  const menorConcorrente = mercado.menor_relevante;
   // Uma fonte só: a nossa oferta viva na ficha. Antes o preço local vinha primeiro e vencia o
   // vivo, então o detalhe mostrava um valor defasado e a margem simulada herdava o erro.
   const meuPreco = produto?.meu_preco ?? null;
@@ -133,7 +175,12 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     return hist[hist.length - 1]?.uf ?? null;
   };
 
-  const colunasConcorrentes: Column<PulseOferta>[] = [
+  const vendedorAtualDe = (o: PulseOferta) => {
+    const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
+    return hist[hist.length - 1];
+  };
+
+  const colunasConcorrentes: Column<OfertaClassificada>[] = [
     {
       key: 'preco',
       header: 'Preço',
@@ -154,16 +201,9 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       className: 'w-64',
       sortValue: (o) => nomeDe(o).toLowerCase(),
       cell: (o) => {
-        const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
-        const selo = reputacao(hist[hist.length - 1]?.power_seller ?? null);
         return (
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="max-w-52 truncate font-medium" title={nomeDe(o)}>{nomeDe(o)}</span>
-            {selo && (
-              <Badge variant="outline" className="border-info/30 bg-info/10 text-[10px] font-normal text-info">
-                {selo}
-              </Badge>
-            )}
             {o.loja_oficial && (
               <Badge variant="outline" className="text-[10px] font-normal">
                 <Store className="mr-1 h-3 w-3" />
@@ -173,6 +213,44 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
           </div>
         );
       },
+    },
+    {
+      key: 'qualificacao',
+      header: 'Qualificação',
+      className: 'w-40',
+      sortValue: (o) => o.qualificacao.status,
+      cell: (o) => {
+        const selo = o.qualificacao.status === 'relevante'
+          ? { texto: rotuloStatusQualificacao(o.qualificacao.status), tom: 'ok' as const }
+          : o.qualificacao.status === 'observacao'
+            ? { texto: rotuloStatusQualificacao(o.qualificacao.status), tom: 'atencao' as const }
+            : { texto: rotuloStatusQualificacao(o.qualificacao.status), tom: 'risco' as const };
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <Badge variant="outline" className={cn('font-normal', classeTom(selo.tom))}>{selo.texto}</Badge>
+            <span className="text-xs text-muted-foreground">
+              {o.qualificacao.motivos.map(rotuloMotivoQualificacao).join(' · ')}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'reputacao',
+      header: 'Reputação',
+      className: 'w-36',
+      sortValue: (o) => vendedorAtualDe(o)?.nivel,
+      cell: (o) => {
+        const vendedor = vendedorAtualDe(o);
+        return <span className="text-xs" title={detalheDaConta(vendedor)}>{rotuloReputacao(vendedor?.nivel ?? null)}</span>;
+      },
+    },
+    {
+      key: 'mercado-lider',
+      header: 'MercadoLíder',
+      className: 'w-32',
+      sortValue: (o) => vendedorAtualDe(o)?.power_seller,
+      cell: (o) => reputacao(vendedorAtualDe(o)?.power_seller ?? null) ?? <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'uf',
@@ -315,10 +393,15 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                       )}
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Menor concorrente</p>
+                      <p className="text-xs text-muted-foreground">Menor concorrente relevante</p>
                       <p className="text-lg font-semibold tabular-nums">
-                        {menorConcorrente != null ? fmtBRL(menorConcorrente) : '—'}
+                        {menorConcorrente != null ? fmtBRL(menorConcorrente) : 'Sem concorrente relevante'}
                       </p>
+                      {mercado.menor_observado != null && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Menor oferta observada: {fmtBRL(mercado.menor_observado)}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Sua posição</p>
@@ -440,7 +523,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
 
               {historico.length >= 2 && (
                 <section>
-                  <h3 className="mb-1 text-sm font-medium">Menor preço do mercado</h3>
+                  <h3 className="mb-1 text-sm font-medium">Menor oferta observada no período</h3>
                   <div className="flex items-end gap-4">
                     <Sparkline pontos={historico} />
                     <div className="pb-1 text-xs text-muted-foreground">
@@ -454,22 +537,27 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
               <section>
                 <h3 className="mb-2 text-sm font-medium">
                   Concorrentes{' '}
-                  <span className="font-normal text-muted-foreground">({atuais.length} ofertas ativas)</span>
+                  <span className="font-normal text-muted-foreground">
+                    ({mercado.total_relevantes} {mercado.total_relevantes === 1 ? 'relevante' : 'relevantes'} de {mercado.total_observadas} observadas)
+                  </span>
                 </h3>
                 {atuais.length === 0 ? (
                   <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                     Nenhuma oferta coletada ainda. Use “Atualizar agora” na lista para forçar uma coleta.
                   </p>
                 ) : (
-                  // DataTable em vez da tabela manual: traz a ordenação por coluna de graça, a
-                  // mesma da lista do radar. "Vendas na conta" virou coluna própria justamente
-                  // para poder ordenar por volume — o nome do vendedor ordena alfabeticamente.
-                  <DataTable
-                    columns={colunasConcorrentes}
-                    rows={atuais}
-                    rowKey={(o) => o.item_id}
-                    defaultSort={{ key: 'preco', dir: 'asc' }}
-                  />
+                  <>
+                    <div className="mb-2 flex gap-1" aria-label="Filtro de concorrentes">
+                      <Button size="sm" variant={filtroOfertas === 'relevantes' ? 'secondary' : 'ghost'} aria-pressed={filtroOfertas === 'relevantes'} onClick={() => setFiltroOfertas('relevantes')}>Relevantes</Button>
+                      <Button size="sm" variant={filtroOfertas === 'todas' ? 'secondary' : 'ghost'} aria-pressed={filtroOfertas === 'todas'} onClick={() => setFiltroOfertas('todas')}>Todas</Button>
+                    </div>
+                    <DataTable
+                      columns={colunasConcorrentes}
+                      rows={ofertasExibidas}
+                      rowKey={(o) => o.item_id}
+                      defaultSort={{ key: 'preco', dir: 'asc' }}
+                    />
+                  </>
                 )}
                 <p className="mt-2 text-xs text-muted-foreground">
                   O volume é da conta do vendedor no Mercado Livre inteiro, não deste anúncio — a API não

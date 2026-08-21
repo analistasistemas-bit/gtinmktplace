@@ -60,16 +60,16 @@ export default function Pulse() {
     enabled: ids.length > 0,
   });
 
-  const menorConcorrenteDe = useCallback(
-    (p: PulseProduto) => resumoOfertas?.get(p.id)?.menorPreco ?? null,
+  const menorRelevanteDe = useCallback(
+    (p: PulseProduto) => resumoOfertas?.get(p.id)?.menorRelevante ?? null,
     [resumoOfertas],
   );
 
   // Os números que respondem "tenho trabalho hoje?". Saem da mesma regra que filtra a lista, para
   // clicar num card de 12 devolver 12 linhas.
   const contagens = useMemo(
-    () => contarPulse(produtos ?? [], menorConcorrenteDe),
-    [produtos, menorConcorrenteDe],
+    () => contarPulse(produtos ?? [], menorRelevanteDe),
+    [produtos, menorRelevanteDe],
   );
 
   /** Clicar no card já aplicado remove o recorte — o card é um interruptor, não um destino. */
@@ -94,7 +94,7 @@ export default function Pulse() {
 
   const lista = produtos ?? [];
   const produtoDetalhe = lista.find((p) => p.id === detalheId) ?? null;
-  const filtrada = filtrarProdutos(lista, filtros, menorConcorrenteDe);
+  const filtrada = filtrarProdutos(lista, filtros, menorRelevanteDe);
   const filtrando = temFiltroAtivo(filtros);
 
   return (

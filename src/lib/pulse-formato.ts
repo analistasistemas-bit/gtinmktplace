@@ -1,5 +1,6 @@
 // Pulse (ADR-0119): tradução do jargão do ML para a linguagem do operador. Puro, sem I/O.
 import type { PulseProduto } from './pulse';
+import type { MotivoQualificacao, StatusQualificacao } from '../../supabase/functions/_shared/concorrencia/qualificacao';
 
 export type Tom = 'neutro' | 'ok' | 'atencao' | 'risco';
 
@@ -148,8 +149,42 @@ export function tipoAnuncio(tier: string | null): string {
 /** Reputação do vendedor. Sem selo o ML devolve null — mostrar "—·" antes do volume é ruído. */
 export function reputacao(powerSeller: string | null): string | null {
   if (!powerSeller) return null;
-  const mapa: Record<string, string> = { gold: 'MercadoLíder Gold', platinum: 'MercadoLíder Platinum', silver: 'MercadoLíder' };
+  const mapa: Record<string, string> = { gold: 'MercadoLíder Gold', platinum: 'MercadoLíder Platinum', silver: 'MercadoLíder Silver' };
   return mapa[powerSeller] ?? 'MercadoLíder';
+}
+
+/** Traduções estáveis dos códigos da regra compartilhada de qualificação. */
+export function rotuloStatusQualificacao(status: StatusQualificacao): string {
+  const rotulos: Record<StatusQualificacao, string> = {
+    relevante: 'Relevante',
+    observacao: 'Em observação',
+    fora_referencia: 'Fora da referência',
+  };
+  return rotulos[status];
+}
+
+/** Traduções estáveis dos códigos da regra compartilhada de qualificação. */
+export function rotuloMotivoQualificacao(motivo: MotivoQualificacao): string {
+  const rotulos: Record<MotivoQualificacao, string> = {
+    QUALIFICADO: 'Qualificado',
+    DADOS_INSUFICIENTES: 'Dados insuficientes',
+    POUCAS_TRANSACOES: 'Poucas transações',
+    SEM_VISITAS_30D: 'Sem visitas nos últimos 30 dias',
+    REPUTACAO_BAIXA: 'Reputação baixa',
+  };
+  return rotulos[motivo];
+}
+
+/** Cor consolidada da reputação do vendedor, sem vazar o identificador do Mercado Livre. */
+export function rotuloReputacao(nivel: string | null): string {
+  const rotulos: Record<string, string> = {
+    '5_green': 'Reputação verde',
+    '4_light_green': 'Reputação verde-clara',
+    '3_yellow': 'Reputação amarela',
+    '2_orange': 'Reputação laranja',
+    '1_red': 'Reputação vermelha',
+  };
+  return nivel ? rotulos[nivel] ?? 'Reputação não informada' : 'Reputação não informada';
 }
 
 export interface Posicao {

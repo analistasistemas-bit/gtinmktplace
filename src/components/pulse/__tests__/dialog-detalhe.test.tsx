@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DialogDetalhe } from '../dialog-detalhe';
 import type { PulseOferta, PulseProduto, PulseVendedor } from '@/lib/pulse';
 
@@ -94,9 +94,12 @@ beforeEach(() => {
       seller_id: 1,
       permalink: 'https://produto.mercadolivre.com.br/MLB-OFFER-36',
     }),
-    oferta({ item_id: 'MLB-OFFER-49', seller_id: 2, preco: 49.9 }),
+    oferta({ item_id: 'MLB-OFFER-70', seller_id: 2, preco: 70.19 }),
   ];
-  detalhe.vendedores = [vendedor(1, 'SOUZABRUNA20230210001211'), vendedor(2, 'OUTRO-VENDEDOR')];
+  detalhe.vendedores = [
+    vendedor(1, 'SOUZABRUNA20230210001211'),
+    { ...vendedor(2, 'OUTRO-VENDEDOR'), transactions_total: 10, nivel: '3_yellow', power_seller: 'gold' },
+  ];
 });
 
 afterEach(() => {
@@ -126,6 +129,7 @@ describe('DialogDetalhe — links de ofertas do Mercado Livre', () => {
 
   it('abre o permalink individual e identifica oferta sem permalink', () => {
     renderDetalhe();
+    fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
 
     expect(screen.getByText('Oferta')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /Abrir oferta/i });
@@ -139,5 +143,33 @@ describe('DialogDetalhe — links de ofertas do Mercado Livre', () => {
     renderDetalhe();
 
     expect(screen.getByRole('dialog')).toHaveClass('sm:max-w-7xl');
+  });
+});
+
+describe('DialogDetalhe — concorrentes relevantes', () => {
+  it('usa o menor relevante e permite auditar todas as ofertas observadas', () => {
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    expect(screen.getByText('Menor concorrente relevante')).toBeInTheDocument();
+    expect(screen.getAllByText(/R\$\s*70,19/)).not.toHaveLength(0);
+    expect(screen.getByText(/Menor oferta observada:\s*R\$\s*36,00/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /1 relevante de 2 observadas/ })).toBeInTheDocument();
+    expect(screen.queryByText('SOUZABRUNA20230210001211')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
+    expect(screen.getByText('SOUZABRUNA20230210001211')).toBeInTheDocument();
+    expect(screen.getByText('Fora da referência')).toBeInTheDocument();
+    expect(screen.getByText('Poucas transações')).toBeInTheDocument();
+    expect(screen.getByText('MercadoLíder Gold')).toBeInTheDocument();
+    expect(screen.getByText('Reputação amarela')).toBeInTheDocument();
+  });
+
+  it('não compara preço quando nenhuma oferta é relevante', () => {
+    detalhe.vendedores = detalhe.vendedores.map((v) => ({ ...v, transactions_total: 0 }));
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    expect(screen.getByText('Sem concorrente relevante')).toBeInTheDocument();
+    expect(screen.getByText(/Menor oferta observada:\s*R\$\s*36,00/)).toBeInTheDocument();
+    expect(screen.getByText('Sua posição').parentElement).toHaveTextContent('—');
   });
 });

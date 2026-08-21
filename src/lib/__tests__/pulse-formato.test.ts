@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   seloPriceToWin, ordemPriceToWin, motivoSemPrecoProprio, seloAnuncio, tipoAnuncio, reputacao,
-  posicaoVsMercado,
+  posicaoVsMercado, rotuloMotivoQualificacao, rotuloReputacao, rotuloStatusQualificacao,
 } from '../pulse-formato';
 
 const vinculado = (ptw_status: string | null, ptw_aplicavel: boolean | null = null) =>
@@ -190,6 +190,32 @@ describe('reputacao', () => {
   it('devolve null quando o vendedor não tem selo (evita o "—·" solto)', () => {
     expect(reputacao(null)).toBeNull();
     expect(reputacao('gold')).toBe('MercadoLíder Gold');
+    expect(reputacao('silver')).toBe('MercadoLíder Silver');
+  });
+});
+
+describe('rótulos da qualificação', () => {
+  it('padroniza os status da classificação', () => {
+    expect(rotuloStatusQualificacao('relevante')).toBe('Relevante');
+    expect(rotuloStatusQualificacao('observacao')).toBe('Em observação');
+    expect(rotuloStatusQualificacao('fora_referencia')).toBe('Fora da referência');
+  });
+
+  it('traduz motivos internos sem expor códigos da API', () => {
+    expect(rotuloMotivoQualificacao('QUALIFICADO')).toBe('Qualificado');
+    expect(rotuloMotivoQualificacao('DADOS_INSUFICIENTES')).toBe('Dados insuficientes');
+    expect(rotuloMotivoQualificacao('POUCAS_TRANSACOES')).toBe('Poucas transações');
+    expect(rotuloMotivoQualificacao('SEM_VISITAS_30D')).toBe('Sem visitas nos últimos 30 dias');
+    expect(rotuloMotivoQualificacao('REPUTACAO_BAIXA')).toBe('Reputação baixa');
+  });
+
+  it('explica todas as cores de reputação e a ausência de dado', () => {
+    expect(rotuloReputacao('5_green')).toBe('Reputação verde');
+    expect(rotuloReputacao('4_light_green')).toBe('Reputação verde-clara');
+    expect(rotuloReputacao('3_yellow')).toBe('Reputação amarela');
+    expect(rotuloReputacao('2_orange')).toBe('Reputação laranja');
+    expect(rotuloReputacao('1_red')).toBe('Reputação vermelha');
+    expect(rotuloReputacao(null)).toBe('Reputação não informada');
   });
 });
 
