@@ -677,7 +677,9 @@ hoje em `America/Sao_Paulo`), `permalink` (URL do anúncio no ML — **sempre nu
 existe para o link por concorrente acender sozinho caso o ML passe a expor, ver Errata 8 do
 ADR-0119), `visitas_30d` (integer, visitas do anúncio nos últimos 30 dias via
 `/items/{id}/visits/time_window` — o coletor mede **só no baseline diário**, não no tier quente de
-6/6h, e escreve na última linha de cada oferta; `null` = não medido, **nunca** zero, ver ADR-0120).
+6/6h, e escreve na última linha de cada oferta; `visitas_30d_em` (timestamptz, instante da leitura)
+controla a janela de frescor de 24 horas. `null` = nunca medido ou snapshot legado, **nunca** zero;
+zero continua significando uma leitura que mediu zero visitas, ver ADR-0120).
 Unique `pulse_ofertas_prod_item_dia_uniq` em
 `(produto_id, item_id, dia)` — é o alvo do upsert idempotente do coletor (merge, não
 `ignoreDuplicates`: ver `edge-functions.md`). Índice `pulse_ofertas_org_prod_dia_idx` em
@@ -685,7 +687,7 @@ Unique `pulse_ofertas_prod_item_dia_uniq` em
 só select org, sem update/insert do membro.
 
 **View `pulse_ofertas_atual`** (`security_invoker = true`): `select distinct on (produto_id,
-item_id) … order by dia desc` — a última linha de cada oferta. É o que o front lê para "menor
+item_id) … order by dia desc`, incluindo `visitas_30d_em` — a última linha de cada oferta. É o que o front lê para "menor
 preço/nº de ofertas" do radar e "ofertas atuais" do detalhe; nunca o histórico bruto, porque o
 PostgREST trunca respostas em ~1000 linhas em silêncio. A RLS de `pulse_ofertas` vale para quem
 consulta a view (invoker).
@@ -694,7 +696,11 @@ consulta a view (invoker).
 Snapshot diário de reputação de um vendedor concorrente. `seller_id` (bigint), `nickname`,
 `power_seller`, `nivel`, `transactions_total` (bigint), `uf` (sigla do estado de onde ele envia,
 de `address.state` de `/users/{id}` sem o prefixo `BR-`; `null` quando o ML não expôs o endereço —
-medido em 2026-08-17: 150 de 232 vendedores traziam), `dia` (date, default hoje BRT). Unique
+medido em 2026-08-17: 150 de 232 vendedores traziam), `reputacao_detalhe` (jsonb, perfil público
+normalizado com período/transações, avaliações e métricas do ML), `perfil_coletado_em` (timestamptz,
+instante exato da leitura de `/users/{seller_id}`), `dia` (date, default hoje BRT). O coletor usa
+`perfil_coletado_em` para controlar a janela de frescor de 24 horas; `null` identifica snapshot legado
+sem leitura do perfil e permanece diferente de qualquer valor medido. Unique
 `pulse_vendedores_org_seller_dia_uniq` em `(org_id, seller_id, dia)` — 1 gravação por vendedor por
 dia, quando `transactions_total` **ou** `uf` mudou (`deveGravarVendedor`, coletado só no tier
 `completo`). A `uf` entra na decisão para o backfill não depender de uma venda acontecer; pelo mesmo
