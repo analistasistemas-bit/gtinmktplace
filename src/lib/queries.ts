@@ -44,6 +44,9 @@ export const QK = {
   familiasNaoPublicadas: ['familias-nao-publicadas'] as const,
   canaisPorProduto: ['canais-por-produto'] as const,
   variacoesEstoque: (codigoPai: string) => ['variacoes-estoque', codigoPai] as const,
+  // Marcador client-side (nunca vai à rede, só setQueryData): SKUs da última submissão de
+  // "Adicionar variação" p/ este produto — badge por linha (Publicado/Erro/Publicando).
+  variacoesRecemAdicionadas: (codigoPai: string) => ['variacoes-recem-adicionadas', codigoPai] as const,
   // Prefixo: invalida todas as páginas do produto de uma vez (ex.: após registrar uma entrada).
   movimentosEstoque: (codigoPai: string) => ['movimentos-estoque', codigoPai] as const,
   /** Página concreta. Estende o prefixo acima — invalidar o prefixo alcança todas as páginas. */

@@ -284,6 +284,27 @@ describe('DialogAdicionarVariacao', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: QK.variacoesEstoque(produto.codigoPai) });
   });
 
+  // Pedido do Diego (2026-08-21): badge por linha nas variações que acabaram de ser adicionadas.
+  // O marcador precisa ir NORMALIZADO ('123' -> '00000123') — é o formato que a tabela mostra,
+  // vindo do banco (a edge normaliza antes de gravar).
+  it('submit com sucesso marca os SKUs desta submissão (normalizados) em QK.variacoesRecemAdicionadas', async () => {
+    invokeMock.mockResolvedValue({
+      data: { loteId: 'lote-1', familiaId: 'fam-nova-1', publicacaoOk: true, falhasEstoque: [] },
+      error: null,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const user = userEvent.setup();
+    renderDialog(vi.fn(), qc);
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await preencherLinha(user, 1, { codigo: '123' });
+    await waitFor(() => expect(BOTAO_SALVAR()).not.toBeDisabled());
+
+    await user.click(BOTAO_SALVAR());
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    expect(qc.getQueryData(QK.variacoesRecemAdicionadas(produto.codigoPai))).toEqual(['00000123']);
+  });
+
   // "200 não prova canal atualizado" — mesmo racional do push de estoque no ML
   // (reference_estoque_push_ml): publicacaoOk=false e falhasEstoque não podem virar sucesso
   // silencioso só porque a chamada HTTP não deu erro.

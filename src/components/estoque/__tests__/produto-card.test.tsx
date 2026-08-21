@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProdutoCard, CabecalhoProdutos, GRID_LINHA_PRODUTO, VARIACOES_VIRTUAL_THRESHOLD, VARIACAO_ROW_ESTIMATE_PX } from '../produto-card';
+import { QK } from '@/lib/queries';
 import type { ProdutoEstoqueResumo, VariacaoComSaldo } from '@/lib/produtos-saldo';
 import * as produtosSaldo from '@/lib/produtos-saldo';
 
@@ -362,6 +363,55 @@ describe('ProdutoCard', () => {
     renderCard();
     expect(screen.queryByText('Atualizando…')).not.toBeInTheDocument();
     expect(screen.queryByText('Erro na última atualização')).not.toBeInTheDocument();
+  });
+
+  // Pedido do Diego (2026-08-21): badge por linha nas variações recém-adicionadas — a linha
+  // '00000006' está marcada, '00000005' não; só a marcada pode ganhar badge.
+  it('linha marcada em QK.variacoesRecemAdicionadas mostra "Publicado" quando não há statusUpdate', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([
+      mockVariacoes(1, 5)[0]!, mockVariacoes(1, 6)[0]!,
+    ]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(QK.variacoesRecemAdicionadas(produto.codigoPai), ['00000006']);
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => expect(screen.getByText('Publicado')).toBeInTheDocument());
+    expect(screen.getAllByText('Publicado')).toHaveLength(1);
+  });
+
+  it('linha marcada + statusUpdate="atualizando" mostra "Publicando…"', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(QK.variacoesRecemAdicionadas(produto.codigoPai), ['00000006']);
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} statusUpdate="atualizando" />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    await waitFor(() => expect(screen.getByText('Publicando…')).toBeInTheDocument());
+  });
+
+  it('linha marcada + statusUpdate="erro" mostra "Erro" na linha', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(QK.variacoesRecemAdicionadas(produto.codigoPai), ['00000006']);
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} statusUpdate="erro" />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+    // Badge da LINHA ("Erro", exato) — diferente do badge do produto ("Erro na última
+    // atualização", já coberto no teste acima), então não colide com `getByText`.
+    await waitFor(() => expect(screen.getByText('Erro')).toBeInTheDocument());
   });
 
   it('variação sem anúncio no mapa segue mostrando o preço local', async () => {

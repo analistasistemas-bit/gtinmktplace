@@ -68,6 +68,29 @@ describe('VariacaoEstoqueLinha', () => {
     expect(screen.getAllByText(/R\$\s?89,90/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/local R\$/)).not.toBeInTheDocument();
   });
+
+  // Pedido do Diego (2026-08-21): badge por linha nas variações recém-adicionadas.
+  it('sem statusPublicacao, nenhum badge de publicação aparece', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao()} />);
+    expect(screen.queryByText('Publicado')).not.toBeInTheDocument();
+    expect(screen.queryByText('Publicando…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Erro')).not.toBeInTheDocument();
+  });
+
+  it('statusPublicacao "publicado" mostra o badge verde', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao()} statusPublicacao="publicado" />);
+    expect(screen.getByText('Publicado')).toBeInTheDocument();
+  });
+
+  it('statusPublicacao "atualizando" mostra "Publicando…"', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao()} statusPublicacao="atualizando" />);
+    expect(screen.getByText('Publicando…')).toBeInTheDocument();
+  });
+
+  it('statusPublicacao "erro" mostra "Erro"', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao()} statusPublicacao="erro" />);
+    expect(screen.getByText('Erro')).toBeInTheDocument();
+  });
 });
 
 describe('CabecalhoVariacoes', () => {

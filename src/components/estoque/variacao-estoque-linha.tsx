@@ -24,6 +24,17 @@ export function PillSaldo({ saldo }: { saldo: number }) {
     : <StatusPill tone="warning">sem estoque</StatusPill>;
 }
 
+/** Pedido do Diego (2026-08-21): badge por linha nas variações da última submissão de
+ *  "Adicionar variação" — `undefined` = não faz parte dela (nenhum badge). */
+export type StatusPublicacaoLinha = 'atualizando' | 'erro' | 'publicado' | undefined;
+
+export function PillPublicacao({ status }: { status: StatusPublicacaoLinha }) {
+  if (!status) return null;
+  if (status === 'atualizando') return <StatusPill tone="warning">Publicando…</StatusPill>;
+  if (status === 'erro') return <StatusPill tone="danger">Erro</StatusPill>;
+  return <StatusPill tone="success">Publicado</StatusPill>;
+}
+
 /**
  * Ordem no DOM: foto · SKU/cor · GTIN · dimensões · custo · preço · saldo.
  * Abaixo de `lg` as quatro células do meio ficam `hidden` (sobram 3 itens para 3 tracks) e
@@ -62,9 +73,10 @@ export function CabecalhoVariacoes() {
  * R$ 28,99 num SKU anunciado a R$ 39,90. O local não some: vira nota, porque é ele que alimenta
  * markup e o próximo push (ADR-0055), e a divergência entre os dois é informação, não ruído.
  */
-export function VariacaoEstoqueLinha({ variacao: v, precoMl }: {
+export function VariacaoEstoqueLinha({ variacao: v, precoMl, statusPublicacao }: {
   variacao: VariacaoComSaldo;
   precoMl?: number | null;
+  statusPublicacao?: StatusPublicacaoLinha;
 }) {
   const { data: url } = useImageUrl(v.imagemPath);
   // Mesma cadeia do card do produto: Storage primeiro, foto do anúncio no ML depois.
@@ -84,6 +96,7 @@ export function VariacaoEstoqueLinha({ variacao: v, precoMl }: {
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-xs font-medium">{v.codigo}</span>
           <PillSaldo saldo={v.estoque} />
+          <PillPublicacao status={statusPublicacao} />
         </div>
         <div className="truncate text-xs text-muted-foreground">{v.cor ?? v.nome ?? '—'}</div>
         {/* Abaixo de lg as colunas somem: custo/preço voltam aqui para não sumir do mobile. */}

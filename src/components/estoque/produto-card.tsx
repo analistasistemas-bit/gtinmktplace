@@ -15,7 +15,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { CanalBadge } from '@/components/canal-badge';
 import { FotoCapaFamilia } from '@/components/foto-capa-familia';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
-import { VariacaoEstoqueLinha, CabecalhoVariacoes, PillSaldo } from '@/components/estoque/variacao-estoque-linha';
+import {
+  VariacaoEstoqueLinha, CabecalhoVariacoes, PillSaldo, type StatusPublicacaoLinha,
+} from '@/components/estoque/variacao-estoque-linha';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { cn } from '@/lib/utils';
@@ -30,10 +32,11 @@ export const VARIACOES_VIRTUAL_THRESHOLD = 50;
 
 export const VARIACAO_ROW_ESTIMATE_PX = 56;
 
-function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl }: {
+function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl, statusPublicacao }: {
   variacoes: VariacaoComSaldo[];
   nomeProduto: string;
   precoMl: (v: VariacaoComSaldo) => number | null;
+  statusPublicacao: (codigo: string) => StatusPublicacaoLinha;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -71,6 +74,7 @@ function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl }: {
             <VariacaoEstoqueLinha
               variacao={variacoes[virtualRow.index]!}
               precoMl={precoMl(variacoes[virtualRow.index]!)}
+              statusPublicacao={statusPublicacao(variacoes[virtualRow.index]!.codigo)}
             />
           </div>
         ))}
@@ -153,6 +157,19 @@ export function ProdutoCard({
     enabled: aberto,
     staleTime: 30_000,
   });
+
+  // Pedido do Diego (2026-08-21): badge por linha (Publicado/Erro/Publicando) nas variações da
+  // última submissão de "Adicionar variação". `queryFn` nunca roda de verdade — o marcador só
+  // chega via `qc.setQueryData` no dialog; `staleTime: Infinity` evita que o useQuery dispare a
+  // queryFn (que apagaria o marcador com `[]`) toda vez que o card reabre.
+  const { data: recemAdicionadas } = useQuery({
+    queryKey: QK.variacoesRecemAdicionadas(produto.codigoPai),
+    queryFn: (): string[] => [],
+    staleTime: Infinity,
+  });
+  const recemAdicionadasSet = useMemo(() => new Set(recemAdicionadas ?? []), [recemAdicionadas]);
+  const statusPublicacao = (codigo: string): StatusPublicacaoLinha =>
+    (recemAdicionadasSet.has(codigo) ? (statusUpdate ?? 'publicado') : undefined);
 
   // Preço vivo do canal, só com o card aberto (a chamada varre todos os anúncios da org). A
   // lista NUNCA espera por ele: enquanto não chega, cada linha mostra o preço local.
@@ -324,7 +341,12 @@ export function ProdutoCard({
                     return (
                       <div className="[&>*:last-child]:border-b-0">
                         {lista.map((v) => (
-                          <VariacaoEstoqueLinha key={v.codigo} variacao={v} precoMl={precoMl(v)} />
+                          <VariacaoEstoqueLinha
+                            key={v.codigo}
+                            variacao={v}
+                            precoMl={precoMl(v)}
+                            statusPublicacao={statusPublicacao(v.codigo)}
+                          />
                         ))}
                       </div>
                     );
@@ -334,6 +356,7 @@ export function ProdutoCard({
                       variacoes={lista}
                       nomeProduto={produto.nomePai}
                       precoMl={precoMl}
+                      statusPublicacao={statusPublicacao}
                     />
                   );
                 })()}

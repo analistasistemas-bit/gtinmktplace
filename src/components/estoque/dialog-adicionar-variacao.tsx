@@ -225,6 +225,18 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
       // resumo acima) ficava presa no cache antigo e o operador via a contagem certa mas a
       // tabela errada.
       qc.invalidateQueries({ queryKey: QK.variacoesEstoque(produto.codigoPai) });
+      // Pedido do Diego (2026-08-21): badge por linha na tabela expandida dizendo se aquela
+      // variação específica publicou ou deu erro. Marca os SKUs desta submissão (normalizados —
+      // é o formato que a tabela mostra); produto-card.tsx cruza com o status família (D-11) pra
+      // decidir a cor/texto do badge de cada linha. `setQueryData`, não uma tabela nova: é
+      // estado só de UI, nunca vai à rede.
+      qc.setQueryData(
+        QK.variacoesRecemAdicionadas(produto.codigoPai),
+        // Normalizado: `l.codigo` é o que o operador digitou ('123'), a tabela mostra o que o
+        // banco grava ('00000123', mesma normalização da edge) — sem isso o `.has()` no card
+        // nunca bateria.
+        variacoes.map((v) => normalizarLocal(v.codigo)).filter((c): c is string => c != null),
+      );
       toast.success('✓ Variações enviadas — atualizando o anúncio');
       if (!r.publicacaoOk) {
         toast.warning('Gravado, mas a publicação não foi disparada — conclua pela tela Lotes.');

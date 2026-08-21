@@ -55,6 +55,13 @@
   consecutivos do poll de 15s; quem sai de `atualizando` sem virar `erro` dispara toast de sucesso
   + invalida `QK.variacoesEstoque` daquele produto (cobre também o caso do `ml_variation_id` só
   ser atribuído depois da primeira invalidação, no submit).
+- [x] **2026-08-21 — badge por linha nas variações recém-adicionadas (pedido do Diego).**
+  `dialog-adicionar-variacao.tsx` marca os SKUs da submissão (normalizados) em
+  `QK.variacoesRecemAdicionadas(codigoPai)` (`setQueryData`, nunca vai à rede — estado só de UI).
+  `produto-card.tsx` cruza o marcador com o `statusUpdate` (D-11) e passa
+  `statusPublicacao: 'atualizando' | 'erro' | 'publicado'` pra cada linha; `PillPublicacao`
+  (`variacao-estoque-linha.tsx`) renderiza o badge ao lado do SKU. Reaproveita o `StatusPill`
+  já usado em `PillSaldo`.
 
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 
