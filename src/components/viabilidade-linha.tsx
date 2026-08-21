@@ -222,7 +222,7 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
         </td>
         <td className="px-3 py-2">{menorRelevante != null ? fmtBRL(menorRelevante) : 'Sem concorrente relevante'}</td>
         <td className="px-3 py-2">
-          {mercado ? `${mercado.vendedores} de ${mercado.observado.vendedores}` : '—'}
+          {mercado ? `${mercado.vendedores} de ${mercado.observado?.vendedores ?? '—'}` : '—'}
         </td>
         <td className="px-3 py-2">{minimo != null ? fmtBRL(minimo) : '—'}</td>
         <td className="px-3 py-2">{liquido != null ? fmtBRL(liquido) : '—'}</td>
@@ -273,7 +273,7 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
               ) : (
                 <span className="text-muted-foreground">Sem concorrente relevante</span>
               )}
-              {mercado?.observado.menor != null && mercado.observado.menor !== menorRelevante && (
+              {mercado?.observado?.menor != null && mercado.observado.menor !== menorRelevante && (
                 <span className="text-muted-foreground">Menor observado: {fmtBRL(mercado.observado.menor)}</span>
               )}
             </div>

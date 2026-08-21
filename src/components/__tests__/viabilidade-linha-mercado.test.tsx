@@ -86,4 +86,15 @@ describe('ViabilidadeLinha — mercado relevante', () => {
     fireEvent.click(screen.getByText('Aptamil Premium 1'));
     expect(screen.getByText('Menor observado: R$ 36,00')).toBeInTheDocument();
   });
+
+  it('não quebra com payload legado sem observado (edge ainda não implantada)', () => {
+    const legado = {
+      ...SEM_RELEVANTE,
+      mercado: { menor: null, maior: null, vendedores: 0, freteGratis: 0, full: 0, ofertas: 0 },
+    } as unknown as ItemAnalisado;
+
+    expect(() => renderLinha(legado)).not.toThrow();
+    expect(screen.getByText('0 de —')).toBeInTheDocument();
+    expect(screen.getByText('Sem concorrente relevante')).toBeInTheDocument();
+  });
 });
