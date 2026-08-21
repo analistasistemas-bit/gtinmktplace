@@ -85,7 +85,7 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
     expect(chamadas.estornos).toHaveLength(0);
     expect(chamadas.despachos).toBe(0);
     expect(chamadas.notificacoes[0].categoria).toBe('pos_venda');
-    expect(chamadas.notificacoes[0].texto).toContain('cancelled');
+    expect(chamadas.notificacoes[0].texto).toContain('Cancelado');
     expect(chamadas.reservas[0]).toEqual({ entidade: 'estoque_cancelado_despachado', chave: String(BASE.orderId) });
   });
 
@@ -103,7 +103,7 @@ describe('tratarPedidoCancelado — o que não é pré-despacho apenas avisa', (
     const r = await tratarPedidoCancelado(ADMIN, deps, { ...BASE, shipmentStatus: null });
     expect(r).toBe('avisado');
     expect(chamadas.estornos).toHaveLength(0);
-    expect(chamadas.notificacoes[0].texto).toContain('não pôde ser consultado');
+    expect(chamadas.notificacoes[0].texto).toContain('não deu para consultar o envio');
   });
 
   // Sem este corte a primeira varredura alertaria todo cancelamento histórico da base de uma vez

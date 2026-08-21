@@ -17,6 +17,13 @@ import type { CategoriaNotificacao } from '../notificacoes/categorias.ts';
  *  "não despachado" reporia estoque de mercadoria já enviada. */
 const PRE_DESPACHO = ['pending', 'handling', 'ready_to_ship'];
 
+/** Rótulo pt-BR só para o texto da notificação — mesmos códigos de `ENVIO` em
+ *  `src/lib/ml-status.ts`, duplicado aqui porque edge (Deno) e frontend não compartilham módulo.
+ *  Sem entrada aqui, cai no código cru do ML (nunca quebra por status novo/desconhecido). */
+const LABEL_ENVIO: Record<string, string> = {
+  shipped: 'Enviado', delivered: 'Entregue', not_delivered: 'Não entregue', cancelled: 'Cancelado',
+};
+
 export interface DepsCancelamento {
   estornarVendaCancelada: (
     admin: SupabaseClient,
@@ -103,10 +110,12 @@ export async function tratarPedidoCancelado(
     if (!await deps.reservarNotificacao(admin, p.orgId, p.userId, 'estoque_cancelado_despachado', String(p.orderId))) {
       return 'silenciado';
     }
+    const situacaoEnvio = st === null ? 'não deu para consultar o envio' : `envio: ${LABEL_ENVIO[st] ?? st}`;
     await deps.notificarCategoria(
       admin, p.orgId, 'pos_venda',
-      `📦 Pedido ${p.orderId} cancelado, mas o envio ${st === null ? 'não pôde ser consultado' : `está em "${st}"`}.\n\n`
-      + 'O estoque NÃO foi reposto automaticamente — confira o que voltou e dê entrada manual.',
+      `📦 Pedido ${p.orderId} cancelado (${situacaoEnvio}). Não dá para confirmar que a mercadoria `
+      + 'não foi despachada, então o estoque NÃO foi reposto automaticamente.\n\n'
+      + 'Confira o que voltou e dê entrada manual em Estoque.',
     );
     return 'avisado';
   } catch (e) {
