@@ -221,6 +221,46 @@ describe('DialogAdicionarVariacao', () => {
     await waitFor(() => expect(onFechar).toHaveBeenCalled());
   });
 
+  // Extensão do D-6 (2026-08-21): custo e preço mínimo raramente mudam entre cores do mesmo
+  // produto — pré-preencher da irmã evita o admin ter que ir consultar a outra variação antes
+  // de digitar. Igual a peso/dimensões, continua editável.
+  it('pré-preenche custo e preço mínimo da variação irmã', async () => {
+    familiaPrefillDataMock.mockReturnValue([{
+      id: 'fam-canonica-1',
+      variacoes: [{
+        codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
+        custo: 12.5, preco: 29.9,
+      }],
+    }]);
+    invokeMock.mockResolvedValue({
+      data: { loteId: 'lote-1', familiaId: 'fam-nova-1', publicacaoOk: true, falhasEstoque: [] },
+      error: null,
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await waitFor(() => expect(
+      screen.getByLabelText('Preço mínimo (líquido) da variação 1'),
+    ).toHaveValue('29.9'));
+    expect(screen.getByLabelText('Custo da variação 1')).toHaveValue('12.5');
+
+    // Não digita preço/custo — só o resto — e confirma que o valor pré-preenchido vai no payload.
+    await user.type(screen.getByLabelText('Código (SKU) da variação 1'), '00000006');
+    await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
+    await user.type(screen.getByLabelText('Estoque inicial da variação 1'), '5');
+    await user.upload(
+      screen.getByLabelText('Foto da variação 1'),
+      new File(['a'], 'azul.png', { type: 'image/png' }),
+    );
+    await waitFor(() => expect(BOTAO_SALVAR()).not.toBeDisabled());
+    await user.click(BOTAO_SALVAR());
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    const [, opts] = invokeMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    const variacoes = opts.body.variacoes as Array<Record<string, unknown>>;
+    expect(variacoes[0]).toMatchObject({ custo: 12.5, preco: 29.9 });
+  });
+
   // "200 não prova canal atualizado" — mesmo racional do push de estoque no ML
   // (reference_estoque_push_ml): publicacaoOk=false e falhasEstoque não podem virar sucesso
   // silencioso só porque a chamada HTTP não deu erro.

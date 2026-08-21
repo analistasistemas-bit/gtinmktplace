@@ -29,6 +29,7 @@ type LinhaAddVariacao = LinhaVariacao & { codigo: string };
 
 interface IrmaReferencia {
   peso_gramas: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null;
+  custo: number | null; preco: number | null;
 }
 
 interface FamiliaCanonicaPrefill {
@@ -37,14 +38,15 @@ interface FamiliaCanonicaPrefill {
 }
 
 // PostgREST: família mais recente por codigo_pai + a 1ª variação como referência de
-// peso/dimensões (D-6 do ADR: campos físicos pré-preenchidos da irmã, editáveis). O `id`
-// devolvido AQUI é o que a edge espera em `familia_id` — é a família CANÔNICA que a tela
-// Estoque conhece, não necessariamente a última publicada (a edge resolve a última publicada
-// sozinha a partir do codigo_pai).
+// peso/dimensões/custo/preço mínimo (D-6 do ADR: campos pré-preenchidos da irmã, editáveis —
+// estendido em 2026-08-21 pra também cobrir custo e preço mínimo, que raramente mudam entre
+// cores do mesmo produto). O `id` devolvido AQUI é o que a edge espera em `familia_id` — é a
+// família CANÔNICA que a tela Estoque conhece, não necessariamente a última publicada (a edge
+// resolve a última publicada sozinha a partir do codigo_pai).
 async function fetchFamiliaCanonicaPrefill(codigoPai: string): Promise<FamiliaCanonicaPrefill | null> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, variacoes(codigo, peso_gramas, altura_cm, largura_cm, comprimento_cm)')
+    .select('id, variacoes(codigo, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco)')
     .eq('codigo_pai', codigoPai)
     .order('criado_em', { ascending: false })
     .limit(1);
@@ -60,6 +62,8 @@ function novaLinhaComPrefill(irma: IrmaReferencia | null): LinhaAddVariacao {
     alturaCm: irma?.altura_cm != null ? String(irma.altura_cm) : '',
     larguraCm: irma?.largura_cm != null ? String(irma.largura_cm) : '',
     comprimentoCm: irma?.comprimento_cm != null ? String(irma.comprimento_cm) : '',
+    custo: irma?.custo != null ? String(irma.custo) : '',
+    preco: irma?.preco != null ? String(irma.preco) : '',
   };
 }
 
@@ -133,22 +137,25 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
     setTentouSalvar(false);
   }, [aberto, produto?.codigoPai]);
 
-  // Aplica o prefill de peso/dimensões (D-6) quando ele chega DEPOIS do reset acima — só em
-  // linhas cujos 4 campos físicos ainda estão vazios (pristine), para nunca sobrescrever o que
-  // o operador já tiver digitado ou uma linha nova adicionada sem irmã de referência.
+  // Aplica o prefill de peso/dimensões/custo/preço (D-6) quando ele chega DEPOIS do reset acima
+  // — cada grupo só toca campos ainda vazios (pristine), pra nunca sobrescrever o que o operador
+  // já tiver digitado. Custo e preço são checados por campo (não em bloco, como os físicos):
+  // o operador pode ter digitado só um dos dois antes do prefill chegar.
   useEffect(() => {
     if (!aberto || !irmaRef) return;
-    setLinhas((prev) => prev.map((l) => (
-      l.pesoGramas === '' && l.alturaCm === '' && l.larguraCm === '' && l.comprimentoCm === ''
+    setLinhas((prev) => prev.map((l) => ({
+      ...l,
+      ...(l.pesoGramas === '' && l.alturaCm === '' && l.larguraCm === '' && l.comprimentoCm === ''
         ? {
-          ...l,
           pesoGramas: irmaRef.peso_gramas != null ? String(irmaRef.peso_gramas) : '',
           alturaCm: irmaRef.altura_cm != null ? String(irmaRef.altura_cm) : '',
           larguraCm: irmaRef.largura_cm != null ? String(irmaRef.largura_cm) : '',
           comprimentoCm: irmaRef.comprimento_cm != null ? String(irmaRef.comprimento_cm) : '',
         }
-        : l
-    )));
+        : {}),
+      ...(l.custo === '' && irmaRef.custo != null ? { custo: String(irmaRef.custo) } : {}),
+      ...(l.preco === '' && irmaRef.preco != null ? { preco: String(irmaRef.preco) } : {}),
+    })));
   }, [aberto, irmaRef]);
 
   useEffect(() => {

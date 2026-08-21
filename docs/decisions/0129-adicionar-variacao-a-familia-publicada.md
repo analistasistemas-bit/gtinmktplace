@@ -137,3 +137,7 @@ das decisões D-1…D-11:
 5. **`estoqueInicial > 0` obrigatório** no formulário e na edge: cor nova com estoque 0 nasceria
    `excluida_da_publicacao` (ADR-0016) e o UPDATE rodaria sem ela — submissão inútil e confusa
    (mesmo racional anti-zumbi do D-4).
+6. **D-6 estendido para CUSTO e PRECO (2026-08-21, pedido do Diego).** Os dois também nascem
+   pré-preenchidos da mesma variação irmã, editáveis — mesmo racional do D-6 original: cor
+   diferente do mesmo produto quase nunca muda custo nem preço mínimo. Reaproveita a mesma query
+   de prefill (`fetchFamiliaCanonicaPrefill`); nenhuma chamada nova.

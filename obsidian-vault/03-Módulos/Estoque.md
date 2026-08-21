@@ -1,6 +1,6 @@
 ---
 tags: [modulo, estoque]
-atualizado: 2026-08-20
+atualizado: 2026-08-21
 ---
 
 # Estoque
@@ -93,7 +93,8 @@ Menu `⋮` do card → **Adicionar variação** (admin-only, mesmo gate do Ajust
 do cadastro manual acima (que cria família **nova**), esta ação estende uma família **já
 publicada**: clona a família mais recente + variações vivas do banco para um **lote dedicado** de
 UPDATE, insere N cores novas digitadas no formulário (foto obrigatória, CODIGO único por org,
-campos físicos pré-preenchidos de uma irmã existente), registra o estoque inicial pelo ledger e
+campos físicos **e** custo/preço mínimo pré-preenchidos de uma irmã existente, editável desde
+2026-08-21), registra o estoque inicial pelo ledger e
 encadeia `publicar-familias` diretamente — **não** `enfileirarFamilias`/Revisão, porque o dado é
 100% digitado pelo admin, não saída de IA (`process-familia` pra UPDATE só resolve cor e para em
 `pronto`, o que deixaria o lote preso esperando clique manual).

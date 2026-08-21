@@ -32,6 +32,8 @@
   e pela edge nova).
 - [x] `pnpm lint` + `pnpm test` + `npx tsc -b --force` + `deno lint`/`deno check` verdes.
   Documentação (`edge-functions.md`, `modelo-de-dados.md`, ADR-0129) atualizada no mesmo ciclo.
+- [x] **2026-08-21:** D-6 estendido — Custo e Preço mínimo (líquido) também pré-preenchidos da
+  variação irmã, editável (mesma query de prefill, sem chamada nova).
 
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 
