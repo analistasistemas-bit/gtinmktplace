@@ -33,6 +33,21 @@
 - [ ] **Pendente: deploy/push/merge** — migration, `pulse-coletar` e `analisar-viabilidade` só
   validadas localmente/dry-run; nada foi implantado. Ordem prevista em
   `.superpowers/sdd/2026-08-20-concorrentes-relevantes-pulse-viabilidade/task-8-brief.md`.
+- [x] **Revisão final adversarial (independente, diff completo desde o merge-base com main):**
+  aprovado com ressalvas, nenhum achado bloqueante. `mercado?.observado?.menor`/`vendedores` em
+  `viabilidade-linha.tsx` ganhou guard defensivo contra payload de edge ainda não implantada
+  (janela transitória de deploy front↔edge) — commit `ab26df48`, com teste de regressão que provava
+  o `TypeError` sem o guard.
+- [x] **Checagem visual em runtime real** (Vite + Playwright isolado, conta VALIDATION, dados
+  injetados via `page.route` — sem tocar dados reais nem o Chrome do Diego): confirmou os estados
+  "com relevante" e "sem concorrente relevante" no Radar, no dialog de detalhe do Pulse e na
+  Viabilidade, em tema claro e escuro, sem nenhuma divergência da spec.
+- [ ] **Limitações conhecidas, não corrigidas (aceitas como estão, revisar se incomodarem em
+  produção):** (1) oferta nova de vendedor ainda sem perfil (`transactions_total` null) que entra
+  numa coleta do tier quente (6/6h) some do diff quando o perfil chega na coleta completa seguinte —
+  o alerta `novo_concorrente` não é adiado, é perdido silenciosamente para aquela entrada específica;
+  (2) `full_relevantes` do Pulse é sempre 0 — o snapshot do Pulse não coleta logística FULL, só a
+  Viabilidade tem esse dado via API do ML.
 
 ## Sonar — Demanda ≠ Entrada no veredito (ADR-0128) — 2026-08-20
 
