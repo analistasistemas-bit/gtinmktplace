@@ -86,6 +86,9 @@ export function criarBuscasMercadoRelevante({
     if (existente) return existente as Promise<T>;
     const promessa = limitar(buscar);
     pendentes.set(chave, promessa);
+    void promessa.catch(() => {
+      if (pendentes.get(chave) === promessa) pendentes.delete(chave);
+    });
     return promessa;
   };
   return {

@@ -234,6 +234,32 @@ describe('resolverMercadoRelevante', () => {
     expect(buscarVisitas.mock.calls.map(([itemId]) => itemId).sort()).toEqual(['MLB1', 'MLB2']);
   });
 
+  it('refaz perfil e visitas depois de rejeição, mantendo dedupe após sucesso', async () => {
+    let tentativasPerfil = 0;
+    let tentativasVisitas = 0;
+    const buscarPerfil = vi.fn(async (sellerId: number) => {
+      tentativasPerfil += 1;
+      if (tentativasPerfil === 1) throw new Error('perfil indisponível');
+      return perfil(sellerId, 10);
+    });
+    const buscarVisitas = vi.fn(async () => {
+      tentativasVisitas += 1;
+      if (tentativasVisitas === 1) throw new Error('visitas indisponíveis');
+      return 4;
+    });
+    const buscas = criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas });
+
+    await expect(buscas.buscarPerfil(1)).rejects.toThrow('perfil indisponível');
+    await expect(buscas.buscarPerfil(1)).resolves.toMatchObject({ seller_id: 1 });
+    await buscas.buscarPerfil(1);
+    expect(buscarPerfil).toHaveBeenCalledTimes(2);
+
+    await expect(buscas.buscarVisitas('MLB1')).rejects.toThrow('visitas indisponíveis');
+    await expect(buscas.buscarVisitas('MLB1')).resolves.toBe(4);
+    await buscas.buscarVisitas('MLB1');
+    expect(buscarVisitas).toHaveBeenCalledTimes(2);
+  });
+
   it('limita a seis as consultas paralelas de perfil e visita', async () => {
     const { db } = dbPulse();
     let emVoo = 0;
@@ -270,49 +296,85 @@ describe('resolverMercadoRelevante', () => {
     expect(buscarVisitas).toHaveBeenCalledTimes(7);
   });
 
-  it('compartilha um único limite e dedupe entre os cinco itens do lote', async () => {
+  it('mantém perfis e visitas simultâneos sob o teto global de seis no lote', async () => {
     let emVoo = 0;
     let maximoEmVoo = 0;
-    let sinalizarSeis: (() => void) | undefined;
+    let visitasIniciadas = 0;
+    let sinalizarQuatroVisitas: (() => void) | undefined;
+    let sinalizarMistura: (() => void) | undefined;
     let liberar: (() => void) | undefined;
-    const seisEmVoo = new Promise<void>((resolve) => { sinalizarSeis = resolve; });
+    const quatroVisitasEmVoo = new Promise<void>((resolve) => { sinalizarQuatroVisitas = resolve; });
+    const tiposMisturadosEmVoo = new Promise<void>((resolve) => { sinalizarMistura = resolve; });
     const bloqueio = new Promise<void>((resolve) => { liberar = resolve; });
-    const medir = async <T,>(valor: T): Promise<T> => {
+    const porTipo = { perfil: 0, visitas: 0 };
+    const medir = async <T,>(tipo: 'perfil' | 'visitas', valor: T): Promise<T> => {
       emVoo += 1;
+      porTipo[tipo] += 1;
       maximoEmVoo = Math.max(maximoEmVoo, emVoo);
-      if (emVoo === 6) sinalizarSeis?.();
+      if (tipo === 'visitas' && ++visitasIniciadas === 4) sinalizarQuatroVisitas?.();
+      if (porTipo.perfil > 0 && porTipo.visitas > 0) sinalizarMistura?.();
       await bloqueio;
       emVoo -= 1;
+      porTipo[tipo] -= 1;
       return valor;
     };
-    const buscarPerfil = vi.fn((sellerId: number) => medir(perfil(sellerId, 10)));
-    const buscarVisitas = vi.fn((itemId: string) => medir(itemId.length));
+    const buscarPerfil = vi.fn((sellerId: number) => medir('perfil', perfil(sellerId, 10)));
+    const buscarVisitas = vi.fn((itemId: string) => medir('visitas', itemId.length));
     const buscas = criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas });
 
-    const resolucoes = Array.from({ length: 5 }, (_, indice) => {
-      const { db } = dbPulse();
+    const resolucoesVisitas = Array.from({ length: 2 }, (_, indice) => {
+      const primeiroSeller = indice * 2 + 1;
+      const { db } = dbPulse({
+        produto: { id: `pulse-${indice}`, ultimo_snapshot_em: '2026-08-21T11:00:00.000Z' },
+        ofertas: [
+          { item_id: `MLB-V-${indice}-A`, seller_id: primeiroSeller, visitas_30d: null, visitas_30d_em: null },
+          { item_id: `MLB-V-${indice}-B`, seller_id: primeiroSeller + 1, visitas_30d: null, visitas_30d_em: null },
+        ],
+        vendedores: [
+          { seller_id: primeiroSeller, transactions_total: 10, nivel: '3_yellow', perfil_coletado_em: '2026-08-21T11:00:00.000Z', dia: '2026-08-21' },
+          { seller_id: primeiroSeller + 1, transactions_total: 10, nivel: '3_yellow', perfil_coletado_em: '2026-08-21T11:00:00.000Z', dia: '2026-08-21' },
+        ],
+      });
       return resolverMercadoRelevante({
         db: db as never,
         orgId: 'org-a',
-        productId: `MCO${indice}`,
+        productId: `MCO-V-${indice}`,
         ofertas: [
-          oferta('MLB-COMPARTILHADO', 1, 70.19),
-          oferta(`MLB-${indice}`, 10 + indice, 71 + indice),
+          oferta(`MLB-V-${indice}-A`, primeiroSeller, 70.19),
+          oferta(`MLB-V-${indice}-B`, primeiroSeller + 1, 71),
         ],
         agora: AGORA,
         buscas,
       });
     });
 
-    await seisEmVoo;
-    expect(maximoEmVoo).toBeLessThanOrEqual(6);
-    liberar?.();
-    await Promise.all(resolucoes);
+    await quatroVisitasEmVoo;
+    const resolucoesPerfis = Array.from({ length: 3 }, (_, indice) => {
+      const { db } = dbPulse();
+      return resolverMercadoRelevante({
+        db: db as never,
+        orgId: 'org-a',
+        productId: `MCO-P-${indice}`,
+        ofertas: [
+          oferta(`MLB-P-${indice}-A`, 10 + indice * 2, 70.19),
+          oferta(`MLB-P-${indice}-B`, 11 + indice * 2, 71),
+        ],
+        agora: AGORA,
+        buscas,
+      });
+    });
 
-    expect(maximoEmVoo).toBeLessThanOrEqual(6);
+    await tiposMisturadosEmVoo;
+    await Promise.resolve();
+    expect(porTipo.perfil).toBeGreaterThan(0);
+    expect(porTipo.visitas).toBeGreaterThan(0);
+    // Dois limiters independentes iniciariam 4 visitas + 6 perfis = 10 chamadas.
+    expect(maximoEmVoo).toBe(6);
+    liberar?.();
+    await Promise.all([...resolucoesVisitas, ...resolucoesPerfis]);
+
     expect(buscarPerfil).toHaveBeenCalledTimes(6);
-    expect(buscarPerfil.mock.calls.filter(([sellerId]) => sellerId === 1)).toHaveLength(1);
-    expect(buscarVisitas).toHaveBeenCalledTimes(6);
-    expect(buscarVisitas.mock.calls.filter(([itemId]) => itemId === 'MLB-COMPARTILHADO')).toHaveLength(1);
+    expect(buscarVisitas).toHaveBeenCalledTimes(10);
+    expect(maximoEmVoo).toBe(6);
   });
 });
