@@ -45,6 +45,16 @@
   `STRIP_VARIACAO`, travado por teste que lê as colunas reais de `src/lib/database.types.ts`.
   Nenhum resíduo das tentativas que falharam (rollback confirmado no banco). Ver ADR-0129,
   seção "Correção pós-produção (2026-08-21)".
+- [x] **2026-08-21 — sinal de conclusão claro (relato do Diego: "sumiu, não sei se deu certo").**
+  Dois problemas achados na mesma sessão, com o backend já 100% correto (confirmado por SQL
+  direto): (1) `dialog-adicionar-variacao.tsx` invalidava `QK.produtosEstoqueResumo` (contagem do
+  cabeçalho) mas não `QK.variacoesEstoque` (a lista expandida do card, query separada em
+  `produto-card.tsx`) — a tela mostrava "Variações (11)" com só 8 linhas na tabela. (2) o badge
+  "Atualizando…" só desaparecia ao terminar, sem distinguir sucesso de qualquer outro desfecho.
+  `codigosConcluidosComSucesso` (nova, `estoque-update-status.ts`) compara dois snapshots
+  consecutivos do poll de 15s; quem sai de `atualizando` sem virar `erro` dispara toast de sucesso
+  + invalida `QK.variacoesEstoque` daquele produto (cobre também o caso do `ml_variation_id` só
+  ser atribuído depois da primeira invalidação, no submit).
 
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 

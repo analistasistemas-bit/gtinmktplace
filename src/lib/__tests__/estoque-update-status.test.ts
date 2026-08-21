@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { statusUpdatePorProduto, familiaEmVoo, type FamiliaStatusRow } from '../estoque-update-status';
+import {
+  statusUpdatePorProduto, familiaEmVoo, codigosConcluidosComSucesso, type FamiliaStatusRow,
+} from '../estoque-update-status';
 
 function row(over: Partial<FamiliaStatusRow> = {}): FamiliaStatusRow {
   return { codigo_pai: '00000100', status: 'pronto', operacao: 'UPDATE', criado_em: '2026-08-19T00:00:00Z', ...over };
@@ -61,5 +63,42 @@ describe('familiaEmVoo', () => {
   it('publicado -> false (terminal)', () => {
     const rows = [row({ status: 'publicado' })];
     expect(familiaEmVoo(rows, '00000100')).toBe(false);
+  });
+});
+
+// Achado 2026-08-21: o badge só sumia, sem confirmação — o operador não sabia se tinha dado certo.
+describe('codigosConcluidosComSucesso', () => {
+  it('atualizando -> ausente = concluiu com sucesso', () => {
+    const anterior = new Map([['00000100', 'atualizando' as const]]);
+    const atual = new Map<string, 'atualizando' | 'erro'>();
+    expect(codigosConcluidosComSucesso(anterior, atual)).toEqual(['00000100']);
+  });
+
+  it('atualizando -> erro NÃO conta (já tem badge próprio, não é sucesso)', () => {
+    const anterior = new Map([['00000100', 'atualizando' as const]]);
+    const atual = new Map([['00000100', 'erro' as const]]);
+    expect(codigosConcluidosComSucesso(anterior, atual)).toEqual([]);
+  });
+
+  it('atualizando -> atualizando (ainda em voo) não conta', () => {
+    const anterior = new Map([['00000100', 'atualizando' as const]]);
+    const atual = new Map([['00000100', 'atualizando' as const]]);
+    expect(codigosConcluidosComSucesso(anterior, atual)).toEqual([]);
+  });
+
+  it('erro -> ausente não conta (erro nunca foi "atualizando" nesse snapshot)', () => {
+    const anterior = new Map([['00000100', 'erro' as const]]);
+    const atual = new Map<string, 'atualizando' | 'erro'>();
+    expect(codigosConcluidosComSucesso(anterior, atual)).toEqual([]);
+  });
+
+  it('vários códigos, só os que saíram de atualizando entram no resultado', () => {
+    const anterior = new Map([
+      ['00000100', 'atualizando' as const],
+      ['00000200', 'atualizando' as const],
+      ['00000300', 'erro' as const],
+    ]);
+    const atual = new Map([['00000200', 'atualizando' as const]]);
+    expect(codigosConcluidosComSucesso(anterior, atual)).toEqual(['00000100']);
   });
 });

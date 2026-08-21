@@ -220,6 +220,11 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
       };
       qc.invalidateQueries({ queryKey: QK.familiasNaoPublicadas });
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
+      // Achado 2026-08-21: as linhas novas já existem no banco neste ponto (o INSERT já rodou
+      // na edge) — sem isso, a lista expandida do card (fetchVariacoesProduto, QK diferente do
+      // resumo acima) ficava presa no cache antigo e o operador via a contagem certa mas a
+      // tabela errada.
+      qc.invalidateQueries({ queryKey: QK.variacoesEstoque(produto.codigoPai) });
       toast.success('✓ Variações enviadas — atualizando o anúncio');
       if (!r.publicacaoOk) {
         toast.warning('Gravado, mas a publicação não foi disparada — conclua pela tela Lotes.');

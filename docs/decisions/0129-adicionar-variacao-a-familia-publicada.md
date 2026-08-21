@@ -210,3 +210,27 @@ diálogo funciona. Único efeito cosmético: buracos na sequência de `proximo_n
 Lacuna residual conhecida: `database.types.ts` não tem check de regeneração no CI, então o teste
 pega "coluna nova + types regenerados + builder esquecido", mas não "coluna nova e types nunca
 regenerados". Fechar isso exigiria consultar o schema vivo no CI.
+
+## Correção pós-produção (2026-08-21) — sinal de conclusão ausente na tela
+
+Com o hotfix acima já deployado, o Diego salvou de verdade (3 cores novas, todas publicadas no ML
+com `ml_variation_id` real — confirmado por SQL) e reportou: "apareceu uma mensagem atualizando e
+depois sumiu, não atualizou nada na tela, não sei se deu certo". O backend estava correto; dois
+bugs de frontend, achados sem tocar em `supabase/functions/`:
+
+1. **A lista expandida do card não atualizava.** O submit invalidava `QK.produtosEstoqueResumo`
+   (contagem do cabeçalho) mas não `QK.variacoesEstoque(codigoPai)` — a query separada que
+   `produto-card.tsx` usa pra buscar as linhas da tabela (`fetchVariacoesProduto`, RPC
+   `variacoes_estoque_produto`). Resultado: cabeçalho mostrava "Variações (11)" com só 8 linhas
+   renderizadas — o dado certo já estava no banco, só a query errada de cache nunca foi refeita.
+2. **Nenhum sinal positivo de conclusão.** O badge "Atualizando…" (D-11) só some quando a família
+   sai do estado não-terminal — comportamento correto, mas indistinguível de qualquer outro jeito
+   de sumir aos olhos do operador. `erro` já tinha badge persistente próprio; só faltava o
+   caminho de sucesso.
+
+**Correção.** `codigosConcluidosComSucesso` (`estoque-update-status.ts`) compara dois snapshots
+consecutivos do poll de 15s já existente (`Estoque.tsx`) e devolve os `codigo_pai` que saíram de
+`atualizando` **sem** virar `erro` — só esse caminho dispara `toast.success` + invalida
+`QK.variacoesEstoque(codigoPai)`. Cobre também o hiato entre o toast imediato do submit (as
+linhas já existem no banco, mas `ml_variation_id` ainda não) e o momento em que a publicação
+assíncrona termina de verdade.

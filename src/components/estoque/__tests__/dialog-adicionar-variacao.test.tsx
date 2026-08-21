@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { DialogAdicionarVariacao } from '../dialog-adicionar-variacao';
+import { QK } from '@/lib/queries';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 import type { FamiliaStatusRow } from '@/lib/estoque-update-status';
 
@@ -67,8 +68,7 @@ const produto: ProdutoEstoqueResumo = {
   gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'], nomes: [],
 };
 
-function renderDialog(onFechar = vi.fn()) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderDialog(onFechar = vi.fn(), qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   render(
     <QueryClientProvider client={qc}>
       <DialogAdicionarVariacao produto={produto} aberto onFechar={onFechar} />
@@ -259,6 +259,29 @@ describe('DialogAdicionarVariacao', () => {
     const [, opts] = invokeMock.mock.calls[0] as [string, { body: Record<string, unknown> }];
     const variacoes = opts.body.variacoes as Array<Record<string, unknown>>;
     expect(variacoes[0]).toMatchObject({ custo: 12.5, preco: 29.9 });
+  });
+
+  // Achado 2026-08-21: a contagem do card (QK.produtosEstoqueResumo) já era invalidada, mas a
+  // lista EXPANDIDA de variações (QK.variacoesEstoque, query separada — produto-card.tsx) não —
+  // o operador via "(11)" no cabeçalho e só 8 linhas na tabela, sem nenhuma indicação de que
+  // faltava atualizar.
+  it('submit com sucesso invalida a lista de variações do produto (QK.variacoesEstoque)', async () => {
+    invokeMock.mockResolvedValue({
+      data: { loteId: 'lote-1', familiaId: 'fam-nova-1', publicacaoOk: true, falhasEstoque: [] },
+      error: null,
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    const user = userEvent.setup();
+    renderDialog(vi.fn(), qc);
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await preencherLinha(user, 1, { codigo: '00000006' });
+    await waitFor(() => expect(BOTAO_SALVAR()).not.toBeDisabled());
+
+    await user.click(BOTAO_SALVAR());
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: QK.variacoesEstoque(produto.codigoPai) });
   });
 
   // "200 não prova canal atualizado" — mesmo racional do push de estoque no ML

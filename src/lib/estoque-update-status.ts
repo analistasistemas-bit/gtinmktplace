@@ -52,3 +52,22 @@ export function statusUpdatePorProduto(
 export function familiaEmVoo(rows: FamiliaStatusRow[], codigoPai: string): boolean {
   return rows.some((r) => r.codigo_pai === codigoPai && r.status !== 'publicado' && r.status !== 'erro');
 }
+
+/**
+ * Achado 2026-08-21: o badge "Atualizando…" só SOME quando o UPDATE termina — sem distinguir
+ * "terminou com sucesso" de "sumiu por algum outro motivo", o operador fica sem sinal nenhum
+ * (relato do Diego: "sumiu, não atualizou nada na tela, aviso nenhum"). `erro` já tem seu próprio
+ * badge persistente — só o caminho `atualizando -> ausente` (== virou `publicado`) precisa de
+ * confirmação explícita. Compara dois snapshots consecutivos do poll de 15s (Estoque.tsx) e
+ * devolve os `codigo_pai` que terminaram com sucesso desde o snapshot anterior.
+ */
+export function codigosConcluidosComSucesso(
+  anterior: Map<string, StatusUpdateProduto>,
+  atual: Map<string, StatusUpdateProduto>,
+): string[] {
+  const out: string[] = [];
+  for (const [codigoPai, status] of anterior) {
+    if (status === 'atualizando' && !atual.has(codigoPai)) out.push(codigoPai);
+  }
+  return out;
+}

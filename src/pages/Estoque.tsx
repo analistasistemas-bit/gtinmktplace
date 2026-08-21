@@ -1,8 +1,8 @@
 // E6b (ADR-0094): tela do módulo Estoque — saldo por produto, entrada de mercadoria e
 // trilha de auditoria dos movimentos.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Boxes, Plus, PackagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,10 @@ import {
   fetchProdutosEstoqueResumo, fetchCanaisPorProduto,
   type ProdutoComSaldo, type ProdutoEstoqueResumo,
 } from '@/lib/produtos-saldo';
-import { fetchFamiliasNaoPublicadas, statusUpdatePorProduto } from '@/lib/estoque-update-status';
+import {
+  fetchFamiliasNaoPublicadas, statusUpdatePorProduto, codigosConcluidosComSucesso,
+  type StatusUpdateProduto,
+} from '@/lib/estoque-update-status';
 import { useProfile } from '@/hooks/useProfile';
 import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
 
@@ -33,6 +36,7 @@ const RESUMO_VAZIO: ResumoEstoque = {
 };
 
 export default function Estoque() {
+  const qc = useQueryClient();
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
   const [busca, setBusca] = useState('');
   const [filtro, setFiltro] = useState<FiltroEstoque>('todos');
@@ -63,8 +67,26 @@ export default function Estoque() {
   });
   const statusMap = useMemo(() => statusUpdatePorProduto(famRows ?? []), [famRows]);
 
-  const produtos = estoque?.produtos ?? [];
+  // useMemo (não literal ?? []): referência estável entre renders — o efeito de conclusão do
+  // update (abaixo) depende de `produtos` só pra achar o nome do produto no toast, e um array
+  // novo a cada render faria o efeito rodar toda hora à toa.
+  const produtos = useMemo(() => estoque?.produtos ?? [], [estoque]);
   const resumo = estoque?.kpis ?? RESUMO_VAZIO;
+
+  // Achado 2026-08-21: o badge "Atualizando…" só sumia quando o UPDATE terminava — sem
+  // confirmação, o operador ficava sem saber se deu certo (relato do Diego). Compara o snapshot
+  // do poll anterior com o atual; quem saiu de "atualizando" sem virar "erro" terminou com
+  // sucesso — toast explícito + invalida a lista de variações do card (mesma lacuna que fazia a
+  // tabela expandida ficar presa no cache antigo mesmo com a contagem já certa).
+  const statusMapAnteriorRef = useRef<Map<string, StatusUpdateProduto>>(new Map());
+  useEffect(() => {
+    for (const codigoPai of codigosConcluidosComSucesso(statusMapAnteriorRef.current, statusMap)) {
+      const nome = produtos.find((p) => p.codigoPai === codigoPai)?.nomePai ?? codigoPai;
+      toast.success(`✓ "${nome}" atualizado no Mercado Livre`);
+      qc.invalidateQueries({ queryKey: QK.variacoesEstoque(codigoPai) });
+    }
+    statusMapAnteriorRef.current = statusMap;
+  }, [statusMap, produtos, qc]);
 
   const {
     data: canaisPorProduto, isLoading: canaisLoading, isError: canaisErro,

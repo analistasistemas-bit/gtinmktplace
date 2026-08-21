@@ -3,9 +3,15 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import { toast } from 'sonner';
 import Estoque from '../Estoque';
 import { QK } from '@/lib/queries';
 import type { ProdutoEstoqueResumo, ResumoEstoqueRpc } from '@/lib/produtos-saldo';
+import type { FamiliaStatusRow } from '@/lib/estoque-update-status';
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+}));
 
 // `typeof import(...)` em vez de `import type { filtrarProdutos as X }`: importar um VALOR sob
 // `import type` não produz um tipo utilizável em `Parameters<X>`/`ReturnType<X>` — TS recusa com
@@ -34,9 +40,12 @@ vi.mock('@/hooks/useModulosHabilitados', () => ({
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
 // ADR-0129 D-11: query de status por produto (badge no card) — sem mock, bateria na rede real
 // a cada render desta suíte. statusUpdatePorProduto continua o de verdade (função pura).
+// famRowsMock controlável (não fixo em []): o teste do sinal de conclusão precisa simular um
+// segundo tick do poll de 15s com um snapshot diferente do primeiro.
+const famRowsMock = vi.fn<() => FamiliaStatusRow[]>(() => []);
 vi.mock('@/lib/estoque-update-status', async (orig) => ({
   ...(await orig<typeof import('@/lib/estoque-update-status')>()),
-  fetchFamiliasNaoPublicadas: () => Promise.resolve([]),
+  fetchFamiliasNaoPublicadas: () => Promise.resolve(famRowsMock()),
 }));
 vi.mock('@/lib/produtos-saldo', async (orig) => ({
   ...(await orig<typeof import('@/lib/produtos-saldo')>()),
@@ -74,6 +83,9 @@ describe('Estoque', () => {
   afterEach(() => {
     fetchCanaisPorProdutoMock.mockReset();
     fetchCanaisPorProdutoMock.mockImplementation(() => Promise.resolve(new Map()));
+    famRowsMock.mockReset();
+    famRowsMock.mockReturnValue([]);
+    vi.mocked(toast.success).mockReset();
   });
 
   it('busca por GTIN encontra o produto', async () => {
@@ -184,5 +196,50 @@ describe('Estoque', () => {
     }
     // E a lista de fato não fica vazia no estado final.
     expect(screen.getByText('Protetor Solar')).toBeInTheDocument();
+  });
+
+  // Achado 2026-08-21: o badge "Atualizando…" só sumia — sem toast nem invalidação da lista
+  // expandida do card, o operador ficava sem saber se tinha dado certo (relato do Diego).
+  it('família sai de "atualizando" sem virar erro: toast de sucesso + invalida a lista de variações do card', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+    famRowsMock.mockReturnValue([{
+      codigo_pai: '00000004', status: 'publicando', operacao: 'UPDATE', criado_em: '2026-08-21T10:00:00Z',
+    }]);
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><Estoque /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Atualizando…');
+
+    // Simula o próximo tick do poll de 15s: a família já não está mais na lista de não-publicadas.
+    famRowsMock.mockReturnValue([]);
+    await qc.refetchQueries({ queryKey: QK.familiasNaoPublicadas });
+
+    await waitFor(() => expect(screen.queryByText('Atualizando…')).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith('✓ "Protetor Solar" atualizado no Mercado Livre');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: QK.variacoesEstoque('00000004') });
+  });
+
+  it('família sai de "atualizando" virando "erro": sem toast de sucesso (já tem o badge vermelho próprio)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    famRowsMock.mockReturnValue([{
+      codigo_pai: '00000004', status: 'publicando', operacao: 'UPDATE', criado_em: '2026-08-21T10:00:00Z',
+    }]);
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><Estoque /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText('Atualizando…');
+
+    famRowsMock.mockReturnValue([{
+      codigo_pai: '00000004', status: 'erro', operacao: 'UPDATE', criado_em: '2026-08-21T10:05:00Z',
+    }]);
+    await qc.refetchQueries({ queryKey: QK.familiasNaoPublicadas });
+
+    await screen.findByText('Erro na última atualização');
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });
