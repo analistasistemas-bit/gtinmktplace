@@ -121,6 +121,23 @@ describe('diffOfertas', () => {
     expect(diffOfertas(anteriores, atuais).alertas).toEqual([]);
   });
 
+  it('histórico só fora da referência não suprime alerta da primeira entrada relevante', () => {
+    const anterioresBrutos = [
+      anteriorQualificavel({ item_id: 'MLB-FORA', transactions_total: 0 }),
+    ];
+    const anteriores = entradaDiffRelevante(anterioresBrutos);
+    const atuais = entradaDiffRelevante([
+      ofertaQualificavel({ item_id: 'MLB-RELEVANTE', seller_id: 2, preco: 90 }),
+    ]);
+
+    expect(diffOfertas(anteriores, atuais, {
+      primeiraColeta: anterioresBrutos.length === 0,
+    }).alertas).toContainEqual({
+      tipo: 'novo_concorrente',
+      payload: { item_id: 'MLB-RELEVANTE', seller_id: 2, preco: 90 },
+    });
+  });
+
   it('não alerta queda de preço causada por oferta fora da referência', () => {
     const anteriores = entradaDiffRelevante([anteriorQualificavel({ item_id: 'MLB1', preco: 100 })]);
     const atuais = entradaDiffRelevante([

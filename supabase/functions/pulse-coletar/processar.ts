@@ -256,7 +256,9 @@ async function gravarAlertasRelevantes(
         visitasAtuais.get(chaveOferta(pendente.produtoId, oferta.item_id)) ?? null,
       ),
     ));
-    const { alertas } = diffOfertas(anteriores, atuais);
+    const { alertas } = diffOfertas(anteriores, atuais, {
+      primeiraColeta: pendente.anteriores.length === 0,
+    });
     if (alertas.length === 0) continue;
     if (!pendente.estadoGravado) {
       console.warn(

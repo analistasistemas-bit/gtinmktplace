@@ -35,9 +35,13 @@ const mudou = (a: OfertaAnterior, b: OfertaColetada) =>
  * (última linha por item_id). Primeiro snapshot (anteriores vazio) grava tudo
  * e NÃO alerta — evita spam no dia em que o produto entra no radar.
  */
-export function diffOfertas(anteriores: OfertaAnterior[], atuais: OfertaColetada[]): DiffOfertas {
+export function diffOfertas(
+  anteriores: OfertaAnterior[],
+  atuais: OfertaColetada[],
+  opcoes?: { primeiraColeta?: boolean },
+): DiffOfertas {
   const antesPorItem = new Map(anteriores.map((o) => [o.item_id, o]));
-  const primeiraColeta = anteriores.length === 0;
+  const primeiraColeta = opcoes?.primeiraColeta ?? anteriores.length === 0;
   const gravar: OfertaColetada[] = [];
   const alertas: AlertaNovo[] = [];
 
