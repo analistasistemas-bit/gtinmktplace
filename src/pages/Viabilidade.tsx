@@ -159,13 +159,6 @@ export default function Viabilidade() {
           )}
           {itens.length > 0 && (
             <>
-              {categoriaMlId && analise.data?.me2Habilitado === true && !analise.isPending && (
-                <TabelaFreteViabilidade
-                  categoriaMlId={categoriaMlId}
-                  categoriasMistas={categoriasMistas}
-                  analiseConcluida={analiseConcluida}
-                />
-              )}
               <div className="rounded-lg border border-border shadow-sm">
               {analise.data!.ignorados > 0 && (
                 <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
@@ -174,6 +167,13 @@ export default function Viabilidade() {
               )}
               <Tabela itens={itens} editavel={analise.variables?.tipo === 'gtins'} />
               </div>
+              {categoriaMlId && analise.data?.me2Habilitado === true && !analise.isPending && (
+                <TabelaFreteViabilidade
+                  categoriaMlId={categoriaMlId}
+                  categoriasMistas={categoriasMistas}
+                  analiseConcluida={analiseConcluida}
+                />
+              )}
             </>
           )}
         </TabsContent>
