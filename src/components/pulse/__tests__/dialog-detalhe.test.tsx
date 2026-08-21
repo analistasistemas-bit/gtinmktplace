@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { DialogDetalhe } from '../dialog-detalhe';
 import type { PulseOferta, PulseProduto, PulseVendedor } from '@/lib/pulse';
 
@@ -182,24 +183,37 @@ describe('DialogDetalhe — concorrentes relevantes', () => {
     expect(screen.getByText('Reputação amarela')).toBeInTheDocument();
   });
 
-  it('expõe os detalhes da conta em disclosure acionável por teclado e toque', () => {
+  it('expõe os detalhes da conta em disclosure acionável por teclado', async () => {
+    const user = userEvent.setup();
     renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
 
     const reputacao = screen.getByText('Reputação amarela');
     const disclosure = reputacao.closest('details');
     expect(disclosure).not.toBeNull();
-    const resumo = within(disclosure!).getByText('Reputação amarela');
+    const resumo = reputacao.closest('summary');
+    expect(resumo).not.toBeNull();
+    expect(resumo).toHaveAccessibleName('Reputação amarela. Vendedor: OUTRO-VENDEDOR. Ver detalhes da conta');
+    expect(disclosure).not.toHaveAttribute('open');
     resumo.focus();
     expect(resumo).toHaveFocus();
-    fireEvent.click(resumo);
+    await user.keyboard('{Enter}');
 
     expect(disclosure).toHaveAttribute('open');
-    expect(within(disclosure!).getAllByText('Período')).not.toHaveLength(0);
-    expect(within(disclosure!).getAllByText(/^Taxa/)).not.toHaveLength(0);
-    expect(within(disclosure!).getAllByText(/^Quantidade/)).not.toHaveLength(0);
-    expect(within(disclosure!).getByText('Reclamações')).toBeInTheDocument();
-    expect(within(disclosure!).getByText('Atrasos')).toBeInTheDocument();
-    expect(within(disclosure!).getByText('Cancelamentos')).toBeInTheDocument();
+    const reclamacoes = within(disclosure!).getByText('Reclamações').parentElement!;
+    expect(reclamacoes).toHaveTextContent(/Período\s*60 days/);
+    expect(reclamacoes).toHaveTextContent(/Taxa\s*1\.0%/);
+    expect(reclamacoes).toHaveTextContent(/Quantidade\s*1/);
+    const atrasos = within(disclosure!).getByText('Atrasos').parentElement!;
+    expect(atrasos).toHaveTextContent(/Período\s*60 days/);
+    expect(atrasos).toHaveTextContent(/Taxa\s*2\.0%/);
+    expect(atrasos).toHaveTextContent(/Quantidade\s*2/);
+    const cancelamentos = within(disclosure!).getByText('Cancelamentos').parentElement!;
+    expect(cancelamentos).toHaveTextContent(/Período\s*60 days/);
+    expect(cancelamentos).toHaveTextContent(/Taxa\s*3\.0%/);
+    expect(cancelamentos).toHaveTextContent(/Quantidade\s*3/);
+
+    await user.keyboard('{Enter}');
+    expect(disclosure).not.toHaveAttribute('open');
   });
 
   it('mostra ofertas em observação apenas ao incluir todas', () => {

@@ -78,7 +78,7 @@ function registro(valor: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function DetalhesConta({ vendedor, rotulo }: { vendedor: PulseVendedor | undefined; rotulo: string }) {
+function DetalhesConta({ vendedor, rotulo, nome }: { vendedor: PulseVendedor | undefined; rotulo: string; nome: string }) {
   const detalhe = vendedor?.reputacao_detalhe;
   const transacoes = registro(detalhe?.transactions);
   if (!transacoes) return <span className="text-xs">{rotulo}</span>;
@@ -93,8 +93,16 @@ function DetalhesConta({ vendedor, rotulo }: { vendedor: PulseVendedor | undefin
 
   return (
     <details className="text-xs">
-      <summary className="cursor-pointer text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {rotulo}<span className="sr-only">. Ver detalhes da conta</span>
+      <summary
+        className="cursor-pointer text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.currentTarget.click();
+          }
+        }}
+      >
+        {rotulo}<span className="sr-only">. Vendedor: {nome}. Ver detalhes da conta</span>
       </summary>
       <dl className="mt-2 space-y-2 border-l pl-2 text-muted-foreground">
         {typeof transacoes.period === 'string' && <div><dt className="font-medium text-foreground">Período</dt><dd>{transacoes.period}</dd></div>}
@@ -258,7 +266,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       sortValue: (o) => vendedorAtualDe(o)?.nivel,
       cell: (o) => {
         const vendedor = vendedorAtualDe(o);
-        return <DetalhesConta vendedor={vendedor} rotulo={rotuloReputacao(vendedor?.nivel ?? null)} />;
+        return <DetalhesConta vendedor={vendedor} rotulo={rotuloReputacao(vendedor?.nivel ?? null)} nome={nomeDe(o)} />;
       },
     },
     {
