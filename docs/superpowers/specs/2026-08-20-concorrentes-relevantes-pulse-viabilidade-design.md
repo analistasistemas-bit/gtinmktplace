@@ -1,6 +1,6 @@
 # Concorrentes relevantes no Pulse e na Viabilidade
 
-**Status:** aprovado em conversa; aguardando revisão do documento  
+**Status:** aprovado por Diego em 2026-08-20  
 **Data:** 2026-08-20  
 **Decisor de produto:** Diego
 
