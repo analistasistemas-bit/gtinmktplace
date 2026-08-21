@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { OfertaVendedor } from '../../concorrencia/tipos.ts';
 import type { PerfilVendedor } from '../../ml/perfil-vendedor.ts';
-import { resolverMercadoRelevante } from '../mercado-relevante.ts';
+import { criarBuscasMercadoRelevante, resolverMercadoRelevante } from '../mercado-relevante.ts';
 
 const AGORA = new Date('2026-08-21T12:00:00.000Z');
 
@@ -133,13 +133,15 @@ describe('resolverMercadoRelevante', () => {
       productId: 'MCO123',
       ofertas: [oferta('MLB36', 1, 36), oferta('MLB70', 2, 70.19)],
       agora: AGORA,
-      buscarPerfil,
-      buscarVisitas,
+      buscas: criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas }),
     });
 
     expect(resultado.menor).toBe(70.19);
+    expect(resultado.maior).toBe(70.19);
     expect(resultado.observado.menor).toBe(36);
     expect(resultado.vendedores).toBe(1);
+    expect(resultado.freteGratis).toBe(1);
+    expect(resultado.full).toBe(1);
     expect(resultado.observado.vendedores).toBe(2);
     expect(resultado.ofertas).toBe(1);
     expect(resultado.observado.ofertas).toBe(2);
@@ -171,8 +173,7 @@ describe('resolverMercadoRelevante', () => {
       productId: 'MCO123',
       ofertas: [oferta('MLB36', 1, 36), oferta('MLB80', 2, 80)],
       agora: AGORA,
-      buscarPerfil,
-      buscarVisitas,
+      buscas: criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas }),
     });
 
     expect(resultado).toMatchObject({
@@ -206,8 +207,7 @@ describe('resolverMercadoRelevante', () => {
       productId: 'MCO123',
       ofertas: [oferta('MLB70', 2, 70.19)],
       agora: AGORA,
-      buscarPerfil,
-      buscarVisitas,
+      buscas: criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas }),
     });
 
     expect(buscarPerfil).not.toHaveBeenCalled();
@@ -226,8 +226,7 @@ describe('resolverMercadoRelevante', () => {
       productId: 'MCO123',
       ofertas: [oferta('MLB1', 1, 70), oferta('MLB1', 1, 71), oferta('MLB2', 1, 72)],
       agora: AGORA,
-      buscarPerfil,
-      buscarVisitas,
+      buscas: criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas }),
     });
 
     expect(resultado.ofertas).toBe(3);
@@ -259,8 +258,7 @@ describe('resolverMercadoRelevante', () => {
       productId: 'MCO123',
       ofertas: Array.from({ length: 7 }, (_, indice) => oferta(`MLB${indice}`, indice, 70 + indice)),
       agora: AGORA,
-      buscarPerfil,
-      buscarVisitas,
+      buscas: criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas }),
     });
 
     await seisEmVoo;
@@ -270,5 +268,51 @@ describe('resolverMercadoRelevante', () => {
     expect(maximoEmVoo).toBe(6);
     expect(buscarPerfil).toHaveBeenCalledTimes(7);
     expect(buscarVisitas).toHaveBeenCalledTimes(7);
+  });
+
+  it('compartilha um único limite e dedupe entre os cinco itens do lote', async () => {
+    let emVoo = 0;
+    let maximoEmVoo = 0;
+    let sinalizarSeis: (() => void) | undefined;
+    let liberar: (() => void) | undefined;
+    const seisEmVoo = new Promise<void>((resolve) => { sinalizarSeis = resolve; });
+    const bloqueio = new Promise<void>((resolve) => { liberar = resolve; });
+    const medir = async <T,>(valor: T): Promise<T> => {
+      emVoo += 1;
+      maximoEmVoo = Math.max(maximoEmVoo, emVoo);
+      if (emVoo === 6) sinalizarSeis?.();
+      await bloqueio;
+      emVoo -= 1;
+      return valor;
+    };
+    const buscarPerfil = vi.fn((sellerId: number) => medir(perfil(sellerId, 10)));
+    const buscarVisitas = vi.fn((itemId: string) => medir(itemId.length));
+    const buscas = criarBuscasMercadoRelevante({ buscarPerfil, buscarVisitas });
+
+    const resolucoes = Array.from({ length: 5 }, (_, indice) => {
+      const { db } = dbPulse();
+      return resolverMercadoRelevante({
+        db: db as never,
+        orgId: 'org-a',
+        productId: `MCO${indice}`,
+        ofertas: [
+          oferta('MLB-COMPARTILHADO', 1, 70.19),
+          oferta(`MLB-${indice}`, 10 + indice, 71 + indice),
+        ],
+        agora: AGORA,
+        buscas,
+      });
+    });
+
+    await seisEmVoo;
+    expect(maximoEmVoo).toBeLessThanOrEqual(6);
+    liberar?.();
+    await Promise.all(resolucoes);
+
+    expect(maximoEmVoo).toBeLessThanOrEqual(6);
+    expect(buscarPerfil).toHaveBeenCalledTimes(6);
+    expect(buscarPerfil.mock.calls.filter(([sellerId]) => sellerId === 1)).toHaveLength(1);
+    expect(buscarVisitas).toHaveBeenCalledTimes(6);
+    expect(buscarVisitas.mock.calls.filter(([itemId]) => itemId === 'MLB-COMPARTILHADO')).toHaveLength(1);
   });
 });

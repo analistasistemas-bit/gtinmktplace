@@ -7,13 +7,17 @@ import { adminClient } from '../_shared/supabase.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { buscarConcorrencia } from '../_shared/ml/concorrencia.ts';
-import { buscarListingPrice, comissaoDe } from '../_shared/ml/listing-prices.ts';
+import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
-import { dimensoesValidas, type DimensoesPacote } from '../_shared/ml/pacote.ts';
+import type { DimensoesPacote } from '../_shared/ml/pacote.ts';
 import { extrairItensAnalise } from '../_shared/analise/extrair-itens.ts';
-import { resolverMercadoRelevante } from '../_shared/analise/mercado-relevante.ts';
+import { criarBuscasMercadoRelevante, resolverMercadoRelevante } from '../_shared/analise/mercado-relevante.ts';
+import {
+  analisarItemViabilidade,
+  type AnalisarItemViabilidadeDependencias,
+} from '../_shared/analise/analisar-item-viabilidade.ts';
 import { resumirVariacoesSalvas, type VariacaoSalvaResumo } from '../_shared/analise/variacao-salva.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
 
@@ -36,82 +40,58 @@ async function buscarVariacaoSalva(
   return resumirVariacoesSalvas(data ?? []);
 }
 
-async function analisarItem(
-  db: SupabaseClient, orgId: string, conexao: ConexaoCanal | null, item: ItemAnalise,
-): Promise<ItemAnalisado> {
-  const base: ItemAnalisado = {
-    gtin: item.gtin, nome: item.nome, unidade: item.unidade,
-    minimo: item.minimo, custo: item.custo, origem: item.origem, existeNoML: false,
+function criarDependencias(
+  db: SupabaseClient,
+  orgId: string,
+  conexao: ConexaoCanal | null,
+): AnalisarItemViabilidadeDependencias {
+  let tokenPromise: Promise<string | null> | undefined;
+  const obterToken = () => {
+    tokenPromise ??= conexao
+      ? getValidAccessTokenConexao(conexao).catch(() => null)
+      : Promise.resolve(null);
+    return tokenPromise;
   };
-  try {
-    const conc = await buscarConcorrencia(conexao, {
-      nome_pai: item.nome, variacoes: [{ gtin: item.gtin }],
-    });
-    if (!conc.product_id) return base;
-
-    // A categoria vem das próprias ofertas (GET /products/{id} não retorna category_id).
-    const categoria = conc.ofertas?.category_id ?? null;
-
-    // Select sempre chamado (T4): jaCadastrado precisa dele mesmo quando o caller já informou
-    // dimensões (senão o recálculo do FormDimensoes apagaria o sinal). Dimensão informada pelo
-    // caller (modo GTIN colado, recálculo) tem precedência sobre a salva; sem ela, tenta achar no
-    // produto já cadastrado antes de cair no pacote genérico (16x11x6cm/300g) do frete.ts.
-    const dimensoesInformadas = item.dimensoes && dimensoesValidas(item.dimensoes);
-    const salva = await buscarVariacaoSalva(db, orgId, item.gtin);
-    let token: string | null = null;
-    if (conexao) token = await getValidAccessTokenConexao(conexao).catch(() => null);
-    const mercado = await resolverMercadoRelevante({
+  const buscas = criarBuscasMercadoRelevante({
+    buscarPerfil: async (sellerId) => {
+      const token = await obterToken();
+      return token ? buscarPerfilVendedor(token, sellerId) : null;
+    },
+    buscarVisitas: async (itemId) => {
+      const token = await obterToken();
+      return token ? buscarVisitas30d(token, itemId) : null;
+    },
+  });
+  return {
+    buscarConcorrencia: (familia) => buscarConcorrencia(conexao, familia),
+    buscarVariacaoSalva: (gtin) => buscarVariacaoSalva(db, orgId, gtin),
+    obterToken,
+    resolverMercado: (productId, ofertas) => resolverMercadoRelevante({
       db,
       orgId,
-      productId: conc.product_id,
-      ofertas: conc.ofertas?.ofertas_detalhe ?? [],
-      buscarPerfil: token
-        ? (sellerId) => buscarPerfilVendedor(token, sellerId)
-        : () => Promise.resolve(null),
-      buscarVisitas: token
-        ? (itemId) => buscarVisitas30d(token, itemId)
-        : () => Promise.resolve(null),
-    });
-    const resultado: ItemAnalisado = {
-      ...base,
-      // Modo GTIN não tem nome (vem = gtin); usa o nome do produto de catálogo do ML.
-      nome: item.nome && item.nome !== item.gtin ? item.nome : (conc.product_name ?? item.gtin),
-      existeNoML: true,
-      mercado,
-      descricaoCatalogo: conc.descricao_catalogo ?? null,
-      categoriaMlId: categoria,
-      // Heurística de UX (casa por GTIN) — não é o guard; o 409 de cadastrar-produto continua autoritativo.
-      jaCadastrado: salva.jaCadastrado,
-    };
-    if (mercado.menor == null || !categoria || !token) return resultado;
-
-    const dimensoes = dimensoesInformadas ? item.dimensoes! : salva.dimensoes;
-    const mlUserId = conexao?.contaExternaId || 'me';
-    const [classicoML, premiumML, frete] = await Promise.all([
-      buscarListingPrice(token, mercado.menor, categoria, 'gold_special'),
-      buscarListingPrice(token, mercado.menor, categoria, 'gold_pro'),
-      buscarFreteVendedor(token, mlUserId, mercado.menor, categoria, dimensoes),
-    ]);
-    return {
-      ...resultado,
-      classico: { saleFeeAmount: classicoML.sale_fee_amount ?? 0, ...comissaoDe(classicoML) },
-      premium: { saleFeeAmount: premiumML.sale_fee_amount ?? 0, ...comissaoDe(premiumML) },
-      frete,
-      dimensoesEncontradas: dimensoes != null,
-    };
-  } catch (e) {
-    console.warn(`analisarItem ${item.gtin} falhou: ${(e as Error).message}`);
-    return { ...base, erro: true };
-  }
+      productId,
+      ofertas,
+      buscas,
+    }),
+    buscarListingPrice,
+    buscarFreteVendedor,
+  };
 }
 
 async function emLotes(
   db: SupabaseClient, orgId: string, conexao: ConexaoCanal | null, itens: ItemAnalise[],
 ): Promise<ItemAnalisado[]> {
+  const deps = criarDependencias(db, orgId, conexao);
+  const contaExternaId = conexao?.contaExternaId ?? null;
   const out: ItemAnalisado[] = [];
   for (let i = 0; i < itens.length; i += LOTE) {
     const fatia = itens.slice(i, i + LOTE);
-    out.push(...(await Promise.all(fatia.map((it) => analisarItem(db, orgId, conexao, it)))));
+    const analisados = await Promise.all(fatia.map((item) => analisarItemViabilidade({
+      item,
+      contaExternaId,
+      deps,
+    })));
+    out.push(...analisados);
   }
   return out;
 }

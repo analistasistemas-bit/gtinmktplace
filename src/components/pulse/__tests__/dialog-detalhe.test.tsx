@@ -192,6 +192,7 @@ describe('DialogDetalhe — concorrentes relevantes', () => {
     expect(disclosure).not.toBeNull();
     const resumo = reputacao.closest('summary');
     expect(resumo).not.toBeNull();
+    if (!resumo) throw new Error('Resumo de reputação ausente');
     expect(resumo).toHaveAccessibleName('Reputação amarela. Vendedor: OUTRO-VENDEDOR. Ver detalhes da conta');
     expect(disclosure).not.toHaveAttribute('open');
     resumo.focus();

@@ -1,5 +1,4 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { pool } from '../concorrencia/pool.ts';
 import { resumirMercadoQualificado, type OfertaQualificavel } from '../concorrencia/qualificacao.ts';
 import type { OfertaVendedor } from '../concorrencia/tipos.ts';
 import type { PerfilVendedor } from '../ml/perfil-vendedor.ts';
@@ -37,8 +36,62 @@ export interface ResolverMercadoRelevanteArgs {
   productId: string;
   ofertas: OfertaVendedor[];
   agora?: Date;
+  buscas: BuscasMercadoRelevante;
+}
+
+export interface BuscasMercadoRelevante {
   buscarPerfil: (sellerId: number) => Promise<PerfilVendedor | null>;
   buscarVisitas: (itemId: string) => Promise<number | null>;
+}
+
+export interface CriarBuscasMercadoRelevanteArgs extends BuscasMercadoRelevante {
+  limite?: number;
+}
+
+function criarLimitador(limite: number) {
+  const maximo = Math.max(1, limite);
+  let emVoo = 0;
+  const fila: Array<() => void> = [];
+
+  return async function limitar<T>(tarefa: () => Promise<T>): Promise<T> {
+    let reservado = false;
+    if (emVoo >= maximo) {
+      await new Promise<void>((resolve) => fila.push(resolve));
+      reservado = true;
+    }
+    if (!reservado) emVoo += 1;
+    try {
+      return await tarefa();
+    } finally {
+      const proximo = fila.shift();
+      if (proximo) proximo();
+      else emVoo -= 1;
+    }
+  };
+}
+
+/**
+ * Coordena as buscas ML do lote inteiro: perfil e visitas dividem os mesmos seis slots,
+ * e uma promessa por chave evita repetir a mesma consulta em itens paralelos.
+ */
+export function criarBuscasMercadoRelevante({
+  buscarPerfil,
+  buscarVisitas,
+  limite = LIMITE_CONCORRENCIA,
+}: CriarBuscasMercadoRelevanteArgs): BuscasMercadoRelevante {
+  const limitar = criarLimitador(limite);
+  const pendentes = new Map<string, Promise<unknown>>();
+  const deduplicar = <T>(chave: string, buscar: () => Promise<T>): Promise<T> => {
+    const existente = pendentes.get(chave);
+    if (existente) return existente as Promise<T>;
+    const promessa = limitar(buscar);
+    pendentes.set(chave, promessa);
+    return promessa;
+  };
+  return {
+    buscarPerfil: (sellerId) => deduplicar(`perfil:${sellerId}`, () => buscarPerfil(sellerId)),
+    buscarVisitas: (itemId) => deduplicar(`visitas:${itemId}`, () => buscarVisitas(itemId)),
+  };
 }
 
 function estaFresco(valor: string | null, agoraMs: number): boolean {
@@ -141,8 +194,7 @@ export async function resolverMercadoRelevante({
   productId,
   ofertas,
   agora = new Date(),
-  buscarPerfil,
-  buscarVisitas,
+  buscas,
 }: ResolverMercadoRelevanteArgs): Promise<Mercado> {
   const agoraMs = agora.getTime();
   const observado = resumirObservado(ofertas);
@@ -154,26 +206,26 @@ export async function resolverMercadoRelevante({
       .map(({ seller_id }) => seller_id)
       .filter((sellerId) => !perfilAproveitavel(perfis.get(sellerId), agoraMs)),
   )];
-  await pool(LIMITE_CONCORRENCIA, sellerIdsPendentes, async (sellerId) => {
-    const perfil = await buscarPerfil(sellerId);
+  await Promise.all(sellerIdsPendentes.map(async (sellerId) => {
+    const perfil = await buscas.buscarPerfil(sellerId);
     perfis.set(sellerId, {
       transactions_total: perfil?.transactions_total ?? null,
       nivel: perfil?.nivel ?? null,
       perfil_coletado_em: agora.toISOString(),
     });
-  });
+  }));
 
   const itemIdsPendentes = [...new Set(
     completas
       .map(({ item_id }) => item_id)
       .filter((itemId) => !visitasAproveitaveis(visitas.get(itemId), agoraMs)),
   )];
-  await pool(LIMITE_CONCORRENCIA, itemIdsPendentes, async (itemId) => {
+  await Promise.all(itemIdsPendentes.map(async (itemId) => {
     visitas.set(itemId, {
-      visitas_30d: await buscarVisitas(itemId),
+      visitas_30d: await buscas.buscarVisitas(itemId),
       visitas_30d_em: agora.toISOString(),
     });
-  });
+  }));
 
   const qualificaveis: OfertaQualificavel[] = completas.map((oferta) => {
     const perfil = perfis.get(oferta.seller_id);
