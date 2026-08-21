@@ -235,10 +235,14 @@ export function montarVariacaoNova(
     catalog_erro: null,
     // preco_publicado_ml é observação do que o ML confirmou — a cor ainda não foi publicada.
     preco_publicado_ml: null,
-    // Desconto/atacado NÃO são herdados das irmãs de propósito: são configuração comercial por
-    // variação (ADR-0055/preço por variação) e este fluxo não roda nenhuma decisão de preço
-    // (D-10, sem IA e sem Revisão). Herdar aplicaria um desconto que ninguém pediu para esta
-    // cor; o operador configura pela tela de preços depois, como em qualquer variação nova.
+    // null NÃO é "sem desconto": nestas três colunas null significa HERDAR o nível família
+    // (`resolverConfigGrupo`, _shared/preco/config-grupo.ts:52-55 — `v.x ?? famX`). Copiar o
+    // valor explícito de uma irmã é que seria o override, e um override diferente do resto da
+    // faixa de preço faz `resolverConfigGrupo` falhar LOUD (400, ADR-0055). Herdando, a cor
+    // nova entra com a MESMA config comercial da família, que é o que o operador espera ao
+    // adicionar uma cor. Nota: se a irmã da faixa em que a cor nova cai tiver override próprio
+    // divergente do família-level, o UPDATE recusa alto com "reconfigure a faixa na Revisão" —
+    // comportamento desenhado do ADR-0078 F2, não regressão desta feature.
     exibir_com_desconto: null,
     desconto_pct: null,
     atacado: null,

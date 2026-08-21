@@ -26,7 +26,7 @@ function colunasDeVariacoes(): string[] {
   if (!bloco) throw new Error('bloco Row de `variacoes` não encontrado em database.types.ts');
   const colunas = bloco[1]
     .split('\n')
-    .map((l) => /^\s{10}([a-z_]+)\??:/.exec(l)?.[1])
+    .map((l) => /^\s{10}([a-z0-9_]+)\??:/.exec(l)?.[1])
     .filter((c): c is string => !!c);
   // Guard anti-"tabela de diagnóstico com 0 linhas": se o gerador mudar de formatação, o parse
   // devolveria poucas colunas e o teste passaria vazio, sem vigiar nada. 30 é folgado (o schema

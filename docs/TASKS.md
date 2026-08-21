@@ -34,6 +34,17 @@
   Documentação (`edge-functions.md`, `modelo-de-dados.md`, ADR-0129) atualizada no mesmo ciclo.
 - [x] **2026-08-21:** D-6 estendido — Custo e Preço mínimo (líquido) também pré-preenchidos da
   variação irmã, editável (mesma query de prefill, sem chamada nova).
+- [x] **2026-08-21 — hotfix de produção:** Salvar falhava em 100% dos casos
+  (`null value in column "preco_editado_pelo_operador" ... violates not-null constraint`).
+  Insert multi-row com clones (`select('*')`) e linhas novas no mesmo array: o PostgREST usa a
+  UNIÃO das chaves e grava NULL explícito nas ausentes de cada linha, atropelando o DEFAULT da
+  coluna. Quatro colunas NOT NULL estavam só no clone (`preco_editado_pelo_operador`,
+  `cor_editada_pelo_operador`, `catalog_status`, `atualizado_em` — esta última também um bug de
+  dado: o trigger `moddatetime` é `before update` e o clone gravava o timestamp congelado).
+  Corrigido com paridade EXATA de chaves entre os dois builders + `atualizado_em` em
+  `STRIP_VARIACAO`, travado por teste que lê as colunas reais de `src/lib/database.types.ts`.
+  Nenhum resíduo das tentativas que falharam (rollback confirmado no banco). Ver ADR-0129,
+  seção "Correção pós-produção (2026-08-21)".
 
 ## Sonar — tabela por anúncio + histórico de snapshots (ADR-0127) — 2026-08-19
 

@@ -186,14 +186,26 @@ Decisões de valor para a cor nova (antes implícitas no DEFAULT, agora explíci
   (a re-resolução de cor é gateada por `if (v.cor) return v`, `process-familia/index.ts:138`).
 - **`catalog_status: 'pendente'`** — SKU novo sem vínculo de catálogo; único valor coerente com
   `catalog_product_id`/`catalog_listing_id` nulos e com `variacoes_catalog_status_check`.
-- **`exibir_com_desconto`/`desconto_pct`/`atacado`: `null`, não herdados das irmãs** — são
-  configuração comercial por variação e este fluxo não roda nenhuma decisão de preço (D-10).
-  Herdar aplicaria à cor nova um desconto que ninguém pediu; o operador configura pela tela de
-  preços depois, como em qualquer variação nova.
+- **`exibir_com_desconto`/`desconto_pct`/`atacado`: `null`** — nestas três colunas `null` é
+  exatamente "herdar o nível família" (`resolverConfigGrupo`, `_shared/preco/config-grupo.ts`:
+  `v.x ?? famX`), não "sem desconto". A cor nova entra com a MESMA config comercial da família.
+  Copiar o valor explícito de uma irmã é que seria o override — e um override divergente do
+  resto da faixa de preço faz `resolverConfigGrupo` falhar LOUD (400, ADR-0055). Se a irmã da
+  faixa em que a cor nova cai tiver override próprio divergente do família-level, o UPDATE
+  recusa alto com "reconfigure a faixa na Revisão": comportamento desenhado do ADR-0078 F2.
+  (`variacoes.atacado` é config; o que vai ao ML no UPDATE é `familias.atacado`,
+  `update-familia-ml/processar.ts:448`.)
 - **`atualizado_em` entrou em `STRIP_VARIACAO`** — bug de dado independente da paridade: o
   trigger `variacoes_set_updated_at` é `before update`, então num INSERT ele não roda e o clone
   gravava o timestamp congelado da variação antiga numa linha recém-criada. É o mesmo racional
   que `STRIP_FAMILIA` já documentava para `familias`.
+
+**Resíduo das tentativas que falharam: nenhum.** O rollback do `varErr` (apaga família e lote)
+rodava antes de qualquer efeito remoto — o `registrar_entrada` do ledger e o encadeamento de
+`publicar-familias` vêm DEPOIS do insert. Confirmado por consulta ao banco de produção: nenhum
+lote `origem='manual'` órfão ou preso em `publicando` nos últimos 3 dias. A `chave` de
+idempotência também não fica envenenada (nada foi gravado), então repetir o Salvar no mesmo
+diálogo funciona. Único efeito cosmético: buracos na sequência de `proximo_numero_lote`.
 
 Lacuna residual conhecida: `database.types.ts` não tem check de regeneração no CI, então o teste
 pega "coluna nova + types regenerados + builder esquecido", mas não "coluna nova e types nunca
