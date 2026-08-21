@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { DialogDetalhe } from '../dialog-detalhe';
 import type { PulseOferta, PulseProduto, PulseVendedor } from '@/lib/pulse';
 
@@ -98,7 +98,17 @@ beforeEach(() => {
   ];
   detalhe.vendedores = [
     vendedor(1, 'SOUZABRUNA20230210001211'),
-    { ...vendedor(2, 'OUTRO-VENDEDOR'), transactions_total: 10, nivel: '3_yellow', power_seller: 'gold' },
+    {
+      ...vendedor(2, 'OUTRO-VENDEDOR'), transactions_total: 10, nivel: '3_yellow', power_seller: 'gold',
+      reputacao_detalhe: {
+        transactions: { period: '60 days', total: 10, ratings: { positive: 0.98 } },
+        metrics: {
+          claims: { period: '60 days', rate: 0.01, value: 1 },
+          delayed_handling_time: { period: '60 days', rate: 0.02, value: 2 },
+          cancellations: { period: '60 days', rate: 0.03, value: 3 },
+        },
+      },
+    },
   ];
 });
 
@@ -150,18 +160,64 @@ describe('DialogDetalhe — concorrentes relevantes', () => {
   it('usa o menor relevante e permite auditar todas as ofertas observadas', () => {
     renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
 
-    expect(screen.getByText('Menor concorrente relevante')).toBeInTheDocument();
-    expect(screen.getAllByText(/R\$\s*70,19/)).not.toHaveLength(0);
+    const referencia = screen.getByText('Menor concorrente relevante').parentElement!;
+    expect(referencia).toHaveTextContent(/R\$\s*70,19/);
     expect(screen.getByText(/Menor oferta observada:\s*R\$\s*36,00/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /1 relevante de 2 observadas/ })).toBeInTheDocument();
     expect(screen.queryByText('SOUZABRUNA20230210001211')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Filtro de concorrentes' })).toContainElement(
+      screen.getByRole('button', { name: 'Relevantes' }),
+    );
+    expect(screen.getByRole('button', { name: 'Relevantes' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('+17% mais caro')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
+    expect(referencia).toHaveTextContent(/R\$\s*70,19/);
+    expect(screen.getByRole('heading', { name: /1 relevante de 2 observadas/ })).toBeInTheDocument();
+    expect(screen.getByText('+17% mais caro')).toBeInTheDocument();
     expect(screen.getByText('SOUZABRUNA20230210001211')).toBeInTheDocument();
     expect(screen.getByText('Fora da referência')).toBeInTheDocument();
     expect(screen.getByText('Poucas transações')).toBeInTheDocument();
     expect(screen.getByText('MercadoLíder Gold')).toBeInTheDocument();
     expect(screen.getByText('Reputação amarela')).toBeInTheDocument();
+  });
+
+  it('expõe os detalhes da conta em disclosure acionável por teclado e toque', () => {
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    const reputacao = screen.getByText('Reputação amarela');
+    const disclosure = reputacao.closest('details');
+    expect(disclosure).not.toBeNull();
+    const resumo = within(disclosure!).getByText('Reputação amarela');
+    resumo.focus();
+    expect(resumo).toHaveFocus();
+    fireEvent.click(resumo);
+
+    expect(disclosure).toHaveAttribute('open');
+    expect(within(disclosure!).getAllByText('Período')).not.toHaveLength(0);
+    expect(within(disclosure!).getAllByText(/^Taxa/)).not.toHaveLength(0);
+    expect(within(disclosure!).getAllByText(/^Quantidade/)).not.toHaveLength(0);
+    expect(within(disclosure!).getByText('Reclamações')).toBeInTheDocument();
+    expect(within(disclosure!).getByText('Atrasos')).toBeInTheDocument();
+    expect(within(disclosure!).getByText('Cancelamentos')).toBeInTheDocument();
+  });
+
+  it('mostra ofertas em observação apenas ao incluir todas', () => {
+    detalhe.vendedores[0] = { ...detalhe.vendedores[0], transactions_total: null };
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    expect(screen.queryByText('Em observação')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Todas' }));
+    expect(screen.getByText('Em observação')).toBeInTheDocument();
+    expect(screen.getByText('Dados insuficientes')).toBeInTheDocument();
+  });
+
+  it('usa observada no singular quando há uma única oferta', () => {
+    detalhe.ofertasAtuais = [oferta({ item_id: 'MLB-OFFER-70', seller_id: 2, preco: 70.19 })];
+    detalhe.vendedores = [detalhe.vendedores[1]];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    expect(screen.getByRole('heading', { name: /1 relevante de 1 observada\)/ })).toBeInTheDocument();
   });
 
   it('não compara preço quando nenhuma oferta é relevante', () => {

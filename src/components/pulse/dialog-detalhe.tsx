@@ -72,31 +72,47 @@ function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {
 
 type OfertaClassificada = PulseOferta & { qualificacao: QualificacaoOferta };
 
-function detalheDaConta(vendedor: PulseVendedor | undefined): string | undefined {
+function registro(valor: unknown): Record<string, unknown> | null {
+  return typeof valor === 'object' && valor != null && !Array.isArray(valor)
+    ? valor as Record<string, unknown>
+    : null;
+}
+
+function DetalhesConta({ vendedor, rotulo }: { vendedor: PulseVendedor | undefined; rotulo: string }) {
   const detalhe = vendedor?.reputacao_detalhe;
-  const transacoes = detalhe?.transactions as Record<string, unknown> | undefined;
-  if (!transacoes) return undefined;
-  const partes = ['Dados da conta'];
-  if (typeof transacoes.period === 'string') partes.push(`Período: ${transacoes.period}`);
-  if (typeof transacoes.total === 'number') partes.push(`Transações: ${fmtInt(transacoes.total)}`);
-  const avaliacoes = transacoes.ratings as Record<string, unknown> | undefined;
-  if (avaliacoes && typeof avaliacoes.positive === 'number') {
-    partes.push(`Avaliações: ${Math.round(avaliacoes.positive * 100)}% positivas`);
-  }
-  const metricas = detalhe?.metrics as Record<string, unknown> | undefined;
-  for (const [chave, rotulo] of Object.entries({
-    claims: 'Reclamações', delayed_handling_time: 'Atrasos', cancellations: 'Cancelamentos',
-  })) {
-    const metrica = metricas?.[chave] as Record<string, unknown> | undefined;
-    if (!metrica) continue;
-    const valores = [
-      typeof metrica.period === 'string' ? metrica.period : null,
-      typeof metrica.rate === 'number' ? `${(metrica.rate * 100).toFixed(1)}%` : null,
-      typeof metrica.value === 'number' ? fmtInt(metrica.value) : null,
-    ].filter((valor): valor is string => valor != null);
-    if (valores.length) partes.push(`${rotulo}: ${valores.join(', ')}`);
-  }
-  return partes.join(' · ');
+  const transacoes = registro(detalhe?.transactions);
+  if (!transacoes) return <span className="text-xs">{rotulo}</span>;
+  const avaliacoes = registro(transacoes.ratings);
+  const metricas = registro(detalhe?.metrics);
+  const metricasDisponiveis = [
+    ['claims', 'Reclamações'], ['delayed_handling_time', 'Atrasos'], ['cancellations', 'Cancelamentos'],
+  ].flatMap(([chave, nome]) => {
+    const metrica = registro(metricas?.[chave]);
+    return metrica ? [{ nome, metrica }] : [];
+  });
+
+  return (
+    <details className="text-xs">
+      <summary className="cursor-pointer text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {rotulo}<span className="sr-only">. Ver detalhes da conta</span>
+      </summary>
+      <dl className="mt-2 space-y-2 border-l pl-2 text-muted-foreground">
+        {typeof transacoes.period === 'string' && <div><dt className="font-medium text-foreground">Período</dt><dd>{transacoes.period}</dd></div>}
+        {typeof transacoes.total === 'number' && <div><dt className="font-medium text-foreground">Transações na conta</dt><dd>{fmtInt(transacoes.total)}</dd></div>}
+        {typeof avaliacoes?.positive === 'number' && <div><dt className="font-medium text-foreground">Avaliações positivas</dt><dd>{Math.round(avaliacoes.positive * 100)}%</dd></div>}
+        {metricasDisponiveis.map(({ nome, metrica }) => (
+          <div key={nome}>
+            <dt className="font-medium text-foreground">{nome}</dt>
+            <dd className="grid grid-cols-3 gap-2">
+              <span>Período<br />{typeof metrica.period === 'string' ? metrica.period : '—'}</span>
+              <span>Taxa<br />{typeof metrica.rate === 'number' ? `${(metrica.rate * 100).toFixed(1)}%` : '—'}</span>
+              <span>Quantidade<br />{typeof metrica.value === 'number' ? fmtInt(metrica.value) : '—'}</span>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
 }
 
 export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | null; onFechar: () => void }) {
@@ -242,7 +258,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       sortValue: (o) => vendedorAtualDe(o)?.nivel,
       cell: (o) => {
         const vendedor = vendedorAtualDe(o);
-        return <span className="text-xs" title={detalheDaConta(vendedor)}>{rotuloReputacao(vendedor?.nivel ?? null)}</span>;
+        return <DetalhesConta vendedor={vendedor} rotulo={rotuloReputacao(vendedor?.nivel ?? null)} />;
       },
     },
     {
@@ -538,7 +554,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                 <h3 className="mb-2 text-sm font-medium">
                   Concorrentes{' '}
                   <span className="font-normal text-muted-foreground">
-                    ({mercado.total_relevantes} {mercado.total_relevantes === 1 ? 'relevante' : 'relevantes'} de {mercado.total_observadas} observadas)
+                    ({mercado.total_relevantes} {mercado.total_relevantes === 1 ? 'relevante' : 'relevantes'} de {mercado.total_observadas} {mercado.total_observadas === 1 ? 'observada' : 'observadas'})
                   </span>
                 </h3>
                 {atuais.length === 0 ? (
@@ -547,7 +563,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                   </p>
                 ) : (
                   <>
-                    <div className="mb-2 flex gap-1" aria-label="Filtro de concorrentes">
+                    <div className="mb-2 flex gap-1" role="group" aria-label="Filtro de concorrentes">
                       <Button size="sm" variant={filtroOfertas === 'relevantes' ? 'secondary' : 'ghost'} aria-pressed={filtroOfertas === 'relevantes'} onClick={() => setFiltroOfertas('relevantes')}>Relevantes</Button>
                       <Button size="sm" variant={filtroOfertas === 'todas' ? 'secondary' : 'ghost'} aria-pressed={filtroOfertas === 'todas'} onClick={() => setFiltroOfertas('todas')}>Todas</Button>
                     </div>
