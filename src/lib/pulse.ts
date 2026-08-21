@@ -2,7 +2,7 @@
 // (adicionar manual, coletar agora) via POST nas edge functions com o token da sessão.
 import { supabase } from './supabase';
 import { fetchAliquotas } from './queries';
-import { estadoAtualOfertas } from './pulse-margem';
+import { estadoAtualOfertas, mercadoPulse } from './pulse-margem';
 
 // As tabelas pulse_* são recentes e database.types.ts ainda não foi regenerado (mesmo padrão
 // de cast pontual usado em queries.ts para ml_formato_publicacao); RLS continua protegendo a
@@ -58,12 +58,18 @@ export interface PulseOferta {
    * `null` = ainda não medido — **nunca** zero, que seria uma afirmação sobre o concorrente.
    */
   visitas_30d: number | null;
+  /** Instante em que `visitas_30d` foi lida; `null` nos snapshots legados ou ainda não medidos. */
+  visitas_30d_em: string | null;
 }
 export interface PulseVendedor {
   seller_id: number; nickname: string | null; power_seller: string | null;
   nivel: string | null; transactions_total: number | null; dia: string;
   /** Sigla do estado de onde o vendedor envia. `null` quando o ML não expôs o endereço. */
   uf: string | null;
+  /** Perfil público normalizado usado para auditoria futura da qualificação. */
+  reputacao_detalhe: Record<string, unknown> | null;
+  /** Instante da leitura do perfil; `null` nos snapshots legados. */
+  perfil_coletado_em: string | null;
 }
 export interface PulseAlerta {
   id: string; produto_id: string | null;
@@ -103,13 +109,13 @@ export async function fetchPulseDetalhe(
   // Estado atual vem da VIEW (última linha por item, sem truncamento); o histórico bruto
   // (limit 400, linhas mais recentes) alimenta só a lista "menor preço por dia".
   const { data: atuaisData, error: atuaisErro } = await pulseFrom('pulse_ofertas_atual')
-    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d')
+    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d, visitas_30d_em')
     .eq('produto_id', produtoId);
   if (atuaisErro) throw atuaisErro;
   const ofertasAtuais = (atuaisData ?? []) as PulseOferta[];
 
   const { data: ofertasData, error: ofertasErro } = await pulseFrom('pulse_ofertas')
-    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d')
+    .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d, visitas_30d_em')
     .eq('produto_id', produtoId)
     .order('dia', { ascending: false })
     .limit(400);
@@ -120,17 +126,24 @@ export async function fetchPulseDetalhe(
   if (sellerIds.length === 0) return { ofertas, ofertasAtuais, vendedores: [] };
 
   const { data: vendedoresData, error: vendedoresErro } = await pulseFrom('pulse_vendedores')
-    .select('seller_id, nickname, power_seller, nivel, transactions_total, dia, uf')
+    .select('seller_id, nickname, power_seller, nivel, transactions_total, dia, uf, reputacao_detalhe, perfil_coletado_em')
     .in('seller_id', sellerIds)
     .order('dia', { ascending: true });
   if (vendedoresErro) throw vendedoresErro;
   return { ofertas, ofertasAtuais, vendedores: (vendedoresData ?? []) as PulseVendedor[] };
 }
 
-export interface PulseResumoOfertas { menorPreco: number | null; nOfertas: number }
+export interface PulseResumoOfertas {
+  /** Alias legado consumido pelos KPIs, posição e filtros: sempre a referência qualificada. */
+  menorPreco: number | null;
+  menorObservado: number | null;
+  menorRelevante: number | null;
+  nOfertas: number;
+  nOfertasRelevantes: number;
+}
 
 /**
- * Estado atual (menor preço + nº de ofertas ativas) por produto, para a lista do radar.
+ * Estado atual observado e qualificado por produto, para a lista do radar.
  * Lê a view `pulse_ofertas_atual` (última linha por item): 1 linha por oferta, nunca o
  * histórico bruto — o PostgREST trunca respostas em ~1000 linhas em silêncio.
  */
@@ -145,7 +158,7 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
   const linhas: (PulseOferta & { produto_id: string })[] = [];
   for (let de = 0; ; de += PAGINA) {
     const { data, error } = await pulseFrom('pulse_ofertas_atual')
-      .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d')
+      .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d, visitas_30d_em')
       .in('produto_id', produtoIds)
       .order('produto_id', { ascending: true })
       .order('item_id', { ascending: true })
@@ -155,6 +168,8 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
     linhas.push(...pagina);
     if (pagina.length < PAGINA) break;
   }
+  const sellerIds = [...new Set(linhas.map((linha) => linha.seller_id))];
+  const vendedores = await fetchPulseVendedoresResumo(sellerIds);
   const porProduto = new Map<string, PulseOferta[]>();
   for (const row of linhas) {
     const lista = porProduto.get(row.produto_id) ?? [];
@@ -163,9 +178,39 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
   }
   for (const [produtoId, ofertas] of porProduto) {
     const atuais = estadoAtualOfertas(ofertas);
-    resumo.set(produtoId, { menorPreco: atuais[0]?.preco ?? null, nOfertas: atuais.length });
+    const mercado = mercadoPulse(atuais, vendedores);
+    resumo.set(produtoId, {
+      menorPreco: mercado.menor_relevante,
+      menorObservado: mercado.menor_observado,
+      menorRelevante: mercado.menor_relevante,
+      nOfertas: mercado.total_observadas,
+      nOfertasRelevantes: mercado.total_relevantes,
+    });
   }
   return resumo;
+}
+
+async function fetchPulseVendedoresResumo(sellerIds: number[]): Promise<PulseVendedor[]> {
+  const vendedores: PulseVendedor[] = [];
+  const POR_LOTE = 100;
+  const PAGINA = 1000;
+  for (let inicio = 0; inicio < sellerIds.length; inicio += POR_LOTE) {
+    const lote = sellerIds.slice(inicio, inicio + POR_LOTE);
+    for (let de = 0; ; de += PAGINA) {
+      const { data, error } = await pulseFrom('pulse_vendedores')
+        .select('seller_id, nickname, power_seller, nivel, transactions_total, dia, uf, reputacao_detalhe, perfil_coletado_em')
+        .in('seller_id', lote)
+        .order('seller_id', { ascending: true })
+        .order('perfil_coletado_em', { ascending: false, nullsFirst: false })
+        .order('dia', { ascending: false })
+        .range(de, de + PAGINA - 1);
+      if (error) throw error;
+      const pagina = (data ?? []) as PulseVendedor[];
+      vendedores.push(...pagina);
+      if (pagina.length < PAGINA) break;
+    }
+  }
+  return vendedores;
 }
 
 export async function pausarPulseProduto(id: string, pausar: boolean): Promise<void> {

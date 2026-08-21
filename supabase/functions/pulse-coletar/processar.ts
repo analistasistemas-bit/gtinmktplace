@@ -13,9 +13,9 @@ import {
   parseStatusAnuncios, type AnuncioMultiget,
 } from '../_shared/pulse/parse.ts';
 import { enrichPulsePermalinks } from '../_shared/pulse/permalink.ts';
-import { diffOfertas } from '../_shared/pulse/diff.ts';
+import { diffOfertas, entradaDiffRelevante, type OfertaQualificavelDiff } from '../_shared/pulse/diff.ts';
 import { deveGravarVendedor } from '../_shared/pulse/vendedor.ts';
-import type { OfertaAnterior } from '../_shared/pulse/tipos.ts';
+import type { OfertaAnterior, OfertaColetada } from '../_shared/pulse/tipos.ts';
 
 const API = 'https://api.mercadolibre.com';
 const CONCORRENCIA = 6;
@@ -33,6 +33,21 @@ interface PulseProdutoRow {
   codigo_pai: string | null;
   origem: 'auto' | 'manual';
   titulo: string | null;
+}
+
+type OfertaAnteriorComVisitas = OfertaAnterior & { visitas_30d: number | null };
+interface AlertaPendente {
+  produtoId: string;
+  anteriores: OfertaAnteriorComVisitas[];
+  atuais: OfertaColetada[];
+  estadoGravado: boolean;
+}
+interface PerfilVendedorAtual {
+  seller_id: number;
+  transactions_total: number | null;
+  nivel: string | null;
+  dia: string;
+  perfil_coletado_em: string | null;
 }
 
 // 1) sincronizarRadar (só tier completo): espelha anuncios_externos publicados em pulse_produtos
@@ -159,6 +174,105 @@ async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<v
   }
 }
 
+const chaveOferta = (produtoId: string, itemId: string) => `${produtoId}\u0000${itemId}`;
+
+async function perfisAtuaisParaAlertas(
+  admin: SupabaseClient, orgId: string, pendentes: AlertaPendente[],
+): Promise<Map<number, PerfilVendedorAtual>> {
+  const ids = [...new Set(pendentes.flatMap((p) => [
+    ...p.anteriores.map((o) => o.seller_id), ...p.atuais.map((o) => o.seller_id),
+  ]))];
+  const porVendedor = new Map<number, PerfilVendedorAtual>();
+  for (let inicio = 0; inicio < ids.length; inicio += 100) {
+    const lote = ids.slice(inicio, inicio + 100);
+    const perfis = await paginarTudo<PerfilVendedorAtual>((de, ate) =>
+      admin.from('pulse_vendedores')
+        .select('seller_id, transactions_total, nivel, dia, perfil_coletado_em')
+        .eq('org_id', orgId).in('seller_id', lote)
+        .order('seller_id', { ascending: true })
+        .order('perfil_coletado_em', { ascending: false, nullsFirst: false })
+        .order('dia', { ascending: false })
+        .range(de, ate)
+    );
+    for (const perfil of perfis) {
+      const atual = porVendedor.get(perfil.seller_id);
+      const leituraAtual = atual?.perfil_coletado_em ?? atual?.dia;
+      const leituraNova = perfil.perfil_coletado_em ?? perfil.dia;
+      if (!atual || leituraNova >= leituraAtual!) porVendedor.set(perfil.seller_id, perfil);
+    }
+  }
+  return porVendedor;
+}
+
+async function visitasAtuaisParaAlertas(
+  admin: SupabaseClient, orgId: string, pendentes: AlertaPendente[],
+): Promise<Map<string, number | null>> {
+  const produtoIds = [...new Set(pendentes.map((p) => p.produtoId))];
+  const porOferta = new Map<string, number | null>();
+  for (let inicio = 0; inicio < produtoIds.length; inicio += 50) {
+    const lote = produtoIds.slice(inicio, inicio + 50);
+    const linhas = await paginarTudo<{ produto_id: string; item_id: string; visitas_30d: number | null }>((de, ate) =>
+      admin.from('pulse_ofertas_atual')
+        .select('produto_id, item_id, visitas_30d')
+        .eq('org_id', orgId).in('produto_id', lote)
+        .order('produto_id', { ascending: true }).order('item_id', { ascending: true })
+        .range(de, ate),
+    );
+    for (const linha of linhas) porOferta.set(chaveOferta(linha.produto_id, linha.item_id), linha.visitas_30d);
+  }
+  return porOferta;
+}
+
+function ofertaParaDiffRelevante<T extends OfertaColetada>(
+  oferta: T,
+  perfil: PerfilVendedorAtual | undefined,
+  visitas30d: number | null,
+): T & OfertaQualificavelDiff {
+  return {
+    ...oferta,
+    transactions_total: perfil?.transactions_total ?? null,
+    visitas_30d: visitas30d,
+    nivel: perfil?.nivel ?? null,
+  };
+}
+
+async function gravarAlertasRelevantes(
+  admin: SupabaseClient, orgId: string, pendentes: AlertaPendente[],
+): Promise<number> {
+  if (pendentes.length === 0) return 0;
+  const [perfis, visitasAtuais] = await Promise.all([
+    perfisAtuaisParaAlertas(admin, orgId, pendentes),
+    visitasAtuaisParaAlertas(admin, orgId, pendentes),
+  ]);
+  let total = 0;
+  for (const pendente of pendentes) {
+    const anteriores = entradaDiffRelevante(pendente.anteriores.map((oferta) =>
+      ofertaParaDiffRelevante(oferta, perfis.get(oferta.seller_id), oferta.visitas_30d),
+    ));
+    const atuais = entradaDiffRelevante(pendente.atuais.map((oferta) =>
+      ofertaParaDiffRelevante(
+        oferta,
+        perfis.get(oferta.seller_id),
+        visitasAtuais.get(chaveOferta(pendente.produtoId, oferta.item_id)) ?? null,
+      ),
+    ));
+    const { alertas } = diffOfertas(anteriores, atuais);
+    if (alertas.length === 0) continue;
+    if (!pendente.estadoGravado) {
+      console.warn(
+        `pulse-coletar: ${alertas.length} alerta(s) do produto ${pendente.produtoId} adiados — ofertas não gravadas`,
+      );
+      continue;
+    }
+    const { error } = await admin.from('pulse_alertas').insert(
+      alertas.map((a) => ({ org_id: orgId, produto_id: pendente.produtoId, tipo: a.tipo, payload: a.payload })),
+    );
+    if (!error) total += alertas.length;
+    else console.warn(`pulse-coletar: alertas do produto ${pendente.produtoId} falharam:`, error.message);
+  }
+  return total;
+}
+
 export async function processarColetaOrg(
   admin: SupabaseClient, conexao: ConexaoCanal, orgId: string,
   tier: 'completo' | 'quente', maxProdutos: number,
@@ -187,6 +301,7 @@ export async function processarColetaOrg(
   let gravadas = 0;
   let alertasTotal = 0;
   const sellerIdsColetados = new Set<number>();
+  const alertasPendentes: AlertaPendente[] = [];
   // Preço EFETIVO da nossa oferta, por item, colhido no passo 3 desta mesma execução. O passo 5b
   // consulta a comissão e só pode confiar no `price` do multiget de `/items` quando não tem isto:
   // aquele campo é o preço BASE, sem promoção (Errata 4), e a faixa da comissão muda com o preço
@@ -213,9 +328,10 @@ export async function processarColetaOrg(
     const { data: anterioresRaw } = await admin.from('pulse_ofertas_atual')
       // `permalink` entra aqui porque `mudou()` o compara: sem lê-lo, o guardado chegaria sempre
       // como undefined e toda oferta pareceria mudada em toda execução.
-      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, permalink')
-      .eq('produto_id', produto.id);
-    const anteriores = ((anterioresRaw ?? []) as OfertaAnterior[]).map((o) => ({ ...o, preco: Number(o.preco) }));
+      .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, permalink, visitas_30d')
+      .eq('org_id', orgId).eq('produto_id', produto.id);
+    const anteriores = ((anterioresRaw ?? []) as OfertaAnteriorComVisitas[])
+      .map((o) => ({ ...o, preco: Number(o.preco) }));
     const permalinksAnteriores = new Map<string, string>();
     for (const oferta of anteriores) {
       if (typeof oferta.permalink === 'string' && /^https?:\/\//.test(oferta.permalink)) {
@@ -262,18 +378,9 @@ export async function processarColetaOrg(
         estadoGravado = false;
       }
     }
-    if (diff.alertas.length > 0 && !estadoGravado) {
-      console.warn(
-        `pulse-coletar: ${diff.alertas.length} alerta(s) do produto ${produto.id} adiados — ofertas não gravadas`,
-      );
-    }
-    if (diff.alertas.length > 0 && estadoGravado) {
-      const { error } = await admin.from('pulse_alertas').insert(
-        diff.alertas.map((a) => ({ org_id: orgId, produto_id: produto.id, tipo: a.tipo, payload: a.payload })),
-      );
-      if (!error) alertasTotal += diff.alertas.length;
-      else console.warn(`pulse-coletar: alertas do produto ${produto.id} falharam:`, error.message);
-    }
+    // A persistência conserva TODAS as ofertas. O diff que gera alerta só será calculado depois
+    // dos perfis e das visitas desta execução, quando já há dados para qualificar cada lado.
+    alertasPendentes.push({ produtoId: produto.id, anteriores, atuais, estadoGravado });
     // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
     // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
     // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
@@ -435,46 +542,15 @@ export async function processarColetaOrg(
     }
   }
 
-  // 6) alertas: 1 notificação agregada por org por execução — SÓ para org com o módulo habilitado.
-  //
-  // A coleta roda para todas as orgs de propósito (o histórico acumula desde o dia 1, decisão do
-  // deploy do v1), mas a notificação não pode acompanhar: a mensagem diz "abra o menu Pulse para
-  // agir" e, para uma org sem o módulo, esse menu não existe. Aconteceu de verdade — o backfill da
-  // migration inscreveu todo perfil na categoria `pulse` do Telegram, e os operadores da Avil
-  // receberam alertas de um menu que não podiam abrir. Os alertas continuam sendo gravados: eles
-  // aparecem no painel no dia em que o módulo for ligado.
-  if (alertasTotal > 0) {
-    const { data: org } = await admin.from('organizations')
-      .select('modulos_habilitados').eq('id', orgId).maybeSingle();
-    const moduloAtivo = ((org?.modulos_habilitados as string[] | null) ?? []).includes('pulse');
-    if (!moduloAtivo) {
-      console.warn(`pulse-coletar: ${alertasTotal} alerta(s) da org ${orgId} sem notificação — módulo pulse desabilitado`);
-    } else {
-      // A mensagem traz os NOVOS desta execução e o total ainda não lido. Sem o segundo número, a
-      // conta nunca fecha com o painel: cada execução avisa o que ela achou, enquanto a tela mostra
-      // o acumulado pendente. Três execuções de 5, 3 e 1 viram "9 alertas novos" no app.
-      const { count } = await admin.from('pulse_alertas')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId).eq('lido', false);
-      const pendentes = count ?? 0;
-      const sufixo = pendentes > alertasTotal ? ` (${pendentes} aguardando no total)` : '';
-      await notificarCategoria(
-        admin, orgId, 'pulse',
-        `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
-      );
-    }
-  }
-
-  // 7) visitas dos últimos 30 dias de cada oferta viva (ADR-0120). É a ÚNICA medida de demanda por
+  // 6) visitas dos últimos 30 dias de cada oferta viva (ADR-0120). É a ÚNICA medida de demanda por
   // anúncio de terceiro que a API oficial entrega — a Errata 9 do ADR-0119 mediu o endpoint vivo
   // para item de concorrente, ao contrário de `/items/{id}`, que segue 403.
   //
   // Só no baseline: é uma chamada por oferta (a janela não tem multiget), o número é de 30 dias e
   // não se move a cada 6h — repetir no tier quente multiplicaria o custo por 4 pelo mesmo valor.
   //
-  // POR ÚLTIMO de propósito, depois da notificação: é o passo mais longo e o único aqui que pode
-  // lançar (o `paginarTudo` abaixo). Antes do passo 6, uma falha de leitura sua engoliria o aviso
-  // de alertas que já estão gravados no banco — o operador ficaria sem saber deles até abrir a tela.
+  // Roda antes do diff de alertas: a qualificação usa a última leitura disponível, inclusive a
+  // atualização deste baseline.
   if (baseline && produtos.length > 0) {
     const linhas: { id: string; item_id: string; visitas_30d: number | null }[] = [];
     // Lotes de 50 ids: `.in()` vai na query string e 200 UUIDs dariam ~7,6 KB de request line —
@@ -484,7 +560,7 @@ export async function processarColetaOrg(
       linhas.push(...await paginarTudo<{ id: string; item_id: string; visitas_30d: number | null }>((de, ate) =>
         admin.from('pulse_ofertas_atual')
           .select('id, item_id, visitas_30d')
-          .in('produto_id', lote)
+          .eq('org_id', orgId).in('produto_id', lote)
           .eq('ativo', true)
           .order('id', { ascending: true }) // ordem estável: sem ela a paginação repete/pula linha
           .range(de, ate),
@@ -520,11 +596,36 @@ export async function processarColetaOrg(
       // teto de tempo acima deixou de fora — as duas pontas preservam.
       if (visitas === null) return;
       const { error } = await admin.from('pulse_ofertas')
-        .update({ visitas_30d: visitas, visitas_30d_em: new Date().toISOString() }).eq('id', linha.id);
+        .update({ visitas_30d: visitas, visitas_30d_em: new Date().toISOString() })
+        .eq('org_id', orgId).eq('id', linha.id);
       if (error) console.warn(`pulse-coletar: visitas do item ${linha.item_id} falharam:`, error.message);
     });
     if (estourou) {
       console.warn(`pulse-coletar: teto de tempo das visitas 30d atingido na org ${orgId} — resto fica para amanhã`);
+    }
+  }
+
+  // 7) Alertas usam somente ofertas relevantes, avaliadas depois de perfis e visitas. A coleta
+  // continua persistindo o mercado bruto acima para auditoria e para uma qualificação futura.
+  alertasTotal = await gravarAlertasRelevantes(admin, orgId, alertasPendentes);
+
+  // Uma notificação agregada por org por execução — SÓ para org com o módulo habilitado.
+  if (alertasTotal > 0) {
+    const { data: org } = await admin.from('organizations')
+      .select('modulos_habilitados').eq('id', orgId).maybeSingle();
+    const moduloAtivo = ((org?.modulos_habilitados as string[] | null) ?? []).includes('pulse');
+    if (!moduloAtivo) {
+      console.warn(`pulse-coletar: ${alertasTotal} alerta(s) da org ${orgId} sem notificação — módulo pulse desabilitado`);
+    } else {
+      const { count } = await admin.from('pulse_alertas')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId).eq('lido', false);
+      const pendentes = count ?? 0;
+      const sufixo = pendentes > alertasTotal ? ` (${pendentes} aguardando no total)` : '';
+      await notificarCategoria(
+        admin, orgId, 'pulse',
+        `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
+      );
     }
   }
 

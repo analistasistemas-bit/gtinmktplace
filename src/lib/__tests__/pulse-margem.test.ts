@@ -1,19 +1,56 @@
 import { describe, it, expect } from 'vitest';
 import {
   estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, comissaoNoPreco,
-  margemEhEstimativa,
+  margemEhEstimativa, mercadoPulse,
 } from '../pulse-margem';
 import type { PulseOferta, PulseVendedor } from '../pulse';
 
 const oferta = (over: Partial<PulseOferta>): PulseOferta => ({
   item_id: 'MLB1', seller_id: 111, preco: 100, tier: 'gold_special',
   frete_gratis: true, loja_oficial: false, ativo: true, dia: '2026-08-10', permalink: null,
-  visitas_30d: null, ...over,
+  visitas_30d: null, visitas_30d_em: null, ...over,
 });
 
 const vendedor = (over: Partial<PulseVendedor>): PulseVendedor => ({
   seller_id: 111, nickname: 'LOJA', power_seller: 'platinum', nivel: '5_green',
-  transactions_total: 100, dia: '2026-08-10', uf: null, ...over,
+  transactions_total: 100, dia: '2026-08-10', uf: null,
+  reputacao_detalhe: null, perfil_coletado_em: null, ...over,
+});
+
+describe('mercadoPulse', () => {
+  it('usa R$70,19 como menor relevante e preserva R$36 observado', () => {
+    const mercado = mercadoPulse([
+      oferta({ item_id: 'MLB36', seller_id: 1, preco: 36, visitas_30d: 19 }),
+      oferta({ item_id: 'MLB70', seller_id: 2, preco: 70.19, visitas_30d: 1 }),
+    ], [
+      vendedor({ seller_id: 1, transactions_total: 0 }),
+      vendedor({ seller_id: 2, transactions_total: 10, nivel: '3_yellow' }),
+    ]);
+
+    expect(mercado.menor_observado).toBe(36);
+    expect(mercado.menor_relevante).toBe(70.19);
+  });
+
+  it('usa o snapshot mais recente do vendedor na junção', () => {
+    const mercado = mercadoPulse([
+      oferta({ seller_id: 2, preco: 70.19 }),
+    ], [
+      vendedor({ seller_id: 2, transactions_total: 10, dia: '2026-08-10' }),
+      vendedor({ seller_id: 2, transactions_total: 0, dia: '2026-08-11' }),
+    ]);
+
+    expect(mercado.menor_relevante).toBeNull();
+  });
+
+  it('não reprova oferta relevante quando visitas ainda não foram medidas', () => {
+    const mercado = mercadoPulse([
+      oferta({ seller_id: 2, preco: 70.19, visitas_30d: null }),
+    ], [
+      vendedor({ seller_id: 2, transactions_total: 10, nivel: '3_yellow' }),
+    ]);
+
+    expect(mercado.menor_relevante).toBe(70.19);
+  });
 });
 
 describe('estadoAtualOfertas', () => {

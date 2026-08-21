@@ -35,9 +35,9 @@ function casaBusca(p: PulseProduto, termo: string): boolean {
     || (p.codigo_pai ?? '').includes(t);
 }
 
-function casaFoco(p: PulseProduto, foco: FocoPulse, menorConcorrente: number | null): boolean {
+function casaFoco(p: PulseProduto, foco: FocoPulse, menorRelevante: number | null): boolean {
   if (foco === 'sem_vinculo') return !!p.catalogo_status && p.catalogo_status !== 'vinculado';
-  const pos = posicaoVsMercado(p.meu_preco, menorConcorrente);
+  const pos = posicaoVsMercado(p.meu_preco, menorRelevante);
   if (!pos) return false; // sem comparação não entra em recorte de posição — nem como "barato"
   // Mesmo limiar de "Empatado" da coluna Sua posição: diferença abaixo de 0,5% não é vantagem
   // nem problema, e contá-la encheria os dois recortes com produtos praticamente no mesmo preço.
@@ -58,12 +58,13 @@ function casaStatus(p: PulseProduto, status: StatusAnuncio): boolean {
 export function filtrarProdutos(
   produtos: PulseProduto[],
   filtros: FiltrosPulse,
-  menorConcorrenteDe: (p: PulseProduto) => number | null,
+  /** `null` sem concorrente relevante: nunca cai no menor preço bruto ou em zero. */
+  menorRelevanteDe: (p: PulseProduto) => number | null,
 ): PulseProduto[] {
   return produtos.filter((p) => {
     if (!casaBusca(p, filtros.busca)) return false;
     if (!casaStatus(p, filtros.status)) return false;
-    if (filtros.foco && !casaFoco(p, filtros.foco, menorConcorrenteDe(p))) return false;
+    if (filtros.foco && !casaFoco(p, filtros.foco, menorRelevanteDe(p))) return false;
     return true;
   });
 }
@@ -73,7 +74,7 @@ export interface ContagensPulse {
   maisCaro: number;
   menorPreco: number;
   semVinculo: number;
-  /** Quantos têm preço nosso E menor concorrente — a base de comparação dos dois recortes. */
+  /** Quantos têm preço nosso E menor relevante — a base de comparação dos dois recortes. */
   comparaveis: number;
 }
 
@@ -83,11 +84,11 @@ export interface ContagensPulse {
  */
 export function contarPulse(
   produtos: PulseProduto[],
-  menorConcorrenteDe: (p: PulseProduto) => number | null,
+  menorRelevanteDe: (p: PulseProduto) => number | null,
 ): ContagensPulse {
   let maisCaro = 0, menorPreco = 0, semVinculo = 0, comparaveis = 0;
   for (const p of produtos) {
-    const menor = menorConcorrenteDe(p);
+    const menor = menorRelevanteDe(p);
     if (casaFoco(p, 'sem_vinculo', menor)) semVinculo++;
     if (posicaoVsMercado(p.meu_preco, menor)) comparaveis++;
     if (casaFoco(p, 'mais_caro', menor)) maisCaro++;

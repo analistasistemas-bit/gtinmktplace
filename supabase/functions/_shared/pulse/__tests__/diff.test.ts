@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diffOfertas } from '../diff.ts';
+import { diffOfertas, entradaDiffRelevante } from '../diff.ts';
 import type { OfertaAnterior, OfertaColetada } from '../tipos.ts';
 
 const oferta = (over: Partial<OfertaColetada> = {}): OfertaColetada => ({
@@ -13,6 +13,19 @@ const oferta = (over: Partial<OfertaColetada> = {}): OfertaColetada => ({
   ...over,
 });
 const anterior = (over: Partial<OfertaAnterior> = {}): OfertaAnterior => ({ ...oferta(), ativo: true, ...over });
+type OfertaQualificavelDiff = OfertaColetada & {
+  transactions_total: number | null;
+  visitas_30d: number | null;
+  nivel: string | null;
+};
+const ofertaQualificavel = (
+  over: Partial<OfertaQualificavelDiff> = {},
+): OfertaQualificavelDiff => ({
+  ...oferta(), transactions_total: 10, visitas_30d: 1, nivel: '3_yellow', ...over,
+});
+const anteriorQualificavel = (
+  over: Partial<OfertaQualificavelDiff & { ativo: boolean }> = {},
+): OfertaQualificavelDiff & { ativo: boolean } => ({ ...ofertaQualificavel(), ativo: true, ...over });
 
 describe('diffOfertas', () => {
   it('primeira coleta: grava tudo, 0 alertas', () => {
@@ -96,5 +109,44 @@ describe('diffOfertas', () => {
     const anteriores = [anterior({ item_id: 'MLB1', preco: 100, permalink: null })];
     const atuais = [oferta({ item_id: 'MLB1', preco: 100, permalink: null })];
     expect(diffOfertas(anteriores, atuais).gravar).toEqual([]);
+  });
+
+  it('não alerta a entrada de oferta fora da referência', () => {
+    const anteriores = entradaDiffRelevante([anteriorQualificavel({ item_id: 'MLB1' })]);
+    const atuais = entradaDiffRelevante([
+      ofertaQualificavel({ item_id: 'MLB1' }),
+      ofertaQualificavel({ item_id: 'MLB2', seller_id: 2, transactions_total: 0 }),
+    ]);
+
+    expect(diffOfertas(anteriores, atuais).alertas).toEqual([]);
+  });
+
+  it('não alerta queda de preço causada por oferta fora da referência', () => {
+    const anteriores = entradaDiffRelevante([anteriorQualificavel({ item_id: 'MLB1', preco: 100 })]);
+    const atuais = entradaDiffRelevante([
+      ofertaQualificavel({ item_id: 'MLB1', preco: 100 }),
+      ofertaQualificavel({ item_id: 'MLB2', seller_id: 2, preco: 50, transactions_total: 0 }),
+    ]);
+
+    expect(diffOfertas(anteriores, atuais).alertas).toEqual([]);
+  });
+
+  it('não alerta saída de oferta fora da referência', () => {
+    const anteriores = entradaDiffRelevante([
+      anteriorQualificavel({ item_id: 'MLB1' }),
+      anteriorQualificavel({ item_id: 'MLB2', seller_id: 2, transactions_total: 0 }),
+    ]);
+    const atuais = entradaDiffRelevante([ofertaQualificavel({ item_id: 'MLB1' })]);
+
+    expect(diffOfertas(anteriores, atuais).alertas).toEqual([]);
+  });
+
+  it('mantém alerta para queda de preço de oferta relevante', () => {
+    const anteriores = entradaDiffRelevante([anteriorQualificavel({ preco: 100 })]);
+    const atuais = entradaDiffRelevante([ofertaQualificavel({ preco: 80 })]);
+
+    expect(diffOfertas(anteriores, atuais).alertas).toContainEqual({
+      tipo: 'preco_caiu', payload: { de: 100, para: 80 },
+    });
   });
 });

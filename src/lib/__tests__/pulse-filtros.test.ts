@@ -90,6 +90,17 @@ describe('filtrarProdutos — recortes dos KPIs', () => {
     expect(filtrarProdutos(lista, filtros({ foco: 'mais_caro' }), menorFixo(100))).toHaveLength(0);
   });
 
+  it('sem menor relevante não compara ao menor preço apenas observado', () => {
+    const mercado = { menor_observado: 36, menor_relevante: null };
+    const menorRelevante = () => mercado.menor_relevante;
+    const lista = [produto({ id: 'sem_referencia', meu_preco: 100 })];
+
+    expect(filtrarProdutos(lista, filtros({ foco: 'mais_caro' }), menorRelevante)).toEqual([]);
+    expect(contarPulse(lista, menorRelevante)).toMatchObject({
+      comparaveis: 0, maisCaro: 0, menorPreco: 0,
+    });
+  });
+
   it('sem vínculo: qualquer status de catálogo diferente de vinculado', () => {
     const lista = [
       produto({ id: 'ok', catalogo_status: 'vinculado' }),

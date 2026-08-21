@@ -1,6 +1,39 @@
 // Pulse (ADR-0119): derivações puras sobre snapshots de ofertas/vendedores. Sem I/O — testável
 // sem mock de rede/Supabase.
+import {
+  resumirMercadoQualificado,
+  type MercadoQualificado,
+} from '../../supabase/functions/_shared/concorrencia/qualificacao';
 import type { PulseOferta, PulseVendedor } from './pulse';
+
+/** Junta cada oferta ao perfil mais recente de seu vendedor e aplica a regra compartilhada.
+ * `full` ainda não é persistido no snapshot Pulse; ele não participa da qualificação. */
+export function mercadoPulse(
+  ofertas: PulseOferta[],
+  vendedores: PulseVendedor[],
+): MercadoQualificado {
+  const vendedorPorId = new Map<number, PulseVendedor>();
+  for (const vendedor of vendedores) {
+    const atual = vendedorPorId.get(vendedor.seller_id);
+    const leituraAtual = atual?.perfil_coletado_em ?? atual?.dia;
+    const leituraNova = vendedor.perfil_coletado_em ?? vendedor.dia;
+    if (!atual || leituraNova >= leituraAtual!) vendedorPorId.set(vendedor.seller_id, vendedor);
+  }
+
+  return resumirMercadoQualificado(ofertas.map((oferta) => {
+    const vendedor = vendedorPorId.get(oferta.seller_id);
+    return {
+      item_id: oferta.item_id,
+      seller_id: oferta.seller_id,
+      preco: oferta.preco,
+      frete_gratis: oferta.frete_gratis,
+      full: false,
+      transactions_total: vendedor?.transactions_total ?? null,
+      visitas_30d: oferta.visitas_30d,
+      nivel: vendedor?.nivel ?? null,
+    };
+  }));
+}
 
 /** Última linha por item (a mais recente por `dia`), só as ativas, ordenada por preço asc. */
 export function estadoAtualOfertas(ofertas: PulseOferta[]): PulseOferta[] {

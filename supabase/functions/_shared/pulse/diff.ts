@@ -1,4 +1,26 @@
 import type { AlertaNovo, DiffOfertas, OfertaAnterior, OfertaColetada } from './tipos.ts';
+import { qualificarOferta } from '../concorrencia/qualificacao.ts';
+
+export interface OfertaQualificavelDiff extends OfertaColetada {
+  transactions_total: number | null;
+  visitas_30d: number | null;
+  nivel: string | null;
+}
+
+/** Entrada de alertas: a persistência continua usando todas as ofertas, mas o diff decisório só
+ * recebe as relevantes. `full` ainda não é coletado no snapshot Pulse e não altera a regra. */
+export function entradaDiffRelevante<T extends OfertaQualificavelDiff>(ofertas: T[]): T[] {
+  return ofertas.filter((oferta) => qualificarOferta({
+    item_id: oferta.item_id,
+    seller_id: oferta.seller_id,
+    preco: oferta.preco,
+    frete_gratis: oferta.frete_gratis,
+    full: false,
+    transactions_total: oferta.transactions_total,
+    visitas_30d: oferta.visitas_30d,
+    nivel: oferta.nivel,
+  }).status === 'relevante');
+}
 
 // `permalink` entra na comparação de propósito: sem ele, o snapshot só-se-mudou deixaria uma
 // oferta de preço estável para sempre sem link, esperando uma mudança de preço que pode não vir.

@@ -66,6 +66,7 @@ const oferta = (overrides: Partial<PulseOferta>): PulseOferta => ({
   dia: '2026-08-20',
   permalink: null,
   visitas_30d: null,
+  visitas_30d_em: null,
   ...overrides,
 });
 
@@ -77,6 +78,8 @@ const vendedor = (seller_id: number, nickname: string): PulseVendedor => ({
   transactions_total: 0,
   dia: '2026-08-20',
   uf: 'RJ',
+  reputacao_detalhe: null,
+  perfil_coletado_em: null,
 });
 
 function renderDetalhe(produto: PulseProduto = produtoBase) {
