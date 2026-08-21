@@ -313,8 +313,11 @@ Estado: 7 tarefas do plano concluídas e revisadas na branch `codex/brainstorm-p
 `deno check`/`check:functions`, `pnpm lint` (0 erros) e `git diff --check` verdes. Migration
 `20260821110914_pulse_qualificacao_vendedor.sql` só validada por dry-run
 (`supabase db push --linked --dry-run`); **nenhuma migration, deploy de edge function, push ou merge
-foi executado** — aguardando autorização explícita de Diego. Sem ADR próprio ainda; a spec aprovada
-faz esse papel até uma ADR ser escrita. Ver `docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
+foi executado** — aguardando autorização explícita de Diego. Revisão final adversarial (diff completo
+desde o merge-base com main) e QA visual em runtime real concluídas sem achado bloqueante — 1 fix de
+hardening aplicado (`viabilidade-linha.tsx` tolera payload de mercado sem `observado` durante skew de
+deploy). Decisão registrada em [ADR-0130](decisions/0130-concorrentes-relevantes-pulse-viabilidade.md).
+Ver `docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

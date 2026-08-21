@@ -27,9 +27,10 @@
   só o arquivo esperado pendente.
 - [x] Documentação (`edge-functions.md`, `glossario.md`, `project-status.md`) atualizada no mesmo
   ciclo; `modelo-de-dados.md` já havia sido atualizado junto da migration.
-- [ ] **Pendente: sem ADR própria ainda** — a spec aprovada por Diego cobre a decisão, mas
-  CLAUDE.md pede ADR para mudança de regra de negócio não-trivial; avaliar se vale escrever uma
-  antes do push/merge.
+- [x] ADR própria escrita: [decisions/0130](decisions/0130-concorrentes-relevantes-pulse-viabilidade.md)
+  — registrada em `obsidian-vault/04-Decisões/Índice de ADRs.md`; corrigido de quebra o contador
+  desatualizado de `docs/README.md` (dizia "126 documentos, mais recente 0126", já estava defasado
+  antes desta sessão — agora 130/0130).
 - [ ] **Pendente: deploy/push/merge** — migration, `pulse-coletar` e `analisar-viabilidade` só
   validadas localmente/dry-run; nada foi implantado. Ordem prevista em
   `.superpowers/sdd/2026-08-20-concorrentes-relevantes-pulse-viabilidade/task-8-brief.md`.
