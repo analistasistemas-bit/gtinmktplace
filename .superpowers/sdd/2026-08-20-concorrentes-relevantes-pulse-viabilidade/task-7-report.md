@@ -5,6 +5,7 @@
 - Base: `f56e2dec`
 - Implementação: `092ec9b` — `feat: usar mercado relevante na Viabilidade`
 - Fix round 1: `f5e0e96` — `fix: corrigir mercado relevante na Viabilidade` (base `21979d60`)
+- Fix round 2: `110e573` — `fix: permitir retry no mercado relevante` (base `6a4ac5ea`)
 - Deploy, push e merge: não executados.
 
 ## Fix round 1 — achados Important do Sol
@@ -52,6 +53,36 @@
 - `rtk deno check ...`, `rtk pnpm run check:functions` e `rtk deno lint ...`: aprovados.
 - `rtk pnpm run lint`: 0 erros; 12 warnings preexistentes fora do diff.
 - `rtk git diff --check` e `rtk git diff --cached --check`: aprovados.
+
+## Fix round 2 — retry e limiter global
+
+### Red → Green
+
+1. A primeira falha de perfil permanecia no `Map` e a segunda chamada recebia a mesma rejection.
+   O teste passou após remover a entrada rejeitada somente quando ela ainda aponta para a mesma
+   promise; perfil e visitas refazem a chamada e continuam deduplicados após sucesso (2 chamadas).
+2. O teste anterior não sobrepunha perfil e visitas. O novo cenário mantém quatro visitas e seis
+   perfis candidatos em voo entre cinco resoluções; passou com máximo global de seis. Dois limiters
+   independentes iniciariam dez chamadas e falhariam no mesmo assert.
+
+### Decisões
+
+- O callback de rejeição compara a promise atual do `Map` antes de apagar a chave, evitando que uma
+  rejection antiga elimine uma tentativa posterior.
+- Promises resolvidas permanecem no `Map` pelo restante do request; não houve mudança de API ou UX.
+- `deno.lock` foi inspecionado e não mudou, portanto não foi incluído.
+
+### Arquivos
+
+- `supabase/functions/_shared/analise/mercado-relevante.ts`
+- `supabase/functions/_shared/analise/__tests__/mercado-relevante.test.ts`
+
+### Verificações
+
+- Testes focados: 2 arquivos / 9 testes aprovados.
+- `rtk pnpm exec tsc -p tsconfig.app.json --pretty false`: aprovado.
+- `rtk deno check ...`, `rtk pnpm run check:functions` e lint Deno direcionado: aprovados.
+- `rtk git diff --check`: aprovado.
 
 ## Red → Green
 
