@@ -37,6 +37,13 @@ function numeroOuNulo(valor: unknown): number | null {
   return typeof valor === 'number' && Number.isFinite(valor) ? valor : null;
 }
 
+function ufOuNulo(valor: unknown): string | null {
+  const estado = typeof valor === 'string' ? valor : textoOuNulo(registro(valor)?.id);
+  if (!estado) return null;
+  const sigla = estado.trim().toUpperCase().replace(/^BR-/, '');
+  return /^[A-Z]{2}$/.test(sigla) ? sigla : null;
+}
+
 function eTextoOuNulo(valor: unknown): valor is string | null {
   return valor === null || typeof valor === 'string';
 }
@@ -51,7 +58,6 @@ export function normalizarPerfilVendedor(json: unknown): PerfilVendedor | null {
   const transactions = registro(reputacao?.transactions);
   const ratings = registro(transactions?.ratings);
   const address = registro(bruto?.address);
-  const state = registro(address?.state);
   const sellerId = numeroOuNulo(bruto?.id);
   const total = numeroOuNulo(transactions?.total);
   if (sellerId == null || total == null) return null;
@@ -62,7 +68,7 @@ export function normalizarPerfilVendedor(json: unknown): PerfilVendedor | null {
     nivel: textoOuNulo(reputacao?.level_id),
     power_seller: textoOuNulo(reputacao?.power_seller_status),
     transactions_total: total,
-    uf: textoOuNulo(state?.id),
+    uf: ufOuNulo(address?.state),
     detalhe: {
       transactions: {
         period: textoOuNulo(transactions?.period),

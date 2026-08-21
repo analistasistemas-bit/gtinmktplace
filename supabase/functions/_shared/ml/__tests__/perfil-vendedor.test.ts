@@ -17,7 +17,7 @@ const perfilEmCache = {
   nivel: '5_green',
   power_seller: 'platinum',
   transactions_total: 120,
-  uf: 'BR-PE',
+  uf: 'PE',
   detalhe: {
     transactions: {
       period: '60 days',
@@ -61,6 +61,26 @@ describe('normalizarPerfilVendedor', () => {
     expect(perfil?.power_seller).toBe('platinum');
     expect(perfil?.transactions_total).toBe(120);
     expect(perfil?.detalhe.transactions.period).toBe('60 days');
+  });
+
+  it('canoniza a UF vinda de address.state objeto ou string', () => {
+    const base = {
+      id: 123,
+      seller_reputation: { transactions: { total: 120 } },
+    };
+
+    expect(normalizarPerfilVendedor({ ...base, address: { state: { id: 'BR-pe' } } })?.uf).toBe('PE');
+    expect(normalizarPerfilVendedor({ ...base, address: { state: 'br-sp' } })?.uf).toBe('SP');
+  });
+
+  it('UF inválida vira null', () => {
+    const base = {
+      id: 123,
+      seller_reputation: { transactions: { total: 120 } },
+    };
+
+    expect(normalizarPerfilVendedor({ ...base, address: { state: { id: 'Pernambuco' } } })?.uf).toBeNull();
+    expect(normalizarPerfilVendedor({ ...base, address: { state: 'BR-' } })?.uf).toBeNull();
   });
 
   it('não converte payload inválido em vendedor com zero vendas', () => {
