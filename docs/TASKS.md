@@ -31,9 +31,19 @@
   — registrada em `obsidian-vault/04-Decisões/Índice de ADRs.md`; corrigido de quebra o contador
   desatualizado de `docs/README.md` (dizia "126 documentos, mais recente 0126", já estava defasado
   antes desta sessão — agora 130/0130).
-- [ ] **Pendente: deploy/push/merge** — migration, `pulse-coletar` e `analisar-viabilidade` só
-  validadas localmente/dry-run; nada foi implantado. Ordem prevista em
-  `.superpowers/sdd/2026-08-20-concorrentes-relevantes-pulse-viabilidade/task-8-brief.md`.
+- [x] **Deploy/push/merge (2026-08-21):** migrations aplicadas, `pulse-coletar` (v21) e
+  `analisar-viabilidade` (v53) deployadas com versão conferida, branch rebaseada sobre `main`
+  (que tinha avançado nesse meio-tempo, sem overlap de código), CI verde de novo, merge
+  fast-forward, branch e worktree removidos, `main` local sincronizada (`da95b759`).
+- [x] **Validação em produção (org DSA):** coleta Pulse real disparada via QStash pós-deploy;
+  snapshot do Aptamil (`MLB10512495`) atualizou ~40s depois. Qualificação aplicada via SQL
+  read-only sobre o dado real confirmou 90 ofertas observadas, menor observado R$ 36,00 e menor
+  relevante R$ 70,19 — exatos, os dois números que motivaram a feature. 26/90 relevantes (vs.
+  28/90 da spec de 2026-08-20 — drift real de 1 dia, todos os vendedores recoletados no mesmo dia
+  da validação, não um bug). `full_ml` confirmado com dado real (3/90). Não foi feita chamada
+  autenticada ao `analisar-viabilidade` como usuário real (sem credencial de login disponível) —
+  a validação SQL sobre o mesmo snapshot fresco que `resolverMercadoRelevante` reaproveitaria é
+  equivalente ao que importa, mas não é literalmente abrir a tela.
 - [x] **Revisão final adversarial (independente, diff completo desde o merge-base com main):**
   aprovado com ressalvas, nenhum achado bloqueante. `mercado?.observado?.menor`/`vendedores` em
   `viabilidade-linha.tsx` ganhou guard defensivo contra payload de edge ainda não implantada

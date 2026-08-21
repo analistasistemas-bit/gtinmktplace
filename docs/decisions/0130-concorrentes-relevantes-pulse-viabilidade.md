@@ -88,6 +88,17 @@ atualizados; 700 testes focados + `tsc -b --force` + `check:functions` + lint + 
 verdes após o fix. D-1/D-2/D-4 acima não mudam — é uma correção de implementação, não uma nova
 decisão.
 
+**Deploy e validação em produção (2026-08-21):** migrations aplicadas, `pulse-coletar` e
+`analisar-viabilidade` deployadas, merge fast-forward na `main`. Coleta Pulse real disparada via
+QStash pós-deploy para o Aptamil (org DSA, `MLB10512495`); qualificação aplicada via SQL read-only
+sobre o dado real recém-coletado confirmou os dois números que motivaram esta ADR: **R$ 36,00
+observado, R$ 70,19 relevante** (exatos), 90 ofertas totais, 26 relevantes (spec original 28/90 em
+2026-08-20 — drift real de 1 dia de transações/visitas de vendedores, todos recoletados no mesmo
+dia da validação). `full_ml` confirmado com dado real. Chamada autenticada ao
+`analisar-viabilidade` como usuário real da org não foi feita por falta de credencial disponível
+na sessão de validação — a checagem SQL sobre o snapshot fresco que `resolverMercadoRelevante`
+reaproveitaria cobre o que importa financeiramente, mas não é literalmente abrir a tela.
+
 ## Validação (critérios de aceite)
 
 Cenário de referência — GTIN `7891025111825`, snapshot de 2026-08-20:

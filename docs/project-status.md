@@ -293,7 +293,7 @@ dialogs. Um achado do relatório foi **refutado** por medição — o PostgREST 
 número JSON, não string, então não havia comparação lexicográfica de preço; o que sobrou foi um
 comentário errado no código, corrigido. Suíte 367 arquivos / 3292 testes.
 
-### Concorrentes relevantes no Pulse e na Viabilidade (spec `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`) — IMPLEMENTADO, AGUARDANDO DEPLOY/PUSH
+### Concorrentes relevantes no Pulse e na Viabilidade (spec `2026-08-20-concorrentes-relevantes-pulse-viabilidade-design.md`, ADR-0130) — EM PRODUÇÃO (org DSA, 2026-08-21)
 
 Motivado pelo GTIN `7891025111825` (Aptamil Premium 1 800 g): 90 ofertas observadas, menor R$ 36,00
 de um vendedor sem força comercial, alimentando Pulse e Viabilidade (comissão, imposto, frete,
@@ -318,9 +318,26 @@ hard-coded `false` — `_shared/pulse/parse.ts` nunca lia `shipping.logistic_typ
 da Viabilidade já lia do mesmo endpoint; migration adicional
 `20260821151141_pulse_ofertas_full_logistica.sql` + parser/diff/margem corrigidos. Suíte focada
 700/700, `tsc -b --force`, `deno check`/`check:functions`, `pnpm lint` (0 erros) e `git diff --check`
-verdes. Migrations (`20260821110914`, `20260821151141`) só validadas por dry-run
-(`supabase db push --linked --dry-run`); **nenhuma migration, deploy de edge function, push ou merge
-foi executado** — aguardando autorização explícita de Diego. Ver
+verdes.
+
+**Deploy (2026-08-21):** migrations `20260821110914`/`20260821151141` aplicadas (`supabase db push`,
+`db:check` alinhado), `pulse-coletar` (v21) e `analisar-viabilidade` (v53) deployadas com versão
+conferida, branch mergeada fast-forward na `main` (CI verde `frontend`+`backend-lint`), branch e
+worktree removidos, `main` local sincronizada.
+
+**Validação em produção (2026-08-21, org DSA):** coleta Pulse real disparada via QStash publish
+(`{"tier":"completo"}`) pós-deploy; `pulse_produtos.ultimo_snapshot_em` do Aptamil
+(`MLB10512495`) atualizou ~40s depois. Query read-only na mesma qualificação
+(`qualificarOferta`) contra os dados reais confirmou: **90 ofertas observadas, menor observado
+R$ 36,00 (exato), menor relevante R$ 70,19 (exato)** — os dois números que motivaram a feature.
+26/90 relevantes (spec original media 28/90 em 2026-08-20; drift de 1 dia em transações/visitas
+reais de vendedores, não uma divergência de lógica — todos os snapshots de vendedor são do mesmo
+dia da coleta). `full_ml` confirmado populando dado real (3 de 90 ofertas com FULL), provando o
+fix do `code-review-fable5` em produção. Chamada autenticada ao `analisar-viabilidade` como
+usuário real da org DSA não foi feita (sem credencial de login disponível para a sessão) — a
+validação via SQL read-only sobre o mesmo snapshot fresco (<24h) que `resolverMercadoRelevante`
+reaproveitaria é equivalente para o que importa (o número financeiro correto chega à Viabilidade),
+mas não é literalmente clicar na tela. Ver
 `docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
 
 ## Trilho de UX/design (2026-06-21, em producao)
