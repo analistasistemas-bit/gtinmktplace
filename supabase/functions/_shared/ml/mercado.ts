@@ -3,10 +3,10 @@ import type { ConexaoCanal } from '../canais/conexao.ts';
 import { redisGet, redisSet } from '../redis/client.ts';
 import { agregarMercado, posicaoNoRanking, type ReputacaoVendedor } from './mercado-agregar.ts';
 import type { DadosOfertas } from '../concorrencia/tipos.ts';
+import { buscarPerfilVendedor } from './perfil-vendedor.ts';
 
 const API = 'https://api.mercadolibre.com';
 const TIMEOUT_MS = 15000;
-const TTL_SELLER = 60 * 60 * 24; // 24h
 const TTL_HIGHLIGHTS = 60 * 60 * 6; // 6h
 
 export interface AnaliseMercado {
@@ -33,22 +33,12 @@ async function mlGet(url: string, token: string): Promise<unknown | null> {
 }
 
 export async function reputacaoVendedor(token: string, sellerId: number): Promise<ReputacaoVendedor> {
-  const chave = `cache:seller:${sellerId}`;
-  try {
-    const cache = await redisGet(chave);
-    if (cache) return JSON.parse(cache) as ReputacaoVendedor;
-  } catch { /* segue */ }
-
-  const json = (await mlGet(`${API}/users/${sellerId}`, token)) as {
-    seller_reputation?: { power_seller_status?: string | null; transactions?: { total?: number } };
-  } | null;
-  const rep = json?.seller_reputation;
-  const resultado: ReputacaoVendedor = {
-    lider: rep?.power_seller_status != null,
-    vendas: rep?.transactions?.total ?? 0,
+  const perfil = await buscarPerfilVendedor(token, sellerId);
+  if (!perfil) throw new Error(`Perfil indisponível para seller ${sellerId}`);
+  return {
+    lider: perfil.power_seller != null,
+    vendas: perfil.transactions_total,
   };
-  try { await redisSet(chave, JSON.stringify(resultado), TTL_SELLER); } catch { /* segue */ }
-  return resultado;
 }
 
 async function rankingCategoria(token: string, categoriaMlId: string, productId: string): Promise<number | null> {
