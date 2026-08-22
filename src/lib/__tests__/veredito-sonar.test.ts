@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  calcularVereditoAnuncios, contextoNichoAnuncios, subamostraNomeada,
+  calcularVereditoAnuncios, contextoNichoAnuncios, faixasPrecoAmostra, insightEntrada, subamostraNomeada,
 } from '../veredito-sonar';
 import type { VereditoAnuncios } from '../veredito-sonar';
 import type { ItemVendasSonar, PainelVendasSonar } from '../sonar';
@@ -59,7 +59,7 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
     expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
     expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
     expect(v.parcial).toBe(false);
-    expect(v.resumo).toBe('Tem gente comprando, mas poucas lojas dominam o topo. Não enche estoque.');
+    expect(v.resumo).toBe('Bom volume de venda, mas poucas lojas já dominam o topo — pouco espaço pra mais um player.');
   });
   it('protetor solar facial → média (4/6)', () => {
     const { vendas, visitas_total } = fixture('protetor-solar-facial');
@@ -167,7 +167,7 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     expect(v.entrada).toBe('fechada');
     expect(v.explicacao.gateDemanda).toBe(false);
     expect(v.titulo).toMatch(/entrada fechada/);
-    expect(v.resumo).toBe('Tem gente comprando, mas o topo é Full. Não enche estoque.');
+    expect(v.resumo).toBe('Mercado aquecido, mas dominado por quem já tem Full — entrar com estoque grande é nadar contra a maré.');
     expect(v.explicacao.acao).not.toMatch(/Demanda insuficiente/i);
     expect(v.explicacao.acao).toMatch(/entrada fechada|Full/i);
   });
@@ -307,5 +307,162 @@ describe('contextoNichoAnuncios — leitura complementar, fora do score', () => 
     expect(rotulos).toContain('% internacionais na amostra');
     // 4 Full em 19 anúncios com envio medido (1 dos 20 vem com `envio: ""`) = 21%, não 4/20.
     expect(itens.find((i) => i.rotulo === '% Full na amostra')!.valor).toBe('21%');
+  });
+});
+
+// =============== Insights do nicho (ADR-0124 addendum 2026-08-21) ===============================
+
+describe('insightEntrada', () => {
+  it('entrada aberta com folga restante → menciona o próximo delta (destravar)', () => {
+    const { vendas, visitas_total } = fixture('tecido-oxford-10-metros');
+    const v = calcularVereditoAnuncios(vendas, visitas_total);
+    expect(v.entrada).toBe('aberta');
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Entrada aberta');
+    expect(insight.tom).toBe('bom');
+    expect(insight.detalhe).toMatch(/Ainda dá para melhorar/);
+  });
+
+  it('entrada fechada por disputa (Full dominante) → detalhe usa o destravar da disputa', () => {
+    const itens = Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: i < 12 ? 500 : null, preco: 100,
+      full: i < 19, loja_oficial: false,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.entrada).toBe('fechada');
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Entrada fechada');
+    expect(insight.tom).toBe('ruim');
+    expect(insight.detalhe).toMatch(/Para destravar:/);
+  });
+
+  it('entrada fechada por marca (disputa boa) → detalhe usa o destravar da marca, não da disputa', () => {
+    const itens = Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1_000, preco: 400,
+      full: false, loja_oficial: i < 11, // 11/20 = 55% > 50%
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.entrada).toBe('fechada');
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).not.toBe('ruim');
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Entrada fechada');
+    expect(insight.detalhe).toMatch(/loja oficial/);
+  });
+
+  it('entrada não medida (trava D10) → detalhe cita a cobertura de rótulo de loja', () => {
+    const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLB${i}`, vendedor: `V${i}`, vendidos: 2000 }));
+    const anonimos = Array.from({ length: 16 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendedor: null, vendidos: 2000 }));
+    const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...anonimos]), null);
+    expect(v.entrada).toBe('nao_medida');
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Concorrência não medida');
+    expect(insight.tom).toBe('medio');
+    expect(insight.detalhe).toMatch(/rótulo de loja/);
+  });
+
+  it('entrada não medida por Full não informado (cobertura OK, sem trava D10) → detalhe cita o envio, não o genérico', () => {
+    // Mesma amostra do teste "Full não medido" acima: cobertura de rótulo passa (>=50%), mas
+    // nenhum anúncio informa o tipo de envio — causa É o fator 'disputa' comum, não o de regua:null.
+    const { vendas } = fixture('protetor-solar-facial');
+    const semFull: PainelVendasSonar = {
+      ...vendas,
+      por_anuncio: Object.fromEntries(
+        Object.entries(vendas.por_anuncio!).map(([k, i]) => [k, { ...i, full: null }]),
+      ),
+      raio_x: { ...vendas.raio_x, full: 0 },
+    };
+    const v = calcularVereditoAnuncios(semFull, null);
+    expect(v.entrada).toBe('nao_medida');
+    expect(v.explicacao.fatores.some((f) => f.regua === null)).toBe(false); // sem trava D10 aqui
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Concorrência não medida');
+    expect(insight.detalhe).toMatch(/tipo de envio/);
+    expect(insight.detalhe).not.toBe('Não deu para medir a concorrência do nicho com os dados desta amostra.');
+  });
+
+  it('entrada aberta sem nenhum destravar (tudo já bom) → detalhe genérico de campo livre', () => {
+    const itens = Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1_000, preco: 400,
+      full: false, loja_oficial: false,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.entrada).toBe('aberta');
+    expect(v.explicacao.fatores.every((f) => f.destravar == null)).toBe(true);
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Entrada aberta');
+    expect(insight.tom).toBe('bom');
+    expect(insight.detalhe).toBe('Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.');
+  });
+});
+
+describe('faixasPrecoAmostra', () => {
+  it('amostra vazia → null (card some)', () => {
+    expect(faixasPrecoAmostra(painelSintetico([]))).toBeNull();
+  });
+
+  it('1 item → min_max com a mesma faixa', () => {
+    const v = painelSintetico([itemV2({ item_id: 'MLB1', preco: 50 })]);
+    expect(faixasPrecoAmostra(v)).toEqual({
+      modo: 'min_max',
+      faixas: [{ rotulo: 'Preço observado', min: 50, max: 50 }],
+    });
+  });
+
+  it('2 itens → min_max única faixa cobrindo os dois preços', () => {
+    const v = painelSintetico([
+      itemV2({ item_id: 'MLB1', preco: 30 }),
+      itemV2({ item_id: 'MLB2', preco: 10 }),
+    ]);
+    expect(faixasPrecoAmostra(v)).toEqual({
+      modo: 'min_max',
+      faixas: [{ rotulo: 'Preço observado', min: 10, max: 30 }],
+    });
+  });
+
+  it('3 itens → tercis, uma unidade por faixa', () => {
+    const v = painelSintetico([
+      itemV2({ item_id: 'MLB1', preco: 30 }),
+      itemV2({ item_id: 'MLB2', preco: 10 }),
+      itemV2({ item_id: 'MLB3', preco: 20 }),
+    ]);
+    expect(faixasPrecoAmostra(v)).toEqual({
+      modo: 'tercis',
+      faixas: [
+        { rotulo: 'Barato', min: 10, max: 10 },
+        { rotulo: 'Médio', min: 20, max: 20 },
+        { rotulo: 'Premium', min: 30, max: 30 },
+      ],
+    });
+  });
+
+  it('9 itens → tercis com 3 preços cada, cortes em 3 e 6', () => {
+    const precos = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+    const v = painelSintetico(precos.map((preco, i) => itemV2({ item_id: `MLB${i}`, preco })));
+    expect(faixasPrecoAmostra(v)).toEqual({
+      modo: 'tercis',
+      faixas: [
+        { rotulo: 'Barato', min: 10, max: 30 },
+        { rotulo: 'Médio', min: 40, max: 60 },
+        { rotulo: 'Premium', min: 70, max: 90 },
+      ],
+    });
+  });
+
+  it('itens sem preço (null) são filtrados antes de ordenar', () => {
+    const v = painelSintetico([
+      itemV2({ item_id: 'MLB1', preco: 40 }),
+      itemV2({ item_id: 'MLB2', preco: null }),
+      itemV2({ item_id: 'MLB3', preco: 20 }),
+      itemV2({ item_id: 'MLB4', preco: 60 }),
+    ]);
+    // 3 itens com preço válido (o null é filtrado) → n=3, cortes floor(3/3)=1 e floor(6/3)=2.
+    expect(faixasPrecoAmostra(v)).toEqual({
+      modo: 'tercis',
+      faixas: [
+        { rotulo: 'Barato', min: 20, max: 20 },
+        { rotulo: 'Médio', min: 40, max: 40 },
+        { rotulo: 'Premium', min: 60, max: 60 },
+      ],
+    });
   });
 });

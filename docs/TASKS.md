@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## "Insights do nicho" no VereditoSonar (adendo ADR-0124, 2026-08-21) — 2026-08-22
+
+- [x] Frase-resumo do veredito com tom mais amigável/comercial (`resumoVeredito` em
+  `src/lib/veredito-sonar.ts`), guardrail mantido: ação "não compre estoque" continua inequívoca.
+- [x] `insightEntrada()` e `faixasPrecoAmostra()` novos em `veredito-sonar.ts` — 100% determinístico,
+  sem chamada de rede, derivados do que `calcularVereditoAnuncios`/`PainelVendasSonar` já trazem.
+- [x] Seção "Insights do nicho" sempre visível no `VereditoSonar` (3 mini-cards: entrada+destravar,
+  pódio de rivais, faixas de preço), reaproveitando o padrão visual de `painel-analise.tsx`. Pódio de
+  rivais removido do "Saiba mais" (não duplica mais).
+- [x] Testes novos/atualizados em `veredito-sonar.test.ts` (37 testes); suíte completa (398
+  arquivos/3676 testes), lint e `tsc -b --force` verdes. Validação visual via Playwright (sessão
+  isolada, conta VALIDATION, respostas do Sonar mockadas) nos 4 estados de entrada
+  (aberta/fechada-Full/fechada-marca/não-medida) + conferência do "Saiba mais" sem duplicação.
+
 ## Botão "Limpar todos" no painel de alertas do Pulse — 2026-08-21
 
 - [x] `marcarTodosAlertasLidos` (`src/lib/pulse.ts`): `update pulse_alertas set lido=true where lido=false`,

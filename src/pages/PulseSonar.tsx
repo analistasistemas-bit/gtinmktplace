@@ -646,6 +646,7 @@ export default function PulseSonar() {
           <VereditoSonar
             veredito={calcularVereditoAnuncios(vendas, visitasTotal)}
             contexto={contextoNichoAnuncios(vendas)}
+            vendas={vendas}
           />
           <SonarVendas resp={vendas} />
 

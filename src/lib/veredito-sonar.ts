@@ -154,19 +154,19 @@ function resumoVeredito(
   disputa: { nivel: NivelFator; fullPct: number | null } | null,
   marca: { nivel: NivelFator } | null,
 ): string {
-  if (gateDemanda) return 'Quase ninguém compra neste termo. Não enche estoque.';
+  if (gateDemanda) return 'Poucas provas de venda por aqui — vale testar antes de investir em estoque.';
   const fullFecha = disputa != null && disputa.fullPct != null && disputa.fullPct >= DISPUTA_V2.fullMuito;
   if (entrada === 'nao_medida') {
-    return 'Tem gente comprando, mas não deu para medir a concorrência. Não enche estoque.';
+    return 'Tem gente comprando, mas não deu pra medir quem mais está vendendo aqui — vá com cautela, sem comprar volume.';
   }
   if (entrada === 'fechada') {
-    if (fullFecha) return 'Tem gente comprando, mas o topo é Full. Não enche estoque.';
-    if (marca?.nivel === 'ruim') return 'Tem gente comprando, mas o topo é loja oficial. Não enche estoque.';
-    return 'Tem gente comprando, mas poucas lojas dominam o topo. Não enche estoque.';
+    if (fullFecha) return 'Mercado aquecido, mas dominado por quem já tem Full — entrar com estoque grande é nadar contra a maré.';
+    if (marca?.nivel === 'ruim') return 'Bom volume de venda, só que a loja oficial manda no topo — dá pra testar, não pra apostar alto.';
+    return 'Bom volume de venda, mas poucas lojas já dominam o topo — pouco espaço pra mais um player.';
   }
-  if (nivel === 'baixa') return 'O mercado não paga mais um player genérico. Não enche estoque.';
-  if (nivel === 'alta') return 'Sinais bons. Entra com estoque pequeno e valida o giro.';
-  return 'Dá para entrar, sem folga. Confere preço e frete antes de encher estoque.';
+  if (nivel === 'baixa') return 'O mercado é pequeno demais pra sustentar mais um concorrente parecido com os outros — sem diferencial forte, não compensa.';
+  if (nivel === 'alta') return 'Boa oportunidade: demanda comprovada e espaço pra entrar. Comece enxuto e valide o giro.';
+  return 'Dá pra entrar, mas sem muita folga — vale conferir preço e frete antes de comprar volume.';
 }
 
 function regua(min: number, max: number, cortes: [number, number], valor: number, invertida: boolean): ExplicacaoRegua {
@@ -598,4 +598,76 @@ export function contextoNichoAnuncios(vendas: PainelVendasSonar): ContextoItem[]
     itens.push({ rotulo: '% internacionais na amostra', valor: pct((rx.internacionais / vendas.itens_analisados) * 100) });
   }
   return itens;
+}
+
+// ================= Insights do nicho (ADR-0124 addendum 2026-08-21) ============================
+// Três mini-cards SEMPRE visíveis (não escondidos no "Saiba mais"): entrada, pódio de rivais
+// (reusa `rivaisPodio` acima, sem função nova) e faixas de preço. 100% derivados do que
+// `calcularVereditoAnuncios`/`PainelVendasSonar` já trazem — sem chamada de rede, sem novo custo.
+
+export interface InsightEntrada { titulo: string; detalhe: string; tom: NivelFator }
+
+/** Por que a entrada está aberta/fechada + como destravar — diferencial citado no ADR: nenhum
+ *  concorrente (Hunter Spy, JoomPulse) explica o que precisaria mudar pra abrir o nicho. */
+export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
+  const fatores = v.explicacao.fatores;
+  if (v.entrada === 'nao_medida') {
+    // Duas causas possíveis (calcularVereditoAnuncios): trava de cobertura D10 (fator sem régua) ou
+    // Full não medido em nenhum anúncio (fator 'disputa' comum, cuja frase já explica a causa).
+    const causa = fatores.find((f) => f.regua === null) ?? fatores.find((f) => f.chave === 'disputa');
+    return {
+      titulo: 'Concorrência não medida',
+      tom: 'medio',
+      detalhe: causa?.frase ?? 'Não deu para medir a concorrência do nicho com os dados desta amostra.',
+    };
+  }
+  if (v.entrada === 'fechada') {
+    // Mesma prioridade do resumoVeredito: Full/disputa fecha primeiro, marca depois.
+    const causa = fatores.find((f) => f.nivel === 'ruim' && f.chave === 'disputa')
+      ?? fatores.find((f) => f.nivel === 'ruim' && f.chave === 'marca');
+    const detalhe = causa?.destravar != null
+      ? `Para destravar: ${causa.destravar}.`
+      : causa?.frase ?? 'Disputa ou marca fecharam a entrada nesta amostra.';
+    return { titulo: 'Entrada fechada', tom: 'ruim', detalhe };
+  }
+  // Aberta: se ainda houver delta em disputa/tração/marca (nicho bom mas não perfeito), resume o
+  // próximo passo; se todos já são 'bom' (nenhum destravar), não há barreira a apontar.
+  const proximoDelta = fatores.find((f) => f.chave !== 'demanda' && f.destravar != null);
+  return {
+    titulo: 'Entrada aberta',
+    tom: 'bom',
+    detalhe: proximoDelta != null
+      ? `Ainda dá para melhorar: ${proximoDelta.destravar}.`
+      : 'Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.',
+  };
+}
+
+export interface FaixaPreco { rotulo: string; min: number; max: number }
+export interface FaixasPrecoAmostra { modo: 'tercis' | 'min_max'; faixas: FaixaPreco[] }
+
+/** Barato/Médio/Premium por tercis do `preco` da amostra — nova leitura sobre dado já lido, sem
+ *  entrar no score. 0 itens some o card; 1-2 itens não dá pra terciar, cai pra uma faixa min-max. */
+export function faixasPrecoAmostra(vendas: PainelVendasSonar): FaixasPrecoAmostra | null {
+  const precos = itensDaAmostra(vendas)
+    .map((i) => i.preco)
+    .filter((p): p is number => p != null)
+    .sort((a, b) => a - b);
+  if (precos.length === 0) return null;
+  if (precos.length <= 2) {
+    return {
+      modo: 'min_max',
+      faixas: [{ rotulo: 'Preço observado', min: precos[0], max: precos[precos.length - 1] }],
+    };
+  }
+  const n = precos.length;
+  const c1 = Math.floor(n / 3);
+  const c2 = Math.floor((2 * n) / 3);
+  const fatia = (rotulo: string, ini: number, fim: number): FaixaPreco => {
+    const parte = precos.slice(ini, fim);
+    return { rotulo, min: parte[0], max: parte[parte.length - 1] };
+  };
+  return {
+    modo: 'tercis',
+    faixas: [fatia('Barato', 0, c1), fatia('Médio', c1, c2), fatia('Premium', c2, n)],
+  };
 }
