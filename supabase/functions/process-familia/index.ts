@@ -24,7 +24,9 @@ import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { montarAtributosML, preencherUnitsPerPack, preencherNomeObrigatorio, categoriaParaTipo, tipoParaCategoria, type AtributoML } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import { resolverCategoria, ehCategoriaGenerica } from '../_shared/categoria/resolver.ts';
-import { buscarCategoriaPreditor } from '../_shared/ml/domain-discovery.ts';
+import { buscarProdutoCatalogoPorGtin, buscarCategoriaFicha } from '../_shared/ml/catalogo.ts';
+import { buscarCategoriaPreditor, buscarDominioCategoria, buscarNomeCategoria } from '../_shared/ml/domain-discovery.ts';
+import { calcularSugestaoCatalogo, type SugestaoCatalogoPersistir } from './sugestao-catalogo.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
 import { desempatarCategoriaLLM } from '../_shared/ai/categoria-llm.ts';
 import { preencherAtributosClosedSet, desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
@@ -63,7 +65,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -448,6 +450,22 @@ Deno.serve(async (req) => {
         ? await analisarMercado(conexao, concorrencia.product_id, categoriaMlId, concorrencia.ofertas)
         : null;
 
+    // 5f. Sugestão de categoria pela ficha de catálogo (spec 2026-08-22, estende ADR-0057).
+    // Best-effort, nunca aplicada sozinha (ADR-0054 Fase 2). Só no CREATE — o UPDATE parcial
+    // retorna cedo lá em cima, de propósito: categoria de anúncio publicado não muda.
+    // 1 chamada só: a variação principal responde pela família (cores irmãs, mesmo domínio).
+    let sugestaoCatalogo: SugestaoCatalogoPersistir | null = null;
+    if (token && categoriaMlId) {
+      const tokenSug = token;
+      const principal = resolvidas.find((v) => v.codigo === claimed.variacao_principal_codigo) ?? resolvidas[0];
+      sugestaoCatalogo = await calcularSugestaoCatalogo({
+        buscarFicha: (g) => buscarProdutoCatalogoPorGtin(tokenSug, g),
+        buscarDominio: (c) => buscarDominioCategoria(tokenSug, c),
+        buscarItensFicha: (f) => buscarCategoriaFicha(tokenSug, f),
+        buscarNome: (c) => buscarNomeCategoria(tokenSug, c),
+      }, { gtin: principal?.gtin ?? null, categoriaMlId, atributosMl });
+    }
+
     // 6. Persistir título + descrição + custos + concorrência + estratégia + categoria + status final.
     // estrategia_preco já vem minúscula de sugerirPrecoVenda (bate com o enum); garante tipo_origem
     // válido (regex/ia/manual). Checa o erro do update para não marcar 'pronto' em silêncio.
@@ -497,6 +515,9 @@ Deno.serve(async (req) => {
       concorrencia_origem: concorrencia.origem,
       concorrencia_classe: concorrencia.classe,
       concorrencia_categoria_id: concorrencia.ofertas?.category_id ?? null,
+      catalogo_categoria_sugerida_id: sugestaoCatalogo?.id ?? null,
+      catalogo_categoria_sugerida_nome: sugestaoCatalogo?.nome ?? null,
+      catalogo_categoria_sugerida_vendedores: sugestaoCatalogo?.vendedores ?? null,
       estrategia_preco: estrategiaFamilia.estrategia,
       estrategia_motivo: estrategiaFamilia.motivo,
       preco_reancorado_lider: estrategiaFamilia.reancorado,
