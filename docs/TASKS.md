@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Revisão — resync pós-IA no cadastro manual (lote #21) — 2026-08-22
+
+- [x] Causa raiz: `FamiliaExpanded` inicializa título/descrição/variações do snapshot pré-IA e
+  nunca ressincronizava. Cadastro pela Viabilidade cai na Revisão antes de `process-familia`
+  terminar (~60-90s): a tela mostrava nome/descrição crus do catálogo e "sem preço" para sempre,
+  e um focus+blur na descrição salvava o snapshot velho por cima da copy da IA marcando
+  `descricao_editada_pelo_operador` (destruição silenciosa — comprovada no banco: família
+  `00000044`, `descricao_ml` = `descricao_pai` verbatim, flag true, `editado_em` 84s pós-cadastro,
+  tokens da IA gastos). Fix em `src/components/familia-expanded.tsx`: campo não-sujo (sem
+  digitação do operador) ressincroniza com o servidor quando `titulo`/`descricao`/
+  `preco_publicacao` mudam; blur só salva campo realmente digitado (dirty por `onChange`);
+  Regenerar reseta os flags dirty. 3 testes novos em
+  `src/components/__tests__/familia-expanded-resync-pos-ia.test.tsx`.
+- [ ] **Remediação do dado do lote #21 (decisão do Diego):** a descrição da família `00000044`
+  (Eucerin Aquaphor) ficou com o texto verbatim do catálogo ML e o flag de edição do operador —
+  clicar em "Regenerar" na Revisão restaura a copy da IA antes de publicar.
+
 ## Sonar — busca por EAN/GTIN (ADR-0127 Errata 1) — 2026-08-22
 
 - [x] Edge nova `pulse-sonar-ean` + parsers puros `_shared/pulse/sonar-ean.ts` (validação de EAN,

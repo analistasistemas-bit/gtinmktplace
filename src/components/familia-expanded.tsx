@@ -75,6 +75,33 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const [descricao, setDescricao] = useState(familia.descricao);
   const [variacoes, setVariacoes] = useState(familia.variacoes);
 
+  // Lote manual #21 (22/08): o cadastro pela Viabilidade cai na Revisão ANTES de o
+  // process-familia terminar. O estado local acima nasce do snapshot pré-IA e, sem resync,
+  // a tela mostra título/descrição crus e "sem preço" para sempre — e o onBlur salvava o
+  // snapshot velho por cima da copy da IA, marcando *_editado_pelo_operador. Só é edição
+  // do operador o que ele DIGITOU (dirty via onChange); campo não-sujo segue o servidor.
+  const tituloDirty = useRef(false);
+  const descricaoDirty = useRef(false);
+  const precosDirty = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!tituloDirty.current) setTitulo(familia.titulo);
+  }, [familia.titulo]);
+  useEffect(() => {
+    if (!descricaoDirty.current) setDescricao(familia.descricao);
+  }, [familia.descricao]);
+  // Mesmo padrão de MERGE do corOrigemKey abaixo: só precoPublicacao, por código, e só em
+  // linha que o operador não editou — preserva cor/GTIN/preço locais ainda não salvos.
+  const precosKey = familia.variacoes.map((v) => `${v.codigo}:${v.precoPublicacao ?? ''}`).join('|');
+  useEffect(() => {
+    setVariacoes((vs) => vs.map((v) => {
+      if (precosDirty.current.has(v.codigo)) return v;
+      const servidor = familia.variacoes.find((x) => x.codigo === v.codigo);
+      return servidor && servidor.precoPublicacao !== v.precoPublicacao
+        ? { ...v, precoPublicacao: servidor.precoPublicacao } : v;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [precosKey]);
+
   // Re-sincroniza o estado local quando o servidor altera a FOTO de alguma variação
   // (upload pela câmera → invalidate → refetch). Sem isso, o estado local — inicializado
   // só uma vez — ignora a foto nova e a linha continua "sem foto". Chaveado apenas por
@@ -163,6 +190,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   }, [focoCodigo]);
 
   function mudarPreco(codigo: string, novoPreco: number) {
+    precosDirty.current.add(codigo);
     // O campo edita o preço de publicação (o que vai ao ML), não o preço da planilha.
     setVariacoes((vs) =>
       vs.map((v) => (v.codigo === codigo ? { ...v, precoPublicacao: novoPreco } : v)),
@@ -196,10 +224,11 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   }
 
   async function salvarTitulo() {
-    if (titulo === familia.titulo) return;
+    if (!tituloDirty.current || titulo === familia.titulo) return;
     setTituloStatus('salvando');
     try {
       await updateTitulo.mutateAsync({ id: familia.id, titulo });
+      tituloDirty.current = false;
       flash(setTituloStatus);
     } catch {
       setTituloStatus('erro');
@@ -207,10 +236,11 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   }
 
   async function salvarDescricao() {
-    if (descricao === familia.descricao) return;
+    if (!descricaoDirty.current || descricao === familia.descricao) return;
     setDescricaoStatus('salvando');
     try {
       await updateDescricao.mutateAsync({ id: familia.id, descricao });
+      descricaoDirty.current = false;
       flash(setDescricaoStatus);
     } catch {
       setDescricaoStatus('erro');
@@ -246,6 +276,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
       alvos.map(async (x) => {
         try {
           await updatePreco.mutateAsync({ id: x.id!, preco: novoPreco });
+          precosDirty.current.delete(x.codigo);
           flashPreco(x.codigo, 'salvo');
         } catch {
           flashPreco(x.codigo, 'erro');
@@ -702,7 +733,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           <Input
             id={`titulo-${familia.id}`}
             value={titulo}
-            onChange={(e) => setTitulo(e.target.value)}
+            onChange={(e) => { tituloDirty.current = true; setTitulo(e.target.value); }}
             onBlur={salvarTitulo}
           />
 
@@ -713,7 +744,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           <Textarea
             id={`descricao-${familia.id}`}
             value={descricao}
-            onChange={(e) => setDescricao(e.target.value)}
+            onChange={(e) => { descricaoDirty.current = true; setDescricao(e.target.value); }}
             onBlur={salvarDescricao}
             rows={5}
           />
@@ -725,6 +756,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               onClick={() =>
                 regenerar.mutate(familia.id, {
                   onSuccess: (data) => {
+                    tituloDirty.current = false;
+                    descricaoDirty.current = false;
                     setTitulo(data.titulo);
                     setDescricao(data.descricao);
                   },
