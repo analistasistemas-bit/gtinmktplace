@@ -318,3 +318,34 @@ caminhos mudam o que o callback e o claim fazem.
 - Achado F6 (supressão de webhook por origem não autenticada).
 - O caminho de UPDATE (`migration:84-89`) sobrescreve em silêncio o `conta_externa_id` da org:
   conectar uma segunda conta ML substitui a primeira sem aviso. Pré-existente.
+
+## Adendo (2026-08-22): direção espelhada do mesmo risco, aceita
+
+A varredura `CLAUDE-SECURITY-20260822-113640` (achados F1/F3, verificados 3/3) descreveu a
+direção **espelhada** do risco já registrado em "Negativas/limites" acima:
+
+- **Risco original (já aceito):** a vítima autoriza com a própria conta ML; um terceiro rouba o
+  `claim_id` antes do auto-redeem e conecta a conta **da vítima** na org **dele**.
+- **Direção espelhada (F1/F3):** o atacante autoriza com a **própria** conta ML, deixa o
+  `claim_id` sem auto-redimir e manda o link para um admin de outra org; a sessão da vítima
+  redime o claim e conecta a conta **do atacante** na org **da vítima** — o item 1 do checklist de
+  Verificação ("a conexão tem de aparecer em B") descreve exatamente esse resultado como o
+  caminho feliz esperado, porque o checklist pressupõe que quem autoriza no ML É a vítima.
+
+**Decisão (Diego, 2026-08-22): aceitar como risco residual, sem mudança de código.** A mitigação
+que a varredura sugere — amarrar o claim ao `org_id`/`user_id` do `state` — é a **mesma** que a
+seção "Negativas/limites" já rejeitou: reintroduz o `state` como autoridade da org de destino, que
+é exatamente o bug que este ADR fechou (achado F4 da varredura anterior,
+`CLAUDE-SECURITY-20260724-125213`). O invariante continua valendo sem exceção: **`ml-oauth-claim`
+não lê org de lugar nenhum além de `requireUserOrg`.**
+
+As mesmas condições de exploração da direção original se aplicam aqui: precisa de um atacante que
+já seja admin de alguma org (org é super-admin/invite-only, ADR-0027), de uma vítima que abra o
+link **autenticada** e dentro do TTL de 300s, e de o atacante deliberadamente não deixar seu
+próprio front redimir o claim primeiro. Nenhuma dessas condições é nova — são a mesma superfície
+que "Negativas/limites" já mede e aceita.
+
+Uma mitigação compatível com o invariante (não implementada, registrada para o futuro se o risco
+deixar de ser aceitável) seria uma confirmação explícita do vendedor ML (nickname/id) antes de
+`ml-oauth-claim` gravar, substituindo o `useEffect` automático de `Canais.tsx` — isso reduz a
+superfície de "confirmação silenciosa" sem tocar a fonte de autoridade da org.

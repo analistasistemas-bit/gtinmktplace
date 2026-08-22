@@ -13,24 +13,25 @@
   `ehCategoriaMlValida()` antes de montar a URL.
 - [x] F5 (token Telegram em texto puro) — migration `20260822131053` revoga SELECT table-wide de
   `configuracoes` e re-concede só as colunas não-secretas; `telegram_bot_token` fora do grant.
-  **Migration escrita, NÃO aplicada em produção** (sem Docker local pra dry-run; `db push` é
-  escrita ao vivo — aguardando confirmação do Diego).
+  **Aplicada em produção** (`supabase link` + `db push`, 2026-08-22) e confirmada empiricamente
+  via Management API: `telegram_bot_token` tem INSERT/UPDATE/REFERENCES mas não SELECT para
+  `authenticated`; todas as outras colunas mantêm SELECT normal.
 - [x] F6 (XLSX bomb) — `analisar-viabilidade` rejeita `arquivoBase64` acima de ~8MB antes de
   decodificar/parsear (`_shared/analise/limite-upload.ts`).
 - [x] F7/F8/F9 (bypass de entitlement Pulse) — `exigirModulo(admin, orgId, 'pulse')` adicionado em
   `pulse-adicionar`, `pulse-sonar-visitas` e no caminho interativo de `pulse-coletar`.
-- [ ] F1/F3 (OAuth claim_id do ML não vinculado à sessão que o criou) — **NÃO corrigido**: a
-  correção sugerida pelo scan (vincular o claim ao `org_id` do `state`) é exatamente a mitigação
-  que o ADR-0091 já considerou e rejeitou explicitamente (reintroduziria o `state` como
-  autoridade — o bug que o próprio ADR fechou). Precisa de decisão do Diego: aceitar como risco
-  residual documentado (o ADR-0091 já aceita a direção espelhada) ou abrir um adendo ao ADR
-  com uma mitigação compatível (ex.: confirmação explícita do vendedor ML antes de
-  `ml-oauth-claim` gravar, sem tocar a fonte da org).
+- [x] F1/F3 (OAuth claim_id do ML não vinculado à sessão que o criou) — **decisão do Diego
+  (2026-08-22): aceitar como risco residual, sem mudança de código.** A correção sugerida pelo
+  scan (vincular o claim ao `org_id` do `state`) é a mesma mitigação que o ADR-0091 já rejeitou
+  (reintroduziria o `state` como autoridade). Adendo registrado em
+  `docs/decisions/0091-conexao-ml-confirmada-pela-sessao.md`.
 - [x] Suíte completa (399 arquivos / 3684 testes), `pnpm lint` e `npx tsc -b --force` verdes;
   `deno lint` + `deno check` (config `supabase/functions/deno.json`) verdes. Smoke visual via
-  Playwright na tela de login (0 erros de console) — os 6 fixes são só backend/migration, sem
-  mudança de frontend; validar o comportamento fim-a-fim exige a migration aplicada +
-  `supabase functions deploy` (nenhum dos dois feito ainda).
+  Playwright na tela de login (0 erros de console) — os 6 fixes de código são só backend, sem
+  mudança de frontend; validar o comportamento fim-a-fim dos 6 exige também
+  `supabase functions deploy` de `ingest-lote`, `_shared/ml`, `analisar-viabilidade`,
+  `pulse-adicionar`, `pulse-sonar-visitas`, `pulse-coletar` — **pendente**, deploy nunca é
+  automático no merge.
 
 - [x] Frase-resumo do veredito com tom mais amigável/comercial (`resumoVeredito` em
   `src/lib/veredito-sonar.ts`), guardrail mantido: ação "não compre estoque" continua inequívoca.
