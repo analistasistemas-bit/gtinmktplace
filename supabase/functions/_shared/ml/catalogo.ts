@@ -1,4 +1,5 @@
 import { gtinAusente } from './publicar.ts';
+import { parseItensProduto } from '../concorrencia/parse.ts';
 
 // Vinculação ao Catálogo do ML (ADR-0021). Validado com token real (2026-06-10):
 // aviamentos são `catalog_required` (não `catalog_only` → o anúncio de marketplace
@@ -183,6 +184,42 @@ export function fichaEquivalente(ficha: AtributosFicha, esperado: EsperadoProdut
   return { ok: true, motivo: null };
 }
 
+/**
+ * `EsperadoProduto` PRÉ-publicação (spec 2026-08-22): não há item ML ainda, então a base de
+ * comparação da trava anti-kit vem dos atributos que o próprio process-familia acabou de montar.
+ * `domainId` fica deliberadamente null — a divergência de domínio é o SINAL da sugestão de
+ * categoria, não motivo de reprova de equivalência.
+ */
+export function montarEsperadoPrePublicacao(
+  atributos: Array<{ id: string; value_name?: string }>,
+): EsperadoProduto {
+  const val = (id: string) => atributos.find((a) => a.id === id)?.value_name ?? null;
+  const unitsRaw = val('UNITS_PER_PACK');
+  const units = unitsRaw != null ? Number(unitsRaw) : null;
+  return {
+    lengthM: normalizarComprimentoMetros(val('LENGTH')),
+    unitsPerPack: units != null && Number.isFinite(units) ? units : null,
+    saleFormat: val('SALE_FORMAT'),
+    domainId: null,
+  };
+}
+
+/**
+ * Gate puro da sugestão de categoria pela ficha (spec 2026-08-22, estende ADR-0057): só sugere
+ * quando os DOIS domínios são conhecidos e diferentes E a ficha passa na trava anti-kit.
+ * Nunca aplicada sozinha (ADR-0054 Fase 2) — quem decide é o operador, no card.
+ */
+export function deveSugerirCategoriaPorFicha(
+  ficha: AtributosFicha | null,
+  esperado: EsperadoProduto,
+  dominioCategoriaEscolhida: string | null,
+): boolean {
+  if (!ficha?.domainId || !dominioCategoriaEscolhida) return false;
+  if (ficha.domainId === dominioCategoriaEscolhida) return false;
+  // Defesa em profundidade: neutraliza domainId mesmo se o chamador vazar.
+  return fichaEquivalente(ficha, { ...esperado, domainId: null }).ok;
+}
+
 export function montarBodyOptin(
   itemId: string,
   variationId: string | number,
@@ -317,6 +354,21 @@ export async function buscarElegibilidadeCatalogo(token: string, itemId: string)
 export async function buscarElegibilidadeItem(token: string, itemId: string): Promise<EligVar | undefined> {
   const json = await mlGet(`${API}/items/${itemId}/catalog_listing_eligibility`, token);
   return parseElegibilidadeItem(json, itemId);
+}
+
+export interface CategoriaFicha { categoriaId: string | null; vendedores: number; }
+
+/**
+ * Categoria real onde os itens de uma ficha competem (`GET /products/{id}/items`). Contrato
+ * confirmado com token real (2026-08-22): `results[].category_id` (MLB19462147 → 7 itens, todos
+ * MLB1262). Reusa `parseItensProduto` (concorrência/ADR-0014) — mesmo endpoint, mesmo parse.
+ * Ficha sem itens → categoriaId null (sem sugestão). Rede/4xx → null.
+ */
+export async function buscarCategoriaFicha(token: string, fichaId: string): Promise<CategoriaFicha | null> {
+  const json = await mlGet(`${API}/products/${encodeURIComponent(fichaId)}/items`, token);
+  if (!json) return null;
+  const ofertas = parseItensProduto(json);
+  return { categoriaId: ofertas.category_id, vendedores: ofertas.vendedores };
 }
 
 export interface OptinResultado { status: number; catalogListingId?: string; erro?: string; }
