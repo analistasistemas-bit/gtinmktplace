@@ -1,7 +1,9 @@
 # Sugestão de categoria pela ficha de catálogo (pré-publicação)
 
 **Data:** 2026-08-22
-**Status:** Aprovado (design)
+**Status:** Aprovado (design); revisão técnica 2026-08-22 — contratos de API confirmados com token
+real, `esperado` pré-publicação definido, card do catálogo lê da row (sem `atributos-familia`),
+3ª coluna p/ nº de vendedores
 **Relacionado:** [ADR-0021](../../decisions/0021-vinculacao-automatica-ao-catalogo-ml.md) (trava `fichaEquivalente`, opt-in),
 [ADR-0036](../../decisions/0036-alerta-catalogo-no-match.md) (alerta Telegram `ficha_divergente`),
 [ADR-0057](../../decisions/0057-categoria-selecao-livre-e-sugestao-concorrente.md) (padrão de sugestão não-vinculante que este design estende),
@@ -39,46 +41,73 @@ terceiro sem confirmação humana já produziu categorização errada por colis�
 
 ### Componentes
 
-**1. `process-familia` — nova etapa best-effort, após `resolverCategoria` decidir a categoria (por
-volta de `index.ts:505`, mesmo bloco que já persiste `concorrencia_categoria_id`):**
+**1. `process-familia` — nova etapa best-effort, depois de `resolverCategoria` E de `atributosMl`
+calculados (o `esperado` da trava anti-kit lê `atributosMl`, ver abaixo), persistindo no mesmo
+UPDATE final que já grava `concorrencia_categoria_id` (`index.ts:488-511`):**
 
-- Só roda se a variação principal tiver GTIN válido (mesmo guard de `gtinAusente` já usado por
-  `buscarProdutoCatalogoPorGtin`).
+- Só roda no fluxo CREATE (o early-return do UPDATE parcial em `index.ts:195` fica antes — de
+  propósito: categoria de anúncio publicado não pode mudar, sugerir troca ali seria convite ao
+  incidente reverso). Usa o GTIN da variação principal — `variacao_principal_codigo` com fallback à
+  1ª variação, mesmo idioma de `publicar-split-ml/index.ts:328` — validado pelo guard `gtinAusente`
+  já embutido em `buscarProdutoCatalogoPorGtin`. Sem GTIN válido nela → sem sugestão (1 chamada só;
+  cores irmãs da mesma família vivem no mesmo domínio de catálogo).
 - Busca a ficha via `buscarProdutoCatalogoPorGtin` (`_shared/ml/catalogo.ts:276`, já existe, usada
   hoje só pelo `vincular-catalogo`).
 - Filtra pela trava anti-kit já existente `fichaEquivalente` (`catalogo.ts:154`) — só considera ficha
-  aprovada (kit/metragem divergente continua sem gerar sugestão nenhuma, igual hoje).
-- Resolve o `domainId` da categoria que o resolver acabou de escolher. **Novo helper** (não existe
-  hoje): `buscarDominioCategoria(token, categoriaMlId)` — `GET /categories/{id}`, contrato exato do
-  campo de domínio a confirmar com token real na implementação (o precedente pós-publicação usa
-  `buscarEsperadoDoItem`, que lê `domain_id` do **item já publicado**; aqui não há item ainda, então
-  a leitura tem que ser pela **categoria**, caminho ainda não percorrido no código).
+  aprovada (kit/metragem divergente continua sem gerar sugestão nenhuma, igual hoje). **`esperado`
+  pré-publicação** (não há item ML ainda, então `buscarEsperadoDoItem` não se aplica): montado de
+  `atributosMl` já calculado no próprio `process-familia` — `UNITS_PER_PACK`/`SALE_FORMAT` quando
+  presentes, `lengthM` via `normalizarComprimentoMetros(LENGTH)`; ausentes → mesmo modo degradado
+  que o `vincular-catalogo` usa quando `buscarEsperadoDoItem` falha (assume 1 unidade avulsa).
+  **`esperado.domainId` fica deliberadamente vazio**: a divergência de domínio é exatamente o sinal
+  que gera a sugestão — preenchê-lo faria `fichaEquivalente` reprovar e suprimir a sugestão sempre.
+- Resolve o domínio da categoria que o resolver acabou de escolher. **Novo helper**
+  `buscarDominioCategoria(token, categoriaMlId)` em `domain-discovery.ts` (espelho de
+  `buscarNomeCategoria`: guard `ehCategoriaMlValida` anti-SSRF, cache Redis `catdom:{id}` TTL 30d).
+  **Contrato confirmado com token real (2026-08-22):** `GET /categories/{id}` →
+  `settings.catalog_domain` (probes: `MLB277750` → `MLB-BABY_CREAMS_AND_OINTMENTS`; `MLB1262` →
+  `MLB-BODY_SKIN_CARE_PRODUCTS`), mesmo formato do `domain_id` que `/products/search` devolve na
+  ficha — comparável por igualdade de string direta.
 - Se `ficha.domainId` (já vem no retorno de `buscarProdutoCatalogoPorGtin`) for diferente do domínio
   da categoria escolhida: resolve a categoria real correspondente ao domínio da ficha. **Novo
-  helper**: `buscarCategoriaFicha(token, fichaId)` — usa os itens que já competem na ficha
-  (`GET /products/{fichaId}/items`, mesmo endpoint que a investigação do lote 21 usou manualmente
-  para achar `MLB1262`) e `buscarNomeCategoria` (`domain-discovery.ts:89`, já existe) para o nome.
-- Persiste em 2 colunas novas de `familias` (nullable, mesmo padrão de `concorrencia_categoria_id`):
-  `catalogo_categoria_sugerida_id`, `catalogo_categoria_sugerida_nome`.
+  helper** `buscarCategoriaFicha(token, fichaId)` em `catalogo.ts` — `GET /products/{fichaId}/items`
+  reaproveitando `parseItensProduto` (`_shared/concorrencia/parse.ts`), que já extrai `category_id`
+  e conta vendedores. **Contrato confirmado com token real (2026-08-22):** `MLB19462147/items` → 7
+  resultados, todos `category_id: "MLB1262"`. Ficha sem nenhum item competindo → sem categoria
+  resolvível → sem sugestão. Nome da categoria via `buscarNomeCategoria` (`domain-discovery.ts:89`,
+  já existe).
+- A decisão "gera sugestão ou não" é função pura (`sugerirCategoriaPorFicha`, em `catalogo.ts`);
+  as chamadas de rede ficam na orquestração do `process-familia`.
+- Persiste em 3 colunas novas de `familias` (nullable, mesmo padrão de `concorrencia_categoria_id`):
+  `catalogo_categoria_sugerida_id`, `catalogo_categoria_sugerida_nome`,
+  `catalogo_categoria_sugerida_vendedores` (o rótulo do card cita "N vendedores competindo" — o N
+  vem de `parseItensProduto(...).vendedores` e precisa estar persistido para o card não fazer rede).
 - Qualquer falha (rede, ficha não encontrada, domínio ausente) → não persiste nada, não lança, não
   afeta o resto do processamento. Mesmo tratamento best-effort do bloco de concorrência hoje.
 
-**2. `card-categoria.tsx` (`BuscaCategoria`) — generaliza o card de sugestão único** (hoje só lê
-`familia.concorrenciaCategoriaId`, linhas 18-75) para aceitar mais de uma fonte: continua carregando
-a sugestão do concorrente do jeito que já é (via `buscar-categoria` em `atributos-familia`), e o
-mesmo payload passa a incluir `sugestaoCatalogo` quando `catalogo_categoria_sugerida_id` estiver
-preenchido — resolvido pelo backend com `buscarNomeCategoria` (mesmo padrão do bloco de
-`sugestaoConcorrente` em `atributos-familia/index.ts:52-60`). Rótulo do card diferencia a origem:
-"Sugestão (concorrente)" existente vs. novo "Sugestão (catálogo): N vendedores competindo". Clicar
+**2. `card-categoria.tsx` — segundo card de sugestão, renderizado direto da row.** A sugestão do
+catálogo **não passa por `atributos-familia`**: id, nome e nº de vendedores já estão persistidos em
+`familias`, então o card renderiza direto de `familia.catalogoCategoriaSugerida*` (mapeados em
+`familiaFromRow`/`tipos-dominio`), **sem rede e sem o lazy-load-on-focus** — o gate de foco do card
+do concorrente existe só para evitar 1 chamada de rede por card, o que aqui não se aplica. Isso
+também é o que torna a sugestão visível de fato: com categoria já definida, `BuscaCategoria` só
+aparece após "Trocar categoria" + foco, e a divergência ficaria tão escondida quanto hoje. O card
+do catálogo aparece no `CardCategoria` sempre que a coluna estiver preenchida e a categoria sugerida
+diferir da `categoriaMlId` atual. Rótulo diferencia a origem: "Sugestão (concorrente)" existente
+vs. novo "Sugestão (catálogo): N vendedores competindo". Quando as duas sugestões apontam a MESMA
+categoria, só o card do catálogo aparece (sinal mais rico; dois cards idênticos é ruído). Clicar
 chama o mesmo `escolher()`/`definirCategoriaLivre` já existente (`definir-categoria-familia`,
-zero mudança de contrato).
+zero mudança de contrato). `atributos-familia` fica intocada.
 
-**3. `vincular-catalogo` — alerta Telegram enriquecido.** Quando grava `ficha_divergente` e a família
-tiver `catalogo_categoria_sugerida_id` preenchido (calculado antes, no `process-familia`, então já
-disponível sem chamada nova), `montarMensagemCatalogoNoMatch` (`_shared/notificacoes/telegram.ts:46`)
-ganha uma linha citando a categoria sugerida. `CatalogoNoMatchAlerta`/`ItemAlerta` ganha campo
-opcional `categoriaSugerida?: { id: string; nome: string } | null`; call site em
-`vincular-catalogo/index.ts:131` passa `familia.catalogo_categoria_sugerida_nome` quando presente.
+**3. `vincular-catalogo` — alerta Telegram enriquecido.** Quando o alerta dispara com
+`resumo.ficha_divergente > 0` e a família tiver `catalogo_categoria_sugerida_id` preenchido
+(calculado antes, no `process-familia`, então já disponível sem chamada nova — adicionar as colunas
+ao select de `index.ts:58`), `montarMensagemCatalogoNoMatch` (`_shared/notificacoes/telegram.ts:46`)
+ganha uma linha citando a categoria sugerida. `CatalogoNoMatchAlerta` ganha campo opcional
+`categoriaSugerida?: { id: string; nome: string } | null`; call site em
+`vincular-catalogo/index.ts:131` passa o valor **só quando `resumo.ficha_divergente > 0`** (nos
+motivos de elegibilidade/variation_id a linha seria ruído). Família de UPDATE tem as colunas nulas
+(sugestão não roda no UPDATE parcial) → linha simplesmente omitida, comportamento atual.
 
 ### O que fica igual
 
@@ -113,33 +142,41 @@ Migration aditiva em `familias` (via `supabase migration new`, ADR-0043):
 
 ```sql
 alter table familias
-  add column catalogo_categoria_sugerida_id text,
-  add column catalogo_categoria_sugerida_nome text;
+  add column if not exists catalogo_categoria_sugerida_id text,
+  add column if not exists catalogo_categoria_sugerida_nome text,
+  add column if not exists catalogo_categoria_sugerida_vendedores integer;
 ```
 
 Sem alteração em `variacoes`, sem novo enum, sem novo status. Mesmo padrão de baixo risco do
-`concorrencia_categoria_id` (ADR-0057) — nenhuma coluna passa a ser obrigatória, nenhum fluxo
-existente lê/escreve menos do que já lê/escreve.
+`concorrencia_categoria_id` (ADR-0057, migration `20260704025322`) — nenhuma coluna passa a ser
+obrigatória, nenhum fluxo existente lê/escreve menos do que já lê/escreve.
 
 ## Testes
 
 Funções puras novas (vitest, padrão de `catalogo.ts`/`resolver.ts`):
 
-- `sugerirCategoriaPorFicha` (nome provisório — a função que decide "gera sugestão ou não" a partir
-  de `AtributosFicha` + domínio da categoria escolhida + resultado de `fichaEquivalente`): domínio
-  igual → sem sugestão; ficha reprovada pela trava anti-kit → sem sugestão; domínio diferente e ficha
-  aprovada → sugestão; ausência de GTIN ou falha de rede → sem sugestão, sem exceção propagada.
+- `sugerirCategoriaPorFicha` (a função pura que decide "gera sugestão ou não" a partir de
+  `AtributosFicha` + `esperado` + domínio da categoria escolhida + itens da ficha): ficha nula →
+  sem sugestão; domínio igual → sem sugestão; ficha reprovada pela trava anti-kit → sem sugestão;
+  domínio da ficha ou da categoria ausente → sem sugestão; ficha sem itens competindo → sem
+  sugestão; domínio diferente e ficha aprovada → sugestão com id/vendedores; `esperado` montado de
+  `atributosMl` nunca carrega `domainId`.
+- `buscarDominioCategoria`: parse de `settings.catalog_domain`; resposta sem o campo → null.
 - `montarMensagemCatalogoNoMatch` com e sem `categoriaSugerida` — texto muda só quando presente.
-- Frontend: `BuscaCategoria` renderiza os dois cards (concorrente + catálogo) quando ambos vêm
-  preenchidos, sem um esconder o outro; clique em cada um chama `definirCategoriaLivre` com o
-  `categoriaId`/`categoriaNome` correto da fonte clicada.
+- Best-effort no `process-familia`: falha de rede na etapa de sugestão não muda status nem lança
+  (mesmo padrão dos testes do bloco de concorrência).
+- Frontend (`CardCategoria`): renderiza o card do catálogo direto da row (sem rede) quando as
+  colunas vêm preenchidas e a sugestão difere da categoria atual; os dois cards (concorrente +
+  catálogo) convivem quando apontam categorias diferentes; mesma categoria → só o do catálogo;
+  clique em cada um chama `definirCategoriaLivre` com o `categoriaId`/`categoriaNome` correto da
+  fonte clicada.
 
 ## Faseamento
 
-Fase única — o volume de código é pequeno (2 helpers novos, 1 coluna dupla, 1 card generalizado, 1
-linha a mais no alerta) e as três partes (process-familia, card, alerta) só fazem sentido juntas.
-Deploy: `process-familia`, `atributos-familia`, `vincular-catalogo` (as três funções que tocam as
-colunas/leem o schema novo).
+Fase única — o volume de código é pequeno (2 helpers novos + 1 função pura, 3 colunas aditivas, 1
+card novo, 1 linha a mais no alerta) e as três partes (process-familia, card, alerta) só fazem
+sentido juntas. Deploy: `process-familia` e `vincular-catalogo` (as duas funções que tocam as
+colunas; `atributos-familia` não muda).
 
 ## Consequências
 
@@ -153,19 +190,21 @@ colunas/leem o schema novo).
   investigação manual no caso residual em que a divergência só é percebida depois.
 
 **Tradeoffs aceitos:**
-- +1 a 2 chamadas ao ML por família processada com GTIN válido (busca de ficha + resolução de
-  domínio/categoria) — mesma característica das chamadas já aceitas pelo ADR-0057 (cacheável,
-  barata, best-effort).
-- Contrato exato de `GET /categories/{id}` (campo de domínio) e de `GET /products/{id}/items`
-  (campo de categoria) precisa ser confirmado com token real na implementação — não foi validado
-  ao vivo neste design, só descrito pelo padrão já usado em `buscarEsperadoDoItem`/investigação
-  manual do lote 21.
+- +2 a 3 chamadas ao ML por família CREATE com GTIN válido (busca de ficha + domínio da categoria
+  [cacheado 30d] + itens da ficha quando diverge) — mesma característica das chamadas já aceitas
+  pelo ADR-0057 (cacheável, barata, best-effort).
+- Só a variação principal é consultada: família cuja ficha só existe no GTIN de outra cor fica sem
+  sugestão (aceito — 1 chamada previsível em vez de N; cores irmãs compartilham domínio).
+- A sugestão do catálogo pode coincidir com a do concorrente (`concorrencia_categoria_id` vem do
+  MESMO endpoint `/products/{id}/items`, ADR-0057) — o valor novo não é a categoria em si, e sim o
+  sinal de divergência com a categoria escolhida + a trava anti-kit + a visibilidade sem foco.
 - Categoria "com ficha" continua podendo ser semanticamente pior que a categoria escolhida
   originalmente (ex.: Aquaphor em "Cuidado do Corpo" vs. "Bebês") — por isso a decisão final é
   sempre do operador, nunca automática.
 
 ## Como reverter
 
-Reverte com checkout dos arquivos tocados (`process-familia/index.ts`, `card-categoria.tsx`,
-`atributos-familia/index.ts`, `vincular-catalogo/index.ts`, `_shared/notificacoes/telegram.ts`) +
-`down` da migration das 2 colunas (aditivas, sem dado derivado em outro lugar — dropar é seguro).
+Reverte com checkout dos arquivos tocados (`process-familia/index.ts`, `_shared/ml/catalogo.ts`,
+`_shared/ml/domain-discovery.ts`, `card-categoria.tsx`, `src/lib/queries.ts`,
+`src/lib/tipos-dominio.ts`, `vincular-catalogo/index.ts`, `_shared/notificacoes/telegram.ts`) +
+drop das 3 colunas (aditivas, sem dado derivado em outro lugar — dropar é seguro).
