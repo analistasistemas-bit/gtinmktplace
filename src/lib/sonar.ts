@@ -197,6 +197,54 @@ export function linkDoAnuncio(link: string | null, itemId: string): string | nul
   return canonico;
 }
 
+// --- Busca por EAN (ADR-0127 Errata 1): produto específico, não nicho --------------------------
+// Tipos espelhados de supabase/functions/_shared/pulse/sonar-ean.ts (mesma regra de sem import
+// cross-runtime). Diferente da busca por termo (vários concorrentes), a busca por EAN é 1 produto.
+
+export interface OfertaEan {
+  item_id: string | null;
+  seller_id: number | null;
+  preco: number | null;
+  frete_gratis: boolean;
+  full: boolean;
+  /** null = sem dado (consulta grátis ou fora da amostra Apify) — nunca 0 por ausência. */
+  vendidos: number | null;
+}
+
+export interface ResultadoEanCatalogado {
+  conectado: true;
+  catalogado: true;
+  ean: string;
+  product_id: string;
+  nome_produto: string | null;
+  descricao_catalogo: string | null;
+  com_vendas: boolean;
+  vendas_indisponivel?: boolean;
+  ofertas: OfertaEan[];
+  gerado_em: string;
+}
+
+/** `conectado:false` = org sem conexão ML; `catalogado:false` = EAN sem ficha de catálogo no ML
+ *  (não é erro — faixa GS1 interna de aviamento cai aqui, por exemplo). */
+export type RespostaSonarEan =
+  | { conectado: false }
+  | { conectado: true; catalogado: false }
+  | ResultadoEanCatalogado;
+
+/** POST /functions/v1/pulse-sonar-ean { ean, com_vendas } → RespostaSonarEan. */
+export async function fetchSonarPorEan(ean: string, comVendas: boolean): Promise<RespostaSonarEan> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sem sessão');
+  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-ean`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ ean, com_vendas: comVendas }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  return json as RespostaSonarEan;
+}
+
 // --- Simulador de margem ------------------------------------------------------------------------
 
 /**

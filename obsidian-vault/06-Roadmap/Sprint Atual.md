@@ -63,6 +63,16 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > itens. Cruzamento ficha↔anúncio do ADR-0125/D4 e a busca de vendedores/UF por fonte oficial
 > saem de circulação. ADR-0127 supersede em parte o ADR-0125/D4.
 
+> **✅ Sonar — busca por EAN/GTIN EM PRODUÇÃO no código (ADR-0127 Errata 1, 2026-08-22).** Além da
+> busca por termo (nicho), o Sonar aceita EAN/GTIN, restrito a **1 produto específico**. Lookup
+> oficial de catálogo grátis (edge nova `pulse-sonar-ean`); "vendidos" só entra sob escolha
+> explícita do operador ("Consultar grátis" vs. "Consultar com vendidos", custo visível na UI),
+> porque usa Apify — e mesmo pago, fica restrito por interseção de `item_id` ao produto do EAN
+> (a busca Apify por termo é livre e pode trazer produtos vizinhos). Leitor de código de barras
+> físico funciona sem lib nova (`autoFocus` + submit no Enter, padrão HTML); câmera do celular
+> fica fora, é etapa futura separada. **Pendente:** `supabase functions deploy pulse-sonar-ean`
+> (deploy nunca é automático no merge, ver `docs/TASKS.md`).
+
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram
 > segundos**, e os **9 vínculos que competiam foram preservados** (`ALREADY_OPTED_IN`); o resto

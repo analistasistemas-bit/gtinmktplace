@@ -28,14 +28,19 @@ import {
 } from '@/lib/sonar-buscas-recentes';
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
-  fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
-  type EtapaProgresso, type ItemVendasSonar, type PainelVendasSonar, type RaioXNicho,
-  type VisitasAnuncio,
+  fetchSonarPorEan, fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, linkDoAnuncio,
+  normalizarSerieVisitas, passosProgresso,
+  type EtapaProgresso, type ItemVendasSonar, type OfertaEan, type PainelVendasSonar,
+  type RaioXNicho, type ResultadoEanCatalogado, type VisitasAnuncio,
 } from '@/lib/sonar';
 import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
+
+// Detecta EAN/GTIN no campo de busca (ADR-0127 Errata 1) — espelho de
+// supabase/functions/_shared/pulse/entrada.ts (regex Deno não é importável no bundle Vite).
+const EAN_RE = /^\d{8,14}$/;
 
 function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
   return (
@@ -171,6 +176,110 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
   );
 }
 
+// Busca por EAN (ADR-0127 Errata 1): produto específico, não nicho. O lookup oficial de catálogo
+// é grátis; "vendidos" só entra sob escolha explícita do operador, porque usa Apify (tem custo).
+function SonarEanEscolha({ ean, onEscolher }: { ean: string; onEscolher: (comVendas: boolean) => void }) {
+  return (
+    <Card className="max-w-md p-4">
+      <p className="mb-3 text-sm font-medium">Como consultar o EAN {ean}?</p>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => onEscolher(false)}
+          className="flex items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-accent"
+        >
+          <div>
+            <div className="text-sm font-medium">Consultar grátis</div>
+            <div className="text-xs text-muted-foreground">sem número de vendidos</div>
+          </div>
+          <Badge variant="outline" className="border-success/40 text-success">grátis</Badge>
+        </button>
+        <button
+          type="button"
+          onClick={() => onEscolher(true)}
+          className="flex items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-accent"
+        >
+          <div>
+            <div className="text-sm font-medium">Consultar com vendidos</div>
+            <div className="text-xs text-muted-foreground">usa dados pagos (Apify) — tem custo por consulta</div>
+          </div>
+          <Badge variant="outline" className="border-warning/40 text-warning">tem custo</Badge>
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+// Resultado da busca por EAN: view PRÓPRIA e enxuta — NÃO reaproveita SonarVendas/RaioXBarra/
+// VereditoSonar (conceitos de NICHO: ticket médio, lojas oficiais, "vencedor do nicho" não fazem
+// sentido para 1 produto já identificado pelo EAN).
+function SonarEanResultado({ resp, onNovaConsulta }: { resp: ResultadoEanCatalogado; onNovaConsulta: () => void }) {
+  const colunas: Column<OfertaEan>[] = [
+    {
+      key: 'preco', header: 'Preço', className: 'tabular-nums',
+      cell: (o) => (o.preco != null ? fmtBRL(o.preco) : '—'),
+      sortValue: (o) => o.preco,
+    },
+    {
+      // Sem nome de vendedor nesta resposta (só a lookup de catálogo, não /users/{id}) — mostra o
+      // seller_id cru.
+      key: 'vendedor', header: 'Vendedor', className: 'tabular-nums',
+      cell: (o) => (o.seller_id != null ? String(o.seller_id) : '—'),
+      sortValue: (o) => o.seller_id,
+    },
+    {
+      key: 'frete', header: 'Frete grátis',
+      cell: (o) => (o.frete_gratis ? <Badge variant="outline">Sim</Badge> : '—'),
+    },
+    {
+      key: 'full', header: 'Full',
+      cell: (o) => (o.full ? <Badge variant="outline">FULL</Badge> : '—'),
+    },
+    {
+      key: 'vendidos', header: 'Vendidos', className: 'tabular-nums',
+      cell: (o) => (o.vendidos != null
+        ? <span title="Acumulado da vida do anúncio, faixa piso do ML">+{fmtInt(o.vendidos)}</span>
+        // Tooltip depende de resp.com_vendas: "—" sozinho não distingue "não paguei por isso" de
+        // "paguei e a Apify não capturou este anúncio" — a operadora precisa saber qual dos dois.
+        : <span title={resp.com_vendas
+          ? 'Consultado (Apify), mas este anúncio ficou fora da amostra capturada'
+          : 'Consulta grátis: vendidos não foi consultado'}>—</span>),
+      sortValue: (o) => o.vendidos,
+    },
+  ];
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">{resp.nome_produto ?? `Produto ${resp.product_id}`}</span>
+            {resp.com_vendas ? (
+              <Badge variant="outline" className="border-warning/40 text-warning">com vendidos</Badge>
+            ) : (
+              <Badge variant="outline" className="border-success/40 text-success">grátis</Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            EAN {resp.ean} · {resp.ofertas.length} oferta{resp.ofertas.length === 1 ? '' : 's'}
+          </div>
+        </div>
+        <Button variant="outline" size="sm" onClick={onNovaConsulta}>Nova consulta</Button>
+      </div>
+      {resp.vendas_indisponivel && (
+        <p className="mb-2 text-xs text-warning">
+          Vendidos indisponível nesta consulta (Apify sem token configurado, ou a busca falhou).
+        </p>
+      )}
+      <DataTable
+        columns={colunas}
+        rows={resp.ofertas}
+        rowKey={(o) => o.item_id ?? `${o.seller_id}-${o.preco}`}
+        empty={<EmptyState icon={Package} title="Sem ofertas ativas para este produto." />}
+      />
+    </div>
+  );
+}
+
 // Popover de filtros (D13/ADR-0127): a tabela inteira agora nasce da Apify — ou tem tudo, ou não
 // tem tabela (D16) — então todos os controles renderizam sempre, sem condicional de grupo.
 function SonarFiltrosPopover({ filtros, setFiltros }: {
@@ -296,6 +405,10 @@ export default function PulseSonar() {
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
   const [, forcarRender] = useState(0);
   const iniciadoEmRef = useRef(0);
+  // Refoco após a escolha grátis/com vendidos e após "Nova consulta" (ADR-0127 Errata 1): o
+  // leitor físico de código de barras precisa do campo focado para o próximo scan — sem isso, o
+  // 2º produto escaneado logo após escolher "grátis"/"com vendidos" se perde no vazio.
+  const inputRef = useRef<HTMLInputElement>(null);
   const [anuncioSimulando, setAnuncioSimulando] = useState<AnuncioSimulavel | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
   // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as etapas
@@ -304,12 +417,28 @@ export default function PulseSonar() {
   // Filtros da tabela (D13): 100% client-side, estado local — sem URL/localStorage nesta entrega.
   const [filtros, setFiltros] = useState<FiltrosAnuncios>(FILTROS_ANUNCIOS_VAZIOS);
 
+  // Busca por EAN (ADR-0127 Errata 1): eanPendente = EAN detectado, aguardando escolha
+  // grátis/com vendidos; eanBuscado = escolha feita, dispara a query abaixo.
+  const [eanPendente, setEanPendente] = useState<string | null>(null);
+  const [eanBuscado, setEanBuscado] = useState<{ ean: string; comVendas: boolean } | null>(null);
+
   // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
   // sem cache dispara um run pago (US$ 0,10).
   const { data: vendas, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['pulse', 'sonar-vendas', termoBuscado],
     queryFn: () => fetchVendasSonar(termoBuscado!),
     enabled: !!termoBuscado,
+    staleTime: Infinity,
+    retry: false,
+  });
+
+  // retry desligado pelo mesmo motivo: "com vendidos" dispara Apify (custo por tentativa).
+  const {
+    data: resultadoEan, isFetching: eanCarregando, isError: eanErro, error: eanErroObj, refetch: refetchEan,
+  } = useQuery({
+    queryKey: ['pulse', 'sonar-ean', eanBuscado?.ean, eanBuscado?.comVendas],
+    queryFn: () => fetchSonarPorEan(eanBuscado!.ean, eanBuscado!.comVendas),
+    enabled: !!eanBuscado,
     staleTime: Infinity,
     retry: false,
   });
@@ -368,16 +497,37 @@ export default function PulseSonar() {
   }, [carregando]);
 
   const garimpar = (t: string) => {
-    setBuscasRecentes(registrarBusca(t));
     setTermo(t);
+    // EAN é produto específico (não nicho): não dispara a busca direto, mostra a escolha
+    // grátis/com vendidos primeiro — o registro em "buscas recentes" acontece só quando o
+    // operador escolher (escolherConsultaEan), que é quando a consulta de fato roda.
+    if (EAN_RE.test(t)) {
+      setTermoBuscado(null);
+      setEanBuscado(null);
+      setEanPendente(t);
+      return;
+    }
+    setEanPendente(null);
+    setEanBuscado(null);
+    setBuscasRecentes(registrarBusca(t));
     setTermoBuscado(t);
   };
 
   const buscar = (e: FormEvent) => {
     e.preventDefault();
     const t = termo.trim();
+    if (EAN_RE.test(t)) { garimpar(t); return; }
     if (t.length < 3) { toast.error('Digite ao menos 3 caracteres para prospectar.'); return; }
     garimpar(t);
+  };
+
+  const escolherConsultaEan = (comVendas: boolean) => {
+    if (!eanPendente) return;
+    setBuscasRecentes(registrarBusca(eanPendente));
+    setEanBuscado({ ean: eanPendente, comVendas });
+    setEanPendente(null);
+    setTermo('');
+    inputRef.current?.focus();
   };
 
   // Sem `defaultSort`: a ordem que chega da amostra é o ranking de relevância do ML, e perder
@@ -531,20 +681,63 @@ export default function PulseSonar() {
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={inputRef}
             value={termo}
             onChange={(e) => setTermo(e.target.value)}
-            placeholder="Ex.: tecido oxford 10 metros"
-            aria-label="Termo de busca no Sonar"
+            placeholder="Ex.: tecido oxford 10 metros, ou um EAN/GTIN de 8 a 14 dígitos"
+            aria-label="Termo de busca ou EAN/GTIN no Sonar"
             className="h-9 pl-8"
+            // Foco automático: é o que faz o leitor de código de barras físico (USB/Bluetooth,
+            // emula teclado) funcionar sem clique prévio — o form já submete no Enter (padrão HTML).
+            // eslint-disable-next-line jsx-a11y/no-autofocus -- único campo da tela, requisito do leitor físico
+            autoFocus
           />
         </div>
-        <Button type="submit" disabled={carregando}>
+        <Button type="submit" disabled={carregando || eanCarregando}>
           <Search className="mr-2 h-4 w-4" />
           Prospectar
         </Button>
       </form>
 
-      {!termoBuscado ? (
+      {eanPendente ? (
+        <SonarEanEscolha ean={eanPendente} onEscolher={escolherConsultaEan} />
+      ) : eanBuscado ? (
+        eanCarregando ? (
+          <div className="flex flex-col gap-1.5">
+            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
+          </div>
+        ) : eanErro ? (
+          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+            <p className="text-sm font-medium text-destructive">
+              Não foi possível consultar o EAN "{eanBuscado.ean}".
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {eanErroObj instanceof Error ? eanErroObj.message : 'Erro desconhecido.'}
+            </p>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchEan()}>
+              Tentar de novo
+            </Button>
+          </div>
+        ) : resultadoEan && !resultadoEan.conectado ? (
+          // Mesmo padrão de degradação explícita das outras rotas do Sonar.
+          <EmptyState
+            icon={Search}
+            title="Sem conexão com o Mercado Livre"
+            description="Conecte uma conta do Mercado Livre para consultar EAN — é dado público, mas o lookup oficial exige token de alguma conta conectada."
+          />
+        ) : resultadoEan && resultadoEan.conectado && !resultadoEan.catalogado ? (
+          <EmptyState
+            icon={Package}
+            title={`EAN "${eanBuscado.ean}" sem ficha de catálogo no Mercado Livre`}
+            description="Não é erro — acontece com faixas GS1 internas (ex.: aviamento) ou produtos ainda não catalogados. Tente outro EAN ou busque por termo."
+          />
+        ) : resultadoEan && resultadoEan.conectado && resultadoEan.catalogado ? (
+          <SonarEanResultado
+            resp={resultadoEan}
+            onNovaConsulta={() => { setEanBuscado(null); setTermo(''); inputRef.current?.focus(); }}
+          />
+        ) : null
+      ) : !termoBuscado ? (
         buscasRecentes.length > 0 ? (
           <Card className="max-w-2xl p-4">
             <div className="mb-3 flex items-center justify-between">

@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — busca por EAN/GTIN (ADR-0127 Errata 1) — 2026-08-22
+
+- [x] Edge nova `pulse-sonar-ean` + parsers puros `_shared/pulse/sonar-ean.ts` (validação de EAN,
+  interseção por `item_id` restringindo "vendidos" da Apify ao produto do EAN, montagem da
+  resposta) com 10 testes; `src/lib/sonar.ts` (`fetchSonarPorEan`) e UI em `PulseSonar.tsx`
+  (escolha grátis/com vendidos, resultado próprio via `DataTable`, `autoFocus` para leitor físico
+  de código de barras). `pnpm lint`/`pnpm test` (401/401, 3710 testes)/`npx tsc -b --force` e
+  `deno lint`/`deno check` (config `supabase/functions/deno.json`) verdes.
+- [ ] **`supabase functions deploy pulse-sonar-ean`** — pendente. Registrada em
+  `supabase/config.toml` mas ainda não deployada (deploy nunca é automático no merge); sem isso a
+  UI nova chama uma function inexistente em produção.
+
 ## Apify — fallback multi-conta por saldo (ADR-0122, adendo 2026-08-22) — 2026-08-22
 
 - [x] `_shared/apify/client.ts` passa a tentar até 4 tokens (`APIFY_TOKEN`, `APIFY_TOKEN_2`,

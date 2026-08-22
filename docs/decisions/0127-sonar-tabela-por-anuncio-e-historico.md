@@ -309,3 +309,48 @@ do ADR-0125 (D1 agregação por MAIOR, D2 cache `v4`+`por_anuncio`, D3 bump `son
 `date_created` e sua refutação) continuam válidas como registro de medição — nada nelas é
 contradito por este ADR; D3 fica órfã com a deleção da `pulse-sonar` (D3 acima), mas o cache expira
 sozinho em 24h.
+
+## Errata 1 (2026-08-22) — busca por EAN/GTIN: produto específico, não nicho
+
+O Sonar buscava só por termo livre (nicho: vários concorrentes). Pedido do Diego (escopo fechado):
+suportar também busca por EAN/GTIN, restrita a **um produto específico**, com leitor de código de
+barras físico (USB/Bluetooth) funcionando de graça — ele emula teclado, então só precisou de
+`autoFocus` no campo (o `<form>` já submete no Enter, comportamento HTML padrão) — **sem nenhuma
+lib nova**. Câmera do celular ficou de fora de propósito: é etapa futura separada que exigirá
+dependência nova.
+
+- **Grátis por padrão, Apify só sob escolha explícita.** O lookup oficial de catálogo
+  (`/products/search?product_identifier={ean}` → `/products/{id}` + `/products/{id}/items`, mesmo
+  padrão de `_shared/ml/concorrencia.ts`, mas para 1 EAN em vez da família inteira) já resolve
+  produto + ofertas de graça — é o mesmo endpoint que a busca por termo usava antes da migração
+  para Apify pura (ADR-0122/ADR-0127 acima). "Vendidos" só existe via Apify (tem custo,
+  ~US$ 0,10/consulta) e nunca é buscado sem o operador escolher explicitamente — a UI mostra dois
+  cards lado a lado ("Consultar grátis" / "Consultar com vendidos") com badge verde/âmbar
+  sinalizando a diferença de custo, sem inventar um valor exato em R$/US$ (não há conversão de
+  custo em nenhum outro lugar do app para isto).
+- **Interseção por `item_id` restringe o caminho pago ao produto do EAN.** A busca da Apify é por
+  termo (livre) — mesmo usando o EAN como palavra-chave, ela pode trazer anúncios de produtos
+  vizinhos. Para cumprir "só este produto" mesmo com `com_vendas=true`, `montarOfertasEan`
+  (`_shared/pulse/sonar-ean.ts`) só aceita `vendidos` da Apify para os `item_id` que a lookup
+  OFICIAL (`ofertas_detalhe`, de `parseItensProduto`) confirmou pertencerem ao produto. Item Apify
+  fora dessa lista é descartado, nunca aparece na resposta; item oficial sem match na amostra
+  Apify fica com `vendidos: null` — limite de amostra, não falha (regra LOUD do resto do Sonar:
+  nunca vira 0 por ausência).
+- **Cache em duas chaves com TTLs diferentes**, mesmo racional de granularidade de
+  `pulse-sonar-vendas`/`visitas`: `sonar:ean:v1:{ean}` (lookup oficial: produto + ofertas) TTL
+  **24h** — preço/oferta muda mais rápido que "vendidos"; `sonar:ean-vendas:v1:{ean}` (itens
+  Apify parseados) TTL **7d** — mesmo motivo da vendas por termo (dado quase não muda dia a dia,
+  cada run custa dinheiro). EAN sem ficha de catálogo também cacheia (tombstone
+  `product_id: null`, TTL 24h, mesmo padrão de `_shared/ml/concorrencia.ts`) — evita rebater o ML
+  a cada leitura repetida do mesmo código sem catálogo.
+- **Falha da Apify degrada, não derruba a resposta.** Diferente de `pulse-sonar-vendas` (que
+  devolve 502 se o run falhar, porque é a query PRIMÁRIA da tela), aqui o catálogo grátis já é uma
+  resposta válida por si só — se o operador pediu "com vendidos" e o run falhar (ou não houver
+  nenhum `APIFY_TOKEN*` configurado), a resposta 200 sai igual com `vendas_indisponivel: true` e
+  `com_vendas: false` (o que foi efetivamente calculado, não o que foi pedido). Decisão de
+  julgamento desta entrega: o operador não perde o lookup grátis por causa de um bloco pago que
+  falhou.
+- Nova edge `pulse-sonar-ean` (par fina de `pulse-sonar-vendas`/`visitas`, mesmo padrão de
+  `resolverConexao` + `getValidAccessTokenConexao` + `exigirModulo(admin, orgId, 'pulse')`);
+  `catalogado: false` (EAN sem ficha) e `conectado: false` (org sem conexão ML) são respostas
+  válidas com HTTP 200, mesmo padrão de degradação explícita do resto do Sonar.
