@@ -207,6 +207,13 @@ Grupos de colunas:
   `20260731192443_codigo_produto_automatico.sql`.*
 - **Lifecycle:** `status` (`familia_status`), `operacao` (`operacao_ml`).
 - **Categorização:** `tipo_aviamento`, `tipo_origem`, `categoria_ml_id`, `categoria_nome`.
+- **Sugestão de categoria pela ficha de catálogo (ADR-0131):** `catalogo_categoria_sugerida_id`,
+  `catalogo_categoria_sugerida_nome`, `catalogo_categoria_sugerida_vendedores` (nullable, mesmo
+  padrão de `concorrencia_categoria_id`/ADR-0057). Escritas por `process-familia` só no fluxo CREATE
+  (best-effort, quando o domínio da ficha de catálogo do GTIN diverge da categoria escolhida); lidas
+  pelo card `SugestaoCatalogo` (`card-categoria.tsx`, direto da row, sem rede) e pelo `vincular-catalogo`
+  (linha extra no alerta Telegram de `ficha_divergente`). *Migration
+  `20260822201053_sugestao_categoria_catalogo.sql`.*
 - **Origem/imposto (ADR-0055):** `origem` (enum `origem_produto` `nacional`/`importado`,
   default `nacional`), lida da coluna opcional `ORIGEM` da planilha (linha PAI).
   *Migration `20260703113001_imposto_origem_e_aliquotas.sql`.*

@@ -281,6 +281,17 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   crítico do publish — no `POST /items` o id já está pronto e o anúncio publica em segundos.
   Best-effort/idempotente; a troca de foto zera o `*_ml_picture_id` (`upload-imagens-lote` e o
   re-ingest UPDATE de planilha via `herdarPictureId`, plano 031).
+  **Sugestão de categoria pela ficha de catálogo (ADR-0131):** etapa nova, só no fluxo CREATE (o
+  early-return do UPDATE parcial fica antes), depois de `resolverCategoria` e de `atributosMl`
+  calculados. `calcularSugestaoCatalogo` (`process-familia/sugestao-catalogo.ts`) busca a ficha de
+  catálogo do GTIN da variação principal, resolve o domínio da categoria escolhida
+  (`buscarDominioCategoria`, `_shared/ml/domain-discovery.ts`, cacheado 30d) e, se divergir do domínio
+  da ficha (`deveSugerirCategoriaPorFicha`, trava anti-kit `fichaEquivalente` reaplicada), resolve a
+  categoria real onde os itens da ficha competem (`buscarCategoriaFicha`, mesmo endpoint
+  `/products/{id}/items` do concorrente). Persiste `catalogo_categoria_sugerida_id/nome/vendedores`
+  no mesmo UPDATE final que já grava `concorrencia_categoria_id`. Best-effort: qualquer falha (rede,
+  ficha não encontrada, domínio ausente) não persiste nada, não lança, não afeta o resto do
+  processamento.
 - **publicar-familias** — marca famílias `publicando`, garante a fila serial
   (`parallelism=1`) e enfileira os jobs de publicação (ADR-0034). **E6 (ADR-0061):** aceita
   `canais[]` (default `['mercado_livre']`); fan-out: ML segue no worker `publish-familia-ml`;
@@ -491,6 +502,12 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   (ADR-0084) — `indexarElegibilidadeAnuncio` lê o status da raiz e indexa pelo item id, e
   `montarBodyOptinVariacao` faz o opt-in sem `variation_id`. Antes disso todo item plano ficava
   `pendente` para sempre.
+  **Sugestão de categoria pela ficha de catálogo (ADR-0131):** quando o alerta dispara com
+  `resumo.ficha_divergente > 0` e a família tem `catalogo_categoria_sugerida_id`/`_nome` preenchidos
+  (calculados antes, no `process-familia` — sem chamada nova, só select a mais), `montarMensagemCatalogoNoMatch`
+  (`_shared/notificacoes/telegram.ts`) ganha uma linha citando a categoria sugerida
+  (`CatalogoNoMatchAlerta.categoriaSugerida`). Família de UPDATE (colunas nulas, sugestão não roda no
+  UPDATE parcial) → linha omitida, comportamento atual preservado.
 
 ### Remoção / reprocessamento
 - **remover-publicado** — remove todas as linhas publicadas de um mesmo `codigo_pai` (global

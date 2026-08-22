@@ -142,5 +142,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0128 | [Veredito Sonar: Demanda e Entrada separadas](../../docs/decisions/0128-veredito-sonar-demanda-e-entrada.md) |
 | 0129 | [Adicionar variação a família publicada, direto da tela Estoque](../../docs/decisions/0129-adicionar-variacao-a-familia-publicada.md) |
 | 0130 | [Concorrentes relevantes no Pulse e na Viabilidade](../../docs/decisions/0130-concorrentes-relevantes-pulse-viabilidade.md) |
+| 0131 | [Sugestão de categoria pela ficha de catálogo](../../docs/decisions/0131-sugestao-categoria-pela-ficha-catalogo.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
