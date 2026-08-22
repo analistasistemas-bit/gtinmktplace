@@ -54,4 +54,19 @@ describe('montarMensagemCatalogoNoMatch', () => {
     expect(msg).toContain('não tem identificador de variação');
     expect(msg).not.toContain('múltiplas tentativas');
   });
+
+  it('cita a categoria sugerida quando presente, com a ressalva de não trocar o anúncio publicado', () => {
+    const msg = montarMensagemCatalogoNoMatch({
+      ml_item_id: 'MLB1', titulo: 'Eucerin Aquaphor 55ml', cores: ['Único'],
+      categoriaSugerida: { id: 'MLB1262', nome: 'Cuidado do Corpo' },
+    });
+    expect(msg).toContain('Cuidado do Corpo');
+    expect(msg).toContain('MLB1262');
+    expect(msg).toContain('Não troque a categoria');
+  });
+
+  it('sem categoriaSugerida o texto fica idêntico ao atual', () => {
+    const msg = montarMensagemCatalogoNoMatch({ ml_item_id: 'MLB1', titulo: 'X', cores: ['Preto'] });
+    expect(msg).not.toContain('Sugestão:');
+  });
 });

@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: familia } = await admin.from('familias')
-    .select('user_id, org_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em').eq('id', job.familia_id).single();
+    .select('user_id, org_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em, catalogo_categoria_sugerida_id, catalogo_categoria_sugerida_nome').eq('id', job.familia_id).single();
   // Sem item publicado não há o que vincular (família removida/erro) — encerra sem retry.
   if (!familia?.ml_item_id) {
     return new Response(JSON.stringify({ skip: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -133,6 +133,10 @@ Deno.serve(async (req) => {
             titulo: familia.nome_pai ?? null,
             cores,
             motivo: decidirMotivoAlertaCatalogo(resumo),
+            categoriaSugerida:
+              resumo.ficha_divergente > 0 && familia.catalogo_categoria_sugerida_id && familia.catalogo_categoria_sugerida_nome
+                ? { id: familia.catalogo_categoria_sugerida_id, nome: familia.catalogo_categoria_sugerida_nome }
+                : null,
           }));
       } catch (e) {
         console.error(`alerta catálogo no-match falhou para ${familia.ml_item_id}:`, (e as Error).message);

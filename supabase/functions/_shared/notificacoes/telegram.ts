@@ -37,6 +37,8 @@ export interface CatalogoNoMatchAlerta {
   titulo: string | null;
   cores: string[];
   motivo?: 'elegibilidade_esgotada' | 'sem_variation_id' | 'elegibilidade_nao_resolvida';
+  /** Categoria compatível com a ficha do GTIN, calculada ANTES de publicar (spec 2026-08-22). */
+  categoriaSugerida?: { id: string; nome: string } | null;
 }
 
 // Alerta PROATIVO (ADR-0036): no opt-in de catálogo, alguma variação não tem ficha equivalente
@@ -59,6 +61,11 @@ export function montarMensagemCatalogoNoMatch(item: CatalogoNoMatchAlerta): stri
     `⚠️ Catálogo: ${plural} ${cores} do anúncio "${nome}" ${causa} e não vai competir.`,
     `Se ficar assim, o Mercado Livre pode pausar/inativar o anúncio.`,
     `Para evitar: abra o link → Publicar no catálogo → na cor sem ficha clique "Não encontro minha variação" → Confirmar.`,
+    // Regra do projeto: NUNCA trocar categoria de anúncio publicado (re-moderação, incidente
+    // Aquaphor) — a sugestão é para a PRÓXIMA publicação, e a mensagem diz isso.
+    ...(item.categoriaSugerida
+      ? [`Sugestão: a ficha de catálogo deste produto vive na categoria "${item.categoriaSugerida.nome}" (${item.categoriaSugerida.id}). Não troque a categoria do anúncio já publicado — considere-a numa próxima publicação.`]
+      : []),
     url,
   ].join('\n');
 }
