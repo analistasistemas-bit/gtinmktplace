@@ -133,3 +133,56 @@ destravar"), uma frase de ação por nível e um bloco "Contexto do nicho" com d
 usa (mediana de preço das fichas, ticket médio, % Full e % internacionais da amostra Apify) —
 rotulado como fora da pontuação. Implementação em `src/lib/veredito-sonar.ts` (campo aditivo
 `explicacao` + `contextoNicho`), render em `src/components/pulse/veredito-sonar.tsx`.
+
+## Adendo (2026-08-21) — Área "Insights do nicho"
+
+O card tinha um lado direito pobre: só a frase-resumo. Diego quer o Sonar como diferencial de
+SaaS premium frente a concorrentes (Hunter Spy, JoomPulse), que mostram vários insights sempre
+visíveis, não escondidos atrás de um expansível. Decisão, grillada em sessão de `/grill-with-docs`
+com análise cruzada via modelo Fable dos dois concorrentes:
+
+**1. Só o Sonar.** O Radar (`Pulse.tsx`) tem modelo de dado diferente; herda o padrão depois, como
+entrega separada.
+
+**2. Continua 100% determinístico.** Nenhum dos três cards novos abaixo exige IA em runtime — todos
+promovem cálculo que `calcularVereditoAnuncios`/`rivaisPodio` já produzem, sem novo endpoint e sem
+novo custo. A postura editorial deste ADR (nunca gerar interpretação por IA) permanece intacta;
+abrir espaço pra texto gerado por IA (ex.: um "copiloto" consultivo) fica como decisão futura
+separada e explícita, não implícita nesta entrega.
+
+**3. Frase-resumo (`resumoVeredito`) ganha tom mais amigável/comercial.** Ex.: "Tem gente
+comprando, mas o topo é Full. Não enche estoque." vira algo como "Mercado aquecido, mas dominado
+por quem já tem Full — entrar com estoque grande é nadar contra a maré." **Guardrail inegociável:**
+quando a ação é "não compre estoque", isso continua cristalino — é decisão de dinheiro real, tom
+mais leve não pode diluir o aviso.
+
+**4. Nova seção "Insights do nicho"**, sempre visível, dentro do mesmo `Card`, entre a frase-resumo
+e o botão "Saiba mais" — não fica escondida atrás do expansível, ao contrário do resto da
+explicação (que continua determinística e agora colapsada). Reaproveita o padrão visual de
+mini-card já usado em `painel-analise.tsx` (borda, `bg-card`, ícone Lucide + label), em vez de um
+componente novo.
+
+**5. Três cards nesta entrega** (ranqueados pelo Fable entre o que já está calculado e na tela, sem
+custo extra; os demais — mercado endereçável, barreiras estruturais, qualidade, desconto médio,
+tendência de visitas — ficam de backlog):
+
+   - **Por que a entrada está aberta/fechada + como destravar** — de `entrada` +
+     `explicacao.fatores[].destravar`. Diferencial real: nenhum dos dois concorrentes explica o que
+     precisaria mudar pra abrir o nicho.
+   - **Pódio de rivais** — de `rivaisPodio` (top 5 por faturamento, inclui "fantasma" sem rótulo de
+     loja). Sai de dentro do "Saiba mais" (não duplica a lista).
+   - **Faixas de preço da amostra** (barato/médio/premium por tercis de `preco`) — nova sort sobre
+     dado já lido.
+
+**6. Ausência de dado nunca vira sinal bom, e cards vazios se escondem** (mesma regra do resto do
+Sonar — RaioX já faz isso): `entrada === 'nao_medida'` mostra a causa da não-medição em vez de
+chutar aberta/fechada; `rivaisPodio` vazio esconde o card inteiro (nunca "0 rivais"); amostra de
+preço pequena demais para tercis cai para min–max simples.
+
+**7. Sem paywall.** O PubliAI não tem infraestrutura de tier por feature dentro do Sonar hoje
+(billing é por assinatura da conta, ADR-0028); os insights são função pura sem custo marginal por
+usuário. "Premium" aqui é posicionamento de produto, não gate de acesso — criar gating seria escopo
+novo não pedido.
+
+Implementação prevista em `src/lib/veredito-sonar.ts` (dados) e
+`src/components/pulse/veredito-sonar.tsx` (render), como entrega separada desta sessão de design.
