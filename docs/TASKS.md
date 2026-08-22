@@ -189,9 +189,11 @@
   fichas do painel oficial e os 20 anúncios da amostra Apify (ADR-0127/D1). Cruzamento
   ficha↔anúncio do ADR-0125/D4 (`src/lib/sonar-cruzamento.ts`) foi deletado.
 - [x] **Edge `pulse-sonar` removida do repositório** (fichas de catálogo, API oficial): fonte e
-  entrada no `config.toml` apagadas. A função **segue deployada em produção de propósito** — o
-  front que está no ar ainda a chama; o `supabase functions delete pulse-sonar` é pendência
-  pós-merge (item aberto no fim desta seção). **Edge nova
+  entrada no `config.toml` apagadas. A função **seguiu deployada em produção de propósito** até o
+  front novo (sem chamadas a `pulse-sonar`) ir ao ar — confirmado em 2026-08-22 (bundle de produção
+  só referencia `pulse-sonar-vendas`/`pulse-sonar-visitas`) e a function já removida do Supabase
+  (não aparece mais em `supabase functions list`); o item de delete pós-merge abaixo já foi
+  executado. **Edge nova
   `pulse-sonar-visitas`** (`{item_ids}`, teto 20, cache `sonar:visitas:v1:{item_id}` TTL 24h,
   `{conectado:false}` sem conexão ML) assume o único uso restante da API oficial: visitas 30d por
   anúncio. `pulse-sonar-vendas` (Apify) continua primária e passa a gravar histórico em
@@ -206,10 +208,9 @@
   amostra (D10).
 - [x] Documentação (`edge-functions.md`, `modelo-de-dados.md`, `glossario.md`, obsidian-vault)
   atualizada no mesmo ciclo. ADR-0127 supersede em parte o ADR-0125/D4.
-- [ ] **Pendente pós-merge: `supabase functions delete pulse-sonar`.** A edge não tem mais fonte no
-  repositório, mas continua deployada porque o front em produção ainda a chama. Só depois do merge
-  na `main` e do deploy do front novo o delete pode ser executado — até lá é uma função viva sem
-  código versionado, e sem este item ela sobreviveria esquecida.
+- [x] **`supabase functions delete pulse-sonar`** — executado. Verificado em 2026-08-22: a edge não
+  aparece mais em `supabase functions list`, e o front em produção (bundle real, chunk `Pulse-*.js`)
+  não referencia mais `pulse-sonar` (só `pulse-sonar-vendas`/`pulse-sonar-visitas`).
 
 ## Sonar — remoção da sonda `date_created` (ADR-0125/D9) — 2026-08-19
 
