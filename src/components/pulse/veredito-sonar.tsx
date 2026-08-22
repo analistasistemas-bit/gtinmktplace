@@ -183,10 +183,15 @@ export function VereditoSonar({
             <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Top 5 por faturamento (vendidos × preço) na amostra">
               <Trophy className="h-3.5 w-3.5" aria-hidden /> Pódio de rivais — por faturamento
             </div>
-            <ol className="list-decimal space-y-0.5 pl-4 text-xs">
+            <ol className="list-decimal space-y-1.5 pl-4 text-xs">
               {veredito.rivaisPodio.map((r) => (
-                <li key={r.item_id || r.titulo} className="truncate" title={r.vendedor ?? 'sem rótulo'}>
-                  {r.vendedor ?? 'sem rótulo'}
+                <li key={r.item_id || r.titulo}>
+                  <span className="block truncate font-medium" title={r.vendedor ?? 'sem rótulo'}>
+                    {r.vendedor ?? 'sem rótulo'}
+                  </span>
+                  <span className="block truncate text-muted-foreground" title={r.titulo}>
+                    {r.titulo}
+                  </span>
                 </li>
               ))}
             </ol>
