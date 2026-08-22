@@ -55,10 +55,13 @@ Deno.serve(async (req) => {
   const silencioso = job.alertar === false;
 
   const admin = adminClient();
-  const { data: familia } = await admin.from('familias')
+  const { data: familia, error: familiaError } = await admin.from('familias')
     .select('user_id, org_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em, catalogo_categoria_sugerida_id, catalogo_categoria_sugerida_nome').eq('id', job.familia_id).single();
   // Sem item publicado não há o que vincular (família removida/erro) — encerra sem retry.
   if (!familia?.ml_item_id) {
+    // I2 (revisão final de branch): erro real do select (ex.: 42703 se deployado antes da
+    // migration das colunas catalogo_categoria_sugerida_*) some no skip silencioso sem isto.
+    if (familiaError) console.error(`vincular-catalogo: select de família falhou para ${job.familia_id}:`, familiaError.message);
     return new Response(JSON.stringify({ skip: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 

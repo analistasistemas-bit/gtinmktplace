@@ -101,6 +101,7 @@ export async function buscarNomeCategoria(
 
   const r = await fetchFn(`https://api.mercadolibre.com/categories/${categoriaId}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!r.ok) return null;
   const json = await r.json().catch(() => null) as { name?: string } | null;
@@ -131,6 +132,7 @@ export async function buscarDominioCategoria(
 
   const r = await fetchFn(`https://api.mercadolibre.com/categories/${categoriaId}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!r.ok) return null;
   const json = await r.json().catch(() => null) as { settings?: { catalog_domain?: string } } | null;

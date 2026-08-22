@@ -89,6 +89,19 @@ describe('buscarNomeCategoria', () => {
     await expect(buscarNomeCategoria('token', 'MLB1000', fakeFetch)).resolves.toBe('Ferramentas');
     expect(urls).toEqual(['https://api.mercadolibre.com/categories/MLB1000']);
   });
+
+  // I1 (revisão final de branch): rota nova pelo worker (process-familia) — hang sem timeout
+  // aqui trava a família em "processando" pra sempre (claim já marcou pendente→processando).
+  it('passa um AbortSignal com timeout na chamada fetch', async () => {
+    let signalRecebido: AbortSignal | undefined;
+    const fakeFetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      signalRecebido = init?.signal ?? undefined;
+      return new Response(JSON.stringify({ name: 'Ferramentas' }), { status: 200 });
+    }) as typeof fetch;
+
+    await buscarNomeCategoria('token', 'MLB1000', fakeFetch);
+    expect(signalRecebido).toBeInstanceOf(AbortSignal);
+  });
 });
 
 // Domínio de catálogo de uma categoria (spec 2026-08-22). Contrato confirmado com token real:
@@ -116,5 +129,18 @@ describe('buscarDominioCategoria', () => {
   it('HTTP não-ok → null', async () => {
     const fakeFetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
     await expect(buscarDominioCategoria('token', 'MLB2', fakeFetch)).resolves.toBeNull();
+  });
+
+  // I1 (revisão final de branch): função nova desta feature, chamada agora dentro do worker
+  // process-familia — sem timeout, um hang de rede trava a família em "processando" pra sempre.
+  it('passa um AbortSignal com timeout na chamada fetch', async () => {
+    let signalRecebido: AbortSignal | undefined;
+    const fakeFetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      signalRecebido = init?.signal ?? undefined;
+      return new Response(JSON.stringify({ id: 'MLB277750', settings: { catalog_domain: 'MLB-X' } }), { status: 200 });
+    }) as typeof fetch;
+
+    await buscarDominioCategoria('token', 'MLB277750', fakeFetch);
+    expect(signalRecebido).toBeInstanceOf(AbortSignal);
   });
 });
