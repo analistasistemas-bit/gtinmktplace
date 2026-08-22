@@ -484,6 +484,10 @@ export function familiaFromRow(
     preco_reancorado_lider?: boolean;
     // Cache RLS-readable de ml_formato_publicacao, sintetizado nas queries acima.
     formato_publicacao_ml?: 'user_products' | null;
+    // ponytail: colunas aditivas (spec 2026-08-22) — database.types.ts ainda não regenerado.
+    catalogo_categoria_sugerida_id?: string | null;
+    catalogo_categoria_sugerida_nome?: string | null;
+    catalogo_categoria_sugerida_vendedores?: number | null;
   }
 ): Familia {
   const variacoes = r.variacoes.map((v) => variacaoFromRow(v, r.skus_ativos_up));
@@ -518,6 +522,9 @@ export function familiaFromRow(
     categoriaNome: r.categoria_nome,
     tipoOrigem: r.tipo_origem,
     concorrenciaCategoriaId: r.concorrencia_categoria_id,
+    catalogoCategoriaSugeridaId: r.catalogo_categoria_sugerida_id ?? null,
+    catalogoCategoriaSugeridaNome: r.catalogo_categoria_sugerida_nome ?? null,
+    catalogoCategoriaSugeridaVendedores: r.catalogo_categoria_sugerida_vendedores ?? null,
     origem: r.origem,
     atributosFaltantes: (r.atributos_faltantes as string[] | null) ?? null,
     atributosMl: (r.atributos_ml as AtributoMl[] | null) ?? [],

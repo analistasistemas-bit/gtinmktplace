@@ -71,6 +71,7 @@ function familia(over: Partial<Familia> = {}): Familia {
     concorrencia: 'sem', concorrenciaVendedores: 0, concorrenciaPrecoMin: null, analiseMercado: null,
     tipoAviamento: null, categoriaMlId: null, formatoPublicacaoMl: null, categoriaNome: null,
     tipoOrigem: null, concorrenciaCategoriaId: null, origem: 'nacional', atributosFaltantes: null,
+    catalogoCategoriaSugeridaId: null, catalogoCategoriaSugeridaNome: null, catalogoCategoriaSugeridaVendedores: null,
     atributosMl: [], precoMin: 10, precoMax: 10, precoAbaixo20pc: false, capaStoragePath: null,
     capa2StoragePath: null, capa3StoragePath: null, variacaoPrincipalCodigo: null,
     variacoes: [variacao()],

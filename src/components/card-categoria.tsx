@@ -15,6 +15,40 @@ function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
   return CATEGORIAS_MANUAIS.find((c) => c.tipo === tipo)?.rotulo ?? '—';
 }
 
+// Sugestão pela ficha de catálogo (spec 2026-08-22): diferente do card do concorrente, os dados
+// já estão persistidos na row (id/nome/vendedores) — renderiza sem foco e sem rede. É isso que
+// torna a divergência visível ANTES de publicar (motivação do lote 21). Nunca aplicada sozinha.
+function SugestaoCatalogo({ familia }: { familia: Familia }) {
+  const definir = useDefinirCategoriaLivre(familia.loteId);
+  const id = familia.catalogoCategoriaSugeridaId;
+  const nome = familia.catalogoCategoriaSugeridaNome;
+  if (!id || !nome || id === familia.categoriaMlId) return null;
+  const n = familia.catalogoCategoriaSugeridaVendedores;
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        definir.mutate(
+          { familiaId: familia.id, categoriaMlId: id, categoriaNome: nome },
+          { onError: (e) => toast.error('Erro ao definir categoria', { description: (e as Error).message }) },
+        )}
+      disabled={definir.isPending}
+      className="mt-1.5 w-full rounded-md border border-warning/40 bg-warning/5 p-1.5 text-left text-xs hover:bg-warning/10 disabled:cursor-wait disabled:opacity-60"
+    >
+      {definir.isPending ? (
+        <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Aplicando…</span>
+      ) : (
+        <>
+          <span className="font-medium">Sugestão (catálogo):</span> {nome}
+          {n != null && n > 0 && (
+            <span className="text-muted-foreground"> — {n} {n === 1 ? 'vendedor competindo' : 'vendedores competindo'}</span>
+          )}
+        </>
+      )}
+    </button>
+  );
+}
+
 function BuscaCategoria({ familia }: { familia: Familia }) {
   const [query, setQuery] = useState('');
   const [candidatos, setCandidatos] = useState<CategoriaCandidata[]>([]);
@@ -28,6 +62,8 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
   // uma vez. Idempotente (só a 1ª vez por card).
   const carregarSugestao = () => {
     if (sugestaoCarregada || !familia.concorrenciaCategoriaId) return;
+    // Dedupe (spec 2026-08-22): mesma categoria já exibida pelo card do catálogo → não duplica.
+    if (familia.concorrenciaCategoriaId === familia.catalogoCategoriaSugeridaId) return;
     setSugestaoCarregada(true);
     buscarCategoriaML(familia.id, '').then((r) => setSugestao(r.sugestaoConcorrente)).catch(() => {});
   };
@@ -139,6 +175,7 @@ export function CardCategoria({ familia }: { familia: Familia }) {
       {categoriaIndefinida ? (
         <>
           <p className="mb-1.5 text-xs font-medium text-destructive motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">Categoria indefinida — busque antes de publicar</p>
+          <SugestaoCatalogo familia={familia} />
           <BuscaCategoria familia={familia} />
         </>
       ) : (
@@ -147,6 +184,7 @@ export function CardCategoria({ familia }: { familia: Familia }) {
             {familia.categoriaNome ?? nomeCategoriaAmigavel(familia.tipoAviamento)}
           </p>
           <p className="text-xs text-muted-foreground">{familia.categoriaMlId}</p>
+          <SugestaoCatalogo familia={familia} />
           {(familia.tipoOrigem === 'preditor' || familia.tipoOrigem === 'ia') && (
             <StatusPill tone="info" className="mt-1.5">
               <Sparkles className="h-3 w-3" /> Sugerida por IA — confira

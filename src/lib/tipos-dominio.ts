@@ -172,6 +172,10 @@ export interface Familia {
   tipoOrigem: TipoOrigem | null;
   /** category_id do concorrente (ADR-0057) — sugestão não-vinculante no seletor de categoria. */
   concorrenciaCategoriaId: string | null;
+  /** Sugestão de categoria pela ficha de catálogo (spec 2026-08-22, estende ADR-0057). */
+  catalogoCategoriaSugeridaId: string | null;
+  catalogoCategoriaSugeridaNome: string | null;
+  catalogoCategoriaSugeridaVendedores: number | null;
   /** Origem do produto p/ imposto (ADR-0055): nacional | importado. */
   origem: 'nacional' | 'importado';
   atributosFaltantes: string[] | null;
