@@ -2,7 +2,35 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## "Insights do nicho" no VereditoSonar (adendo ADR-0124, 2026-08-21) — 2026-08-22
+## Scan de segurança `supabase/functions` (CLAUDE-SECURITY-20260822-113640) — 2026-08-22
+
+- [x] Scan `claude-security` escopo `supabase/functions` (446 arquivos, effort medium, focus
+  attack-surface): 9 achados confirmados (1 HIGH, 5 MEDIUM, 3 LOW). Relatório completo em
+  `CLAUDE-SECURITY-20260822-113640/` na raiz (gitignored).
+- [x] F2 (IDOR cross-org em storage) — `ingest-lote` valida `planilha_path` contra a org real do
+  dono (`donoDoPathNaOrg`, `_shared/lote/exclusao.ts`) antes do download com service_role.
+- [x] F4 (SSRF confinado a api.mercadolibre.com) — `buscarNomeCategoria` aplica
+  `ehCategoriaMlValida()` antes de montar a URL.
+- [x] F5 (token Telegram em texto puro) — migration `20260822131053` revoga SELECT table-wide de
+  `configuracoes` e re-concede só as colunas não-secretas; `telegram_bot_token` fora do grant.
+  **Migration escrita, NÃO aplicada em produção** (sem Docker local pra dry-run; `db push` é
+  escrita ao vivo — aguardando confirmação do Diego).
+- [x] F6 (XLSX bomb) — `analisar-viabilidade` rejeita `arquivoBase64` acima de ~8MB antes de
+  decodificar/parsear (`_shared/analise/limite-upload.ts`).
+- [x] F7/F8/F9 (bypass de entitlement Pulse) — `exigirModulo(admin, orgId, 'pulse')` adicionado em
+  `pulse-adicionar`, `pulse-sonar-visitas` e no caminho interativo de `pulse-coletar`.
+- [ ] F1/F3 (OAuth claim_id do ML não vinculado à sessão que o criou) — **NÃO corrigido**: a
+  correção sugerida pelo scan (vincular o claim ao `org_id` do `state`) é exatamente a mitigação
+  que o ADR-0091 já considerou e rejeitou explicitamente (reintroduziria o `state` como
+  autoridade — o bug que o próprio ADR fechou). Precisa de decisão do Diego: aceitar como risco
+  residual documentado (o ADR-0091 já aceita a direção espelhada) ou abrir um adendo ao ADR
+  com uma mitigação compatível (ex.: confirmação explícita do vendedor ML antes de
+  `ml-oauth-claim` gravar, sem tocar a fonte da org).
+- [x] Suíte completa (399 arquivos / 3684 testes), `pnpm lint` e `npx tsc -b --force` verdes;
+  `deno lint` + `deno check` (config `supabase/functions/deno.json`) verdes. Smoke visual via
+  Playwright na tela de login (0 erros de console) — os 6 fixes são só backend/migration, sem
+  mudança de frontend; validar o comportamento fim-a-fim exige a migration aplicada +
+  `supabase functions deploy` (nenhum dos dois feito ainda).
 
 - [x] Frase-resumo do veredito com tom mais amigável/comercial (`resumoVeredito` em
   `src/lib/veredito-sonar.ts`), guardrail mantido: ação "não compre estoque" continua inequívoca.

@@ -20,6 +20,7 @@ import {
 } from '../_shared/analise/analisar-item-viabilidade.ts';
 import { resumirVariacoesSalvas, type VariacaoSalvaResumo } from '../_shared/analise/variacao-salva.ts';
 import type { ItemAnalise, ItemAnalisado } from '../_shared/analise/tipos.ts';
+import { excedeLimiteBase64 } from '../_shared/analise/limite-upload.ts';
 
 const LOTE = 5; // concorrência limitada p/ não estourar a API do ML
 
@@ -113,6 +114,9 @@ Deno.serve(async (req) => {
   let ignorados = 0;
   try {
     if (body.modo === 'planilha' && typeof body.arquivoBase64 === 'string') {
+      if (excedeLimiteBase64(body.arquivoBase64)) {
+        return json({ erro: 'Planilha excede o tamanho máximo permitido' }, 413);
+      }
       const buffer = Uint8Array.from(atob(body.arquivoBase64), (c) => c.charCodeAt(0));
       const wb = XLSX.read(buffer, { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];

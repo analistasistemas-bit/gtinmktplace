@@ -8,6 +8,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { resolverEntrada } from '../_shared/pulse/entrada.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 
 const API = 'https://api.mercadolibre.com';
 
@@ -23,12 +24,16 @@ Deno.serve(async (req) => {
   try { ({ orgId } = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
+  const admin = adminClient();
+  if (!(await exigirModulo(admin, orgId, 'pulse'))) {
+    return json({ erro: 'Módulo Pulse não habilitado para esta organização.' }, 403);
+  }
+
   let body: { entrada?: string };
   try { body = await req.json(); } catch { return json({ erro: 'JSON inválido' }, 400); }
   const entrada = body.entrada?.trim() ?? '';
   if (!entrada) return json({ erro: 'Informe o link de catálogo ou o GTIN.' }, 400);
 
-  const admin = adminClient();
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   if (!conexao) return json({ erro: 'Conecte o Mercado Livre antes de adicionar um produto ao Pulse.' }, 400);
   const token = await getValidAccessTokenConexao(conexao);

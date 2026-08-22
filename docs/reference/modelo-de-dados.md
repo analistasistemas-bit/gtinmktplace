@@ -597,7 +597,12 @@ Settings por **organização** desde o E7 (era por usuário). *Migrations `20260
 (ADR-0059) + `20260705174455_e7_config_org.sql` (ADR-0027).*
 `user_id` (PK, legado), `org_id` (FK organizations, `NOT NULL`, **único** — 1 configuração por
 org), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token` (sensível —
-nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`),
+nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`;
+até a migration `20260822131053_revoke_telegram_bot_token_select.sql` o grant table-wide de
+SELECT em `authenticated` (`20260725224000_support_access.sql`) tornava a RLS por linha
+irrelevante para esta coluna — qualquer membro da org lia o token em texto puro via PostgREST
+direto, contornando a RPC. A migration revoga o SELECT da tabela inteira e re-concede só as
+colunas não-sensíveis; `telegram_bot_token` fica de fora, lido só por `service_role`),
 `aliquota_nacional_pct` (default 8), `aliquota_importado_pct` (default 16) — alíquotas por org,
 sem override por família (ADR-0055) —, **`uf_empresa`** (text, nullable) e
 **`aliquota_interna_pct`** (numeric, nullable) — UF de origem da empresa e alíquota das vendas

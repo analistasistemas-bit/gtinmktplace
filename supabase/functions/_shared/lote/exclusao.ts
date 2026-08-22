@@ -66,6 +66,22 @@ export function filtrarPathsDeDonos(paths: string[], donos: ReadonlySet<string>)
   });
 }
 
+/**
+ * Guard de posse cross-org para paths client-writable cujo dono não foi previamente
+ * confirmado contra o chamador (ex.: `lotes.planilha_path` em ingest-lote, onde qualquer
+ * membro DA MESMA ORG pode operar o lote de outro membro — ADR-0047/0056). Comparar contra
+ * a própria coluna `user_id` da linha não basta: ela também é livre pro cliente escrever no
+ * mesmo UPDATE que grava o path. Só confia no 1º segmento do path quando o profile a que ele
+ * pertence é da org que está chamando; fail-closed (Set vazio) sem profile ou org diferente.
+ */
+export function donoDoPathNaOrg(
+  donoOrgId: string | null | undefined,
+  orgEsperado: string,
+  candidatoUserId: string,
+): ReadonlySet<string> {
+  return donoOrgId === orgEsperado ? new Set([candidatoUserId]) : new Set();
+}
+
 /** Chave de um vínculo com o ML. Só existe quando os dois lados estão preenchidos. */
 export function chaveVinculo(mlItemId: string | null, variationId: string | null | undefined): string | null {
   return mlItemId && variationId ? `${mlItemId}|${variationId}` : null;
