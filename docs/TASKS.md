@@ -10,9 +10,12 @@
   (escolha grátis/com vendidos, resultado próprio via `DataTable`, `autoFocus` para leitor físico
   de código de barras). `pnpm lint`/`pnpm test` (401/401, 3710 testes)/`npx tsc -b --force` e
   `deno lint`/`deno check` (config `supabase/functions/deno.json`) verdes.
-- [ ] **`supabase functions deploy pulse-sonar-ean`** — pendente. Registrada em
-  `supabase/config.toml` mas ainda não deployada (deploy nunca é automático no merge); sem isso a
-  UI nova chama uma function inexistente em produção.
+- [x] **`supabase functions deploy pulse-sonar-ean`** — feito 2026-08-22, `pulse-sonar-ean`
+  ACTIVE versão 1 em produção (confirmado via `supabase functions list`).
+- [x] Correção pós-revisão (Fable): falha transitória do ML (timeout/5xx) em `resolverLookup`
+  (`pulse-sonar-ean/index.ts`) não vira mais tombstone "EAN sem ficha" cacheado 24h — agora
+  distingue de HTTP 200 com resultado vazio e devolve erro 502 explícito ("tente de novo"), mesma
+  regra já usada em `pulse-sonar-visitas`.
 
 ## Apify — fallback multi-conta por saldo (ADR-0122, adendo 2026-08-22) — 2026-08-22
 
