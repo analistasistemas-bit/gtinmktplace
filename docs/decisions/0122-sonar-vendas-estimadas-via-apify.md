@@ -74,6 +74,32 @@ reabrir o endpoint, as contagens absolutas substituem as de amostra de graça.
 (`Tiempo` é o timestamp do scrape) nem o tipo Flex — exibi-los exigiria inventar dado.
 Chave de cache bumpada para `sonar:vendas:v4` (v3 aposentada guarda painéis do corte de 6).
 
+## Adendo 2026-08-22 — Fallback multi-conta por saldo
+
+A premissa "conta única e global" (Consequências, abaixo) criava um teto rígido: no plano FREE
+(~50 termos novos/mês), esgotar o saldo do mês derrubava o Sonar para todas as orgs até o reset.
+Passou a suportar **até 4 tokens** (`APIFY_TOKEN`, `APIFY_TOKEN_2`, `APIFY_TOKEN_3`,
+`APIFY_TOKEN_4`, cada um de uma conta Apify distinta), tentados em **ordem fixa de prioridade** —
+não round-robin, para manter previsível qual conta é cobrada primeiro.
+
+Antes de cada tentativa, checa o saldo mensal restante da conta candidata via
+`GET /v2/users/me/limits` (`data.limits.maxMonthlyUsageUsd - data.current.monthlyUsageUsd`); abaixo
+de US$ 0,15 (folga sobre o teto de US$ 0,10/busca) pula pro próximo token sem gastar a chamada. Se
+essa checagem falhar por rede, **não bloqueia** — a tentativa real decide, evitando que uma conta
+saudável fique de fora por um hiccup do endpoint de limites. Se a busca em si estourar cota
+(`HTTP 402`) **ou o token for rejeitado** (`401`/`403` — revogado, expirado, secret incorreto),
+também tenta o próximo token; qualquer outro erro (actor `FAILED`, timeout, 5xx) desiste sem
+trocar de conta, porque nesses casos trocar de token não resolve.
+
+Rejeição de token (401/403) foi testada contra a API real da Apify (chave real invalidada de
+propósito, local, não a edge deployada) e loga `console.warn` explícito — não deve virar rotina
+silenciosa: se aparecer nos logs de produção, é sinal de secret errado ou conta revogada, não de
+saldo normal acabando.
+
+Implementado só em `_shared/apify/client.ts` (`buscarAnunciosML`/`apifyConfigurado`); nenhuma
+mudança no consumidor (`pulse-sonar-vendas`) nem na semântica de `{ configurado: false }` — ela
+agora significa "nenhum dos até 4 tokens está presente", não "falta o único token".
+
 ## Alternativas descartadas
 
 - **Integrar na `pulse-sonar`:** acopla o painel oficial ao tempo/custo/falha da Apify; um run
@@ -111,9 +137,11 @@ voltar a expor `sold_quantity` de terceiros na API oficial.
   pedidos simultâneos do mesmo termo ainda não-cacheado também disparam dois runs pagos (o lock
   `redisSetNX` de `_shared/redis/client.ts` resolve, se o volume justificar). Rever com quota por
   org se o gasto incomodar.
-- A conta Apify é **única e global** (um `APIFY_TOKEN`, não uma chave por org): todo o consumo de
-  todas as orgs cai na fatura da DALUDI. No plano FREE (US$ 5/mês) isso dá ~50 termos novos por
-  mês — o cache de 7 dias é o que estica esse número na prática.
+- A conta Apify é **global** (não uma chave por org): todo o consumo de todas as orgs cai na
+  fatura da DALUDI. No plano FREE (US$ 5/mês) isso dá ~50 termos novos por mês por conta — o cache
+  de 7 dias é o que estica esse número na prática. Desde o Adendo 2026-08-22, até 4 contas em
+  fallback por saldo multiplicam esse teto, mas o consumo continua sem cota por org dentro de cada
+  conta.
 - `vendas_totais` soma faixas arredondadas do ML (100 / 500 / 1k / … / 250k), então o total exibido
   tem menos precisão do que os dígitos sugerem — daí o "≈" e o rótulo de acumulado na UI.
 - Dependência de HTML de terceiro (via actor mantido pela comunidade Apify): aceita porque está

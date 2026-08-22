@@ -972,8 +972,14 @@ falha ao ler `organizations` não libera.
   interseção 0 medida entre fichas e anúncios em 19/08/2026, veja ADR-0127 §Contexto. A função
   **continua deployada em produção** enquanto o front no ar a chamar; o `supabase functions delete
   pulse-sonar` é pendência pós-merge, rastreada em `docs/TASKS.md`). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
-  sem `APIFY_TOKEN` configurado devolve `{configurado:false}` com 200 (indisponível ≠ erro).
-  Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
+  sem nenhum `APIFY_TOKEN*` configurado devolve `{configurado:false}` com 200 (indisponível ≠
+  erro). Até 4 tokens (`APIFY_TOKEN`, `APIFY_TOKEN_2`, `APIFY_TOKEN_3`, `APIFY_TOKEN_4`), tentados
+  em ordem fixa de prioridade — antes de cada tentativa checa o saldo mensal restante da conta
+  (`GET /v2/users/me/limits`) e pula pro próximo token se sobrar menos de US$ 0,15; se a busca em
+  si estourar cota (`402`) ou o token for rejeitado (`401`/`403` — revogado, expirado, secret
+  errado; loga `console.warn`), também tenta o próximo token (checagem de saldo falhando por rede
+  não bloqueia, a tentativa real decide). Qualquer outro erro (actor FAILED, timeout, 5xx) desiste
+  sem trocar de conta. Roda o actor `karamelo/mercadolivre-scraper-brasil-portugues` de forma síncrona
   (`run-sync-get-dataset-items`, `timeout=120s`, `{keyword, maxPages:1}`, ordem de relevância;
   cliente em `_shared/apify/client.ts`) com **`maxTotalChargeUsd=0.10` ≈ 20 anúncios** — o actor é
   PAY_PER_EVENT a US$ 0,005 por anúncio e sem custo fixo de run, então o teto controla o gasto e a

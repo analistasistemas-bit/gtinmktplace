@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Apify — fallback multi-conta por saldo (ADR-0122, adendo 2026-08-22) — 2026-08-22
+
+- [x] `_shared/apify/client.ts` passa a tentar até 4 tokens (`APIFY_TOKEN`, `APIFY_TOKEN_2`,
+  `APIFY_TOKEN_3`, `APIFY_TOKEN_4`) em ordem fixa de prioridade, checando saldo mensal restante
+  (`GET /v2/users/me/limits`) antes de cada tentativa — pula pro próximo se sobrar menos de
+  US$ 0,15; fallback reativo em `HTTP 402` (cota estourada) **e em `401`/`403`** (token
+  revogado/expirado/secret errado, com `console.warn`). 12 testes em
+  `_shared/apify/__tests__/client.test.ts`. `pnpm test` (400/400 arquivos, 3696 testes) e
+  `pnpm lint` verdes; `deno lint`/`deno fmt` do diretório `supabase/functions` sem apontamentos.
+- [x] Testado de ponta a ponta contra a API real da Apify (não a edge deployada): saldo dos 2
+  tokens já configurados lido corretamente, busca real com o token 1 (20 itens, 14s) e, forçando
+  o token 1 inválido, fallback real para o token 2 com o `console.warn` de token rejeitado
+  aparecendo no log — comportamento confirmado com contas de verdade, não só mock.
+- [ ] **Pendência do Diego:** `APIFY_TOKEN_2` já está no `.env.local` (dev/teste); falta criar
+  1-2 contas extras (`APIFY_TOKEN_3`/`_4`, opcional) e rodar
+  `supabase secrets set APIFY_TOKEN_2=... [APIFY_TOKEN_3=... APIFY_TOKEN_4=...]` em produção —
+  sem isso o fallback em produção fica um no-op silencioso e correto (só o `APIFY_TOKEN` atual é
+  tentado).
+
 ## Scan de segurança `supabase/functions` (CLAUDE-SECURITY-20260822-113640) — 2026-08-22
 
 - [x] Scan `claude-security` escopo `supabase/functions` (446 arquivos, effort medium, focus
