@@ -108,3 +108,33 @@ export async function buscarNomeCategoria(
   if (nome) await redisSet(key, nome, TTL_NOME_S).catch(() => {});
   return nome;
 }
+
+
+const TTL_DOMINIO_S = 30 * 24 * 60 * 60; // mesmo TTL do nome — domínio de categoria muda raro.
+
+/**
+ * Domínio de catálogo de uma categoria (`GET /categories/{id}` → `settings.catalog_domain`).
+ * Contrato confirmado com token real (2026-08-22): MLB277750 → MLB-BABY_CREAMS_AND_OINTMENTS,
+ * MLB1262 → MLB-BODY_SKIN_CARE_PRODUCTS — mesmo formato do `domain_id` das fichas, comparável
+ * por igualdade de string. Resiliente: rede/4xx/campo ausente → null. Cacheado no Redis.
+ */
+export async function buscarDominioCategoria(
+  token: string,
+  categoriaId: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<string | null> {
+  // Mesmo guard de SSRF de buscarNomeCategoria (achado F4): id vira URL com token do vendedor.
+  if (!ehCategoriaMlValida(categoriaId)) return null;
+  const key = `catdom:${categoriaId}`;
+  const cached = await redisGet(key).catch(() => null);
+  if (cached) return cached;
+
+  const r = await fetchFn(`https://api.mercadolibre.com/categories/${categoriaId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const json = await r.json().catch(() => null) as { settings?: { catalog_domain?: string } } | null;
+  const dominio = json?.settings?.catalog_domain ?? null;
+  if (dominio) await redisSet(key, dominio, TTL_DOMINIO_S).catch(() => {});
+  return dominio;
+}

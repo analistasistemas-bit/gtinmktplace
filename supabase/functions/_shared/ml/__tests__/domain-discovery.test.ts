@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buscarCategoriaDireta, buscarNomeCategoria, parseDomainDiscovery } from '../domain-discovery';
+import { buscarCategoriaDireta, buscarNomeCategoria, buscarDominioCategoria, parseDomainDiscovery } from '../domain-discovery';
 
 // Shape real do probe 2026-06-14 (furadeira → 2 domains distintos).
 const REAL = [
@@ -88,5 +88,33 @@ describe('buscarNomeCategoria', () => {
 
     await expect(buscarNomeCategoria('token', 'MLB1000', fakeFetch)).resolves.toBe('Ferramentas');
     expect(urls).toEqual(['https://api.mercadolibre.com/categories/MLB1000']);
+  });
+});
+
+// Domínio de catálogo de uma categoria (spec 2026-08-22). Contrato confirmado com token real:
+// GET /categories/MLB277750 → settings.catalog_domain = "MLB-BABY_CREAMS_AND_OINTMENTS".
+describe('buscarDominioCategoria', () => {
+  it('rejeita categoriaId fora do formato MLB\d+ sem chamar a API (guard de SSRF)', async () => {
+    let chamadas = 0;
+    const fakeFetch = (async () => { chamadas += 1; return new Response(null, { status: 200 }); }) as typeof fetch;
+    await expect(buscarDominioCategoria('token', '../../x', fakeFetch)).resolves.toBeNull();
+    expect(chamadas).toBe(0);
+  });
+
+  it('lê settings.catalog_domain da resposta real', async () => {
+    const fakeFetch = (async () =>
+      new Response(JSON.stringify({ id: 'MLB277750', settings: { catalog_domain: 'MLB-BABY_CREAMS_AND_OINTMENTS' } }), { status: 200 })
+    ) as typeof fetch;
+    await expect(buscarDominioCategoria('token', 'MLB277750', fakeFetch)).resolves.toBe('MLB-BABY_CREAMS_AND_OINTMENTS');
+  });
+
+  it('resposta sem o campo → null (sem sugestão, sem lançar)', async () => {
+    const fakeFetch = (async () => new Response(JSON.stringify({ id: 'MLB1', settings: {} }), { status: 200 })) as typeof fetch;
+    await expect(buscarDominioCategoria('token', 'MLB1', fakeFetch)).resolves.toBeNull();
+  });
+
+  it('HTTP não-ok → null', async () => {
+    const fakeFetch = (async () => new Response(null, { status: 404 })) as typeof fetch;
+    await expect(buscarDominioCategoria('token', 'MLB2', fakeFetch)).resolves.toBeNull();
   });
 });
