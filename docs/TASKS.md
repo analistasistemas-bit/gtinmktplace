@@ -15,11 +15,11 @@
   tokens já configurados lido corretamente, busca real com o token 1 (20 itens, 14s) e, forçando
   o token 1 inválido, fallback real para o token 2 com o `console.warn` de token rejeitado
   aparecendo no log — comportamento confirmado com contas de verdade, não só mock.
-- [ ] **Pendência do Diego:** `APIFY_TOKEN_2` já está no `.env.local` (dev/teste); falta criar
-  1-2 contas extras (`APIFY_TOKEN_3`/`_4`, opcional) e rodar
-  `supabase secrets set APIFY_TOKEN_2=... [APIFY_TOKEN_3=... APIFY_TOKEN_4=...]` em produção —
-  sem isso o fallback em produção fica um no-op silencioso e correto (só o `APIFY_TOKEN` atual é
-  tentado).
+- [x] **Concluído (2026-08-22):** as 4 contas Apify criadas, os 4 tokens confirmados válidos e
+  com saldo via `GET /v2/users/me/limits` (checagem direta, sem gastar cota) e `APIFY_TOKEN_2/_3/_4`
+  subidos em produção (`supabase secrets set`, hashes distintos confirmados em
+  `supabase secrets list`). `pulse-sonar-vendas` já rodava na versão com o código do fallback
+  (deploy do merge anterior) — nenhum redeploy extra necessário, só os secrets novos.
 
 ## Scan de segurança `supabase/functions` (CLAUDE-SECURITY-20260822-113640) — 2026-08-22
 
