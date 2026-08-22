@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buscarCategoriaDireta, parseDomainDiscovery } from '../domain-discovery';
+import { buscarCategoriaDireta, buscarNomeCategoria, parseDomainDiscovery } from '../domain-discovery';
 
 // Shape real do probe 2026-06-14 (furadeira → 2 domains distintos).
 const REAL = [
@@ -59,5 +59,34 @@ describe('buscarCategoriaDireta', () => {
 
     await expect(buscarCategoriaDireta('colchete gancho', fakeFetch)).resolves.toBeNull();
     expect(chamadas).toBe(0);
+  });
+});
+
+// F4 (CLAUDE-SECURITY-20260822-113640): categoriaId chega de uma coluna livre pro cliente
+// escrever (familias.concorrencia_categoria_id) e é interpolado direto na URL com o token do
+// vendedor — sem o guard ehCategoriaMlValida que os irmãos (lerSchemaAtributos,
+// buscarCategoriaDireta) já aplicam, um valor tipo '../../x' vira SSRF confinado a
+// api.mercadolibre.com.
+describe('buscarNomeCategoria', () => {
+  it('rejeita categoriaId fora do formato MLB\\d+ sem chamar a API (guard de SSRF)', async () => {
+    let chamadas = 0;
+    const fakeFetch = (async () => {
+      chamadas += 1;
+      return new Response(null, { status: 200 });
+    }) as typeof fetch;
+
+    await expect(buscarNomeCategoria('token', '../../algum/endpoint', fakeFetch)).resolves.toBeNull();
+    expect(chamadas).toBe(0);
+  });
+
+  it('busca o nome normalmente para um categoriaId MLB válido', async () => {
+    const urls: string[] = [];
+    const fakeFetch = (async (input: string | URL | Request) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ name: 'Ferramentas' }), { status: 200 });
+    }) as typeof fetch;
+
+    await expect(buscarNomeCategoria('token', 'MLB1000', fakeFetch)).resolves.toBe('Ferramentas');
+    expect(urls).toEqual(['https://api.mercadolibre.com/categories/MLB1000']);
   });
 });

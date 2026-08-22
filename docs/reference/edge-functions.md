@@ -181,6 +181,11 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   No re-ingest UPDATE herda o `*_ml_picture_id`/`ml_picture_id` só quando NÃO veio foto nova no lote
   (reposição só-planilha preserva a publicada); com foto nova, zera para forçar re-upload da atual —
   senão republicaria a imagem antiga cacheada no ML (plano 031, `herdarPictureId`).
+  `planilha_path` é escrito pelo cliente e baixado com `service_role` (RLS de storage não se
+  aplica) — antes do download, `donoDoPathNaOrg` (`_shared/lote/exclusao.ts`) confirma que o
+  profile do 1º segmento do path é da mesma org do chamador, senão aborta 400 (achado F2,
+  CLAUDE-SECURITY-20260822-113640; comparar contra `lotes.user_id` não bastaria — a coluna
+  também é livre pro cliente escrever no mesmo UPDATE que grava o path).
 - **upload-imagens-lote** — recebe FormData de imagens e casa por nome de arquivo
   (`00CODIGO`, `CAPA_…`, `CAPA2_…`, `CAPA3_…`) com variações/família.
 
@@ -454,7 +459,11 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   `atributos_faltantes`. Base do editor inline na Revisão. `action:'buscar-categoria'` (ADR-0057)
   busca categorias reais do ML por texto livre (`buscarCategoriaPreditor`) e devolve também a
   sugestão não-vinculante da categoria do concorrente (`concorrencia_categoria_id` →
-  `buscarNomeCategoria`), sem exigir categoria já definida.
+  `buscarNomeCategoria`), sem exigir categoria já definida. `buscarNomeCategoria` agora aplica
+  `ehCategoriaMlValida()` (`^MLB\d+$`) antes de montar a URL — `concorrencia_categoria_id` é
+  coluna livre pro cliente escrever e ia direto pro fetch com o token do vendedor sem o guard
+  que as irmãs (`lerSchemaAtributos`, `buscarCategoriaDireta`) já tinham (achado F4,
+  CLAUDE-SECURITY-20260822-113640, SSRF confinado a `api.mercadolibre.com`).
 - **vincular-catalogo** *(worker, delay 10min)* — opt-in de catálogo por GTIN; uma decisão unificada
   por rodada reagenda `pendente` **e** `nao_elegivel` pelo mesmo backoff limitado
   (1h/6h/24h/48h; janela total de ~3,3 dias) ou finaliza e alerta via Telegram em
@@ -911,7 +920,10 @@ falha ao ler `organizations` não libera.
   `/items` restringe detalhes de anúncios concorrentes; links válidos já gravados são preservados.
   A notificação traz **os novos desta execução e o
   total ainda não lido** — sem o segundo número a conta nunca fecha com o painel, que mostra o
-  acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela).
+  acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela). O caminho
+  interativo (botão, sem `upstash-signature`) checa `exigirModulo(admin, scopedOrgId, 'pulse')`
+  logo após resolver `scopedOrgId` (achado F9, CLAUDE-SECURITY-20260822-113640 — faltava; o
+  caminho QStash não é alcançável por atacante e ficou fora do escopo do achado).
   **Alertas usam só o mercado relevante** (`gravarAlertasRelevantes`, avaliado depois de perfis e
   visitas frescos) — a coleta continua persistindo o mercado observado bruto para auditoria, mas
   `preco_caiu`/`novo_concorrente`/`concorrente_saiu` só disparam para ofertas qualificadas pela
@@ -951,6 +963,8 @@ falha ao ler `organizations` não libera.
   incondicional anterior rebaixava produto `auto` para `manual` (tirando-o do tier quente e
   congelando a referência de preço) e desfazia o pausar do operador. Única exceção: ficha
   **arquivada** volta para `ativo`, porque readicioná-la é um pedido explícito de trazê-la de volta.
+  Checa `exigirModulo(admin, orgId, 'pulse')` logo após `requireUserOrg` — faltava (achado F7,
+  CLAUDE-SECURITY-20260822-113640), permitindo org sem o módulo habilitado consumir a API do ML.
 - **pulse-sonar-vendas** (ADR-0122, `verify_jwt=true`, chamada pelo app com o JWT do usuário) —
   query primária da tela: a tabela do Sonar passou a listar os até 20 **anúncios reais** da busca
   Apify, não mais fichas de catálogo (ADR-0127/D1 — a `pulse-sonar` original, que buscava fichas
@@ -1002,7 +1016,9 @@ falha ao ler `organizations` não libera.
   conexão ML da org, devolve `{conectado:false}` com 200 (mesmo padrão do `configurado:false` da
   vendas): a coluna Visitas mostra "—" e o resto da tela vive — único modo degradado que sobra
   depois da `pulse-sonar` (ADR-0127/D16). Com conexão, devolve
-  `{conectado:true, por_item: Record<item_id, {total, por_dia} | null>}`.
+  `{conectado:true, por_item: Record<item_id, {total, por_dia} | null>}`. Checa
+  `exigirModulo(admin, orgId, 'pulse')` logo após `requireUserOrg` (achado F8,
+  CLAUDE-SECURITY-20260822-113640 — faltava, org sem o módulo consumia a API do ML de graça).
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
@@ -1016,7 +1032,11 @@ falha ao ler `organizations` não libera.
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
   Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);
-  o menor preço da concorrência usa o valor vigente de venda de cada publicação
+  `modo:'planilha'` rejeita `arquivoBase64` acima de `MAX_ARQUIVO_BASE64_CHARS` (~8MB texto,
+  `_shared/analise/limite-upload.ts`) com 413 antes de decodificar/parsear — sem o teto, um
+  payload pequeno podia declarar tamanho descomprimido arbitrário no ZIP e estourar memória no
+  `XLSX.read` vendorizado (achado F6, CLAUDE-SECURITY-20260822-113640).
+  O menor preço da concorrência usa o valor vigente de venda de cada publicação
   (`GET /items/{item_id}/sale_price?context=channel_marketplace`), e não o campo legado `price`
   de `/products/{product_id}/items`; falha nessa consulta preserva `price` como fallback. O cache
   Redis dessa leitura usa a versão **`gtin:v5:*`** (TTL 6h), separada dos valores legados; a chave

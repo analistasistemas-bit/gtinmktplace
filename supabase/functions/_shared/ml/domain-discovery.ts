@@ -1,4 +1,5 @@
 import { redisGet, redisSet } from '../redis/client.ts';
+import { ehCategoriaMlValida } from '../categoria/schema.ts';
 
 // Preditor nativo de categoria do ML (ADR-0026 / E3). domain_discovery devolve um array
 // ORDENADO por relevância; o topo é a melhor categoria-folha. Validado com token real (probe
@@ -85,13 +86,20 @@ const TTL_NOME_S = 30 * 24 * 60 * 60; // mesmo TTL de buscarCategoriaPreditor �
  * concorrente (ADR-0057) — os resultados de busca já trazem o nome via domain_discovery.
  * Resiliente: rede/4xx → null (sugestão simplesmente não aparece). Cacheado no Redis.
  */
-export async function buscarNomeCategoria(token: string, categoriaId: string): Promise<string | null> {
-  if (!categoriaId) return null;
+export async function buscarNomeCategoria(
+  token: string,
+  categoriaId: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<string | null> {
+  // Guard de SSRF (achado F4, CLAUDE-SECURITY-20260822-113640): categoriaId chega de
+  // familias.concorrencia_categoria_id, coluna livre pro cliente escrever, e é interpolada
+  // aqui numa URL chamada com o token do vendedor — mesmo guard que os irmãos já aplicam.
+  if (!ehCategoriaMlValida(categoriaId)) return null;
   const key = `catnome:${categoriaId}`;
   const cached = await redisGet(key).catch(() => null);
   if (cached) return cached;
 
-  const r = await fetch(`https://api.mercadolibre.com/categories/${categoriaId}`, {
+  const r = await fetchFn(`https://api.mercadolibre.com/categories/${categoriaId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!r.ok) return null;

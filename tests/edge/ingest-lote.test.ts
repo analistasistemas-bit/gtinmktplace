@@ -5,6 +5,23 @@ import {
   matchImagem,
   matchCapa,
 } from '../../supabase/functions/_shared/parser';
+import { donoDoPathNaOrg } from '../../supabase/functions/_shared/lote/exclusao';
+
+// F2 (CLAUDE-SECURITY-20260822-113640): planilha_path é escrito pelo cliente e lido com
+// service_role (RLS de storage não se aplica); comparar contra lote.user_id não basta
+// porque essa coluna também é livre pro cliente escrever (mesma linha, mesmo UPDATE). O
+// guard real é: o dono candidato (1º segmento do path) precisa ser membro da MESMA org.
+describe('donoDoPathNaOrg', () => {
+  it('autoriza quando o profile do candidato é da org esperada', () => {
+    expect(donoDoPathNaOrg('org-a', 'org-a', 'user-vitima')).toEqual(new Set(['user-vitima']));
+  });
+  it('nega quando o profile do candidato é de outra org (path cross-org)', () => {
+    expect(donoDoPathNaOrg('org-b', 'org-a', 'user-vitima')).toEqual(new Set());
+  });
+  it('nega (fail-closed) quando o candidato não tem profile', () => {
+    expect(donoDoPathNaOrg(null, 'org-a', 'user-inexistente')).toEqual(new Set());
+  });
+});
 
 describe('validarColunas', () => {
   it('aceita quando todas as colunas obrigatórias estão presentes', () => {

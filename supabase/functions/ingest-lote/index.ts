@@ -8,6 +8,7 @@ import { mapearLinha } from './mapear-linha.ts';
 import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-origem.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
+import { donoDoPathNaOrg, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
 import { buscarVariacoesExistentesML } from '../_shared/ml/variacoes-existentes.ts';
@@ -77,6 +78,22 @@ Deno.serve(async (req) => {
   }
   if (!lote.planilha_path) {
     return new Response('Lote sem planilha_path', { status: 400, headers: corsHeaders });
+  }
+
+  // Guard de posse cross-org (achado F2, CLAUDE-SECURITY-20260822-113640): planilha_path é
+  // escrito pelo cliente e este download roda com service_role (RLS de storage não se
+  // aplica). Comparar contra lote.user_id não bastaria — a coluna também é livre pro cliente
+  // escrever no mesmo UPDATE que grava o path. Confia no 1º segmento só se o profile daquele
+  // user_id for da MESMA org (qualquer membro pode operar o lote de outro — ADR-0047/0056).
+  const uploaderCandidato = lote.planilha_path.split('/')[0] ?? '';
+  const { data: uploaderProfile } = await admin
+    .from('profiles')
+    .select('org_id')
+    .eq('id', uploaderCandidato)
+    .maybeSingle();
+  const donos = donoDoPathNaOrg(uploaderProfile?.org_id, orgId, uploaderCandidato);
+  if (filtrarPathsDeDonos([lote.planilha_path], donos).length === 0) {
+    return new Response('planilha_path inválido para esta organização', { status: 400, headers: corsHeaders });
   }
 
   try {

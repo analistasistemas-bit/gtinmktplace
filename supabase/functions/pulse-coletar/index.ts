@@ -7,6 +7,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
 import { processarColetaOrg } from './processar.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 
 interface ConexaoRow {
   id: string; org_id: string; canal: string;
@@ -29,6 +30,10 @@ Deno.serve(async (req) => {
   } else {
     try { ({ orgId: scopedOrgId } = await requireUserOrg(req, { access: 'write' })); }
     catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+    if (!(await exigirModulo(admin, scopedOrgId, 'pulse'))) {
+      return new Response(JSON.stringify({ erro: 'Módulo Pulse não habilitado para esta organização.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
   }
 
   let payload: { tier?: 'completo' | 'quente' } = {};

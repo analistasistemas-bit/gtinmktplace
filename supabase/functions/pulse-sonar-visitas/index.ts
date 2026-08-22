@@ -9,6 +9,7 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { parseVisitasJanela, validarItemIds, type VisitasJanela } from '../_shared/pulse/sonar.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 
 const API = 'https://api.mercadolibre.com';
 // 24h, não 7d: a janela de 30 dias anda todo dia — TTL maior serviria visita velha (D6).
@@ -39,12 +40,16 @@ Deno.serve(async (req) => {
   try { ({ orgId } = await requireUserOrg(req, { access: 'read' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
+  const admin = adminClient();
+  if (!(await exigirModulo(admin, orgId, 'pulse'))) {
+    return json({ erro: 'Módulo Pulse não habilitado para esta organização.' }, 403);
+  }
+
   let body: { item_ids?: unknown };
   try { body = await req.json(); } catch { return json({ erro: 'JSON inválido' }, 400); }
   const itemIds = validarItemIds(body.item_ids);
   if (itemIds == null) return json({ erro: 'item_ids obrigatório (1 a 20 strings)' }, 400);
 
-  const admin = adminClient();
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   // Sem conexão ML → indisponível explícito com 200 (mesmo padrão do configurado:false da
   // vendas): a coluna Visitas mostra "—" e o resto da tela vive (D16, único modo degradado).
