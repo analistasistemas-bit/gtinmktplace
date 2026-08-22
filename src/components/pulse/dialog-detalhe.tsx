@@ -405,7 +405,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
               {/* Bloco de decisão: o que o operador veio saber, antes da evidência. */}
               {produto?.codigo_pai && (
                 <section className="rounded-lg border bg-muted/30 p-4">
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                     <div>
                       <p className="text-xs text-muted-foreground">Seu preço</p>
                       {meuPreco != null ? (
@@ -437,34 +437,17 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                         <p className="text-lg text-muted-foreground">—</p>
                       )}
                     </div>
-                    <div>
-                      {/* Duas referências convivem nesta linha e podem apontar para lados opostos:
-                          o menor concorrente é o piso real da ficha; a referência do ML é um preço
-                          calculado por ele a partir de concorrentes internos e externos. Sem dizer
-                          isso, o bloco parece se contradizer. */}
-                      <p
-                        className="text-xs text-muted-foreground"
-                        title="Preço de referência calculado pelo Mercado Livre. Não é o menor preço da ficha — por isso pode ficar acima do menor concorrente."
-                      >
-                        Referência do ML
-                      </p>
-                      {/* Referência que o ML marcou como não aplicável não é exibida como número:
-                          um valor grande e em destaque é lido como alvo de preço, e seria alvo que
-                          a própria fonte não sustenta. O selo da lista diz a mesma coisa. */}
-                      {produto.ptw_aplicavel === false ? (
-                        <p
-                          className="text-sm text-muted-foreground"
-                          title="O Mercado Livre calculou uma referência para este anúncio, mas marcou que ela não se aplica agora."
-                        >
-                          não aplicável
-                        </p>
-                      ) : (
-                        <p className="text-lg font-semibold tabular-nums">
-                          {produto.ptw_preco_sugerido != null ? fmtBRL(produto.ptw_preco_sugerido) : '—'}
-                        </p>
-                      )}
-                    </div>
                   </div>
+
+                  {produto.ptw_aplicavel === true && produto.ptw_preco_sugerido != null
+                    && (menorConcorrente == null || produto.ptw_preco_sugerido >= menorConcorrente) && (
+                    <p
+                      className="mt-2 text-xs text-muted-foreground"
+                      title="Preço calculado pelo Mercado Livre a partir de produtos semelhantes — pode incluir preços de fora do Mercado Livre. Não é necessariamente um concorrente que você pode abrir e conferir."
+                    >
+                      Preço-alvo do algoritmo do ML: {fmtBRL(produto.ptw_preco_sugerido)} (pode incluir preços fora do ML e produtos apenas semelhantes)
+                    </p>
+                  )}
 
                   <div className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
                     <div className="flex flex-col gap-1">

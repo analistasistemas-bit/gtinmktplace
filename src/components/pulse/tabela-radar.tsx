@@ -157,9 +157,9 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       className: 'hidden lg:table-cell',
       // Escala ordinal (mais barato → mais caro), não alfabética: ordenar por texto colocaria
       // "Abaixo da referência" antes de "Acima da referência" e misturaria a leitura.
-      sortValue: (p) => ordemPriceToWin(p),
+      sortValue: (p) => ordemPriceToWin(p, menorDe(p)),
       cell: (p) => {
-        const selo = seloPriceToWin(p);
+        const selo = seloPriceToWin(p, menorDe(p));
         if (!selo) return <span className="text-muted-foreground">—</span>;
         return (
           <Badge variant="outline" className={cn('font-normal', classeTom(selo.tom))} title={selo.ajuda}>

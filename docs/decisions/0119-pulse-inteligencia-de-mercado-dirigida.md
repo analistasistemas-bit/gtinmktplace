@@ -411,6 +411,41 @@ e virou o **ADR-0120 (Pulse Sonar)** — aba nova no Pulse + coluna "Visitas 30d
 do Radar. A extensão do v2 continua sendo o caminho para vendas POR ANÚNCIO e para anúncios sem
 ficha; nada da Errata 2 muda quanto a isso.
 
+## Errata 10 (2026-08-22) — a mitigação da Errata 3 (aviso em texto) não impediu a confusão
+
+A Errata 3 decidiu manter as duas métricas de posição de preço lado a lado (mesmo peso visual) com
+um aviso em texto/tooltip explicando que podem divergir. Um caso real expôs que isso não basta: o
+Eucerin Protetor Solar FPS 60 (`4005900183125`) é o **mais barato** entre os 2 concorrentes reais e
+auditáveis da ficha (R$ 109,99 e R$ 129,90 — 12% mais barato que o mais próximo), e mesmo assim
+aparecia com o selo "Acima da referência" (tom laranja, badge de veredito), porque a referência do
+ML (R$ 75,90) vinha de fora do universo comparável — confirmado na doc oficial do ML
+(`developers.mercadolivre.com.br/pt_br/referencias-de-precos`): a referência é calculada sobre
+produtos "semelhantes", podendo incluir preços de **outras plataformas** (ex.: farmácia online),
+não só concorrência real do Mercado Livre. O dono do produto leu o selo como "estou caro, devo
+baixar" — decisão financeira sobre um número sem procedência auditável, e o aviso em texto não
+evitou essa leitura.
+
+**Decisão:** a referência do ML nunca pode contradizer o dado auditável (menor concorrente real
+coletado). Quando `ptw_preco_sugerido` é menor que o menor concorrente relevante da ficha, o
+selo/número some (célula vira "—", detalhe não mostra a linha) — mostrar "acima da referência"
+quando o operador já é mais barato que todo concorrente real visível é enganoso, não é nuance.
+Quando não contradiz, o selo pode aparecer, mas:
+
+- **Tom sempre neutro** nos 4 status de posição (`no_benchmark_lowest`, `no_benchmark_ok`,
+  `with_benchmark_high`, `with_benchmark_highest`) — inclusive os que antes eram "ok"/verde: não é
+  dado auditável, não deveria carregar cor de veredito em nenhuma direção, nem favorável.
+- **No dialog de detalhe, deixa de ser "big number" par de "Menor concorrente relevante"** (mesmo
+  grid, mesma fonte) — vira linha secundária pequena, só exibida quando aplicável e não
+  contraditória, com o texto deixando explícito que "pode incluir preços fora do ML e produtos
+  apenas semelhantes".
+
+Os estados de Markdown (`MARKDOWN`, promoção sugerida/agendada/ativa) ficam de fora dessa regra —
+são um sinal diferente (o ML oferece um desconto, não "seu preço está errado"), continuam com o
+tom que tinham.
+
+**Escopo da correção:** `src/lib/pulse-formato.ts` (`seloPriceToWin`, `ordemPriceToWin`),
+`src/components/pulse/tabela-radar.tsx`, `src/components/pulse/dialog-detalhe.tsx`.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.
