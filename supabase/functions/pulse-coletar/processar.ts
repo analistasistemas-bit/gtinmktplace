@@ -3,6 +3,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
+import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
@@ -444,6 +445,7 @@ export async function processarColetaOrg(
   }
 
   // 5) price-to-win (só tier completo, só produtos origem='auto'): não sobrescreve com null.
+  // Frete NÃO vem mais daqui — passo 5b grava `ptw_custos.frete` via shipping_options/free.
   if (tier === 'completo') {
     const produtosAuto = produtos.filter((p) => p.origem === 'auto' && p.codigo_pai);
     await pool(CONCORRENCIA, produtosAuto, async (produto) => {
@@ -462,7 +464,7 @@ export async function processarColetaOrg(
       const ptw = parsePriceToWin(json);
       if (!ptw) return;
       await admin.from('pulse_produtos').update({
-        ptw_status: ptw.status, ptw_preco_sugerido: ptw.preco_sugerido, ptw_custos: ptw.custos,
+        ptw_status: ptw.status, ptw_preco_sugerido: ptw.preco_sugerido,
         ptw_aplicavel: ptw.aplicavel,
         ptw_atualizado_em: new Date().toISOString(),
       }).eq('id', produto.id);
@@ -514,16 +516,21 @@ export async function processarColetaOrg(
       // casos gravamos em `comissao_preco` o preço realmente usado, para a tela saber se o número
       // é exato para o preço exibido ou uma estimativa.
       const comissaoPorItem = new Map<string, { pct: number; fixa: number; preco: number }>();
+      const fretePorItem = new Map<string, number>();
       await pool(CONCORRENCIA, [...infoPorItem.values()], async (info) => {
         if (!info.category_id || !info.listing_type_id) return;
         const preco = precoEfetivoPorItem.get(info.item_id) ?? info.price;
         if (preco == null) return;
-        const json = await mlGet(
-          `${API}/sites/MLB/listing_prices?price=${preco}&category_id=${info.category_id}&listing_type_id=${info.listing_type_id}`,
-          token,
-        );
+        const [json, frete] = await Promise.all([
+          mlGet(
+            `${API}/sites/MLB/listing_prices?price=${preco}&category_id=${info.category_id}&listing_type_id=${info.listing_type_id}`,
+            token,
+          ),
+          buscarFreteVendedor(token, conexao.contaExternaId ?? 'me', preco, info.category_id),
+        ]);
         const c = parseComissao(json);
         if (c) comissaoPorItem.set(info.item_id, { ...c, preco });
+        fretePorItem.set(info.item_id, frete);
       });
 
       const agora = new Date().toISOString();
@@ -534,11 +541,13 @@ export async function processarColetaOrg(
         // de apagá-la, do mesmo jeito que o price-to-win não sobrescreve com null.
         if (!st) return;
         const com = itemId ? comissaoPorItem.get(itemId) : undefined;
+        const frete = itemId ? fretePorItem.get(itemId) : undefined;
         await admin.from('pulse_produtos').update({
           anuncio_status: st.status, anuncio_sub_status: st.sub_status, anuncio_status_em: agora,
           ...(com
             ? { comissao_pct: com.pct, comissao_fixa: com.fixa, comissao_preco: com.preco, comissao_em: agora }
             : {}),
+          ...(frete != null ? { ptw_custos: { frete } } : {}),
         }).eq('id', produto.id);
       });
     }

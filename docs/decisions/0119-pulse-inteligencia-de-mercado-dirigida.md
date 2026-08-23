@@ -446,6 +446,24 @@ tom que tinham.
 **Escopo da correção:** `src/lib/pulse-formato.ts` (`seloPriceToWin`, `ordemPriceToWin`),
 `src/components/pulse/tabela-radar.tsx`, `src/components/pulse/dialog-detalhe.tsx`.
 
+## Errata 11 (2026-08-22) — frete desacoplado do price-to-win esparso
+
+A Errata 6 desacoplou a **comissão** do endpoint de sugestões (`/suggestions/items/{id}/details`)
+para o passo 5b via `/listing_prices`. O **frete** ficou pendente: continuava vindo só do passo 5,
+que responde 404 ou sem `costs` para a maior parte dos produtos (~86% na 1ª coleta medida).
+
+**Decisão:** o frete passa a ser fonte canônica do passo 5b, via `buscarFreteVendedor`
+(`GET /users/{id}/shipping_options/free`) — mesma função já usada na Calculadora/Viabilidade.
+Consulta no preço efetivo do anúncio (passo 3, com promoção) e categoria do multiget; dimensões
+default 16×11×6 cm / 300 g quando o produto não tem medidas cadastradas. O valor **0** (comprador
+paga frete) é gravado e válido para margem — distinto de `null` (ainda não coletado).
+
+O passo 5 deixa de gravar `ptw_custos` (evita apagar frete com `null` quando o PTW falha).
+Comissão continua em `comissao_pct`/`comissao_fixa`; `ptw_custos` no Pulse guarda só `{ frete }`.
+
+**Escopo:** `supabase/functions/pulse-coletar/processar.ts` (passos 5 e 5b),
+`supabase/functions/_shared/ml/frete.ts` (reutilizado, sem alteração).
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.

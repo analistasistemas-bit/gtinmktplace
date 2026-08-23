@@ -178,6 +178,11 @@ describe('margemEstimada — regra LOUD: qualquer insumo ausente → null', () =
     expect(margemEstimada({ ...base, frete: null })).toBeNull();
   });
 
+  it('frete zero é válido — comprador paga envio, margem calcula normalmente', () => {
+    // Coleta via shipping_options/free grava 0 quando vendedor não absorve frete.
+    expect(margemEstimada({ ...base, frete: 0 })).toEqual({ liquido: 42, margemPct: 42, comissao: 10 });
+  });
+
   it('retorna null sem alíquota de imposto', () => {
     expect(margemEstimada({ ...base, aliquotaPct: null })).toBeNull();
   });

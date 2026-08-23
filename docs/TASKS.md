@@ -2,6 +2,13 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Pulse — frete na margem via shipping_options/free (ADR-0119 Errata 11) — 2026-08-22
+
+- [x] `pulse-coletar/processar.ts` passo 5b: coleta frete com `buscarFreteVendedor` (paralelo à
+  comissão) e grava `ptw_custos.frete`; passo 5 deixa de sobrescrever `ptw_custos` com null do PTW
+  esparso. Teste `frete=0` válido em `pulse-margem.test.ts`. Docs: Errata 11 ADR-0119,
+  `docs/how-to/usar-o-pulse.md`.
+
 ## Revisão — resync pós-IA no cadastro manual (lote #21) — 2026-08-22
 
 - [x] Causa raiz: `FamiliaExpanded` inicializa título/descrição/variações do snapshot pré-IA e

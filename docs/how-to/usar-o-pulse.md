@@ -267,7 +267,7 @@ qual e não mostra margem nenhuma. As causas:
 | falta **custo do produto** | Cadastre o custo das variações (menu Estoque → entrada de produto). Sem custo real não existe margem real. |
 | falta **alíquota de imposto** | Confirme as alíquotas em **Configurações** (nacional 8% / importado 16%). Enquanto não estiverem confirmadas, o sistema se recusa a assumir um valor. |
 | falta **comissão do Mercado Livre** | A coleta ainda não leu a taxa desse anúncio. Costuma resolver sozinho na coleta seguinte. |
-| falta **custo de frete do Mercado Livre** | Mesma coisa: o ML ainda não devolveu o custo de envio. |
+| falta **custo de frete do Mercado Livre** | A coleta ainda não leu o custo de envio para esse anúncio. Desde a Errata 11 (ADR-0119), o frete vem do endpoint `shipping_options/free` na coleta completa (passo 5b), no preço efetivo do anúncio — não depende mais do endpoint esparso de sugestões do price-to-win. Quando o comprador paga o frete, o valor gravado é **R$ 0,00** (válido). Aguarde a próxima coleta completa ou use "Atualizar agora". |
 
 Isso é proposital: um número de margem errado é pior do que nenhum número — leva a baixar preço
 abaixo do custo achando que está no lucro.
