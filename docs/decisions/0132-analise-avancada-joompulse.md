@@ -1,0 +1,460 @@
+# ADR-0132 — Análise Avançada com JoomPulse
+
+**Status:** Aceito com bloqueios — direção arquitetural aprovada; implementação não iniciada e bloqueada pelo spike e pelas questões marcadas como "A definir"
+**Data:** 2026-08-23
+**Decisores:** Diego
+**Relaciona:** [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Pulse; o 403 de vendas por anúncio de terceiro), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) (Sonar + Apify, fora do v1), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0086](0086-configuracao-org-scoped.md) (módulos), [0024](0024-abstracao-de-canais.md) (Canal ≠ provedor de análise), [0027](0027-multi-tenancy-organizations.md) (multi-tenancy), [0043](0043-migrations-canal-unico.md) (migrations canal único)
+
+## Problema
+
+O Radar não vê vendas por anúncio de concorrente porque a API do Mercado Livre devolve 403. A Viabilidade calcula margem sem demanda. A JoomPulse tem esse histórico e existe parceria formal autorizando a integração.
+
+O PubliAI não deve falar MCP nem expor ferramentas, tokens ou detalhes do provedor ao operador. O enriquecimento também não pode vir ligado para todos os clientes, contaminar margem, piso, semáforo ou reprecificação, nem criar vazamento de dados entre organizações.
+
+A integração introduz o primeiro backend próprio do PubliAI: hoje o Render serve apenas o frontend estático. Antes da implementação ainda é necessário validar, contra a JoomPulse real, OAuth multi-conta, refresh, ferramentas MCP disponíveis, schemas, identificadores, quotas, latência e o significado exato das estimativas.
+
+## Decisão
+
+| # | Decisão |
+|---|---|
+| D-1 | JoomPulse é provedor de dado, não copiloto. Margem, piso, semáforo e reprecificar continuam só no PubliAI. Nenhum dado da JoomPulse entra nesses cálculos, direta ou indiretamente. |
+| D-2 | PubliAI nunca chama `https://joompulse.com/mcp`. Um Gateway de mercado, como Web Service separado no Render, é o único cliente MCP + OAuth. No v1, o browser chama a API HTTP do Gateway; não há Edge Function intermediando consultas de análise. O Gateway chama apenas a JoomPulse e os serviços necessários para autenticação, autorização e gate do módulo. |
+| D-3 | O v1 só enriquece Radar com vendas e receita estimadas do rival e Viabilidade com demanda ao lado do semáforo. Sem dado não significa zero: a UI mostra travessão e estado explicativo. Falha nunca produz número inventado nem fallback para o menor preço observado, conforme ADR-0130. |
+| D-4 | O módulo usa o slug `analise_avancada` em `/admin` → Módulos e fica desligado por padrão. O frontend não é autoridade: Gateway e qualquer Edge envolvida checam server-side `modulos_habilitados_da_org()`. Desligado significa telas e Canais iguais aos de hoje, ausência de novas chamadas ao Gateway e rejeição server-side caso alguém tente chamá-lo diretamente. Desligar não apaga ativamente dados já gravados nem a credencial da organização; caches continuam sujeitos ao TTL normal. |
+| D-5 | Cada organização conecta a própria conta JoomPulse por OAuth no browser, com callback processado pelo Gateway. Só admin da organização pode conectar ou desconectar; super-admin apenas habilita o módulo. Access token e refresh token ficam exclusivamente no limite do Gateway, nunca no browser, Supabase ou payload do PubliAI. O storage definitivo das credenciais e a revogação remota no ato de desconectar permanecem **A definir**. |
+| D-6 | Conectar mora em `/canais`, no bloco Análise Avançada, visível somente com o módulo ligado: JoomPulse ativo; Hunter Spy e Avant PRO "Em breve". São provedores de análise, não Canal, e ficam fora de `canais_habilitados` e do `ChannelConnector`. |
+| D-7 | Pedido à JoomPulse ocorre somente no uso: abrir o detalhe de um concorrente no Radar ou rodar a Viabilidade. O cron do Pulse não chama o Gateway. Prefetch automático, enriquecimento em lote e Sonar ficam fora do v1. |
+| D-8 | A API do Gateway é versionada sob `/v1` e expõe operações de domínio, nunca `tool` + `args`. Endpoints, schemas JSON, envelope de erro e limites máximos de payload devem ser fechados no contrato antes da implementação. Quebra de contrato exige nova versão. |
+| D-9 | O Gateway mantém allowlist explícita de ferramentas MCP e parâmetros, somente para leitura e apenas nos scopes mínimos. Não existe proxy MCP genérico. Toda resposta do provedor é validada por schema, tipo e tamanho antes de sair do Gateway; resposta inválida é falha do provedor, não dado parcial confiável. |
+| D-10 | A correlação não será presumida por GTIN. Radar parte de `MLB` e/ou `catalog_product_id`, enquanto alguns anúncios não têm GTIN. A chave canônica e a estratégia determinística de correlação permanecem **A definir** pelo spike. Até isso ser fechado, não haverá implementação nem fallback por título, texto ou similaridade. |
+| D-11 | Cache é segregado primeiro por organização e credencial JoomPulse. A chave inclui versão do contrato, operação, identificador opaco da credencial, chave de correlação e janela consultada. Backend, TTLs e política de dado expirado permanecem **A definir**. Cache global por GTIN só poderá existir se a parceria permitir e o spike provar que a resposta é invariável entre contas. |
+| D-12 | O Gateway terá rate limit por organização, por credencial/conta JoomPulse, por endpoint e global, além de single-flight para consultas simultâneas da mesma chave de correlação. Limites numéricos e timeouts permanecem **A definir** após medir quotas e latência. Como não há Edge→Gateway no v1, não existe timeout de Edge nesse fluxo; adotar essa topologia exigirá revisão desta ADR e definição explícita do orçamento de timeout. |
+| D-13 | Módulo, conexão, saúde da credencial, plano/quota, disponibilidade do provedor e existência de dado para o item são estados distintos. Backend e UI não podem reduzi-los ao mesmo travessão ou ao mesmo erro genérico. |
+| D-14 | O Gateway terá configuração declarativa em `render.yaml`, pipeline de CI, health check e deploy independente do frontend estático. Cold start e latência serão medidos no spike; metas e eventual mitigação permanecem **A definir**. |
+| D-15 | Credenciais, caches, auditoria e qualquer persistência são isolados por organização. Postgres usa RLS; Redis ou cofre de segredos usa namespace e política equivalente. `org_id` nunca vem de payload, query string ou header controlado pelo cliente. Offboarding de organização ou término da parceria exige expurgo; prazos e o comportamento quando o usuário que conectou sai da organização permanecem **A definir**. |
+| D-16 | O Gateway emite métricas por organização e credencial opaca, sem tokens: latência, cache hit, erros por classe, throttling, indisponibilidade, falhas de schema e falhas de refresh. Logs removem tokens, authorization codes, headers de autorização e payloads sensíveis. Alertas, redaction testada e procedimento de revogação em massa são pré-requisitos de produção. |
+| D-17 | Um spike contra o ambiente real da JoomPulse é obrigatório antes de qualquer implementação. Resultado incompatível com esta ADR interrompe o trabalho e exige revisão da decisão; não autoriza troca silenciosa de topologia, identificador ou semântica. |
+| D-18 | Termos de uso não são bloqueante: existe parceria formal para a integração. A parceria não elimina os bloqueios técnicos, de segurança e de semântica desta ADR. |
+
+## Topologia e autenticação
+
+O fluxo do v1 é:
+
+1. Browser autentica normalmente no Supabase.
+2. Browser chama a API HTTP `/v1` do Gateway com o JWT Supabase.
+3. Gateway valida assinatura, issuer, audience, expiração e demais claims exigidas.
+4. Gateway deriva usuário e organização a partir do token e da associação server-side; nunca aceita `org_id` enviado no payload.
+5. Gateway verifica o módulo `analise_avancada` e, nas operações de conexão, o papel de admin da organização.
+6. Gateway consulta a ferramenta MCP permitida, valida a resposta e devolve somente o schema do PubliAI.
+
+CORS permite apenas as origens explícitas do PubliAI por ambiente; wildcard não é permitido. CORS não substitui autenticação.
+
+Não haverá Edge→Gateway no v1. Se a chamada direta do browser se mostrar inviável no spike, esta ADR deve ser reaberta antes de adotar uma Edge como proxy.
+
+### Contrato HTTP
+
+Todos os endpoints ficam sob `/v1`. Antes da implementação, o contrato deve definir:
+
+- caminhos e métodos;
+- schemas de request e response;
+- campos obrigatórios e nulabilidade;
+- limites máximos de payload e resposta;
+- timeouts e comportamento de cancelamento;
+- paginação, se necessária;
+- códigos HTTP e códigos estáveis de domínio;
+- distinção entre ausência de dado e falha;
+- identificador de correlação para suporte e observabilidade.
+
+Os valores e schemas exatos estão **A definir** no spike. O contrato não pode aceitar nomes arbitrários de ferramenta MCP nem parâmetros livres.
+
+## OAuth e credenciais
+
+A autorização usa Authorization Code com:
+
+- `state` imprevisível, de uso único e com expiração;
+- PKCE;
+- `nonce`;
+- redirect URI fixa e previamente registrada;
+- scopes mínimos e somente leitura;
+- validação do usuário, organização e papel tanto no início quanto no callback;
+- vínculo explícito entre usuário autenticado, organização, conta JoomPulse e credencial criada.
+
+Somente admin da organização conecta ou desconecta. O Gateway registra auditoria com ator, organização, conta JoomPulse vinculada, instante e resultado, sem guardar token ou authorization code no log.
+
+A credencial pertence à organização, não ao usuário que iniciou o OAuth. O comportamento quando esse usuário deixa a organização está **A definir** e deve ser fechado antes da produção.
+
+Access e refresh tokens:
+
+- permanecem apenas no Gateway;
+- são cifrados em repouso;
+- usam chave separada do banco;
+- nunca aparecem em logs, métricas ou respostas;
+- exigem procedimento de rotação de chave e revogação em massa;
+- deixam de ser utilizáveis imediatamente após a desconexão local.
+
+Permanecem **A definir**:
+
+- Postgres gerenciado do Render, Vault ou solução equivalente;
+- mecanismo exato de envelope encryption e rotação;
+- suporte da JoomPulse a refresh token rotation;
+- suporte a revogação remota;
+- se "Desconectar" revoga na JoomPulse e apaga localmente ou, na ausência de endpoint de revogação, apenas inutiliza e apaga a credencial local.
+
+Se o provedor não oferecer revogação, a limitação deve ser documentada na UI e no procedimento operacional; não pode ser ocultada.
+
+## Gateway MCP fechado
+
+O Gateway só pode executar ferramentas aprovadas após o spike. Para cada ferramenta haverá:
+
+- nome fixo;
+- finalidade de domínio;
+- schema fechado de parâmetros;
+- limites de tamanho e cardinalidade;
+- scopes OAuth necessários;
+- schema fechado da resposta;
+- timeout;
+- classificação dos erros;
+- indicação de quais campos são estimativas.
+
+Operações de escrita, descoberta arbitrária de ferramentas e repasse de parâmetros desconhecidos são proibidos. Resposta com tipo, tamanho ou schema inesperado é descartada e registrada como erro de integração, com conteúdo sensível removido do log.
+
+A allowlist definitiva está **A definir** porque depende das ferramentas e schemas reais encontrados no spike.
+
+## Semântica do dado
+
+Toda métrica exibida deve informar obrigatoriamente:
+
+- fonte: JoomPulse;
+- `coletado_em`;
+- janela temporal ou período de referência;
+- unidade;
+- moeda, quando aplicável;
+- indicação explícita de estimativa;
+- identificador usado na correlação.
+
+A UI não exibe um número sem sua janela temporal. Se a JoomPulse fornecer apenas janela móvel, o rótulo deve informar isso. Janelas incompatíveis não são comparadas como se representassem o mesmo período.
+
+Ausência de dado não vira `0`. Resposta vazia válida, credencial inválida, quota insuficiente, indisponibilidade e falha de schema são resultados diferentes.
+
+Permanecem **A definir** após validação com a JoomPulse:
+
+- janela disponível para vendas;
+- janela disponível para receita;
+- instante de corte e timezone;
+- se a janela é fechada ou móvel;
+- unidade e moeda da receita;
+- regra de arredondamento;
+- precisão armazenada e precisão exibida;
+- significado estatístico e limitações das estimativas;
+- política de exibição de cache expirado.
+
+Independentemente dessas definições, dados JoomPulse são apenas informativos. Eles não entram em:
+
+- margem;
+- piso;
+- semáforo;
+- preço recomendado;
+- reprecificação;
+- seleção do menor preço observado;
+- publicação ou atualização de anúncio.
+
+Essa separação deve existir também no backend e nos testes, não apenas no layout.
+
+## Correlação de itens
+
+"Demanda por GTIN" não é contrato suficiente:
+
+- Viabilidade pode partir de GTIN;
+- Radar trabalha com anúncio `MLB` e/ou `catalog_product_id`;
+- nem todo anúncio possui GTIN;
+- um GTIN pode não representar sozinho o mesmo anúncio, kit ou variação;
+- as ferramentas JoomPulse podem usar identificadores diferentes.
+
+O spike deve produzir uma matriz verificável entre os identificadores aceitos pela JoomPulse e os disponíveis no PubliAI. A decisão final deve definir:
+
+- chave canônica por caso de uso;
+- transformações permitidas;
+- prioridade entre `MLB`, `catalog_product_id` e GTIN;
+- comportamento para kit, variação e item sem GTIN;
+- resultado quando não existe correlação determinística.
+
+Até essa decisão, não há fallback por título, descrição, categoria ou similaridade. Correlação ambígua resulta em "sem dado para este item", nunca em associação provável silenciosa.
+
+## Persistência e cache
+
+A implementação escolherá entre tabela persistida, Redis ou combinação dos dois somente após o spike medir custo, latência e repetição das consultas.
+
+Regras independentes da tecnologia escolhida:
+
+- isolamento por organização e credencial;
+- nenhuma chave contém token bruto;
+- chave versionada pelo contrato;
+- TTL explícito por tipo de resposta;
+- invalidação ou isolamento após troca de conta;
+- single-flight para consultas concorrentes equivalentes;
+- RLS em tabelas Postgres;
+- namespace e política equivalente em Redis;
+- limpeza no offboarding;
+- não compartilhar cache entre organizações por padrão.
+
+Cache global por GTIN só será permitido se:
+
+1. a parceria autorizar o reaproveitamento;
+2. a resposta não variar por conta, plano, região ou credencial;
+3. a semântica e a janela forem idênticas;
+4. essa invariância for comprovada no spike.
+
+Backend, TTLs, política de stale data e esquema de persistência estão **A definir**.
+
+## Rate limits, quotas e timeouts
+
+Existem quatro limites independentes:
+
+- por organização PubliAI;
+- por credencial/conta JoomPulse;
+- por endpoint;
+- global do Gateway.
+
+O Gateway também aplica single-flight para a mesma combinação de organização, credencial, operação, chave de correlação, janela e versão.
+
+Uma resposta de quota ou throttling não é tratada como "sem dado". O Gateway evita retries em tempestade e retorna estado específico.
+
+Permanecem **A definir**:
+
+- limites numéricos;
+- burst permitido;
+- duração da janela;
+- política de retry e backoff;
+- timeout de conexão e resposta da JoomPulse;
+- timeout total do Gateway;
+- orçamento do browser;
+- metas de latência;
+- comportamento diante de cold start.
+
+Como a topologia v1 não usa Edge, timeout de Edge não se aplica. Uma futura Edge→Gateway exige revisão desta ADR.
+
+## Máquina de estados
+
+Os estados são avaliados separadamente e não podem ser condensados em um booleano "JoomPulse disponível".
+
+| Estado | Comportamento server-side | UI |
+|---|---|---|
+| Módulo desligado | Gateway rejeita a operação; nenhuma nova chamada à JoomPulse | Bloco Análise Avançada oculto e telas iguais às atuais |
+| Módulo ligado, conta não conectada | Consulta não é executada | CTA para conectar a JoomPulse |
+| OAuth em andamento | Estado e callback são validados | Estado de conexão em andamento; nova tentativa controlada |
+| Conta conectada e credencial saudável | Consulta pode prosseguir | Estado conectado |
+| Credencial expirada ou revogada | Consulta bloqueada; retry de refresh não entra em loop | "Reconectar" |
+| Plano ou quota insuficiente | Consulta bloqueada ou limitada, sem retry automático contínuo | Mensagem específica de plano/quota |
+| Provedor indisponível | Falha transitória, observável e sujeita à política de retry | Aviso de indisponibilidade e opção de tentar novamente |
+| Resposta inválida | Dado descartado; erro de schema/tipo/tamanho | Aviso de indisponibilidade do dado |
+| Sem dado para este item | Resposta válida e vazia; nunca convertida em zero | Travessão e mensagem "Sem dado para este item" |
+| Dado disponível | Resposta validada | Valor com fonte, janela e `coletado_em` |
+
+Transições mínimas:
+
+- super-admin liga o módulo → organização volta ao estado real da credencial preservada ou "não conectada";
+- super-admin desliga o módulo → estado funcional "módulo desligado", sem apagar ativamente a credencial;
+- admin conclui OAuth → conta conectada;
+- refresh retorna erro definitivo → credencial expirada;
+- provedor retorna quota/plano → quota insuficiente;
+- timeout, 5xx ou resposta inválida → provedor indisponível;
+- resposta válida vazia → sem dado para o item;
+- admin desconecta → não conectado;
+- offboarding → credenciais e dados expurgados segundo política ainda **A definir**.
+
+## Infraestrutura e operação
+
+O Gateway é um novo Web Service no Render, separado do frontend estático. Antes de produção deve existir:
+
+- `render.yaml` declarativo;
+- build reproduzível;
+- CI com lint, testes e validação do contrato;
+- health check;
+- configuração de ambientes;
+- deploy e rollback independentes;
+- gestão de segredos fora do repositório;
+- medição de cold start;
+- limites de CPU, memória e concorrência definidos após o spike;
+- procedimento operacional para indisponibilidade da JoomPulse;
+- procedimento de rotação e revogação em massa de credenciais.
+
+O health check prova que o processo consegue atender requisições e acessar suas dependências internas. Ele não deve transformar uma indisponibilidade da JoomPulse em reinício contínuo do Gateway.
+
+Metas numéricas de disponibilidade, latência e cold start estão **A definir**.
+
+## Multi-tenancy e ciclo de vida
+
+Toda autorização parte da identidade autenticada e da associação server-side à organização. O cliente nunca escolhe livremente a organização consultada.
+
+Regras:
+
+- módulo validado por organização;
+- credencial vinculada à organização;
+- cache e persistência vinculados à organização e à credencial;
+- RLS em todo dado relacional persistido;
+- nenhum token em tabela acessível pelo frontend;
+- nenhuma resposta ou métrica expõe token;
+- troca de conta não reaproveita cache de outra credencial sem prova de invariância;
+- auditoria registra ator e conta vinculada;
+- exclusão da organização e término da parceria disparam offboarding e expurgo.
+
+Permanecem **A definir**:
+
+- comportamento quando o usuário que conectou perde o papel de admin;
+- comportamento quando esse usuário deixa a organização;
+- possibilidade de uma conta JoomPulse ser vinculada a mais de uma organização;
+- prazo de retenção de cache, auditoria e metadados;
+- prazo e confirmação do expurgo;
+- tratamento de organização suspensa, mas não excluída;
+- processo de offboarding quando a parceria for encerrada globalmente.
+
+## Observabilidade e resposta a incidente
+
+Métricas mínimas:
+
+- requisições e latência por endpoint;
+- cache hit/miss;
+- throttling por classe;
+- quota insuficiente;
+- falhas de autenticação e autorização;
+- falhas de refresh;
+- credenciais em estado expirado;
+- erros e latência da JoomPulse;
+- respostas rejeitadas por schema, tipo ou tamanho;
+- cold starts;
+- single-flight aplicado.
+
+Organização e credencial aparecem apenas por identificadores internos ou opacos. Tokens, authorization codes, headers de autorização, parâmetros sensíveis e respostas integrais do MCP não entram em logs.
+
+Antes da produção devem existir:
+
+- testes de redaction;
+- alertas para falha de refresh, aumento de erros, throttling e indisponibilidade;
+- thresholds definidos;
+- correlação entre request do PubliAI e chamada ao provedor;
+- runbook de indisponibilidade;
+- runbook de comprometimento de credencial;
+- procedimento de revogação em massa;
+- responsável operacional definido.
+
+Thresholds e canal dos alertas estão **A definir**.
+
+## Spike obrigatório
+
+Nenhuma implementação de produção começa antes de um spike comprovar e registrar:
+
+1. fluxo OAuth com múltiplas contas e organizações;
+2. suporte a `state`, PKCE, `nonce` e redirect URI fixa;
+3. expiração, refresh, refresh token rotation e revogação;
+4. scopes mínimos disponíveis;
+5. ferramentas MCP necessárias e confirmação de que são somente leitura;
+6. schemas reais de request e response;
+7. limites de tamanho;
+8. identificadores aceitos e estratégia de correlação;
+9. janela, timezone, arredondamento e significado das estimativas;
+10. diferença ou invariância das respostas entre contas e planos;
+11. quotas e rate limits;
+12. latência, timeout e cold start;
+13. comportamento de erro, resposta vazia e dado parcial;
+14. compatibilidade da topologia browser→Gateway com JWT Supabase e CORS restrito;
+15. storage de credenciais, cifragem e rotação;
+16. requisitos de cache e TTL;
+17. condições operacionais da parceria formal.
+
+O spike deve usar pelo menos duas organizações e duas credenciais distintas para validar isolamento. Tokens e respostas sensíveis não entram no relatório.
+
+Se qualquer premissa estrutural falhar, a ADR volta para decisão antes de código de produção.
+
+## Questões abertas
+
+As seguintes questões bloqueiam a implementação:
+
+1. Qual identificador fecha deterministicamente Radar e Viabilidade com as ferramentas JoomPulse?
+2. Quais ferramentas MCP entram na allowlist e quais são seus schemas?
+3. Quais são as janelas, timezone, precisão, arredondamento e limitações das estimativas?
+4. Qual é o contrato HTTP completo de `/v1`, incluindo endpoints, schemas, erros e limites?
+5. Credenciais ficam em Postgres gerenciado, Vault ou solução equivalente?
+6. Como funcionam cifragem, backup e rotação das chaves?
+7. A JoomPulse oferece revogação e refresh token rotation?
+8. O que "Desconectar" executa remotamente e quais dados locais remove?
+9. Cache usa tabela, Redis ou ambos? Quais TTLs e política de dado expirado?
+10. O contrato permite cache global e a resposta é invariável entre contas?
+11. Quais são os rate limits, timeouts, retries e metas de latência?
+12. Qual cold start é aceitável e qual mitigação será necessária?
+13. O que ocorre quando quem conectou perde o papel ou deixa a organização?
+14. Quais são os prazos de retenção e expurgo no offboarding?
+15. Quais alertas, thresholds e responsáveis operacionais serão adotados?
+
+## Critérios de aceite
+
+A implementação só pode ser considerada pronta quando:
+
+- [ ] O spike foi concluído e todas as questões bloqueantes foram fechadas nesta ADR ou em ADR sucessora.
+- [ ] A parceria formal está registrada como autorização para o uso acordado.
+- [ ] O Gateway possui `render.yaml`, CI verde, health check, deploy e rollback documentados.
+- [ ] Browser→Gateway usa JWT Supabase válido, CORS restrito e nunca aceita `org_id` do cliente.
+- [ ] Tentativas de acesso cruzado entre duas organizações são rejeitadas em teste contra runtime real.
+- [ ] Gateway e qualquer Edge envolvida verificam `analise_avancada` server-side.
+- [ ] Módulo desligado preserva a experiência atual e produz zero chamadas novas à JoomPulse.
+- [ ] Somente admin da organização conecta e desconecta.
+- [ ] OAuth valida `state`, PKCE, `nonce`, redirect URI, usuário, organização e conta.
+- [ ] Tokens ficam somente no Gateway, cifrados e ausentes de logs, respostas e métricas.
+- [ ] Allowlist MCP contém somente ferramentas e parâmetros de leitura necessários.
+- [ ] Requests e responses são validados por schema, tipo e tamanho.
+- [ ] Correlação funciona para os casos suportados e falha de forma explícita nos não suportados.
+- [ ] Toda métrica mostra fonte, janela e `coletado_em`.
+- [ ] Ausência de dado não vira zero.
+- [ ] Dados JoomPulse não alteram margem, piso, semáforo, preço recomendado ou reprecificação, comprovado por testes.
+- [ ] Estados desligado, não conectado, expirado, quota insuficiente, indisponível e sem dado têm respostas e UI distintas.
+- [ ] Credencial expirada mostra "Reconectar".
+- [ ] Rate limits, single-flight, timeouts e política de retry foram testados.
+- [ ] Cache não cruza organizações ou credenciais.
+- [ ] Persistência relacional possui RLS e foi validada em Postgres real.
+- [ ] Logs passam por teste de redaction.
+- [ ] Métricas, alertas e runbook de revogação em massa estão ativos.
+- [ ] Fluxo completo foi validado com duas organizações e credenciais diferentes contra a JoomPulse real.
+- [ ] Falha ou indisponibilidade mantém Radar e Viabilidade utilizáveis sem dado inventado.
+
+## Plano de reversão
+
+A reversão funcional usa os mecanismos já definidos:
+
+1. desligar `analise_avancada` para as organizações afetadas;
+2. confirmar que o Gateway rejeita novas consultas e que as telas voltaram ao comportamento atual;
+3. interromper ou reverter o deploy do Gateway sem alterar o frontend estático;
+4. preservar credenciais e dados quando a reversão for apenas funcional, conforme D-4;
+5. em incidente de segurança, inutilizar credenciais locais, executar revogação em massa quando suportada e expurgar material comprometido;
+6. reverter alterações de banco por nova migration, nunca por DDL manual, conforme ADR-0043;
+7. não reutilizar dados coletados durante janela suspeita até sua validade ser confirmada.
+
+Se a causa for incompatibilidade de contrato, identificador ou semântica, o módulo permanece desligado até revisão desta ADR. Não haverá fallback para integração direta, proxy MCP genérico, conta compartilhada ou dado estimado localmente.
+
+## Alternativas descartadas
+
+- Chat/MCP dentro do Pulse
+- PubliAI chamando o MCP direto
+- Browser chamando a JoomPulse diretamente
+- Proxy fino `tool` + `args`
+- Edge→Gateway no v1
+- Conta JoomPulse compartilhada entre organizações
+- Token JoomPulse no frontend ou Supabase
+- Ligar no checkbox Pulse
+- Bloco Análise Avançada sempre visível no Canais
+- Enriquecer o Sonar no v1
+- Pedir no ciclo automático do Radar
+- Prefetch ou coleta em lote no v1
+- Tratar ausência de dado como zero
+- Usar menor preço observado como fallback
+- Correlacionar silenciosamente por título ou similaridade
+- Cache global por GTIN sem autorização e prova de invariância
+
+## Consequências
+
+- O diferencial do Pulse permanece; a JoomPulse cobre a lacuna criada pelo 403 sem assumir decisões do PubliAI.
+- Análise Avançada exige dois interruptores: módulo habilitado pelo super-admin e conexão JoomPulse administrada pela organização.
+- A integração cria o primeiro backend próprio e aumenta a superfície operacional, de segurança e observabilidade.
+- Browser→Gateway evita uma Edge intermediária no v1, mas exige JWT, CORS e autorização server-side corretos no Gateway.
+- Token e refresh ficam fora do PubliAI e exigem storage, cifragem, rotação e offboarding próprios.
+- Hunter Spy e Avant PRO no mesmo bloco estabelecem o lugar de futuros provedores sem transformá-los em Canal.
+- A parceria formal remove o bloqueio de termos de uso, mas não substitui o spike nem resolve identificadores, semântica, quotas ou ciclo de vida.
+- Enquanto as questões abertas não forem fechadas, a direção arquitetural está aceita, mas a implementação permanece bloqueada.
