@@ -125,6 +125,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0111 | [Repor estoque reativa o anúncio pausado (qualquer pausa; reconciliação não reativa)](../../docs/decisions/0111-reativacao-automatica-ao-repor-estoque.md) |
 | 0112 | [Alíquota interna por UF da empresa (venda dentro do estado)](../../docs/decisions/0112-aliquota-interna-por-uf-da-empresa.md) |
 | 0113 | [Exclusão de produto pelo Estoque: só o que não está publicado](../../docs/decisions/0113-exclusao-de-produto-no-estoque.md) |
+| 0114 | [Emissão de NF-e modelo 55 (superado parcialmente pelo 0135)](../../docs/decisions/0114-emissao-de-nf-e-modelo-55.md) |
 | 0115 | [O eixo de variação nem sempre é cor](../../docs/decisions/0115-eixo-de-variacao-nao-e-sempre-cor.md) |
 | 0116 | [Visibilidade do que o pipeline de título descarta](../../docs/decisions/0116-visibilidade-dos-descartes-do-titulo.md) |
 | 0116 | [GTIN com dígito verificador errado é ausência de código (e o campo virou editável na Revisão)](../../docs/decisions/0116-gtin-invalido-e-ausencia-de-codigo.md) |
@@ -146,5 +147,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0132 | [Análise Avançada com JoomPulse](../../docs/decisions/0132-analise-avancada-joompulse.md) |
 | 0133 | [Alertas do Pulse: severidade gravada e área dedicada](../../docs/decisions/0133-alertas-do-pulse-severidade-e-area-dedicada.md) |
 | 0134 | [Alerta de estoque zerado e de volta ao ar](../../docs/decisions/0134-alerta-de-estoque-zerado-e-volta-ao-ar.md) |
+| 0135 | [Cadastro fiscal e emissão via Faturador do Mercado Livre](../../docs/decisions/0135-cadastro-fiscal-e-faturador-do-ml.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
