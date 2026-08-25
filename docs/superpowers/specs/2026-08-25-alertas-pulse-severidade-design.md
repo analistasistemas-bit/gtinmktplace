@@ -124,9 +124,11 @@ a classificação) e `nickname` quando disponível.
 3. `gravarAlertasRelevantes` passa `meuPreco` ao `diffOfertas`, grava `severidade` no insert e
    retorna `{ total, acao }` em vez de um número.
 4. A notificação (linha ~624) usa `acao` (ADR-0133 D-10):
-   - `acao > 0` → `Pulse: N alerta(s) exigem decisão — abra o Pulse para agir.`
-   - `acao === 0` → `Pulse: N atualização(ões) de mercado.`
-   - Link/deep-link com `?tab=alertas` em ambos.
+   - `acao > 0` → `Pulse: N alerta(s) exigem decisão de preço — abra a aba Alertas do Pulse.`
+   - `acao === 0` → `Pulse: N atualização(ões) de mercado, nenhuma exige decisão.`
+   - **Sem deep-link:** `gravarNotificacoesInApp` (`_shared/notificacoes/config.ts:56-58`) insere só
+     `user_id, org_id, categoria, texto`, e o Telegram recebe texto puro — não há campo de link.
+     Citar a aba em texto é o que dá para fazer sem mexer no schema de notificações.
 
 ## Frontend
 
