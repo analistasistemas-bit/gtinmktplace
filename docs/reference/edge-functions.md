@@ -586,7 +586,12 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   e notifica a categoria `estoque`. A mensagem distingue produto inteiro zerado ("anúncio pausado
   no Mercado Livre") de variação isolada ("segue no ar sem ela"). Produto sem anúncio publicado tem
   os movimentos marcados **sem envio** — senão publicar um produto velho despejaria a história
-  inteira de uma vez. Reativação bem-sucedida manda o aviso de volta ao ar pela mesma categoria.
+  inteira de uma vez. "Tem anúncio" é *existir* anúncio publicado, não *haver alvo neste push*: na
+  venda o job carrega o canal onde ela ocorreu e esse canal é excluído dos alvos, então com um só
+  canal `alvos` fica vazio justamente quando o anúncio acabou de ser pausado. Reativação
+  bem-sucedida manda o aviso de volta ao ar pela mesma categoria — uma vez por produto (família
+  user products reativa N filhos) e antes do eventual 500, porque na retentativa o anúncio já está
+  ativo e o aviso se perderia.
   **Reativação ao repor (ADR-0111):** com `reativar` no job e saldo > 0 no alvo, depois do push OK
   o worker lê o status ao vivo e devolve o anúncio de `pausado` para `ativo`. Lê antes de escrever
   (o job é reentregue): já ativo não recebe PUT. `moderado`/`encerrado`/`inativo`/`indisponivel`

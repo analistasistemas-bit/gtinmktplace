@@ -384,6 +384,51 @@ describe('alerta de estoque (ADR-0134)', () => {
     expect(enviados).toEqual([]);
   });
 
+  // O caminho REAL da venda: o job carrega o canal onde ela ocorreu e `resolverAlvosPush` exclui
+  // esse canal (ele já se decrementou sozinho). Com um único canal publicado, `alvos` fica vazio —
+  // e é exatamente aí que o anúncio acabou de ser pausado por falta de estoque.
+  it('venda que zera o estoque no único canal publicado ainda alerta', async () => {
+    const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()]);
+    await processarSincronizacao(deps(db, { notificar }), { ...JOB, canal_origem: 'fake' });
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].texto).toContain('anúncio pausado no Mercado Livre');
+  });
+
+  it('reativou num canal e outro ficou retentável: o aviso de volta ao ar não se perde', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    fakeConnector.falharProximo('ESTOQUE', true);
+    const db: DB = {
+      familia: { id: 'f1', nome_pai: 'Sabonete Nivea 200ml', ml_permalink: null },
+      variacoes: [{ codigo: 'A1', estoque: 5 }],
+      anuncios: [
+        { id: 'x1', canal: 'fake', item_externo_id: 'FK1', variacoes_externas: { A1: {} } },
+        { id: 'x2', canal: 'fake2', item_externo_id: 'FK2', variacoes_externas: { A1: {} } },
+      ],
+      itensUP: [],
+      movimentos: [],
+    };
+    const r = await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
+    expect(r.status).toBe(500);
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].texto).toContain('voltou ao ar');
+  });
+
+  it('user products: reativação de N itens filhos avisa a volta ao ar UMA vez', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const db: DB = {
+      familia: { id: 'f1', nome_pai: 'Sabonete Nivea 200ml', ml_permalink: null },
+      variacoes: [{ codigo: 'A1', estoque: 5 }, { codigo: 'A2', estoque: 3 }],
+      anuncios: [{ id: 'p0', canal: 'fake', item_externo_id: null, variacoes_externas: { A1: {}, A2: {} } }],
+      itensUP: [
+        { anuncio_externo_id: 'p0', sku: 'A1', item_externo_id: 'FK-A1', retirado: false, status: 'ativo' },
+        { anuncio_externo_id: 'p0', sku: 'A2', item_externo_id: 'FK-A2', retirado: false, status: 'ativo' },
+      ],
+      movimentos: [],
+    };
+    await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
+    expect(enviados).toHaveLength(1);
+  });
+
   // Publicar um produto velho não pode despejar a história inteira de zeradas de uma vez.
   it('produto sem anúncio publicado: marca o movimento e não envia nada', async () => {
     const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()], false);

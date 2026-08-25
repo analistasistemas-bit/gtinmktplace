@@ -43,6 +43,10 @@ idempotente e repete de propósito) não duplica o aviso.
 retentativa.
 
 **Produto sem anúncio publicado:** os movimentos são marcados como alertados **sem enviar nada**.
+O critério é *existir anúncio publicado*, não *haver alvo neste push*: na venda o job carrega o
+canal onde ela ocorreu e `resolverAlvosPush` o exclui (aquele canal já se decrementou sozinho), de
+modo que com um único canal publicado — o caso de produção hoje — a lista de alvos fica vazia
+exatamente quando o anúncio acabou de ser pausado por falta de estoque.
 Sem isso, publicar um produto velho dispararia de uma vez a história inteira de zeradas antigas —
 o mesmo erro que o alerta de cancelamento cometeu no primeiro run (ADR-0121).
 
@@ -50,7 +54,9 @@ o mesmo erro que o alerta de cancelamento cometeu no primeiro run (ADR-0121).
 
 Quando `reativarSePausado` de fato reativa (leu `pausado` e o `PUT status=active` deu certo),
 avisa que o anúncio voltou. A transição é a própria dedup: na reentrega o anúncio já está `ativo`,
-não há reativação e nada é enviado.
+não há reativação e nada é enviado. Uma mensagem por produto, não por item — uma família user
+products reativa N itens filhos no mesmo run. O aviso sai **antes** do eventual 500 por alvo
+retentável: o `PUT` já aconteceu, e na retentativa não haveria mais nada a reativar.
 
 ### Assinatura
 

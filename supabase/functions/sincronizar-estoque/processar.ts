@@ -81,7 +81,12 @@ interface ContextoAlerta {
   /** Rótulo de cada SKU do produto, para nomear a variação zerada na mensagem. */
   rotuloPorSku: Map<string, { nome: string | null; cor: string | null }>;
   estoquePorSku: Record<string, number>;
-  /** Sem anúncio publicado não há "anúncio pausado" a anunciar: marca e não envia. */
+  /**
+   * Existe anúncio publicado do produto — NÃO é "este push tem alvos". Na venda, o job carrega o
+   * canal onde ela ocorreu e `resolverAlvosPush` exclui esse canal (já se decrementou sozinho);
+   * com um canal só, `alvos` fica vazio justamente quando o anúncio acabou de ser pausado por
+   * falta de estoque. Sem anúncio nenhum não há "anúncio pausado" a anunciar: marca e não envia.
+   */
   temAnuncio: boolean;
 }
 
@@ -184,7 +189,7 @@ export async function processarSincronizacao(
     permalink: (familia.ml_permalink as string | null) ?? null,
     rotuloPorSku,
     estoquePorSku,
-    temAnuncio: alvos.length > 0,
+    temAnuncio: (anuncios ?? []).length > 0,
   };
   if (alvos.length === 0) {
     // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
@@ -194,6 +199,7 @@ export async function processarSincronizacao(
 
   // 3) Push absoluto, um alvo por vez. Falha de um canal nunca afeta outro.
   const retentaveis: string[] = [];
+  let reativou = false;
   const tokenPorCanal = new Map<string, () => Promise<string>>();
 
   for (const alvo of alvos) {
@@ -228,11 +234,9 @@ export async function processarSincronizacao(
       if (r.ok && job.reativar && alvo.estoques.some((e) => e.estoque > 0)) {
         const reativacao = await reativarSePausado(conn, { getToken }, alvo.canal, alvo.itemExternoId);
         if (reativacao === 'retentavel') retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}:status`);
-        if (reativacao === 'reativado') {
-          await notificar(admin, org_id, 'estoque', montarMensagemVoltaAoAr({
-            produto: ctxAlerta.produto, codigoPai: codigo_pai, permalink: ctxAlerta.permalink,
-          })).catch((e) => console.error('estoque_alerta_volta_falhou', codigo_pai, String(e)));
-        }
+        // Uma família user products reativa N itens filhos no mesmo run (ADR-0088); o aviso é
+        // sobre o PRODUTO, então sai uma vez só, depois do laço.
+        if (reativacao === 'reativado') reativou = true;
       }
     } catch (e) {
       // Exceção inesperada é tratada como RETENTÁVEL: melhor o QStash tentar de novo
@@ -240,6 +244,14 @@ export async function processarSincronizacao(
       console.error('estoque_push_excecao', alvo.canal, alvo.itemExternoId, String(e));
       retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}`);
     }
+  }
+
+  // A reativação já aconteceu de fato (PUT ok), então o aviso sai antes do eventual 500: na
+  // retentativa o anúncio já está `ativo`, ninguém reativa nada e o aviso se perderia.
+  if (reativou) {
+    await notificar(admin, org_id, 'estoque', montarMensagemVoltaAoAr({
+      produto: ctxAlerta.produto, codigoPai: codigo_pai, permalink: ctxAlerta.permalink,
+    })).catch((e) => console.error('estoque_alerta_volta_falhou', codigo_pai, String(e)));
   }
 
   // Push é absoluto: repetir é seguro, então 500 para o QStash re-tentar.
