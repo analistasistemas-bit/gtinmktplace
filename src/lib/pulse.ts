@@ -73,10 +73,16 @@ export interface PulseVendedor {
   /** Instante da leitura do perfil; `null` nos snapshots legados. */
   perfil_coletado_em: string | null;
 }
+/** ADR-0133. `acao` = muda decisão de preço; `info` = movimento de mercado sem decisão. */
+export type SeveridadeAlerta = 'acao' | 'info';
+export type FiltroSeveridade = SeveridadeAlerta | 'todos';
+export const ALERTAS_POR_PAGINA = 50;
+
 export interface PulseAlerta {
   id: string; produto_id: string | null;
   tipo: 'preco_caiu' | 'novo_concorrente' | 'concorrente_saiu';
   payload: Record<string, unknown>; lido: boolean; criado_em: string;
+  severidade: SeveridadeAlerta;
   pulse_produtos: { titulo: string | null; codigo_pai: string | null; catalog_product_id: string } | null;
 }
 
@@ -222,16 +228,38 @@ export async function pausarPulseProduto(id: string, pausar: boolean): Promise<v
   if (error) throw error;
 }
 
-/** Alertas não lidos (últimos 20), com o produto associado embutido (título/codigo_pai para o
- *  texto e para a ação de Reprecificar). */
-export async function fetchPulseAlertas(): Promise<PulseAlerta[]> {
-  const { data, error } = await pulseFrom('pulse_alertas')
-    .select('id, produto_id, tipo, payload, lido, criado_em, pulse_produtos(titulo, codigo_pai, catalog_product_id)')
+/** Uma página de alertas NÃO LIDOS do filtro. A aba é a caixa de não lidos, não o arquivo
+ *  histórico (ADR-0133). Sem teto fixo: o teto é o tamanho da página. */
+export async function fetchPulseAlertas(
+  { severidade, pagina }: { severidade: FiltroSeveridade; pagina: number },
+): Promise<PulseAlerta[]> {
+  const de = pagina * ALERTAS_POR_PAGINA;
+  // `order('id')` como desempate: o coletor grava vários alertas do mesmo produto num único
+  // insert, e `criado_em` (default now()) empata entre eles. Sem desempate determinístico o
+  // Postgres não garante ordem estável entre páginas de LIMIT/OFFSET com chave repetida — página
+  // 2 podia repetir ou pular linha da página 1.
+  let q = pulseFrom('pulse_alertas')
+    .select('id, produto_id, tipo, severidade, payload, lido, criado_em, pulse_produtos(titulo, codigo_pai, catalog_product_id)')
     .eq('lido', false)
     .order('criado_em', { ascending: false })
-    .limit(20);
+    .order('id', { ascending: false })
+    .range(de, de + ALERTAS_POR_PAGINA - 1);
+  if (severidade !== 'todos') q = q.eq('severidade', severidade);
+  const { data, error } = await q;
   if (error) throw error;
   return (data ?? []) as PulseAlerta[];
+}
+
+/** Contagem VERDADEIRA de não lidos do filtro — separada da página. O rótulo antigo usava o
+ *  tamanho da lista, que era o teto de leitura: dizia "20" com 145 não lidos (ADR-0133 D-7). */
+export async function contarPulseAlertas(severidade: FiltroSeveridade): Promise<number> {
+  let q = pulseFrom('pulse_alertas')
+    .select('id', { count: 'exact', head: true })
+    .eq('lido', false);
+  if (severidade !== 'todos') q = q.eq('severidade', severidade);
+  const { count, error } = await q;
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** Marca o alerta como lido — grant é column-level só em `lido` (não pode ir mais nada no update). */
@@ -240,10 +268,14 @@ export async function marcarAlertaLido(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Marca TODOS os alertas não lidos como lidos — não só os 20 exibidos (fetchPulseAlertas tem
- *  teto de leitura, este update não tem). RLS escopa por org, mesmo grant column-level de `lido`. */
-export async function marcarTodosAlertasLidos(): Promise<void> {
-  const { error } = await pulseFrom('pulse_alertas').update({ lido: true }).eq('lido', false);
+/** Marca como lidos os não lidos do filtro ativo. O escopo só admite colunas locais de
+ *  `pulse_alertas`: o update do PostgREST não filtra por coluna de recurso embutido, então um
+ *  escopo por título de produto ou apagaria o que o operador não viu, ou mentiria no número
+ *  (ADR-0133 D-9). Grant é column-level em `lido` — nada mais pode ir no update. */
+export async function marcarAlertasLidos(severidade: FiltroSeveridade): Promise<void> {
+  let q = pulseFrom('pulse_alertas').update({ lido: true }).eq('lido', false);
+  if (severidade !== 'todos') q = q.eq('severidade', severidade);
+  const { error } = await q;
   if (error) throw error;
 }
 

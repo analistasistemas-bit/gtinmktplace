@@ -5,6 +5,7 @@ import type { PulseAlerta } from '../pulse';
 
 const base = (over: Partial<PulseAlerta>): PulseAlerta => ({
   id: '1', produto_id: 'p1', tipo: 'preco_caiu', payload: {}, lido: false, criado_em: '2026-08-16T00:00:00Z',
+  severidade: 'info',
   pulse_produtos: { titulo: 'Fone Bluetooth X', codigo_pai: 'ABC123', catalog_product_id: 'MLB123' },
   ...over,
 });

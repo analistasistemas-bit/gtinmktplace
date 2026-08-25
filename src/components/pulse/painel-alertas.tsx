@@ -7,8 +7,12 @@ import { Bell, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { QK } from '@/lib/queries';
-import { fetchPulseAlertas, marcarAlertaLido, marcarTodosAlertasLidos, type PulseAlerta } from '@/lib/pulse';
+import { fetchPulseAlertas, marcarAlertaLido, marcarAlertasLidos, type PulseAlerta } from '@/lib/pulse';
 import { textoAlerta } from '@/lib/pulse-alerta-texto';
+
+// ponytail: painel-alertas será removido na Task 4 (substituído pela aba Alertas do ADR-0133).
+// Chave/filtro fixados em 'todos'/página 0 só para manter este arquivo compilando até lá.
+const CHAVE_ALERTAS = QK.pulseAlertas('todos', 0);
 
 export function PainelAlertas({
   onVerProduto, onReprecificar,
@@ -18,37 +22,39 @@ export function PainelAlertas({
 }) {
   const qc = useQueryClient();
   const { data: alertas, isError } = useQuery({
-    queryKey: QK.pulseAlertas, queryFn: fetchPulseAlertas, staleTime: 30_000,
+    queryKey: CHAVE_ALERTAS,
+    queryFn: () => fetchPulseAlertas({ severidade: 'todos', pagina: 0 }),
+    staleTime: 30_000,
   });
 
   const marcarLido = useMutation({
     mutationFn: marcarAlertaLido,
     onMutate: async (id: string) => {
-      await qc.cancelQueries({ queryKey: QK.pulseAlertas });
-      const anterior = qc.getQueryData<PulseAlerta[]>(QK.pulseAlertas);
-      qc.setQueryData<PulseAlerta[]>(QK.pulseAlertas, (atual) => (atual ?? []).filter((a) => a.id !== id));
+      await qc.cancelQueries({ queryKey: CHAVE_ALERTAS });
+      const anterior = qc.getQueryData<PulseAlerta[]>(CHAVE_ALERTAS);
+      qc.setQueryData<PulseAlerta[]>(CHAVE_ALERTAS, (atual) => (atual ?? []).filter((a) => a.id !== id));
       return { anterior };
     },
     onError: (e: Error, _id, contexto) => {
-      if (contexto?.anterior) qc.setQueryData(QK.pulseAlertas, contexto.anterior);
+      if (contexto?.anterior) qc.setQueryData(CHAVE_ALERTAS, contexto.anterior);
       toast.error(e.message);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: QK.pulseAlertas }),
+    onSettled: () => qc.invalidateQueries({ queryKey: CHAVE_ALERTAS }),
   });
 
   const limparTodos = useMutation({
-    mutationFn: marcarTodosAlertasLidos,
+    mutationFn: () => marcarAlertasLidos('todos'),
     onMutate: async () => {
-      await qc.cancelQueries({ queryKey: QK.pulseAlertas });
-      const anterior = qc.getQueryData<PulseAlerta[]>(QK.pulseAlertas);
-      qc.setQueryData<PulseAlerta[]>(QK.pulseAlertas, []);
+      await qc.cancelQueries({ queryKey: CHAVE_ALERTAS });
+      const anterior = qc.getQueryData<PulseAlerta[]>(CHAVE_ALERTAS);
+      qc.setQueryData<PulseAlerta[]>(CHAVE_ALERTAS, []);
       return { anterior };
     },
     onError: (e: Error, _vars, contexto) => {
-      if (contexto?.anterior) qc.setQueryData(QK.pulseAlertas, contexto.anterior);
+      if (contexto?.anterior) qc.setQueryData(CHAVE_ALERTAS, contexto.anterior);
       toast.error(e.message);
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: QK.pulseAlertas }),
+    onSettled: () => qc.invalidateQueries({ queryKey: CHAVE_ALERTAS }),
   });
 
   // Consulta quebrada não pode parecer "nenhum alerta" — é a primeira pergunta que a tela responde.

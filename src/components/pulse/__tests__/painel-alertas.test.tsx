@@ -6,7 +6,7 @@ import { PainelAlertas } from '../painel-alertas';
 import { QK } from '@/lib/queries';
 import { fetchPulseAlertas, type PulseAlerta } from '@/lib/pulse';
 
-const marcarTodosAlertasLidos = vi.fn(async () => undefined);
+const marcarAlertasLidos = vi.fn(async (_severidade: string) => undefined);
 
 vi.mock('@/lib/pulse', async () => {
   const real = await vi.importActual<typeof import('@/lib/pulse')>('@/lib/pulse');
@@ -15,7 +15,7 @@ vi.mock('@/lib/pulse', async () => {
     // react-query trata queryFn que resolve `undefined` como erro — sempre precisa de um array.
     fetchPulseAlertas: vi.fn(async () => []),
     marcarAlertaLido: vi.fn(async () => undefined),
-    marcarTodosAlertasLidos: (...args: []) => marcarTodosAlertasLidos(...args),
+    marcarAlertasLidos: (...args: [string]) => marcarAlertasLidos(...args),
   };
 });
 
@@ -26,13 +26,14 @@ const alerta = (over: Partial<PulseAlerta> = {}): PulseAlerta => ({
   payload: { item_id: 'MLB1', seller_id: 1, preco: 90 },
   lido: false,
   criado_em: '2026-08-21T12:00:00.000Z',
+  severidade: 'info',
   pulse_produtos: { titulo: 'Aptamil Premium 1', codigo_pai: 'APTAMIL-1', catalog_product_id: 'MLB10512495' },
   ...over,
 });
 
 function renderPainel(alertas: PulseAlerta[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(QK.pulseAlertas, alertas);
+  client.setQueryData(QK.pulseAlertas('todos', 0), alertas);
   render(
     <QueryClientProvider client={client}>
       <PainelAlertas onVerProduto={vi.fn()} onReprecificar={vi.fn()} />
@@ -55,15 +56,15 @@ describe('PainelAlertas — limpar todos', () => {
 
     await user.click(botao);
 
-    expect(marcarTodosAlertasLidos).toHaveBeenCalledTimes(1);
+    expect(marcarAlertasLidos).toHaveBeenCalledTimes(1);
     // Otimista: lista esvazia (e o card some, já que ele retorna null com lista vazia) antes
     // mesmo da mutation resolver de verdade.
     await waitFor(() => expect(screen.queryByText(/alertas? novos?/)).not.toBeInTheDocument());
-    expect(client.getQueryData(QK.pulseAlertas)).toEqual([]);
+    expect(client.getQueryData(QK.pulseAlertas('todos', 0))).toEqual([]);
   });
 
   it('erro em Limpar todos restaura a lista anterior e avisa', async () => {
-    marcarTodosAlertasLidos.mockRejectedValueOnce(new Error('falhou'));
+    marcarAlertasLidos.mockRejectedValueOnce(new Error('falhou'));
     vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([alerta({ id: 'a1' })]);
     const user = userEvent.setup();
     renderPainel([alerta({ id: 'a1' })]);
