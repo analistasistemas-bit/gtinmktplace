@@ -1,6 +1,6 @@
 ---
 tags: [modulo, configuracoes]
-atualizado: 2026-08-11
+atualizado: 2026-08-24
 ---
 
 # Configurações

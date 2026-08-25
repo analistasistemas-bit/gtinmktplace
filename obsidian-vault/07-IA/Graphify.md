@@ -1,6 +1,6 @@
 ---
 tags: [ia, graphify]
-atualizado: 2026-08-19
+atualizado: 2026-08-24
 ---
 
 # Graphify

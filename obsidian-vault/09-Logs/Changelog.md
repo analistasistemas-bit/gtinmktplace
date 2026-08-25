@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-08-19
+atualizado: 2026-08-24
 ---
 
 # Changelog
@@ -9,16 +9,23 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
-## 2026-08-19
+## 2026-08-24
 
-- **Feature: Calculadora Mercado Livre premium na Viabilidade (ADR-0126).** Compara anúncios
-  Clássico e Premium, explicita lucro, margem, custos, peso cúbico, sensibilidades e preço para a
-  margem-alvo. Tarifa oficial vem da API quando categoria e conexão permitem; categoria é
-  opcional com aviso visível e busca read-only no preditor do ML. A tela identifica a proveniência
-  do cálculo e nunca presume frete zero. Pode preencher dados de um produto
-  cadastrado, mas tudo permanece editável. O modo manual é estimado; `partial` aparece somente ao
-  combinar comissão oficial com frete confirmado manualmente. Não persiste simulações nem escreve
-  dados do tenant.
+- **ADR-0132: Análise Avançada com JoomPulse.** Direção arquitetural aprovada; implementação bloqueada pelo spike e questões "A definir" (D-5, D-9, D-10, D-11). Gateway próprio no Render como único cliente MCP/OAuth; módulo `analise_avancada` desligado por padrão; enriquece Radar (vendas/renda rival) e Viabilidade (demanda ao lado do semáforo). Sem fallback inventado, sem contaminação de margem/piso/semáforo/reprecificação. Credenciais ficam só no Gateway. Cache segregado por org+credencial. Chave canônica de correlação e TTLs A definir.
+
+## 2026-08-23
+
+- **Security scan `supabase/functions` (CLAUDE-SECURITY-20260822-113640): 6 de 9 achados corrigidos.** F5 (token Telegram em texto puro) aplicado em produção — migration `20260822131053` revoga SELECT de `telegram_bot_token` para `authenticated`. F1/F3 registrados como risco aceito. F2 (IDOR cross-org storage), F4 (SSRF confinado), F6 (XLSX bomb), F7/F8/F9 (bypass entitlement Pulse) corrigidos no código.
+
+## 2026-08-22
+
+- **Sugestão de categoria pela ficha de catálogo, pré-publicação (ADR-0131).** Migration `20260822201053_sugestao_categoria_catalogo.sql` (`catalogo_categoria_sugerida_id`/`_nome`/`_vendedores` em `familias`); `_shared/ml/catalogo.ts` ganha `montarEsperadoPrePublicacao`, `deveSugerirCategoriaPorFicha` e `buscarCategoriaFicha`; `buscarDominioCategoria` em `_shared/ml/domain-discovery.ts` resolve `settings.catalog_domain` (cache Redis 30d); `process-familia/sugestao-catalogo.ts` calcula e persiste só no fluxo CREATE, best-effort; `vincular-catalogo` cita a categoria sugerida no alerta de `ficha_divergente`; card `SugestaoCatalogo` em `card-categoria.tsx` (renderiza da row, dedupe contra a sugestão do concorrente). Estende o ADR-0057 para uma 2ª fonte, **nunca aplicada automaticamente** (ADR-0054 Fase 2). Motivador: lote 21, Eucerin Aquaphor 55ml em Bebês com a única ficha do GTIN em `MLB-BODY_SKIN_CARE_PRODUCTS` (7 vendedores). Fix `d309619c`: timeout de rede em `buscarDominioCategoria`/`buscarNomeCategoria` + log de erro no select do `vincular-catalogo`.
+- **Pulse — frete na margem via shipping_options/free (ADR-0119 Errata 11).** `pulse-coletar/processar.ts` passo 5b: coleta frete com `buscarFreteVendedor` paralelo à comissão, grava `ptw_custos.frete`; passo 5 não sobrescreve mais com null do PTW esparso. Teste `frete=0` válido. Docs: Errata 11 ADR-0119, `docs/how-to/usar-o-pulse.md`.
+- **Sonar — busca por EAN/GTIN (ADR-0127 Errata 1).** Edge nova `pulse-sonar-ean` + parsers `_shared/pulse/sonar-ean.ts` (validação EAN, interseção por `item_id` restringindo "vendidos" da Apify ao produto do EAN). UI em `PulseSonar.tsx` (escolha grátis/com vendidos, `autoFocus` para leitor físico). Deploy `pulse-sonar-ean` versão 1 ativa em produção. Fix pós-Fable: falha transitória ML não vira tombstone "EAN sem ficha" cacheado — devolve 502 explícito.
+- **Apify — fallback multi-conta por saldo (ADR-0122 adendo 2026-08-22).** `_shared/apify/client.ts` tenta até 4 tokens (`APIFY_TOKEN` a `_4`) em ordem, checa saldo mensal (`GET /v2/users/me/limits`), pula se < US$ 0,15. Fallback reativo em HTTP 402, 401, 403 com `console.warn`. 4 contas Apify criadas, tokens confirmados válidos com saldo, `APIFY_TOKEN_2/_3/_4` subidos em produção. `pulse-sonar-vendas` já roda com fallback (sem redeploy extra).
+- **Revisão — resync pós-IA no cadastro manual (lote #21).** Fix em `familia-expanded.tsx`: campo não-sujo ressincroniza com servidor quando `titulo`/`descricao`/`preco_publicacao` mudam; blur só salva campo realmente digitado. Remediação pendente: família `00000044` (Eucerin Aquaphor) ficou com texto do catálogo — "Regenerar" restaura copy da IA antes de publicar.
+
+## 2026-08-19
 
 ## 2026-08-11
 

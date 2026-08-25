@@ -46,9 +46,13 @@ outro diretório é resíduo, não usar. `.graphifyignore` já exclui o SheetJS 
 
 Todo update termina com **`python3 scripts/graphify-podar-falsos.py --aplicar`** e a
 reclusterização. O extrator casa chamadas por nome, sem escopo, e inventa arestas entre `src/` e
-`supabase/functions/` (runtimes que nunca se importam) e de produção para arquivos de teste — elas
-aparecem como achado em "Surprising Connections". O script reverifica as duas premissas antes de
-apagar e aborta se alguma deixar de valer.
+`supabase/functions/<função>/**` (Deno puro, runtimes que nunca se importam) e de produção para
+arquivos de teste — elas aparecem como achado em "Surprising Connections".
+`supabase/functions/_shared/**` é a exceção: código isomórfico, importado de verdade pelos dois
+runtimes (ex.: `src/lib/pulse-margem.ts` executa `resumirMercadoQualificado()` de
+`_shared/concorrencia/qualificacao.ts`), então tem área própria e **nunca** é podado — não
+"conserte" isso. O script reverifica as duas premissas antes de apagar e aborta se alguma deixar
+de valer.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 tags: [bugs, conhecidos]
-atualizado: 2026-08-11
+atualizado: 2026-08-24
 ---
 
 # Bugs Conhecidos

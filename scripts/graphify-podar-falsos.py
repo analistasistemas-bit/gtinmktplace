@@ -15,9 +15,14 @@ Ambas foram verificadas no repositório antes de virarem código, e o script REV
 premissa a cada execução — se algum dia passar a existir um import real, ele aborta em vez de
 apagar aresta legítima.
 
-A. `src/**` e `supabase/functions/**` nunca se importam. São runtimes separados: bundle do
-   Vite (browser) e Edge Functions (Deno). Uma aresta de chamada entre eles é impossível.
-   NÃO vale para `scripts/**`, que importa `_shared/ai/**` de verdade.
+A. `src/**` e `supabase/functions/<função>/**` nunca se importam. São runtimes separados:
+   bundle do Vite (browser) e Edge Functions (Deno). Uma aresta de chamada entre eles é
+   impossível. NÃO vale para `scripts/**`, que importa `_shared/ai/**` de verdade.
+   Exceção: `supabase/functions/_shared/**` é código ISOMÓRFICO — roda nos dois runtimes e é
+   importado de verdade pelos dois lados. Não é só `import type`: `src/lib/pulse-margem.ts`
+   importa e EXECUTA `resumirMercadoQualificado()` de `_shared/concorrencia/qualificacao.ts`
+   (ADR-0130). Por isso `_shared/` tem área própria (`shared`) e nenhuma aresta que o envolva
+   é podada por A — só o Deno puro, específico de uma Edge Function, é.
 
 B. Nada de produção importa de arquivo de teste. Testes importam produção, nunca o contrário.
    Uma aresta de chamada cujo ALVO está em `__tests__/`/`*.test.*` e cuja ORIGEM não está é
@@ -88,6 +93,10 @@ def eh_teste(sf: str) -> bool:
 
 
 def area(sf: str) -> str:
+    # Antes de 'deno': `_shared/` é isomórfico, importado pelos dois runtimes. Área própria
+    # para nunca formar o par {'app','deno'} da regra A.
+    if sf.startswith('supabase/functions/_shared/'):
+        return 'shared'
     if sf.startswith('supabase/functions/'):
         return 'deno'
     if sf.startswith('src/') or sf.startswith('tests/'):
@@ -102,10 +111,22 @@ def _grep(padrao: str, *caminhos: str) -> list[str]:
     return [l for l in r.stdout.splitlines() if l.strip()]
 
 
+def _sem_shared(linhas: list[str]) -> list[str]:
+    """`_shared/` é isomórfico: import dele (de tipo OU de valor) nao viola a regra A (ADR-0130).
+
+    Este grep é por LINHA, entao nao enxerga import multi-linha — o de `pulse-margem.ts` passa
+    batido aqui e foi a trava `EXTRACTED` de classificar() que pegou o caso. Filtro barato de
+    proposito; a trava é a rede de seguranca real.
+    """
+    return [l for l in linhas if '_shared/' not in l]
+
+
 def reverificar_premissas() -> None:
     """As regras valem porque o repositório é assim HOJE. Confere de novo antes de apagar."""
-    a1 = _grep(r"^\s*import .*from ['\"][^'\"]*supabase/functions", 'src')
-    a2 = _grep(r"^\s*import .*from ['\"][^'\"]*\.\./src/", 'supabase/functions')
+    a1 = _sem_shared(
+        _grep(r"^\s*import .*from ['\"][^'\"]*supabase/functions", 'src'))
+    a2 = _sem_shared(
+        _grep(r"^\s*import .*from ['\"][^'\"]*\.\./src/", 'supabase/functions'))
     b = [l for l in _grep(r"^\s*import .*from ['\"][^'\"]*(__tests__|\.test)",
                           'src', 'supabase/functions', 'scripts')
          if '__tests__/' not in l.split(':')[0] and '.test.' not in l.split(':')[0]]

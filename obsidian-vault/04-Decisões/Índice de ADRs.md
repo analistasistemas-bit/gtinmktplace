@@ -1,6 +1,6 @@
 ---
 tags: [adr, indice]
-atualizado: 2026-08-20
+atualizado: 2026-08-24
 ---
 
 # Índice de ADRs
@@ -143,5 +143,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0129 | [Adicionar variação a família publicada, direto da tela Estoque](../../docs/decisions/0129-adicionar-variacao-a-familia-publicada.md) |
 | 0130 | [Concorrentes relevantes no Pulse e na Viabilidade](../../docs/decisions/0130-concorrentes-relevantes-pulse-viabilidade.md) |
 | 0131 | [Sugestão de categoria pela ficha de catálogo](../../docs/decisions/0131-sugestao-categoria-pela-ficha-catalogo.md) |
+| 0132 | [Análise Avançada com JoomPulse](../../docs/decisions/0132-analise-avancada-joompulse.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

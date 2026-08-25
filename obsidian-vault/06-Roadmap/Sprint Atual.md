@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-08-20
+atualizado: 2026-08-24
 ---
 
 # Sprint Atual
@@ -70,8 +70,28 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > porque usa Apify — e mesmo pago, fica restrito por interseção de `item_id` ao produto do EAN
 > (a busca Apify por termo é livre e pode trazer produtos vizinhos). Leitor de código de barras
 > físico funciona sem lib nova (`autoFocus` + submit no Enter, padrão HTML); câmera do celular
-> fica fora, é etapa futura separada. **Pendente:** `supabase functions deploy pulse-sonar-ean`
-> (deploy nunca é automático no merge, ver `docs/TASKS.md`).
+> fica fora, é etapa futura separada. **✅ Deploy `pulse-sonar-ean` v1 ativo em produção (2026-08-22).**
+
+> **✅ Pulse — frete na margem via shipping_options/free (ADR-0119 Errata 11, 2026-08-22).** `pulse-coletar/processar.ts` passo 5b: coleta frete com `buscarFreteVendedor` paralelo à comissão, grava `ptw_custos.frete`; passo 5 não sobrescreve mais com null do PTW esparso. Teste `frete=0` válido. Docs: Errata 11 ADR-0119, `docs/how-to/usar-o-pulse.md`.
+
+> **✅ Apify — fallback multi-conta por saldo (ADR-0122 adendo 2026-08-22).** `_shared/apify/client.ts` tenta até 4 tokens (`APIFY_TOKEN` a `_4`) em ordem, checa saldo mensal (`GET /v2/users/me/limits`), pula se < US$ 0,15. Fallback reativo em HTTP 402, 401, 403 com `console.warn`. 4 contas Apify criadas, tokens confirmados válidos com saldo, `APIFY_TOKEN_2/_3/_4` subidos em produção. `pulse-sonar-vendas` já roda com fallback (sem redeploy extra).
+
+> **✅ Sugestão de categoria pela ficha de catálogo EM PRODUÇÃO (ADR-0131, 2026-08-22).** Antes de publicar,
+> `process-familia` compara o domínio da categoria escolhida (`GET /categories/{id}` → `settings.catalog_domain`,
+> cache Redis 30d) com o domínio da ficha de catálogo do GTIN da variação principal; divergindo, e passando na
+> trava anti-kit `fichaEquivalente`, persiste `catalogo_categoria_sugerida_id`/`_nome`/`_vendedores` em `familias`
+> (migration `20260822201053_sugestao_categoria_catalogo.sql`). A Revisão ganha o card `SugestaoCatalogo`
+> (`card-categoria.tsx`) e o alerta Telegram de `ficha_divergente` (`vincular-catalogo`) passa a citar a categoria
+> sugerida. Estende o padrão não-vinculante do ADR-0057 para uma 2ª fonte — **nunca aplicada automaticamente**
+> (ADR-0054 Fase 2); best-effort e **só no fluxo CREATE** (categoria de anúncio publicado não muda). Motivador:
+> lote 21, Eucerin Aquaphor 55ml publicado em Bebês com a única ficha do GTIN em `MLB-BODY_SKIN_CARE_PRODUCTS`
+> (7 vendedores). Fix `d309619c`: timeout de rede em `buscarDominioCategoria`/`buscarNomeCategoria`.
+
+> **✅ Security scan `supabase/functions` (CLAUDE-SECURITY-20260822-113640): 6 de 9 achados corrigidos (2026-08-23).** F5 (token Telegram em texto puro) aplicado em produção — migration `20260822131053` revoga SELECT de `telegram_bot_token` para `authenticated`. F1/F3 registrados como risco aceito. F2 (IDOR cross-org storage), F4 (SSRF confinado), F6 (XLSX bomb), F7/F8/F9 (bypass entitlement Pulse) corrigidos no código.
+
+> **📋 ADR-0132: Análise Avançada com JoomPulse (2026-08-23).** Direção arquitetural aprovada; implementação bloqueada pelo spike e questões "A definir" (D-5, D-9, D-10, D-11). Gateway próprio no Render como único cliente MCP/OAuth; módulo `analise_avancada` desligado por padrão; enriquece Radar (vendas/renda rival) e Viabilidade (demanda ao lado do semáforo). Sem fallback inventado, sem contaminação de margem/piso/semáforo/reprecificação. Credenciais ficam só no Gateway. Cache segregado por org+credencial. Chave canônica de correlação e TTLs A definir.
+
+> **✅ Viabilidade — mercado relevante e tabela de frete EM PRODUÇÃO (2026-08-20/22).** Mercado relevante integrado (edge `buscar-mercado-relevante`); tabela compacta de frete Mercado Envios movida para fim da página; tolera payload sem observado durante skew de deploy.
 
 > **✅ Resolução em massa do "Não encontro minha variação" (ADR-0118).** A fila "Próximos a serem
 > pausados" **zerou**: os 3 anúncios sinalizados foram resolvidos, **66 cliques manuais viraram

@@ -1,6 +1,6 @@
 ---
 tags: [modulo, faturamento]
-atualizado: 2026-08-11
+atualizado: 2026-08-24
 ---
 
 # Faturamento

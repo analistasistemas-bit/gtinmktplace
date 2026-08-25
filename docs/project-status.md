@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-08-11
+**Ultima atualizacao:** 2026-08-24
 
 ## Snapshot
 
@@ -339,6 +339,17 @@ validação via SQL read-only sobre o mesmo snapshot fresco (<24h) que `resolver
 reaproveitaria é equivalente para o que importa (o número financeiro correto chega à Viabilidade),
 mas não é literalmente clicar na tela. Ver
 `docs/superpowers/plans/2026-08-20-concorrentes-relevantes-pulse-viabilidade.md`.
+
+### Entregas pós 11/08 (até 24/08) — em produção, salvo onde indicado
+
+- **Pulse — frete na margem via shipping_options/free (ADR-0119 Errata 11, 2026-08-22).** `pulse-coletar/processar.ts` passo 5b: coleta frete com `buscarFreteVendedor` paralelo à comissão, grava `ptw_custos.frete`; passo 5 não sobrescreve mais com null do PTW esparso. Teste `frete=0` válido. Docs: Errata 11 ADR-0119, `docs/how-to/usar-o-pulse.md`.
+- **Sonar — busca por EAN/GTIN (ADR-0127 Errata 1, 2026-08-22).** Edge nova `pulse-sonar-ean` + parsers `_shared/pulse/sonar-ean.ts` (validação EAN, interseção por `item_id` restringindo "vendidos" da Apify ao produto do EAN). UI em `PulseSonar.tsx` (escolha grátis/com vendidos, `autoFocus` para leitor físico). Deploy `pulse-sonar-ean` versão 1 ativa em produção. Fix pós-Fable: falha transitória ML não vira tombstone "EAN sem ficha" cacheado — devolve 502 explícito.
+- **Apify — fallback multi-conta por saldo (ADR-0122 adendo 2026-08-22).** `_shared/apify/client.ts` tenta até 4 tokens (`APIFY_TOKEN` a `_4`) em ordem, checa saldo mensal (`GET /v2/users/me/limits`), pula se < US$ 0,15. Fallback reativo em HTTP 402, 401, 403 com `console.warn`. 4 contas Apify criadas, tokens confirmados válidos com saldo, `APIFY_TOKEN_2/_3/_4` subidos em produção. `pulse-sonar-vendas` já roda com fallback (sem redeploy extra).
+- **Revisão — resync pós-IA no cadastro manual (lote #21, 2026-08-22).** Fix em `familia-expanded.tsx`: campo não-sujo ressincroniza com servidor quando `titulo`/`descricao`/`preco_publicacao` mudam; blur só salva campo realmente digitado. Remediação pendente: família `00000044` (Eucerin Aquaphor) ficou com texto do catálogo — "Regenerar" restaura copy da IA antes de publicar.
+- **Sugestão de categoria pela ficha de catálogo, pré-publicação (ADR-0131, 2026-08-22).** Migration `20260822201053_sugestao_categoria_catalogo.sql` (3 colunas aditivas em `familias`: `catalogo_categoria_sugerida_id`/`_nome`/`_vendedores`); funções puras em `_shared/ml/catalogo.ts` (`montarEsperadoPrePublicacao`, `deveSugerirCategoriaPorFicha`, `buscarCategoriaFicha`); `buscarDominioCategoria` em `_shared/ml/domain-discovery.ts` (`settings.catalog_domain`, cache Redis 30d); `process-familia/sugestao-catalogo.ts` calcula e persiste **só no fluxo CREATE**, best-effort; `vincular-catalogo` cita a categoria sugerida no alerta Telegram de `ficha_divergente`; card `SugestaoCatalogo` em `card-categoria.tsx`, renderizado direto da row, com dedupe contra a sugestão do concorrente. Estende o padrão não-vinculante do ADR-0057 — **nunca aplicada automaticamente** (ADR-0054 Fase 2). Motivador: lote 21, Eucerin Aquaphor 55ml publicado em Bebês enquanto a única ficha do GTIN vive em `MLB-BODY_SKIN_CARE_PRODUCTS`. Follow-up `d309619c`: timeout de rede em `buscarDominioCategoria`/`buscarNomeCategoria` e log de erro no select do `vincular-catalogo`.
+- **Security scan `supabase/functions` (CLAUDE-SECURITY-20260822-113640): 6 de 9 achados corrigidos (2026-08-23).** F5 (token Telegram em texto puro) aplicado em produção — migration `20260822131053` revoga SELECT de `telegram_bot_token` para `authenticated`. F1/F3 registrados como risco aceito. F2 (IDOR cross-org storage), F4 (SSRF confinado), F6 (XLSX bomb), F7/F8/F9 (bypass entitlement Pulse) corrigidos no código.
+- **ADR-0132: Análise Avançada com JoomPulse (2026-08-23).** **Não implementado — só decisão documentada, bloqueada por spike.** Direção arquitetural aprovada; implementação bloqueada pelo spike e questões "A definir" (D-5, D-9, D-10, D-11). Gateway próprio no Render como único cliente MCP/OAuth; módulo `analise_avancada` desligado por padrão; enriquece Radar (vendas/renda rival) e Viabilidade (demanda ao lado do semáforo). Sem fallback inventado, sem contaminação de margem/piso/semáforo/reprecificação. Credenciais ficam só no Gateway. Cache segregado por org+credencial. Chave canônica de correlação e TTLs A definir.
+- **Viabilidade — mercado relevante e tabela de frete (2026-08-20/22).** Mercado relevante integrado (edge `buscar-mercado-relevante`); tabela compacta de frete Mercado Envios movida para fim da página; tolera payload sem observado durante skew de deploy.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
