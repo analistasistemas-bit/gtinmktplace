@@ -1,6 +1,19 @@
 import type { AlertaNovo, DiffOfertas, OfertaAnterior, OfertaColetada } from './tipos.ts';
 import { qualificarOferta } from '../concorrencia/qualificacao.ts';
 
+export interface OpcoesDiff {
+  primeiraColeta?: boolean;
+  /** Preço da NOSSA oferta no mesmo snapshot das concorrentes (ADR-0133 D-3). `null` = não
+   *  vendemos o item; sem preço nosso não há decisão de preço, então tudo vira `info`. */
+  meuPreco?: number | null;
+  /** Apelido por seller_id, para congelar o nome no payload e não depender de join no render. */
+  nicknames?: Map<number, string | null>;
+}
+
+/** Só um preço medido abaixo do nosso ameaça a posição. `meuPreco` nulo nunca qualifica. */
+const abaixoDeNos = (preco: number, meuPreco: number | null | undefined): boolean =>
+  meuPreco != null && Number.isFinite(meuPreco) && preco < meuPreco;
+
 export interface OfertaQualificavelDiff extends OfertaColetada {
   transactions_total: number | null;
   visitas_30d: number | null;
@@ -39,19 +52,28 @@ const mudou = (a: OfertaAnterior, b: OfertaColetada) =>
 export function diffOfertas(
   anteriores: OfertaAnterior[],
   atuais: OfertaColetada[],
-  opcoes?: { primeiraColeta?: boolean },
+  opcoes?: OpcoesDiff,
 ): DiffOfertas {
   const antesPorItem = new Map(anteriores.map((o) => [o.item_id, o]));
   const primeiraColeta = opcoes?.primeiraColeta ?? anteriores.length === 0;
   const gravar: OfertaColetada[] = [];
   const alertas: AlertaNovo[] = [];
+  const meuPreco = opcoes?.meuPreco ?? null;
+  const apelido = (sellerId: number) => opcoes?.nicknames?.get(sellerId) ?? null;
 
   for (const atual of atuais) {
     const antes = antesPorItem.get(atual.item_id);
     if (!antes) {
       gravar.push(atual);
       if (!primeiraColeta) {
-        alertas.push({ tipo: 'novo_concorrente', payload: { item_id: atual.item_id, seller_id: atual.seller_id, preco: atual.preco } });
+        alertas.push({
+          tipo: 'novo_concorrente',
+          payload: {
+            item_id: atual.item_id, seller_id: atual.seller_id, preco: atual.preco,
+            meu_preco: meuPreco, nickname: apelido(atual.seller_id),
+          },
+          severidade: abaixoDeNos(atual.preco, meuPreco) ? 'acao' : 'info',
+        });
       }
       continue;
     }
@@ -63,15 +85,32 @@ export function diffOfertas(
   const minAntes = Math.min(...anteriores.filter((o) => o.ativo).map((o) => o.preco));
   const minAtual = Math.min(...atuais.map((o) => o.preco));
   if (!primeiraColeta && Number.isFinite(minAntes) && Number.isFinite(minAtual) && minAtual < minAntes) {
-    alertas.push({ tipo: 'preco_caiu', payload: { de: minAntes, para: minAtual } });
+    alertas.push({
+      tipo: 'preco_caiu',
+      payload: { de: minAntes, para: minAtual, meu_preco: meuPreco },
+      severidade: abaixoDeNos(minAtual, meuPreco) ? 'acao' : 'info',
+    });
   }
 
   const itensAtuais = new Set(atuais.map((o) => o.item_id));
   const desativar = anteriores.filter((o) => o.ativo && !itensAtuais.has(o.item_id));
   const sellersAtuais = new Set(atuais.map((o) => o.seller_id));
+  // A decisão que este alerta habilita é SUBIR preço, e ela depende do mercado DEPOIS da saída:
+  // com relevantes a 70 e 71 e nosso preço 75, a saída do de 70 não nos torna o menor. Ficha que
+  // ficou sem nenhuma oferta relevante é o caso mais forte — `Math.min` de lista vazia devolve
+  // Infinity, não null, então a checagem de finitude tem de vir primeiro e como aprovação.
+  const ninguemAbaixoAgora = meuPreco != null && Number.isFinite(meuPreco)
+    && (!Number.isFinite(minAtual) || minAtual >= meuPreco);
   for (const d of desativar) {
     if (!sellersAtuais.has(d.seller_id)) {
-      alertas.push({ tipo: 'concorrente_saiu', payload: { item_id: d.item_id, seller_id: d.seller_id } });
+      alertas.push({
+        tipo: 'concorrente_saiu',
+        payload: {
+          item_id: d.item_id, seller_id: d.seller_id, preco: d.preco,
+          meu_preco: meuPreco, nickname: apelido(d.seller_id),
+        },
+        severidade: abaixoDeNos(d.preco, meuPreco) && ninguemAbaixoAgora ? 'acao' : 'info',
+      });
     }
   }
   return { gravar, desativar, alertas };

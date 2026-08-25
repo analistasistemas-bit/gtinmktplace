@@ -17,7 +17,14 @@ export interface OfertaColetada {
 }
 export interface OfertaAnterior extends OfertaColetada { ativo: boolean; }
 export type TipoAlerta = 'preco_caiu' | 'novo_concorrente' | 'concorrente_saiu';
-export interface AlertaNovo { tipo: TipoAlerta; payload: Record<string, unknown>; }
+/** ADR-0133: `acao` = muda decisão de preço; `info` = movimento de mercado sem decisão. Congelada
+ *  no instante do evento — nunca recalculada na leitura. */
+export type SeveridadeAlerta = 'acao' | 'info';
+export interface AlertaNovo {
+  tipo: TipoAlerta;
+  payload: Record<string, unknown>;
+  severidade: SeveridadeAlerta;
+}
 export interface DiffOfertas {
   gravar: OfertaColetada[];          // linhas novas do dia (novas ou com preço/atributo mudado)
   desativar: OfertaColetada[];       // ofertas que sumiram (gravadas com ativo=false)

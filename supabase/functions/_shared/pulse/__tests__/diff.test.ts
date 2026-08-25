@@ -42,7 +42,9 @@ describe('diffOfertas', () => {
     const atuais = [oferta({ item_id: 'MLB1', seller_id: 1, preco: 80 })];
     const r = diffOfertas(anteriores, atuais);
     expect(r.gravar).toEqual(atuais);
-    expect(r.alertas).toContainEqual({ tipo: 'preco_caiu', payload: { de: 100, para: 80 } });
+    expect(r.alertas).toContainEqual({
+      tipo: 'preco_caiu', payload: { de: 100, para: 80, meu_preco: null }, severidade: 'info',
+    });
   });
 
   it('oferta nova: alerta novo_concorrente', () => {
@@ -55,7 +57,8 @@ describe('diffOfertas', () => {
     expect(r.gravar).toContainEqual(atuais[1]);
     expect(r.alertas).toContainEqual({
       tipo: 'novo_concorrente',
-      payload: { item_id: 'MLB2', seller_id: 2, preco: 90 },
+      payload: { item_id: 'MLB2', seller_id: 2, preco: 90, meu_preco: null, nickname: null },
+      severidade: 'info',
     });
   });
 
@@ -80,7 +83,8 @@ describe('diffOfertas', () => {
     expect(r.desativar).toEqual([anteriores[1]]);
     expect(r.alertas).toContainEqual({
       tipo: 'concorrente_saiu',
-      payload: { item_id: 'MLB2', seller_id: 2 },
+      payload: { item_id: 'MLB2', seller_id: 2, preco: 110, meu_preco: null, nickname: null },
+      severidade: 'info',
     });
   });
 
@@ -142,7 +146,8 @@ describe('diffOfertas', () => {
       primeiraColeta: anterioresBrutos.length === 0,
     }).alertas).toContainEqual({
       tipo: 'novo_concorrente',
-      payload: { item_id: 'MLB-RELEVANTE', seller_id: 2, preco: 90 },
+      payload: { item_id: 'MLB-RELEVANTE', seller_id: 2, preco: 90, meu_preco: null, nickname: null },
+      severidade: 'info',
     });
   });
 
@@ -171,7 +176,97 @@ describe('diffOfertas', () => {
     const atuais = entradaDiffRelevante([ofertaQualificavel({ preco: 80 })]);
 
     expect(diffOfertas(anteriores, atuais).alertas).toContainEqual({
-      tipo: 'preco_caiu', payload: { de: 100, para: 80 },
+      tipo: 'preco_caiu', payload: { de: 100, para: 80, meu_preco: null }, severidade: 'info',
     });
+  });
+});
+
+describe('severidade do alerta (ADR-0133)', () => {
+  const semMeuPreco = { primeiraColeta: false };
+
+  it('preco_caiu vira acao quando o menor fica abaixo do nosso preço', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 80 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'preco_caiu')?.severidade).toBe('acao');
+  });
+
+  it('preco_caiu fica info quando o menor continua acima do nosso preço', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 95 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'preco_caiu')?.severidade).toBe('info');
+  });
+
+  it('sem meuPreco todo alerta é info', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 10 }), oferta({ item_id: 'MLB2', seller_id: 2, preco: 5 })],
+      semMeuPreco,
+    );
+    expect(alertas.length).toBeGreaterThan(0);
+    expect(alertas.every((a) => a.severidade === 'info')).toBe(true);
+  });
+
+  it('novo_concorrente vira acao só quando entra abaixo de nós', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 100 }), oferta({ item_id: 'MLB2', seller_id: 2, preco: 80 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    const novo = alertas.filter((a) => a.tipo === 'novo_concorrente');
+    expect(novo).toHaveLength(1);
+    expect(novo[0].severidade).toBe('acao');
+  });
+
+  it('concorrente_saiu vira acao quando o único abaixo de nós sai', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
+      [oferta({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    const saiu = alertas.filter((a) => a.tipo === 'concorrente_saiu');
+    expect(saiu).toHaveLength(1);
+    expect(saiu[0].severidade).toBe('acao');
+  });
+
+  it('concorrente_saiu fica info quando ainda resta alguém abaixo de nós', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 70 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 71 })],
+      [oferta({ item_id: 'MLB2', seller_id: 2, preco: 71 })],
+      { primeiraColeta: false, meuPreco: 75 },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
+  });
+
+  it('concorrente_saiu fica info quando quem saiu estava acima de nós', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 120 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 130 })],
+      [oferta({ item_id: 'MLB2', seller_id: 2, preco: 130 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
+  });
+
+  it('ficha que ficou sem nenhuma oferta relevante é acao', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      [],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('acao');
+  });
+
+  it('congela o nickname no payload quando o mapa o conhece', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 100 }), oferta({ item_id: 'MLB2', seller_id: 2, preco: 80 })],
+      { primeiraColeta: false, meuPreco: 90, nicknames: new Map([[2, 'LOJA DOIS']]) },
+    );
+    expect(alertas.find((a) => a.tipo === 'novo_concorrente')?.payload.nickname).toBe('LOJA DOIS');
   });
 });
