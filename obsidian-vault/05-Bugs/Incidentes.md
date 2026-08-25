@@ -1,12 +1,36 @@
 ---
 tags: [bugs, incidentes]
-atualizado: 2026-08-13
+atualizado: 2026-08-25
 ---
 
 # Incidentes
 
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
+
+## 2026-08-25 — alerta de "2 anúncios moderados" que nunca foram moderados
+
+Às 09:00 (BRT) o Telegram e as notificações in-app avisaram "2 anúncios moderados pelo Mercado
+Livre" — MLB5040504553 (Nivea Sabonete Líquido) e MLB5001755829 (Principia Gel de Limpeza), motivo
+`suspended_for_prevention`. Diego conferiu: nenhum dos dois foi moderado; os dois estavam apenas
+sem estoque.
+
+**Causa:** `parseStatusML` (`_shared/ml/status.ts`) classificava **todo** `status: under_review`
+como moderado. O ML também usa `under_review` para **pausa preventiva** (`suspended_for_prevention`),
+que a doc oficial separa das moderações por infração — causas são preço atípico, item sem
+vendas/abandonado e imagem por URL não processada, e o vendedor reativa com `PUT status=active`.
+Consulta ao ML às 16:41 UTC: os dois já estavam de volta em `paused`/`out_of_stock`.
+
+**Não era estoque zerado:** dos 5 anúncios da org com estoque 0, só esses 2 entraram em pausa
+preventiva, e um deles estava zerado havia 5 dias. Zerar não dispara o estado.
+
+**Correção:** `suspended_for_prevention` sozinho no `sub_status` mapeia para `pausado` (sem motivo,
+sem alerta); junto de `forbidden`/`waiting_for_patch`/`poor_quality_*` segue `moderado`.
+`under_review` sem sub_status ou com outros códigos (`pending_documentation`) continua moderado.
+Adendo no [[Índice de ADRs|ADR-0035]].
+
+**Lição:** o código do `sub_status` é que diz se houve infração — o `under_review` sozinho não
+distingue moderação de pausa administrativa do ML.
 
 ## 2026-08-18 — Supabase ameaçou restringir a org por egress de PostgREST
 

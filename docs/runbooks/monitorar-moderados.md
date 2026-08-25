@@ -62,5 +62,9 @@ requisição (header `upstash-signature`), que a função valida.
   Telegram). `alertado_em` fica null e a função tenta de novo no próximo ciclo.
 - **Falso silêncio:** se `lerStatus` falha para um bloco, os itens viram `indisponivel`
   (não `moderado`) — não gera alerta; é transitório, resolve no próximo ciclo.
+- **Pausa preventiva não alerta:** `sub_status: suspended_for_prevention` sozinho (mesmo com
+  `status: under_review`) é pausa preventiva do ML — vira `pausado`, não `moderado`, e não gera
+  alerta (adendo 2026-08-25 do ADR-0035). Se aparecer junto de `forbidden`/`waiting_for_patch`/
+  `poor_quality_*`, segue sendo moderação e alerta normalmente.
 - **Motivo textual:** a API do ML não expõe o texto; o link no alerta leva ao anúncio,
   onde está a notificação completa do ML.

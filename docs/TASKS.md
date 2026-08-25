@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix — pausa preventiva do ML não é moderação (ADR-0035, adendo) — 2026-08-25
+
+- [x] `parseStatusML` (`_shared/ml/status.ts`): `sub_status: suspended_for_prevention` sozinho vira
+  `pausado` (sem motivo, sem alerta) em vez de `moderado`; junto de `forbidden`/`waiting_for_patch`/
+  `poor_quality_*` segue moderado, e `under_review` sem sub_status ou com outros códigos também.
+  Motivo: alerta falso de "2 anúncios moderados" em 25/08 09:00 para MLB5040504553/MLB5001755829,
+  que estavam só sem estoque e voltaram sozinhos a `paused`/`out_of_stock`.
+- [x] Redeploy das 11 funções que alcançam o parser (`monitorar-moderados`, `status-publicados`,
+  `sincronizar-estoque`, `atualizar-status-publicado`, `metricas-vendas`, `process-familia`,
+  `publicar-anuncio`, `publicar-split-ml`, `publish-familia-ml`, `reconciliar-convergencia-up`,
+  `update-familia-ml`).
+
 ## Pulse — alertas com severidade gravada e aba dedicada (ADR-0133) — 2026-08-25
 
 - [x] Coletor (`pulse-coletar`/`_shared/pulse/diff.ts`) grava `severidade` (`acao`|`info`) congelada

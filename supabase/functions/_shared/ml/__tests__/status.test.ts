@@ -16,6 +16,24 @@ describe('parseStatusML', () => {
     expect(r.status).toBe('moderado');
     expect(r.motivo).toContain('forbidden');
   });
+  // 2026-08-25: `suspended_for_prevention` é pausa preventiva do ML (item sem vendas/abandonado,
+  // preço atípico, imagem por URL não processada), não infração — alertava como "moderado".
+  it('under_review só com suspended_for_prevention → pausado, sem motivo', () => {
+    const r = parseStatusML({ id: 'MLB1', status: 'under_review', sub_status: ['suspended_for_prevention'], available_quantity: 0 });
+    expect(r.status).toBe('pausado');
+    expect(r.motivo).toBeNull();
+  });
+  it('suspended_for_prevention junto de marcador de moderação segue moderado', () => {
+    const r = parseStatusML({ id: 'MLB1', status: 'under_review', sub_status: ['suspended_for_prevention', 'forbidden'] });
+    expect(r.status).toBe('moderado');
+    expect(r.motivo).toContain('forbidden');
+  });
+  it('paused + suspended_for_prevention → pausado', () => {
+    expect(parseStatusML({ id: 'x', status: 'paused', sub_status: ['suspended_for_prevention'] }).status).toBe('pausado');
+  });
+  it('under_review sem sub_status segue moderado', () => {
+    expect(parseStatusML({ id: 'x', status: 'under_review' }).status).toBe('moderado');
+  });
   it('poor_quality_thumbnail conta como moderado', () => {
     const r = parseStatusML({ id: 'MLB1', status: 'inactive', sub_status: ['poor_quality_thumbnail'] });
     expect(r.status).toBe('moderado');
