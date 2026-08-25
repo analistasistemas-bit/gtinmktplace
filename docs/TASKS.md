@@ -17,7 +17,17 @@
   o Radar com foco "Mais caro que o mercado". `PainelAlertas` removido da aba Radar, sem
   substituto (D-5). `pulse-alerta-texto.ts` passa a nomear o vendedor (`nickname`, com fallback
   para `vendedor {seller_id}`) em `novo_concorrente`/`concorrente_saiu`. Docs:
-  `docs/how-to/usar-o-pulse.md` seções 1, 7 e 10.
+  `docs/how-to/usar-o-pulse.md` — tabela da introdução, seções 7 e 10.
+
+- [x] Revisão do front da aba Alertas: faixa de erro só ocupa a tela inteira quando não há lista
+  carregada (com dado presente vira faixa inline com "Tentar de novo", preservando lista e
+  filtro); contagem pendente/em erro deixa de exibir `0` inventado no rótulo e no estado vazio;
+  filtro de severidade vira grupo de botões `aria-pressed` (sem `TabsContent`, o `aria-controls`
+  do Radix apontava para ids inexistentes) e `TabsList` do Pulse ganha `aria-label`; os três
+  botões da linha ganham nome acessível com o texto do alerta; `marcarAlertaLido` volta a ter
+  update otimista; dedupe por `id` ao achatar as páginas; `?tab=` inválido é normalizado.
+  `QK.pulseAlertas` perde o parâmetro `pagina` morto. Docs: Errata 2 do ADR-0133 (âncora
+  `ateCriadoEm` e o invariante real) e `docs/how-to/usar-o-pulse.md` seção 7.
 
 - [x] `pulse-coletar/processar.ts` passo 5b: coleta frete com `buscarFreteVendedor` (paralelo à
   comissão) e grava `ptw_custos.frete`; passo 5 deixa de sobrescrever `ptw_custos` com null do PTW

@@ -92,6 +92,23 @@ Ausência de dado nunca aprova — a mesma doutrina que já
 valia para `meu_preco` nulo, e o espelho do D-3 do ADR-0130 ("ausência de dado nunca reprova
 sozinha"): aqui, ausência de dado nunca *aprova* sozinha.
 
+## Errata 2 (2026-08-25, revisão do front) — o "Marcar N como lidos" tem teto
+
+O diagnóstico acima afirma que "a ação de 'Limpar todos' está correta — ela marca todos os não
+lidos". Deixou de ser literal na implementação: `marcarAlertasLidos` recebe uma âncora
+`ateCriadoEm` e aplica `.lte('criado_em', ateCriadoEm)` com o `criado_em` do alerta mais **novo** já
+carregado na tela (a lista vem em ordem decrescente, então é a primeira linha).
+
+**Motivo:** contar e marcar são duas idas ao banco, e o coletor roda em cron. Sem teto, um alerta
+inserido entre a contagem que o operador leu e o clique casaria `lido = false` e sumiria sem nunca
+ter existido para ele — e o número que o botão anunciou não seria o número marcado.
+
+**Invariante real: "nada mais novo do que o operador viu"** — não "nada que o operador não viu". O
+teto exclui apenas o que for mais novo que a primeira linha; tudo o que for mais antigo é marcado,
+**inclusive as páginas que ninguém rolou**. Isso é intencional e é o que o D-7 promete: o rótulo
+mostra a contagem verdadeira do filtro e o clique marca exatamente esse conjunto. A âncora protege
+contra a corrida com o coletor, não contra a paginação.
+
 ## Consequências aceitas
 
 - **O modelo permanece evento com marcar-lido.** A alternativa (condição aberta que se resolve

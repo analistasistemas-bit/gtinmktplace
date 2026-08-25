@@ -1,6 +1,6 @@
 // Pulse (ADR-0119): radar dirigido de concorrência — preços e vendedores dos produtos de
 // catálogo dos nossos anúncios, com price-to-win e simulador de margem.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -39,6 +39,13 @@ export default function Pulse() {
   const tabParam = searchParams.get('tab');
   const tab = tabParam === 'sonar' || tabParam === 'alertas' ? tabParam : 'radar';
   const qc = useQueryClient();
+
+  // `?tab=xyz` cai no Radar, mas o parâmetro mentiroso ficava na URL: o Radix não dispara
+  // `onValueChange` para a aba já selecionada, então só sumia quando o operador clicava em outra.
+  useEffect(() => {
+    if (tabParam !== null && tabParam !== tab) setSearchParams({}, { replace: true });
+  }, [tabParam, tab, setSearchParams]);
+
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
   const [alertaReprecificar, setAlertaReprecificar] = useState<PulseAlerta | null>(null);
@@ -129,7 +136,7 @@ export default function Pulse() {
         value={tab}
         onValueChange={(v) => setSearchParams(v === 'radar' ? {} : { tab: v }, { replace: true })}
       >
-        <TabsList className="mb-4">
+        <TabsList className="mb-4" aria-label="Seções do Pulse">
           <TabsTrigger value="radar">Radar</TabsTrigger>
           <TabsTrigger value="sonar">Sonar</TabsTrigger>
           <TabsTrigger value="alertas">

@@ -281,9 +281,14 @@ export async function marcarAlertaLido(id: string): Promise<void> {
  *
  *  `ateCriadoEm` é o teto, e existe porque contar e marcar são duas idas ao banco: o coletor roda
  *  em cron e pode inserir alertas entre a contagem que o operador leu e o clique. Sem teto, esses
- *  alertas novos casariam `lido = false` e sumiriam sem nunca terem sido renderizados. Passe o
- *  `criado_em` do alerta mais NOVO já carregado na tela — a lista vem em ordem decrescente, então é
- *  o primeiro item. */
+ *  alertas novos casariam `lido = false` e sumiriam sem nunca terem existido para o operador. Passe
+ *  o `criado_em` do alerta mais NOVO já carregado na tela — a lista vem em ordem decrescente, então
+ *  é o primeiro item.
+ *
+ *  O invariante é "nada MAIS NOVO do que o operador viu", não "nada que o operador não viu": o
+ *  `.lte` só exclui o que for mais novo que a primeira linha da lista. Tudo o que for mais antigo é
+ *  marcado, inclusive as páginas que ninguém rolou — e é exatamente isso que o rótulo promete, já
+ *  que o botão anuncia a contagem verdadeira do filtro (ADR-0133 D-7 e Errata 2). */
 export async function marcarAlertasLidos(
   severidade: FiltroSeveridade, ateCriadoEm: string,
 ): Promise<void> {

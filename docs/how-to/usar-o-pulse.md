@@ -306,9 +306,11 @@ Cada alerta tem até três botões:
 - **Reprecificar** — só aparece em queda de preço, e só para produto que você vende.
 - **✓** — marca como lido e some da lista.
 
-O botão **Marcar N como lidos**, no cabeçalho da aba, marca de uma vez todos os não lidos do filtro
-**ativo** — sem confirmação, porque marcar como lido não apaga o alerta, só some da lista de
-pendentes. Trocar de filtro antes de clicar muda o que é marcado.
+O botão **Marcar N como lidos**, no cabeçalho da aba, marca os N não lidos do filtro **ativo** —
+inclusive os que ainda não apareceram na tela, se a lista tiver mais de uma página. O único
+recorte é no outro extremo: alerta que o coletor gravar **depois** de a lista ter carregado fica
+de fora e continua pendente. Sem confirmação, porque marcar como lido não apaga o alerta, só some
+da lista de pendentes. Trocar de filtro antes de clicar muda o que é marcado.
 
 **Sem alertas de Ação agora?** A tela mostra os dois próximos passos: ver os alertas informativos
 (com a contagem), ou ir direto para o Radar já filtrado nos produtos mais caros que o mercado — o
