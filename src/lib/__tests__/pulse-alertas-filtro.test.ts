@@ -13,7 +13,7 @@ function registrar(nome: string, args: unknown[]) {
 const resposta: { data: unknown[]; error: null; count: number } = { data: [], error: null, count: 0 };
 
 const cadeia: Record<string, unknown> = {};
-for (const m of ['select', 'eq', 'order', 'range', 'update']) {
+for (const m of ['select', 'eq', 'lte', 'order', 'range', 'update']) {
   cadeia[m] = vi.fn((...args: unknown[]) => { registrar(m, args); return cadeia; });
 }
 cadeia.then = (resolve: (v: typeof resposta) => unknown) => Promise.resolve(resposta).then(resolve);
@@ -57,14 +57,36 @@ describe('lib/pulse — filtro de severidade e paginação (ADR-0133)', () => {
     expect(chamadas.eq).toEqual([['lido', false], ['severidade', 'info']]);
   });
 
+  // Desempate obrigatório: o coletor grava vários alertas do mesmo produto num único insert e
+  // `criado_em` (default now()) empata entre eles. Sem o segundo critério a ordem entre linhas
+  // empatadas não é garantida, e páginas de LIMIT/OFFSET podem repetir ou pular linha.
+  it('fetchPulseAlertas ordena por criado_em com desempate determinístico por id', () => {
+    return fetchPulseAlertas({ severidade: 'todos', pagina: 0 }).then(() => {
+      expect(chamadas.order).toEqual([
+        ['criado_em', { ascending: false }],
+        ['id', { ascending: false }],
+      ]);
+    });
+  });
+
+  const ANCORA = '2026-08-25T12:00:00.000Z';
+
   it('marcarAlertasLidos com "todos" só escopa por lido = false, sem severidade', async () => {
-    await marcarAlertasLidos('todos');
+    await marcarAlertasLidos('todos', ANCORA);
     expect(chamadas.update).toEqual([[{ lido: true }]]);
     expect(chamadas.eq).toEqual([['lido', false]]);
   });
 
   it('marcarAlertasLidos com "acao" escopa por lido = false e severidade = acao', async () => {
-    await marcarAlertasLidos('acao');
+    await marcarAlertasLidos('acao', ANCORA);
     expect(chamadas.eq).toEqual([['lido', false], ['severidade', 'acao']]);
+  });
+
+  // Contar e marcar são duas idas ao banco; o coletor roda em cron e pode inserir no intervalo.
+  // Sem teto, o update alcançaria alertas que chegaram DEPOIS da contagem — marcados como lidos
+  // sem nunca terem sido renderizados. A âncora é o mais novo que o operador viu.
+  it('marcarAlertasLidos nunca alcança alerta mais novo que o último visto', async () => {
+    await marcarAlertasLidos('acao', ANCORA);
+    expect(chamadas.lte).toEqual([['criado_em', ANCORA]]);
   });
 });

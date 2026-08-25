@@ -53,13 +53,18 @@ export function AbaAlertas({
     onSettled: invalidar,
   });
 
+  const lista = useMemo(() => (data?.pages ?? []).flat(), [data]);
+
+  // Teto do "marcar todos": o alerta mais novo já carregado. A lista vem em ordem decrescente, então
+  // é o primeiro item. Sem isso, um alerta gravado pelo coletor entre a contagem e o clique seria
+  // marcado como lido sem nunca ter sido renderizado.
+  const maisNovoVisto = lista[0]?.criado_em ?? null;
+
   const marcarTodosLidos = useMutation({
-    mutationFn: () => marcarAlertasLidos(severidade),
+    mutationFn: (ateCriadoEm: string) => marcarAlertasLidos(severidade, ateCriadoEm),
     onError: (e: Error) => toast.error(e.message),
     onSettled: invalidar,
   });
-
-  const lista = useMemo(() => (data?.pages ?? []).flat(), [data]);
 
   // Consulta quebrada não pode parecer "nenhum alerta" — é a primeira pergunta que a tela responde.
   if (isError) {
@@ -83,8 +88,8 @@ export function AbaAlertas({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => marcarTodosLidos.mutate()}
-          disabled={!contagem || marcarTodosLidos.isPending}
+          onClick={() => maisNovoVisto && marcarTodosLidos.mutate(maisNovoVisto)}
+          disabled={!contagem || !maisNovoVisto || marcarTodosLidos.isPending}
         >
           Marcar {contagem ?? 0} como lidos
         </Button>

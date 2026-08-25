@@ -238,6 +238,12 @@ export async function fetchPulseAlertas(
   // insert, e `criado_em` (default now()) empata entre eles. Sem desempate determinístico o
   // Postgres não garante ordem estável entre páginas de LIMIT/OFFSET com chave repetida — página
   // 2 podia repetir ou pular linha da página 1.
+  //
+  // Isso resolve a ordem dentro de um mesmo snapshot, e SÓ isso. Escrita concorrente continua
+  // deslocando a janela: um alerta novo entre a leitura da página 1 e da 2 empurra tudo para
+  // baixo, e marcar um como lido encolhe o conjunto filtrado. Risco aceito — o alerta deslocado
+  // aparece no próximo refetch, e a alternativa (cursor por criado_em+id) não paga o custo com
+  // ~12 alertas de ação por dia.
   let q = pulseFrom('pulse_alertas')
     .select('id, produto_id, tipo, severidade, payload, lido, criado_em, pulse_produtos(titulo, codigo_pai, catalog_product_id)')
     .eq('lido', false)
@@ -268,12 +274,22 @@ export async function marcarAlertaLido(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Marca como lidos os não lidos do filtro ativo. O escopo só admite colunas locais de
- *  `pulse_alertas`: o update do PostgREST não filtra por coluna de recurso embutido, então um
- *  escopo por título de produto ou apagaria o que o operador não viu, ou mentiria no número
- *  (ADR-0133 D-9). Grant é column-level em `lido` — nada mais pode ir no update. */
-export async function marcarAlertasLidos(severidade: FiltroSeveridade): Promise<void> {
-  let q = pulseFrom('pulse_alertas').update({ lido: true }).eq('lido', false);
+/** Marca como lidos os não lidos do filtro ativo, até `ateCriadoEm` inclusive. O escopo só admite
+ *  colunas locais de `pulse_alertas`: o update do PostgREST não filtra por coluna de recurso
+ *  embutido, então um escopo por título de produto ou apagaria o que o operador não viu, ou
+ *  mentiria no número (ADR-0133 D-9). Grant é column-level em `lido` — nada mais pode ir no update.
+ *
+ *  `ateCriadoEm` é o teto, e existe porque contar e marcar são duas idas ao banco: o coletor roda
+ *  em cron e pode inserir alertas entre a contagem que o operador leu e o clique. Sem teto, esses
+ *  alertas novos casariam `lido = false` e sumiriam sem nunca terem sido renderizados. Passe o
+ *  `criado_em` do alerta mais NOVO já carregado na tela — a lista vem em ordem decrescente, então é
+ *  o primeiro item. */
+export async function marcarAlertasLidos(
+  severidade: FiltroSeveridade, ateCriadoEm: string,
+): Promise<void> {
+  let q = pulseFrom('pulse_alertas').update({ lido: true })
+    .eq('lido', false)
+    .lte('criado_em', ateCriadoEm);
   if (severidade !== 'todos') q = q.eq('severidade', severidade);
   const { error } = await q;
   if (error) throw error;

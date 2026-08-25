@@ -70,14 +70,21 @@ describe('AbaAlertas', () => {
     expect(screen.getAllByRole('button', { name: 'Ver produto' })).toHaveLength(2);
   });
 
-  it('Marcar N como lidos chama marcarAlertasLidos com a severidade ativa', async () => {
+  // Além da severidade ativa, prova a ÂNCORA: o teto é o `criado_em` do alerta mais novo já
+  // renderizado. Sem ele, um alerta gravado pelo coletor entre a contagem e o clique seria marcado
+  // como lido sem nunca ter aparecido na tela.
+  it('Marcar N como lidos usa a severidade ativa e o alerta mais novo visto como teto', async () => {
     const user = userEvent.setup();
     vi.mocked(contarPulseAlertas).mockImplementation(async (severidade) => (severidade === 'info' ? 7 : 0));
+    vi.mocked(fetchPulseAlertas).mockResolvedValue([
+      alerta({ id: 'a-novo', severidade: 'info', criado_em: '2026-08-25T09:00:00.000Z' }),
+      alerta({ id: 'a-velho', severidade: 'info', criado_em: '2026-08-20T09:00:00.000Z' }),
+    ]);
     renderAba();
     await user.click(screen.getByRole('tab', { name: 'Informativo' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Marcar 7 como lidos' })).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: 'Marcar 7 como lidos' }));
-    expect(marcarAlertasLidos).toHaveBeenCalledWith('info');
+    expect(marcarAlertasLidos).toHaveBeenCalledWith('info', '2026-08-25T09:00:00.000Z');
   });
 
   it('estado vazio de Ação mostra Ver informativos e o caminho para o Radar', async () => {
