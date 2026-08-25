@@ -28,7 +28,7 @@ O Pulse responde três perguntas que antes você respondia no olho:
 | Pergunta | Onde ela é respondida |
 |---|---|
 | Meu preço ainda está competitivo? | Tela do radar + detalhe do produto |
-| Quando eu preciso agir? | Painel de alertas (e o sino de notificações) |
+| Quando eu preciso agir? | Aba **Alertas** (e o sino de notificações) |
 | Até onde posso baixar sem prejuízo? | Simulador de margem, dentro do detalhe |
 
 Ele **não** publica nem altera nada sozinho. Toda mudança de preço continua passando pela Revisão,
@@ -276,8 +276,23 @@ abaixo do custo achando que está no lucro.
 
 ## 7. Alertas
 
-Quando algo muda no seu mercado, aparece um cartão no topo da tela do Pulse com os alertas não
-lidos. Três tipos:
+Quando algo muda no seu mercado, o Pulse grava um alerta. Eles ficam na aba **Alertas**, ao lado de
+Radar e Sonar — não mais num cartão no topo do Radar.
+
+Cada alerta nasce com uma **severidade** (ADR-0133), decidida contra o **seu preço** no instante do
+evento:
+
+- **Ação** — muda decisão de preço: o menor preço da ficha caiu abaixo do seu, um concorrente novo
+  entrou abaixo do seu, ou o concorrente que te segurava embaixo saiu e agora ninguém mais está
+  abaixo de você (oportunidade de subir preço). Sem oferta sua na ficha, o alerta nunca é Ação —
+  não há preço seu para comparar.
+- **Informativo** — o resto: movimento de mercado que não muda a sua posição de preço.
+
+A aba abre em **Ação**, porque é o que exige você. Os outros dois filtros (**Informativo** e
+**Todos**) ficam a um clique. O número ao lado do nome **Alertas**, na barra de abas, conta só
+alertas de Ação não lidos — não o total. Se ele estiver em branco ou zero, não é bug: quer dizer que
+não há nada pendente que mude decisão de preço agora, mesmo que existam vários alertas informativos
+esperando.
 
 | Alerta | O que significa | O que costuma valer a pena fazer |
 |---|---|---|
@@ -290,6 +305,14 @@ Cada alerta tem até três botões:
 - **Ver produto** — abre o detalhe daquela ficha.
 - **Reprecificar** — só aparece em queda de preço, e só para produto que você vende.
 - **✓** — marca como lido e some da lista.
+
+O botão **Marcar N como lidos**, no cabeçalho da aba, marca de uma vez todos os não lidos do filtro
+**ativo** — sem confirmação, porque marcar como lido não apaga o alerta, só some da lista de
+pendentes. Trocar de filtro antes de clicar muda o que é marcado.
+
+**Sem alertas de Ação agora?** A tela mostra os dois próximos passos: ver os alertas informativos
+(com a contagem), ou ir direto para o Radar já filtrado nos produtos mais caros que o mercado — o
+lugar mais provável de achar uma oportunidade de reprecificar mesmo sem alerta novo.
 
 **Onde mais os alertas aparecem:** no sino de notificações do topo, na categoria **Pulse (mercado)**.
 Hoje só administradores ativos estão inscritos nessa categoria; para incluir alguém, é o mesmo lugar
@@ -343,9 +366,9 @@ origem. Se voltar a publicar, ele reaparece na próxima coleta completa.
 
 O Pulse foi feito para consumo rápido, não para ficar aberto o dia todo.
 
-**Todo dia (2 minutos).** Abrir o Pulse, ler o cartão de alertas, marcar como lido o que não exige
-ação. Agir só no que muda decisão — normalmente queda de preço em produto onde você tem margem
-folgada.
+**Todo dia (2 minutos).** Abrir a aba **Alertas** — ela já abre no filtro Ação, e o número na aba
+conta só esses. Agir no que muda decisão (normalmente queda de preço em produto onde você tem
+margem folgada), marcar como lido o resto. Passar pelo filtro Informativo é opcional.
 
 **Uma vez por semana (10 minutos).** Ordenar a lista pela coluna **Sua posição** (do mais caro para
 o mais barato) e olhar o topo: são os anúncios onde você está mais acima do menor concorrente.

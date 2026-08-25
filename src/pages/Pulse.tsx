@@ -22,12 +22,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TabelaRadar } from '@/components/pulse/tabela-radar';
 import { DialogDetalhe } from '@/components/pulse/dialog-detalhe';
 import { DialogAdicionar } from '@/components/pulse/dialog-adicionar';
-import { PainelAlertas } from '@/components/pulse/painel-alertas';
+import { AbaAlertas } from '@/components/pulse/aba-alertas';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK } from '@/lib/queries';
 import {
-  fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora,
+  fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora, contarPulseAlertas,
   type PulseAlerta, type PulseProduto,
 } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,8 @@ import PulseSonar from './PulseSonar';
 export default function Pulse() {
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get('tab') === 'sonar' ? 'sonar' : 'radar';
+  const tabParam = searchParams.get('tab');
+  const tab = tabParam === 'sonar' || tabParam === 'alertas' ? tabParam : 'radar';
   const qc = useQueryClient();
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
@@ -48,6 +49,14 @@ export default function Pulse() {
     queryFn: fetchPulseProdutos,
     enabled: !!modulos?.includes('pulse'),
     staleTime: 60_000,
+  });
+
+  // Badge da aba Alertas: só `acao` não lido, nunca o total (ADR-0133 D-6) — os alertas
+  // históricos foram backfillados como `info`, então o número certo é 0 até haver decisão real.
+  const { data: acaoPendente } = useQuery({
+    queryKey: QK.pulseAlertasContagem('acao'),
+    queryFn: () => contarPulseAlertas('acao'),
+    enabled: !!modulos?.includes('pulse'),
   });
 
   // Uma única query de ofertas para a página inteira: KPIs e tabela leem o mesmo Map. A chave usa
@@ -118,16 +127,22 @@ export default function Pulse() {
 
       <Tabs
         value={tab}
-        onValueChange={(v) => setSearchParams(v === 'sonar' ? { tab: 'sonar' } : {}, { replace: true })}
+        onValueChange={(v) => setSearchParams(v === 'radar' ? {} : { tab: v }, { replace: true })}
       >
         <TabsList className="mb-4">
           <TabsTrigger value="radar">Radar</TabsTrigger>
           <TabsTrigger value="sonar">Sonar</TabsTrigger>
+          <TabsTrigger value="alertas">
+            Alertas
+            {!!acaoPendente && acaoPendente > 0 && (
+              <span className="ml-1.5 rounded-full bg-warning px-1.5 text-xs font-medium text-warning-foreground">
+                {acaoPendente}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="radar">
-      <PainelAlertas onVerProduto={setDetalheId} onReprecificar={setAlertaReprecificar} />
-
       {lista.length > 0 && (
         // Cada card é o atalho para as linhas que ele conta. "No radar" não filtra nada — ele
         // limpa: é o caminho de volta para a lista inteira depois de qualquer recorte.
@@ -261,6 +276,17 @@ export default function Pulse() {
 
         <TabsContent value="sonar">
           <PulseSonar />
+        </TabsContent>
+
+        <TabsContent value="alertas">
+          <AbaAlertas
+            onVerProduto={setDetalheId}
+            onReprecificar={setAlertaReprecificar}
+            onVerRadar={() => {
+              setSearchParams({}, { replace: true });
+              setFiltros((f) => ({ ...f, foco: 'mais_caro' }));
+            }}
+          />
         </TabsContent>
       </Tabs>
 

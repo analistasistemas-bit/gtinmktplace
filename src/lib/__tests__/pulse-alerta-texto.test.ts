@@ -18,13 +18,25 @@ describe('textoAlerta', () => {
     );
   });
 
-  it('novo_concorrente: novo concorrente a R$ preco', () => {
+  it('novo_concorrente: cai no seller_id quando não há nickname', () => {
     const alerta = base({ tipo: 'novo_concorrente', payload: { item_id: 'MLB999', seller_id: 42, preco: 79.5 } });
-    expect(textoAlerta(alerta)).toBe(`Novo concorrente em Fone Bluetooth X a ${fmtBRL(79.5)}`);
+    expect(textoAlerta(alerta)).toBe(`vendedor 42 entrou em Fone Bluetooth X a ${fmtBRL(79.5)}`);
   });
 
-  it('concorrente_saiu: um concorrente saiu', () => {
+  it('concorrente_saiu: cai no seller_id quando não há nickname', () => {
     const alerta = base({ tipo: 'concorrente_saiu', payload: { item_id: 'MLB999', seller_id: 42 } });
+    expect(textoAlerta(alerta)).toBe('vendedor 42 saiu de Fone Bluetooth X');
+  });
+
+  it('nomeia o vendedor quando o payload traz nickname', () => {
+    const alerta = base({
+      tipo: 'concorrente_saiu', payload: { item_id: 'MLB999', seller_id: 42, nickname: 'LOJA SETE' },
+    });
+    expect(textoAlerta(alerta)).toBe('LOJA SETE saiu de Fone Bluetooth X');
+  });
+
+  it('mantém o texto genérico sem nickname e sem seller_id', () => {
+    const alerta = base({ tipo: 'concorrente_saiu', payload: {} });
     expect(textoAlerta(alerta)).toBe('Um concorrente saiu de Fone Bluetooth X');
   });
 

@@ -2,7 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Pulse — frete na margem via shipping_options/free (ADR-0119 Errata 11) — 2026-08-22
+## Pulse — alertas com severidade gravada e aba dedicada (ADR-0133) — 2026-08-25
+
+- [x] Coletor (`pulse-coletar`/`_shared/pulse/diff.ts`) grava `severidade` (`acao`|`info`) congelada
+  no instante do evento, comparando contra `meu_preco` do mesmo snapshot; notificação Telegram
+  distingue severidade (D-10). `pulse_alertas.severidade` `not null default 'info'` — histórico
+  (262 alertas) todo backfillado como `info` (D-8, sem `UPDATE`).
+- [x] Camada de dados do front (`src/lib/pulse.ts`): `fetchPulseAlertas`/`contarPulseAlertas`
+  paginados e escopados por severidade, `marcarAlertaLido`/`marcarAlertasLidos` (escopo só em
+  colunas locais de `pulse_alertas`, sem busca por produto — D-9).
+- [x] Aba **Alertas** nova (`src/components/pulse/aba-alertas.tsx`), terceira aba do Pulse ao lado
+  de Radar e Sonar (`?tab=alertas`). Abre no filtro Ação; badge na aba conta só `acao` não lido
+  (D-6), nasce em 0 pelo backfill — estado vazio de Ação aponta para "Ver informativos (N)" e para
+  o Radar com foco "Mais caro que o mercado". `PainelAlertas` removido da aba Radar, sem
+  substituto (D-5). `pulse-alerta-texto.ts` passa a nomear o vendedor (`nickname`, com fallback
+  para `vendedor {seller_id}`) em `novo_concorrente`/`concorrente_saiu`. Docs:
+  `docs/how-to/usar-o-pulse.md` seções 1, 7 e 10.
 
 - [x] `pulse-coletar/processar.ts` passo 5b: coleta frete com `buscarFreteVendedor` (paralelo à
   comissão) e grava `ptw_custos.frete`; passo 5 deixa de sobrescrever `ptw_custos` com null do PTW
